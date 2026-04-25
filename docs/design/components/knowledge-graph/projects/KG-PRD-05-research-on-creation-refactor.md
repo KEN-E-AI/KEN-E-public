@@ -247,7 +247,7 @@ No new endpoints. The existing account-creation endpoint at `api/src/kene_api/ro
 1. Creating a new account via the existing POST endpoint triggers `execute_strategy_generation_direct`, which first creates a `ResearchRun` and then runs the four builders. After completion, the `ResearchRun.status="complete"` and the `ended_at` is populated.
 2. Every node produced by the research run has: `source_research_run_id == run.run_id`, `last_updated_by_agent == "researcher"`, `valid_from` set, and one `:ESTABLISHED_BY` edge to the ResearchRun.
 3. `GraphSyncService.create_node` is the only write path used by the four builders — grep for `execute_write_transaction` or raw `MERGE` Cypher in `app/adk/agents/strategy_agent/*graph_builder.py` returns zero hits.
-4. Firestore is kept in sync: every node that appears in Neo4j also appears in its corresponding `accounts/{account_id}/strategy_docs` subcollection (Shape B layout per the [Multi-Tenant Data Model decision](https://www.notion.so/34830fd653028177bc0dc2a1637c7f60)). Count match within ±0 after a full research run.
+4. Firestore is kept in sync: every node that appears in Neo4j also appears in its corresponding `accounts/{account_id}/strategy_docs` subcollection (Shape B layout per the [Review 15 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1)). Count match within ±0 after a full research run.
 5. Re-running research for the same account with the same `research_run_id` (simulate via direct call, bypassing the account endpoint) is a no-op — no duplicate nodes created. Verified by snapshot + second call + count check.
 6. Re-running research for the same account with a *different* `research_run_id` creates a new ResearchRun and a second set of nodes (distinct `source_research_run_id`). The old nodes remain untouched. This behavior is expected for v1 — deduplication across runs is a future concern.
 7. If any builder raises mid-run, `close_research_run` sets `status="failed"` and the partial nodes that were created remain in the graph (they carry the failed run's id for later cleanup). The existing account-creation error path runs unchanged.
@@ -301,7 +301,6 @@ No new endpoints. The existing account-creation endpoint at `api/src/kene_api/ro
 ## 10. Reference
 
 - KG-PRD-01 (shared label, constraints); KG-PRD-02 (ResearchRun + provenance methods).
-- Parent plan: [`the-purpose-of-neo4j-clever-frost.md`](../../../../../Users/kenwilliams/.claude/plans/the-purpose-of-neo4j-clever-frost.md) §Phase 5.
 - Existing files being refactored: `app/adk/agents/strategy_agent/orchestrator.py`, `*_graph_builder.py` × 4, `neo4j_tools.py`.
 - Existing service being extended: `api/src/kene_api/services/graph_sync_service.py`.
 - CLAUDE.md rules in scope: C-2, C-4, C-9; PY-1, PY-2, PY-3, PY-7; T-1, T-3, T-5, T-8.

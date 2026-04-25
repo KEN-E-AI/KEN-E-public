@@ -3,7 +3,7 @@
 **Status:** Research needed; decision pending
 **Owner:** TBD (assign during research kickoff)
 **Created:** 2026-04-20
-**Expected output:** A Notion Design Decision entry + a migration plan (if the decision changes the current pattern)
+**Expected output:** A Review entry in `docs/design/DESIGN-REVIEW-LOG.md` + a migration plan (if the decision changes the current pattern). *Historically resolved in [Review 15 — Multi-Tenant Data Model Shape](DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1).*
 
 ---
 
@@ -74,7 +74,7 @@ Ground-truth findings from the `api/src/kene_api/` tree as of 2026-04-20:
 
 ## 4. Research questions — Firestore
 
-Each question has a concrete method. Answers should be captured directly in the eventual Notion Decision entry.
+Each question has a concrete method. Answers should be captured directly in the eventual `DESIGN-REVIEW-LOG` Review entry.
 
 ### Q1. What's the full inventory of account-scoped Firestore data?
 
@@ -209,14 +209,14 @@ Weight these criteria when evaluating research results. Order is approximate; th
 
 After research concludes, the owner produces:
 
-1. **A Notion Design Decision entry** in the Design Decisions database (data source ID in `CLAUDE.md`): title, status, context (summary of this brief + findings), decision, consequences, link to this file.
+1. **A Review entry** in `docs/design/DESIGN-REVIEW-LOG.md`: title, status, context (summary of this brief + findings), decision, consequences, link to this file. (This step was completed in Review 15.)
 2. **A migration plan** checked in as `docs/design/components/data-management/multi-tenant-migration-plan.md` if the decision changes the current pattern. The plan enumerates:
    - Every collection / path / bucket prefix that must move
    - The script or batch job that moves it (even in dev/staging — repeatability matters)
    - Code edits required (routers, services, repositories, tests, deployment configs)
    - How each in-flight PRD is affected (components/skills/projects/*, components/project-tasks/projects/*)
    - Terraform changes (indexes, bucket lifecycle, IAM)
-3. **PRD updates** — if the decision changes the shape for Skills / Project Plans, edit the affected PRDs and add a line to `docs/design/DESIGN-REVIEW-LOG.md` referencing the Notion decision.
+3. **PRD updates** — if the decision changes the shape for Skills / Project Plans, edit the affected PRDs and add a line to `docs/design/DESIGN-REVIEW-LOG.md` referencing the Review entry that captures the decision.
 
 ## 9. Context for the next session
 
@@ -236,4 +236,4 @@ When you pick this up:
 - [Firestore quotas and limits](https://firebase.google.com/docs/firestore/quotas)
 - [Firestore data model best practices](https://firebase.google.com/docs/firestore/best-practices)
 - [GCS bucket limits](https://cloud.google.com/storage/quotas)
-- `CLAUDE.md` §"Design Documentation & Architecture Decisions" — the Notion Decision workflow this research feeds into
+- `CLAUDE.md` §"Documentation Model" — the DESIGN-REVIEW-LOG decision workflow this research feeds into

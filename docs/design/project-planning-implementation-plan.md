@@ -86,7 +86,7 @@ The `depends_on` field on each task forms a directed acyclic graph (DAG). The Py
 
 ### Firestore Collection Structure
 
-> **Revised 2026-04-20** — Firestore paths follow the Shape B layout (`accounts/{account_id}/{resource}/...`). See [Multi-Tenant Data Model Shape Decision](https://www.notion.so/34830fd653028177bc0dc2a1637c7f60) for rationale.
+> **Revised 2026-04-20** — Firestore paths follow the Shape B layout (`accounts/{account_id}/{resource}/...`). See [Review 15 in DESIGN-REVIEW-LOG](DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1) — Multi-Tenant Data Model Shape for rationale.
 
 ```
 accounts/{account_id}/project_plans/{plan_id}

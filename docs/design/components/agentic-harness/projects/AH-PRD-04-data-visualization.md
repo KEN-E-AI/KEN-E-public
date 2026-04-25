@@ -185,7 +185,7 @@ Vega-Lite specs must be complete to render, so artifacts are **not** streamed in
 
 ## 7. Acceptance criteria
 
-Mapped 1:1 to the nine Sprint 11 sprint-level ACs so the project maintains traceability back to the original Notion plan.
+Mapped 1:1 to the nine sprint-level ACs from the original Sprint 11 plan (historical Notion page; archived).
 
 1. **Artifact model.** `Artifact` and `ArtifactMetadata` Pydantic models are defined in a shared location importable from both `app/` and `api/`. `type` and `chart_type_suggestion` are `Literal` enums. The Vega-Lite spec structure (`$schema` = v6, `data.values` inline, `mark`, `encoding`) round-trips through JSON serialization.
 2. **`create_visualization()` tool.** `create_visualization()` constructs valid Vega-Lite v6 specs, **appends** to `response_artifacts` (multiple calls accumulate; never overwrites), returns a human-readable confirmation string (title + chart type + data-point count), and handles invalid JSON input for `data` / `encoding` with a clear error message rather than an unhandled exception. Specs do not include a `config` block or hardcoded mark colors.
@@ -248,8 +248,8 @@ Carried over from `data-visualization.md` §10; resolve during implementation or
 
 - Canonical design: [`data-visualization.md`](../data-visualization.md) — §3 (Artifact model), §4 (`create_visualization`), §5 (data flow + `ChatResponse`), §6 (review-loop integration), §8 (frontend rendering), §10 (open questions).
 - Parent plan: [`../../../review-loop-implementation-plan.md`](../../../review-loop-implementation-plan.md) §3.1 — reviewer template `{step_N_…?}` optional-suffix pattern that story 2.4-5 extends.
-- Harness design: [`../../../KEN-E-System-Architecture.md`](../../../KEN-E-System-Architecture.md) §2.3.2 (Request flow), §4.4 (Specialist agents), §4.6 (Review loop pattern).
-- Trace spec: [`../../../trace-structure-spec.md`](../../../trace-structure-spec.md) — no new span types; artifact evaluation rides the existing review-loop sub-span hierarchy.
+- Harness design: [`../../../KEN-E-System-Architecture.md`](../../../../KEN-E-System-Architecture.md) §2.3.2 (Request flow), §4.4 (Specialist agents), §4.6 (Review loop pattern).
+- Trace spec: [`../../../trace-structure-spec.md`](../../../../trace-structure-spec.md) — no new span types; artifact evaluation rides the existing review-loop sub-span hierarchy.
 - Upstream projects: [AH-PRD-01](./AH-PRD-01-review-loop-framework.md), [AH-PRD-02](./AH-PRD-02-agent-factory.md), [AH-PRD-03](./AH-PRD-03-google-analytics-specialist.md).
 - Frontend renderer: `src/app/components/dashboard/ArtifactRenderer.tsx`, `src/app/components/dashboard/TileSettingsPopover.tsx`, `src/app/components/dashboard/artifactTypes.ts`.
 - Notion (archival): [Sprint 11 — Data Visualization Tool](https://www.notion.so/KEN-E-Sprint-11-Data-Visualization-Tool-32930fd6530281cca478fa23ca3abae2) — original sprint plan with the six user stories (2.4-1 … 2.4-6).

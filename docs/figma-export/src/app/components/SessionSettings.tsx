@@ -66,7 +66,7 @@ interface LoadedTool {
   name: string;
   description: string;
   authenticated: boolean;
-  lastUsed?: Date;
+  lastChecked: Date;
 }
 
 const mockDocuments: SessionDocument[] = [
@@ -128,14 +128,14 @@ const mockPermissions: Permission[] = [
 ];
 
 const mockTools: LoadedTool[] = [
-  { id: '1', name: 'Google Ads API', description: 'Campaign management and reporting', authenticated: true, lastUsed: new Date(2026, 1, 15, 8, 30) },
-  { id: '2', name: 'HubSpot CRM', description: 'Contact and deal management', authenticated: true, lastUsed: new Date(2026, 1, 15, 9, 15) },
-  { id: '3', name: 'Meta Ads Manager', description: 'Facebook and Instagram advertising', authenticated: true, lastUsed: new Date(2026, 1, 14, 16, 0) },
-  { id: '4', name: 'Salesforce', description: 'CRM data and lead management', authenticated: false },
-  { id: '5', name: 'LinkedIn Campaign Manager', description: 'LinkedIn advertising platform', authenticated: true, lastUsed: new Date(2026, 1, 15, 7, 45) },
-  { id: '6', name: 'Mailchimp', description: 'Email marketing automation', authenticated: false },
-  { id: '7', name: 'Google Analytics 4', description: 'Website traffic and conversion tracking', authenticated: true, lastUsed: new Date(2026, 1, 15, 10, 0) },
-  { id: '8', name: 'Canva Design API', description: 'Asset generation and design tools', authenticated: true, lastUsed: new Date(2026, 1, 13, 14, 20) },
+  { id: '1', name: 'Google Ads API', description: 'Campaign management and reporting', authenticated: true, lastChecked: new Date(2026, 1, 15, 8, 30) },
+  { id: '2', name: 'HubSpot CRM', description: 'Contact and deal management', authenticated: true, lastChecked: new Date(2026, 1, 15, 9, 15) },
+  { id: '3', name: 'Meta Ads Manager', description: 'Facebook and Instagram advertising', authenticated: true, lastChecked: new Date(2026, 1, 14, 16, 0) },
+  { id: '4', name: 'Salesforce', description: 'CRM data and lead management', authenticated: false, lastChecked: new Date(2026, 1, 14, 11, 5) },
+  { id: '5', name: 'LinkedIn Campaign Manager', description: 'LinkedIn advertising platform', authenticated: true, lastChecked: new Date(2026, 1, 15, 7, 45) },
+  { id: '6', name: 'Mailchimp', description: 'Email marketing automation', authenticated: false, lastChecked: new Date(2026, 1, 13, 18, 22) },
+  { id: '7', name: 'Google Analytics 4', description: 'Website traffic and conversion tracking', authenticated: true, lastChecked: new Date(2026, 1, 15, 10, 0) },
+  { id: '8', name: 'Canva Design API', description: 'Asset generation and design tools', authenticated: true, lastChecked: new Date(2026, 1, 13, 14, 20) },
 ];
 
 // --- Component ---
@@ -531,7 +531,7 @@ export function SessionSettings() {
               className="text-[var(--text-heading-sm)]"
               style={{ fontFamily: 'var(--font-display)' }}
             >
-              Loaded Tools
+              Authentication Status
             </h3>
             <Badge variant="success">
               {mockTools.filter(t => t.authenticated).length}/{mockTools.length} connected
@@ -564,10 +564,19 @@ export function SessionSettings() {
                   <p className="text-[var(--text-body-sm)] font-medium">
                     {tool.name}
                   </p>
-                  <p className="text-[var(--text-caption)] text-[var(--color-text-tertiary)]">
-                    {tool.description}
+                  <p className="text-[var(--text-overline)] text-[var(--color-text-tertiary)] opacity-75">
+                    Last Checked: {tool.lastChecked.toLocaleString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    })}
                   </p>
                 </div>
+                <Button variant="outline" size="sm">
+                  Check Status
+                </Button>
                 <Badge variant={tool.authenticated ? 'success' : 'error'}>
                   {tool.authenticated ? 'Authenticated' : 'Disconnected'}
                 </Badge>

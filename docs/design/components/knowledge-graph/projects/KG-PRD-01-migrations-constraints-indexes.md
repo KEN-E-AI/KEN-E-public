@@ -270,7 +270,6 @@ No new endpoints. This PRD is pure infrastructure.
 
 ## 10. Reference
 
-- Parent plan: [`the-purpose-of-neo4j-clever-frost.md`](../../../../../Users/kenwilliams/.claude/plans/the-purpose-of-neo4j-clever-frost.md) §Phase 1 (this user's local plan; not committed)
 - Existing files: `api/src/kene_api/database.py`, `api/src/kene_api/main.py`, `api/scripts/cleanup_neo4j_data.py`
 - Neo4j docs: [Vector indexes](https://neo4j.com/docs/cypher-manual/current/indexes/semantic-indexes/vector-indexes/), [Constraints](https://neo4j.com/docs/cypher-manual/current/constraints/)
 - CLAUDE.md rules in scope: D-1, D-4, D-5; PY-1, PY-7; T-1, T-3, T-4

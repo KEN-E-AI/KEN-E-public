@@ -1,12 +1,12 @@
 # KEN-E System Architecture
 
-**Version:** 4.0
+**Version:** 4.2
 **Date:** April 2026
 **Author:** Development Team
 
 > **Role of this document.** This is the canonical, high-level system architecture for KEN-E. It covers the cross-cutting concerns — context management, agent runtime, multi-step orchestration, evaluation framework, infrastructure, resilience, and security — and frames each major component with a short summary and a pointer to the detailed component doc. **Detailed, evolving implementation content lives in component docs and is not duplicated here.** See §1.6 for the full component landscape; individual components are covered in the sections that follow.
 >
-> **What this doc is not:** it is not a PRD (components own their PRDs under `docs/design/components/<component>/projects/`), not a roadmap (see [`docs/product-roadmap.md`](product-roadmap.md) and [`docs/design/components/PROJECT-PLANNER.md`](design/components/PROJECT-PLANNER.md)), and not an ADR log (see [`docs/design/DESIGN-REVIEW-LOG.md`](design/DESIGN-REVIEW-LOG.md) for decision history).
+> **What this doc is not:** it is not a PRD (components own their PRDs under `docs/design/components/<component>/projects/`), not a roadmap (see [`docs/design/components/PROJECT-PLANNER.md`](design/components/PROJECT-PLANNER.md) for project sequencing; per-feature execution lives in Linear), and not an ADR log (see [`docs/design/DESIGN-REVIEW-LOG.md`](design/DESIGN-REVIEW-LOG.md) for decision history).
 
 ---
 
@@ -32,9 +32,9 @@
 
 ### 1.1 Purpose
 
-This document defines the comprehensive design for KEN-E's agentic harness — the software framework that enables KEN-E to function as an autonomous AI marketing agent. The harness orchestrates multiple specialized agents using Google's Agent Development Kit (ADK) to complete complex marketing tasks including strategy development, content creation, campaign execution, and performance optimization.
+This document defines the system architecture for KEN-E, a multi-agent AI marketing platform built on Google Cloud. KEN-E spans three complementary execution layers — an **agentic layer** (root agent + narrow per-platform specialists + review loop + config-driven agent factory), a **deterministic layer** (Data Pipeline's typed connectors running platform extractions on fixed schedules), and an **analytical layer** (SAR-E's statistical forecasting + LLM-driven target derivation feeding the Performance page). The three share a common substrate: persistent project plans, an event- and time-driven orchestrator, an artifact system, a KMS-encrypted credential store, a knowledge graph, and a design-system frontend — together the thirteen components listed in §1.6.
 
-This document serves as an architecture reference: it describes both the current implementation and planned extensions. Features not yet built are marked `[PLANNED]` throughout. Agents marked `[TRANSITIONAL]` exist in the current implementation but will be subsumed by a specialist agent or automation when the specialist layer is built (Sprint 5-6). As planned features are deployed, this document is updated to collapse the distinction.
+This doc serves as an architecture reference: current implementation + planned extensions. Features not yet built are marked `[PLANNED]` throughout; agents marked `[TRANSITIONAL]` exist in the current implementation but will be subsumed by specialist agents or automations when the specialist layer is built (R5). As planned features ship, this document is updated to collapse the distinction.
 
 ### 1.2 Critical Design Challenges
 
@@ -67,8 +67,12 @@ For the canonical architecture, agent tree, dispatch pattern, tool-assignment mo
 | **ADK Skills for expertise delivery** — predefined skills shipped with product, custom skills created by users via UI. |
 | **Vega-Lite artifacts for data visualization** — specialists produce Vega-Lite chart specs via `create_visualization()` tool; `ChatResponse` extended with `artifacts` field. |
 | **Gemini code execution for numerical analysis** — Google Analytics Specialist uses Gemini's built-in code execution for reliable calculations (percentages, trends, averages). Google-managed sandbox — no infrastructure. |
+| **Deterministic Data Pipeline for repeatable extractions** — a sibling `kene-data-pipeline-{env}` Cloud Run service runs well-defined platform extractions (GA, Google Ads, Meta Ads, Mailchimp) via typed connectors outside the agent path. `assignee_type="data_pipeline"` makes it a first-class `PlanTask` assignee alongside `agent` and `human`. Per-account caching + per-connector rate limits. |
+| **Integrations-owned credentials** — third-party OAuth tokens live in a KMS-encrypted Firestore substrate; consumers fetch per-invocation via `GET /api/v1/internal/integrations/credentials/{account_id}/{platform_id}`. Supersedes the legacy per-specialist session-state pattern. Generic OAuth flow driven by `PlatformDefinition` docs — adding a platform adds a doc, not a code branch. |
+| **Opt-in analytical layer (SAR-E + Performance)** — statistical forecasting, IRF scenario propagation, and LLM-driven per-KPI-per-week targets activate per-account only after the setup wizard completes. Pre-wizard, SAR-E endpoints return empty-shape responses and the Performance page hides its analytical tabs. |
+| **"Statistical association only"** — SAR-E outputs never claim causation. Enforced in the `performance_forecasting` specialist's system prompt, response schema, and a `make lint` CI gate that greps for banned phrases (`caused`, `because`, `due to`, …) in `sar_e_*` files. |
 
-For full decision rationale, see the [Design Decisions database in Notion](https://www.notion.so/2f230fd6530280d599f0ca1449111d7e). For execution plans, see [AH-PRD-01 Review Loop](design/components/agentic-harness/projects/AH-PRD-01-review-loop-framework.md), [AH-PRD-02 Agent Factory](design/components/agentic-harness/projects/AH-PRD-02-agent-factory.md), [AH-PRD-03 GA Specialist](design/components/agentic-harness/projects/AH-PRD-03-google-analytics-specialist.md).
+For full decision rationale, see [`docs/design/DESIGN-REVIEW-LOG.md`](design/DESIGN-REVIEW-LOG.md) — the canonical in-repo decision log. For execution plans, see [AH-PRD-01 Review Loop](design/components/agentic-harness/projects/AH-PRD-01-review-loop-framework.md), [AH-PRD-02 Agent Factory](design/components/agentic-harness/projects/AH-PRD-02-agent-factory.md), [AH-PRD-03 GA Specialist](design/components/agentic-harness/projects/AH-PRD-03-google-analytics-specialist.md).
 
 ### 1.5 Expected Outcomes
 
@@ -81,7 +85,7 @@ For full decision rationale, see the [Design Decisions database in Notion](https
 
 ### 1.6 Component Landscape
 
-KEN-E is built as nine discrete components, each with its own README and set of project PRDs under `docs/design/components/`. The component split lets independent dev teams ship in parallel and keeps the surface area each team holds in context small.
+KEN-E is built as fifteen discrete components, each with its own README and set of project PRDs under `docs/design/components/`. The component split lets independent dev teams ship in parallel and keeps the surface area each team holds in context small. Not every component is agentic — Data Pipeline is deterministic, SAR-E is a statistical + LLM-specialist hybrid, Integrations is OAuth plumbing, Performance is a frontend — and the split calls that out explicitly.
 
 | Component | Scope | Primary component doc |
 |-----------|-------|----------------------|
@@ -90,14 +94,29 @@ KEN-E is built as nine discrete components, each with its own README and set of 
 | **Project Tasks** | `ProjectPlan` / `PlanTask` data model, `TaskOrchestrator`, event-driven + time-based triggers, planning specialist, calendar UI, multi-category activities, campaigns | [`components/project-tasks/README.md`](design/components/project-tasks/README.md) |
 | **Automations** | `PlanRun` execution records, recurring scheduler, artifact system, test/dry-run mode, Automations UI (list + details) | [`components/automations/README.md`](design/components/automations/README.md) |
 | **Dashboards** | `ProjectPlan` with `type="dashboard"` + canvas placements; server-side artifact resolver; four widget renderers (text / Vega-Lite / table / file); Performance-page Dashboards tab | [`components/dashboards/README.md`](design/components/dashboards/README.md) |
+| **Data Pipeline** | Deterministic (non-agentic) platform-API extraction — typed connectors (GA, Google Ads, Meta Ads, Mailchimp), `DataPipelineJob` / `DataPipelineRun`, per-account caching, sibling `kene-data-pipeline-{env}` Cloud Run service, `assignee_type="data_pipeline"` task-orchestrator branch | [`components/data-pipeline/README.md`](design/components/data-pipeline/README.md) |
+| **Integrations** | Third-party OAuth credential substrate — `PlatformDefinition`-driven OAuth flows, KMS-encrypted token store, per-account connection sharing, re-auth lifecycle, `/settings/integrations` UI. Every consumer (Data Pipeline, Agent Factory, KG) reads credentials via one internal API. | [`components/integrations/README.md`](design/components/integrations/README.md) |
+| **SAR-E** | Analytical backend for marketing measurement — weekly `EffectivenessKPI` time series, VAR baseline forecasts, IRF scenario propagation, LLM-driven per-KPI-per-week `Target` derivation, analytical query layer. Opt-in per account; "statistical association only" methodology invariant. | [`components/sar-e/README.md`](design/components/sar-e/README.md) |
+| **Performance** | `/performance` 5-tab page (Analysis / Simulations / Targets / Diagnostics / Configuration) + 4-step setup wizard + composite BFF endpoints. Renders SAR-E outputs; does no statistics itself. | [`components/performance/README.md`](design/components/performance/README.md) |
 | **Skills** | User-authored + predefined skill packs, sandbox code execution, skill attachment to custom specialists, Skills authoring UI | [`components/skills/README.md`](design/components/skills/README.md) |
-| **UI** | Soft Maximalism design system, global shell, all first-party React pages (chat, settings, workflows, calendar, knowledge, performance) | [`components/ui/README.md`](design/components/ui/README.md) |
+| **Chat** | `/chat` page, session history sidebar (search + category filter + 3-state status dots + infinite scroll), session status view (title / summary / tokens / context / activity / Delete / Export), per-user categories, todo lists in `session.state["todo_lists"]`, artifact provenance wrapper, Firestore `chat_sessions` side-table mirroring ADK sessions for pagination / search / listing. Cost display, manual Compact-now, and the "Permissions Approved" / "Loaded Tools" figma cards are scoped out of v1. | [`components/chat/README.md`](design/components/chat/README.md) |
+| **UI** | Soft Maximalism design system, global shell, all first-party React pages (settings, workflows, calendar, knowledge, performance). The `/chat` page is owned by the Chat component. | [`components/ui/README.md`](design/components/ui/README.md) |
 | **Data Management** | Shape B Firestore convention (`accounts/{account_id}/…`), migration tooling, deletion sweep rewrite, composite-index registry, approval-workflow + audit schema | [`components/data-management/README.md`](design/components/data-management/README.md) |
+| **Billing** | Stripe-backed subscriptions, 41-stop pricing tier table, internal token meter (per account → rolled up to org), monthly enforcement window, org-status state machine (`active` / `approaching_limit` / `inactive_overage` / `inactive_past_due` / `inactive_canceled`), Subscription tab + inactive banner + chat-disabled state, Stripe webhook idempotency journal, manual override, sales handoff. | [`components/billing/README.md`](design/components/billing/README.md) |
 | **Feature Flags** | Targeted-rollout infrastructure — per-entity percentage bucketing, kill switches, admin UI, backend + frontend SDKs | [`components/feature-flags/README.md`](design/components/feature-flags/README.md) |
 
-Each subsequent section either **describes a cross-cutting concern** (§3 Context, §9 Evaluation, §10 Infrastructure, §11 Resilience / Security) or **summarizes a component's architecture** (§4 Agent Definitions → Agentic Harness, §5 MCP → Agentic Harness, §6 Skills, §7 Frontend & Channels → UI + api-gateway, §8 Multi-Step Orchestration → Project Tasks + Automations + KG session-end). Detailed PRDs live in the component dirs; this doc gives the cross-component story.
+Each subsequent section either **describes a cross-cutting concern** (§3 Context, §9 Evaluation, §10 Infrastructure, §11 Resilience / Security) or **summarizes a component's architecture** (§4 Agent Definitions → Agentic Harness, §5 MCP → Agentic Harness, §6 Skills, §7 Frontend & Channels → UI + Performance, §8 Multi-Step Orchestration → Project Tasks + Automations + Data Pipeline + KG session-end + SAR-E analytical layer, §11.2 Credential Lifecycle → Integrations). Detailed PRDs live in the component dirs; this doc gives the cross-component story.
 
 For project sequencing across components, see [`components/PROJECT-PLANNER.md`](design/components/PROJECT-PLANNER.md).
+
+### 1.7 Sequencing principles
+
+Four principles guide how we slice and order work across releases. They predate the current planner and continue to apply:
+
+1. **Each release is production-deployable.** Small scope, high reliability, well-tested. Avoid "big bang" releases that depend on multiple components landing simultaneously.
+2. **Dependencies drive ordering.** The `blocked_by` column in PROJECT-PLANNER is the authoritative graph; release themes follow what's actually unblocked, not what's marketing-friendly to ship together.
+3. **Incremental complexity.** Single-step review loops before multi-step workflows. Predefined skills before custom skills. Narrow specialists before broad rollups. The simplest version that proves the pattern ships first; refinements ride later releases.
+4. **Stabilization between releases.** Each customer-visible release is followed by a stabilization window (production hardening, bug fixes, monitoring) before the next release begins.
 
 ---
 
@@ -105,7 +124,7 @@ For project sequencing across components, see [`components/PROJECT-PLANNER.md`](
 
 Client (Web UI; Slack and Voice planned) → FastAPI on Cloud Run (Firebase Auth, session management, platform credential injection) → Vertex AI Agent Engine (KEN-E root agent, narrow specialists, review loops). Persistent state lives in Firestore (config + session state) and Neo4j (knowledge graph). Tool access flows through `McpToolset` instances and SDK function tools, with Gemini code execution as a built-in capability on selected specialists.
 
-For the canonical architecture diagram, key abstractions, data flow, API contracts, and per-turn dispatch mechanics, see [`docs/design/components/agentic-harness/README.md`](design/components/agentic-harness/README.md) §2. For the review loop that wraps every specialist delegation, see [`AH-PRD-01`](design/components/agentic-harness/projects/AH-PRD-01-review-loop-framework.md). For the config-driven agent factory that assembles the hierarchy, see [`AH-PRD-02`](design/components/agentic-harness/projects/AH-PRD-02-agent-factory.md). For the MCP integration layer, see [`mcp-architecture.md`](design/components/agentic-harness/mcp-architecture.md). For channel architecture, see [`api-gateway-multi-channel.md`](design/api-gateway-multi-channel.md).
+For the canonical architecture diagram, key abstractions, data flow, API contracts, and per-turn dispatch mechanics, see [`docs/design/components/agentic-harness/README.md`](design/components/agentic-harness/README.md) §2. For the review loop that wraps every specialist delegation, see [`AH-PRD-01`](design/components/agentic-harness/projects/AH-PRD-01-review-loop-framework.md). For the config-driven agent factory that assembles the hierarchy, see [`AH-PRD-02`](design/components/agentic-harness/projects/AH-PRD-02-agent-factory.md). For the MCP integration layer, see [`mcp-architecture.md`](design/components/agentic-harness/mcp-architecture.md). For channel architecture, see [`api-gateway-multi-channel.md`](design/components/backlog/api-gateway-multi-channel.md) (in backlog).
 
 ### 2.1 Agent Type Selection (Google ADK)
 
@@ -119,7 +138,6 @@ For the current and planned specialist roster, see [agentic-harness README §2.6
 
 ## 3. Context Management Strategy
 
-> **Roadmap:** [Feature 1.1.1: ADK Upgrade](product-roadmap.md#111--adk-upgrade) — Release 1.1
 
 ### 3.1 The Context Challenge
 
@@ -159,7 +177,7 @@ Context flows into agent turns at two moments: a **session-start executive summa
 
 All four are read-only, account-scoped via `tool_context.state["account_id"]` (never by LLM argument), and wrapped with Weave tracing. Token budgets: `load_context_section` caps at ~10k tokens; `load_document` at ~8k tokens; over-budget truncation drops lowest-priority entities first.
 
-> **Implementation:** See [KG-PRD-03](design/components/knowledge-graph/projects/KG-PRD-03-orchestrator-read-tools.md) for the Cypher per section, the `:KGNode` label model, the vector-index integration, and the account-scoping rules. Realizes [Decision 17: Context Management](https://www.notion.so/32030fd6530281dca919d68aa0e27094) — keyword detection (`SECTION_KEYWORDS`, `should_load_section`) is removed when KG-PRD-03 ships.
+> **Implementation:** See [KG-PRD-03](design/components/knowledge-graph/projects/KG-PRD-03-orchestrator-read-tools.md) for the Cypher per section, the `:KGNode` label model, the vector-index integration, and the account-scoping rules. Realizes the Context Management decision (see [Review 4 in DESIGN-REVIEW-LOG](design/DESIGN-REVIEW-LOG.md#review-4-context-loading--keyword-detection--agent-driven-loading)) — keyword detection (`SECTION_KEYWORDS`, `should_load_section`) is removed when KG-PRD-03 ships.
 
 ### 3.3 Learning Loop
 
@@ -174,39 +192,11 @@ The effect: facts surfaced in conversation ("the CMO is pivoting to usage-based 
 
 ### 3.4 Context-Aware Agent Instructions
 
-The KEN-E root agent uses an `InstructionProvider` pattern (see `app/adk/agents/ken_e_agent.py`):
-
-```python
-def _make_instruction_provider(base_instruction: str) -> Callable[[ReadonlyContext], str]:
-    """Create a closure-based InstructionProvider."""
-    def instruction_provider(context: ReadonlyContext) -> str:
-        org_context = context.state.get("organization_context")
-        if org_context:
-            return f"[ORGANIZATION CONTEXT]\n{org_context}\n[END CONTEXT]\n\n{base_instruction}"
-        return base_instruction
-    return instruction_provider
-```
-
-This is called on every LLM turn, reading organization context from session state (stored at session creation time — no DB call per turn).
+The KEN-E root agent uses ADK's `InstructionProvider` pattern: a closure that's invoked on every LLM turn, reads `organization_context` from session state (populated once at session creation), and prepends it to the agent's base instruction. No DB call per turn. Implementation lives in `app/adk/agents/ken_e_agent.py`.
 
 ### 3.5 Session Compaction (ADK Native)
 
-Long-running sessions are automatically compacted using ADK's `EventsCompactionConfig`, configured in `app/adk/deploy_ken_e.py`:
-
-```python
-compaction_summarizer = LlmEventSummarizer(
-    llm=Gemini(model="gemini-2.5-flash")
-)
-compaction_config = EventsCompactionConfig(
-    summarizer=compaction_summarizer,
-    compaction_interval=5,        # Compact every 5 user invocations
-    overlap_size=1,               # Include 1 prior invocation for context continuity
-    token_threshold=50000,        # Also compact when session exceeds 50K tokens
-    event_retention_size=10,      # Keep last 10 raw events un-compacted
-)
-```
-
-ADK handles summarization, retention, and token budgeting natively. See [Decision 18: Session Compaction](https://www.notion.so/32030fd65302811dbc29f1c34dd46eab).
+Long-running sessions are automatically compacted using ADK's `EventsCompactionConfig`, configured in `app/adk/deploy_ken_e.py`. A `gemini-2.5-flash` summarizer runs every 5 user invocations or whenever the session exceeds 50K tokens, with one invocation of overlap for continuity and the last 10 raw events kept un-compacted. ADK handles summarization, retention, and token budgeting natively — KEN-E owns only the config values. See [Review 24 in DESIGN-REVIEW-LOG](design/DESIGN-REVIEW-LOG.md#review-24-backfill--decision-18-session-compaction--adk-native).
 
 ### 3.6 Session State Management
 
@@ -220,7 +210,7 @@ ADK session state carries per-session data that the API, agents, and security ho
 | `account_id` | Selected account identifier | API at session creation | Dispatch handlers |
 | `accessible_accounts` | Accounts the user can access | API at session creation | — |
 | `organization_context` | Org + brand context text from Neo4j | API at session creation (cached in Redis, 15-min TTL) | InstructionProvider (per-turn), dispatch handlers |
-| `ga_credentials` | Google Analytics OAuth tokens (access, refresh, tenant, properties, expiry) | API from Firebase Auth (cached in Redis, 10-min TTL) | GA dispatch handler, security hooks |
+| `ga_credentials` *(being retired)* | Google Analytics OAuth tokens (access, refresh, tenant, properties, expiry) | API from Firebase Auth (cached in Redis, 10-min TTL) | GA dispatch handler, security hooks. **Retired by [IN-PRD-06](design/components/integrations/projects/IN-PRD-06-integration-testing-cleanup.md)** — Agent Factory's `_make_header_provider` body is swapped to fetch from the Integrations internal API per tool invocation; session-state writes for `ga_credentials` / `google_ads_credentials` / etc. are removed. See §11.2. |
 | `campaign_context` | Campaign context text (when loaded) | Context loader | Dispatch handlers |
 | `connected_accounts` | User's connected platform account types | API at session creation | Tool discovery filtering |
 | `uploaded_strategy_documents` | Strategy input documents loaded mid-session | Strategy orchestrator | Strategy orchestrator |
@@ -234,7 +224,7 @@ The target architecture generalises credentials to support all integrated platfo
 
 | Key | Purpose | Set By |
 |-----|---------|--------|
-| `platform_credentials.<service>` | Per-platform OAuth tokens or API keys (GA, Google Ads, HubSpot, Meta Ads, Mailchimp) | API at session creation |
+| *(model retired)* `platform_credentials.<service>` | Originally planned: per-platform OAuth tokens in session state. **Superseded** by the Integrations component — credentials are **not** stored in session state; consumers fetch per-invocation via `GET /api/v1/internal/integrations/credentials/{account_id}/{platform_id}` (OIDC-authed). See §11.2 and [`components/integrations/README.md`](design/components/integrations/README.md). | — |
 | `response_artifacts` | Visualization artifacts (Vega-Lite specs) produced by specialist agents during current invocation | `create_visualization` tool in specialist agents. See [`data-visualization.md`](design/components/agentic-harness/data-visualization.md) §4. |
 | `{prefix}_draft`, `{prefix}_feedback` | Review-loop intermediate state (per specialist dispatch). Each review pipeline uses a unique `output_key_prefix`. | Specialist + reviewer `LlmAgent` via `output_key`. See [AH-PRD-01](design/components/agentic-harness/projects/AH-PRD-01-review-loop-framework.md). |
 | `tool_filter_state` *(retired)* | Previously drove per-turn `tool_filter` predicates — **no longer used**. Specialists now receive a fixed ≤30-tool roster at construction (see [agentic-harness README §2.5](design/components/agentic-harness/README.md#25-tool-assignment--routing-model)). |
@@ -260,7 +250,7 @@ The planned feature surfaces token data to the UI:
 | Session tokens used | `ConversationSummarizer.token_budget_usage` | Running total |
 | Compaction proximity | `ConversationSummarizer.should_compact()` threshold (80% of 40K) | Warning indicator when approaching limit |
 
-Implementation requires changes at three layers: API (extract `usage_metadata`, extend `ChatResponse`), response model (add `usage` field), and frontend (token display components). See [Decision 19: Token Usage Visibility in UI](https://www.notion.so/32030fd65302815ca0d6fe5291fdfc54).
+Implementation requires changes at three layers: API (extract `usage_metadata`, extend `ChatResponse`), response model (add `usage` field), and frontend (token display components). See [Review 25 in DESIGN-REVIEW-LOG](design/DESIGN-REVIEW-LOG.md#review-25-backfill--decision-19-token-usage-visibility-in-ui-proposed).
 
 #### 3.6.5 [PLANNED] Unified Usage Tracking for Billing
 
@@ -279,7 +269,7 @@ Monthly billing requires aggregating token usage to the organisation level. The 
 2. Ensure LLM token counts from Vertex AI `usage_metadata` are reliably written to `usage_records` (currently they only reach W&B traces)
 3. Build a billing aggregation query or scheduled Cloud Function that sums tokens by organisation and billing period
 
-The two collections will remain separate (tool observability vs. billing) but share `organization_id` and `session_id` as common keys for cross-referencing. See [Decision 20: Unified Usage Tracking for Billing](https://www.notion.so/32030fd6530281bfa31cf19af537b206).
+The two collections will remain separate (tool observability vs. billing) but share `organization_id` and `session_id` as common keys for cross-referencing. See [Review 26 in DESIGN-REVIEW-LOG](design/DESIGN-REVIEW-LOG.md#review-26-backfill--decision-20-unified-usage-tracking-for-billing-superseded-in-part) (partly superseded by the Billing component's BL-PRD-02).
 
 ---
 
@@ -308,7 +298,7 @@ KEN-E agents carry tools from three distinct categories, each with different res
 
 All three types count toward the agent's curated tool roster for scope purposes, but built-in capabilities carry zero context overhead and are not counted against the ≤30-tool cap. The Root Agent does not get domain tools or code execution — it routes to specialists. See [agentic-harness README §2.5](design/components/agentic-harness/README.md#25-tool-assignment--routing-model) for the full assignment model.
 
-See [Decision 7: Token Budget Strategy](https://www.notion.so/32030fd6530281da97cef1729242ccd1) and [Decision 8: ToolRegistry](https://www.notion.so/32030fd65302813ab406cf15f7e1e7f6) in the Design Decisions database.
+See [Review 22 in DESIGN-REVIEW-LOG](design/DESIGN-REVIEW-LOG.md#review-22-backfill--decisions-7--8-token-budget-strategy--toolregistry-as-build-time-catalog) for the Token Budget Strategy + ToolRegistry rationale.
 
 ---
 
@@ -333,7 +323,7 @@ Progressive disclosure keeps token overhead low: L1 metadata (~50–100 tokens) 
 
 The canonical Skills design, data model, sandbox policy, UI, and phased delivery live in the **Skills component**: [`docs/design/components/skills/README.md`](design/components/skills/README.md) and the four project PRDs there ([SK-PRD-01 Backend](design/components/skills/projects/SK-PRD-01-skills-backend.md), [SK-PRD-02 Agent integration](design/components/skills/projects/SK-PRD-02-agent-integration.md), [SK-PRD-03 Authoring UI](design/components/skills/projects/SK-PRD-03-authoring-ui.md), [SK-PRD-04 Agent-builder controls](design/components/skills/projects/SK-PRD-04-agent-builder-controls.md)).
 
-See [Decision 22: ADK Skills Architecture](https://www.notion.so/32030fd653028114827be82c2731ea72) for rationale.
+See [Review 7 in DESIGN-REVIEW-LOG](design/DESIGN-REVIEW-LOG.md#review-7-transitional-agent-annotations-meta-ads-shared-access-skills-architecture) for rationale.
 
 ---
 
@@ -346,13 +336,14 @@ The primary user experience is a React SPA at `app.ken-e.ai`. The entire fronten
 - **Soft Maximalism design system** (UI-PRD-01) — `theme.css` tokens, Tailwind config, `ThemeProvider`, `BackgroundEffects`, re-skinned shadcn primitives, shell layouts (`LayoutC`, `LayoutSettings`), and global chrome (`Sidebar`, `TopNav`, `AccountSwitcher`, `NotificationBell`, `ProfileMenu`, `SessionsSidebar`).
 - **Core pages** (UI-PRD-02) — chat, auth/invitation, organization/account/user settings.
 - **Workflows tab container** (UI-PRD-03) — the `WorkflowsLayout` tab host for Agents (data-wired by [AH-PRD-02](design/components/agentic-harness/projects/AH-PRD-02-agent-factory.md)), Automations (wired by [A-PRD-05](design/components/automations/README.md) / A-PRD-06), and Skills (wired by [SK-PRD-03](design/components/skills/README.md)).
-- **Feature pages** — Calendar (UI-PRD-04, data-wired by [PR-PRD-03](design/components/project-tasks/projects/PR-PRD-03-calendar-page-frontend.md)), Knowledge/Strategy (UI-PRD-05), Extensions (UI-PRD-06), Performance (UI-PRD-07).
+- **Feature pages** — Calendar (UI-PRD-04, data-wired by [PR-PRD-03](design/components/project-tasks/projects/PR-PRD-03-calendar-page-frontend.md)), Knowledge/Strategy (UI-PRD-05), Extensions (UI-PRD-06).
+- **Performance page** — `/performance` with five tabs (Analysis / Simulations / Targets / Diagnostics / Configuration) and a four-step setup wizard at `/performance/setup`. Owned by the **Performance component** ([`components/performance/README.md`](design/components/performance/README.md), PE-PRDs 01–08) as a frontend + thin BFF layer. The analytical data it renders comes from the **SAR-E component** (weekly KPI time series, VAR baselines, IRF scenarios, LLM-derived targets); see §8.5. UI-PRD-07 was the initial Figma redesign; the real page structure lives in the Performance component.
 
 The design-system foundation (UI-PRD-01) lands first in Release 1 so every subsequent component's frontend slots into the same shell. Full design system, component inventory, and page-by-page breakdown live in [`components/ui/README.md`](design/components/ui/README.md).
 
 ### 7.2 Channel-Agnostic API
 
-The chat API is channel-agnostic from the start — any new channel needs only an auth adapter, input normalizer, and output formatter. The Agent Engine call path is unchanged regardless of source. Full API architecture, session management, and planned-channel integration approaches live in [`docs/design/api-gateway-multi-channel.md`](design/api-gateway-multi-channel.md).
+The chat API is channel-agnostic from the start — any new channel needs only an auth adapter, input normalizer, and output formatter. The Agent Engine call path is unchanged regardless of source. Full API architecture, session management, and planned-channel integration approaches live in [`docs/design/components/backlog/api-gateway-multi-channel.md`](design/components/backlog/api-gateway-multi-channel.md) (in backlog).
 
 ### 7.3 [PLANNED] Additional Channels
 
@@ -362,17 +353,16 @@ The chat API is channel-agnostic from the start — any new channel needs only a
 | **Slack** | Bolt SDK | Separate Cloud Run | Release 5 |
 | **Voice** | Pipecat + Meeting BaaS (Recall.ai or equivalent) | Dedicated service | Release 6 |
 
-See [Decision 14: Channel-Agnostic API](https://www.notion.so/32030fd65302811ea99dfa94c3448a0d), [Decision 15: Slack Channel](https://www.notion.so/32030fd6530281148e89eb56494a7489), [Decision 16: Voice Channel](https://www.notion.so/32030fd6530281ce82d3f7bbbee439c3).
+See [Review 23 in DESIGN-REVIEW-LOG](design/DESIGN-REVIEW-LOG.md#review-23-backfill--decisions-14--15--16-channel-architecture-api-gateway-slack-voice) for the channel architecture rationale (Channel-Agnostic API, Slack, Voice).
 
 ---
 
 ## 8. Multi-Step Orchestration
 
-KEN-E handles work that spans more than one LLM turn or more than one session through two complementary mechanisms, both documented at the component level. This section frames the architecture at a high level and points at the component docs for details.
+KEN-E handles work that spans more than one LLM turn or more than one session through several complementary mechanisms — in-session workflow agents, persistent project-task orchestration, automations, deterministic data-pipeline extraction, and a separate analytical-computation layer — all documented at the component level. This section frames the architecture at a high level and points at the component docs for details.
 
 ### 8.1 In-Session Multi-Step Workflows [PLANNED, R3]
 
-> **Roadmap:** [Feature 3.4: Multi-Step Workflows](product-roadmap.md#34--multi-step-workflows), [Feature 5.3: Workflow Templates](product-roadmap.md#53--workflow-templates), [Feature 5.4: Advanced Workflow](product-roadmap.md#54--advanced-workflow--observability) — Releases 3.0, 5.0
 
 For complex requests that can be decomposed into parallel + sequential steps within a single conversation (e.g., "Increase budgets for Meta Ads campaigns with the most engaged website visitors" → parallel data-gathering across Google Analytics + Meta Ads → synthesizer → user approval → execution step), KEN-E composes review pipelines (AH-PRD-01) into larger workflows using ADK workflow agents.
 
@@ -429,11 +419,36 @@ Two components build directly on §8.2 rather than reinventing the orchestration
 
 **Why not n8n?** The Automations component delivers the feature set KEN-E needs (recurring schedules, multi-step DAGs, HITL, artifacts, dry-run) agent-natively — factory-assembled specialists, review loops, and Weave traces all flow through it unchanged. Running n8n would duplicate this infrastructure and add per-account tenancy + operational burden. Future: an n8n **MCP tool** could expose user-owned external n8n workflows to the agent without KEN-E hosting n8n itself — but that is a future specialist/tool decision, not a replacement for internal orchestration.
 
+### 8.4 Deterministic Platform-API Extraction (Data Pipeline)
+
+Not every third-party platform touch should flow through an agent. For **repeatable, well-defined extractions** — "pull daily GA first-purchase counts at 07:00 UTC," "fetch last week's Meta Ads spend by campaign" — the agent-routed path (Root → specialist → MCP call → code execution) is the wrong shape: non-deterministic, token-expensive, and hard to reason about. For that class of work, KEN-E uses the **Data Pipeline** component.
+
+A `PlanTask` carries a third `assignee_type="data_pipeline"` alongside `agent` and `human`. The task holds a `pipeline_spec` (`{job_id, inputs, output_artifact_name}`); when the `TaskOrchestrator` (§8.2) fires it, the `DataPipelineDispatcher` HTTP-calls the sibling `kene-data-pipeline-{env}` Cloud Run service, which runs the job via a typed connector (Google Analytics, Google Ads, Meta Ads, Mailchimp), writes the result as a `TaskArtifact` (§8.3's artifact system), and reports completion back through an OIDC-authed callback endpoint. Downstream agent tasks read the artifact as upstream context via A-PRD-03's prompt-injection helper. A per-account cache (`sha256(account_id || job_id || canonical_json(inputs) || job.version)`) short-circuits duplicate runs; per-connector rate-limit budgets prevent platform-quota exhaustion.
+
+Credentials flow through Integrations, not session state — the Data Pipeline service calls `GET /api/v1/internal/integrations/credentials/{account_id}/{platform_id}` per run (OIDC-authed). See §11.2.
+
+The first production consumer is **SAR-E's weekly KPI ingestion automation** — a seeded `is_system=true` `ProjectPlan` with four daily GA extraction tasks feeding a single glue agent task that aggregates daily rows to weekly KPI series (§8.5).
+
+Full data model (`DataPipelineJob`, `DataPipelineRun`, `PipelineJobSpec`), connector catalog, cache semantics, `test_mode_policy` handling, frontend authoring UI, and the sibling Cloud Run service's footprint live in [`components/data-pipeline/README.md`](design/components/data-pipeline/README.md) and the six DP-PRDs.
+
+### 8.5 Analytical Layer (SAR-E & Performance)
+
+Some of KEN-E's work is **analytical and statistical**, not agentic. Forecasting the next 12 weeks of funnel KPIs, computing vector-auto-regression (VAR) baselines, propagating simulated lifts as impulse-response functions, and deriving per-KPI weekly targets — all of this lives in the **SAR-E component** (Simulation and Recommendations Engine). Statistical code runs synchronously via `statsmodels`; one LLM specialist (`performance_forecasting`, factory-built via AH-PRD-02) handles the reasoning step in target derivation.
+
+Three facts shape the design:
+
+- **SAR-E is opt-in per account.** At account creation the forecasting stack is disabled; it activates only after the user connects at least one integration and completes the Performance component's four-step setup wizard (picks four Effectiveness KPIs, maps them to the four funnel Objectives). Until then, every SAR-E analytical endpoint returns an empty-shape response and the Performance page hides its analytical tabs.
+- **Weekly is the only internal granularity.** Daily rows are produced by Data Pipeline (§8.4), aggregated to weekly at ingestion time, and the daily source rows are not persisted in SAR-E. VAR training, Target derivation, and trendline queries all operate on weekly series.
+- **"Statistical association only" is an invariant.** The target-derivation specialist's system prompt, response schema, and a `make lint` CI gate forbid causal language (`caused`, `because`, `due to`, …) in SAR-E outputs. Every `Target` carries a `methodology_note` phrasing the relationship as association.
+
+SAR-E's inputs come from Data Pipeline via a system-triggered weekly automation (§8.3 + §8.4); its outputs are rendered by the **Performance** component at `/performance` (§7.1). Performance is a frontend + thin BFF layer — it does no statistics — which keeps computation testable and the render path cacheable.
+
+Full design, VAR model details, IRF propagation, target derivation specialist, methodology gate, and the analytical query layer live in [`components/sar-e/README.md`](design/components/sar-e/README.md) + the seven SE-PRDs. The Performance page structure (tabs, setup wizard, BFF composition) lives in [`components/performance/README.md`](design/components/performance/README.md) + the eight PE-PRDs.
+
 ---
 
 ## 9. Integration with Evaluation Framework
 
-> **Roadmap:** [Feature 2.5: MER-E Phase 0](product-roadmap.md#25--mer-e-phase-0-trace-extraction), [Feature 3.5: MER-E Phase 1](product-roadmap.md#35--mer-e-phase-1-quality-scoring), [Feature 4.3: MER-E Phase 2](product-roadmap.md#43--mer-e-phase-2-human-feedback--patterns), [Feature 4.4: A/B Testing](product-roadmap.md#44--ab-testing-infrastructure) — Releases 2.0–4.0
 
 ### 9.1 Overview
 
@@ -496,7 +511,6 @@ OUTPUT_CATEGORIES = {
 
 ### 9.4 [PLANNED] Feedback Collection
 
-> **Roadmap:** [Feature 4.3: MER-E Phase 2 — Human Feedback](product-roadmap.md#43--mer-e-phase-2-human-feedback--patterns) — Release 4.0
 
 A feedback collection system will enable human evaluation alignment:
 - Queue feedback requests for users after agent outputs
@@ -505,7 +519,6 @@ A feedback collection system will enable human evaluation alignment:
 
 ### 9.5 [PLANNED] A/B Testing Support
 
-> **Roadmap:** [Feature 4.4: A/B Testing Infrastructure](product-roadmap.md#44--ab-testing-infrastructure) — Release 4.0
 
 The harness will support A/B testing of agent configurations:
 - Consistent hash-based variant assignment per account
@@ -518,12 +531,13 @@ The harness will support A/B testing of agent configurations:
 
 ### 10.1 Data Layer
 
-KEN-E uses three persistent stores with a standardized layout across all components:
+KEN-E uses five persistent stores with a standardized layout across all components:
 
-- **Firestore (Shape B)** — per-account configuration, session state, project plans, plan runs, skills, feature flags, observations metadata, and account-scoped audit logs. Every account-scoped collection lives at `accounts/{account_id}/{resource}/…` per the Shape B convention owned by the **Data Management component**. Account deletion is covered by `firestore.recursive_delete(accounts/{account_id})` so new subcollections automatically inherit clean-deletion semantics.
+- **Firestore (Shape B)** — per-account configuration, session state, project plans, plan runs, task artifacts metadata, skills, feature flags, observations metadata, and account-scoped audit logs. Every account-scoped collection lives at `accounts/{account_id}/{resource}/…` per the Shape B convention owned by the **Data Management component**. Account-scoped subcollections now include: `project_plans` / `plan_runs` (Project Tasks + Automations); `platform_connections/{connection_id}/tokens/*` (Integrations, KMS-encrypted — see Cloud KMS below); `data_pipeline_jobs` + `data_pipeline_runs` (Data Pipeline overlay catalog + execution records); `kpi_time_series` / `baselines` / `irf_coefficients` / `targets` / `funnel_mapping` / `channel_coverage` / `thresholds` / `effectiveness_kpis` / `sar_e_config` (SAR-E). Global (non-account-scoped) collections include `platform_definitions/*` (Integrations OAuth metadata), `data_pipeline_jobs/*` (platform-global job catalog), `feature_flags/*`, and the `agent_configs/*` + `mcp_servers/*` factory inputs. Account deletion is covered by `firestore.recursive_delete(accounts/{account_id})` so new subcollections automatically inherit clean-deletion semantics.
 - **Neo4j (AuraDB)** — the account knowledge graph. Shared `:KGNode` label on all 29 node types enables one account-scoped lookup index and one 768-dim cosine vector index (`kb_vector_index`) across the whole KB. Migration runner + `:Migration` ledger bootstrap constraints and indexes on API startup. See [Knowledge Graph component](design/components/knowledge-graph/README.md).
-- **Redis (Memorystore)** — session cache, short-TTL OAuth credential cache, rate-limiter counters.
-- **GCS buckets** — `kene-skills-{env}` for `SKILL.md` content + resources, `kene-task-artifacts-{env}` for automation task artifacts (30-day lifecycle, 100MB cap).
+- **Cloud KMS** — env-specific symmetric key that wraps OAuth token payloads before they're written to Firestore. The key never leaves GCP; a stolen Firestore export yields no usable credentials. Owned by the **Integrations component** (IN-PRD-01). See §11.2.
+- **Redis (Memorystore)** — session cache, short-TTL credential cache (for the Integrations internal endpoint), rate-limiter counters, and Data Pipeline per-account rate-limit windows.
+- **GCS buckets** — `kene-skills-{env}` for `SKILL.md` content + resources (CMEK, 30-day `-trash` sibling); `kene-task-artifacts-{env}` for automation + Data Pipeline task artifacts (30-day lifecycle, 100MB cap per artifact).
 
 The Shape B layout, migration tooling, and deletion-sweep rewrite live in [`components/data-management/README.md`](design/components/data-management/README.md) and the seven DM-PRDs. This is a **Release 1 foundation** — every component that writes to Firestore lands directly on Shape B rather than migrating after the fact.
 
@@ -534,6 +548,8 @@ The Shape B layout, migration tooling, and deletion-sweep rewrite live in [`comp
 | **API Server (Cloud Run)** | 4 vCPU, 8GB RAM | 2-10 instances based on load |
 | **Agent Engine (Vertex AI)** | Managed by Google | Auto-scaled |
 | **GA MCP Server (Cloud Run)** | 2 vCPU, 4GB RAM | On-demand |
+| **Data Pipeline service (Cloud Run)** | `kene-data-pipeline-{env}`, 2 vCPU, 4GB RAM | On-demand; per-account + per-connector rate-limit budgets |
+| **Cloud Scheduler** | Per-minute crons (task orchestrator `launch-due-tasks`, automations engine `launch-due-automations`); daily (Integrations idle-connection cleanup, Integrations stuck-expired watchdog, KG session-end sweeper); weekly (SAR-E retrain trigger via `is_system` automation) | Managed by Google |
 
 ### 10.3 Cost Estimates
 
@@ -574,46 +590,51 @@ The `UsageTracker` (`app/adk/tracking/usage.py`) records per-tool-call events in
 ### 10.4 Architecture Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                          GOOGLE CLOUD PLATFORM                           │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌─────────────┐     ┌─────────────────────┐     ┌─────────────┐     │
-│  │  Cloud Run  │     │ Vertex AI           │     │  Cloud Run  │     │
-│  │   API       │────▶│ Agent Engine        │────▶│  GA MCP     │     │
-│  │  (FastAPI)  │     │ (KEN-E Agent)       │     │  Server     │     │
-│  └──────┬──────┘     └─────────────────────┘     └─────────────┘     │
-│         │                                                              │
-│    ┌────┴──────────────────────────────────────────┐                  │
-│    │                                                │                  │
-│    ▼                    ▼                    ▼       │                  │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐ │                  │
-│  │  Firestore  │  │   Neo4j     │  │   Redis     │ │                  │
-│  │  (Config,   │  │   AuraDB    │  │  (Sessions) │ │                  │
-│  │   State)    │  │  (Knowledge)│  │             │ │                  │
-│  └─────────────┘  └─────────────┘  └─────────────┘ │                  │
-│                                                      │                  │
-│  ┌───────────────────────────────────────────────────┘                  │
-│  │                                                                      │
-│  ▼                                                                      │
-│  ┌─────────────────────────────────────────────────────────────┐      │
-│  │                    Secret Manager                            │      │
-│  │         (API keys, OAuth tokens, MCP credentials)           │      │
-│  └─────────────────────────────────────────────────────────────┘      │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                          GOOGLE CLOUD PLATFORM                                │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌─────────────┐     ┌─────────────────────┐     ┌─────────────────┐        │
+│  │  Cloud Run  │     │ Vertex AI           │     │ Cloud Run       │        │
+│  │   API       │────▶│ Agent Engine        │────▶│ GA MCP Server   │        │
+│  │  (FastAPI)  │     │ (KEN-E root +       │     │ (+ future       │        │
+│  │             │     │  specialists +      │     │   platform MCPs)│        │
+│  │             │     │  review loops)      │     └─────────────────┘        │
+│  │             │     └─────────────────────┘                                │
+│  │             │                                                            │
+│  │             │     ┌─────────────────────────┐                            │
+│  │             │────▶│ Cloud Run               │                            │
+│  │             │◀────│ kene-data-pipeline-{env}│  Data Pipeline sibling     │
+│  │             │     │ (deterministic, §8.4)   │  (OIDC callbacks)          │
+│  └──────┬──────┘     └─────────────────────────┘                            │
+│         │                                                                    │
+│         ▼                                                                    │
+│  ┌──────────┐ ┌──────────┐ ┌───────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐│
+│  │Firestore │ │  Neo4j   │ │ Redis │ │ Cloud    │ │  GCS     │ │  Cloud   ││
+│  │(Shape B  │ │ AuraDB   │ │       │ │ KMS      │ │ task-    │ │ Scheduler││
+│  │ config + │ │(Knowledge│ │       │ │ (token   │ │ artifacts│ │ (crons,  ││
+│  │ state)   │ │  Graph)  │ │       │ │ wrapping)│ │ + skills │ │  §10.2)  ││
+│  └──────────┘ └──────────┘ └───────┘ └──────────┘ └──────────┘ └──────────┘│
+│                                                                              │
+│  ┌────────────────────────────────────────────────────────────────────┐     │
+│  │                    Secret Manager                                   │     │
+│  │      (API keys, OAuth client secrets, HMAC state-token key)         │     │
+│  └────────────────────────────────────────────────────────────────────┘     │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
 
-┌─────────────────────────────────────────────────────────────────────────┐
-│                          EXTERNAL SERVICES                               │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌───────────────────────┐  ┌───────────────────────┐                  │
-│  │   Weave / W&B         │  │  [PLANNED] MCP Servers │                  │
-│  │   (Tracing)           │  │  Google Ads MCP        │                  │
-│  └───────────────────────┘  │  HubSpot MCP (hosted)  │                  │
-│                              └───────────────────────┘                  │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                          EXTERNAL SERVICES                                    │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐    │
+│  │ Weave / W&B    │  │ Platform APIs        │  │ [PLANNED] MCP        │    │
+│  │ (Tracing)      │  │ GA, Google Ads,      │  │ Google Ads MCP       │    │
+│  │                │  │ Meta Ads, Mailchimp, │  │ HubSpot MCP (hosted) │    │
+│  │                │  │ HubSpot              │  │                      │    │
+│  └────────────────┘  └──────────────────────┘  └──────────────────────┘    │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -655,43 +676,20 @@ If Firestore is unreachable during `deploy_ken_e.py` execution, `load_config_fro
 
 ### 11.2 Credential Lifecycle & Security Model
 
-#### 11.2.1 Current OAuth Flow
+Every third-party credential in KEN-E — OAuth access/refresh tokens, API keys, platform metadata — is owned by the **Integrations** component as a first-class substrate. Every consumer that touches a third-party platform (Data Pipeline connectors, Agent Factory specialists, future Knowledge Graph ingestion) reads credentials through a single internal API (`GET /api/v1/internal/integrations/credentials/{account_id}/{platform_id}`, OIDC-authed). No other component decrypts tokens, speaks OAuth, or writes to `platform_connections/*`.
 
-| Step | Implementation | Key File |
-|------|---------------|----------|
-| **Authorization** | Frontend initiates `GET /api/oauth/authorize/google-analytics`. Generates state token (15-min TTL in Firestore). Redirects to Google with `offline` + `consent` prompts. Scopes: `analytics.readonly`, `analytics.edit`. | `routers/oauth_integrations.py` |
-| **Callback** | Validates state token (CSRF protection). Exchanges auth code for tokens. Preserves existing refresh_token if Google doesn't return new one. Encrypts and stores in Firestore. | `routers/oauth_integrations.py` |
-| **Storage** | Credentials encrypted via `EncryptionService` (Fernet-based). Stored in Firestore via `IntegrationCredentialsService`. Keys: `access_token`, `refresh_token`, `expires_at`, `tenant_id`, `selected_property_ids`. | `ga_credential_helper.py`, `encryption_service.py` |
-| **Injection** | API loads creds from Firestore at session creation, refreshes if expired, writes to ADK session state as `ga_credentials`. Cached in Redis (10-min TTL). | `routers/chat.py` |
-| **Per-request auth** | `_ga_header_provider()` reads `ga_credentials` from `context.state`, builds `Authorization: Bearer` + `X-Tenant-ID` headers. Called per turn by McpToolset. | `google_analytics_agent_v4.py` |
-| **Token refresh** | On-demand: checks `expires_at` with 5-min buffer. Calls `https://oauth2.googleapis.com/token` with 10s timeout. Updates Firestore + returns refreshed creds. | `ga_credential_helper.py` |
-| **Reauth signal** | `adk_before_tool_callback` detects expired/revoked tokens → returns `{requires_reauth: true}` → frontend triggers re-authorization flow. | `security/hooks.py` |
+Four properties shape the model:
 
-#### 11.2.2 Gaps in Credential Security
+- **Account-scoped, not user-scoped.** When a user authorizes "my business's GA account," the resulting tokens belong to the KEN-E account; every member can invoke jobs that use them. Matches how marketing teams actually work.
+- **KMS-encrypted at rest.** Env-specific Cloud KMS key (never leaves GCP). Encrypted token rows live under `accounts/{account_id}/platform_connections/{connection_id}/tokens/*`. A stolen Firestore export does not yield usable credentials.
+- **Generic OAuth driven by `PlatformDefinition`.** The OAuth initiate / callback / refresh machinery is platform-agnostic; adding a platform adds a `PlatformDefinition` Firestore doc (scopes, authorize/token URLs, health check, optional long-lived exchange), not a code branch. HMAC-signed JWT state tokens (10-min expiry, nonce-based replay protection) secure the callback.
+- **Re-auth is first-class.** A single `INTEGRATION_NEEDS_REAUTH` notification category + deep-link to `/settings/integrations/{connection_id}` + per-connection 24h dedup. Every consumer handles expired credentials the same way — hold the task, surface the notification, resume on reconnection.
 
-| Gap | Risk | Recommendation |
-|-----|------|----------------|
-| **No proactive token refresh** | Tokens may expire mid-conversation if session is long | Add background refresh task or refresh during `InstructionProvider` (runs each turn) |
-| **No refresh token rotation tracking** | Can't detect if refresh token was revoked by user in Google | Track last successful refresh timestamp; if refresh fails, immediately signal reauth |
-| **Fernet encryption in dev, KMS TODO in prod** | Local encryption key management is not production-grade | Complete `EncryptionService` KMS integration before production launch |
-| **No credential expiry notifications** | Users discover broken credentials only when they try to use an agent | Add expiry monitoring: warn user in frontend when creds expire within 24h |
-| **No cross-tenant isolation checks** | Credential retrieval uses `account_id` but no additional tenant boundary enforcement | Add explicit tenant context validation in `IntegrationCredentialsService` |
+**Legacy pattern retired by IN-PRD-06.** The pre-Integrations model stored per-platform credentials in ADK session state (`ga_credentials`, `google_ads_credentials`, etc.) and used per-specialist `header_provider` closures to read them. IN-PRD-06 swaps the Agent Factory's `_make_header_provider` body to call the Integrations internal endpoint per tool invocation, drops the session-state writes, and enforces removal via a `grep`-based regression guard. Redis caches the encrypted-token fetch with short TTL to absorb burst traffic.
 
-#### 11.2.3 Multi-Tenant Security for Specialist Agents
+Full data model (`PlatformDefinition`, `PlatformConnection`, `EncryptedToken`, `ConnectionAuditEntry`), OAuth flow + state-token validation, KMS key-rotation runbook, per-platform quirks (Google incremental scopes, Meta long-lived-token exchange, Mailchimp `dc` metadata), and the six-PRD rollout live in [`components/integrations/README.md`](design/components/integrations/README.md) and IN-PRDs 01–06.
 
-When a specialist agent connects to one or more MCP servers, each `McpToolset` has its own `header_provider` that reads the correct platform credentials from session state (see [AH-PRD-02 §5.3](design/components/agentic-harness/projects/AH-PRD-02-agent-factory.md) for the header-provider factory):
-
-```
-Session state keys (per-platform):
-  ga_credentials          → GA Specialist's GA MCP header_provider
-  google_ads_credentials  → Google Ads Specialist's MCP header_provider + SDK function tools
-  hubspot_credentials     → HubSpot provider-MCP header_provider
-  meta_ads_credentials    → Meta Ads Specialist's facebook-business SDK function tools
-```
-
-The API layer loads and refreshes credentials for all connected platforms at session creation time. N platforms = N credential loads; mitigation is parallel loading (already implemented for GA) and per-platform Redis caching.
-
-> For the multi-tenancy model (one MCP server instance per platform serving all accounts, scoped by OAuth token), see [`docs/design/components/agentic-harness/mcp-architecture.md`](design/components/agentic-harness/mcp-architecture.md) §3.
+> For the multi-tenancy model (one MCP server instance per platform serving all accounts, scoped by the per-request OAuth token), see [`docs/design/components/agentic-harness/mcp-architecture.md`](design/components/agentic-harness/mcp-architecture.md) §3.
 
 ### 11.3 Rate Limiting & Platform Quota Management
 
@@ -703,23 +701,25 @@ The API layer loads and refreshes credentials for all connected platforms at ses
 | **External APIs** | Redis-backed per-API limits. Wikipedia: 10/min. Wikidata: 10/min. Gemini: 5/min. Fail-open if cache unavailable. | `services/rate_limiter.py` |
 | **Firestore operations** | Retry with backoff on `ResourceExhausted` (Firestore's rate limit signal). | `strategy_agent/retry_utils.py` |
 
-#### 11.3.2 Gap: No Marketing Platform Quota Management
+#### 11.3.2 Platform Quota Management
 
-Marketing platform APIs have aggressive rate limits that the specialist agents must respect:
+Marketing platform APIs have aggressive rate limits. KEN-E touches these APIs through two paths, each with its own quota posture:
 
-| Platform | Rate Limits | Impact |
-|----------|------------|--------|
-| **Google Ads API** | 15,000 operations/day (basic access), per-customer limits on mutate operations | Daily quota exhaustion blocks all Google Ads queries |
-| **Meta Marketing API** | Rate limits per ad account, sliding window with business use case rate limits | Account-level throttling; shared across all users accessing same ad account |
-| **HubSpot API** | 100-200 requests/10s depending on plan tier, daily limits | Per-app limits shared across all KEN-E users on same HubSpot portal |
-| **Google Analytics Data API** | 200 requests/min per property, 50,000 requests/day per project | Shared project quota across all KEN-E users |
+| Platform | Rate Limits | Path | Quota posture |
+|----------|------------|------|---------------|
+| **Google Analytics Data API** | 200 requests/min per property, 50,000 requests/day per project | Data Pipeline connector (`ga.*` jobs) **and** GA MCP via the specialist | Data Pipeline: per-account budgets 100/day · 20/hr · 5 concurrent (DP-PRD-02). Specialist MCP calls: **gap — no per-account tracking yet.** |
+| **Google Ads API** | 15,000 operations/day (basic access) | Data Pipeline connector (DP-PRD-05) **and** future Google Ads specialist | Data Pipeline: 50/10/3. Specialist path: **gap.** |
+| **Meta Marketing API** | Per-ad-account sliding window + business-use-case limits | Data Pipeline connector (DP-PRD-05) **and** future Meta Ads specialist | Data Pipeline: 50/10/3. Specialist path: **gap.** |
+| **Mailchimp** | Per-account budgets | Data Pipeline connector (DP-PRD-05) **and** future Mailchimp specialist | Data Pipeline: 20/5/2. Specialist path: **gap.** |
+| **HubSpot** | 100-200 requests/10s per plan tier, daily limits | Provider-hosted HubSpot MCP (no Data Pipeline connector today) | **Gap on both paths.** |
 
-**Recommendation:** Implement per-platform quota tracking at the specialist agent level:
+Data Pipeline consumers already honor per-account + per-connector budgets; transient 429s retry with exponential backoff, and semantic 4xxs fail the task with a notification. The remaining gap is **agent-routed MCP calls** — the specialist's McpToolset has no quota awareness today.
 
-1. **`before_tool_callback` quota check** — Before each tool call, check remaining quota from a shared counter (Redis). If quota is low, either throttle (add delay) or inform the user.
-2. **Response header parsing** — Extract `X-RateLimit-Remaining` and `Retry-After` headers from MCP server responses. Store in Redis for quota tracking.
-3. **Account-level quota isolation** — For platforms with per-account limits (Meta, HubSpot), track quota per `account_id`, not globally.
-4. **User-facing feedback** — When rate limited, the specialist agent should explain the constraint: "Google Ads daily quota is at 95%. I can run 3 more queries today."
+**Recommendation (specialist path only):**
+
+1. **`before_tool_callback` quota check** — Before each MCP tool call, check remaining quota from a shared counter (Redis) keyed by `(account_id, platform)`. If low, throttle or inform the user.
+2. **Response header parsing** — Extract `X-RateLimit-Remaining` / `Retry-After` from MCP responses; store in Redis for quota tracking.
+3. **User-facing feedback** — When rate limited, the specialist surfaces the constraint: "Google Ads daily quota is at 95%; I can run 3 more queries today."
 
 ### 11.4 Risk Assessment Matrix
 
@@ -732,8 +732,16 @@ Marketing platform APIs have aggressive rate limits that the specialist agents m
 | **Firestore config drift** | Low | Medium | Config validation at deploy time, registry consistency tests |
 | **Cost overrun from token usage** | Medium | Medium | UsageTracker (token + cost metrics), Weave tracing, alerts via `AlertData` model |
 | **Platform API rate limit exhaustion** | Medium | Medium | Per-platform quota tracking (gap — not yet implemented) |
-| **OAuth token expiry mid-conversation** | Medium | Low | 5-min refresh buffer, reauth signal to frontend. Gap: no proactive refresh. |
-| **Credential encryption not prod-ready** | Low | High | Fernet in dev, KMS TODO in prod. Must complete before launch. |
+| **OAuth token expiry mid-conversation** | Medium | Low | Integrations' pre-emptive refresh sweeper + synchronous refresh on near-expiry reads + `INTEGRATION_NEEDS_REAUTH` notification + per-connection 24h dedup (IN-PRD-02 / IN-PRD-05). |
+| **Credential encryption at rest** | Low | High | Cloud KMS per env (env-specific key, never leaves GCP). Owned by Integrations (IN-PRD-01). |
+| **Review loop latency increase** | High | Medium | Cap `max_iterations=3` (~15s overhead max). Root agent skips criteria for simple lookups. AH-PRD-01. |
+| **Token cost increase from review loops** | High | Medium | Reviewer uses cheapest model (`gemini-2.0-flash`); criteria generation ~200 tokens; monitored via Weave. |
+| **LLM-generated acceptance criteria are poor** | Medium | Medium | Include good/bad criteria examples in root-agent instruction; iterate based on Weave traces. |
+| **State collisions in parallel workflow execution** | Low | High | Unique `output_key` prefix per step, enforced by `build_workflow_pipeline()` factory. |
+| **Artifact size bloats review context** | Medium | Low | Limit embedded data to summaries; defer raw data to separate `data_uri` if >1,000 rows. AH-PRD-04. |
+| **Voice latency incompatible with Agent Engine** | High | High | Agent Engine ~7-13s vs. voice <2s target. R5 voice feasibility spike (Story 5.5-1) is the de-risk gate before R6 commits. |
+| **Platform SDK breaking changes (Meta, Google Ads)** | Medium | Medium | Pin SDK versions; integration tests catch regressions; budget buffer in Execution Specialist sprint. |
+| **MER-E evaluation of a moving target** | Medium | Medium | Parallel track design — extraction/scoring evolves with agents. Output type expansion story per MER-E phase. |
 
 ### 11.5 Test Locations
 
@@ -772,19 +780,21 @@ Full system design, data model, targeting rules, and admin UI live in [`componen
 
 ## 12. Roadmap
 
-The authoritative, release-based roadmap — features, design refs, and Notion links — lives in [`docs/product-roadmap.md`](product-roadmap.md). Project-level sequencing with `blocked_by` dependencies across all components is tracked in [`docs/design/components/PROJECT-PLANNER.md`](design/components/PROJECT-PLANNER.md).
+Project-level sequencing with `blocked_by` dependencies across all components is tracked in [`docs/design/components/PROJECT-PLANNER.md`](design/components/PROJECT-PLANNER.md). Per-feature execution (Issues, Cycles, status transitions) is tracked in Linear — see [`CLAUDE.md`](../CLAUDE.md) "Linear Workflow Conventions" for the team → repo → component mapping.
 
 ### Release overview
 
 | Release | Theme | Components / headline projects |
 |---------|-------|--------------------------------|
-| **1** | Foundation | Data Management Shape B migration + approval workflow & audit (DM-PRDs 00–07); Agentic Harness review loop + agent factory + GA specialist (AH-PRDs 01–03); UI design system + core shell (UI-PRDs 01–02); Feature Flags (FF-PRDs 01–03) |
-| **2** | Task Automation | Project Tasks data model + planning agent + orchestrator + scheduler + calendar + multi-category activities + campaigns (PR-PRDs 01–08); Automations platform end-to-end (A-PRDs 01–07); Dashboards end-to-end (DB-PRDs 01–04); Workflows shell + calendar UI (UI-PRDs 03–04) |
-| **3** | Expertise | Knowledge Graph migrations + provenance + read tools + session-end automation + research refactor (KG-PRDs 01–05); Skills sandbox + backend + factory integration + authoring UI + agent-builder controls (SK-PRDs 00–04); Knowledge/Strategy UI redesign (UI-PRD-05); Data Visualization (AH-PRD-04) |
-| **5** | Integrations | Slack channel; Extensions marketplace (UI-PRD-06); additional narrow specialists (Google Ads, Meta Ads, Mailchimp) |
+| **1** | Foundation | Data Management Shape B migration (DM-PRDs 00–06); Agentic Harness review loop + agent factory + GA specialist (AH-PRDs 01–03); UI design system + core shell + organization selection (UI-PRDs 01, 02, 08); Feature Flags (FF-PRDs 01–03); Chat substrate — session metadata + sidebar + categories + todos/artifacts (CH-PRDs 01, 02, 03, 05) |
+| **2** | Task Automation | Approval workflow & audit (DM-PRD-07); Project Tasks end-to-end (PR-PRDs 01–08); Automations platform (A-PRDs 01–07); Dashboards (DB-PRDs 01–04); Workflows shell + calendar UI (UI-PRDs 03–04); Integrations OAuth substrate (IN-PRDs 01–07); Data Pipeline foundation + GA connector + task integration + authoring UI + testing (DP-PRDs 01–04, 06); Chat session status view (CH-PRD-04, requires IN-PRD-03) |
+| **3** | Expertise + Monetization | Knowledge Graph migrations + provenance + read tools + session-end automation + research refactor (KG-PRDs 01–05); Skills sandbox + backend + factory integration + authoring UI + agent-builder controls (SK-PRDs 00–04); Knowledge/Strategy UI redesign (UI-PRD-05); Data Visualization (AH-PRD-04); Billing end-to-end — Stripe, token meter, monthly enforcement, subscription UI, sales handoff (BL-PRDs 01–06) |
+| **4** | Measurement | SAR-E analytical backend — configuration, weekly ingestion, VAR baselines, IRF scenarios, target derivation, analytical query layer (SE-PRDs 01–07); Performance page — 5-tab shell, analysis, simulations, configuration, setup wizard, targets, diagnostics, testing (PE-PRDs 01–08) |
+| **5** | Multi-Channel + Extensions | Slack channel; Extensions marketplace (UI-PRD-06); additional platform connectors — Google Ads / Meta Ads / Mailchimp (DP-PRD-05); additional narrow specialists (Google Ads, Meta Ads, Mailchimp) |
 | **6** | Voice | Voice channel (Pipecat + Meeting BaaS) |
 
-> **Note on numbering:** [`PROJECT-PLANNER.md`](design/components/PROJECT-PLANNER.md) currently uses release themes 1 / 2 / 3 / 5 for component projects; [`product-roadmap.md`](product-roadmap.md) uses 1.1 / 2.0 / 3.0 / 4.0 / 5.0 / 6.0 for feature-level releases. The two are being reconciled — when they diverge, product-roadmap is the source of truth for customer-facing releases and PROJECT-PLANNER is the source of truth for project sequencing.
+**Subsumed / dropped:** `UI-PRD-07` (Performance page redesign) is folded into `PE-PRD-01`, which delivers the same `/performance` shell on `LayoutC` as part of the full Performance component.
+
 
 ---
 
@@ -828,6 +838,22 @@ Agent configuration (Firestore `agent_configs/{id}` fields + per-account overlay
 | **`is_system`** | Flag on `ProjectPlan` marking platform-owned seeded templates (hidden from user-facing lists, read-only in UI). Consumed by Automations and by the KG session-end automation. |
 | **Time-based scheduler** | Cloud Scheduler cron firing `POST /api/v1/internal/scheduler/launch-due-tasks` per minute; collection-group query for tasks whose `due_date + launch_time_utc <= now` and `launched_at IS NULL`, hands off to `TaskOrchestrator.on_task_due`. See [PR-PRD-06](design/components/project-tasks/projects/PR-PRD-06-time-based-scheduler.md). |
 | **`PlanRun`** | Execution record against a `ProjectPlan` template (Automations component). One plan can have many runs — recurring, manual, or system-triggered. See [automations README](design/components/automations/README.md). |
+| **Data Pipeline** | Deterministic (non-agentic) component owning platform-API extraction. Typed connectors (GA, Google Ads, Meta Ads, Mailchimp) run on fixed schedules via a sibling `kene-data-pipeline-{env}` Cloud Run service; output is persisted as a `TaskArtifact`. See [Data Pipeline component](design/components/data-pipeline/README.md). |
+| **`DataPipelineJob`** | Declarative specification of a platform-API extraction — connector, operation, input schema, output shape, cache TTL, rate-limit budget, test-mode policy. Global + per-account overlay catalogs. |
+| **`DataPipelineRun`** | Execution record of a `DataPipelineJob` — inputs, input hash, output artifact id, cache hit/miss, status, start/finish timestamps. |
+| **`assignee_type="data_pipeline"`** | Third `PlanTask.assignee_type` value alongside `agent` and `human`. Signals the `TaskOrchestrator` to dispatch via `DataPipelineDispatcher` → sibling Cloud Run service. See [DP-PRD-03](design/components/data-pipeline/projects/DP-PRD-03-task-system-integration.md). |
+| **Integrations** | Component owning the third-party OAuth credential substrate. Every consumer (Data Pipeline, Agent Factory, future KG ingestion) reads credentials via a single internal API (`GET /api/v1/internal/integrations/credentials/{account_id}/{platform_id}`, OIDC). KMS-encrypted token store; generic OAuth driven by `PlatformDefinition`. See [Integrations component](design/components/integrations/README.md). |
+| **`PlatformDefinition`** | Global Firestore doc describing a third-party platform's OAuth metadata (authorize URL, scopes, token URL, health check, optional long-lived exchange). Adding a platform adds a `PlatformDefinition`, not a code branch. |
+| **`PlatformConnection`** | Per-account Firestore doc at `accounts/{account_id}/platform_connections/{connection_id}` recording an account's connection to a platform (status, scope, external label, connected-by user). Token rows live in the `tokens/` subcollection, KMS-encrypted. |
+| **`INTEGRATION_NEEDS_REAUTH`** | Notification category raised by Integrations when an account's platform connection expires or is revoked. Deep-links to `/settings/integrations/{connection_id}`; per-connection 24h dedup. Every consumer handles expired credentials the same way. See [IN-PRD-05](design/components/integrations/projects/IN-PRD-05-reauth-lifecycle.md). |
+| **SAR-E** | Simulation and Recommendations Engine — KEN-E's analytical backend. Owns weekly KPI time series, VAR baseline forecasts, IRF scenario propagation, LLM-driven target derivation, and the analytical query layer the Performance page renders. Opt-in per account; "statistical association only" methodology invariant. See [SAR-E component](design/components/sar-e/README.md). |
+| **`EffectivenessKPI`** | SAR-E's unit of measurement — a weekly metric (e.g., "first-purchase events") mapped to one of four funnel Objectives (`Problem Awareness` / `Brand Awareness` / `Consideration` / `Conversion`). Four per account, chosen during the setup wizard. |
+| **`FunnelStageMapping`** | 4-row binding of funnel Objectives to `EffectivenessKPI`s. Versioned (history retained) — mapping changes alter historical interpretation, so trendlines walk the history per week. |
+| **VAR (model)** | Vector Auto-Regression model trained weekly per account on the four KPI time series (min 26 weeks, max lag 8, AIC/BIC lag selection). Produces 12-week baseline forecasts with 80% prediction intervals. Flat-baseline fallback for accounts with <26 weeks of history. See [SE-PRD-03](design/components/sar-e/projects/SE-PRD-03-var-baseline.md). |
+| **IRF** | Impulse-Response Function — the VAR model's moving-average representation over the 12-week horizon. Drives scenario propagation: user supplies weekly per-KPI overrides, SAR-E returns baseline / scenario / incremental per KPI per week. See [SE-PRD-04](design/components/sar-e/projects/SE-PRD-04-irf-scenarios.md). |
+| **`Target`** (SAR-E) | Per-KPI, per-week goal derived by the `performance_forecasting` specialist from baseline + calendar + historical pulses. Supersedes on edit (no version history); carries a `methodology_note` phrasing the relationship as association. See [SE-PRD-05](design/components/sar-e/projects/SE-PRD-05-target-derivation-specialist.md). |
+| **Performance page** | `/performance` — five-tab surface (Analysis / Simulations / Targets / Diagnostics / Configuration) + four-step setup wizard at `/performance/setup`. Opt-in per account; renders SAR-E outputs. See [Performance component](design/components/performance/README.md). |
+| **Setup Wizard** | Four-step onboarding flow (`/performance/setup`) that turns an opted-out account into a fully configured SAR-E consumer: picks four Effectiveness KPIs, maps them to the four funnel Objectives, sets backfill depth (computed, not chosen — `min(104, min(weeks_available_across_KPIs))`), reviews + submits. See [PE-PRD-05](design/components/performance/projects/PE-PRD-05-setup-wizard.md). |
 | **Workflows tab** | Top-level `/workflows` route hosting three tabs — Agents (config-driven specialist admin, owned by AH-PRD-02), Automations (A-PRD-05/06), Skills (SK-PRD-03). Tab container shell delivered by UI-PRD-03. |
 | **Shape B** | Firestore layout convention — every account-scoped resource lives at `accounts/{account_id}/{resource}/…`. Owned by the Data Management component. See [data-management README](design/components/data-management/README.md). |
 | **`FeatureFlag`** | Boolean targeted-rollout flag with allowlist + percentage-bucketing rules; kill switches propagate in ≤60s. See [feature-flags README](design/components/feature-flags/README.md). |
@@ -861,6 +887,7 @@ Agent configuration (Firestore `agent_configs/{id}` fields + per-account overlay
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 4.2 | 2026-04-23 | Development Team | Reflected the four new components added in April (Data Pipeline, Integrations, SAR-E, Performance). §1.1 Purpose reframed from "agentic harness" to "system architecture" — acknowledges the agentic + deterministic + analytical execution layers. §1.4 Key Design Decisions gained four rows (deterministic Data Pipeline, Integrations-owned credentials, opt-in analytical layer, "statistical association only" invariant). §1.6 Component Landscape updated from "nine" to "thirteen" discrete components; table gained Data Pipeline / Integrations / SAR-E / Performance rows with scope summaries; trailing section-mapping refreshed. §3.6 session-state tables marked `ga_credentials` as being retired by IN-PRD-06 and noted the `platform_credentials.<service>` model was superseded by Integrations' fetch-per-call endpoint. §7.1 split Performance out of "Feature pages" into its own bullet naming Performance (PE-PRDs 01–08) as page owner and SAR-E (SE-PRDs 01–07) as analytical source. §8 intro updated; added §8.4 Deterministic Platform-API Extraction (Data Pipeline) framing `assignee_type="data_pipeline"`, and §8.5 Analytical Layer (SAR-E & Performance) framing the opt-in statistical backend. §10.1 Data Layer expanded with Integrations / Data Pipeline / SAR-E Firestore surfaces, added Cloud KMS as a fifth persistent store, clarified the skills + task-artifacts GCS buckets. §10.2 Compute gained a Data Pipeline Cloud Run row + a Cloud Scheduler row enumerating the per-minute/daily/weekly crons. §10.4 Architecture Diagram refreshed with the sibling Data Pipeline service, Cloud KMS, Cloud Scheduler, and an accurate Secret Manager description (OAuth tokens moved out). §11.2 Credential Lifecycle collapsed from three subsections (GA-specific OAuth flow + gap table + session-state credential keys) to one tight Integrations-owned summary — four key properties + explicit retirement of the legacy pattern + pointer to `integrations/README.md`. §11.3.2 retitled "Platform Quota Management" — split rate-limit handling into Data Pipeline path (budgets enforced) vs agent-routed MCP path (still a gap). §11.4 Risk Matrix: OAuth expiry and credential-encryption rows updated to reflect Integrations' refresh sweeper + KMS-at-rest. §12 Roadmap gained a "TBD" row for the four unassigned components. §3.4 + §3.5 trimmed Python code blocks to prose + file pointers. Appendix D Glossary gained 17 new entries covering Data Pipeline / Integrations / SAR-E / Performance terminology. Fixed two broken `design/api-gateway-multi-channel.md` links (file moved to backlog). |
 | 1.0 | 2026-01-10 | Development Team | Initial design document |
 | 2.0 | 2026-03-10 | Development Team | Updated to reflect Sprints 1-4 implementation. Replaced fictional code with actual implementations. Marked unbuilt features as [PLANNED]. |
 | 2.1 | 2026-03-10 | Development Team | Design review: Added `tool_filter` + ToolRegistry architecture (Section 4.3). Updated ADK internals analysis. Added sprint-3b dependency note. Fixed Deepgram latency claim. |
@@ -869,8 +896,8 @@ Agent configuration (Firestore `agent_configs/{id}` fields + per-account overlay
 | 2.4 | 2026-03-11 | Development Team | Added Section 4.6 Review Loop Pattern (Generator-Critic with LoopAgent). Updated Section 2.3.2 request flow to show review loop. Rewrote Section 8.1 with ADK workflow agent architecture, ParallelAgent for concurrent steps, Meta Ads optimisation example, and dynamic pipeline construction. Added Decision 21 link. |
 | 2.5 | 2026-03-11 | Development Team | Added `[TRANSITIONAL]` convention for GA Agent and Company News Agent (successors documented). Added Meta Ads SDK shared access (Analytics reads + Execution reads/writes via `tool_filter`). Added Section 6 Skills Architecture (predefined + custom skills, SkillToolset integration, skill builder UI). Renumbered Sections 6-12 → 7-13. Added Decision 22 link. Updated glossary with Skill/SkillToolset/SKILL.md terms. |
 | 2.6 | 2026-03-18 | Development Team | ADK 1.26.0 experiment corrections: removed `SequentialAgent` wrappers inside `LoopAgent` (Sections 4.6, 8.1), added `include_contents='none'` on reviewers and synthesizers, added `{key?}` optional template syntax, added pipeline `SequentialAgent` wrappers for `ParallelAgent` branches. New subsections: 8.2 ADK Implementation Details (`build_review_pipeline()` and `build_workflow_pipeline()` factories, synthesizer pattern), 8.3 ADK Pitfalls (3 validated pitfalls), 8.4 LLM Call Cost & Latency. Renumbered 8.2-8.5 → 8.5-8.8. Added LLM call cost table to Section 4.6. |
-| 2.7 | 2026-03-18 | Development Team | Experiment #4 resolution — resolved `tool_filter` driver pattern as `before_agent_callback`. Updated Section 3.6.2 (`tool_filter_state` Set By). Resolved `[PLANNED] tool_filter driver` in Section 4.3 (added execution order note). Added specialist callback chaining note to Section 4.2. Added ReadonlyContext, CallbackContext, before_agent_callback glossary entries (Appendix D). See [Decision 23](https://www.notion.so/32730fd6530281999389eb3116e7585c). |
-| 2.8 | 2026-03-18 | Development Team | Data visualization & artifacts. Added Vega-Lite artifacts decision to Section 1.4. Updated Section 2.3.2 request flow (create_visualization in specialist, artifacts extraction in response). Added `response_artifacts` to Section 3.6.2 session state. Added visualization blockquote to Section 4.4. Added "Visualization Artifacts in Review Loops" subsection after Section 4.6. Added data visualization row to Section 12.3 roadmap. Added Vega-Lite, Artifact, create_visualization glossary entries (Appendix D). Created [`data-visualization.md`](design/data-visualization.md). |
+| 2.7 | 2026-03-18 | Development Team | Experiment #4 resolution — resolved `tool_filter` driver pattern as `before_agent_callback`. Updated Section 3.6.2 (`tool_filter_state` Set By). Resolved `[PLANNED] tool_filter driver` in Section 4.3 (added execution order note). Added specialist callback chaining note to Section 4.2. Added ReadonlyContext, CallbackContext, before_agent_callback glossary entries (Appendix D). See [Review 9 in DESIGN-REVIEW-LOG](design/DESIGN-REVIEW-LOG.md#review-9-experiment-4--tool_filter-integration-pattern-resolution). |
+| 2.8 | 2026-03-18 | Development Team | Data visualization & artifacts. Added Vega-Lite artifacts decision to Section 1.4. Updated Section 2.3.2 request flow (create_visualization in specialist, artifacts extraction in response). Added `response_artifacts` to Section 3.6.2 session state. Added visualization blockquote to Section 4.4. Added "Visualization Artifacts in Review Loops" subsection after Section 4.6. Added data visualization row to Section 12.3 roadmap. Added Vega-Lite, Artifact, create_visualization glossary entries (Appendix D). Created [`data-visualization.md`](design/components/agentic-harness/data-visualization.md). |
 | 2.9 | 2026-03-18 | Development Team | Gemini native code execution. Added code execution decision to Section 1.4. Added Tool Type Taxonomy table to Section 4.3 (MCP Tools, SDK Function Tools, Built-in Model Capabilities). Updated Analytics Specialist in Sections 4.4 and 4.5 with Gemini code execution. Added code execution note to Section 4.6 review loop. Added Section 9.2.1 Code Execution Traces. Added code execution cost bullet to Section 10.2. Added Gemini code execution to Section 12.3 roadmap and Appendix A. Added Code Execution (Gemini), Built-in Model Capability, ToolCodeExecution to Appendix D glossary. |
 | 4.1 | 2026-04-22 | Development Team | Added the **Dashboards** component (ninth component). §1.6 prose updated from "eight discrete components" → "nine"; §1.6 table gained a Dashboards row between Automations and Skills (`type="dashboard"` ProjectPlans + canvas placements + artifact resolver + Performance-page Dashboards tab). Project Tasks row updated to reflect PR-PRDs 07–08 additions (multi-category activities, campaigns); Data Management row updated to reflect DM-PRD-07 (approval workflow & audit). §12 Release overview updated: Release 1 includes DM-PRDs 00–07 (was 00–06); Release 2 includes PR-PRDs 01–08 (was 01–06) and adds Dashboards DB-PRDs 01–04. No schema, API, or orchestration changes in this doc — the Dashboards component sits on top of existing Project Tasks + Automations + A-PRD-03 artifact infrastructure without introducing new storage or runtime primitives. |
 | 4.0 | 2026-04-20 | Development Team | **Document reframed as `KEN-E System Architecture`** (from "Agentic Harness Design"). The doc's scope had grown beyond agent architecture to cover context management, multi-step orchestration (project-tasks + Automations + KG session-end), evaluation framework, infrastructure, resilience/security, and now the full eight-component landscape — the title and framing needed to match. Changes: renamed header + rewrote top-of-doc purpose statement to position this as the canonical system architecture (not a PRD, not a roadmap, not an ADR log). Added §1.6 Component Landscape (eight-component table with one-line scope + doc pointer per component). Renamed §7 "Multi-Channel Support" → "Frontend & Channels" and added §7.1 (Web UI / design system / workflows tab container, from UI component), §7.2 (channel-agnostic API), §7.3 (planned channels). Added §10.1 Data Layer covering Firestore Shape B (data-management), Neo4j, Redis, GCS — renumbered downstream §10 subsections. Added §11.7 Targeted Rollouts & Kill Switches (feature-flags). Expanded §12 Roadmap with a release-plan table tying components to releases + a note reconciling PROJECT-PLANNER vs product-roadmap numbering. Added glossary entries for `Workflows tab`, `Shape B`, `FeatureFlag`, `is_feature_enabled` / `useFeatureFlag`, `Design System (Soft Maximalism)`. File renamed `KEN-E-Agentic-Harness-Design.md` → `KEN-E-System-Architecture.md` with cross-references updated in 21 files. |

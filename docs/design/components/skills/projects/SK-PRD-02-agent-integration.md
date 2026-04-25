@@ -47,7 +47,7 @@ No new user-facing endpoints are introduced. The observable change is: an existi
 ## 3. Dependencies
 
 - **[AH-PRD-02](../../agentic-harness/projects/AH-PRD-02-agent-factory.md) (Agent Factory):** `agent_configs/{config_id}` has `skill_ids: list[str]` and `sandbox_code_executor_enabled: bool`; constructor reads them but doesn't act. Migration script populated defaults on existing docs.
-- **Sprint 2.6-A:** Skills API live; `api/src/kene_api/services/skill_loader.py` exports `load_skill(account_id, skill_id)` returning an ADK `Skill` object with lazy L3 resources. `account_id` is required — skills are stored under `accounts/{account_id}/skills/{skill_id}` (Shape B per the [Multi-Tenant Data Model decision](https://www.notion.so/34830fd653028177bc0dc2a1637c7f60)) and GCS prefixes (`accounts/{account_id}/…`).
+- **Sprint 2.6-A:** Skills API live; `api/src/kene_api/services/skill_loader.py` exports `load_skill(account_id, skill_id)` returning an ADK `Skill` object with lazy L3 resources. `account_id` is required — skills are stored under `accounts/{account_id}/skills/{skill_id}` (Shape B per [Review 15 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1)) and GCS prefixes (`accounts/{account_id}/…`).
 - **Sprint 2.6-0:** Spike findings doc at `docs/spike-agent-engine-sandbox-findings.md` with network/cost/resource answers that inform the sandbox config chosen here.
 - **ADK:** v1.25.0+ pinned. Relevant APIs:
   - `google.adk.skills.SkillToolset` / `load_skill_from_dir` / `models.Skill`

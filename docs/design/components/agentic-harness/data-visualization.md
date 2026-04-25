@@ -17,7 +17,6 @@
 
 ## 1. Overview
 
-> **Roadmap:** [Feature 2.4: Data Visualization](../../../product-roadmap.md#24--data-visualization) — Release 2.0
 
 ### Problem
 
@@ -45,13 +44,13 @@ The same `ArtifactRenderer` powers both the chat surface and the Performance →
 
 | # | Decision | Link |
 |---|----------|------|
-| 1 | Vega-Lite **v6** as visualization spec format | *Notion Decision TBD* |
-| 2 | Agent suggests chart type, frontend can override (and persist the override per-placement on the dashboards surface) | *Notion Decision TBD* |
-| 3 | Additive ChatResponse extension (backward-compatible) | *Notion Decision TBD* |
-| 4 | Review loop evaluates visualization quality | *Notion Decision TBD* |
-| 5 | Backend emits plain specs; theme, color overrides, and data labels applied by the frontend | *Notion Decision TBD* |
+| 1 | Vega-Lite **v6** as visualization spec format | *DESIGN-REVIEW-LOG entry pending — captured when AH-PRD-04 implementation begins* |
+| 2 | Agent suggests chart type, frontend can override (and persist the override per-placement on the dashboards surface) | *DESIGN-REVIEW-LOG entry pending* |
+| 3 | Additive ChatResponse extension (backward-compatible) | *DESIGN-REVIEW-LOG entry pending* |
+| 4 | Review loop evaluates visualization quality | *DESIGN-REVIEW-LOG entry pending* |
+| 5 | Backend emits plain specs; theme, color overrides, and data labels applied by the frontend | *DESIGN-REVIEW-LOG entry pending* |
 
-> Decisions will be recorded in the [Design Decisions database in Notion](https://www.notion.so/2f230fd6530280d599f0ca1449111d7e) when implementation begins.
+> Decisions will be recorded as Review entries in [`docs/design/DESIGN-REVIEW-LOG.md`](../../DESIGN-REVIEW-LOG.md) when AH-PRD-04 implementation begins.
 
 ---
 
@@ -312,7 +311,6 @@ Artifacts are sent as a single atomic event (not streamed incrementally) because
 
 ## 6. Review Loop Integration
 
-> **Roadmap:** [Feature 2.1: Review Loop Framework](../../../product-roadmap.md#21--review-loop-framework), [Feature 2.4: Data Visualization](../../../product-roadmap.md#24--data-visualization) — Release 2.0
 
 ### 6.1 Reviewer Evaluates Artifacts
 
@@ -355,7 +353,6 @@ The reviewer checks that a visualization artifact exists, matches the specified 
 
 ## 7. Multi-Step Workflow Integration
 
-> **Roadmap:** [Feature 2.4: Data Visualization](../../../product-roadmap.md#24--data-visualization), [Feature 3.4: Multi-Step Workflows](../../../product-roadmap.md#34--multi-step-workflows) — Releases 2.0, 3.0
 
 ### 7.1 Per-Step Artifacts
 
@@ -477,7 +474,6 @@ The renderer applies these transforms after receiving the spec. Backends should 
 
 ## 9. Channel Considerations
 
-> **Roadmap:** [Feature 5.1: Slack Channel](../../../product-roadmap.md#51--slack-channel), [Feature 6.1: Voice Channel](../../../product-roadmap.md#61--voice-channel) — Releases 5.0, 6.0
 
 | Channel | Rendering Approach | Status |
 |---------|--------------------|--------|
@@ -485,7 +481,7 @@ The renderer applies these transforms after receiving the spec. Backends should 
 | **Slack** `[PLANNED]` | Server-side render Vega-Lite to PNG via `vega-lite-to-png` or Vega CLI, send as image attachment. Apply the same app-theme config server-side for consistency. | Requires server-side rendering pipeline |
 | **Voice** `[PLANNED]` | No visual rendering. Agent describes the data verbally: "Sessions peaked on Thursday at 1,423" | `create_visualization()` still produces the artifact for session history; voice channel skips rendering |
 
-See [`api-gateway-multi-channel.md`](../../api-gateway-multi-channel.md) Section 6 for the per-channel rendering architecture.
+See [`api-gateway-multi-channel.md`](../backlog/api-gateway-multi-channel.md) Section 6 for the per-channel rendering architecture.
 
 ---
 
@@ -507,7 +503,7 @@ See [`api-gateway-multi-channel.md`](../../api-gateway-multi-channel.md) Section
 
 - Harness Design Doc — Sections 1.4 (Key Design Decisions), 2.3.2 (Request Flow), 3.6.2 (Session State), 4.4 (Specialist Agents), 4.6 (Review Loop Pattern)
 - [`components/agentic-harness/README.md`](./README.md) §2.6 — Specialist roadmap
-- [`api-gateway-multi-channel.md`](../../api-gateway-multi-channel.md) Section 6 — Stable Components Across Channels
+- [`api-gateway-multi-channel.md`](../backlog/api-gateway-multi-channel.md) Section 6 — Stable Components Across Channels
 - [`mcp-architecture.md`](./mcp-architecture.md) §4 — SDK Function Tools Pattern
 - [`review-loop-implementation-plan.md`](../../review-loop-implementation-plan.md) Section 3 — Architecture
 - Frontend renderer: `src/app/components/dashboard/ArtifactRenderer.tsx`

@@ -425,8 +425,8 @@ Existing `save_as_automation=true`, `is_system=false`, and `is_active` filters u
 
 - Parent plan: [`../implementation-plan.md`](../implementation-plan.md)
 - Foundation: [PR-PRD-01](../../project-tasks/projects/PR-PRD-01-data-model-and-api.md) §4 data contract
-- Sibling: [A-PRD-01](../../automations/projects/01-data-model-and-api.md) — `ProjectPlan.type` enum owner
-- Sibling: [A-PRD-03](../../automations/projects/03-task-artifact-system.md) — artifact store + signed-URL helper
+- Sibling: [A-PRD-01](../../automations/projects/A-PRD-01-data-model-and-api.md) — `ProjectPlan.type` enum owner
+- Sibling: [A-PRD-03](../../automations/projects/A-PRD-03-task-artifact-system.md) — artifact store + signed-URL helper
 - Role gate + audit: [DM-PRD-07](../../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md)
 - Frontend context: `docs/figma-export/src/app/data/mockData.ts` (`DashboardPlacement`, `OutputFileType`), `docs/figma-export/src/app/data/automationDetailsData.ts` (`OutputConfig`, `TaskRunOutput`), `docs/figma-export/src/app/components/DashboardCanvas.tsx` (canvas model + artifact-resolution hook)
 - CLAUDE.md rules in scope: C-1, C-5; D-1, D-5; PY-1, PY-2, PY-7; T-1, T-3, T-4, T-7, T-8

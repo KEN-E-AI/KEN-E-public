@@ -24,7 +24,7 @@
 | **Planned**: `skills_{account_id}/{skill_id}` + `/versions/{n}` | User-authored skills | Skills bounded per account; versions unbounded | SK-PRD-01 |
 | **Planned**: `project_plans_{account_id}/{plan_id}` + `/versions/{n}` | Project plans | Unbounded | `components/project-tasks/projects/PR-PRD-01-data-model-and-api.md:120-124` |
 | **Planned**: `project_plan_audit_{account_id}/` | Project-plan audit log | Unbounded | `components/project-tasks/projects/PR-PRD-01-data-model-and-api.md:123` |
-| **Planned**: `plan_runs_{account_id}/{run_id}` + `/artifacts/{id}` | Automation runs + artifacts | Unbounded | `components/automations/projects/01-data-model-and-api.md:140-141`, `components/automations/projects/03-task-artifact-system.md:36` |
+| **Planned**: `plan_runs_{account_id}/{run_id}` + `/artifacts/{id}` | Automation runs + artifacts | Unbounded | `components/automations/projects/A-PRD-01-data-model-and-api.md:140-141`, `components/automations/projects/A-PRD-03-task-artifact-system.md:36` |
 
 ### 1.2. Shape D — nested map fields on a shared root doc
 
@@ -117,10 +117,10 @@ Not the canonical Shape B from the brief (subcollections under an account doc) �
 |---|---|---|---|
 | Scheduler finds all due tasks across all accounts every N minutes | `components/project-tasks/projects/PR-PRD-06-time-based-scheduler.md:94,173` | Shape B/C — `collection_group("plans").where("due_datetime_utc","<=",now)` | PRD already flags this as a blocker: *"fall back to per-account iteration… acceptable for moderate account counts"* |
 | Session-end sweeper: find idle sessions across all accounts daily | `components/knowledge-graph/projects/KG-PRD-04-session-end-automation.md:145` | Shape B/C | Would need per-account iteration |
-| Scheduler-endpoint scan with 10k tasks across 100 accounts in <5s | `components/automations/projects/07-integration-testing-and-polish.md:75` | Shape B/C | 100 collection queries serially is slow; batched parallel queries work but add complexity |
+| Scheduler-endpoint scan with 10k tasks across 100 accounts in <5s | `components/automations/projects/A-PRD-07-integration-testing-and-polish.md:75` | Shape B/C | 100 collection queries serially is slow; batched parallel queries work but add complexity |
 | Org-level billing aggregation (sum tokens per org per period) | `KEN-E-System-Architecture.md:542` + `DESIGN-REVIEW-LOG.md:214` | Shape C on `usage_records` (currently lacks `organization_id` — separate gap) | Doesn't use account-scoped collections; orthogonal to this decision |
 | **MER-E cross-account benchmarking (anonymized aggregation)** | `KEN-E-Self-Improving-Evaluation-Framework-Design.md` §15 (§28 TOC entry) + §53 ("Global Optimization — Improvements apply across all KEN-E accounts") | Operates on Weave traces, not Firestore directly. However, if any evaluation state is mirrored to Firestore, Shape B/C preferred. | N/A if purely in Weave; Shape A painful if it lands in Firestore |
-| Plan-run aggregation (A-PRD-5 list view across all runs for an org admin) | `components/automations/projects/03-task-artifact-system.md`, `components/automations/projects/05-automations-list-page.md` | Shape B/C | Per-account iteration works; scales poorly at N accounts × runs/account |
+| Plan-run aggregation (A-PRD-5 list view across all runs for an org admin) | `components/automations/projects/A-PRD-03-task-artifact-system.md`, `components/automations/projects/A-PRD-05-automations-list-page.md` | Shape B/C | Per-account iteration works; scales poorly at N accounts × runs/account |
 
 ### 2.3. Observations from Q2
 
@@ -255,7 +255,7 @@ Q5 confirmed that account-isolation enforcement stays in Python. Shape A's "diff
 | `docs/design/components/skills/projects/SK-PRD-02-agent-integration.md`, `SK-PRD-04-agent-builder-controls.md` | Path references aligned with SK-PRD-01. |
 | `docs/design/components/project-tasks/projects/PR-PRD-01-data-model-and-api.md` (Project Plans) | Replace `project_plans_{account_id}/…` and `project_plan_audit_{account_id}/…` with `accounts/{account_id}/project_plans/…` and `accounts/{account_id}/project_plan_audit/…`. |
 | `docs/design/components/project-tasks/projects/PR-PRD-06-time-based-scheduler.md` | Remove the "fall back to per-account iteration" mitigation — collection-group query is the primary path. |
-| `docs/design/components/automations/projects/01-data-model-and-api.md`, `03-task-artifact-system.md` | Replace `plan_runs_{account_id}/…` with `accounts/{account_id}/plan_runs/…`. |
+| `docs/design/components/automations/projects/A-PRD-01-data-model-and-api.md`, `03-task-artifact-system.md` | Replace `plan_runs_{account_id}/…` with `accounts/{account_id}/plan_runs/…`. |
 | `docs/design/components/knowledge-graph/projects/KG-PRD-04-session-end-automation.md` | Session-sweeper query pattern updates to collection-group. |
 
 ### What this implies for existing code (to be scoped in the migration plan)

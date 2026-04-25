@@ -8,7 +8,6 @@
 
 ## 1. Current API Architecture
 
-> **Roadmap:** [Feature 1.1.1: ADK Upgrade](../product-roadmap.md#111--adk-upgrade) — Release 1.1
 
 The KEN-E API is a FastAPI application deployed on Google Cloud Run.
 
@@ -88,7 +87,6 @@ All channels normalize to the same `POST /api/v1/chat/completions` call. The age
 
 ## 4. [PLANNED] Slack Integration Approach
 
-> **Roadmap:** [Feature 5.1: Slack Channel](../product-roadmap.md#51--slack-channel) — Release 5.0
 
 - **Framework:** Slack Bolt SDK for Python
 - **Deployment:** Separate Cloud Run service (not embedded in the API)
@@ -101,7 +99,6 @@ The Slack service is a thin adapter — it authenticates the Slack user, maps to
 
 ## 5. [PLANNED] Voice Integration Approach
 
-> **Roadmap:** [Feature 6.1: Voice Channel](../product-roadmap.md#61--voice-channel) — Release 6.0
 
 - **Framework:** Pipecat for voice pipeline orchestration
 - **Meeting access:** Recall.ai or Meeting BaaS for joining Zoom/Teams/Meet
@@ -131,7 +128,7 @@ The only new code needed per channel is: auth adapter, input normalizer, output 
 
 | `ChatResponse` artifacts field | No — optional field, backward-compatible. Old clients ignore it. |
 
-> **Per-channel artifact rendering:** The `artifacts` field in `ChatResponse` contains Vega-Lite specs. Each channel renders artifacts differently: Web UI renders interactive charts via `react-vega` or Recharts translation; Slack `[PLANNED]` server-side renders to PNG and sends as image attachment; Voice `[PLANNED]` describes the data verbally with no visual rendering. See [`data-visualization.md`](components/agentic-harness/data-visualization.md) Section 9 for channel-specific rendering details.
+> **Per-channel artifact rendering:** The `artifacts` field in `ChatResponse` contains Vega-Lite specs. Each channel renders artifacts differently: Web UI renders interactive charts via `react-vega` or Recharts translation; Slack `[PLANNED]` server-side renders to PNG and sends as image attachment; Voice `[PLANNED]` describes the data verbally with no visual rendering. See [`data-visualization.md`](../agentic-harness/data-visualization.md) Section 9 for channel-specific rendering details.
 
 ## References
 

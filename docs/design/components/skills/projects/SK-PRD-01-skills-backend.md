@@ -21,7 +21,7 @@ Skills follow the [`agentskills.io`](https://agentskills.io/specification) spec:
 
 ### In scope
 - Pydantic models for skill metadata and frontmatter
-- Account-scoped Firestore subcollection `accounts/{account_id}/skills/{skill_id}` — metadata (Shape B layout per the [Multi-Tenant Data Model decision](https://www.notion.so/34830fd653028177bc0dc2a1637c7f60))
+- Account-scoped Firestore subcollection `accounts/{account_id}/skills/{skill_id}` — metadata (Shape B layout per [Review 15 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1))
 - GCS bucket layout: `gs://kene-skills-{env}/accounts/{account_id}/{skill_name}/{version}/…`
 - CRUD REST API under `/api/v1/accounts/{account_id}/skills/` (consistent with `agent-configs`)
 - Frontmatter validation per agentskills.io spec (name regex, description length, etc.)
@@ -163,7 +163,7 @@ class SkillFileEntry(BaseModel):
 
 ### Firestore layout
 
-> **Revised 2026-04-20** — Firestore paths follow the Shape B layout (`accounts/{account_id}/{resource}/...`). See [Multi-Tenant Data Model Shape Decision](https://www.notion.so/34830fd653028177bc0dc2a1637c7f60) for rationale.
+> **Revised 2026-04-20** — Firestore paths follow the Shape B layout (`accounts/{account_id}/{resource}/...`). See [Review 15 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1) for rationale.
 
 ```
 accounts/{account_id}/skills/{skill_id}                       # Skill doc

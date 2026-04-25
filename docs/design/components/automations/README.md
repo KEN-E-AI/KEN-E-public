@@ -1,6 +1,6 @@
 # Automations — Product Requirements Document
 
-> **Linear Team:** [TBD] Automations
+> **Linear Team:** [KEN-E] Automations
 > **Last Updated:** 2026-04-20
 > **Status:** Active
 
@@ -150,13 +150,13 @@ A-PRD-01: Data Model & API ──┬──> A-PRD-02: Recurring Scheduler ──
 
 | # | Project PRD | Owner team | Blocked by | Parallel with | Est. |
 |---|-------------|------------|------------|---------------|------|
-| 01 | [Data Model & API Extensions](./projects/01-data-model-and-api.md) | Backend (foundation) | PR-PRD-01, DM-PRD-00, DM-PRD-05 | — | 2–3 days |
-| 02 | [Recurring Scheduler & Run Engine](./projects/02-recurring-scheduler.md) | Backend / Infra | A-PRD-01, Project Tasks PR-PRDs 04 + 06 | 03, 05, 06 | 3 days. Also ships the public `POST /v1/schedules/preview` and `GET /v1/automations/{account_id}/schedules/upcoming` endpoints consumed by the Calendar page. |
-| 03 | [Task Artifact System](./projects/03-task-artifact-system.md) | Backend + Agent | A-PRD-01, Project Tasks PR-PRDs 02 + 04 | 02, 05, 06 | 3–4 days |
-| 04 | [Test / Dry-Run Mode](./projects/04-test-dry-run-mode.md) | Backend | A-PRD-01, A-PRD-03, Project Tasks PR-PRD-04 | 05, 06 | 2 days |
-| 05 | [Automations List Page](./projects/05-automations-list-page.md) | Frontend | A-PRD-01, Project Tasks PR-PRD-03 | 02, 03, 06 | 2 days |
-| 06 | [Automation Details Page](./projects/06-automation-details-page.md) | Frontend | A-PRD-01, Project Tasks PR-PRD-03 (soft: A-PRDs 03 + 04) | 02, 03, 05 | 4–5 days |
-| 07 | [Integration Testing & Polish](./projects/07-integration-testing-and-polish.md) | QA + first-finished team | A-PRDs 01–06 | — | 1–2 days |
+| 01 | [Data Model & API Extensions](./projects/A-PRD-01-data-model-and-api.md) | Backend (foundation) | PR-PRD-01, DM-PRD-00, DM-PRD-05 | — | 2–3 days |
+| 02 | [Recurring Scheduler & Run Engine](./projects/A-PRD-02-recurring-scheduler.md) | Backend / Infra | A-PRD-01, Project Tasks PR-PRDs 04 + 06 | 03, 05, 06 | 3 days. Also ships the public `POST /v1/schedules/preview` and `GET /v1/automations/{account_id}/schedules/upcoming` endpoints consumed by the Calendar page. |
+| 03 | [Task Artifact System](./projects/A-PRD-03-task-artifact-system.md) | Backend + Agent | A-PRD-01, Project Tasks PR-PRDs 02 + 04 | 02, 05, 06 | 3–4 days |
+| 04 | [Test / Dry-Run Mode](./projects/A-PRD-04-test-dry-run-mode.md) | Backend | A-PRD-01, A-PRD-03, Project Tasks PR-PRD-04 | 05, 06 | 2 days |
+| 05 | [Automations List Page](./projects/A-PRD-05-automations-list-page.md) | Frontend | A-PRD-01, Project Tasks PR-PRD-03 | 02, 03, 06 | 2 days |
+| 06 | [Automation Details Page](./projects/A-PRD-06-automation-details-page.md) | Frontend | A-PRD-01, Project Tasks PR-PRD-03 (soft: A-PRDs 03 + 04) | 02, 03, 05 | 4–5 days |
+| 07 | [Integration Testing & Polish](./projects/A-PRD-07-integration-testing-and-polish.md) | QA + first-finished team | A-PRDs 01–06 | — | 1–2 days |
 
 ### 5.3 Cross-PRD coordination points
 

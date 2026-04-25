@@ -1,6 +1,6 @@
 # Agentic Harness — Product Requirements Document
 
-> **Linear Team:** [TBD] Core AI / Agent Platform
+> **Linear Team:** [KEN-E] Agentic Harness
 > **Last Updated:** 2026-04-20
 > **Status:** Active
 
@@ -135,7 +135,7 @@ This component does **not** own the chat endpoint or the session-management API 
 
 ### 2.5 Tool-assignment & routing model
 
-> **Reference:** [Notion User Story 2.2.4](https://www.notion.so/2-2-4-ToolRegistry-as-Root-Agent-routing-index-32930fd65302816284c1c8fd981d4a40) drove the move away from the per-turn `tool_filter` mechanism. The specialist-description routing below is a refinement: scope-ambiguity (two specialists sharing a tool) is resolved at the specialist level, not via a tool-level index.
+> **Reference:** the move away from the per-turn `tool_filter` mechanism is captured in [Review 9 in DESIGN-REVIEW-LOG](../../DESIGN-REVIEW-LOG.md#review-9-experiment-4--tool_filter-integration-pattern-resolution) (originally Notion User Story 2.2.4 — historical archive). The specialist-description routing below is a refinement: scope-ambiguity (two specialists sharing a tool) is resolved at the specialist level, not via a tool-level index.
 
 Two concerns, two mechanisms:
 
@@ -189,7 +189,7 @@ Transitional agents (`google_analytics_agent_v4.py`, `company_news_chatbot/agent
 | **[Data Management — DM-PRD-00 (Migration Foundation)](../data-management/projects/DM-PRD-00-migration-foundation.md)** | **Hard prerequisite for AH-PRD-02.** Documents the Shape B convention in `api/CLAUDE.md` and ships `seed_shape_b_fixtures.py`. AH-PRD-02 is the first feature to land directly on Shape B via the per-account overlay at `accounts/{account_id}/agent_configs/{config_id}` — no legacy Shape A intermediate step. | `../data-management/README.md` §2.2 |
 | **[Data Management — DM-PRD-05 (Deletion Sweep Rewrite)](../data-management/projects/DM-PRD-05-deletion-sweep-rewrite.md)** | **Soft prerequisite — recommended before AH-PRD-02 ships.** Replaces the enumerated deletion sweep with `firestore.recursive_delete(accounts/{account_id})`, which automatically covers the new `accounts/{account_id}/agent_configs/*` subcollection. AH-PRD-02 includes an interim extension to the enumerated sweep as a bridge if DM-PRD-05 has not shipped yet (see AH-PRD-02 §9 risk + AC #15). | `../data-management/projects/DM-PRD-05-deletion-sweep-rewrite.md` |
 | Existing Firestore config pattern | Current per-agent `load_config_from_firestore(config_doc_id)` pattern in `app/adk/agents/ken_e_agent.py`, `google_analytics_agent_v4.py`, and the strategy supervisor. AH-PRD-02 generalizes it. | AH-PRD-02 §5.2 (config-to-constructor mapping) |
-| Existing `ToolRegistry` | Build-time metadata catalog the factory reads to assemble specialist rosters (§2.5). Already operational — no changes required. | [Notion 2.2.4](https://www.notion.so/2-2-4-ToolRegistry-as-Root-Agent-routing-index-32930fd65302816284c1c8fd981d4a40) |
+| Existing `ToolRegistry` | Build-time metadata catalog the factory reads to assemble specialist rosters (§2.5). Already operational — no changes required. | [Review 22 in DESIGN-REVIEW-LOG](../../DESIGN-REVIEW-LOG.md#review-22-backfill--decisions-7--8-token-budget-strategy--toolregistry-as-build-time-catalog) |
 | Existing MCP servers | Referenced by `mcp_servers/{server_id}` Firestore docs. This component does not build or host MCP servers. | `app/adk/mcp_config/config/mcp_servers.yaml` (seed) |
 | Gemini code execution (for AH-PRD-03) | Built-in via `Tool(code_execution=ToolCodeExecution())`. Google-managed sandbox — no infrastructure. | AH-PRD-03 §2 Phase 2 (code execution) |
 | W&B Weave tracing | Every dispatch + review-loop iteration emits spans per `docs/trace-structure-spec.md`. MER-E consumes them. | `../../../trace-structure-spec.md` |
@@ -264,8 +264,8 @@ Three touchpoints do not fit cleanly inside one PRD and need an owning team to c
 | `docs/trace-structure-spec.md` | Span table | Every dispatch + review-loop iteration emits spans matching this spec. MER-E ingestion depends on it. |
 | [`../data-management/README.md`](../data-management/README.md) | §2.2 Data Flow, §7.1 Shape B path convention | Shape B layout for `accounts/{account_id}/agent_configs/{config_id}`. |
 | [`../../DESIGN-REVIEW-LOG.md`](../../DESIGN-REVIEW-LOG.md) | 2026-04-20 Multi-Tenant Shape B entry | Rationale for the current per-account overlay path layout. |
-| Notion: [Decision 21 — Task Delegation with Review Loops](https://www.notion.so/32030fd6530281a8a30fc8e12c3f931e) | Entire decision | Full rationale for the Generator-Critic review-loop pattern. |
-| Notion: Narrow Specialist Architecture decision | Entire decision | Rationale for the config-driven narrow-specialist pattern proven by AH-PRD-03. |
+| [Review 6 in DESIGN-REVIEW-LOG](../../DESIGN-REVIEW-LOG.md#review-6-task-delegation-with-review-loops) | Entire entry | Full rationale for the Generator-Critic review-loop pattern (originally Notion Decision 21). |
+| [Review 5 in DESIGN-REVIEW-LOG](../../DESIGN-REVIEW-LOG.md#review-5-architecture-accuracy-pass--harness-doc-v22--v23) | Entire entry | Rationale for the config-driven narrow-specialist pattern proven by AH-PRD-03. |
 
 ## 7. Conventions and Constraints
 

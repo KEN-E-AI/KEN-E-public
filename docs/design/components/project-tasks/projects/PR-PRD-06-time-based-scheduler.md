@@ -94,7 +94,7 @@ Response:
 
 ### Core algorithm — `find_and_fire_due_tasks(now: datetime)`
 
-> **Revised 2026-04-20** — The scheduler uses a collection-group query over `project_plans` under the Shape B layout (`accounts/*/project_plans`). See [Multi-Tenant Data Model Shape Decision](https://www.notion.so/34830fd653028177bc0dc2a1637c7f60) for rationale.
+> **Revised 2026-04-20** — The scheduler uses a collection-group query over `project_plans` under the Shape B layout (`accounts/*/project_plans`). See [Review 15 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1) for rationale.
 
 ```
 1. Query Firestore (collection group "project_plans"):

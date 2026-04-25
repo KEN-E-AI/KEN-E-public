@@ -265,7 +265,7 @@ Plan title is editable inline in the header. Click-to-edit → blur or Enter sub
 - Parent plan: [`../implementation-plan.md`](../implementation-plan.md)
 - Foundation: [DB-PRD-01](./DB-PRD-01-data-model-and-api.md)
 - Shell: [DB-PRD-02](./DB-PRD-02-dashboards-tab-and-list.md)
-- Shared components: [A-PRD-06 Automation Details](../../automations/projects/06-automation-details-page.md)
+- Shared components: [A-PRD-06 Automation Details](../../automations/projects/A-PRD-06-automation-details-page.md)
 - Figma reference: `docs/figma-export/src/app/pages/performance/DashboardDetailsPage.tsx`, `docs/figma-export/src/app/components/DashboardCanvas.tsx`, `docs/figma-export/src/app/components/dashboard/ArtifactRenderer.tsx`
 - Design tokens: [UI-PRD-01](../../ui/projects/UI-PRD-01-design-system-foundation.md)
 - CLAUDE.md rules in scope: C-1, C-5, C-6, C-8; T-2, T-6, T-8; G-2, G-3

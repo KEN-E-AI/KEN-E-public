@@ -14,6 +14,8 @@ The existing Performance page (`frontend/src/pages/Performance.tsx`) displays ma
 
 **Scope boundary:** this PRD owns the page shell, metric tiles, chart styling, and layout. Data loading logic, analytics queries, and any GA/Ads integration calls are preserved as-is.
 
+> **Open question:** the Performance component PRDs (`PE-PRD-01` … `PE-PRD-08`) now own a full redesign of `/performance` as a five-tab surface (Analysis / Simulations / Targets / Diagnostics / Configuration) backed by SAR-E. That work likely **subsumes** this PRD. Revisit at kickoff: either (a) retire UI-PRD-07 once PE-PRD-01 starts, or (b) keep UI-PRD-07 as a minimal "re-skin the legacy single-page Performance view until PE-PRDs ship" bridge. Either way, the §11 Cleanup below still applies — the dropped pages (`Recommendations`, `Campaigns`, `Reports`, `Index`, `Simulations`) do not come back.
+
 ## 2. Scope
 
 ### In scope
@@ -26,8 +28,14 @@ The existing Performance page (`frontend/src/pages/Performance.tsx`) displays ma
 
 ### Out of scope
 - Changes to analytics data loading, APIs, or backend
-- Changes to existing Recommendations, Campaigns, or Reports pages (separate surfaces)
 - New metric definitions
+
+### Pages dropped from the product (handled in §11 Cleanup, not redesigned)
+- `Recommendations.tsx` (`/recommendations`) — absorbed into the Performance **Analysis tab** (PE-PRD-02)
+- `Campaigns.tsx` (`/campaigns`) — absorbed into Calendar + **Campaign Management** (PR-PRD-08)
+- `Reports.tsx` (`/reports`) — absorbed into **Dashboards** (DB-PRD-*)
+- `Simulations.tsx` (`/simulations`) — absorbed into the Performance **Simulations tab** (PE-PRD-03)
+- `Index.tsx` (`/measurement-plan`) — dropped; no replacement needed
 
 ## 3. Dependencies
 
@@ -110,3 +118,21 @@ N/A — no new endpoints. Existing performance data loading is preserved.
 - Figma: [KEN-E UI V2 — Soft Maximalism](https://www.figma.com/make/fhkgWZyTHdKtvDNRoQrcMT/KEN-E-UI-V2---Soft-Maximalism) — PerformancePage
 - Existing files: `frontend/src/pages/Performance.tsx`, `frontend/src/components/dashboard/*`
 - CLAUDE.md rules in scope: C-5, C-6, C-8; T-2; G-2, G-3
+
+## 11. Cleanup — legacy pages deleted by this PRD
+
+| File | Route(s) | Replaced by / reason |
+|------|----------|----------------------|
+| `frontend/src/pages/Recommendations.tsx` | `/recommendations` | Absorbed into Performance **Analysis tab** (PE-PRD-02) |
+| `frontend/src/pages/Campaigns.tsx` | `/campaigns` | Absorbed into Calendar + **Campaign Management** (PR-PRD-08) |
+| `frontend/src/pages/Reports.tsx` | `/reports` | Absorbed into **Dashboards** (DB-PRD-*) |
+| `frontend/src/pages/Index.tsx` | `/measurement-plan` | Dropped — no replacement; `/measurement-plan` route removed |
+| `frontend/src/pages/Simulations.tsx` | `/simulations` | Absorbed into Performance **Simulations tab** (PE-PRD-03) |
+
+Post-cleanup checks:
+- `App.tsx` no longer routes `/recommendations`, `/campaigns`, `/reports`, `/measurement-plan`, or `/simulations`
+- `Sidebar.tsx` has no nav entries pointing to deleted routes
+- `grep -r "Recommendations\|Campaigns\|Reports\|Simulations\|measurement-plan" frontend/src/pages` returns no live references (excluding the new Performance sub-components that may reuse the words)
+- Associated `*.test.tsx` files for deleted pages are also deleted
+
+If UI-PRD-07 is retired in favor of the PE-PRDs (see §1 open question), the cleanup table above still applies — move it into PE-PRD-01's cleanup section instead.

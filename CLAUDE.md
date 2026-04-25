@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 KEN-E is a multi-agent AI system for marketing analysis built on Google Cloud Platform. It uses Google's Agent Development Kit (ADK) deployed on Vertex AI Agent Engine, integrated with a modern React frontend to provide comprehensive marketing insights and analytics.
 
-KEN-E's design is organized around **nine components** under [`docs/design/components/`](docs/design/components/): **Agentic Harness** (agent runtime + review loop + factory), **Knowledge Graph** (Neo4j + read tools + learning loop), **Project Tasks** (persistent plans + orchestration), **Automations** (re-executable templates + scheduler), **Dashboards** (canvas of widgets powered by plan artifacts), **Skills** (user-authored expertise packs), **UI** (design system + React pages), **Data Management** (Shape B Firestore convention), and **Feature Flags** (targeted rollouts). The cross-component architecture lives in [`docs/KEN-E-System-Architecture.md`](docs/KEN-E-System-Architecture.md).
+KEN-E's design is organized around **fifteen components** under [`docs/design/components/`](docs/design/components/): **Agentic Harness** (agent runtime + review loop + factory), **Knowledge Graph** (Neo4j + read tools + learning loop), **Project Tasks** (persistent plans + orchestration), **Automations** (re-executable templates + scheduler), **Dashboards** (canvas of widgets powered by plan artifacts), **Data Pipeline** (deterministic platform-API extraction jobs + sibling Cloud Run service), **Integrations** (OAuth credential substrate for third-party platforms), **SAR-E** (analytical backend — VAR forecasting, KPI ingestion, target derivation), **Performance** (marketing-measurement page that renders SAR-E outputs), **Skills** (user-authored expertise packs), **Chat** (`/chat` page + session history sidebar + status view + per-user categories + todo lists + artifact provenance + Firestore side-table mirroring ADK sessions), **UI** (design system + React pages), **Data Management** (Shape B Firestore convention), **Billing** (Stripe-backed subscriptions + token meter + monthly enforcement), and **Feature Flags** (targeted rollouts). The cross-component architecture lives in [`docs/KEN-E-System-Architecture.md`](docs/KEN-E-System-Architecture.md).
 
 ## Context Loading Sequence
 
@@ -23,9 +23,15 @@ Identify which component(s) the story touches. If unsure, read [`docs/KEN-E-Syst
 | Project Tasks | `project-tasks/` | `ProjectPlan` / `PlanTask`, `TaskOrchestrator`, triggers, calendar |
 | Automations | `automations/` | `PlanRun` execution, recurring scheduler, artifacts, Automations UI |
 | Dashboards | `dashboards/` | `type='dashboard'` plans, canvas placements, artifact resolver, Performance tab |
+| Data Pipeline | `data-pipeline/` | Deterministic platform-API extraction — connectors, jobs, runs, cache; sibling `kene-data-pipeline-{env}` Cloud Run service; `assignee_type="data_pipeline"` task branch |
+| Integrations | `integrations/` | OAuth flows per platform, KMS-encrypted token store, per-account connection sharing, re-auth lifecycle, `/settings/integrations` UI |
+| SAR-E | `sar-e/` | Weekly KPI time series, VAR baseline forecasts, IRF scenarios, LLM target derivation, analytical query layer (Simulation and Recommendations Engine) |
+| Performance | `performance/` | `/performance` page (Analysis / Simulations / Targets / Diagnostics / Configuration tabs + setup wizard), composite BFF endpoints |
 | Skills | `skills/` | User-authored + predefined skills, sandbox code execution, authoring UI |
-| UI | `ui/` | Soft Maximalism design system, global shell, React pages |
+| Chat | `chat/` | `/chat` page, session history sidebar (search + category filter + status dots + infinite scroll), session status view (title / summary / tokens / context / activity / export / delete), per-user categories, todo lists in `session.state`, artifact provenance wrapper, Firestore `chat_sessions` side-table mirroring ADK sessions |
+| UI | `ui/` | Soft Maximalism design system, global shell, React pages (the `/chat` page is owned by the Chat component) |
 | Data Management | `data-management/` | Shape B Firestore convention, migrations, composite indexes |
+| Billing | `billing/` | Stripe-backed subscriptions, 41-stop pricing tier table, internal token meter, org-status state machine, monthly enforcement, sales handoff |
 | Feature Flags | `feature-flags/` | Targeted rollouts, kill switches, admin UI + SDKs |
 
 ### Step 2 — Orient with the System Architecture
@@ -45,7 +51,7 @@ If the story maps to a project PRD (e.g., `AH-PRD-02`, `KG-PRD-04`, `PR-PRD-01`)
 - **You don't understand a requirement** → re-read the component README + System Architecture §1.6 for cross-component context. If the requirement spans components, the System Architecture is where the cross-component story lives.
 - **You don't know which component touches your work** → System Architecture §1.6 Component Landscape is the authoritative map.
 - **You find a contradiction between docs** → [`docs/design/DESIGN-REVIEW-LOG.md`](docs/design/DESIGN-REVIEW-LOG.md) has the decision history.
-- **You need to know what's shipped vs. planned** → project status is in [`docs/design/components/PROJECT-PLANNER.md`](docs/design/components/PROJECT-PLANNER.md); customer-facing release plan is in [`docs/product-roadmap.md`](docs/product-roadmap.md).
+- **You need to know what's shipped vs. planned** → project status is in [`docs/design/components/PROJECT-PLANNER.md`](docs/design/components/PROJECT-PLANNER.md); per-feature execution (Issues, Cycles) lives in Linear.
 - **You hit an ADK- or MCP-specific question** → [`docs/design/components/agentic-harness/mcp-architecture.md`](docs/design/components/agentic-harness/mcp-architecture.md) has verified ADK internals + platform decisions.
 
 ## Design Documentation Index
@@ -55,24 +61,30 @@ One table, ordered from most general (start here) to most specific (consult for 
 | Document | Read when... |
 |----------|--------------|
 | **— System-level —** | |
-| [`docs/KEN-E-System-Architecture.md`](docs/KEN-E-System-Architecture.md) | Start of every story. Gives the canonical 8-component map + cross-cutting concerns (context management, orchestration, MER-E, infrastructure, resilience/security, feature flags). |
+| [`docs/KEN-E-System-Architecture.md`](docs/KEN-E-System-Architecture.md) | Start of every story. Gives the canonical 15-component map + cross-cutting concerns (context management, orchestration, MER-E, infrastructure, resilience/security, feature flags). |
 | [`docs/KEN-E_User_Stories.md`](docs/KEN-E_User_Stories.md) | Understanding the three guiding product scenarios. |
 | [`docs/design/components/PROJECT-PLANNER.md`](docs/design/components/PROJECT-PLANNER.md) | Project sequencing across all components — what's blocked by what, what's ready to start, what release each targets. |
-| [`docs/product-roadmap.md`](docs/product-roadmap.md) | Customer-facing release plan (1.1 → 6.0) with design-ref blockquotes into component docs. |
+| [`docs/dev-workflow.md`](docs/dev-workflow.md) | Human-facing summary of the autonomous-agent development workflow (Sprint Manager → SCRUM Master → Dev Team → Test Team), wave-based execution, PO/PM responsibilities, and Linear status transitions. |
 | **— Component READMEs —** | |
 | [`docs/design/components/agentic-harness/README.md`](docs/design/components/agentic-harness/README.md) | Working on the agent runtime — root agent, specialists, review loop, agent factory, tool assignment, MCP. |
 | [`docs/design/components/knowledge-graph/README.md`](docs/design/components/knowledge-graph/README.md) | Working on Neo4j, orchestrator read tools, session-end automation, or research-on-creation. |
 | [`docs/design/components/project-tasks/README.md`](docs/design/components/project-tasks/README.md) | Working on project plans, the calendar UI, task orchestration, or the time-based scheduler. |
 | [`docs/design/components/automations/README.md`](docs/design/components/automations/README.md) | Working on recurring automations, `PlanRun`, the artifact system, test-run mode, or the Automations UI. |
 | [`docs/design/components/dashboards/README.md`](docs/design/components/dashboards/README.md) | Working on dashboards — canvas placements, widget renderers, the artifact resolver, or the Performance-page Dashboards tab. |
+| [`docs/design/components/data-pipeline/README.md`](docs/design/components/data-pipeline/README.md) | Working on deterministic platform-API extraction — connectors, jobs, runs, cache, the sibling `kene-data-pipeline-{env}` Cloud Run service, or task-system integration (`assignee_type="data_pipeline"`). |
+| [`docs/design/components/integrations/README.md`](docs/design/components/integrations/README.md) | Working on OAuth flows, the encrypted token store, per-account connection sharing, re-auth notifications, or the `/settings/integrations` UI. |
+| [`docs/design/components/sar-e/README.md`](docs/design/components/sar-e/README.md) | Working on weekly KPI ingestion, VAR baselines, IRF scenarios, LLM target derivation, or any analytical query the Performance page renders. |
+| [`docs/design/components/performance/README.md`](docs/design/components/performance/README.md) | Working on the `/performance` page — five tab surfaces, the setup wizard, BFF endpoints, or the Goal→Target terminology rename. |
 | [`docs/design/components/skills/README.md`](docs/design/components/skills/README.md) | Working on skill authoring, attachment, sandbox code execution, or the Skills UI. |
-| [`docs/design/components/ui/README.md`](docs/design/components/ui/README.md) | Working on any React page or the design system (Soft Maximalism). |
+| [`docs/design/components/chat/README.md`](docs/design/components/chat/README.md) | Working on the `/chat` page, session history sidebar, session status view, per-user categories, todo lists in `session.state`, artifact provenance wrapper, or the `chat_sessions` Firestore side-table. |
+| [`docs/design/components/ui/README.md`](docs/design/components/ui/README.md) | Working on the design system (Soft Maximalism), global shell, or any first-party React page EXCEPT `/chat` (owned by Chat). |
 | [`docs/design/components/data-management/README.md`](docs/design/components/data-management/README.md) | Working on Firestore layout, migrations, composite indexes, or account-deletion cleanup. |
+| [`docs/design/components/billing/README.md`](docs/design/components/billing/README.md) | Working on subscriptions, the token meter, monthly enforcement, the Subscription tab, the inactive banner, Stripe webhooks, manual override, or the sales-handoff flow. |
 | [`docs/design/components/feature-flags/README.md`](docs/design/components/feature-flags/README.md) | Working on a targeted rollout or kill-switching a feature. |
 | **— Specialist deep-dives —** | |
 | [`docs/design/components/agentic-harness/mcp-architecture.md`](docs/design/components/agentic-harness/mcp-architecture.md) | ADK MCP internals, platform integration decisions, Firestore config schema, MCPServerManager disposition. |
 | [`docs/design/components/agentic-harness/data-visualization.md`](docs/design/components/agentic-harness/data-visualization.md) | Vega-Lite artifacts, `create_visualization()` tool, chart rendering, channel considerations. |
-| [`docs/design/api-gateway-multi-channel.md`](docs/design/api-gateway-multi-channel.md) | API architecture, channel-agnostic design, planned Slack/Voice approaches. |
+| [`docs/design/components/backlog/api-gateway-multi-channel.md`](docs/design/components/backlog/api-gateway-multi-channel.md) | API architecture, channel-agnostic design, planned Slack/Voice approaches. (In backlog.) |
 | [`docs/design/review-loop-implementation-plan.md`](docs/design/review-loop-implementation-plan.md) | Review loop phases, ADK patterns, cost analysis, multi-step workflow pattern. |
 | [`docs/KEN-E-Self-Improving-Evaluation-Framework-Design.md`](docs/KEN-E-Self-Improving-Evaluation-Framework-Design.md) | MER-E evaluation framework — scoring, feedback, self-improvement. |
 | [`docs/trace-structure-spec.md`](docs/trace-structure-spec.md) | W&B Weave span structure specification — tracing contract between KEN-E and MER-E. |
@@ -290,14 +302,17 @@ These rules ensure maintainability, safety, and developer velocity.
 
 ### 8 — Skills
 
-| Skill | Purpose |
-|-------|---------|
-| `/qstart` | Understand best practices, validate plan, implement with verification |
-| `/qreview` | Skeptical code review: functions, tests, UX, best practices |
-| `/qgit` | Stage, commit (Conventional Commits), and push |
-| `/start-session` | Start a development session for a user story |
-| `/run-tests` | Run test phase for a user story |
-| `/end-session` | Close session, update logs, commit, push, PR check |
+| Skill | Purpose | Invoked by |
+|-------|---------|-----------|
+| `/qstart` | Understand best practices, validate plan, implement with verification | Local human |
+| `/qreview` | Skeptical code review: functions, tests, UX, best practices | Local human |
+| `/qgit` | Stage, commit (Conventional Commits), and push | Local human |
+| `product-assistant` | Interactive PO flow — plan features, update design docs, create Linear issues + Cycles | Local human (PO) in terminal |
+| `update-design-docs` | Cross-document dependency propagation + Linear Design References update | `product-assistant` Flow 2 (or human directly) |
+| `linear-sprint-ops` | Reusable Linear API operations (cycle queries, issue lifecycle, dependency graphs) | Loaded by autonomous-agent workflow skills (image-baked); human-readable reference here |
+| `frontend-design` | Visual design reference (typography, spatial, motion, color, etc.) | Loaded by `frontend-engineer` sub-agent (image-baked); human-readable reference here |
+
+**Note on the autonomous-agent workflow.** The full development lifecycle (Sprint Manager → SCRUM Master → Dev Team → Test Team) runs on GCE VMs dispatched by Linear webhooks; those workflow skills are baked into the VM image and not committed here. See [`docs/dev-workflow.md`](docs/dev-workflow.md) for the human-facing summary of how that pipeline works (roles, status transitions, error scenarios).
 
 ---
 
@@ -312,15 +327,61 @@ These rules ensure maintainability, safety, and developer velocity.
    - Alternative: `cd api && python -m uvicorn src.kene_api.main:app --reload`
 6. **Invitation Emails Not Sending**: See `api/CLAUDE.md` Email Service Setup section
 
+## Linear Workflow Conventions
+
+KEN-E development is driven by Linear. The autonomous-agent pipeline (Sprint Manager → SCRUM Master → Dev Team → Test Team) is dispatched by Linear webhooks; per-feature execution lives in Linear projects + issues. See [`docs/dev-workflow.md`](docs/dev-workflow.md) for the full human-facing workflow.
+
+### Linear team → repo → component mapping
+
+Each Linear team maps to one `(GitHub repo, component)` pair. The mapping is the source of truth for which repo an agent VM clones and which component PRD gets injected into the agent's prompt — it lives in `Fun-E/agents/webhook-receiver/main.py` (`TEAM_REPO_MAP` + `TEAM_COMPONENT_MAP`). The KEN-E entries:
+
+| Linear team (display name) | GitHub repo | Component dir |
+|---|---|---|
+| `[KEN-E] Data Management` | `KEN-E-AI/KEN-E` | `data-management` |
+| `[KEN-E] Agentic Harness` | `KEN-E-AI/KEN-E` | `agentic-harness` |
+| `[KEN-E] Knowledge Graph` | `KEN-E-AI/KEN-E` | `knowledge-graph` |
+| `[KEN-E] Projects & Tasks` | `KEN-E-AI/KEN-E` | `project-tasks` |
+| `[KEN-E] Automations` | `KEN-E-AI/KEN-E` | `automations` |
+| `[KEN-E] Dashboards` | `KEN-E-AI/KEN-E` | `dashboards` |
+| `[KEN-E] Data Pipeline` | `KEN-E-AI/KEN-E` | `data-pipeline` |
+| `[KEN-E] Integrations` | `KEN-E-AI/KEN-E` | `integrations` |
+| `[KEN-E] SAR-E` | `KEN-E-AI/KEN-E` | `sar-e` |
+| `[KEN-E] Performance` | `KEN-E-AI/KEN-E` | `performance` |
+| `[KEN-E] Skills` | `KEN-E-AI/KEN-E` | `skills` |
+| `[KEN-E] Chat` | `KEN-E-AI/KEN-E` | `chat` |
+| `[KEN-E] UI` | `KEN-E-AI/KEN-E` | `ui` |
+| `[KEN-E] Billing` | `KEN-E-AI/KEN-E` | `billing` |
+| `[KEN-E] Feature Flags` | `KEN-E-AI/KEN-E` | `feature-flags` |
+
+The `component` column is kebab-case and matches the directory name under `docs/design/components/<name>/`.
+
+### Project + issue conventions
+
+- **Linear project naming:** `<PRD-ID>: <PRD title>` (e.g., `DM-PRD-00: Migration Foundation`). One Linear project per PRD.
+- **Linear issue naming:** Acceptance criteria from the PRD's §7 become individual Linear issues under the project. Each issue captures one criterion + its implementation scope.
+- **PRD authority:** The PRD in `docs/design/components/<comp>/projects/<PRD>.md` is the spec. The Linear project is the execution tracker; its description should be a one-paragraph summary + a link to the PRD, not a copy of PRD content.
+- **Release sequencing:** the `release` column in [`docs/design/components/PROJECT-PLANNER.md`](docs/design/components/PROJECT-PLANNER.md) is the canonical cross-component release plan (1: Foundation → 6: Voice). Linear cycles map to releases informally — sequencing is driven by `blocked_by` dependencies, not Linear cycle dates.
+
+### Canonical sources
+
+The autonomous-agent workflow is documented in two places that must agree:
+
+| Source | Audience | Authoritative for... |
+|---|---|---|
+| `docs/dev-workflow.md` (this repo) | Humans (PO, PM, devs reading the repo) | Roles, lifecycle phases, escalation, error scenarios |
+| `Fun-E/.claude/skills/workflows/*-workflow/SKILL.md` (image-baked) | Autonomous agents on GCE VMs | Operational behavior — exact API calls, status transitions, decision rules |
+
+**If the two disagree, the SKILL file is canonical for agent behavior; `dev-workflow.md` is canonical for humans.** When changing the workflow, update the SKILL files first (in Fun-E), then mirror the human-facing change here. The `Fun-E` repo is the authoritative source for the skill files.
+
 ## Documentation Model
 
 Architecture reference documents live in the [`docs/`](docs/) directory — both current implementation and planned extensions. Features marked `[PLANNED]` are not yet built. When a planned feature ships, collapse the current-vs-planned distinction in its doc: remove `[PLANNED]` tags, merge "current" and "planned" sections/diagrams, update status columns to "Implemented."
 
-Significant architectural changes are logged in [`docs/design/DESIGN-REVIEW-LOG.md`](docs/design/DESIGN-REVIEW-LOG.md) with the date, scope, list of affected files, and rationale. Add a new review entry at the top of that log whenever a design-doc change is non-trivial (structural reorganization, retired mechanism, new cross-component coupling, etc.).
+Significant architectural changes are logged in [`docs/design/DESIGN-REVIEW-LOG.md`](docs/design/DESIGN-REVIEW-LOG.md) — **the canonical decision log going forward**. New decisions are captured there with full rationale (date, scope, decision, consequences). Add a new review entry whenever a design-doc change is non-trivial (structural reorganization, retired mechanism, new cross-component coupling). Reviews 1–20 reference a legacy Notion Design Decisions database that is retained as a historical archive only — no new Notion entries should be created.
 
 ## Additional Documentation
 
-- **Component-level design**: See [`docs/design/components/`](docs/design/components/) — the landing directory for all eight components. Each has a `README.md` and a `projects/` subdirectory with project PRDs.
+- **Component-level design**: See [`docs/design/components/`](docs/design/components/) — the landing directory for all fifteen components. Each has a `README.md` and a `projects/` subdirectory with project PRDs.
 - **API specifics**: See `api/CLAUDE.md` for architecture patterns, email setup, and endpoints.
 - **Frontend specifics**: See `frontend/CLAUDE.md` for CSS architecture and component library.
 - **Code review rules**: See `REVIEW.md` for the review checklist.

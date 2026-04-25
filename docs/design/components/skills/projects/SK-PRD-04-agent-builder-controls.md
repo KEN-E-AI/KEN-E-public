@@ -51,7 +51,7 @@ This sprint also delivers the **attach-time validation** logic: a user can't att
 
 ## 4. Data contract
 
-> **Revised 2026-04-20** — Skill existence checks read from the Shape B subcollection `accounts/{account_id}/skills/*`. See [Multi-Tenant Data Model Shape Decision](https://www.notion.so/34830fd653028177bc0dc2a1637c7f60) for rationale.
+> **Revised 2026-04-20** — Skill existence checks read from the Shape B subcollection `accounts/{account_id}/skills/*`. See [Review 15 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1) for rationale.
 
 No new persisted fields. The contract changes are:
 

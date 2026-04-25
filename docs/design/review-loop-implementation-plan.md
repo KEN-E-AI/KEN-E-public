@@ -5,7 +5,7 @@
 **Status:** Proposed — for roadmap/story creation
 
 > **Revised March 18, 2026 (v1.1)** — Structural corrections based on ADK 1.26.0 experiments: removed `SequentialAgent` wrappers inside `LoopAgent`, added `include_contents='none'` on reviewers and synthesizers, added `{key?}` optional template syntax, added pipeline wrappers for `ParallelAgent` branches, added synthesizer agent pattern, added 3 new risks (pitfalls).
-**Decision:** [Decision 21: Task Delegation with Review Loops](https://www.notion.so/32030fd6530281a8a30fc8e12c3f931e)
+**Decision:** [Review 6 in DESIGN-REVIEW-LOG](DESIGN-REVIEW-LOG.md#review-6-task-delegation-with-review-loops) — Task Delegation with Review Loops
 
 > **Status by phase (as of 2026-04-21):** Phases 1–3 are now tracked by [AH-PRD-01 — Review Loop Framework](components/agentic-harness/projects/AH-PRD-01-review-loop-framework.md) (Release 2). Phase 4 (Multi-Step Workflow Support, Release 3) and Phase 5 (Observability & Monitoring, Release 5) have not yet been extracted into their own PRDs — this document remains the authoritative design source for both until those PRDs are written.
 
@@ -13,7 +13,6 @@
 
 ## 1. Overview
 
-> **Roadmap:** [Feature 2.1: Review Loop Framework](../product-roadmap.md#21--review-loop-framework) — Release 2.0
 
 This document is a comprehensive implementation plan for adding **review loops** and **multi-step workflow orchestration** to the KEN-E agent system. It is intended to be used as input for creating features and user stories in the product roadmap.
 
@@ -36,7 +35,7 @@ Use ADK's native workflow agents (LoopAgent, SequentialAgent, ParallelAgent) to 
 | Harness Design Doc | 8.3 | ADK Pitfalls (validated rules from experiments) |
 | Harness Design Doc | 8.4 | LLM Call Cost & Latency (total-time estimates) |
 | `components/agentic-harness/projects/AH-PRD-01-review-loop-framework.md` | — | Single-step review-loop execution PRD (this doc's Phases 1–3 realized) |
-| Notion | Decision 21 | Full decision rationale |
+| `docs/design/DESIGN-REVIEW-LOG.md` | Review 6 | Full decision rationale (originally Notion Decision 21) |
 
 ---
 
@@ -501,7 +500,6 @@ Pass your criteria as the `acceptance_criteria` parameter when calling the tool.
 
 ### Phase 4: Multi-Step Workflow Support
 
-> **Roadmap:** [Feature 3.4: Multi-Step Workflows](../product-roadmap.md#34--multi-step-workflows) — Release 3.0
 > **PRD status:** Not yet extracted into a PRD. This section is the authoritative design source until a dedicated AH-PRD is created.
 
 **Goal:** Add the ability to decompose complex tasks into multi-step workflows with parallel execution and user approval checkpoints.
@@ -700,7 +698,6 @@ Steps:
 
 ### Phase 5: Observability & Monitoring
 
-> **Roadmap:** [Feature 5.4: Advanced Workflow & Observability](../product-roadmap.md#54--advanced-workflow--observability) — Release 5.0
 > **PRD status:** Not yet extracted into a PRD. This section is the authoritative design source until a dedicated AH-PRD is created.
 
 **Goal:** Ensure review loop iterations and workflow execution are visible in tracing and monitoring.
@@ -841,7 +838,7 @@ Phases 1-3 can ship independently. Phase 4 builds on Phase 2. Phase 5 is increme
 
 ## References
 
-- [Decision 21: Task Delegation with Review Loops](https://www.notion.so/32030fd6530281a8a30fc8e12c3f931e) — Notion Design Decision
+- [Review 6 in DESIGN-REVIEW-LOG](DESIGN-REVIEW-LOG.md#review-6-task-delegation-with-review-loops) — Task Delegation with Review Loops (originally Notion Decision 21)
 - Harness Design Doc Section 4.6 — Review Loop Pattern (Generator-Critic)
 - Harness Design Doc Section 8.1 — Multi-Step Workflow Pattern
 - [`components/agentic-harness/projects/AH-PRD-01-review-loop-framework.md`](components/agentic-harness/projects/AH-PRD-01-review-loop-framework.md) — Single-step review-loop execution PRD

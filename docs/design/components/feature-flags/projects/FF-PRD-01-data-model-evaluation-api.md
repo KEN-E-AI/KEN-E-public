@@ -260,4 +260,4 @@ See §4 — `POST /api/v1/feature-flags/evaluate`.
 - Sibling PRDs: [FF-PRD-02](./FF-PRD-02-admin-api-and-ui.md), [FF-PRD-03](./FF-PRD-03-frontend-sdk-and-e2e.md)
 - Root `CLAUDE.md` — §PY-1…PY-7 (Python), §D-1…D-5 (Database), §T-1…T-8 (Testing), §G-1 (Lint)
 - `api/CLAUDE.md` — Firestore access patterns, super-admin auth
-- Notion Design Decision — [Feature Flag Targeting Model](https://www.notion.so/<TBD>) (to be created alongside this PRD set)
+- Decision: [Review 16 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-16-feature-flags-component--targeted-rollout-with-per-entity-stickiness) — Feature Flag Targeting Model

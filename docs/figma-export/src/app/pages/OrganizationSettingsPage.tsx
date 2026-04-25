@@ -16,6 +16,7 @@ import { Badge } from '../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Label } from '../components/ui/label';
 import { Input } from '../components/ui/input';
+import { SubscriptionTab } from '../components/SubscriptionTab';
 import { mockAccounts } from '../data/mockData';
 
 export function OrganizationSettingsPage() {
@@ -85,113 +86,7 @@ export function OrganizationSettingsPage() {
         </TabsContent>
 
         <TabsContent value="subscription">
-          <div className="space-y-6">
-            <Card className="p-6">
-              <div className="flex items-start justify-between mb-6">
-                <div>
-                  <h2 className="mb-2">Current Plan</h2>
-                  <div className="flex items-center gap-3">
-                    <Badge 
-                      className="text-base px-3 py-1"
-                      style={{
-                        background: 'var(--color-violet-500)',
-                        color: 'var(--color-text-inverse)'
-                      }}
-                    >
-                      Professional
-                    </Badge>
-                    <span className="text-2xl font-bold">$299<span className="text-sm text-muted-foreground font-normal">/month</span></span>
-                  </div>
-                </div>
-                <Button>Upgrade Plan</Button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="p-4 rounded-lg bg-muted/50">
-                  <p className="text-sm text-muted-foreground mb-1">Accounts</p>
-                  <p className="text-2xl font-bold">3 <span className="text-sm text-muted-foreground font-normal">/ 10</span></p>
-                </div>
-                <div className="p-4 rounded-lg bg-muted/50">
-                  <p className="text-sm text-muted-foreground mb-1">Team Members</p>
-                  <p className="text-2xl font-bold">8 <span className="text-sm text-muted-foreground font-normal">/ 25</span></p>
-                </div>
-                <div className="p-4 rounded-lg bg-muted/50">
-                  <p className="text-sm text-muted-foreground mb-1">AI Sessions</p>
-                  <p className="text-2xl font-bold">142 <span className="text-sm text-muted-foreground font-normal">/ ∞</span></p>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="mb-3">Plan Features</h3>
-                <ul className="space-y-2 text-sm">
-                  <li className="flex items-center gap-2">
-                    <div className="size-1.5 rounded-full bg-[var(--color-violet-500)]" />
-                    Up to 10 marketing accounts
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <div className="size-1.5 rounded-full bg-[var(--color-violet-500)]" />
-                    25 team members
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <div className="size-1.5 rounded-full bg-[var(--color-violet-500)]" />
-                    Unlimited AI sessions
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <div className="size-1.5 rounded-full bg-[var(--color-violet-500)]" />
-                    Advanced analytics & reporting
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <div className="size-1.5 rounded-full bg-[var(--color-violet-500)]" />
-                    Priority support
-                  </li>
-                </ul>
-              </div>
-            </Card>
-
-            <Card className="p-6">
-              <h2 className="mb-4">Usage This Month</h2>
-              <div className="space-y-4">
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm">AI Sessions</p>
-                    <p className="text-sm font-bold">142 sessions</p>
-                  </div>
-                  <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-[var(--color-violet-500)]"
-                      style={{ width: '35%' }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm">API Calls</p>
-                    <p className="text-sm font-bold">24,582 / 100,000</p>
-                  </div>
-                  <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-[var(--color-blue-500)]"
-                      style={{ width: '25%' }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-sm">Data Storage</p>
-                    <p className="text-sm font-bold">8.2 GB / 50 GB</p>
-                  </div>
-                  <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-[var(--color-teal-500)]"
-                      style={{ width: '16%' }}
-                    />
-                  </div>
-                </div>
-              </div>
-            </Card>
-          </div>
+          <SubscriptionTab />
         </TabsContent>
 
         <TabsContent value="billing">

@@ -9,6 +9,8 @@
 
 ---
 
+> **Credential-loading migration note.** This PRD consumes the `_make_header_provider("ga_oauth")` factory from AH-PRD-02 and the session-state `ga_credentials` key. Both are retrofitted by [Integrations](../../integrations/implementation-plan.md) **IN-PRD-06** to read credentials from the Integrations internal endpoint (`GET /api/v1/internal/integrations/credentials/{account_id}/google`) instead of session state. **Not a blocking dependency** — ship AH-PRD-03 as specified; the multi-tenant OAuth isolation in §2 acceptance criteria continues to hold after IN-PRD-06 because the per-account scoping moves from session-state keys to Integrations' per-account `PlatformConnection` records. The GA specialist's dispatch, review-loop integration, and code-execution behavior are unchanged by the migration.
+
 ## 1. Context
 
 AH-PRD-02 delivers the agent factory; this project validates it end-to-end by assembling the **first** narrow specialist — the Google Analytics Specialist — entirely through the factory pipeline. By the end of this project KEN-E can query Google Analytics via the GA MCP server, perform accurate numerical analysis (percentages, trends, averages) using Gemini's built-in code execution instead of in-context arithmetic, and guarantee output quality through review-loop iteration. It also retires the transitional `google_analytics_agent_v4.py` that the R1.0 hardcoded pattern installed, migrating fully to the R2.0 config-driven narrow-specialist pattern.
@@ -49,6 +51,7 @@ This is the **proof point** for the full Release 2 stack: agent factory (AH-PRD-
 | Gemini code execution | Built-in via `ToolCodeExecution()`. Google-managed sandbox — no infrastructure. | `docs/KEN-E-System-Architecture.md` §4.4 (Code execution) |
 | `_ga_header_provider()` reference | Current pattern in `google_analytics_agent_v4.py` — AH-PRD-02 generalizes it as `_make_header_provider("ga_oauth")`. | Deprecated by this project |
 | W&B Weave tracing | Review-loop sub-spans, dispatch span, code-execution span. | `docs/trace-structure-spec.md` |
+| [Integrations IN-PRD-06](../../integrations/implementation-plan.md#6-phasing) | **Forward migration target (non-blocking).** Retrofits `_make_header_provider("ga_oauth")` to fetch credentials via the Integrations internal endpoint instead of session state. No contract change for the GA specialist; multi-tenant isolation is preserved. | Forward reference |
 
 ## 4. Data contract
 
@@ -144,7 +147,7 @@ Existing query patterns ("What were my sessions last week?", "Show me traffic tr
 
 ## 10. Reference
 
-- Parent: Sprint 10 Notion page + Decision: Narrow Specialist Architecture
+- Parent: Linear project for this PRD; design rationale captured in [Review 5 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-5-architecture-accuracy-pass--harness-doc-v22--v23) (Narrow Specialist Architecture)
 - Upstream: [AH-PRD-01](./AH-PRD-01-review-loop-framework.md), [AH-PRD-02](./AH-PRD-02-agent-factory.md)
 - Design docs: [`../README.md`](../README.md) §2 Architecture, §2.5 Tool-assignment model, §2.6 Specialist roadmap; [AH-PRD-02](./AH-PRD-02-agent-factory.md) §5 Factory implementation; [`../mcp-architecture.md`](../mcp-architecture.md) §4 Platform integration decisions (Google Analytics row)
 - Harness design: `docs/KEN-E-System-Architecture.md` §4.4 (Code execution)

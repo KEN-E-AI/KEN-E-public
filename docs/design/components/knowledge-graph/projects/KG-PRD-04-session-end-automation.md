@@ -39,7 +39,7 @@ Destructive changes (deletes, updates to user-written fields) halt as `PlanRun.s
 
 ## 3. Dependencies
 
-> **Revised 2026-04-20** — Consumed Firestore collections (`project_plans`, `plan_runs`, artifact subcollection) follow the Shape B layout (`accounts/{account_id}/{resource}/...`). The PRD itself calls the Automations API and does not touch Firestore paths directly, but integrators should expect Shape B paths when debugging. See [Multi-Tenant Data Model Shape Decision](https://www.notion.so/34830fd653028177bc0dc2a1637c7f60) for rationale.
+> **Revised 2026-04-20** — Consumed Firestore collections (`project_plans`, `plan_runs`, artifact subcollection) follow the Shape B layout (`accounts/{account_id}/{resource}/...`). The PRD itself calls the Automations API and does not touch Firestore paths directly, but integrators should expect Shape B paths when debugging. See [Review 15 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1) for rationale.
 
 **Hard blockers:**
 - **KG-PRD-01:** `:KGNode`, constraints, vector index.
@@ -466,7 +466,6 @@ No user-facing endpoints. The Automation Details page (A-PRD-6) is the user's re
 
 ## 10. Reference
 
-- Parent plan: [`the-purpose-of-neo4j-clever-frost.md`](../../../../../Users/kenwilliams/.claude/plans/the-purpose-of-neo4j-clever-frost.md) §Phase 4.
 - KG-PRD-01, 2, 3 (direct dependencies).
 - Calendar PRDs 1, 4, 6 + Automations PRDs 1, 2, 3, 4, 6 (platform dependencies — see §3).
 - `api/src/kene_api/routers/chat.py:1291` — transcript access.

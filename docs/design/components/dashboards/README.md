@@ -1,6 +1,6 @@
 # Dashboards — Product Requirements Document
 
-> **Linear Team:** [TBD] Dashboards
+> **Linear Team:** [KEN-E] Dashboards
 > **Last Updated:** 2026-04-22
 > **Status:** Design complete, implementation not started
 
@@ -87,8 +87,8 @@ Schema source of truth: `api/src/kene_api/models/project_plan_models.py` + `dash
 | Component | Dependency | Reference |
 |-----------|------------|-----------|
 | **Project Tasks** | `ProjectPlan` / `PlanTask` base models, plan-edit endpoints, versioning, audit pattern. DB-PRD-01 extends both models with `dashboard_placements` + `output_config`. | [`../project-tasks/README.md`](../project-tasks/README.md), [PR-PRD-01](../project-tasks/projects/PR-PRD-01-data-model-and-api.md) |
-| **Automations** | `ProjectPlan.type` enum, `PlanRun` + `TaskRunState`, manual-trigger endpoint, recurring scheduler, `schedule/preview` endpoint. DB-PRD-01 adds the small default filter `type="freeform"` to A-PRD-01's list endpoint. DB-PRD-03 reuses `AutomationGraph`, `AutomationTaskPanel`, `AutomationSchedulePanel` from A-PRD-06 with a small additive prop (`context: "automation" \| "dashboard"`). | [`../automations/README.md`](../automations/README.md), [A-PRD-01](../automations/projects/01-data-model-and-api.md), [A-PRD-02](../automations/projects/02-recurring-scheduler.md), [A-PRD-06](../automations/projects/06-automation-details-page.md) |
-| **Automations Artifacts (A-PRD-03)** | GCS-backed `TaskArtifact` store at `gs://kene-task-artifacts-{env}/{account_id}/{plan_id}/{run_id}/{task_id}/...`; `artifact_store.generate_signed_url(artifact_id, ttl_seconds=3600)` helper; 100 MB cap; 30-day lifecycle. The resolver reads artifact metadata and generates signed URLs via these helpers — no new storage path. | [A-PRD-03](../automations/projects/03-task-artifact-system.md) |
+| **Automations** | `ProjectPlan.type` enum, `PlanRun` + `TaskRunState`, manual-trigger endpoint, recurring scheduler, `schedule/preview` endpoint. DB-PRD-01 adds the small default filter `type="freeform"` to A-PRD-01's list endpoint. DB-PRD-03 reuses `AutomationGraph`, `AutomationTaskPanel`, `AutomationSchedulePanel` from A-PRD-06 with a small additive prop (`context: "automation" \| "dashboard"`). | [`../automations/README.md`](../automations/README.md), [A-PRD-01](../automations/projects/A-PRD-01-data-model-and-api.md), [A-PRD-02](../automations/projects/A-PRD-02-recurring-scheduler.md), [A-PRD-06](../automations/projects/A-PRD-06-automation-details-page.md) |
+| **Automations Artifacts (A-PRD-03)** | GCS-backed `TaskArtifact` store at `gs://kene-task-artifacts-{env}/{account_id}/{plan_id}/{run_id}/{task_id}/...`; `artifact_store.generate_signed_url(artifact_id, ttl_seconds=3600)` helper; 100 MB cap; 30-day lifecycle. The resolver reads artifact metadata and generates signed URLs via these helpers — no new storage path. | [A-PRD-03](../automations/projects/A-PRD-03-task-artifact-system.md) |
 | **Data Management — DM-PRD-00 (Migration Foundation)** | Shape B convention (`accounts/{account_id}/project_plans/...`). No new subcollection introduced (placements embedded). May need one new composite index — see §2.3 index note in DB-PRD-01. | [`../data-management/README.md`](../data-management/README.md) §7.1 / §7.7, [DM-PRD-00](../data-management/projects/DM-PRD-00-migration-foundation.md) |
 | **Data Management — DM-PRD-05 (Deletion Sweep Rewrite)** | `recursive_delete(accounts/{account_id})` covers `project_plans` including embedded `dashboard_placements`. No additional cleanup logic required. | [DM-PRD-05](../data-management/projects/DM-PRD-05-deletion-sweep-rewrite.md) |
 | **Data Management — DM-PRD-07 (Approval Workflow & Audit)** | `require_role` FastAPI dependency on every mutating endpoint; `write_audit` helper on every mutation including placement PUT diffs. Role gates: `viewer` (GET only), `editor` (POST / PUT / DELETE). | [`../data-management/README.md`](../data-management/README.md) §7.6, [DM-PRD-07](../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md) |
@@ -111,7 +111,7 @@ Schema source of truth: `api/src/kene_api/models/project_plan_models.py` + `dash
 | `frontend/CLAUDE.md` | CSS architecture, component library, branded types | Before adding new visual components. |
 | `frontend/src/pages/workflows/AutomationDetailsPage.tsx` (A-PRD-06) | Task-graph + task-panel integration pattern | Starting DB-PRD-03; the Dashboard Details page mirrors this layout. |
 | `docs/figma-export/AH-PRD-04-data-visualization.md` / `data-visualization-1.md` | Vega-Lite artifact format, `create_visualization()` tool | When extending `VisualizationWidget`. |
-| [`../agentic-harness/data-visualization.md`](../agentic-harness/components/agentic-harness/data-visualization.md) | Chart rendering, channel considerations, theming | When debugging Vega rendering or adding a new `view_override`. |
+| [`../agentic-harness/data-visualization.md`](../agentic-harness/data-visualization.md) | Chart rendering, channel considerations, theming | When debugging Vega rendering or adding a new `view_override`. |
 
 ## 5. Project Index
 

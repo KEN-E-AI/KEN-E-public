@@ -1,6 +1,6 @@
 # Knowledge Graph — Product Requirements Document
 
-> **Linear Team:** [TBD] Knowledge Graph
+> **Linear Team:** [KEN-E] Knowledge Graph
 > **Last Updated:** 2026-04-20
 > **Status:** Active
 
@@ -142,7 +142,7 @@ Schema source of truth: `api/src/kene_api/models/session_models.py`, `observatio
 
 | Component | Dependency |
 |-----------|------------|
-| Chat orchestrator (`app/adk/agents/ken_e_agent.py`) | Registers the four KG-PRD-03 read tools and consumes them per conversation turn. Replaces the partial keyword-detection path (`SECTION_KEYWORDS`, `should_load_section`) per Design Decision 17. |
+| Chat orchestrator (`app/adk/agents/ken_e_agent.py`) | Registers the four KG-PRD-03 read tools and consumes them per conversation turn. Replaces the partial keyword-detection path (`SECTION_KEYWORDS`, `should_load_section`) per the Context Management decision ([Review 4 in DESIGN-REVIEW-LOG](../../DESIGN-REVIEW-LOG.md#review-4-context-loading--keyword-detection--agent-driven-loading)). |
 | Strategy agents (`app/adk/agents/strategy_agent/`) | KG-PRD-05 refactors the four builders to write via `GraphSyncService.create_node`, removing the divergent raw-Cypher write path. `neo4j_tools.py` retains embedding helpers only; write helpers are deprecated. |
 
 ## 5. Project Index
@@ -238,11 +238,11 @@ If only two teams are available, Team B absorbs Team C's work in Sprint 1.
 | [`../project-tasks/README.md`](../project-tasks/README.md) | §2 (Architecture), §7 (`is_system` semantics) | KG-PRD-04's seeded template is an `is_system=true` `ProjectPlan`; HITL halt + revision loop live in PR-PRD-04. |
 | [`../automations/README.md`](../automations/README.md) | §2 (Architecture), §7 (Conventions — `inputs`, `triggered_by`, `is_system`) | KG-PRD-04 rides on this platform; the `inputs` + `triggered_by="system"` + Outputs-tab contracts live here. |
 | [`../data-management/README.md`](../data-management/README.md) | §2 (Architecture), §5.3 (Shape B indexes) | Shape B path convention the three new KG Firestore subcollections (`sessions`, `observations`, `research_runs`) follow. |
-| `docs/KEN-E-System-Architecture.md` | §3.2 (Hierarchical Context Loading), §Agent hierarchy | Background for KG-PRD-03 (replaces keyword-detection path per Design Decision 17). |
+| `docs/KEN-E-System-Architecture.md` | §3.2 (Hierarchical Context Loading), §Agent hierarchy | Background for KG-PRD-03 (replaces keyword-detection path per the Context Management decision; see [Review 4 in DESIGN-REVIEW-LOG](../../DESIGN-REVIEW-LOG.md#review-4-context-loading--keyword-detection--agent-driven-loading)). |
 | [`../agentic-harness/README.md`](../agentic-harness/README.md) | §2 Architecture, §2.4 Key Abstractions | When wiring `session_reviewer` / `session_applier` into the registry (KG-PRD-04). |
 | [`../../DESIGN-REVIEW-LOG.md`](../../DESIGN-REVIEW-LOG.md) | 2026-04-20 entry (Multi-Tenant Shape B) | Rationale for the `accounts/*/{sessions,observations,research_runs}/*` path layout. |
 | Neo4j docs: [Vector indexes](https://neo4j.com/docs/cypher-manual/current/indexes/semantic-indexes/vector-indexes/), [Constraints](https://neo4j.com/docs/cypher-manual/current/constraints/) | Entire pages | Reference when implementing KG-PRD-01's migrations and KG-PRD-03's `kb_vector_index` calls. |
-| Notion: [Story 1.1.6-1](https://www.notion.so/34230fd653028175bccadb3dfd3d581f), [Story 1.1.6-2](https://www.notion.so/34230fd65302816ea2eeeec49aedd90e) | Stories subsumed by KG-PRD-03 | Original user stories for on-demand section loading + per-entity drill-down. |
+| Historical Notion User Stories (archive only): [Story 1.1.6-1](https://www.notion.so/34230fd653028175bccadb3dfd3d581f), [Story 1.1.6-2](https://www.notion.so/34230fd65302816ea2eeeec49aedd90e) | Stories subsumed by KG-PRD-03 | Original user stories for on-demand section loading + per-entity drill-down. |
 
 ## 7. Conventions and Constraints
 

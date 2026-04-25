@@ -1,6 +1,6 @@
 # Project Tasks — Product Requirements Document
 
-> **Linear Team:** [TBD] Project Tasks
+> **Linear Team:** [KEN-E] Projects & Tasks
 > **Last Updated:** 2026-04-20
 > **Status:** Active
 

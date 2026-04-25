@@ -10,7 +10,7 @@
 
 ## 1. Context
 
-The KEN-E orchestrator agent today reads account context only at session start: `HierarchicalContextManager` loads a ~5k-token "executive summary" into the system prompt, then the agent is on its own. If the user asks about a topic that wasn't in the executive summary, the agent cannot drill into the KB — it must hallucinate or answer vaguely. Two previously-approved Sprint 7 stories ([1.1.6-1](https://www.notion.so/34230fd653028175bccadb3dfd3d581f), [1.1.6-2](https://www.notion.so/34230fd65302816ea2eeeec49aedd90e)) proposed on-demand section loading and per-entity drill-down tools; neither has shipped. This PRD delivers those, plus two new tools needed to support the `Observation` layer (KG-PRD-02) and semantic fallback for fuzzy queries.
+The KEN-E orchestrator agent today reads account context only at session start: `HierarchicalContextManager` loads a ~5k-token "executive summary" into the system prompt, then the agent is on its own. If the user asks about a topic that wasn't in the executive summary, the agent cannot drill into the KB — it must hallucinate or answer vaguely. Two previously-approved Sprint 7 stories (historical Notion archive: [1.1.6-1](https://www.notion.so/34230fd653028175bccadb3dfd3d581f), [1.1.6-2](https://www.notion.so/34230fd65302816ea2eeeec49aedd90e)) proposed on-demand section loading and per-entity drill-down tools; neither has shipped. This PRD delivers those, plus two new tools needed to support the `Observation` layer (KG-PRD-02) and semantic fallback for fuzzy queries.
 
 Four complementary retrieval primitives; the orchestrator picks one per user question:
 
@@ -32,7 +32,7 @@ All tools are **read-only**, account-scoped by `tool_context.state["account_id"]
 - `search_kb`: query-embedding via `text-embedding-004`, Neo4j vector index lookup, result snippeting.
 - `list_observations`: paginated observation filter over the Phase 2 layer.
 - Tool registration on the root agent at `app/adk/agents/ken_e_agent.py:244`.
-- Removal of the legacy keyword-detection path (`SECTION_KEYWORDS`, `should_load_section`) in `shared/context_utils.py` once the tools ship, per Design Decision 17.
+- Removal of the legacy keyword-detection path (`SECTION_KEYWORDS`, `should_load_section`) in `shared/context_utils.py` once the tools ship, per the Context Management decision (see [Review 4 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-4-context-loading--keyword-detection--agent-driven-loading)).
 - Unit tests per tool + an end-to-end integration test that exercises all four from a single agent invocation.
 
 ### Out of scope
@@ -270,7 +270,7 @@ Use load_document only after you have a node_id.
 | Create | `app/adk/agents/shared_tools/kb_cypher.py` — section Cypher queries, centralized for testability |
 | Modify | `app/adk/agents/ken_e_agent.py` — register four new tools in the `tools=[]` list at line 244; small instruction update |
 | Modify | `app/adk/agents/utils/context_loader.py` — `load_section()` delegates to `load_context_section` under the hood, or is removed if callers switch to the tool directly |
-| Modify | `app/adk/agents/utils/shared/context_utils.py` — remove `SECTION_KEYWORDS` and `should_load_section()` (dead code per Design Decision 17) |
+| Modify | `app/adk/agents/utils/shared/context_utils.py` — remove `SECTION_KEYWORDS` and `should_load_section()` (dead code per the Context Management decision; see [Review 4 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-4-context-loading--keyword-detection--agent-driven-loading)) |
 | Create | `app/adk/agents/shared_tools/test_kb_read_tools.py` (unit) |
 | Create | `app/adk/agents/shared_tools/test_kb_cypher.py` (unit; query builder tests) |
 | Create | `tests/integration/test_orchestrator_kb_tools.py` — end-to-end chat turns |
@@ -365,9 +365,8 @@ No HTTP endpoints. Tools are called by the ADK runtime on the agent's behalf.
 
 ## 10. Reference
 
-- Notion: [Story 1.1.6-1](https://www.notion.so/34230fd653028175bccadb3dfd3d581f), [Story 1.1.6-2](https://www.notion.so/34230fd65302816ea2eeeec49aedd90e) — these cover `load_context_section` and `load_document`.
-- Notion: Design Decision 17 — agent-driven context loading supersedes keyword detection.
+- Historical Notion User Stories (archive only): [Story 1.1.6-1](https://www.notion.so/34230fd653028175bccadb3dfd3d581f), [Story 1.1.6-2](https://www.notion.so/34230fd65302816ea2eeeec49aedd90e) — these cover `load_context_section` and `load_document`.
+- Decision rationale: [Review 4 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-4-context-loading--keyword-detection--agent-driven-loading) — agent-driven context loading supersedes keyword detection.
 - Harness design: `docs/KEN-E-System-Architecture.md` §3.2 (Hierarchical Context Loading).
-- Parent plan: [`the-purpose-of-neo4j-clever-frost.md`](../../../../../Users/kenwilliams/.claude/plans/the-purpose-of-neo4j-clever-frost.md) §Phase 3.
 - Pattern files: `app/adk/agents/ken_e_agent.py:210-244`, `app/adk/agents/utils/context_loader.py`.
 - CLAUDE.md rules in scope: C-1, C-2, C-4, C-7; PY-1, PY-3, PY-7; T-1, T-3, T-4, T-6.

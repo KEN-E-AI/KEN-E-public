@@ -3,7 +3,7 @@
 **Version:** 2.0
 **Date:** April 2026
 **Status:** Canonical — reflects the narrow-per-platform specialist roadmap and the retirement of the per-turn `tool_filter` mechanism. Supersedes v1.4.
-**Canonical Source:** [Notion Design Brief](https://www.notion.so/31e30fd653028118bd11f4a3270e3463)
+**Canonical Source:** This document. (Historical Notion design brief retained as archive: [Notion link](https://www.notion.so/31e30fd653028118bd11f4a3270e3463).)
 
 > **v2.0 change summary (April 2026):** Deleted former §5a (`tool_filter` + ToolRegistry runtime driver) — that mechanism is retired. Rewrote §5 around specialist routing only — per-turn filtering is gone; each specialist is constructed with a fixed ≤30-tool roster. Replaced the Analytics / Content / Execution / Automation specialist tree with the narrow-per-platform roadmap (GA in R1; Google Ads / Meta Ads / Mailchimp in R5). Updated §8 and §10 accordingly. See [README §2.5](./README.md#25-tool-assignment--routing-model) for the current tool-assignment and routing model.
 
@@ -211,7 +211,7 @@ HubSpot MCP is currently read-only. Google Ads uses a **hybrid approach** (MCP f
 
 ## References
 
-- [Notion Design Brief](https://www.notion.so/31e30fd653028118bd11f4a3270e3463)
+- Historical Notion Design Brief (archive): [Notion link](https://www.notion.so/31e30fd653028118bd11f4a3270e3463) — superseded by this document
 - [Google Ads MCP (Official)](https://github.com/googleads/google-ads-mcp)
 - [HubSpot MCP Server (Official)](https://developers.hubspot.com/mcp)
 - [Meta Marketing API](https://developers.facebook.com/docs/marketing-api)

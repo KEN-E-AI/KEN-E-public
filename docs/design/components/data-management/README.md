@@ -1,6 +1,6 @@
 # Data Management — Product Requirements Document
 
-> **Linear Team:** [TBD] Data Management / Platform
+> **Linear Team:** [KEN-E] Data Management
 > **Last Updated:** 2026-04-20
 > **Status:** Active
 
@@ -10,7 +10,7 @@ The Data Management component owns the multi-tenant data model for KEN-E. It def
 
 Its immediate scope is the **Shape B migration**: realigning every account-scoped Firestore collection under `accounts/{account_id}/{resource}/…`, splitting the legacy `organizations/{org_id}` nested accounts-map out to per-account docs, and keeping GCS on the existing G1 prefix pattern. Seven project PRDs (DM-PRD-00 through DM-PRD-06) break the work into parallelizable units — DM-PRD-00 is the blocking foundation; DM-PRD-01 through DM-PRD-04 then run in parallel across up to four dev teams; DM-PRD-05 rewrites the deletion sweep once all four land; DM-PRD-06 does the staging cutover. Once this migration completes, the data-shape surface area across the codebase drops from four distinct patterns (Shape A/B/C/D) down to two (Shape B + Shape C) — giving every downstream component a single, unambiguous path contract to rely on.
 
-KEN-E has no production users today, so this is a **single-cutover migration per environment** — no dual-write, no backwards-compatibility phase, no downtime window tracking. Repeatability across dev → staging → prod matters because the same migration script runs in each environment. The authoritative decision that drives this work is [Multi-Tenant Data Model Shape: Firestore Subcollections (Shape B) + GCS Prefix (G1)](https://www.notion.so/34830fd653028177bc0dc2a1637c7f60) (Notion); the step-by-step plan lives in [`./multi-tenant-migration-plan.md`](./multi-tenant-migration-plan.md).
+KEN-E has no production users today, so this is a **single-cutover migration per environment** — no dual-write, no backwards-compatibility phase, no downtime window tracking. Repeatability across dev → staging → prod matters because the same migration script runs in each environment. The authoritative decision that drives this work is [Review 15 in DESIGN-REVIEW-LOG](../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1) — Multi-Tenant Data Model Shape (Firestore Subcollections + GCS Prefix G1); the step-by-step plan lives in [`./multi-tenant-migration-plan.md`](./multi-tenant-migration-plan.md).
 
 ## 2. Architecture
 
@@ -206,7 +206,7 @@ Those teams can start implementation **as soon as DM-PRD-00 ships** (indexes in 
 | [`../../multi-tenant-data-model-research-findings.md`](../../multi-tenant-data-model-research-findings.md) | Q1 Inventory, Q2 Cross-account query list, Final recommendation | Research output that drove the Shape B + G1 decision. Read only if re-evaluating the decision; not needed for implementation. |
 | [`../../multi-tenant-data-model-research-brief.md`](../../multi-tenant-data-model-research-brief.md) | Entire file | Historical — framed the decision research. Read only for background. |
 | [`../../DESIGN-REVIEW-LOG.md`](../../DESIGN-REVIEW-LOG.md) | 2026-04-20 entry (Review 15 — Multi-Tenant Shape B) | Change log; records the PRD updates that realigned Skills / Plans / Automations / KG-04 to Shape B. |
-| Notion Design Decision | [Multi-Tenant Data Model Shape: Firestore Subcollections (Shape B) + GCS Prefix (G1)](https://www.notion.so/34830fd653028177bc0dc2a1637c7f60) | Rationale, alternatives considered, decision criteria. |
+| [`../../DESIGN-REVIEW-LOG.md`](../../DESIGN-REVIEW-LOG.md) | Review 15 (Multi-Tenant Data Model Shape) | Rationale, alternatives considered, decision criteria. (Historical Notion record retained as archive: [Multi-Tenant Data Model Shape](https://www.notion.so/34830fd653028177bc0dc2a1637c7f60).) |
 
 ## 7. Conventions and Constraints
 
@@ -293,7 +293,7 @@ Updating this PRD:
 - When a new collection-group index is added: update §2.3 API Contracts and `deployment/firestore.indexes.json`.
 - When the migration completes: flip §1 Overview status and check all boxes in `./multi-tenant-migration-plan.md` §11.
 - When a downstream component adds a new Shape B resource: update §3.2 Depended On By.
-- When the Notion decision is revised: link the new decision in §6 Global Document References and add an entry to DESIGN-REVIEW-LOG.md.
+- When the data-model decision is revised: add a new Review entry to `docs/design/DESIGN-REVIEW-LOG.md` and link it in §6 Global Document References.
 
 Relationship to `./multi-tenant-migration-plan.md`:
 - The migration plan holds the detailed per-resource call-site tables, Terraform index JSON, migration script design sketch, and execution checklist — content too granular for this README.
