@@ -5,7 +5,7 @@ collection. Consumed by the forthcoming ``FirestoreMCPLoader`` (Story 1.1.4-2)
 and admin CRUD endpoints (Story 1.1.4-3).
 
 The **connection sub-models** (``StdioConnectionConfig`` / ``SseConnectionConfig``)
-are imported unchanged from ``app.adk.mcp_config.config`` to keep a single
+are imported unchanged from ``shared.mcp_connection_config`` to keep a single
 source of truth for connection shape — both YAML and Firestore loaders share
 the same runtime-critical connection discriminator.
 
@@ -24,7 +24,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.adk.mcp_config.config import (
+from shared.mcp_connection_config import (
     SseConnectionConfig,
     StdioConnectionConfig,
 )

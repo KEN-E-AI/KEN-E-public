@@ -291,7 +291,7 @@ class TestStrategyL2Metadata:
         """If researcher_meta is empty, fall back to DEFAULT_VERSION (valid semver),
         not 'unknown' — the validator's semver regex would reject 'unknown'."""
         from app.adk.agents.strategy_agent.orchestrator import _build_l2_span_attrs
-        from app.utils.trace_metadata import DEFAULT_VERSION
+        from shared.trace_metadata import DEFAULT_VERSION
 
         attrs = _build_l2_span_attrs(
             {

@@ -17,8 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from google.cloud import firestore
 from pydantic import ValidationError
 
-from app.adk.mcp_config.manager import get_mcp_manager
-from app.utils.trace_metadata import parse_semver, validate_semver
+from shared.trace_metadata import parse_semver, validate_semver
 
 from ..auth import UserContext
 from ..auth.user_context import get_current_user_context
@@ -360,6 +359,11 @@ async def _maybe_reload(fields_changed: list[str]) -> list[str]:
     if not any(field in _RELOAD_TRIGGER_FIELDS for field in fields_changed):
         return []
 
+    # Lazy: ``app.adk.*`` is not packaged in the API image, so importing
+    # here keeps module load clean and defers any failure to handler
+    # invocation (where it surfaces as a warning, not a 5xx on startup).
+    from app.adk.mcp_config.manager import get_mcp_manager
+
     try:
         manager = get_mcp_manager()
         result = await manager.reload()
@@ -420,6 +424,9 @@ async def reload_mcp_server_configs(
     stuck server. Returns the counts of unloaded vs. kept servers.
     """
     _require_admin(user, "reload")
+
+    # Lazy import: see ``_maybe_reload`` for rationale.
+    from app.adk.mcp_config.manager import get_mcp_manager
 
     try:
         manager = get_mcp_manager()
