@@ -9,7 +9,7 @@
 #   If external link health becomes a concern, add a *separate* scheduled job
 #   rather than making the PR gate network-dependent.
 #
-# CI step: deployment/ci/pr_checks.yaml (CH-3 — markdown-link-check step)
+# CI step: will be consumed by deployment/ci/pr_checks.yaml (CH-3 — markdown-link-check step, not yet added)
 # Component PRD: docs/design/components/chat/projects/CH-PRD-06-documentation-link-integrity.md
 
 # Skip all http/https URLs — offline-only checking of relative file links.
@@ -34,7 +34,7 @@ extensions = ["md"]
 # Safe to expand this list; never shrink without a deliberate audit.
 exclude_path = [
     "docs/figma-export",   # Tool-generated Figma export; ~94 broken refs that are not authored content.
-    "docs/archive",        # Historical docs that intentionally reference retired/renamed files.
+    "docs/archive",        # Reserved for historical docs that intentionally reference retired/renamed files. Directory does not exist yet.
     "node_modules",        # Third-party dependencies — never authored content.
     ".git",                # VCS internals.
 ]
