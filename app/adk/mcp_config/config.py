@@ -9,12 +9,13 @@ automatically resolved using the shared.secrets module.
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from shared.secrets import get_env_or_secret
 from shared.structured_logging import get_structured_logger, log_context
@@ -41,6 +42,12 @@ class StdioConnectionConfig(MCPConnectionParams):
           args: ["-y", "@anthropic/mcp-server-google-analytics"]
           env:
             GA_PROPERTY_ID: "${GA_PROPERTY_ID}"
+
+    Note: ``${VAR}`` resolution happens in the loader (see
+    :func:`_resolve_env_vars_in_dict`) **before** this model is constructed,
+    so runtime ``env`` values are already resolved strings. The admin
+    router path does NOT run the loader, so it sees literal ``${VAR}``
+    strings end-to-end (Sprint 6 secret-leak fix).
     """
 
     connection_type: Literal["stdio"] = "stdio"
@@ -50,14 +57,6 @@ class StdioConnectionConfig(MCPConnectionParams):
         default_factory=dict, description="Environment variables for the process"
     )
     working_dir: str | None = Field(None, description="Working directory for process")
-
-    @field_validator("env", mode="before")
-    @classmethod
-    def resolve_env_vars(cls, v: dict[str, str]) -> dict[str, str]:
-        """Resolve ${VAR_NAME} patterns in environment values."""
-        if not v:
-            return {}
-        return {key: _resolve_env_pattern(value) for key, value in v.items()}
 
 
 class SseConnectionConfig(MCPConnectionParams):
@@ -73,6 +72,12 @@ class SseConnectionConfig(MCPConnectionParams):
           headers:
             Authorization: "Bearer ${HUBSPOT_API_KEY}"
           timeout_seconds: 30
+
+    Note: ``${VAR}`` resolution happens in the loader (see
+    :func:`_resolve_env_vars_in_dict`) **before** this model is constructed.
+    The admin router deliberately bypasses the loader so literal ``${VAR}``
+    strings flow through GET/PUT/audit without leaking resolved secrets
+    (Sprint 6 secret-leak fix).
     """
 
     connection_type: Literal["sse"] = "sse"
@@ -83,20 +88,6 @@ class SseConnectionConfig(MCPConnectionParams):
     timeout_seconds: int = Field(
         30, ge=5, le=300, description="Connection timeout in seconds"
     )
-
-    @field_validator("url", mode="before")
-    @classmethod
-    def resolve_url(cls, v: str) -> str:
-        """Resolve ${VAR_NAME} patterns in URL."""
-        return _resolve_env_pattern(v)
-
-    @field_validator("headers", mode="before")
-    @classmethod
-    def resolve_headers(cls, v: dict[str, str]) -> dict[str, str]:
-        """Resolve ${VAR_NAME} patterns in headers."""
-        if not v:
-            return {}
-        return {key: _resolve_env_pattern(value) for key, value in v.items()}
 
 
 class MCPServerConfig(BaseModel):
@@ -165,7 +156,9 @@ class MCPConfigLoader:
             config_path: Path to YAML config file. Defaults to mcp_servers.yaml
                         in the config subdirectory of this module.
         """
-        self.config_path = config_path or Path(__file__).parent / "config" / "mcp_servers.yaml"
+        self.config_path = (
+            config_path or Path(__file__).parent / "config" / "mcp_servers.yaml"
+        )
         self._configs: dict[str, MCPServerConfig] = {}
 
     @property
@@ -206,6 +199,11 @@ class MCPConfigLoader:
         for name, config in servers.items():
             try:
                 config["name"] = name
+                # Resolve ${VAR} patterns before Pydantic construction — the
+                # connection sub-models used to do this via field validators
+                # but that leaked resolved secrets through the admin PUT/GET
+                # path. Resolution is now an explicit loader concern.
+                config = _resolve_env_vars_in_dict(config)
                 self._configs[name] = MCPServerConfig(**config)
                 logger.info(
                     f"Loaded MCP server config: {name}",
@@ -266,7 +264,9 @@ class MCPConfigLoader:
         """
         if not self._configs:
             self.load()
-        return [c for c in self._configs.values() if c.category == category and c.enabled]
+        return [
+            c for c in self._configs.values() if c.category == category and c.enabled
+        ]
 
     def reload(self) -> dict[str, MCPServerConfig]:
         """Force reload configurations from disk.
@@ -316,18 +316,93 @@ def _resolve_env_pattern(value: str) -> str:
     return re.sub(pattern, replacer, value)
 
 
-# Singleton loader instance
+def _resolve_env_vars_in_dict(data: Any) -> Any:
+    """Recursively resolve ``${VAR}`` patterns in every string in ``data``.
+
+    Used by loaders (:class:`MCPConfigLoader.load`,
+    :func:`FirestoreMCPLoader._doc_to_runtime_config`) to materialize
+    secrets before constructing :class:`MCPServerConfig`. The admin router
+    deliberately does NOT call this helper — it keeps literal ``${VAR}``
+    strings end-to-end so GET/PUT responses, Firestore writes, and audit
+    diffs never carry resolved secrets.
+    """
+    if isinstance(data, str):
+        return _resolve_env_pattern(data)
+    if isinstance(data, dict):
+        return {k: _resolve_env_vars_in_dict(v) for k, v in data.items()}
+    if isinstance(data, list):
+        return [_resolve_env_vars_in_dict(v) for v in data]
+    return data
+
+
+# Singleton loader instance. Typed as the base loader interface; the concrete
+# implementation is either ``MCPConfigLoader`` (YAML) or ``FirestoreMCPLoader``
+# depending on the ``MCP_CONFIG_SOURCE`` env var.
 _config_loader: MCPConfigLoader | None = None
 
 
 def get_mcp_config_loader() -> MCPConfigLoader:
     """Get the singleton MCP config loader.
 
+    The ``MCP_CONFIG_SOURCE`` env var selects the backing store:
+
+    * ``"yaml"`` (default during the Sprint 6 transition) — reads from
+      ``mcp_servers.yaml``. Preserves legacy behavior for local dev and for
+      environments where the Firestore migration (Story 1.1.4-2) hasn't run yet.
+    * ``"firestore"`` — reads from ``mcp_server_configs/{id}`` via
+      ``FirestoreMCPLoader``, which falls back to YAML on connection errors.
+      Operators should flip the env var after running the migration script
+      against a given environment.
+
+    Both loaders expose the same public surface (``.load``, ``.reload``,
+    ``.configs``, ``.get_server``, ``.get_enabled_servers``,
+    ``.get_servers_by_category``), so ``MCPServerManager`` consumes either
+    without changes.
+
     Returns:
-        Shared MCPConfigLoader instance
+        Shared loader singleton (duck-typed as ``MCPConfigLoader``).
     """
     global _config_loader
     if _config_loader is None:
-        _config_loader = MCPConfigLoader()
+        source = os.getenv("MCP_CONFIG_SOURCE", "yaml").strip().lower()
+        if source == "firestore":
+            # Local import to keep google.cloud.firestore out of the YAML-only
+            # code path (useful for tests that don't install firestore).
+            from .firestore_loader import FirestoreMCPLoader
+
+            _config_loader = FirestoreMCPLoader()  # type: ignore[assignment]
+            logger.info(
+                "MCP config source: firestore",
+                extra=log_context(
+                    component="mcp_config",
+                    action="loader_selected",
+                    extra={"source": "firestore"},
+                ),
+            )
+        else:
+            if source not in ("yaml", ""):
+                logger.warning(
+                    f"Unknown MCP_CONFIG_SOURCE={source!r}; defaulting to yaml",
+                    extra=log_context(
+                        component="mcp_config",
+                        action="loader_unknown_source",
+                        extra={"source": source},
+                    ),
+                )
+            _config_loader = MCPConfigLoader()
+            logger.info(
+                "MCP config source: yaml",
+                extra=log_context(
+                    component="mcp_config",
+                    action="loader_selected",
+                    extra={"source": "yaml"},
+                ),
+            )
         _config_loader.load()
     return _config_loader
+
+
+def reset_mcp_config_loader() -> None:
+    """Reset the singleton loader (primarily for tests)."""
+    global _config_loader
+    _config_loader = None

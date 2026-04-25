@@ -40,6 +40,7 @@ from app.utils.weave_observability import init_weave_if_needed, safe_weave_op
 from shared.structured_logging import configure_logging, get_structured_logger
 
 from .strategy_agent.config_loader import load_config_from_firestore
+from .utils import config_cache
 from .utils.dispatch_handlers import (
     dispatch_to_company_news,
     dispatch_to_google_analytics,
@@ -126,13 +127,13 @@ Remember: You are a router, not a data source. ALWAYS delegate to the appropriat
 
 
 def build_ken_e_instruction(context: ReadonlyContext) -> str:
-    """Build KEN-E instruction with organization context from session state.
+    """Build KEN-E's instruction from ``_BASE_INSTRUCTION`` + org context.
 
-    ADK calls this on each turn, reading org context that was stored
-    in session state at session creation time (no DB call here).
-
-    Args:
-        context: ADK ReadonlyContext with access to session state
+    Static alternative to the cache-backed :func:`_make_instruction_provider`
+    closure. Kept because ``tests/unit/test_adk_agents/test_ken_e_instruction_provider.py``
+    targets the static merge behavior directly (no cache / no Firestore),
+    which is useful for regression-testing the org-context prepend logic
+    independently of the hot-reload path.
     """
     org_context = context.state.get("organization_context")
     if org_context:
@@ -140,16 +141,36 @@ def build_ken_e_instruction(context: ReadonlyContext) -> str:
     return _BASE_INSTRUCTION
 
 
-def _make_instruction_provider(base_instruction: str) -> Callable[[ReadonlyContext], str]:
-    """Create a closure-based InstructionProvider that uses the given base instruction.
+def _make_instruction_provider(config_doc_id: str) -> Callable[[ReadonlyContext], str]:
+    """Create an InstructionProvider that reads the latest instruction from cache.
+
+    Per Sprint 6 Decision B, the instruction text is live-reloadable: every
+    turn, the closure asks the agent config cache for the current
+    instruction, so admin PUTs propagate within the cache TTL (~60 s) with
+    no redeploy. The cache handles Firestore failures by serving the last
+    known-good value. If even the cache is unusable (e.g., first call ever
+    failed), fall back to the hardcoded ``_BASE_INSTRUCTION`` so the turn
+    still runs rather than erroring out.
 
     Args:
-        base_instruction: The base instruction text (from Firestore or hardcoded fallback)
+        config_doc_id: Firestore document ID under ``agent_configs``.
 
     Returns:
-        A callable that ADK invokes on each turn to get the instruction string
+        A callable ADK invokes each turn; returns the current instruction
+        string (with organization context prepended if present in state).
     """
+
     def instruction_provider(context: ReadonlyContext) -> str:
+        try:
+            cfg, _ = config_cache.get_cached_config(config_doc_id)
+            base_instruction = cfg.instruction or _BASE_INSTRUCTION
+        except Exception as e:
+            logger.warning(
+                f"InstructionProvider could not load {config_doc_id!r} from cache "
+                f"({e}); falling back to _BASE_INSTRUCTION for this turn."
+            )
+            base_instruction = _BASE_INSTRUCTION
+
         org_context = context.state.get("organization_context")
         if org_context:
             return f"[ORGANIZATION CONTEXT]\n{org_context}\n[END CONTEXT]\n\n{base_instruction}"
@@ -175,11 +196,14 @@ def create_ken_e_agent(config_doc_id: str = "ken_e_chatbot"):
             "Check that WANDB_API_KEY is set in .env and the weave package is installed."
         )
 
-    # Load configuration from Firestore with fallback to hardcoded values
+    # Load model / description / generate_content_config from Firestore at
+    # construction time — ADK bakes these into the Agent at __init__ and
+    # doesn't accept callables for them (Sprint 6 Decision B). The agent's
+    # ``instruction`` is read live from the config cache on every turn, so
+    # it is NOT bound here.
     try:
         config, metadata = load_config_from_firestore(config_doc_id)
         model = config.model
-        base_instruction = config.instruction or _BASE_INSTRUCTION
         description = config.description or ""
         generate_content_config = config.generate_content_config
         logger.info(
@@ -192,7 +216,6 @@ def create_ken_e_agent(config_doc_id: str = "ken_e_chatbot"):
             f"Falling back to hardcoded defaults"
         )
         model = "gemini-2.0-flash"
-        base_instruction = _BASE_INSTRUCTION
         description = ""
         generate_content_config = None
 
@@ -214,27 +237,39 @@ def create_ken_e_agent(config_doc_id: str = "ken_e_chatbot"):
             query: The user's question about company news, earnings, market updates, or business intelligence
         """
         result = dispatch_to_company_news(query, tool_context)
-        return result.get("result", str(result)) if isinstance(result, dict) else str(result)
+        return (
+            result.get("result", str(result))
+            if isinstance(result, dict)
+            else str(result)
+        )
 
-    def query_google_analytics(query: str, tool_context: ToolContext | None = None) -> str:
+    def query_google_analytics(
+        query: str, tool_context: ToolContext | None = None
+    ) -> str:
         """Query Google Analytics data, run reports, get real-time metrics, analyze website/app performance, and access GA4 properties.
 
         Args:
             query: The user's question about website analytics, traffic, user behavior, or GA4 data
         """
         result = dispatch_to_google_analytics(query, tool_context)
-        return result.get("result", str(result)) if isinstance(result, dict) else str(result)
+        return (
+            result.get("result", str(result))
+            if isinstance(result, dict)
+            else str(result)
+        )
 
     # Apply Weave tracing to tool wrappers (dispatch handlers are already traced,
     # but these wrappers need their own spans for complete L3 tool coverage)
     search_company_news = safe_weave_op(name="search_company_news")(search_company_news)
-    query_google_analytics = safe_weave_op(name="query_google_analytics")(query_google_analytics)
+    query_google_analytics = safe_weave_op(name="query_google_analytics")(
+        query_google_analytics
+    )
 
     ken_e = Agent(
         name="ken_e",
         model=model,
         description=description,
-        instruction=_make_instruction_provider(base_instruction),
+        instruction=_make_instruction_provider(config_doc_id),
         generate_content_config=generate_content_config,
         before_agent_callback=weave_before_agent_callback,
         after_agent_callback=weave_after_agent_callback,

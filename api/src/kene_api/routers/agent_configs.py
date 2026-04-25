@@ -2,21 +2,76 @@
 Agent configuration management endpoints.
 
 Provides CRUD operations for strategy agent configurations stored in Firestore.
+
+Pydantic models for the ``agent_configs/{id}`` schema live in
+``kene_api.models.agent_config_models``; this module re-exports them for
+backwards compatibility with pre-Sprint-6 callers.
 """
 
 import logging
-import re
 from datetime import datetime, timezone
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from google.cloud import firestore
-from pydantic import BaseModel, Field, field_validator
+from pydantic import Field
 
-from app.utils.trace_metadata import SEMVER_PATTERN, parse_semver, validate_semver
+from app.utils.trace_metadata import parse_semver, validate_semver
 
 from ..auth import UserContext
 from ..auth.user_context import get_current_user_context
 from ..dependencies import get_firestore
+from ..models.agent_config_models import (
+    AgentConfig,
+    AgentConfigMetadata,
+    AgentConfigUpdate,
+    ConfigAuditEntry,
+    GenerateContentConfig,
+)
+from ..services.audit_service import log_config_action
+from ..services.config_versioning import increment_version, sanitize_updated_by
+
+__all__ = [
+    "ALLOWED_CONFIG_IDS",
+    "AgentConfig",
+    "AgentConfigMetadata",
+    "AgentConfigUpdate",
+    "AgentConfigUpdateResponse",
+    "ConfigAuditEntry",
+    "GenerateContentConfig",
+    "router",
+]
+
+
+class AgentConfigUpdateResponse(AgentConfig):
+    """PUT response: the updated AgentConfig plus any operator warnings.
+
+    Extends ``AgentConfig`` (rather than nesting it) so existing callers that
+    read top-level fields like ``response.model`` or ``response.metadata``
+    keep working. Adding a new optional ``warnings`` list is additive.
+
+    Per Sprint 6 AC-6.25, changes to ``model`` or ``max_output_tokens`` /
+    ``generate_content_config`` cannot be picked up by the 60 s hot-reload
+    cache (ADK bakes them in at agent construction) — those changes surface
+    as a redeploy-required warning here so admins don't silently think the
+    change is live.
+    """
+
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Operator warnings (e.g., redeploy required for model change).",
+    )
+
+
+# Fields whose runtime effect requires a pod/agent redeploy. Per Sprint 6
+# Decision B, ONLY ``instruction`` propagates via the 60 s in-process cache
+# because the ADK ``Agent`` constructor only accepts a callable for the
+# ``instruction`` field. ``model``, ``generate_content_config`` (including
+# ``temperature`` and ``max_output_tokens``) and tools are baked at
+# construction time, so updates to any of them require a pod restart.
+_REDEPLOY_REQUIRED_FIELDS: frozenset[str] = frozenset(
+    {"model", "temperature", "max_output_tokens"}
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,217 +95,13 @@ ALLOWED_CONFIG_IDS: set[str] = {
 }
 
 
-class AgentConfigMetadata(BaseModel):
-    """Metadata for an agent configuration."""
-
-    version: str = Field(..., description="Version number (e.g., v1.0, v1.1)")
-    variant_name: str = Field(..., description="Descriptive variant name")
-    experiment_id: str = Field(
-        default="baseline", description="Experiment grouping identifier"
-    )
-    created_at: str = Field(..., description="ISO timestamp of creation")
-    updated_at: str = Field(..., description="ISO timestamp of last update")
-    updated_by: str = Field(..., description="Email or identifier of last updater")
-    notes: str = Field(default="", description="Change notes or description")
-
-
-class GenerateContentConfig(BaseModel):
-    """Generation configuration for the agent."""
-
-    temperature: float = Field(default=0.3, ge=0.0, le=1.0)
-    max_output_tokens: int = Field(default=2500, ge=100, le=65535)
-
-
-class AgentConfig(BaseModel):
-    """Complete agent configuration."""
-
-    name: str = Field(..., description="Agent name")
-    model: str = Field(..., description="Model identifier")
-    description: str = Field(..., description="Agent description")
-    instruction: str = Field(..., description="Agent instruction/prompt")
-    generate_content_config: GenerateContentConfig
-    metadata: AgentConfigMetadata
-
-
-class AgentConfigUpdate(BaseModel):
-    """Request to update an agent configuration with validation."""
-
-    instruction: str | None = Field(
-        None,
-        min_length=10,
-        max_length=50000,
-        description="Agent instruction/prompt",
-    )
-
-    model: str | None = Field(
-        None,
-        pattern=r"^(gemini-[\d]+-[\w-]+|gemini-[\d\.]+[-\w]+|gpt-[\w-]+|o1-[\w-]+)$",
-        description="Model identifier (Gemini or OpenAI model)",
-    )
-
-    description: str | None = Field(
-        None, min_length=10, max_length=1000, description="Agent description"
-    )
-
-    temperature: float | None = Field(
-        None, ge=0.0, le=1.0, description="Generation temperature (0.0-1.0)"
-    )
-
-    max_output_tokens: int | None = Field(
-        None,
-        ge=100,
-        le=65535,
-        description="Maximum output tokens (100-65535)",
-    )
-
-    version: str | None = Field(
-        None,
-        description="Version string in semver format (e.g., v1.0.0)",
-    )
-
-    @field_validator("version")
-    @classmethod
-    def validate_version_format(cls, v: str | None) -> str | None:
-        if v is None:
-            return v
-        v = v.strip()
-        if not v.startswith("v"):
-            v = f"v{v}"
-        if not SEMVER_PATTERN.match(v):
-            raise ValueError(
-                f"Invalid version '{v}'. "
-                f"Please use semver format, e.g. v1.0.0 or v2.1.3"
-            )
-        return v
-
-    variant_name: str | None = Field(
-        None, min_length=1, max_length=100, description="Descriptive variant name"
-    )
-
-    experiment_id: str | None = Field(
-        None,
-        min_length=1,
-        max_length=100,
-        description="Experiment grouping identifier",
-    )
-
-    updated_by: str = Field(
-        ...,
-        min_length=3,
-        max_length=255,
-        description="Email of person making update",
-    )
-
-    notes: str = Field(
-        default="", max_length=5000, description="Notes about this change"
-    )
-
-    @field_validator("updated_by")
-    @classmethod
-    def validate_email_format(cls, v: str) -> str:
-        """Validate updated_by looks like an email."""
-        email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
-        if not re.match(email_pattern, v):
-            raise ValueError("updated_by must be a valid email address")
-        return v
-
-    @field_validator("model")
-    @classmethod
-    def validate_model_exists(cls, v: str | None) -> str | None:
-        """Validate model ID is a known Gemini or OpenAI model."""
-        if v is None:
-            return v
-
-        # List of supported models (update as new models are released)
-        SUPPORTED_MODELS = {
-            # Gemini 3 models (latest, preview)
-            "gemini-3-flash-preview",
-            "gemini-3-pro-preview",
-            # Gemini 2.x models (current stable)
-            "gemini-2.0-flash",
-            "gemini-2.0-flash-exp",
-            "gemini-2.5-flash",
-            "gemini-2.5-pro",
-            # Gemini 1.5 models (stable fallback)
-            "gemini-1.5-pro",
-            "gemini-1.5-flash",
-            # OpenAI models (for formatters)
-            "gpt-4o",
-            "gpt-4o-2024-08-06",
-            "gpt-4o-mini",
-            "o1-preview",
-            "o1-mini",
-        }
-
-        if v not in SUPPORTED_MODELS:
-            # Separate Gemini and OpenAI models for better error message
-            gemini_models = {m for m in SUPPORTED_MODELS if m.startswith("gemini")}
-            openai_models = {m for m in SUPPORTED_MODELS if not m.startswith("gemini")}
-
-            error_msg = (
-                f"Model '{v}' is not supported.\n"
-                f"Supported Gemini models: {', '.join(sorted(gemini_models))}\n"
-                f"Supported OpenAI models: {', '.join(sorted(openai_models))}"
-            )
-            raise ValueError(error_msg)
-
-        return v
-
-
-def _increment_version(current_version: str) -> str:
-    """
-    Increment version patch number (semver format).
-
-    Auto-increment bumps the patch version. Major/minor bumps are manual.
-    Handles both legacy 2-part (vX.Y) and semver 3-part (vX.Y.Z) formats.
-
-    Args:
-        current_version: Current version string (e.g., "v1.0.0", "v1.2")
-
-    Returns:
-        Incremented semver version string (e.g., "v1.0.1")
-
-    Raises:
-        ValueError: If version format is not parseable
-    """
-    version = current_version.strip() if current_version else ""
-    if not version.startswith("v"):
-        version = f"v{version}" if version else ""
-
-    # Strip prerelease suffix for incrementing (e.g., "v1.0.0-beta" → "v1.0.0")
-    base = version[1:].split("-", 1)[0] if version.startswith("v") else ""
-    parts = base.split(".") if base else []
-
-    if len(parts) == 2:
-        major, minor, patch = int(parts[0]), int(parts[1]), 0
-    elif len(parts) == 3:
-        major, minor, patch = int(parts[0]), int(parts[1]), int(parts[2])
-    else:
-        raise ValueError(
-            f"Cannot increment version '{current_version}': "
-            f"expected vX.Y or vX.Y.Z format"
-        )
-
-    return f"v{major}.{minor}.{patch + 1}"
-
-
-def _sanitize_updated_by(email: str) -> str:
-    """
-    Sanitize updated_by field to prevent Firestore injection.
-
-    Firestore doesn't allow dots or dollar signs in field names,
-    so we sanitize the email to prevent potential issues.
-
-    Args:
-        email: Email address to sanitize
-
-    Returns:
-        Sanitized email string (max 100 chars, dots/dollars replaced)
-    """
-    if not email:
-        return "unknown"
-
-    return email.replace(".", "_").replace("$", "_")[:100]
+# Version-bump + field-name sanitization helpers now live in
+# ``services/config_versioning.py`` so ``routers/mcp_server_configs.py`` can
+# import them without reaching across into another router's private API.
+# Kept as backward-compatible aliases for any external callers / tests that
+# still reference the underscored names.
+_increment_version = increment_version
+_sanitize_updated_by = sanitize_updated_by
 
 
 def _build_firestore_updates(
@@ -327,6 +178,83 @@ def _build_firestore_updates(
         updates["metadata.notes"] = notes
 
     return updates
+
+
+def _snapshot_pre_image(
+    current_config: dict[str, Any], update: AgentConfigUpdate
+) -> dict[str, Any]:
+    """Capture current values for every field the update touches."""
+    gen_cfg = current_config.get("generate_content_config", {}) or {}
+    snap: dict[str, Any] = {}
+
+    if update.instruction is not None:
+        snap["instruction"] = current_config.get("instruction")
+    if update.model is not None:
+        snap["model"] = current_config.get("model")
+    if update.description is not None:
+        snap["description"] = current_config.get("description")
+    if update.temperature is not None:
+        snap["temperature"] = gen_cfg.get("temperature")
+    if update.max_output_tokens is not None:
+        snap["max_output_tokens"] = gen_cfg.get("max_output_tokens")
+
+    return snap
+
+
+def _snapshot_post_image(
+    updated_data: dict[str, Any], update: AgentConfigUpdate
+) -> dict[str, Any]:
+    gen_cfg = updated_data.get("generate_content_config", {}) or {}
+    snap: dict[str, Any] = {}
+
+    if update.instruction is not None:
+        snap["instruction"] = updated_data.get("instruction")
+    if update.model is not None:
+        snap["model"] = updated_data.get("model")
+    if update.description is not None:
+        snap["description"] = updated_data.get("description")
+    if update.temperature is not None:
+        snap["temperature"] = gen_cfg.get("temperature")
+    if update.max_output_tokens is not None:
+        snap["max_output_tokens"] = gen_cfg.get("max_output_tokens")
+
+    return snap
+
+
+def _diff_fields(
+    pre: dict[str, Any],
+    post: dict[str, Any],
+    update: AgentConfigUpdate,
+) -> tuple[list[str], dict[str, dict[str, Any]]]:
+    """Return (fields_changed, changes) for fields the caller actually set.
+
+    A field is "changed" if it was present in the update body and its value
+    actually differs from the pre-image. This avoids logging no-op fields.
+    """
+    fields_changed: list[str] = []
+    changes: dict[str, dict[str, Any]] = {}
+
+    for field_name in pre:
+        before = pre[field_name]
+        after = post.get(field_name)
+        if before != after:
+            fields_changed.append(field_name)
+            changes[field_name] = {"before": before, "after": after}
+
+    return fields_changed, changes
+
+
+def _build_redeploy_warnings(fields_changed: list[str]) -> list[str]:
+    """Surface redeploy-required warnings for fields ADK bakes at construction."""
+    warnings: list[str] = []
+    for field_name in fields_changed:
+        if field_name in _REDEPLOY_REQUIRED_FIELDS:
+            warnings.append(
+                f"Change to '{field_name}' requires a pod/agent redeploy to take "
+                f"effect. The 60 s hot-reload cache only covers instruction and "
+                f"temperature."
+            )
+    return warnings
 
 
 @router.get("/", response_model=list[str])
@@ -442,13 +370,13 @@ async def get_agent_config(
         ) from e
 
 
-@router.put("/{config_id}", response_model=AgentConfig)
+@router.put("/{config_id}", response_model=AgentConfigUpdateResponse)
 async def update_agent_config(
     config_id: str,
     update: AgentConfigUpdate,
     user: UserContext = Depends(get_current_user_context),
     db: firestore.Client = Depends(get_firestore),
-) -> AgentConfig:
+) -> AgentConfigUpdateResponse:
     """
     Update an agent configuration.
 
@@ -512,9 +440,7 @@ async def update_agent_config(
             # Prevent version downgrade
             if current_version_str:
                 try:
-                    current_parsed = parse_semver(
-                        validate_semver(current_version_str)
-                    )
+                    current_parsed = parse_semver(validate_semver(current_version_str))
                     new_parsed = parse_semver(new_version)
                     if new_parsed < current_parsed:
                         raise HTTPException(
@@ -539,7 +465,7 @@ async def update_agent_config(
                     "Please set a version manually (e.g., v1.0.0).",
                 )
             try:
-                new_version = _increment_version(current_version_str)
+                new_version = increment_version(current_version_str)
             except ValueError as e:
                 raise HTTPException(
                     status_code=400,
@@ -550,7 +476,7 @@ async def update_agent_config(
                 ) from e
 
         # Sanitize updated_by field
-        safe_updated_by = _sanitize_updated_by(update.updated_by)
+        safe_updated_by = sanitize_updated_by(update.updated_by)
 
         # Build type-safe updates using helper function
         updates = _build_firestore_updates(
@@ -568,6 +494,9 @@ async def update_agent_config(
             current_gen_config=current_config.get("generate_content_config", {}),
         )
 
+        # Snapshot pre-image for audit diff (Sprint 6 AC-6.9)
+        pre_image = _snapshot_pre_image(current_config, update)
+
         # Apply updates
         doc_ref.update(updates)
 
@@ -575,11 +504,29 @@ async def update_agent_config(
         updated_doc = doc_ref.get()
         updated_data = updated_doc.to_dict()
 
+        # Diff + audit write (failure non-fatal)
+        post_image = _snapshot_post_image(updated_data, update)
+        fields_changed, changes = _diff_fields(pre_image, post_image, update)
+        await log_config_action(
+            db=db,
+            doc_type="agent_config",
+            doc_id=config_id,
+            action="updated",
+            user=user,
+            version_before=current_version_str,
+            version_after=new_version,
+            fields_changed=fields_changed,
+            changes=changes,
+        )
+
+        # Redeploy warnings (Sprint 6 AC-6.25)
+        warnings = _build_redeploy_warnings(fields_changed)
+
         logger.info(
             f"User {user.email} updated config {config_id} to version {new_version}"
         )
 
-        return AgentConfig(**updated_data)
+        return AgentConfigUpdateResponse(**updated_data, warnings=warnings)
 
     except HTTPException:
         raise
@@ -587,4 +534,49 @@ async def update_agent_config(
         logger.error(f"Failed to update agent config {config_id}: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to update agent configuration"
+        ) from e
+
+
+@router.get("/{config_id}/history", response_model=list[ConfigAuditEntry])
+async def get_agent_config_history(
+    config_id: str,
+    user: UserContext = Depends(get_current_user_context),
+    db: firestore.Client = Depends(get_firestore),
+    limit: int = Query(20, ge=1, le=100, description="Max entries to return"),
+) -> list[ConfigAuditEntry]:
+    """Return recent audit entries for an agent config, newest first.
+
+    Reads from ``agent_configs/{config_id}/history/*`` subcollection written
+    by ``log_config_action``. Per Sprint 6 AC-6.9 / Decision C.
+    """
+    if not user.is_super_admin:
+        raise HTTPException(
+            status_code=403,
+            detail="Only super administrators can read agent config history",
+        )
+
+    if config_id not in ALLOWED_CONFIG_IDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid config_id. Must be one of: {', '.join(sorted(ALLOWED_CONFIG_IDS))}",
+        )
+
+    # FastAPI enforces `le=100` on the query-param, but that only runs at the
+    # HTTP boundary; in-process callers could pass a wider value.
+    if limit > 100:
+        raise HTTPException(status_code=400, detail="limit must be <= 100")
+
+    try:
+        history_ref = (
+            db.collection("agent_configs")
+            .document(config_id)
+            .collection("history")
+            .order_by("timestamp", direction=firestore.Query.DESCENDING)
+            .limit(limit)
+        )
+        return [ConfigAuditEntry(**doc.to_dict()) for doc in history_ref.stream()]
+    except Exception as e:
+        logger.error(f"Failed to fetch history for {config_id}: {e!s}")
+        raise HTTPException(
+            status_code=500, detail="Failed to retrieve config history"
         ) from e
