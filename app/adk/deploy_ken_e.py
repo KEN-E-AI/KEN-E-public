@@ -202,7 +202,13 @@ def deploy_ken_e() -> str | None:
         (temp_path / "app" / "__init__.py").touch()
         (app_adk_dest / "__init__.py").touch()
 
-        for subpkg in ("security", "tracking", "tools"):
+        # NOTE: mcp_config is required at runtime by MCPServerManager (via
+        # get_mcp_config_loader) both for YAML loading and as the fallback
+        # path when MCP_CONFIG_SOURCE=firestore and Firestore is unreachable.
+        # Prior to Sprint 6 Story 1.1.4-2, this directory was not copied into
+        # the Agent Engine artifact — a latent bug that broke YAML fallback
+        # on deployed agents.
+        for subpkg in ("security", "tracking", "tools", "mcp_config"):
             src = adk_root / subpkg
             if src.exists():
                 shutil.copytree(
@@ -234,7 +240,9 @@ def deploy_ken_e() -> str | None:
             env_file = Path(".env")
 
         if env_file.exists():
-            logger.info(f"Using {env_file} for {os.getenv('_TARGET_ENV', 'dev')} environment")
+            logger.info(
+                f"Using {env_file} for {os.getenv('_TARGET_ENV', 'dev')} environment"
+            )
             process_env_file(env_file, temp_path / ".env")
             logger.info("Processed and copied .env file to root")
             # Also copy to agents directory for runtime loading
@@ -271,9 +279,7 @@ def deploy_ken_e() -> str | None:
         # Compaction: Summarizes older conversation events to stay within token limits
         # Caching: Caches static content (instructions, tools) for cost/latency savings
         logger.info("Configuring context compaction and caching...")
-        compaction_summarizer = LlmEventSummarizer(
-            llm=Gemini(model="gemini-2.5-flash")
-        )
+        compaction_summarizer = LlmEventSummarizer(llm=Gemini(model="gemini-2.5-flash"))
         compaction_config = EventsCompactionConfig(
             summarizer=compaction_summarizer,
             compaction_interval=5,  # Compact every 5 user invocations
@@ -338,7 +344,9 @@ def deploy_ken_e() -> str | None:
             deployed_engine = None
             if existing_engine_id:
                 existing_engine_id = existing_engine_id.strip()
-                logger.info(f"Found existing engine: {existing_engine_id}, updating in place...")
+                logger.info(
+                    f"Found existing engine: {existing_engine_id}, updating in place..."
+                )
                 try:
                     deployed_engine = agent_engines.update(
                         resource_name=existing_engine_id,
@@ -404,7 +412,9 @@ Location: {location}
             print("🎉 KEN-E CHAT AGENT DEPLOYMENT SUCCESSFUL!")
             print("=" * 70)
             print(f"Engine ID: {engine_id}")
-            print(f"Python Version: {__import__('sys').version_info.major}.{__import__('sys').version_info.minor}")
+            print(
+                f"Python Version: {__import__('sys').version_info.major}.{__import__('sys').version_info.minor}"
+            )
             print("=" * 70)
 
             return engine_id
@@ -412,6 +422,7 @@ Location: {location}
         except Exception as e:
             logger.error(f"❌ Deployment failed: {e}")
             import traceback
+
             traceback.print_exc()
             return None
         finally:

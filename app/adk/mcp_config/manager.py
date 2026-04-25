@@ -290,13 +290,9 @@ class MCPServerManager:
                 ),
                 timeout=5.0,
             )
-        raise ValueError(
-            f"Unsupported connection type: {type(config.connection)}"
-        )
+        raise ValueError(f"Unsupported connection type: {type(config.connection)}")
 
-    def _build_header_provider(
-        self, config: MCPServerConfig
-    ) -> Any:
+    def _build_header_provider(self, config: MCPServerConfig) -> Any:
         """Build a header_provider callback for per-user auth.
 
         For GA OAuth, returns a function that reads ga_credentials from
@@ -355,7 +351,9 @@ class MCPServerManager:
                 ),
             )
             await self._unload_server_unlocked(lru_name)
-            current_tokens = sum(s.token_estimate for s in self._loaded_servers.values())
+            current_tokens = sum(
+                s.token_estimate for s in self._loaded_servers.values()
+            )
 
     def _get_lru_server(self) -> str:
         """Get the least recently used server name.
@@ -367,6 +365,47 @@ class MCPServerManager:
             self._loaded_servers.keys(),
             key=lambda name: self._loaded_servers[name].last_used,
         )
+
+    async def reload(self) -> dict[str, Any]:
+        """Re-read configs from the underlying loader and evict stale servers.
+
+        Preserves lazy-load semantics: evicted servers are simply removed from
+        ``_loaded_servers`` — the next ``load_server`` call re-initializes them
+        from the fresh config. Servers whose config is byte-for-byte identical
+        to the cached version are left loaded.
+
+        Servers removed from Firestore entirely are unloaded.
+
+        Returns:
+            ``{"unloaded": [server_name, ...], "kept": int}`` — caller can
+            surface as an admin response or audit record.
+        """
+        async with self._lock:
+            self._config_loader.reload()
+            new_configs = self._config_loader.configs
+
+            unloaded: list[str] = []
+            for server_name in list(self._loaded_servers.keys()):
+                loaded = self._loaded_servers[server_name]
+                new_cfg = new_configs.get(server_name)
+                if new_cfg is None or new_cfg != loaded.config:
+                    await self._unload_server_unlocked(server_name)
+                    unloaded.append(server_name)
+
+            kept = len(self._loaded_servers)
+            logger.info(
+                "MCP config reloaded",
+                extra=log_context(
+                    component="mcp_manager",
+                    action="reload",
+                    extra={
+                        "unloaded_count": len(unloaded),
+                        "kept_count": kept,
+                        "total_configs": len(new_configs),
+                    },
+                ),
+            )
+            return {"unloaded": unloaded, "kept": kept}
 
     async def unload_server(self, server_name: str) -> None:
         """Unload an MCP server and free resources.
@@ -463,7 +502,9 @@ class MCPServerManager:
         return {
             "loaded_count": len(self._loaded_servers),
             "max_servers": self.max_loaded_servers,
-            "total_tokens": sum(s.token_estimate for s in self._loaded_servers.values()),
+            "total_tokens": sum(
+                s.token_estimate for s in self._loaded_servers.values()
+            ),
             "max_tokens": self.max_total_tokens,
             "servers": [
                 {
