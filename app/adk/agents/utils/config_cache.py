@@ -56,6 +56,10 @@ _CacheEntry = tuple[
 ]  # (config, metadata, expires_at_monotonic)
 
 _cache: dict[str, _CacheEntry] = {}
+# Process-wide lock — held during the Firestore call inside get_cached_config,
+# so a slow refresh for one doc_id blocks reads of every other doc_id. Acceptable
+# today because only ``ken_e_chatbot`` uses this cache; revisit (per-doc-id locks
+# or a striped lock) once a second agent ships.
 _cache_lock = threading.Lock()
 
 
