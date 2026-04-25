@@ -147,7 +147,7 @@ Existing query patterns ("What were my sessions last week?", "Show me traffic tr
 
 ## 10. Reference
 
-- Parent: Sprint 10 Notion page + Decision: Narrow Specialist Architecture
+- Parent: Linear project for this PRD; design rationale captured in [Review 5 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-5-architecture-accuracy-pass--harness-doc-v22--v23) (Narrow Specialist Architecture)
 - Upstream: [AH-PRD-01](./AH-PRD-01-review-loop-framework.md), [AH-PRD-02](./AH-PRD-02-agent-factory.md)
 - Design docs: [`../README.md`](../README.md) §2 Architecture, §2.5 Tool-assignment model, §2.6 Specialist roadmap; [AH-PRD-02](./AH-PRD-02-agent-factory.md) §5 Factory implementation; [`../mcp-architecture.md`](../mcp-architecture.md) §4 Platform integration decisions (Google Analytics row)
 - Harness design: `docs/KEN-E-System-Architecture.md` §4.4 (Code execution)

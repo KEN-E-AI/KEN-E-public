@@ -1,6 +1,6 @@
 # Design Review Log
 
-Hybrid decision log and document changelog. Tracks what changed in the design docs, when, and why. For full decision rationale, see the [Design Decisions database in Notion](https://www.notion.so/2f230fd6530280d599f0ca1449111d7e).
+Hybrid decision log and document changelog. Tracks what changed in the design docs, when, and why. **This is the canonical decision log going forward** — new architectural decisions are captured as Review entries with their full rationale. Reviews 1–20 reference a legacy Notion Design Decisions database that is retained as a historical archive only; new entries should not link out to it.
 
 ---
 
@@ -873,13 +873,234 @@ Six components (Data Pipeline, Integrations, SAR-E, Performance, Billing, Chat) 
 
 ### Follow-ups
 
-- **`docs/product-roadmap.md` reconciliation** — that doc still describes R2.0 as "Intelligent Analytics" (review loop + GA specialist + data viz) and R3.0 as "Content & Campaigns," which no longer matches the component planner's release structure. Recommendation under separate cover: retire `product-roadmap.md` in favor of `PROJECT-PLANNER.md` + Notion, since the roadmap's unique content (Features Index, design refs) is already duplicated in the component PRDs and Notion is designated as the source of truth for feature detail.
-- **No implementation work unblocked yet** — this review only fills in the release column. Component teams continue to pull from `blocked_by` directly; the `release` column is for cross-component planning and product-roadmap sync.
+- **`docs/product-roadmap.md` reconciliation** — that doc still describes R2.0 as "Intelligent Analytics" (review loop + GA specialist + data viz) and R3.0 as "Content & Campaigns," which no longer matches the component planner's release structure. Recommendation under separate cover: retire `docs/product-roadmap.md` in favor of `PROJECT-PLANNER.md` for project sequencing and Linear for feature/sprint detail. (Followed up in Review 27 — the Notion → Linear migration.)
+- **No implementation work unblocked yet** — this review only fills in the release column. Component teams continue to pull from `blocked_by` directly; the `release` column is for cross-component planning.
 
-### Notion Design Decision
+### Decision
 
-Add a Design Decision entry for "Release assignments — full dependency-driven sequencing" linking to this review. (To be filed by the design-doc maintainer.)
+This Review entry is the canonical capture. Release assignments are tracked in `docs/design/components/PROJECT-PLANNER.md`.
 
 ---
 
-*Add new review entries above this line. Each entry should include: date, scope, summary of findings, documents updated, and a link to the corresponding Notion Design Decision(s).*
+## Review 22: Backfill — Decisions 7 + 8 (Token Budget Strategy + ToolRegistry as build-time catalog)
+
+**Date:** 2026-04-25
+**Scope:** Backfill Decisions 7 + 8 from the legacy Notion Design Decisions database into this in-repo log. These are foundational tool-handling decisions that pre-date Reviews 1–20 but only had Notion records until now.
+
+### Context
+
+The agent system manages a large tool inventory (~400 tools across 20–40 MCP servers) per the System Architecture §1.2. The naive approach of loading every tool definition into every agent context would consume ~60,000 tokens before any conversation begins. Two architectural decisions shape how this is handled.
+
+### Decision 7 — Token Budget Strategy
+
+Each specialist receives a **curated ≤30-tool roster fixed at construction time**. The cap is the scope discipline — specialists that need more than 30 tools indicate a scope problem and should be split into multiple specialists. Built-in Gemini code execution (`ToolCodeExecution`) is included as a tool *type* but carries zero context overhead — no tool definition is sent to the model. The Root Agent does not get domain tools; it routes to specialists.
+
+Per-turn `tool_filter` predicates were considered but later retired (see Review 9) in favor of fixed rosters with description-based routing.
+
+### Decision 8 — ToolRegistry as build-time catalog
+
+The ToolRegistry is a **build-time metadata catalog** read by the Agent Factory at deploy time, not a runtime router. The factory uses it to assemble each specialist's ≤30-tool roster. There is no runtime tool-selection layer. Routing between specialists is description-based: the root LLM reasons over each specialist's `agent_configs/{id}.description` to pick a `dispatch_to_{name}()` call.
+
+### Where the rationale lives now
+
+- System Architecture §1.4 (Key Design Decisions) — narrow per-platform specialists, ≤30-tool roster
+- Agentic-harness README §2.5 (Tool-assignment & routing model)
+- System Architecture §4.1 (Tool Type Taxonomy)
+- Review 9 in this log — `tool_filter` retirement (the refinement of Decision 8)
+
+### Decision
+
+This Review entry is the canonical capture. The original Notion Decisions remain accessible in archive but should not be cited as the authoritative source going forward.
+
+---
+
+## Review 23: Backfill — Decisions 14 + 15 + 16 (Channel architecture: API gateway, Slack, Voice)
+
+**Date:** 2026-04-25
+**Scope:** Backfill the three multi-channel architecture decisions from Notion. These cover the channel-agnostic API surface (today: web chat; planned: Slack in R5; planned: Voice in R6).
+
+### Decision 14 — Channel-Agnostic API
+
+Single FastAPI surface in front of Vertex AI Agent Engine. Channel-specific adapters (web frontend, Slack bot, voice gateway) translate to a common `ChatRequest` / `ChatResponse` contract. Channel knowledge does not leak into the agent path; the agent does not know whether it is responding to a browser, a Slack thread, or a voice stream.
+
+### Decision 15 — Slack Channel
+
+Slack Bolt SDK with thread-context binding. One ADK session per user × Slack workspace. Long-running responses use Slack's deferred response pattern (initial ack, follow-up message via webhook). Visualization artifacts degrade to text-+-image attachments per the channel-considerations note in `data-visualization.md` §9.
+
+### Decision 16 — Voice Channel
+
+Pipecat for voice pipeline orchestration. Cartesia TTS (sub-100ms TTFB). Deepgram STT (sub-300ms). Recall.ai or Meeting BaaS for meeting-bot integration. The voice-latency gap is the open risk: Agent Engine's ~7–13s response time vs. voice's <2s end-to-end target. R5 voice feasibility spike (Story 5.5-1) is the de-risk gate before R6 planning commits.
+
+### Where the rationale lives now
+
+- System Architecture §7 (Frontend & Channels)
+- `docs/design/components/backlog/api-gateway-multi-channel.md` (channel adapter design)
+- Risk Register entry "Voice latency incompatible with Agent Engine"
+
+### Decision
+
+This Review entry is the canonical capture. R5 spike outcome will produce its own Review when complete.
+
+---
+
+## Review 24: Backfill — Decision 18 (Session Compaction — ADK native)
+
+**Date:** 2026-04-25
+**Scope:** Backfill the session compaction architectural decision from Notion.
+
+### Context
+
+Long-running chat sessions accumulate events that eventually exceed the model context window. Three approaches were considered: a custom `ConversationSummarizer` written in-house, manual user-triggered compaction via a UI affordance, or ADK's built-in `EventsCompactionConfig`.
+
+### Decision
+
+Use ADK's `EventsCompactionConfig` with a `gemini-2.5-flash` summarizer. Triggers: every 5 user invocations OR session exceeds 50K tokens. Retention: last 10 raw events un-compacted + 1 invocation of overlap with the prior summary for continuity. KEN-E owns only the config values (`token_threshold=50000`, `event_retention_size=10`); ADK owns the summarization logic, retention windowing, and budgeting.
+
+### Alternatives rejected
+
+- **Custom `ConversationSummarizer`** — rejected because it duplicates ADK functionality and requires us to maintain the summary-quality bar ourselves.
+- **Manual user-triggered compaction** — rejected because the UX friction (asking the user to "compact now") was deemed worse than automatic compaction with conservative thresholds.
+- **Larger context window** — rejected; cost + latency penalty outweighs the benefit for typical session lengths.
+
+### Where the rationale lives now
+
+- System Architecture §3.5 (Session Compaction — ADK Native)
+- `app/adk/deploy_ken_e.py` — config values
+
+### Decision
+
+This Review entry is the canonical capture.
+
+---
+
+## Review 25: Backfill — Decision 19 (Token Usage Visibility in UI) [PROPOSED]
+
+**Date:** 2026-04-25
+**Scope:** Backfill the proposed token-usage-visibility decision from Notion. Status: proposed; not yet implemented.
+
+### Context
+
+Token-usage data exists at three layers — Vertex AI `usage_metadata` per response, Weave traces, and `ConversationSummarizer.token_budget_usage` — but none of it crosses the API boundary to the frontend. The current `ChatResponse` returns content + session metadata only.
+
+### Proposed Decision
+
+Add a `usage` field to `ChatResponse` exposing three signals:
+
+- **Tokens sent with most-recent query** — from `usage_metadata`; rendered as a percentage of total available context
+- **Session tokens used** — running total from `ConversationSummarizer.token_budget_usage`
+- **Compaction proximity** — warning indicator when the session crosses 80% of the 40K compaction trigger
+
+### Implementation surface (when scheduled)
+
+- API: extract `usage_metadata` from Agent Engine response, populate the new field
+- Response model: extend `ChatResponse` with the `usage` field (additive, backward-compatible)
+- Frontend: token-display components in the chat UI
+
+### Status
+
+Proposed — not in any current release plan. May be folded into the Billing or Chat components if the product case develops.
+
+### Decision
+
+This Review entry is the canonical capture of the proposal. When implementation is scheduled, the implementing PRD becomes authoritative.
+
+---
+
+## Review 26: Backfill — Decision 20 (Unified Usage Tracking for Billing) [SUPERSEDED IN PART]
+
+**Date:** 2026-04-25
+**Scope:** Backfill the unified-usage-tracking architectural decision from Notion. Partly superseded by the Billing component (BL-PRD-02).
+
+### Context
+
+Two separate usage-tracking Firestore collections exist:
+
+| Collection | Tracks | Has organization_id | Has session_id | Has token counts |
+|------------|--------|---------------------|-----------------|------------------|
+| `tool_usage_events` | Tool calls (name, duration, user) | ✅ | ❌ | ❌ |
+| `usage_records` | LLM calls (tokens, model, cost) | ❌ | ❌ | ✅ (partial) |
+
+Monthly billing requires aggregating token usage to the organization level — neither collection supports this on its own.
+
+### Original Decision (Decision 20)
+
+Keep the two collections separate (tool observability vs. billing) but standardize on shared keys: `organization_id` + `session_id`. Close three gaps:
+
+1. Backfill `organization_id` + `session_id` on `usage_records` writes
+2. Ensure Vertex AI `usage_metadata` token counts reach `usage_records` reliably (currently only W&B traces)
+3. Build a billing aggregation Cloud Function or BigQuery view summing tokens by organization × billing period
+
+### Current state
+
+The Billing component (`docs/design/components/billing/`) supersedes the aggregation-layer portion of this decision. **BL-PRD-02 (Token Meter + Monthly Enforcement)** is the canonical implementation:
+
+- `billing.meter_increment()` is the synchronous per-call meter, not a Cloud Function aggregator
+- Per-account → per-org rollup uses Shape-B Firestore subcollections
+- 10-shard distributed counter handles write contention
+
+The schema decisions in Decision 20 (shared `organization_id` + `session_id` keys) remain valid for cross-referencing the two collections.
+
+### Where the rationale lives now
+
+- System Architecture §3.6.5 (Unified Usage Tracking for Billing) — original framing
+- `docs/design/components/billing/` — current implementation
+- BL-PRD-02 — token meter spec
+
+### Decision
+
+This Review entry is the canonical capture of the original decision. BL-PRD-02 is the canonical implementation plan going forward.
+
+---
+
+## Review 27: Notion → Linear migration (workflow + decision-log + roadmap retirement)
+
+**Date:** 2026-04-25
+**Scope:** Full migration of KEN-E development off Notion. Three concurrent threads: (a) replace the local-dev session-skill workflow with the Linear-driven autonomous-agent workflow imported from Fun-E, (b) collapse all live decision references in design docs to in-repo `DESIGN-REVIEW-LOG.md` anchors with backfilled Reviews for previously-Notion-only decisions, (c) retire `docs/product-roadmap.md` after salvaging its Risk Register and Sequencing Principles into the System Architecture.
+
+### Context
+
+KEN-E development was three-way split across docs (architecture), Notion (decisions + sprint planning), and ad-hoc state in component READMEs (release sequencing). Per-feature execution was migrating to Linear independently. The drift surface area was high — every PRD update potentially required Notion edits, and the `product-roadmap.md` numbering (1.1 / 2.0 / …) had diverged from the component planner's release themes (1 / 2 / …). Track 1 (Fun-E infrastructure) was completed in a parallel session and shipped a multi-repo dispatch system that supports KEN-E-AI/KEN-E (15 component teams) plus KEN-E-AI/FUN-E, KEN-E-AI/MER-E, KEN-E-AI/ken-e-web, and Dive-Team/diveteam_website.
+
+### Method (seven-phase migration in KEN-E)
+
+**Phase 1 — Local skills import.** Copied Fun-E's `product-assistant`, `update-design-docs`, `linear-sprint-ops`, and `frontend-design` skills (12 files total) into `KEN-E/.claude/skills/`. Workflow skills (`dev-team-workflow` etc.) were intentionally NOT copied — they're baked into the agent VM image in Fun-E and shouldn't drift between repos.
+
+**Phase 2 — Obsolete skill removal.** Deleted `start-session`, `run-tests`, `end-session`, `notion-pm-workflow` skills + `session-context` agent. These were the Notion-era local-dev session lifecycle that no longer applies.
+
+**Phase 3 — Decision link migration.** Converted ~30 outbound Notion Decision URLs across 18 files to in-repo Review anchors. Backfilled five new Reviews (22–26) for decisions that previously only had Notion records: Decisions 7+8 (Token Budget + ToolRegistry), 14+15+16 (channel architecture), 18 (session compaction), 19 (token usage visibility), 20 (unified usage tracking). Updated DESIGN-REVIEW-LOG header to mark itself canonical and the footer template to drop the Notion follow-up line.
+
+**Phase 4 — `product-roadmap.md` retirement.** Salvaged 8 unique Risk Register rows into System Architecture §11.4. Salvaged 4 timeless Sequencing Principles into a new System Architecture §1.7. Bulk-removed 37 `> **Roadmap:**` blockquotes across 7 design docs (those references pointed at product-roadmap features and didn't add architectural value). Updated CLAUDE.md to add `dev-workflow.md` as the human-facing workflow doc. Deleted `docs/product-roadmap.md`.
+
+**Phase 5 — CLAUDE.md updates.** Added a new "Linear Workflow Conventions" section with the 15-team mapping (KEN-E component → Linear team display name → repo + dir), project naming convention (`<PRD-ID>: <PRD title>`), and the canonical-source rule: SKILL files are canonical for autonomous-agent behavior; `dev-workflow.md` is canonical for humans. Updated the Skills table to reflect the four imported skills (product-assistant, update-design-docs, linear-sprint-ops, frontend-design) plus a note about image-baked workflow skills.
+
+**Phase 6 — Setup guide + prose housekeeping.** Deleted `docs/claude-code-notion-setup-guide.md`. Fixed ~12 incidental Notion-prose mentions across PROJECT-PLANNER, DM-PRD-06, multi-tenant-data-model-research-brief, Release-1-Optimization-Strategy, AH-PRD-03, AH-PRD-04, and `ai-engineer.md`. Most became Review-N anchors; some became Linear pointers; a few were dropped entirely.
+
+**Phase 7 — Verification.** Final greps confirm: zero live-doc Notion URLs (all remaining ones are explicitly marked "historical / archival" or live in DESIGN-REVIEW-LOG entries 1–20 as accurate-for-their-time history); zero `product-roadmap.md` references outside the System Architecture's own Document History changelog; zero `start-session` / `run-tests` / `end-session` / `notion-pm-workflow` skill mentions in CLAUDE.md.
+
+### Documents updated
+
+- **Skills imported** (12 files): `.claude/skills/operations/product-assistant/{SKILL.md,example.md}`, `.claude/skills/tools/{update-design-docs,linear-sprint-ops}/SKILL.md`, `.claude/skills/frontend-design/SKILL.md` + 7 reference files
+- **Skills deleted**: `.claude/skills/{start-session,run-tests,end-session,notion-pm-workflow}/`, `.claude/agents/session-context.md`
+- **Decision-link conversions** (18 files): `KEN-E-System-Architecture.md`, `knowledge-graph/README.md` + KG-PRD-03 + KG-PRD-04 + KG-PRD-05, `agentic-harness/README.md` + AH-PRD-01 + AH-PRD-03 + AH-PRD-04 + `mcp-architecture.md` + `data-visualization.md`, `data-management/README.md` + DM-PRD-00 through DM-PRD-06 + `multi-tenant-migration-plan.md`, `feature-flags/README.md` + FF-PRD-01, `skills/skills-implementation-plan.md` + SK-PRD-01 + SK-PRD-02 + SK-PRD-04, project-tasks PRDs (PR-PRD-01, PR-PRD-06), automations PRDs (A-PRD-01, A-PRD-03), `review-loop-implementation-plan.md`, `project-planning-implementation-plan.md`, `spike-otel-pydantic-findings.md`, `multi-tenant-data-model-research-brief.md`
+- **Backfilled Reviews (this log)**: 22 (Decisions 7 + 8), 23 (Decisions 14 + 15 + 16), 24 (Decision 18), 25 (Decision 19), 26 (Decision 20)
+- **Header / footer**: log header reframed as canonical source going forward; footer template stripped of Notion follow-up line; existing Reviews 1–20 left intact as historical record
+- **System Architecture**: new §1.7 (Sequencing principles) + 8 new rows in §11.4 (Risk Assessment Matrix); §12 release table; "What this doc is not" purpose paragraph
+- **CLAUDE.md**: new "Linear Workflow Conventions" section with 15-row team mapping; updated Skills table; updated Documentation Model paragraph
+- **`docs/dev-workflow.md`**: cross-link header pointing at the canonical SKILL files
+- **Deleted**: `docs/product-roadmap.md`, `docs/claude-code-notion-setup-guide.md`
+
+### What's intentionally NOT in this migration
+
+- **Fun-E repo** — Track 1 (the multi-repo dispatch infrastructure + skill parameterization) was completed separately. This migration only touched KEN-E.
+- **MER-E / DiveTeam Website / KEN-E Website repos** — each follows the same pattern when its turn comes (docs standardize to KEN-E layout, Linear teams created, CLAUDE.md mapping table added). Out of scope here.
+- **Linear team / project / issue creation** — one-time data entry; can be done interactively via `product-assistant` after this lands.
+- **Removing Notion MCP from individual Claude Code user settings** — per-developer; not a repo change.
+- **DESIGN-REVIEW-LOG entries 1–20** — left intact. Their inline "See Decision N in Notion" references and "Notion Design Decision" footers are accurate-for-their-time historical records of how decisions were captured at the time. Per the migration policy: don't rewrite history, just stop writing new Notion links.
+
+### Decision
+
+This Review entry is the canonical capture. Going forward, DESIGN-REVIEW-LOG is the architectural decision log and Linear is the per-feature execution tracker. No new entries should reference the legacy Notion Design Decisions database.
+
+---
+
+*Add new review entries above this line. Each entry should include: date, scope, summary of findings, and documents updated. Decision rationale lives in the Review itself — this log is the canonical record going forward.*

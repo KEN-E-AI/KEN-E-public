@@ -185,7 +185,7 @@ Vega-Lite specs must be complete to render, so artifacts are **not** streamed in
 
 ## 7. Acceptance criteria
 
-Mapped 1:1 to the nine Sprint 11 sprint-level ACs so the project maintains traceability back to the original Notion plan.
+Mapped 1:1 to the nine sprint-level ACs from the original Sprint 11 plan (historical Notion page; archived).
 
 1. **Artifact model.** `Artifact` and `ArtifactMetadata` Pydantic models are defined in a shared location importable from both `app/` and `api/`. `type` and `chart_type_suggestion` are `Literal` enums. The Vega-Lite spec structure (`$schema` = v6, `data.values` inline, `mark`, `encoding`) round-trips through JSON serialization.
 2. **`create_visualization()` tool.** `create_visualization()` constructs valid Vega-Lite v6 specs, **appends** to `response_artifacts` (multiple calls accumulate; never overwrites), returns a human-readable confirmation string (title + chart type + data-point count), and handles invalid JSON input for `data` / `encoding` with a clear error message rather than an unhandled exception. Specs do not include a `config` block or hardcoded mark colors.

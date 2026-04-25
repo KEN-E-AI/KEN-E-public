@@ -2,7 +2,6 @@
 
 ## Scenario 1: The user requests a keyword analysis for a website.
 
-> **Roadmap:** [Feature 2.3: Analytics Specialist](product-roadmap.md#23--analytics-specialist), [Feature 3.3: Predefined Skills](product-roadmap.md#33--predefined-skills), [Feature 3.4: Multi-Step Workflows](product-roadmap.md#34--multi-step-workflows), [Feature 5.3: Workflow Templates](product-roadmap.md#53--workflow-templates) — Releases 2.0, 3.0, 5.0
 
 This is an example prompt that a user might enter to initiate this use case: I am updating a website for a consulting firm that helps marketing teams use data and AI to optimize performance. Before we begin generating content, I would like to do a comprehensive keyword analysis to determine what language people are searching for in Google or in large language models when they are looking for service providers in this niche. Help me conduct a keyword analysis.
 
@@ -222,7 +221,6 @@ Once the blog post is live, the user might want to view the performance of the b
 
 ## Scenario 2: The user generates content to improve brand awareness.
 
-> **Roadmap:** [Feature 2.3: Analytics Specialist](product-roadmap.md#23--analytics-specialist), [Feature 3.1: Content Specialist](product-roadmap.md#31--content-specialist), [Feature 3.3: Predefined Skills](product-roadmap.md#33--predefined-skills), [Feature 5.3: Workflow Templates](product-roadmap.md#53--workflow-templates) — Releases 2.0, 3.0, 5.0
 
 The user is a CMO who works for a consulting firm that has expertise in IT Security. He has already built a website and begun launching content across a blog, TikTok, Instagram, LinkedIn, and Twitter. The user has already identified a list of concepts that he thinks would help him increase awareness of his company across his marketing channels. He would like KEN-E to help him analyzing the concepts to determine which would be the best fit for content creation that accomplishes his goal. To this end, the user inputs the following into chat: a description of a concept, a description of the target audience, and his or her unique perspective on the topic that will be shared.
 
@@ -389,7 +387,6 @@ When the user agrees, the LLM drafts all content and adds it to the content cale
 
 ## Scenario 3: The user hosts a team meeting to brainstorm optimiztion strategies
 
-> **Roadmap:** [Feature 2.3: Analytics Specialist](product-roadmap.md#23--analytics-specialist), [Feature 3.2: Execution Specialist](product-roadmap.md#32--execution-specialist), [Feature 6.1: Voice Channel](product-roadmap.md#61--voice-channel), [Feature 6.2: Enterprise Integrations](product-roadmap.md#62--enterprise-integrations) — Releases 2.0, 3.0, 6.0
 
 The user is a Chief Marketing Officer for a retail clothing company. The CMO oversees the work of a 5-person marketing team, and a digital marketing agency. The people in the marketing team specialize in channels: Social media, Email, Paid search & display, Video, Website writing and design. The agency specifically supports paid media campaigns for paid search, display and social media.
 

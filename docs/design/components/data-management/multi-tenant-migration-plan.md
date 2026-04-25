@@ -1,6 +1,6 @@
 # Multi-Tenant Data Model — Migration Plan
 
-**Decision:** [Multi-Tenant Data Model Shape: Firestore Subcollections (Shape B) + GCS Prefix (G1)](https://www.notion.so/34830fd653028177bc0dc2a1637c7f60) (Notion)
+**Decision:** [Review 15 in DESIGN-REVIEW-LOG](../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1) — Multi-Tenant Data Model Shape: Firestore Subcollections (Shape B) + GCS Prefix (G1)
 **Research findings:** [`../../multi-tenant-data-model-research-findings.md`](../../multi-tenant-data-model-research-findings.md)
 **Research brief:** [`../../multi-tenant-data-model-research-brief.md`](../../multi-tenant-data-model-research-brief.md)
 **Created:** 2026-04-20
@@ -397,11 +397,11 @@ See Phase 5. The impact per PRD:
 | `docs/design/components/project-tasks/projects/PR-PRD-06-time-based-scheduler.md` | Collection-group index name; remove the per-account-iteration fallback row in §9 |
 | `docs/design/components/automations/projects/A-PRD-01-data-model-and-api.md` | Firestore layout block + index section |
 | `docs/design/components/automations/projects/A-PRD-03-task-artifact-system.md` | Artifact path reference |
-| `docs/design/components/knowledge-graph/projects/KG-PRD-04-session-end-automation.md` | No structural path changes (uses Automations API), but add a Notion callout for reader context |
+| `docs/design/components/knowledge-graph/projects/KG-PRD-04-session-end-automation.md` | No structural path changes (uses Automations API), but add a Review-15 callout for reader context |
 
 Each edited PRD gets a short inline callout at the top of its Firestore-layout section:
 ```
-> **Revised 2026-04-20** — Firestore paths updated to Shape B (accounts/{account_id}/{resource}/...). See [Multi-Tenant Data Model Shape Decision](https://www.notion.so/34830fd653028177bc0dc2a1637c7f60) for rationale.
+> **Revised 2026-04-20** — Firestore paths updated to Shape B (accounts/{account_id}/{resource}/...). See [Review 15 in DESIGN-REVIEW-LOG](../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1) — Multi-Tenant Data Model Shape for rationale.
 ```
 
 ## 8. Risks & mitigations
@@ -433,7 +433,7 @@ These are independent of the migration but become easier once Shape B is in plac
 
 ## 11. Execution checklist
 
-- [x] Decision recorded in [Notion](https://www.notion.so/34830fd653028177bc0dc2a1637c7f60)
+- [x] Decision recorded in [Review 15 of DESIGN-REVIEW-LOG](../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1)
 - [x] Migration plan drafted (this doc)
 - [x] PRD edits landed (Phase 5 — see DESIGN-REVIEW-LOG for date)
 - [ ] Migration script written (`api/scripts/migrate_to_shape_b.py`)

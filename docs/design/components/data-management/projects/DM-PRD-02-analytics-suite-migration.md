@@ -160,6 +160,6 @@ python api/scripts/migrate_to_shape_b.py --resource=performance_profiles --confi
 - Parent plan: [`../multi-tenant-migration-plan.md`](../multi-tenant-migration-plan.md) §3.1, §3.5
 - Upstream: [DM-PRD-00](./DM-PRD-00-migration-foundation.md)
 - Downstream: [DM-PRD-05](./DM-PRD-05-deletion-sweep-rewrite.md)
-- Notion decision: [Multi-Tenant Data Model Shape](https://www.notion.so/34830fd653028177bc0dc2a1637c7f60)
+- Decision: [Review 15 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1) — Multi-Tenant Data Model Shape
 - Naming-inconsistency callout: `app/adk/agents/strategy_agent/RUNTIME_WARNINGS_ERRORS.md:230`
 - CLAUDE.md rules in scope: PY-1, PY-2, PY-7; T-1, T-3, T-4, T-6

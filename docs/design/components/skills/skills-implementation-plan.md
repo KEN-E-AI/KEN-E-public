@@ -99,7 +99,7 @@ Feature 2.6 gives end-users a way to **capture and reuse their domain expertise*
 | 5 | **Agent placement** | Root agent has system-owned skills users cannot modify. User-authored skills may only be attached to **user-created custom specialist agents** (per [AH-PRD-02](../agentic-harness/projects/AH-PRD-02-agent-factory.md) §5.2). |
 | 6 | **skills.sh import** | **Deferred to v2.** No skill import in v1 — users author skills natively. Import design will involve per-GitHub-repo licensing, attribution preservation, and prompt-injection content scanning. |
 
-Design Decision ADRs covering these will be filed in Notion once this plan is approved. Each ADR links back to its decision row above.
+When SK-PRD-* implementation begins, decisions captured above are recorded as Review entries in [`docs/design/DESIGN-REVIEW-LOG.md`](../../DESIGN-REVIEW-LOG.md).
 
 ## 4. Data model headlines
 

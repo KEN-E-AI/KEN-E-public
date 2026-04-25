@@ -39,7 +39,7 @@ Destructive changes (deletes, updates to user-written fields) halt as `PlanRun.s
 
 ## 3. Dependencies
 
-> **Revised 2026-04-20** — Consumed Firestore collections (`project_plans`, `plan_runs`, artifact subcollection) follow the Shape B layout (`accounts/{account_id}/{resource}/...`). The PRD itself calls the Automations API and does not touch Firestore paths directly, but integrators should expect Shape B paths when debugging. See [Multi-Tenant Data Model Shape Decision](https://www.notion.so/34830fd653028177bc0dc2a1637c7f60) for rationale.
+> **Revised 2026-04-20** — Consumed Firestore collections (`project_plans`, `plan_runs`, artifact subcollection) follow the Shape B layout (`accounts/{account_id}/{resource}/...`). The PRD itself calls the Automations API and does not touch Firestore paths directly, but integrators should expect Shape B paths when debugging. See [Review 15 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1) for rationale.
 
 **Hard blockers:**
 - **KG-PRD-01:** `:KGNode`, constraints, vector index.

@@ -21,7 +21,7 @@ No new code is produced here. The work is **verify, document, and cut over**.
 - Run the Phase 6 verification checklist from the migration plan in dev (`../multi-tenant-migration-plan.md` §4 Phase 6)
 - Run the whole-codebase scan for residual Shape A / D / B-like references
 - Promote the cutover to staging: run `migrate_to_shape_b.py --all` in staging (with appropriate service-account credentials)
-- Update `DESIGN-REVIEW-LOG.md` with a "migration complete" entry (Review 16 or the next available number) referencing the Notion decision
+- Update `DESIGN-REVIEW-LOG.md` with a "migration complete" entry (Review 16 or the next available number) cross-linking to Review 15 (the original data-model decision)
 - Update each completed PRD's Status to "Complete" in `README.md`
 
 ### Out of scope
@@ -86,11 +86,10 @@ Each grep should return **zero** hits after DM-PRD-01–DM-PRD-05 complete. Any 
 
 - Add **Review 16** entry to `docs/design/DESIGN-REVIEW-LOG.md`:
   - Scope: migration complete; all code on Shape B; staging cut over
-  - Link to [Notion decision](https://www.notion.so/34830fd653028177bc0dc2a1637c7f60)
+  - Cross-link to [Review 15 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1) — Multi-Tenant Data Model Shape
   - Link to the execution checklist in `../multi-tenant-migration-plan.md` §11 (all items checked)
 - Update `docs/design/components/data-management/README.md` §Project Index — mark DM-PRD-00–DM-PRD-06 Status as "Complete"
 - Update `docs/design/components/data-management/multi-tenant-migration-plan.md` §11 checklist — check the remaining boxes
-- Close the Notion decision by setting `Status` via the Notion API (or manually) if that's the workspace convention post-completion (not required if the decision stays `Accepted` for reference)
 
 ## 5. Acceptance criteria
 
@@ -98,7 +97,7 @@ Each grep should return **zero** hits after DM-PRD-01–DM-PRD-05 complete. Any 
 2. A new DESIGN-REVIEW-LOG entry exists documenting migration completion.
 3. The migration plan §11 "Execution checklist" has all its checkboxes filled.
 4. All PRDs DM-PRD-00–DM-PRD-06 in this project set have Status updated to "Complete" in the README.
-5. Staging migration timing report is posted (can be a short comment in the DESIGN-REVIEW-LOG entry or a separate Notion page linked from it).
+5. Staging migration timing report is posted (a short comment in the DESIGN-REVIEW-LOG entry, or a separate doc linked from it).
 
 ## 6. Test plan
 
@@ -123,5 +122,5 @@ A "red-light" test: if any of §4.1's checks fail, **do not proceed to §4.3**. 
 
 - Parent plan: [`../multi-tenant-migration-plan.md`](../multi-tenant-migration-plan.md) §4 Phase 6, §11
 - Upstream: [DM-PRD-05](./DM-PRD-05-deletion-sweep-rewrite.md)
-- Notion decision: [Multi-Tenant Data Model Shape](https://www.notion.so/34830fd653028177bc0dc2a1637c7f60)
+- Decision: [Review 15 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1) — Multi-Tenant Data Model Shape
 - CLAUDE.md rules in scope: (none — no code; documentation and verification only)

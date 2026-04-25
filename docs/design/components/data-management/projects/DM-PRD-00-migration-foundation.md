@@ -219,7 +219,7 @@ Exceptions (Shape C — global collection with `account_id` field):
 - `notifications` — users query N accounts at once via `where("account_id","in",[batch])`
 - `usage_records` — org-level billing aggregation
 
-See the [Multi-Tenant Data Model decision](https://www.notion.so/34830fd653028177bc0dc2a1637c7f60) for full rationale.
+See [Review 15 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1) for full rationale.
 ```
 
 ## 6. Acceptance criteria
@@ -272,7 +272,7 @@ See the [Multi-Tenant Data Model decision](https://www.notion.so/34830fd65302817
 ## 9. Reference
 
 - Parent plan: [`../multi-tenant-migration-plan.md`](../multi-tenant-migration-plan.md) §4 Phase 0, §5, §6
-- Notion decision: [Multi-Tenant Data Model Shape](https://www.notion.so/34830fd653028177bc0dc2a1637c7f60)
+- Decision: [Review 15 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1) — Multi-Tenant Data Model Shape
 - Existing index file: `deployment/firestore.indexes.json`
 - Seed-script pattern: `api/scripts/init_subscription_plans.py`
 - CLAUDE.md rules in scope: PY-1, PY-2, PY-5, PY-7; T-1, T-3, T-4, T-6

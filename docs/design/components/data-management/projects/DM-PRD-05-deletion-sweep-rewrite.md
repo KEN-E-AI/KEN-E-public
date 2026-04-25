@@ -164,6 +164,6 @@ assert:
 - Parent plan: [`../multi-tenant-migration-plan.md`](../multi-tenant-migration-plan.md) §3.4 and §4 Phase 4
 - Upstream projects: [DM-PRD-01](./DM-PRD-01-strategy-suite-migration.md), [DM-PRD-02](./DM-PRD-02-analytics-suite-migration.md), [DM-PRD-03](./DM-PRD-03-shape-d-split.md), [DM-PRD-04](./DM-PRD-04-shape-b-like-collapse.md)
 - Downstream: [DM-PRD-06](./DM-PRD-06-verification-and-cutover.md)
-- Notion decision: [Multi-Tenant Data Model Shape](https://www.notion.so/34830fd653028177bc0dc2a1637c7f60)
+- Decision: [Review 15 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1) — Multi-Tenant Data Model Shape
 - Firestore SDK reference: [`recursive_delete`](https://cloud.google.com/python/docs/reference/firestore/latest/google.cloud.firestore_v1.client.Client#google_cloud_firestore_v1_client_Client_recursive_delete)
 - CLAUDE.md rules in scope: PY-1, PY-2, PY-3, PY-7; D-1, D-5; T-1, T-3, T-4, T-5, T-6

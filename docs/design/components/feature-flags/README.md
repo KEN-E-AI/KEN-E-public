@@ -191,7 +191,7 @@ Two touchpoints need conscious coordination:
 | `api/CLAUDE.md` | Firestore access patterns, super-admin auth pattern, Secret Manager | Before building the evaluation service or admin endpoints. |
 | `frontend/CLAUDE.md` | CSS architecture, shadcn component library, TanStack Query patterns | Before building the admin UI or the React hook. |
 | [`../../DESIGN-REVIEW-LOG.md`](../../DESIGN-REVIEW-LOG.md) | 2026-04-20 Feature Flags entry | Rationale for the current Shape-C collection layout and bucketing-entity decision. |
-| Notion Design Decision | [Feature Flag Targeting Model — Allowlist + Per-Entity Percentage Rollout](https://www.notion.so/<TBD>) | Full decision rationale (to be created alongside this PRD set). |
+| [`../../DESIGN-REVIEW-LOG.md`](../../DESIGN-REVIEW-LOG.md) | Review 16 — Feature Flags Component | Full decision rationale for the targeting model (allowlist + per-entity percentage rollout). |
 
 ## 7. Conventions and Constraints
 

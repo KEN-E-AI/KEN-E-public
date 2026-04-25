@@ -130,7 +130,7 @@ Current pins in `app/adk/pyproject.toml`:
 
 When W&B either (a) makes polyfile-weave optional, or (b) fixes the kaitai parser syntax errors, we can upgrade to weave >=0.52.1 and remove the gql<4 pin. Track [wandb/weave#5288](https://github.com/wandb/weave/issues/5288).
 
-See Notion Design Decision: "Agent Engine Python Version Migration: 3.10 to 3.13".
+See [Review 14 in DESIGN-REVIEW-LOG](design/DESIGN-REVIEW-LOG.md#review-14-adk-experiment-findings-integration-adk-v1274-validation) for the Agent Engine Python Version Migration (3.10 → 3.13) rationale.
 
 ## Existing Code References
 

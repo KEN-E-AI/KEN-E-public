@@ -5,7 +5,7 @@
 **Status:** Active — evaluation gates for Release 1.1 (Foundation Hardening)
 **Purpose:** Comprehensive evaluation plan to ensure Release 1 delivers high-quality outputs and optimal performance before deployment to live users.
 
-> **Status note (2026-04-21):** Release 1 has been re-scoped around the 8-component structure and the Release 1.1 "Foundation Hardening" feature set in [`product-roadmap.md`](product-roadmap.md#release-11-foundation-hardening). The authoritative sections of this document are: §3 Quality Evaluation Plan (methodology), §4 Performance Evaluation Plan, §6 Test Environment Requirements, §7 Acceptance Criteria (G-Q/G-P gates), §8 Schedule. §2 has been rewritten to map to current R1.1 features. MER-E / evaluation-framework infrastructure work is no longer part of R1 — it now lives in Features 2.5, 3.5, 4.3 (MER-E Phases 0–2) and is owned by [`KEN-E-Self-Improving-Evaluation-Framework-Design.md`](KEN-E-Self-Improving-Evaluation-Framework-Design.md). The old DDP1-/NR1- scope IDs and Sprint 5c/6b story references have been removed from this document; they do not map to any current work.
+> **Status note (2026-04-21):** Release 1 has been re-scoped around the 15-component structure tracked in [`design/components/PROJECT-PLANNER.md`](design/components/PROJECT-PLANNER.md). The authoritative sections of this document are: §3 Quality Evaluation Plan (methodology), §4 Performance Evaluation Plan, §6 Test Environment Requirements, §7 Acceptance Criteria (G-Q/G-P gates), §8 Schedule. §2 has been rewritten to map to current Release 1 components. MER-E / evaluation-framework infrastructure work is no longer part of R1 — it now lives in MER-E Phases 0–2 and is owned by [`KEN-E-Self-Improving-Evaluation-Framework-Design.md`](KEN-E-Self-Improving-Evaluation-Framework-Design.md). The old DDP1-/NR1- scope IDs and Sprint 5c/6b story references have been removed from this document; they do not map to any current work.
 
 ---
 
@@ -53,15 +53,15 @@ Release 1 is the first deployment to live users. The evaluation covers two thing
 
 ### 2.1 Release 1.1 Foundation Hardening features (active development)
 
-Source of truth: [`product-roadmap.md`](product-roadmap.md#release-11-foundation-hardening) + Notion.
+Source of truth: [`design/components/PROJECT-PLANNER.md`](design/components/PROJECT-PLANNER.md) for project sequencing; Linear for per-feature execution.
 
 | Feature | Purpose | Design ref |
 |---|---|---|
-| 1.1.1 — ADK Upgrade | Move to ADK ≥ 1.26 for per-invocation tool caching + other fixes | Notion |
+| 1.1.1 — ADK Upgrade | Move to ADK ≥ 1.26 for per-invocation tool caching + other fixes | Linear (the KEN-E team's tracked feature) |
 | 1.1.2 — Tracing Hardening | Every agent call emits a trace with the required metadata fields (contract in `trace-structure-spec.md`) — enables MER-E ingestion starting in R2.5 | [trace-structure-spec §3, §10, §11](trace-structure-spec.md) |
 | 1.1.3 — Release 1 Optimization Gates | The go/no-go checklist — **this document defines the gates** | §7 below |
 | 1.1.4 — Firestore Config Registry | Agent configs live in Firestore; factory reads at deploy time | [AH-PRD-02 §4, §5.2](design/components/agentic-harness/projects/AH-PRD-02-agent-factory.md), [mcp-architecture §6](design/components/agentic-harness/mcp-architecture.md#6-mcp-server-config-registry) |
-| 1.1.5 — Remove Session Timeout | Session lifecycle aligned to ADK's invocation model | Notion |
+| 1.1.5 — Remove Session Timeout | Session lifecycle aligned to ADK's invocation model | Linear (the KEN-E team's tracked feature) |
 
 ### 2.2 Existing harness capabilities evaluated by this plan
 
@@ -91,7 +91,7 @@ These will get their own evaluation plans when those releases are cut.
 
 ## 3. Quality Evaluation Plan
 
-Quality is the primary optimization target. Each section below defines what "high quality" means for that feature area and how to evaluate it. Execution of the plan (assigning individual Q-items to user stories in Notion) is tracked under Feature 1.1.3 — Release 1 Optimization Gates; this document defines **what** to evaluate, not which sprint owns each item.
+Quality is the primary optimization target. Each section below defines what "high quality" means for that feature area and how to evaluate it. Execution of the plan (assigning individual Q-items to user stories in Linear) is tracked under the Release 1 Optimization Gates feature; this document defines **what** to evaluate, not which cycle owns each item.
 
 ### 3.1 Onboarding Research Pipeline Quality
 
@@ -233,7 +233,7 @@ Feature 1.1.2 — Tracing Hardening is the R1.1 item that makes every agent call
 | Q-8.1 | Trace completeness | Every agent call produces a trace with all required metadata fields (agent_id, agent_version, account_id, session_id, model config, duration_ms) per `trace-structure-spec.md` §4, §10 | Run the compliance validator (`trace-structure-spec.md` §11) across every agent type on staging |
 | Q-8.2 | Span naming conventions | Span names match the conventions in `trace-structure-spec.md` §3 (e.g., `ken_e.root`, `ken_e.specialist.{name}`, `ken_e.tool.{name}`) | Snapshot a diverse set of traces; diff against the convention table |
 
-Full MER-E evaluation-retrieval / agreement-rate / extractor-quality work (previously Q-8.3–Q-8.8) is scoped to [Feature 2.5 — MER-E Phase 0](product-roadmap.md#25--mer-e-phase-0-trace-extraction) and later, not Release 1. See [`KEN-E-Self-Improving-Evaluation-Framework-Design.md`](KEN-E-Self-Improving-Evaluation-Framework-Design.md).
+Full MER-E evaluation-retrieval / agreement-rate / extractor-quality work (previously Q-8.3–Q-8.8) is scoped to MER-E Phase 0 (trace extraction) and later, not Release 1. See [`KEN-E-Self-Improving-Evaluation-Framework-Design.md`](KEN-E-Self-Improving-Evaluation-Framework-Design.md).
 
 ---
 

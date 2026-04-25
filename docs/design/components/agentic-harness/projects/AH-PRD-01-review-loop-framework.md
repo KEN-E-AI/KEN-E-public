@@ -78,7 +78,7 @@ def build_review_pipeline(
     """Generator-Critic loop: specialist drafts, reviewer approves or gives feedback."""
 ```
 
-Structural rules (validated from ADK 1.26.0 experiments — see Decision 21 and `review-loop-implementation-plan.md` §8 Risk Assessment):
+Structural rules (validated from ADK 1.26.0 experiments — see [Review 6 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-6-task-delegation-with-review-loops) and `review-loop-implementation-plan.md` §8 Risk Assessment):
 - Sub-agents are **direct children** of `LoopAgent` — no `SequentialAgent` wrapper (`SequentialAgent` swallows the `escalate` signal from `exit_loop`).
 - Reviewer uses `include_contents='none'` so it evaluates only the template-injected draft, not conversation history.
 - Reviewer is `gemini-2.0-flash` (cheapest model; ~200–400 tokens per evaluation).
@@ -150,6 +150,6 @@ Mapped 1:1 to the Sprint 8 sprint-level ACs for traceability.
 
 - Parent plan: [`../../../review-loop-implementation-plan.md`](../../../review-loop-implementation-plan.md) §Phase 1 (Core Building Block), §Phase 2 (Single-Step Integration), §Phase 3 (Criteria Generation), §Phase 4 (Multi-Step Workflow Support — deferred to Release 3)
 - Harness design: `docs/KEN-E-System-Architecture.md` §4.6 (Review Loop Pattern), §8.1–8.3 (ADK pitfalls)
-- Notion decision: [Decision 21 — Task Delegation with Review Loops](https://www.notion.so/32030fd6530281a8a30fc8e12c3f931e)
+- Decision rationale: [Review 6 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-6-task-delegation-with-review-loops) (originally Notion Decision 21 — historical archive)
 - Downstream: [AH-PRD-02](./AH-PRD-02-agent-factory.md) (dispatch generation imports `build_review_pipeline`), [AH-PRD-03](./AH-PRD-03-google-analytics-specialist.md) (first specialist to exercise review loop end-to-end)
 - CLAUDE.md rules in scope: PY-1, PY-2, PY-6, PY-7; C-2, C-4, C-7; T-1, T-4, T-5, T-6

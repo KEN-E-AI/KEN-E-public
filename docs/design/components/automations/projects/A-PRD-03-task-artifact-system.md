@@ -44,7 +44,7 @@ This PRD builds it: a GCS-backed storage tier for task outputs, an ADK tool agen
 
 ## 4. Data contract
 
-> **Revised 2026-04-20** — Firestore paths for artifact metadata follow the Shape B layout (`accounts/{account_id}/plan_runs/{run_id}/artifacts/{artifact_id}`). See [Multi-Tenant Data Model Shape Decision](https://www.notion.so/34830fd653028177bc0dc2a1637c7f60) for rationale.
+> **Revised 2026-04-20** — Firestore paths for artifact metadata follow the Shape B layout (`accounts/{account_id}/plan_runs/{run_id}/artifacts/{artifact_id}`). See [Review 15 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1) for rationale.
 
 ### `TaskArtifact` (Pydantic + Firestore)
 

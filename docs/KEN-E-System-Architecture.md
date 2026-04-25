@@ -6,7 +6,7 @@
 
 > **Role of this document.** This is the canonical, high-level system architecture for KEN-E. It covers the cross-cutting concerns — context management, agent runtime, multi-step orchestration, evaluation framework, infrastructure, resilience, and security — and frames each major component with a short summary and a pointer to the detailed component doc. **Detailed, evolving implementation content lives in component docs and is not duplicated here.** See §1.6 for the full component landscape; individual components are covered in the sections that follow.
 >
-> **What this doc is not:** it is not a PRD (components own their PRDs under `docs/design/components/<component>/projects/`), not a roadmap (see [`docs/product-roadmap.md`](product-roadmap.md) and [`docs/design/components/PROJECT-PLANNER.md`](design/components/PROJECT-PLANNER.md)), and not an ADR log (see [`docs/design/DESIGN-REVIEW-LOG.md`](design/DESIGN-REVIEW-LOG.md) for decision history).
+> **What this doc is not:** it is not a PRD (components own their PRDs under `docs/design/components/<component>/projects/`), not a roadmap (see [`docs/design/components/PROJECT-PLANNER.md`](design/components/PROJECT-PLANNER.md) for project sequencing; per-feature execution lives in Linear), and not an ADR log (see [`docs/design/DESIGN-REVIEW-LOG.md`](design/DESIGN-REVIEW-LOG.md) for decision history).
 
 ---
 
@@ -72,7 +72,7 @@ For the canonical architecture, agent tree, dispatch pattern, tool-assignment mo
 | **Opt-in analytical layer (SAR-E + Performance)** — statistical forecasting, IRF scenario propagation, and LLM-driven per-KPI-per-week targets activate per-account only after the setup wizard completes. Pre-wizard, SAR-E endpoints return empty-shape responses and the Performance page hides its analytical tabs. |
 | **"Statistical association only"** — SAR-E outputs never claim causation. Enforced in the `performance_forecasting` specialist's system prompt, response schema, and a `make lint` CI gate that greps for banned phrases (`caused`, `because`, `due to`, …) in `sar_e_*` files. |
 
-For full decision rationale, see the [Design Decisions database in Notion](https://www.notion.so/2f230fd6530280d599f0ca1449111d7e). For execution plans, see [AH-PRD-01 Review Loop](design/components/agentic-harness/projects/AH-PRD-01-review-loop-framework.md), [AH-PRD-02 Agent Factory](design/components/agentic-harness/projects/AH-PRD-02-agent-factory.md), [AH-PRD-03 GA Specialist](design/components/agentic-harness/projects/AH-PRD-03-google-analytics-specialist.md).
+For full decision rationale, see [`docs/design/DESIGN-REVIEW-LOG.md`](design/DESIGN-REVIEW-LOG.md) — the canonical in-repo decision log. For execution plans, see [AH-PRD-01 Review Loop](design/components/agentic-harness/projects/AH-PRD-01-review-loop-framework.md), [AH-PRD-02 Agent Factory](design/components/agentic-harness/projects/AH-PRD-02-agent-factory.md), [AH-PRD-03 GA Specialist](design/components/agentic-harness/projects/AH-PRD-03-google-analytics-specialist.md).
 
 ### 1.5 Expected Outcomes
 
@@ -109,6 +109,15 @@ Each subsequent section either **describes a cross-cutting concern** (§3 Contex
 
 For project sequencing across components, see [`components/PROJECT-PLANNER.md`](design/components/PROJECT-PLANNER.md).
 
+### 1.7 Sequencing principles
+
+Four principles guide how we slice and order work across releases. They predate the current planner and continue to apply:
+
+1. **Each release is production-deployable.** Small scope, high reliability, well-tested. Avoid "big bang" releases that depend on multiple components landing simultaneously.
+2. **Dependencies drive ordering.** The `blocked_by` column in PROJECT-PLANNER is the authoritative graph; release themes follow what's actually unblocked, not what's marketing-friendly to ship together.
+3. **Incremental complexity.** Single-step review loops before multi-step workflows. Predefined skills before custom skills. Narrow specialists before broad rollups. The simplest version that proves the pattern ships first; refinements ride later releases.
+4. **Stabilization between releases.** Each customer-visible release is followed by a stabilization window (production hardening, bug fixes, monitoring) before the next release begins.
+
 ---
 
 ## 2. Architecture Overview
@@ -129,7 +138,6 @@ For the current and planned specialist roster, see [agentic-harness README §2.6
 
 ## 3. Context Management Strategy
 
-> **Roadmap:** [Feature 1.1.1: ADK Upgrade](product-roadmap.md#111--adk-upgrade) — Release 1.1
 
 ### 3.1 The Context Challenge
 
@@ -169,7 +177,7 @@ Context flows into agent turns at two moments: a **session-start executive summa
 
 All four are read-only, account-scoped via `tool_context.state["account_id"]` (never by LLM argument), and wrapped with Weave tracing. Token budgets: `load_context_section` caps at ~10k tokens; `load_document` at ~8k tokens; over-budget truncation drops lowest-priority entities first.
 
-> **Implementation:** See [KG-PRD-03](design/components/knowledge-graph/projects/KG-PRD-03-orchestrator-read-tools.md) for the Cypher per section, the `:KGNode` label model, the vector-index integration, and the account-scoping rules. Realizes [Decision 17: Context Management](https://www.notion.so/32030fd6530281dca919d68aa0e27094) — keyword detection (`SECTION_KEYWORDS`, `should_load_section`) is removed when KG-PRD-03 ships.
+> **Implementation:** See [KG-PRD-03](design/components/knowledge-graph/projects/KG-PRD-03-orchestrator-read-tools.md) for the Cypher per section, the `:KGNode` label model, the vector-index integration, and the account-scoping rules. Realizes the Context Management decision (see [Review 4 in DESIGN-REVIEW-LOG](design/DESIGN-REVIEW-LOG.md#review-4-context-loading--keyword-detection--agent-driven-loading)) — keyword detection (`SECTION_KEYWORDS`, `should_load_section`) is removed when KG-PRD-03 ships.
 
 ### 3.3 Learning Loop
 
@@ -188,7 +196,7 @@ The KEN-E root agent uses ADK's `InstructionProvider` pattern: a closure that's 
 
 ### 3.5 Session Compaction (ADK Native)
 
-Long-running sessions are automatically compacted using ADK's `EventsCompactionConfig`, configured in `app/adk/deploy_ken_e.py`. A `gemini-2.5-flash` summarizer runs every 5 user invocations or whenever the session exceeds 50K tokens, with one invocation of overlap for continuity and the last 10 raw events kept un-compacted. ADK handles summarization, retention, and token budgeting natively — KEN-E owns only the config values. See [Decision 18: Session Compaction](https://www.notion.so/32030fd65302811dbc29f1c34dd46eab).
+Long-running sessions are automatically compacted using ADK's `EventsCompactionConfig`, configured in `app/adk/deploy_ken_e.py`. A `gemini-2.5-flash` summarizer runs every 5 user invocations or whenever the session exceeds 50K tokens, with one invocation of overlap for continuity and the last 10 raw events kept un-compacted. ADK handles summarization, retention, and token budgeting natively — KEN-E owns only the config values. See [Review 24 in DESIGN-REVIEW-LOG](design/DESIGN-REVIEW-LOG.md#review-24-backfill--decision-18-session-compaction--adk-native).
 
 ### 3.6 Session State Management
 
@@ -242,7 +250,7 @@ The planned feature surfaces token data to the UI:
 | Session tokens used | `ConversationSummarizer.token_budget_usage` | Running total |
 | Compaction proximity | `ConversationSummarizer.should_compact()` threshold (80% of 40K) | Warning indicator when approaching limit |
 
-Implementation requires changes at three layers: API (extract `usage_metadata`, extend `ChatResponse`), response model (add `usage` field), and frontend (token display components). See [Decision 19: Token Usage Visibility in UI](https://www.notion.so/32030fd65302815ca0d6fe5291fdfc54).
+Implementation requires changes at three layers: API (extract `usage_metadata`, extend `ChatResponse`), response model (add `usage` field), and frontend (token display components). See [Review 25 in DESIGN-REVIEW-LOG](design/DESIGN-REVIEW-LOG.md#review-25-backfill--decision-19-token-usage-visibility-in-ui-proposed).
 
 #### 3.6.5 [PLANNED] Unified Usage Tracking for Billing
 
@@ -261,7 +269,7 @@ Monthly billing requires aggregating token usage to the organisation level. The 
 2. Ensure LLM token counts from Vertex AI `usage_metadata` are reliably written to `usage_records` (currently they only reach W&B traces)
 3. Build a billing aggregation query or scheduled Cloud Function that sums tokens by organisation and billing period
 
-The two collections will remain separate (tool observability vs. billing) but share `organization_id` and `session_id` as common keys for cross-referencing. See [Decision 20: Unified Usage Tracking for Billing](https://www.notion.so/32030fd6530281bfa31cf19af537b206).
+The two collections will remain separate (tool observability vs. billing) but share `organization_id` and `session_id` as common keys for cross-referencing. See [Review 26 in DESIGN-REVIEW-LOG](design/DESIGN-REVIEW-LOG.md#review-26-backfill--decision-20-unified-usage-tracking-for-billing-superseded-in-part) (partly superseded by the Billing component's BL-PRD-02).
 
 ---
 
@@ -290,7 +298,7 @@ KEN-E agents carry tools from three distinct categories, each with different res
 
 All three types count toward the agent's curated tool roster for scope purposes, but built-in capabilities carry zero context overhead and are not counted against the ≤30-tool cap. The Root Agent does not get domain tools or code execution — it routes to specialists. See [agentic-harness README §2.5](design/components/agentic-harness/README.md#25-tool-assignment--routing-model) for the full assignment model.
 
-See [Decision 7: Token Budget Strategy](https://www.notion.so/32030fd6530281da97cef1729242ccd1) and [Decision 8: ToolRegistry](https://www.notion.so/32030fd65302813ab406cf15f7e1e7f6) in the Design Decisions database.
+See [Review 22 in DESIGN-REVIEW-LOG](design/DESIGN-REVIEW-LOG.md#review-22-backfill--decisions-7--8-token-budget-strategy--toolregistry-as-build-time-catalog) for the Token Budget Strategy + ToolRegistry rationale.
 
 ---
 
@@ -315,7 +323,7 @@ Progressive disclosure keeps token overhead low: L1 metadata (~50–100 tokens) 
 
 The canonical Skills design, data model, sandbox policy, UI, and phased delivery live in the **Skills component**: [`docs/design/components/skills/README.md`](design/components/skills/README.md) and the four project PRDs there ([SK-PRD-01 Backend](design/components/skills/projects/SK-PRD-01-skills-backend.md), [SK-PRD-02 Agent integration](design/components/skills/projects/SK-PRD-02-agent-integration.md), [SK-PRD-03 Authoring UI](design/components/skills/projects/SK-PRD-03-authoring-ui.md), [SK-PRD-04 Agent-builder controls](design/components/skills/projects/SK-PRD-04-agent-builder-controls.md)).
 
-See [Decision 22: ADK Skills Architecture](https://www.notion.so/32030fd653028114827be82c2731ea72) for rationale.
+See [Review 7 in DESIGN-REVIEW-LOG](design/DESIGN-REVIEW-LOG.md#review-7-transitional-agent-annotations-meta-ads-shared-access-skills-architecture) for rationale.
 
 ---
 
@@ -345,7 +353,7 @@ The chat API is channel-agnostic from the start — any new channel needs only a
 | **Slack** | Bolt SDK | Separate Cloud Run | Release 5 |
 | **Voice** | Pipecat + Meeting BaaS (Recall.ai or equivalent) | Dedicated service | Release 6 |
 
-See [Decision 14: Channel-Agnostic API](https://www.notion.so/32030fd65302811ea99dfa94c3448a0d), [Decision 15: Slack Channel](https://www.notion.so/32030fd6530281148e89eb56494a7489), [Decision 16: Voice Channel](https://www.notion.so/32030fd6530281ce82d3f7bbbee439c3).
+See [Review 23 in DESIGN-REVIEW-LOG](design/DESIGN-REVIEW-LOG.md#review-23-backfill--decisions-14--15--16-channel-architecture-api-gateway-slack-voice) for the channel architecture rationale (Channel-Agnostic API, Slack, Voice).
 
 ---
 
@@ -355,7 +363,6 @@ KEN-E handles work that spans more than one LLM turn or more than one session th
 
 ### 8.1 In-Session Multi-Step Workflows [PLANNED, R3]
 
-> **Roadmap:** [Feature 3.4: Multi-Step Workflows](product-roadmap.md#34--multi-step-workflows), [Feature 5.3: Workflow Templates](product-roadmap.md#53--workflow-templates), [Feature 5.4: Advanced Workflow](product-roadmap.md#54--advanced-workflow--observability) — Releases 3.0, 5.0
 
 For complex requests that can be decomposed into parallel + sequential steps within a single conversation (e.g., "Increase budgets for Meta Ads campaigns with the most engaged website visitors" → parallel data-gathering across Google Analytics + Meta Ads → synthesizer → user approval → execution step), KEN-E composes review pipelines (AH-PRD-01) into larger workflows using ADK workflow agents.
 
@@ -442,7 +449,6 @@ Full design, VAR model details, IRF propagation, target derivation specialist, m
 
 ## 9. Integration with Evaluation Framework
 
-> **Roadmap:** [Feature 2.5: MER-E Phase 0](product-roadmap.md#25--mer-e-phase-0-trace-extraction), [Feature 3.5: MER-E Phase 1](product-roadmap.md#35--mer-e-phase-1-quality-scoring), [Feature 4.3: MER-E Phase 2](product-roadmap.md#43--mer-e-phase-2-human-feedback--patterns), [Feature 4.4: A/B Testing](product-roadmap.md#44--ab-testing-infrastructure) — Releases 2.0–4.0
 
 ### 9.1 Overview
 
@@ -505,7 +511,6 @@ OUTPUT_CATEGORIES = {
 
 ### 9.4 [PLANNED] Feedback Collection
 
-> **Roadmap:** [Feature 4.3: MER-E Phase 2 — Human Feedback](product-roadmap.md#43--mer-e-phase-2-human-feedback--patterns) — Release 4.0
 
 A feedback collection system will enable human evaluation alignment:
 - Queue feedback requests for users after agent outputs
@@ -514,7 +519,6 @@ A feedback collection system will enable human evaluation alignment:
 
 ### 9.5 [PLANNED] A/B Testing Support
 
-> **Roadmap:** [Feature 4.4: A/B Testing Infrastructure](product-roadmap.md#44--ab-testing-infrastructure) — Release 4.0
 
 The harness will support A/B testing of agent configurations:
 - Consistent hash-based variant assignment per account
@@ -730,6 +734,14 @@ Data Pipeline consumers already honor per-account + per-connector budgets; trans
 | **Platform API rate limit exhaustion** | Medium | Medium | Per-platform quota tracking (gap — not yet implemented) |
 | **OAuth token expiry mid-conversation** | Medium | Low | Integrations' pre-emptive refresh sweeper + synchronous refresh on near-expiry reads + `INTEGRATION_NEEDS_REAUTH` notification + per-connection 24h dedup (IN-PRD-02 / IN-PRD-05). |
 | **Credential encryption at rest** | Low | High | Cloud KMS per env (env-specific key, never leaves GCP). Owned by Integrations (IN-PRD-01). |
+| **Review loop latency increase** | High | Medium | Cap `max_iterations=3` (~15s overhead max). Root agent skips criteria for simple lookups. AH-PRD-01. |
+| **Token cost increase from review loops** | High | Medium | Reviewer uses cheapest model (`gemini-2.0-flash`); criteria generation ~200 tokens; monitored via Weave. |
+| **LLM-generated acceptance criteria are poor** | Medium | Medium | Include good/bad criteria examples in root-agent instruction; iterate based on Weave traces. |
+| **State collisions in parallel workflow execution** | Low | High | Unique `output_key` prefix per step, enforced by `build_workflow_pipeline()` factory. |
+| **Artifact size bloats review context** | Medium | Low | Limit embedded data to summaries; defer raw data to separate `data_uri` if >1,000 rows. AH-PRD-04. |
+| **Voice latency incompatible with Agent Engine** | High | High | Agent Engine ~7-13s vs. voice <2s target. R5 voice feasibility spike (Story 5.5-1) is the de-risk gate before R6 commits. |
+| **Platform SDK breaking changes (Meta, Google Ads)** | Medium | Medium | Pin SDK versions; integration tests catch regressions; budget buffer in Execution Specialist sprint. |
+| **MER-E evaluation of a moving target** | Medium | Medium | Parallel track design — extraction/scoring evolves with agents. Output type expansion story per MER-E phase. |
 
 ### 11.5 Test Locations
 
@@ -768,7 +780,7 @@ Full system design, data model, targeting rules, and admin UI live in [`componen
 
 ## 12. Roadmap
 
-The authoritative, release-based roadmap — features, design refs, and Notion links — lives in [`docs/product-roadmap.md`](product-roadmap.md). Project-level sequencing with `blocked_by` dependencies across all components is tracked in [`docs/design/components/PROJECT-PLANNER.md`](design/components/PROJECT-PLANNER.md).
+Project-level sequencing with `blocked_by` dependencies across all components is tracked in [`docs/design/components/PROJECT-PLANNER.md`](design/components/PROJECT-PLANNER.md). Per-feature execution (Issues, Cycles, status transitions) is tracked in Linear — see [`CLAUDE.md`](../CLAUDE.md) "Linear Workflow Conventions" for the team → repo → component mapping.
 
 ### Release overview
 
@@ -783,7 +795,6 @@ The authoritative, release-based roadmap — features, design refs, and Notion l
 
 **Subsumed / dropped:** `UI-PRD-07` (Performance page redesign) is folded into `PE-PRD-01`, which delivers the same `/performance` shell on `LayoutC` as part of the full Performance component.
 
-> **Note on numbering:** [`PROJECT-PLANNER.md`](design/components/PROJECT-PLANNER.md) uses release themes 1 / 2 / 3 / 4 / 5 / 6 for project sequencing; [`product-roadmap.md`](product-roadmap.md) uses 1.1 / 2.0 / 3.0 / 4.0 / 5.0 / 6.0 for customer-facing feature releases. When the two diverge, product-roadmap is the source of truth for customer-facing releases and PROJECT-PLANNER is the source of truth for project sequencing.
 
 ---
 
@@ -885,7 +896,7 @@ Agent configuration (Firestore `agent_configs/{id}` fields + per-account overlay
 | 2.4 | 2026-03-11 | Development Team | Added Section 4.6 Review Loop Pattern (Generator-Critic with LoopAgent). Updated Section 2.3.2 request flow to show review loop. Rewrote Section 8.1 with ADK workflow agent architecture, ParallelAgent for concurrent steps, Meta Ads optimisation example, and dynamic pipeline construction. Added Decision 21 link. |
 | 2.5 | 2026-03-11 | Development Team | Added `[TRANSITIONAL]` convention for GA Agent and Company News Agent (successors documented). Added Meta Ads SDK shared access (Analytics reads + Execution reads/writes via `tool_filter`). Added Section 6 Skills Architecture (predefined + custom skills, SkillToolset integration, skill builder UI). Renumbered Sections 6-12 → 7-13. Added Decision 22 link. Updated glossary with Skill/SkillToolset/SKILL.md terms. |
 | 2.6 | 2026-03-18 | Development Team | ADK 1.26.0 experiment corrections: removed `SequentialAgent` wrappers inside `LoopAgent` (Sections 4.6, 8.1), added `include_contents='none'` on reviewers and synthesizers, added `{key?}` optional template syntax, added pipeline `SequentialAgent` wrappers for `ParallelAgent` branches. New subsections: 8.2 ADK Implementation Details (`build_review_pipeline()` and `build_workflow_pipeline()` factories, synthesizer pattern), 8.3 ADK Pitfalls (3 validated pitfalls), 8.4 LLM Call Cost & Latency. Renumbered 8.2-8.5 → 8.5-8.8. Added LLM call cost table to Section 4.6. |
-| 2.7 | 2026-03-18 | Development Team | Experiment #4 resolution — resolved `tool_filter` driver pattern as `before_agent_callback`. Updated Section 3.6.2 (`tool_filter_state` Set By). Resolved `[PLANNED] tool_filter driver` in Section 4.3 (added execution order note). Added specialist callback chaining note to Section 4.2. Added ReadonlyContext, CallbackContext, before_agent_callback glossary entries (Appendix D). See [Decision 23](https://www.notion.so/32730fd6530281999389eb3116e7585c). |
+| 2.7 | 2026-03-18 | Development Team | Experiment #4 resolution — resolved `tool_filter` driver pattern as `before_agent_callback`. Updated Section 3.6.2 (`tool_filter_state` Set By). Resolved `[PLANNED] tool_filter driver` in Section 4.3 (added execution order note). Added specialist callback chaining note to Section 4.2. Added ReadonlyContext, CallbackContext, before_agent_callback glossary entries (Appendix D). See [Review 9 in DESIGN-REVIEW-LOG](design/DESIGN-REVIEW-LOG.md#review-9-experiment-4--tool_filter-integration-pattern-resolution). |
 | 2.8 | 2026-03-18 | Development Team | Data visualization & artifacts. Added Vega-Lite artifacts decision to Section 1.4. Updated Section 2.3.2 request flow (create_visualization in specialist, artifacts extraction in response). Added `response_artifacts` to Section 3.6.2 session state. Added visualization blockquote to Section 4.4. Added "Visualization Artifacts in Review Loops" subsection after Section 4.6. Added data visualization row to Section 12.3 roadmap. Added Vega-Lite, Artifact, create_visualization glossary entries (Appendix D). Created [`data-visualization.md`](design/data-visualization.md). |
 | 2.9 | 2026-03-18 | Development Team | Gemini native code execution. Added code execution decision to Section 1.4. Added Tool Type Taxonomy table to Section 4.3 (MCP Tools, SDK Function Tools, Built-in Model Capabilities). Updated Analytics Specialist in Sections 4.4 and 4.5 with Gemini code execution. Added code execution note to Section 4.6 review loop. Added Section 9.2.1 Code Execution Traces. Added code execution cost bullet to Section 10.2. Added Gemini code execution to Section 12.3 roadmap and Appendix A. Added Code Execution (Gemini), Built-in Model Capability, ToolCodeExecution to Appendix D glossary. |
 | 4.1 | 2026-04-22 | Development Team | Added the **Dashboards** component (ninth component). §1.6 prose updated from "eight discrete components" → "nine"; §1.6 table gained a Dashboards row between Automations and Skills (`type="dashboard"` ProjectPlans + canvas placements + artifact resolver + Performance-page Dashboards tab). Project Tasks row updated to reflect PR-PRDs 07–08 additions (multi-category activities, campaigns); Data Management row updated to reflect DM-PRD-07 (approval workflow & audit). §12 Release overview updated: Release 1 includes DM-PRDs 00–07 (was 00–06); Release 2 includes PR-PRDs 01–08 (was 01–06) and adds Dashboards DB-PRDs 01–04. No schema, API, or orchestration changes in this doc — the Dashboards component sits on top of existing Project Tasks + Automations + A-PRD-03 artifact infrastructure without introducing new storage or runtime primitives. |

@@ -188,6 +188,6 @@ python api/scripts/migrate_shape_d_split.py --env=dev --confirm-delete-field
 - Parent plan: [`../multi-tenant-migration-plan.md`](../multi-tenant-migration-plan.md) §3.3
 - Upstream: [DM-PRD-00](./DM-PRD-00-migration-foundation.md)
 - Downstream: [DM-PRD-05](./DM-PRD-05-deletion-sweep-rewrite.md)
-- Notion decision: [Multi-Tenant Data Model Shape](https://www.notion.so/34830fd653028177bc0dc2a1637c7f60)
+- Decision: [Review 15 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1) — Multi-Tenant Data Model Shape
 - Code: `api/src/kene_api/firestore.py` (the L441–L1469 block of methods)
 - CLAUDE.md rules in scope: PY-1, PY-2, PY-5, PY-7; D-1, D-2, D-5; T-1, T-3, T-4, T-6

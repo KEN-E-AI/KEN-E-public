@@ -51,7 +51,7 @@ If the story maps to a project PRD (e.g., `AH-PRD-02`, `KG-PRD-04`, `PR-PRD-01`)
 - **You don't understand a requirement** → re-read the component README + System Architecture §1.6 for cross-component context. If the requirement spans components, the System Architecture is where the cross-component story lives.
 - **You don't know which component touches your work** → System Architecture §1.6 Component Landscape is the authoritative map.
 - **You find a contradiction between docs** → [`docs/design/DESIGN-REVIEW-LOG.md`](docs/design/DESIGN-REVIEW-LOG.md) has the decision history.
-- **You need to know what's shipped vs. planned** → project status is in [`docs/design/components/PROJECT-PLANNER.md`](docs/design/components/PROJECT-PLANNER.md); customer-facing release plan is in [`docs/product-roadmap.md`](docs/product-roadmap.md).
+- **You need to know what's shipped vs. planned** → project status is in [`docs/design/components/PROJECT-PLANNER.md`](docs/design/components/PROJECT-PLANNER.md); per-feature execution (Issues, Cycles) lives in Linear.
 - **You hit an ADK- or MCP-specific question** → [`docs/design/components/agentic-harness/mcp-architecture.md`](docs/design/components/agentic-harness/mcp-architecture.md) has verified ADK internals + platform decisions.
 
 ## Design Documentation Index
@@ -64,7 +64,7 @@ One table, ordered from most general (start here) to most specific (consult for 
 | [`docs/KEN-E-System-Architecture.md`](docs/KEN-E-System-Architecture.md) | Start of every story. Gives the canonical 15-component map + cross-cutting concerns (context management, orchestration, MER-E, infrastructure, resilience/security, feature flags). |
 | [`docs/KEN-E_User_Stories.md`](docs/KEN-E_User_Stories.md) | Understanding the three guiding product scenarios. |
 | [`docs/design/components/PROJECT-PLANNER.md`](docs/design/components/PROJECT-PLANNER.md) | Project sequencing across all components — what's blocked by what, what's ready to start, what release each targets. |
-| [`docs/product-roadmap.md`](docs/product-roadmap.md) | Customer-facing release plan (1.1 → 6.0) with design-ref blockquotes into component docs. |
+| [`docs/dev-workflow.md`](docs/dev-workflow.md) | Human-facing summary of the autonomous-agent development workflow (Sprint Manager → SCRUM Master → Dev Team → Test Team), wave-based execution, PO/PM responsibilities, and Linear status transitions. |
 | **— Component READMEs —** | |
 | [`docs/design/components/agentic-harness/README.md`](docs/design/components/agentic-harness/README.md) | Working on the agent runtime — root agent, specialists, review loop, agent factory, tool assignment, MCP. |
 | [`docs/design/components/knowledge-graph/README.md`](docs/design/components/knowledge-graph/README.md) | Working on Neo4j, orchestrator read tools, session-end automation, or research-on-creation. |
@@ -302,14 +302,17 @@ These rules ensure maintainability, safety, and developer velocity.
 
 ### 8 — Skills
 
-| Skill | Purpose |
-|-------|---------|
-| `/qstart` | Understand best practices, validate plan, implement with verification |
-| `/qreview` | Skeptical code review: functions, tests, UX, best practices |
-| `/qgit` | Stage, commit (Conventional Commits), and push |
-| `/start-session` | Start a development session for a user story |
-| `/run-tests` | Run test phase for a user story |
-| `/end-session` | Close session, update logs, commit, push, PR check |
+| Skill | Purpose | Invoked by |
+|-------|---------|-----------|
+| `/qstart` | Understand best practices, validate plan, implement with verification | Local human |
+| `/qreview` | Skeptical code review: functions, tests, UX, best practices | Local human |
+| `/qgit` | Stage, commit (Conventional Commits), and push | Local human |
+| `product-assistant` | Interactive PO flow — plan features, update design docs, create Linear issues + Cycles | Local human (PO) in terminal |
+| `update-design-docs` | Cross-document dependency propagation + Linear Design References update | `product-assistant` Flow 2 (or human directly) |
+| `linear-sprint-ops` | Reusable Linear API operations (cycle queries, issue lifecycle, dependency graphs) | Loaded by autonomous-agent workflow skills (image-baked); human-readable reference here |
+| `frontend-design` | Visual design reference (typography, spatial, motion, color, etc.) | Loaded by `frontend-engineer` sub-agent (image-baked); human-readable reference here |
+
+**Note on the autonomous-agent workflow.** The full development lifecycle (Sprint Manager → SCRUM Master → Dev Team → Test Team) runs on GCE VMs dispatched by Linear webhooks; those workflow skills are baked into the VM image and not committed here. See [`docs/dev-workflow.md`](docs/dev-workflow.md) for the human-facing summary of how that pipeline works (roles, status transitions, error scenarios).
 
 ---
 
@@ -324,11 +327,57 @@ These rules ensure maintainability, safety, and developer velocity.
    - Alternative: `cd api && python -m uvicorn src.kene_api.main:app --reload`
 6. **Invitation Emails Not Sending**: See `api/CLAUDE.md` Email Service Setup section
 
+## Linear Workflow Conventions
+
+KEN-E development is driven by Linear. The autonomous-agent pipeline (Sprint Manager → SCRUM Master → Dev Team → Test Team) is dispatched by Linear webhooks; per-feature execution lives in Linear projects + issues. See [`docs/dev-workflow.md`](docs/dev-workflow.md) for the full human-facing workflow.
+
+### Linear team → repo → component mapping
+
+Each Linear team maps to one `(GitHub repo, component)` pair. The mapping is the source of truth for which repo an agent VM clones and which component PRD gets injected into the agent's prompt — it lives in `Fun-E/agents/webhook-receiver/main.py` (`TEAM_REPO_MAP` + `TEAM_COMPONENT_MAP`). The KEN-E entries:
+
+| Linear team (display name) | GitHub repo | Component dir |
+|---|---|---|
+| `[KEN-E] Data Management` | `KEN-E-AI/KEN-E` | `data-management` |
+| `[KEN-E] Agentic Harness` | `KEN-E-AI/KEN-E` | `agentic-harness` |
+| `[KEN-E] Knowledge Graph` | `KEN-E-AI/KEN-E` | `knowledge-graph` |
+| `[KEN-E] Projects & Tasks` | `KEN-E-AI/KEN-E` | `project-tasks` |
+| `[KEN-E] Automations` | `KEN-E-AI/KEN-E` | `automations` |
+| `[KEN-E] Dashboards` | `KEN-E-AI/KEN-E` | `dashboards` |
+| `[KEN-E] Data Pipeline` | `KEN-E-AI/KEN-E` | `data-pipeline` |
+| `[KEN-E] Integrations` | `KEN-E-AI/KEN-E` | `integrations` |
+| `[KEN-E] SAR-E` | `KEN-E-AI/KEN-E` | `sar-e` |
+| `[KEN-E] Performance` | `KEN-E-AI/KEN-E` | `performance` |
+| `[KEN-E] Skills` | `KEN-E-AI/KEN-E` | `skills` |
+| `[KEN-E] Chat` | `KEN-E-AI/KEN-E` | `chat` |
+| `[KEN-E] UI` | `KEN-E-AI/KEN-E` | `ui` |
+| `[KEN-E] Billing` | `KEN-E-AI/KEN-E` | `billing` |
+| `[KEN-E] Feature Flags` | `KEN-E-AI/KEN-E` | `feature-flags` |
+
+The `component` column is kebab-case and matches the directory name under `docs/design/components/<name>/`.
+
+### Project + issue conventions
+
+- **Linear project naming:** `<PRD-ID>: <PRD title>` (e.g., `DM-PRD-00: Migration Foundation`). One Linear project per PRD.
+- **Linear issue naming:** Acceptance criteria from the PRD's §7 become individual Linear issues under the project. Each issue captures one criterion + its implementation scope.
+- **PRD authority:** The PRD in `docs/design/components/<comp>/projects/<PRD>.md` is the spec. The Linear project is the execution tracker; its description should be a one-paragraph summary + a link to the PRD, not a copy of PRD content.
+- **Release sequencing:** the `release` column in [`docs/design/components/PROJECT-PLANNER.md`](docs/design/components/PROJECT-PLANNER.md) is the canonical cross-component release plan (1: Foundation → 6: Voice). Linear cycles map to releases informally — sequencing is driven by `blocked_by` dependencies, not Linear cycle dates.
+
+### Canonical sources
+
+The autonomous-agent workflow is documented in two places that must agree:
+
+| Source | Audience | Authoritative for... |
+|---|---|---|
+| `docs/dev-workflow.md` (this repo) | Humans (PO, PM, devs reading the repo) | Roles, lifecycle phases, escalation, error scenarios |
+| `Fun-E/.claude/skills/workflows/*-workflow/SKILL.md` (image-baked) | Autonomous agents on GCE VMs | Operational behavior — exact API calls, status transitions, decision rules |
+
+**If the two disagree, the SKILL file is canonical for agent behavior; `dev-workflow.md` is canonical for humans.** When changing the workflow, update the SKILL files first (in Fun-E), then mirror the human-facing change here. The `Fun-E` repo is the authoritative source for the skill files.
+
 ## Documentation Model
 
 Architecture reference documents live in the [`docs/`](docs/) directory — both current implementation and planned extensions. Features marked `[PLANNED]` are not yet built. When a planned feature ships, collapse the current-vs-planned distinction in its doc: remove `[PLANNED]` tags, merge "current" and "planned" sections/diagrams, update status columns to "Implemented."
 
-Significant architectural changes are logged in [`docs/design/DESIGN-REVIEW-LOG.md`](docs/design/DESIGN-REVIEW-LOG.md) with the date, scope, list of affected files, and rationale. Add a new review entry at the top of that log whenever a design-doc change is non-trivial (structural reorganization, retired mechanism, new cross-component coupling, etc.).
+Significant architectural changes are logged in [`docs/design/DESIGN-REVIEW-LOG.md`](docs/design/DESIGN-REVIEW-LOG.md) — **the canonical decision log going forward**. New decisions are captured there with full rationale (date, scope, decision, consequences). Add a new review entry whenever a design-doc change is non-trivial (structural reorganization, retired mechanism, new cross-component coupling). Reviews 1–20 reference a legacy Notion Design Decisions database that is retained as a historical archive only — no new Notion entries should be created.
 
 ## Additional Documentation
 
