@@ -1,0 +1,40 @@
+# lychee.toml — markdown link checker configuration for KEN-E
+#
+# Design choice — offline mode:
+#   This gate runs in offline mode (skip all http/https URLs). Rationale:
+#   1. Deterministic CI: no external rate limits, timeouts, or DNS flakiness.
+#   2. No allowlist needed for historical Notion URLs retained as archive markers
+#      in docs/design/DESIGN-REVIEW-LOG.md and component READMEs (those are
+#      intentional, not regressions).
+#   If external link health becomes a concern, add a *separate* scheduled job
+#   rather than making the PR gate network-dependent.
+#
+# CI step: deployment/ci/pr_checks.yaml (CH-3 — markdown-link-check step)
+# Component PRD: docs/design/components/chat/projects/CH-PRD-06-documentation-link-integrity.md
+
+# Skip all http/https URLs — offline-only checking of relative file links.
+offline = true
+
+# Disable the on-disk link cache. Offline mode is fast enough that caching
+# adds CI surface area (cache lifecycle, cleanup, invalidation) without payoff.
+cache = false
+
+# Also scan links that appear inside fenced code blocks (``` ... ```).
+# Component PRDs frequently embed [name](path) references in Python/TypeScript
+# examples; we want those caught by the gate too.
+include_verbatim = true
+
+# Limit scanning to markdown files only.
+# The CI step passes docs/ and root-level *.md files as inputs; this guard
+# prevents accidentally scanning .html, .ts, .py, etc. if the input glob
+# ever widens.
+extensions = ["md"]
+
+# Paths excluded from scanning.
+# Safe to expand this list; never shrink without a deliberate audit.
+exclude_path = [
+    "docs/figma-export",   # Tool-generated Figma export; ~94 broken refs that are not authored content.
+    "docs/archive",        # Historical docs that intentionally reference retired/renamed files.
+    "node_modules",        # Third-party dependencies — never authored content.
+    ".git",                # VCS internals.
+]
