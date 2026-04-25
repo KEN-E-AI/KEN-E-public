@@ -561,6 +561,6 @@ No new write endpoints — todo lists and artifacts are written by agent tools v
 - Mounts into: [CH-PRD-04](./CH-PRD-04-session-status-view.md) — `SessionStatusView` reserves the slots; depends on CH-PRD-05's ADK-session orphan scan as safety net
 - Integration: [AH-PRD-02](../../agentic-harness/projects/AH-PRD-02-agent-factory.md) (tool registration)
 - Figma: `docs/figma-export/src/app/components/SessionSettings.tsx` — documents + todo lists sections (user-upload variant not ported in v1)
-- Existing code: [`app/adk/agents/strategy_agent/artifact_utils.py`](../../../../app/adk/agents/strategy_agent/artifact_utils.py) (migrated)
+- Existing code: `app/adk/agents/strategy_agent/artifact_utils.py` (migrated)
 - ADK docs: [`ArtifactService`](https://google.github.io/adk-docs/artifacts/), [`session.state`](https://google.github.io/adk-docs/sessions/state/)
 - CLAUDE.md rules in scope: C-4, C-5, C-7, C-9; PY-1, PY-2, PY-5, PY-7; T-1, T-3, T-4, T-5; G-1

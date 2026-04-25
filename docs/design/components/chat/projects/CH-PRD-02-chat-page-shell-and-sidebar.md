@@ -355,5 +355,5 @@ Auth: both endpoints require authenticated user + session ownership (`session.us
 - Upstream: [CH-PRD-01](./CH-PRD-01-session-metadata-substrate.md), [UI-PRD-01](../../ui/README.md), [FF-PRD-03](../../feature-flags/projects/FF-PRD-03-frontend-sdk-and-e2e.md)
 - Downstream: [CH-PRD-03](./CH-PRD-03-session-categories.md), [CH-PRD-04](./CH-PRD-04-session-status-view.md), [CH-PRD-05](./CH-PRD-05-todo-lists-and-artifacts.md)
 - Figma: `docs/figma-export/src/app/components/SessionsSidebar.tsx`, `ChatInterface.tsx`, `ChatPage.tsx`
-- Existing code: [`frontend/src/services/chatService.ts`](../../../../frontend/src/services/chatService.ts), [`api/src/kene_api/routers/chat.py`](../../../../api/src/kene_api/routers/chat.py)
+- Existing code: `frontend/src/services/chatService.ts`, `api/src/kene_api/routers/chat.py`
 - CLAUDE.md rules in scope: C-5 (branded types), C-6 (`import type`), C-8 (type over interface); T-1, T-2, T-5; G-2, G-3

@@ -585,5 +585,5 @@ Auth gates:
 - Peer (Billing): [BL-PRD-02](../../billing/projects/BL-PRD-02-token-meter-monthly-enforcement.md) — owns `extract_billable_tokens`. Rate-limit substrate: [BL-PRD-05](../../billing/projects/BL-PRD-05-failure-modes-permissions.md).
 - ADK docs: [`VertexAiSessionService`](https://google.github.io/adk-docs/sessions/), [`EventsCompactionConfig`](https://google.github.io/adk-docs/context/compaction/), [agent callbacks](https://google.github.io/adk-docs/agents/)
 - ADK known issue: [Issue #3154 — `list_sessions` returns empty `user_id`](https://github.com/google/adk-python/issues/3154)
-- Existing code: [`api/src/kene_api/routers/chat.py`](../../../../api/src/kene_api/routers/chat.py), [`app/adk/session/recovery.py`](../../../../app/adk/session/recovery.py)
+- Existing code: `api/src/kene_api/routers/chat.py`, `app/adk/session/recovery.py`
 - CLAUDE.md rules in scope: PY-1, PY-2, PY-5, PY-7; D-1, D-2, D-5; C-2, C-4; T-1, T-3, T-4, T-5
