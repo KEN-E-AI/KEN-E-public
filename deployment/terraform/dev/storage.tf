@@ -36,38 +36,3 @@ data "google_storage_bucket" "existing_bucket" {
   count      = can(data.google_storage_bucket.existing_bucket[0]) ? 1 : 0
   depends_on = [resource.google_project_service.services]
 }
-resource "google_storage_bucket" "data_ingestion_PIPELINE_GCS_ROOT" {
-  name                        = "${var.dev_project_id}-pipeline-artifacts"
-  location                    = var.region
-  project                     = var.dev_project_id
-  uniform_bucket_level_access = true
-  force_destroy               = true
-
-  depends_on = [resource.google_project_service.services]
-}
-
-resource "google_discovery_engine_data_store" "data_store_dev" {
-  location                    = var.data_store_region
-  project                     = var.dev_project_id
-  data_store_id               = "${var.datastore_name}"
-  display_name                = "${var.datastore_name}"
-  industry_vertical           = "GENERIC"
-  content_config              = "NO_CONTENT"
-  solution_types              = ["SOLUTION_TYPE_SEARCH"]
-  create_advanced_site_search = false
-  provider                    = google.dev_billing_override
-  depends_on             = [resource.google_project_service.services]
-}
-
-resource "google_discovery_engine_search_engine" "search_engine_dev" {
-  project        = var.dev_project_id
-  engine_id      = "${var.search_engine_name}"
-  collection_id  = "default_collection"
-  location       = google_discovery_engine_data_store.data_store_dev.location
-  display_name   = "Search Engine App Staging"
-  data_store_ids = [google_discovery_engine_data_store.data_store_dev.data_store_id]
-  search_engine_config {
-    search_tier = "SEARCH_TIER_ENTERPRISE"
-  }
-  provider      = google.dev_billing_override
-}

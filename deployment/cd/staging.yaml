@@ -14,24 +14,6 @@
 
 steps:
   - name: "python:3.11-slim"
-    id: deploy-data-ingestion-pipeline-staging
-    entrypoint: bash
-    args:
-      - -c
-      - |
-        cd data_ingestion && pip install uv --user && uv sync --frozen && \
-        uv run python data_ingestion_pipeline/submit_pipeline.py
-    env:
-      - "PIPELINE_ROOT=${_PIPELINE_GCS_ROOT}"
-      - "REGION=${_REGION}"
-      - "DATA_STORE_REGION=${_DATA_STORE_REGION}"
-      - "DATA_STORE_ID=${_DATA_STORE_ID}"
-      - "PROJECT_ID=${_STAGING_PROJECT_ID}"
-      - "SERVICE_ACCOUNT=${_PIPELINE_SA_EMAIL}"
-      - "PIPELINE_NAME=${_PIPELINE_NAME}"
-      - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
-      
-  - name: "python:3.11-slim" 
     id: install-dependencies
     entrypoint: /bin/bash
     args:
@@ -252,8 +234,6 @@ substitutions:
   _STAGING_PROJECT_ID: ken-e-staging
   _BUCKET_NAME_LOAD_TEST_RESULTS: ${PROJECT_ID}-cicd-load-test-results
   _REGION: us-central1
-  _DATA_STORE_REGION: us
-  _PIPELINE_NAME: genai_sample_data_ingestion
   _NEO4J_DATABASE: neo4j
   _NEO4J_URI: neo4j+s://f7649bfa.databases.neo4j.io
   _NEO4J_USERNAME: neo4j

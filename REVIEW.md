@@ -30,4 +30,3 @@ Code Review rules. Treat violations as findings.
 - Lock files (`package-lock.json`, `uv.lock`)
 - Formatting-only changes (whitespace, import order)
 - Notebook outputs
-- Files in `data_ingestion/` pipeline configs

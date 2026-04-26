@@ -31,8 +31,6 @@ ken-e/
 ├── frontend/              # React TypeScript application
 │   ├── src/               # Frontend source code
 │   └── public/            # Static assets
-├── data_ingestion/        # Vertex AI data pipeline
-│   └── data_ingestion_pipeline/
 ├── deployment/            # Infrastructure & CI/CD
 │   ├── terraform/         # IaC for GCP resources
 │   ├── ci/               # CI pipeline (PR checks)
@@ -247,12 +245,6 @@ npm run format.fix    # Format code with Prettier
 ./scripts/set_environment.sh [development|staging|production]  # Switch environment files
 ```
 
-### Data Pipeline
-```bash
-cd data_ingestion
-python data_ingestion_pipeline/submit_pipeline.py  # Submit to Vertex AI
-```
-
 ## Configuration Options
 
 ### Organization Creation Permissions
@@ -287,10 +279,6 @@ ORGANIZATION_CREATION_PERMISSION=all  # or super_admin, or none
    - ~50 Radix UI components
    - TailwindCSS styling
    - Protected routing with Firebase Auth
-
-4. **Data Pipeline** (`data_ingestion/`): Vertex AI Kubeflow pipeline
-   - Data processing and embedding generation
-   - RAG-enabled search capabilities
 
 ## Deployment
 

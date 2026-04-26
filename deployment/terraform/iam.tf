@@ -81,35 +81,6 @@ resource "google_service_account_iam_member" "cicd_run_invoker_account_user" {
   member             = "serviceAccount:${resource.google_service_account.cicd_runner_sa.email}"
   depends_on         = [resource.google_project_service.cicd_services, resource.google_project_service.shared_services]
 }
-# Grant Vertex AI SA the required permissions to run the ingestion
-resource "google_project_iam_member" "vertexai_pipeline_sa_roles" {
-  for_each = {
-    for pair in setproduct(keys(local.deploy_project_ids), var.pipelines_roles) :
-    join(",", pair) => {
-      project = local.deploy_project_ids[pair[0]]
-      role    = pair[1]
-    }
-  }
-
-  project    = each.value.project
-  role       = each.value.role
-  member     = "serviceAccount:${google_service_account.vertexai_pipeline_app_sa[split(",", each.key)[0]].email}"
-  depends_on = [resource.google_project_service.cicd_services, resource.google_project_service.shared_services]
-}
-
-# assigning IAM roles for db access
-resource "google_project_iam_member" "cloudsql_client_staging" {
-  project = var.staging_project_id
-  role    = "roles/cloudsql.client"
-  member  = "serviceAccount:${google_service_account.vertexai_pipeline_app_sa["staging"].email}"
-}
-
-resource "google_project_iam_member" "cloudsql_client_prod" {
-  project = var.prod_project_id
-  role    = "roles/cloudsql.client"
-  member  = "serviceAccount:${google_service_account.vertexai_pipeline_app_sa["prod"].email}"
-}
-
 # grant Cloud Build access to Firebase secrets in staging
 resource "google_secret_manager_secret_iam_member" "firebase_key_staging_access" {
   secret_id = "projects/${var.staging_project_id}/secrets/firebase-key-staging"

@@ -30,11 +30,9 @@ resource "google_cloudbuild_trigger" "pr_checks" {
   filename = "deployment/ci/pr_checks.yaml"
   included_files = [
     "app/**",
-    "data_ingestion/**",
     "tests/**",
     "deployment/**",
     "uv.lock",
-    "data_ingestion/**",
   ]
   depends_on = [resource.google_project_service.cicd_services, resource.google_project_service.shared_services]
 }
@@ -57,7 +55,6 @@ resource "google_cloudbuild_trigger" "cd_pipeline" {
   filename = "deployment/cd/staging.yaml"
   included_files = [
     "app/**",
-    "data_ingestion/**",
     "tests/**",
     "deployment/**",
     "uv.lock"
@@ -66,11 +63,6 @@ resource "google_cloudbuild_trigger" "cd_pipeline" {
     _STAGING_PROJECT_ID            = var.staging_project_id
     _BUCKET_NAME_LOAD_TEST_RESULTS = resource.google_storage_bucket.bucket_load_test_results.name
     _REGION                        = var.region
-    _PIPELINE_GCS_ROOT             = "gs://${resource.google_storage_bucket.data_ingestion_pipeline_gcs_root["staging"].name}"
-    _PIPELINE_SA_EMAIL             = "${var.vertexai_pipeline_sa_name}@${var.staging_project_id}.iam.gserviceaccount.com"
-    _PIPELINE_CRON_SCHEDULE        = var.pipeline_cron_schedule
-    _DATA_STORE_ID                 = resource.google_discovery_engine_data_store.data_store_staging.data_store_id
-    _DATA_STORE_REGION             = var.data_store_region
     # Your other CD Pipeline substitutions
   }
   depends_on = [resource.google_project_service.cicd_services, resource.google_project_service.shared_services]
@@ -92,13 +84,8 @@ resource "google_cloudbuild_trigger" "deploy_to_prod_pipeline" {
     approval_required = true
   }
   substitutions = {
-    _PROD_PROJECT_ID        = var.prod_project_id
-    _REGION                 = var.region
-    _PIPELINE_GCS_ROOT      = "gs://${resource.google_storage_bucket.data_ingestion_pipeline_gcs_root["prod"].name}"
-    _PIPELINE_SA_EMAIL      = "${var.vertexai_pipeline_sa_name}@${var.prod_project_id}.iam.gserviceaccount.com"
-    _PIPELINE_CRON_SCHEDULE = var.pipeline_cron_schedule
-    _DATA_STORE_ID          = resource.google_discovery_engine_data_store.data_store_prod.data_store_id
-    _DATA_STORE_REGION      = var.data_store_region
+    _PROD_PROJECT_ID = var.prod_project_id
+    _REGION          = var.region
     # Your other Deploy to Prod Pipeline substitutions
   }
   depends_on = [resource.google_project_service.cicd_services, resource.google_project_service.shared_services]
