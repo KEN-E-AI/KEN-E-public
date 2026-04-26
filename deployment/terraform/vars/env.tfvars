@@ -27,13 +27,6 @@ feedback_logs_filter = "jsonPayload.log_type=\"feedback\""
 cicd_runner_sa_name = "cicd-runner"
 
 suffix_bucket_name_load_test_results = "cicd-load-test-results"
-search_engine_name = "sample-search-engine"
-datastore_name = "sample-datastore"
-vertexai_pipeline_sa_name = "vertexai-pipelines-sa"
-pipeline_cron_schedule = "0 0 * * 0"
-
-#The value can only be one of "global", "us" and "eu".
-data_store_region = "us"
 
 # sql db passwords
 staging_db_password = "ppPP00))pp"
