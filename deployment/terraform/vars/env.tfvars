@@ -27,7 +27,3 @@ feedback_logs_filter = "jsonPayload.log_type=\"feedback\""
 cicd_runner_sa_name = "cicd-runner"
 
 suffix_bucket_name_load_test_results = "cicd-load-test-results"
-
-# sql db passwords
-staging_db_password = "ppPP00))pp"
-prod_db_password = "ppPP00))pp"

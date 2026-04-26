@@ -125,14 +125,3 @@ variable "cicd_sa_deployment_required_roles" {
     "roles/storage.admin"
   ]
 }
-variable "staging_db_password" {
-  description = "Password for staging database user"
-  type        = string
-  sensitive   = true
-}
-
-variable "prod_db_password" {
-  description = "Password for production database user"
-  type        = string
-  sensitive   = true
-}
