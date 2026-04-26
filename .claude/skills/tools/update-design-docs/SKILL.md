@@ -62,7 +62,7 @@ After updating downstream docs, propagate changes to Linear issues that referenc
 For each document that was modified, renamed, or deleted (including the primary document and all downstream docs updated in Step 4), search for Linear issues that reference it.
 
 **Search strategy:**
-1. Extract the filename and path components from each changed doc (e.g., `Fun-E_Model_Product_Requirements_v1.md`, `docs/Fun-E_Model_Product_Requirements_v1.md`)
+1. Extract the filename and path components from each changed doc (e.g., `FUN-E-System-Architecture.md`, `docs/FUN-E-System-Architecture.md`)
 2. Query the Linear API to find issues whose descriptions contain those filenames. Use the `list_issues` operation filtered by Team, then search description text for matches.
 3. Also search for section-level references using the `§` pattern (e.g., `docs/filename: §Section Name`)
 
