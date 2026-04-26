@@ -179,8 +179,12 @@ substitutions:
   _RECAPTCHA_SECRET_KEY_PROD: projects/395770269870/secrets/recaptcha-secret-key/versions/latest
   _VERTEX_AI_LOCATION: us-central1
   _VERTEX_AI_AGENT_ENGINE_ID_PROD: projects/395770269870/secrets/strategy-supervisor-engine-id/versions/latest
-  # Redis configuration for production (Memorystore IP will be set after Terraform deployment)
-  _REDIS_HOST_PROD: ${_REDIS_HOST_PROD}  # Set this in Cloud Build trigger to Memorystore IP
+  # WARNING: this default is self-referential. The trigger MUST override
+  # _REDIS_HOST_PROD (set in deployment/terraform/build_triggers.tf as
+  # google_redis_instance.production.host) or Cloud Build fails with "cycle in
+  # evaluating substitutions" before the build can start. Do not remove the
+  # trigger override without first replacing this default with a real value.
+  _REDIS_HOST_PROD: ${_REDIS_HOST_PROD}
   _REDIS_PORT: "6379"
   _REDIS_DB: "0"
   _SENDGRID_API_KEY_PROD: projects/395770269870/secrets/sendgrid-api-key/versions/latest
