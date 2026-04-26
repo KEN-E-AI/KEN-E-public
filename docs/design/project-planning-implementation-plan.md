@@ -299,7 +299,7 @@ Drawer for editing project-level properties:
 
 ### Chat Integration
 
-When the agent creates a plan, the chat response should include a clickable link: "Your project plan has been created. [View Plan](/calendar?project={plan_id})".
+When the agent creates a plan, the chat response should include a clickable link: "Your project plan has been created. View Plan at `/calendar?project={plan_id}`".
 
 ---
 

@@ -284,7 +284,8 @@ async def export_session_as_markdown(session_id: str, user_id: str) -> Streaming
             yield "\n## Artifacts\n\n"
             for a in artifacts:
                 signed_url = gcs.generate_signed_url(a.gcs_path, ttl_seconds=86400)  # 24 hours
-                yield f"- [{a.filename}]({signed_url}) — {a.created_at:%Y-%m-%d}\n"
+                yield f"- [{a.filename}]"
+                yield f"({signed_url}) — {a.created_at:%Y-%m-%d}\n"
 
     return StreamingResponse(
         generate(),
