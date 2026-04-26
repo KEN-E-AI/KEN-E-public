@@ -81,21 +81,3 @@ resource "google_service_account_iam_member" "cicd_run_invoker_account_user" {
   member             = "serviceAccount:${resource.google_service_account.cicd_runner_sa.email}"
   depends_on         = [resource.google_project_service.cicd_services, resource.google_project_service.shared_services]
 }
-# grant Cloud Build access to Firebase secrets in staging
-resource "google_secret_manager_secret_iam_member" "firebase_key_staging_access" {
-  secret_id = "projects/${var.staging_project_id}/secrets/firebase-key-staging"
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:service-${data.google_project.projects["staging"].number}@gcp-sa-cloudbuild.iam.gserviceaccount.com"
-
-  depends_on = [google_secret_manager_secret.firebase_key_staging]
-}
-
-# grant Cloud Build access to Firebase secrets in production
-resource "google_secret_manager_secret_iam_member" "firebase_key_prod_access" {
-  secret_id = "projects/${var.prod_project_id}/secrets/firebase-key-prod"
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:service-${data.google_project.projects["prod"].number}@gcp-sa-cloudbuild.iam.gserviceaccount.com"
-
-  depends_on = [google_secret_manager_secret.firebase_key_prod]
-}
-

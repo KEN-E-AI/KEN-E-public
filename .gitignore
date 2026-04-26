@@ -220,7 +220,6 @@ my_env.tfvars
 temp_scripts/
 
 #secrets
-deployment/terraform/keys/*.json
 firebase-key.json
 *service-account-key.json
 **/*service-account*.json
