@@ -287,6 +287,9 @@ These rules ensure maintainability, safety, and developer velocity.
 - **G-1 (MUST)** `make lint` passes (includes ruff, mypy, codespell).
 - **G-2 (MUST)** `npm run format.fix` passes for frontend code.
 - **G-3 (MUST)** `npm run typecheck` passes for frontend TypeScript.
+- **G-4 (MUST)** `lychee --config lychee.toml .` passes for any change that
+  touches `docs/**` or root-level `.md` files. Runs in CI on every PR; install
+  locally via `brew install lychee` or `cargo install lychee`.
 
 ---
 
