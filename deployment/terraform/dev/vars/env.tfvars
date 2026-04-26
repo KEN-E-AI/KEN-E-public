@@ -11,9 +11,3 @@ telemetry_logs_filter = "jsonPayload.attributes.\"traceloop.association.properti
 feedback_bigquery_dataset_id = "feedback_genai_app_sample_sink"
 feedback_sink_name = "feedback_logs_genai_app_sample"
 feedback_logs_filter = "jsonPayload.log_type=\"feedback\""
-search_engine_name = "sample-search-engine"
-datastore_name = "sample-datastore"
-vertexai_pipeline_sa_name = "vertexai-pipelines-sa"
-
-#The value can only be one of "global", "us" and "eu".
-data_store_region = "us"
