@@ -79,7 +79,7 @@ When you change anything that affects the deployed surface (agent definition, to
 ## Out of scope — hand back to the orchestrator
 
 - Frontend / React UI → `frontend-engineer`
-- Backend code outside `app/adk/` (e.g., `api/`, `data_ingestion/`, `knowledge_graph/`, `shared/` infra changes beyond logging) → `backend-engineer`
+- Backend code outside `app/adk/` (e.g., `api/`, `knowledge_graph/`, `shared/` infra changes beyond logging) → `backend-engineer`
 - New pytest files or substantial test refactors → `test-engineer`
 - Design tokens / UI styling → `design-token-engineer`
 - Broad security audit of the system → `security-auditor`

@@ -114,8 +114,6 @@ ken-e/
 ├── frontend/              # React TypeScript application
 │   ├── src/               # Frontend source code
 │   └── public/            # Static assets
-├── data_ingestion/        # Vertex AI data pipeline
-│   └── data_ingestion_pipeline/
 ├── deployment/            # Infrastructure & CI/CD
 │   ├── terraform/         # IaC for GCP resources
 │   ├── ci/               # CI pipeline (PR checks)

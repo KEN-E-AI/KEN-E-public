@@ -125,53 +125,6 @@ variable "cicd_sa_deployment_required_roles" {
     "roles/storage.admin"
   ]
 }
-variable "vertexai_pipeline_sa_name" {
-  description = "Service account name to be used for the Vertex AI service"
-  type        = string
-  default     = "data-ingestion-vertexai-sa"
-}
-
-variable "pipeline_cron_schedule" {
-  type        = string
-  description = "Cron expression defining the schedule for automated data ingestion."
-  default     = "0 0 * * 0" # Run at 00:00 UTC every Sunday
-}
-
-variable "data_store_region" {
-  type        = string
-  description = "Google Cloud region for resource deployment."
-  default     = "us"
-}
-
-variable "pipelines_roles" {
-  description = "List of roles to assign to the Vertex AI Pipelines service account"
-  type        = list(string)
-  default = [
-    "roles/storage.admin",
-    "roles/aiplatform.user",
-    "roles/discoveryengine.admin",
-    "roles/logging.logWriter",
-    "roles/artifactregistry.writer",
-    "roles/bigquery.dataEditor",
-    "roles/bigquery.jobUser",
-    "roles/bigquery.readSessionUser",
-    "roles/bigquery.connectionAdmin",
-    "roles/resourcemanager.projectIamAdmin"
-  ]
-}
-
-variable "datastore_name" {
-  description = "The name of the datastore"
-  type        = string
-  default     = "sample-datastore"
-}
-
-variable "search_engine_name" {
-  description = "The name of the search engine"
-  type        = string
-  default     = "sample-search-engine"
-}
-
 variable "staging_db_password" {
   description = "Password for staging database user"
   type        = string
