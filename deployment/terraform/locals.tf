@@ -41,6 +41,13 @@ locals {
     staging = var.staging_project_id
   }
 
+  # Subset of deploy_project_ids that still routes Traceloop tracing logs to
+  # BigQuery. Prod was removed when its destination dataset went away with
+  # no downstream consumers.
+  telemetry_export_project_ids = {
+    staging = var.staging_project_id
+  }
+
   all_project_ids = [
     var.cicd_runner_project_id,
     var.prod_project_id,
