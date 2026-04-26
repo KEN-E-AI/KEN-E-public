@@ -63,7 +63,10 @@ resource "google_cloudbuild_trigger" "cd_pipeline" {
     _STAGING_PROJECT_ID            = var.staging_project_id
     _BUCKET_NAME_LOAD_TEST_RESULTS = resource.google_storage_bucket.bucket_load_test_results.name
     _REGION                        = var.region
-    # Your other CD Pipeline substitutions
+    # Memorystore Redis host — the staging.yaml default is self-referential
+    # (`_REDIS_HOST_STAGING: ${_REDIS_HOST_STAGING}`) so must be overridden here
+    # or the build fails with "cycle in evaluating substitutions".
+    _REDIS_HOST_STAGING = google_redis_instance.staging.host
   }
   depends_on = [resource.google_project_service.cicd_services, resource.google_project_service.shared_services]
 
@@ -86,7 +89,10 @@ resource "google_cloudbuild_trigger" "deploy_to_prod_pipeline" {
   substitutions = {
     _PROD_PROJECT_ID = var.prod_project_id
     _REGION          = var.region
-    # Your other Deploy to Prod Pipeline substitutions
+    # Memorystore Redis host — the deploy-to-prod.yaml default is self-referential
+    # (`_REDIS_HOST_PROD: ${_REDIS_HOST_PROD}`) so must be overridden here or the
+    # build fails with "cycle in evaluating substitutions".
+    _REDIS_HOST_PROD = google_redis_instance.production.host
   }
   depends_on = [resource.google_project_service.cicd_services, resource.google_project_service.shared_services]
 
