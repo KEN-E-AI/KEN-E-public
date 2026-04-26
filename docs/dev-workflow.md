@@ -87,14 +87,28 @@ The two maps are validated at module-import time (`_validate_team_maps()`); if t
 | Dev Team | Yes — clones to read PRD, write code, push branches | `TEAM_REPO_MAP[team_id]` |
 | Test Team | Yes — clones to check out the Dev Team's branch and run Playwright | `TEAM_REPO_MAP[team_id]` |
 
-#### Component PRD layout (dual-layout, auto-detected)
+#### Component PRD layout
 
-Component docs live in ONE of two layouts. The startup script detects which is present in the cloned repo and injects accordingly:
+Every repo uses the same component-docs layout:
 
-- **KEN-E-style (multi-PRD):** `docs/design/components/{name}/README.md` plus optional project PRDs under `docs/design/components/{name}/projects/*.md`. The startup script enumerates `projects/` and prepends every `*.md` file to the prompt alongside the README.
-- **Fun-E-style (single-PRD):** `docs/components/{name}/PRD.md` — single file injected into the prompt.
+```
+docs/
+├── {Repo-Name}-System-Architecture.md   ← system-level architecture (Level 1)
+└── design/
+    └── components/
+        └── {component-name}/
+            ├── README.md                 ← component overview (Level 2)
+            └── projects/
+                ├── {PRD-1}.md            ← project PRDs (Level 3)
+                ├── {PRD-2}.md
+                └── ...
+```
 
-If neither path exists for the named component, the startup script logs a warning and continues; the agent's SKILL still instructs it to enumerate the docs directory itself via Read/Bash, so context loading degrades gracefully rather than failing.
+The startup script reads the component name from the dispatched VM's metadata, then prepends `docs/design/components/{name}/README.md` plus every `*.md` file under `docs/design/components/{name}/projects/` to the agent's prompt. Components with no `projects/` subdirectory have only the README injected.
+
+If the named component directory does not exist, the startup script logs a warning and continues; the Dev Team SKILL instructs the agent to enumerate the docs directory itself via Read/Bash, so context loading degrades gracefully rather than failing.
+
+The repo's system-architecture document (Level 1) is **not** pre-injected — agents load it themselves. The Dev Team SKILL names the canonical paths (`docs/KEN-E-System-Architecture.md` for KEN-E, `docs/FUN-E-System-Architecture.md` for Fun-E).
 
 #### GitHub authentication
 
