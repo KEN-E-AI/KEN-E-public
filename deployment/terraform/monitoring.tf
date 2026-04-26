@@ -45,8 +45,18 @@ resource "google_logging_metric" "http_request_duration" {
 # Shows latency heatmap, p50/p95/p99 percentiles, and request rate per route.
 
 resource "google_monitoring_dashboard" "api_latency" {
-  for_each       = local.deploy_project_ids
-  project        = each.value
+  for_each = local.deploy_project_ids
+  project  = each.value
+
+  # Cloud Monitoring's API normalizes dashboard JSON on read (strips
+  # default xPos/yPos, adds an etag, returns explicit defaults like
+  # targetAxis="Y1" / scale="LINEAR"), so the round-trip never matches
+  # the input. Ignore the field entirely — re-applying changes requires
+  # `terraform state taint` or temporarily removing this block.
+  lifecycle {
+    ignore_changes = [dashboard_json]
+  }
+
   dashboard_json = jsonencode({
     displayName = "API Latency - ${each.key}"
     mosaicLayout = {
