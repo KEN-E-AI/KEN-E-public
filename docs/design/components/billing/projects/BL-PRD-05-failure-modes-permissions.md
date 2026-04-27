@@ -35,7 +35,7 @@ This PRD also formalizes the "non-admin attempting to upgrade" UX in the fronten
   - `POST /api/v1/billing/{org_id}/customer-portal-session`
   - `POST /api/v1/billing/{org_id}/sales-handoff` (BL-PRD-06 contract; permission landed here)
 - **Read-only access** for any user with org membership: `GET /profile`, `GET /usage/current`, `GET /usage/daily`, `GET /pricing-tiers`, `GET /bff/billing/status/{org_id}` — open to all members (uses `require_role(OrgRole.MEMBER, scope="org")`). Pricing-tiers is fully public.
-- **Permission-denied response shape** — 403 with `{error: "billing_role_required", required_role: "admin", actor_role: "<role>"}`. Frontend uses this to render a "Ask your org admin to upgrade" inline message + reveal a "Notify admin" button (sends an in-app notification to the org's admins; future polish, contract exposed here).
+- **Permission-denied response shape** — 403 with `{error: "billing_role_required", required_role: "admin", actor_role: "<role>"}`. Frontend uses this to render an "Ask your org admin to upgrade" inline message + reveal a "Notify admins" button (sends an in-app notification to every `OrgRole.ADMIN` in the org; future polish, contract exposed here).
 - **Manual override admin endpoint** — `POST /api/v1/internal/billing/{org_id}/manual-override`. OIDC-authed, restricted to a hard-coded internal-staff allow-list (group claim or service-account-with-staff-claim). Body:
   ```json
   {
@@ -82,7 +82,7 @@ This PRD also formalizes the "non-admin attempting to upgrade" UX in the fronten
 | **DM-PRD-07 (Roles + Audit substrate)** | `OrgRole` enum (`admin \| member`) + `require_role(OrgRole.ADMIN, scope="org")` FastAPI dependency. Reads `organizations/{org_id}/members/{user_id}.role`. Billing's permission middleware is a thin wrapper around this. | `../../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md` §4.1, §6 |
 | **Internal-staff allow-list** | Either a Firestore-backed list (`internal_staff/{user_id}`) or a group claim from the auth provider. Decided in §9 Q1. | TBD |
 | **Existing rate-limit middleware** | If present, reuse. If not, ship a thin Firestore-backed limiter scoped to billing endpoints only (low traffic, OK to be naive). | `api/src/kene_api/middleware/` |
-| **Notifications** | `Org Owner Action Required` category for "Notify owner" button (frontend wiring deferred; contract exposed here). | Existing notifications service |
+| **Notifications** | `Org Admin Action Required` category for the "Notify admins" button (frontend wiring deferred; contract exposed here). Fan-out target: every `OrgRole.ADMIN` in the org. | Existing notifications service |
 
 ## 4. Data contract
 
@@ -138,7 +138,7 @@ Per-action `params`:
 | Create | `docs/design/components/billing/runbooks/webhook-replay.md` |
 | Create | `docs/design/components/billing/runbooks/webhook-secret-rotation.md` |
 | Create | `api/tests/unit/billing/test_manual_override.py`, `test_rate_limit.py` (permission tests live in DM-PRD-07's `test_rbac_role_gate.py`) |
-| Create | `api/tests/integration/billing/test_admin_only_endpoints.py`, `test_manual_override_audit.py`, `test_webhook_two_secret_rotation.py`, `test_stripe_outage_degradation.py`, `test_webhook_replay_tool.py` |
+| Create | `api/tests/integration/billing/test_admin_only_endpoints.py`, `test_manual_override_audit.py`, `test_webhook_two_secret_rotation.py`, `test_stripe_outage_degradation.py`, `test_webhook_replay_tool.py`, `test_cache_invalidation_sweep.py` |
 
 ### 5.2 Permission middleware (thin wrapper over DM-PRD-07)
 
@@ -263,6 +263,7 @@ No new public contracts; this PRD layers permission + failure-mode behavior on e
 13. **Rate limit on `/checkout-session`** — 11th call within an hour for the same org → 429 with `retry_after_seconds`.
 14. **Rate limit on `/sales-handoff`** — 4th call within a day for the same org → 429.
 15. **Audit completeness** — automated test enumerates every state-changing endpoint; for each, makes a successful call; asserts a corresponding `BillingAuditEntry` row exists with non-empty `actor_id`.
+16. **Status-cache invalidation sweep** — automated test enumerates **every** code path that mutates `OrganizationStatus` (per Billing README §7.3): `meter_increment` threshold crossing (BL-PRD-02), `monthly_reset` per-org reactivation (BL-PRD-02), all five Stripe webhook handlers (BL-PRD-03), `change_subscription` immediate-proration path (BL-PRD-03), and `manual_override` `credit_tokens` / `uplift_cap` / `force_status` (BL-PRD-05). For each mutator: prime the 30s cache with a stale value, fire the mutator, assert the very next `check_status(org_id)` call reads fresh state (cache invalidated). Adding a new mutator without invalidation fails this test in CI. Lives in `api/tests/integration/billing/test_cache_invalidation_sweep.py`.
 
 ## 8. Test plan
 
@@ -281,6 +282,7 @@ No new public contracts; this PRD layers permission + failure-mode behavior on e
 - Webhook replay (AC #12).
 - Rate limits (AC #13, #14).
 - Audit completeness sweep (AC #15).
+- Status-cache invalidation sweep (AC #16) — exercises every status mutator listed in Billing README §7.3 against a primed 30s cache; asserts the next `check_status` reads fresh.
 
 ### Manual verification
 - Run replay tool against staging for a known recent date range; confirm idempotent behavior in audit.

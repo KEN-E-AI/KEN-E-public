@@ -114,7 +114,7 @@ class BillingAuditEntry(BaseModel):
         "profile_created", "subscription_created", "subscription_upgraded",
         "subscription_downgraded", "subscription_canceled", "payment_succeeded",
         "payment_failed", "status_changed", "manual_override",
-        "enterprise_handoff_initiated",
+        "enterprise_handoff_initiated", "scheduled_run_skipped",
     ]
     timestamp: datetime
     metadata: dict                          # no card numbers, no PII beyond user_id

@@ -73,7 +73,9 @@ A developer reading only this section should understand: this component owns the
 │    2. idempotency: read billing_stripe_events/{event.id}                    │
 │       if already processed → return 200 (replay)                            │
 │    3. dispatch handler:                                                     │
-│         checkout.session.completed   → activate subscription                │
+│         checkout.session.completed    → activate subscription               │
+│         customer.subscription.created → defensive duplicate; no-op if       │
+│                                          stripe_subscription_id matches     │
 │         customer.subscription.updated → re-derive tier; audit; notify       │
 │         customer.subscription.deleted → revert to Free; recompute status    │
 │         invoice.payment_succeeded     → if past_due → active                │
@@ -127,7 +129,7 @@ A developer reading only this section should understand: this component owns the
 | `api/src/kene_api/billing/meter.py` | `meter_increment(...)`, `check_status(...)`, `invalidate_status_cache(...)`. The hot-path API for the Agentic Harness. (BL-PRD-02) |
 | `api/src/kene_api/billing/state_machine.py` | Pure transition functions; testable without Firestore. (BL-PRD-02) |
 | `api/src/kene_api/billing/counters.py` | Distributed-counter read/write helpers (10-shard pattern). (BL-PRD-02) |
-| `api/src/kene_api/billing/notifications.py` | `Approaching Token Limit`, `Token Limit Exceeded`, `Payment Failed`, `Subscription Updated` factories. (BL-PRD-02 + BL-PRD-03) |
+| `api/src/kene_api/billing/notifications.py` | `Approaching Token Limit`, `Token Limit Exceeded`, `Scheduled Run Skipped — Billing`, `Payment Failed`, `Subscription Updated` factories. (BL-PRD-02 + BL-PRD-03) |
 | `api/src/kene_api/billing/exceptions.py` | `BillingInactiveError` — typed exception mapped to HTTP 402 by the API exception handler. (BL-PRD-02) |
 | `api/src/kene_api/billing/checkout.py` | `create_checkout_session(org_id, tier_stop_index)`. (BL-PRD-03) |
 | `api/src/kene_api/billing/subscription.py` | `change_subscription`, `cancel_subscription`. (BL-PRD-03) |
@@ -241,7 +243,7 @@ Schema source of truth: `api/src/kene_api/models/billing.py` (Pydantic), mirrore
 |-----------|------------|
 | **[Agentic Harness](../agentic-harness/README.md)** | **Every LLM-consuming agent invocation** wraps `billing.check_status` (pre-call) + `billing.meter_increment` (post-call). On `BillingInactiveError`, the runtime refuses with a typed exception that the API layer maps to HTTP 402. The integration is one helper at the LLM-call site — see `app/adk/agents/...`. The hook is the single place tokens are metered for chat (no global middleware that double-counts). |
 | **[Chat — CH-PRD-04 auto-title](../chat/projects/CH-PRD-04-session-status-view.md)** | Once-per-session `gemini-2.5-flash` call after the first assistant response generates a session title (3–6 words). The call's `usage_metadata` flows through the shared `extract_billable_tokens(event)` helper (per §7.4) and increments the org's monthly meter via `billing.meter_increment` — same code path agent calls use, no duplicate metering. Auto-title respects `check_status` indirectly: when the org is `inactive_*`, the agent call that would trigger auto-title cannot fire in the first place (there's no first assistant response), so no special pre-call gating is needed. |
-| **[Project Tasks](../project-tasks/README.md) + [Automations](../automations/README.md)** | `TaskOrchestrator` calls `billing.check_status(org_id)` before firing any scheduled run. On `inactive_*`, the run is skipped, the task is marked `skipped_billing`, and a notification fires (deduped per day to avoid spam). |
+| **[Project Tasks](../project-tasks/README.md) + [Automations](../automations/README.md)** | BL-PRD-02 layers a `billing.check_status(org_id)` gate into both `TaskOrchestrator.on_task_status_change` / `on_task_due` (PR-PRD-04) and `AutomationRunEngine.on_scheduler_tick` (A-PRD-02). On `inactive_*` + enforce-on, dispatch is skipped (the task stays in its current status; the automation tick does not clone a `PlanRun`, leaving `next_run_at` unchanged so the next tick retries naturally), a `scheduled_run_skipped` audit row is written, and a `Scheduled Run Skipped — Billing` notification fires deduped per `(org_id, day)`. Manual "Run now" rides the Agentic Harness 402 path instead. See BL-PRD-02 §2 (scope) and §5.5 (gate logic) for details — no `TaskStatus` / `RunStatus` enum changes are required. |
 | **[Data Pipeline](../data-pipeline/README.md)** | Deterministic platform-API extraction jobs **do not count** against the token meter (zero LLM tokens consumed). They continue running while an org is inactive. Intentional — data freshness shouldn't lapse with paused chat. Flagged as `implementation-plan.md` §10 Q3. |
 | **[UI](../ui/README.md)** | Subscription tab (BL-PRD-04) lives in the production frontend; figma-export prototype is the design contract. Global app-shell `OrganizationStatusBanner` mounted in `LayoutC.tsx`. `ChatInterface` renders the disabled state when `useOrgStatus().status` is `inactive_*`. The 402 response interceptor in `apiClient.ts` triggers a status refetch + dedup'd toast. |
 | **[Performance / Setup Wizard](../performance/README.md)** | If a customer's wizard requires an LLM-driven step and the org is inactive, the wizard surfaces the same banner copy and links to the Subscription tab. No direct billing dependency beyond `useOrgStatus()`. |
@@ -429,6 +431,7 @@ Multi-admin orgs coordinate destructive actions out-of-band; the audit trail (DM
 - `organizations/{org_id}/billing_reconciliation/{date}` — Shape B. Daily report row.
 - `billing_monthly_reset_marker/{YYYY-MM}` — Shape C. Per-period idempotency marker for the reset job.
 - `billing_rate_limits/{org_id}/{endpoint}` — Shape B. Sliding-window event log; trimmed in-place.
+- `billing_skipped_run_dedup/{org_id}_{YYYY-MM-DD}` — Shape C. Per-`(org, day)` dedup marker for `Scheduled Run Skipped — Billing` notifications. 24h TTL.
 
 ### 7.10 Feature-flag structure
 

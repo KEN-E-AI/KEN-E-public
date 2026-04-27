@@ -2,7 +2,7 @@
 
 **Status:** Not started
 **Owner team:** Frontend team + Billing component team (joint)
-**Blocked by:** [BL-PRD-02](./BL-PRD-02-token-meter-monthly-enforcement.md), [BL-PRD-03](./BL-PRD-03-stripe-checkout-subscription-lifecycle.md)
+**Blocked by:** [BL-PRD-02](./BL-PRD-02-token-meter-monthly-enforcement.md), [BL-PRD-03](./BL-PRD-03-stripe-checkout-subscription-lifecycle.md), [UI-PRD-01](../../ui/projects/UI-PRD-01-design-system-foundation.md) (provides `LayoutC` + `bannerSlot` outlet), [UI-PRD-02](../../ui/projects/UI-PRD-02-core-shell-pages.md) (provides `SETTINGS_NAV_REGISTRY`), [CH-PRD-02](../../chat/projects/CH-PRD-02-chat-page-shell-and-sidebar.md) (creates `frontend/src/components/chat/ChatInterface.tsx` that BL-PRD-04 modifies for the chat-input disabled state)
 **Parallel with:** [BL-PRD-05](./BL-PRD-05-failure-modes-permissions.md) — UI work and backend hardening don't block each other; BL-PRD-04 ships against the BL-PRD-03 endpoints with no admin gate and BL-PRD-05 layers DM-PRD-07's `OrgRole.ADMIN` gate on later
 **Blocks:** BL-PRD-06
 **Estimated effort:** 4 days frontend (≈3 days production wiring + ≈1 day inactive-banner + chat-disabled state)
@@ -130,7 +130,7 @@ type SalesHandoffRequest = {
 | Create | `frontend/src/app/components/OrganizationStatusBanner.tsx` |
 | Create | `frontend/src/app/components/SalesHandoffForm.tsx` |
 | Create | `frontend/src/app/components/CancelSubscriptionDialog.tsx` |
-| Modify | `frontend/src/app/layouts/LayoutC.tsx` — mount `OrganizationStatusBanner` above page content |
+| Consume | UI-PRD-01's `LayoutC.tsx` `bannerSlot` outlet — mount `OrganizationStatusBanner` into the slot via the existing render-prop / context API. **No `LayoutC.tsx` modification required** — the slot was reserved by UI-PRD-01 §2 specifically so banner consumers don't have to edit the layout. |
 | Modify | `frontend/src/components/chat/ChatInterface.tsx` (created by CH-PRD-02) — disabled state when `useOrgStatus().status != "active"` |
 | Modify | `frontend/src/app/lib/apiClient.ts` — 402 response interceptor |
 | Create | `frontend/src/app/lib/billingApi.ts` — typed wrappers for every billing endpoint |
