@@ -14,7 +14,7 @@ gracefully if Redis is unavailable.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -30,11 +30,11 @@ if TYPE_CHECKING:
 class TTLController:
     """Thin wrapper around :class:`RedisService` for harness tests."""
 
-    def __init__(self, service: Any) -> None:
+    def __init__(self, service: "RedisService") -> None:
         self._svc = service
 
     @property
-    def service(self) -> Any:
+    def service(self) -> "RedisService":
         return self._svc
 
     def is_available(self) -> bool:
