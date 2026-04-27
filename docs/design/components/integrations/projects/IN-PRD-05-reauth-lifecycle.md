@@ -54,7 +54,8 @@ This PRD also lights up a low-priority watchdog — if a connection has been in 
 | **[IN-PRD-02](./IN-PRD-02-google-oauth-flow.md)** | `refresh_connection` failure path; `status=expired` transition; audit writer. | This component |
 | **[IN-PRD-03](./IN-PRD-03-connection-management-ui.md)** | `/settings/integrations/{connection_id}` deep-link target page (pulse-animation + Reconnect focus behavior). | This component |
 | **Notification system** (existing) | `create_notification(account_id, category, payload, ...)` + `NotificationCategory` enum. This PRD adds a category and uses the existing routing (in-app bell, email-digest subscription if configured). | `api/src/kene_api/notifications/` |
-| Account-member service | User-removal flow calls our `on-user-removed` hook. Wiring edits: the existing `DELETE /api/v1/accounts/{account_id}/members/{user_id}` handler (or equivalent) appends a POST to `on-user-removed` after successful removal, transactionally or via a post-commit hook. | `api/src/kene_api/routers/accounts.py` or `organizations.py` |
+| Account-member service ([DM-PRD-07](../../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md)) | DM-PRD-07 ships the canonical member-CRUD endpoints. This PRD's `on-user-removed` hook is fired in two places: (a) `DELETE /api/v1/accounts/{account_id}/members/{user_id}` (post-commit hook on the explicit account-grant removal); (b) `DELETE /api/v1/organizations/{org_id}/members/{user_id}` (post-commit hook, fired once per affected account in the org). Both wiring points live in DM-PRD-07's `routers/members.py`. | `../../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md` §6.1 |
+| Full user-deletion ([DM-PRD-05](../../data-management/projects/DM-PRD-05-deletion-sweep-rewrite.md)) | DM-PRD-05's `delete_user_data(user_id)` orchestrator calls `on_user_removed(account_id, user_id)` per affected account before deleting the user doc. This PRD's hook is the bridge that revokes integration connections during full user purge. | `../../data-management/projects/DM-PRD-05-deletion-sweep-rewrite.md` §4.2 |
 | Feature Flags | `integrations_reauth_lifecycle_enabled`. | [FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api.md) |
 | Cloud Scheduler | One additional job: `integrations-stuck-expired-watchdog` (daily). | `deployment/terraform/` |
 | Internal alerting channel | Existing PagerDuty / Slack routing for system alerts. Runbook: `operations/integrations-watchdog.md` (new). | Operations |
@@ -90,7 +91,8 @@ Per-connection dedup lives on the doc so it's atomic with the status transition 
 | Modify | `api/src/kene_api/integrations/refresh.py` — replace inline `status=expired` transition with a call to `mark_expired(..., reason="refresh_failed")` |
 | Modify | `api/src/kene_api/notifications/categories.py` — add `INTEGRATION_NEEDS_REAUTH` |
 | Modify | `api/src/kene_api/notifications/templates.py` (or equivalent) — copy + deep-link URL for the new category |
-| Modify | `api/src/kene_api/routers/accounts.py` (or `organizations.py`) — post-commit call to `on_user_removed` after a member removal |
+| Modify | `api/src/kene_api/routers/members.py` (DM-PRD-07) — post-commit call to `on_user_removed(account_id, user_id)` after a member-removal mutation; once per affected account when an org member is removed at the org level |
+| Verify | `api/src/kene_api/services/user_deletion_service.py` (DM-PRD-05) — already calls `on_user_removed` per affected account; this PRD's hook is the wired-in implementation |
 | Create | `api/src/kene_api/integrations/workers/stuck_expired_watchdog.py` + Cloud Scheduler handler route |
 | Modify | `deployment/terraform/` — the new Cloud Scheduler job |
 | Create | `docs/design/components/integrations/operations/integrations-watchdog.md` |

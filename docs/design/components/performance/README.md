@@ -322,7 +322,7 @@ Upstream components:
 
 - **Bundle endpoints are reads only.** Every mutation goes directly to the owning component: SAR-E config PUTs, `/targets` POST/PATCH/DELETE, `/config/setup` POST. The BFF is a read-side aggregator, not a write proxy.
 - **`POST /performance/{account_id}/simulations/run` is the one orchestration endpoint.** It composes SAR-E `/scenarios` + `/targets/derive` into one user gesture. Do not split simulation into a two-step client-side flow.
-- **Role gating via DM-PRD-07.** Every BFF endpoint declares `require_role(UserRole.VIEWER)` on reads and `require_role(UserRole.EDITOR)` on wizard-draft mutations. Writes proxied to SAR-E inherit SAR-E's role matrix.
+- **Role gating via DM-PRD-07.** Every BFF endpoint declares `require_role(AccountRole.VIEWER, scope="account")` on reads and `require_role(AccountRole.EDITOR, scope="account")` on wizard-draft mutations. Writes proxied to SAR-E inherit SAR-E's role matrix.
 - **Contract tests in CI (PE-PRD-08).** Every `/api/v1/performance/*` bundle endpoint's response shape is validated against SAR-E's OpenAPI + Project-Tasks' schema. Schema drift fails the build.
 
 ### Firestore

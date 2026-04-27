@@ -48,7 +48,7 @@ What this PRD is **not:** any live connector implementation (Google Analytics is
 ## 3. Dependencies
 
 - **DM-PRD-00 (Migration Foundation):** hard prerequisite. Publishes the migration framework + composite-index registry this PRD uses to provision `data_pipeline_jobs/*`, `accounts/*/data_pipeline_jobs/*`, and `accounts/*/data_pipeline_runs/*`. Without it there is no standard path to add new collection-group queries.
-- **DM-PRD-07 (Approval Workflow & Audit):** soft dependency. The `POST /api/v1/data-pipeline/jobs` endpoint calls `require_role("editor")` and writes audit entries through the `write_audit` helper published by DM-PRD-07. If DM-PRD-07 has not merged when this PRD starts, the endpoint can ship behind a feature flag with a stub role check; once DM-PRD-07 lands the gate is swapped in. The run write endpoints do not require this dependency.
+- **DM-PRD-07 (Approval Workflow & Audit):** soft dependency. The `POST /api/v1/data-pipeline/jobs` endpoint calls `require_role(AccountRole.EDITOR, scope="account")` and writes audit entries through the `write_audit` helper published by DM-PRD-07. If DM-PRD-07 has not merged when this PRD starts, the endpoint can ship behind a feature flag with a stub role check; once DM-PRD-07 lands the gate is swapped in. The run write endpoints do not require this dependency.
 - **Integrations (IN-PRD-02):** soft dependency for this PRD specifically — `StubConnector` bypasses Integrations. The credential-read internal endpoint at `GET /api/v1/internal/integrations/credentials/{account_id}/{platform_id}` is called from DP-PRD-02's `GoogleAnalyticsConnector`, not here. DP-PRD-01 leaves a `credentials: dict` parameter on the connector protocol that DP-PRD-02 fills in.
 - **Project Tasks (PR-PRD-01):** soft dependency. `DataPipelineRun` carries `plan_id` and `task_id` so runs can be attributed to a task; the schema does not require PR-PRD-01 to ship first, but the full end-to-end hand-off requires DP-PRD-03 which depends on PR-PRD-04.
 - **Automations (A-PRD-02, A-PRD-03):** soft dependency. `PipelineJobSpec.output_artifact_name` is the name under which a downstream `TaskArtifact` will be written in DP-PRD-03 via A-PRD-03's write path. This PRD exposes the field but does not call A-PRD-03.
@@ -323,7 +323,7 @@ Returns the overlay doc if present for the caller's account, else the global doc
 
 ### 6.4 `POST /api/v1/data-pipeline/jobs`
 
-**Auth:** user auth + `require_role("editor")` from DM-PRD-07.
+**Auth:** user auth + `require_role(AccountRole.EDITOR, scope="account")` from DM-PRD-07.
 
 **Body:** a `DataPipelineJob` payload. Validated against the Pydantic schema + JSON-Schema meta-validation on the declared `input_schema` / `output_schema`.
 

@@ -148,9 +148,9 @@ Stripe Price IDs are *not* in the JSON — they live per-environment in Secret M
 | `GET` | `/api/v1/billing/{org_id}/usage/current` | This month's tokens used, allowance, status. |
 | `GET` | `/api/v1/billing/{org_id}/usage/daily?from=&to=&breakdown=none\|account\|user` | Daily aggregates feeding the chart. |
 | `GET` | `/api/v1/billing/pricing-tiers` | Public — returns the 41-stop table for the slider. |
-| `POST` | `/api/v1/billing/{org_id}/checkout-session` | Body: `{tier_stop_index}`. Returns Stripe Checkout URL. Auth: org owner only. |
-| `POST` | `/api/v1/billing/{org_id}/subscription/change` | Body: `{tier_stop_index}`. Mid-cycle change for an existing subscription (proration). Auth: org owner only. |
-| `POST` | `/api/v1/billing/{org_id}/subscription/cancel` | Schedules cancellation at period end. Auth: org owner only. |
+| `POST` | `/api/v1/billing/{org_id}/checkout-session` | Body: `{tier_stop_index}`. Returns Stripe Checkout URL. Auth: org admin only (DM-PRD-07's `require_role(OrgRole.ADMIN, scope="org")`). |
+| `POST` | `/api/v1/billing/{org_id}/subscription/change` | Body: `{tier_stop_index}`. Mid-cycle change for an existing subscription (proration). Auth: org admin only. |
+| `POST` | `/api/v1/billing/{org_id}/subscription/cancel` | Schedules cancellation at period end. Auth: org admin only. |
 | `POST` | `/api/v1/billing/{org_id}/customer-portal-session` | Returns a Stripe Customer Portal URL for card updates / invoice history. |
 | `POST` | `/api/v1/billing/{org_id}/sales-handoff` | Body: `{estimated_tokens, contact_message}`. Routes to sales (CRM ticket + email). |
 
@@ -262,9 +262,9 @@ Six PRDs. Proposed prefix: `BL-PRD-NN`.
 
 ### BL-PRD-05 — Failure modes + permissions
 
-**Delivers:** owner-only authorization on every state-changing endpoint (only org owners may upgrade/downgrade/cancel/handoff); `manual_override` admin endpoint (internal staff tool) for credit-back / temporary-uplift / forced-downgrade with mandatory `reason` audit field; Stripe API outage handling (transient errors don't lock customers out — gating decisions never depend on a live Stripe call, only on the materialized status doc); webhook replay tooling (re-process a date range from `billing_stripe_events`); rate-limit on `/checkout-session` and `/sales-handoff` (anti-abuse).
+**Delivers:** org-admin authorization on every state-changing endpoint via DM-PRD-07's `require_role(OrgRole.ADMIN, scope="org")` (any org admin may upgrade/downgrade/cancel/handoff — the earlier owner/admin distinction is collapsed per BL-PRD-05 §1); `manual_override` admin endpoint (internal staff tool) for credit-back / temporary-uplift / forced-downgrade with mandatory `reason` audit field; Stripe API outage handling (transient errors don't lock customers out — gating decisions never depend on a live Stripe call, only on the materialized status doc); webhook replay tooling (re-process a date range from `billing_stripe_events`); rate-limit on `/checkout-session` and `/sales-handoff` (anti-abuse).
 
-**Exit criteria:** Stripe outage simulation (`StubStripe` returns 503 for 10 minutes) causes zero false-inactive flips; non-owners attempting to upgrade get 403; manual override creates a `BillingAuditEntry` with reason captured.
+**Exit criteria:** Stripe outage simulation (`StubStripe` returns 503 for 10 minutes) causes zero false-inactive flips; non-admin org members attempting to upgrade get 403; manual override creates a `BillingAuditEntry` with reason captured.
 
 **Blocked by:** BL-PRD-03.
 
@@ -348,7 +348,7 @@ Six PRDs. Proposed prefix: `BL-PRD-NN`.
 | Customer exceeds limit while a chat is mid-stream | Active in-flight call completes; the meter increment that crosses the threshold flips status synchronously; the *next* call returns 402. |
 | PCI scope creep — a developer adds a "let's collect card details ourselves" feature | Code-review gate; no card-handling libraries in `package.json`; lint rule blocking imports of `@stripe/stripe-js` outside the Subscription tab and the Customer Portal redirect. |
 | Webhook signature secret leaked / rotated | Per-env `STRIPE_WEBHOOK_SECRET` in Secret Manager; rotation runbook; multi-secret support during rotation window. |
-| Org owner leaves the company; no one can manage billing | Org-owner promotion path lives in account-management. Documented in BL-PRD-05 acceptance criteria as a non-goal-but-mandatory upstream dependency. |
+| Sole org admin leaves the company; no remaining admin to manage billing | Org-admin promotion via DM-PRD-07's member-CRUD API is the recovery path; super-admin (`@ken-e.ai`) can also use `/internal/billing/{org_id}/manual-override` to keep the org running while a new admin is appointed. |
 | Free-tier abuse (creating many orgs to skirt the cap) | Email-domain heuristic + per-IP org-creation rate limit. Not a v1 blocker (KEN-E is invite-only at launch); revisit pre-GA. |
 | "I want to upgrade *down* to Free mid-cycle" → Stripe credit balance | Cancel-at-period-end is the only downgrade-to-Free path; no mid-cycle credits. Documented in UI copy. |
 | Time-zone confusion on monthly reset | Reset runs at 00:05 UTC; UI displays "Resets on {local-time formatted next-1st}". |
@@ -362,7 +362,7 @@ These are the decisions that need a product call before PRDs are written.
 3. **Should Data Pipeline jobs count against the meter?** Currently planned: no. But a customer extracting a 90-day GA backfill across 12 properties does cost real money in Google API quota *and* Cloud Run minutes. Either: (a) accept it as a v1 cost, (b) cap pipeline-job run-rate per Free org, (c) introduce a separate "data refresh credits" meter. Decision needed before BL-PRD-04.
 4. **Grace period for past-due.** Default proposal: 7 days. Some SaaS goes 14. Tradeoff: longer = more goodwill, more risk of bad debt.
 5. **Notifications cadence on inactive orgs.** Once daily? Once on transition only? Risk of nag fatigue vs. risk of forgetting to upgrade.
-6. **Org-owner authorization for billing.** Proposal in BL-PRD-05: only `role == "owner"` can upgrade/downgrade/cancel. Should `admin` also have access? Probably yes for upgrade (preventing block on the owner being unavailable), no for cancel.
+6. **Org-admin authorization for billing (resolved).** With DM-PRD-07's `OrgRole = admin | member`, all state-changing billing actions (upgrade / downgrade / cancel / customer portal / sales handoff) require `OrgRole.ADMIN`. The earlier `owner` vs `admin` distinction is collapsed; see BL-PRD-05 §1 Role-model decision for rationale.
 7. **Stripe Tax v. defer.** Proposal: enable in BL-PRD-03 (it's mostly a Stripe dashboard setting + a single API flag). Decision = how much manual tax work the finance team will accept v1.
 8. **Customer Portal scope.** Stripe's hosted portal can do: card update, invoice download, plan change, cancellation. We probably want to *disable* plan change / cancellation in the portal so the in-app slider remains the source of truth (and so we capture intent in our own audit log). Decision: portal limited to card + invoices only?
 9. **Sales-handoff output.** When the user submits the form at >81M tokens, what happens? Q2 covers the *channel*; this question is about the *content* — is the form data structured (tokens needed, billing contact, anticipated start date), or just a free-text "tell us more"? Determines BL-PRD-06 form fields.

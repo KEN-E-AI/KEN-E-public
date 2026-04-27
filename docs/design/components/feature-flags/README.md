@@ -17,16 +17,16 @@ A developer reading only this section should understand: this component owns the
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  Callers                                                                    │
-│    Python: is_feature_enabled("new-ui", user_context)                       │
-│    React:  useFeatureFlag("new-ui")  →  { enabled, reason }                 │
+│    Python: is_feature_enabled("new_ui", user_context)                       │
+│    React:  useFeatureFlag("new_ui")  →  { enabled, reason }                 │
 └───────────────────────────────────┬─────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  /api/v1/feature-flags/evaluate (POST)                                      │
-│    Body: { flag_keys: ["new-ui", "automations-beta"] }                      │
+│    Body: { flag_keys: ["new_ui", "automations_beta"] }                      │
 │    Auth: Firebase JWT → UserContext (user_id, email, org_id, account_id)    │
-│    Returns: { evaluations: { "new-ui": {enabled, reason}, ... } }           │
+│    Returns: { evaluations: { "new_ui": {enabled, reason}, ... } }           │
 └───────────────────────────────────┬─────────────────────────────────────────┘
                                     │
                                     ▼
@@ -78,11 +78,11 @@ A developer reading only this section should understand: this component owns the
 ### 2.2 Data Flow
 
 1. **Flag creation (FF-PRD-02):** A super-admin opens `/admin/feature-flags`, fills in `key`, `description`, `default_enabled=false`, `is_active=true`, targeting rules, and `bucketing_entity` (default `account`). The admin API writes `feature_flags/{key}` and an audit entry to `feature_flag_audit/{audit_id}`.
-2. **Server-side evaluation (FF-PRD-01):** A router or service calls `is_feature_enabled("new-ui", user_context)`. The helper calls `FeatureFlagService.evaluate_batch(["new-ui"], ctx)`. Service hits the in-process LRU cache (60 s TTL keyed by `flag_key`); on miss, reads Firestore. The evaluator walks the precedence ladder (see §2, §7.2) and returns `{enabled, reason}`.
-3. **Client-side evaluation (FF-PRD-03):** `FeatureFlagsProvider` (mounted under `AuthContext`) batch-evaluates the flags used in the app via `POST /api/v1/feature-flags/evaluate` on mount and whenever `selectedAccount.accountId` changes. Results cached in TanStack Query with 60 s staleTime. `useFeatureFlag("new-ui")` reads from that cache.
+2. **Server-side evaluation (FF-PRD-01):** A router or service calls `is_feature_enabled("new_ui", user_context)`. The helper calls `FeatureFlagService.evaluate_batch(["new_ui"], ctx)`. Service hits the in-process LRU cache (60 s TTL keyed by `flag_key`); on miss, reads Firestore. The evaluator walks the precedence ladder (see §2, §7.2) and returns `{enabled, reason}`.
+3. **Client-side evaluation (FF-PRD-03):** `FeatureFlagsProvider` (mounted under `AuthContext`) batch-evaluates the flags used in the app via `POST /api/v1/feature-flags/evaluate` on mount and whenever `selectedAccount.accountId` changes. Results cached in TanStack Query with 60 s staleTime. `useFeatureFlag("new_ui")` reads from that cache.
 4. **Kill switch:** An admin toggles `is_active=false`. Backend LRU cache expires within 60 s; frontend cache expires within 60 s of the next `AuthContext` change or on SWR revalidation. Worst-case propagation: ~60 s. That latency is the Release 1 trade-off for simplicity (no Firestore listeners, no Redis).
 5. **Audit trail:** Every CRUD mutation records `{flag_key, actor_email, action, diff, created_at}` to `feature_flag_audit/{audit_id}`. The admin UI surfaces this per-flag.
-6. **Dev override (FF-PRD-03):** In non-production environments (`import.meta.env.VITE_ENVIRONMENT !== 'production'`), a URL param `?ff.new-ui=on` or `?ff.new-ui=off` short-circuits the hook for that browser tab. Persisted to `sessionStorage`. Has no effect in production.
+6. **Dev override (FF-PRD-03):** In non-production environments (`import.meta.env.VITE_ENVIRONMENT !== 'production'`), a URL param `?ff.new_ui=on` or `?ff.new_ui=off` short-circuits the hook for that browser tab. Persisted to `sessionStorage`. Has no effect in production.
 
 ### 2.3 API Contracts
 
@@ -96,7 +96,7 @@ A developer reading only this section should understand: this component owns the
 | `/api/v1/admin/feature-flags/{key}` | DELETE | FF-PRD-02 | Hard-delete (super-admin only; writes audit entry) |
 | `/api/v1/admin/feature-flags/{key}/audit` | GET | FF-PRD-02 | Audit log for a flag (super-admin only) |
 
-Schema source of truth: `api/src/kene_api/models/feature_flag_models.py` (Pydantic), mirrored in `frontend/src/lib/featureFlags/types.ts` as branded `FlagKey` + matching `FeatureFlag` / `TargetingRules` / `FlagEvaluation` types. URL paths use kebab-case (`feature-flags`); Firestore collections use snake_case (`feature_flags`, `feature_flag_audit`).
+Schema source of truth: `api/src/kene_api/models/feature_flag_models.py` (Pydantic), mirrored in `frontend/src/lib/featureFlags/types.ts` as branded `FlagKey` + matching `FeatureFlag` / `TargetingRules` / `FlagEvaluation` types. URL paths use kebab-case (`feature-flags`); Firestore collections use snake_case (`feature_flags`, `feature_flag_audit`); **flag keys are snake_case** (regex in §7.1). Drift between Python and TypeScript is gated by FF-PRD-01's JSON-schema snapshot test (see §7.1).
 
 ### 2.4 Key Abstractions
 
@@ -174,7 +174,7 @@ The component's Release 1 work is split across **3 project PRDs** under [`projec
 
 Two touchpoints need conscious coordination:
 
-- **Typed-client contract (FF-PRD-02 ↔ FF-PRD-03):** FF-PRD-02's TypeScript types (`FeatureFlag`, `TargetingRules`) and FF-PRD-03's typed client both mirror the Pydantic models in `feature_flag_models.py`. Generate once; both PRDs import from `frontend/src/lib/featureFlags/types.ts` owned by whichever PRD ships first. Lock the type surface in that PRD's code review.
+- **Typed-client contract (FF-PRD-02 ↔ FF-PRD-03):** `frontend/src/lib/featureFlags/types.ts` is **owned by FF-PRD-02**. FF-PRD-03 imports from it and appends runtime-only types (`FeatureFlagsContextValue`, `UseFeatureFlagResult`). The Pydantic models in `feature_flag_models.py` (FF-PRD-01) are mirrored manually; a JSON-schema snapshot test (`api/tests/unit/test_feature_flag_schema_contract.py`) catches Python-side drift, and the PR reviewer compares the snapshot diff against the matching `types.ts` change in the same PR.
 - **Bucketing-entity choice in documentation (FF-PRD-01 ↔ FF-PRD-02):** The admin UI must explain `bucketing_entity` clearly (default `account`; switch to `user` only when the flag genuinely follows a person across accounts). FF-PRD-01 owns the prose; FF-PRD-02 surfaces it in the create/edit form's help text.
 
 ### 5.4 Recommended workflow
@@ -198,7 +198,7 @@ Two touchpoints need conscious coordination:
 ### 7.1 Flag schema
 
 - **Boolean flags only for Release 1.** Multi-variant (string / JSON) flags are a future PRD; no speculative schema in Release 1.
-- `key` is kebab-case, regex `^[a-z0-9][a-z0-9-]{2,63}$`. Enforced in the Pydantic model and at the admin API.
+- `key` is **snake_case**, regex `^[a-z0-9][a-z0-9_]{2,63}$`. Enforced in the Pydantic model and at the admin API. (Snake_case matches the convention every consumer component uses — `chat_v2_enabled`, `billing_enabled`, `performance_dashboards_tab`, etc.)
 - `default_enabled` should be `false` for in-development features. Flip to `true` at GA and then retire the flag (delete the doc, remove callers).
 - `is_active=false` is the kill switch — always returns `default_enabled` regardless of targeting.
 - `bucketing_entity` is `"account"` by default; override to `"user"` only when the feature genuinely travels with a person across accounts (e.g., profile settings), or `"organization"` when the feature is an org-wide capability.

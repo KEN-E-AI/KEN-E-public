@@ -150,7 +150,7 @@ class ChatStatusDetail(BaseModel):
 |---|---|
 | `accounts/{account_id}/chat_sessions/{session_id}` | Side-table row. One per ADK session. |
 | `accounts/{account_id}/chat_sessions/{session_id}/artifacts/{artifact_id}` | Artifact metadata index. |
-| `users/{user_id}/chat_categories/{category_id}` | Per-user categories. **First user-scoped subcollection in the codebase** — see README §7.2. |
+| `users/{user_id}/chat_categories/{category_id}` | Per-user categories. Third user-scoped subcollection in the codebase (after the existing `notification_status` and `preferences` per `firestore_notification_repository.py`). Registered in DM-PRD-05's `USER_SUBCOLLECTIONS` so the user-deletion sweep covers it. — see README §7.2. |
 
 **Four composite indexes** (CH-PRD-01 §4.3) — two sidebar variants (with/without category filter; both include `deleted_at` for index-covered tombstone exclusion), artifact listing, category dedup. Firestore security rules (`firestore.rules`) enforce per-user-per-account access; API-layer checks are belt-and-braces.
 

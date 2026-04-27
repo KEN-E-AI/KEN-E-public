@@ -259,7 +259,7 @@ Idempotent; returns `{last_viewed_at}` so the client can optimistically set loca
 
 ```typescript
 // frontend/src/App.tsx
-const chatEnabled = useFeatureFlag("chat_v2_enabled");
+const { enabled: chatEnabled } = useFeatureFlag("chat_v2_enabled");
 // ...
 {chatEnabled && <Route path="/chat" element={<ChatPage />} />}
 ```

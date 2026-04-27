@@ -3,9 +3,9 @@
 **Status:** Not started
 **Owner team:** Billing component team (backend) + Platform team (rate limiting + ops tooling)
 **Blocked by:** [BL-PRD-03](./BL-PRD-03-stripe-checkout-subscription-lifecycle.md)
-**Parallel with:** [BL-PRD-04](./BL-PRD-04-subscription-settings-ui-integration.md) — UI work and backend hardening don't block each other; BL-PRD-04 ships against the BL-PRD-03 endpoints unsecured-by-owner-only and BL-PRD-05 layers permissions on later
+**Parallel with:** [BL-PRD-04](./BL-PRD-04-subscription-settings-ui-integration.md) — UI work and backend hardening don't block each other; BL-PRD-04 ships against the BL-PRD-03 endpoints with no admin gate and BL-PRD-05 layers DM-PRD-07's `OrgRole.ADMIN` gate on later
 **Blocks:** BL-PRD-06
-**Estimated effort:** 3 days backend (≈1.5 owner-only + manual override, ≈1 outage + rate-limit, ≈0.5 webhook replay tooling)
+**Estimated effort:** 3 days backend (≈1.5 admin-gate wiring + manual override, ≈1 outage + rate-limit, ≈0.5 webhook replay tooling)
 
 ---
 
@@ -15,26 +15,27 @@ By the end of BL-PRD-03 + BL-PRD-04, the entire happy path works: orgs can self-
 
 Five hardening surfaces ship here:
 
-1. **Owner-only authorization** on every state-changing billing endpoint (upgrade, downgrade, cancel, customer portal, sales handoff). Org admins get read access only; viewers and members get nothing beyond the public pricing tiers.
+1. **Org-admin authorization** on every state-changing billing endpoint (upgrade, downgrade, cancel, customer portal, sales handoff). Org members get read access only. Authorization rides on DM-PRD-07's `OrgRole` enum (`admin | member`) and `require_role(OrgRole.ADMIN, scope="org")` dependency — Billing does not maintain its own role enum.
 2. **Manual override admin endpoint** for internal staff to credit-back tokens, temporarily uplift the cap, or force a downgrade — every action mandatorily writes a `BillingAuditEntry` with a reason field.
 3. **Stripe outage handling** — explicit assertion (with tests) that no enforcement decision ever calls Stripe live; gating decisions read only the materialized `OrganizationStatus`. Outage degrades upgrade flow only, not active customers.
 4. **Webhook replay tooling** — operator command to re-process a date range from `billing_stripe_events` by re-invoking the relevant handler. Used when a handler bug is fixed and we need to re-apply stuck events.
 5. **Rate limits** on `/checkout-session` and `/sales-handoff` to prevent abuse (cheap to call, expensive to ignore; sales-handoff in particular touches a CRM ticket).
 
-This PRD also formalizes the "non-owner attempting to upgrade" UX in the frontend: BL-PRD-04 didn't gate the button visually, so the backend rejection here triggers a UI hint that the upgrade requires an org owner.
+This PRD also formalizes the "non-admin attempting to upgrade" UX in the frontend: BL-PRD-04 didn't gate the button visually, so the backend rejection here triggers a UI hint that the upgrade requires an org admin.
+
+> **Role-model decision:** earlier drafts of this PRD proposed a 3-value Billing-specific enum (`owner / admin / member`) with `owner`-only cancel/downgrade and a `BILLING_ALLOW_ADMIN_UPGRADE` env-var fallback. With KEN-E pre-production and DM-PRD-07's `OrgRole` only carrying two values (`admin / member`), Billing collapses to a single `admin` role for all state-changing actions. Multi-admin orgs coordinate destructive actions out-of-band; the audit trail (DM-PRD-07) gives ops the data to detect when this becomes a problem and re-introduce an `owner` tier. The `BILLING_ALLOW_ADMIN_UPGRADE` env var is removed.
 
 ## 2. Scope
 
 ### In scope
-- **Owner-only authorization** on:
+- **Org-admin authorization** (via DM-PRD-07's `require_role(OrgRole.ADMIN, scope="org")`) on:
   - `POST /api/v1/billing/{org_id}/checkout-session`
   - `POST /api/v1/billing/{org_id}/subscription/change`
   - `POST /api/v1/billing/{org_id}/subscription/cancel`
   - `POST /api/v1/billing/{org_id}/customer-portal-session`
   - `POST /api/v1/billing/{org_id}/sales-handoff` (BL-PRD-06 contract; permission landed here)
-  - Per `../implementation-plan.md` §10 Q6 proposal: `admin` role gets upgrade access (so a sole owner being unavailable doesn't block recovery); only `owner` can cancel or downgrade. Configurable via `BILLING_ALLOW_ADMIN_UPGRADE` (default true).
-- **Read-only access** for any user with org membership: `GET /profile`, `GET /usage/current`, `GET /usage/daily`, `GET /pricing-tiers`, `GET /bff/billing/status/{org_id}` — open to all members. (Pricing-tiers is fully public.)
-- **Permission-denied response shape** — 403 with `{error: "billing_role_required", required_role: "owner", actor_role: "<role>"}`. Frontend uses this to render a "Ask your org owner to upgrade" inline message + reveal a "Notify owner" button (sends an in-app notification to the owner; future polish, contract exposed here).
+- **Read-only access** for any user with org membership: `GET /profile`, `GET /usage/current`, `GET /usage/daily`, `GET /pricing-tiers`, `GET /bff/billing/status/{org_id}` — open to all members (uses `require_role(OrgRole.MEMBER, scope="org")`). Pricing-tiers is fully public.
+- **Permission-denied response shape** — 403 with `{error: "billing_role_required", required_role: "admin", actor_role: "<role>"}`. Frontend uses this to render a "Ask your org admin to upgrade" inline message + reveal a "Notify admin" button (sends an in-app notification to the org's admins; future polish, contract exposed here).
 - **Manual override admin endpoint** — `POST /api/v1/internal/billing/{org_id}/manual-override`. OIDC-authed, restricted to a hard-coded internal-staff allow-list (group claim or service-account-with-staff-claim). Body:
   ```json
   {
@@ -78,7 +79,7 @@ This PRD also formalizes the "non-owner attempting to upgrade" UX in the fronten
 |-----------|------------|-----------|
 | **[BL-PRD-03](./BL-PRD-03-stripe-checkout-subscription-lifecycle.md)** | All state-changing endpoints; `billing_stripe_events` journal; webhook handlers (already idempotent). | This component |
 | **[BL-PRD-02](./BL-PRD-02-token-meter-monthly-enforcement.md)** | `MonthlyUsageWindow`, `OrganizationStatus`, `invalidate_status_cache`. Used by manual-override actions. | This component |
-| **Existing role model** | `accounts/{account_id}/users/{user_id}` (or wherever role lives) → resolves a user's role within an org. Owner-only middleware reads this. | `api/src/kene_api/auth/` |
+| **DM-PRD-07 (Roles + Audit substrate)** | `OrgRole` enum (`admin \| member`) + `require_role(OrgRole.ADMIN, scope="org")` FastAPI dependency. Reads `organizations/{org_id}/members/{user_id}.role`. Billing's permission middleware is a thin wrapper around this. | `../../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md` §4.1, §6 |
 | **Internal-staff allow-list** | Either a Firestore-backed list (`internal_staff/{user_id}`) or a group claim from the auth provider. Decided in §9 Q1. | TBD |
 | **Existing rate-limit middleware** | If present, reuse. If not, ship a thin Firestore-backed limiter scoped to billing endpoints only (low traffic, OK to be naive). | `api/src/kene_api/middleware/` |
 | **Notifications** | `Org Owner Action Required` category for "Notify owner" button (frontend wiring deferred; contract exposed here). | Existing notifications service |
@@ -109,15 +110,15 @@ Per-action `params`:
 
 ### Permission model (enforced)
 
-| Endpoint | Required role |
+| Endpoint | Required role (DM-PRD-07's `OrgRole`) |
 |---|---|
 | `GET /pricing-tiers` | (public) |
-| `GET /profile`, `GET /usage/*`, `GET /bff/billing/status/{org_id}` | any org member |
-| `POST /checkout-session`, `POST /subscription/change` | owner OR (admin if `BILLING_ALLOW_ADMIN_UPGRADE=true`) |
-| `POST /subscription/cancel` | owner only |
-| `POST /customer-portal-session` | owner only |
-| `POST /sales-handoff` | owner OR admin |
-| `POST /internal/billing/{org_id}/manual-override` | internal staff only |
+| `GET /profile`, `GET /usage/*`, `GET /bff/billing/status/{org_id}` | any org member (`OrgRole.MEMBER`) |
+| `POST /checkout-session`, `POST /subscription/change` | `OrgRole.ADMIN` |
+| `POST /subscription/cancel` | `OrgRole.ADMIN` |
+| `POST /customer-portal-session` | `OrgRole.ADMIN` |
+| `POST /sales-handoff` | `OrgRole.ADMIN` |
+| `POST /internal/billing/{org_id}/manual-override` | internal staff only (`@ken-e.ai` claim) |
 
 ## 5. Implementation outline
 
@@ -125,9 +126,8 @@ Per-action `params`:
 
 | Action | File |
 |--------|------|
-| Create | `api/src/kene_api/billing/permissions.py` — `require_billing_role(roles: list[str])` FastAPI dependency |
+| Modify | `api/src/kene_api/routers/billing.py` — apply DM-PRD-07's `require_role(OrgRole.ADMIN, scope="org")` to every state-changing endpoint; `require_role(OrgRole.MEMBER, scope="org")` to read endpoints; add `/internal/billing/{org_id}/manual-override` |
 | Create | `api/src/kene_api/billing/manual_override.py` — handler + per-action validators |
-| Modify | `api/src/kene_api/routers/billing.py` — apply `require_billing_role` to every state-changing endpoint; add `/internal/billing/{org_id}/manual-override` |
 | Create | `api/src/kene_api/billing/_stripe_callsites.py` — registry of allowed Stripe-import modules |
 | Create | `api/scripts/lint/check_stripe_imports.py` — CI lint enforcing the registry |
 | Create | `api/src/kene_api/billing/rate_limit.py` — billing-specific Firestore-backed limiter (or wrapper over existing middleware) |
@@ -137,29 +137,22 @@ Per-action `params`:
 | Create | `docs/design/components/billing/runbooks/stripe-outage-response.md` |
 | Create | `docs/design/components/billing/runbooks/webhook-replay.md` |
 | Create | `docs/design/components/billing/runbooks/webhook-secret-rotation.md` |
-| Create | `api/tests/unit/billing/test_permissions.py`, `test_manual_override.py`, `test_rate_limit.py` |
-| Create | `api/tests/integration/billing/test_owner_only_endpoints.py`, `test_manual_override_audit.py`, `test_webhook_two_secret_rotation.py`, `test_stripe_outage_degradation.py`, `test_webhook_replay_tool.py` |
+| Create | `api/tests/unit/billing/test_manual_override.py`, `test_rate_limit.py` (permission tests live in DM-PRD-07's `test_rbac_role_gate.py`) |
+| Create | `api/tests/integration/billing/test_admin_only_endpoints.py`, `test_manual_override_audit.py`, `test_webhook_two_secret_rotation.py`, `test_stripe_outage_degradation.py`, `test_webhook_replay_tool.py` |
 
-### 5.2 Owner-only middleware
+### 5.2 Permission middleware (thin wrapper over DM-PRD-07)
 
 ```python
-def require_billing_role(allowed_roles: list[Literal["owner", "admin"]]):
-    async def dependency(org_id: str, current_user: User = Depends(get_current_user)) -> User:
-        role = await get_user_role_in_org(current_user.id, org_id)
-        if role not in allowed_roles:
-            raise HTTPException(
-                status_code=403,
-                detail={
-                    "error": "billing_role_required",
-                    "required_role": allowed_roles[0],
-                    "actor_role": role,
-                },
-            )
-        return current_user
-    return dependency
+from kene_api.dependencies.rbac import require_role
+from kene_api.models.role_models import OrgRole
+
+# Applied as a Depends(...) on each route. No Billing-specific role enum;
+# all gating goes through DM-PRD-07's require_role.
+require_org_admin = require_role(OrgRole.ADMIN, scope="org")
+require_org_member = require_role(OrgRole.MEMBER, scope="org")
 ```
 
-Applied as a `Depends(...)` on each route. The `BILLING_ALLOW_ADMIN_UPGRADE` env var controls whether `admin` is included in the allowed-roles list for upgrade endpoints.
+DM-PRD-07's `require_role(...)` raises `HTTPException(403, detail={"error": "billing_role_required", "required_role": "admin", "actor_role": "<role>"})` on rejection (the `error` key is component-specific and parameterized by the calling component). Billing has no separate middleware to maintain.
 
 ### 5.3 Manual override flow
 
@@ -243,7 +236,7 @@ On each request: append now; trim out-of-window; if count exceeds limit, return 
 
 | Method | Path | Change |
 |---|---|---|
-| `POST /checkout-session`, `/subscription/change`, `/subscription/cancel`, `/customer-portal-session`, `/sales-handoff` | Add `Depends(require_billing_role(["owner", "admin"?]))` per role table. 403 + structured body on rejection. 429 on rate-limit. 503 on Stripe outage. |
+| `POST /checkout-session`, `/subscription/change`, `/subscription/cancel`, `/customer-portal-session`, `/sales-handoff` | Add `Depends(require_role(OrgRole.ADMIN, scope="org"))` per role table. 403 + structured body on rejection. 429 on rate-limit. 503 on Stripe outage. |
 
 ### Internal
 
@@ -255,10 +248,10 @@ No new public contracts; this PRD layers permission + failure-mode behavior on e
 
 ## 7. Acceptance criteria
 
-1. **Owner-only enforced** — non-owner POST to `/checkout-session`, `/subscription/change`, `/subscription/cancel`, `/customer-portal-session`, `/sales-handoff` → 403 with `{error: "billing_role_required", ...}`. Owner POST → 200 / 204.
-2. **`BILLING_ALLOW_ADMIN_UPGRADE=true`** — admin POST to upgrade-class endpoints succeeds; cancel + portal still 403.
-3. **`BILLING_ALLOW_ADMIN_UPGRADE=false`** — admin POST to all state-changing endpoints → 403; only owner succeeds.
-4. **Read-only endpoints open to all members** — viewer/member GET `/profile`, `/usage/*` → 200; non-member → 403.
+1. **Org-admin enforced** — non-admin POST to `/checkout-session`, `/subscription/change`, `/subscription/cancel`, `/customer-portal-session`, `/sales-handoff` → 403 with `{error: "billing_role_required", required_role: "admin", actor_role: "member"}`. Admin POST → 200 / 204.
+2. **Read-only endpoints open to all members** — member GET `/profile`, `/usage/*` → 200; non-member → 403.
+3. **(slot retained for future role-tier reintroduction; intentionally empty)**
+4. *(slot retained — see #3)*
 5. **Manual override succeeds with audit** — internal-staff POST `/manual-override action="credit_tokens"` → 204; audit entry written with `event="manual_override"`, full `metadata.action/params/reason/prior_state`. Non-staff caller → 403.
 6. **Manual override `reason` validation** — request with `reason="too short"` → 400 `{error: "reason_too_short"}`.
 7. **Manual override `credit_tokens` reactivates** — seed org `inactive_overage` at 110%; credit 20% worth of tokens; status flips to `active`; cache invalidated; subsequent chat returns 200.
@@ -274,14 +267,14 @@ No new public contracts; this PRD layers permission + failure-mode behavior on e
 ## 8. Test plan
 
 ### Unit
-- `require_billing_role` middleware: each role × allowed-list combo.
+- (Role-gate unit tests live in DM-PRD-07's `test_rbac_role_gate.py` — Billing inherits behavior; integration tests below verify wiring.)
 - Manual-override per-action validators (param shape, reason length).
 - Each manual-override action's pure logic (state transitions independent of Firestore).
 - Stripe-import lint against synthetic fixtures.
 - Rate-limit window math: under, at, over the threshold; window expiry.
 
 ### Integration
-- Owner-only enforcement on every endpoint (AC #1, #2, #3, #4).
+- Org-admin enforcement on every state-changing endpoint (AC #1, #2).
 - Manual override end-to-end (AC #5, #6, #7, #8).
 - Stripe outage degradation (AC #10) — uses `StubStripe` fault injection.
 - Webhook two-secret verification (AC #11).
@@ -299,7 +292,7 @@ No new public contracts; this PRD layers permission + failure-mode behavior on e
 |------|------------|
 | Internal-staff allow-list misconfigured, allowing manual-override to non-staff | Allow-list source is single-sourced per env; staging vs. prod isolation; deploy-time check that the list is non-empty and references real users. |
 | Manual override accidentally permanent | All actions write a full prior-state snapshot; ops doc covers reversal. |
-| Owner leaves the company; no one can upgrade | Org-owner promotion (managed in account-management, not here) is the recovery path. Mitigation in this PRD: `BILLING_ALLOW_ADMIN_UPGRADE=true` so admins can step in. |
+| Sole admin leaves the company; no remaining admin to upgrade | Org-admin promotion (managed via DM-PRD-07's member-CRUD API, not here) is the recovery path. Super-admin (`@ken-e.ai`) can also use `/internal/billing/{org_id}/manual-override` to keep the org running while a new admin is appointed. |
 | Rate limits trip a legitimate sales-handoff retry | 3/day is generous for a single contact event; documented in runbook. Internal staff can use manual override to bypass via `force_status` if needed (extreme). |
 | Two-secret rotation window leaves a stale secondary indefinitely | Rotation runbook mandates secondary deletion within 7 days; reminder in runbook + Cloud Scheduler alarm if both are populated for >14 days. |
 | Webhook replay tool re-fires emails / notifications | Handlers' notification + email side effects need to be replay-safe. Design choice: on replay, suppress side effects via a `--no-side-effects` flag; default is to replay everything (matches the "fix bug, recover state" use case). Documented. |
@@ -309,7 +302,7 @@ No new public contracts; this PRD layers permission + failure-mode behavior on e
 
 ### Open questions
 - **Q:** Internal-staff allow-list source — Firestore (`internal_staff/{user_id}`) or auth-provider group claim? → **Proposal:** auth-provider group claim if available; else Firestore allow-list with rotation runbook. Decide before coding the dependency.
-- **Q:** `BILLING_ALLOW_ADMIN_UPGRADE` default — true or false? → Per `../implementation-plan.md` §10 Q6 proposal: true (admins can upgrade, only owner can cancel). Ratify.
+- **Q:** Should we re-introduce an `OrgRole.OWNER` tier for cancel-protection at some future scale? → **Defer.** Track via the audit-trail signal — if multi-admin orgs become common and an accidental cancel is observed, add the tier in a follow-up DM-PRD update + a Billing PRD update.
 - **Q:** Should manual override `force_downgrade` be available, or always go through the customer's own cancel flow? → **Proposal:** keep it for incident response (e.g. payment processor said "stop charging this customer"). Audit + reason ensure traceability.
 - **Q:** Rate-limit storage — Firestore is fine for low-traffic billing endpoints, but if existing middleware uses Redis or a similar in-memory store, prefer that. → Spike before coding.
 

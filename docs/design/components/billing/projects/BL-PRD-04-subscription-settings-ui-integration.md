@@ -3,7 +3,7 @@
 **Status:** Not started
 **Owner team:** Frontend team + Billing component team (joint)
 **Blocked by:** [BL-PRD-02](./BL-PRD-02-token-meter-monthly-enforcement.md), [BL-PRD-03](./BL-PRD-03-stripe-checkout-subscription-lifecycle.md)
-**Parallel with:** [BL-PRD-05](./BL-PRD-05-failure-modes-permissions.md) — UI work and backend hardening don't block each other; BL-PRD-04 ships against the BL-PRD-03 endpoints unsecured-by-owner-only and BL-PRD-05 layers permissions on later
+**Parallel with:** [BL-PRD-05](./BL-PRD-05-failure-modes-permissions.md) — UI work and backend hardening don't block each other; BL-PRD-04 ships against the BL-PRD-03 endpoints with no admin gate and BL-PRD-05 layers DM-PRD-07's `OrgRole.ADMIN` gate on later
 **Blocks:** BL-PRD-06
 **Estimated effort:** 4 days frontend (≈3 days production wiring + ≈1 day inactive-banner + chat-disabled state)
 
@@ -43,7 +43,7 @@ The pricing slider also moves from a hardcoded constant in the prototype to a fe
 - **Loading + error states** — every async surface has skeleton + error fallbacks following the existing UI conventions in `frontend/src/`.
 
 ### Out of scope
-- Owner-only auth on the upgrade button (visible to all org members in v1; backend rejects with 403 in BL-PRD-05; UI hides the button if the backend returns "not allowed" → in BL-PRD-05).
+- Org-admin auth on the upgrade button (visible to all org members in v1; backend rejects non-admins with 403 in BL-PRD-05; UI hides the button if the backend returns "not allowed" → in BL-PRD-05).
 - Manual override admin tool — BL-PRD-05.
 - Sales-handoff actual destination (the form posts but the routing logic is BL-PRD-06).
 - Reconciliation / finance dashboard surfaces — BL-PRD-06 (and likely deferred to a future release).

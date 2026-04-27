@@ -21,7 +21,7 @@ Landing categories lets users scale past a flat 30-day sidebar — the common ca
 
 ### In scope
 
-- **`users/{user_id}/chat_categories/{category_id}` collection** — shape registered in CH-PRD-01; CH-PRD-03 delivers the write-path + reads. First user-scoped subcollection in the codebase; convention documented in [`../README.md`](../README.md) §7.2.
+- **`users/{user_id}/chat_categories/{category_id}` collection** — shape registered in CH-PRD-01; CH-PRD-03 delivers the write-path + reads. The third user-scoped subcollection in the codebase (after the existing `users/{user_id}/notification_status/*` and `users/{user_id}/preferences/notifications` per `firestore_notification_repository.py`); registered with DM-PRD-05's `USER_SUBCOLLECTIONS` registry so the user-deletion sweep covers it. Convention documented in [`../README.md`](../README.md) §7.2.
 - **`ChatCategoryDefinition` Pydantic shape** — fields per CH-PRD-01 §4.1 (`category_id`, `user_id`, `name`, `name_casefold`, `created_at`, `updated_at`). Name 1–64 chars; stripped; case-insensitive dedup via `name_casefold`.
 - **`ChatCategoryService`** (`api/src/kene_api/chat/categories.py`) — `list_categories(user_id)`, `create_category(user_id, name)`, `delete_category(user_id, category_id)` (with transactional bulk-clear), `assign_category(session_id, category_id | None)`.
 - **Four API endpoints:** `GET /categories`, `POST /categories`, `DELETE /categories/{id}`, `PUT /conversations/{id}/category`.
@@ -51,7 +51,7 @@ Landing categories lets users scale past a flat 30-day sidebar — the common ca
 |-----------|------------|-----------|
 | **[CH-PRD-01](./CH-PRD-01-session-metadata-substrate.md)** | `ChatCategoryDefinition` shape; Firestore collection registered in DM-PRD-00 registry; composite index. | This PRD package |
 | **[CH-PRD-02](./CH-PRD-02-chat-page-shell-and-sidebar.md)** | Sidebar filter dropdown stub replaced by `CategoriesDropdown.tsx`. `useChatSessions` query key includes `category_id` so mutations invalidate cleanly. | This PRD package |
-| **[DM-PRD-05](../../data-management/projects/DM-PRD-05-deletion-sweep-rewrite.md)** | User-deletion sweep cleans `users/{user_id}/chat_categories/*`. First user-scoped subcollection in the sweep. | `../../data-management/README.md` |
+| **[DM-PRD-05](../../data-management/projects/DM-PRD-05-deletion-sweep-rewrite.md)** | User-deletion sweep cleans `users/{user_id}/chat_categories/*` via the `USER_SUBCOLLECTIONS` registry (`recursive_delete(users/{user_id})` reaps the subcollection). CH-PRD-03 adds `chat_categories` to that registry as the third entry (after `notification_status` and `preferences`). | `../../data-management/README.md` |
 | **[FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api.md)**, **[FF-PRD-03](../../feature-flags/projects/FF-PRD-03-frontend-sdk-and-e2e.md)** | `chat_categories_enabled` flag — registered by CH-PRD-01, gated here. | `../../feature-flags/README.md` |
 | **[BL-PRD-05](../../billing/projects/BL-PRD-05-failure-modes-permissions.md)** | **Soft.** Firestore-backed sliding-window rate-limit substrate for `POST /categories` (20/hour/user), `DELETE /categories/{id}` (20/hour/user), `PUT /conversations/{id}/category` (60/min/session). Fallback: in-process limiter while BL-PRD-05 is pending. | `../../billing/README.md` |
 | Firestore transactions | `transaction.set/update/delete` for the atomic bulk-clear + delete path. | Firestore Python SDK |
@@ -171,7 +171,7 @@ Port + generalize from `docs/figma-export/src/app/components/SessionSettings.tsx
 ```typescript
 export function useChatCategories() {
   const queryClient = useQueryClient();
-  const enabled = useFeatureFlag("chat_categories_enabled");
+  const { enabled } = useFeatureFlag("chat_categories_enabled");
 
   const list = useQuery({
     queryKey: ["chat-categories"],
@@ -268,7 +268,7 @@ Auth: all require authenticated user. Ownership enforced server-side. Schemas in
 9. **Trash icon in status-view dropdown** — same UX, same endpoint. CH-PRD-04 wires the mount.
 10. **User isolation** — user A's categories are invisible to user B. Integration test with two users asserts 404 on cross-user read and no leakage via `list_categories`.
 11. **Flag off** — with `chat_categories_enabled=false`: `GET /categories` 404; category filter hidden from sidebar; existing `category_id` values preserved in rows but not rendered.
-12. **DM-PRD-05 sweep** — deleting a user cleans `users/{user_id}/chat_categories/*`. Integration test seeds a user with 5 categories + 10 categorized sessions, runs the user-deletion sweep, confirms categories are gone and sessions have `category_id=null`.
+12. **DM-PRD-05 sweep** — `delete_user_data(user_id)` cleans `users/{user_id}/chat_categories/*` via the `USER_SUBCOLLECTIONS` registry. Integration test seeds a user with 5 categories + 10 categorized sessions, runs the user-deletion endpoint, confirms categories are gone (sessions are also deleted as part of the same sweep since the user owned them).
 13. **Bulk-clear at scale** — delete a category with 800 affected sessions → completes in 2 transactions; all sessions clear correctly; no orphans.
 14. **Dropdown keyboard navigation** — arrow keys navigate options; Enter selects; accessible via screen-reader (aria-labels present).
 
