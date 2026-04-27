@@ -62,7 +62,7 @@ docs/
 
 When updating design docs, enumerate the appropriate directory (`ls docs/design/components/{name}/projects/`) and read the relevant `.md` files before proposing changes.
 
-The `{component}` value is resolved from the issue's Linear team via `TEAM_COMPONENT_MAP` in `Fun-E/agents/webhook-receiver/main.py`. Component → team mapping is also documented in `CLAUDE.md` §KEN-E Platform Architecture.
+The `{component}` value is resolved from the issue's Linear team via `TEAM_COMPONENT_MAP` in `Fun-E/agents/webhook-receiver/main.py`. The team → component mapping is also documented in this repo's `CLAUDE.md` (look for the Linear team / component table).
 
 ---
 
