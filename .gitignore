@@ -228,3 +228,6 @@ firebase-key.json
 # Deployment logs (environment-specific)
 app/adk/agents/logs/*.txt
 .vite/
+
+# Sprint 6 harness run reports
+tests/integration/sprint6_harness/runs/
