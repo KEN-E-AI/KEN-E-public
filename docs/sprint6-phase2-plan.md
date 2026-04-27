@@ -247,3 +247,38 @@ Closeout: Results summary, Session Log, PR.
 ## Calibration anchor
 
 Feature 1.1.4 estimate was ~20–22 hr; actual ~17–22 hr effective + 1 unplanned surprise (secret-leak). Phase 2 budget: ~30 hr planned, expect 33–38 hr with 1–2 surprises.
+
+## Execution notes (closeout, 2026-04-27)
+
+Phase 2 delivered as a 5-PR stack: #260 (harness) → #262 (1.1.1-3) → #263 (1.1.2-3) → #265 (1.14.5) → #269 (1.1.5-4). Closeout PR opened on top.
+
+### Per-story outcomes
+
+| Story | PR | Result | Notable |
+|---|---|---|---|
+| 1.1.x harness | #260 | merged-ready | gitignore + dev-deps in root pyproject.toml; renamed `sprint6_harness/` → `stability/` for naming hygiene |
+| 1.1.1-3 ADK | #262 | PASS — 50/50, 12/12 org_context, callback bus 0/0, config refresh ✓ | construction 0.92s · p50 10.15s · p95 25.57s |
+| 1.1.2-3 trace | #263 | PASS — **85/85 spans compliant (100%)** across 8 op_types | uncovered + fixed real agent-emitter bug (parent span missing all required attrs) AND harness-capture bug (push_call too early) |
+| 1.14.5 OTEL | #265 | PASS — **Outcome B**, workaround removed everywhere | memory delta +0.8%; GenAI coverage 100% (39/39); spike doc closed; subprocess pipe deadlock fix |
+| 1.1.5-4 session | #269 | PASS — Tests 1+3+4 + Test 2 with live token | 2hr sustained delta_pct **-67.4%**; harness fixture rewritten to match KEN-E SSE contract |
+
+### Deviations from plan
+
+- **Stack ordering changed** mid-flight. Original plan had Stories 3/4/5 as siblings off 1.1.1-3. Story 4 found a real agent-emitter bug (PR #263) that Story 3's GenAI coverage check needed; Story 3 was rebased onto Story 4. Story 5 stayed sibling (didn't need the trace fixes).
+- **Story 5 Test 2 was almost punted to Sprint 7.** First attempt against the live API hit a fundamental fixture incompatibility (KEN-E doesn't expose `session_id` in the streaming response). Pragmatic call: rewrite fixture to require caller-pre-created session_id. Took ~30 extra min, AC-6.22 fully validated.
+- **Memory delta required `--memory-invocations 20`.** First runs at 5 invocations showed ±20% swings (Python allocator noise dominating), prompting brief panic. Bumping invocations diluted startup variance and the real OTEL overhead (~0.8%) emerged cleanly.
+- **`tests/integration/stability/runs/__init__.py`** ships empty; gitignore simplified to `runs/*.json` + `*.log` (was an explicit per-file allow-list).
+
+### Latent bugs caught + fixed in flight
+
+1. Agent emitter not passing `attributes=` to `client.create_call` → parent span shipped without `account_id`/`session_id`/`agent_id`/`agent_version`. Fixed in PR #263.
+2. Harness `weave_trace_capture` patched `push_call` (too early) instead of `finish_call`. Fixed in PR #263.
+3. OTEL probe was left half-applied across .env files for ~2 months (Sprint 5 → Sprint 6). Closed + stripped in PR #265.
+4. OTEL stability runner subprocess used `stdout=PIPE` without draining → deadlocked on >64 KB output. Fixed in PR #265.
+5. Stream-reconnect fixture extracted `session_id` from a non-existent header. Fixed in PR #269.
+
+### What got deferred (filed for Sprint 7)
+
+- W&B Weave `EndedCallSchemaForInsert` validation error noise (every LLM call). Tracked as upstream weave issue; pinned around in `pyproject.toml`.
+- Manual token mint requirement for AC-6.22 in CI — needs service-account token issuance.
+- `docs/sprint6-phase2-plan.md` deletion (this file) — defer until merge stack lands on main; useful as a reference for the next sprint.
