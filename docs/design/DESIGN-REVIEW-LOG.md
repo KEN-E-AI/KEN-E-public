@@ -1212,7 +1212,7 @@ Sprint 6 Phase 2 (stability validation stories 1.1.1-3, 1.14.5, 1.1.2-3, 1.1.5-4
 ## Review 30: Feature Flags PRDs — Cross-Component Alignment Pass
 
 **Date:** 2026-04-27
-**Branch:** `docs/align-feature-flags-prds`
+**Branch:** `docs/align-component-prds`
 **Scope:** Pre-Linear-issue review of the three feature-flags PRDs (FF-PRD-01 through FF-PRD-03), the feature-flags README, the System Architecture's feature-flags coverage (§10.1, §11.7, glossary), and every cross-component caller (CH-PRD-01/02/03, BL-PRD-01/06, PE-PRD-01/03/04/05/06/07/08, IN-PRD-03, DP-PRD-04). Goal: surface contradictions, gaps, and stale references before the work hits Linear and gets dispatched to autonomous dev teams.
 
 ### What changed
