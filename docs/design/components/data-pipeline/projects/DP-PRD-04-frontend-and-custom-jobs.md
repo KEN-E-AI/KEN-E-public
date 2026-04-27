@@ -1,8 +1,8 @@
 # DP-PRD-04 — Frontend + Custom-Job Authoring
 
-**Status:** Blocked — resumes once DP-PRD-03, A-PRD-06, and IN-PRD-03 ship
-**Owner team:** Frontend (Data Pipeline) — with one backend line for the `POST /api/v1/data-pipeline/jobs` custom-job authoring endpoint already scoped in plan §4 but hardened here
-**Blocked by:** DP-PRD-03 (task-system integration: `PlanTask.assignee_type="data_pipeline"`, `pipeline_spec`, `TaskOrchestrator.data_pipeline` branch, artifact write via A-PRD-03); A-PRD-06 (publishes the shared `frontend/src/components/dag/TaskGraph.tsx` + side-panel pattern this PRD plugs into); IN-PRD-03 (connection-management UI — custom-job authoring needs the connection picker)
+**Status:** Blocked — resumes once DP-PRD-03, A-PRD-06, IN-PRD-03, and PR-PRD-03 ship
+**Owner team:** Frontend (Data Pipeline) — backend-side endpoints (POST/PUT/DELETE/preview) are scoped in DP-PRD-01 and (for `/jobs/preview`) this PRD §4.2
+**Blocked by:** DP-PRD-03 (task-system integration: `PlanTask.assignee_type="data_pipeline"`, `pipeline_spec`, `TaskOrchestrator.data_pipeline` branch, artifact write via A-PRD-03); A-PRD-06 (publishes the shared `frontend/src/components/dag/TaskGraph.tsx` + side-panel pattern this PRD plugs into); IN-PRD-03 (connection-management UI — custom-job authoring needs the connection picker); PR-PRD-03 (Calendar page — owns `ProjectEditDrawer` and `ActivityDetailPanel`, which this PRD extends in place)
 **Blocks:** DP-PRD-06 (integration testing depends on a working end-to-end UI flow)
 **Estimated effort:** 5–6 days
 
@@ -244,7 +244,7 @@ Semantics:
 - On success, the panel returns to `<PipelineJobPicker>` mode with the new job pre-selected, ready for the user to fill `<PipelineInputsForm>` and finish creating the task. Success toast confirms publication.
 
 **Editing an existing per-account job:**
-Editing happens via the same panel. From the picker, a row's "Edit" affordance (editor role only, per-account jobs only) opens `<CustomJobAuthoringPanel>` pre-populated. `PUT /api/v1/data-pipeline/jobs/{job_id}` on "Save & Use" (new endpoint scoped here — plan §4 covers create only; update edition follows the same validation path; confirm at kickoff if missing). `version` auto-increments on publish. A warning banner fires if any active plan references the job — edits ship new runs with the new version but existing cached runs remain addressable by their `input_hash` + prior `version`.
+Editing happens via the same panel. From the picker, a row's "Edit" affordance (editor role only, per-account jobs only) opens `<CustomJobAuthoringPanel>` pre-populated. "Save & Use" calls `PUT /api/v1/data-pipeline/jobs/{job_id}` (DP-PRD-01 §6.4.1). `version` auto-increments server-side on publish. A warning banner fires if any active plan references the job — edits ship new runs with the new version but existing cached runs remain addressable by their `input_hash` + prior `version`.
 
 ### 5.4 Feature-flag gating
 
@@ -280,9 +280,9 @@ Role gating from DM-PRD-07:
 |---|---|---|---|
 | `GET` | `/api/v1/data-pipeline/jobs` | List global + per-account catalog; `?connector=` filter | DP-PRD-01 |
 | `GET` | `/api/v1/data-pipeline/jobs/{job_id}` | Job detail (incl. `input_schema`) | DP-PRD-01 |
-| `POST` | `/api/v1/data-pipeline/jobs` | Create a per-account custom job | DP-PRD-01 (plan §4) |
-| `PUT` | `/api/v1/data-pipeline/jobs/{job_id}` | Update a per-account custom job | **scoped here** — confirm with DP-PRD-01 owner at kickoff; if absent, add as a companion line in this PRD's API surface |
-| `DELETE` | `/api/v1/data-pipeline/jobs/{job_id}` | Delete a per-account custom job | **scoped here** — same disposition as PUT |
+| `POST` | `/api/v1/data-pipeline/jobs` | Create a per-account custom job | DP-PRD-01 §6.4 |
+| `PUT` | `/api/v1/data-pipeline/jobs/{job_id}` | Update a per-account custom job (bumps `version` monotonically; rejects writes against global `job_id`) | DP-PRD-01 §6.4.1 |
+| `DELETE` | `/api/v1/data-pipeline/jobs/{job_id}` | Soft-delete a per-account custom job (`is_active=false`); rejects writes against global `job_id` | DP-PRD-01 §6.4.2 |
 | `GET` | `/api/v1/data-pipeline/{account_id}/runs` | List runs (filters: plan_id, task_id, job_id, status, date range) | DP-PRD-01 |
 | `GET` | `/api/v1/data-pipeline/{account_id}/runs/{run_id}` | Run detail + artifact link | DP-PRD-01 |
 | `GET` | `/api/v1/artifacts/{artifact_id}/preview` | First-N-row preview of a `TaskArtifact` | A-PRD-03 |
@@ -345,6 +345,7 @@ Role gating from DM-PRD-07:
 |---|---|
 | Authoring entry point | Inline inside the shared DAG editor's task side-panel (A-PRD-06's "+ Add Task" + Calendar's `ProjectEditDrawer`). **No standalone `/workflows/data-pipelines` routes** — that scope is retired. |
 | Calendar page integration | Extends `ProjectEditDrawer` + `ActivityDetailPanel` in place, not a sibling surface. |
+| PUT / DELETE on per-account jobs | **Owned by DP-PRD-01 §6.4.1 / §6.4.2.** This PRD consumes them only — no backend work for the catalog mutations. |
 | Custom-job authoring scope | Per-account only in v1; platform-global jobs read-only from UI. |
 | Code in custom jobs | Declarative JSON Schema only; no Python. Code lives in Skills (plan §9). |
 | Preview semantics | Synchronous, credentialed, no `DataPipelineRun` persisted, separate Weave span. |
@@ -356,7 +357,6 @@ Role gating from DM-PRD-07:
 
 | Question | Disposition |
 |---|---|
-| PUT / DELETE for per-account jobs not explicit in plan §4 | Scoped here (§6); confirm with DP-PRD-01 owner at kickoff. If already in-scope for DP-PRD-01, remove from this PRD's API-surface section. |
 | Operation field on authoring Basics step | Free-text in v1. Per-connector operation enums (drop-down with allowed operations) deferred until the catalog grows enough to be worth enumerating. TODO at kickoff to confirm. |
 | Weave span URL template for the "View Weave span" link | Not yet standardized component-wide. Default: link to `{WEAVE_BASE_URL}/{project}/traces/{trace_id}` and resolve `WEAVE_BASE_URL` via env at build time. TODO: confirm with the observability team at kickoff. |
 | Edit-warning banner text when a published job is in use by an active plan | Draft copy subject to product review. Confirm at kickoff. |

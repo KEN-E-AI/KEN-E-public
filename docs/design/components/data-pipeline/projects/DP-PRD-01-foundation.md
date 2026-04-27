@@ -27,7 +27,8 @@ What this PRD is **not:** any live connector implementation (Google Analytics is
 - `DataPipelineService` class: resolves `DataPipelineJob` from catalog (global → per-account overlay precedence), validates `inputs` against the job's `input_schema`, computes the cache key, dispatches to the connector, persists a `DataPipelineRun`
 - `POST /api/v1/internal/data-pipeline/run` OIDC-authed endpoint (same pattern as PR-PRD-06 / A-PRD-02) callable by the orchestrator; 10-minute cap per run; fire-and-forget semantics with a PATCH back to the plan on completion
 - Catalog read endpoints on the main API (colocated with the existing FastAPI app): `GET /api/v1/data-pipeline/jobs` (list global + per-account overlay, filter by `connector`), `GET /api/v1/data-pipeline/jobs/{job_id}` (fetch one)
-- Catalog write endpoint `POST /api/v1/data-pipeline/jobs` — create a per-account custom job; validates against the `DataPipelineJob` schema + a JSON-Schema meta-validator on declared `input_schema` / `output_schema`; requires `editor` role or higher per DM-PRD-07
+- Catalog write endpoints `POST /api/v1/data-pipeline/jobs` (create a per-account custom job), `PUT /api/v1/data-pipeline/jobs/{job_id}` (update a per-account custom job; bumps `version` monotonically; global jobs are read-only from the API), `DELETE /api/v1/data-pipeline/jobs/{job_id}` (soft-delete via `is_active=false` on per-account overlay docs); validates against the `DataPipelineJob` schema + a JSON-Schema meta-validator on declared `input_schema` / `output_schema`; requires `editor` role or higher per DM-PRD-07
+- **Internal (OIDC) catalog read endpoints** — service-to-service surface for SAR-E and other internal consumers: `GET /api/v1/internal/data-pipeline/jobs?account_id={id}` (list global + per-account overlay), `GET /api/v1/internal/data-pipeline/jobs/{job_id}` (fetch one), `GET /api/v1/internal/data-pipeline/jobs/{job_id}/history-depth?account_id={id}` (returns `{weeks_available: int | null}` — how far back the connector can fetch for the given account; v1 dispatches to the connector via `DataPipelineConnector.get_history_depth(credentials)`, defaulting to `null` for connectors that haven't implemented it; `StubConnector` returns a fixed value for contract tests)
 - Run read endpoints on the main API: `GET /api/v1/data-pipeline/{account_id}/runs` (list with filters: `plan_id`, `task_id`, `job_id`, `status`, `from`, `to`), `GET /api/v1/data-pipeline/{account_id}/runs/{run_id}` (detail + artifact link)
 - Per-account cache lookup keyed on `sha256(account_id || job_id || canonical_json(inputs) || job.version)`; cache hits still write a `DataPipelineRun` with `status="cached"` for audit completeness
 - Firestore collections: `data_pipeline_jobs/{job_id}` (global catalog — Shape B carve-out mirroring `agent_configs/*`), `accounts/{account_id}/data_pipeline_jobs/{job_id}` (per-account overlay), `accounts/{account_id}/data_pipeline_runs/{run_id}` (execution history). Migration authored against DM-PRD-00's framework; composite indexes registered per `(account_id, plan_id, started_at)` and `(account_id, job_id, started_at)`
@@ -38,11 +39,12 @@ What this PRD is **not:** any live connector implementation (Google Analytics is
 ### Out of scope
 
 - **`GoogleAnalyticsConnector` + the 8-job starter catalog.** Owned by DP-PRD-02.
+- **Real `get_history_depth` implementation against GA Data API.** DP-PRD-01 ships the Protocol method + the `BaseConnector` default returning `None` + the `StubConnector` returning `104` for contract tests; DP-PRD-02 implements the GA call.
 - **Google Ads / Meta Ads / Mailchimp connectors.** Owned by DP-PRD-05.
 - **`TaskOrchestrator.on_task_due` / `on_task_status_change` `data_pipeline` branch.** Owned by DP-PRD-03, which also extends `PlanTask.assignee_type`.
 - **Frontend consumption — `ProjectEditDrawer` assignee selector, `PipelineJobPicker`, schema-driven input forms, run-viewer, custom-job authoring UI.** Owned by DP-PRD-04.
 - **BigQuery external-table materialization.** The `bigquery_external_table` field is defined on `DataPipelineJob` here but not acted on until DP-PRD-02's per-job opt-in. The v1 model is the `None`-default case.
-- **Credential loading from Integrations.** This PRD's `StubConnector` accepts a stubbed credentials dict; the real `/api/v1/internal/integrations/credentials/{account_id}/{platform_id}` call lands in DP-PRD-02.
+- **Credential loading from Integrations.** This PRD's `StubConnector` accepts a stubbed credentials dict; the real `/api/v1/internal/integrations/credentials/{account_id}/{platform_id}` call lands in DP-PRD-02. The internal `/history-depth` endpoint scoped in §6.7 wires the credential-fetch path so SAR-E's contract is stable from DP-PRD-01, but the call is short-circuited (returns `None`) for connectors without a `get_history_depth` override.
 - **Rate-limit enforcement.** v1 starting points are specified in plan §3.3 but enforcement is per-connector and ships with DP-PRD-02.
 
 ## 3. Dependencies
@@ -52,6 +54,7 @@ What this PRD is **not:** any live connector implementation (Google Analytics is
 - **Integrations (IN-PRD-02):** soft dependency for this PRD specifically — `StubConnector` bypasses Integrations. The credential-read internal endpoint at `GET /api/v1/internal/integrations/credentials/{account_id}/{platform_id}` is called from DP-PRD-02's `GoogleAnalyticsConnector`, not here. DP-PRD-01 leaves a `credentials: dict` parameter on the connector protocol that DP-PRD-02 fills in.
 - **Project Tasks (PR-PRD-01):** soft dependency. `DataPipelineRun` carries `plan_id` and `task_id` so runs can be attributed to a task; the schema does not require PR-PRD-01 to ship first, but the full end-to-end hand-off requires DP-PRD-03 which depends on PR-PRD-04.
 - **Automations (A-PRD-02, A-PRD-03):** soft dependency. `PipelineJobSpec.output_artifact_name` is the name under which a downstream `TaskArtifact` will be written in DP-PRD-03 via A-PRD-03's write path. This PRD exposes the field but does not call A-PRD-03.
+- **Forward-coordination — SAR-E (SE-PRD-01, SE-PRD-02):** downstream consumer of the new internal catalog + `/history-depth` endpoints scoped in §6.7. The endpoints are stable from this PRD onwards; `StubConnector.get_history_depth()` returning `104` lets SE-PRD-01 / SE-PRD-02 drive the contract before DP-PRD-02's GA implementation lands.
 - **Existing files to study:**
   - `api/src/kene_api/routers/strategy.py` — account-scoped CRUD pattern this PRD's catalog + runs routers mirror (versioning, soft-delete, access-control dependency)
   - `api/src/kene_api/routers/project_plans.py` (PR-PRD-01) — router registration + audit + `PATCH` semantics reference
@@ -166,6 +169,15 @@ class DataPipelineConnector(Protocol):
         inputs: dict,
         credentials: dict,
     ) -> PipelineOutput: ...
+
+    async def get_history_depth(
+        self,
+        credentials: dict,
+    ) -> int | None: ...
+    """Returns weeks_available for the given account's credential — how far back the
+    connector can fetch for this platform. SAR-E's backfill-plan probe (SE-PRD-02)
+    consumes this. Default implementation in BaseConnector returns None; per-connector
+    overrides query the platform API or read a known retention property."""
 ```
 
 **Implementation rules:**
@@ -173,13 +185,15 @@ class DataPipelineConnector(Protocol):
 - `credentials` is a structural contract — a dict with keys `{access_token, expires_at, external_account_id}` as returned by `GET /api/v1/internal/integrations/credentials/{account_id}/{platform_id}` in DP-PRD-02. `StubConnector` accepts any dict.
 - Connectors MUST NOT write to Firestore or GCS — `DataPipelineService` owns persistence
 - Connectors MUST be stateless: one instance can be reused across accounts and operations
+- `get_history_depth(credentials)` is best-effort: it returns `None` when the connector cannot determine retention without a paid lookup. The internal `/history-depth` endpoint forwards `None` as JSON `null`; SAR-E treats `null` as "use the connector's documented default."
 
 ### 4.6 `StubConnector`
 
-Lives in `services/data_pipeline/connectors/stub.py`. Returns a deterministic `PipelineOutput` whose `rows` are a function of `inputs` (e.g., `[{"key": k, "value": v} for k, v in sorted(inputs.items())]`). Used by:
+Lives in `services/data_pipeline/connectors/stub.py`. Returns a deterministic `PipelineOutput` whose `rows` are a function of `inputs` (e.g., `[{"key": k, "value": v} for k, v in sorted(inputs.items())]`). `get_history_depth()` returns a fixed value (`104` weeks) so SAR-E contract tests can drive the `/history-depth` endpoint end-to-end without a live connector. Used by:
 
 - Contract tests in this PRD
 - DP-PRD-03 integration tests that exercise the orchestrator dispatch branch before DP-PRD-02 ships
+- DP-PRD-01's contract test for `GET /api/v1/internal/data-pipeline/jobs/{job_id}/history-depth` (asserts the stub's `104` flows through the endpoint)
 
 ## 5. Implementation outline
 
@@ -195,8 +209,9 @@ Lives in `services/data_pipeline/connectors/stub.py`. Returns a deterministic `P
 | Create | `services/data_pipeline/src/kene_data_pipeline/routers/internal.py` — `POST /api/v1/internal/data-pipeline/run` |
 | Create | `services/data_pipeline/Dockerfile` — Cloud Run-compatible container |
 | Create | `services/data_pipeline/pyproject.toml` — Python deps (`fastapi`, `uvicorn`, `google-cloud-firestore`, `google-cloud-storage`, `pyarrow`, `jsonschema`, `weave`) |
-| Create | `api/src/kene_api/routers/data_pipeline.py` — catalog + runs read endpoints (main API; reads the sibling service's Firestore directly) |
-| Modify | `api/src/kene_api/main.py` — register `data_pipeline` router |
+| Create | `api/src/kene_api/routers/data_pipeline.py` — public catalog (GET/POST/PUT/DELETE) + runs read endpoints (main API; reads the sibling service's Firestore directly) |
+| Create | `api/src/kene_api/routers/internal/data_pipeline_catalog.py` — OIDC-authed `GET /api/v1/internal/data-pipeline/jobs`, `GET .../jobs/{job_id}`, `GET .../jobs/{job_id}/history-depth?account_id=...` (the last dispatches via the connector registry's `get_history_depth`) |
+| Modify | `api/src/kene_api/main.py` — register `data_pipeline` + `internal.data_pipeline_catalog` routers |
 | Create | `api/src/kene_api/models/data_pipeline_models.py` — Pydantic mirrors for the main API router (import from shared module or duplicate per existing convention; duplicate is fine if the sibling service is a separate deploy unit) |
 | Create | `deployment/terraform/data_pipeline_service.tf` — Cloud Run service `kene-data-pipeline-{env}` + IAM + secrets |
 | Create | `deployment/terraform/data_pipeline_firestore.tf` — composite-index registry entries |
@@ -207,6 +222,7 @@ Lives in `services/data_pipeline/connectors/stub.py`. Returns a deterministic `P
 | Create | `services/data_pipeline/tests/unit/test_stub_connector.py` |
 | Create | `services/data_pipeline/tests/integration/test_internal_run_endpoint.py` |
 | Create | `api/tests/integration/test_data_pipeline_catalog_router.py` |
+| Create | `api/tests/integration/test_data_pipeline_internal_catalog_router.py` |
 | Create | `api/tests/integration/test_data_pipeline_runs_router.py` |
 
 ### Firestore layout
@@ -331,6 +347,26 @@ Returns the overlay doc if present for the caller's account, else the global doc
 
 **Error codes:** `403` role check fails; `409` `job_id` already exists in the account overlay; `422` schema validation fails (body names the offending field path).
 
+### 6.4.1 `PUT /api/v1/data-pipeline/jobs/{job_id}`
+
+**Auth:** user auth + `require_role(AccountRole.EDITOR, scope="account")`.
+
+**Body:** a full `DataPipelineJob` payload. Re-validated identically to `POST /jobs`. Bumps `version` monotonically (server-side `version+=1`); the client cannot set `version` directly. **Per-account overlay only** — attempting to PUT a global `job_id` returns `403` (global jobs are seeded via migrations + a CODEOWNER-gated PR, not the API).
+
+**Response:** `200` with the persisted doc.
+
+**Error codes:** `403` role check fails OR `job_id` is global; `404` `job_id` not found in account overlay; `422` schema validation fails.
+
+### 6.4.2 `DELETE /api/v1/data-pipeline/jobs/{job_id}`
+
+**Auth:** user auth + `require_role(AccountRole.EDITOR, scope="account")`.
+
+**Behavior:** soft-delete on the per-account overlay doc (`is_active=false`); cached runs remain queryable by `input_hash` + prior `version`. Hard-delete is admin-only and out of scope here. **Per-account overlay only** — global jobs return `403`.
+
+**Response:** `204`.
+
+**Error codes:** `403` role check fails OR `job_id` is global; `404` `job_id` not found in account overlay.
+
 ### 6.5 `GET /api/v1/data-pipeline/{account_id}/runs`
 
 **Query params:** `plan_id`, `task_id`, `job_id`, `status`, `from` (ISO datetime), `to` (ISO datetime), `cursor`, `page_size` (default 50, max 200).
@@ -343,11 +379,36 @@ Response: a single `DataPipelineRun` plus a signed URL for the output artifact (
 
 **Error codes:** `404` run not found or cross-account access.
 
-### 6.7 Consumption rules
+### 6.7 Internal catalog endpoints (OIDC, service-to-service)
 
-- The internal endpoint is the single entry point for run execution. The main API's run read endpoints are strictly read-only.
+Mirror of the public catalog reads, but OIDC-authed for service-to-service consumers (SAR-E's KPI-source validator + backfill-plan probe per SE-PRD-01 / SE-PRD-02). Same response shapes as their public siblings — only the auth and the `?account_id=` query parameter (instead of route-derived account) differ.
+
+#### `GET /api/v1/internal/data-pipeline/jobs?account_id={id}`
+
+OIDC; lists global + per-account overlay for the given `account_id`. Response shape identical to §6.2. Filterable by `connector`. Cross-account checks performed against the OIDC caller's allowlist, not the user-auth path.
+
+#### `GET /api/v1/internal/data-pipeline/jobs/{job_id}?account_id={id}`
+
+OIDC; same resolution as §6.3 (overlay > global). `account_id` query param required. `404` if the job exists in neither layer.
+
+#### `GET /api/v1/internal/data-pipeline/jobs/{job_id}/history-depth?account_id={id}`
+
+OIDC. Returns `{"weeks_available": <int|null>}` — the number of weeks back the connector can fetch for the resolved `(account_id, job_id)`. Implementation:
+
+1. Resolve the `DataPipelineJob` (overlay > global). `404` if not found.
+2. Look up the connector implementation in the registry.
+3. Load credentials via `GET /api/v1/internal/integrations/credentials/{account_id}/{platform_id}`. If the connection is missing or `needs_reauth`, return `409` with `{"reason": "needs_reauth", "platform_id": "..."}` so SAR-E can surface the message in the wizard.
+4. Call `connector.get_history_depth(credentials)`. The default `BaseConnector` implementation returns `None`; per-connector overrides (DP-PRD-02 for GA) return an integer.
+5. Return `{"weeks_available": <result>}`. SAR-E's 5-minute LRU cache (SE-PRD-02) absorbs repeat probes within the same wizard session.
+
+**Error codes:** `401` missing OIDC; `403` non-allowlisted SA; `404` job not found; `409` connection in `needs_reauth`; `500` connector raised an unexpected error (sanitized).
+
+### 6.8 Consumption rules
+
+- The internal run endpoint (§6.1) is the single entry point for run execution. The main API's run read endpoints are strictly read-only.
 - Callers of `POST /api/v1/internal/data-pipeline/run` MUST set both `plan_id` and `task_id` when the caller is the orchestrator; ad-hoc calls (reserved for internal debugging) may leave them `null` but the run record stays queryable by `job_id`.
 - The catalog endpoints are safe to call frequently — frontend (DP-PRD-04) will fetch the catalog on `ProjectEditDrawer` mount. No rate limit beyond the existing per-IP limit on `/api/v1/*`.
+- The internal catalog endpoints (§6.7) are reserved for service-to-service callers (SAR-E in v1). They do **not** count against per-account rate-limit budgets — the budget is for connector runs, not catalog reads. The `/history-depth` endpoint may make a single platform-API call per uncached probe; it is **not** subject to the per-connector daily/hourly run budgets but DOES respect the same `needs_reauth` behavior.
 
 ## 7. Acceptance criteria
 
@@ -362,11 +423,14 @@ Response: a single `DataPipelineRun` plus a signed URL for the output artifact (
 9. The 10-minute cap is enforced: a connector whose `run()` sleeps 11 minutes causes the endpoint to mark the run `failed` with `error_message="timeout_10_min"`.
 10. `GET /api/v1/data-pipeline/jobs` returns the union of global catalog entries and the account overlay, with overlay entries carrying `source="account_overlay"`; filtering by `connector=google_analytics` restricts the response accordingly.
 11. `POST /api/v1/data-pipeline/jobs` requires `editor` role (per DM-PRD-07); a viewer-role caller receives `403`; a missing `input_schema` or malformed JSON Schema receives `422` with the JSON-Pointer path of the failure.
-12. `GET /api/v1/data-pipeline/{account_id}/runs?plan_id=...` returns only runs for that account + plan; cross-account access (user from account A requesting account B's runs) returns `403`.
-13. `GET /api/v1/data-pipeline/{account_id}/runs/{run_id}` includes a 1-hour-TTL signed URL in the response when `output_artifact_id` is set; when unset, the field is `null`.
-14. Every run (hit or miss) emits a `data_pipeline.run` Weave span with attributes `{connector, operation, input_hash, row_count, cache_hit, test_mode}`; span shape verified by a contract test asserting exact key set.
-15. The migration `DM-2026-05-01-data-pipeline-collections.py` runs cleanly under DM-PRD-00's framework; composite indexes listed in §5 exist after migration in the local emulator and in the Terraform-managed indexes file.
-16. `make lint` passes (**G-1**: ruff + mypy + codespell) and `pytest services/data_pipeline/tests/ api/tests/integration/test_data_pipeline_*.py` passes green on CI.
+12. `PUT /api/v1/data-pipeline/jobs/{job_id}` on a per-account job bumps `version` monotonically and re-validates schemas; calling on a global `job_id` returns `403`. `DELETE /api/v1/data-pipeline/jobs/{job_id}` soft-deletes the per-account doc (`is_active=false`); cached runs at the prior version remain addressable; calling on a global `job_id` returns `403`.
+13. `GET /api/v1/data-pipeline/{account_id}/runs?plan_id=...` returns only runs for that account + plan; cross-account access (user from account A requesting account B's runs) returns `403`.
+14. `GET /api/v1/data-pipeline/{account_id}/runs/{run_id}` includes a 1-hour-TTL signed URL in the response when `output_artifact_id` is set; when unset, the field is `null`.
+15. Every run (hit or miss) emits a `data_pipeline.run` Weave span with attributes `{connector, operation, input_hash, row_count, cache_hit, test_mode}`; span shape verified by a contract test asserting exact key set.
+16. **Internal catalog endpoints (OIDC):** `GET /api/v1/internal/data-pipeline/jobs?account_id=A` returns the same union as the public endpoint for account `A`; valid OIDC required (401 without; 403 from a non-allowlisted SA). `GET /api/v1/internal/data-pipeline/jobs/{job_id}?account_id=A` resolves overlay > global with the same auth rules.
+17. **Internal `/history-depth`:** with a `StubConnector`-backed job, `GET /api/v1/internal/data-pipeline/jobs/{job_id}/history-depth?account_id=A` returns `{"weeks_available": 104}` (the stub's fixed value). When the underlying connection is in `needs_reauth`, the endpoint returns `409` with `{"reason": "needs_reauth", "platform_id": ...}`.
+18. The migration `DM-2026-05-01-data-pipeline-collections.py` runs cleanly under DM-PRD-00's framework; composite indexes listed in §5 exist after migration in the local emulator and in the Terraform-managed indexes file.
+19. `make lint` passes (**G-1**: ruff + mypy + codespell) and `pytest services/data_pipeline/tests/ api/tests/integration/test_data_pipeline_*.py` passes green on CI.
 
 ## 8. Test plan
 
@@ -383,7 +447,8 @@ Response: a single `DataPipelineRun` plus a signed URL for the output artifact (
 
 **Integration tests** (`api/tests/integration/`):
 
-- `test_data_pipeline_catalog_router.py` — `GET /jobs` returns union; filter by `connector` works; `GET /jobs/{job_id}` resolves overlay > global; unknown `job_id` → `404`. `POST /jobs` with editor role → `201`; viewer role → `403`; malformed `input_schema` → `422` with JSON Pointer; duplicate `job_id` → `409`.
+- `test_data_pipeline_catalog_router.py` — `GET /jobs` returns union; filter by `connector` works; `GET /jobs/{job_id}` resolves overlay > global; unknown `job_id` → `404`. `POST /jobs` with editor role → `201`; viewer role → `403`; malformed `input_schema` → `422` with JSON Pointer; duplicate `job_id` → `409`. `PUT /jobs/{job_id}` on per-account job bumps `version` monotonically; on global `job_id` → `403`. `DELETE /jobs/{job_id}` sets `is_active=false` on per-account; on global → `403`.
+- `test_data_pipeline_internal_catalog_router.py` — internal `GET /internal/data-pipeline/jobs?account_id=A` requires OIDC (401 without); non-allowlisted SA → `403`; valid OIDC returns the union. `GET /internal/data-pipeline/jobs/{job_id}/history-depth?account_id=A` against a `StubConnector`-backed job returns `{"weeks_available": 104}`; when the connection is `needs_reauth`, returns `409`.
 - `test_data_pipeline_runs_router.py` — `GET /runs` filter matrix (`plan_id`, `task_id`, `job_id`, `status`, `from`, `to`) returns the right subset. Cross-account access → `403`. `GET /runs/{run_id}` returns a signed URL when the run has `output_artifact_id`; omits it otherwise.
 
 **E2E / contract tests** (`services/data_pipeline/tests/integration/test_stub_e2e.py`):

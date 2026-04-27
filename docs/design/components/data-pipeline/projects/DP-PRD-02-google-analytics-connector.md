@@ -3,7 +3,7 @@
 **Status:** Draft — ready to start once DP-PRD-01 + IN-PRD-02 ship
 **Owner team:** Backend (Data Pipeline)
 **Blocked by:** DP-PRD-01 (`DataPipelineService` + models + internal run endpoint); IN-PRD-02 (Google OAuth flow + `/api/v1/internal/integrations/credentials/{account_id}/{platform_id}` internal endpoint)
-**Blocks:** DP-PRD-03 (task-system integration requires a real connector to prove the end-to-end path); SE-PRD-02 (SAR-E weekly KPI ingestion depends on the 4 daily jobs seeded here)
+**Blocks:** DP-PRD-03 (task-system integration requires a real connector to prove the end-to-end path); SE-PRD-02 (SAR-E weekly KPI ingestion depends on the 4 daily jobs seeded here AND on `GoogleAnalyticsConnector.get_history_depth()` lighting up the internal `/history-depth` endpoint scoped in DP-PRD-01 §6.7)
 **Estimated effort:** 4–5 days
 
 ---
@@ -44,6 +44,7 @@ What this PRD is **not:** the task-system dispatch wiring (DP-PRD-03); the front
   - **Parquet** (default) for tabular jobs — written to GCS via A-PRD-03's artifact-write helper (wired up in DP-PRD-03); in this PRD the connector only returns a `PipelineOutput`, and the Parquet write is exercised via a unit test of `DataPipelineService`'s serialization path
   - **JSON** fallback for non-tabular shapes (no GA jobs in the v1 starter catalog use JSON; the code path is verified against `StubConnector`-style inputs to keep regression-proof)
 - Weave span `data_pipeline.run` populated with `{connector: "google_analytics", operation, input_hash, row_count, cache_hit, test_mode}` on every invocation; span records `error` status with sanitized message on failure
+- **`GoogleAnalyticsConnector.get_history_depth(credentials)` implementation** — lights up the internal `/history-depth` endpoint scoped in DP-PRD-01 §6.7 for `connector="google_analytics"`. Returns `weeks_available: int` for the resolved GA4 property by reading the property's `dataRetention` configuration via `AnalyticsAdminServiceAsyncClient.get_data_retention_settings(name="properties/{id}/dataRetentionSettings")`. Maps the API enum to weeks: `MONTHS_2 → 9`, `MONTHS_14 → 60`, `MONTHS_26 → 113`, `MONTHS_38 → 165`, `MONTHS_50 → 217`, default `60` (the GA4 default) on unknown values. SAR-E's SE-PRD-02 backfill probe consumes this through the internal endpoint.
 - Unit tests with a mocked GA client and a stub credentials service
 - Integration tests against a real GA4 property + real OAuth tokens, gated behind `@pytest.mark.platform` (matches existing platform-sensitive test convention)
 
@@ -206,7 +207,7 @@ Every invocation emits `data_pipeline.run` with:
 
 | Action | File |
 |--------|------|
-| Create | `services/data_pipeline/src/kene_data_pipeline/connectors/google_analytics.py` — `GoogleAnalyticsConnector` + per-operation methods |
+| Create | `services/data_pipeline/src/kene_data_pipeline/connectors/google_analytics.py` — `GoogleAnalyticsConnector` + per-operation methods + `get_history_depth(credentials) -> int` calling the GA Admin API's `getDataRetentionSettings` and mapping the enum to weeks |
 | Create | `services/data_pipeline/src/kene_data_pipeline/connectors/ga_credentials.py` — small wrapper that calls `GET /api/v1/internal/integrations/credentials/{account_id}/google` and refreshes on 401 |
 | Create | `services/data_pipeline/src/kene_data_pipeline/rate_limit.py` — `RateLimiter` + Firestore-backed counters + `check_and_increment(account_id, connector)` |
 | Create | `services/data_pipeline/src/kene_data_pipeline/retry.py` — `exponential_backoff` helper + `classify_error(exc) -> Literal["transient", "semantic", "auth", "timeout"]` |
@@ -363,7 +364,8 @@ Failures from the connector propagate to the internal run endpoint (DP-PRD-01) a
 13. Weave span `data_pipeline.run` on a `google_analytics` invocation carries exactly `{connector, operation, input_hash, row_count, cache_hit, test_mode}` on success; on failure it additionally carries `{error_class, error_message_sanitized}` with no token or raw-response leakage (asserted via substring absence of `access_token` in the span payload).
 14. Parquet serialization: `DataPipelineService` writes the `PipelineOutput` rows as Parquet to GCS with a schema matching the declared `FieldSpec` list. A roundtrip test reads the Parquet file back and compares rows to the source `PipelineOutput`.
 15. SAR-E contract test: invoking `ga.unbranded_search_daily` with `target_date="2026-04-22"` returns a `PipelineOutput` with exactly 1 row whose shape is `{"date": "2026-04-22", "value": <float>}`. (Uses mocked GA client in unit tests; live GA4 in the platform-marked integration test.)
-16. `make lint` passes (**G-1**) and `pytest services/data_pipeline/tests/` passes green on CI with platform-marked tests skipped; running with `pytest -m platform` and live credentials passes against a seed GA4 property.
+16. **`GoogleAnalyticsConnector.get_history_depth(credentials)`** returns the right week count for each `dataRetentionSettings.eventDataRetention` enum: `MONTHS_2 → 9`, `MONTHS_14 → 60`, `MONTHS_26 → 113`, `MONTHS_38 → 165`, `MONTHS_50 → 217`. The internal endpoint `GET /api/v1/internal/data-pipeline/jobs/ga.sessions_by_date/history-depth?account_id=A` (DP-PRD-01 §6.7) returns `{"weeks_available": <int>}` matching the connector's value when called with valid credentials; returns `409` `{"reason": "needs_reauth", ...}` when the GA connection is in `expired` state.
+17. `make lint` passes (**G-1**) and `pytest services/data_pipeline/tests/` passes green on CI with platform-marked tests skipped; running with `pytest -m platform` and live credentials passes against a seed GA4 property.
 
 ## 8. Test plan
 
@@ -377,6 +379,7 @@ Failures from the connector propagate to the internal run endpoint (DP-PRD-01) a
   - Mock GA client raises `Unavailable` → 3 attempts → success on the 3rd; raises always → 3 attempts → fail
   - `Unauthenticated` → no retry, mark-expired called once, `AuthExpired` raised
   - `InvalidArgument` → no retry, `SemanticError` raised with sanitized message
+  - `get_history_depth`: each `dataRetentionSettings.eventDataRetention` enum maps to the documented week count; an unknown enum returns the default `60`; `Unauthenticated` from the Admin API surfaces as `AuthExpired` (same handling as `run`).
 - `test_rate_limit.py`
   - First invocation populates counters
   - 20th hour invocation succeeds, 21st raises `RateLimitExceeded` with `retry_after == seconds_until_next_hour`
@@ -400,6 +403,7 @@ Failures from the connector propagate to the internal run endpoint (DP-PRD-01) a
   - `ga.transactions_by_date` returns non-empty rows with correct dtypes
   - `ga.unbranded_search_daily` with `target_date` yesterday returns exactly 1 row
   - Parquet roundtrip via `DataPipelineService` serialization path — read back equals source
+  - `get_history_depth` against the live property returns a positive integer matching the property's configured retention (default GA4 setup yields `60`).
 
 **E2E** — deferred to DP-PRD-03 once the orchestrator dispatch branch is wired (end-to-end GA job runs through a real `PlanTask`, writes a `TaskArtifact`, downstream agent task reads it).
 

@@ -217,7 +217,7 @@ Credential loading via Integrations (`/internal/integrations/credentials/{accoun
 
 **Exit criteria:** a user composes, activates, and reviews a pipeline task end-to-end inline from the DAG editor side-panel without API calls; an account editor can author a custom per-account job inline from the same panel, preview it, and use it in a task in the same session.
 
-**Blocked by:** DP-PRD-03, IN-PRD-03 (connection-management UI — custom-job authoring needs the connection picker).
+**Blocked by:** DP-PRD-03, A-PRD-06 (shared DAG editor + side-panel pattern), IN-PRD-03 (connection-management UI — custom-job authoring needs the connection picker), PR-PRD-03 (Calendar — owns `ProjectEditDrawer` + `ActivityDetailPanel` extended in place).
 
 **Blocks:** DP-PRD-06.
 
@@ -225,7 +225,7 @@ Credential loading via Integrations (`/internal/integrations/credentials/{accoun
 
 ### DP-PRD-05 — Additional connectors
 
-**Delivers:** `GoogleAdsConnector`, `MetaAdsConnector`, `MailchimpConnector` (can split further if estimation shows). Each ships with a 3–5 job starter catalog. Credential-loader extension per `auth_type`. HubSpot deferred until the HubSpot Specialist PRD lands.
+**Delivers:** `GoogleAdsConnector`, `MetaAdsConnector`, `MailchimpConnector` (can split further if estimation shows). Each ships with a 3–5 job starter catalog. Reuses DP-PRD-02's `load_credentials()` helper unchanged — Integrations IN-PRD-01 v1 contract is OAuth-only, no `auth_type` branching needed. HubSpot deferred until the HubSpot Specialist PRD lands.
 
 **Exit criteria:** users of the R5 narrow-specialist cohort can run deterministic extracts for every covered platform.
 
@@ -256,6 +256,8 @@ DP-PRD-01 (Foundation) ──► DP-PRD-02 (GA) ──┬──► DP-PRD-03 (Ta
                                             │                                       ▲
                                             ├──► SE-PRD-02 (SAR-E ingestion)        │
                                             │                                       │
+A-PRD-06 (Shared DAG editor) ───────────────┼───────────────────────────────────────┤
+PR-PRD-03 (Calendar — ProjectEditDrawer) ───┼───────────────────────────────────────┤
 IN-PRD-03 (Connection mgmt UI) ─────────────┼───────────────────────────────────────┘
                                             │
 IN-PRD-04 (Meta + Mailchimp OAuth) ─────────┴──► DP-PRD-05 (additional connectors)
