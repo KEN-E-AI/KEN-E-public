@@ -48,7 +48,7 @@ It also performs a final pass on documentation — updating the component README
 **E2E-1 — Create → add task → pin → run → refresh**
 
 1. Log in (editor role).
-2. Navigate to `/performance?tab=dashboards`. Verify empty state.
+2. Navigate to `/performance/dashboards`. Verify empty state.
 3. Click "New Dashboard"; title = "Q2 Competitive Landscape"; tags = ["q2", "competitive"]; Create.
 4. Land on `/performance/dashboards/{plan_id}`. Verify empty-canvas placeholder.
 5. Add a task via `AutomationTaskPanel`: `title="Collect competitor pricing"`, `assignee_type="agent"`, `output_config.enabled=true`, `expected_file_types=["text", "visualization"]`.

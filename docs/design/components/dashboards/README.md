@@ -93,7 +93,7 @@ Schema source of truth: `api/src/kene_api/models/project_plan_models.py` + `dash
 | **Data Management — DM-PRD-05 (Deletion Sweep Rewrite)** | `recursive_delete(accounts/{account_id})` covers `project_plans` including embedded `dashboard_placements`. No additional cleanup logic required. | [DM-PRD-05](../data-management/projects/DM-PRD-05-deletion-sweep-rewrite.md) |
 | **Data Management — DM-PRD-07 (Approval Workflow & Audit)** | `require_role` FastAPI dependency on every mutating endpoint; `write_audit` helper on every mutation including placement PUT diffs. Role gates: `viewer` (GET only), `editor` (POST / PUT / DELETE). | [`../data-management/README.md`](../data-management/README.md) §7.6, [DM-PRD-07](../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md) |
 | **UI — UI-PRD-01 (Design System)** | Soft Maximalism tokens, shadcn primitives, theming via CSS variables (used by the Vega renderer). | [UI-PRD-01](../ui/projects/UI-PRD-01-design-system-foundation.md) |
-| **UI — UI-PRD-07 (Performance Page)** | *Soft* dep — DB-PRD-02 extends the Performance page's tab container. If UI-PRD-07 hasn't shipped, DB-PRD-02 lands a minimal tab container using UI-PRD-01 tokens. | [UI-PRD-07](../ui/projects/UI-PRD-07-performance-page.md) |
+| **Performance — PE-PRD-01 (Page Shell)** | Hard dep — PE-PRD-01 owns the `/performance` 6-tab shell (Analysis / **Dashboards** / Simulations / Targets / Diagnostics / Configuration), reserves the Dashboards tab slot + route + `<DashboardsTabPlaceholder />` + `performance_dashboards_tab` flag. DB-PRD-02 swaps in the real `<DashboardsSection />`. UI-PRD-07 (the original presentation-only redesign) is **retired and subsumed by PE-PRD-01**. | [PE-PRD-01](../performance/projects/PE-PRD-01-page-shell-and-routing.md) |
 | External | `react-vega` (renderer), `react-markdown` + `rehype-raw` (text widget), `papaparse` (CSV widget), `dagre` (via A-PRD-06's graph). | — |
 
 ### 3.2 Depended On By
@@ -158,7 +158,7 @@ The component's work is split across **4 independently shippable project PRDs** 
 | # | Project PRD | Owner team | Blocked by | Parallel with | Est. |
 |---|-------------|------------|------------|---------------|------|
 | 01 | [Data Model & API](./projects/DB-PRD-01-data-model-and-api.md) | Backend (foundation) | PR-PRD-01, A-PRD-01, A-PRD-03, DM-PRD-05, DM-PRD-07 | — | 2–3 days |
-| 02 | [Dashboards Tab & List](./projects/DB-PRD-02-dashboards-tab-and-list.md) | Frontend | DB-PRD-01 (soft: UI-PRD-07) | 03 | 2 days |
+| 02 | [Dashboards Tab & List](./projects/DB-PRD-02-dashboards-tab-and-list.md) | Frontend | DB-PRD-01, PE-PRD-01 | 03 | 2 days |
 | 03 | [Dashboard Details & Canvas](./projects/DB-PRD-03-dashboard-details-and-canvas.md) | Frontend | DB-PRD-01, DB-PRD-02, A-PRD-06 | 02 | 4–5 days |
 | 04 | [Integration Testing & Polish](./projects/DB-PRD-04-integration-testing-and-polish.md) | QA + first-finished team | DB-PRDs 01–03 | — | 1–2 days |
 
@@ -218,7 +218,7 @@ Two touchpoints don't fit cleanly inside one PRD:
 
 ### Frontend
 - Branded types (`DashboardPlanId`) per CLAUDE.md C-5.
-- URL structure: `/performance?tab=dashboards` (list), `/performance/dashboards/{plan_id}` (details), `/performance/dashboards/{plan_id}?runId={run_id}` (notification deep-link highlights a specific run).
+- URL structure: `/performance/dashboards` (list — 2nd tab of `/performance`, slot reserved by PE-PRD-01), `/performance/dashboards/{plan_id}` (details), `/performance/dashboards/{plan_id}?runId={run_id}` (notification deep-link highlights a specific run).
 - Client-side `type="dashboard"` filter defaults on the list (defense in depth; server enforces too).
 - Polling cadence: 2 s while a run is in-flight; 30 s stale-time on the list; otherwise rely on user-triggered re-fetches.
 

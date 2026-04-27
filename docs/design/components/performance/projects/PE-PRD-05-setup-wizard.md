@@ -10,7 +10,7 @@
 
 ## 1. Context
 
-The Setup Wizard is the onboarding flow that turns an opted-out account into a fully configured SAR-E consumer. Pre-wizard, forecasting is disabled, only the Configuration tab is visible on `/performance`, and no analytical data renders. Post-wizard, SAR-E has four Effectiveness KPIs seeded, a funnel mapping persisted, a weekly ingestion automation scheduled, and up to 104 weeks of backfilled KPI history in motion — the user lands on Analysis with all five tabs visible.
+The Setup Wizard is the onboarding flow that turns an opted-out account into a fully configured SAR-E consumer. Pre-wizard, forecasting is disabled and only **Dashboards + Configuration** are visible on `/performance` (the four SAR-E-backed tabs are hidden by `ForecastingEnabledGate`); no analytical data renders for those four tabs. Post-wizard, SAR-E has four Effectiveness KPIs seeded, a funnel mapping persisted, a weekly ingestion automation scheduled, and up to 104 weeks of backfilled KPI history in motion — the user lands on Analysis with all six tabs visible.
 
 Three facts shape this PRD:
 

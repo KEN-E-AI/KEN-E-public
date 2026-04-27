@@ -15,19 +15,22 @@ When a user clicks "Configure" on an automation row in A-PRD-5, they land on the
 
 This PRD is the largest frontend piece in the Automations set — five capabilities composed into one page.
 
+**Shared DAG editor.** This PRD ships the React Flow DAG editor as a **shared, reusable component** at `frontend/src/components/dag/TaskGraph.tsx` (with siblings `TaskNode.tsx`, `dagLayout.ts`). DB-PRD-03 reuses this component verbatim for the Performance → Dashboards details page (`/performance/dashboards/{plan_id}`). One implementation, two consumers — driven by props (`tasks`, `edges`, `onTaskAdd`, `onEdgeChange`, `readOnly`, `selectedTaskId`, `availablePanels`). The "+ Add Task" button on the canvas opens the right-side panel for task configuration; for `assignee_type="data_pipeline"`, the panel surfaces DP-PRD-04's pipeline-job picker + custom-job authoring side-flow (see DP-PRD-04 §scope).
+
 ## 2. Scope
 
 ### In scope
 - New route `/workflows/automations/{plan_id}`
-- DAG diagram using **React Flow** (xyflow): draggable task nodes, draggable edges for dependencies, custom node component matching the design system
-- Inline DAG editing: add task (right-click canvas), connect tasks (drag handle to handle), delete (selection + Delete key), auto-layout (dagre) button
+- **Shared DAG editor** at `frontend/src/components/dag/TaskGraph.tsx` (+ `TaskNode.tsx`, `dagLayout.ts`) using **React Flow** (xyflow): draggable task nodes, draggable edges for dependencies, custom node component matching the design system. Designed to be reused unchanged by DB-PRD-03 on the Dashboards details page — driven by props, no automation-specific assumptions inside the component.
+- Inline DAG editing: **+ Add Task** button (also available via right-click on canvas), connect tasks (drag handle to handle), delete (selection + Delete key), auto-layout (dagre) button
+- "+ Add Task" → opens the right-side `ActivityDetailPanel` in "create" mode with an `assignee_type` picker (`agent` / `human` / `data_pipeline`). When `data_pipeline` is selected, DP-PRD-04's pipeline-job picker + custom-job authoring panel surfaces (see DP-PRD-04). No standalone `/workflows/data-pipelines` route — data pipelines are created inline from the DAG editor.
 - Right-side `ActivityDetailPanel` (reused from Calendar PRD-3) extended with a new **"Outputs"** tab that lists artifacts from past runs of the selected task
 - Schedule editor modal: Daily / Weekly / Monthly preset picker + Custom (cron) tab + timezone picker + "next 5 fires" preview
 - "Test Run" button + in-page progress display: tasks animate as they complete; halted HITL tasks pulse with "Action required"; user can mark complete from the right panel
 - Cancel-test-run button while a run is in flight
-- **Read-only mode when `is_system=true`** — used for platform-owned templates (e.g. KG-PRD-04's session-end automation). See §is_system read-only mode.
+- **Read-only mode when `is_system=true`** — used for platform-owned templates (e.g. KG-PRD-04's session-end automation). See §is_system read-only mode. Also passed as the `readOnly` prop on the shared `TaskGraph`, which DB-PRD-03 and any future consumer can use too.
 - **HITL Mark Complete / Revision Requested affordances** that work on system-owned runs too — this is how users review and approve session-end proposals without being able to edit the underlying template.
-- Component tests
+- Component tests on the shared `TaskGraph` covering both consumers' use cases (basic editing, read-only mode, data-pipeline assignee creation)
 
 ### Out of scope
 - Backend test-run engine (A-PRD-4)
@@ -95,9 +98,9 @@ type RunProgress = {
 | Action | File |
 |--------|------|
 | Create | `frontend/src/pages/AutomationDetailsPage.tsx` |
-| Create | `frontend/src/components/automations/dag/DagDiagram.tsx` (React Flow wrapper) |
-| Create | `frontend/src/components/automations/dag/TaskNode.tsx` (custom node) |
-| Create | `frontend/src/components/automations/dag/dagLayout.ts` (dagre auto-layout helper) |
+| Create | `frontend/src/components/dag/TaskGraph.tsx` (shared React Flow wrapper — used here and by DB-PRD-03) |
+| Create | `frontend/src/components/dag/TaskNode.tsx` (shared custom node) |
+| Create | `frontend/src/components/dag/dagLayout.ts` (shared dagre auto-layout helper) |
 | Create | `frontend/src/components/automations/dag/dagSerialize.ts` (`PlanTask[]` ↔ `{nodes, edges}`) |
 | Create | `frontend/src/components/automations/ScheduleEditorModal.tsx` |
 | Create | `frontend/src/components/automations/schedulePresetToCron.ts` |

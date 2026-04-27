@@ -3,16 +3,19 @@
 **Status:** Blocked on UI-PRD-01
 **Owner team:** Frontend
 **Blocked by:** UI-PRD-01
-**Parallel with:** UI-PRD-02, UI-PRD-04, UI-PRD-06
+**Parallel with:** UI-PRD-02, UI-PRD-08 (all three Release 1)
+**Release:** 1 (Foundation) — moved up from Release 2 to align with AH-PRD-02
 **Estimated effort:** 4–5 days
 
 ---
 
 ## 1. Context
 
-Three Release-1-to-3 features — Agents (AH-PRD-02), Automations (A-PRD-05 / A-PRD-06), Skills (SK-PRD-03) — all live under a shared `/workflows` shell with tabbed navigation. Each of those backend-owning PRDs adds the data-wired tab content for its feature. This PRD lands the shell first so those PRDs build on the new design rather than re-skinning later. Without this, AH-PRD-02's Agents UI (Release 1) ships against the old style and we incur a re-skin.
+Three Release-1-and-2 features — Agents (AH-PRD-02), Automations (A-PRD-05 / A-PRD-06), Skills (SK-PRD-03) — all live under a shared `/workflows` shell with tabbed navigation. Each of those backend-owning PRDs adds the data-wired tab content for its feature. This PRD lands the shell first so those PRDs build on the new design rather than re-skinning later. Because AH-PRD-02 ships in Release 1, **UI-PRD-03 ships in Release 1 alongside it** — without that alignment, the Agents UI lands against the old style and we incur a Release-2 re-skin.
 
 **Scope boundary:** this PRD owns the `WorkflowsLayout` (tab container, active-tab URL sync), the three tab page shells (`AgentsPage`, `AutomationsPage`, `SkillsPage`) with skeleton or empty-state content, and the two detail-page shells (`AgentCreatePage`, `AutomationDetailsPage`) with mocked data. Data wiring is owned by AH-PRD-02, A-PRD-05/06, and SK-PRD-03 respectively.
+
+**Data Pipelines are not a tab.** Per the cross-component decision documented in PROJECT-PLANNER and System Architecture §8.4, a "data pipeline" is a `PlanTask.assignee_type="data_pipeline"` value created from inside the shared DAG editor (Automations details page or Performance Dashboards details page) — not a top-level Workflows tab. UI-PRD-03's tab list stays at three tabs (Agents / Automations / Skills); DP-PRD-04 plugs into the DAG editor's "+ Add Task" side-panel and does not introduce a `/workflows/data-pipelines` route.
 
 ## 2. Scope
 

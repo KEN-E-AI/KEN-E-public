@@ -171,9 +171,9 @@ Four PRDs, matching the Automations breakdown:
 
 ### DB-PRD-02 — Dashboards Tab & List
 
-**Delivers:** The Dashboards tab on the Performance page (`/performance?tab=dashboards`), the list view (one row per dashboard with title, schedule, last-run, status badge), the "New Dashboard" create flow (title + description modal → `POST /dashboards` → redirect to Details), the empty state. Uses TanStack Query against the DB-PRD-01 API.
+**Delivers:** The Dashboards tab on the Performance page (`/performance/dashboards`, the 2nd tab per the figma export — slot reserved by PE-PRD-01), the list view (one row per dashboard with title, schedule, last-run, status badge), the "New Dashboard" create flow (title + description modal → `POST /dashboards` → redirect to Details), the empty state. Uses TanStack Query against the DB-PRD-01 API.
 
-**Blocked by:** DB-PRD-01, UI-PRD-07 (Performance page shell) — soft dep. If UI-PRD-07 hasn't shipped, this PRD adds a minimal tab shell co-sited with UI-PRD-07's design tokens.
+**Blocked by:** DB-PRD-01, **PE-PRD-01** (Performance page shell — owns the Dashboards tab slot, route, placeholder, and feature flag; this PRD swaps PE-PRD-01's `<DashboardsTabPlaceholder />` for the real `<DashboardsSection />`). UI-PRD-07 — the original presentation-only redesign — is **retired and subsumed by PE-PRD-01**.
 
 **Blocks:** DB-PRD-03 (shares the tab shell), DB-PRD-04.
 
@@ -183,7 +183,7 @@ Four PRDs, matching the Automations breakdown:
 
 **Delivers:** The Dashboard Details page (`/performance/dashboards/{plan_id}`) with split layout (task graph on top, canvas on bottom, task panel on right). Free-form absolute-positioned canvas with drag-to-move / corner-resize, 8-px grid snap. Four widget renderers: text (markdown), visualization (react-vega), table (CSV parsed client-side), file (fallback with download link). "Pin to Dashboard" button on the task panel. Run button invokes A-PRD-02's manual trigger; polling on the latest run until terminal. Schedule modal invokes A-PRD-01's recurrence PATCH. Placement PUT debounced 500 ms after drag-end.
 
-**Blocked by:** DB-PRD-01, DB-PRD-02, A-PRD-06 (reuses `AutomationGraph`, `AutomationTaskPanel`, `AutomationSchedulePanel`).
+**Blocked by:** DB-PRD-01, DB-PRD-02, A-PRD-06 (consumes the **shared `frontend/src/components/dag/TaskGraph.tsx`** + `AutomationTaskPanel`, `AutomationSchedulePanel` published by A-PRD-06 — no fork).
 
 **Blocks:** DB-PRD-04.
 

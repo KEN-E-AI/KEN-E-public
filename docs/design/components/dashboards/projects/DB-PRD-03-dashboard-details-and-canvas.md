@@ -2,7 +2,7 @@
 
 **Status:** Blocked — resumes once DB-PRD-01, DB-PRD-02, and A-PRD-06 ship
 **Owner team:** Frontend
-**Blocked by:** DB-PRD-01 (API contract and resolved-artifact shape); DB-PRD-02 (Performance tab + navigation + stub route); A-PRD-06 (reuses `AutomationGraph`, `AutomationTaskPanel`, `AutomationSchedulePanel` — share the `availableTabs`/`slots` contract)
+**Blocked by:** DB-PRD-01 (API contract and resolved-artifact shape); DB-PRD-02 (Performance tab + navigation + stub route); A-PRD-06 (publishes the shared `frontend/src/components/dag/TaskGraph.tsx` + `TaskNode.tsx` + `dagLayout.ts`; also publishes `AutomationTaskPanel`, `AutomationSchedulePanel` — share the `context: "automation" | "dashboard"` prop contract)
 **Blocks:** DB-PRD-04
 **Estimated effort:** 4–5 days
 
@@ -12,7 +12,9 @@
 
 The Dashboard Details page is where a user authors tasks, places widgets on a canvas, runs the plan, and sees the resolved artifacts. This PRD delivers that page end-to-end: the page shell, the split layout (task graph + canvas + task panel), the free-form drag-and-resize canvas, the four widget renderers, the Pin-to-Dashboard affordance on the task panel, the Run button and run-status polling, and the canvas-save debounce.
 
-It reuses three existing components from Automations (A-PRD-06): `AutomationGraph` (React Flow DAG), `AutomationTaskPanel` (task edit sidebar), `AutomationSchedulePanel` (schedule modal). This PRD extends each with a small prop so the same components render correctly in the Dashboard context.
+It **reuses the shared DAG editor** that A-PRD-06 ships at `frontend/src/components/dag/TaskGraph.tsx` (+ `TaskNode.tsx` + `dagLayout.ts`). Same component, no fork — driven by props (`tasks`, `edges`, `readOnly`, `onTaskAdd`, etc.). This PRD also reuses A-PRD-06's `AutomationTaskPanel` (task edit sidebar) and `AutomationSchedulePanel` (schedule modal). A small additive prop (`context: "automation" | "dashboard"`) on `AutomationTaskPanel` toggles the Pin-to-Dashboard affordance. **No DAG re-implementation in this PRD.**
+
+When the user clicks "+ Add Task" in the shared `TaskGraph` and selects `assignee_type="data_pipeline"`, the side-panel surfaces DP-PRD-04's pipeline-job picker + custom-job authoring — same flow as on the Automation Details page (A-PRD-06).
 
 ## 2. Scope
 
@@ -46,7 +48,7 @@ It reuses three existing components from Automations (A-PRD-06): `AutomationGrap
 - **PR-PRD-01:** `PUT /api/v1/plans/{account_id}/{plan_id}` (for plan-title edits) and `PATCH .../tasks/{task_id}` (for task edits). Used by the task panel.
 - **A-PRD-01:** `PATCH /api/v1/automations/{account_id}/{plan_id}/recurrence` (for schedule edits via the AutomationSchedulePanel).
 - **A-PRD-02:** `POST /api/v1/automations/{account_id}/{plan_id}/runs` (manual trigger). Same endpoint the Automations page uses.
-- **A-PRD-06 (Automation Details page):** supplies `AutomationGraph`, `AutomationTaskPanel`, `AutomationSchedulePanel`. Coordination note: this PRD adds a `context: "automation" | "dashboard"` prop to `AutomationTaskPanel` that toggles the Pin-to-Dashboard button's visibility. Small, additive.
+- **A-PRD-06 (Automation Details page):** supplies the shared **`frontend/src/components/dag/TaskGraph.tsx`** (+ `TaskNode.tsx` + `dagLayout.ts`), plus `AutomationTaskPanel` and `AutomationSchedulePanel`. Coordination note: this PRD adds a `context: "automation" | "dashboard"` prop to `AutomationTaskPanel` that toggles the Pin-to-Dashboard button's visibility. Small, additive. The shared `TaskGraph` is consumed verbatim — no fork, no shadow component.
 - **UI-PRD-01:** design tokens, shadcn primitives.
 - **External:** `react-vega` (existing per the Figma export), `react-markdown`, `rehype-raw`, `papaparse`, `dagre` (via A-PRD-06's graph). No new runtime libraries.
 - **Existing files to study:**

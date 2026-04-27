@@ -10,7 +10,7 @@ The Data Pipeline component is KEN-E's **deterministic, non-agentic** path to th
 
 Concretely, a `PlanTask` carries a third `assignee_type="data_pipeline"` alongside `agent` and `human`. The task holds a `pipeline_spec` (`{job_id, inputs, output_artifact_name}`); when the `TaskOrchestrator` (PR-PRD-04) fires it, the `DataPipelineDispatcher` HTTP-calls the sibling Cloud Run service (`kene-data-pipeline-{env}`) which runs the job via a connector, writes the result as a `TaskArtifact` (A-PRD-03), and reports completion back through a callback endpoint — the main API marks the task `Complete` and downstream tasks read the artifact as upstream context. SAR-E (SE-PRD-02) is the first production consumer: its daily KPI ingestion is a four-job `is_system` automation that feeds a single agent task.
 
-A developer reading only this section should understand: this component owns the `/api/v1/data-pipeline/*` public API, the `/api/v1/internal/data-pipeline/*` internal RPC surface (run + callback), the sibling `kene-data-pipeline-{env}` Cloud Run service, the four connectors (GA, Google Ads, Meta Ads, Mailchimp), the `data_pipeline_jobs/*` Firestore collections, and the `/workflows/data-pipelines` authoring UI. It does **not** own OAuth token lifecycle (Integrations — IN-PRD-02), the plan/task DAG (Project Tasks — PR-PRD-01), the orchestrator itself (PR-PRD-04), the recurring scheduler (A-PRD-02), or artifact storage (A-PRD-03) — it is a consumer of all five.
+A developer reading only this section should understand: this component owns the `/api/v1/data-pipeline/*` public API, the `/api/v1/internal/data-pipeline/*` internal RPC surface (run + callback), the sibling `kene-data-pipeline-{env}` Cloud Run service, the four connectors (GA, Google Ads, Meta Ads, Mailchimp), the `data_pipeline_jobs/*` Firestore collections, and the inline data-pipeline authoring UX surfaced from inside the shared DAG editor's task side-panel (DP-PRD-04 — `<PipelineJobPicker>` + `<CustomJobAuthoringPanel>`; **no standalone `/workflows/data-pipelines` routes**). It does **not** own OAuth token lifecycle (Integrations — IN-PRD-02), the plan/task DAG (Project Tasks — PR-PRD-01), the orchestrator itself (PR-PRD-04), the recurring scheduler (A-PRD-02), the shared DAG editor itself (A-PRD-06), or artifact storage (A-PRD-03) — it is a consumer of all six.
 
 ## 2. Architecture
 
@@ -62,7 +62,7 @@ A developer reading only this section should understand: this component owns the
 | `api/src/kene_api/routers/data_pipeline.py` | Public catalog + runs endpoints (`/api/v1/data-pipeline/*`). DP-PRD-01 + DP-PRD-04. |
 | `api/src/kene_api/routers/internal/data_pipeline_callback.py` | OIDC-authed `POST /api/v1/internal/data-pipeline/callback` — sibling service → main API completion report. DP-PRD-03. |
 | `api/src/kene_api/services/data_pipeline_dispatcher.py` | `DataPipelineDispatcher` — bridges `TaskOrchestrator` to the sibling service (fire-and-forget `POST /run`; applies per-job `test_mode_policy`). DP-PRD-03. |
-| `frontend/src/pages/workflows/DataPipelinesPage.tsx` | `/workflows/data-pipelines` list + authoring shell. DP-PRD-04. |
+| `frontend/src/components/dataPipeline/PipelineJobPicker.tsx` + `CustomJobAuthoringPanel.tsx` | Inline data-pipeline-task picker + authoring panel surfaced from the shared DAG editor's "+ Add Task" side-panel (and from Calendar's `ProjectEditDrawer`). No standalone route. DP-PRD-04. |
 | `frontend/src/components/data-pipeline/PipelineJobPicker.tsx` | Browses global + per-account overlay catalog inside `ProjectEditDrawer`. DP-PRD-04. |
 | `frontend/src/components/data-pipeline/SchemaDrivenInputForm.tsx` | JSON-Schema → form renderer for job inputs. DP-PRD-04. |
 | `frontend/src/components/data-pipeline/PipelineRunPanel.tsx` | Run viewer inside `ActivityDetailPanel` — status, inputs, artifact preview, cache indicator, Weave link. DP-PRD-04. |
@@ -147,7 +147,8 @@ Schema source of truth: `api/src/kene_api/models/data_pipeline_models.py` (Pydan
 | **Automations — A-PRD-03 (Task Artifact System)** | Pipeline output is written through `attach_task_artifact()` into `gs://kene-task-artifacts-{env}/…` with 30-day lifecycle + 100 MB cap; no parallel storage path. | [A-PRD-03](../automations/projects/A-PRD-03-task-artifact-system.md) |
 | **Automations — A-PRD-04 (Test / Dry-Run Mode)** | `TaskOrchestrator` exposes `is_test` per run; the dispatcher forwards it and the service honors each job's `test_mode_policy` (`run_normally` default / `sandbox_endpoint` / `fail_not_testable`). | [A-PRD-04](../automations/projects/A-PRD-04-test-dry-run-mode.md) |
 | **UI — UI-PRD-01 (Design System)** | Soft Maximalism tokens, shadcn primitives, form primitives for the JSON-Schema renderer and guided schema builder. | [UI-PRD-01](../ui/projects/UI-PRD-01-design-system-foundation.md) |
-| **UI — UI-PRD-03 (Workflows Shell + Tabs)** | `/workflows/data-pipelines` mounts under the existing `WorkflowsLayout` tab container alongside Agents / Automations / Skills. | [UI-PRD-03](../ui/projects/UI-PRD-03-workflows-shell.md) |
+| **Automations — A-PRD-06 (Automation Details Page)** | Publishes the **shared `frontend/src/components/dag/TaskGraph.tsx`** + the right-side task panel that DP-PRD-04 plugs into via its `PipelineJobPicker` + `CustomJobAuthoringPanel`. Same panel is reused by DB-PRD-03 (Dashboards details). No standalone Workflows tab for data pipelines. | [A-PRD-06](../automations/projects/A-PRD-06-automation-details-page.md) |
+| **UI — UI-PRD-03 (Workflows Shell + Tabs)** | The Automations tab on `/workflows` hosts the DAG editor surface where data-pipeline tasks are created (via A-PRD-06's details page). UI-PRD-03 itself does **not** introduce a Data Pipelines tab — three tabs only (Agents / Automations / Skills). | [UI-PRD-03](../ui/projects/UI-PRD-03-workflows-shell.md) |
 | **Agentic Harness — AH-PRD-03 (GA Specialist)** | *Soft* — the specialist reasons, the pipeline extracts. They share no code. The GA Data API client is used independently by each (pipeline via the official Python client, not MCP). | [AH-PRD-03](../agentic-harness/projects/AH-PRD-03-google-analytics-specialist.md) |
 | External | `google-analytics-data` (GA Data API v1 client), `google-ads` Python SDK, `facebook-business` SDK (Meta), `mailchimp-marketing`, `pyarrow` + `pandas` (Parquet serialization), `jsonschema` (meta-validation of `input_schema`/`output_schema` on write). | — |
 
@@ -167,9 +168,9 @@ Applies to DP-PRD-04 only (the rest of the component is backend).
 
 | Document | Sections | When to Read |
 |----------|----------|--------------|
-| Figma: [KEN-E UI V2 — Soft Maximalism](https://www.figma.com/make/fhkgWZyTHdKtvDNRoQrcMT/KEN-E-UI-V2---Soft-Maximalism) | Workflows shell, `ProjectEditDrawer` assignee extension, `ActivityDetailPanel` run viewer, `/workflows/data-pipelines*` routes | Before starting DP-PRD-04 UI work. |
+| Figma: [KEN-E UI V2 — Soft Maximalism](https://www.figma.com/make/fhkgWZyTHdKtvDNRoQrcMT/KEN-E-UI-V2---Soft-Maximalism) | Shared DAG editor (A-PRD-06), `ProjectEditDrawer` assignee extension, `ActivityDetailPanel` run viewer, inline `<PipelineJobPicker>` + `<CustomJobAuthoringPanel>` in the task side-panel | Before starting DP-PRD-04 UI work. |
 | `frontend/CLAUDE.md` | CSS architecture, branded types, form primitives | Before adding any frontend component. |
-| [`../ui/README.md`](../ui/README.md) | §2 Architecture, §7 Conventions | Workflows shell integration pattern — `/workflows/data-pipelines` mounts inside the existing tab container. |
+| [`../ui/README.md`](../ui/README.md) | §2 Architecture, §7 Conventions | Shell + scope-boundary patterns — data pipelines are a `PlanTask.assignee_type` value created from the shared DAG editor's side-panel; no standalone `/workflows/data-pipelines` route. |
 | [`../project-tasks/README.md`](../project-tasks/README.md) §2.4 | `ProjectEditDrawer`, `ActivityDetailPanel` | DP-PRD-04 extends these two components additively — read their contracts before modifying. |
 | [`../automations/README.md`](../automations/README.md) §2.4 | `AutomationTaskPanel` + output rendering | Reference pattern for how pipeline runs surface inside a task detail view. |
 
@@ -323,8 +324,10 @@ Breach returns HTTP `429` with `Retry-After`. Three breaches within a 24-hour wi
 ### Frontend (DP-PRD-04 only)
 
 - Branded types (`DataPipelineJobId`) per CLAUDE.md C-5.
-- Routes: `/workflows/data-pipelines` (list), `/workflows/data-pipelines/new` (authoring), `/workflows/data-pipelines/:job_id` (view/edit; read-only for global jobs).
-- Global catalog jobs are read-only from the UI. Custom-job CRUD is editor-gated.
+- **No standalone routes** — data pipelines are surfaced inline:
+  - **Side-panel** (canonical): `<PipelineJobPicker>` + `<CustomJobAuthoringPanel>` mounted in A-PRD-06's task-creation right-side panel (the panel that opens from the shared DAG editor's "+ Add Task" button on `/workflows/automations/{plan_id}` and `/performance/dashboards/{plan_id}`).
+  - Calendar's `ProjectEditDrawer` (PR-PRD-03) also surfaces the same `assignee_type="data_pipeline"` option for adding pipeline tasks to free-form plans.
+- Global catalog jobs are read-only from the UI. Custom-job CRUD is editor-gated. Authoring is a 4-step inline stepper inside the side-panel (Basics → Schemas → Connection → Preview → Publish & Use).
 - Pipeline-run polling inside `ActivityDetailPanel`: 2 s while `status="running"`, 30 s stale once terminal.
 
 ### Testing

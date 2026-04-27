@@ -31,7 +31,7 @@ Both are tested here via automation: grep audits + Playwright UI assertions.
   - 53-week trendline (via Dashboards LineChart widget) + 4-stage drill-down rendered under 2s p95 (implementation-plan §11 success criterion)
   - Tab-switch latency (any → any) under 200ms p95 when data is cached
 - **Contract tests** between every `/api/v1/performance/{account_id}/*` bundle endpoint and SAR-E's OpenAPI, enforced in CI (implementation-plan §5.1 requirement)
-- **Accessibility audit** across all five tabs + the setup wizard (automated axe-core pass in Playwright + a manual keyboard-navigation pass)
+- **Accessibility audit** across all six tabs + the setup wizard (automated axe-core pass in Playwright + a manual keyboard-navigation pass)
 - **Verification report** appended to `docs/design/components/performance/README.md` — see §4.6 for the template paragraph structure
 - **PROJECT-PLANNER update** — flip all PE-PRD rows to `shipped` once this PRD's gates are green
 
@@ -51,7 +51,7 @@ Both are tested here via automation: grep audits + Playwright UI assertions.
 - **DP-PRD-06 (Data Pipeline testing & polish):** verifies the ingestion-status query is stable. PE-PRD-07's Diagnostics tab fixtures depend on it.
 - **A-PRD-04 (Test / Dry-Run Mode), if shipped:** used by the Simulations E2E to produce deterministic simulation outputs without hitting Gemini 2.0 Pro on every CI run. If not yet shipped, this PRD adds a `seed_sar_e_fixture` helper that writes baseline + target docs directly to Firestore (see §4.5).
 - **IN-PRD-03 (Connection-management UI):** the wizard-abandonment scenario navigates through `/settings/integrations`; that page must be navigable (even as a stub) for E2E to pass.
-- **Feature Flags (FF-PRD-03):** all five `performance_*_tab` flags + `performance_setup_wizard` are resolvable in the CI test environment.
+- **Feature Flags (FF-PRD-03):** all six `performance_*_tab` flags (including `performance_dashboards_tab`) + `performance_setup_wizard` are resolvable in the CI test environment.
 - **Existing files to study:**
   - `frontend/e2e/` — existing Playwright setup + helpers
   - `api/tests/integration/` — contract-test patterns + OpenAPI schema validator
@@ -69,7 +69,7 @@ This PRD has no new data contract. All contract coverage is inherited from PE-PR
 
 1. Log in to a freshly-seeded account (no integrations connected, forecasting disabled; SAR-E `/config/status` returns `{enabled: false, setup_wizard_completed: false, connected_integrations: []}`).
 2. Navigate to `/performance`. Assert the URL auto-resolves to `/performance/configuration` (PE-PRD-01's default-route logic).
-3. Assert that **only the Configuration tab is visible in the tab nav**; Analysis / Simulations / Targets / Diagnostics buttons are absent from the rendered DOM.
+3. Assert that **Dashboards + Configuration tabs are visible in the tab nav**; Analysis / Simulations / Targets / Diagnostics buttons are absent from the rendered DOM.
 4. Assert the Configuration tab body renders the empty-state CTA ("Set up forecasting"); click it.
 5. Wizard opens at `/performance/setup`, step 1 (Welcome). Because `connected_integrations` is empty, the Welcome step routes to `/settings/integrations`.
 6. Complete the Google OAuth flow via the Integrations test harness (mock OAuth server — standard IN-PRD-02 fixture).
@@ -78,7 +78,7 @@ This PRD has no new data contract. All contract coverage is inherited from PE-PR
 9. Advance to step 4 (Review + Confirm). Click "Start backfill"; wizard submits `POST /sar-e/{account_id}/config/setup`.
 10. Wizard polls `/sar-e/{account_id}/config/status`; test harness flips `enabled=true` + `setup_wizard_completed=true` within the polling window.
 11. Wizard redirects to `/performance/analysis`.
-12. Assert **all five tabs are now visible** in the nav.
+12. Assert **all six tabs are now visible** in the nav (Analysis / Dashboards / Simulations / Targets / Diagnostics / Configuration).
 13. Assert the Analysis tab renders: 4-stage funnel, 53-week trendlines (via Dashboards LineChart widget), cost-rollup chips, related-metrics grid, External Factors panel. Data may be low-confidence; the "insufficient history" badge is acceptable for this fixture.
 
 **E2E-2 — Save-as-Targets round-trip**
@@ -239,7 +239,7 @@ The Performance component shipped on YYYY-MM-DD. This section records the observ
 
 1. All five Playwright E2E specs (`performance-wizard-flow`, `performance-save-as-targets`, `performance-configuration-edit`, `performance-diagnostics`, `performance-wizard-abandonment`) pass in CI.
 2. `performance-perf.spec.ts` passes at the p95 thresholds in §4.3 (P-1 < 2000ms, P-2 < 500ms, P-3 < 200ms).
-3. `performance-accessibility.spec.ts` reports zero `serious` or `critical` axe-core violations across all five tabs + the wizard.
+3. `performance-accessibility.spec.ts` reports zero `serious` or `critical` axe-core violations across all six tabs + the wizard.
 4. `test_performance_terminology_rename.py` returns zero matches for `useGoals` / `GoalsContext` / `setForecastAsGoals` / `Goals:` across the Performance surface.
 5. `test_performance_contract.py` passes for all five bundle endpoints against SAR-E's OpenAPI + Data Pipeline's ingestion-status query.
 6. Wizard E2E-5 specifically verifies: (a) the "Resume setup" banner appears on the Configuration tab and (b) the wizard reopens at step 3 with prior selections intact — this is the key resumability guarantee.
