@@ -6,11 +6,11 @@ local self-check rather than a CI gate.
 
 from __future__ import annotations
 
-from tests.integration.sprint6_harness.redis_ttl_fixture import TTLController
+from tests.integration.stability.redis_ttl_fixture import TTLController
 
 
 def test_seed_and_expire_round_trip(ttl_controller: TTLController) -> None:
-    key = "sprint6_harness:roundtrip"
+    key = "stability:roundtrip"
     try:
         assert ttl_controller.seed(key, "hello", ttl_s=60)
         assert ttl_controller.get(key) == "hello"
@@ -21,14 +21,14 @@ def test_seed_and_expire_round_trip(ttl_controller: TTLController) -> None:
 
 
 def test_flush_pattern_removes_only_matching(ttl_controller: TTLController) -> None:
-    keys = ["sprint6_harness:flush:a", "sprint6_harness:flush:b"]
-    other = "sprint6_harness:other"
+    keys = ["stability:flush:a", "stability:flush:b"]
+    other = "stability:other"
     try:
         for k in keys:
             ttl_controller.seed(k, "x", ttl_s=60)
         ttl_controller.seed(other, "y", ttl_s=60)
 
-        deleted = ttl_controller.flush_pattern("sprint6_harness:flush:*")
+        deleted = ttl_controller.flush_pattern("stability:flush:*")
         assert deleted == 2
         assert ttl_controller.get(other) == "y"
     finally:

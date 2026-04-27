@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from tests.integration.sprint6_harness.memory_profiler import MemoryProfiler
+from tests.integration.stability.memory_profiler import MemoryProfiler
 
 
 def test_profiler_captures_baseline_and_final() -> None:

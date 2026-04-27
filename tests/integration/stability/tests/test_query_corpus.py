@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from tests.integration.sprint6_harness.query_corpus import (
+from tests.integration.stability.query_corpus import (
     EXPECTED_AGENT_TYPES,
     QUERIES,
     QueryCategory,

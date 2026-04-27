@@ -6,7 +6,7 @@ session id, and (best-effort) the agent the request was dispatched to.
 
 CLI::
 
-    python -m tests.integration.sprint6_harness.diverse_invocation_runner \\
+    python -m tests.integration.stability.diverse_invocation_runner \\
         --queries 50 --output run_<ts>.json
 
 The CLI requires ``HARNESS_API_BASE_URL`` and ``HARNESS_AUTH_TOKEN`` env
@@ -30,7 +30,7 @@ from typing import Any
 
 import httpx
 
-from tests.integration.sprint6_harness.query_corpus import QUERIES, QueryCase
+from tests.integration.stability.query_corpus import QUERIES, QueryCase
 
 
 @dataclass

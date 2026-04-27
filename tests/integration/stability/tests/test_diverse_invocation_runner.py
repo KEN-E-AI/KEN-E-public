@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 from pytest_httpx import HTTPXMock
 
-from tests.integration.sprint6_harness.diverse_invocation_runner import (
+from tests.integration.stability.diverse_invocation_runner import (
     RunReport,
     run_corpus,
 )
-from tests.integration.sprint6_harness.query_corpus import QUERIES
+from tests.integration.stability.query_corpus import QUERIES
 
 _API = "http://example.test"
 

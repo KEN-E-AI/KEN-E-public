@@ -17,7 +17,7 @@ from textwrap import dedent
 import httpx
 import pytest
 
-from tests.integration.sprint6_harness.stream_reconnect_fixture import (
+from tests.integration.stability.stream_reconnect_fixture import (
     APIServerSubprocess,
     streaming_chat_with_kill,
 )
