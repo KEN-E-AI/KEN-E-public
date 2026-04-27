@@ -150,7 +150,7 @@ def _build_chatbot_root_attrs(callback_context: CallbackContext) -> dict[str, An
         logger.debug(f"Could not read session/user from invocation_context: {e}")
 
     cfg = _get_chatbot_config_metadata()
-    return {
+    attrs: dict[str, Any] = {
         "account_id": state.get("account_id", "unknown"),
         "session_id": session_id,
         "user_id": user_id,
@@ -162,6 +162,14 @@ def _build_chatbot_root_attrs(callback_context: CallbackContext) -> dict[str, An
         "variant_name": cfg.get("variant_name", "baseline"),
         "model_used": cfg.get("model", "unknown"),
     }
+    # Optional generation-config fields — included when the Firestore doc
+    # surfaces them, omitted otherwise (the trace-spec marks them
+    # ``Required: No`` for L2 sub-agent spans).
+    if cfg.get("temperature") is not None:
+        attrs["temperature"] = cfg["temperature"]
+    if cfg.get("max_output_tokens") is not None:
+        attrs["max_output_tokens"] = cfg["max_output_tokens"]
+    return attrs
 
 
 def _extract_user_goal(callback_context: CallbackContext) -> str | None:

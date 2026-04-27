@@ -312,12 +312,6 @@ def deploy_ken_e() -> str | None:
             "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", _capture_content
         )
 
-        # Workaround for buggy google-genai OTEL instrumentation that crashes
-        # strategy agents using output_schema (calls model_dump() on Pydantic classes).
-        # Temporarily disabled to test if bug still triggers on ADK 1.26.0.
-        # See docs/spike-otel-pydantic-findings.md for details.
-        # os.environ.setdefault("OTEL_PYTHON_DISABLED_INSTRUMENTATIONS", "google-genai")
-
         # Wrap with AdkApp for deployment (pass App object, not agent directly)
         app = agent_engines.AdkApp(app=adk_app, enable_tracing=True)
         logger.info(f"✅ Created AdkApp with tracing enabled: {type(app)}")
