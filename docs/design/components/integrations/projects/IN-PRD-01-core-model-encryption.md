@@ -101,9 +101,12 @@ class ConnectionAuditEntry(BaseModel):
     connection_id: str
     account_id: str
     actor_id: str                          # user ID or "system:<subtype>"
-    event: Literal["connected", "refreshed", "revoked", "reauth_requested", "used", "error"]
+    event: Literal["connected", "refreshed", "revoked", "reauth_requested", "used", "error", "tested"]
     timestamp: datetime
     metadata: dict                         # platform-specific context (no token values)
+    # `tested` is emitted by IN-PRD-07's on-demand connection-test endpoint;
+    # registered in DM-PRD-07's audit registry from day one so IN-PRD-07's
+    # extension is a content-only change with no schema migration.
 
 class StateTokenClaims(BaseModel):
     user_id: str

@@ -29,13 +29,13 @@ Credential loading reuses DP-PRD-02's pattern unchanged. Integrations IN-PRD-01 
 ### In scope
 
 - **`GoogleAdsConnector`** — `app/data_pipeline/connectors/google_ads.py` — wraps the `google-ads` Python client. Reuses the same Google OAuth credential from IN-PRD-02 that DP-PRD-02 uses for GA; no new OAuth scopes are added beyond what IN-PRD-02 requested (confirm `https://www.googleapis.com/auth/adwords` is in the Google platform definition before kickoff).
-- **`MetaAdsConnector`** — `app/data_pipeline/connectors/meta_ads.py` — wraps the `facebook_business` Python SDK. Reads credentials from Integrations' internal endpoint with `platform_id="meta_ads"` (IN-PRD-04).
-- **`MailchimpConnector`** — `app/data_pipeline/connectors/mailchimp.py` — wraps the `mailchimp-marketing` Python SDK. Reads credentials from Integrations with `platform_id="mailchimp"` (IN-PRD-04). Respects Mailchimp's data-center prefix in the server URL (Integrations stores it as part of the connection's `external_account_id`).
+- **`MetaAdsConnector`** — `app/data_pipeline/connectors/meta_ads.py` — wraps the `facebook_business` Python SDK. Reads credentials from Integrations' internal endpoint with `platform_id="meta"` (per IN-PRD-04 — the seeded platform definition is `platform_definitions/meta`, scoped for Ads + future Meta surfaces).
+- **`MailchimpConnector`** — `app/data_pipeline/connectors/mailchimp.py` — wraps the `mailchimp-marketing` Python SDK. Reads credentials from Integrations with `platform_id="mailchimp"` (IN-PRD-04). Respects Mailchimp's data-center prefix in the server URL — sourced from `credentials["platform_metadata"]["dc"]` on the credentials response (per IN-PRD-02 §5.3 + IN-PRD-04 §5.4).
 - **Rate-limit budgets wired into the middleware** per plan §3.3:
   - `google_ads`: 50/day · 10/hr · 3 concurrent
   - `meta_ads`: 50/day · 10/hr · 3 concurrent
   - `mailchimp`: 20/day · 5/hr · 2 concurrent
-- **Credential loading.** Each connector calls `GET /api/v1/internal/integrations/credentials/{account_id}/{platform_id}` (OIDC) and reads `{access_token, expires_at, external_account_id}` — the v1 shape from IN-PRD-01. No `auth_type` branching (see §1 non-goal). Each connector uses the access token according to its SDK's expectation: Google Ads + Meta Ads as a Bearer token; Mailchimp as the API-key value (Mailchimp's OAuth flow returns a long-lived token consumable as an API key, plus a `dc` prefix surfaced separately — see Mailchimp note in §5.3).
+- **Credential loading.** Each connector calls `GET /api/v1/internal/integrations/credentials/{account_id}/{platform_id}` (OIDC) and reads `{connection_id, access_token, expires_at, external_account_id, platform_metadata}` — the v1 shape from IN-PRD-01 (extended in IN-PRD-02 §5.3 to include `connection_id` and in IN-PRD-04 §5.4 to surface `platform_metadata`). No `auth_type` branching (see §1 non-goal). Each connector uses the access token according to its SDK's expectation: Google Ads + Meta Ads as a Bearer token; Mailchimp as the API-key value (Mailchimp's OAuth flow returns a long-lived token consumable as an API key, plus a `dc` prefix in `platform_metadata["dc"]` — see Mailchimp note in §5.3).
 - **Seeded job catalog entries** — 3–5 jobs per connector, all flagged `visible_in_frontend=true` unless noted:
 
   | Connector | Suggested starter jobs |
@@ -65,7 +65,7 @@ Credential loading reuses DP-PRD-02's pattern unchanged. Integrations IN-PRD-01 
 
 - **DP-PRD-02 (Google Analytics connector):** framework proven. `BaseConnector`, rate-limit middleware, retry ladder, `load_credentials()` helper (consumed unchanged — see §4.3), `PipelineOutput` shape, artifact-write pipeline, error-notification flow, `@pytest.mark.platform` integration-test harness all consumed as-is.
 - **DP-PRD-01 (Foundation):** `DataPipelineConnector` Protocol, service endpoint, cache-lookup flow, `DataPipelineRun` persistence — all upstream.
-- **IN-PRD-04 (Meta + Mailchimp platforms):** adds `meta_ads` and `mailchimp` entries to `platform_definitions/*` + wires their OAuth callbacks. This PRD's Meta + Mailchimp connectors cannot proceed before those connections are authable from the UI. **Coordinate at kickoff:** the Mailchimp connector requires the connection's `dc` prefix to be readable from the credentials endpoint or a sibling connection-detail endpoint; see §5.3 + §9 open question.
+- **IN-PRD-04 (Meta + Mailchimp platforms):** adds `meta` and `mailchimp` entries to `platform_definitions/*` + wires their OAuth callbacks. This PRD's Meta + Mailchimp connectors cannot proceed before those connections are authable from the UI. The `dc`-prefix transport question is resolved: per IN-PRD-04 §5.4 + IN-PRD-02 §5.3, `platform_metadata` (containing `{"dc": "us6"}` for Mailchimp) is returned on the credentials response. The connector reads `credentials["platform_metadata"]["dc"]` directly — no sibling endpoint, no extra round-trip.
 - **IN-PRD-02 (Google OAuth):** Google Ads connector reuses the same Google OAuth app DP-PRD-02 established. Incremental scope request (`adwords`) must be confirmed against the existing `google` `PlatformDefinition.scopes` list.
 - **DM-PRD-00 (Migration foundation):** the seeded-catalog migration follows the standard Shape B pattern used by DP-PRD-02.
 - **Existing files to study:**
@@ -194,10 +194,7 @@ When a future PRD widens `PlatformDefinition.auth_type` past `oauth2_auth_code` 
 ### 5.3 Mailchimp connector
 
 - SDK: `mailchimp-marketing`. Constructor calls `client.set_config({"api_key": <access_token>, "server": <dc_prefix>})`. The `access_token` is the OAuth-issued long-lived token Integrations stores; Mailchimp's SDK accepts it under the `api_key` field. The `<dc_prefix>` is Mailchimp's data-center prefix (e.g., `us6`) and is **required** to build the API base URL.
-- **Open contract — `dc` prefix sourcing:** IN-PRD-04 stores the `dc` value during OAuth callback. Two viable sources for the connector to read it:
-  1. The credentials endpoint includes it directly — e.g., extend the v1 response shape to `{access_token, expires_at, external_account_id, platform_metadata: {"dc": "us6"}}`. Cleanest for the connector.
-  2. The connector reads it from a separate connection-detail endpoint (e.g., `GET /api/v1/internal/integrations/connections/{connection_id}` already exposed in IN-PRD-03 / IN-PRD-04 for the management UI).
-  Coordinate with IN-PRD-04 owners at kickoff. **Default assumption:** option (1) — Integrations adds `platform_metadata` to the credentials response for platforms that need it, and the Mailchimp connector reads `credentials["platform_metadata"]["dc"]`. Documented as an open question in §9.
+- **`dc` prefix sourcing — resolved:** IN-PRD-04 stores the `dc` value during OAuth callback in `PlatformConnection.platform_metadata`, and IN-PRD-02 §5.3 returns `platform_metadata` on the internal credentials-read response. The connector reads `credentials["platform_metadata"]["dc"]` directly — no sibling endpoint, no separate lookup. (See IN-PRD-02 §5.3 for the canonical response shape.)
 - Operations: `_op_campaign_send_summary` (`client.reports.get_campaign_report(campaign_id)`), `_op_subscriber_counts` (`client.lists.get_list_members_info`), `_op_open_click_rates` (`client.reports.get_email_activity_for_campaign`).
 - Rate-limit: `@rate_limited("mailchimp")`. Mailchimp's published limit is 10 concurrent per API key; this PRD sets our per-account budget at 2 concurrent (plan §3.3) to leave headroom for human users of the same credential.
 - Retry: Mailchimp returns 429 with a `Retry-After` header; the connector respects that header directly inside the retry ladder (overrides the default exponential-backoff delay).
@@ -219,7 +216,7 @@ Endpoints consumed:
 | Method | Path | Purpose | Owner |
 |---|---|---|---|
 | `POST` | `/api/v1/internal/data-pipeline/run` | Orchestrator-to-service dispatch; routes to the connector via the registry | DP-PRD-01 |
-| `GET` | `/api/v1/internal/integrations/credentials/{account_id}/{platform_id}` | OIDC; returns `{access_token, expires_at, external_account_id}` per IN-PRD-01's v1 contract. Mailchimp also requires the connection's `dc` prefix surfaced from this endpoint (or a sibling) — coordination point with IN-PRD-04, see §5.3 + §9 open question. | IN-PRD-01 (refresh by IN-PRD-02 / IN-PRD-04) |
+| `GET` | `/api/v1/internal/integrations/credentials/{account_id}/{platform_id}` | OIDC; returns `{connection_id, access_token, expires_at, external_account_id, platform_metadata}` per IN-PRD-02 §5.3. For Mailchimp, the `dc` prefix rides in `platform_metadata["dc"]`. | IN-PRD-01 (refresh by IN-PRD-02; `platform_metadata` by IN-PRD-04) |
 | `POST` | `/api/v1/internal/integrations/connections/{connection_id}/mark-expired` | Called on 401 / 403 from the platform to trigger re-auth | IN-PRD-05 |
 
 ## 7. Acceptance criteria
@@ -235,7 +232,7 @@ Endpoints consumed:
 9. Three consecutive rate-limit breaches within a 24-hour window fire the existing DP-PRD-02 account-level notification.
 10. Transient-error retry: 5xx / platform-specific quota / network errors retry up to 3 times with exponential backoff; the 4th failure surfaces as a task failure + notification per plan §3.3.
 11. Auth-error handling: platform 401 / 403 responses trigger `POST /internal/integrations/connections/{id}/mark-expired` and fail the task; downstream tasks halt until reconnection.
-12. Credential loader: `load_credentials(account_id, platform_id)` returns the v1 OAuth shape `{access_token, expires_at, external_account_id}` from IN-PRD-01 unchanged; for `mailchimp`, the connector also reads `credentials["platform_metadata"]["dc"]` (or the IN-PRD-04-coordinated alternative — see §9 open question).
+12. Credential loader: `load_credentials(account_id, platform_id)` returns the IN-PRD-02 §5.3 shape `{connection_id, access_token, expires_at, external_account_id, platform_metadata}`; for `mailchimp`, the connector reads `credentials["platform_metadata"]["dc"]` to construct the API base URL.
 13. Cross-account isolation: a connector run for account A never reads account B's credentials; a run against account B's connection cannot use account A's rate-limit quota.
 14. Observability: every run emits a `data_pipeline.run` Weave span with `{connector, operation, input_hash, row_count, cache_hit, test_mode}` (inherited from DP-PRD-02).
 15. HubSpot is **not** present in the connector registry, the rate-limit config, or the seeded-jobs catalog. Explicit non-goal per plan §7 DP-PRD-05.
@@ -281,7 +278,7 @@ Endpoints consumed:
 
 | Question | Disposition |
 |---|---|
-| Mailchimp `dc` prefix transport from Integrations to the connector | **Coordinate with IN-PRD-04 owners at kickoff.** Default proposal: extend the IN-PRD-01 credentials-endpoint response with an optional `platform_metadata: dict` field, populated for Mailchimp with `{"dc": "us6"}`. Alternative: connector calls a separate connection-detail endpoint. Whichever path lands, it MUST be locked before the Mailchimp connector implementation begins; the rest of DP-PRD-05 (Google Ads + Meta Ads) does not depend on the resolution. |
+| Mailchimp `dc` prefix transport from Integrations to the connector | **Resolved.** Per IN-PRD-02 §5.3 + IN-PRD-04 §5.4, the credentials-read response includes `platform_metadata`; for Mailchimp, `platform_metadata["dc"]` carries the data-center prefix. No separate connection-detail endpoint, no coordination needed at kickoff. |
 | Google Ads developer-token storage path | `sm://google-ads-developer-token` per env. Confirm against `api/src/kene_api/services/secrets.py` conventions at kickoff. |
 | Mailchimp OAuth vs. API-key nuance | Most Mailchimp users in the wild use OAuth; some legacy-setup enterprise users use API keys. IN-PRD-04 owns the OAuth flow; API-key mode deferred until a customer asks. Confirm at kickoff. |
 | Meta long-lived token refresh inside the pipeline | IN-PRD-04 owns the short → long-lived token exchange. The connector treats all access tokens as opaque. Double-check at kickoff that long-lived tokens are what Integrations returns on `GET /api/v1/internal/integrations/credentials/.../meta_ads`. |
