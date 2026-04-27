@@ -85,7 +85,7 @@ title: str
 description: str
 assignee_type: Literal["agent", "human"]
 assignee_name: str
-status: TaskStatus              # Draft | Awaiting Approval | Approved | Rejected | Revision Requested | Complete
+status: TaskStatus              # Draft | Awaiting Approval | Approved | Rejected | Revision Requested | Complete | Failed | Blocked
 depends_on: list[str]           # task_ids — forms the DAG
 cost: float | None
 due_date: date | None
@@ -105,6 +105,19 @@ revision_comment: str | None
   - Every `task_id` in any `depends_on` exists in `tasks`
   - No cycles (Kahn's topological sort)
   - Returns clear error message identifying offending task(s)
+
+### `TaskStatus` semantics
+
+`Failed` and `Blocked` are terminal lifecycle states that the orchestrator (PRD-4) writes — but the enum is owned by this PRD so the model and validators ship in v1 without a follow-up migration:
+
+- **`Failed`** — written by the orchestrator when (a) the revision loop exceeds 5 iterations or (b) an agent / data-pipeline dispatch fails non-recoverably. Independent branches of the DAG continue running.
+- **`Blocked`** — written by the orchestrator on every transitively-downstream task when an upstream task is `Rejected` or `Failed`. Reactivation requires a plan edit (changing `depends_on` or rejecting status); there is no direct `Blocked → Draft` transition exposed via the API.
+
+The detailed transition rules and the side effects (notifications, downstream blocking, audit) live in [PR-PRD-04](./PR-PRD-04-event-driven-orchestrator.md). PR-PRD-01 ships only the enum values + the model field; PR-PRD-04 enforces the transition policy.
+
+### Forward-coordination — `assignee_type` extension
+
+[DP-PRD-03](../../data-pipeline/projects/DP-PRD-03-task-system-integration.md) extends `PlanTask.assignee_type` from `Literal["agent", "human"]` to `Literal["agent", "human", "data_pipeline"]` and adds a sibling `pipeline_spec: PipelineJobSpec | None` field. PR-PRD-01 ships the two-value union; DP-PRD-03 lands the third value as an additive patch (no migration needed because `pipeline_spec` defaults to `None` and existing rows already have `assignee_type ∈ {"agent", "human"}`).
 
 ## 5. Implementation outline
 
@@ -167,6 +180,7 @@ Auth: standard `check_strategy_access`-equivalent dependency, scoped per account
 - DAG validator: empty `depends_on` (root), valid linear chain, valid diamond, simple 2-cycle, self-reference cycle, deep cycle (5 hops), missing reference, single-task plan, large plan (~50 tasks)
 - `launch_time_utc` regex: valid (`"00:00"`, `"13:00"`, `"23:59"`), invalid (`"24:00"`, `"1:0"`, `"13:60"`, `""`)
 - Status transition rules (where enforced at the model level)
+- `TaskStatus` enum accepts all eight values (`Draft`, `Awaiting Approval`, `Approved`, `Rejected`, `Revision Requested`, `Complete`, `Failed`, `Blocked`); a ninth value rejected at parse time
 
 **Integration tests** (`test_project_plans_router.py`):
 - Full CRUD lifecycle for one plan

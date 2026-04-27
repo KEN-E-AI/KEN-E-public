@@ -85,15 +85,9 @@ recurring: bool = False                    # "does this holiday repeat annually?
 
 Event category has no additional fields in v1 — it reuses the base `PlanTask` shape.
 
-### `ProjectPlan` — fields added
+### `ProjectPlan` — consumed fields (not added here)
 
-```
-type: Literal["freeform", "dashboard"] = "freeform"
-                                           # freeform = user-defined DAG (default, matches
-                                           # the current implicit behavior). dashboard = a
-                                           # dashboard-placement plan (shape per frontend
-                                           # Dashboard page; no runtime behavior change).
-```
+The `ProjectPlan.type: Literal["freeform", "dashboard"]` discriminator is owned by [A-PRD-01](../../automations/projects/A-PRD-01-data-model-and-api.md#4-data-contract). PR-PRD-07's filter loop on the list endpoint must respect it (the default A-PRD-01 filter excludes `type="dashboard"` plans from the user-facing Automations / Calendar lists; that default still applies through this PRD's filters). PR-PRD-07 does **not** define or migrate the field.
 
 ### Validators (model-level)
 
@@ -199,10 +193,9 @@ All endpoints use the existing account-scoped access-control dependency. Approva
 8. `POST /orphan-tasks/{id}/attach-to-plan` moves the task from `orphan_tasks` into the target plan's `tasks`; subsequent `GET /orphan-tasks/{account_id}` does not include it; `GET /plans/{account_id}/{plan_id}` does. Source and target updates are in one transaction.
 9. `POST /orphan-tasks/{id}/attach-to-new-plan` creates a new plan with the supplied title and attaches the task — a single transaction, no orphaned plan if the task step fails. Returns both IDs.
 10. `POST /plans/{account_id}/{plan_id}/tasks/{task_id}/detach` removes the task and prunes any `depends_on` references to the detached task from siblings. The DAG validator runs after the prune.
-11. `type="dashboard"` is accepted on a plan create and round-trips; no runtime behavior changes.
-12. All new endpoints return `403` for cross-account requests.
-13. All composite indexes for `orphan_tasks` exist in `firestore_indexes_project_tasks.tf`; emulator runs the new queries without scan warnings.
-14. All unit and integration tests pass; `make lint` clean.
+11. All new endpoints return `403` for cross-account requests.
+12. All composite indexes for `orphan_tasks` exist in `firestore_indexes_project_tasks.tf`; emulator runs the new queries without scan warnings.
+13. All unit and integration tests pass; `make lint` clean.
 
 ## 8. Test plan
 
@@ -211,7 +204,6 @@ All endpoints use the existing account-scoped access-control dependency. Approva
 - Each category missing its discriminant field → `422` with a clear message
 - `unscheduled=true` combinations (with/without `due_date`, with/without `launch_time_utc`)
 - `recurrence_enabled=true` combinations (with/without `recurrence_cron`, invalid cron, invalid tz)
-- `type` enum on `ProjectPlan`: `freeform`, `dashboard`, rejected value
 
 **Unit tests** (`test_orphan_task_service.py`):
 - `attach_to_plan`: orphan doc removed, plan doc updated with appended task, DAG re-validated

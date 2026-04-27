@@ -3,7 +3,7 @@
 **Status:** Blocked — resumes once PR-PRD-01 and DM-PRD-05 ship
 **Owner team:** Backend / Platform
 **Blocked by:** PR-PRD-01 (status enum + transition endpoints this PRD gates); DM-PRD-05 (ensures `recursive_delete` covers the audit subcollection)
-**Blocks:** PR-PRD-07 (all approval-sensitive endpoints call this PRD's gate); PR-PRD-08 (the same gate protects campaign mutations)
+**Blocks:** PR-PRD-07 (all approval-sensitive endpoints call this PRD's gate)
 **Estimated effort:** 2–3 days
 
 ---
@@ -26,7 +26,7 @@ This PRD delivers the role model, the gate that enforces it on every status-chan
 - FastAPI dependency `require_role(min_role: UserRole)` usable from any router
 - Transition policy table: for each (from_state, to_state) pair, the minimum role required. Consumed by PR-PRD-01's `transition` endpoint and by PR-PRD-07's status-patch paths.
 - Formal `AuditEntry` Pydantic model and document shape
-- Audit-write helper `write_audit(...)` used by PR-PRD-01, PR-PRD-07, PR-PRD-08 (and any future consumer)
+- Audit-write helper `write_audit(...)` used by PR-PRD-01, PR-PRD-07 (and any future consumer; PR-PRD-08 retrofits its audit writes to call `write_audit` once this PRD ships, the same way PR-PRD-01 does)
 - Retention: 2 years hot in Firestore under `accounts/{account_id}/project_plan_audit/`; nightly export to BigQuery for indefinite archive
 - Cloud Scheduler job + internal endpoint that trims audit entries older than 2 years (after successful BigQuery export)
 - Unit tests for the role gate and the audit helper; integration tests for transition denial + audit-write verification
@@ -42,7 +42,7 @@ This PRD delivers the role model, the gate that enforces it on every status-chan
 
 - **PR-PRD-01:** owns the transition endpoint; calls `require_role(...)` and `write_audit(...)` from this PRD on every mutation.
 - **PR-PRD-07 (Calendar Activities):** consumer — every activity status mutation (including batch-create and group-edit) routes through `require_role` and `write_audit`.
-- **PR-PRD-08 (Campaign Management):** consumer — campaign create/patch/delete use `write_audit`. Role gate is `editor`-minimum for create/patch; `admin`-minimum for delete of a non-generic campaign (generic deletions are already blocked in PR-PRD-08).
+- **PR-PRD-08 (Campaign Management):** later consumer — does not block PR-PRD-08's initial ship. PR-PRD-08 lands its own raw audit writes (mirroring PR-PRD-01's interim approach) and retrofits them to call `write_audit` after this PRD ships. Once retrofitted, role gating is `editor`-minimum for create/patch; `admin`-minimum for delete of a non-generic campaign (generic deletions are already blocked in PR-PRD-08).
 - **DM-PRD-00 (Migration Foundation):** adds the `project_plan_audit` collection-group composite index for the nightly BigQuery export scan (`at ASC`, cross-account).
 - **DM-PRD-05 (Deletion Sweep Rewrite):** `project_plan_audit` is under `accounts/{account_id}/...` and is covered by `recursive_delete`. No special cleanup.
 - **External:** BigQuery (destination for the audit archive). Re-use the existing GCP project and a new dataset `audit_archive_{env}`.
