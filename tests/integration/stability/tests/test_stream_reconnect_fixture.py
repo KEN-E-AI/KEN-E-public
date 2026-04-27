@@ -93,9 +93,9 @@ def test_subprocess_lifecycle_against_stub_app(tmp_path: Path) -> None:
 async def test_streaming_chat_with_kill_against_stub_app(tmp_path: Path) -> None:
     """Exercise streaming_chat_with_kill end-to-end against a stub.
 
-    Verifies that the helper captures `session_id` from response headers,
-    receives chunks before kill, and the API restarts cleanly on the same
-    port — without needing real ADC or super-admin tokens.
+    Verifies that the helper passes a caller-provided ``session_id``
+    through, receives chunks before kill, and restarts cleanly on the
+    same port — without needing real ADC or super-admin tokens.
     """
     (tmp_path / "stub_app.py").write_text(_STUB_APP_SOURCE)
     port = _bind_ephemeral_port()
@@ -111,6 +111,7 @@ async def test_streaming_chat_with_kill_against_stub_app(tmp_path: Path) -> None
         async with streaming_chat_with_kill(
             server,
             auth_token="ignored-by-stub",
+            session_id="sess_stub_123",
             chunks_before_kill=2,
         ) as (session_id, chunks):
             assert session_id == "sess_stub_123"

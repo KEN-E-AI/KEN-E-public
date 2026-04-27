@@ -289,6 +289,8 @@ async def run_test2_stream_reconnect() -> StepResult:
             ),
         )
 
+    import httpx
+
     from tests.integration.stability.stream_reconnect_fixture import (
         APIServerSubprocess,
         _bind_ephemeral_port,
@@ -297,33 +299,63 @@ async def run_test2_stream_reconnect() -> StepResult:
 
     port = _bind_ephemeral_port()
     server = APIServerSubprocess(port=port)
-    captured_session_id: str | None = None
+    session_id: str | None = None
     chunks_before_kill: list[bytes] = []
+    follow_up_status: int | None = None
     error: str | None = None
 
     try:
         server.start()
-        async with streaming_chat_with_kill(
-            server, auth_token=auth_token, chunks_before_kill=2
-        ) as (session_id, chunks):
-            captured_session_id = session_id
-            chunks_before_kill = chunks
-        # After the context: server has been terminated. Restart on the same port.
-        server.start()
 
-        # Issue a follow-up against the same session and check we get a 200.
-        import httpx
-        async with httpx.AsyncClient(base_url=server.base_url, timeout=30) as client:
-            resp = await client.post(
+        # Step 1: pre-create the session via POST /api/v1/chat/conversations.
+        # KEN-E's streaming /chat/completions response is plain SSE (text only)
+        # — it never exposes the session_id back to the client mid-stream, so
+        # we must know the session_id up front to make the AC's reconnect
+        # check ("issue a follow-up against the same session_id") meaningful.
+        async with httpx.AsyncClient(
+            base_url=server.base_url, timeout=30.0
+        ) as client:
+            create_resp = await client.post(
+                "/api/v1/chat/conversations",
+                json={"name": "harness-stream-reconnect"},
+                headers={"Authorization": f"Bearer {auth_token}"},
+            )
+            create_resp.raise_for_status()
+            session_id = create_resp.json()["session_id"]
+
+        # Step 2: stream + kill mid-stream + restart subprocess.
+        async with streaming_chat_with_kill(
+            server,
+            auth_token=auth_token,
+            session_id=session_id,
+            chunks_before_kill=2,
+            request_timeout_s=120.0,
+        ) as (sid, chunks):
+            assert sid == session_id
+            chunks_before_kill = chunks
+
+        # Step 3: hit the restarted subprocess with a non-streaming follow-up
+        # against the same session. AC-6.22 passes when this returns 200,
+        # confirming the ADK session survived the process kill.
+        async with httpx.AsyncClient(
+            base_url=server.base_url, timeout=120.0
+        ) as client:
+            follow_up = await client.post(
                 "/api/v1/chat/completions",
                 json={
                     "messages": [{"role": "user", "content": "follow-up"}],
-                    "session_id": captured_session_id,
+                    "session_id": session_id,
                     "stream": False,
                 },
                 headers={"Authorization": f"Bearer {auth_token}"},
             )
-        ok = resp.status_code == 200 and captured_session_id is not None
+            follow_up_status = follow_up.status_code
+
+        ok = (
+            session_id is not None
+            and len(chunks_before_kill) > 0
+            and follow_up_status == 200
+        )
     except Exception as e:
         error = f"{type(e).__name__}: {e}"
         ok = False
@@ -331,15 +363,19 @@ async def run_test2_stream_reconnect() -> StepResult:
         server.terminate(signal_term=False)
 
     passed = ok
-    print(f"      [{'PASS' if passed else 'FAIL'}] session_id={captured_session_id}, "
-          f"chunks_before_kill={len(chunks_before_kill)}, error={error}")
+    print(
+        f"      [{'PASS' if passed else 'FAIL'}] session_id={session_id}, "
+        f"chunks_before_kill={len(chunks_before_kill)}, "
+        f"follow_up_status={follow_up_status}, error={error}"
+    )
 
     return StepResult(
         name="stream_reconnect",
         passed=passed,
         details={
-            "captured_session_id": captured_session_id,
+            "captured_session_id": session_id,
             "chunks_before_kill": len(chunks_before_kill),
+            "follow_up_status": follow_up_status,
             "error": error,
         },
     )
