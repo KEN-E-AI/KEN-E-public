@@ -42,6 +42,7 @@ This PRD reuses the Cloud Scheduler infrastructure delivered by [Calendar PRD-6]
 - **A-PRD-1:** `ProjectPlan.recurrence_cron`, `next_run_at`, `PlanRun` model
 - **Calendar PRD-4:** `TaskOrchestrator.activate_plan` — this PRD extends its signature with optional `run_id`
 - **Calendar PRD-6:** Cloud Scheduler infrastructure + OIDC auth dependency — reuse
+- **DM-PRD-07 (Roles, Members, Audit Substrate):** hard prerequisite. The manual-trigger endpoint calls `require_role(min_role=editor, scope=Account)`; the run engine calls `write_audit(...)` on every run created (`run_start`) and on every run that reaches a terminal status (`run_complete`). Both actions and the `plan_run` resource type are already registered against `project_plan_audit` per DM-PRD-07 §registry. The internal scheduler endpoint authenticates via OIDC (Cloud Scheduler SA), not via `require_role`.
 - **External:** `croniter`, `zoneinfo`, Cloud Scheduler (GCP)
 
 ### Coordination — orchestrator signature change
@@ -199,6 +200,19 @@ Rules:
 - Other `{…}` template variables are reserved for future use (e.g. `{upstream_artifacts}`, `{revision_feedback}`) — substitution engine must tolerate unrecognized markers by leaving them intact for downstream handling.
 
 Implementation lives in `AutomationRunEngine._build_agent_prompt(task, run)` (or the equivalent function inside `TaskOrchestrator` — owner's choice). Keep it small and pure so it's unit-testable without the orchestrator harness.
+
+### Audit events
+
+The run engine and the orchestrator extension write audit entries via DM-PRD-07's `write_audit(...)` helper. Common fields: `parent_kind="account"`, `parent_id=account_id`, `audit_subcollection="project_plan_audit"`, `resource_type="plan_run"`. The action and metadata vary:
+
+| Trigger | Action | Metadata |
+|---------|--------|----------|
+| Scheduler tick creates a `PlanRun` | `run_start` | `{run_id, plan_id, triggered_by="scheduled", template_version}` |
+| Manual-trigger endpoint creates a `PlanRun` (`triggered_by="manual"`) | `run_start` | `{run_id, plan_id, triggered_by="manual", triggered_by_user_id, inputs_size_bytes}` |
+| Manual-trigger endpoint creates a `PlanRun` (`triggered_by="system"`) | `run_start` | `{run_id, plan_id, triggered_by="system", triggered_by_user_id?, inputs_size_bytes}` |
+| Orchestrator finishes a run (status → `complete` / `failed`) | `run_complete` | `{run_id, plan_id, final_status, task_count_complete, task_count_failed, duration_seconds}` |
+
+Cancel audit (`run_complete` with `final_status="cancelled"`) is owned by A-PRD-4. The preview/upcoming endpoints are pure reads and do not write audit.
 
 ## 6. API contract
 

@@ -48,8 +48,8 @@ A developer reading only this section should understand: this component owns `Pl
 | `api/src/kene_api/services/artifact_store.py` | GCS upload, signed-URL generation, size validation (A-PRD-03) |
 | `api/src/kene_api/repositories/firestore_artifact_repository.py` | Artifact metadata CRUD (A-PRD-03) |
 | `app/adk/tools/builtin/attach_task_artifact.py` | ADK tool agents call to register outputs (A-PRD-03) |
-| `frontend/src/pages/WorkflowsPage.tsx` | `/workflows` route with Automations tab (A-PRD-05) |
-| `frontend/src/pages/AutomationDetailsPage.tsx` | `/workflows/automations/:planId` — DAG editor, schedule editor, test runs, Outputs tab (A-PRD-06) |
+| `frontend/src/pages/workflows/AutomationsPage.tsx` | `/workflows/automations` Automations-tab content (UI-PRD-03 ships the shell; A-PRD-05 wires the data) |
+| `frontend/src/pages/workflows/AutomationDetailsPage.tsx` | `/workflows/automations/:planId` — DAG editor, schedule editor, test runs, Outputs tab (UI-PRD-03 ships the shell; A-PRD-06 replaces mocked content) |
 | `frontend/src/components/automations/` | DAG diagram, schedule modal, outputs tab, test-run controls (A-PRD-05 + 06) |
 | `deployment/terraform/cloud_scheduler_automations.tf` | Sibling Cloud Scheduler job + SA + IAM (A-PRD-02) |
 | `deployment/terraform/gcs_task_artifacts.tf` | `kene-task-artifacts-{env}` bucket + 30-day lifecycle rule + IAM (A-PRD-03) |
@@ -63,7 +63,7 @@ A developer reading only this section should understand: this component owns `Pl
 4. **Test fire (A-PRD-04):** `POST .../runs/test` creates a run with `is_test=true`. Execution is identical to a production run except notifications carry `is_test=true` so the UI can badge them, and the run becomes cancellable. HITL halt behavior is unchanged from Calendar PRD-4.
 5. **Artifact generation (A-PRD-03):** Agent tasks call the `attach_task_artifact(filename, content_base64, mime_type)` ADK tool during execution. The tool validates size (≤100 MB), sanitizes the filename, uploads to `gs://kene-task-artifacts-{env}/{account_id}/{plan_id}/{run_id}/{task_id}/...`, writes a metadata doc under `accounts/{account_id}/plan_runs/{run_id}/artifacts/{artifact_id}`, and records an audit entry.
 6. **Downstream prompt injection (A-PRD-03):** When the orchestrator dispatches a task whose `depends_on` is non-empty, the prompt builder lists upstream artifacts — text under 64 KB inlined, everything else as filename + 1-hour signed URL.
-7. **Frontend list (A-PRD-05):** `/workflows` loads the Automations tab. `GET /api/v1/automations/{account_id}` with filters (goal, campaign, tags, status, created_by, is_active) returns paginated results. `is_system=true` templates are filtered out of the default query.
+7. **Frontend list (A-PRD-05):** `/workflows/automations` (the Automations-tab route shipped by UI-PRD-03) renders the data-wired list. `GET /api/v1/automations/{account_id}` with filters (goal, campaign, tags, status, created_by, is_active) returns paginated results. `is_system=true` templates are filtered out of the default query.
 8. **Frontend details (A-PRD-06):** `/workflows/automations/{plan_id}` renders the DAG via React Flow, a schedule editor modal, the Test Run button + progress, and a right-panel Outputs tab listing artifacts from past runs. System automations render read-only (HITL Mark Complete / Revision Requested still work on human tasks so reviewers can act on halted runs).
 
 ### 2.3 API Contracts
@@ -108,6 +108,7 @@ Schema source of truth: `api/src/kene_api/models/plan_run_models.py` + `task_art
 | Component | Dependency | Reference |
 |-----------|------------|-----------|
 | **Project Tasks (all 6 PRDs)** | **Hard prerequisite — must ship before any A-PRD starts.** Provides `ProjectPlan` / `PlanTask` base models, the `TaskOrchestrator` service this component extends, the `/api/v1/plans/*` CRUD surface, the Calendar frontend's `ActivityDetailPanel` (reused on the Details page), and the Cloud Scheduler infrastructure the sibling `launch-due-automations` tick reuses. | [`../project-tasks/README.md`](../project-tasks/README.md) |
+| **UI — UI-PRD-03 (Workflows Shell + Tabs)** | **Hard prerequisite for A-PRD-05 and A-PRD-06.** Ships the `WorkflowsLayout` tab container, the `/workflows/*` route group (`/workflows/agents`, `/workflows/automations`, `/workflows/automations/:planId`, `/workflows/skills`), the Sidebar "Workflows" nav entry, and empty-state shells for `AutomationsPage` and `AutomationDetailsPage` that A-PRD-05 / A-PRD-06 fill in. The tab contract (path-based active tab, frozen at UI-PRD-03 merge) is consumed by reference, not modified. | [`../ui/projects/UI-PRD-03-workflows-shell.md`](../ui/projects/UI-PRD-03-workflows-shell.md) |
 | **Data Management — DM-PRD-00 (Migration Foundation)** | **Hard prerequisite for A-PRD-01.** Establishes the Shape B convention (`accounts/{account_id}/plan_runs/…`) and ships the two `plan_runs` collection-scope composite indexes (`template_plan_id ASC, started_at DESC` and `template_plan_id ASC, is_test ASC, started_at DESC`) that the runs-list endpoint consumes. | [`../data-management/projects/DM-PRD-00-migration-foundation.md`](../data-management/projects/DM-PRD-00-migration-foundation.md) |
 | **Data Management — DM-PRD-05 (Deletion Sweep Rewrite)** | **Hard prerequisite for A-PRD-01.** Rewrites the enumerated account-deletion sweep in `routers/accounts.py:968-997` as `firestore.recursive_delete(accounts/{account_id})` so the new `plan_runs` subcollection and its nested `artifacts/` subcollection (A-PRD-03) are automatically covered on account deletion. | [`../data-management/projects/DM-PRD-05-deletion-sweep-rewrite.md`](../data-management/projects/DM-PRD-05-deletion-sweep-rewrite.md) |
 | Notifications (existing) | `create_notification` + `Task Ready` category. A-PRD-04 adds an `is_test=true` field to the notification payload; no new enum value needed. | `api/src/kene_api/services/notification_service_v2.py` |
@@ -154,8 +155,8 @@ A-PRD-01: Data Model & API ──┬──> A-PRD-02: Recurring Scheduler ──
 | 02 | [Recurring Scheduler & Run Engine](./projects/A-PRD-02-recurring-scheduler.md) | Backend / Infra | A-PRD-01, Project Tasks PR-PRDs 04 + 06 | 03, 05, 06 | 3 days. Also ships the public `POST /v1/schedules/preview` and `GET /v1/automations/{account_id}/schedules/upcoming` endpoints consumed by the Calendar page. |
 | 03 | [Task Artifact System](./projects/A-PRD-03-task-artifact-system.md) | Backend + Agent | A-PRD-01, Project Tasks PR-PRDs 02 + 04 | 02, 05, 06 | 3–4 days |
 | 04 | [Test / Dry-Run Mode](./projects/A-PRD-04-test-dry-run-mode.md) | Backend | A-PRD-01, A-PRD-03, Project Tasks PR-PRD-04 | 05, 06 | 2 days |
-| 05 | [Automations List Page](./projects/A-PRD-05-automations-list-page.md) | Frontend | A-PRD-01, Project Tasks PR-PRD-03 | 02, 03, 06 | 2 days |
-| 06 | [Automation Details Page](./projects/A-PRD-06-automation-details-page.md) | Frontend | A-PRD-01, Project Tasks PR-PRD-03 (soft: A-PRDs 03 + 04) | 02, 03, 05 | 4–5 days |
+| 05 | [Automations List Page](./projects/A-PRD-05-automations-list-page.md) | Frontend | A-PRD-01, Project Tasks PR-PRD-03, UI-PRD-03 | 02, 03, 06 | 2 days |
+| 06 | [Automation Details Page](./projects/A-PRD-06-automation-details-page.md) | Frontend | A-PRD-01, Project Tasks PR-PRD-03, UI-PRD-03 (soft: A-PRDs 03 + 04, DP-PRD-03) | 02, 03, 05 | 4–5 days |
 | 07 | [Integration Testing & Polish](./projects/A-PRD-07-integration-testing-and-polish.md) | QA + first-finished team | A-PRDs 01–06 | — | 1–2 days |
 
 ### 5.3 Cross-PRD coordination points
@@ -168,7 +169,7 @@ Three touchpoints do not fit cleanly inside one PRD and need an owning team to c
 
 ### 5.4 Recommended workflow
 
-1. **Prerequisite sprint(s):** Data Management DM-PRD-00 (ships the `plan_runs` indexes) and DM-PRD-05 (makes `recursive_delete` cover the new subcollections) merge; Project Tasks PR-PRDs 01–06 ship (including the `is_system` and `inputs`-adjacent adds folded in for Knowledge Graph). No automations work starts before A-PRD-01's prerequisites are merged.
+1. **Prerequisite sprint(s):** Data Management DM-PRD-00 (ships the `plan_runs` indexes) and DM-PRD-05 (makes `recursive_delete` cover the new subcollections) merge; Project Tasks PR-PRDs 01–06 ship (including the `is_system` and `inputs`-adjacent adds folded in for Knowledge Graph); UI-PRD-03 (Workflows shell) ships in Release 1, ahead of the frontend A-PRDs. No automations work starts before A-PRD-01's prerequisites are merged; A-PRD-05 and A-PRD-06 additionally require UI-PRD-03's `WorkflowsLayout` + `AutomationsPage` / `AutomationDetailsPage` shells to be in place.
 2. **Sprint 1 (foundation):** Backend ships A-PRD-01. All other teams stub against the published Pydantic schema and TypeScript types.
 3. **Sprints 2–3 (parallel):** A-PRDs 02, 03, 05, 06 run in parallel. A-PRD-04 starts mid-sprint once A-PRD-03 lands (it needs artifacts to be the point of inspecting test runs).
 4. **Sprint 4 (close-out):** A-PRD-07 runs end-to-end tests, closes out edge-case suites (DST, overlap, downtime backfill, artifact lifecycle), and appends a verification report to this README.
@@ -194,6 +195,8 @@ Three touchpoints do not fit cleanly inside one PRD and need an owning team to c
 - `is_test=true` runs save real artifacts, hit real agents, incur real costs — "test" framing is about validating outputs, not about sandboxing side effects. Document this prominently in any UX copy.
 - `template_version` is snapshotted into the `PlanRun` at trigger time; edits to the template mid-run do not affect the in-flight run.
 - No backfill replay: on server-downtime recovery, each automation fires **once** for "now" and schedules forward from there; missed slots are not replayed.
+- **No PlanRun retention in v1.** Run docs persist for the lifetime of the account; account deletion is the only cleanup path (covered by DM-PRD-05's `recursive_delete`). High-frequency automations will accumulate runs over time. A retention sweep is tracked as future work — see A-PRD-01 §9.
+- `extension_id` and `goal_id` are persisted as opaque strings with no current consumer. Future PRDs (extensions registry, goals service) will define the contract. v1 round-trips them verbatim — they do not influence orchestration, dispatch, or list-endpoint filtering.
 
 ### Firestore layout (Shape B)
 
@@ -216,7 +219,8 @@ Defined in Project Tasks; enforced across this component by A-PRD-01 (recurrence
 
 ### Frontend
 - Terminology mapping to Figma: **"Workflow" → Automation** (the Workflows page holds Automations as one tab).
-- URL structure: `/workflows?tab=automations&campaign=Spring` for list state; `/workflows/automations/{plan_id}?run={run_id}&task={task_id}` for Details deep-links.
+- Tab container + routes are owned by [UI-PRD-03](../ui/projects/UI-PRD-03-workflows-shell.md). A-PRD-05 / A-PRD-06 wire data into the existing `AutomationsPage` and `AutomationDetailsPage` shells; they do not own the `/workflows` route group, the `WorkflowsLayout` tab container, or the Sidebar nav entry.
+- URL structure: `/workflows/automations?campaign=Spring` for list state (path-based active tab per UI-PRD-03's contract — not query-param tabs); `/workflows/automations/{plan_id}?run={run_id}&task={task_id}` for Details deep-links.
 - Client-side `is_system` filter defaults to `false` on every list query (defense in depth; server enforces too).
 
 ### Testing
