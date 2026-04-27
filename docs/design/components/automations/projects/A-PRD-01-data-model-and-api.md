@@ -179,7 +179,7 @@ This PRD owns the **4 `project_plans` collection-scope indexes** for the list pa
 collection: accounts/*/project_plans   (queryScope: COLLECTION)  — owned by this PRD
   fields: [save_as_automation ASC, is_system ASC, is_active ASC, updated_at DESC]
   fields: [save_as_automation ASC, is_system ASC, status ASC, updated_at DESC]
-  fields: [save_as_automation ASC, is_system ASC, campaign ASC, updated_at DESC]
+  fields: [save_as_automation ASC, is_system ASC, campaign_id ASC, updated_at DESC]
   fields: [save_as_automation ASC, is_system ASC, created_by ASC, updated_at DESC]
 ```
 
@@ -193,13 +193,15 @@ collection: accounts/*/plan_runs   (queryScope: COLLECTION)  — owned by DM-PRD
 
 Cross-account reads (e.g., the scheduler's due-task query under PR-PRD-06) use collection-group indexes on `project_plans` — also owned by DM-PRD-00, not duplicated here.
 
+The `campaign_id` index field name is the post-rename name owned by [PR-PRD-08](../../project-tasks/projects/PR-PRD-08-campaign-management.md). PR-PRD-08 supports a one-release alias (`campaign` → `campaign_id`) for backwards compatibility on the input/output shape; this PRD's index uses the post-rename name. Sequencing: PR-PRD-08 lands the rename + alias + backfill before A-PRD-01's index is queried in production.
+
 Every automation list query includes `is_system` as a leading equality filter (default `false`), so the composite indexes above lead with `save_as_automation, is_system`. Tags filter uses `array_contains_any` (no composite index needed beyond the base filters).
 
 ## 6. API contract
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET` | `/api/v1/automations/{account_id}` | List automations. Query params: `goal` (substring), `campaign[]`, `tags[]`, `status[]`, `created_by[]`, `is_active`, `is_system` (default `false`), `cursor`, `page_size` |
+| `GET` | `/api/v1/automations/{account_id}` | List automations. Query params: `goal` (substring), `campaign_id[]`, `tags[]`, `status[]`, `created_by[]`, `is_active`, `is_system` (default `false`), `cursor`, `page_size` |
 | `GET` | `/api/v1/automations/{account_id}/{plan_id}` | Fetch one automation enriched with `last_run_at`, `next_run_at`, `last_run.status` |
 | `PATCH` | `/api/v1/automations/{account_id}/{plan_id}/recurrence` | Body: `{recurrence_cron, recurrence_timezone, is_active}` — updates schedule config. A-PRD-2 will re-compute `next_run_at` on the next tick. |
 | `GET` | `/api/v1/automations/{account_id}/{plan_id}/runs` | List runs for an automation. Query params: `is_test`, `status[]`, `cursor`, `page_size` |
@@ -211,7 +213,7 @@ Endpoints reuse the existing access-control dependency (`check_strategy_access`-
 
 1. Setting `save_as_automation=true` on a `ProjectPlan` succeeds; `GET /api/v1/automations/{account_id}` returns it
 2. Setting `recurrence_cron="0 9 * * MON"` and `recurrence_timezone="America/Los_Angeles"` is accepted; invalid cron or invalid timezone returns `422`
-3. List endpoint with `campaign=["Spring"]&status=["active"]` returns only matching automations; pagination cursor walks the full result set without duplicates or skips
+3. List endpoint with `campaign_id=["cc-spring-2026"]&status=["active"]` returns only matching automations; pagination cursor walks the full result set without duplicates or skips
 4. Patching `recurrence_cron` updates the field and clears `next_run_at` (so A-PRD-2's next tick will re-compute it)
 5. A `PlanRun` doc can be created (manually for tests; A-PRD-2 owns the production path) and is returned by the runs-list endpoint
 5a. The `inputs` field on `PlanRun` round-trips through create + fetch without coercion (stored as a nested map in Firestore, returned as a JSON object)

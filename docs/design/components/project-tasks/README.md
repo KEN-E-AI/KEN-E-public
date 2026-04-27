@@ -8,7 +8,7 @@
 
 The Project Tasks component is KEN-E's project-planning subsystem. It lets a user ask the agent to produce a structured project plan (tasks, dependencies, acceptance criteria, assignees, launch times) for a marketing initiative, then persist, display, edit, and execute that plan outside the agent session. Plans are the bridge between a conversational request ("plan an Instagram ad campaign") and concrete, scheduled, agent-or-human-executable work on a calendar.
 
-The component spans the full stack — a FastAPI CRUD surface with Firestore persistence (PRD-1), a planning specialist agent with ADK tools (PRD-2), a React calendar page with task detail and project edit UIs (PRD-3), an event-driven `TaskOrchestrator` that advances a DAG as tasks complete or get revised (PRD-4), and a Cloud-Scheduler-driven time-based trigger that fires tasks at `due_date + launch_time_utc` (PRD-6) — all verified end-to-end in PRD-5. It is the foundation consumed by the Automations component (`docs/design/components/automations/`) and by the Knowledge Graph session-end automation (`docs/design/components/knowledge-graph/`).
+The component spans the full stack — a FastAPI CRUD surface with Firestore persistence (PRD-1), a planning specialist agent with ADK tools (PRD-2; multi-category instruction update PRD-9), a React calendar page with activity detail and project edit UIs (PRD-3), an event-driven `TaskOrchestrator` that advances a DAG as tasks complete or get revised (PRD-4), and a Cloud-Scheduler-driven time-based trigger that fires tasks at `due_date + launch_time_utc` (PRD-6); the multi-category activity model (categories, sparse fields, orphan-task lifecycle, batch / group-edit endpoints) lives in PRD-7 and the first-class Campaign entity in PRD-8 — all verified end-to-end in PRD-5. It is the foundation consumed by the Automations component (`docs/design/components/automations/`) and by the Knowledge Graph session-end automation (`docs/design/components/knowledge-graph/`).
 
 A developer reading only this section should understand: this component owns `ProjectPlan` / `PlanTask` data, the `/api/v1/plans/*` API, the `/calendar` page, the `project_planning` specialist agent, and the two triggering mechanisms (event-driven + time-based) that advance an active plan.
 
@@ -22,8 +22,8 @@ A developer reading only this section should understand: this component owns `Pr
 | `api/src/kene_api/routers/project_plans.py` | CRUD + history endpoints under `/api/v1/plans/*` |
 | `api/src/kene_api/routers/internal/scheduler.py` | Internal scheduler endpoint `launch-due-tasks` (PRD-6) |
 | `api/src/kene_api/services/task_orchestrator.py` | `TaskOrchestrator` service (PRD-4) — event-driven DAG advancement, dispatch, revision loop |
-| Firestore `agents/project_planning` config doc | Read by `agent_factory.build_hierarchy()` (AH-PRD-02). Defines model, instruction, temperature, tools, callbacks. The `LlmAgent` and `dispatch_to_project_planning()` are assembled at deploy time from this doc — no hand-written agent file or dispatch handler. |
-| `app/adk/agents/project_planning_tools.py` | Python tool functions referenced by the config doc: `save_project_plan`, `update_task_status`, `get_project_plan` |
+| Firestore `agent_configs/project_planning` config doc | Read by `agent_factory.build_hierarchy()` (AH-PRD-02). Defines model, instruction, temperature, tools, callbacks. The `LlmAgent` and `dispatch_to_project_planning()` are assembled at deploy time from this doc — no hand-written agent file or dispatch handler. PRD-9 updates the instruction + tool roster for the multi-category model. |
+| `app/adk/agents/project_planning_tools.py` | Python tool functions referenced by the config doc: `save_project_plan`, `update_task_status`, `get_project_plan` (PRD-2); `resolve_or_create_campaign` (PRD-9, post PR-PRD-08) |
 | `frontend/src/pages/CalendarPage.tsx` | Calendar view + list view toggle at route `/calendar` |
 | `frontend/src/components/calendar/` | `ActivityDetailPanel`, `ProjectEditDrawer`, filters, deep-link helpers |
 | `frontend/src/contexts/ActivitiesContext.tsx` | Plan/task state context for the calendar page |
@@ -72,13 +72,13 @@ Schema source of truth: `api/src/kene_api/models/project_plan_models.py` (Pydant
 
 | Abstraction | Path | Purpose |
 |-------------|------|---------|
-| `ProjectPlan` / `PlanTask` | `api/src/kene_api/models/project_plan_models.py` | Core Pydantic models; DAG + `launch_time_utc` validators live here. PR-PRD-07 extends `PlanTask` with `category`, `channel`, `task_type`, `owner_email`, `unscheduled`, task-level recurrence, and per-category sparse fields for promotion / holiday. PR-PRD-08 renames `ProjectPlan.campaign` → `campaign_id`. A-PRD-1 adds `type: freeform \| dashboard`, `extension_id`, `goal_id`. |
+| `ProjectPlan` / `PlanTask` | `api/src/kene_api/models/project_plan_models.py` | Core Pydantic models; DAG + `launch_time_utc` validators live here. `TaskStatus` ships eight values from v1 (`Draft \| Awaiting Approval \| Approved \| Rejected \| Revision Requested \| Complete \| Failed \| Blocked`); the orchestrator (PRD-4) writes the terminal `Failed` and `Blocked` values. PR-PRD-07 extends `PlanTask` with `category`, `channel`, `task_type`, `owner_email`, `unscheduled`, task-level recurrence, and per-category sparse fields for promotion / holiday. PR-PRD-08 renames `ProjectPlan.campaign` → `campaign_id`. A-PRD-1 adds `type: freeform \| dashboard`, `extension_id`, `goal_id`. DP-PRD-03 extends `assignee_type` with `data_pipeline` and adds `pipeline_spec`. |
 | `Campaign` | `api/src/kene_api/models/campaign_models.py` (PR-PRD-08) | First-class entity with `objective` enum; seeded with four per-objective generic fallbacks at account creation |
 | Orphan task | `accounts/{account_id}/orphan_tasks/{task_id}` (PR-PRD-07) | `PlanTask` not attached to any plan; user-scoped; can be attached to an existing or new plan atomically |
 | `is_system` flag | Same file | Marks platform-owned templates. Defined here; cross-component enforcement table in [`../data-management/README.md` §7.6](../data-management/README.md#76-is_system-system-plan-convention). |
 | `TaskOrchestrator` | `api/src/kene_api/services/task_orchestrator.py` | Single convergence point for task-state changes; exposes `on_task_status_change`, `on_task_due`, `activate_plan` |
 | `AgentEngineClient` (reused) | `api/src/kene_api/routers/chat.py` (258–378) | Used by orchestrator to dispatch agent tasks |
-| `agent_factory.build_hierarchy()` | `app/adk/agents/agent_factory/` | AH-PRD-02. Assembles the full agent hierarchy at deploy time from Firestore `agents/*` and `mcp_servers/*` docs, auto-generating `dispatch_to_project_planning()` and wiring the four standard callbacks (incl. `before_agent_callback` → `ToolRegistry.search`). |
+| `agent_factory.build_hierarchy()` | `app/adk/agents/agent_factory/` | AH-PRD-02. Assembles the full agent hierarchy at deploy time from Firestore `agent_configs/*` and `mcp_servers/*` docs, auto-generating `dispatch_to_project_planning()` and wiring the standard Weave tracing callbacks. |
 | `project_planning_tools` | `app/adk/agents/project_planning_tools.py` | Python tool functions referenced by the agent config doc: `save_project_plan`, `update_task_status`, `get_project_plan` |
 | `ActivitiesContext` | `frontend/src/contexts/ActivitiesContext.tsx` | Frontend plan/task state provider |
 | `CalendarPage` | `frontend/src/pages/CalendarPage.tsx` | Top-level calendar/list view with filters and deep-link support |
@@ -116,42 +116,54 @@ Schema source of truth: `api/src/kene_api/models/project_plan_models.py` (Pydant
 
 ## 5. Project Index
 
-The component's work is split across **8 independently shippable project PRDs** under [`projects/`](./projects/). Split rationale: enable parallel execution by multiple dev teams and shrink the surface area each team holds in context. PRD-6 was added when review of `project-planning-implementation-plan.md` surfaced that nothing in the plan actually fires a task at its scheduled `due_date + launch_time_utc`. PRDs 7 and 8 were added when the Figma-designed Calendar page surfaced multi-category activities, orphan-task lifecycle, and a first-class Campaign entity not covered by the original 6 PRDs.
+The component's work is split across **9 independently shippable project PRDs** under [`projects/`](./projects/). Split rationale: enable parallel execution by multiple dev teams and shrink the surface area each team holds in context. PRD-6 was added when review of `project-planning-implementation-plan.md` surfaced that nothing in the plan actually fires a task at its scheduled `due_date + launch_time_utc`. PRDs 7 and 8 were added when the Figma-designed Calendar page surfaced multi-category activities, orphan-task lifecycle, and a first-class Campaign entity not covered by the original 6 PRDs. PRD-9 was added so that the planning specialist's instruction + tool roster catches up with the multi-category and Campaign contracts after PRDs 7 and 8 ship — without it, every plan the agent produces collapses to `category="task"` and never assigns a campaign.
 
 ### Dependency graph
 
 ```
 DM-PRD-05 (Deletion Sweep Rewrite, data-management) ──> PR-PRD-01: Data Model & API  ──┬──> PR-PRD-02: Planning Agent & Tools ─┐
-                                                          (BLOCKING — ships first)     ├──> PR-PRD-03: Calendar Page Frontend ─┤
-                                                                                       ├──> PR-PRD-04: Event-Driven Orchestrator┤──> PR-PRD-05: Integration Testing
-                                                                                       ├──> PR-PRD-06: Time-Based Scheduler ────┤    (closes out)
-                                                                                       ├──> PR-PRD-08: Campaign Management ─────┤
-                                                                                       └──> PR-PRD-07: Calendar Activities ─────┘
-                                                                                               ▲         ▲             ▲
-            DM-PRD-00 (Migration Foundation, data-management) ──────────────────────────────────┘         │             │
-            DM-PRD-07 (Approval Workflow & Audit, data-management) ─────────────────────────────────────────┴─────────────┘
-                                                                                               (gate + audit consumed by 7, 8)
+                                                          (BLOCKING — ships first)     ├──> PR-PRD-04: Event-Driven Orchestrator┤
+                                                                                       ├──> PR-PRD-06: Time-Based Scheduler ────┤
+                                                                                       ├──> PR-PRD-08: Campaign Management ─────┤──> PR-PRD-05: Integration Testing
+                                                                                       └──> PR-PRD-07: Calendar Activities ─────┤    (closes out)
+                                                                                                ▲                ▲              │
+                                                                                                │                │              │
+                                                                       PR-PRD-08 ────────────────┘                │              │
+                                                                       DM-PRD-07 (approval+audit) ────────────────┘              │
+                                                                                                                                 │
+                                                                       PR-PRD-07 ──> PR-PRD-03: Calendar Page Frontend ──────────┤
+                                                                       PR-PRD-02 + PR-PRD-07 + PR-PRD-08 ──> PR-PRD-09: Planning Agent Multi-Category Update ─┘
+
+DM-PRD-00 (Migration Foundation) ──> PR-PRD-06 (collection-group index for the scheduler)
 ```
+
+Edge summary:
+- PR-PRD-01 unblocks 02 / 04 / 06 / 07 / 08.
+- PR-PRD-07 is gated by PR-PRD-08 (campaigns) + DM-PRD-07 (approval gate + audit schema), and gates PR-PRD-03 (the calendar UI consumes the multi-category contract).
+- PR-PRD-09 is gated by PR-PRD-02 + PR-PRD-07 + PR-PRD-08 (it updates the planning specialist's instruction to use the multi-category model and the Campaign entity).
+- PR-PRD-05 runs last, after PR-PRDs 1–4 + 6–8 merge. PR-PRD-09 may land in parallel with PR-PRD-05 close-out.
 
 ### Projects
 
 | # | Project PRD | Owner team | Blocked by | Parallel with | Status |
 |---|-------------|------------|------------|---------------|--------|
 | 1 | [Data Model & API](./projects/PR-PRD-01-data-model-and-api.md) | Backend (foundation) | DM-PRD-05 | — | Scheduled |
-| 2 | [Planning Agent & Tools](./projects/PR-PRD-02-planning-agent-and-tools.md) | Agent / ML | PR-PRD-01 | 3, 4, 6 | Scheduled |
-| 3 | [Calendar Page Frontend](./projects/PR-PRD-03-calendar-page-frontend.md) | Frontend | PR-PRD-01, PR-PRD-07 | 2, 4, 6 | Scheduled |
-| 4 | [Event-Driven Orchestrator](./projects/PR-PRD-04-event-driven-orchestrator.md) | Backend | PR-PRD-01 | 2, 3, 6 | Scheduled |
-| 5 | [Integration Testing & Polish](./projects/PR-PRD-05-integration-testing-and-polish.md) | QA + first-finished team | PR-PRDs 1–4, 6, 7, 8 | — | Scheduled |
-| 6 | [Time-Based Scheduler](./projects/PR-PRD-06-time-based-scheduler.md) | Backend / Infra | PR-PRD-01, DM-PRD-00 | 2, 3, 4 | Scheduled |
-| 7 | [Calendar Activities (Multi-Category Model)](./projects/PR-PRD-07-calendar-activities.md) | Backend | PR-PRD-01, PR-PRD-08, DM-PRD-07 | 2, 4, 6 (after deps met) | Scheduled |
-| 8 | [Campaign Management](./projects/PR-PRD-08-campaign-management.md) | Backend | PR-PRD-01, DM-PRD-05 | 2, 3, 4, 6 | Scheduled |
+| 2 | [Planning Agent & Tools](./projects/PR-PRD-02-planning-agent-and-tools.md) | Agent / ML | PR-PRD-01, AH-PRD-02 | 4, 6, 8 | Scheduled |
+| 3 | [Calendar Page Frontend](./projects/PR-PRD-03-calendar-page-frontend.md) | Frontend | PR-PRD-01, PR-PRD-07 | 9 (after deps met) | Scheduled |
+| 4 | [Event-Driven Orchestrator](./projects/PR-PRD-04-event-driven-orchestrator.md) | Backend | PR-PRD-01 | 2, 6, 8 | Scheduled |
+| 5 | [Integration Testing & Polish](./projects/PR-PRD-05-integration-testing-and-polish.md) | QA + first-finished team | PR-PRDs 1–4, 6, 7, 8 | 9 | Scheduled |
+| 6 | [Time-Based Scheduler](./projects/PR-PRD-06-time-based-scheduler.md) | Backend / Infra | PR-PRD-01, DM-PRD-00 | 2, 4, 8 | Scheduled |
+| 7 | [Calendar Activities (Multi-Category Model)](./projects/PR-PRD-07-calendar-activities.md) | Backend | PR-PRD-01, PR-PRD-08, DM-PRD-07 | 4, 6 (after deps met) | Scheduled |
+| 8 | [Campaign Management](./projects/PR-PRD-08-campaign-management.md) | Backend | PR-PRD-01, DM-PRD-05 | 2, 4, 6 | Scheduled |
+| 9 | [Planning Agent Multi-Category Update](./projects/PR-PRD-09-planning-agent-multi-category-update.md) | Agent / ML | PR-PRD-02, PR-PRD-07, PR-PRD-08 | 3, 5 | Scheduled |
 
 ### Recommended workflow
 
 1. **Data-management phase** (see [`../data-management/README.md`](../data-management/README.md) §5.3): DM-PRD-00 → DM-PRD-01/02/03/04 in parallel → DM-PRD-05 → DM-PRD-07. Expected ≈ 8–12 working days with 3–4 teams.
-2. **Once DM-PRD-05 merges:** Backend team ships PR-PRD-01 and PR-PRD-08 in parallel (PR-PRD-08 only depends on PR-PRD-01's `campaign` field rename, which can be sequenced late in PR-PRD-01 or accepted as a follow-up). Other teams stay engaged by reviewing data contracts and stubbing against the published Pydantic schemas. DM-PRD-00 should already be merged; if not, PR-PRD-06 stays parked until it is.
-3. **Once PR-PRD-01 and PR-PRD-08 and DM-PRD-07 merge:** kick off PR-PRD-07 (Calendar Activities) alongside PR-PRDs 2, 4, and 6 in parallel. PR-PRD-03 (Calendar Frontend) starts after PR-PRD-07 since it consumes the multi-category contract.
-4. **Closing sprint:** PR-PRD-05 closes out with end-to-end testing once PR-PRDs 1–4 + 6–8 are merged.
+2. **Once DM-PRD-05 merges:** Backend team ships PR-PRD-01 first (the field rename from `campaign` → `campaign_id` happens in lockstep with PR-PRD-08, but the rest of PR-PRD-01 ships as soon as DM-PRD-05 is merged). PR-PRD-08 can start in parallel once PR-PRD-01's data contract is published. Other teams stay engaged by reviewing data contracts and stubbing against the published Pydantic schemas. DM-PRD-00 should already be merged; if not, PR-PRD-06 stays parked until it is.
+3. **Once PR-PRD-01 + PR-PRD-08 + DM-PRD-07 merge:** kick off PR-PRD-07 (Calendar Activities) alongside PR-PRDs 2, 4, and 6 in parallel. PR-PRD-03 (Calendar Frontend) starts after PR-PRD-07 since it consumes the multi-category contract.
+4. **Once PR-PRD-02 + PR-PRD-07 + PR-PRD-08 merge:** kick off PR-PRD-09 (Planning Agent Multi-Category Update) — Agent / ML team only. Light-weight (instruction edit + one tool function + golden-path evals); can run alongside PR-PRD-03 and PR-PRD-05.
+5. **Closing sprint:** PR-PRD-05 closes out with end-to-end testing once PR-PRDs 1–4 + 6–8 are merged. PR-PRD-09 can land before, during, or shortly after PR-PRD-05; failure does not block PR-PRD-05's ship since the agent's pre-PRD-9 instruction continues to produce valid (collapsed-to-`task`) plans.
 
 ## 6. Global Document References
 

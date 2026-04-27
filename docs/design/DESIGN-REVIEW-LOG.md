@@ -1158,4 +1158,57 @@ Sprint 6 Phase 2 (stability validation stories 1.1.1-3, 1.14.5, 1.1.2-3, 1.1.5-4
 
 ---
 
+## Review 29: Project-Tasks PRDs — Cross-Component Alignment Pass
+
+**Date:** 2026-04-27
+**Branch:** `docs/align-project-tasks-prds`
+**Scope:** Pre-Linear-issue review of the eight project-tasks PRDs (PR-PRD-01 through PR-PRD-08), the project-tasks README, the System Architecture's project-tasks coverage, and cross-component dependencies (A-PRD-01, DM-PRD-07, DB-PRD-01, DP-PRD-03, KG-PRD-04, AH-PRD-02). Goal: surface contradictions, gaps, and stale references before the work hits Linear and gets dispatched to autonomous dev teams.
+
+### What changed
+
+**(A) Duplicate ownership of `ProjectPlan.type`.** A-PRD-01 §4 and PR-PRD-07 §4 both claimed to add `type: Literal["freeform", "dashboard"]`. Removed the field from PR-PRD-07's data contract (§4 reframed as "consumed fields, not added here"); dropped AC #11 + the `type` enum unit test. A-PRD-01 retains sole ownership.
+
+**(B) `Failed` and `Blocked` task statuses missing from PR-PRD-01.** PR-PRD-04's §5 algorithm referenced `Failed` (revision-cap, dispatch-failure) and `Blocked` (transitively-downstream of Rejected) as if shipped, but PR-PRD-01's enum only had six values. Added both to PR-PRD-01's `TaskStatus` from v1, with a §4 "TaskStatus semantics" subsection clarifying that PRD-01 ships the enum values; PRD-04 enforces the transition policy. PR-PRD-04's §9 risk row cleaned up to drop the "coordinate with PRD-1 to add" note.
+
+**(C) `campaign` vs `campaign_id` rename in A-PRD-01.** A-PRD-01's composite index field and list-endpoint query param still used the legacy `campaign` name. Updated both to `campaign_id` and added a sequencing note: PR-PRD-08 lands the rename + alias + backfill before A-PRD-01's index is queried in production.
+
+**(D) Firestore config-doc path inconsistency `agents/...` vs `agent_configs/...`.** AH-PRD-02 and PR-PRD-02 use `agent_configs/{config_id}` (canonical). The project-tasks README §2.1 + §2.4 and System Architecture §8.2 line 404 still said `agents/project_planning` / `agents/*`. Fixed all three.
+
+**(E) DM-PRD-07 ↔ PR-PRD-08 dependency mismatch.** DM-PRD-07's "Blocks" line listed PR-PRD-08, but PR-PRD-08's own dependencies, PROJECT-PLANNER, and the README workflow all assumed PR-PRD-08 ships in parallel with PR-PRD-01 (before DM-PRD-07). Resolved by removing PR-PRD-08 from DM-PRD-07's "Blocks"; PR-PRD-08 retrofits its `write_audit` calls after DM-PRD-07 ships, mirroring PR-PRD-01's interim approach.
+
+**(F + G) System Architecture §8.2 stale.** Said "six PRDs (PR-PRD-01 through PR-PRD-06)" — out of date once PRDs 07/08 landed. Updated to nine (PRDs 01–09) and added a paragraph block covering multi-category activities (categories + sparse fields + recurrence + owner_email + unscheduled), the Campaign entity (`accounts/{account_id}/campaigns/...` + four-objective enum + per-account generic-fallback seeding), and orphan-task lifecycle.
+
+**(H) `assignee_type="data_pipeline"` extension not acknowledged in PR-PRD-01 / PR-PRD-04.** Added forward-coordination notes in both PRDs noting DP-PRD-03 lands the third `assignee_type` value and the orchestrator's third dispatch branch as additive patches.
+
+**(I) Planning specialist's instruction never updated for the multi-category model.** Added new project **PR-PRD-09 — Planning Agent Multi-Category Update** (Agent / ML team, 1–2 days, blocked by PR-PRD-02 + PR-PRD-07 + PR-PRD-08). Scope: instruction update on `agent_configs/project_planning`; new `resolve_or_create_campaign` tool function; eight golden-path evals exercising every category + recurrence + campaign-resolution path. Without this PRD, every plan the agent emits collapses to `category="task"` and never assigns a campaign — undercutting the value of PRDs 7 and 8.
+
+**(J) PR-PRD-03 header + scope stale.** Header listed only PRD-1 as a blocker; data contract used pre-PRD-7 `PlanTask`; scope omitted the Unscheduled Tasks panel, Batch Activity Wizard, Group Edit drawer, and inline campaign-create flow. Refreshed: header now includes PR-PRD-07 as a hard prerequisite; §1 Context names the multi-category contract; §2 Scope adds the orphan panel + batch wizard + group edit + campaign picker + recurrence rendering; §4 Data contract publishes the full multi-category TypeScript shape; §5 Implementation outline adds the new components + services; §6 API contract enumerates every consumed endpoint (plans, orphan tasks, campaigns, schedules/preview); §7 Acceptance criteria expanded from 10 to 16; §8 Test plan updated with new component tests.
+
+### Cross-cutting decisions taken
+
+| Decision | Rationale | Consequence |
+|---|---|---|
+| `Failed` and `Blocked` ship in PR-PRD-01's enum from v1 (not as a PR-PRD-04 follow-up) | Consumers (PR-PRD-04, DP-PRD-03) already depend on the values; making PR-PRD-01 the source of truth removes the cross-PRD coordination note and avoids a schema migration mid-release. | PR-PRD-01's tests gain one assertion; PR-PRD-04 publishes the transition policy that uses them. |
+| Drop PR-PRD-08 from DM-PRD-07's `Blocks` list rather than adding DM-PRD-07 to PR-PRD-08's `Blocked by` | DM-PRD-07 itself is blocked by PR-PRD-01. Adding DM-PRD-07 to PR-PRD-08's chain would push PR-PRD-08 (and the campaign rename PR-PRD-07 needs) past DM-PRD-07's ship — extending the critical path with no functional benefit, since PR-PRD-08's audit writes can be retrofitted later. | PR-PRD-08 ships its own raw audit writes (mirroring PR-PRD-01's interim pattern) and retrofits to `write_audit` once DM-PRD-07 ships. |
+| Add PR-PRD-09 as a separate ninth project (not extend PR-PRD-02 or PR-PRD-07's scope) | PR-PRD-02's owner is Agent/ML; PR-PRD-07's is Backend. Splitting ownership across the agent-instruction update would muddy responsibility. PR-PRD-09 is small (1–2 days) and consistent with how PRDs 06 / 07 / 08 were added. | Component PRD count goes from 8 → 9; sequencing places PR-PRD-09 alongside PR-PRD-05 close-out so the closing sprint isn't extended. |
+
+### Documents updated
+
+- `docs/design/components/project-tasks/README.md` — §1 Overview, §2.1 Key Directories (path fix), §2.4 Key Abstractions (path fix + Failed/Blocked + DP-PRD-03 note), §5 Project Index (count 8→9, dependency-graph rewrite, projects table, recommended workflow rewrite)
+- `docs/design/components/project-tasks/projects/PR-PRD-01-data-model-and-api.md` — §4 TaskStatus expanded to eight values + new "TaskStatus semantics" + "Forward-coordination" subsections; §8 unit-test list extended
+- `docs/design/components/project-tasks/projects/PR-PRD-03-calendar-page-frontend.md` — header (PR-PRD-07 added as blocker), §1 Context, §2 Scope, §3 Dependencies, §4 Data contract (full multi-category TypeScript shape), §5 Implementation outline, §6 API contract, §7 ACs (10→16), §8 Test plan
+- `docs/design/components/project-tasks/projects/PR-PRD-04-event-driven-orchestrator.md` — §3 Dependencies (DP-PRD-03 forward-coord), §9 risk row cleaned up
+- `docs/design/components/project-tasks/projects/PR-PRD-07-calendar-activities.md` — §4 ProjectPlan-fields-added section reframed (consumes A-PRD-01's `type`); AC #11 dropped; §8 unit test for `type` removed
+- `docs/design/components/project-tasks/projects/PR-PRD-09-planning-agent-multi-category-update.md` — **new file**
+- `docs/design/components/automations/projects/A-PRD-01-data-model-and-api.md` — §5 composite index `campaign` → `campaign_id`; §6 query param rename; §7 AC-3 rewrite; sequencing note added
+- `docs/design/components/data-management/projects/DM-PRD-07-approval-workflow-and-audit.md` — header `Blocks` line + §2 scope bullet + §3 PR-PRD-08 dependency reframed as "later consumer"
+- `docs/KEN-E-System-Architecture.md` — §8.2 closing pointer (six → nine PRDs), `agents/project_planning` → `agent_configs/project_planning`, new paragraph block for multi-category activities + Campaigns + orphan tasks
+- `docs/design/components/PROJECT-PLANNER.md` — PR-PRD-02 row description (path fix), new PR-PRD-09 row
+
+### Follow-ups (filed)
+
+- Apply the same pre-Linear alignment pass to the other component PRD sets before issues are created (Automations, Knowledge Graph, Data Pipeline, Performance, SAR-E). The pattern surfaced here — duplicate field ownership across components, stale enum-coordination notes, mismatched `Blocks` / `Blocked by` edges, planner-doc count drift — likely repeats elsewhere.
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, and documents updated. Decision rationale lives in the Review itself — this log is the canonical record going forward.*
