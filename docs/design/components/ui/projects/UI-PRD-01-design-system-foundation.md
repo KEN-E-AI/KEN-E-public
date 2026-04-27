@@ -10,7 +10,7 @@
 
 ## 1. Context
 
-The Figma design ([KEN-E UI V2 — Soft Maximalism](https://www.figma.com/make/fhkgWZyTHdKtvDNRoQrcMT/KEN-E-UI-V2---Soft-Maximalism)) introduces a new token system (`theme.css` + `ThemeProvider`), ambient `BackgroundEffects`, two shell layouts (`LayoutC` for authenticated pages, `LayoutSettings` for settings), and a redesigned shared chrome (sidebar, top-nav, account switcher, notification bell, profile menu). Every subsequent UI project plugs into this foundation. Landing it first unblocks UI-PRD-02 through UI-PRD-07 and ensures backend PRDs that own frontend work (AH-PRD-02, PR-PRD-03, A-PRD-05/06, SK-PRD-03, KG-PRD-*) build against the new design, not the old one.
+The Figma design ([KEN-E UI V2 — Soft Maximalism](https://www.figma.com/make/fhkgWZyTHdKtvDNRoQrcMT/KEN-E-UI-V2---Soft-Maximalism)) introduces a new token system (`theme.css` + `ThemeProvider`), ambient `BackgroundEffects`, two shell layouts (`LayoutC` for authenticated pages, `LayoutSettings` for settings), and a redesigned shared chrome (sidebar, top-nav, account switcher, notification bell, profile menu). Every subsequent UI project plugs into this foundation. Landing it first unblocks UI-PRD-02 through UI-PRD-06 and UI-PRD-08 (UI-PRD-07 is retired — see component README) and ensures sibling-component frontend work (CH-PRD-02, PE-PRD-01, AH-PRD-02, PR-PRD-03, A-PRD-05/06, SK-PRD-03, KG-PRD-*) builds against the new design, not the old one.
 
 **Scope boundary:** this PRD owns the tokens, shell layouts, and global chrome. Page-level content is owned by later UI-PRDs.
 

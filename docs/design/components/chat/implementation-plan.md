@@ -243,9 +243,9 @@ Chat owns the `/chat` route and mounts inside UI-PRD-01's `LayoutC`. The top-nav
 
 Chat registers two ADK callbacks on the root runner: `before_agent_callback` (stamps `last_agent_started_at`) and `after_agent_callback` (flushes the per-turn accumulator, stamps `last_agent_stopped_at`). Per-event updates live in the completion endpoint's `async for event in runner.run_async(...)` loop, feeding a `SessionTurnAccumulator` that calls `.add_event(event)` per event. At end-of-turn, one Firestore `update` is issued. The completion endpoint's `finally` block ensures cancellation / exception still flushes the accumulator — no stuck state. The Agent Factory (AH-PRD-02) is the idiomatic registration site; if AH-PRD-02 hasn't shipped, CH-PRD-01 registers against the current hardcoded root path with a TODO.
 
-### 5.3 UI-PRD-02 (coordination — scope adjustment required)
+### 5.3 UI-PRD-02 (coordination — scope adjustment complete)
 
-UI-PRD-02 as registered in PROJECT-PLANNER today includes "new `/chat` page with `ChatInterface`, `ThinkingBlock`, wired `SessionsSidebar`." Chat's CH-PRD-02 delivers the same surface end-to-end with full feature parity. Before CH-PRD-02 starts, UI-PRD-02 must be scope-adjusted: its description becomes "Redesign Authentication / AcceptInvitation / OrganizationSettings / AccountSettings / UserSettings onto the new shell." The `/chat` page, `ChatInterface`, `ThinkingBlock`, and `SessionsSidebar` are removed from UI-PRD-02 and absorbed into CH-PRD-02. Coordination step: the PROJECT-PLANNER edit and a UI-PRD-02 README update; happens alongside CH-PRD-01 in Sprint 1.
+UI-PRD-02's scope has been adjusted in `PROJECT-PLANNER.md`, `docs/design/components/ui/README.md`, and `docs/design/components/ui/projects/UI-PRD-02-core-shell-pages.md`. The `/chat` page, `ChatInterface`, `ThinkingBlock`, and `SessionsSidebar` are no longer in UI-PRD-02; CH-PRD-02 owns them end-to-end. UI-PRD-02 is now responsible for redesigning Authentication / AcceptInvitation / OrganizationSettings / AccountSettings / UserSettings onto the new shell, deleting legacy `Home.tsx`, and registering `/` as `<Navigate to="/chat" replace />`. Both PRDs land in Release 1 and must coordinate the `App.tsx` route registration (UI-PRD-02 lands the redirect; CH-PRD-02 lands the destination behind `chat_v2_enabled`).
 
 ### 5.4 Billing
 
@@ -406,7 +406,7 @@ Soft peers: BL-PRD-02 (extract_billable_tokens, Billing-owned)
 | Artifact blob exists in GCS but no Firestore index row (raw save_artifact bypass) | CI lint rule + nightly GCS orphan scan; orphans reported to ops. |
 | Token-definition drift between Chat and Billing | Shared `extract_billable_tokens` under Billing ownership + CI parity test. Divergence fails build. |
 | Export endpoint leaks a signed GCS URL | Authorization check (session owner); 24-hour TTL on export URLs is a deliberate UX tradeoff (links usable hours after download); `artifact_links_valid_until` surfaced in front-matter. |
-| UI-PRD-02 scope adjustment conflict | Explicit coordination in §5.3 during Sprint 1. If disagreement, CH-PRD-02 defers start. |
+| `App.tsx` route registration race between UI-PRD-02 and CH-PRD-02 | Both ship in Release 1; coordinate landing order at PR review. UI-PRD-02 lands `/` redirect; CH-PRD-02 lands `/chat` destination behind `chat_v2_enabled`. The flag-gated fallback (CH-PRD-02 §2.1) handles the ordering gap if they merge out of order. |
 | ADK `list_sessions` Issue #3154 returns empty `user_id` | Back-fill reads `user_id` from iteration loop, never trusts `Session.user_id`. ADK-session orphan scan uses same guard. |
 | 30-day window cutoff hides an active session | `updated_at` is rolling on every event; opening/editing bumps it. |
 | Post-compaction context baseline miscomputes | Unit-tested pure function; worst case is transient display oddity (much better than naive reset-to-0). |
@@ -415,7 +415,7 @@ Soft peers: BL-PRD-02 (extract_billable_tokens, Billing-owned)
 
 Decisions that need a product / ops call before or during implementation.
 
-1. **UI-PRD-02 scope adjustment** (§5.3). Is the UI team aligned to narrow UI-PRD-02 to auth / settings redesigns and hand the `/chat` page to CH-PRD-02? Strongly recommended. Confirm before CH-PRD-02 starts.
+1. ~~**UI-PRD-02 scope adjustment** (§5.3).~~ **Resolved** — UI-PRD-02 scope adjustment is complete in `PROJECT-PLANNER.md`, `docs/design/components/ui/README.md`, and `docs/design/components/ui/projects/UI-PRD-02-core-shell-pages.md`. UI-PRD-02 owns the `/` → `/chat` redirect; CH-PRD-02 owns `/chat`.
 2. **Artifact user-upload surface timing.** v1 has no user-upload UI; `created_by_tool=None` is latent. Is there a v2 PRD already scheduled to surface user uploads? → If not, the latent shape stays; if yes, schedule it.
 3. **Export format in v2.** Markdown v1 is settled. JSON / PDF demand should be driven by data.
 4. **`STUCK_THRESHOLD` for `is_agent_running` derivation.** 10 min is the proposal; revisit if users report stuck "working…" indicators.
