@@ -229,5 +229,10 @@ firebase-key.json
 app/adk/agents/logs/*.txt
 .vite/
 
-# Sprint 6 harness run reports
-tests/integration/sprint6_harness/runs/
+# Sprint 6 stability harness — ignore generated JSON reports but keep
+# the driver script + package files checked in.
+tests/integration/stability/runs/*
+!tests/integration/stability/runs/.gitkeep
+!tests/integration/stability/runs/README.md
+!tests/integration/stability/runs/__init__.py
+!tests/integration/stability/runs/run_adk_stability.py

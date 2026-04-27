@@ -42,14 +42,16 @@ want.
 
 ## Story → module mapping
 
-| Story | ACs | Modules used |
-|---|---|---|
-| 1.1.1-3 (ADK stability) | 6.10–6.13 | `diverse_invocation_runner` + `memory_profiler` |
-| 1.14.5 (OTEL stability) | 6.14–6.17 | `diverse_invocation_runner` + `memory_profiler` + `weave_trace_capture` |
-| 1.1.2-3 (trace compliance) | 6.18–6.20 | `diverse_invocation_runner` + `weave_trace_capture` |
-| 1.1.5-4 (session stability) | 6.21–6.24 | `memory_profiler` + `redis_ttl_fixture` + `stream_reconnect_fixture` |
+| Story | ACs | Driver | Modules used |
+|---|---|---|---|
+| 1.1.1-3 (ADK stability) | 6.10–6.13 | `runs/run_adk_stability.py` | `query_corpus` (direct ADK ``Runner``, not HTTP) |
+| 1.14.5 (OTEL stability) | 6.14–6.17 | _TBD_ | `diverse_invocation_runner` + `memory_profiler` + `weave_trace_capture` |
+| 1.1.2-3 (trace compliance) | 6.18–6.20 | _TBD_ | `diverse_invocation_runner` + `weave_trace_capture` |
+| 1.1.5-4 (session stability) | 6.21–6.24 | _TBD_ | `memory_profiler` + `redis_ttl_fixture` + `stream_reconnect_fixture` |
 
 ## Driving a run by hand
+
+### HTTP driver (`diverse_invocation_runner`)
 
 ```bash
 # 1. Start the API locally (port 8000).
@@ -68,6 +70,24 @@ uv run --directory api python -m tests.integration.stability.diverse_invocation_
 
 The runner writes a `RunReport` JSON with per-query latency, errors,
 session ids, token counts, and aggregate p50/p95.
+
+### Direct-ADK driver (`runs/run_adk_stability.py`)
+
+The ADK stability validation drives the agent via
+``InMemorySessionService`` + ``Runner`` instead of HTTP — no auth-token
+mint needed, the same callback chain runs:
+
+```bash
+# Requires only ADC (`gcloud auth application-default login`) for the
+# Vertex Gemini call + Firestore config read.
+PYTHONPATH=.:api/src uv run --directory api python \
+  tests/integration/stability/runs/run_adk_stability.py --invocations 50
+```
+
+Writes `tests/integration/stability/runs/run_adk_stability_<ts>.json`
+with per-invocation outcomes, callback-bus log records, the org-context
+merge sweep, and the config-cache refresh check. Exit code 0 when all
+four checks pass.
 
 ## Notes & known gaps
 
