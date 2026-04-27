@@ -30,11 +30,11 @@ if TYPE_CHECKING:
 class TTLController:
     """Thin wrapper around :class:`RedisService` for harness tests."""
 
-    def __init__(self, service: "RedisService") -> None:
+    def __init__(self, service: RedisService) -> None:
         self._svc = service
 
     @property
-    def service(self) -> "RedisService":
+    def service(self) -> RedisService:
         return self._svc
 
     def is_available(self) -> bool:
