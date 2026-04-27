@@ -3,7 +3,7 @@
 **Status:** Blocked on UI-PRD-01
 **Owner team:** Frontend
 **Blocked by:** UI-PRD-01
-**Parallel with:** UI-PRD-02, UI-PRD-03, UI-PRD-06, UI-PRD-07
+**Parallel with:** UI-PRD-02, UI-PRD-03, UI-PRD-06
 **Estimated effort:** 3–4 days
 
 ---
