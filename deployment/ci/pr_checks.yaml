@@ -80,6 +80,18 @@ steps:
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
 
+  # Validate markdown link integrity using lychee (offline mode — file:// links only).
+  # Scope: docs/**/*.md and root-level *.md per lychee.toml. No network calls.
+  # See docs/design/components/chat/projects/CH-PRD-06-documentation-link-integrity.md (CH-3)
+  # and CLAUDE.md §6 G-4. Fails the build on any broken relative markdown link.
+  - name: "lycheeverse/lychee:latest"
+    id: markdown-link-check
+    entrypoint: lychee
+    args:
+      - "--config"
+      - "lychee.toml"
+      - "."
+
 logsBucket: gs://${PROJECT_ID}-logs-data/build-logs
 options:
   defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET

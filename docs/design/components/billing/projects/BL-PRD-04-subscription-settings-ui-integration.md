@@ -55,7 +55,8 @@ The pricing slider also moves from a hardcoded constant in the prototype to a fe
 |-----------|------------|-----------|
 | **[BL-PRD-02](./BL-PRD-02-token-meter-monthly-enforcement.md)** | `/usage/current`, `/usage/daily`, `/internal/status/{org_id}`. | This component |
 | **[BL-PRD-03](./BL-PRD-03-stripe-checkout-subscription-lifecycle.md)** | `/checkout-session`, `/subscription/change`, `/subscription/cancel`, `/customer-portal-session`. | This component |
-| **Existing frontend** | `LayoutC.tsx` (banner mount point); `ChatInterface.tsx` (disabled state hook); `apiClient.ts` (402 interceptor); shared toast / dialog / form primitives. | `frontend/CLAUDE.md` |
+| **Existing frontend** | `LayoutC.tsx` (banner mount point); `apiClient.ts` (402 interceptor); shared toast / dialog / form primitives. | `frontend/CLAUDE.md` |
+| **[CH-PRD-02](../../chat/projects/CH-PRD-02-chat-page-shell-and-sidebar.md)** | **Hard upstream prerequisite** — creates `frontend/src/components/chat/ChatInterface.tsx`, which BL-PRD-04 modifies to add the chat-input disabled state when `useOrgStatus().status != "active"`. CH-PRD-02 ships in R1; BL-PRD-04 (in R3) consumes the file already on `main`. | [`../../chat/README.md`](../../chat/README.md) |
 | **Pricing-tier JSON** | `shared/billing/pricing-tiers.v1.json` consumed by both backend (via `/pricing-tiers`) and frontend (slider). The prototype's hardcoded constants are removed in favor of the API. | This component |
 | **Frontend BFF** (existing) | Proxy endpoint `/bff/billing/status/{org_id}` that wraps the OIDC-authed internal endpoint. (If no BFF pattern exists, a thin Cloud Run-side route handler does the proxy.) | TBD per architecture |
 | **Sales-handoff endpoint** | `POST /api/v1/billing/{org_id}/sales-handoff` — contract defined here, implementation in BL-PRD-06. UI ships against the contract. | BL-PRD-06 |
@@ -130,7 +131,7 @@ type SalesHandoffRequest = {
 | Create | `frontend/src/app/components/SalesHandoffForm.tsx` |
 | Create | `frontend/src/app/components/CancelSubscriptionDialog.tsx` |
 | Modify | `frontend/src/app/layouts/LayoutC.tsx` — mount `OrganizationStatusBanner` above page content |
-| Modify | `frontend/src/app/components/ChatInterface.tsx` — disabled state when `useOrgStatus().status != "active"` |
+| Modify | `frontend/src/components/chat/ChatInterface.tsx` (created by CH-PRD-02) — disabled state when `useOrgStatus().status != "active"` |
 | Modify | `frontend/src/app/lib/apiClient.ts` — 402 response interceptor |
 | Create | `frontend/src/app/lib/billingApi.ts` — typed wrappers for every billing endpoint |
 | Delete (after migration) | hardcoded `PRICING_BANDS` / `PRICING_STOPS` constants in figma-export prototype |

@@ -307,7 +307,7 @@ If service account files are not available, the script falls back to Application
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License.
 
 ## 🆘 Troubleshooting
 
@@ -365,7 +365,7 @@ npm run build
 
 ### Getting Help
 
-- Check the [Issues](../../issues) page for known problems
+- Check the [Issues](https://github.com/KEN-E-AI/KEN-E/issues) page for known problems
 - Review the component documentation in `src/components/ui/`
 - Ensure all dependencies are up to date with `npm update`
 

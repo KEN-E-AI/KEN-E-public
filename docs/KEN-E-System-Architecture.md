@@ -238,38 +238,25 @@ The target architecture generalises credentials to support all integrated platfo
 | Tool registry index | YAML config loaded at deploy time (`app/adk/tools/registry/config/tools.yaml`) |
 | Conversation history | ADK event log (managed by EventsCompactionConfig, not stored in state) |
 
-#### 3.6.4 [PLANNED] Token Usage Visibility
+#### 3.6.4 Token Usage Visibility — superseded by CH-PRD-04
 
-Token usage data exists at every layer (Vertex AI `usage_metadata`, Weave traces, `ConversationSummarizer` budget tracking) but does not currently cross the API boundary to the frontend. The `ChatResponse` model returns content and session metadata only — no token counts.
+**Superseded by the Chat component.** The originally proposed approach (extend `ChatResponse` with a `usage` field) is replaced by Chat's per-turn accumulator + composite endpoint design:
 
-The planned feature surfaces token data to the UI:
+- **Per-turn aggregation** — CH-PRD-01's `SessionTurnAccumulator` extracts tokens from every event via `extract_billable_tokens(event)` (Billing-owned helper at `app/adk/token_accounting.py`) and writes input / output / reasoning aggregates + `current_context_tokens` + `context_window_max` to the Firestore `chat_sessions` side-table at end-of-turn.
+- **Composite read** — CH-PRD-04's `GET /api/v1/chat/conversations/{id}/status-detail` returns metadata + server-derived `context_usage_percent`, `total_tokens`, and `activity_summary` in one round-trip.
+- **UI surface** — CH-PRD-04's `TokenUsagePanel.tsx` renders a context-window bar (Healthy / Moderate / Near-limit badge) and a 3-card token grid (Input / Output / Total). **No cost line** — subscription-level pricing is Billing's concern; Chat shows token counts only.
 
-| Metric | Source | Display |
-|--------|--------|---------|
-| Tokens sent with most recent query | `usage_metadata` from Agent Engine response | Percentage of total available context |
-| Session tokens used | `ConversationSummarizer.token_budget_usage` | Running total |
-| Compaction proximity | `ConversationSummarizer.should_compact()` threshold (80% of 40K) | Warning indicator when approaching limit |
+See [Chat component README](design/components/chat/README.md) §2.3 for the canonical contract and [Review 25 in DESIGN-REVIEW-LOG](design/DESIGN-REVIEW-LOG.md#review-25-backfill--decision-19-token-usage-visibility-in-ui-proposed) for historical context.
 
-Implementation requires changes at three layers: API (extract `usage_metadata`, extend `ChatResponse`), response model (add `usage` field), and frontend (token display components). See [Review 25 in DESIGN-REVIEW-LOG](design/DESIGN-REVIEW-LOG.md#review-25-backfill--decision-19-token-usage-visibility-in-ui-proposed).
+#### 3.6.5 Unified Usage Tracking for Billing — superseded by BL-PRD-02
 
-#### 3.6.5 [PLANNED] Unified Usage Tracking for Billing
+**Superseded by the Billing component.** [BL-PRD-02](design/components/billing/projects/BL-PRD-02-token-meter-monthly-enforcement.md) owns the org-level token meter end-to-end:
 
-Monthly billing requires aggregating token usage to the organisation level. The current codebase has two separate tracking systems that cannot support this:
+- **Org-scoped meter** — Billing maintains `usage_windows` per `(org_id, billing_period)` rolled up from per-account `accounts/{account_id}/usage_daily/*` increments. Organization is the billing unit; sub-accounts contribute to the org-level total.
+- **Single token-extraction helper** — `extract_billable_tokens(event)` at `app/adk/token_accounting.py` (Billing-owned per BL-PRD-02; Chat consumes via `SessionTurnAccumulator`). Token definition: input + output + reasoning, cached-input excluded. CI parity test enforces both consumers produce identical output.
+- **Enforcement path** — every LLM-consuming agent invocation wraps `billing.check_status` (pre-call) + `billing.meter_increment` (post-call); on `BillingInactiveError`, the API maps to HTTP 402.
 
-| Collection | Tracks | Has `organization_id` | Has `session_id` | Has token counts |
-|------------|--------|----------------------|-------------------|-----------------|
-| `tool_usage_events` | Tool calls (name, duration, user) | ✅ | ❌ | ❌ |
-| `usage_records` | LLM calls (tokens, model, cost) | ❌ | ❌ | ✅ (partial) |
-
-**Billing hierarchy:** Organisation → Accounts → Sessions → Usage records.
-
-**Gaps to close:**
-
-1. Add `organization_id` and `session_id` to `usage_records` at write time
-2. Ensure LLM token counts from Vertex AI `usage_metadata` are reliably written to `usage_records` (currently they only reach W&B traces)
-3. Build a billing aggregation query or scheduled Cloud Function that sums tokens by organisation and billing period
-
-The two collections will remain separate (tool observability vs. billing) but share `organization_id` and `session_id` as common keys for cross-referencing. See [Review 26 in DESIGN-REVIEW-LOG](design/DESIGN-REVIEW-LOG.md#review-26-backfill--decision-20-unified-usage-tracking-for-billing-superseded-in-part) (partly superseded by the Billing component's BL-PRD-02).
+Tool observability and billing remain separate concerns — `tool_usage_events` (tool-call observability owned by the Agentic Harness) is no longer part of the billing pipeline. See [Billing component README](design/components/billing/README.md) §3 and [Review 26 in DESIGN-REVIEW-LOG](design/DESIGN-REVIEW-LOG.md#review-26-backfill--decision-20-unified-usage-tracking-for-billing-superseded-in-part) for historical context.
 
 ---
 
@@ -541,7 +528,7 @@ The harness will support A/B testing of agent configurations:
 
 KEN-E uses five persistent stores with a standardized layout across all components:
 
-- **Firestore (Shape B)** — per-account configuration, session state, project plans, plan runs, task artifacts metadata, skills, observations metadata, and audit logs. Every account-scoped collection lives at `accounts/{account_id}/{resource}/…` per the Shape B convention owned by the **Data Management component**. Account-scoped subcollections include: `project_plans` / `plan_runs` (Project Tasks + Automations); `members` (DM-PRD-07 — explicit account-level role grants only, overlay handles the common case); `platform_connections/{connection_id}/tokens/*` (Integrations, KMS-encrypted — see Cloud KMS below); `data_pipeline_jobs` + `data_pipeline_runs` (Data Pipeline overlay catalog + execution records); `kpi_time_series` / `baselines` / `irf_coefficients` / `targets` / `funnel_mapping` / `channel_coverage` / `thresholds` / `effectiveness_kpis` / `sar_e_config` (SAR-E); five audit subcollections (`project_plan_audit`, `integrations_audit`, `sar_e_audit`, `data_pipeline_audit`, `account_member_audit`). Org-scoped subcollections include `members` (DM-PRD-07 — every org member has a row), `billing_audit` (Billing — org-scoped audits), and `account_member_audit` (DM-PRD-07 — org-level member-CRUD events). User-scoped subcollections (Shape B-compatible, predate the migration) include `notification_status`, `preferences`, and `chat_categories` (CH-PRD-03). Global (non-account-scoped) collections include `platform_definitions/*` (Integrations OAuth metadata), `data_pipeline_jobs/*` (platform-global job catalog), `feature_flags/*` + `feature_flag_audit/*` (Feature Flags), and the `agent_configs/*` + `mcp_servers/*` factory inputs. Account deletion is covered by `firestore.recursive_delete(accounts/{account_id})` so new subcollections automatically inherit clean-deletion semantics; user deletion is covered by `delete_user_data(user_id)` (DM-PRD-05) which sweeps cross-account/org `members` rows, fires Integrations' `on_user_removed` hook per affected account, and recursively deletes the user doc + registered user-scoped subcollections.
+- **Firestore (Shape B)** — per-account configuration, session state, project plans, plan runs, task artifacts metadata, skills, observations metadata, chat-session metadata, and audit logs. Every account-scoped collection lives at `accounts/{account_id}/{resource}/…` per the Shape B convention owned by the **Data Management component**. Account-scoped subcollections include: `project_plans` / `plan_runs` (Project Tasks + Automations); `members` (DM-PRD-07 — explicit account-level role grants only, overlay handles the common case); `platform_connections/{connection_id}/tokens/*` (Integrations, KMS-encrypted — see Cloud KMS below); `data_pipeline_jobs` + `data_pipeline_runs` (Data Pipeline overlay catalog + execution records); `kpi_time_series` / `baselines` / `irf_coefficients` / `targets` / `funnel_mapping` / `channel_coverage` / `thresholds` / `effectiveness_kpis` / `sar_e_config` (SAR-E); `chat_sessions` + nested `chat_sessions/{session_id}/artifacts/*` (Chat — CH-PRD-01 side-table mirroring ADK sessions, plus CH-PRD-05 artifact metadata index); five audit subcollections (`project_plan_audit`, `integrations_audit`, `sar_e_audit`, `data_pipeline_audit`, `account_member_audit`). Org-scoped subcollections include `members` (DM-PRD-07 — every org member has a row), `billing_audit` (Billing — org-scoped audits), and `account_member_audit` (DM-PRD-07 — org-level member-CRUD events). User-scoped subcollections (Shape B-compatible, predate the migration) include `notification_status`, `preferences`, and `chat_categories` (CH-PRD-03). Global (non-account-scoped) collections include `platform_definitions/*` (Integrations OAuth metadata), `data_pipeline_jobs/*` (platform-global job catalog), `feature_flags/*` + `feature_flag_audit/*` (Feature Flags), and the `agent_configs/*` + `mcp_servers/*` factory inputs. Account deletion is covered by `firestore.recursive_delete(accounts/{account_id})` so new subcollections automatically inherit clean-deletion semantics; user deletion is covered by `delete_user_data(user_id)` (DM-PRD-05) which sweeps cross-account/org `members` rows, fires Integrations' `on_user_removed` hook per affected account, and recursively deletes the user doc + registered user-scoped subcollections.
 - **Neo4j (AuraDB)** — the account knowledge graph. Shared `:KGNode` label on all 29 node types enables one account-scoped lookup index and one 768-dim cosine vector index (`kb_vector_index`) across the whole KB. Migration runner + `:Migration` ledger bootstrap constraints and indexes on API startup. See [Knowledge Graph component](design/components/knowledge-graph/README.md).
 - **Cloud KMS** — env-specific symmetric key that wraps OAuth token payloads before they're written to Firestore. The key never leaves GCP; a stolen Firestore export yields no usable credentials. Owned by the **Integrations component** (IN-PRD-01). See §11.2.
 - **Redis (Memorystore)** — session cache, short-TTL credential cache (for the Integrations internal endpoint), rate-limiter counters, and Data Pipeline per-account rate-limit windows.

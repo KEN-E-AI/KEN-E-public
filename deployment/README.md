@@ -54,7 +54,7 @@ The application leverages [**Terraform**](http://terraform.io) to define and pro
 
 3. **Configure Terraform Variables**
 
-   - Edit [`deployment/terraform/vars/env.tfvars`](../terraform/vars/env.tfvars) with your Google Cloud settings.
+   - Edit [`deployment/terraform/vars/env.tfvars`](terraform/vars/env.tfvars) with your Google Cloud settings.
 
    | Variable               | Description                                                     | Required |
    | ---------------------- | --------------------------------------------------------------- | :------: |
@@ -102,7 +102,7 @@ gcloud config set project <your-dev-project-id>
 gcloud services enable serviceusage.googleapis.com cloudresourcemanager.googleapis.com
 ```
 
-After you edited the relative [`env.tfvars` file](../terraform/dev/vars/env.tfvars), follow the following instructions:
+After you edited the relative [`env.tfvars` file](terraform/vars/env.tfvars), follow the following instructions:
 
 ```bash
 cd deployment/terraform/dev

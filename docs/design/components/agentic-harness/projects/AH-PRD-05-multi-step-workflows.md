@@ -271,5 +271,5 @@ No new HTTP endpoints. Two additive surface changes:
 - Harness design: `docs/KEN-E-System-Architecture.md` §2.1 (ADK agent types), §8.1 (in-session multi-step workflows — pointer updated to this PRD)
 - Upstream: [AH-PRD-01](./AH-PRD-01-review-loop-framework.md), [AH-PRD-02](./AH-PRD-02-agent-factory.md), [AH-PRD-03](./AH-PRD-03-google-analytics-specialist.md), [AH-PRD-04](./AH-PRD-04-data-visualization.md)
 - Trace spec: `docs/trace-structure-spec.md` — workflow span hierarchy (no new span types)
-- Decision rationale: [Review 6 in DESIGN-REVIEW-LOG](../../../design/DESIGN-REVIEW-LOG.md#review-6-task-delegation-with-review-loops) (review-loop pattern; multi-step is a composition of it)
+- Decision rationale: [Review 6 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-6-task-delegation-with-review-loops) (review-loop pattern; multi-step is a composition of it)
 - CLAUDE.md rules in scope: PY-1, PY-2, PY-3, PY-7; C-2, C-4, C-7; T-1, T-3, T-5, T-6

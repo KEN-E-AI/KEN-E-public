@@ -184,6 +184,6 @@ No new HTTP endpoints. The user-facing Skills API is unchanged. Loader behavior 
 - Parent plan: [`../skills-implementation-plan.md`](../skills-implementation-plan.md) (legacy — superseded by `README.md` and `projects/SK-PRD-*`)
 - Sister sprints: [`SK-PRD-01`](./SK-PRD-01-skills-backend.md), [`SK-PRD-02`](./SK-PRD-02-agent-integration.md), [`SK-PRD-03`](./SK-PRD-03-authoring-ui.md), [`SK-PRD-04`](./SK-PRD-04-agent-builder-controls.md)
 - Upstream project: [AH-PRD-02](../../agentic-harness/projects/AH-PRD-02-agent-factory.md) (Agent Factory)
-- System Architecture: [§6 Skills Architecture](../../../KEN-E-System-Architecture.md#6-skills-architecture-planned)
-- Tracing: [`trace-structure-spec.md`](../../../trace-structure-spec.md)
+- System Architecture: [§6 Skills Architecture](../../../../KEN-E-System-Architecture.md#6-skills-architecture-planned)
+- Tracing: [`trace-structure-spec.md`](../../../../trace-structure-spec.md)
 - CLAUDE.md rules in scope: D-1, D-2; PY-1, PY-2; T-1, T-3, T-5
