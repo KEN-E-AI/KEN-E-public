@@ -15,9 +15,9 @@
 
 Today every specialist agent is constructed by a hand-written per-file factory (`create_google_analytics_agent()`, `create_ken_e_agent()`, etc.), and `deploy_ken_e.py` imports those singletons. Adding a new specialist requires writing and wiring new code. This project transforms the agent system into a **config-driven, multi-tenant architecture** — `agent_factory.build_hierarchy()` reads Firestore `agent_configs/{config_id}` + `mcp_servers/{server_id}` documents and assembles the full specialist hierarchy, including tool wiring, OAuth header providers, review-loop-aware dispatch functions, and per-account configuration overlays.
 
-The project spans three phases. **Phase 1** introduces the config-driven constructor and the `account_id`-aware overlay loader that reads `accounts/{account_id}/agent_configs/{config_id}` first and shallow-merges overrides onto the global config. **Phase 2** adds MCP toolset creation from `mcp_servers` documents (with `specialist_categories` sharing one server across multiple specialists), a `_make_header_provider(auth_type)` factory for OAuth credential injection, `ToolRegistry.search()` wired into each specialist's `before_agent_callback` for per-turn tool filtering, and the dispatch-function generator that calls `build_review_pipeline()` from AH-PRD-01 when `acceptance_criteria` is provided. **Phase 3** adds three Firestore flags to the global config schema (`available_to_copy`, `automatically_available`, `visible_in_frontend`), the per-account agent-config CRUD API, and the Workflows > Agents frontend (listing, detail/customization, AgentCreatePage for custom agents). After this project, adding a specialist is a Firestore config change rather than a code change; every account can customize its agents without affecting other accounts.
+The project spans three phases. **Phase 1** introduces the config-driven constructor and the `account_id`-aware overlay loader that reads `accounts/{account_id}/agent_configs/{config_id}` first and shallow-merges overrides onto the global config. **Phase 2** adds MCP toolset creation from `mcp_servers` documents (with `specialist_categories` sharing one server across multiple specialists), a `_make_header_provider(auth_type)` factory for OAuth credential injection, build-time tool-roster assembly (≤30 tools per specialist resolved from `mcp_servers` references + function tools, with the ToolRegistry consulted as a metadata catalog — see §2.5), and the dispatch-function generator that calls `build_review_pipeline()` from AH-PRD-01 when `acceptance_criteria` is provided. **Phase 3** adds three Firestore flags to the global config schema (`available_to_copy`, `automatically_available`, `visible_in_frontend`), the per-account agent-config CRUD API, and the Workflows > Agents frontend (listing, detail/customization, AgentCreatePage for custom agents). After this project, adding a specialist is a Firestore config change rather than a code change; every account can customize its agents without affecting other accounts.
 
-The Google Analytics Specialist in [AH-PRD-03](./AH-PRD-03-google-analytics-specialist.md) is the first specialist assembled entirely through this factory — it is the validation checkpoint for the config-driven narrow-specialist pattern before it is replicated for Google Ads, Meta Ads, HubSpot, and future domain specialists.
+The Google Analytics Specialist in [AH-PRD-03](./AH-PRD-03-google-analytics-specialist.md) is the first specialist assembled entirely through this factory — it is the validation checkpoint for the config-driven narrow-specialist pattern before it is replicated for the planned R5 specialists (Google Ads, Meta Ads, Mailchimp — see [README §2.6](../README.md#26-specialist-roadmap)) and any future domain specialists.
 
 ## 2. Scope
 
@@ -28,7 +28,7 @@ The Google Analytics Specialist in [AH-PRD-03](./AH-PRD-03-google-analytics-spec
 
 ### In scope — Phase 2 (MCP + dispatch generation)
 - `McpToolset` creation from `mcp_servers` documents; `specialist_categories` grouping; disabled servers excluded
-- `_make_header_provider(auth_type)` closures for `ga_oauth`, `google_ads_oauth`, `hubspot_oauth`, `meta_ads_oauth`; unknown types fail fast at build time
+- `_make_header_provider(auth_type)` closures for `ga_oauth`, `google_ads_oauth`, `meta_ads_oauth`, `mailchimp_oauth`; unknown types fail fast at build time
 - **Curated per-specialist tool rosters (≤30 tools each).** Each specialist receives a fixed list of tools at construction time, capped at 30 — no per-turn `tool_filter`, no `tool_filter_state` session-state key. The ToolRegistry is a **build-time metadata catalog** the factory reads to assemble those rosters; it is **not** a runtime routing index. Root-agent routing is specialist-description-based — see [README §2.5](../README.md#25-tool-assignment--routing-model).
 - `dispatch_to_{specialist_name}()` generator with `@safe_weave_op()` tracing and `acceptance_criteria: str | None = None` plumbing; when provided, wraps specialist in `build_review_pipeline()` from AH-PRD-01; when `None`, preserves single-pass behavior
 - **Root instruction assembly.** The factory injects an "Available specialists" block into the root agent's instruction, sourced from each `agent_configs/{id}.description`. This is what the root LLM reads to choose between `dispatch_to_*()` calls — see [README §2.5 Routing](../README.md#25-tool-assignment--routing-model).
@@ -157,8 +157,8 @@ def _make_header_provider(auth_type: str) -> Callable[[ReadonlyContext], dict[st
     CREDENTIAL_KEYS = {
         "ga_oauth": "ga_credentials",
         "google_ads_oauth": "google_ads_credentials",
-        "hubspot_oauth": "hubspot_credentials",
         "meta_ads_oauth": "meta_ads_credentials",
+        "mailchimp_oauth": "mailchimp_credentials",
     }
     if auth_type not in CREDENTIAL_KEYS:
         raise ValueError(f"Unknown auth_type: {auth_type}")
@@ -252,9 +252,9 @@ Response shape: `MergedAgentConfig` — Pydantic model union of global fields + 
 
 ## 7. Acceptance criteria
 
-1. **Agent factory construction:** Given an `agent_configs/{config_id}` document, the factory creates an `LlmAgent` with matching `model`, `instruction` (wrapped in `InstructionProvider`), `temperature`, `code_execution` config, and all four standard Weave callbacks wired (`before_agent_callback` also includes the `ToolRegistry.search` wrapper from §5).
+1. **Agent factory construction:** Given an `agent_configs/{config_id}` document, the factory creates an `LlmAgent` with matching `model`, `instruction` (wrapped in `InstructionProvider`), `temperature`, `code_execution` config, and the standard Weave tracing callbacks wired. No runtime ToolRegistry callback is attached — the curated tool roster (≤30 tools per §2.5) is resolved at build time and bound directly to the specialist.
 2. **MCP toolset creation:** Given `mcp_servers/*` documents with `specialist_categories` and `enabled=true`, the factory creates `McpToolset` instances with correct `SseConnectionParams` and header providers. Disabled servers produce no toolsets.
-3. **Server sharing:** Given an MCP server with `specialist_categories=["analytics","execution"]`, both the analytics and execution specialists receive an `McpToolset` for that server.
+3. **Server sharing:** Given an MCP server with `specialist_categories=["google_analytics","google_ads"]` (or any pair of planned narrow specialists per [README §2.6](../README.md#26-specialist-roadmap)), both listed specialists receive an `McpToolset` for that server.
 4. **Header provider:** Given `auth_type="ga_oauth"`, the header provider reads `ga_credentials` from session state and returns correct `Authorization` and `X-Tenant-ID` headers. Unknown `auth_type` raises a clear error at build time.
 5. **Tool roster cap:** Every specialist built by the factory has a tool list of ≤30 tools resolved from its `mcp_servers` references at construction. Build fails fast if a specialist exceeds the cap — signals that the specialist's scope is too broad and should be split. No per-turn `tool_filter` is wired.
 6. **Dispatch generation:** Given N specialists built by the factory, N `dispatch_to_{name}()` functions are generated with `@safe_weave_op()` decorators and registered as root-agent tools. Each supports review-loop mode (criteria provided) and single-pass mode (criteria=None). The root agent's instruction is assembled at factory time to include an "Available specialists" section listing each specialist's name + `description` for LLM-based routing.
@@ -271,7 +271,7 @@ Response shape: `MergedAgentConfig` — Pydantic model union of global fields + 
 ## 8. Test plan
 
 ### Unit
-- Factory: agent count matches config, `mcp_servers` grouping, disabled servers excluded, code-execution flag wired, all four callbacks attached, dispatch function count
+- Factory: agent count matches config, `mcp_servers` grouping, disabled servers excluded, code-execution flag wired, standard Weave tracing callbacks attached, dispatch function count
 - Config loader: global-only path, overlay-present path, custom-only path, shallow merge with multi-field overlay, `based_on_version` set correctly, missing global falls back appropriately
 - Header provider: each known `auth_type` reads the correct session-state key and constructs correct headers; unknown `auth_type` raises `ValueError` at build time
 - Dispatch generator: `acceptance_criteria=None` path invokes specialist directly; criteria-provided path builds pipeline via `build_review_pipeline()`
