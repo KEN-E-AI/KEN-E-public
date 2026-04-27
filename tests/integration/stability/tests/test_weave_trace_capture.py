@@ -10,7 +10,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from tests.integration.sprint6_harness.weave_trace_capture import (
+from tests.integration.stability.weave_trace_capture import (
     TraceCapture,
     replay_through_compliance,
 )

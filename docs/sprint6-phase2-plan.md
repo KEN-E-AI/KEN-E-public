@@ -30,7 +30,7 @@ This plan picks up after PR #240 merged Feature 1.1.4 to main. It covers the rem
 
 Branch: `feature/1.1.x-sprint6-harness` off `main`.
 
-Directory: `tests/integration/sprint6_harness/`. Tests: `tests/integration/sprint6_harness/tests/`.
+Directory: `tests/integration/stability/`. Tests: `tests/integration/stability/tests/`.
 
 ### Module 1 — `query_corpus.py` (~30 min)
 
@@ -105,7 +105,7 @@ Run N queries through the chat endpoint, capture metrics, write JSON report.
   - Tokens: from response body (verify shape via `api/src/kene_api/routers/chat.py`).
   - `actual_agent_type`: best-effort tag from response metadata or dispatch tool fired.
   - On error: record `error` string, continue.
-- CLI: `python -m tests.integration.sprint6_harness.diverse_invocation_runner --queries 50 --output run_<ts>.json`.
+- CLI: `python -m tests.integration.stability.diverse_invocation_runner --queries 50 --output run_<ts>.json`.
 - Test: against `httpx_mock`-stubbed API, run 5 queries, assert report has 5 results, p50/p95 computed, JSON file written.
 
 ### `README.md`
@@ -118,12 +118,12 @@ Document end-to-end usage:
   - 1.14.5 → `runner` + `memory_profiler` + `weave_trace_capture`
   - 1.1.2-3 → `runner` + `weave_trace_capture`
   - 1.1.5-4 → `memory_profiler` + `redis_ttl_fixture` + `stream_reconnect_fixture`
-- Run harness self-tests: `cd api && uv run pytest ../tests/integration/sprint6_harness/tests/`.
+- Run harness self-tests: `cd api && uv run pytest ../tests/integration/stability/tests/`.
 - `runs/` directory is gitignored (add to `.gitignore`).
 
 ### Tests
 
-`tests/integration/sprint6_harness/tests/`:
+`tests/integration/stability/tests/`:
 - `test_query_corpus.py` — 4 tests
 - `test_memory_profiler.py` — 3 tests
 - `test_redis_ttl_fixture.py` — 2 tests (skip if Redis unavailable)
@@ -147,7 +147,7 @@ Branch: `feature/1.1.1-3-adk-stability` off `main` (after harness merges).
 Sprint 6 ACs 6.10–6.13. AC-6.10 (≥50 invocations zero failures), 6.11 (config change → tools refresh on next call), 6.12 (callbacks zero errors), 6.13 (10+ org_context merges including missing/empty/large).
 
 Implementation:
-1. New script `tests/integration/sprint6_harness/runs/run_adk_stability.py` (or just a pytest test) that:
+1. New script `tests/integration/stability/runs/run_adk_stability.py` (or just a pytest test) that:
    - Imports harness modules.
    - Runs `diverse_invocation_runner.run_corpus(QUERIES, ...)` against a local API.
    - Asserts `error_count == 0` for ADK-construction failures.

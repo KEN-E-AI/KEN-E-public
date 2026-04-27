@@ -36,6 +36,6 @@ if str(_REPO_ROOT) not in sys.path:
 
 # Re-export the TTL fixture here so test files can use it as a parameter
 # without importing it directly (which trips ruff's F811).
-from tests.integration.sprint6_harness.redis_ttl_fixture import (  # noqa: E402, F401
+from tests.integration.stability.redis_ttl_fixture import (  # noqa: E402, F401
     ttl_controller,
 )

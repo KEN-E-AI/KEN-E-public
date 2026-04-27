@@ -9,7 +9,7 @@ See `docs/sprint6-phase2-plan.md` for the broader Phase 2 plan.
 ## Layout
 
 ```
-tests/integration/sprint6_harness/
+tests/integration/stability/
 ├── query_corpus.py              # 28 prompts spanning 5 categories
 ├── memory_profiler.py           # psutil RSS sampler context manager
 ├── redis_ttl_fixture.py         # TTLController + pytest fixture
@@ -33,7 +33,7 @@ tests/integration/sprint6_harness/
 
 ```bash
 cd api
-uv run pytest ../tests/integration/sprint6_harness/tests/ -v
+uv run pytest ../tests/integration/stability/tests/ -v
 ```
 
 All 19 tests should pass green. Two of them require local Redis — they
@@ -61,9 +61,9 @@ export HARNESS_API_BASE_URL="http://localhost:8000"
 
 # 3. Run a 50-query sweep into the harness's runs/ directory.
 cd /path/to/repo
-uv run --directory api python -m tests.integration.sprint6_harness.diverse_invocation_runner \
+uv run --directory api python -m tests.integration.stability.diverse_invocation_runner \
     --queries 50 \
-    --output tests/integration/sprint6_harness/runs/run_$(date +%s).json
+    --output tests/integration/stability/runs/run_$(date +%s).json
 ```
 
 The runner writes a `RunReport` JSON with per-query latency, errors,
