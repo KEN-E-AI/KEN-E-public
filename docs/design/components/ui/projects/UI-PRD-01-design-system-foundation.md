@@ -116,7 +116,8 @@ N/A — this project consumes no APIs.
 8. `/` renders through `LayoutC` (Home page wrapped), with no visible regression on existing content (content may look unstyled in places where downstream UI-PRDs have not yet migrated a page — that is acceptable).
 9. Dark mode renders correctly across every shell component.
 10. Dev-only `/__dev__/design-system` route renders one of every re-skinned primitive and the full shell at 1280 / 1440 / 1920 widths.
-11. Component tests pass; `npm run typecheck`, `npm run format.fix`, `npm run build`, `npm test` pass.
+
+**Definition of Done (applies to every AC above):** `npm run typecheck`, `npm run format.fix`, `npm run build`, and `npm test` all pass; component tests for any new shell component are colocated and passing.
 
 ## 8. Test plan
 
