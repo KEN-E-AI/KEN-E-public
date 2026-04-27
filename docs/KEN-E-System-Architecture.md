@@ -366,7 +366,7 @@ KEN-E handles work that spans more than one LLM turn or more than one session th
 
 For complex requests that can be decomposed into parallel + sequential steps within a single conversation (e.g., "Increase budgets for Meta Ads campaigns with the most engaged website visitors" → parallel data-gathering across Google Analytics + Meta Ads → synthesizer → user approval → execution step), KEN-E composes review pipelines (AH-PRD-01) into larger workflows using ADK workflow agents.
 
-The **multi-step pattern** — `ParallelAgent` + pipeline-wrapped `LoopAgent`s + synthesizer with `include_contents='none'` — plus the `build_review_pipeline()` / `build_workflow_pipeline()` factory code, three validated ADK pitfalls (ADK 1.26.0), and LLM cost/latency tables all live in [`docs/design/review-loop-implementation-plan.md`](design/review-loop-implementation-plan.md) §3.3 (architecture) and §Phase 4 (13-story delivery plan). The single-step review-loop building block is tracked as [AH-PRD-01](design/components/agentic-harness/projects/AH-PRD-01-review-loop-framework.md); the multi-step composition is deferred to a Release 3 PRD.
+The **multi-step pattern** — `ParallelAgent` + pipeline-wrapped `LoopAgent`s + synthesizer with `include_contents='none'` — plus the `build_review_pipeline()` / `build_workflow_pipeline()` factory code, three validated ADK pitfalls (ADK 1.26.0), and LLM cost/latency tables all live in [`docs/design/review-loop-implementation-plan.md`](design/review-loop-implementation-plan.md) §3.3 (architecture) and §Phase 4 (4-story delivery plan). The single-step review-loop building block is tracked as [AH-PRD-01](design/components/agentic-harness/projects/AH-PRD-01-review-loop-framework.md); the multi-step composition (`build_workflow_pipeline`, `WorkflowStep`, `execute_workflow` root tool, approval-via-conversation-turns continuation) is tracked as [AH-PRD-05](design/components/agentic-harness/projects/AH-PRD-05-multi-step-workflows.md), targeting Release 3.
 
 ### 8.2 Project Plans & Task Orchestration
 
@@ -733,7 +733,7 @@ Data Pipeline consumers already honor per-account + per-connector budgets; trans
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|------------|--------|------------|
-| **Context overflow during complex tasks** | High | High | ADK compaction (interval=5, threshold=50K), hierarchical loading, `tool_filter` |
+| **Context overflow during complex tasks** | High | High | ADK compaction (interval=5, threshold=50K), hierarchical loading, narrow specialist scope, ≤30-tool roster discipline |
 | **MCP server connection failures** | Medium | High | ADK auto-reconnect, health monitoring, retry logic. Gap: no circuit breaker. |
 | **Agent hallucination in strategy outputs** | Medium | High | Require citations, fact-checking tools, human review queue |
 | **ADK version dependency** | Medium | Medium | Pin versions, test upgrades in staging before prod |

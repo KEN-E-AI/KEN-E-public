@@ -106,9 +106,9 @@ class ChatResponse(BaseModel):
 | Key | Shape | Written by | Read by | Lifetime |
 |-----|-------|-----------|---------|----------|
 | `response_artifacts` | `list[Artifact]` | `create_visualization()` tool (append) | API chat endpoint (then cleared) | One turn |
-| `step_N_artifacts` | `list[Artifact]` | Specialist worker inside a review loop (via the same tool, pipeline-prefixed) | Reviewer agent via `{step_N_artifacts?}` template | Pipeline run |
+| `<output_key_prefix>_artifacts` | `list[Artifact]` | Specialist worker inside a review loop (via the same tool, pipeline-prefixed) | Reviewer agent via `{<output_key_prefix>_artifacts?}` template | Pipeline run |
 
-The `step_N_artifacts` naming parallels the existing `step_N_draft` / `step_N_feedback` convention (`review-loop-implementation-plan.md` §3.1), isolating concurrent pipelines.
+The artifacts session-state key is parameterized by the same `output_key_prefix` argument that AH-PRD-01's `build_review_pipeline()` uses for `_draft` and `_feedback` (default `"review"` for single-step, e.g. `step_1` / `step_2` for multi-step). The literal `step_N_artifacts` form that appears in `data-visualization.md` §6 and in `review-loop-implementation-plan.md` §3.1 is the **multi-step instance** of this convention; AH-PRD-04's E2E target (the GA specialist via single-step dispatch) uses whatever prefix the dispatch handler passes in. The reviewer instruction template extension introduced in story 2.4-5 must therefore parameterize the variable name (`{<prefix>_artifacts?}`), not hardcode `step_N`.
 
 ### 4.4 Frontend render-time transforms (informational)
 
