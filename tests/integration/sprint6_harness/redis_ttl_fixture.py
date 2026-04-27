@@ -14,18 +14,27 @@ gracefully if Redis is unavailable.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 import pytest
-from kene_api.redis_client import RedisService, get_redis_service
+
+# ``kene_api.redis_client`` does ``import redis`` at module top, and the
+# CI integration-tests step runs from the repo-root venv which doesn't
+# install the ``redis`` package (only ``api/.venv`` does). Defer the
+# import to fixture-resolution time so module collection succeeds in any
+# venv; tests that need it then ``importorskip`` cleanly.
+if TYPE_CHECKING:
+    from kene_api.redis_client import RedisService
 
 
 class TTLController:
     """Thin wrapper around :class:`RedisService` for harness tests."""
 
-    def __init__(self, service: RedisService) -> None:
+    def __init__(self, service: Any) -> None:
         self._svc = service
 
     @property
-    def service(self) -> RedisService:
+    def service(self) -> Any:
         return self._svc
 
     def is_available(self) -> bool:
@@ -58,7 +67,15 @@ class TTLController:
 
 @pytest.fixture
 def ttl_controller() -> TTLController:
-    """Provide a TTLController; skip the test if dev Redis isn't reachable."""
+    """Provide a TTLController; skip the test if dev Redis isn't reachable.
+
+    Skip-then-import order matters: ``importorskip("redis")`` runs before the
+    ``kene_api.redis_client`` import so we don't blow up on ``ModuleNotFoundError``
+    in venvs that don't ship ``redis`` (notably the CI root venv).
+    """
+    pytest.importorskip("redis", reason="redis package not installed in this venv")
+    from kene_api.redis_client import get_redis_service
+
     service = get_redis_service()
     if not service.is_available():
         pytest.skip("Redis unavailable — cannot run TTL fixture tests")
