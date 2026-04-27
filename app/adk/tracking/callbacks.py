@@ -213,12 +213,19 @@ def weave_before_agent_callback(
         attrs_ctx.__enter__()
         _current_agent_goal_ctx.set(attrs_ctx)
 
+        # ``weave.attributes(...)`` propagates to ``@weave.op()`` child spans
+        # via contextvar, but ``client.create_call(...)`` does not snapshot
+        # that contextvar onto the call it creates — we have to pass
+        # ``attributes=`` explicitly or the parent root span ships without
+        # ``account_id``, ``session_id``, ``agent_id``, ``agent_version``
+        # set, which fails ``validate_trace_compliance``.
         call = client.create_call(
             op="ken_e_agent",
             inputs={
                 "agent": "ken_e",
                 "context_agent_goal": agent_goal,
             },
+            attributes=root_attrs,
             use_stack=True,
         )
         _current_agent_call.set(call)
