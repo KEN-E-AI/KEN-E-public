@@ -258,6 +258,7 @@ No new HTTP endpoints. Two additive surface changes:
 | **Crash recovery / cross-device resumption** | Out of scope for v1 — session-state continuation is sufficient for the chat-conversation use case. Firestore persistence is deferred per `review-loop-implementation-plan.md` §10 Q5; revisit when workflow framework matures. |
 | **Workflow tries to dispatch to a dispatched-only-from-root specialist** | Specialist registry is the same one the factory hands to the root agent; the dispatcher rejects unknown specialist ids. No additional access control needed because the workflow tool is itself a root-agent tool — same trust boundary. |
 | **Artifact ordering** — multiple parallel branches each emit charts; aggregation order should be stable | `execute_workflow` aggregates by step iteration order (sorted by `id` per dependency level), not by completion order. AC #8 + integration test cover this. |
+| **Synthesizer produces bracket-placeholder text** — `include_contents='none'` with a weak instruction can yield literal `[Target Audience]` / `[Spend Total]` placeholders instead of using the template-injected data | Synthesizer instructions must explicitly frame template-injected data as "completed research" (or equivalent) and instruct the model to use the specific names/values from the injected drafts — not produce templates. AC #4 covers the `include_contents='none'` requirement; the instruction-quality requirement is enforced by the integration test asserting the synthesizer output references specific values from `step_1a_draft` / `step_1b_draft`. Validated in the research-team experiment (see §10). |
 
 ### Open questions
 - **Q:** Should the Root Agent be allowed to call `execute_workflow` recursively (a step whose specialist is the root itself)? → No. The dispatcher rejects `specialist == "ken_e"` to prevent infinite recursion. Documented in the root instruction.
@@ -268,6 +269,7 @@ No new HTTP endpoints. Two additive surface changes:
 ## 10. Reference
 
 - Parent plan: [`../../../review-loop-implementation-plan.md`](../../../review-loop-implementation-plan.md) §3.3 (Multi-Step Workflow architecture), §Phase 4 (Stories 4.1–4.4 — the canonical source for this PRD), §8 (validated ADK pitfalls), §10 Q5 (deferred Firestore persistence)
+- Validated experimental basis: `ADK-experiments/docs/review-loop-design-doc-updates.md` (research-team experiment confirming the 2-agent topology + multi-step composition; documents the synthesizer-instruction failure mode added to §9)
 - Harness design: `docs/KEN-E-System-Architecture.md` §2.1 (ADK agent types), §8.1 (in-session multi-step workflows — pointer updated to this PRD)
 - Upstream: [AH-PRD-01](./AH-PRD-01-review-loop-framework.md), [AH-PRD-02](./AH-PRD-02-agent-factory.md), [AH-PRD-03](./AH-PRD-03-google-analytics-specialist.md), [AH-PRD-04](./AH-PRD-04-data-visualization.md)
 - Trace spec: `docs/trace-structure-spec.md` — workflow span hierarchy (no new span types)

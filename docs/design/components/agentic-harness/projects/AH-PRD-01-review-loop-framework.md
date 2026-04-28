@@ -5,7 +5,7 @@
 **Blocked by:** —
 **Parallel with:** DM-PRD-00, DM-PRD-01, DM-PRD-02, DM-PRD-03, DM-PRD-04 (no data-model coupling)
 **Blocks:** AH-PRD-02 (dispatch-function generator imports `build_review_pipeline`)
-**Estimated effort:** 2–3 days (6 stories, originally Sprint 8)
+**Estimated effort:** 2–3 days (9 issues, originally Sprint 8)
 
 ---
 
@@ -55,11 +55,20 @@ This project introduces **no new Firestore or GCS state**. All intermediate stat
 
 Each review pipeline uses a unique `output_key_prefix` (e.g., `news_review`, `ga_review`) to isolate state between concurrent pipelines in the same session.
 
+**Approval-vs-exhaustion signal.** After the pipeline returns, the value of `{prefix}_feedback` distinguishes the two terminal states deterministically:
+
+| `session.state[f"{prefix}_feedback"]` | Meaning |
+|---|---|
+| `""` (empty string) | Loop approved. `exit_loop` produces no text, so its `output_key` write overwrites the prior feedback to empty. |
+| non-empty | `max_iterations` reached. Value is the last reviewer's feedback bullets. |
+
+Dispatch handlers use this signal to relay either the approved draft or the last draft + warning to the caller. ADK does **not** emit any synthetic "max_iterations reached" event; the empty-string check is the canonical detector.
+
 ## 5. Implementation outline
 
 | Action | File |
 |--------|------|
-| Create | `app/adk/agents/utils/review_pipeline.py` — `build_review_pipeline()` + `extract_pipeline_result()` |
+| Create | `app/adk/agents/utils/review_pipeline.py` — `build_review_pipeline()` + `extract_pipeline_result()` (uses the §5.2 detection idiom) |
 | Modify | `app/adk/agents/utils/dispatch_handlers.py` — add `acceptance_criteria` parameter; build pipeline when provided |
 | Modify | `app/adk/agents/ken_e_agent.py` — add `acceptance_criteria` parameter to tool wrappers; extend base instruction with criteria-generation guidance |
 | Modify | `app/adk/agents/utils/supervisor_utils.py` — extract `output_key` values from session state after pipeline runs; backward-compatible fallback |
@@ -74,6 +83,7 @@ def build_review_pipeline(
     acceptance_criteria: str,
     output_key_prefix: str = "review",
     max_iterations: int = 3,
+    reviewer_model: str = "gemini-2.0-flash",
 ) -> LoopAgent:
     """Generator-Critic loop: specialist drafts, reviewer approves or gives feedback."""
 ```
@@ -82,7 +92,26 @@ Structural rules (validated from ADK 1.26.0 experiments — see [Review 6 in DES
 - Sub-agents are **direct children** of `LoopAgent` — no `SequentialAgent` wrapper (`SequentialAgent` swallows the `escalate` signal from `exit_loop`).
 - Reviewer uses `include_contents='none'` so it evaluates only the template-injected draft, not conversation history.
 - Reviewer is `gemini-2.0-flash` (cheapest model; ~200–400 tokens per evaluation).
-- Specialist template includes `{{{prefix}_feedback?}}` with the `?` suffix so the first iteration (no feedback yet) resolves to empty string instead of `KeyError`.
+- Specialist template includes `{{{prefix}_feedback?}}` with the `?` suffix so the first iteration (no feedback yet) resolves to empty string instead of `KeyError`. The specialist's previous draft is carried via default conversation history — explicitly injecting `{{{prefix}_draft?}}` was tested and adds ~74 prompt tokens/iteration with no quality benefit, so it is deliberately omitted.
+- Reviewer instruction must explicitly forbid text on the approval turn — the reviewer invokes `exit_loop` as a tool call with **no narration**. Without this, gemini-2.0-flash occasionally emits `"All criteria are met. Calling exit_loop."` as text without actually invoking the tool, leaving `escalate` unset and causing a wasted iteration. The reviewer instruction template should include: *"If criteria pass, invoke the `exit_loop` tool. Do not write 'calling exit_loop' or any approval text."*
+
+### 5.2 Approval-vs-exhaustion detection in dispatch handlers
+
+Dispatch handlers detect the loop's terminal state by inspecting session state after invocation. This idiom is the contract between `build_review_pipeline()` and every caller:
+
+```python
+state = session.state
+draft = state[f"{prefix}_draft"]
+feedback = state.get(f"{prefix}_feedback", "")
+if feedback == "":
+    # Approved: exit_loop wiped the feedback key on the approval turn
+    return {"result": draft, "approved": True}
+else:
+    # max_iterations reached: feedback contains the last rejection bullets
+    return {"result": draft, "approved": False, "warning": feedback}
+```
+
+**Defensive observability.** If the loop's last reviewer event has approval-sounding text (regex: `approved|all criteria|exit_loop`) but `escalate` was never set, the dispatch wrapper logs a warning span. This catches the rare hallucinated-approval failure mode (see §9 risks) and gives us a real-world rate via Weave.
 
 ## 6. API contract
 
@@ -109,12 +138,14 @@ Mapped 1:1 to the Sprint 8 sprint-level ACs for traceability.
 1. **Pipeline construction:** `build_review_pipeline(specialist, criteria)` returns a `LoopAgent` whose `sub_agents` list contains exactly `[specialist_worker, reviewer]` with no `SequentialAgent` wrapper.
 2. **State isolation:** Two pipelines with different `output_key_prefix` values running in the same session do not collide on `_draft` or `_feedback` keys.
 3. **Termination — approval:** When the reviewer determines all criteria are met, it calls `exit_loop` and the `LoopAgent` exits immediately without running the specialist again. The approved draft is retained in session state.
-4. **Termination — exhaustion:** When `max_iterations` is reached without approval, the `LoopAgent` exits with the last draft and a soft warning. No exception is raised.
+4. **Termination — exhaustion:** When `max_iterations` is reached without approval, the `LoopAgent` exits cleanly — no exception is raised, and ADK does **not** emit a synthetic warning event. The dispatch handler detects exhaustion by checking `session.state[f"{prefix}_feedback"] != ""` (per §5.2) and returns the last draft together with the final feedback text as the warning.
 5. **Reviewer isolation:** The reviewer agent has `include_contents='none'` and uses `gemini-2.0-flash`. It evaluates only the template-injected draft and acceptance criteria — not conversation history.
 6. **Criteria flow:** Acceptance criteria pass from root-agent tool functions through dispatch handlers into `build_review_pipeline()`. When `acceptance_criteria` is `None` or empty, existing single-pass behavior is preserved.
 7. **Unit test coverage:** Unit tests verify pipeline structure, exit-on-approval, exhaustion-on-max-iterations, state isolation, and template correctness — all passing.
 8. **Integration test:** End-to-end test validates the full chain (user message → root-agent criteria generation → dispatch → review iteration → approved result return) against an existing specialist (news or GA). Weave traces show review-loop iterations as sub-spans.
-9. **Tracing:** All dispatch handlers with `acceptance_criteria` produce Weave traces that include review-loop iterations as sub-spans with acceptance criteria in the top-level pipeline span's attributes.
+9. **Tracing:** All dispatch handlers with `acceptance_criteria` produce Weave traces with acceptance criteria, exit reason (`approved` | `max_iterations`), and total iteration count in the top-level pipeline span's attributes. Per-iteration sub-spans are **synthesized by the dispatch wrapper** — ADK's native event stream shares one `invocation_id` across the whole loop with `branch=null`, so the wrapper counts (specialist-final, reviewer-final) event pairs and emits one synthetic child span per pair.
+10. **Approval-vs-exhaustion idiom implemented:** Dispatch handlers implement the §5.2 detection idiom verbatim. Unit test forces both branches (approved → `feedback == ""`; exhausted → `feedback != ""`) and asserts the handler returns the correct shape.
+11. **Hallucinated-approval defensive check:** If the final reviewer event has approval-sounding text without `escalate=True`, the dispatch wrapper logs a warning span. Unit test forces this with a mocked reviewer that emits `"All criteria are met. Calling exit_loop."` as text only.
 
 ## 8. Test plan
 
@@ -125,12 +156,15 @@ Mapped 1:1 to the Sprint 8 sprint-level ACs for traceability.
 - `max_iterations=1` exhaustion → last draft retained; no exception
 - Multiple pipelines with distinct prefixes → no key collisions
 - Template correctness — specialist instruction contains `{{prefix}_feedback?}`; reviewer instruction contains `{{prefix}_draft}` and the full acceptance-criteria string
+- Reviewer instruction-template assertion includes the forbid-narration clause (per §5.1 structural rule)
 
 ### Integration (single-step)
 - Dispatch with `acceptance_criteria=None` → identical to current behavior (regression guard)
 - Dispatch with criteria → pipeline built + invoked; approved draft returned
 - End-to-end: real user message → root generates criteria (verify criteria in tool call) → pipeline runs against `google_analytics_agent_v4` or `company_news_chatbot` → approved draft in response
-- Weave trace verification — review-loop iterations appear as sub-spans; acceptance criteria in span attributes; exit condition (approved vs. max_iterations) captured
+- Weave trace verification — review-loop iterations appear as **synthesized** sub-spans (one per specialist+reviewer event pair); acceptance criteria, exit reason, and iteration count in pipeline-level span attributes
+- Exhaustion idiom — force max-iterations exit with a deadlock criterion; assert handler returns `{approved: False, warning: <last feedback>}` and `feedback` is non-empty in session state
+- Hallucinated-approval defensive check — mock reviewer emits approval-sounding text without invoking `exit_loop`; assert dispatch wrapper logs a warning span and the loop continues normally
 
 ## 9. Risks & open questions
 
@@ -141,10 +175,13 @@ Mapped 1:1 to the Sprint 8 sprint-level ACs for traceability.
 | Latency increase (~3–5s per iteration) | `max_iterations=3` default caps overhead at ~15s. Root agent skips criteria for trivially simple lookups — empty string = single pass. |
 | Token cost increase (~1–3k extra per delegation) | Reviewer on `gemini-2.0-flash` (cheapest). Monitor via Weave; adjust if cost-per-turn climbs. |
 | LLM generates vague criteria | Root instruction includes good-vs-bad examples. Telemetry in AH-PRD-03 will reveal real-world quality; iterate on instruction. |
+| Reviewer hallucinates `exit_loop` as plain text without invoking the tool (observed ~1/8 reviewer turns in pre-implementation testing) | Reviewer instruction explicitly forbids approval narration (§5.1). Dispatch wrapper logs a warning span when approval-sounding text appears without `escalate=True` (§5.2, AC#11). Telemetry will reveal real-world rate. |
+| Reviewer cannot fact-check claims requiring external knowledge (observed approving a fabricated academic citation) | The reviewer is a structural / criteria-checker, not a fact-checker. Acceptance criteria must be phrased to be verifiable from the draft text alone (e.g., "must include a numbered list", not "numbers must be accurate"). Root-instruction examples should reflect this constraint. |
+| Reviewer per-criterion feedback may include false positives | Treat the binary approve/reject signal as reliable; per-criterion bullets are guidance, not ground truth. Document this in dispatch-handler comments so callers don't surface bullets to users as authoritative. |
 
-### Open questions
-- **Q:** Should the reviewer model be configurable per specialist or always `gemini-2.0-flash`? → Default to `gemini-2.0-flash`; revisit only if a specialist shows accuracy gaps.
-- **Q:** Should `build_review_pipeline` accept an optional `reviewer_model` parameter now for forward-compat? → Yes, default `"gemini-2.0-flash"` — costs nothing and avoids a later signature change.
+### Resolved questions
+- **Q:** Should the reviewer model be configurable per specialist or always `gemini-2.0-flash`? → **Resolved:** default `"gemini-2.0-flash"` via the `reviewer_model` parameter (§5.1); revisit only if a specialist shows accuracy gaps.
+- **Q:** Should the specialist instruction explicitly inject `{{{prefix}_feedback?}}` only, or also `{{{prefix}_draft?}}`? → **Resolved (feedback only).** Pre-implementation testing showed that adding `{{{prefix}_draft?}}` costs ~74 prompt tokens/iteration with no quality benefit — the previous draft is already available via default conversation history. Spec stays at feedback-only.
 
 ## 10. Reference
 
