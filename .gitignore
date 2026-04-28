@@ -229,5 +229,5 @@ firebase-key.json
 app/adk/agents/logs/*.txt
 .vite/
 
-# Sprint 6 harness run reports
-tests/integration/sprint6_harness/runs/
+# Stability harness run reports
+tests/integration/stability/runs/
