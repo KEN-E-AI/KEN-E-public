@@ -228,3 +228,6 @@ firebase-key.json
 # Deployment logs (environment-specific)
 app/adk/agents/logs/*.txt
 .vite/
+
+# Stability harness run reports
+tests/integration/stability/runs/

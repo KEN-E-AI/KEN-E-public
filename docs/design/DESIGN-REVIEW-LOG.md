@@ -1154,7 +1154,7 @@ The initial MCP admin implementation resolved `${VAR}` patterns at Pydantic mode
 - Cache serve-stale bound + alert — currently unbounded; a prompt-injection remediation blocked by a Firestore outage could serve the old instruction indefinitely.
 - Semver rapid-update race test — needs integration-test infra.
 
-Sprint 6 Phase 2 (stability validation stories 1.1.1-3, 1.14.5, 1.1.2-3, 1.1.5-4) remains Backlog; those stories share the proposed `tests/integration/sprint6_harness/` infrastructure, not yet built.
+Sprint 6 Phase 2 (stability validation stories 1.1.1-3, 1.14.5, 1.1.2-3, 1.1.5-4) remains Backlog; those stories share the proposed `tests/integration/stability/` infrastructure, not yet built.
 
 ---
 
