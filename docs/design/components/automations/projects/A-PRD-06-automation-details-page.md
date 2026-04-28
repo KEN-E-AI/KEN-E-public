@@ -17,6 +17,13 @@ This PRD is the largest frontend piece in the Automations set — five capabilit
 
 **Shared DAG editor.** This PRD ships the React Flow DAG editor as a **shared, reusable component** at `frontend/src/components/dag/TaskGraph.tsx` (with siblings `TaskNode.tsx`, `dagLayout.ts`). DB-PRD-03 reuses this component verbatim for the Performance → Dashboards details page (`/performance/dashboards/{plan_id}`). One implementation, two consumers — driven by props (`tasks`, `edges`, `onTaskAdd`, `onEdgeChange`, `readOnly`, `selectedTaskId`, `availablePanels`). The "+ Add Task" button on the canvas opens the right-side panel for task configuration; for `assignee_type="data_pipeline"`, the panel surfaces DP-PRD-04's pipeline-job picker + custom-job authoring side-flow (see DP-PRD-04 §scope).
 
+**Shared task and schedule panels.** This PRD also publishes two additional shared, reusable components consumed verbatim by DB-PRD-03:
+
+- **`ActivityDetailPanel`** (the right-side task-edit panel, originally from Calendar PRD-3, extended here with the Outputs tab) is now relocated to `frontend/src/components/workflows/ActivityDetailPanel.tsx` so both Automations (Calendar + this PRD) and Dashboards (DB-PRD-03) consume it from a single location. New additive prop `pinToDashboardSlot?: ReactNode` — when present, the panel renders the slot in a dedicated location in the agent-task surface (DB-PRD-03 fills it with `<PinToDashboardPicker />`); when absent (the Automation Details page case), the slot region collapses to nothing. No breaking change for existing callers.
+- **`ScheduleEditorModal`** (this PRD's schedule editor) ships at `frontend/src/components/workflows/ScheduleEditorModal.tsx` as a shared component DB-PRD-03 mounts on the Dashboards details page header. Same prop contract, same behavior, same `POST /v1/schedules/preview` consumer; the modal is unaware of `plan.type`.
+
+Both are at `frontend/src/components/workflows/` rather than `.../automations/` to make the shared status visible at the file-tree level.
+
 ## 2. Scope
 
 ### In scope
@@ -24,13 +31,14 @@ This PRD is the largest frontend piece in the Automations set — five capabilit
 - **Shared DAG editor** at `frontend/src/components/dag/TaskGraph.tsx` (+ `TaskNode.tsx`, `dagLayout.ts`) using **React Flow** (xyflow): draggable task nodes, draggable edges for dependencies, custom node component matching the design system. Designed to be reused unchanged by DB-PRD-03 on the Dashboards details page — driven by props, no automation-specific assumptions inside the component.
 - Inline DAG editing: **+ Add Task** button (also available via right-click on canvas), connect tasks (drag handle to handle), delete (selection + Delete key), auto-layout (dagre) button
 - "+ Add Task" → opens the right-side `ActivityDetailPanel` in "create" mode with an `assignee_type` picker (`agent` / `human` / `data_pipeline`). When `data_pipeline` is selected, DP-PRD-04's pipeline-job picker + custom-job authoring panel surfaces (see DP-PRD-04). No standalone `/workflows/data-pipelines` route — data pipelines are created inline from the DAG editor.
-- Right-side `ActivityDetailPanel` (reused from Calendar PRD-3) extended with a new **"Outputs"** tab that lists artifacts from past runs of the selected task
-- Schedule editor modal: Daily / Weekly / Monthly preset picker + Custom (cron) tab + timezone picker + "next 5 fires" preview
+- Right-side `ActivityDetailPanel` — relocated from `frontend/src/components/ActivityDetailPanel.tsx` (Calendar PRD-3) to `frontend/src/components/workflows/ActivityDetailPanel.tsx` and extended with a new **"Outputs"** tab that lists artifacts from past runs of the selected task. Adds an additive `pinToDashboardSlot?: ReactNode` prop that DB-PRD-03 uses to render its `<PinToDashboardPicker />`; A-PRD-06 itself never passes this prop (slot collapses to nothing).
+- Schedule editor modal at `frontend/src/components/workflows/ScheduleEditorModal.tsx`: Daily / Weekly / Monthly preset picker + Custom (cron) tab + timezone picker + "next 5 fires" preview. Published as a shared component consumed verbatim by DB-PRD-03's Dashboards details page header.
 - "Test Run" button + in-page progress display: tasks animate as they complete; halted HITL tasks pulse with "Action required"; user can mark complete from the right panel
 - Cancel-test-run button while a run is in flight
 - **Read-only mode when `is_system=true`** — used for platform-owned templates (e.g. KG-PRD-04's session-end automation). See §is_system read-only mode. Also passed as the `readOnly` prop on the shared `TaskGraph`, which DB-PRD-03 and any future consumer can use too.
 - **HITL Mark Complete / Revision Requested affordances** that work on system-owned runs too — this is how users review and approve session-end proposals without being able to edit the underlying template.
 - Component tests on the shared `TaskGraph` covering both consumers' use cases (basic editing, read-only mode, data-pipeline assignee creation)
+- Component tests on `ActivityDetailPanel` covering both consumers: `pinToDashboardSlot` absent (Automations path — slot empty) and `pinToDashboardSlot` present (Dashboards path — slot rendered with a stub node).
 
 ### Out of scope
 - Backend test-run engine (A-PRD-4)
@@ -47,7 +55,8 @@ This PRD is the largest frontend piece in the Automations set — five capabilit
 - **A-PRD-3:** API for listing artifacts per task; without A-PRD-3, the Outputs tab shows an empty state
 - **A-PRD-4:** Test-run endpoint + cancel endpoint; without A-PRD-4, the Test Run button is hidden
 - **DP-PRD-03 (forward-coordination):** extends `PlanTask.assignee_type` from `{agent, human}` to `{agent, human, data_pipeline}`. This PRD's task-creation side-panel renders the `data_pipeline` option behind a `data_pipeline_task_assignee` feature flag until DP-PRD-03 ships; DP-PRD-04 then wires the picker + custom-job authoring panel into the same side-panel. A-PRD-06 ships only the assignee-type radio + flag gate; DP-PRD-04 fills in the data-pipeline-specific fields.
-- **Calendar PRD-3:** reuses `ActivityDetailPanel` (must be extensible — confirm with the owning team)
+- **Calendar PRD-3:** sources `ActivityDetailPanel` (relocated from `frontend/src/components/ActivityDetailPanel.tsx` to `frontend/src/components/workflows/ActivityDetailPanel.tsx` by this PRD; updates Calendar PRD-3's import paths in the same change).
+- **DB-PRD-03 (forward-coordination, Dashboards):** consumes the shared `frontend/src/components/dag/TaskGraph.tsx` plus the shared `frontend/src/components/workflows/ActivityDetailPanel.tsx` and `frontend/src/components/workflows/ScheduleEditorModal.tsx`. Coordination point: this PRD adds the `pinToDashboardSlot?: ReactNode` prop on `ActivityDetailPanel`; DB-PRD-03 supplies the slot value (`<PinToDashboardPicker />`). Additive only — no breaking change.
 - **External libraries:**
   - `@xyflow/react` (React Flow) — DAG diagram
   - `dagre` — auto-layout
@@ -57,13 +66,19 @@ This PRD is the largest frontend piece in the Automations set — five capabilit
   - `frontend/src/components/ActivityDetailPanel.tsx` (Calendar PRD-3)
   - `frontend/src/services/projectPlanService.ts` (Calendar PRD-3)
 
-### Coordination — extending `ActivityDetailPanel`
+### Coordination — extending `ActivityDetailPanel` and relocating it as shared
 
-The right-panel detail component owns the tab strip. This PRD adds a new tab key (`"outputs"`) that appears when:
-1. The selected task has `assignee_type === "agent"`, AND
-2. The current page is the Automation Details page (not the calendar)
+The right-panel detail component owns the tab strip and is the canonical task-edit surface across three consumers (Calendar PRD-3, this PRD, and DB-PRD-03).
 
-Pass an `availableTabs` prop or use a slot pattern. Coordinate with the Calendar PRD-3 owners.
+This PRD makes three changes to it:
+
+1. **Relocate** from `frontend/src/components/ActivityDetailPanel.tsx` → `frontend/src/components/workflows/ActivityDetailPanel.tsx`. Update import paths in Calendar PRD-3's callers in the same change. (Calendar PRD-3 shipped first and put the panel under `components/`; the move surfaces its shared status.)
+2. **Add** a new tab key (`"outputs"`) that appears when:
+   - The selected task has `assignee_type === "agent"`, AND
+   - The current page is the Automation Details page (not the Calendar — Calendar consumers pass `availableTabs` without `"outputs"`)
+3. **Add** an additive prop `pinToDashboardSlot?: ReactNode`. When present, the panel renders the slot in a dedicated location near the bottom of the agent-task surface; when absent (Calendar + Automations callers), the slot region is empty. DB-PRD-03 supplies `<PinToDashboardPicker />` as the slot value.
+
+Coordinate the relocation with Calendar PRD-3 owners (one-PR change with import-path updates).
 
 ## 4. Data contract (TypeScript)
 
@@ -106,9 +121,9 @@ type RunProgress = {
 | Create | `frontend/src/components/dag/TaskNode.tsx` (shared custom node) |
 | Create | `frontend/src/components/dag/dagLayout.ts` (shared dagre auto-layout helper) |
 | Create | `frontend/src/components/automations/dag/dagSerialize.ts` (`PlanTask[]` ↔ `{nodes, edges}`) |
-| Create | `frontend/src/components/automations/ScheduleEditorModal.tsx` |
+| Create | `frontend/src/components/workflows/ScheduleEditorModal.tsx` (shared — used here and by DB-PRD-03) |
 | Create | `frontend/src/components/automations/schedulePresetToCron.ts` |
-| Modify | `frontend/src/components/ActivityDetailPanel.tsx` (Calendar PRD-3) — add `availableTabs` + Outputs tab content slot |
+| Move + Modify | `frontend/src/components/ActivityDetailPanel.tsx` (Calendar PRD-3) → `frontend/src/components/workflows/ActivityDetailPanel.tsx`; add `availableTabs` + Outputs tab content slot + additive `pinToDashboardSlot?: ReactNode` prop. Update import paths in Calendar PRD-3's existing callers in the same PR. |
 | Create | `frontend/src/components/automations/OutputsTab.tsx` |
 | Create | `frontend/src/components/automations/TestRunControls.tsx` (button + progress + cancel) |
 | Modify | `frontend/src/services/projectPlanService.ts` — add `getAutomation`, `getRun`, `listRuns`, `triggerTestRun`, `cancelRun`, `listTaskArtifactsRecent`, `previewSchedule` (calls A-PRD-2's `POST /v1/schedules/preview` for the schedule editor's cron-validation + "next 5 fires" preview), `getDagLayout`, `putDagLayout` |
@@ -117,7 +132,8 @@ type RunProgress = {
 | Create | `api/tests/integration/test_dag_layouts_router.py` |
 | Modify | `frontend/src/pages/workflows/AutomationDetailsPage.test.tsx` (UI-PRD-03 shell test) — extend with DAG-canvas + side-panel assertions |
 | Create | `frontend/src/components/automations/dag/DagDiagram.test.tsx` |
-| Create | `frontend/src/components/automations/ScheduleEditorModal.test.tsx` |
+| Create | `frontend/src/components/workflows/ScheduleEditorModal.test.tsx` (shared — covers both Automation and Dashboard caller contexts) |
+| Create | `frontend/src/components/workflows/ActivityDetailPanel.test.tsx` — covers `pinToDashboardSlot` absent (Automation path) and present (Dashboard path) |
 | Create | `frontend/src/components/automations/OutputsTab.test.tsx` |
 
 > **Out of scope (already shipped by UI-PRD-03):** the `/workflows/automations/:planId` route registration in `frontend/src/App.tsx`. Do not re-add the route.

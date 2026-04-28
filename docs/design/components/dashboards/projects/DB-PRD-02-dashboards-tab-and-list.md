@@ -43,7 +43,7 @@ It does **not** deliver the dashboard details canvas (DB-PRD-03). Details page d
 - **DB-PRD-01:** publishes `GET /api/v1/dashboards/{account_id}` (list) and `POST /api/v1/dashboards/{account_id}` (create). Also provides `DashboardSummary` and `ProjectPlan` types mirrored client-side.
 - **PE-PRD-01 (Performance Page Shell):** owns the Performance tab container, the `/performance/dashboards` route, the `<DashboardsTabPlaceholder />` stub this PRD replaces, the `performance_dashboards_tab` feature flag, and the gating decision (Dashboards is **not** wrapped in `ForecastingEnabledGate`). PE-PRD-01 must be merged before this PRD starts.
 - **UI-PRD-01 (Design System):** consumes tokens from `theme.css`, Tailwind config, and the redesigned shadcn primitives under `frontend/src/components/ui/`.
-- **Notifications (existing):** "Dashboard ready" notifications (from A-PRD-04's run-complete payload for `type="dashboard"` plans) deep-link to `/performance/dashboards/{plan_id}?runId={run_id}`. No change here; just verify the deep-link format is honored.
+- **Notifications (A-PRD-02 producer):** "Dashboard ready" notifications come from A-PRD-02's `AUTOMATION_RUN_COMPLETE` notification, fired on every `PlanRun` terminal state for `plan.created_by` (skipped for `is_test=true` runs). For `plan.type=='dashboard'` the deep-link is `/performance/dashboards/{plan_id}?runId={run_id}` (for `type='freeform'`, A-PRD-02 routes to `/workflows/automations/{plan_id}?run={run_id}` — same producer, two consumers). No work in this PRD; verify the deep-link format renders the right run highlighted in DB-PRD-03 (`?runId={run_id}` is a query param read by the details page, not a route). PE-PRD-01 owns the `/performance/dashboards/{plan_id}` route registration.
 - **Existing files to study:**
   - `frontend/src/pages/Performance/PerformancePage.tsx` (PE-PRD-01 target) — tab container to plug into
   - `frontend/src/pages/Performance/DashboardsTabPlaceholder.tsx` (PE-PRD-01) — the stub this PRD replaces
@@ -202,15 +202,15 @@ Cache policy (TanStack Query):
 5. Each list row renders title, schedule summary, last-run relative time, status badge, and a Configure button linking to the details URL.
 6. Row-menu "Run Now" POSTs to the A-PRD-02 trigger endpoint; the row's `last_run_status` updates to "running" on the next re-fetch.
 7. Row-menu "Delete" shows a confirmation (Cancel / Delete), then DELETEs on confirm; the row disappears from the list after invalidation.
-7a. Row-menu "Duplicate" opens `DuplicateDashboardDialog` pre-filled with `"{source.title} (Copy)"`. Submitting POSTs to the duplicate endpoint; on 201, a toast shows with an "Open new dashboard" link; the list re-fetches and the new dashboard appears at the top.
-7b. Duplicate of a dashboard with an active schedule creates a new dashboard with `is_active=false` (schedule preserved but disabled). The new dashboard's row shows the schedule summary but a toned-down / paused visual state.
-8. Deep-linking to `/performance/dashboards` selects the Dashboards tab on page load (URL → state sync).
-9. Deep-linking to `/performance/dashboards/{plan_id}` renders the stub until DB-PRD-03 replaces it.
-10. Viewer-role users see the list and rows but the "+ New Dashboard" CTA and row-menu destructive actions (Delete, Run Now) are disabled with tooltips.
-11. Cross-account access returns `403` at the API layer; UI renders a toast and navigates to `/accounts`.
-12. List is paginated: loading 30 dashboards shows the first page with `page_size=25` default; scrolling to bottom triggers the next-page fetch via `cursor`.
-13. `npm run build` clean; `npm run typecheck` clean; `npm run format.fix` clean.
-14. All unit tests pass; Playwright `dashboards-create-flow.spec.ts` passes.
+8. Row-menu "Duplicate" opens `DuplicateDashboardDialog` pre-filled with `"{source.title} (Copy)"`. Submitting POSTs to the duplicate endpoint; on 201, a toast shows with an "Open new dashboard" link; the list re-fetches and the new dashboard appears at the top.
+9. Duplicate of a dashboard with an active schedule creates a new dashboard with `is_active=false` (schedule preserved but disabled). The new dashboard's row shows the schedule summary but a toned-down / paused visual state.
+10. Deep-linking to `/performance/dashboards` selects the Dashboards tab on page load (URL → state sync).
+11. Deep-linking to `/performance/dashboards/{plan_id}` renders the stub until DB-PRD-03 replaces it.
+12. Viewer-role users see the list and rows but the "+ New Dashboard" CTA and row-menu destructive actions (Delete, Run Now) are disabled with tooltips.
+13. Cross-account access returns `403` at the API layer; UI renders a toast and navigates to `/accounts`.
+14. List is paginated: loading 30 dashboards shows the first page with `page_size=25` default; scrolling to bottom triggers the next-page fetch via `cursor`.
+15. `npm run build` clean; `npm run typecheck` clean; `npm run format.fix` clean.
+16. All unit tests pass; Playwright `dashboards-create-flow.spec.ts` passes.
 
 ## 8. Test plan
 

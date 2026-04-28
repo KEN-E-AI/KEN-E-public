@@ -2,7 +2,7 @@
 
 **Status:** Blocked — resumes once DB-PRD-01, DB-PRD-02, and A-PRD-06 ship
 **Owner team:** Frontend
-**Blocked by:** DB-PRD-01 (API contract and resolved-artifact shape); DB-PRD-02 (Performance tab + navigation + stub route); A-PRD-06 (publishes the shared `frontend/src/components/dag/TaskGraph.tsx` + `TaskNode.tsx` + `dagLayout.ts`; also publishes `AutomationTaskPanel`, `AutomationSchedulePanel` — share the `context: "automation" | "dashboard"` prop contract)
+**Blocked by:** DB-PRD-01 (API contract and resolved-artifact shape); DB-PRD-02 (Performance tab + navigation + stub route); A-PRD-06 (publishes three shared components consumed verbatim by this PRD: `frontend/src/components/dag/TaskGraph.tsx` + `TaskNode.tsx` + `dagLayout.ts`, `frontend/src/components/workflows/ActivityDetailPanel.tsx` with the additive `pinToDashboardSlot?: ReactNode` prop, and `frontend/src/components/workflows/ScheduleEditorModal.tsx`)
 **Blocks:** DB-PRD-04
 **Estimated effort:** 4–5 days
 
@@ -12,7 +12,12 @@
 
 The Dashboard Details page is where a user authors tasks, places widgets on a canvas, runs the plan, and sees the resolved artifacts. This PRD delivers that page end-to-end: the page shell, the split layout (task graph + canvas + task panel), the free-form drag-and-resize canvas, the four widget renderers, the Pin-to-Dashboard affordance on the task panel, the Run button and run-status polling, and the canvas-save debounce.
 
-It **reuses the shared DAG editor** that A-PRD-06 ships at `frontend/src/components/dag/TaskGraph.tsx` (+ `TaskNode.tsx` + `dagLayout.ts`). Same component, no fork — driven by props (`tasks`, `edges`, `readOnly`, `onTaskAdd`, etc.). This PRD also reuses A-PRD-06's `AutomationTaskPanel` (task edit sidebar) and `AutomationSchedulePanel` (schedule modal). A small additive prop (`context: "automation" | "dashboard"`) on `AutomationTaskPanel` toggles the Pin-to-Dashboard affordance. **No DAG re-implementation in this PRD.**
+It **reuses three shared components** that A-PRD-06 ships:
+- `frontend/src/components/dag/TaskGraph.tsx` (+ `TaskNode.tsx` + `dagLayout.ts`) — the DAG editor; consumed verbatim, driven by props (`tasks`, `edges`, `readOnly`, `onTaskAdd`, etc.).
+- `frontend/src/components/workflows/ActivityDetailPanel.tsx` — the right-side task-edit panel, originally from Calendar PRD-3 and relocated to `components/workflows/` by A-PRD-06. This PRD passes the additive `pinToDashboardSlot?: ReactNode` prop with `<PinToDashboardPicker />` to render the Pin-to-Dashboard affordance; the panel collapses the slot region when the prop is absent (Automations / Calendar callers).
+- `frontend/src/components/workflows/ScheduleEditorModal.tsx` — the schedule modal; consumed verbatim with the same prop contract A-PRD-06 publishes.
+
+**No DAG re-implementation, no panel fork, no schedule-modal fork.** This PRD owns only `<PinToDashboardPicker />` (the slot value) and the canvas + widgets.
 
 When the user clicks "+ Add Task" in the shared `TaskGraph` and selects `assignee_type="data_pipeline"`, the side-panel surfaces DP-PRD-04's pipeline-job picker + custom-job authoring — same flow as on the Automation Details page (A-PRD-06).
 
@@ -23,13 +28,15 @@ When the user clicks "+ Add Task" in the shared `TaskGraph` and selects `assigne
 - Split layout: DAG on top, canvas on bottom, right-side task panel — with a resizable vertical divider (drag to reassign top/bottom split ratio)
 - Header: back link, title (editable inline), status badges, schedule summary, Run button, Schedule modal entry, More menu (Delete, future Duplicate)
 - Free-form canvas: absolute-positioned placements, drag-to-move, corner-handle resize, 8-px grid snap, collision OK (overlapping widgets allowed per Figma)
+- **Install runtime deps** — `react-vega@^8`, `vega-lite@^6`, `vega@^6`. Production frontend currently ships `recharts` only; these are net-new packages. (AH-PRD-04's data-visualization spec calls them out as "renderer not yet on `main`"; this PRD is the first consumer to land them.)
 - Four widget renderers:
   - **TextWidget** — markdown rendered via `react-markdown` + `rehype-raw`
   - **VisualizationWidget** — Vega-Lite spec via `react-vega`, honors `view_override` (bar / line / area / point / arc / table) by overriding `mark.type` at render time, honors `color` and `show_data_labels`
   - **TableWidget** — CSV fetched via `download_url`, parsed via `papaparse` client-side, rendered via the existing `DataTable` component
   - **FileWidget** — fallback for `image` / `document` / `video` / `audio` / `html` / `other`; shows filename + size + download button (signed URL)
-- Status indicator per widget: fresh (no badge), stale (clock icon + tooltip), disconnected (unlink icon + tooltip), pending (spinner + "Task hasn't produced this output yet")
-- Pin-to-Dashboard button in `AutomationTaskPanel` — opens a dropdown of that task's `output_config.expected_file_types`; clicking one adds a placement at an empty canvas location
+- **`LineChart` adapter widget** at `frontend/src/components/dashboards/widgets/LineChart.tsx` — thin wrapper around `VisualizationWidget` with a fixed Vega-Lite line-chart spec. Prop contract (locked, consumed by PE-PRD-02 trendlines): `{data: TrendlinePoint[], xKey: string, yKey: string, partialFlagKey?: string, width: number, height: number}`. When `partialFlagKey` is provided, rows where `row[partialFlagKey] === true` render with a dashed segment (the "current in-progress week" affordance for PE-PRD-02). Does not consume `DashboardArtifact` directly — the adapter is a pure data-in / chart-out renderer reusable outside the canvas. Has its own export so PE-PRD-02 can import without dragging in canvas dependencies.
+- Status indicator per widget: `fresh` (no badge), `disconnected` (unlink icon + tooltip), `pending` (spinner + "Task hasn't produced this output yet"). (No `stale` status — see DB-PRD-01 §4.7 rationale.)
+- Pin-to-Dashboard picker rendered as the `pinToDashboardSlot` slot value in A-PRD-06's shared `ActivityDetailPanel` — opens a dropdown of the selected task's `output_config.expected_file_types`; clicking one adds a placement at an empty canvas location. The picker component itself (`<PinToDashboardPicker />`) is owned by this PRD; the slot mechanism is owned by A-PRD-06.
 - Run button: POSTs to `A-PRD-02`'s manual trigger; polls `GET /dashboards/{plan_id}` every 2 s until `latest_run.status` is terminal; disables during in-flight
 - Canvas PUT: debounced 500 ms after last drag / resize event; flushes on `pointerup` and `beforeunload`
 - Unit tests per widget renderer; Playwright E2E for the drag / run / refresh flow
@@ -46,11 +53,15 @@ When the user clicks "+ Add Task" in the shared `TaskGraph` and selects `assigne
 - **DB-PRD-01:** `GET /api/v1/dashboards/{account_id}/{plan_id}` (enriched response), `PUT /placements`, `DELETE`. Payload resolution rules (inline vs. signed URL) are owned there.
 - **DB-PRD-02:** already registered the route and published the stub; this PRD replaces the stub component.
 - **PR-PRD-01:** `PUT /api/v1/plans/{account_id}/{plan_id}` (for plan-title edits) and `PATCH .../tasks/{task_id}` (for task edits). Used by the task panel.
-- **A-PRD-01:** `PATCH /api/v1/automations/{account_id}/{plan_id}/recurrence` (for schedule edits via the AutomationSchedulePanel).
+- **A-PRD-01:** `PATCH /api/v1/automations/{account_id}/{plan_id}/recurrence` (for schedule edits via the shared `ScheduleEditorModal`).
 - **A-PRD-02:** `POST /api/v1/automations/{account_id}/{plan_id}/runs` (manual trigger). Same endpoint the Automations page uses.
-- **A-PRD-06 (Automation Details page):** supplies the shared **`frontend/src/components/dag/TaskGraph.tsx`** (+ `TaskNode.tsx` + `dagLayout.ts`), plus `AutomationTaskPanel` and `AutomationSchedulePanel`. Coordination note: this PRD adds a `context: "automation" | "dashboard"` prop to `AutomationTaskPanel` that toggles the Pin-to-Dashboard button's visibility. Small, additive. The shared `TaskGraph` is consumed verbatim — no fork, no shadow component.
+- **A-PRD-06 (Automation Details page):** supplies three shared components:
+  - **`frontend/src/components/dag/TaskGraph.tsx`** (+ `TaskNode.tsx` + `dagLayout.ts`) — DAG editor. Consumed verbatim, no fork.
+  - **`frontend/src/components/workflows/ActivityDetailPanel.tsx`** — task-edit panel with the additive `pinToDashboardSlot?: ReactNode` prop that A-PRD-06 publishes for this PRD. This PRD passes `<PinToDashboardPicker />` as the slot value; A-PRD-06's own caller passes nothing and the slot region collapses.
+  - **`frontend/src/components/workflows/ScheduleEditorModal.tsx`** — schedule editor modal. Consumed verbatim with the same prop contract A-PRD-06 ships.
+  Coordination is one-way (A-PRD-06 publishes, this PRD consumes). All three components are at `frontend/src/components/{dag,workflows}/` to make their shared status visible at the file-tree level.
 - **UI-PRD-01:** design tokens, shadcn primitives.
-- **External:** `react-vega` (existing per the Figma export), `react-markdown`, `rehype-raw`, `papaparse`, `dagre` (via A-PRD-06's graph). No new runtime libraries.
+- **External:** `react-markdown`, `rehype-raw`, `papaparse`, `dagre` (via A-PRD-06's graph) — already present. **`react-vega@^8`, `vega-lite@^6`, `vega@^6`** are **new runtime deps** installed by this PRD (production frontend currently ships `recharts` only; AH-PRD-04 documents the renderer is not yet on `main`).
 - **Existing files to study:**
   - `docs/figma-export/src/app/pages/performance/DashboardDetailsPage.tsx` — reference UX (rebuild in Soft Maximalism, not literal copy)
   - `docs/figma-export/src/app/components/DashboardCanvas.tsx` — reference canvas mechanics
@@ -72,7 +83,7 @@ export interface DashboardArtifact {
   placement_id: string;
   task_id: string;
   file_type: OutputFileType;
-  status: 'fresh' | 'stale' | 'disconnected' | 'pending';
+  status: 'fresh' | 'disconnected' | 'pending';     // three values, not four — see DB-PRD-01 §4.7
   inline_payload: Record<string, unknown> | null;   // shape depends on file_type
   download_url: string | null;                      // 1-hour signed URL for large artifacts
   updated_at: string | null;
@@ -112,7 +123,10 @@ export interface DragState {
 | Create | `frontend/src/components/dashboards/widgets/TableWidget.tsx` |
 | Create | `frontend/src/components/dashboards/widgets/FileWidget.tsx` |
 | Create | `frontend/src/components/dashboards/PinToDashboardPicker.tsx` — task-panel action |
-| Modify | `frontend/src/components/automations/AutomationTaskPanel.tsx` (A-PRD-06) — add `context: "automation" \| "dashboard"` prop; render `<PinToDashboardPicker>` when `context === "dashboard"` |
+| Consume (no edits) | `frontend/src/components/workflows/ActivityDetailPanel.tsx` (A-PRD-06) — pass `pinToDashboardSlot={<PinToDashboardPicker task={selectedTask} />}` from this page. A-PRD-06 owns the prop and the slot rendering location; this PRD only supplies the slot value. |
+| Install | `react-vega@^8`, `vega-lite@^6`, `vega@^6` via `package.json` (new runtime deps; lockfile updated in the same PR) |
+| Create | `frontend/src/components/dashboards/widgets/LineChart.tsx` — adapter for PE-PRD-02 (prop contract `{data, xKey, yKey, partialFlagKey?, width, height}`) |
+| Create | `frontend/src/components/dashboards/widgets/__tests__/LineChart.test.tsx` |
 | Create | `frontend/src/hooks/useDashboardDetails.ts` — TanStack Query (10-second stale while fresh; 2-second poll while a run is in-flight) |
 | Create | `frontend/src/hooks/useDebouncedPlacementsPut.ts` — 500 ms debounce + beforeunload flush |
 | Create | `frontend/src/services/dashboardsApi.ts` — extend with `getDashboardDetails`, `putPlacements`, `deleteDashboard` |
@@ -129,9 +143,9 @@ export interface DragState {
 **Empty-canvas placeholder.** When `plan.dashboard_placements.length === 0`, the canvas shows an illustration + "Pin task outputs from the graph above to build your dashboard" + an arrow pointing up to the DAG view.
 
 **Adding a placement.** Triggered from `PinToDashboardPicker`:
-1. User clicks a task node in `AutomationGraph` → `AutomationTaskPanel` opens for that task.
-2. If the task has `output_config.enabled=true`, the panel shows a "Pin to dashboard" button that opens `PinToDashboardPicker`.
-3. Picker lists `task.output_config.expected_file_types`; user clicks one.
+1. User clicks a task node in the shared `TaskGraph` → the shared `ActivityDetailPanel` (A-PRD-06) opens for that task.
+2. Because this page passes `pinToDashboardSlot={<PinToDashboardPicker task={selectedTask} />}` to `ActivityDetailPanel`, the panel renders the picker in its slot region. (The Automation Details page does not pass the prop, so the slot region collapses there.)
+3. If the task has `output_config.enabled=true`, `PinToDashboardPicker` shows a button that opens a dropdown of `task.output_config.expected_file_types`; the user clicks one.
 4. Client generates a new `placement_id` (UUID), chooses an empty canvas location (see below), appends to local placements, and triggers the debounced PUT.
 
 **Empty-location heuristic.** Iterate an 8-px grid scanning left-to-right, top-to-bottom, looking for a `320 × 240` rectangle with no overlap against existing placements. If the canvas is full, append at the bottom (increasing canvas height as needed).
@@ -165,11 +179,10 @@ Each `CanvasTile` shows a small status badge in the top-right corner based on `a
 | Status | Badge |
 |---|---|
 | `fresh` | (none) |
-| `stale` | Clock icon; tooltip: "Last updated [updated_at relative]. Re-run the dashboard to refresh." |
 | `disconnected` | Broken-link icon; tooltip: "This task no longer produces [file_type]. Edit the task or remove this widget." |
 | `pending` | Spinner; tooltip: "Task hasn't produced [file_type] yet. Run the dashboard to generate it." |
 
-The badge is `editor`-clickable to remove the widget when `status="disconnected"`.
+The badge is `editor`-clickable to remove the widget when `status="disconnected"`. (No `stale` row — see DB-PRD-01 §4.7 rationale; placements where the latest run failed to re-emit render as `pending` and the user re-runs to refresh.)
 
 ### Run button + polling
 
@@ -197,14 +210,14 @@ Plan title is editable inline in the header. Click-to-edit → blur or Enter sub
 ## 7. Acceptance criteria
 
 1. Navigating to `/performance/dashboards/{plan_id}` loads the page and issues a single `GET /dashboards/{plan_id}`. Split layout renders with task graph on top, canvas below, no task-panel sidebar until a task is clicked.
-2. Dragging a task node produces `AutomationTaskPanel` on the right, with a "Pin to dashboard" button visible (because `context="dashboard"`). The Automation Details page (A-PRD-06) passes `context="automation"`, which hides the button — no regression.
+2. Clicking a task node produces the shared `ActivityDetailPanel` on the right with the Pin-to-Dashboard picker rendered in the `pinToDashboardSlot` region (because this page passes the slot value). The Automation Details page (A-PRD-06) does not pass the prop, so its slot region collapses — no regression for the Automations consumer.
 3. Clicking "Pin to dashboard" → picker shows the task's `expected_file_types` → selecting one adds a new `CanvasTile` at the next empty grid location with the appropriate widget renderer.
 4. Dragging a tile updates `x/y` locally in real time; on `pointerup`, a debounced `PUT /placements` fires within 500 ms with the full placements array.
 5. Resizing a tile from its corner handle updates `w/h` live; snapped to 8 px; persisted on `pointerup`.
 6. Two drags within 500 ms coalesce into a single PUT carrying the final state.
 7. Closing the tab while a PUT is debounced flushes the pending PUT via `beforeunload`.
 8. The Run button POSTs a manual trigger, the button transitions to "Running (00:12)" with an elapsed counter, polling starts at 2 s intervals.
-9. On run completion, the final GET arrives and every widget with a new artifact transitions from `pending`/`stale` to `fresh` (no badge).
+9. On run completion, the final GET arrives and every widget with a new artifact transitions from `pending` to `fresh` (no badge).
 10. A text artifact ≤64 KB renders inline via `TextWidget` (no network fetch beyond the initial GET).
 11. A Vega-Lite visualization renders via `react-vega`; `view_override="line"` on a bar-chart spec causes the rendered chart to be a line chart.
 12. A CSV artifact loads via `download_url`, parses, renders as a sortable / paginated `DataTable`.
@@ -213,14 +226,16 @@ Plan title is editable inline in the header. Click-to-edit → blur or Enter sub
 15. Viewer-role users see the canvas but cannot add/move/resize/remove tiles, cannot edit the title, and the Run / Delete buttons are disabled with tooltips.
 16. Cross-account navigation returns the page to `/accounts` with a toast.
 17. Placement limit: attempting to add a 101st placement shows a toast ("Dashboards support up to 100 widgets; remove an existing widget to add a new one.").
-18. `npm run build` / `npm run typecheck` / `npm run format.fix` clean.
-19. Playwright `dashboards-pin-run-refresh.spec.ts` passes.
+18. **`LineChart` adapter:** importing `<LineChart data={…} xKey="week" yKey="value" partialFlagKey="is_partial" width={600} height={240} />` from `frontend/src/components/dashboards/widgets/LineChart.tsx` renders a Vega-Lite line chart. When a row has `is_partial === true`, the segment leading to that row renders dashed; remaining rows render solid. The component is importable standalone (no canvas dependencies pulled in) so PE-PRD-02 can mount it inside its trendline adapter.
+19. `npm run build` / `npm run typecheck` / `npm run format.fix` clean — including the three new runtime deps (`react-vega`, `vega-lite`, `vega`) resolving without peer-dep warnings.
+20. Playwright `dashboards-pin-run-refresh.spec.ts` passes.
 
 ## 8. Test plan
 
 **Unit tests — widgets** (`widgets/*.test.tsx`):
 - `TextWidget`: renders markdown; honors width/height; handles empty content
 - `VisualizationWidget`: renders a Vega-Lite bar chart; `view_override="line"` rewrites `mark.type`; `color` override applied; missing spec renders an error state
+- `LineChart` adapter: passes data through to a fixed Vega-Lite line spec; `partialFlagKey` produces dashed segments; missing `partialFlagKey` produces all-solid; standalone import does not require `<DashboardCanvas>` context
 - `TableWidget`: parses a 100-row CSV from `download_url`; handles 10k-row CSV (virtualized); surfaces parse errors
 - `FileWidget`: renders download card with filename + size; for `file_type="image"`, renders `<img>` inline
 
@@ -250,7 +265,7 @@ Plan title is editable inline in the header. Click-to-edit → blur or Enter sub
 | Drag performance with 100 tiles | Use CSS transforms for the dragged tile (not layout writes); only commit x/y on `pointerup`. Measured in DB-PRD-04. |
 | User drags a tile off-screen (negative x) | Clamp to `x >= 0`, `y >= 0` at move time. |
 | Pin-to-Dashboard picker on a task with `expected_file_types=[]` | Show "Configure task outputs first" with a link to the task-edit form. |
-| A-PRD-06's `AutomationTaskPanel` prop extension | Additive prop with default `context="automation"` — no breaking change to A-PRD-06 callers. |
+| A-PRD-06's `pinToDashboardSlot` prop on `ActivityDetailPanel` | Additive — the prop defaults to `undefined`, which collapses the slot region. No breaking change to A-PRD-06 / Calendar PRD-3 callers. |
 | Dashboard with in-flight run opened in a second tab | Each tab polls independently; benign redundancy. Acceptable for v1. |
 
 ### Open questions

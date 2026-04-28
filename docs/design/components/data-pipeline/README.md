@@ -179,7 +179,7 @@ Applies to DP-PRD-04 only (the rest of the component is backend).
 | `frontend/CLAUDE.md` | CSS architecture, branded types, form primitives | Before adding any frontend component. |
 | [`../ui/README.md`](../ui/README.md) | §2 Architecture, §7 Conventions | Shell + scope-boundary patterns — data pipelines are a `PlanTask.assignee_type` value created from the shared DAG editor's side-panel; no standalone `/workflows/data-pipelines` route. |
 | [`../project-tasks/README.md`](../project-tasks/README.md) §2.4 | `ProjectEditDrawer`, `ActivityDetailPanel` | DP-PRD-04 extends these two components additively — read their contracts before modifying. |
-| [`../automations/README.md`](../automations/README.md) §2.4 | `AutomationTaskPanel` + output rendering | Reference pattern for how pipeline runs surface inside a task detail view. |
+| [`../automations/README.md`](../automations/README.md) §2.4 | Shared `ActivityDetailPanel` (relocated to `frontend/src/components/workflows/` by A-PRD-06) + output rendering | Reference pattern for how pipeline runs surface inside a task detail view. |
 
 ## 5. Project Index
 

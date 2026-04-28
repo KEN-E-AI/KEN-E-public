@@ -14,6 +14,8 @@ A-PRD-1 publishes the `recurrence_cron` field on `ProjectPlan` and the `PlanRun`
 
 It also delivers the manual-trigger endpoint that a user invokes from the Automation Details page ("Run now") — same engine, different `triggered_by`.
 
+This PRD also fires the **`AUTOMATION_RUN_COMPLETE` notification** on every `PlanRun` terminal state (`complete` / `failed` / `cancelled`) so users — both Automations and Dashboards — learn when their work finished. The deep-link routes by `plan.type`: `dashboard` runs into `/performance/dashboards/{plan_id}?runId={run_id}`; `freeform` runs into `/workflows/automations/{plan_id}?run={run_id}`. Single producer, two consumers — no parallel notification path inside Dashboards.
+
 This PRD reuses the Cloud Scheduler infrastructure delivered by [Calendar PRD-6](../../project-tasks/projects/PR-PRD-06-time-based-scheduler.md) but adds a sibling endpoint, since per-task firing and per-automation firing have different queries and different downstream paths.
 
 ## 2. Scope
@@ -30,6 +32,7 @@ This PRD reuses the Cloud Scheduler infrastructure delivered by [Calendar PRD-6]
 - `croniter`-based next-fire computation with explicit IANA timezone
 - Backfill policy: only fire ONCE for "now" after server downtime (no missed-run replay)
 - Idempotency: single Firestore transaction guards "compute next_run_at + create PlanRun" so a Cloud Scheduler retry never double-fires
+- **`AUTOMATION_RUN_COMPLETE` notification** — register the new enum value in `NotificationCategory`; hook `notification_service_v2.create_notification(...)` after the existing `write_audit("run_complete", …)` callsite (success / failure / cancelled). Recipient is `plan.created_by`. Skip when `run.is_test == true`. Deep-link routes by `plan.type`. Idempotent per `(account_id, run_id)` via a deterministic notification id (`f"run_complete:{account_id}:{run_id}"`) so a Cloud Scheduler retry or a duplicate `run_complete` audit write never produces a second notification.
 - Unit + integration tests with a fake clock
 
 ### Out of scope
@@ -43,6 +46,7 @@ This PRD reuses the Cloud Scheduler infrastructure delivered by [Calendar PRD-6]
 - **Calendar PRD-4:** `TaskOrchestrator.activate_plan` — this PRD extends its signature with optional `run_id`
 - **Calendar PRD-6:** Cloud Scheduler infrastructure + OIDC auth dependency — reuse
 - **DM-PRD-07 (Roles, Members, Audit Substrate):** hard prerequisite. The manual-trigger endpoint calls `require_role(min_role=editor, scope=Account)`; the run engine calls `write_audit(...)` on every run created (`run_start`) and on every run that reaches a terminal status (`run_complete`). Both actions and the `plan_run` resource type are already registered against `project_plan_audit` per DM-PRD-07 §registry. The internal scheduler endpoint authenticates via OIDC (Cloud Scheduler SA), not via `require_role`.
+- **Notification substrate (existing):** `notification_service_v2.create_notification(...)` and the `NotificationCategory` enum (`api/src/kene_api/models/kene_models.py`). This PRD adds **one new enum value** (`AUTOMATION_RUN_COMPLETE = "Automation Run Complete"`) and **one new producer callsite** (in the run-complete audit hook). All existing per-user notification preferences pick up the new category as enabled-by-default via the `categories=list(NotificationCategory)` initializer in `notification_service_v2.py:220`.
 - **External:** `croniter`, `zoneinfo`, Cloud Scheduler (GCP)
 
 ### Coordination — orchestrator signature change
@@ -112,6 +116,47 @@ Sibling job to the Calendar PRD-6 scheduler:
 - Retry: 3 attempts, exponential backoff
 - Time zone: UTC
 
+### `AUTOMATION_RUN_COMPLETE` notification payload
+
+When a `PlanRun` reaches a terminal state (`complete` / `failed` / `cancelled`), the run engine emits a notification via `notification_service_v2.create_notification(...)` with:
+
+```python
+NotificationCategory.AUTOMATION_RUN_COMPLETE   # NEW enum value (this PRD)
+
+# Notification.description (one of):
+#   "Dashboard '{plan.title}' is ready."                      # final_status=complete, plan.type=dashboard
+#   "Automation '{plan.title}' finished."                     # final_status=complete, plan.type=freeform
+#   "Dashboard '{plan.title}' run failed."                    # final_status=failed, plan.type=dashboard
+#   "Automation '{plan.title}' run failed."                   # final_status=failed, plan.type=freeform
+#   "Dashboard '{plan.title}' run was cancelled."             # final_status=cancelled, plan.type=dashboard
+#   "Automation '{plan.title}' run was cancelled."            # final_status=cancelled, plan.type=freeform
+
+# Notification.data (JSON):
+{
+    "plan_id":              "p_123",
+    "run_id":               "r_456",
+    "plan_type":            "dashboard" | "freeform",
+    "final_status":         "complete" | "failed" | "cancelled",
+    "duration_seconds":     287.4,
+    "triggered_by":         "manual" | "scheduled" | "system",
+    "deep_link_url":        "/performance/dashboards/p_123?runId=r_456"      # if plan_type=dashboard
+                            # OR
+                            "/workflows/automations/p_123?run=r_456"         # if plan_type=freeform
+}
+
+# Notification.recipient (user_id):
+plan.created_by          # single per-user notification, not account-wide
+
+# Notification.id (deterministic for idempotency):
+f"run_complete:{account_id}:{run_id}"
+```
+
+**Skip rules:**
+- `run.is_test == true` → no notification (test mode shouldn't spam users).
+- `plan.created_by is None` → no notification (system-seeded plans like KG-PRD-04's `kg-session-end-review` have no human creator; skip silently).
+
+**Idempotency:** the deterministic notification id ensures Cloud Scheduler retries, duplicate `run_complete` audit writes, or two concurrent terminal-state writes (race between orchestrator and cancel) collapse to a single notification per `(account_id, run_id)`. The notification service's create call MUST use upsert semantics or check-then-write with the id to honor this.
+
 ## 5. Implementation outline
 
 | Action | File |
@@ -122,14 +167,19 @@ Sibling job to the Calendar PRD-6 scheduler:
 | Create | `api/src/kene_api/routers/schedules.py` (public `preview` and `upcoming` endpoints) |
 | Modify | `api/src/kene_api/routers/automations.py` (A-PRD-1) — add manual-trigger endpoint |
 | Modify | `api/src/kene_api/main.py` — register `schedules` router |
-| Modify | `api/src/kene_api/services/task_orchestrator.py` (Calendar PRD-4) — add `run_id` param threading |
+| Modify | `api/src/kene_api/services/task_orchestrator.py` (Calendar PRD-4) — add `run_id` param threading; on terminal-state transitions, after `write_audit("run_complete", …)`, call `_emit_run_complete_notification(run, plan)` |
 | Modify | `api/src/kene_api/main.py` — register internal router |
+| Modify | `api/src/kene_api/models/kene_models.py` — add `NotificationCategory.AUTOMATION_RUN_COMPLETE = "Automation Run Complete"` |
+| Modify | `api/src/kene_api/services/notification_service_v2.py` — no breaking change; producer is the orchestrator/run engine, not this service. (The default-categories initializer at line 220 picks up the new value automatically via `list(NotificationCategory)`.) |
+| Create | `api/src/kene_api/services/run_complete_notifier.py` — small helper module exposing `emit_run_complete_notification(run, plan)` with the deep-link routing + skip rules + deterministic id. Called from the orchestrator's terminal-state hook (and from A-PRD-04's cancel path, which reuses the same helper). |
 | Create | `deployment/terraform/cloud_scheduler_automations.tf` |
 | Create | `api/tests/unit/test_automation_run_engine.py` |
 | Create | `api/tests/unit/test_cron_next_fire.py` |
 | Create | `api/tests/unit/test_schedule_preview_service.py` |
+| Create | `api/tests/unit/test_run_complete_notifier.py` — covers the four skip / route / dedup branches |
 | Create | `api/tests/integration/test_automation_scheduler_endpoint.py` |
 | Create | `api/tests/integration/test_schedules_preview_and_upcoming.py` |
+| Create | `api/tests/integration/test_run_complete_notification.py` — full lifecycle: trigger run → wait for terminal → assert one notification per recipient with correct deep-link by `plan.type` |
 
 ### Core algorithm — `find_and_fire_due_automations(now: datetime)`
 
@@ -307,6 +357,13 @@ Rules:
 12. `POST /api/v1/schedules/preview` with an invalid cron returns `422`; with `window_end - window_start > 90 days` returns `422`; with more occurrences than `max_occurrences` returns `truncated=true` plus the first N
 13. `GET /api/v1/automations/{account_id}/schedules/upcoming?from=...&to=...` returns only automations with `save_as_automation=true`, `is_active=true`, `is_system=false`; each item includes its occurrence list for the window; cross-account → `403`
 14. The preview and upcoming endpoints are pure reads — calling them repeatedly produces identical results and writes nothing to Firestore
+15. **Run-complete notification — success.** A `PlanRun` for a `type="dashboard"` plan reaching `final_status="complete"` produces exactly one `AUTOMATION_RUN_COMPLETE` notification for `plan.created_by` whose `data.deep_link_url` is `/performance/dashboards/{plan_id}?runId={run_id}` and whose description includes "is ready."
+16. **Run-complete notification — automation.** A `PlanRun` for a `type="freeform"` plan reaching `final_status="complete"` produces exactly one notification whose `data.deep_link_url` is `/workflows/automations/{plan_id}?run={run_id}`.
+17. **Run-complete notification — failure / cancellation.** Runs ending in `failed` or `cancelled` also produce a notification (different description text); both deep-link formats route correctly.
+18. **Skip on `is_test`.** A run with `is_test=true` produces zero `AUTOMATION_RUN_COMPLETE` notifications regardless of final state.
+19. **Skip on system-seeded plans.** A `PlanRun` whose `plan.created_by is None` (e.g., KG-PRD-04's `kg-session-end-review` system plan) produces zero notifications.
+20. **Idempotency.** Two terminal-state hooks for the same `run_id` (simulated via duplicate orchestrator hook + cancel race) collapse to exactly one notification document in Firestore (deterministic id `run_complete:{account_id}:{run_id}` enforces uniqueness).
+21. **Cross-component reuse.** A-PRD-04's cancel endpoint, when it transitions a run to `final_status="cancelled"`, calls the same `run_complete_notifier.emit_run_complete_notification(...)` helper — verified by an integration test that cancels a dashboard run and asserts exactly one notification with the cancellation description.
 
 ## 8. Test plan
 
@@ -350,6 +407,22 @@ Rules:
 - `GET /schedules/upcoming`: seed 3 automations (two user, one system), only the two user-owned with `is_active=true` appear in the response; occurrences are present per item
 - Cross-account `GET /schedules/upcoming` → `403`
 - Truncation: seed 300 automations with matching schedules → response `truncated=true` with `items.length <= 200`
+
+**Unit tests** (`test_run_complete_notifier.py`):
+- `plan.type=="dashboard"`, `final_status="complete"`, not test → emits with `/performance/dashboards/{plan_id}?runId={run_id}` deep-link + "is ready." description
+- `plan.type=="freeform"`, `final_status="complete"`, not test → emits with `/workflows/automations/{plan_id}?run={run_id}` deep-link + "finished." description
+- `final_status="failed"` → description includes "run failed."; deep-link still set
+- `final_status="cancelled"` → description includes "was cancelled."; deep-link still set
+- `is_test=true` → no `create_notification` call
+- `plan.created_by is None` → no `create_notification` call
+- Notification id is deterministic: `f"run_complete:{account_id}:{run_id}"` for any input
+
+**Integration tests** (`test_run_complete_notification.py`):
+- Trigger a `type="dashboard"` automation manually, wait for terminal state → exactly one Firestore notification doc exists for `plan.created_by` with the dashboard deep-link
+- Trigger a `type="freeform"` automation, complete → notification deep-links to `/workflows/automations/...`
+- Cancel an in-flight run via A-PRD-04's cancel endpoint → exactly one notification with "cancelled" description (verifies the shared helper is reused)
+- Run with `is_test=true` → zero notifications post-completion
+- Two duplicate `run_complete` audit hooks (simulated via direct orchestrator invocation + cancel race) → exactly one notification
 
 ## 9. Risks & open questions
 
