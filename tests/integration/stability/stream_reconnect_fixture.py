@@ -129,25 +129,38 @@ class APIServerSubprocess:
 async def streaming_chat_with_kill(
     server: APIServerSubprocess,
     auth_token: str,
+    session_id: str,
     *,
     chunks_before_kill: int = 2,
     payload: dict[str, object] | None = None,
+    request_timeout_s: float = 120.0,
 ) -> AsyncIterator[tuple[str, list[bytes]]]:
     """Open a streaming chat request, kill the API mid-stream, restart it.
 
-    Yields a tuple of `(session_id, chunks_received_before_kill)`. The caller
-    is expected to issue a follow-up request against the same `session_id` to
-    verify state preservation.
+    The caller must pre-create the session_id (e.g. via
+    ``POST /api/v1/chat/conversations``) and pass it in. KEN-E's
+    ``/chat/completions`` streaming response is plain SSE
+    (``data: <text>\\n\\n``) — session_id is not exposed mid-stream, so
+    state-preservation validation requires the caller to know the
+    session id up front.
+
+    Yields ``(session_id, chunks_received_before_kill)``. The caller is
+    expected to issue a follow-up request against the same session_id
+    after the context exits to verify state preservation.
     """
     body = payload or {
         "messages": [{"role": "user", "content": "Hello, who are you?"}],
+        "session_id": session_id,
         "stream": True,
     }
+    if "session_id" not in body:
+        body["session_id"] = session_id
     chunks: list[bytes] = []
-    session_id: str | None = None
     headers = {"Authorization": f"Bearer {auth_token}"}
 
-    async with httpx.AsyncClient(base_url=server.base_url, timeout=30.0) as client:
+    async with httpx.AsyncClient(
+        base_url=server.base_url, timeout=request_timeout_s
+    ) as client:
         async with client.stream(
             "POST",
             "/api/v1/chat/completions",
@@ -157,10 +170,6 @@ async def streaming_chat_with_kill(
             resp.raise_for_status()
             async for chunk in resp.aiter_bytes():
                 chunks.append(chunk)
-                # Best-effort session_id extraction — the streaming contract
-                # may carry it as a header or an early SSE/JSON chunk.
-                if session_id is None:
-                    session_id = resp.headers.get("X-Session-Id")
                 if len(chunks) >= chunks_before_kill:
                     break
 
@@ -169,8 +178,5 @@ async def streaming_chat_with_kill(
     server.terminate(signal_term=True)
     server.port = port
     server.start()
-
-    if session_id is None:
-        raise RuntimeError("No session_id captured from streaming response")
 
     yield session_id, chunks

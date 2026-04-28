@@ -47,7 +47,7 @@ want.
 | 1.1.1-3 (ADK stability) | 6.10–6.13 | `runs/run_adk_stability.py` | `query_corpus` (direct ADK ``Runner``, not HTTP) |
 | 1.14.5 (OTEL stability) | 6.14–6.17 | `runs/run_otel_stability.py` | `query_corpus` + `memory_profiler` + `weave_trace_capture` |
 | 1.1.2-3 (trace compliance) | 6.18–6.20 | `runs/run_trace_compliance.py` | `query_corpus` + `weave_trace_capture` |
-| 1.1.5-4 (session stability) | 6.21–6.24 | _TBD_ | `memory_profiler` + `redis_ttl_fixture` + `stream_reconnect_fixture` |
+| 1.1.5-4 (session stability) | 6.21–6.24 | `runs/run_session_stability.py` | `memory_profiler` + `redis_ttl_fixture` + `stream_reconnect_fixture` |
 
 ## Driving a run by hand
 
@@ -140,6 +140,27 @@ PYTHONPATH=.:api/src uv run --project api python \
 Step 2 spawns subprocesses with stdout/stderr redirected to a temp log
 file (NOT a PIPE) — draining a PIPE in the parent's psutil polling
 loop would deadlock the child once the buffer fills (~64 KB).
+
+### Session stability driver (`runs/run_session_stability.py`)
+
+Runs Sprint 6 ACs 6.21–6.24 as four sub-tests with a `--tests` filter:
+
+```bash
+# Test 1 — 2-hour sustained session (long pole; launch in background)
+PYTHONPATH=.:api/src nohup uv run --project api python -u \
+  tests/integration/stability/runs/run_session_stability.py \
+  --tests 1 --duration-seconds 7200 --interaction-interval-s 300 \
+  > /tmp/session_test1.log 2>&1 &
+
+# Tests 2 + 3 + 4 — fast (~5-10 min)
+PYTHONPATH=.:api/src uv run --project api python \
+  tests/integration/stability/runs/run_session_stability.py --tests 2,3,4
+```
+
+Tests 2 (stream reconnect) and 3 (Redis TTL) skip gracefully if their
+prerequisites aren't met (`HARNESS_AUTH_TOKEN` for Test 2, local
+Redis for Test 3). The skip is reported as `SKIP` in the summary and
+captured in the JSON report's `skip_reason` field.
 
 ## Notes & known gaps
 
