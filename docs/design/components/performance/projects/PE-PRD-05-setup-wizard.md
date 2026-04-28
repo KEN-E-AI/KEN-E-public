@@ -409,7 +409,7 @@ This endpoint does not exist in the current SAR-E implementation plan. This PRD'
 - Step 2: select 4 KPIs via the `<FunnelStageMappingEditor />`, fill 4 `<KPISelectionForm>`s, click Continue
 - Step 3: verify the panel shows "52 weeks" (limiting KPI named if applicable) → click Continue
 - Step 4: verify summary → click Submit → wait for polling to complete
-- Verify redirect to `/performance/analysis`, verify all 5 tabs visible, verify `forecasting_enabled=true` via `/config/status`
+- Verify redirect to `/performance/analysis`, verify all 6 tabs visible (Analysis / Dashboards / Simulations / Targets / Diagnostics / Configuration), verify `forecasting_enabled=true` via `/config/status`
 - Verify draft doc deleted
 
 **Playwright — abandon + resume** (`performance-setup-wizard-abandon-resume.spec.ts`):

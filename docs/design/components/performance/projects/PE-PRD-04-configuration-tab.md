@@ -193,6 +193,10 @@ Brand types per CLAUDE.md C-5.
 | Create | `frontend/src/hooks/useChannelCoverageMutation.ts` |
 | Create | `frontend/src/hooks/useFunnelMappingHistory.ts` |
 | Create | `frontend/src/services/performanceConfigApi.ts` — axios wrappers for the `PUT /sar-e/config/*` endpoints + history read |
+| Modify | `api/src/kene_api/routers/performance.py` (scaffolded by PE-PRD-01) — add `GET /api/v1/performance/{account_id}/configuration` endpoint; declares `require_role(AccountRole.VIEWER, scope="account")`; delegates composition to `PerformanceBundleComposer.compose_configuration_bundle` |
+| Modify | `api/src/kene_api/services/performance_bundle_composer.py` (scaffolded by PE-PRD-01) — add `async compose_configuration_bundle(account_id)` method; reads SAR-E `/config/funnel-mapping`, `/config/thresholds`, `/config/channel-coverage`, `/config/effectiveness-kpis`, `/config/status` (for `connected_integrations` + `available_kpi_sources`) + the wizard-draft Firestore doc (PE-PRD-05's `accounts/{account_id}/performance_wizard_draft`) for the resume-banner signal |
+| Modify | `api/src/kene_api/models/performance_models.py` (scaffolded by PE-PRD-01) — add `ConfigurationBundle`, `EffectivenessKPI`, `FunnelStageMapping`, `Threshold`, `ChannelCoverageMatrix`, `ChannelCoveragePoint`, `PlatformConnectionSummary`, `AvailableKPISource`, `PerformanceWizardDraftSummary` Pydantic models per §4.1 |
+| Create | `api/tests/integration/test_performance_configuration_bundle.py` — pre-wizard variant (no draft, with draft, no integrations, with integrations) + post-wizard variant (full bundle) + `forecasting_enabled=false` short-circuit |
 | Create | `frontend/src/types/performance/configuration.ts` — branded types + form state + `ConfigurationMode` |
 | Create | `frontend/src/pages/Performance/__tests__/ConfigurationTab.test.tsx` |
 | Create | `frontend/src/components/performance/config/__tests__/FunnelStageMappingEditor.test.tsx` |

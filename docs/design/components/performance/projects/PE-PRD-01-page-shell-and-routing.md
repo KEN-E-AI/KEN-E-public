@@ -1,9 +1,10 @@
 # PE-PRD-01 — Page Shell, Routing & Shared State
 
-**Status:** Draft — ready to start once UI-PRD-01 ships
+**Status:** Draft — ready to start once UI-PRD-01 and FF-PRD-03 ship
 **Owner team:** Frontend (Performance)
 **Blocked by:** UI-PRD-01 (design tokens + shell layout the six tabs live in); FF-PRD-03 (the `useFeatureFlag` hook every tab mounts behind)
-**Blocks:** PE-PRD-02, PE-PRD-03, PE-PRD-04, PE-PRD-05, PE-PRD-06, PE-PRD-07
+**Blocks:** PE-PRD-02, PE-PRD-03, PE-PRD-04, PE-PRD-05, PE-PRD-06, PE-PRD-07; **DB-PRD-02** (consumes the Dashboards tab slot reserved here)
+**Release:** 2 (moved up from R4 to unblock DB-PRD-02 — gate defaults `enabled=false` when SE-PRD-01's `/config/status` is unavailable, so the four SAR-E-backed tabs stay hidden in R2 and light up automatically when SE-PRD-01 ships in R4)
 **Estimated effort:** 1–2 days
 
 ---
@@ -14,7 +15,7 @@ Performance is a new top-level page at `/performance` with **six tabs** in this 
 
 Three shell responsibilities anchor this PRD:
 
-1. **Opt-in enablement (SAR-E only).** SAR-E is disabled at account creation. Until the setup wizard completes, the four SAR-E-backed tabs (Analysis / Simulations / Targets / Diagnostics) are hidden from the nav entirely; **Dashboards** and **Configuration** remain visible regardless because Dashboards is independent of SAR-E (powered by Project Tasks + Automations, not by the analytical backend). Configuration renders a single empty-state CTA pointing at `/performance/setup` until the wizard completes; Dashboards renders the regular DB-PRD-02 list (or its empty state) without gating. Once SAR-E's `/config/status` flips to `enabled=true`, all six tabs appear and `/performance` defaults to Analysis. The gate that drives this behavior lives here, not in each tab.
+1. **Opt-in enablement (SAR-E only).** SAR-E is disabled at account creation. Until the setup wizard completes, the four SAR-E-backed tabs (Analysis / Simulations / Targets / Diagnostics) are hidden from the nav entirely; **Dashboards** and **Configuration** remain visible regardless because Dashboards is independent of SAR-E (powered by Project Tasks + Automations, not by the analytical backend). Configuration renders a single empty-state CTA pointing at `/performance/setup` until the wizard completes; Dashboards renders the regular DB-PRD-02 list (or its empty state) without gating. Once SAR-E's `/config/status` flips to `enabled=true`, all six tabs appear and `/performance` defaults to Analysis. The gate that drives this behavior lives here, not in each tab. **Graceful degradation pre-SAR-E:** PE-PRD-01 ships in R2, one release before SE-PRD-01 (R4) which owns `/sar-e/{account_id}/config/status`. When that endpoint is missing (404), errors (4xx/5xx), or unreachable (network), the gate treats SAR-E as disabled (`enabled=false`) without surfacing an error UI — same UX as a fresh-account pre-wizard state. The gate "lights up" automatically once SE-PRD-01 ships and the endpoint returns a real `enabled` value.
 2. **Shared page state.** Every data tab reads the same week-indexed period and comparison mode. Hoisting that into a `PerformanceDateRangeContext` at the shell — versus redeclaring it per tab — means a user's date selection survives tab switches and the per-tab query keys stay trivially composable.
 3. **Terminology scaffolding.** The Figma export labels forecast-derived values as "Goals" in Simulations; the product decision is to rename that concept to "Targets" everywhere in this component (Goals remain a Knowledge-Graph concept). The `useTargets` hook scaffolding and the naming convention for every downstream hook / context / component ships here so PE-PRD-03 does not need to re-introduce the rename mid-build.
 
@@ -26,7 +27,7 @@ This PRD does no live data consumption. All TanStack Query wiring, bundle fetche
 
 - `PerformancePage` at `/performance` with **six** child routes (in this tab order): `/performance/analysis`, `/performance/dashboards`, `/performance/simulations`, `/performance/targets`, `/performance/diagnostics`, `/performance/configuration`
 - Dedicated `/performance/setup` route placeholder (full wizard ships in PE-PRD-05; this PRD mounts a route target so `/performance/setup` resolves instead of hitting UI-PRD-01's `NotFoundPage` during parallel development)
-- `ForecastingEnabledGate` React component: reads SAR-E `/config/status` once per page mount; when `enabled=false`, hides **Analysis / Simulations / Targets / Diagnostics** from the tab nav and renders only **Dashboards + Configuration**. Configuration renders an empty-state CTA ("Set up forecasting") that navigates to `/performance/setup`; Dashboards renders DB-PRD-02's list (or its own empty state) regardless of SAR-E state. When `enabled=true`, renders all six tabs.
+- `ForecastingEnabledGate` React component: reads SAR-E `/config/status` once per page mount; when `enabled=false`, hides **Analysis / Simulations / Targets / Diagnostics** from the tab nav and renders only **Dashboards + Configuration**. Configuration renders an empty-state CTA ("Set up forecasting") that navigates to `/performance/setup`; Dashboards renders DB-PRD-02's list (or its own empty state) regardless of SAR-E state. When `enabled=true`, renders all six tabs. **On 404 / 4xx / 5xx / network error from `/config/status`** (the expected R2 state until SE-PRD-01 ships in R4), the gate treats SAR-E as disabled (`enabled=false`) silently — no error toast, no retry button, no "Coming soon" overlay; the user sees Dashboards + Configuration only.
 - Default-route logic on `/performance`: redirect to `/performance/configuration` when `enabled=false`; redirect to `/performance/analysis` when `enabled=true`
 - `PerformanceDateRangeContext` provider — week-indexed `period: DateRange` plus `comparisonMode: ComparisonMode` — mounted inside the SAR-E-gated tabs only (Analysis / Simulations / Targets / Diagnostics). Not mounted above Dashboards or Configuration — pre-wizard there is no range to carry, and Dashboards uses its own filtering surfaces (DB-PRD-02 / DB-PRD-03)
 - Five branded types in `frontend/src/types/performance.ts`: `FunnelObjective`, `EffectivenessKPIId`, `ComparisonMode`, `CostDimension`, `WizardStep`
@@ -51,7 +52,7 @@ This PRD does no live data consumption. All TanStack Query wiring, bundle fetche
 - **UI-PRD-01 (Design System Foundation):** supplies the shell layout, tab primitives, and Soft Maximalism tokens every placeholder + gate + CTA uses. The Performance page registers as a new top-level nav entry against the shell's sidebar slot.
 - **FF-PRD-03 (Feature Flags Frontend SDK):** publishes `FeatureFlagsProvider` + `useFeatureFlag(key)`. Both are already mounted in `App.tsx` above `AuthContext`; this PRD registers seven new flag keys in `frontend/src/lib/featureFlags/registry.ts` so they're in the batch evaluation on provider mount.
 - **DB-PRD-02 (Dashboards Tab & List):** owns and fills in the **Dashboards** tab content (`DashboardsSection`). PE-PRD-01 reserves the tab slot + route; DB-PRD-02 mounts its list view inside that slot. The legacy `frontend/src/pages/Performance.tsx` is deleted by this PRD entirely; UI-PRD-07 (the original presentation-only redesign) is **retired and subsumed by PE-PRD-01** (see component README §1.4 and `docs/design/DESIGN-REVIEW-LOG.md`) — no coordination remains.
-- **SE-PRD-01 (SAR-E Configuration foundation):** publishes `GET /api/v1/sar-e/{account_id}/config/status`. `ForecastingEnabledGate` reads this endpoint. No write coupling here — status is read-only from Performance's perspective.
+- **SE-PRD-01 (SAR-E Configuration foundation, soft dep — R4):** publishes `GET /api/v1/sar-e/{account_id}/config/status`. `ForecastingEnabledGate` reads this endpoint. **Soft dep only** — PE-PRD-01 ships in R2, one release before SE-PRD-01. The gate degrades gracefully (404 / 4xx / 5xx / network → `enabled=false`) so PE-PRD-01 is fully functional in R2 with only Dashboards + Configuration tabs visible. When SE-PRD-01 ships in R4, the gate begins returning live values without any code change here. No write coupling — status is read-only from Performance's perspective.
 - **Existing files to study:**
   - `frontend/src/App.tsx` — shell-level routing + `FeatureFlagsProvider` mount
   - `frontend/src/pages/Performance.tsx` — legacy page to replace
@@ -172,6 +173,10 @@ The gate exposes no imperative API. Downstream consumers that need the current s
 | Create | `frontend/src/pages/Performance/SetupRoutePlaceholder.tsx` — stub replaced by PE-PRD-05 |
 | Create | `frontend/src/hooks/useTargets.ts` — hook scaffolding per §4.3 |
 | Create | `frontend/src/services/performanceApi.ts` — axios client boundary used by every tab's bundle call (initial surface: `getConfigStatus(accountId)`; bundle fetchers added per tab PRD) |
+| Create | `api/src/kene_api/routers/performance.py` — empty BFF router scaffold mounted at `/api/v1/performance/{account_id}`; ships only `getConfigStatus` proxy in this PRD; tab PRDs (PE-PRD-02 / 03 / 04 / 06 / 07) each `Modify` to add their bundle endpoint; PE-PRD-03 adds `POST /simulations/run`; PE-PRD-05 adds wizard-draft endpoints |
+| Create | `api/src/kene_api/services/performance_bundle_composer.py` — empty service scaffold with class skeleton + `asyncio.gather` parallel-fanout helper; tab PRDs each `Modify` to add a `compose_<tab>_bundle(account_id, ...)` method |
+| Create | `api/src/kene_api/models/performance_models.py` — empty composite-models module; tab PRDs each `Modify` to add their `<Tab>Bundle` Pydantic model |
+| Modify | `api/src/kene_api/main.py` — register `performance` router |
 | Modify | `frontend/src/App.tsx` — replace legacy `Performance.tsx` route with `PerformancePage`; register nested routes for `analysis`, `dashboards`, `simulations`, `targets`, `diagnostics`, `configuration`, `setup`; register `/performance` index redirect driven by gate |
 | Modify | `frontend/src/lib/featureFlags/registry.ts` — add seven flag keys: `performance_analysis_tab`, `performance_dashboards_tab`, `performance_simulations_tab`, `performance_targets_tab`, `performance_diagnostics_tab`, `performance_configuration_tab`, `performance_setup_wizard` |
 | Modify | `frontend/src/components/layout/Sidebar.tsx` — retain Performance nav entry; no icon change |
@@ -239,18 +244,26 @@ Consumption rules:
 - Query key: `['sar-e', 'config-status', accountId]`.
 - Stale time: 60 seconds (matches FF-PRD-03's convention for reference-data reads).
 - Refetch triggers: window focus (default), tab switch back to Performance (explicit `refetch()` at page mount), explicit `invalidateQueries` after wizard completion (called by PE-PRD-05).
-- Error handling: on 5xx / network error, the gate renders the "Coming soon" variant with a retry button rather than defaulting to enabled-false (fail-closed-for-nav, fail-open-for-troubleshooting).
+- Error handling: on 404 / 4xx / 5xx / network error, the gate **silently degrades to `enabled=false`** — no error UI, no retry button. This is the expected R2 state until SE-PRD-01 ships in R4. If SE-PRD-01 is shipped and the endpoint subsequently fails (e.g., a real outage post-launch), the gate still degrades to "SAR-E disabled" UX rather than surfacing a tab-nav error; ops teams diagnose via the structured 4xx/5xx logs and Weave traces. (Decision rationale: Dashboards must remain usable regardless of SAR-E availability, so the gate's failure mode is "hide the SAR-E tabs," not "block the page.")
 
-### 6.2 Not owned here
+### 6.2 Backend scaffolds shipped here; bundle endpoints owned by tab PRDs
 
-This PRD does not ship any performance-bundle endpoints. Each tab's bundle fetcher lands in its own PRD:
+This PRD ships **empty backend scaffolds** so the first tab implementer doesn't need to invent the file structure mid-build:
+
+- `api/src/kene_api/routers/performance.py` — FastAPI router mounted at `/api/v1/performance/{account_id}`. Initial surface: a single `GET /config/status` proxy that forwards to SAR-E (matches the frontend's `performanceApi.getConfigStatus`). `require_role(AccountRole.VIEWER, scope="account")` declared at router level.
+- `api/src/kene_api/services/performance_bundle_composer.py` — service class skeleton with an `asyncio.gather`-based parallel-fanout helper that each tab PRD's `compose_<tab>_bundle` method will use. Includes the `forecasting_enabled=false` short-circuit logic so each tab's compose method inherits "all-nulls when SAR-E disabled" without duplicating the check.
+- `api/src/kene_api/models/performance_models.py` — empty module that each tab PRD will extend with its `<Tab>Bundle` Pydantic composite (`AnalysisBundle`, `SimulationsBundle`, `TargetsBundle`, `DiagnosticsBundle`, `ConfigurationBundle`).
+
+Tab-PRD ownership of the actual endpoints + composer methods + bundle models:
+
 - `/performance/{account_id}/analysis` — PE-PRD-02
-- `/performance/{account_id}/simulations` — PE-PRD-03
+- `/performance/{account_id}/simulations` (GET) + `/performance/{account_id}/simulations/run` (POST) — PE-PRD-03
 - `/performance/{account_id}/targets` — PE-PRD-06
 - `/performance/{account_id}/diagnostics` — PE-PRD-07
 - `/performance/{account_id}/configuration` — PE-PRD-04
+- `/performance/{account_id}/wizard-draft` (GET / PUT / DELETE) — PE-PRD-05
 
-The `performanceApi.ts` service-layer boundary is created here with only `getConfigStatus(accountId)`; the bundle fetchers are additive additions per tab PRD.
+Each tab PRD's §5 implementation outline `Modify`s the three scaffold files (`routers/performance.py`, `services/performance_bundle_composer.py`, `models/performance_models.py`) to add its endpoint, composer method, and bundle model. The `performanceApi.ts` frontend service-layer boundary is created here with only `getConfigStatus(accountId)`; tab-specific fetchers are additive per tab PRD.
 
 ## 7. Acceptance criteria
 
@@ -272,6 +285,7 @@ The `performanceApi.ts` service-layer boundary is created here with only `getCon
 16. `FunnelObjective`, `EffectivenessKPIId`, `ComparisonMode`, `CostDimension`, `WizardStep` are exported from `frontend/src/types/performance.ts` and importable by at least one consumer in this PRD's tests.
 17. `npm run build`, `npm run typecheck`, `npm run format.fix` all clean.
 18. `performance-shell.spec.ts` Playwright test passes: (a) new account → lands on Configuration, only Dashboards + Configuration tabs visible; (b) enabled account → lands on Analysis, all six tabs visible in the documented order.
+19. **Graceful degradation:** On a fresh deploy where `GET /sar-e/{account_id}/config/status` returns 404 (SE-PRD-01 hasn't shipped yet), `/performance` redirects to `/performance/configuration`; only Dashboards + Configuration tabs render; no error toast, no "Coming soon" overlay, no retry button. The same UX holds for 500 responses and network failures.
 
 ## 8. Test plan
 
@@ -279,7 +293,9 @@ The `performanceApi.ts` service-layer boundary is created here with only `getCon
 - `enabled=false` renders `<ConfigurationEmptyState />` and does not render `children`
 - `enabled=true` renders `children` wrapped in `<PerformanceDateRangeProvider>`
 - Loading state renders a skeleton (no flash of either variant)
-- Network error renders a retry button and does not silently default to `enabled=true`
+- **404 response** (SE-PRD-01 not yet shipped) → gate renders as `enabled=false`; no error UI; no retry button
+- **500 response** → gate renders as `enabled=false`; no error UI
+- **Network error** (fetch reject) → gate renders as `enabled=false`; no error UI
 - Mock `useQuery` for `['sar-e', 'config-status', accountId]`; assert the query key and `staleTime: 60_000`
 
 **Unit tests** (`PerformanceDateRangeContext.test.tsx`):

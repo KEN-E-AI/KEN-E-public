@@ -29,6 +29,7 @@ What this PRD is **not:** any live connector implementation (Google Analytics is
 - Catalog read endpoints on the main API (colocated with the existing FastAPI app): `GET /api/v1/data-pipeline/jobs` (list global + per-account overlay, filter by `connector`), `GET /api/v1/data-pipeline/jobs/{job_id}` (fetch one)
 - Catalog write endpoints `POST /api/v1/data-pipeline/jobs` (create a per-account custom job), `PUT /api/v1/data-pipeline/jobs/{job_id}` (update a per-account custom job; bumps `version` monotonically; global jobs are read-only from the API), `DELETE /api/v1/data-pipeline/jobs/{job_id}` (soft-delete via `is_active=false` on per-account overlay docs); validates against the `DataPipelineJob` schema + a JSON-Schema meta-validator on declared `input_schema` / `output_schema`; requires `editor` role or higher per DM-PRD-07
 - **Internal (OIDC) catalog read endpoints** — service-to-service surface for SAR-E and other internal consumers: `GET /api/v1/internal/data-pipeline/jobs?account_id={id}` (list global + per-account overlay), `GET /api/v1/internal/data-pipeline/jobs/{job_id}` (fetch one), `GET /api/v1/internal/data-pipeline/jobs/{job_id}/history-depth?account_id={id}` (returns `{weeks_available: int | null}` — how far back the connector can fetch for the given account; v1 dispatches to the connector via `DataPipelineConnector.get_history_depth(credentials)`, defaulting to `null` for connectors that haven't implemented it; `StubConnector` returns a fixed value for contract tests)
+- **Internal (OIDC) per-source ingestion-status query** — service-to-service aggregation over `accounts/{account_id}/data_pipeline_runs` returning, for each requested `source_job_id`: `latest_run_at`, `latest_run_status`, `latest_successful_run_at`, `consecutive_failures` (count of `status="failed"` runs immediately preceding the most-recent `status="succeeded"` run), and `latest_error_message`. Consumed by Performance's Diagnostics-tab bundle composer (PE-PRD-07) joined with SAR-E's kpi-time-series-derived gap / coverage metrics. Endpoint: `GET /api/v1/internal/data-pipeline/{account_id}/ingestion-status?source_job_ids=<id1>,<id2>,...` (max 8 ids per call; 422 above)
 - Run read endpoints on the main API: `GET /api/v1/data-pipeline/{account_id}/runs` (list with filters: `plan_id`, `task_id`, `job_id`, `status`, `from`, `to`), `GET /api/v1/data-pipeline/{account_id}/runs/{run_id}` (detail + artifact link)
 - Per-account cache lookup keyed on `sha256(account_id || job_id || canonical_json(inputs) || job.version)`; cache hits still write a `DataPipelineRun` with `status="cached"` for audit completeness
 - Firestore collections: `data_pipeline_jobs/{job_id}` (global catalog — Shape B carve-out mirroring `agent_configs/*`), `accounts/{account_id}/data_pipeline_jobs/{job_id}` (per-account overlay), `accounts/{account_id}/data_pipeline_runs/{run_id}` (execution history). Migration authored against DM-PRD-00's framework; composite indexes registered per `(account_id, plan_id, started_at)` and `(account_id, job_id, started_at)`
@@ -55,6 +56,7 @@ What this PRD is **not:** any live connector implementation (Google Analytics is
 - **Project Tasks (PR-PRD-01):** soft dependency. `DataPipelineRun` carries `plan_id` and `task_id` so runs can be attributed to a task; the schema does not require PR-PRD-01 to ship first, but the full end-to-end hand-off requires DP-PRD-03 which depends on PR-PRD-04.
 - **Automations (A-PRD-02, A-PRD-03):** soft dependency. `PipelineJobSpec.output_artifact_name` is the name under which a downstream `TaskArtifact` will be written in DP-PRD-03 via A-PRD-03's write path. This PRD exposes the field but does not call A-PRD-03.
 - **Forward-coordination — SAR-E (SE-PRD-01, SE-PRD-02):** downstream consumer of the new internal catalog + `/history-depth` endpoints scoped in §6.7. The endpoints are stable from this PRD onwards; `StubConnector.get_history_depth()` returning `104` lets SE-PRD-01 / SE-PRD-02 drive the contract before DP-PRD-02's GA implementation lands.
+- **Forward-coordination — Performance (PE-PRD-07):** downstream consumer of the new `/ingestion-status` endpoint scoped in §6.7. PE-PRD-07's Diagnostics-tab bundle composer joins this PRD's per-source run aggregation with SAR-E's kpi-time-series-derived `latest_week_ingested` / `gap_count_last_13_weeks` / `coverage_percent_last_53_weeks` to assemble `KPIIngestionStatus`. The endpoint is stable from this PRD onwards; `StubConnector` runs let PE-PRD-07 drive the contract before live connectors ship.
 - **Existing files to study:**
   - `api/src/kene_api/routers/strategy.py` — account-scoped CRUD pattern this PRD's catalog + runs routers mirror (versioning, soft-delete, access-control dependency)
   - `api/src/kene_api/routers/project_plans.py` (PR-PRD-01) — router registration + audit + `PATCH` semantics reference
@@ -194,6 +196,29 @@ Lives in `services/data_pipeline/connectors/stub.py`. Returns a deterministic `P
 - Contract tests in this PRD
 - DP-PRD-03 integration tests that exercise the orchestrator dispatch branch before DP-PRD-02 ships
 - DP-PRD-01's contract test for `GET /api/v1/internal/data-pipeline/jobs/{job_id}/history-depth` (asserts the stub's `104` flows through the endpoint)
+- DP-PRD-01's contract test for `GET /api/v1/internal/data-pipeline/{account_id}/ingestion-status` (asserts `consecutive_failures` accounting flows through correctly when seeded `DataPipelineRun` rows alternate `succeeded` / `failed`)
+
+### 4.7 `IngestionStatusEntry` (per-source aggregation result)
+
+```python
+class IngestionStatusEntry(BaseModel):
+    source_job_id: str
+    latest_run_at: datetime | None              # most recent DataPipelineRun.started_at across any status
+    latest_run_status: Literal["running", "succeeded", "failed", "cached"] | None
+    latest_successful_run_at: datetime | None   # most recent DataPipelineRun.finished_at where status="succeeded"
+    consecutive_failures: int                   # count of status="failed" runs immediately preceding the most-recent status="succeeded" run; 0 when the most-recent run succeeded or no runs exist
+    latest_error_message: str | None            # error_message of the most-recent failed run; null otherwise
+
+class IngestionStatusResponse(BaseModel):
+    ingestion_status: list[IngestionStatusEntry]
+```
+
+**Aggregation semantics:**
+
+- A `source_job_id` with zero runs in `accounts/{account_id}/data_pipeline_runs` returns an entry with all-null timestamps + `consecutive_failures=0` + `latest_error_message=null`. Callers MUST handle this "never run" case.
+- `consecutive_failures` is computed by walking runs in `started_at DESC` order and counting `status="failed"` rows until the first non-failed row is seen. `status="cached"` does not break the streak (cache hits don't affect the connector's health signal); `status="running"` and `status="succeeded"` do break it.
+- `latest_error_message` is sourced from the most-recent `status="failed"` row's `error_message`, regardless of whether `consecutive_failures > 0`. This lets the UI surface the last known error even after a successful retry.
+- The aggregation is bounded — for each source the query reads at most 50 most-recent runs (covers the worst realistic streak); if the streak exceeds 50, `consecutive_failures` is capped at 50 and a `truncated` flag (TBD — add only if PE-PRD-07 needs it) would be set. v1 does not surface a truncation flag; consumers should treat `consecutive_failures=50` as "≥50".
 
 ## 5. Implementation outline
 
@@ -211,7 +236,9 @@ Lives in `services/data_pipeline/connectors/stub.py`. Returns a deterministic `P
 | Create | `services/data_pipeline/pyproject.toml` — Python deps (`fastapi`, `uvicorn`, `google-cloud-firestore`, `google-cloud-storage`, `pyarrow`, `jsonschema`, `weave`) |
 | Create | `api/src/kene_api/routers/data_pipeline.py` — public catalog (GET/POST/PUT/DELETE) + runs read endpoints (main API; reads the sibling service's Firestore directly) |
 | Create | `api/src/kene_api/routers/internal/data_pipeline_catalog.py` — OIDC-authed `GET /api/v1/internal/data-pipeline/jobs`, `GET .../jobs/{job_id}`, `GET .../jobs/{job_id}/history-depth?account_id=...` (the last dispatches via the connector registry's `get_history_depth`) |
-| Modify | `api/src/kene_api/main.py` — register `data_pipeline` + `internal.data_pipeline_catalog` routers |
+| Create | `api/src/kene_api/routers/internal/data_pipeline_ingestion_status.py` — OIDC-authed `GET /api/v1/internal/data-pipeline/{account_id}/ingestion-status?source_job_ids=...`; aggregates `data_pipeline_runs` per §6.7 |
+| Create | `api/src/kene_api/services/data_pipeline_ingestion_aggregator.py` — pure-logic helper that walks a list of `DataPipelineRun` rows in `started_at DESC` order and returns an `IngestionStatusEntry` per §4.7 semantics; unit-tested directly without Firestore |
+| Modify | `api/src/kene_api/main.py` — register `data_pipeline` + `internal.data_pipeline_catalog` + `internal.data_pipeline_ingestion_status` routers |
 | Create | `api/src/kene_api/models/data_pipeline_models.py` — Pydantic mirrors for the main API router (import from shared module or duplicate per existing convention; duplicate is fine if the sibling service is a separate deploy unit) |
 | Create | `deployment/terraform/data_pipeline_service.tf` — Cloud Run service `kene-data-pipeline-{env}` + IAM + secrets |
 | Create | `deployment/terraform/data_pipeline_firestore.tf` — composite-index registry entries |
@@ -223,6 +250,8 @@ Lives in `services/data_pipeline/connectors/stub.py`. Returns a deterministic `P
 | Create | `services/data_pipeline/tests/integration/test_internal_run_endpoint.py` |
 | Create | `api/tests/integration/test_data_pipeline_catalog_router.py` |
 | Create | `api/tests/integration/test_data_pipeline_internal_catalog_router.py` |
+| Create | `api/tests/integration/test_data_pipeline_internal_ingestion_status_router.py` — seeds a `data_pipeline_runs` fixture with mixed `succeeded` / `failed` / `cached` / `running` rows across 3 source ids; asserts (a) ordering preserves input order, (b) `consecutive_failures` counts up to (but not past) the latest succeeded row, (c) cached rows do not break the failure streak, (d) never-run sources return all-null, (e) >8 ids returns 422 |
+| Create | `api/tests/unit/test_data_pipeline_ingestion_aggregator.py` — pure-logic unit tests for the aggregator helper (T-4 split: pure-logic separated from Firestore) |
 | Create | `api/tests/integration/test_data_pipeline_runs_router.py` |
 
 ### Firestore layout
@@ -379,9 +408,9 @@ Response: a single `DataPipelineRun` plus a signed URL for the output artifact (
 
 **Error codes:** `404` run not found or cross-account access.
 
-### 6.7 Internal catalog endpoints (OIDC, service-to-service)
+### 6.7 Internal endpoints (OIDC, service-to-service)
 
-Mirror of the public catalog reads, but OIDC-authed for service-to-service consumers (SAR-E's KPI-source validator + backfill-plan probe per SE-PRD-01 / SE-PRD-02). Same response shapes as their public siblings — only the auth and the `?account_id=` query parameter (instead of route-derived account) differ.
+OIDC-authed surface for service-to-service consumers (SAR-E's KPI-source validator + backfill-plan probe per SE-PRD-01 / SE-PRD-02; Performance's Diagnostics-tab bundle composer per PE-PRD-07). Catalog-mirror endpoints share response shapes with their public siblings — only the auth and the `?account_id=` query parameter (instead of route-derived account) differ. The `/history-depth` and `/ingestion-status` endpoints are aggregation reads with no public siblings.
 
 #### `GET /api/v1/internal/data-pipeline/jobs?account_id={id}`
 
@@ -403,12 +432,31 @@ OIDC. Returns `{"weeks_available": <int|null>}` — the number of weeks back the
 
 **Error codes:** `401` missing OIDC; `403` non-allowlisted SA; `404` job not found; `409` connection in `needs_reauth`; `500` connector raised an unexpected error (sanitized).
 
+#### `GET /api/v1/internal/data-pipeline/{account_id}/ingestion-status?source_job_ids=<id1>,<id2>,...`
+
+OIDC. Returns per-source aggregation over `accounts/{account_id}/data_pipeline_runs` to support PE-PRD-07's Diagnostics-tab Ingestion Health section. Response: `IngestionStatusResponse` per §4.7 — one `IngestionStatusEntry` per requested `source_job_id`, in the same order as the query.
+
+**Query params:**
+
+- `source_job_ids` — required; comma-separated list of 1–8 `DataPipelineJob.job_id` values. The 8-id cap matches the realistic worst case (4 mapped Effectiveness KPIs in v1; 8 leaves headroom for future use). 422 above 8.
+
+**Implementation:**
+
+1. Parse and de-duplicate `source_job_ids`. Reject with 422 if any id is empty or the list is empty.
+2. For each id, run a `data_pipeline_runs` collection-group query filtered by `account_id` + `job_id`, ordered `started_at DESC`, `limit(50)`. Existing composite index `account_id ASC, job_id ASC, started_at DESC` (§5 Composite indexes) covers it.
+3. Walk the returned runs to compute the four derived fields per §4.7 aggregation semantics.
+4. Return the entries in input order. Unknown / never-run `source_job_ids` get an all-null entry — the caller decides whether that's a soft warning or hard error in its UX.
+
+**Performance budget:** 8 single-collection-group reads, each capped at 50 docs, in parallel via `asyncio.gather`. p95 target ≤200 ms (validated in §8 contract test).
+
+**Error codes:** `401` missing OIDC; `403` non-allowlisted SA; `422` invalid / empty / >8 `source_job_ids`; `500` Firestore unavailable (sanitized).
+
 ### 6.8 Consumption rules
 
 - The internal run endpoint (§6.1) is the single entry point for run execution. The main API's run read endpoints are strictly read-only.
 - Callers of `POST /api/v1/internal/data-pipeline/run` MUST set both `plan_id` and `task_id` when the caller is the orchestrator; ad-hoc calls (reserved for internal debugging) may leave them `null` but the run record stays queryable by `job_id`.
 - The catalog endpoints are safe to call frequently — frontend (DP-PRD-04) will fetch the catalog on `ProjectEditDrawer` mount. No rate limit beyond the existing per-IP limit on `/api/v1/*`.
-- The internal catalog endpoints (§6.7) are reserved for service-to-service callers (SAR-E in v1). They do **not** count against per-account rate-limit budgets — the budget is for connector runs, not catalog reads. The `/history-depth` endpoint may make a single platform-API call per uncached probe; it is **not** subject to the per-connector daily/hourly run budgets but DOES respect the same `needs_reauth` behavior.
+- The internal endpoints (§6.7) are reserved for service-to-service callers (SAR-E + Performance in v1). They do **not** count against per-account rate-limit budgets — the budget is for connector runs, not aggregation / catalog reads. The `/history-depth` endpoint may make a single platform-API call per uncached probe; it is **not** subject to the per-connector daily/hourly run budgets but DOES respect the same `needs_reauth` behavior. The `/ingestion-status` endpoint is a pure Firestore aggregation (no platform-API calls); PE-PRD-07's 60-second polling cadence is absorbed by both the bounded `limit(50)` query and the Diagnostics-tab's React Query stale time.
 
 ## 7. Acceptance criteria
 
@@ -429,8 +477,9 @@ OIDC. Returns `{"weeks_available": <int|null>}` — the number of weeks back the
 15. Every run (hit or miss) emits a `data_pipeline.run` Weave span with attributes `{connector, operation, input_hash, row_count, cache_hit, test_mode}`; span shape verified by a contract test asserting exact key set.
 16. **Internal catalog endpoints (OIDC):** `GET /api/v1/internal/data-pipeline/jobs?account_id=A` returns the same union as the public endpoint for account `A`; valid OIDC required (401 without; 403 from a non-allowlisted SA). `GET /api/v1/internal/data-pipeline/jobs/{job_id}?account_id=A` resolves overlay > global with the same auth rules.
 17. **Internal `/history-depth`:** with a `StubConnector`-backed job, `GET /api/v1/internal/data-pipeline/jobs/{job_id}/history-depth?account_id=A` returns `{"weeks_available": 104}` (the stub's fixed value). When the underlying connection is in `needs_reauth`, the endpoint returns `409` with `{"reason": "needs_reauth", "platform_id": ...}`.
-18. The migration `DM-2026-05-01-data-pipeline-collections.py` runs cleanly under DM-PRD-00's framework; composite indexes listed in §5 exist after migration in the local emulator and in the Terraform-managed indexes file.
-19. `make lint` passes (**G-1**: ruff + mypy + codespell) and `pytest services/data_pipeline/tests/ api/tests/integration/test_data_pipeline_*.py` passes green on CI.
+18. **Internal `/ingestion-status`:** `GET /api/v1/internal/data-pipeline/{account_id}/ingestion-status?source_job_ids=jobA,jobB` against a fixture of mixed `succeeded` / `failed` / `cached` runs returns an `IngestionStatusEntry` per requested id in input order; `consecutive_failures` reflects only the streak of `status="failed"` rows immediately preceding the most-recent `status="succeeded"` row (cached runs do not break the streak); never-run sources return all-null fields with `consecutive_failures=0`. `>8` ids → 422; missing OIDC → 401; non-allowlisted SA → 403. p95 ≤200 ms with 8 ids × 50 runs each.
+19. The migration `DM-2026-05-01-data-pipeline-collections.py` runs cleanly under DM-PRD-00's framework; composite indexes listed in §5 exist after migration in the local emulator and in the Terraform-managed indexes file.
+20. `make lint` passes (**G-1**: ruff + mypy + codespell) and `pytest services/data_pipeline/tests/ api/tests/integration/test_data_pipeline_*.py` passes green on CI.
 
 ## 8. Test plan
 
@@ -449,6 +498,8 @@ OIDC. Returns `{"weeks_available": <int|null>}` — the number of weeks back the
 
 - `test_data_pipeline_catalog_router.py` — `GET /jobs` returns union; filter by `connector` works; `GET /jobs/{job_id}` resolves overlay > global; unknown `job_id` → `404`. `POST /jobs` with editor role → `201`; viewer role → `403`; malformed `input_schema` → `422` with JSON Pointer; duplicate `job_id` → `409`. `PUT /jobs/{job_id}` on per-account job bumps `version` monotonically; on global `job_id` → `403`. `DELETE /jobs/{job_id}` sets `is_active=false` on per-account; on global → `403`.
 - `test_data_pipeline_internal_catalog_router.py` — internal `GET /internal/data-pipeline/jobs?account_id=A` requires OIDC (401 without); non-allowlisted SA → `403`; valid OIDC returns the union. `GET /internal/data-pipeline/jobs/{job_id}/history-depth?account_id=A` against a `StubConnector`-backed job returns `{"weeks_available": 104}`; when the connection is `needs_reauth`, returns `409`.
+- `test_data_pipeline_internal_ingestion_status_router.py` — fixture seeds `data_pipeline_runs` for 3 source ids: `jobA` with rows `[succeeded@T-1d, cached@T-3h, failed@T-1h, failed@T-30m]` (latest is failed → `consecutive_failures=2`, `latest_error_message` = T-30m's error), `jobB` with rows `[failed@T-1d, succeeded@T-1h]` (latest succeeded → `consecutive_failures=0`, but `latest_error_message` still set from the older failed row), `jobC` with no rows (all-null entry). Asserts ordering matches input list, asserts cached runs do not break the streak, asserts the `>8` ids 422 case, asserts the unknown-source all-null case.
+- `test_data_pipeline_ingestion_aggregator.py` (unit, T-4 split) — pure-logic tests for the aggregator helper consuming a list of `DataPipelineRun` rows in `started_at DESC` order; covers the same fixture matrix as the integration test without Firestore.
 - `test_data_pipeline_runs_router.py` — `GET /runs` filter matrix (`plan_id`, `task_id`, `job_id`, `status`, `from`, `to`) returns the right subset. Cross-account access → `403`. `GET /runs/{run_id}` returns a signed URL when the run has `output_artifact_id`; omits it otherwise.
 
 **E2E / contract tests** (`services/data_pipeline/tests/integration/test_stub_e2e.py`):

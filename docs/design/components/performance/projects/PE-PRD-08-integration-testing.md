@@ -164,7 +164,7 @@ Runs as a CI gate — a single match fails the build. The ESLint rule from PE-PR
 
 ### 4.4 Accessibility audit
 
-- Every tab (`/performance/analysis`, `/performance/simulations`, `/performance/targets`, `/performance/diagnostics`, `/performance/configuration`) + the wizard route (`/performance/setup`) is loaded in a Playwright test and passed through `axe-core` via `@axe-core/playwright`. Zero violations at `serious` or `critical` severity is the bar.
+- Every tab (`/performance/analysis`, `/performance/dashboards`, `/performance/simulations`, `/performance/targets`, `/performance/diagnostics`, `/performance/configuration`) + the wizard route (`/performance/setup`) is loaded in a Playwright test and passed through `axe-core` via `@axe-core/playwright`. Zero violations at `serious` or `critical` severity is the bar. The Dashboards tab is included even though its content is owned by the Dashboards component — it renders inside Performance's shell, so a11y violations on it land as Performance regressions to a user. (Dashboards-specific a11y testing remains in DB-PRD-04's scope; this is a belt-and-suspenders check on the integrated page.)
 - **Manual keyboard-navigation pass:** one engineer runs a scripted keyboard-only walkthrough of each tab + the full wizard flow (tab forward, arrow keys in the table, enter / escape to expand/collapse drill-downs, esc to cancel modals). Findings logged in the verification report (§4.6).
 - **Focus-order sanity check:** the wizard's step-by-step focus order matches reading order; the Configuration tab's Funnel Mapping editor focus order goes top-down through the four rows.
 
@@ -227,7 +227,7 @@ The Performance component shipped on YYYY-MM-DD. This section records the observ
 | Create | `frontend/e2e/performance-diagnostics.spec.ts` — E2E-4 |
 | Create | `frontend/e2e/performance-wizard-abandonment.spec.ts` — E2E-5 |
 | Create | `frontend/e2e/performance-perf.spec.ts` — P-1 / P-2 / P-3 via `performance.measure` markers |
-| Create | `frontend/e2e/performance-accessibility.spec.ts` — axe-core pass across all 5 tabs + wizard |
+| Create | `frontend/e2e/performance-accessibility.spec.ts` — axe-core pass across all 6 tabs (Analysis / Dashboards / Simulations / Targets / Diagnostics / Configuration) + wizard |
 | Create | `api/tests/integration/test_performance_terminology_rename.py` — §4.2 grep audit |
 | Create | `api/tests/integration/test_performance_contract.py` — §4.5 contract tests |
 | Create (if needed) | `api/tests/fixtures/seed_sar_e_fixture.py` — helper if SE-PRD-07 fixtures not yet available |
