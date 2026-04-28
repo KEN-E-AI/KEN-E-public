@@ -16,6 +16,8 @@ vi.mock("firebase/auth", () => ({
 // Mock the firebase lib
 vi.mock("@/lib/firebase", () => ({
   auth: {},
+  authInitialized: true,
+  authBypassEnabled: false,
 }));
 
 // Mock axios

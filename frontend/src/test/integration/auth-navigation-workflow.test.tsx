@@ -19,6 +19,8 @@ vi.mock("@/lib/firebase", () => ({
     signOut: vi.fn(),
     onAuthStateChanged: vi.fn(),
   },
+  authInitialized: true,
+  authBypassEnabled: false,
 }));
 
 // Mock organizationApi to prevent fetch errors
