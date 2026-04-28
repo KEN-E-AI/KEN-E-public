@@ -6,6 +6,8 @@
 **Parallel with:** A-PRDs 5, 6
 **Estimated effort:** 2 days
 
+**Forward-coordination — [DP-PRD-03](../../data-pipeline/projects/DP-PRD-03-task-system-integration.md):** the `data_pipeline` orchestrator branch added in DP-PRD-03 reads `is_test` from this PRD and dispatches according to each `DataPipelineJob.test_mode_policy` (`run_normally` default — execute the connector; `sandbox_endpoint` — forward `use_sandbox=true`; `fail_not_testable` — short-circuit to `Skipped`). A-PRD-04 ships the `is_test` thread; DP-PRD-03 adds the per-policy switch as an additive patch. No A-PRD-04 changes are required for the data-pipeline branch.
+
 ---
 
 ## 1. Context
@@ -35,6 +37,7 @@ When a test run hits a human-in-the-loop (HITL) task, the orchestrator **halts**
 - **A-PRD-3:** test runs save artifacts via the artifact system; the Outputs tab depends on this working
 - **Calendar PRD-4:** `TaskOrchestrator.activate_plan` + `on_task_status_change` — extended here to support test-mode halt semantics
 - **Calendar PRD-1:** PATCH task endpoint — must route status changes through the orchestrator (already does, per Calendar PRD-4)
+- **DM-PRD-07 (Roles, Members, Audit Substrate):** hard prerequisite. Both new endpoints (`/runs/test`, `/runs/{run_id}/cancel`) call `require_role(min_role=editor, scope=Account)` and `write_audit(...)`. Test-run creation reuses the `run_start` action introduced by A-PRD-2 (with `is_test=true` in the metadata); cancellation writes `run_complete` with `final_status="cancelled"`. Both actions and the `plan_run` resource type are already in DM-PRD-07's `project_plan_audit` registry — no registry update needed.
 
 ### Coordination — orchestrator extension
 
@@ -147,6 +150,17 @@ cancel_run(run_id):
 ```
 
 The orchestrator's status-write path checks `run.status` before applying any write; if the run is `cancelled`, the write is dropped and an audit entry is logged.
+
+### Audit events
+
+Both new endpoints write audit entries via DM-PRD-07's `write_audit(...)` helper. Common fields: `parent_kind="account"`, `parent_id=account_id`, `audit_subcollection="project_plan_audit"`, `resource_type="plan_run"`.
+
+| Endpoint | Action | Metadata |
+|----------|--------|----------|
+| `POST /runs/test` | `run_start` (reuses A-PRD-2's action) | `{run_id, plan_id, triggered_by="test", triggered_by_user_id, is_test=true, inputs_size_bytes}` |
+| `POST /runs/{run_id}/cancel` | `run_complete` (reuses A-PRD-2's action) | `{run_id, plan_id, final_status="cancelled", cancelled_by_user_id, task_count_complete, task_count_cancelled}` |
+
+Cancelling an already-terminal run is a no-op and does **not** write a duplicate audit entry. Status-write drops by the orchestrator (when `run.status="cancelled"`) write a single internal log line, not a `write_audit` call (those drops are not user actions).
 
 ## 6. API contract
 

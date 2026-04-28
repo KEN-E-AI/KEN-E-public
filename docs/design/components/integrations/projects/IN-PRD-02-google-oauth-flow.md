@@ -102,7 +102,9 @@ GET /internal/integrations/credentials/{account_id}/{platform_id}:
   3. Load access_token EncryptedToken.
   4. If now + refresh_lookahead_seconds > expires_at:
      refresh_connection(connection_id)  # synchronous; ~200ms
-  5. Decrypt and return { access_token, expires_at, external_account_id }.
+  5. Decrypt and return { connection_id, access_token, expires_at, external_account_id, platform_metadata }.
+     - connection_id lets consumers POST to /mark-expired without a separate lookup.
+     - platform_metadata is the per-connection dict introduced in IN-PRD-04 (e.g., {"dc": "us14"} for Mailchimp); empty {} for platforms that don't need it (Google, Meta).
   6. write_connection_audit(event="used", actor_id=caller_service_id) — debounced to once per minute per (connection_id, caller) to avoid audit-log bloat.
 ```
 
@@ -132,7 +134,10 @@ DELETE /api/v1/integrations/{account_id}/connections/{connection_id}:
   3. POST to PlatformDefinition.oauth_revoke_url?token={refresh_token}. Tolerate 400.
   4. firestore.recursive_delete(accounts/{account_id}/platform_connections/{connection_id}).
   5. write_connection_audit(event="revoked", actor_id=caller_user_id).
-  6. Publish a RevocationEvent to the internal notification bus so downstream consumers clear cached credentials (IN-PRD-05 consumes this).
+  # No explicit revocation-event bus — consumers re-read credentials per unit of work
+  # (per README §7.3), so the next credential-read returns 404 and the consumer
+  # converges on the standard needs_reauth path. In-flight tasks finish their current
+  # retry boundary on cached tokens, then pick up the new state.
 ```
 
 ## 6. API contract
@@ -141,7 +146,7 @@ Extends the IN-PRD-01 surface:
 
 | Method | Path | Purpose |
 |---|---|---|
-| `POST` | `/api/v1/integrations/{account_id}/connections/{connection_id}/refresh` | Force a refresh (admin tool; normally automatic). Returns new `expires_at`. |
+| `POST` | `/api/v1/integrations/{account_id}/connections/{connection_id}/refresh` | Force a refresh (admin tool; normally automatic). Returns new `expires_at`. **Rate-limited 1/min per (admin, connection)** — enforced server-side via Firestore-backed sliding-window check. |
 | `DELETE` | `/api/v1/integrations/{account_id}/connections/{connection_id}` | Revoke + recursive-delete. |
 | `GET` | `/api/v1/integrations/platforms` | List platform definitions filtered by `integration_<platform>_enabled` flags; includes `connected: bool` per platform for the account. |
 

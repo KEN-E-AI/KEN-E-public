@@ -29,9 +29,9 @@ This component does not build from scratch. Five upstream components already sup
 
 What's **missing** and needed for Dashboards:
 
-- A way for a task to **declare** what outputs it produces (`output_config` on `PlanTask`) — drives the "Pin to Dashboard" picker and staleness detection.
+- A way for a task to **declare** what outputs it produces (`output_config` on `PlanTask`) — drives the "Pin to Dashboard" picker and the resolver's `disconnected` detection.
 - A **canvas layout** on the plan (`dashboard_placements` on `ProjectPlan`) — the set of widgets on the dashboard.
-- A server-side **artifact resolver** that maps `(task_id, file_type)` → the latest matching `OutputFile` with staleness / disconnected status — so the frontend doesn't re-implement this logic per page.
+- A server-side **artifact resolver** that maps `(task_id, file_type)` → the latest matching artifact with `fresh` / `disconnected` / `pending` status — so the frontend doesn't re-implement this logic per page. Includes a `classify_artifact(mime_type, content_head)` helper that bridges A-PRD-03's `mime_type`-only `TaskArtifact` to the dashboards `OutputFileType` enum.
 - A **`/api/v1/dashboards/*`** API surface — create a dashboard, save the canvas layout, fetch a fully-resolved dashboard with artifacts inlined where small and signed-URL'd where large.
 - The **Dashboards tab** on the Performance page and the **Dashboard Details** frontend — free-form drag/resize canvas, widget renderers for text / Vega-Lite / table / file, pin-to-dashboard from the task graph, Run button.
 
@@ -67,7 +67,7 @@ Rules:
 
 A task may declare what outputs it emits. This drives:
 - The "Pin to Dashboard" picker on the Details page (lists terminal-ish tasks with `output_config.enabled=true`).
-- The staleness / disconnected resolver (an expected file type that didn't materialize is "pending" after a run completes).
+- The resolver (an expected file type that didn't materialize is `pending` after a run completes; a task / `output_config` removal renders as `disconnected`).
 
 ```python
 class OutputConfig(BaseModel):
@@ -90,7 +90,7 @@ class DashboardArtifact(BaseModel):
     placement_id: str
     task_id: str
     file_type: OutputFileType
-    status: Literal["fresh", "stale", "disconnected", "pending"]
+    status: Literal["fresh", "disconnected", "pending"]
     # Inline payload for small artifacts (≤64 KB); None for large artifacts
     inline_payload: dict | None = None          # {"content": "...", "spec": {...}, "rows": [...]} shape varies by file_type
     # Signed URL for large artifacts (csv, image, document, video, audio, other)
@@ -101,9 +101,10 @@ class DashboardArtifact(BaseModel):
 
 Status rules:
 - **fresh** — artifact exists and was produced in the latest completed PlanRun.
-- **stale** — artifact exists but was produced in a prior run (the dashboard has been re-run and the referenced task did not re-emit this file type on the latest run).
 - **disconnected** — the referenced task no longer exists, or its `output_config.enabled=false`, or `file_type ∉ output_config.expected_file_types`.
-- **pending** — `output_config` declares this file type but the latest run has no matching artifact (task hasn't completed, or agent did not emit it).
+- **pending** — either no completed run yet, or the latest completed run has no matching artifact (task hasn't completed, agent did not emit it, or the agent's re-run failed to re-emit on a subsequent invocation).
+
+There is intentionally no `stale` status. Originally specced as a fourth value for "the latest run failed to re-emit, but a prior run's artifact is still available," but A-PRD-03's `TaskArtifact` doesn't carry a `produced_in_run_id` (the run subcollection path is the producer-of-record), so resolving `stale` would require walking back through every prior `PlanRun`. Cut to three values; the user re-runs to refresh. See DB-PRD-01 §4.7 for full rationale.
 
 Inlining threshold is the same as A-PRD-03's orchestrator-prompt injection: ≤64 KB of text or Vega spec is inlined; everything else is a signed URL with 1-hour expiry.
 
@@ -135,16 +136,16 @@ Rationale: dashboards, automations, and plans all edit the same `ProjectPlan`. D
 
 ### 5.2 Shared frontend components
 
-The Dashboard Details page reuses three Automations frontend components:
-- `AutomationGraph` — React Flow DAG visualization.
-- `AutomationTaskPanel` — task-edit sidebar.
-- `AutomationSchedulePanel` — schedule-edit modal.
+The Dashboard Details page reuses three shared components published by A-PRD-06:
+- `frontend/src/components/dag/TaskGraph.tsx` — React Flow DAG visualization (with siblings `TaskNode.tsx`, `dagLayout.ts`).
+- `frontend/src/components/workflows/ActivityDetailPanel.tsx` — task-edit sidebar (relocated from Calendar PRD-3 by A-PRD-06; additive `pinToDashboardSlot?: ReactNode` prop).
+- `frontend/src/components/workflows/ScheduleEditorModal.tsx` — schedule-edit modal.
 
-The "Pin to Dashboard" action is added to `AutomationTaskPanel`, conditional on the containing page being a Dashboard Details page (not the Automation Details page). A small prop on the panel, wired by each consumer.
+The "Pin to Dashboard" action is rendered via the `pinToDashboardSlot` prop on `ActivityDetailPanel`. DB-PRD-03 supplies `<PinToDashboardPicker />` as the slot value; A-PRD-06's own caller (and Calendar PRD-3) pass nothing, and the slot region collapses. Additive — no breaking change.
 
 ### 5.3 Artifact lifecycle
 
-Dashboards do not introduce new artifact storage. Every artifact on a dashboard was produced by a normal run via `attach_task_artifact` and lives in the same GCS bucket with the same 30-day TTL. If a user opens a dashboard whose latest run is >30 days old, the resolver marks every placement **stale** and the download URL still works (signed URL is fetched on demand, but the blob may already be expired — surface a graceful error).
+Dashboards do not introduce new artifact storage. Every artifact on a dashboard was produced by a normal run via `attach_task_artifact` and lives in the same GCS bucket with the same 30-day TTL. If a user opens a dashboard whose latest run is >30 days old, the resolver still classifies the metadata as `fresh` (the `TaskArtifact` Firestore doc persists; only the GCS blob expires) and returns a signed URL. The widget then fetches that URL → GCS 404 → frontend renders "Artifact expired — re-run to refresh." (DB-PRD-04 Edge-4 covers this path.)
 
 ### 5.4 Role-based access
 
@@ -171,9 +172,9 @@ Four PRDs, matching the Automations breakdown:
 
 ### DB-PRD-02 — Dashboards Tab & List
 
-**Delivers:** The Dashboards tab on the Performance page (`/performance?tab=dashboards`), the list view (one row per dashboard with title, schedule, last-run, status badge), the "New Dashboard" create flow (title + description modal → `POST /dashboards` → redirect to Details), the empty state. Uses TanStack Query against the DB-PRD-01 API.
+**Delivers:** The Dashboards tab on the Performance page (`/performance/dashboards`, the 2nd tab per the figma export — slot reserved by PE-PRD-01), the list view (one row per dashboard with title, schedule, last-run, status badge), the "New Dashboard" create flow (title + description modal → `POST /dashboards` → redirect to Details), the empty state. Uses TanStack Query against the DB-PRD-01 API.
 
-**Blocked by:** DB-PRD-01, UI-PRD-07 (Performance page shell) — soft dep. If UI-PRD-07 hasn't shipped, this PRD adds a minimal tab shell co-sited with UI-PRD-07's design tokens.
+**Blocked by:** DB-PRD-01, **PE-PRD-01** (Performance page shell — owns the Dashboards tab slot, route, placeholder, and feature flag; this PRD swaps PE-PRD-01's `<DashboardsTabPlaceholder />` for the real `<DashboardsSection />`). UI-PRD-07 — the original presentation-only redesign — is **retired and subsumed by PE-PRD-01**.
 
 **Blocks:** DB-PRD-03 (shares the tab shell), DB-PRD-04.
 
@@ -183,7 +184,7 @@ Four PRDs, matching the Automations breakdown:
 
 **Delivers:** The Dashboard Details page (`/performance/dashboards/{plan_id}`) with split layout (task graph on top, canvas on bottom, task panel on right). Free-form absolute-positioned canvas with drag-to-move / corner-resize, 8-px grid snap. Four widget renderers: text (markdown), visualization (react-vega), table (CSV parsed client-side), file (fallback with download link). "Pin to Dashboard" button on the task panel. Run button invokes A-PRD-02's manual trigger; polling on the latest run until terminal. Schedule modal invokes A-PRD-01's recurrence PATCH. Placement PUT debounced 500 ms after drag-end.
 
-**Blocked by:** DB-PRD-01, DB-PRD-02, A-PRD-06 (reuses `AutomationGraph`, `AutomationTaskPanel`, `AutomationSchedulePanel`).
+**Blocked by:** DB-PRD-01, DB-PRD-02, A-PRD-06 (consumes the three shared components A-PRD-06 publishes: `frontend/src/components/dag/TaskGraph.tsx`, `frontend/src/components/workflows/ActivityDetailPanel.tsx`, and `frontend/src/components/workflows/ScheduleEditorModal.tsx` — no fork).
 
 **Blocks:** DB-PRD-04.
 
@@ -191,7 +192,7 @@ Four PRDs, matching the Automations breakdown:
 
 ### DB-PRD-04 — Integration Testing & Polish
 
-**Delivers:** E2E Playwright suite (create → add task with `output_config` → pin → run → verify canvas refresh). Edge-case tests: disconnected placement (task deleted), stale placement (task didn't re-emit this run), pending placement (task hasn't completed), 100-placement performance, large-CSV widget. Verifies the Automations list excludes `type="dashboard"` entries. Appends a verification report to the component README.
+**Delivers:** E2E Playwright suite (create → add task with `output_config` → pin → run → verify canvas refresh). Edge-case tests: disconnected placement (task deleted), pending placement after partial re-run (task didn't re-emit this run), pending placement on fresh dashboard (task hasn't completed), 100-placement performance, large-CSV widget, blob-expired (>30 day TTL → `fresh` + GCS 404 → expired-warning UI). Verifies the Automations list excludes `type="dashboard"` entries. Appends a verification report to the component README.
 
 **Blocked by:** DB-PRD-01, DB-PRD-02, DB-PRD-03.
 
@@ -240,7 +241,7 @@ Four PRDs, matching the Automations breakdown:
 ## 8. Explicit non-goals for this release
 
 - **Dashboard templates / extensions.** The Figma frontend has an Extensions concept (`extensionId` field) for pre-built dashboard templates. Extensions are a separate backend concern (covered by a future `extensions/` component, out of scope here). A dashboard created today is always user-authored.
-- **Real-time refresh during runs.** The canvas shows the latest *completed* run's artifacts. While a run is in-flight, widgets display the previous run's artifacts (marked stale) plus per-task progress on the DAG visualization. A WebSocket / SSE stream for live artifact hydration is a future enhancement.
+- **Real-time refresh during runs.** The canvas shows the latest *completed* run's artifacts. While a run is in-flight, widgets display the previous completed run's artifacts plus per-task progress on the DAG visualization. A WebSocket / SSE stream for live artifact hydration is a future enhancement.
 - **Separate Test Run button.** Dashboards ship with one Run button. A-PRD-04's `is_test` mode is an Automations affordance for validating recipes before enabling recurring firing; dashboards produce real artifacts on every run, so the distinction doesn't apply at the UX layer. The underlying `/runs/test` endpoint still works for anyone who needs it programmatically.
 - **Widget types beyond the four listed.** No KPI tiles, no iframe embeds, no image galleries. If a file type doesn't match one of the four renderers, the **file fallback** widget offers a download link.
 - **Drill-down / cross-filtering.** Widgets are independent. Clicking a point in one visualization does not filter another.
@@ -256,7 +257,7 @@ These become discovery items as Dashboards gains usage, not launch requirements.
 | Risk | Mitigation |
 |---|---|
 | Canvas PUT debounce loses the last drag if the user closes the tab immediately after dropping | `beforeunload` handler flushes the pending PUT; worst case re-open with slightly stale layout. |
-| 30-day artifact TTL vs. infrequent dashboard re-runs | Resolver marks every placement stale beyond the TTL; download URL returns a 404. Add a clear "this artifact has expired — re-run the dashboard" message. |
+| 30-day artifact TTL vs. infrequent dashboard re-runs | Resolver still classifies metadata as `fresh` (Firestore doc persists, GCS blob lifecycled). Frontend hits the signed URL → 404 → renders "Artifact expired — re-run the dashboard" message. DB-PRD-04 Edge-4 verifies. |
 | Large Vega specs (>64 KB) exceed the inline threshold | Rare in practice (most specs are <10 KB). If exceeded, serve via signed URL like any other large artifact; react-vega fetches it. |
 | `output_config` declared but agent doesn't emit the declared type | Resolver marks the placement **pending** with a hint ("task completed but did not emit visualization"). Operators can diagnose from the Automation Details Outputs tab. |
 | Drag operations generate chatty PUTs | 500 ms debounce on drag-end + final flush on `pointerup`. Single PUT per drag gesture. |
@@ -273,7 +274,7 @@ These become discovery items as Dashboards gains usage, not launch requirements.
 ## 11. Success criteria (rolled up)
 
 - A user can create a dashboard, attach 5+ tasks with declared outputs, run the plan, and see five populated widgets on the canvas. (DB-PRD-04 E2E)
-- Re-running the dashboard updates every widget's `updated_at` to the new run's timestamp; staleness indicator clears. (DB-PRD-04 E2E)
+- Re-running the dashboard updates every widget's `updated_at` to the new run's timestamp. (DB-PRD-04 E2E)
 - Disconnecting a task (disable `output_config`, or delete the task) flags affected placements as disconnected without data loss. (DB-PRD-04 edge case)
 - The Dashboards list is distinct from the Automations list — a user toggling `save_as_automation=true` on a dashboard plan still sees it in Dashboards, not in Automations. (DB-PRD-04 isolation test)
 - 100-placement dashboard GET returns in under 500 ms p95, with small payloads inlined and large ones signed-URL'd. (DB-PRD-04 perf test)

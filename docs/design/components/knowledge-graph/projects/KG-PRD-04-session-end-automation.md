@@ -1,8 +1,8 @@
 # KG-PRD-04 — Session-End as a System-Triggered Automation
 
-**Status:** Ready for development (after KG-PRDs 1, 2, 3 + Calendar PRDs 1–6 + Automations PRDs 1–7 all merge)
+**Status:** Ready for development (after KG-PRDs 01, 02, 03 + PR-PRDs 01, 04, 06 + A-PRDs 01–06 all merge)
 **Owner team:** Agent / ML + Backend (pair)
-**Blocked by:** KG-PRDs 1, 2, 3; Calendar PRDs 1–6; Automations PRDs 1–7
+**Blocked by:** KG-PRDs 01, 02, 03; PR-PRDs 01, 04, 06; A-PRDs 01–06
 **Parallel with:** KG-PRD-05 (same dev can ship both if scheduled)
 **Estimated effort:** 5–7 days
 
@@ -12,7 +12,7 @@
 
 Today, anything the user surfaces in chat — a new pricing move, a competitor launch, a stakeholder change — is lost when the conversation ends. The next session starts cold. This PRD delivers the learning loop: a system that reviews completed chat sessions, extracts new facts, and updates the account's Neo4j knowledge base.
 
-Rather than a bespoke Cloud Tasks pipeline, session-end **rides on the Automations platform** (Calendar + Automations PRDs). One seeded system-level `ProjectPlan` (`is_system=true`) with two tasks — `session_reviewer` (LLM) and `session_applier` (deterministic) — represents the workflow. A daily Cloud Scheduler sweeper finds idle sessions and triggers one `PlanRun` per session via the Automations manual-trigger endpoint. The Automations orchestrator, artifact system, HITL halt, and Outputs tab do the heavy lifting.
+Rather than a bespoke Cloud Tasks pipeline, session-end **rides on the Automations platform** (Project Tasks + Automations PRDs). One seeded system-level `ProjectPlan` (`is_system=true`) with two tasks — `session_reviewer` (LLM) and `session_applier` (deterministic) — represents the workflow. A daily Cloud Scheduler sweeper finds idle sessions and triggers one `PlanRun` per session via the Automations manual-trigger endpoint. The Automations orchestrator, artifact system, HITL halt, and Outputs tab do the heavy lifting.
 
 Destructive changes (deletes, updates to user-written fields) halt as `PlanRun.status="halted_for_human"`, surfacing in the Automation Details Outputs tab for human review. Additive changes (new Observations, new relationships, supersedes within the same session) auto-apply.
 
@@ -20,10 +20,10 @@ Destructive changes (deletes, updates to user-written fields) halt as `PlanRun.s
 
 ### In scope
 - `api/scripts/seed_session_end_template.py` — one-time Firestore write of the Session-End Review ProjectPlan (`is_system=true`, two tasks, no cron).
-- `api/src/kene_api/routers/internal/session_sweeper.py` — new `POST /api/v1/internal/scheduler/process-idle-sessions` endpoint (OIDC auth, same pattern as A-PRD-2 scheduler).
+- `api/src/kene_api/routers/internal/session_sweeper.py` — new `POST /api/v1/internal/scheduler/process-idle-sessions` endpoint (OIDC auth, same pattern as A-PRD-02 scheduler).
 - Cloud Scheduler job (Terraform) firing once daily to hit the sweeper.
 - Two ADK agents in `app/adk/agents/session_end_agent/`:
-  - `reviewer.py` — LLM agent; reads transcript + KG via KG-PRD-03 tools; emits a `SessionReview` Pydantic payload; saves it as a `TaskArtifact` via A-PRD-3's `attach_task_artifact` tool.
+  - `reviewer.py` — LLM agent; reads transcript + KG via KG-PRD-03 tools; emits a `SessionReview` Pydantic payload; saves it as a `TaskArtifact` via A-PRD-03's `attach_task_artifact` tool.
   - `applier.py` — deterministic Python wrapped as an agent task; downloads the artifact, routes each proposed change by autonomy rules, applies via `GraphSyncService` (KG-PRD-02) or halts the task for HITL.
 - `review_session(session_id, account_id, transcript) -> SessionReview` as a **pure function** core so the reviewer logic can be invoked from any orchestrator (future-proofing against the Automations platform slipping).
 - Embedding generation for created Observations (reuse `EmbeddingGenerator` from strategy agent).
@@ -45,13 +45,15 @@ Destructive changes (deletes, updates to user-written fields) halt as `PlanRun.s
 - **KG-PRD-01:** `:KGNode`, constraints, vector index.
 - **KG-PRD-02:** `Session` lifecycle (`touch_session`, `close_session`), `Observation` / `create_observation` / `supersede_observation`, provenance stamping.
 - **KG-PRD-03:** read tools (`load_context_section`, `load_document`, `search_kb`, `list_observations`) that the reviewer consumes.
-- **Calendar PRD-1:** `ProjectPlan`, `PlanTask`, `is_system` field, write-protection for system plans.
-- **Calendar PRD-4:** orchestrator DAG dispatch, HITL `Awaiting Approval` semantics.
-- **Calendar PRD-6:** Cloud Scheduler Terraform pattern + OIDC auth for internal endpoints.
-- **A-PRD-1:** `PlanRun`, `inputs` field, `triggered_by="system"`.
-- **A-PRD-2:** manual-trigger endpoint accepting `triggered_by="system"` + `inputs`, prompt template substitution.
-- **A-PRD-3:** `TaskArtifact` persistence + `attach_task_artifact` agent tool + signed-URL download.
-- **A-PRD-6:** Automation Details Outputs tab + HITL Mark Complete / Revision Requested on `is_system=true` runs.
+- **PR-PRD-01:** `ProjectPlan`, `PlanTask`, `is_system` field, write-protection for system plans.
+- **PR-PRD-04:** orchestrator DAG dispatch, HITL `Awaiting Approval` semantics.
+- **PR-PRD-06:** Cloud Scheduler Terraform pattern + OIDC auth for internal endpoints.
+- **A-PRD-01:** `PlanRun`, `inputs` field, `triggered_by="system"`.
+- **A-PRD-02:** manual-trigger endpoint accepting `triggered_by="system"` + `inputs`, prompt template substitution.
+- **A-PRD-03:** `TaskArtifact` persistence + `attach_task_artifact` agent tool + signed-URL download.
+- **A-PRD-04:** test-run mode `inputs` for validation paths.
+- **A-PRD-05:** default Automations List filter hiding `is_system=true`.
+- **A-PRD-06:** Automation Details Outputs tab + HITL Mark Complete / Revision Requested on `is_system=true` runs.
 
 **External:**
 - `AgentEngineClient.get_conversation_history(session_id)` at `api/src/kene_api/routers/chat.py:1291` — transcript access.
@@ -140,7 +142,7 @@ ProjectPlan(
 )
 ```
 
-The `_system` account id is a sentinel to hold platform-owned ProjectPlans. Calendar PRD-1's write-protection rules (`is_system=true` → 403 on edit/delete) already protect it; the read endpoints naturally return it when queried with that account id (though users never query for it — the sweeper hardcodes the plan_id).
+The `_system` account id is a sentinel to hold platform-owned ProjectPlans. PR-PRD-01's write-protection rules (`is_system=true` → 403 on edit/delete) already protect it; the read endpoints naturally return it when queried with that account id (though users never query for it — the sweeper hardcodes the plan_id).
 
 ### Sweeper endpoint
 
@@ -162,13 +164,13 @@ Response:
 }
 ```
 
-Auth: OIDC with the same service account that runs the A-PRD-2 scheduler tick (Calendar PRD-6 established the auth pattern).
+Auth: OIDC with the same service account that runs the A-PRD-02 scheduler tick (PR-PRD-06 established the auth pattern).
 
 ### Cloud Scheduler config
 
 - Schedule: `0 4 * * *` UTC — daily at 04:00 UTC (low-traffic window)
 - Target: `POST /api/v1/internal/scheduler/process-idle-sessions`
-- Auth: OIDC (same SA as A-PRD-2)
+- Auth: OIDC (same SA as A-PRD-02)
 - Retry: 3 attempts, exponential backoff
 
 ## 5. Implementation outline
@@ -178,10 +180,11 @@ Auth: OIDC with the same service account that runs the A-PRD-2 scheduler tick (C
 | Create | `api/scripts/seed_session_end_template.py` |
 | Create | `api/src/kene_api/routers/internal/session_sweeper.py` |
 | Modify | `api/src/kene_api/main.py` — register internal router |
+| Modify | `api/src/kene_api/services/graph_sync_service.py` — add `claim_session_for_processing(session_id)` and `revert_session_claim(session_id)` (sweeper-specific atomic `active → processing` claim + rollback). See §Service-method additions. |
 | Create | `deployment/terraform/cloud_scheduler_session_sweeper.tf` |
 | Create | `app/adk/agents/session_end_agent/__init__.py` |
 | Create | `app/adk/agents/session_end_agent/reviewer.py` |
-| Create | `app/adk/agents/session_end_agent/applier.py` |
+| Create | `app/adk/agents/session_end_agent/applier.py` — also emits the halt-notification described in §Notification on halt |
 | Create | `app/adk/agents/session_end_agent/models.py` — `SessionReview`, `ProposedChange` |
 | Create | `app/adk/agents/session_end_agent/prompts.py` — reviewer prompt templates |
 | Create | `app/adk/agents/session_end_agent/core.py` — `review_session()` pure function |
@@ -189,6 +192,7 @@ Auth: OIDC with the same service account that runs the A-PRD-2 scheduler tick (C
 | Create | `api/tests/unit/test_session_sweeper.py` |
 | Create | `app/adk/agents/session_end_agent/test_applier_routing.py` — autonomy-rule unit tests |
 | Create | `app/adk/agents/session_end_agent/test_review_session.py` — `review_session()` pure-function tests with canned transcripts |
+| Create | `app/adk/agents/session_end_agent/test_halt_notification.py` — fires once per halt with the right deep-link |
 | Create | `tests/integration/test_session_end_e2e.py` — full HITL halt + resume cycle |
 
 ### Sweeper algorithm
@@ -253,6 +257,53 @@ SET s.status = 'processing'
 RETURN s.session_id IS NOT NULL AS claimed
 ```
 
+### Service-method additions
+
+Two methods land on `GraphSyncService` to support the sweeper. They are sweeper-specific (the chat path that owns KG-PRD-02 has no use for them), so this PRD owns them rather than KG-PRD-02.
+
+```python
+# api/src/kene_api/services/graph_sync_service.py
+
+async def claim_session_for_processing(self, session_id: str) -> bool:
+    """Atomic active → processing transition. Returns True if this caller
+    won the claim, False if the session was already claimed (or absent).
+    Must be safe to race: two concurrent sweeper ticks observing the same
+    session must produce exactly one True."""
+
+async def revert_session_claim(self, session_id: str) -> None:
+    """Roll status back to 'active' after a failed Automations trigger so the
+    next sweep retries. Idempotent — calling on a session not in 'processing'
+    is a no-op."""
+```
+
+The `claim` method uses the Cypher above; `revert` is the inverse `WHERE s.status = 'processing' SET s.status = 'active'`.
+
+### Notification on halt
+
+`A-PRD-05`'s default list filter hides `is_system=true` automations from `/workflows`, which means a user whose session produced a halt won't discover it by browsing. Without an explicit notification, halted KB updates would sit in the Outputs tab unread until the next time someone deep-links in.
+
+When the applier flips a task to `Awaiting Approval` (the halt path described above), it also emits one user-facing notification via the existing notification system that Project Tasks already uses (PR-PRD-04 §"notify human owners via existing notification system"):
+
+```python
+# app/adk/agents/session_end_agent/applier.py — at the halt branch
+await notification_service.notify_user(
+    user_id=session.user_id,
+    kind="kg_session_end_halt",
+    title="Knowledge update needs your review",
+    body=f"Your session on {session.started_at:%b %d} surfaced "
+         f"{halt_count} change(s) that need approval before they're saved.",
+    deep_link=f"/workflows/automations/kg-session-end-review"
+              f"?run={run_id}&task=applier",
+)
+```
+
+Behavior:
+- **Recipient:** the `Session.user_id` (one notification per halted run, not per halted change).
+- **Reuse, don't extend:** the notification kind `"kg_session_end_halt"` registers with the existing notification system; no new transport, badge, or inbox surface is added.
+- **Idempotency:** the applier emits at most one notification per `(run_id, task_id, halt_count)` tuple. Resuming a halted run after Mark Complete + a fresh halt (e.g. a stale-target second halt — see §9 risks) emits one new notification.
+- **No notification on auto-apply:** a run that finishes cleanly without halts is silent — users don't need to know about routine knowledge updates. They surface in `list_observations` on the next session.
+- **Failure isolation:** notification-emit failures log + continue. The halt itself is the source of truth; a missed notification doesn't block the user from finding the run via direct URL or admin tooling.
+
 ### `review_session` pure function
 
 ```python
@@ -316,11 +367,11 @@ def route_change(
 
 Apply path: invoke the appropriate `GraphSyncService` method (with `session_id=run_session_id` so provenance is stamped).
 
-Halt path: the applier agent calls its `update_task_status` tool (provided by the Automations orchestrator) with `status="Awaiting Approval"` and a `revision_comment` that names the pending change and its reasoning. The `PlanRun` flips to `halted_for_human` (per Calendar PRD-4 / A-PRD-4 semantics). User reviews in the Automation Details Outputs tab (A-PRD-6) and either Marks Complete (approve) or Revision Requested (reject).
+Halt path: the applier agent calls its `update_task_status` tool (provided by the Automations orchestrator) with `status="Awaiting Approval"` and a `revision_comment` that names the pending change and its reasoning. The `PlanRun` flips to `halted_for_human` (per PR-PRD-04 / A-PRD-04 semantics). User reviews in the Automation Details Outputs tab (A-PRD-06) and either Marks Complete (approve) or Revision Requested (reject).
 
 On approve: the applier task re-runs — but this time the routing is bypassed for the halted change (the human approved it), so it applies directly. Implementation: use a small run-scoped `approved_changes: set[int]` (indexes into `proposed_changes`) stored in the `PlanRun.task_states[applier].completion_notes` or similar — or simpler, re-read the proposal artifact and the current halt state and only apply the specific change that was approved.
 
-Detail: if the reviewer proposed 5 changes and 2 halt, the applier applies 3 immediately, halts with both pending. On approve, the applier resumes and applies both. On Revision Requested with feedback, the applier *re-runs the reviewer task* via a revision-iteration dispatch (Calendar PRD-4's revision loop), capped at 5 iterations.
+Detail: if the reviewer proposed 5 changes and 2 halt, the applier applies 3 immediately, halts with both pending. On approve, the applier resumes and applies both. On Revision Requested with feedback, the applier *re-runs the reviewer task* via a revision-iteration dispatch (PR-PRD-04's revision loop), capped at 5 iterations.
 
 ### Reviewer prompt (structure)
 
@@ -365,7 +416,7 @@ AGENTS["session_reviewer"] = build_session_reviewer_agent()
 AGENTS["session_applier"] = build_session_applier_agent()
 ```
 
-The Automations task dispatcher (A-PRD-2 / Calendar PRD-4) looks up `assignee_name` against this registry.
+The Automations task dispatcher (A-PRD-02 / PR-PRD-04) looks up `assignee_name` against this registry.
 
 ### Embeddings for new Observations
 
@@ -377,12 +428,12 @@ After `create_observation` lands, generate the embedding asynchronously (fire-an
 |---|---|---|---|
 | `POST` | `/api/v1/internal/scheduler/process-idle-sessions` | OIDC (daily sweeper SA) | Daily tick |
 
-No user-facing endpoints. The Automation Details page (A-PRD-6) is the user's review surface, reached via the Automations List page (filtered to `is_system=false` in normal use; operators reach the system automation via direct URL).
+No user-facing endpoints. The Automation Details page (A-PRD-06) is the user's review surface, reached via the Automations List page (filtered to `is_system=false` in normal use; operators reach the system automation via direct URL). When a run halts for HITL review, the applier emits a notification to the session's owning user that deep-links to the Outputs tab — see §Notification on halt below.
 
 ## 7. Acceptance criteria
 
 1. Running `api/scripts/seed_session_end_template.py` creates the `kg-session-end-review` ProjectPlan in Firestore with `is_system=true`, `save_as_automation=true`, the two tasks, and an audit entry. Re-running the script is idempotent.
-2. The Session-End Review template does not appear on the Automations List page (A-PRD-5) when a standard user visits `/workflows`.
+2. The Session-End Review template does not appear on the Automations List page (A-PRD-05) when a standard user visits `/workflows`.
 3. Visiting `/workflows/automations/kg-session-end-review` directly renders the page in read-only mode with the banner, no Run Now / Delete buttons, and the DAG visualization.
 4. Given a fixture account with a Session whose `status="active"` and `last_message_at < now - 24h`, calling the sweeper endpoint triggers exactly one `PlanRun` for that session with `triggered_by="system"` and `inputs={"session_id": ..., "account_id": ...}`. The `Session.status` flips to `processing`.
 5. The sweeper claims each idle session atomically — two concurrent sweeper ticks trigger exactly one run (not two) per session.
@@ -396,7 +447,7 @@ No user-facing endpoints. The Automation Details page (A-PRD-6) is the user's re
    - No Product deleted in Neo4j
    - The applier task in `Awaiting Approval` state with a clear `revision_comment`
    - Deep-linkable via `/workflows/automations/kg-session-end-review?run={run_id}&task=applier` from the notification
-8. Marking the applier task Complete via the A-PRD-6 UI applies the halted delete, flips the run to `complete`, and the product is removed from Neo4j.
+8. Marking the applier task Complete via the A-PRD-06 UI applies the halted delete, flips the run to `complete`, and the product is removed from Neo4j.
 9. Marking Revision Requested with a comment ("that's not right, the product is still live") re-dispatches the reviewer, which produces a new `proposal.json` and does NOT re-propose the delete. (Verify via a second fixture that's engineered to respond to feedback; at worst, verify the revision round-trip happens and bypass the content check.)
 10. Autonomy routing:
     - `create_observation` → auto-applies
@@ -410,6 +461,7 @@ No user-facing endpoints. The Automation Details page (A-PRD-6) is the user's re
 12. Re-processing an already-processed Session (`status="processed"`) is a no-op — the sweeper skips it.
 13. The daily Cloud Scheduler job exists in Terraform, authenticates with OIDC, and is visible in the GCP console.
 14. Multi-tenant: two Sessions belonging to different accounts, both idle, both get processed; neither's Observations leak into the other's KB.
+15. **Halt notification:** the destructive-transcript case in AC #7 also produces exactly one notification of kind `kg_session_end_halt` to the `Session.user_id`, with `deep_link` pointing at `/workflows/automations/kg-session-end-review?run={run_id}&task=applier`. A run that completes cleanly (AC #6) emits zero notifications.
 
 ## 8. Test plan
 
@@ -425,6 +477,7 @@ No user-facing endpoints. The Automation Details page (A-PRD-6) is the user's re
   Assert structure of returned `SessionReview`; exact content validation is brittle, so check `kind` distribution + presence of key fields.
 - `test_session_sweeper.py` — mock Neo4j + Automations client. Idle detection, atomic claim, idempotent re-run (no double fire), failure path reverts claim.
 - `test_seed_script.py` — seed script creates the plan once; re-run is no-op; idempotent.
+- `test_halt_notification.py` — applier with one halted change emits exactly one `kg_session_end_halt` notification with the right user_id + deep_link; applier with zero halts emits none; notification-service failures are swallowed (halt persists).
 
 **Integration tests:**
 
@@ -459,15 +512,15 @@ No user-facing endpoints. The Automation Details page (A-PRD-6) is the user's re
 | Many concurrent idle sessions overwhelm the Automations platform | Sweeper LIMITs to 500 sessions per tick. Measure. If this ever becomes constraining, split into smaller batches or add a rate-limit. |
 | Approved halt applies a stale proposal if the KB moved | When the user clicks Complete, the applier re-fetches target nodes before writing. If the target has changed materially (different `last_modified`), the applier halts again with a fresh revision_comment. Document. |
 | Embedding generation lag affects downstream `search_kb` | Accepted — an Observation created at time T is semantically searchable at time T+N. Document. |
-| `_system` sentinel account accidentally exposed to users | Calendar PRD-1 write-protection + A-PRD-5 list filter + A-PRD-6 read-only mode all gate this. Add an explicit integration test that a non-admin user cannot create, edit, or delete the seeded template. |
+| `_system` sentinel account accidentally exposed to users | PR-PRD-01 write-protection + A-PRD-05 list filter + A-PRD-06 read-only mode all gate this. Add an explicit integration test that a non-admin user cannot create, edit, or delete the seeded template. |
 | The applier's "re-run to apply approved halts" logic is fragile | Implementation choice: instead of re-reading artifact + halt state, have the applier on revision #2 apply **every** non-halt-eligible change (same routing) — on a second pass, any changes the human approved via Complete are no longer halt-eligible because their routing conditions resolved. Tighter than storing approval state. Validate via the halt-resume integration test. |
 | PRD-6 / PRD-5 integration not yet implemented when KG-PRD-4 is ready to test | Mock the Automations orchestrator + UI in tests; gate merge on actual Automations shipping. Phases 1, 2, 3 (KG) can ship first without this. |
-| Revision loop eats tokens | Cap at 5 iterations (matches Calendar PRD-4 default). After cap, mark the run `failed` with a reason. |
+| Revision loop eats tokens | Cap at 5 iterations (matches PR-PRD-04 default). After cap, mark the run `failed` with a reason. |
 
 ## 10. Reference
 
 - KG-PRD-01, 2, 3 (direct dependencies).
-- Calendar PRDs 1, 4, 6 + Automations PRDs 1, 2, 3, 4, 6 (platform dependencies — see §3).
+- PR-PRDs 01, 04, 06 + A-PRDs 01, 02, 03, 04, 05, 06 (platform dependencies — see §3).
 - `api/src/kene_api/routers/chat.py:1291` — transcript access.
 - `app/adk/agents/strategy_agent/embeddings.py` — embedding reuse.
 - CLAUDE.md rules in scope: C-1, C-4; PY-1, PY-2, PY-3, PY-7; T-1, T-3, T-4, T-6.

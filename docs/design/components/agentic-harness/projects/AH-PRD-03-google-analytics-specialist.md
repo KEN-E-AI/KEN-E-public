@@ -4,7 +4,7 @@
 **Owner team:** Core AI / Agent Platform
 **Blocked by:** AH-PRD-01 (review-loop framework), AH-PRD-02 (agent factory)
 **Parallel with:** Data-management projects (DM-PRDs run on a separate path), Skills SK-PRDs, Project-Tasks PR-PRDs that don't touch GA
-**Blocks:** Future narrow-specialist sprints (Google Ads, Meta Ads, HubSpot, Content Specialist, Execution Specialist) — this project is their reference pattern
+**Blocks:** Future narrow-specialist sprints (Google Ads, Meta Ads, Mailchimp — see [README §2.6](../README.md#26-specialist-roadmap)) — this project is their reference pattern
 **Estimated effort:** 5 stories (originally Sprint 10). ≈ 5–7 days.
 
 ---
@@ -17,7 +17,7 @@ AH-PRD-02 delivers the agent factory; this project validates it end-to-end by as
 
 The project has two phases. **Phase 1** creates the agent config document at `agent_configs/google_analytics_specialist` (model, instruction, `mcp_servers=["google_analytics_mcp"]`, `code_execution_enabled=true`) and deprecates `google_analytics_agent_v4.py` by pointing the dispatch at the factory-generated `dispatch_to_google_analytics_specialist()`. **Phase 2** validates the full stack: review-loop integration (reviewer evaluates data accuracy, completeness, and calculation correctness), Gemini code execution for numerical analysis (`executable_code` + `code_execution_result` parts in responses), multi-tenant OAuth isolation via the `_make_header_provider("ga_oauth")` factory from AH-PRD-02, and end-to-end tests with Weave trace structure verification.
 
-This is the **proof point** for the full Release 2 stack: agent factory (AH-PRD-02) + review loop (AH-PRD-01) + code execution + multi-tenant auth, all working together against a real data source. Google Ads, Meta Ads, and HubSpot specialists in future sprints follow the pattern established here — the factory is the mechanism, the review loop is the quality gate, and this project sets the recipe.
+This is the **proof point** for the full Release 2 stack: agent factory (AH-PRD-02) + review loop (AH-PRD-01) + code execution + multi-tenant auth, all working together against a real data source. The R5-planned specialists (Google Ads, Meta Ads, Mailchimp — see [README §2.6](../README.md#26-specialist-roadmap)) follow the pattern established here — the factory is the mechanism, the review loop is the quality gate, and this project sets the recipe.
 
 ## 2. Scope
 
@@ -36,7 +36,7 @@ This is the **proof point** for the full Release 2 stack: agent factory (AH-PRD-
   - End-to-end tests covering: happy path ("Show me traffic trends for the past week"), code-execution failures, OAuth error handling, multi-tenant concurrency, Weave trace verification.
 
 ### Out of scope
-- Google Ads, Meta Ads, HubSpot, Content, Execution specialists — deferred to future sprints.
+- Google Ads, Meta Ads, Mailchimp specialists — deferred to future sprints (see [README §2.6](../README.md#26-specialist-roadmap)).
 - Skill attachment — the GA specialist ships without skills; skills wiring is SK-PRD-02's job.
 - Any change to the GA MCP server implementation itself — KEN-E consumes the existing SSE endpoint.
 - Removal of `google_analytics_agent_v4.py` — deprecation banner only; removal happens in a follow-up once no callers remain.

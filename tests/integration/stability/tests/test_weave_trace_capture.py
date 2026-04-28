@@ -1,14 +1,19 @@
 """Tests for the Weave trace capture context manager.
 
-These tests don't require a live wandb backend — they push synthetic
-``Call``-shaped objects through the patched ``push_call`` to verify the
-capture and validate-compliance flows.
+These tests don't require a live wandb backend — they drive the patched
+``WeaveClient.finish_call`` directly with synthetic ``Call``-shaped
+objects. The ``stub_finish_call`` fixture replaces the real
+``WeaveClient.finish_call`` with a no-op **before** ``TraceCapture``
+enters, so the capture's ``_original_finish`` reference is the stub
+(and the patched wrapper's pass-through doesn't try to ship to wandb).
 """
 
 from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any
+
+import pytest
 
 from tests.integration.stability.weave_trace_capture import (
     TraceCapture,
@@ -42,36 +47,57 @@ _COMPLIANT_ATTRS: dict[str, Any] = {
 }
 
 
-def test_capture_records_pushed_calls() -> None:
-    from weave.trace.context import call_context
+@pytest.fixture
+def stub_finish_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Replace ``WeaveClient.finish_call`` with a no-op so tests don't hit wandb.
+
+    Must run BEFORE ``TraceCapture.__enter__`` so the capture's
+    ``_original_finish`` reference is the stub, not the real method.
+    """
+    from weave.trace.weave_client import WeaveClient
+
+    monkeypatch.setattr(
+        WeaveClient,
+        "finish_call",
+        lambda self, call, output=None, exception=None, *, op=None: None,
+    )
+
+
+def test_capture_records_finished_calls(stub_finish_call: None) -> None:
+    from weave.trace.weave_client import WeaveClient
 
     with TraceCapture() as cap:
-        call_context.push_call(_make_call(_COMPLIANT_ATTRS))
-        call_context.push_call(_make_call({"agent_id": "x"}, op_name="other_op"))
+        WeaveClient.finish_call(None, _make_call(_COMPLIANT_ATTRS))
+        WeaveClient.finish_call(
+            None, _make_call({"agent_id": "x"}, op_name="other_op")
+        )
 
     traces = cap.traces
     assert len(traces) == 2
     assert traces[0]["agent_id"] == "ken_e_chatbot"
     assert traces[0]["_weave_op_name"] == "test_op"
+    assert traces[0]["_weave_call_id"] == "call_test_001"
     assert traces[1]["_weave_op_name"] == "other_op"
 
 
-def test_capture_unpatches_on_exit() -> None:
-    from weave.trace.context import call_context
+def test_capture_unpatches_on_exit(stub_finish_call: None) -> None:
+    from weave.trace.weave_client import WeaveClient
 
-    original = call_context.push_call
+    original = WeaveClient.finish_call
     with TraceCapture():
-        assert call_context.push_call is not original
-    assert call_context.push_call is original
+        assert WeaveClient.finish_call is not original
+    assert WeaveClient.finish_call is original
 
 
-def test_replay_through_compliance_flags_compliant_and_noncompliant() -> None:
+def test_replay_through_compliance_flags_compliant_and_noncompliant(
+    stub_finish_call: None,
+) -> None:
+    from weave.trace.weave_client import WeaveClient
+
     bad_attrs = {**_COMPLIANT_ATTRS, "agent_id": ""}  # missing/empty -> non-compliant
     with TraceCapture() as cap:
-        from weave.trace.context import call_context
-
-        call_context.push_call(_make_call(_COMPLIANT_ATTRS))
-        call_context.push_call(_make_call(bad_attrs))
+        WeaveClient.finish_call(None, _make_call(_COMPLIANT_ATTRS))
+        WeaveClient.finish_call(None, _make_call(bad_attrs))
 
     results = replay_through_compliance(cap.traces)
     assert len(results) == 2
@@ -80,8 +106,9 @@ def test_replay_through_compliance_flags_compliant_and_noncompliant() -> None:
     assert any(issue.field == "agent_id" for issue in results[1].issues)
 
 
-def test_capture_swallows_record_errors() -> None:
-    """A pathological Call that explodes on attribute access must not break push."""
+def test_capture_swallows_record_errors(stub_finish_call: None) -> None:
+    """A pathological Call that explodes on attribute access must not break finish."""
+    from weave.trace.weave_client import WeaveClient
 
     class Explosive:
         @property
@@ -92,10 +119,26 @@ def test_capture_swallows_record_errors() -> None:
         trace_id = "y"
         id = "z"
 
-    from weave.trace.context import call_context
-
     with TraceCapture() as cap:
-        call_context.push_call(Explosive())  # must not raise
+        WeaveClient.finish_call(None, Explosive())  # must not raise
 
-    # Either nothing recorded (preferred) or recorded with whatever survived.
-    assert len(cap.traces) <= 1
+    assert len(cap.traces) == 0
+
+
+def test_capture_calls_through_to_original(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The patched wrapper must still forward to the original finish_call."""
+    from weave.trace.weave_client import WeaveClient
+
+    seen: list[Any] = []
+    monkeypatch.setattr(
+        WeaveClient,
+        "finish_call",
+        lambda self, call, output=None, exception=None, *, op=None: seen.append(call),
+    )
+
+    with TraceCapture():
+        synthetic = _make_call(_COMPLIANT_ATTRS)
+        WeaveClient.finish_call(None, synthetic)
+
+    assert len(seen) == 1
+    assert seen[0] is synthetic

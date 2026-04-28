@@ -144,7 +144,7 @@ The exact view DDL is captured in `runbooks/finance-dashboard.md` and the Terraf
 
 ```text
 POST /api/v1/billing/{org_id}/sales-handoff:
-  1. Permission check: owner or admin (per BL-PRD-05).
+  1. Permission check: `OrgRole.ADMIN` (per BL-PRD-05 §1 — owner/admin distinction collapsed).
   2. Rate-limit check: 3/day/org (per BL-PRD-05).
   3. Validate body.
   4. Resolve org name and requesting user from auth context.
@@ -228,7 +228,7 @@ No new endpoints beyond `/sales-handoff`; this PRD is mostly testing, runbooks, 
 ## 7. Acceptance criteria
 
 1. **Six E2E scenarios pass** — Playwright suite covers every scenario in §2; runs in CI on every commit; runs against Stripe test mode.
-2. **Sales-handoff endpoint works** — owner POSTs valid form → email sent (verified via SendGrid event log fixture) → Slack message posted (verified via webhook-mock fixture) → audit entry written with `event="enterprise_handoff_initiated"`. Non-owner → 403. Over rate limit → 429. Invalid body (e.g. tokens <81M) → 400.
+2. **Sales-handoff endpoint works** — org `admin` POSTs valid form → email sent (verified via SendGrid event log fixture) → Slack message posted (verified via webhook-mock fixture) → audit entry written with `event="enterprise_handoff_initiated"`. Non-admin (org `member`) → 403. Over rate limit → 429. Invalid body (e.g. tokens <81M) → 400.
 3. **Reconciliation runs nightly in production** — Cloud Scheduler invokes the script; report appears in `organizations/{org_id}/billing_reconciliation/{date}` for every active org; alert fires on >0.5% drift.
 4. **30-day clean reconciliation** — verification report shows 30 consecutive nights with all-org max drift <0.5%. (Launch acceptance gate, not coded gate.)
 5. **Finance dashboard live** — `billing_kpis_v1` BigQuery view exists; Looker Studio dashboard shared with the finance team; populated with at least one full month of data before GA.

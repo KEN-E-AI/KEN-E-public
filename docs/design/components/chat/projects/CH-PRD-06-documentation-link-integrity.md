@@ -1,6 +1,6 @@
 # CH-PRD-06 — Documentation Link Integrity & CI Enforcement
 
-**Status:** Not started
+**Status:** Substantially shipped — CH-1 (chat-PRD forward-reference cleanup, verified clean by lychee against `main`) + CH-2 (`lychee.toml`) + CH-3 (`pr_checks.yaml` step) + CH-5 (`CLAUDE.md` G-4) complete. CH-4 (negative-test verification on a throwaway PR) is the only item remaining; that's a runtime verification done after this PR merges, not a code change. Note: a cross-repo cleanup of 9 unrelated broken links (`deployment/README.md` × 2, `deployment/redis/README.md`, `AH-PRD-05`, `SK-PRD-05` × 2, `UI-PRD-07`, `frontend/README.md` × 2) was bundled into the same PR so the new CI gate exits 0 on `main`.
 **Owner team:** Chat component team (docs-quality scope; tooling work bundled here because the immediate doc-cleanup is in chat/)
 **Blocked by:** none (PR #241 merge is the trigger event, not a strict blocker)
 **Parallel with:** any other docs work

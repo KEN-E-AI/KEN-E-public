@@ -16,10 +16,12 @@ Four complementary retrieval primitives; the orchestrator picks one per user que
 
 | Tool | Retrieval shape | Good for |
 |---|---|---|
-| `load_context_section(section)` | Bulk structured listing of one of 7 fixed domains | "Who are our competitors?" / "What do we sell?" |
+| `load_context_section(section)` | Bulk structured listing of one of 5 fixed domains | "Who are our competitors?" / "What do we sell?" |
 | `load_document(entity_type, entity_id)` | Detail drill-down on one entity | "Tell me more about ProductCategory X" |
 | `search_kb(query, node_types?, k=10)` | Semantic vector similarity | "Anything about usage-based pricing?" |
 | `list_observations(subject?, valid_only=true)` | Long-tail conversational facts | "What did we learn about pricing last time?" |
+
+> **Section scope.** The five sections are **products, icps, competitors, strategies, brand**. Earlier drafts also covered `performance` and `calendar`, but Campaign / CampaignPerformance live exclusively in Firestore — owned by the Project Tasks component (`Campaign`, PR-PRD-08) and queried for measurement by SAR-E / the Performance page — not as `:KGNode` types in Neo4j. Adding Firestore-backed sections to this Neo4j-shaped read tool would conflate two storage layers. A future PRD can add a `list_activities` / `list_campaigns` tool that reads the Project Tasks API directly when the orchestrator needs that data.
 
 All tools are **read-only**, account-scoped by `tool_context.state["account_id"]` (never by LLM-supplied argument), and wrapped with Weave tracing.
 
@@ -27,7 +29,7 @@ All tools are **read-only**, account-scoped by `tool_context.state["account_id"]
 
 ### In scope
 - New module `app/adk/agents/shared_tools/kb_read_tools.py` with four FunctionTool wrappers.
-- `load_context_section`: implement all 7 sections (products, icps, competitors, strategies, brand, performance, calendar) with account-scoped Cypher + formatted markdown output. Replaces the partial `load_section()` at `app/adk/agents/utils/context_loader.py:133` (which only handles `campaigns` with mock data).
+- `load_context_section`: implement all 5 sections (products, icps, competitors, strategies, brand) with account-scoped Cypher + formatted markdown output. Replaces the partial `load_section()` at `app/adk/agents/utils/context_loader.py:133` (which only handles `campaigns` with mock data — that mock path goes away with no replacement here, since campaign/calendar data lives in Firestore and is out of scope for this Neo4j-shaped tool).
 - `load_document`: generic entity-detail loader that accepts any of the 28 registered node types + `Observation`.
 - `search_kb`: query-embedding via `text-embedding-004`, Neo4j vector index lookup, result snippeting.
 - `list_observations`: paginated observation filter over the Phase 2 layer.
@@ -65,8 +67,7 @@ All four tools take `tool_context: ToolContext | None = None` as the last parame
 
 ```python
 def load_context_section(
-    section: Literal["products", "icps", "competitors", "strategies",
-                     "brand", "performance", "calendar"],
+    section: Literal["products", "icps", "competitors", "strategies", "brand"],
     tool_context: ToolContext | None = None,
 ) -> str:
     """Load a domain section of the account knowledge graph as formatted markdown.
@@ -78,7 +79,7 @@ def load_context_section(
 
 #### Section → Cypher mapping
 
-The seven sections group related node types. The queries below are the **reference shapes** — each owning team must reconcile the relationship names against the live schema before implementing (the exploration found `BELONGS_TO`, `HAS_{PHASE}_STRATEGY`, `HAS_CAMPAIGN`, etc. — not the names in the original Sprint 7 story). Take the 7-section taxonomy as authoritative; adapt the Cypher to reality.
+The five sections group related node types. The queries below are the **reference shapes** — each owning team must reconcile the relationship names against the live schema before implementing (the exploration found `BELONGS_TO`, `HAS_{PHASE}_STRATEGY`, etc. — not the names in the original Sprint 7 story). Take the 5-section taxonomy as authoritative; adapt the Cypher to reality.
 
 | Section | Node types to include | Traversal sketch |
 |---|---|---|
@@ -87,8 +88,6 @@ The seven sections group related node types. The queries below are the **referen
 | `competitors` | `CompetitiveEnvironment`, `Competitor`, `CompetitorTactic`, `CompetitorStrength`, `CompetitorWeakness`, `SubstituteProduct` | Account → CompetitiveEnvironment → Competitor → (tactics / strengths / weaknesses / substitutes) |
 | `strategies` | `Goal`, `Strength`, `Weakness`, `Opportunity`, `Risk`, `SWOTAnalysis` | Account → SWOTAnalysis → (strengths / weaknesses / opportunities / risks); Account → Goal |
 | `brand` | `BrandIdentity`, `BrandPersonality`, `VoiceAndTone`, `ColorPalette`, `Typography`, `ImageStyle`, `MissionAndValues` | Account → BrandIdentity → all brand element types |
-| `performance` | `Campaign`, `CampaignPerformance` (if modeled) | Account → Campaign → CampaignPerformance |
-| `calendar` | `Campaign` filtered by date | Account → Campaign WHERE date range overlaps [now - 90d, now + 180d] |
 
 Every section query MUST include `{account_id: $account_id}` in the traversal seed (the Account match). Defense-in-depth: after retrieving nodes, filter in Python to only return those where `node.account_id == account_id`.
 
@@ -241,8 +240,10 @@ Root instruction additions (small — the tools' docstrings carry most of the gu
 You have four read-only tools for the current account's knowledge graph:
 
 - `load_context_section(section)` — bulk load one of: products, icps,
-  competitors, strategies, brand, performance, calendar. Use when the user
-  asks about a whole domain ("Tell me about our competitors").
+  competitors, strategies, brand. Use when the user asks about a whole
+  domain ("Tell me about our competitors"). Calendar / campaign / performance
+  data lives outside the knowledge graph and is not available through
+  this tool.
 
 - `load_document(entity_type, entity_id)` — drill into one entity. Use after
   identifying a `node_id` from one of the other tools.
@@ -282,7 +283,7 @@ Import `EmbeddingGenerator` from `app/adk/agents/strategy_agent/embeddings.py`. 
 
 ### Section registry
 
-Centralize the seven sections + their node types + their Cypher in one place:
+Centralize the five sections + their node types + their Cypher in one place:
 
 ```python
 # app/adk/agents/shared_tools/kb_cypher.py
@@ -319,7 +320,7 @@ No HTTP endpoints. Tools are called by the ADK runtime on the agent's behalf.
 ## 7. Acceptance criteria
 
 1. Chat turn: user asks "who are our competitors?" → agent calls `load_context_section("competitors")` → response is well-formed markdown covering `CompetitiveEnvironment` + all `Competitor` entities (plus their tactics / strengths / weaknesses / substitutes) for the selected account, < 1 second, within the 10k-token budget.
-2. Each of the 7 section names returns a valid markdown response against an account with representative data. An unknown section name returns an error listing the valid options.
+2. Each of the 5 section names returns a valid markdown response against an account with representative data. An unknown section name (including the historical `performance` and `calendar`) returns an error listing the valid options (products, icps, competitors, strategies, brand).
 3. `load_document("Competitor", "competitor_acc_abc_xyz")` returns full properties + 1-hop neighbors (tactics, strengths, weaknesses). Unknown `entity_type` returns a clear error. `entity_id` not found returns a clear error.
 4. `search_kb("usage-based pricing")` against an account that has one matching Observation returns that Observation as the top result with score > 0.7 (qualitative — the exact score depends on the embedding model, but it should clearly lead).
 5. `search_kb` filtered by `node_types=["Product"]` excludes Observations even when an Observation is semantically closer.

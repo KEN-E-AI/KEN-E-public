@@ -13,7 +13,7 @@
 
 This project plugs Stripe into the foundation. It builds the Stripe Checkout session creation, the webhook handler with signature verification + idempotency, all six event handlers we care about, mid-cycle proration, scheduled-at-period-end downgrade and cancel, Stripe Tax, the past-due grace period, the payment-failure email, and the Stripe Customer Portal session for self-serve card updates.
 
-Before this PRD, every paid plan was a placeholder. After, an org owner can complete a real Stripe Checkout (test mode in CI; live in prod) and see their `BillingProfile` flip to `paid` with the correct `current_tier_stop_index`, allowance, and Stripe Subscription ID — within seconds of the webhook firing.
+Before this PRD, every paid plan was a placeholder. After, an org admin can complete a real Stripe Checkout (test mode in CI; live in prod) and see their `BillingProfile` flip to `paid` with the correct `current_tier_stop_index`, allowance, and Stripe Subscription ID — within seconds of the webhook firing.
 
 The hardest correctness concern is webhook idempotency: Stripe retries failed deliveries with the same `event.id` for up to 3 days. Every handler must be idempotent against re-delivery, and the `billing_stripe_events` journal is the dedup mechanism. The hardest reliability concern is the upgrade-staleness UX: a user expects their plan to apply immediately after Stripe Checkout returns. We achieve this by invalidating the status cache on `checkout.session.completed` *and* by writing the new `BillingProfile.monthly_token_allowance` synchronously inside the same handler.
 
@@ -35,7 +35,7 @@ The hardest correctness concern is webhook idempotency: Stripe retries failed de
 - **Weave spans** — `billing.checkout_session_created`, `billing.webhook_received` (`{event_type, processing_latency_ms, idempotent_replay}`), `billing.subscription_change`, `billing.payment_outcome`.
 
 ### Out of scope
-- Owner-only authorization on state-changing endpoints — BL-PRD-05.
+- Org-admin authorization on state-changing endpoints (via DM-PRD-07's `require_role(OrgRole.ADMIN, scope="org")`) — BL-PRD-05.
 - Manual override admin endpoint — BL-PRD-05.
 - Stripe API outage handling specifics (status decisions never call Stripe live) — BL-PRD-05.
 - Sales handoff for >81M tokens — BL-PRD-06.
@@ -210,7 +210,7 @@ All public routes are gated by `billing_enabled`. The webhook is unconditional �
 
 ## 7. Acceptance criteria
 
-1. **Free → paid via Checkout E2E** — test using `StubStripe`: org owner POSTs `/checkout-session` → server creates session → simulated `checkout.session.completed` webhook → org's `BillingProfile.plan == "paid"`, `current_tier_stop_index == requested`, `stripe_subscription_id` populated, `monthly_token_allowance` raised, `MonthlyUsageWindow.allowance_at_period_start` raised, status cache invalidated, `subscription_created` audit + `Subscription Updated` notification fired.
+1. **Free → paid via Checkout E2E** — test using `StubStripe`: org admin POSTs `/checkout-session` → server creates session → simulated `checkout.session.completed` webhook → org's `BillingProfile.plan == "paid"`, `current_tier_stop_index == requested`, `stripe_subscription_id` populated, `monthly_token_allowance` raised, `MonthlyUsageWindow.allowance_at_period_start` raised, status cache invalidated, `subscription_created` audit + `Subscription Updated` notification fired.
 2. **Webhook signature verification** — request with invalid signature → 400; valid signature → handler runs.
 3. **Webhook idempotency** — same `event.id` posted twice → second call short-circuits with 200 "idempotent replay"; state mutated exactly once.
 4. **Mid-cycle upgrade with proration** — paid org POSTs `/subscription/change` to a higher tier → `stripe.subscription.modify` called with `proration_behavior="create_prorations"` → `customer.subscription.updated` webhook → allowance raised synchronously, `subscription_upgraded` audit, notification.
@@ -260,7 +260,7 @@ All public routes are gated by `billing_enabled`. The webhook is unconditional �
 | Mid-cycle upgrade leaves allowance ambiguous (raised in our system before Stripe charges) | Acceptable: we err in the customer's favor (give access immediately on `checkout.session.completed`); Stripe's invoice settles correctly. |
 | Customer Portal accidentally enabled with cancel/plan-change | Configuration captured in runbook + checked at boot via Stripe API call asserting expected feature set. |
 | Stripe outage: checkout creation fails | Surface a clear "Try again in a few minutes" UI. Status decisions never depend on a live Stripe call (gates read materialized `OrganizationStatus`), so existing customers are unaffected. |
-| Free users abuse checkout-session creation (DoS via spam) | BL-PRD-05 adds rate limits + owner-only auth. v1 mitigation: rely on auth requirement that user is in the org. |
+| Free users abuse checkout-session creation (DoS via spam) | BL-PRD-05 adds rate limits + admin-only auth. v1 mitigation: rely on auth requirement that user is in the org. |
 | Idempotency journal write fails after handler succeeds → next replay re-runs the handler | Each handler is itself idempotent against the underlying state (e.g. setting `BillingProfile.plan = "paid"` for a customer already on paid is a no-op). The journal is defense-in-depth; double-applying a handler does not corrupt state. |
 | Currency mismatch (Stripe Customer in EUR, our prices in USD) | All Customers created with `currency="usd"` in BL-PRD-01; checkout enforces same currency. Multi-currency deferred (`../implementation-plan.md` §8). |
 | Refund creating a credit balance the user doesn't see in our UI | Refunds are an ops process via Stripe Dashboard for v1; documented in `../implementation-plan.md` §8 + risk row in §9. Future PRD can surface credit balance in UI. |

@@ -71,7 +71,7 @@ A developer reading only this section should understand: this component owns the
 | `api/src/kene_api/routers/chat.py` | Per-turn `touch_session` hook (KG-PRD-02) |
 | `api/src/kene_api/routers/internal/session_sweeper.py` | `POST /api/v1/internal/scheduler/process-idle-sessions` (KG-PRD-04) |
 | `app/adk/agents/shared_tools/kb_read_tools.py` | Four orchestrator read tools wrapped as `FunctionTool` (KG-PRD-03) |
-| `app/adk/agents/shared_tools/kb_cypher.py` | `SECTION_SPECS` — centralized Cypher for the seven domain sections (KG-PRD-03) |
+| `app/adk/agents/shared_tools/kb_cypher.py` | `SECTION_SPECS` — centralized Cypher for the five domain sections (KG-PRD-03) |
 | `app/adk/agents/shared_tools/kb_formatting.py` | Markdown renderers shared across tools (KG-PRD-03) |
 | `app/adk/agents/session_end_agent/reviewer.py` | LLM agent — reads transcript + KB, emits `proposal.json` artifact (KG-PRD-04) |
 | `app/adk/agents/session_end_agent/applier.py` | Deterministic applier — routes each change to apply / halt for HITL (KG-PRD-04) |
@@ -87,7 +87,7 @@ A developer reading only this section should understand: this component owns the
 1. **Schema bootstrap (KG-PRD-01):** On API startup, the lifespan runs `apply_all_migrations()`. Migration 001 creates `:Account` / `:Organization` / `:KGNode` uniqueness constraints, the `kg_node_account_id` lookup index, and the `kb_vector_index` (768-dim, cosine). Migration 002 adds the shared `:KGNode` label and backfills `valid_from` on every existing strategy node (28 labels). A `:Migration` ledger node skips already-applied migrations.
 2. **Per-turn session touch (KG-PRD-02):** Every chat turn's handler calls `GraphSyncService.touch_session(session_id, account_id, user_id)` — a single `MERGE` that creates the `Session` node lazily on the first turn and bumps `last_message_at` + `message_count` thereafter. Synchronous; < 20 ms typical.
 3. **Provenance stamping (KG-PRD-02):** Any write through `GraphSyncService.create_node` / `update_node` that supplies `session_id` or `research_run_id` auto-stamps `source_session_id` / `source_research_run_id` + writes `:OBSERVED_IN` / `:UPDATED_BY` / `:ESTABLISHED_BY` edges after the Firestore sync succeeds. Edge writes use `MERGE` — retry-safe if the follow-up query fails after the node is persisted.
-4. **Orchestrator reads (KG-PRD-03):** When the user asks about the account, the ken_e_agent picks one of four read tools: `load_context_section(section)` for a whole domain (products / icps / competitors / strategies / brand / performance / calendar), `load_document(entity_type, entity_id)` for drill-down, `search_kb(query)` for semantic fallback via the vector index, `list_observations(subject?)` for long-tail conversational facts. All four are account-scoped by `tool_context.state["account_id"]` (never by LLM argument).
+4. **Orchestrator reads (KG-PRD-03):** When the user asks about the account, the ken_e_agent picks one of four read tools: `load_context_section(section)` for a whole domain (products / icps / competitors / strategies / brand), `load_document(entity_type, entity_id)` for drill-down, `search_kb(query)` for semantic fallback via the vector index, `list_observations(subject?)` for long-tail conversational facts. All four are account-scoped by `tool_context.state["account_id"]` (never by LLM argument). Calendar / campaign / performance data lives in Firestore (Project Tasks `Campaign`) and SAR-E — not in Neo4j — so it is out of scope for these read tools; the orchestrator reads it through component-specific paths.
 5. **Research-on-creation (KG-PRD-05):** New-account research creates a `ResearchRun` node up front; the four builders (business / competitive / marketing / brand) are refactored to call `GraphSyncService.create_node(..., idempotency_key=(account_id, run_id, natural_key), research_run_id=run_id)` instead of raw Cypher. Every produced node carries `source_research_run_id` and a `:ESTABLISHED_BY` edge. Re-dispatching a builder with the same `run_id` + `natural_key` is a no-op (`MERGE` on `ON MATCH`).
 6. **Daily session sweep (KG-PRD-04):** Cloud Scheduler fires `POST /api/v1/internal/scheduler/process-idle-sessions` at 04:00 UTC. The sweeper runs a Cypher query for `Session` nodes where `status="active"` AND `last_message_at < now - 24h`, atomically flips each to `"processing"` (idempotency guard), and for each claimed session triggers one `PlanRun` on the seeded `kg-session-end-review` ProjectPlan via the Automations manual-trigger endpoint with `triggered_by="system"` and `inputs={session_id, account_id}`.
 7. **Reviewer → applier (KG-PRD-04):** The Automations orchestrator (Project Tasks PR-PRD-04, extended by A-PRD-02) dispatches the `session_reviewer` agent. It fetches the transcript via `AgentEngineClient.get_conversation_history(session_id)`, grounds itself via the KG-PRD-03 read tools, emits a `SessionReview` JSON artifact (`proposal.json`) via A-PRD-03's `attach_task_artifact`. The orchestrator then dispatches the `session_applier` task, which downloads the artifact and routes each `ProposedChange` by autonomy rules: additive + in-session changes auto-apply via `GraphSyncService`; destructive / cross-session / user-recent-write changes halt the task with `status="Awaiting Approval"` (A-PRD-04 HITL semantics). Users review halted runs on the Automation Details Outputs tab (A-PRD-06) and either Mark Complete (approve) or Revision Requested (re-dispatch the reviewer, capped at 5 iterations).
@@ -147,27 +147,33 @@ Schema source of truth: `api/src/kene_api/models/session_models.py`, `observatio
 
 ## 5. Project Index
 
-The component's work is split across **5 independently shippable project PRDs** under [`projects/`](./projects/). The split follows the same logic as the Project Tasks and Automations sets: one foundation PRD that unblocks everything, two provenance / read PRDs that run in parallel, and two consumer PRDs (one blocked on the Automations platform, one on the strategy agents). Each PRD publishes a contract up front so downstream teams can stub against it and run in parallel.
+The component's work is split across **6 independently shippable project PRDs** under [`projects/`](./projects/). The split follows the same logic as the Project Tasks and Automations sets: one foundation PRD that unblocks everything, two provenance / read PRDs that run in parallel, two consumer PRDs (one blocked on the Automations platform, one on the strategy agents), and one closing-out integration-testing PRD. Each PRD publishes a contract up front so downstream teams can stub against it and run in parallel.
 
 ### 5.1 Dependency graph
 
 ```
                                  ┌─────────────────────────────────────┐
-                                 │ Prereq: Project Tasks PR-PRDs 1–6 + │
-                                 │         Automations A-PRDs 1–7      │
-                                 │         (is_system + inputs adds    │
-                                 │          already folded in)         │
+                                 │ Prereq: Project Tasks PR-PRDs 01,   │
+                                 │         04, 06 + Automations        │
+                                 │         A-PRDs 01–06 (is_system +   │
+                                 │         inputs adds already folded) │
                                  └────────────────┬────────────────────┘
                                                   │
                                                   │ (KG-PRD-04 only)
                                                   │
 KG-PRD-01: Migrations,     ┌──> KG-PRD-03: Orchestrator Read Tools ┐
   Constraints, Indexes,    │     (hierarchical context + hybrid)    │
-  :KGNode Backfill  ───────┼──> KG-PRD-02: Provenance Spine ────────┼──> KG-PRD-04: Session-End Automation
-  (BLOCKING — ships first) │     (Session / Observation / ResearchRun│     (reviewer + applier + daily sweeper)
-                           │      + GraphSyncService methods)        │     — also waits on Project Tasks + Automations
-                           │                            │           │
-                           └──> KG-PRD-05: Research-on-Creation ─────┘
+  :KGNode Backfill  ───────┼──> KG-PRD-02: Provenance Spine ────────┼──> KG-PRD-04: Session-End Automation ┐
+  (BLOCKING — ships first) │     (Session / Observation / ResearchRun│     (reviewer + applier + daily sweeper)│
+                           │      + GraphSyncService methods)        │     — also waits on Project Tasks +     │
+                           │                            │           │     Automations                          │
+                           │                            │           │                                          ▼
+                           │                            │           │                          KG-PRD-06: Integration
+                           │                            │           │                          Testing & Polish
+                           │                            │           │                          (E2E + multi-tenant +
+                           │                            │           │                           perf smoke + observability)
+                           │                                        │                                          ▲
+                           └──> KG-PRD-05: Research-on-Creation ─────┘──────────────────────────────────────────┘
                                  Refactor (strategy agents →
                                  GraphSyncService + ResearchRun)
 ```
@@ -181,12 +187,14 @@ KG-PRD-01: Migrations,     ┌──> KG-PRD-03: Orchestrator Read Tools ┐
 | 03 | [Orchestrator Read Tools](./projects/KG-PRD-03-orchestrator-read-tools.md) | Agent / ML | KG-PRD-01, KG-PRD-02 | KG-PRD-05 | 4–5 days |
 | 04 | [Session-End as a System-Triggered Automation](./projects/KG-PRD-04-session-end-automation.md) | Agent / ML + Backend (pair) | KG-PRDs 01, 02, 03 + PR-PRDs 01, 04, 06 + A-PRDs 01, 02, 03, 04, 05, 06 | KG-PRD-05 | 5–7 days |
 | 05 | [Research-on-Creation Refactor](./projects/KG-PRD-05-research-on-creation-refactor.md) | Agent / ML | KG-PRD-01, KG-PRD-02 | KG-PRD-03, KG-PRD-04 | 3–4 days |
+| 06 | [Integration Testing & Polish](./projects/KG-PRD-06-integration-testing-and-polish.md) | QA + the team that finishes its KG-PRD first | KG-PRDs 01, 02, 03, 04, 05 | — | 1–2 days |
 
-**Total effort:** ~17–22 engineer-days. With three teams in parallel, clock time is roughly:
+**Total effort:** ~18–24 engineer-days. With three teams in parallel, clock time is roughly:
 - **Sprint 1:** KG-PRD-01 alone (critical path; 2 days).
 - **Sprint 2:** KG-PRD-02 solo (foundation for 3, 4, 5) while Prereq team folds `is_system` / `inputs` into Project Tasks + Automations PRDs (already landed per this README).
 - **Sprint 3:** KG-PRDs 3 and 5 in parallel (different teams), KG-PRD-04 design work begins waiting on Automations platform.
 - **Sprint 4 (pending Automations ship):** KG-PRD-04.
+- **Sprint 5:** KG-PRD-06 — integration testing + polish, run by whichever team finished its component PRD first.
 
 If the Automations platform ships in Sprint 2–3 (7 A-PRDs over ~4 weeks based on the Automations README estimates), KG-PRD-04 can start in Sprint 4 without a stall.
 
@@ -224,12 +232,15 @@ If only two teams are available, Team B absorbs Team C's work in Sprint 1.
 2. **Sprint 2** — Team A ships KG-PRD-02. Team B starts KG-PRD-05 (the parts that don't need KG-PRD-02 — research-run lifecycle design, builder refactor planning). Team C has any remaining Project Tasks / Automations PRD additions in review.
 3. **Sprint 3** — Team B ships KG-PRD-05 and KG-PRD-03 in parallel (different engineers, same team). Team A is available to unblock the Automations platform team on anything KG-PRD-04 will need.
 4. **Sprint 4** (pending Automations ship) — Team B + Team A pair on KG-PRD-04.
+5. **Sprint 5** — KG-PRD-06 — whichever team finished its component PRD first owns this; QA leads. End-to-end suites, multi-tenant isolation, performance smoke, observability checks, and the README "Status: shipped" report.
 
 **First shippable value lands at end of Sprint 2:** KG-PRD-01 + KG-PRD-02 together give the KB its provenance spine, vector index, and constraints — the orchestrator's context-loading is unchanged but the data it reads is now traceable.
 
 **Full user-visible value lands at end of Sprint 3:** KG-PRD-03 makes the orchestrator actually smarter during conversations; KG-PRD-05 unifies the research write path; no visible UI changes but query quality improves.
 
 **Learning loop closes at end of Sprint 4:** KG-PRD-04 enables session-end updates; the KB grows with every conversation.
+
+**Component is verified end-to-end at end of Sprint 5:** KG-PRD-06 confirms every seam — Neo4j ↔ Firestore, sweeper ↔ Automations, read tools ↔ orchestrator — works against real services.
 
 ## 6. Global Document References
 
@@ -314,7 +325,7 @@ Updating this PRD:
 - When architecture changes (new node types, new relationships, new tools, new abstractions): update §2
 - When a new cross-component dependency is introduced: update §3
 - When Neo4j schema changes: update §7 Neo4j layout
-- Update after KG-PRD-07-equivalent integration test runs (if a 6th PRD is added) with a "Status: shipped" section at the top of §5.5 linking the verification report.
+- Update after KG-PRD-06 integration test runs with a "Status: shipped" section at the top of §5.5 linking the verification report.
 
 This PRD is read by the Dev Team agent during implementation planning. Keep it concise — every sentence should help a dev write better code or avoid mistakes.
 -->

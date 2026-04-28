@@ -35,7 +35,7 @@ All three are tested here via automation — E2E Playwright for (1), an integrat
 - **Rate-limit ceiling tests** — per-account enforcement under concurrent load.
 - **Runbook updates**:
   - `api/CLAUDE.md` gains a "Running Data Pipeline jobs locally" section — how to start the sibling service, invoke `POST /api/v1/internal/data-pipeline/run` with a test token, view runs, invalidate caches by account + job.
-  - `frontend/CLAUDE.md` gains a "Authoring a custom pipeline job" walkthrough — enter at `/workflows/data-pipelines`, compose + preview + publish, invoke from a plan.
+  - `frontend/CLAUDE.md` gains a "Authoring a custom pipeline job" walkthrough — open the Automation Details (or Dashboard Details) page, click "+ Add Task" in the shared DAG editor, choose Data Pipeline assignee, click "Or author a new job →", step through Basics / Schemas / Connection / Preview / Publish & Use.
 - **Verification report** appended to `docs/design/components/data-pipeline/README.md` capturing observed run volumes, cache-hit rates, p95 durations, and the state of plan §10 open questions at ship time.
 - **PROJECT-PLANNER update** — flip all DP-PRD rows to `shipped` once this PRD's gates are green.
 
@@ -54,7 +54,7 @@ All three are tested here via automation — E2E Playwright for (1), an integrat
 - **DP-PRD-01 (Foundation):** service scaffold + `POST /api/v1/internal/data-pipeline/run` + cache + run-record persistence. E2E suites exercise this path end-to-end.
 - **DP-PRD-02 (Google Analytics connector):** the seeded GA jobs + the `@pytest.mark.platform` live-API test harness. This PRD extends it with multi-connector rate-limit tests.
 - **DP-PRD-03 (Task-system integration):** `assignee_type="data_pipeline"` on `PlanTask`, `TaskOrchestrator` dispatch branch, artifact write via A-PRD-03. E2E-1 exercises the full round trip.
-- **DP-PRD-04 (Frontend + custom-job authoring):** Calendar UI + `/workflows/data-pipelines*` routes. E2E suites drive through the UI.
+- **DP-PRD-04 (Frontend + custom-job authoring):** Calendar `ProjectEditDrawer` extension + the inline `<PipelineJobPicker>` + `<CustomJobAuthoringPanel>` mounted in A-PRD-06's task-creation side-panel (the right-side panel that opens from the shared DAG editor's "+ Add Task" button on `/workflows/automations/{plan_id}` and `/performance/dashboards/{plan_id}`). E2E suites drive through the DAG-editor UI.
 - **DP-PRD-05 (Additional connectors) — optional:** supplies Google Ads / Meta Ads / Mailchimp connectors for per-connector perf data. If DP-PRD-05 hasn't shipped, this PRD's rate-limit ceiling tests cover GA only and the dashboard omits the other connectors' series.
 - **A-PRD-02 (Recurring scheduler):** the SAR-E smoke test uses the scheduler to fire the daily plan on a test-only cron expression; `{inputs.*}` substitution behavior verified here.
 - **A-PRD-03 (Task artifact system):** artifact read used by the downstream agent task in E2E-1.
@@ -126,12 +126,13 @@ Note: plan §5 specifies `default_cache_ttl_seconds=0` on SAR-E's daily jobs bec
 
 Fixture: editor-role user with a connected GA integration.
 
-1. Navigate to `/workflows/data-pipelines`. Click "New Job".
-2. Step through Basics → Schemas → Connection → Preview, composing a minimal GA job equivalent to `ga.sessions_by_date` but under a custom `job_id` (e.g., `custom.ga_sessions_test`).
-3. Run preview; assert the preview panel renders non-empty rows.
-4. Click Publish. Assert redirect to the detail route.
-5. Navigate to `/calendar`; create a plan with a pipeline task using the new `custom.ga_sessions_test` job; activate.
-6. Assert the task runs + produces an artifact + emits a `data_pipeline.run` span with the custom `job_id`.
+1. Open an existing automation at `/workflows/automations/{plan_id}` (or create one). Click "+ Add Task" in the shared DAG editor; the right-side task panel opens.
+2. Choose `assignee_type="data_pipeline"` in the side-panel; the picker renders. Click "Or author a new job →".
+3. Step through Basics → Schemas → Connection → Preview inside the side-panel, composing a minimal GA job equivalent to `ga.sessions_by_date` but under a custom `job_id` (e.g., `custom.ga_sessions_test`).
+4. Run preview; assert the preview panel renders non-empty rows.
+5. Click "Publish & Use". Assert the panel returns to the picker with the new job pre-selected.
+6. Fill required inputs in `<PipelineInputsForm>`; click Save to add the task to the plan; activate.
+7. Assert the task runs + produces an artifact + emits a `data_pipeline.run` span with the custom `job_id`.
 
 ### 5.2 Concurrent-runs load test
 
@@ -211,7 +212,7 @@ Exceptions: `DataPipelineJob` / `DataPipelineRun` intentionally contain the subs
 
 **`frontend/CLAUDE.md` — new section "Authoring a custom pipeline job":**
 
-- Short walkthrough: log in as an editor → navigate to `/workflows/data-pipelines` → click "New Job" → step through Basics / Schemas / Connection / Preview → Publish → invoke from a plan via `ProjectEditDrawer`.
+- Short walkthrough: log in as an editor → open an automation at `/workflows/automations/{plan_id}` → click "+ Add Task" in the DAG editor → choose Data Pipeline assignee → click "Or author a new job →" → step through Basics / Schemas / Connection / Preview → Publish & Use → finish creating the task with the new job.
 - How to reset an in-progress authoring session (close the tab; no draft persistence for authoring in v1 — confirm at kickoff whether DP-PRD-04 adds a draft collection).
 - Where authored jobs live (`accounts/{account_id}/data_pipeline_jobs/{job_id}`).
 
@@ -287,7 +288,7 @@ This PRD owns no new endpoints. It consumes:
 8. `api/tests/data_pipeline/test_naming_audit.py` returns zero matches for stale `pipeline_jobs/` (without `data_` prefix), `/api/v1/pipeline/`, `/internal/pipeline/run`, or bare `class PipelineJob` / `class PipelineRun` in `app/`, `api/src/`, `frontend/src/`, `docs/`; canonical paths (`data_pipeline_jobs/`, `/api/v1/internal/data-pipeline/run`) confirmed present via spot-check greps.
 9. Observability dashboard (`deployment/observability/dashboards/data-pipeline.json`) renders four panels (run volume, cache-hit rate, failure rate, per-connector p95) backed by `data_pipeline.run` spans. Panel JSON committed and lint-validated.
 10. `api/CLAUDE.md` contains a "Running Data Pipeline jobs locally" section covering service startup, test invocation, run inspection, and cache invalidation.
-11. `frontend/CLAUDE.md` contains an "Authoring a custom pipeline job" walkthrough covering the full `/workflows/data-pipelines` flow end-to-end.
+11. `frontend/CLAUDE.md` contains an "Authoring a custom pipeline job" walkthrough covering the inline-in-DAG-editor flow end-to-end (no standalone route — open Automation Details → "+ Add Task" → Data Pipeline assignee → "Or author a new job →" → Basics / Schemas / Connection / Preview / Publish & Use).
 12. `docs/design/components/data-pipeline/README.md` gains a "Shipped YYYY-MM-DD" banner + a Verification Report section per §5.7.
 13. `docs/design/components/PROJECT-PLANNER.md` DP-PRD rows all read `shipped` with today's date.
 14. Cross-account isolation confirmed by a test: an editor on account A cannot PATCH a pipeline task against an `accounts/{B}/data_pipeline_jobs/*` custom job; `POST /api/v1/internal/data-pipeline/run` with `account_id=A` + a custom-job `job_id` from account B returns 404.
