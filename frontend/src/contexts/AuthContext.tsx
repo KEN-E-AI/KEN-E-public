@@ -7,7 +7,7 @@ import {
 } from "react";
 import api from "@/lib/api";
 import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { auth, authBypassEnabled, authInitialized } from "@/lib/firebase";
 import type { UserId, OrganizationId, AccountId } from "@/lib/branded-types";
 import {
   toUserId,
@@ -303,6 +303,41 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   // Sync with Firebase auth state
   useEffect(() => {
+    if (!authInitialized) {
+      // Either bypass mode or init failed in firebase.ts. Either way, the
+      // `auth` export is a stub and onAuthStateChanged would throw.
+      if (authBypassEnabled) {
+        console.warn(
+          "[AuthContext] auth bypass active — injecting synthetic test user and workspace",
+        );
+        const fakeUser: User = {
+          id: toUserId("test-bypass-uid"),
+          email: "test-bypass@ken-e.ai",
+          firstName: "Test",
+          lastName: "Bypass",
+        };
+        setUser(fakeUser);
+        localStorage.setItem("user", JSON.stringify(fakeUser));
+        setHasSelectedWorkspace(true);
+        localStorage.setItem("hasSelectedWorkspace", "true");
+        const orgId = toOrganizationId("org_bypass");
+        const accountId = toAccountId("acc_bypass");
+        setCurrentOrganizationId(orgId);
+        localStorage.setItem("currentOrganizationId", orgId);
+        setSelectedOrgAccountState({
+          orgId,
+          accountId,
+          metadata: {
+            organization_name: "Bypass Org",
+            account_name: "Bypass Account",
+            industry: "test",
+            status: "active",
+          },
+        });
+      }
+      setIsAuthLoading(false);
+      return;
+    }
     const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
       if (!firebaseUser) {
         // User is signed out - clear all state

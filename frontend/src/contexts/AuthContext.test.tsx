@@ -9,6 +9,8 @@ vi.mock("@/lib/firebase", () => ({
     currentUser: null,
     onAuthStateChanged: vi.fn(() => vi.fn()), // Return unsubscribe function
   },
+  authInitialized: true,
+  authBypassEnabled: false,
 }));
 
 // Mock localStorage

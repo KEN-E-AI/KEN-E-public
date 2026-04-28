@@ -13,6 +13,8 @@ vi.mock("@/lib/firebase", () => ({
     signOut: vi.fn(),
   },
   googleProvider: {},
+  authInitialized: true,
+  authBypassEnabled: false,
 }));
 
 // Mock team API

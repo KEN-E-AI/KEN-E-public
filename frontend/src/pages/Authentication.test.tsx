@@ -11,6 +11,8 @@ import type { ReactNode } from "react";
 vi.mock("@/lib/firebase", () => ({
   auth: {},
   googleProvider: {},
+  authInitialized: true,
+  authBypassEnabled: false,
 }));
 
 vi.mock("firebase/auth", () => ({
