@@ -231,56 +231,64 @@ The component's work is split across **7 independently shippable project PRDs** 
 ### 5.1 Dependency graph
 
 ```
-┌─────────────────────────┐   ┌────────────────────────┐   ┌───────────────────┐
-│     DM-PRD-00/07        │   │      PR-PRD-08         │   │     AH-PRD-02     │
-│  (migration + audit)    │   │  (Campaign + objective)│   │  (agent factory)  │
-└────────────┬────────────┘   └───────────┬────────────┘   └─────────┬─────────┘
-             │                             │                         │
-             └──────────┬──────────────────┘                         │
-                        ▼                                            │
-              ┌───────────────────┐                                  │
-              │     SE-PRD-01     │  Configuration foundation        │
-              └─────────┬─────────┘                                  │
-                        │                                            │
-                        ▼                                            │
-              ┌───────────────────┐    ┌──────────────────────┐      │
-              │     SE-PRD-02     │◄───│  DP-PRDs 01 + 02 + 03│      │
-              │  Weekly ingestion │    │                      │      │
-              └─────────┬─────────┘    └──────────────────────┘      │
-                        │                                            │
-                        ▼                                            │
-              ┌───────────────────┐                                  │
-              │     SE-PRD-03     │  VAR + 12-week baseline          │
-              └─────────┬─────────┘                                  │
-                        │                                            │
-                        ▼                                            │
-              ┌───────────────────┐                                  │
-              │     SE-PRD-04     │  IRF + scenarios                 │
-              └─────────┬─────────┘                                  │
-                        │                                            │
-                        ▼                                            │
-              ┌───────────────────┐◄─────────────────────────────────┘
-              │     SE-PRD-05     │  Target derivation specialist
-              └─────────┬─────────┘
-                        │
-                        ▼
-              ┌───────────────────┐
-              │     SE-PRD-06     │  Analytical query layer
-              └─────────┬─────────┘    (consumes PR-PRD-07 + 08)
-                        │
-                        ▼
-              ┌───────────────────┐
-              │     SE-PRD-07     │  Integration testing + polish
-              └───────────────────┘
+┌─────────────────────────┐   ┌────────────────────────┐   ┌───────────────────┐   ┌───────────────────┐
+│     DM-PRD-00/07        │   │      PR-PRD-08         │   │     AH-PRD-02     │   │  A-PRDs 01–04     │
+│  (migration + audit)    │   │  (Campaign + objective)│   │  (agent factory)  │   │ (automations      │
+│                         │   │                        │   │                   │   │  platform)        │
+└────────────┬────────────┘   └───────────┬────────────┘   └─────────┬─────────┘   └─────────┬─────────┘
+             │                             │                         │                       │
+             └──────────┬──────────────────┘                         │                       │
+                        ▼                                            │                       │
+              ┌───────────────────┐◄────────────────────────────────────────────────────────┤
+              │     SE-PRD-01     │  Configuration foundation        │                       │
+              │                   │  (needs A-PRD-01: ProjectPlan +  │                       │
+              │                   │   PlanRun model for stub seeder) │                       │
+              └─────────┬─────────┘                                  │                       │
+                        │                                            │                       │
+                        ▼                                            │                       │
+              ┌───────────────────┐    ┌──────────────────────┐      │                       │
+              │     SE-PRD-02     │◄───│  DP-PRDs 01 + 02 + 03│      │ (sar_e_ingestion      │
+              │  Weekly ingestion │    │                      │      │  glue agent;          │
+              │                   │◄───────────────────────────────── │  is_system plan;     │
+              │                   │◄────────────────────────────────────────────────────────┤
+              └─────────┬─────────┘    └──────────────────────┘      │  artifact system;     │
+                        │                                            │  test-mode honoring)  │
+                        ▼                                            │                       │
+              ┌───────────────────┐                                  │                       │
+              │     SE-PRD-03     │  VAR + 12-week baseline          │ (sar_e_retrain glue   │
+              │                   │◄───────────────────────────────── │  agent; weekly       │
+              │                   │◄──────────────────────────────────────── (A-PRDs 01–02)  │
+              └─────────┬─────────┘                                  │   recurring plan)     │
+                        │                                            │                       │
+                        ▼                                            │                       │
+              ┌───────────────────┐                                  │                       │
+              │     SE-PRD-04     │  IRF + scenarios                 │                       │
+              └─────────┬─────────┘                                  │                       │
+                        │                                            │                       │
+                        ▼                                            │                       │
+              ┌───────────────────┐◄─────────────────────────────────┘                       │
+              │     SE-PRD-05     │  Target derivation specialist                            │
+              │                   │  (needs AH-PRD-02 + response_schema field)               │
+              └─────────┬─────────┘                                                          │
+                        │                                                                    │
+                        ▼                                                                    │
+              ┌───────────────────┐                                                          │
+              │     SE-PRD-06     │  Analytical query layer                                  │
+              └─────────┬─────────┘    (consumes PR-PRD-07 + 08)                             │
+                        │                                                                    │
+                        ▼                                                                    │
+              ┌───────────────────┐                                                          │
+              │     SE-PRD-07     │  Integration testing + polish                            │
+              └───────────────────┘                                                          │
 ```
 
 ### 5.2 Projects
 
 | # | Project PRD | Owner team | Blocked by | Parallel with | Est. |
 |---|-------------|------------|------------|---------------|------|
-| 01 | [Configuration Foundation + Setup State](./projects/SE-PRD-01-configuration-foundation.md) | Backend (foundation) | DM-PRD-00, DM-PRD-07, PR-PRD-08 | — | 4 days |
-| 02 | [Weekly KPI Ingestion + Backfill Plan](./projects/SE-PRD-02-weekly-kpi-ingestion.md) | Backend | SE-PRD-01, DP-PRDs 01 + 02 + 03 | — | 4 days |
-| 03 | [VAR Model + 12-Week Baseline Forecast](./projects/SE-PRD-03-var-baseline.md) | Backend / applied stats | SE-PRD-02 | — | 4 days |
+| 01 | [Configuration Foundation + Setup State](./projects/SE-PRD-01-configuration-foundation.md) | Backend (foundation) | DM-PRD-00, DM-PRD-07, PR-PRD-08, A-PRD-01 | — | 4 days |
+| 02 | [Weekly KPI Ingestion + Backfill Plan](./projects/SE-PRD-02-weekly-kpi-ingestion.md) | Backend | SE-PRD-01, DP-PRDs 01 + 02 + 03, AH-PRD-02, A-PRDs 01–04 | — | 4 days |
+| 03 | [VAR Model + 12-Week Baseline Forecast](./projects/SE-PRD-03-var-baseline.md) | Backend / applied stats | SE-PRD-02, AH-PRD-02, A-PRDs 01–02 | — | 4 days |
 | 04 | [Scenario Propagation (IRF)](./projects/SE-PRD-04-irf-scenarios.md) | Backend / applied stats | SE-PRD-03 | 05 | 3 days |
 | 05 | [Target Derivation Specialist](./projects/SE-PRD-05-target-derivation-specialist.md) | Backend + Agentic Harness liaison | SE-PRD-03, SE-PRD-04, AH-PRD-02 | 04 (partial) | 4 days |
 | 06 | [Analytical Query Layer](./projects/SE-PRD-06-analytical-query-layer.md) | Backend | SE-PRDs 01 + 02 + 03, PR-PRDs 07 + 08 | 04, 05 | 4 days |

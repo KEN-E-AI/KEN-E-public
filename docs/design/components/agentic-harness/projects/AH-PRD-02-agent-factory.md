@@ -32,6 +32,7 @@ The Google Analytics Specialist in [AH-PRD-03](./AH-PRD-03-google-analytics-spec
 - **Curated per-specialist tool rosters (≤30 tools each).** Each specialist receives a fixed list of tools at construction time, capped at 30 — no per-turn `tool_filter`, no `tool_filter_state` session-state key. The ToolRegistry is a **build-time metadata catalog** the factory reads to assemble those rosters; it is **not** a runtime routing index. Root-agent routing is specialist-description-based — see [README §2.5](../README.md#25-tool-assignment--routing-model).
 - `dispatch_to_{specialist_name}()` generator with `@safe_weave_op()` tracing and `acceptance_criteria: str | None = None` plumbing; when provided, wraps specialist in `build_review_pipeline()` from AH-PRD-01; when `None`, preserves single-pass behavior
 - **Root instruction assembly.** The factory injects an "Available specialists" block into the root agent's instruction, sourced from each `agent_configs/{id}.description`. This is what the root LLM reads to choose between `dispatch_to_*()` calls — see [README §2.5 Routing](../README.md#25-tool-assignment--routing-model).
+- **Forward-compat structured-output enforcement.** A new optional `agent_configs/{id}.response_schema: dict | None` field. When non-None, the factory passes it through to `GenerateContentConfig.response_schema` so the ADK layer enforces structured output at LLM-call time. First consumer: [SE-PRD-05](../../sar-e/projects/SE-PRD-05-target-derivation-specialist.md)'s `performance_forecasting` specialist (Gemini 2.0 Pro) which sets it to `DerivedTargetsResponse.model_json_schema()`. Default `None` for every other agent — pure pass-through, no behavior change.
 - **`MCPServerManager` retirement** (`app/adk/mcp_config/manager.py`): with the factory now creating `McpToolset` instances directly per [`mcp-architecture.md`](../mcp-architecture.md) §7, the in-process Sprint-3 singleton's connection-pooling and LRU-eviction code paths become redundant — ADK's native `MCPSessionManager` already handles SSE session pooling (see [`mcp-architecture.md`](../mcp-architecture.md) §2). This PRD removes the redundant code, lifts the YAML-loading + auth-helper utilities the factory still needs into `app/adk/agents/agent_factory/mcp.py`, and **retains** only the health-monitoring + admin-status-endpoint surface (still consumed by ops). The Firestore migration of the YAML config is the same `mcp_servers/{server_id}` schema this PRD lands.
 - `deploy_ken_e.py` updated to call `agent_factory.build_hierarchy()` instead of importing individual agent singletons
 - Factory unit tests (mock Firestore) + integration tests (end-to-end hierarchy build)
@@ -94,6 +95,13 @@ visible_in_frontend: bool = True           # appears on Workflows > Agents list
 skill_ids: list[str] = []
 sandbox_code_executor_enabled: bool = False
 
+# New in Phase 2 — forward-compat structured-output enforcement:
+response_schema: dict | None = None        # JSON schema (or Pydantic-derived dict) passed through to
+                                           # `GenerateContentConfig.response_schema` when not None.
+                                           # First consumer: SE-PRD-05's `performance_forecasting` specialist
+                                           # (Gemini 2.0 Pro) enforces `DerivedTargetsResponse` shape on
+                                           # every target-derivation call. Optional for all other agents.
+
 # New on per-account overlay documents:
 based_on_version: int                      # which global version was forked (for drift detection + revert)
 ```
@@ -143,6 +151,7 @@ Each specialist receives a **fixed curated tool list (≤30 tools)** at construc
 | `mcp_servers/{id}.enabled` | Include/exclude from specialist | Disabled servers are not wired |
 | `mcp_servers/{id}.specialist_categories` | Groups server into specialist(s) | A server can belong to multiple specialists |
 | `agent_configs/{id}.code_execution_enabled` | `generate_content_config.tools` | If true, adds `Tool(code_execution=ToolCodeExecution())` to `GenerateContentConfig.tools` |
+| `agent_configs/{id}.response_schema` | `generate_content_config.response_schema` | If non-None, sets `GenerateContentConfig.response_schema` to enforce structured output at the ADK layer. Accepts either a JSON-schema dict or the dict produced by `PydanticModel.model_json_schema()`. First consumed by SE-PRD-05 (`DerivedTargetsResponse`); optional for other agents. |
 | `agent_configs/{id}.available_to_copy` *(Phase 3)* | Frontend only | Account admins can fork this as the basis for a custom agent |
 | `agent_configs/{id}.automatically_available` *(Phase 3)* | Factory: include in account's hierarchy | Auto-attached to accounts without opt-in |
 | `agent_configs/{id}.visible_in_frontend` *(Phase 3)* | API filter | Shown on Workflows > Agents list |
