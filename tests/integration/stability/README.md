@@ -45,7 +45,7 @@ want.
 | Story | ACs | Driver | Modules used |
 |---|---|---|---|
 | 1.1.1-3 (ADK stability) | 6.10–6.13 | `runs/run_adk_stability.py` | `query_corpus` (direct ADK ``Runner``, not HTTP) |
-| 1.14.5 (OTEL stability) | 6.14–6.17 | _TBD_ | `diverse_invocation_runner` + `memory_profiler` + `weave_trace_capture` |
+| 1.14.5 (OTEL stability) | 6.14–6.17 | `runs/run_otel_stability.py` | `query_corpus` + `memory_profiler` + `weave_trace_capture` |
 | 1.1.2-3 (trace compliance) | 6.18–6.20 | `runs/run_trace_compliance.py` | `query_corpus` + `weave_trace_capture` |
 | 1.1.5-4 (session stability) | 6.21–6.24 | _TBD_ | `memory_profiler` + `redis_ttl_fixture` + `stream_reconnect_fixture` |
 
@@ -107,6 +107,39 @@ outcomes (Weave call URL for the AC-6.20 spot-check), the full
 `TraceComplianceReport`, and a per-op-name compliance breakdown so it's
 obvious which span types fail when compliance < 100%. Exit code 0 only
 at 100% compliance.
+
+### OTEL stability driver (`runs/run_otel_stability.py`)
+
+Four-step OTEL validation:
+
+1. **Probe** — closes the OTEL `google-genai` workaround question
+   (Outcome A or B) by running a strategy-style agent with
+   `output_schema=Pydantic`.
+2. **Memory delta** — paired subprocess runs of `run_adk_stability.py`
+   with `OTEL_SDK_DISABLED=true` vs OTEL on; peak RSS sampled via
+   `psutil`. Threshold: delta_pct < 10.
+3. **GenAI span coverage** — drives 20+ corpus queries inside
+   `TraceCapture`, asserts every
+   `google.genai.models.AsyncModels.generate_content` span carries
+   `model_used` and `temperature`.
+4. **Non-GenAI spans** — same capture, asserts at least one
+   `load_config_from_firestore` (DB) and one
+   `mcp.client.session.ClientSession.call_tool.*` (HTTP) span across
+   the run.
+
+```bash
+# Report-only (default — no file mutations)
+PYTHONPATH=.:api/src uv run --project api python \
+  tests/integration/stability/runs/run_otel_stability.py
+
+# Apply Outcome A or B cleanup to .env.* + deploy_ken_e.py + spike doc
+PYTHONPATH=.:api/src uv run --project api python \
+  tests/integration/stability/runs/run_otel_stability.py --apply-cleanup
+```
+
+Step 2 spawns subprocesses with stdout/stderr redirected to a temp log
+file (NOT a PIPE) — draining a PIPE in the parent's psutil polling
+loop would deadlock the child once the buffer fills (~64 KB).
 
 ## Notes & known gaps
 
