@@ -13,7 +13,7 @@
 > The §11 Cleanup table below — covering `Recommendations.tsx`, `Campaigns.tsx`, `Reports.tsx`, `Index.tsx`, `Simulations.tsx` — is **not executed by UI-PRD-07**. Each row is owned by the PRD that ships the replacement surface (PE-PRD-02 / PE-PRD-03 / PR-PRD-08 / DB-PRD-01 / PE-PRD-01 respectively). The table is preserved here as a checklist so the subsumption decision history remains traceable.
 >
 > **References for the subsumption decision:**
-> - [`docs/design/DESIGN-REVIEW-LOG.md`](../../../../DESIGN-REVIEW-LOG.md) — UI-PRD-07 marked subsumed
+> - [`docs/design/DESIGN-REVIEW-LOG.md`](../../../DESIGN-REVIEW-LOG.md) — UI-PRD-07 marked subsumed
 > - [`docs/KEN-E-System-Architecture.md`](../../../../KEN-E-System-Architecture.md) §7.1, §12 — UI-PRD-07 folded into PE-PRD-01
 > - [`docs/design/components/PROJECT-PLANNER.md`](../../PROJECT-PLANNER.md) — release column = "— (subsumed by PE-PRD-01)"
 > - [`docs/design/components/performance/README.md`](../../performance/README.md) §3.1 — Performance page replaces legacy `Performance.tsx` entirely

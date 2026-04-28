@@ -326,7 +326,7 @@ Cache key: `(account_id, context_hash)`. TTL: 10 minutes. Cache stores the valid
 2. In a single transaction:
    - If a prior target exists, mark its `is_active=false` AND delete it (per implementation-plan §3.4 "no version history retained") — we soft-delete for audit purposes only, then hard-delete after the audit entry writes. Equivalently: a single `delete`.
    - Write the new target with a fresh `target_id` (ULID)
-   - Write audit entry `sar_e.target.supersede` or `sar_e.target.create` with before/after
+   - Write audit entry via `write_audit(parent_kind="account", parent_id=account_id, audit_subcollection="sar_e_audit", resource_type="target", action="target_save", ...)` (DM-PRD-07's registered action). The `before_state` / `after_state` payload distinguishes supersede (prior row in `before_state`) from create (`before_state=None`); no separate action name needed.
 3. Response: `Target` with HTTP 200 (supersede) or 201 (create)
 
 `PATCH /targets/{target_id}`:
@@ -397,7 +397,7 @@ def _methodology_lint_passes(response: DerivedTargetsResponse) -> bool:
 7. **Methodology lint.** Mock the specialist to include "because of the promotion" in one target's reasoning → endpoint rejects, sends a reminder, and retries; final response has no banned phrases.
 8. **No-mapping gate.** `POST /targets/derive` on an account with `FunnelStageMapping.version=0` returns 422 with "forecasting not set up; complete the wizard first".
 9. **No-baseline gate.** `POST /targets/derive` on an account with no baselines yet returns 409 with "baseline not yet available; wait for backfill + retrain to complete".
-10. **Supersede-on-edit.** `POST /targets` with `(kpi_id=X, period_start=W1, period_end=W2)` when a prior target exists for the same key → prior doc is absent, new doc written, audit entry `sar_e.target.supersede` with before/after. Query `GET /targets?kpi_id=X&start_week=W1` → exactly 1 row.
+10. **Supersede-on-edit.** `POST /targets` with `(kpi_id=X, period_start=W1, period_end=W2)` when a prior target exists for the same key → prior doc is absent, new doc written, audit entry with `action="target_save"` (DM-PRD-07 registry) and the prior row in `before_state` indicating supersede. Query `GET /targets?kpi_id=X&start_week=W1` → exactly 1 row.
 11. **No version history.** After 5 sequential supersedes, Firestore has exactly 1 active row for the key; 0 soft-deleted rows (hard-deletion confirmed).
 12. **PATCH uses supersede.** `PATCH /targets/{id}` with `{value: 15000}` → response has a new `target_id` + `derived_by: "user_edit"`; old id is gone.
 13. **DELETE is soft.** `DELETE /targets/{id}` → row has `is_active=false`; subsequent `POST` for the same `(kpi_id, period)` writes a new row without affecting the soft-deleted one.

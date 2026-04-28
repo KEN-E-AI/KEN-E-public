@@ -43,6 +43,7 @@ No new code is produced here. The work is **verify, document, and cut over**.
 - [ ] `make lint` passes
 - [ ] `pytest api/tests/ app/adk/agents/strategy_agent/tests/` passes
 - [ ] Account deletion end-to-end: seed an account with data in every migrated resource (see test from DM-PRD-05), `DELETE`, verify nothing orphaned in Firestore or GCS
+- [ ] User deletion end-to-end (DM-PRD-05): seed a user across 2 orgs × 3 accounts with chat categories + notification preferences + integration connections, `DELETE /api/v1/users/{user_id}` as super-admin, verify cross-account `members` cleanup, IN-PRD-05 hook fired per affected account, user doc + all user-scoped subcollections gone
 - [ ] Broken cross-account audit query works: `get_user_activity(user_id)` returns results for a seeded user with audit entries across ≥ 2 accounts
 - [ ] Scheduler dry-run (if PRD-6 has shipped): `collection_group("project_plans").where("due_datetime_utc", "<=", now)` query runs against seeded cross-account plans and returns expected results
 - [ ] Index budget: `gcloud firestore indexes composite list --project=ken-e-dev --database='(default)' | wc -l` returns < 50 (well below the 200-per-project cap)
@@ -55,17 +56,38 @@ No new code is produced here. The work is **verify, document, and cut over**.
 Run the following and address any hits (expected: zero hits in source files; hits in `multi-tenant-migration-plan.md`, research docs, and this PRD set are fine because those are historical/documentation):
 
 ```bash
+# Shape A → B residue
 rg -n "strategy_docs_\{account_id\}|strategy_audit_\{account_id\}|strategy_processing_state_\{account_id\}" api/ app/ \
   --glob '!**/docs/**' --glob '!**/*.md'
 rg -n "agent_analytics_\{account_id\}|cost_aggregations_\{account_id\}|performance_profiles_\{account_id\}" api/ app/ \
   --glob '!**/docs/**' --glob '!**/*.md'
+
+# Shape D residue (nested accounts map on org docs)
 rg -n "accounts\.\{account_id\}\." api/ app/ \
   --glob '!**/docs/**' --glob '!**/*.md'
+
+# Shape B-like residue (whole-collection patterns) — NOTE: searches both api/ AND app/
 rg -n 'collection\("monitoring_topics"\)|collection\("alert_configurations"\)' api/ app/ \
   --glob '!**/docs/**'
+
+# Legacy user-permissions field tree residue (DM-PRD-07 hybrid migration)
+rg -n "users.permissions.organizations\.|users.permissions.account_permissions\." api/ app/ \
+  --glob '!**/docs/**' --glob '!**/*.md'
+rg -n '\.permissions\.organizations\b|\.permissions\.account_permissions\b' api/src/kene_api/ \
+  --glob '!**/docs/**' --glob '!**/*.md'
+
+# User-scoped subcollection registry coverage (DM-PRD-05 USER_SUBCOLLECTIONS)
+# Any new users/{user_id}/{name}/ subcollection write must be registered.
+# Compare the set of users/{user_id}/{X}/ writes in source vs. USER_SUBCOLLECTIONS in user_deletion_service.py.
+python api/scripts/check_user_subcollections_registry.py
+
+# Audit-write coverage (DM-PRD-07)
+# Every mutating endpoint should write through write_audit; raw audit-doc writes outside the helper are residue.
+rg -n 'collection\("(\w+_audit)"\)\.document' api/ app/ \
+  --glob '!**/docs/**' --glob '!**/services/audit_service.py' --glob '!**/services/audit_archive_service.py'
 ```
 
-Each grep should return **zero** hits after DM-PRD-01–DM-PRD-05 complete. Any hit is a leftover that must be filed against the responsible team.
+Each grep should return **zero** hits after DM-PRD-01–DM-PRD-05 complete (DM-PRD-07 residue greps target the audit and members migration; run those after DM-PRD-07 ships). Any hit is a leftover that must be filed against the responsible team.
 
 ### 4.3 Staging cutover
 

@@ -213,11 +213,11 @@ Credential loading via Integrations (`/internal/integrations/credentials/{accoun
 
 ### DP-PRD-04 — Frontend + custom-job authoring
 
-**Delivers:** "Data Pipeline" option in `ProjectEditDrawer` assignee selector; `PipelineJobPicker` browsing the global + account-overlay catalog; schema-driven input form (JSON Schema → form, inline validation); pipeline-run viewer in `ActivityDetailPanel` (status, inputs, artifact preview, cache indicator); **custom-job authoring UI** at `/workflows/data-pipelines` — create / edit per-account jobs, compose `input_schema` / `output_schema` via a guided schema builder, pick a connector via the Integrations connection picker, preview against a sample run before publishing. Platform-global jobs remain read-only from the UI.
+**Delivers:** "Data Pipeline" option in the task-creation right-side panel that opens from the shared DAG editor's "+ Add Task" button (A-PRD-06's panel, used on `/workflows/automations/{plan_id}` and `/performance/dashboards/{plan_id}`) and in Calendar's `ProjectEditDrawer`; `<PipelineJobPicker>` browsing the global + account-overlay catalog; schema-driven input form (JSON Schema → form, inline validation); pipeline-run viewer in `ActivityDetailPanel` (status, inputs, artifact preview, cache indicator); **inline `<CustomJobAuthoringPanel>`** mounted in the same side-panel — 4-step stepper (Basics → Schemas → Connection → Preview) for creating / editing per-account jobs, with guided schema builder + Integrations connection picker + "Publish & Use" button that creates the job and selects it back in the parent picker. Platform-global jobs remain read-only from the UI. **No standalone `/workflows/data-pipelines` route group** — that scope was retired.
 
-**Exit criteria:** a user composes, activates, and reviews a pipeline task end-to-end from the UI without API calls; an account editor can author a custom per-account job from scratch, save, and invoke it in a plan.
+**Exit criteria:** a user composes, activates, and reviews a pipeline task end-to-end inline from the DAG editor side-panel without API calls; an account editor can author a custom per-account job inline from the same panel, preview it, and use it in a task in the same session.
 
-**Blocked by:** DP-PRD-03, IN-PRD-03 (connection-management UI — custom-job authoring needs the connection picker).
+**Blocked by:** DP-PRD-03, A-PRD-06 (shared DAG editor + side-panel pattern), IN-PRD-03 (connection-management UI — custom-job authoring needs the connection picker), PR-PRD-03 (Calendar — owns `ProjectEditDrawer` + `ActivityDetailPanel` extended in place).
 
 **Blocks:** DP-PRD-06.
 
@@ -225,7 +225,7 @@ Credential loading via Integrations (`/internal/integrations/credentials/{accoun
 
 ### DP-PRD-05 — Additional connectors
 
-**Delivers:** `GoogleAdsConnector`, `MetaAdsConnector`, `MailchimpConnector` (can split further if estimation shows). Each ships with a 3–5 job starter catalog. Credential-loader extension per `auth_type`. HubSpot deferred until the HubSpot Specialist PRD lands.
+**Delivers:** `GoogleAdsConnector`, `MetaAdsConnector`, `MailchimpConnector` (can split further if estimation shows). Each ships with a 3–5 job starter catalog. Reuses DP-PRD-02's `load_credentials()` helper unchanged — Integrations IN-PRD-01 v1 contract is OAuth-only, no `auth_type` branching needed. HubSpot deferred until the HubSpot Specialist PRD lands.
 
 **Exit criteria:** users of the R5 narrow-specialist cohort can run deterministic extracts for every covered platform.
 
@@ -256,6 +256,8 @@ DP-PRD-01 (Foundation) ──► DP-PRD-02 (GA) ──┬──► DP-PRD-03 (Ta
                                             │                                       ▲
                                             ├──► SE-PRD-02 (SAR-E ingestion)        │
                                             │                                       │
+A-PRD-06 (Shared DAG editor) ───────────────┼───────────────────────────────────────┤
+PR-PRD-03 (Calendar — ProjectEditDrawer) ───┼───────────────────────────────────────┤
 IN-PRD-03 (Connection mgmt UI) ─────────────┼───────────────────────────────────────┘
                                             │
 IN-PRD-04 (Meta + Mailchimp OAuth) ─────────┴──► DP-PRD-05 (additional connectors)

@@ -32,6 +32,8 @@ The Google Analytics Specialist in [AH-PRD-03](./AH-PRD-03-google-analytics-spec
 - **Curated per-specialist tool rosters (≤30 tools each).** Each specialist receives a fixed list of tools at construction time, capped at 30 — no per-turn `tool_filter`, no `tool_filter_state` session-state key. The ToolRegistry is a **build-time metadata catalog** the factory reads to assemble those rosters; it is **not** a runtime routing index. Root-agent routing is specialist-description-based — see [README §2.5](../README.md#25-tool-assignment--routing-model).
 - `dispatch_to_{specialist_name}()` generator with `@safe_weave_op()` tracing and `acceptance_criteria: str | None = None` plumbing; when provided, wraps specialist in `build_review_pipeline()` from AH-PRD-01; when `None`, preserves single-pass behavior
 - **Root instruction assembly.** The factory injects an "Available specialists" block into the root agent's instruction, sourced from each `agent_configs/{id}.description`. This is what the root LLM reads to choose between `dispatch_to_*()` calls — see [README §2.5 Routing](../README.md#25-tool-assignment--routing-model).
+- **Forward-compat structured-output enforcement.** A new optional `agent_configs/{id}.response_schema: dict | None` field. When non-None, the factory passes it through to `GenerateContentConfig.response_schema` so the ADK layer enforces structured output at LLM-call time. First consumer: [SE-PRD-05](../../sar-e/projects/SE-PRD-05-target-derivation-specialist.md)'s `performance_forecasting` specialist (Gemini 2.0 Pro) which sets it to `DerivedTargetsResponse.model_json_schema()`. Default `None` for every other agent — pure pass-through, no behavior change.
+- **`MCPServerManager` retirement** (`app/adk/mcp_config/manager.py`): with the factory now creating `McpToolset` instances directly per [`mcp-architecture.md`](../mcp-architecture.md) §7, the in-process Sprint-3 singleton's connection-pooling and LRU-eviction code paths become redundant — ADK's native `MCPSessionManager` already handles SSE session pooling (see [`mcp-architecture.md`](../mcp-architecture.md) §2). This PRD removes the redundant code, lifts the YAML-loading + auth-helper utilities the factory still needs into `app/adk/agents/agent_factory/mcp.py`, and **retains** only the health-monitoring + admin-status-endpoint surface (still consumed by ops). The Firestore migration of the YAML config is the same `mcp_servers/{server_id}` schema this PRD lands.
 - `deploy_ken_e.py` updated to call `agent_factory.build_hierarchy()` instead of importing individual agent singletons
 - Factory unit tests (mock Firestore) + integration tests (end-to-end hierarchy build)
 
@@ -58,6 +60,7 @@ The Google Analytics Specialist in [AH-PRD-03](./AH-PRD-03-google-analytics-spec
 | **[DM-PRD-00](../../data-management/projects/DM-PRD-00-migration-foundation.md)** | Shape B convention in `api/CLAUDE.md` + `accounts/{account_id}/` subcollection fixtures. The per-account overlay at `accounts/{account_id}/agent_configs/{config_id}` is a new Shape B subcollection; this project is the first feature to land directly on Shape B. | `../../data-management/README.md` §2.2 Data Flow |
 | Existing Firestore config pattern | Current per-agent `load_config_from_firestore(config_doc_id)` in `app/adk/agents/ken_e_agent.py`, `google_analytics_agent_v4.py`, and the strategy supervisor. Factory generalizes this pattern. | See those source files for the current pattern; §5.2 below maps it to the new factory contract. |
 | Existing `ToolRegistry` | `app/adk/tools/registry/tool_registry.py` — `search(user_query)` returns ranked tool metadata. The factory reads it at build time to assemble each specialist's ≤30-tool roster; not wired as a runtime filter. | [README §2.5](../README.md#25-tool-assignment--routing-model) |
+| Existing `MCPServerManager` | `app/adk/mcp_config/manager.py` — Sprint-3 in-process singleton. This PRD retires its pooling + LRU paths (ADK's `MCPSessionManager` owns them) and lifts its YAML loading + auth helpers into the factory; health/admin endpoints remain. | [`mcp-architecture.md`](../mcp-architecture.md) §7 |
 | Existing `@safe_weave_op()` decorator | Preserved in generated dispatch functions for tracing. | `app/adk/tracking/` |
 | Figma design | Workflows > Agents list + detail + AgentCreatePage specs (referenced in story 2.2-9, 2.2-10, 2.2-11). | Figma Make file |
 | Account / Auth | Account-admin authorization on `/api/v1/accounts/{account_id}/agent-configs/*`. Reuses existing `has_account_access` + `is_super_admin` pattern. | `api/src/kene_api/auth/` |
@@ -92,6 +95,13 @@ visible_in_frontend: bool = True           # appears on Workflows > Agents list
 skill_ids: list[str] = []
 sandbox_code_executor_enabled: bool = False
 
+# New in Phase 2 — forward-compat structured-output enforcement:
+response_schema: dict | None = None        # JSON schema (or Pydantic-derived dict) passed through to
+                                           # `GenerateContentConfig.response_schema` when not None.
+                                           # First consumer: SE-PRD-05's `performance_forecasting` specialist
+                                           # (Gemini 2.0 Pro) enforces `DerivedTargetsResponse` shape on
+                                           # every target-derivation call. Optional for all other agents.
+
 # New on per-account overlay documents:
 based_on_version: int                      # which global version was forked (for drift detection + revert)
 ```
@@ -110,9 +120,10 @@ Each specialist receives a **fixed curated tool list (≤30 tools)** at construc
 |--------|------|
 | Create | `app/adk/agents/agent_factory/__init__.py` — `build_hierarchy()`, `build_agent()` |
 | Create | `app/adk/agents/agent_factory/config_loader.py` — global + overlay + merge + `based_on_version` |
-| Create | `app/adk/agents/agent_factory/mcp.py` — MCP toolset creation + `specialist_categories` grouping |
+| Create | `app/adk/agents/agent_factory/mcp.py` — MCP toolset creation + `specialist_categories` grouping; absorbs the YAML-loading + auth helpers previously in `app/adk/mcp_config/manager.py` |
 | Create | `app/adk/agents/agent_factory/header_provider.py` — `_make_header_provider(auth_type)` |
 | Create | `app/adk/agents/agent_factory/dispatch.py` — `generate_dispatch_functions(specialists)` |
+| Modify | `app/adk/mcp_config/manager.py` — **retire connection pooling + LRU eviction** (ADK's `MCPSessionManager` owns these natively per [`mcp-architecture.md`](../mcp-architecture.md) §2); **move** YAML loading + auth helpers into `app/adk/agents/agent_factory/mcp.py`; **retain** health-monitoring + admin-status endpoints. Update any remaining caller to import the factory's MCP utilities. |
 | Modify | `deploy_ken_e.py` — replace individual agent imports with `agent_factory.build_hierarchy()` |
 | Create | `api/src/kene_api/routers/agent_configs.py` — `/api/v1/accounts/{account_id}/agent-configs/` CRUD |
 | Create | `api/src/kene_api/models/agent_config_models.py` — Pydantic shapes |
@@ -140,6 +151,7 @@ Each specialist receives a **fixed curated tool list (≤30 tools)** at construc
 | `mcp_servers/{id}.enabled` | Include/exclude from specialist | Disabled servers are not wired |
 | `mcp_servers/{id}.specialist_categories` | Groups server into specialist(s) | A server can belong to multiple specialists |
 | `agent_configs/{id}.code_execution_enabled` | `generate_content_config.tools` | If true, adds `Tool(code_execution=ToolCodeExecution())` to `GenerateContentConfig.tools` |
+| `agent_configs/{id}.response_schema` | `generate_content_config.response_schema` | If non-None, sets `GenerateContentConfig.response_schema` to enforce structured output at the ADK layer. Accepts either a JSON-schema dict or the dict produced by `PydanticModel.model_json_schema()`. First consumed by SE-PRD-05 (`DerivedTargetsResponse`); optional for other agents. |
 | `agent_configs/{id}.available_to_copy` *(Phase 3)* | Frontend only | Account admins can fork this as the basis for a custom agent |
 | `agent_configs/{id}.automatically_available` *(Phase 3)* | Factory: include in account's hierarchy | Auto-attached to accounts without opt-in |
 | `agent_configs/{id}.visible_in_frontend` *(Phase 3)* | API filter | Shown on Workflows > Agents list |
@@ -178,7 +190,7 @@ def _make_header_provider(auth_type: str) -> Callable[[ReadonlyContext], dict[st
 
 Generalizes the existing `_ga_header_provider()` pattern. Unknown `auth_type` values **fail fast at factory build time**, not at runtime — catches config typos before deploy.
 
-> **Future replacement (IN-PRD-06).** The closure body is rewritten to call `GET /api/v1/internal/integrations/credentials/{account_id}/{platform_id}` (OIDC-authed) instead of reading `context.state[state_key]`. Session-state credential keys are removed; [Integrations](../../integrations/implementation-plan.md) owns the OAuth lifecycle end-to-end. The `auth_type` enum maps one-to-one to Integrations `platform_id` values (`ga_oauth` → `google_analytics`, `google_ads_oauth` → `google_ads`, etc.). The returned header shape, the `header_provider=` callsite, and the fail-fast-on-unknown-auth-type behavior are unchanged — existing consumers see no contract difference.
+> **Future replacement (IN-PRD-06).** The closure body is rewritten to call `GET /api/v1/internal/integrations/credentials/{account_id}/{platform_id}` (OIDC-authed) instead of reading `context.state[state_key]`. Session-state credential keys are removed; [Integrations](../../integrations/implementation-plan.md) owns the OAuth lifecycle end-to-end. The `auth_type` enum maps to Integrations `platform_id` values per IN-PRD-06 §5.4: `ga_oauth` → `google` and `google_ads_oauth` → `google` (single shared OAuth app for GA + Ads with incremental scopes per IN-PRD-02), `meta_ads_oauth` → `meta`, `mailchimp_oauth` → `mailchimp`, `hubspot_oauth` → `hubspot` (when HubSpot lands). The returned header shape, the `header_provider=` callsite, and the fail-fast-on-unknown-auth-type behavior are unchanged — existing consumers see no contract difference.
 
 ### 5.4 Dynamic agent creation: why pre-declared specialists
 
@@ -252,7 +264,7 @@ Response shape: `MergedAgentConfig` — Pydantic model union of global fields + 
 
 ## 7. Acceptance criteria
 
-1. **Agent factory construction:** Given an `agent_configs/{config_id}` document, the factory creates an `LlmAgent` with matching `model`, `instruction` (wrapped in `InstructionProvider`), `temperature`, `code_execution` config, and the standard Weave tracing callbacks wired. No runtime ToolRegistry callback is attached — the curated tool roster (≤30 tools per §2.5) is resolved at build time and bound directly to the specialist.
+1. **Agent factory construction:** Given an `agent_configs/{config_id}` document, the factory creates an `LlmAgent` with matching `model`, `instruction` (wrapped in `InstructionProvider`), `temperature`, `code_execution` config, and the four standard ADK callbacks wired on every factory-built specialist: `before_agent_callback` + `after_agent_callback` (Weave parent-span open/close; consumed by Chat for `last_agent_started_at` / `last_agent_stopped_at` per CH-PRD-01) and `before_tool_callback` + `after_tool_callback` (the existing `adk_before_tool_callback` / `adk_after_tool_callback` for tool-execution status tracking; the extension point Skills SK-PRD-02 layers its `allowed-tools` restriction filter on). Each call site preserves any callback the existing specialist already had via the standard ADK callback-chaining convention. No runtime ToolRegistry callback is attached — the curated tool roster (≤30 tools per §2.5) is resolved at build time and bound directly to the specialist.
 2. **MCP toolset creation:** Given `mcp_servers/*` documents with `specialist_categories` and `enabled=true`, the factory creates `McpToolset` instances with correct `SseConnectionParams` and header providers. Disabled servers produce no toolsets.
 3. **Server sharing:** Given an MCP server with `specialist_categories=["google_analytics","google_ads"]` (or any pair of planned narrow specialists per [README §2.6](../README.md#26-specialist-roadmap)), both listed specialists receive an `McpToolset` for that server.
 4. **Header provider:** Given `auth_type="ga_oauth"`, the header provider reads `ga_credentials` from session state and returns correct `Authorization` and `X-Tenant-ID` headers. Unknown `auth_type` raises a clear error at build time.
@@ -267,6 +279,7 @@ Response shape: `MergedAgentConfig` — Pydantic model union of global fields + 
 13. **Frontend edit:** Admins can edit instruction, temperature, model, description from the detail view; a diff indicator shows changes vs. global default; Revert deletes the overlay; version tracking shows which global version was forked.
 14. **AgentCreatePage:** Form-based creation of a custom agent (required: name, instruction, model; optional: temperature, description). Submission creates a `custom_` prefixed config_id via the API. Two disabled rows ("Skills" and "Sandbox code execution") appear beneath with tooltip "Available in Feature 2.6".
 15. **Account-deletion cleanup (interim):** Until DM-PRD-05 ships, the enumerated sweep in `routers/accounts.py` includes `accounts/{account_id}/agent_configs/*`. Once DM-PRD-05 lands, `recursive_delete(accounts/{account_id})` covers this automatically and the interim code is removed. Integration test confirms no orphaned overlays after `DELETE /api/v1/accounts/{account_id}`.
+16. **MCPServerManager retirement:** The connection-pooling + LRU-eviction code paths in `app/adk/mcp_config/manager.py` are removed; YAML-loading + auth helpers are moved into `app/adk/agents/agent_factory/mcp.py`; the health-monitoring + admin-status endpoint surface is retained and still operational. `grep -rn "MCPServerManager(" app/ api/` returns matches only at the health/admin-endpoint call sites (not at agent or factory construction sites). Disposition matches the table in [`mcp-architecture.md`](../mcp-architecture.md) §7.
 
 ## 8. Test plan
 
@@ -305,6 +318,6 @@ Response shape: `MergedAgentConfig` — Pydantic model union of global fields + 
 
 - Upstream: [AH-PRD-01](./AH-PRD-01-review-loop-framework.md), [DM-PRD-00](../../data-management/projects/DM-PRD-00-migration-foundation.md)
 - Downstream: [AH-PRD-03](./AH-PRD-03-google-analytics-specialist.md), [PR-PRD-02](../../project-tasks/projects/PR-PRD-02-planning-agent-and-tools.md), [SK-PRD-02](../../skills/projects/SK-PRD-02-agent-integration.md), [SK-PRD-04](../../skills/projects/SK-PRD-04-agent-builder-controls.md), [KG-PRD-05](../../knowledge-graph/projects/KG-PRD-05-research-on-creation-refactor.md)
-- MCP architecture: [`../mcp-architecture.md`](../mcp-architecture.md) §2 (ADK internals), §4 (platform decisions), §6 (Firestore config schema), §7 (MCPServerManager disposition).
+- MCP architecture: [`../mcp-architecture.md`](../mcp-architecture.md) §2 (ADK internals), §4 (platform decisions), §6 (Firestore config schema), §7 (MCPServerManager disposition — retired by this PRD).
 - Harness design: `docs/KEN-E-System-Architecture.md` §4.3 (Tool type taxonomy)
 - CLAUDE.md rules in scope: PY-1, PY-2, PY-5, PY-7; D-1, D-2, D-5; C-2, C-4, C-5, C-6; T-1, T-3, T-4, T-5, T-6

@@ -91,7 +91,7 @@ After this component's Release 1 projects complete, adding a new specialist is a
 | `app/adk/agents/registry.py` | Existing lazy-loading registry + capability search. Preserved; factory populates it. |
 | `app/adk/agents/google_analytics_agent_v4.py` | Transitional (R1.0) hand-wired GA agent. Marked deprecated by AH-PRD-03; removed in a follow-up once no callers remain. |
 | `app/adk/agents/company_news_chatbot/agent.py` | Transitional news agent. Wraps well inside a review loop; remains as a transitional agent until a long-term replacement is scoped. |
-| `app/adk/agents/create_strategy_docs_supervisor.py` | Strategy document supervisor. Separate entry point — not dispatched from root; not part of the narrow-specialist path (will be revisited by KG-PRD-05). |
+| `app/adk/agents/create_strategy_docs_supervisor.py` | Strategy document supervisor. Separate entry point — not dispatched from root; not part of the narrow-specialist path. **Long-term disposition TBD** — KG-PRD-05 refactors only the four downstream graph builders the supervisor invokes (write path → `GraphSyncService`); the supervisor itself is not factory-migrated and remains a parallel Agent Engine entry point. A future PRD will scope its replacement once the planning specialist (PR-PRD-02) and KG learning loop (KG-PRD-04) prove out the post-strategy-supervisor flow. |
 | `app/adk/tools/registry/tool_registry.py` | ToolRegistry — **build-time metadata catalog** the factory reads to assemble specialist rosters. Not a runtime routing index; root-agent routing is specialist-description-based. See §2.5. |
 | `api/src/kene_api/routers/agent_configs.py` | `/api/v1/accounts/{account_id}/agent-configs/` CRUD. Created by AH-PRD-02. |
 | `frontend/src/app/pages/workflows/agents/` | Workflows > Agents list, detail/customization, AgentCreatePage. Created by AH-PRD-02. |
@@ -215,7 +215,7 @@ Transitional agents (`google_analytics_agent_v4.py`, `company_news_chatbot/agent
 
 ## 5. Project Index
 
-The component's work is split across **4 project PRDs** under [`projects/`](./projects/). The first three (AH-PRD-01 → AH-PRD-02 → AH-PRD-03) form a strictly serial Release 1 chain because each layer is a prerequisite for the next. AH-PRD-04 (Data Visualization, Release 3 / Expertise) sits on top of all three and adds chart-artifact output to the platform. Future specialist PRDs (Google Ads, Meta Ads, Mailchimp — see §2.6) would land here as AH-PRD-05+, consuming the pattern established in AH-PRD-03 and automatically inheriting `create_visualization()` via the factory's default function-tool roster (see AH-PRD-04).
+The component's work is split across **5 project PRDs** under [`projects/`](./projects/). The first three (AH-PRD-01 → AH-PRD-02 → AH-PRD-03) form a strictly serial Release 1 chain because each layer is a prerequisite for the next. AH-PRD-04 (Data Visualization) and AH-PRD-05 (Multi-Step Workflow Orchestration) both land in Release 3 / Expertise and sit on top of the R1 trio — AH-PRD-04 adds chart-artifact output, AH-PRD-05 adds the multi-step workflow primitive (`build_workflow_pipeline` + `execute_workflow` + approval-via-conversation-turns) deferred from AH-PRD-01 §2. Future per-platform specialist PRDs (Google Ads, Meta Ads, Mailchimp — see §2.6) land as AH-PRD-06+, consuming the pattern established in AH-PRD-03 and automatically inheriting `create_visualization()` via the factory's default function-tool roster (see AH-PRD-04).
 
 ### 5.1 Dependency graph
 
@@ -223,7 +223,7 @@ The component's work is split across **4 project PRDs** under [`projects/`](./pr
 DM-PRD-00 (Migration Foundation) ──┐
                                     │
                                     ▼
-AH-PRD-01 (Review Loop) ──────────► AH-PRD-02 (Agent Factory) ─────► AH-PRD-03 (GA Specialist) ─────► AH-PRD-04 (Data Visualization)
+AH-PRD-01 (Review Loop) ──────────► AH-PRD-02 (Agent Factory) ─────► AH-PRD-03 (GA Specialist) ─────► AH-PRD-04 (Data Visualization) ─────► AH-PRD-05 (Multi-Step Workflows)
                                          ▲
                                          │
                                     (soft) DM-PRD-05 (Deletion Sweep Rewrite)
@@ -237,6 +237,7 @@ AH-PRD-01 (Review Loop) ──────────► AH-PRD-02 (Agent Facto
 | 02 | [Agent Factory](./projects/AH-PRD-02-agent-factory.md) | Core AI (backend + frontend) | AH-PRD-01, DM-PRD-00 | Data-migration projects | ~8–11 days |
 | 03 | [Google Analytics Specialist](./projects/AH-PRD-03-google-analytics-specialist.md) | Core AI | AH-PRD-01, AH-PRD-02 | Data-migration projects, SK-PRDs | 5–7 days |
 | 04 | [Data Visualization](./projects/AH-PRD-04-data-visualization.md) | Core AI (backend + frontend) | AH-PRD-01, AH-PRD-02, AH-PRD-03 | UI-PRD-01/02, KG / PR / Automations projects | 5–7 days |
+| 05 | [Multi-Step Workflow Orchestration](./projects/AH-PRD-05-multi-step-workflows.md) | Core AI | AH-PRD-01, AH-PRD-02, AH-PRD-03, AH-PRD-04 | KG-PRDs, SK-PRDs, Performance / SAR-E projects | 3–5 days |
 
 ### 5.3 Cross-PRD coordination points
 
@@ -253,6 +254,7 @@ Three touchpoints do not fit cleanly inside one PRD and need an owning team to c
 3. **Day ~11 (AH-PRD-02 merged):** AH-PRD-03 kickoff. Small project; mostly config + tests. Deprecation banner on `google_analytics_agent_v4.py`; full removal is a follow-up once no callers remain.
 4. **Release 1 exit:** Review loop, factory, and first specialist all working in staging. MER-E consuming Weave spans. Ready for downstream components (Skills, Project Tasks, KG-PRD-05) to pick up.
 5. **Release 3 (Expertise):** AH-PRD-04 kickoff once AH-PRD-03 is in staging. Phase 1 (Pydantic model → `create_visualization()` tool → `ChatResponse` extension → frontend renderer) can parallelize between backend and frontend once the `Artifact` model ships; Phase 2 (reviewer template + E2E against the GA specialist) requires Phase 1 in place.
+6. **Release 3 (Expertise) — multi-step:** AH-PRD-05 kickoff once AH-PRD-04 is in staging (or in parallel once `Artifact` lands and the artifact session-state convention is stable; the workflow factory threads `<step_id>_artifacts` through the same path). Single Core AI track; the four stories (4.1–4.4) are largely sequential within a 3–5-day window. After this lands, the harness has a complete review-loop story across single-step and multi-step composition.
 
 ## 6. Global Document References
 

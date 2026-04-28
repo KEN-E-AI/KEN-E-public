@@ -56,7 +56,7 @@ The tab renders skeleton-first and fills in as bundle fields arrive. Comparison-
 - **PE-PRD-01:** publishes `ForecastingEnabledGate`, `PerformanceDateRangeContext`, `FunnelObjective`, `EffectivenessKPIId`, `ComparisonMode`, `CostDimension` branded types, and the `performanceApi.ts` service-layer module this PRD extends.
 - **SE-PRD-06 (Analytical query layer):** publishes `/analytics/funnel`, `/analytics/trendline/{objective}` (default 53-week window), `/analytics/cost-rollup` (single `dimension` query param per resolved question 3 in the implementation plan), `/analytics/related-metrics`. The Performance-side composite bundle at `/api/v1/performance/{account_id}/analysis` wraps these into a single page-load response.
 - **SE-PRD-01:** `/config/status` — the gate above this tab reads it; this PRD assumes `enabled=true` and does not implement pre-wizard paths.
-- **DB-PRD-03 (Dashboard Details & Canvas):** publishes the `LineChart` widget at `frontend/src/components/dashboards/widgets/VisualizationWidget.tsx` (with `view_override="line"`) or — more likely per the implementation plan — a dedicated line-chart renderer extracted during DB-PRD-03 for reuse. The contract assumed here: the widget accepts `{data: TrendlinePoint[], xKey, yKey, partialFlagKey, width, height}`. Confirm final export surface with Dashboards owner at PE-PRD-02 kickoff; if DB-PRD-03 ships a Vega-Lite-only renderer, this PRD wraps it with a small adapter (still no new runtime library).
+- **DB-PRD-03 (Dashboard Details & Canvas):** publishes the standalone `LineChart` adapter widget at `frontend/src/components/dashboards/widgets/LineChart.tsx` with the locked prop contract `{data: TrendlinePoint[], xKey: string, yKey: string, partialFlagKey?: string, width: number, height: number}`. The widget is a thin wrapper around DB-PRD-03's `VisualizationWidget` (Vega-Lite under the hood) with a fixed line-chart spec; it imports without dragging in canvas dependencies. PE-PRD-02 imports it directly — no adapter wrapping required. (DB-PRD-03 also installs `react-vega@^8` + `vega-lite@^6` + `vega@^6` as new runtime deps; PE-PRD-02 inherits them transitively, no `package.json` changes here.)
 - **PR-PRD-07 (Calendar Activities):** publishes `GET /api/v1/plans/{account_id}` with `category` filter accepting `holiday | promotion | event` (list filter per §5 of PR-PRD-07). External Factors reads directly — no SAR-E proxy.
 - **Existing files to study:**
   - `frontend/src/pages/Performance/PerformancePage.tsx` (PE-PRD-01) — host component
@@ -64,7 +64,7 @@ The tab renders skeleton-first and fills in as bundle fields arrive. Comparison-
   - `frontend/src/contexts/PerformanceDateRangeContext.tsx` (PE-PRD-01)
   - `frontend/src/types/performance.ts` (PE-PRD-01) — branded types
   - `frontend/src/services/performanceApi.ts` (PE-PRD-01) — extend with `getAnalysisBundle`
-  - `frontend/src/components/dashboards/widgets/VisualizationWidget.tsx` (DB-PRD-03) — reuse for trendline
+  - `frontend/src/components/dashboards/widgets/LineChart.tsx` (DB-PRD-03) — direct import for trendline rendering
   - `docs/figma-export/src/app/pages/performance/` — reference UX (note: AnalysisSection.tsx and FunnelSection.tsx are not present in the current export; rebuild from Figma designs at kickoff — see §9 Open question 2)
 
 ## 4. Data contract
@@ -175,11 +175,11 @@ interface AnalysisTrendlineProps {
 //   data        = series.weekly_points
 //   xKey        = 'week_start'
 //   yKey        = 'value'
-//   partialKey  = 'is_partial'   // widget renders dashed segment for the last point if true
+//   partialFlagKey = 'is_partial'   // widget renders dashed segment for rows where row[key] === true
 //   overlayData = comparisonSeries?.weekly_points
 ```
 
-If DB-PRD-03's final exported widget does not expose `partialKey`, this PRD splits the series into two adjacent series (complete weeks + tail partial week as a separate series with dashed `view_override`). Either path produces the same visual.
+DB-PRD-03 ships `partialFlagKey` as part of the locked prop contract — segments leading to a row where `row[partialFlagKey] === true` render dashed. No fallback splitting is required.
 
 ### 4.3 External Factors query
 
@@ -219,6 +219,10 @@ The `mapPlanTaskToExogenousEvent` helper reads PR-PRD-07's `PlanTask` category-d
 | Create | `frontend/src/hooks/useRelatedMetrics.ts` — lazy hook; enabled only when a stage is expanded |
 | Create | `frontend/src/hooks/useExternalFactors.ts` — direct Calendar-read hook |
 | Modify | `frontend/src/services/performanceApi.ts` — add `getAnalysisBundle(accountId, {period, comparisonMode, dimension})`, `getRelatedMetrics(accountId, objective, period, comparisonMode)`, `getExternalFactors(accountId, period)` |
+| Modify | `api/src/kene_api/routers/performance.py` (scaffolded by PE-PRD-01) — add `GET /api/v1/performance/{account_id}/analysis?period&comparison_mode&dimension` endpoint; declares `require_role(AccountRole.VIEWER, scope="account")`; delegates composition to `PerformanceBundleComposer.compose_analysis_bundle` |
+| Modify | `api/src/kene_api/services/performance_bundle_composer.py` (scaffolded by PE-PRD-01) — add `async compose_analysis_bundle(account_id, period, comparison_mode, dimension)` method; fans out via `asyncio.gather` to SAR-E `/analytics/funnel` + `/analytics/trendline/{objective}` × 4 + `/analytics/cost-rollup` + Project-Tasks `/plans?category=...` for External Factors; section-scoped error handling per §6.1 |
+| Modify | `api/src/kene_api/models/performance_models.py` (scaffolded by PE-PRD-01) — add `AnalysisBundle`, `FunnelSnapshot`, `FunnelStageSnapshot`, `TrendlineSeries`, `TrendlinePoint`, `CostRollup`, `CostRollupBucket`, `ExogenousEventProjection`, `RelatedMetric` Pydantic models per §4.1 |
+| Create | `api/tests/integration/test_performance_analysis_bundle.py` — bundle composition + section-scoped error handling + `forecasting_enabled=false` short-circuit |
 | Modify | `frontend/src/pages/Performance/PerformancePage.tsx` (PE-PRD-01) — swap `<AnalysisTabPlaceholder />` for `<AnalysisTab />` |
 | Delete | `frontend/src/pages/Performance/AnalysisTabPlaceholder.tsx` (PE-PRD-01 scaffolding) |
 | Create | `frontend/src/components/performance/__tests__/FunnelVisualization.test.tsx` |
@@ -409,7 +413,7 @@ Mapped client-side to `ExogenousEventProjection[]` via `mapPlanTaskToExogenousEv
 
 | Risk / question | Mitigation |
 |---|---|
-| DB-PRD-03's exported line-chart widget does not expose a `partialKey` / dashed-segment prop | Fallback: split the series into two adjacent series (complete weeks + 1-point partial tail rendered with `view_override="line"` + dashed styling via Vega `mark.strokeDash`). Confirmed at kickoff with Dashboards owner. |
+| DB-PRD-03's `LineChart` adapter ships late or with a different prop contract | Locked at PRD-alignment time (2026-04-27): DB-PRD-03 §2 publishes `LineChart.tsx` with the contract `{data, xKey, yKey, partialFlagKey?, width, height}`. PE-PRD-02 imports directly. If the kickoff reveals a divergence, this PRD is the consumer — coordinate to update DB-PRD-03 rather than building a local adapter. |
 | AnalysisSection / FunnelSection Figma files not present in current figma-export | Rebuild from Figma designs at kickoff; implementation plan §9 Risk row 1 confirms this is expected. The clip-path math for the 4-stage funnel is a straightforward polygon formula; no reference code needed. |
 | 53-week trendline slow on accounts with many metrics | Per implementation-plan §9 row 3: bundle returns only the mapped Effectiveness KPI per stage (4 series). Related metrics are separate lazy fetches. |
 | Stale Funnel Mapping skews trendlines mid-view | Per implementation-plan §9 row 4: Configuration tab mapping edits invalidate `['performance', 'analysis', ...]` cache keys via `queryClient.invalidateQueries`. This PRD registers the query keys; PE-PRD-04 wires the invalidation. |

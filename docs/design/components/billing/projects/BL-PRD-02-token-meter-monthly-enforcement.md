@@ -1,11 +1,11 @@
 # BL-PRD-02 — Token Meter + Monthly Enforcement
 
 **Status:** Not started
-**Owner team:** Billing component team (backend) + Agentic Harness team (integration point)
-**Blocked by:** [BL-PRD-01](./BL-PRD-01-core-model-stripe-foundation.md)
+**Owner team:** Billing component team (backend) + Agentic Harness team (LLM-call integration) + Project Tasks / Automations teams (orchestrator + scheduler integration)
+**Blocked by:** [BL-PRD-01](./BL-PRD-01-core-model-stripe-foundation.md), [PR-PRD-04](../../project-tasks/projects/PR-PRD-04-event-driven-orchestrator.md) (TaskOrchestrator must exist to gate), [A-PRD-02](../../automations/projects/A-PRD-02-recurring-scheduler.md) (AutomationRunEngine must exist to gate)
 **Parallel with:** [BL-PRD-03](./BL-PRD-03-stripe-checkout-subscription-lifecycle.md) — both depend only on BL-PRD-01 and have no cross-dependency in v1
 **Blocks:** BL-PRD-04
-**Estimated effort:** 5 days backend (≈3 in Billing, ≈2 in Agentic Harness integration + Cloud Scheduler)
+**Estimated effort:** 6 days backend (≈3 in Billing, ≈2 in Agentic Harness integration + Cloud Scheduler, ≈1 in TaskOrchestrator + AutomationRunEngine gates)
 
 ---
 
@@ -23,14 +23,17 @@ When `billing_enforce_limits=true`, an org that crosses 100% of its allowance ha
 - **`billing.meter_increment(org_id, account_id, user_id, tokens, trace_id)`** — synchronous Firestore-transactional increment of the org's monthly counter, the account's daily counter, and the per-user breakdown inside the daily counter. Idempotency keyed on `trace_id` (re-submitting the same trace is a no-op).
 - **`billing.check_status(org_id) -> OrganizationStatus`** — read-side helper with a 30s in-process LRU cache. Cache keyed by `org_id`; invalidated by `billing.invalidate_status_cache(org_id)` (called from the meter when status flips, and from BL-PRD-03 webhook handlers).
 - **State machine** for `OrganizationStatus.status`: `active` → `approaching_limit` (≥75%) → `inactive_overage` (≥100%); reverse transitions on monthly reset and (in BL-PRD-03) on plan upgrade. The two `inactive_past_due` and `inactive_canceled` states exist in the Literal but are owned by BL-PRD-03 webhook handlers (no transitions wired here).
-- **Agentic Harness integration** — `billing.check_status` called at the start of every LLM-consuming agent invocation; on `inactive_*`, raise `BillingInactiveError` (typed exception that the API layer maps to HTTP 402 + structured body). `billing.meter_increment` called after every successful LLM call with the provider-reported token count.
+- **Agentic Harness integration** — `billing.check_status` called at the start of every LLM-consuming agent invocation; on `inactive_*`, raise `BillingInactiveError` (typed exception that the API layer maps to HTTP 402 + structured body). `billing.meter_increment` called after every successful LLM call with the provider-reported token count extracted via `extract_billable_tokens(event).total_billable` (Billing-owned helper at `app/adk/token_accounting.py`; see §3 dependency note).
+- **Project Tasks integration (TaskOrchestrator gate)** — extend `api/src/kene_api/services/task_orchestrator.py` (PR-PRD-04) so every dispatch entry point (`on_task_status_change`, `on_task_due`) calls `billing.check_status(org_id)` before invoking an agent or marking a human task `Awaiting Approval`. On `inactive_*` and when `billing_enforce_limits=true`: skip dispatch, write a `scheduled_run_skipped` audit entry (`metadata={trigger, task_id, plan_id, reason_message}`), emit a `Scheduled Run Skipped — Billing` notification deduped per (org_id, day) so a long inactive window doesn't spam, and leave the task in its current status (do **not** transition to `Failed` — the task remains eligible for re-dispatch once the org is reactivated). On `inactive_*` in observe-only mode: dispatch proceeds normally; the audit entry is still written with `metadata.observe_only=true` so the rollout playbook can verify timing. The org-id is resolved via `account.organization_id` on the parent `accounts/{account_id}` doc.
+- **Automations integration (AutomationRunEngine gate)** — extend `api/src/kene_api/services/automation_run_engine.py` (A-PRD-02) so the once-per-minute scheduler tick calls `billing.check_status(org_id)` before cloning a template into a `PlanRun`. On `inactive_*` + enforce-on: skip the fire entirely (no `PlanRun` is created — the next scheduled tick will retry naturally); same `scheduled_run_skipped` audit + daily-deduped notification as the orchestrator gate. On `inactive_*` in observe-only: the `PlanRun` is created normally; audit entry has `metadata.observe_only=true`. Manual "Run now" requests are **not** gated here — they ride the same LLM-call path as chat and are gated by the Agentic Harness `check_status` hook, surfacing as 402.
 - **HTTP 402 mapping** — exception handler in the API layer translates `BillingInactiveError` into `{status: 402, body: {error: "billing_inactive", reason: "<human copy>", upgrade_url: "/settings/organization/subscription"}}`. The `reason` string is sourced from `OrganizationStatus.reason_message` and is what the frontend banner copy renders.
 - **Daily/monthly transactional write** — single Firestore transaction touches three docs: `usage_windows/{YYYY-MM}` (org monthly counter), `accounts/{account_id}/usage_daily/{YYYY-MM-DD}` (account daily counter + by_user dict), and `status/current` (only if status transitions this increment). Distributed-counter pattern (10 sub-counters per doc) keeps write contention bounded.
 - **Monthly-reset Cloud Scheduler** — Cloud Scheduler hits `POST /api/v1/internal/billing/monthly-reset` at `00:05 UTC` on the 1st of every month. Idempotent per `YYYY-MM`. Resets every `OrganizationStatus` whose status is `inactive_overage` back to `active`; creates the new `MonthlyUsageWindow` with the current `BillingProfile.monthly_token_allowance` snapshotted as `allowance_at_period_start`; clears notification flags on the *previous* window for record-keeping.
-- **Notifications** — emit `Approaching Token Limit` when `tokens_used / allowance` crosses 0.75 in the current window (`notification_75_sent` flag prevents repeat); emit `Token Limit Exceeded` when it crosses 1.0 (`notification_exceeded_sent` flag prevents repeat).
+- **Notifications** — emit `Approaching Token Limit` when `tokens_used / allowance` crosses 0.75 in the current window (`notification_75_sent` flag prevents repeat); emit `Token Limit Exceeded` when it crosses 1.0 (`notification_exceeded_sent` flag prevents repeat); emit `Scheduled Run Skipped — Billing` when the TaskOrchestrator or AutomationRunEngine skips a dispatch due to `inactive_*` status, deduped per `(org_id, YYYY-MM-DD)` via a `billing_skipped_run_dedup/{org_id}_{YYYY-MM-DD}` marker doc (24h TTL).
 - **`/usage/current` and `/usage/daily` endpoints** — read-only consumer endpoints for the figma-export Subscription tab. `current` returns this month's `MonthlyUsageWindow`. `daily` returns aggregated `AccountUsageDaily` rows for a date range with optional `breakdown=none|account|user`.
 - **Reconciliation script** — `api/scripts/reconcile_billing_meter.py` queries W&B Weave for the previous day's spans (filtered to LLM-consumption spans), aggregates per `(org_id, account_id, user_id, date)`, and diffs against the meter. Outputs a discrepancy report; alerts via Slack webhook if drift >0.5%.
-- **Observe-only mode** — when `billing_enforce_limits=false`, status flips still happen and notifications still fire (so we can verify timing in real traffic), but the API layer's 402 mapping is bypassed and chat / scheduled tasks proceed normally. Logged for audit (`metadata.observe_only=true` on every status_changed audit entry during this period).
+- **Observe-only mode** — when `billing_enforce_limits=false`, status flips still happen and notifications still fire (so we can verify timing in real traffic), but the API layer's 402 mapping is bypassed and chat / scheduled tasks proceed normally. The TaskOrchestrator + AutomationRunEngine gates also bypass the skip (audit-only path) when enforce is off. Logged for audit (`metadata.observe_only=true` on every status_changed and `scheduled_run_skipped` audit entry during this period).
+- **`BillingAuditEntry.event` Literal extended** — add `scheduled_run_skipped` to BL-PRD-01's audit-event Literal so the orchestrator + scheduler gates have a typed audit row. Captured in BL-PRD-01's audit registry update (additive, no migration).
 - **Weave spans** — `billing.meter_increment` (`{org_id_hash, account_id_hash, tokens, transition?, observe_only}`), `billing.check_status` (`{org_id_hash, status, cache_hit, latency_ms}`), `billing.monthly_reset` (`{period: YYYY-MM, orgs_processed, orgs_reactivated, latency_ms}`).
 
 ### Out of scope
@@ -45,10 +48,13 @@ When `billing_enforce_limits=true`, an org that crosses 100% of its allowance ha
 
 | Component | Dependency | Reference |
 |-----------|------------|-----------|
-| **[BL-PRD-01](./BL-PRD-01-core-model-stripe-foundation.md)** | All Pydantic shapes; Firestore layout; `OrganizationStatus` doc; `write_billing_audit`; status-cache scaffold; `/internal/status/{org_id}` contract. | This component |
-| **Agentic Harness** (existing) | LLM-call wrapper that reports token counts after each call. Hook point: `app/adk/agents/...` — single helper to call `billing.meter_increment` after the LLM SDK returns. The exact symbol depends on current code; spike required. | `app/adk/` |
+| **[BL-PRD-01](./BL-PRD-01-core-model-stripe-foundation.md)** | All Pydantic shapes; Firestore layout; `OrganizationStatus` doc; `write_billing_audit`; status-cache scaffold; `/internal/status/{org_id}` contract. BL-PRD-01's audit-event Literal is extended in this PRD to add `scheduled_run_skipped`. | This component |
+| **[CH-PRD-01](../../chat/projects/CH-PRD-01-session-metadata-substrate.md)** | Lands `app/adk/token_accounting.py` (`extract_billable_tokens(event) -> BillableTokenCounts`) **under Billing's namespace** if Billing hasn't shipped yet (CH-PRD-01 is R1, BL-PRD-02 is R3 — so CH-PRD-01 lands the helper first). BL-PRD-02 takes over maintenance and uses `.total_billable` as the meter input. CI parity test (`test_token_accounting_parity.py`) is symlinked / duplicated so divergence between Chat and Billing fails CI. Token definition: input + output + reasoning, cached-input excluded. | `../../chat/README.md` §3.6 |
+| **Agentic Harness** (existing) | LLM-call wrapper that reports token counts after each call. Hook point: `app/adk/agents/...` — single helper to call `billing.meter_increment(...)` with `tokens=extract_billable_tokens(event).total_billable` after the LLM SDK returns. The exact symbol depends on current code; spike required. | `app/adk/` |
+| **[PR-PRD-04](../../project-tasks/projects/PR-PRD-04-event-driven-orchestrator.md)** | `TaskOrchestrator` at `api/src/kene_api/services/task_orchestrator.py`. BL-PRD-02 modifies the dispatch entry points to call `billing.check_status` before agent invocation / human-task `Awaiting Approval` transition. PR-PRD-04 ships in R2; BL-PRD-02 in R3 layers the gate without changing PR-PRD-04's `TaskStatus` enum (skipped tasks remain in their current status — no new value needed). | `../../project-tasks/projects/PR-PRD-04-event-driven-orchestrator.md` |
+| **[A-PRD-02](../../automations/projects/A-PRD-02-recurring-scheduler.md)** | `AutomationRunEngine` at `api/src/kene_api/services/automation_run_engine.py`. BL-PRD-02 modifies the once-per-minute scheduler-tick handler to call `billing.check_status` before cloning a template into a `PlanRun`. A-PRD-02 ships in R2; BL-PRD-02 in R3 layers the gate without changing A-PRD-01's `RunStatus` enum (no `PlanRun` is created on skip — the next tick retries). | `../../automations/projects/A-PRD-02-recurring-scheduler.md` |
 | **W&B Weave** (existing) | Reconciliation reads from Weave's exported span store. Weave already captures token counts in the span structure documented in `docs/trace-structure-spec.md`. | `docs/trace-structure-spec.md` |
-| **Notifications** (existing) | `create_notification(category, org_id, user_ids, ...)`. New categories: `Approaching Token Limit`, `Token Limit Exceeded`. | Existing notifications service |
+| **Notifications** (existing) | `create_notification(category, org_id, user_ids, ...)`. New categories: `Approaching Token Limit`, `Token Limit Exceeded`, `Scheduled Run Skipped — Billing` (deduped per `(org_id, day)`). | Existing notifications service |
 | **Cloud Scheduler** | One scheduled job per env hitting `POST /api/v1/internal/billing/monthly-reset` at `0 5 1 * *`. OIDC auth. | `deployment/terraform/` |
 | **Slack** | Reconciliation alert webhook (`sm://billing-reconciliation-slack-{env}`). | Secret Manager |
 
@@ -126,36 +132,46 @@ The trace-id idempotency record is kept in `organizations/{org_id}/usage_windows
 | Create | `api/src/kene_api/billing/exceptions.py` — `BillingInactiveError` |
 | Modify | `api/src/kene_api/routers/billing.py` — add `/usage/current`, `/usage/daily`, `/internal/meter-increment`, `/internal/monthly-reset` |
 | Modify | `api/src/kene_api/main.py` — register `BillingInactiveError` exception handler returning 402 |
-| Modify | `app/adk/agents/...` — call `billing.check_status` at run start; call `billing.meter_increment` after each LLM SDK response |
+| Modify | `app/adk/agents/...` — call `billing.check_status` at run start; call `billing.meter_increment(..., tokens=extract_billable_tokens(event).total_billable)` after each LLM SDK response |
+| Modify | `app/adk/token_accounting.py` (created by CH-PRD-01) — Billing takes over maintenance; verify `BillableTokenCounts.total_billable` returns input + output + reasoning (cached-input excluded) |
+| Modify | `api/src/kene_api/services/task_orchestrator.py` (PR-PRD-04) — `billing.check_status` gate at the top of `on_task_status_change` and `on_task_due` dispatch entry points |
+| Modify | `api/src/kene_api/services/automation_run_engine.py` (A-PRD-02) — `billing.check_status` gate at the top of the scheduler-tick handler before any `PlanRun` clone |
+| Create | `api/src/kene_api/billing/skipped_run_dedup.py` — per-`(org_id, day)` notification dedup helper backed by `billing_skipped_run_dedup/{org_id}_{YYYY-MM-DD}` (24h TTL) |
 | Create | `api/scripts/reconcile_billing_meter.py` |
 | Modify | `deployment/terraform/cloud_scheduler.tf` — monthly-reset job + OIDC SA binding |
-| Modify | `deployment/terraform/firestore.tf` — TTL policy on `seen_traces` (24h); composite index on `usage_daily` (`organization_id, date DESC`) |
-| Create | `api/tests/unit/billing/test_state_machine.py`, `test_counters.py`, `test_meter.py` |
+| Modify | `deployment/terraform/firestore.tf` — TTL policy on `seen_traces` (24h); TTL policy on `billing_skipped_run_dedup` (24h); composite index on `usage_daily` (`organization_id, date DESC`) |
+| Create | `api/tests/unit/billing/test_state_machine.py`, `test_counters.py`, `test_meter.py`, `test_skipped_run_dedup.py` |
+| Create | `api/tests/unit/billing/test_token_accounting_parity.py` — Billing-side parity test (CI asserts identical output with Chat's copy on the shared fixture) |
 | Create | `api/tests/integration/billing/test_meter_end_to_end.py`, `test_monthly_reset.py`, `test_402_mapping.py` |
 | Create | `api/tests/integration/billing/test_observe_only_mode.py` |
+| Create | `api/tests/integration/billing/test_task_orchestrator_billing_gate.py` — TaskOrchestrator gate behavior under enforce + observe-only |
+| Create | `api/tests/integration/billing/test_automation_scheduler_billing_gate.py` — AutomationRunEngine gate behavior under enforce + observe-only |
 
 ### 5.2 Agentic Harness integration
 
 Single hook in the LLM-call wrapper:
 
 ```python
+from app.adk.token_accounting import extract_billable_tokens   # Billing-owned helper
+
 async def invoke_agent(org_id, account_id, user_id, prompt, ...):
     status = billing.check_status(org_id)         # 30s cache; <1ms typical
     if status.status.startswith("inactive"):
         raise BillingInactiveError(status.reason_message)
 
     response = await llm_provider.invoke(...)     # existing path
+    counts = extract_billable_tokens(response)     # input + output + reasoning, cached-input excluded
     billing.meter_increment(
         org_id=org_id,
         account_id=account_id,
         user_id=user_id,
-        tokens=response.token_count,              # input + output + reasoning (per Q1 in implementation plan)
+        tokens=counts.total_billable,
         trace_id=current_trace_id(),
     )
     return response
 ```
 
-For BL-PRD-02 we adopt the proposal in `../implementation-plan.md` §10 Q1: `tokens = input + output + reasoning, *exclusive* of cached-input discount`. That decision is reflected in the helper that extracts `response.token_count` per provider.
+For BL-PRD-02 we adopt the proposal in `../implementation-plan.md` §10 Q1: `tokens = input + output + reasoning, *exclusive* of cached-input discount`. That decision is encapsulated in `extract_billable_tokens(event) -> BillableTokenCounts` at `app/adk/token_accounting.py` — Billing-owned per the System Architecture §3.6.5; CH-PRD-01 lands the file under Billing's namespace if Billing hasn't shipped (since CH-PRD-01 is R1 and BL-PRD-02 is R3, Chat ships the file first; BL-PRD-02 takes over maintenance). A symlinked / duplicated parity test (`test_token_accounting_parity.py`) on a shared fixture is included in both Chat's and Billing's test suites so divergence between consumers fails CI.
 
 ### 5.3 Monthly-reset job
 
@@ -202,6 +218,53 @@ reconcile(date_yyyy_mm_dd):
 
 The 0.5% threshold matches the 99.5% accuracy success criterion in the implementation plan §11.
 
+### 5.5 TaskOrchestrator + AutomationRunEngine gate
+
+```text
+TaskOrchestrator.on_task_status_change(task, ...) / .on_task_due(task, ...):
+  org_id = resolve_org_id(task.account_id)
+  status = billing.check_status(org_id)
+  if status.status.startswith("inactive"):
+    if billing_enforce_limits:
+      write_billing_audit(
+        event="scheduled_run_skipped",
+        actor_id="system:task_orchestrator",
+        metadata={
+          trigger: "task_due" | "status_change",
+          task_id, plan_id, account_id,
+          reason_message: status.reason_message,
+        })
+      if not skipped_run_dedup.seen_today(org_id):
+        create_notification("Scheduled Run Skipped — Billing", org_id, ...)
+        skipped_run_dedup.mark(org_id)   # 24h TTL
+      return  # leave task in current status; next fire will retry
+    else:
+      # observe-only: dispatch proceeds; audit captures hypothetical skip
+      write_billing_audit(event="scheduled_run_skipped",
+                          metadata={..., observe_only: True})
+  proceed_with_dispatch(...)
+
+AutomationRunEngine.on_scheduler_tick():
+  for due_automation in find_due_automations(now):
+    org_id = resolve_org_id(due_automation.account_id)
+    status = billing.check_status(org_id)
+    if status.status.startswith("inactive"):
+      if billing_enforce_limits:
+        write_billing_audit(event="scheduled_run_skipped",
+                            metadata={trigger: "automation_tick", plan_id, ...})
+        if not skipped_run_dedup.seen_today(org_id):
+          create_notification("Scheduled Run Skipped — Billing", ...)
+          skipped_run_dedup.mark(org_id)
+        # Do NOT clone the template; do NOT update next_run_at — natural retry next tick.
+        continue
+      else:
+        write_billing_audit(event="scheduled_run_skipped",
+                            metadata={..., observe_only: True})
+    clone_template_into_plan_run(due_automation)
+```
+
+Manual "Run now" requests are deliberately not gated here — they ride the chat / agent-invocation path and surface as 402 from the Agentic Harness `check_status` hook. Same enforcement, same UX (banner + toast).
+
 ## 6. API contract
 
 ### Public
@@ -238,6 +301,13 @@ The `/usage/*` endpoints are gated by `billing_show_subscription_ui`. The intern
 13. **Reconciliation script catches drift** — synthetic test: write a known-divergent meter row; run reconciliation; assert diff_pct reported correctly and alert webhook called when threshold exceeded.
 14. **`/usage/current` + `/usage/daily` shapes** — endpoint contract tests; `breakdown` query parameter behaves correctly (`none` returns one row per date; `account` adds account; `user` adds user).
 15. **Cloud Scheduler wiring** — Terraform-applied resource exists; OIDC SA can call `/internal/monthly-reset`; manual trigger runs successfully in dev.
+16. **TaskOrchestrator gate enforces** — seed an org `inactive_overage` with `billing_enforce_limits=true`; trigger `on_task_due` for an agent-assignee task; assert dispatch is skipped, task status unchanged, `scheduled_run_skipped` audit row written with the right metadata, `Scheduled Run Skipped — Billing` notification fired exactly once, dedup marker set.
+17. **TaskOrchestrator gate dedup** — within the same 24h window for the same org, fire 5 more skipped dispatches across different tasks; only the first creates a notification; all 6 write audit rows.
+18. **TaskOrchestrator observe-only** — same setup as #16 but `billing_enforce_limits=false`; assert dispatch proceeds normally, audit row carries `metadata.observe_only=true`, no notification fires.
+19. **TaskOrchestrator gate clears on reactivation** — after AC #16, monthly-reset reactivates the org → next `on_task_due` for a new task dispatches normally; dedup marker auto-expires within 24h.
+20. **AutomationRunEngine gate enforces** — seed an org `inactive_overage` with enforce-on; trigger the scheduler tick on a due automation; assert no `PlanRun` doc is created, `next_run_at` unchanged (so the next tick retries), `scheduled_run_skipped` audit row written, notification fires once per (org, day).
+21. **AutomationRunEngine observe-only** — same setup as #20 but enforce-off; `PlanRun` is created normally, audit row carries `metadata.observe_only=true`.
+22. **`extract_billable_tokens` parity** — Billing's `test_token_accounting_parity.py` and Chat's copy run on the same fixture and produce identical `BillableTokenCounts`. CI fails on divergence.
 
 ## 8. Test plan
 
@@ -257,6 +327,9 @@ The `/usage/*` endpoints are gated by `billing_show_subscription_ui`. The intern
 - In-flight request not killed (AC #12).
 - Reconciliation drift detection (AC #13) — uses a `StubWeave` for the Weave query side.
 - Endpoint contracts (AC #14).
+- TaskOrchestrator billing gate (AC #16–#19) — fault-injection of org status; assert dispatch skip + audit + notification dedup; observe-only bypass.
+- AutomationRunEngine billing gate (AC #20–#21) — scheduler tick against a due automation; assert no `PlanRun` created on enforce-on inactive; `next_run_at` not advanced.
+- `extract_billable_tokens` parity (AC #22) — Chat-and-Billing duplicate test runs on identical fixtures.
 
 ### Manual verification
 - Dev: run a real chat session through the Agentic Harness in observe-only mode; confirm counters increment in Firestore console; flip enforce flag on; confirm next chat returns 402.

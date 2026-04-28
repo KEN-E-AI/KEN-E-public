@@ -2,7 +2,7 @@
 
 **Status:** Blocked — resumes once SE-PRD-02 ships
 **Owner team:** SAR-E component team (backend / applied stats)
-**Blocked by:** SE-PRD-02 (`KPIDataPoint` weekly rows are the VAR training input; `is_partial=true` rows must be excludable; the weekly ingestion automation is where we chain the retrain task)
+**Blocked by:** SE-PRD-02 (`KPIDataPoint` weekly rows are the VAR training input; `is_partial=true` rows must be excludable; the weekly ingestion automation is where we chain the retrain task); AH-PRD-02 (agent factory builds the `sar_e_retrain` glue agent from `agent_configs/sar_e_retrain`); A-PRD-01 (`ProjectPlan` automation fields — the retrain task is appended to the existing weekly `is_system=true` plan); A-PRD-02 (recurring scheduler — the weekly cron fires the same plan that ingestion uses; ad-hoc retrain via the manual-trigger endpoint)
 **Blocks:** SE-PRD-04 (IRF reads persisted VAR coefficients); SE-PRD-05 (Target derivation specialist reads `Baseline` per KPI); SE-PRD-06 (analytical queries surface `confidence_level` + model-version metadata); PE-PRD-03 (Simulations chart); PE-PRD-07 (Diagnostics tab)
 **Estimated effort:** 4 days
 
@@ -27,8 +27,9 @@ The retrain cadence is weekly. The ingestion automation's final task (SE-PRD-02)
 
 - **`Baseline` + `ForecastPoint` Pydantic models** under `api/src/kene_api/models/sar_e_models.py`:
   - `ForecastPoint { week_start, value, ci_low, ci_high }`
-  - `Baseline { account_id, kpi_id, generated_at, model_version, horizon_weeks, horizon: list[ForecastPoint], confidence_level, training_weeks, training_inputs: VARTrainingInputsSnapshot }`
+  - `Baseline { account_id, kpi_id, generated_at, model_version, horizon_weeks, horizon: list[ForecastPoint], confidence_level, training_weeks, training_inputs: VARTrainingInputsSnapshot, retrain_needed: bool, retrain_reason: Literal["data_drift_detected", "config_changed", "manual_override"] | None }`
   - `VARTrainingInputsSnapshot { included_kpi_ids, excluded_channels, training_window_start, training_window_end, lag_order, fit_aic, fit_bic }` — informational; not part of the user-facing contract
+- **Retrain-needed signal** — `Baseline.retrain_needed` + `Baseline.retrain_reason` (§4.1) surface model staleness to the Performance Diagnostics tab (PE-PRD-07's `RetrainNeededBadge`). v1 setter coverage: the retrain function writes `retrain_needed=False, retrain_reason=None` on every retrain; an internal helper `flag_baselines_for_retrain(account_id, reason)` (§5.8) flips the flag with `reason="config_changed"`, called by SE-PRD-01's funnel-mapping save endpoint after a successful mapping write. `data_drift_detected` and `manual_override` reasons are reserved for future PRDs (drift-scan automation; admin override endpoint) — the schema is forward-compatible, no other v1 setter ships.
 - **`VAREstimator` class** in `api/src/kene_api/services/sar_e_var_estimator.py`:
   - Wraps `statsmodels.tsa.api.VAR`; log-transforms non-negative KPI series with `log1p`; exposes `fit(training_matrix) -> FittedVARModel`
   - Lag selection via AIC/BIC with a min-sample guard of **26 weeks** (implementation-plan §6 SE-PRD-03 deliverable) and a max-lag cap of 8 weeks (2 months of influence)
@@ -74,7 +75,8 @@ The retrain cadence is weekly. The ingestion automation's final task (SE-PRD-02)
 ## 3. Dependencies
 
 - **SE-PRD-02:** `KPIDataPoint` model at `accounts/{account_id}/kpi_time_series/{kpi_id}__{week}`; `is_partial` filter; weekly ingestion automation's final task is extended here. Also the `sar_e_ingestion` glue agent pattern (§5.1 of SE-PRD-02) — we add a sibling `sar_e_retrain` glue agent.
-- **SE-PRD-01:** `FunnelStageMapping` (gives the 4 KPI ids to train), `ChannelCoverage` (drives channel exclusion), `SarEConfig` (gate check: if `enabled=false`, retrain is a no-op that logs + returns early).
+- **SE-PRD-01:** `FunnelStageMapping` (gives the 4 KPI ids to train), `ChannelCoverage` (drives channel exclusion), `SarEConfig` (gate check: if `enabled=false`, retrain is a no-op that logs + returns early). **Forward-coordination:** SE-PRD-01's funnel-mapping save endpoint (`PUT /config/funnel-mapping`) calls SE-PRD-03's new `flag_baselines_for_retrain(account_id, "config_changed")` helper (§5.8) after a successful mapping write so the Diagnostics tab's `retrain_needed` flag flips immediately. SE-PRD-01 owns the call site; SE-PRD-03 owns the helper.
+- **PE-PRD-07 (downstream consumer):** the Diagnostics tab's `PerKPIModelHealthCard` reads `Baseline.retrain_needed` + `Baseline.retrain_reason` directly (via the analytical query layer per SE-PRD-06). No new endpoint needed beyond the existing `/forecasts/baseline` — the fields are part of the persisted `Baseline` doc.
 - **Agentic Harness (AH-PRD-02):** agent factory reads `agent_configs/sar_e_retrain` (single-tool glue agent calling `POST /internal/sar-e/retrain-var`). Unlike SE-PRD-05's `performance_forecasting` specialist, this is a `FunctionTool`-only agent — no LLM reasoning. The factory has to tolerate that; confirm at kickoff that AH-PRD-02's factory can construct an agent with zero LLM fields (`model=None`? or `model="gemini-2.0-flash"` with a no-op instruction?). First-pass approach: use `gemini-2.0-flash` with an instruction of `"Call the sar_e_retrain tool. Return its JSON output verbatim."` — cheap and simple.
 - **Automations (A-PRD-01, A-PRD-02):** retrain task integrates into the weekly `is_system=true` plan. Uses `TaskOrchestrator.on_task_due` / `on_task_status_change`.
 - **Python deps:** `statsmodels >= 0.14.0`, `numpy >= 1.26`, `pandas >= 2.0`. All already in `api/pyproject.toml` or adjacent; if `statsmodels` is not present, add it here.
@@ -114,7 +116,17 @@ class Baseline(BaseModel):
     confidence_level: Literal["low", "medium", "high"]
     training_weeks: int                                      # rows available after alignment + partial filter
     training_inputs: VARTrainingInputsSnapshot
+
+    # Retrain-staleness signal — surfaced on the Performance Diagnostics tab (PE-PRD-07)
+    retrain_needed: bool = False                             # written false on every retrain; flipped true by config-change hook
+    retrain_reason: Literal["data_drift_detected", "config_changed", "manual_override"] | None = None
 ```
+
+**Retrain-needed semantics (v1):**
+
+- The retrain function (§5.5) always writes `retrain_needed=False, retrain_reason=None` — a fresh baseline is, by definition, not stale.
+- This PRD ships an internal helper `flag_baselines_for_retrain(account_id, reason)` (§5.8) that flips `retrain_needed=True` + sets `retrain_reason` on all of an account's baselines in one Firestore batch. v1 caller: SE-PRD-01's funnel-mapping save endpoint, which calls the helper with `reason="config_changed"` after a successful mapping write (forward-coordination note in §3 — SE-PRD-01 owns the call site).
+- `data_drift_detected` and `manual_override` reasons are reserved for future PRDs (a nightly drift-scan automation and an admin override endpoint, respectively). The Pydantic field accepts them so PE-PRD-07's `RetrainNeededBadge` UI is forward-compatible without a model change. v1 ships the schema + the `config_changed` setter; no other reason fires in production.
 
 ### 4.2 Retrain endpoint
 
@@ -160,7 +172,8 @@ Register `baselines` in `_migrate_shape_b/resources.py`. No composite indexes ne
 | Create | `api/src/kene_api/services/sar_e_training_input.py` — `assemble_training_matrix(account_id) -> TrainingMatrix` |
 | Create | `api/src/kene_api/services/sar_e_var_estimator.py` — `VAREstimator.fit`, `FittedVARModel`, `FlatBaselineModel` |
 | Create | `api/src/kene_api/services/sar_e_forecast_engine.py` — `produce_baselines(fitted_model, training_inputs) -> list[Baseline]` |
-| Create | `api/src/kene_api/services/sar_e_retrain_service.py` — orchestrates assemble → fit → produce → persist; adds Weave span |
+| Create | `api/src/kene_api/services/sar_e_retrain_service.py` — orchestrates assemble → fit → produce → persist; adds Weave span; persists each `Baseline` with `retrain_needed=False, retrain_reason=None` |
+| Create | `api/src/kene_api/services/sar_e_baseline_staleness.py` — `flag_baselines_for_retrain(account_id, reason)` helper (§5.8); single Firestore batch write across `accounts/{account_id}/baselines/*` setting `retrain_needed=True` + `retrain_reason=reason`; idempotent (no-op when fields are already set with the same reason) |
 | Create | `api/src/kene_api/routers/sar_e_forecasts.py` — `/forecasts/baseline` (GET) + `/internal/sar-e/retrain-var` (POST) |
 | Modify | `api/src/kene_api/services/sar_e_automation_seeder.py` — extend `create_weekly_ingestion_automation` to include the retrain-task after the ingest-task |
 | Modify | `api/src/kene_api/main.py` — mount `sar_e_forecasts.router` |
@@ -173,6 +186,8 @@ Register `baselines` in `_migrate_shape_b/resources.py`. No composite indexes ne
 | Create | `api/tests/integration/test_sar_e_retrain_endpoint.py` |
 | Create | `api/tests/integration/test_sar_e_forecasts_baseline_endpoint.py` |
 | Create | `api/tests/integration/test_sar_e_weekly_automation_retrain.py` |
+| Create | `api/tests/unit/test_sar_e_baseline_staleness.py` — pure-logic tests for the helper: empty account → no-op; 4 baselines → all 4 flipped in one batch; idempotent re-call with same reason → no extra Firestore writes; reason validation rejects unknown literals |
+| Create | `api/tests/integration/test_sar_e_baseline_staleness_endpoint.py` — end-to-end: seed 4 baselines with `retrain_needed=False`, call helper with `reason="config_changed"`, assert all 4 docs now carry `retrain_needed=True, retrain_reason="config_changed"`; assert subsequent retrain resets them to `False`/`None` |
 | Create | `api/tests/perf/test_sar_e_retrain_perf.py` — asserts ≤10min p95 on 104×4 synthetic fixture |
 
 ### 5.1 Training matrix assembly
@@ -362,6 +377,15 @@ The `sar_e_retrain` glue agent has one function tool that calls `POST /internal/
 
 Admin-triggered retrain (e.g., after a mapping change that invalidates cached baselines) calls `POST /internal/sar-e/retrain-var` directly — same endpoint, OIDC-authed, same body. No user-facing UI in v1; invoked via `curl`/the runbook in SE-PRD-07.
 
+### 5.8 Retrain-needed staleness signal
+
+Per §4.1, every persisted `Baseline` carries `retrain_needed: bool` + `retrain_reason: Literal[...] | None`. The retrain function (§5.5) writes both to their fresh defaults (`False, None`) on every successful retrain. Two complementary write paths flip them to `True`:
+
+1. **Config-changed (v1, ships here).** Internal helper `flag_baselines_for_retrain(account_id, reason)` in `services/sar_e_baseline_staleness.py`. One Firestore batch write across `accounts/{account_id}/baselines/*` setting `retrain_needed=True` + `retrain_reason=reason`. Idempotent — if all baselines already carry the same `retrain_reason`, the helper short-circuits without writing. v1 sole caller: SE-PRD-01's `PUT /config/funnel-mapping` endpoint, after a successful mapping write, with `reason="config_changed"`. The call is fire-and-forget from SE-PRD-01's perspective; staleness is best-effort and a missed write self-heals on the next Monday's retrain (which resets to `False`).
+2. **Data drift / manual override (deferred).** Reserved values on the `retrain_reason` literal — `data_drift_detected` and `manual_override`. No setter ships in v1; the Pydantic field accepts them so PE-PRD-07's `RetrainNeededBadge` UI is forward-compatible without a schema change. A future PRD will add a nightly drift-scan automation (compares each KPI's most-recent week against the baseline's CI band) and an admin override endpoint.
+
+Read-side: PE-PRD-07's Diagnostics-tab bundle composer reads the fields directly from each `Baseline` doc (no new endpoint). The signal is per-KPI (each baseline carries its own flag), and PE-PRD-07's account-level rollup (`DiagnosticsBundle.retrain_needed`) is `any(per_kpi.retrain_needed)`.
+
 ## 6. API contract (owned here)
 
 | Method | Path | Purpose | Role |
@@ -392,7 +416,9 @@ Admin-triggered retrain (e.g., after a mapping change that invalidates cached ba
 17. **Baseline overwrites are atomic.** Two concurrent retrain calls for the same account produce a consistent final state — the last-to-commit wins; no interleaved half-written baselines.
 18. **Account deletion.** Deleting an account removes all `baselines/*` rows (covered by the account-deletion sweep extension or DM-PRD-05 `recursive_delete`).
 19. **Shape B registration + index.** `baselines` appears in `_migrate_shape_b/resources.py`.
-20. **Tooling gates.** `make lint`, `mypy`, `ruff`, `codespell`, and the `pytest` suite all pass.
+20. **Retrain-needed defaults on fresh write.** Every `Baseline` doc written by the retrain function carries `retrain_needed=False, retrain_reason=None`, regardless of whether the prior doc was flagged. (Verified by seeding a flagged baseline, re-running retrain, asserting reset.)
+21. **`flag_baselines_for_retrain` helper.** Calling `flag_baselines_for_retrain(account_id, "config_changed")` against an account with 4 baselines writes `retrain_needed=True, retrain_reason="config_changed"` to all 4 docs in a single Firestore batch (verified by transaction-count assertion). A second call with the same reason is a no-op (no extra writes). The helper rejects unknown reason literals with a `ValueError`. Per `PE-PRD-07.RetrainNeededBadge`, the rendered reason copy is sourced from these field values.
+22. **Tooling gates.** `make lint`, `mypy`, `ruff`, `codespell`, and the `pytest` suite all pass.
 
 ## 8. Test plan
 

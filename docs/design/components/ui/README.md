@@ -10,22 +10,27 @@ The UI component owns the global frontend shell of KEN-E — the design tokens, 
 
 This component's work is organised as a **shell-first, pages-second** migration. UI-PRD-01 lands the design tokens and shared shell chrome (sidebar, top-nav, account switcher, notification bell, profile menu) — every subsequent project plugs into that shell. UI-PRD-02 through UI-PRD-06 and UI-PRD-08 each migrate one logical section of the application (auth + settings, workflows, calendar, knowledge, extensions, organization selection); **UI-PRD-07 (Performance) is retired** — its scope is delivered by the Performance component's `PE-PRD-01`. Sequencing matches the backend release plan so that each page's shell is ready before the backend component that owns its data wiring begins frontend work.
 
-A developer reading only this section should understand: this component owns the global frontend shell, the `theme.css` token system, and the styling / shell for every top-level route **except `/chat` and `/performance`**. The `/chat` page is owned end-to-end by the **[Chat component](../chat/README.md)** (page, sidebar, status view, Firestore side-table); the `/performance` page is owned end-to-end by the **[Performance component](../performance/README.md)** (5-tab shell, setup wizard, BFF). Both mount inside UI-PRD-01's `LayoutC` but are not UI-component deliverables. For other backend-owned pages, this component **does not** own page-level data wiring — those pages get their shell from UI projects and their data wiring from their home component (`agentic-harness`, `project-tasks`, `automations`, `knowledge-graph`, `skills`). The scope boundary is spelled out explicitly in §7 and restated at the top of every project PRD.
+A developer reading only this section should understand: this component owns the global frontend shell, the `theme.css` token system, and the styling / shell for every top-level route **except `/chat` and `/performance`**. The `/chat` page is owned end-to-end by the **[Chat component](../chat/README.md)** (page, sidebar, status view, Firestore side-table); the `/performance` page is owned end-to-end by the **[Performance component](../performance/README.md)** (6-tab shell — Analysis / Dashboards / Simulations / Targets / Diagnostics / Configuration — setup wizard, BFF). Both mount inside UI-PRD-01's `LayoutC` but are not UI-component deliverables. For other backend-owned pages, this component **does not** own page-level data wiring — those pages get their shell from UI projects and their data wiring from their home component (`agentic-harness`, `project-tasks`, `automations`, `knowledge-graph`, `skills`). The scope boundary is spelled out explicitly in §7 and restated at the top of every project PRD.
 
 ## 2. Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  Global shell (UI-PRD-01)                                                   │
-│    ThemeProvider (light/dark)                                               │
+│    ThemeProvider (light/dark)  +  AppErrorBoundary  +  Toaster  +  NotFound │
 │    BackgroundEffects (ambient)                                              │
-│    LayoutC                    LayoutSettings                                │
-│      ├── Sidebar                ├── Sidebar (compact)                       │
-│      ├── TopNav                 └── Settings content area                   │
-│      │     ├── AccountSwitcher                                              │
-│      │     ├── NotificationBell                                             │
-│      │     └── ProfileMenu                                                  │
+│    LayoutC                                LayoutSettings                    │
+│      ├── Sidebar (+ super-admin section)    ├── Sidebar (compact)           │
+│      ├── TopNav                             └── Settings content area       │
+│      │     ├── AccountSwitcher                  (sub-nav read from          │
+│      │     ├── NotificationBell                  SETTINGS_NAV_REGISTRY      │
+│      │     └── ProfileMenu                       — UI-PRD-02 + IN-PRD-03    │
+│      ├── bannerSlot (BL-PRD-04 banner)            + BL-PRD-04)              │
 │      └── Page content area                                                  │
+│                                                                             │
+│  Responsive breakpoints: Mobile <768px / Tablet 768–1199px / Desktop ≥1200  │
+│  Accessibility baseline: AA contrast (axe-CI), keyboard nav, focus rings,   │
+│  semantic landmarks, reduced-motion support.                                │
 └───────────────────────────────────┬─────────────────────────────────────────┘
                                     │
         ┌───────────────────────────┼────────────────────────────┐
@@ -62,7 +67,7 @@ A developer reading only this section should understand: this component owns the
 | `frontend/src/App.css` | Kept minimal. Guard against reintroducing Vite-template styles that break the shell layout. |
 | `frontend/tailwind.config.ts` | Tailwind theme extension — token wiring. Updated by UI-PRD-01. |
 | `frontend/src/components/ui/` | shadcn/ui primitives (~50 components). UI-PRD-01 reviews and re-skins each primitive to match Figma; subsequent UI-PRDs consume them. |
-| `frontend/src/components/layout/` | Shell layouts (`LayoutC`, `LayoutSettings`) and global chrome (`Sidebar`, `TopNav`, `AccountSwitcher`, `NotificationBell`, `ProfileMenu`, `SessionsSidebar`, `QuickStartGuide`). Created/expanded by UI-PRD-01. |
+| `frontend/src/components/layout/` | Shell layouts (`LayoutC` with `bannerSlot` outlet, `LayoutSettings` with registry-driven sub-nav) and global chrome (`Sidebar` with super-admin section, `TopNav`, `AccountSwitcher`, `NotificationBell`, `ProfileMenu`, top-level `AppErrorBoundary`). Created/expanded by UI-PRD-01. **`SessionsSidebar` lives at `frontend/src/components/chat/SessionsSidebar.tsx`** and is owned by **CH-PRD-02** (Chat component) — not a UI-component file. |
 | `frontend/src/pages/` | Page components, one per route. Each UI-PRD creates or migrates a subset here. |
 | `frontend/src/components/theme/` | `ThemeProvider`, `BackgroundEffects`, `ThemeToggle`. Created by UI-PRD-01. |
 | `frontend/src/contexts/` | React contexts (Auth, Chat, Account). Consumed by pages; no new contexts owned by this component. |
@@ -124,7 +129,7 @@ Every user-facing capability in KEN-E renders through this component's shell and
 | Component | Dependency |
 |-----------|------------|
 | [Chat](../chat/README.md) | CH-PRD-02 ships the `/chat` page, `SessionsSidebar`, and `ChatInterface` — every Chat surface mounts inside UI-PRD-01's `LayoutC` and consumes the shell tokens, `Sidebar`, `TopNav`, and `AccountSwitcher`. CH-PRD-02 absorbed the `/chat` page scope previously listed in UI-PRD-02. |
-| [Performance](../performance/README.md) | PE-PRD-01 ships the `/performance` 5-tab shell, `ForecastingEnabledGate`, and setup wizard — all inside `LayoutC`. PE-PRD-01 supersedes the now-retired UI-PRD-07. |
+| [Performance](../performance/README.md) | PE-PRD-01 ships the `/performance` 6-tab shell (Analysis / Dashboards / Simulations / Targets / Diagnostics / Configuration), `ForecastingEnabledGate`, and setup wizard — all inside `LayoutC` with the `bannerSlot` outlet available. PE-PRD-01 supersedes the now-retired UI-PRD-07. The Dashboards tab content is owned by the Dashboards component (DB-PRD-02 list / DB-PRD-03 details). |
 | [Agentic Harness](../agentic-harness/README.md) | AH-PRD-02 ships `/workflows/agents` views — relies on UI-PRD-03's `WorkflowsLayout`. Scheduling AH-PRD-02 after UI-PRD-03 ensures it builds on the new design. |
 | [Project Tasks](../project-tasks/README.md) | PR-PRD-03 ships the calendar page's data wiring — relies on UI-PRD-04's page shell. |
 | [Automations](../automations/README.md) | A-PRD-05 (Automations list) and A-PRD-06 (Automation details) fill out the Automations tab inside UI-PRD-03's `WorkflowsLayout`. |
@@ -149,8 +154,8 @@ The migration is split across **8 project PRDs** under [`projects/`](./projects/
 ```
 UI-PRD-01 (Design System Foundation + Shell)
     │
-    ├──► UI-PRD-02 (Auth, Settings)               (Release 1)
-    ├──► UI-PRD-03 (Workflows Shell + Tabs)       (Release 2 — precedes AH-PRD-02 frontend)
+    ├──► UI-PRD-02 (Auth, Settings, /create-organization, registry sub-nav)  (Release 1)
+    ├──► UI-PRD-03 (Workflows Shell + Tabs)       (Release 1 — moved up; AH-PRD-02 plugs into this)
     ├──► UI-PRD-04 (Calendar)                     (Release 2 — precedes PR-PRD-03)
     ├──► UI-PRD-05 (Knowledge / Strategy)         (Release 3 — precedes KG-PRD-*)
     ├──► UI-PRD-06 (Extensions)                   (Release 5 — no backend PRD today)
@@ -168,7 +173,7 @@ Sibling components that mount inside UI-PRD-01's shell but are not UI-PRD delive
 |---|-------------|------------|------------|-------------------|------|
 | 01 | [Design System Foundation + Shell](./projects/UI-PRD-01-design-system-foundation.md) | Frontend | — | — | ~8–10 days |
 | 02 | [Core Shell Pages — Auth, Settings](./projects/UI-PRD-02-core-shell-pages.md) | Frontend | UI-PRD-01 | Release 1 | ~5–7 days |
-| 03 | [Workflows Shell + Tabs](./projects/UI-PRD-03-workflows-shell.md) | Frontend | UI-PRD-01 | Release 2 (precedes AH-PRD-02 frontend) | ~4–5 days |
+| 03 | [Workflows Shell + Tabs](./projects/UI-PRD-03-workflows-shell.md) | Frontend | UI-PRD-01 | **Release 1** (moved up to align with AH-PRD-02) | ~4–5 days |
 | 04 | [Calendar Page](./projects/UI-PRD-04-calendar-page.md) | Frontend | UI-PRD-01 | Release 2 (precedes PR-PRD-03) | ~4–5 days |
 | 05 | [Knowledge / Strategy Section](./projects/UI-PRD-05-knowledge-section.md) | Frontend | UI-PRD-01 | Release 3 (precedes KG-PRD-*) | ~10–14 days |
 | 06 | [Extensions Page](./projects/UI-PRD-06-extensions-page.md) | Frontend | UI-PRD-01 | Release 5 (no backend PRD yet) | ~4–6 days |
@@ -177,21 +182,25 @@ Sibling components that mount inside UI-PRD-01's shell but are not UI-PRD delive
 
 ### 5.3 Cross-PRD coordination points
 
-Three touchpoints need conscious coordination across components because a page's shell lives here and its data wiring lives elsewhere — plus one component-boundary handoff where a sibling component owns the page entirely:
+Several touchpoints need conscious coordination across components because a page's shell lives here and its data wiring lives elsewhere — plus component-boundary handoffs where a sibling component owns the page entirely:
 
-- **Workflows shell handoff (UI-PRD-03 ↔ AH-PRD-02, A-PRD-05/06, SK-PRD-03):** UI-PRD-03 ships `WorkflowsLayout` and three empty tab pages (`AgentsPage`, `AutomationsPage`, `SkillsPage`) that render skeletons or empty states. Data wiring is added later by each owning PRD. The layout's tab contract (tab registration, active-tab URL sync) must be stable before AH-PRD-02 starts; lock it in UI-PRD-03 code review.
+- **Workflows shell handoff (UI-PRD-03 ↔ AH-PRD-02, A-PRD-05/06, SK-PRD-03):** UI-PRD-03 ships `WorkflowsLayout` and three empty tab pages (`AgentsPage`, `AutomationsPage`, `SkillsPage`) that render skeletons or empty states. Data wiring is added later by each owning PRD. The layout's tab contract (tab registration, active-tab URL sync) must be stable before AH-PRD-02 starts; lock it in UI-PRD-03 code review. Three tabs only — data pipelines are not a tab.
 - **Calendar page handoff (UI-PRD-04 ↔ PR-PRD-03):** UI-PRD-04 ships the `/calendar` route, `CalendarPage` shell with calendar + list views, `ActivityDetailPanel`, `ProjectEditDrawer` — all using mocked data. PR-PRD-03 replaces the mock with `/api/v1/plans/*` wiring and the `ProjectPlanContext`. Agree on the component prop signatures in UI-PRD-04 code review.
 - **Knowledge section handoff (UI-PRD-05 ↔ KG-PRD-03):** UI-PRD-05 ships every `/knowledge/*` route shell with mocked data; KG-PRD-03 wires the four orchestrator read tools through to dynamic content. Component props are designed to accept a generic `data` prop so the swap is a one-line change.
 - **`/` route handoff (UI-PRD-02 ↔ CH-PRD-02):** UI-PRD-02 deletes the legacy `Home.tsx` (admin-style hub) and registers `/` as a redirect to `/chat`. CH-PRD-02 owns the `/chat` page, `SessionsSidebar`, and `ChatInterface` end-to-end. The two PRDs must coordinate on `App.tsx` route registration in the same release window — UI-PRD-02 lands the redirect; CH-PRD-02 lands the destination behind `chat_v2_enabled`.
+- **`ProtectedRoute` gating change (UI-PRD-02 ↔ UI-PRD-08):** UI-PRD-08 lands the `<Navigate to="/select-organization">` route-based gate; UI-PRD-02 lands the `<Navigate to="/sign-in">` route-based gate for unauthenticated users. Both touch `frontend/src/components/auth/ProtectedRoute.tsx`. Coordinate landing order at PR review.
+- **`SETTINGS_NAV_REGISTRY` extension (UI-PRD-02 ↔ IN-PRD-03 ↔ BL-PRD-04):** UI-PRD-02 freezes the registry shape + helper at merge; IN-PRD-03 plugs in Integrations (`order: 40`); BL-PRD-04 plugs in Subscription (`order: 50`). No further `LayoutSettings` modifications by downstream PRDs.
+- **`LayoutC` `bannerSlot` outlet (UI-PRD-01 ↔ BL-PRD-04):** UI-PRD-01 reserves the slot above page content; BL-PRD-04 mounts `OrganizationStatusBanner` into it without modifying `LayoutC`.
+- **Sidebar admin section (UI-PRD-01 ↔ FF-PRD-02):** UI-PRD-01 reserves the super-admin-only section in `Sidebar` (gated on `isSuperAdmin`); FF-PRD-02 plugs in its `/admin/feature-flags` entry.
 
 ### 5.4 Recommended workflow
 
 1. **Day 1:** Frontend kicks off UI-PRD-01. Every other UI-PRD is blocked on it.
-2. **Day ~10 (UI-PRD-01 merged):** UI-PRD-02 and UI-PRD-08 start in parallel (Release 1 surfaces). UI-PRD-02 coordinates `/` redirect with the Chat team's CH-PRD-02 (Release 1).
-3. **Release 2 kickoff:** UI-PRD-03 lands before AH-PRD-02's frontend phase begins; UI-PRD-04 begins ahead of PR-PRD-03.
+2. **Day ~10 (UI-PRD-01 merged):** UI-PRD-02, UI-PRD-03, and UI-PRD-08 start in parallel (Release 1 surfaces). UI-PRD-02 coordinates `/` redirect with the Chat team's CH-PRD-02 (Release 1) and the `<Authentication>` route gate with UI-PRD-08's `<OrganizationSelection>` route gate. UI-PRD-03 lands ahead of AH-PRD-02's frontend phase (also Release 1).
+3. **Release 2 kickoff:** UI-PRD-04 begins ahead of PR-PRD-03. A-PRD-06 ships the shared `frontend/src/components/dag/TaskGraph.tsx`; DB-PRD-03 reuses it; DP-PRD-04 plugs into the same DAG editor's side-panel.
 4. **Release 3 kickoff:** UI-PRD-05 begins ahead of KG-PRD-01.
 5. **Release 5 kickoff:** UI-PRD-06 ships behind a feature flag.
-6. **Performance:** No UI-PRD work — PE-PRD-01 (Performance component, Release 4) delivers the `/performance` page directly on `LayoutC`.
+6. **Performance:** No UI-PRD work — PE-PRD-01 (Performance component, Release 4) delivers the `/performance` 6-tab page directly on `LayoutC`. The Dashboards tab (2nd tab) is filled in by DB-PRD-02 / DB-PRD-03.
 
 ## 6. Global Document References
 

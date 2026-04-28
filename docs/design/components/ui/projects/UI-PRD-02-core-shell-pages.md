@@ -20,10 +20,14 @@ Authentication and settings are the "day one" non-conversational surfaces every 
 
 ### In scope
 - Redesign `Authentication.tsx` (sign-in, sign-up, email verification, invitation acceptance flows) onto the new design
+- **Auth route-gating change:** `Authentication.tsx` becomes a route-mounted page (no longer inline-rendered by `ProtectedRoute`). `ProtectedRoute` redirects unauthenticated users to `/sign-in` via `<Navigate to="/sign-in" replace />` instead of inline-rendering `<Authentication>`. Mirrors UI-PRD-08's pattern for `<OrganizationSelection>` and makes `/sign-in` (and `/sign-up`) the canonical entry points.
 - Redesign `AccountSettings.tsx` (organization + account settings) onto `LayoutSettings`
 - Redesign `UserSettings.tsx` onto `LayoutSettings`
 - Redesign `AcceptInvitation.tsx` onto the auth layout
+- Redesign `/create-organization` page (the destination of the "Create new organization" CTAs in `UI-PRD-08`'s `SelectOrganizationPage` and the zero-orgs auto-redirect). Standalone layout (same `BackgroundEffects` treatment as the auth pages, no `LayoutC`/`LayoutSettings` shell). Reuses the existing org-creation form logic; only re-skins.
 - Delete the legacy `Home.tsx` and register `/` as `<Navigate to="/chat" replace />` (the destination is owned by CH-PRD-02 behind the `chat_v2_enabled` flag — see §11 Cleanup and the coordination note in this PRD's Reference section)
+- Register `/settings` (no sub-route) as `<Navigate to="/settings/organization" replace />` so users typing the bare path land on a real page instead of hitting UI-PRD-01's `NotFoundPage`.
+- **`LayoutSettings` sub-nav as a registry pattern.** The settings sub-nav reads its rows from a `SETTINGS_NAV_REGISTRY` exported from `frontend/src/components/layout/LayoutSettings.tsx`. UI-PRD-02 seeds the registry with **Organization → Account → User** in that order; downstream PRDs append their entries (IN-PRD-03 inserts **Integrations**, BL-PRD-04 inserts **Subscription**) without modifying `LayoutSettings` itself. Final v1 row order: Organization / Account / User / Integrations / Subscription.
 - Route migration: preserve current backward-compat redirects in `App.tsx`
 - Delete the dropped legacy routes + pages listed in §11 Cleanup
 - Component tests for every migrated page
@@ -31,8 +35,11 @@ Authentication and settings are the "day one" non-conversational surfaces every 
 ### Out of scope
 - Changes to Firebase auth logic, email verification flow, or invitation backend
 - Changes to settings API endpoints
+- Changes to the create-organization form **logic** (data model, API calls, validation rules) — this PRD only re-skins the page
 - **`/chat` page, `ChatInterface`, `ThinkingBlock`, `SessionsSidebar`** — owned by **CH-PRD-02** ([chat/projects/CH-PRD-02](../../chat/projects/CH-PRD-02-chat-page-shell-and-sidebar.md)). This PRD does not create any `frontend/src/components/chat/*` files.
 - Organization Selection page — owned by **UI-PRD-08** (new `/select-organization` page)
+- Integrations settings tab — owned by **IN-PRD-03** (plugs into `SETTINGS_NAV_REGISTRY`)
+- Subscription settings tab — owned by **BL-PRD-04** (plugs into `SETTINGS_NAV_REGISTRY`)
 
 ### Pages dropped from the product (handled in §11 Cleanup, not redesigned)
 - `Home.tsx` — replaced by a `/` → `/chat` redirect; the destination page is owned by CH-PRD-02
@@ -43,10 +50,13 @@ Authentication and settings are the "day one" non-conversational surfaces every 
 
 - **UI-PRD-01:** shell tokens, `LayoutSettings`, `LayoutC`, re-skinned shadcn primitives
 - **CH-PRD-02 (coordination):** owns the `/chat` route this PRD's `/` redirect points at. CH-PRD-02 must land before or in the same release window as UI-PRD-02 so the redirect resolves to a real page (behind `chat_v2_enabled`). If CH-PRD-02 hasn't shipped yet, the redirect can land first — `/chat` will render the `chat_v2_enabled=false` fallback (a "coming soon" placeholder per CH-PRD-02 §2.1).
+- **UI-PRD-08 (coordination):** UI-PRD-08 lands the `<Navigate to="/select-organization">` gate in `ProtectedRoute`. UI-PRD-02 mirrors that pattern for `<Authentication>` (`<Navigate to="/sign-in">`). The two PRDs touch the same `ProtectedRoute.tsx` file; coordinate landing order at PR review.
+- **IN-PRD-03, BL-PRD-04 (downstream):** both register entries in `SETTINGS_NAV_REGISTRY` (Integrations and Subscription respectively). UI-PRD-02 freezes the registry shape + helper at merge.
 - **Existing files to study:**
-  - `frontend/src/pages/Authentication.tsx`, `AcceptInvitation.tsx`, `AccountSettings.tsx`, `UserSettings.tsx`
+  - `frontend/src/pages/Authentication.tsx`, `AcceptInvitation.tsx`, `AccountSettings.tsx`, `UserSettings.tsx`, `CreateOrganization.tsx` (or current path)
   - `frontend/src/contexts/AuthContext.tsx`
   - `frontend/src/components/auth/*`
+  - `frontend/src/components/auth/ProtectedRoute.tsx` (for the gating change)
 - **Figma nodes:** SignInPage, CreateAccountPage, EmailVerificationPage, InvitationAcceptancePage, OrganizationSettingsPage, AccountSettingsPage, UserSettingsPage
 
 ## 4. Data contract (TypeScript)
@@ -60,19 +70,34 @@ Branded IDs reused from existing code.
 
 | Action | File |
 |--------|------|
-| Modify | `frontend/src/pages/Authentication.tsx` — redesign per Figma SignInPage/CreateAccountPage |
+| Modify | `frontend/src/pages/Authentication.tsx` — redesign per Figma SignInPage/CreateAccountPage; route-mounted (no longer inline-rendered by `ProtectedRoute`) |
+| Modify | `frontend/src/components/auth/ProtectedRoute.tsx` — replace inline `<Authentication>` render with `<Navigate to="/sign-in" replace />` when unauthenticated (matches UI-PRD-08's pattern) |
 | Modify | `frontend/src/pages/AcceptInvitation.tsx` |
 | Modify | `frontend/src/pages/AccountSettings.tsx` — recompose into `LayoutSettings` |
 | Modify | `frontend/src/pages/UserSettings.tsx` |
-| Modify | `frontend/src/App.tsx` — wrap settings routes in `LayoutSettings`; register `/` as `<Navigate to="/chat" replace />`; delete the import + route for the legacy `Home` page |
+| Modify | `frontend/src/pages/CreateOrganization.tsx` (or current path) — re-skin onto Soft Maximalism with the auth-page background treatment; logic preserved |
+| Modify | `frontend/src/components/layout/LayoutSettings.tsx` — read rows from `SETTINGS_NAV_REGISTRY`; export the registry constant + a registration helper |
+| Modify | `frontend/src/App.tsx` — wrap settings routes in `LayoutSettings`; register `/` as `<Navigate to="/chat" replace />`; register `/settings` as `<Navigate to="/settings/organization" replace />`; register `/sign-in` and `/sign-up` as the canonical auth routes; delete the import + route for the legacy `Home` page |
 | Modify | `frontend/src/components/auth/*` — update email action handler and related sub-components for new design |
 | Create | colocated `*.test.tsx` for every materially changed component |
 
 ### Auth page structure
 Sign-in and sign-up share a centered card over `BackgroundEffects`. Password reset, email verification, and invitation acceptance reuse the same card shell. Error / success states use new `Alert` variants from UI-PRD-01.
 
-### Settings page structure
-`LayoutSettings` provides a secondary left nav with three rows: Organization, Account, User. Each row is a route. Forms use `react-hook-form` + Zod (already in deps). File uploads (logo, avatar) reuse existing upload logic.
+### Auth route-gating change
+The legacy pattern inline-renders `<Authentication onComplete={…}>` from inside `ProtectedRoute` when the user isn't signed in. This PRD switches to a route-based gate: `ProtectedRoute` redirects to `/sign-in` (`<Navigate to="/sign-in" replace />`); the auth pages are normal route components that call the existing auth handlers and then `navigate('/')` on success. Matches UI-PRD-08's `SelectOrganizationPage` gating pattern and makes `/sign-in` / `/sign-up` the canonical entry points instead of URLs that are only reachable by typing them. Backward-compat: `/login` and `/signup` redirect to `/sign-in` and `/sign-up` respectively.
+
+### Settings sub-nav (registry pattern)
+
+`LayoutSettings` exposes a `SETTINGS_NAV_REGISTRY: SettingsNavRow[]` constant + a `registerSettingsNavRow(row)` helper. Each row carries `{ id, label, path, order, isVisible? }`. UI-PRD-02 seeds three rows (Organization / Account / User). Downstream PRDs register their own:
+
+- `IN-PRD-03` registers `{ id: 'integrations', label: 'Integrations', path: '/settings/integrations', order: 40 }`
+- `BL-PRD-04` registers `{ id: 'subscription', label: 'Subscription', path: '/settings/subscription', order: 50 }`
+
+`order` values leave gaps (10, 20, 30, 40, 50) for future insertions. `LayoutSettings` reads the registry once at module load and renders rows sorted by `order`. Final v1 row order: Organization (10) / Account (20) / User (30) / Integrations (40) / Subscription (50). Forms use `react-hook-form` + Zod (already in deps). File uploads (logo, avatar) reuse existing upload logic.
+
+### Create Organization page
+Re-skin the existing create-organization form onto the auth-page visual treatment (`BackgroundEffects` + centered card). Standalone (no `LayoutC` or `LayoutSettings`). Preserves: Firestore + organization API write logic, validation rules, redirect-on-success to `/select-organization` (or auto-pick the new org if it's the user's only one — existing behavior). Visual parity with `/sign-in`'s card shell.
 
 ### Root-route coordination with CH-PRD-02
 - UI-PRD-02 registers `/` as `<Navigate to="/chat" replace />` and deletes `Home.tsx`.
@@ -86,13 +111,17 @@ This PRD consumes only existing endpoints — no new contracts.
 
 ## 7. Acceptance criteria
 
-1. `/auth/signin` and `/auth/signup` render the new design; the existing auth flow (Firebase sign-in, sign-up, OTP verification, invitation token handling) works end-to-end.
+1. `/sign-in` and `/sign-up` render the new design; the existing auth flow (Firebase sign-in, sign-up, OTP verification, invitation token handling) works end-to-end. Hitting any protected route while unauthenticated lands the user on `/sign-in` via `ProtectedRoute`'s `<Navigate>` — not via inline render.
 2. `/invite/:token` renders the new design and preserves the token-to-account flow.
 3. `/settings/organization`, `/settings/account/:accountId`, `/settings/user` render inside `LayoutSettings` with the new left-nav design; forms save and load correctly.
-4. `/` renders `<Navigate to="/chat" replace />`; `Home.tsx` and its imports are removed; no live references remain.
-5. Dark mode renders correctly on every page.
-6. Backward-compat route redirects (`/login`, `/signup`, `/organization-settings`, `/account-settings`, `/user-settings`) still work.
-7. Component tests pass; `npm run typecheck`, `npm run format.fix`, `npm run build`, `npm test` pass.
+4. `/settings` (no sub-route) renders `<Navigate to="/settings/organization" replace />`.
+5. `/create-organization` renders the redesigned page with the auth-page visual treatment; the existing create-organization form logic is preserved (validation rules, API call, success redirect).
+6. `/` renders `<Navigate to="/chat" replace />`; `Home.tsx` and its imports are removed; no live references remain.
+7. Dark mode renders correctly on every page.
+8. Backward-compat route redirects (`/login` → `/sign-in`, `/signup` → `/sign-up`, `/organization-settings`, `/account-settings`, `/user-settings`) still work. (`/organization-selection` is converted to a redirect by **UI-PRD-08**, not this PRD.)
+9. `LayoutSettings` reads its sub-nav from `SETTINGS_NAV_REGISTRY`; visiting each registered route highlights the correct row. Adding / removing entries in the registry changes the sub-nav without modifying `LayoutSettings`.
+10. **Responsive (per UI-PRD-01 breakpoints):** every page renders correctly at 375 / 768 / 1200 / 1440 / 1920 widths; `LayoutSettings` sub-nav collapses to a top tab strip on mobile.
+11. Component tests pass; `npm run typecheck`, `npm run format.fix`, `npm run build`, `npm test` pass.
 
 ## 8. Test plan
 
@@ -100,11 +129,17 @@ This PRD consumes only existing endpoints — no new contracts.
 - `Authentication.test.tsx`: sign-in form renders; error alerts surface; OTP flow renders correctly (existing tests preserved and updated for new markup)
 - `AcceptInvitation.test.tsx`: token handling preserved
 - `AccountSettings.test.tsx` / `UserSettings.test.tsx`: existing tests updated for new layout
-- `App.test.tsx` (or routing test): visiting `/` redirects to `/chat`
+- `LayoutSettings.test.tsx`: registry-driven sub-nav renders the seeded rows in `order` order; appending a row via `registerSettingsNavRow` adds it without re-rendering existing rows
+- `CreateOrganization.test.tsx`: form renders, validation rules preserved, success path navigates correctly
+- `ProtectedRoute.test.tsx`: unauthenticated user is redirected to `/sign-in` (route-based gate), not inline-rendered with `<Authentication>`
+- `App.test.tsx` (or routing test): visiting `/` redirects to `/chat`; visiting `/settings` redirects to `/settings/organization`
 
 **Manual smoke:**
 - End-to-end sign-in, sign-up, email verification, invitation acceptance (use an existing test account)
 - Visit `/`; verify redirect to `/chat`
+- Visit `/settings`; verify redirect to `/settings/organization`
+- Visit any protected route while signed out; verify redirect to `/sign-in`
+- Resize browser through 375 / 768 / 1200 widths on auth pages, settings pages, and `/create-organization`
 
 ## 9. Risks & open questions
 
@@ -136,8 +171,8 @@ The following files are removed as part of this PRD. Each is either absorbed by 
 | File | Route(s) | Replaced by / reason |
 |------|----------|----------------------|
 | `frontend/src/pages/Home.tsx` | `/` | `/` is now `<Navigate to="/chat" replace />`. The `/chat` destination is owned by **CH-PRD-02** (Chat component). |
-| `frontend/src/pages/Settings.tsx` | `/settings` | `LayoutSettings` sub-nav — no hub page needed |
-| `frontend/src/pages/AdminSettings.tsx` | `/settings/admin` | Dropped — admin surface removed from the product |
+| `frontend/src/pages/Settings.tsx` | `/settings` | `/settings` becomes `<Navigate to="/settings/organization" replace />`; the `LayoutSettings` sub-nav supplies the hub UX. |
+| `frontend/src/pages/AdminSettings.tsx` | `/settings/admin` | Dropped — per-account admin toggles removed from the product. (Note: a separate platform-level super-admin section in the `Sidebar` is reserved by **UI-PRD-01** for future admin tooling like FF-PRD-02's `/admin/feature-flags` — different scope.) |
 | `frontend/src/pages/AdminIndustryKeywords.tsx` | `/settings/admin/industry-keywords` | Dropped |
 | `frontend/src/pages/AgentConfigManagement.tsx` | `/settings/admin/agent-configs` | Dropped — admin surface removed; agent configuration will be authored via the Workflows > Agents UI (AH-PRD-02) |
 | `frontend/src/pages/ToolUsageDashboard.tsx` | `/settings/admin/tool-usage` | Dropped |

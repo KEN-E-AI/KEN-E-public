@@ -34,11 +34,12 @@ Users author a skill by filling out a form with frontmatter fields (name, descri
 
 ### Out of scope
 - Attaching skills to agents — Sprint 2.6-D ships the skill picker in the agent builder
-- Restore-from-archive (users contact support for 30 days; then GCS lifecycle purges)
+- Restore-from-archive — archive is effectively permanent; the trash bucket's 30-day GCS lifecycle purges the bundle and v1 ships no UI to restore. Users see this prominently on the archive-confirmation dialog.
 - Sharing UI (v2)
 - Skill-import-from-URL UI (v2)
 - Live preview of L1 metadata as it would appear to an agent (stretch)
 - Mobile responsive beyond basic readability
+- Per-attachment skill version pinning (v2 — see §4 latest-wins note)
 
 ## 3. Dependencies
 
@@ -67,7 +68,10 @@ All endpoints are **account-scoped** under `/api/v1/accounts/{account_id}/skills
 ```ts
 // frontend/src/app/lib/api/skills.ts
 
-export type SkillOwner = { account_id: string };
+export type SkillOwner = {
+  account_id: string;
+  shared_with_accounts: string[]; // always [] in v1; reserved for v2 cross-account sharing
+};
 
 export type SkillVisibility = "private";
 export type SkillStatus = "draft" | "published" | "archived";
@@ -90,7 +94,6 @@ export interface Skill {
   created_by: string;   // user_id of the authoring user (display-only)
   updated_at: string;
   updated_by: string;   // user_id of the user who last edited
-  shared_with_accounts: string[]; // always [] in v1; reserved for v2 cross-account sharing
 }
 
 export interface SkillFrontmatter {
@@ -115,9 +118,22 @@ The editor runs the same validation rules as the backend:
 - `description`: 1–1024 chars
 - `compatibility`: ≤ 500 chars
 - SKILL.md body ≤ 5000 bytes (counted as UTF-8)
-- Reference files ≤ 100 kB each, ≤ 20 total, total bundle ≤ 2 MB
+- Files in `references/` ≤ 100 kB each, **≤ 20 total** files in `references/`. `assets/` and `scripts/` have no separate file-count cap and are constrained by the total-bundle cap (≤ 2 MB) only.
+- Total bundle ≤ 2 MB
 
 On submit, the backend re-validates. If client-side missed something (e.g., allowed-but-unusual YAML), the error surfaces in the top banner.
+
+### Latest-wins skill version semantics (UX requirement)
+
+Skills are attached to agents by `skill_id` only — agents always load the **current_version**. Editing a skill propagates immediately to every agent that has it attached, with no re-attach required. There is no per-attachment version pinning in v1.
+
+The editor MUST surface this when a user begins editing a skill that is currently attached to one or more agents:
+
+- **Attachment-aware banner:** When loading the editor for an existing skill, fetch the count of agent configs whose `skill_ids` contain this skill (via a backend helper, e.g., `GET /api/v1/accounts/{account_id}/skills/{id}/attached-agents-count` — owned by SK-PRD-04). If the count is ≥ 1, show a sticky banner above the editor:
+  > "This skill is attached to **N agent(s)**. Saving a new version updates them immediately — there is no per-attachment version pinning in v1."
+- **Save-confirmation dialog:** When the user clicks "Save draft" or "Publish" on a previously-attached skill, the confirm dialog repeats the count and includes a one-click way to view the affected agents' names (drawer or popover).
+
+The `attached-agents-count` endpoint is delivered by SK-PRD-04 alongside the picker work. SK-PRD-03 stubs against the contract and renders a non-blocking placeholder if the endpoint is not yet live.
 
 ### Test drawer semantics
 
@@ -222,7 +238,8 @@ All endpoints owned by Sprint 2.6-A. This PRD only consumes them via the React Q
 4. **Edit a skill:** Clicking a row opens the editor with current content. Making a change and saving creates version 2 (current_version increments in the UI). Previous version is visible in the Version History drawer.
 5. **allowed-tools warning:** If `allowed-tools` references a tool name that doesn't exist in the known tool registry, a warning is shown but the skill can still be saved. Rationale: tool availability is agent-specific; warning, not blocker.
 6. **Scripts warning:** Uploading a file under `scripts/` shows an info callout: "Scripts only run when the target agent has sandbox code execution enabled. Learn more ↗." The file is still accepted.
-7. **Archive:** Clicking Archive opens a confirm dialog; on confirm, the skill's status becomes "Archived" and it's hidden from the default list view. An "Include archived" toggle reveals it.
+7. **Archive:** Clicking Archive opens a confirm dialog explicitly stating "Archive is permanent — the bundle is moved to a 30-day trash bucket and there is no UI to restore." On confirm, the skill's status becomes "Archived" and it's hidden from the default list view. An "Include archived" toggle reveals it.
+7a. **Attachment-aware editor banner:** Editing an existing skill attached to ≥ 1 agents shows the latest-wins banner above the editor. The save-confirmation dialog repeats the count with a "View affected agents" affordance.
 8. **Empty state:** A user with 0 skills sees the first-skill onboarding copy and a single CTA.
 9. **Test drawer (flag-gated):** Behind `VITE_SKILLS_TEST_DRAWER=true`, clicking "Test with agent" opens a drawer with a chat textarea; submitting calls the existing chat endpoint with the skill attached to a one-off agent; the response renders. OFF by default until Sprint 2.6-D lands the ephemeral-agent mechanism.
 10. **Accessibility basics:** All form fields have labels; the Monaco editor has a `aria-label`; color contrast meets WCAG AA on the validation panel.
@@ -234,7 +251,7 @@ All endpoints owned by Sprint 2.6-A. This PRD only consumes them via the React Q
 
 - `FrontmatterForm.test.tsx`: name regex enforcement, description length counter, metadata key/value CRUD
 - `SkillMdEditor.test.tsx`: char counter accuracy on UTF-8 (emoji, multi-byte chars)
-- `ReferenceFileUploader.test.tsx`: 20-file limit enforced, >100 kB per-file rejected, drag-drop works, scripts/ path triggers info callout
+- `ReferenceFileUploader.test.tsx`: 20-file limit on `references/` enforced; `assets/` and `scripts/` accept >20 files (constrained only by the total-bundle cap); >100 kB per-file rejected uniformly across all three directories; drag-drop works; scripts/ path triggers info callout
 - `ValidationPanel.test.tsx`: shows server errors surfaced from a failed POST; clears on successful re-submit
 - `SkillsListPage.test.tsx`: empty state renders when list is empty; archive toggle filters correctly
 - `VersionHistoryDrawer.test.tsx`: renders all versions; clicking a row shows that version's SKILL.md

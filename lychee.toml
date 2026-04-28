@@ -9,7 +9,7 @@
 #   If external link health becomes a concern, add a *separate* scheduled job
 #   rather than making the PR gate network-dependent.
 #
-# CI step: will be consumed by deployment/ci/pr_checks.yaml (CH-3 — markdown-link-check step, not yet added)
+# CI step: consumed by deployment/ci/pr_checks.yaml (markdown-link-check step — CH-PRD-06 CH-3).
 # Component PRD: docs/design/components/chat/projects/CH-PRD-06-documentation-link-integrity.md
 
 # Restrict lychee to the "file" scheme only — equivalent to the --offline CLI flag.

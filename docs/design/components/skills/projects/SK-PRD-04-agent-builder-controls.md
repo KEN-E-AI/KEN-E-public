@@ -27,8 +27,9 @@ This sprint also delivers the **attach-time validation** logic: a user can't att
   - Reject PUT/POST when any skill in `skill_ids` has `has_scripts=true` and `sandbox_code_executor_enabled` on the target agent is `false`. Return a structured 422 naming the offending skill and the required toggle.
   - Reject PUT/POST when `skill_ids` is longer than 10.
 - **Ephemeral-agent endpoint** — a new `POST /api/v1/accounts/{account_id}/agents/_ephemeral_chat` that accepts `(skill_ids, message)` and returns the agent's response, used by the Sprint 2.6-C Test Drawer. Account-scoped for consistency with the skill and agent-config endpoints; the ephemeral agent is built with the caller's `account_id`, a fixed system instruction, and just those skills; not persisted.
+- **Attached-agents-count helper endpoint** — `GET /api/v1/accounts/{account_id}/skills/{skill_id}/attached-agents-count` returning `{count: int, agent_config_ids: list[str]}` for the SK-PRD-03 latest-wins editor banner. Reads `accounts/{account_id}/agent_configs` (per-account overlays) + global `agent_configs/*` whose `skill_ids` contain the requested skill. Cached in-process for 30 s.
 - **End-to-end Playwright test** covering the full user journey.
-- **Documentation:** update [AH-PRD-02](../../agentic-harness/projects/AH-PRD-02-agent-factory.md) §5.2 (final behavior of the skill/sandbox fields, replacing the forward-compat note) and add a user-facing guide to `docs/skills-user-guide.md`.
+- **Documentation:** update [AH-PRD-02](../../agentic-harness/projects/AH-PRD-02-agent-factory.md) §5.2 (final behavior of the skill/sandbox fields, replacing the forward-compat note) and add a user-facing guide to `docs/skills-user-guide.md`. The user guide MUST include a **"Skill versions and attached agents"** section that explicitly documents the latest-wins trade-off: editing a skill propagates immediately to every agent that has it attached; per-attachment version pinning is a v2 enhancement.
 
 ### Out of scope
 - Advanced skill-picker UX (tags, sort-by-usage) — defer to 2.6.1
@@ -181,6 +182,18 @@ Same three rejection cases apply to custom agent creation.
 ### New — `POST /api/v1/accounts/{account_id}/agents/_ephemeral_chat`
 See §4 for shape.
 
+### New — `GET /api/v1/accounts/{account_id}/skills/{skill_id}/attached-agents-count`
+Returns the number of agent configs (per-account overlays + global) whose `skill_ids` currently contains `{skill_id}`. Used by SK-PRD-03's latest-wins banner.
+
+```json
+{
+  "count": 3,
+  "agent_config_ids": ["custom_acc_abc_blog_writer", "custom_acc_abc_seo_helper", "google_analytics_specialist"]
+}
+```
+
+In-process cache: 30 s. Auth: same account-access dependency as the skills endpoints.
+
 ## 7. Acceptance criteria
 
 1. **Picker works in Create:** On `/workflows/agents/create`, the admin can pick up to 10 skills from their own library. A counter shows "X / 10". Submitting creates the agent with `skill_ids` populated; the agent detail view shows them.
@@ -193,9 +206,10 @@ See §4 for shape.
 8. **Ephemeral chat:** POST `/api/v1/accounts/{account_id}/agents/_ephemeral_chat` with a valid skill_id and message returns a response within 30s. Callers who are not members of `{account_id}` receive 403. Attach-time validation identical to agent-config endpoint.
 9. **Test drawer ON:** With Sprint 2.6-C's test drawer now enabled, a user can select a skill from their list, click "Test", type a prompt, and see the agent's reply — all without navigating away from the skill editor.
 10. **End-to-end:** Playwright test passes: create skill → create agent with skill attached → visit chat page → send a prompt that triggers skill use → assert the response contains content matching the skill's instructions.
-11. **User guide:** `docs/skills-user-guide.md` exists, covers authoring, attachment, sandbox, allowed-tools, and skill limits.
+11. **User guide:** `docs/skills-user-guide.md` exists, covers authoring, attachment, sandbox, allowed-tools, skill limits, **and the latest-wins version-pinning trade-off** (editing a skill propagates immediately to attached agents).
 12. **AH-PRD-02 §5.2 updated** — `skill_ids` / `sandbox_code_executor_enabled` rows reflect the final behavior.
-13. **All tests pass;** lint, typecheck, format all clean.
+13. **Attached-agents-count endpoint:** `GET /api/v1/accounts/{account_id}/skills/{skill_id}/attached-agents-count` returns the correct count for a skill attached to N agents. SK-PRD-03's editor banner consumes this and renders the count.
+14. **All tests pass;** lint, typecheck, format all clean.
 
 ## 8. Test plan
 
@@ -259,6 +273,7 @@ See §4 for shape.
 | Skill metadata drifts between the picker's cache and the attach-time check | Backend is the source of truth; the picker's UX is optimistic, errors surface via the 422 banner |
 | Users attach skills and expect them to apply to system/root agents too | Copy on the picker clarifies: "Skills attach to this custom agent only"; attempts to attach to system agents are blocked at the API layer (system agents return 403 on PUT per AH-PRD-02) |
 | Users who belong to multiple accounts expect their skills to follow them across accounts | Account-scoped skills is deliberate (SK-PRD-01). If this becomes a real ask, add a "Copy skill to another account" action — do not widen the ownership model. Surface this clearly in the authoring UI empty state copy. |
+| **Latest-wins skill version pinning** — a user edits a skill and unintentionally breaks every agent that has it attached | v1 ships latest-wins by deliberate trade-off. Mitigations: (a) SK-PRD-03 attachment-aware banner above the editor when ≥ 1 agents have the skill attached; (b) save-confirmation dialog naming the affected agents; (c) `docs/skills-user-guide.md` "Skill versions and attached agents" section calling the trade-off out prominently; (d) per-attachment version pinning is reserved for a v2 enhancement. |
 
 ### Open questions
 
