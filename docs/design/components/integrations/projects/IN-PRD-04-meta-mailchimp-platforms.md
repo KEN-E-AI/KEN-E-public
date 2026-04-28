@@ -67,6 +67,8 @@ token_response_extra_fields: list[str] = []    # fields from token response to p
 platform_metadata: dict = {}                   # platform-native routing fields (e.g., {"dc": "us14"})
 ```
 
+`platform_metadata` is **also returned in the internal credentials-read response** (per IN-PRD-02 §5.3), so downstream consumers can read it on the same request that fetches the access token. No separate connection-detail lookup needed.
+
 ### Seeded documents
 
 - `platform_definitions/meta` (`platform_version=1`) — `long_lived_exchange_url` set, `refresh_grant_type="fb_exchange_token"`, `token_response_extra_fields=[]`.
@@ -136,7 +138,7 @@ callback:
   5. On 2xx, proceed.
 ```
 
-Downstream Mailchimp connectors (DP-PRD-05) read `platform_metadata["dc"]` alongside the access_token to build their API base URL.
+Downstream Mailchimp connectors (DP-PRD-05) read `platform_metadata["dc"]` alongside the access_token to build their API base URL — both fields are returned by the single internal credentials-read call (IN-PRD-02 §5.3).
 
 ### 5.5 Meta long-lived exchange
 

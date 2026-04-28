@@ -1,8 +1,29 @@
 # Spike 1.14.1: OTEL Pydantic Bug in ADK >=1.23.0
 
-**Status**: RESOLVED — Tracing re-enabled with workaround (2026-03-06)
-**ADK Version installed**: 1.26.0
-**Date**: 2026-02-24 (updated 2026-03-06)
+**Status**: RESOLVED — Workaround removed (2026-04-27)
+**ADK Version installed**: 1.27.5
+**Date**: 2026-02-24 (updated 2026-03-06; closed 2026-04-27)
+
+## Sprint 6 verification (2026-04-27)
+
+The Sprint 6 OTEL stability validation
+(`tests/integration/stability/runs/run_otel_stability.py` Step 1) ran a
+strategy formatter (`output_schema=Pydantic`) on ADK 1.27.5 with
+`OTEL_PYTHON_DISABLED_INSTRUMENTATIONS` **off**.
+
+- **Outcome**: clean run, no `model_dump()` `TypeError`, no other Pydantic crash.
+- **Action**: removed `OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=google-genai`
+  from `.env.development`, `.env.staging`, `.env.production`, and
+  `app/adk/deploy_ken_e.py`.
+- **Implication**: the upstream
+  `opentelemetry-instrumentation-google-genai` package shipped with
+  ADK ≥1.27 no longer calls `model_dump()` on Pydantic classes. The
+  workaround is obsolete on this ADK line — re-apply it on a future ADK
+  release only if the same crash signature returns.
+
+The full Sprint 6 OTEL run (probe + paired memory delta + GenAI span
+coverage + non-GenAI span presence) passed end-to-end with the
+workaround removed.
 
 ## Summary
 

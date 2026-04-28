@@ -8,7 +8,7 @@
 
 The Dashboards component lets a user compose a canvas of widgets — text blocks, data visualizations, tables, and file cards — whose content is produced by an agent-executed plan. A dashboard is a `ProjectPlan` with `type="dashboard"` that additionally carries a `dashboard_placements` array describing the canvas layout. Running the dashboard invokes the standard Automations manual-trigger endpoint, produces a `PlanRun` with artifacts via the existing A-PRD-03 artifact system, and the canvas refreshes by re-resolving each placement against the latest run.
 
-The component does not introduce a new data store, orchestrator, or scheduler. It sits on top of five upstream components — **Project Tasks** (the `ProjectPlan` / `PlanTask` base model), **Automations** (`PlanRun`, manual trigger, recurring scheduler, `type` enum), **Automations Artifacts** (A-PRD-03's GCS store and signed-URL downloads), **Data Management Shape B** (the Firestore convention every account-scoped collection uses), and **Approval Workflow & Audit** (DM-PRD-07's role gate and audit log). What Dashboards adds is (a) a canvas layout on the plan, (b) a server-side artifact resolver that maps `(task_id, file_type)` → the latest `PlanRun`'s matching `OutputFile` with status (fresh / stale / disconnected / pending), and (c) the Performance-tab UI to create, edit, run, and view dashboards.
+The component does not introduce a new data store, orchestrator, or scheduler. It sits on top of five upstream components — **Project Tasks** (the `ProjectPlan` / `PlanTask` base model), **Automations** (`PlanRun`, manual trigger, recurring scheduler, `type` enum, `AUTOMATION_RUN_COMPLETE` notification), **Automations Artifacts** (A-PRD-03's GCS store and signed-URL downloads), **Data Management Shape B** (the Firestore convention every account-scoped collection uses), and **Approval Workflow & Audit** (DM-PRD-07's role gate and audit log). What Dashboards adds is (a) a canvas layout on the plan, (b) a server-side artifact resolver that maps `(task_id, file_type)` → the latest `PlanRun`'s matching artifact with status (fresh / disconnected / pending), and (c) the Performance-tab UI to create, edit, run, and view dashboards.
 
 A developer reading only this section should understand: this component owns the `/api/v1/dashboards/*` API surface, the Dashboards tab on the Performance page, the Dashboard Details page (canvas + widget renderers), and the `DashboardArtifactResolver` service. It does not own plan CRUD, run triggering, schedule config, or artifact storage — those come from Project Tasks, Automations, and Automations Artifacts respectively.
 
@@ -37,7 +37,7 @@ A developer reading only this section should understand: this component owns the
 2. **Task DAG:** The Details page exposes the same task-graph + task-panel UI as the Automation Details page (A-PRD-06). The user authors tasks; for any task that should feed the canvas, they enable `output_config.enabled=true` and declare `expected_file_types` (e.g., `["visualization", "text"]`).
 3. **Pinning:** From the task panel, the user clicks "Pin to dashboard" → picker lists the task's expected file types → selecting one appends a `DashboardPlacement` at the next empty grid location. The canvas PUT is debounced 500 ms.
 4. **Running:** The Run button POSTs to `A-PRD-02`'s manual-trigger endpoint. A normal `PlanRun` executes via the `TaskOrchestrator`. Each agent task emits artifacts via `attach_task_artifact` (A-PRD-03). The frontend polls `GET /dashboards/{plan_id}` every 2 s until the run reaches terminal state.
-5. **Resolution:** The `DashboardArtifactResolver` walks each placement, finds the matching `OutputFile` from the latest run's `artifacts/` subcollection, classifies it (fresh / stale / disconnected / pending), and inlines the payload (text, Vega-Lite spec ≤64 KB) or returns a 1-hour signed URL (CSV, images, large payloads).
+5. **Resolution:** The `DashboardArtifactResolver` lists the latest run's `artifacts/` subcollection once, then for each placement runs the `classify_artifact(mime_type, content_head)` helper to find a matching `(task_id, file_type)` pair. It tags each as fresh / disconnected / pending and inlines the payload (text, Vega-Lite spec ≤64 KB) or returns a 1-hour signed URL (CSV, images, large payloads). No `stale` status — see DB-PRD-01 §4.7 rationale.
 6. **Rendering:** The canvas receives `DashboardArtifact[]` from the GET response and routes each to one of four widget renderers by `file_type`. Status badges overlay tiles as needed.
 7. **Scheduling (optional):** A dashboard can carry a `recurrence_cron` + `recurrence_timezone`. If set and `is_active=true`, A-PRD-02's recurring scheduler tick fires runs on schedule. The canvas refreshes on the next user visit (no SSE push in v1).
 
@@ -73,7 +73,7 @@ Schema source of truth: `api/src/kene_api/models/project_plan_models.py` + `dash
 | Abstraction | Path | Purpose |
 |-------------|------|---------|
 | `DashboardPlacement` | `api/src/kene_api/models/project_plan_models.py` | Single canvas item: `(placement_id, task_id, file_type, x, y, w, h, view_override?, color?, show_data_labels?)`. Embedded array on `ProjectPlan` when `type="dashboard"`. Cap 100. |
-| `OutputConfig` | Same file | `(enabled, expected_file_types)` on `PlanTask` — declares what outputs a task produces. Drives the Pin-to-Dashboard picker and the resolver's staleness detection. |
+| `OutputConfig` | Same file | `(enabled, expected_file_types)` on `PlanTask` — declares what outputs a task produces. Drives the Pin-to-Dashboard picker and the resolver's `disconnected` detection. |
 | `OutputFileType` enum | `api/src/kene_api/models/output_types.py` | Shared with Automations: `text \| visualization \| csv \| image \| document \| json \| html \| video \| audio \| other` |
 | `DashboardArtifact` | `api/src/kene_api/models/dashboard_models.py` | Resolver output: status + inline payload or signed URL. One per placement on every GET. |
 | `DashboardArtifactResolver` | `api/src/kene_api/services/dashboard_artifact_resolver.py` | Maps `(plan, latest_run) → DashboardArtifact[]`. O(placements) Firestore reads bounded at 100. Inlines ≤64 KB; else signed URL via A-PRD-03's store. |
@@ -87,13 +87,13 @@ Schema source of truth: `api/src/kene_api/models/project_plan_models.py` + `dash
 | Component | Dependency | Reference |
 |-----------|------------|-----------|
 | **Project Tasks** | `ProjectPlan` / `PlanTask` base models, plan-edit endpoints, versioning, audit pattern. DB-PRD-01 extends both models with `dashboard_placements` + `output_config`. | [`../project-tasks/README.md`](../project-tasks/README.md), [PR-PRD-01](../project-tasks/projects/PR-PRD-01-data-model-and-api.md) |
-| **Automations** | `ProjectPlan.type` enum, `PlanRun` + `TaskRunState`, manual-trigger endpoint, recurring scheduler, `schedule/preview` endpoint. DB-PRD-01 adds the small default filter `type="freeform"` to A-PRD-01's list endpoint. DB-PRD-03 reuses `AutomationGraph`, `AutomationTaskPanel`, `AutomationSchedulePanel` from A-PRD-06 with a small additive prop (`context: "automation" \| "dashboard"`). | [`../automations/README.md`](../automations/README.md), [A-PRD-01](../automations/projects/A-PRD-01-data-model-and-api.md), [A-PRD-02](../automations/projects/A-PRD-02-recurring-scheduler.md), [A-PRD-06](../automations/projects/A-PRD-06-automation-details-page.md) |
+| **Automations** | `ProjectPlan.type` enum, `PlanRun` + `TaskRunState`, manual-trigger endpoint, recurring scheduler, `schedule/preview` endpoint, **`AUTOMATION_RUN_COMPLETE` notification on every terminal `PlanRun` state** (single producer in A-PRD-02; deep-link routes by `plan.type`, so `dashboard` runs deep-link into the Dashboards details page). DB-PRD-01 adds the small default filter `type="freeform"` to A-PRD-01's list endpoint. DB-PRD-03 consumes three shared components from A-PRD-06 verbatim: `frontend/src/components/dag/TaskGraph.tsx`, `frontend/src/components/workflows/ActivityDetailPanel.tsx` (with the `pinToDashboardSlot` slot prop A-PRD-06 publishes for this PRD), and `frontend/src/components/workflows/ScheduleEditorModal.tsx`. | [`../automations/README.md`](../automations/README.md), [A-PRD-01](../automations/projects/A-PRD-01-data-model-and-api.md), [A-PRD-02](../automations/projects/A-PRD-02-recurring-scheduler.md), [A-PRD-06](../automations/projects/A-PRD-06-automation-details-page.md) |
 | **Automations Artifacts (A-PRD-03)** | GCS-backed `TaskArtifact` store at `gs://kene-task-artifacts-{env}/{account_id}/{plan_id}/{run_id}/{task_id}/...`; `artifact_store.generate_signed_url(artifact_id, ttl_seconds=3600)` helper; 100 MB cap; 30-day lifecycle. The resolver reads artifact metadata and generates signed URLs via these helpers — no new storage path. | [A-PRD-03](../automations/projects/A-PRD-03-task-artifact-system.md) |
 | **Data Management — DM-PRD-00 (Migration Foundation)** | Shape B convention (`accounts/{account_id}/project_plans/...`). No new subcollection introduced (placements embedded). May need one new composite index — see §2.3 index note in DB-PRD-01. | [`../data-management/README.md`](../data-management/README.md) §7.1 / §7.7, [DM-PRD-00](../data-management/projects/DM-PRD-00-migration-foundation.md) |
 | **Data Management — DM-PRD-05 (Deletion Sweep Rewrite)** | `recursive_delete(accounts/{account_id})` covers `project_plans` including embedded `dashboard_placements`. No additional cleanup logic required. | [DM-PRD-05](../data-management/projects/DM-PRD-05-deletion-sweep-rewrite.md) |
 | **Data Management — DM-PRD-07 (Approval Workflow & Audit)** | `require_role` FastAPI dependency on every mutating endpoint; `write_audit` helper on every mutation including placement PUT diffs. Role gates: `viewer` (GET only), `editor` (POST / PUT / DELETE). | [`../data-management/README.md`](../data-management/README.md) §7.6, [DM-PRD-07](../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md) |
 | **UI — UI-PRD-01 (Design System)** | Soft Maximalism tokens, shadcn primitives, theming via CSS variables (used by the Vega renderer). | [UI-PRD-01](../ui/projects/UI-PRD-01-design-system-foundation.md) |
-| **UI — UI-PRD-07 (Performance Page)** | *Soft* dep — DB-PRD-02 extends the Performance page's tab container. If UI-PRD-07 hasn't shipped, DB-PRD-02 lands a minimal tab container using UI-PRD-01 tokens. | [UI-PRD-07](../ui/projects/UI-PRD-07-performance-page.md) |
+| **Performance — PE-PRD-01 (Page Shell, R2)** | Hard dep — PE-PRD-01 owns the `/performance` 6-tab shell (Analysis / **Dashboards** / Simulations / Targets / Diagnostics / Configuration), reserves the Dashboards tab slot + route + `<DashboardsTabPlaceholder />` + `performance_dashboards_tab` flag. DB-PRD-02 swaps in the real `<DashboardsSection />`. **PE-PRD-01 was moved up from R4 to R2 to unblock DB-PRD-02** — its `ForecastingEnabledGate` defaults `enabled=false` on 4xx/5xx/network from `/sar-e/{account_id}/config/status`, so the SAR-E-backed tabs stay hidden in R2 until SE-PRD-01 (R4) lights up the endpoint. UI-PRD-07 (the original presentation-only redesign) is **retired and subsumed by PE-PRD-01**. | [PE-PRD-01](../performance/projects/PE-PRD-01-page-shell-and-routing.md) |
 | External | `react-vega` (renderer), `react-markdown` + `rehype-raw` (text widget), `papaparse` (CSV widget), `dagre` (via A-PRD-06's graph). | — |
 
 ### 3.2 Depended On By
@@ -158,7 +158,7 @@ The component's work is split across **4 independently shippable project PRDs** 
 | # | Project PRD | Owner team | Blocked by | Parallel with | Est. |
 |---|-------------|------------|------------|---------------|------|
 | 01 | [Data Model & API](./projects/DB-PRD-01-data-model-and-api.md) | Backend (foundation) | PR-PRD-01, A-PRD-01, A-PRD-03, DM-PRD-05, DM-PRD-07 | — | 2–3 days |
-| 02 | [Dashboards Tab & List](./projects/DB-PRD-02-dashboards-tab-and-list.md) | Frontend | DB-PRD-01 (soft: UI-PRD-07) | 03 | 2 days |
+| 02 | [Dashboards Tab & List](./projects/DB-PRD-02-dashboards-tab-and-list.md) | Frontend | DB-PRD-01, PE-PRD-01 | 03 | 2 days |
 | 03 | [Dashboard Details & Canvas](./projects/DB-PRD-03-dashboard-details-and-canvas.md) | Frontend | DB-PRD-01, DB-PRD-02, A-PRD-06 | 02 | 4–5 days |
 | 04 | [Integration Testing & Polish](./projects/DB-PRD-04-integration-testing-and-polish.md) | QA + first-finished team | DB-PRDs 01–03 | — | 1–2 days |
 
@@ -166,7 +166,7 @@ The component's work is split across **4 independently shippable project PRDs** 
 
 Two touchpoints don't fit cleanly inside one PRD:
 
-- **`AutomationTaskPanel` prop extension (DB-PRD-03 ↔ A-PRD-06):** adds `context: "automation" | "dashboard"` prop (default `"automation"`). In dashboard context, renders the Pin-to-Dashboard button. Additive; no breaking change for A-PRD-06 callers. A-PRD-06 owners review the PR.
+- **`pinToDashboardSlot` prop on shared `ActivityDetailPanel` (A-PRD-06 publishes; DB-PRD-03 consumes):** A-PRD-06 owns the panel (relocated to `frontend/src/components/workflows/ActivityDetailPanel.tsx`) and adds the additive `pinToDashboardSlot?: ReactNode` prop. DB-PRD-03 supplies `<PinToDashboardPicker />` as the slot value; A-PRD-06's own caller passes nothing and the slot region collapses. Additive; no breaking change for Calendar PRD-3 / Automations callers. A-PRD-06 also relocates the schedule modal to `frontend/src/components/workflows/ScheduleEditorModal.tsx` for DB-PRD-03 to mount unchanged on the Dashboards details page.
 - **Automations list default filter (DB-PRD-01 ↔ A-PRD-01):** `GET /api/v1/automations/{account_id}` gains a default `type="freeform"` filter to keep dashboards out. Small, backwards-compatible for the Automations UI (which never wanted dashboards in the list). DB-PRD-01 owners drive; A-PRD-05 team reviews.
 
 ### 5.4 Recommended workflow
@@ -192,14 +192,14 @@ Two touchpoints don't fit cleanly inside one PRD:
 ### Data model
 - A dashboard IS a `ProjectPlan` with `type="dashboard"`. No new root entity. Do not create a parallel `Dashboard` model.
 - `dashboard_placements` is embedded on the plan doc, capped at 100 entries. Not a subcollection.
-- `output_config` on `PlanTask` declares what outputs a task produces — drives the Pin-to-Dashboard picker and staleness detection.
+- `output_config` on `PlanTask` declares what outputs a task produces — drives the Pin-to-Dashboard picker and the resolver's `disconnected` detection.
 - `(task_id, file_type)` is the placement's binding key. A single task can feed multiple placements (one per file type), but no two placements may share the same `(task_id, file_type)` pair.
 - Placement layout uses **absolute pixel coordinates** with **8-pixel grid snap**; min tile size 64×64, max 4000×4000.
 
 ### Artifact resolution
 - The resolver is the single source of truth for dashboard state. Frontend never resolves `(task_id, file_type)` → artifact client-side.
 - Inline payload threshold: **≤64 KB** for text / Vega-Lite specs. Everything else uses 1-hour signed URLs.
-- Status progression: `pending` (before first run) → `fresh` (after run produces expected artifact) → `stale` (after subsequent run fails to re-emit) → `disconnected` (task or `output_config` removed).
+- Status progression: `pending` (before first run, or after a re-run that didn't emit the expected artifact) → `fresh` (after a run produces the expected artifact) → `disconnected` (task or `output_config` removed). Three values, not four — see DB-PRD-01 §4.7 for why `stale` was cut.
 
 ### API surface
 - Dedicated `/api/v1/dashboards/*` namespace for dashboard-shaped reads (resolver) and canvas PUT.
@@ -218,13 +218,13 @@ Two touchpoints don't fit cleanly inside one PRD:
 
 ### Frontend
 - Branded types (`DashboardPlanId`) per CLAUDE.md C-5.
-- URL structure: `/performance?tab=dashboards` (list), `/performance/dashboards/{plan_id}` (details), `/performance/dashboards/{plan_id}?runId={run_id}` (notification deep-link highlights a specific run).
+- URL structure: `/performance/dashboards` (list — 2nd tab of `/performance`, slot reserved by PE-PRD-01), `/performance/dashboards/{plan_id}` (details), `/performance/dashboards/{plan_id}?runId={run_id}` (notification deep-link highlights a specific run).
 - Client-side `type="dashboard"` filter defaults on the list (defense in depth; server enforces too).
 - Polling cadence: 2 s while a run is in-flight; 30 s stale-time on the list; otherwise rely on user-triggered re-fetches.
 
 ### Testing
 - Resolver unit tests cover all four status branches + inline threshold boundaries + Vega-Lite detection.
-- DB-PRD-04 Playwright suites cover the five edge cases (disconnected, stale, pending, blob-expired, oversize-inline).
+- DB-PRD-04 Playwright suites cover the five edge cases (disconnected, pending-after-partial-rerun, pending-on-fresh-dashboard, blob-expired, oversize-inline).
 - Role-matrix test is parameterized to auto-cover new endpoints.
 - Perf gates in CI: 100-placement GET p95 < 500 ms, canvas drag ≥ 55 fps, placements PUT p95 < 200 ms.
 

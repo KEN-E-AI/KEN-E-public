@@ -38,9 +38,12 @@ This PRD builds the `TaskOrchestrator` service — the single point where task-s
 
 ## 3. Dependencies
 
-- **PRD-1:** uses `ProjectPlan` / `PlanTask` models; calls `PATCH` task endpoint
+- **PRD-1:** uses `ProjectPlan` / `PlanTask` models (incl. `Failed` and `Blocked` `TaskStatus` enum values); calls `PATCH` task endpoint
 - **PRD-3:** coordinates on the small `NotificationSidebar.tsx` change (this PRD owns the enum + nav wiring; PRD-3 owns the calendar page that the deep link lands on)
 - **PRD-6:** exposes `on_task_due(plan_id, task_id)` as the hand-off contract
+- **Forward-coordination — [DP-PRD-03](../../data-pipeline/projects/DP-PRD-03-task-system-integration.md):** adds a `data_pipeline` branch to `on_task_due` and `on_task_status_change` (HTTP-dispatches to the sibling Cloud Run service, disables the revision loop on pipeline tasks, honors `is_test`). PR-PRD-04 ships the two-branch (`agent`, `human`) switch; DP-PRD-03 lands the third branch as an additive patch to the dispatch helper.
+- **Forward-coordination — [A-PRD-02](../../automations/projects/A-PRD-02-recurring-scheduler.md):** adds an optional `run_id: str | None = None` parameter to `activate_plan`, `on_task_status_change`, and `on_task_due`. Behavior: `run_id is None` → legacy template-mode (status reads/writes go to `ProjectPlan.tasks[*]`); `run_id is not None` → status reads/writes go to `accounts/{account_id}/plan_runs/{run_id}.task_states[*]`, and the template is read-only for the duration of the run. PR-PRD-04 ships the parameter-less signature; A-PRD-02 lands the `run_id` thread as an additive change (no breaking-change for existing callers).
+- **Forward-coordination — [A-PRD-04](../../automations/projects/A-PRD-04-test-dry-run-mode.md):** the orchestrator reads `is_test` off the loaded `PlanRun` (no signature change). When `run.is_test == True`, HITL halts behave identically to production runs except the `Task Ready` notification payload carries `is_test=true` so the frontend can badge it. A-PRD-04 also enables in-flight cancellation: status writes are dropped when `run.status == "cancelled"`. PR-PRD-04 ships the always-`is_test=False` baseline; A-PRD-04 lands the test-mode delta as an additive patch.
 - **Existing files to study:**
   - `api/src/kene_api/services/notification_service_v2.py` (`create_notification` API)
   - `api/src/kene_api/repositories/firestore_notification_repository.py`
@@ -194,7 +197,7 @@ Request/response bodies follow the strategy router conventions. Auth via the sam
 | Risk / question | Mitigation |
 |-----------------|------------|
 | Concurrent updates to the same plan (race) | Use Firestore transactions for status writes; orchestrator reads-then-writes within a transaction |
-| Agent dispatch fails mid-plan | Mark task `Failed` (new status — coordinate with PRD-1 to add to enum); other branches continue; audit and notify |
+| Agent dispatch fails mid-plan | Mark task `Failed` (enum value shipped by [PR-PRD-01](./PR-PRD-01-data-model-and-api.md#taskstatus-semantics) from v1); other branches continue; audit and notify |
 | Determining the "producing upstream task" for revisions in fan-in topologies is ambiguous | Default heuristic: most recent agent task in the closure of `depends_on`. Document and revisit. Consider a `produced_by_task_id` link field in v2. |
 | Notifications miss the user (polling-based system) | Existing limitation; future work: add Firestore real-time listeners for "Task Ready" |
 | Prompt injection via `revision_comment` | Existing `adk_before_tool_callback` security hook applies; sanitize before injection |

@@ -17,7 +17,7 @@ It also performs a final pass on documentation — updating the component README
 ## 2. Scope
 
 ### In scope
-- **E2E suites** (Playwright): two golden-path flows + five edge cases
+- **E2E suites** (Playwright): two golden-path flows + four edge cases (disconnected, pending-after-partial-rerun, pending-on-fresh-dashboard, blob-expired, oversize-inline)
 - **Performance targets** (automated): 100-placement dashboard GET < 500 ms p95; canvas drag @ 60 fps with 50 tiles; full-canvas PUT < 200 ms p95
 - **List-separation tests**: dashboards never appear in the Automations list (and vice versa), including the case of a dashboard with `save_as_automation=true`
 - **Artifact edge cases**: 30-day TTL expiry surfacing; `output_config` removed mid-life; Vega-Lite spec >64 KB; 10 MB CSV
@@ -48,10 +48,10 @@ It also performs a final pass on documentation — updating the component README
 **E2E-1 — Create → add task → pin → run → refresh**
 
 1. Log in (editor role).
-2. Navigate to `/performance?tab=dashboards`. Verify empty state.
+2. Navigate to `/performance/dashboards`. Verify empty state.
 3. Click "New Dashboard"; title = "Q2 Competitive Landscape"; tags = ["q2", "competitive"]; Create.
 4. Land on `/performance/dashboards/{plan_id}`. Verify empty-canvas placeholder.
-5. Add a task via `AutomationTaskPanel`: `title="Collect competitor pricing"`, `assignee_type="agent"`, `output_config.enabled=true`, `expected_file_types=["text", "visualization"]`.
+5. Add a task via the shared `ActivityDetailPanel`: `title="Collect competitor pricing"`, `assignee_type="agent"`, `output_config.enabled=true`, `expected_file_types=["text", "visualization"]`.
 6. Click "Pin to dashboard" on the task → select "text" → tile appears top-left on the canvas with `status="pending"` badge.
 7. Pin "visualization" similarly → second tile appears.
 8. Click "Run" → Run button shows elapsed counter.
@@ -74,19 +74,19 @@ It also performs a final pass on documentation — updating the component README
 - Reload the dashboard.
 - Expected: placement renders with `status="disconnected"` and a broken-link badge. Tile shows a prompt to remove or reconfigure. Clicking Remove fires a PUT without the placement.
 
-**Edge-2 — Stale placement after partial re-run**
+**Edge-2 — Pending placement after partial re-run**
 - Seed: run produces `(task_A, visualization)` and `(task_B, text)`.
 - Re-run; test harness emits only `(task_A, visualization)` this time.
 - Reload.
-- Expected: `(task_A, visualization)` is `fresh` with new `updated_at`; `(task_B, text)` is `stale` with the prior `updated_at` preserved.
+- Expected: `(task_A, visualization)` is `fresh` with new `updated_at`; `(task_B, text)` is `pending` with `updated_at=null` and no inline payload / download URL. (Per DB-PRD-01 §4.7 — no `stale` status; the resolver does not surface the prior run's text artifact. The user re-runs to refresh.)
 
 **Edge-3 — Pending placement before first run**
 - Seed: new dashboard with 2 placements; never run.
 - Expected: both placements render with `status="pending"`; spinner badge; widget body shows "Task hasn't produced [file_type] yet. Run the dashboard to generate it."
 
 **Edge-4 — Artifact blob expired (>30 days)**
-- Seed: `latest_run` completed 31 days ago; GCS object already lifecycled.
-- Expected: GET returns `status="stale"` with a working `download_url` that resolves to a GCS 404. Frontend catches the 404 on widget load and shows "Artifact expired — re-run to refresh."
+- Seed: `latest_run` completed 31 days ago; the `TaskArtifact` Firestore doc still exists in the run's `artifacts/` subcollection, but the GCS object has been lifecycled out (30-day TTL per A-PRD-03).
+- Expected: GET returns `status="fresh"` (the metadata exists, classifier matches) with a `download_url` signed against the now-missing blob. The widget fetches the URL → GCS 404 → frontend catches the error and renders "Artifact expired — re-run the dashboard to refresh." For inline-eligible artifacts (`text`, `visualization` ≤64 KB), the inline payload itself was never persisted (resolver re-derives it on every GET from the live blob), so the widget displays the same "expired" message rather than serving a stale inline body.
 
 **Edge-5 — Placement exceeds size thresholds**
 - Seed: a text artifact of 65 KB; a Vega-Lite spec of 70 KB.

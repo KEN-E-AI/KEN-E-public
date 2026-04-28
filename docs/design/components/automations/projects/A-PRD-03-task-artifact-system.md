@@ -6,6 +6,8 @@
 **Parallel with:** A-PRDs 2, 5, 6
 **Estimated effort:** 3–4 days
 
+**Forward-coordination — [DP-PRD-03](../../data-pipeline/projects/DP-PRD-03-task-system-integration.md):** the `DataPipelineDispatcher` writes pipeline output as a `TaskArtifact` via this PRD's `artifact_store.create()` Python API (§5 Non-agent creation path) using `created_by="data_pipeline:{job_id}"`. A-PRD-03 ships the API surface + the broadened `created_by` semantics described below; DP-PRD-03 calls it. No changes to the ADK tool path.
+
 ---
 
 ## 1. Context
@@ -36,6 +38,8 @@ This PRD builds it: a GCS-backed storage tier for task outputs, an ADK tool agen
 - **A-PRD-1:** `PlanRun` model + `accounts/{account_id}/plan_runs` subcollection (artifact sub-collection lives under each run)
 - **Calendar PRD-2:** ADK tool registry, agent dispatch path; this PRD adds a tool that agents call from inside their execution
 - **Calendar PRD-4:** `TaskOrchestrator` — the prompt-building helper for downstream dispatches lives here; this PRD adds upstream-artifact injection into that helper
+- **DM-PRD-07 (Roles, Members, Audit Substrate):** hard prerequisite. The `attach_task_artifact` tool calls `write_audit(...)` on every artifact upload. **Coordination point:** DM-PRD-07's `project_plan_audit` registry currently lists `resource_types ⊇ {project_plan, plan_task, campaign, orphan_task, plan_run}` and `actions ⊇ {…, run_start, run_complete}`. This PRD requires an additive update to extend the registry with `resource_type="task_artifact"` and `action="attach_artifact"`. Land the registry update as a small additive PR against DM-PRD-07's `audit_registry.py` (no new audit subcollection; `project_plan_audit` already covers it). The list-artifacts and download endpoints are pure reads and do not write audit.
+- **DM-PRD-05 (Deletion Sweep Rewrite):** soft coordination. DM-PRD-05's `firestore.recursive_delete(accounts/{account_id})` covers artifact metadata in Firestore but not the underlying GCS objects. v1 relies on the 30-day GCS lifecycle rule to sweep orphans; see §9 risks for the rationale and the future-enhancement path.
 - **External:** Google Cloud Storage, signed URL generation
 - **Existing files to study:**
   - `app/utils/gcs.py` (existing GCS helpers)
@@ -57,9 +61,21 @@ mime_type: str                              # e.g., "text/markdown", "image/png"
 size_bytes: int                             # validated <= 100 MB
 gcs_uri: str                                # gs://bucket/path
 created_at: datetime
-created_by_agent: str                       # agent name from registry
+created_by: str                             # creator id — see "Creator identity" below
 sha256: str                                 # for downstream content addressing
 ```
+
+#### Creator identity
+
+`created_by` is a string identifier of who created the artifact. Validation accepts any of:
+
+| Prefix | Example | Source |
+|---|---|---|
+| `agent:<name>` | `agent:project_planning` | Agent name from the ADK registry. Default for the `attach_task_artifact` ADK tool path (§5 Upload flow). |
+| `data_pipeline:<job_id>` | `data_pipeline:ga.transactions_by_date` | The `DataPipelineDispatcher` (DP-PRD-03) writing pipeline output through the non-agent creation path. `job_id` matches `^[a-z0-9_]+\.[a-z0-9_]+$` per DP-PRD-01. |
+| `human:<email>` | `human:owner@acct.example` | Reserved for future human-uploaded artifacts. Not produced in v1. |
+
+Validation rule: `created_by` MUST match `^(agent|data_pipeline|human):[\w@.\-]+$`. The ADK tool sets the `agent:<name>` prefix automatically from `tool_context.state["agent_name"]`; non-agent callers (the dispatcher) pass the full prefixed string explicitly.
 
 ### GCS layout
 
@@ -98,7 +114,25 @@ attach_task_artifact(
     """
 ```
 
-The tool resolves `account_id`, `plan_id`, `run_id`, `task_id` from `tool_context.state` (set by the dispatch handler when the orchestrator invokes the agent).
+The tool resolves `account_id`, `plan_id`, `run_id`, `task_id` from `tool_context.state` (set by the dispatch handler when the orchestrator invokes the agent). Sets `created_by="agent:{tool_context.state['agent_name']}"`.
+
+### Non-agent creation path: `artifact_store.create()`
+
+```python
+async def artifact_store_create(
+    *,
+    account_id: str,
+    plan_id: str,
+    run_id: str,
+    task_id: str,
+    filename: str,
+    content: bytes,                # raw bytes — no base64 round-trip for non-agent callers
+    mime_type: str,
+    created_by: str,               # "data_pipeline:<job_id>" / "human:<email>" / "agent:<name>"
+) -> TaskArtifact: ...
+```
+
+Same upload pipeline as the ADK tool (size check, sanitize filename, sha256, upload, Firestore write, audit log) — only the entry point differs. Used by the `DataPipelineDispatcher` (DP-PRD-03) to persist pipeline output as a `TaskArtifact`; future non-agent producers (e.g., scheduled exports) call the same function. Idempotency by `(account_id, run_id, task_id, sha256)`: a second create with identical content returns the existing artifact rather than writing a duplicate.
 
 ### Inline-vs-link threshold for downstream prompts
 
@@ -125,17 +159,17 @@ Download: https://storage.googleapis.com/...?signed=...
 
 | Action | File |
 |--------|------|
-| Create | `api/src/kene_api/services/artifact_store.py` (GCS upload, signed URL, size validation) |
-| Create | `api/src/kene_api/models/task_artifact_models.py` |
+| Create | `api/src/kene_api/services/artifact_store.py` — GCS upload, signed URL, size validation. Exposes `create(...)` as the non-agent creation path; the ADK tool wraps it. |
+| Create | `api/src/kene_api/models/task_artifact_models.py` — Pydantic `TaskArtifact` with `created_by` validator (`^(agent\|data_pipeline\|human):[\w@.\-]+$`). |
 | Create | `api/src/kene_api/repositories/firestore_artifact_repository.py` |
 | Create | `api/src/kene_api/routers/artifacts.py` (list + download endpoints) |
 | Modify | `api/src/kene_api/main.py` — register router |
-| Create | `app/adk/tools/builtin/attach_task_artifact.py` |
+| Create | `app/adk/tools/builtin/attach_task_artifact.py` — thin wrapper around `artifact_store.create(...)` that resolves `created_by="agent:{agent_name}"` from `tool_context.state`. |
 | Modify | `app/adk/tools/registry/config/tools.yaml` — register tool under `artifacts` category |
 | Modify | `app/adk/agents/registry.py` — add `artifacts` capability to all agents that produce output (project_planning, others as needed) |
 | Modify | `api/src/kene_api/services/task_orchestrator.py` (Calendar PRD-4) — `_build_downstream_prompt` injects upstream artifacts |
 | Create | `deployment/terraform/gcs_task_artifacts.tf` (bucket + lifecycle + IAM) |
-| Create | `api/tests/unit/test_artifact_store.py` |
+| Create | `api/tests/unit/test_artifact_store.py` — covers both the ADK-tool entry and the direct `artifact_store.create()` entry; asserts `created_by` validator rejects unprefixed names. |
 | Create | `api/tests/unit/test_attach_artifact_tool.py` |
 | Create | `api/tests/integration/test_artifacts_router.py` |
 | Create | `api/tests/integration/test_artifact_lifecycle.py` (uses a 1-day lifecycle test bucket) |
@@ -143,17 +177,22 @@ Download: https://storage.googleapis.com/...?signed=...
 ### Upload flow
 
 ```
-agent calls attach_task_artifact(filename, content_base64, mime_type)
-  │
-  ▼
-artifact_store.upload(account_id, plan_id, run_id, task_id, content, ...)
-  ├─ size check (<= 100 MB) → reject with 413 if over
-  ├─ sanitize filename
-  ├─ compute sha256
-  ├─ upload to GCS
-  ├─ write Firestore metadata doc
-  ├─ write audit log entry
-  └─ return signed_url (1-hour expiry)
+agent calls attach_task_artifact(...)         non-agent caller (e.g., DataPipelineDispatcher)
+  │  resolves account_id/plan_id/run_id        │  passes ids + created_by="data_pipeline:<job_id>"
+  │  task_id from tool_context.state           │  directly
+  │  base64-decodes content                    │
+  │  sets created_by="agent:<name>"            │
+  ▼                                            ▼
+                  artifact_store.create(account_id, plan_id, run_id, task_id, content, created_by, ...)
+                    ├─ validate created_by prefix
+                    ├─ size check (<= 100 MB) → reject with 413 if over
+                    ├─ sanitize filename
+                    ├─ compute sha256
+                    ├─ idempotency check (existing artifact with same (run_id, task_id, sha256) → return it)
+                    ├─ upload to GCS
+                    ├─ write Firestore metadata doc
+                    ├─ write audit log entry
+                    └─ return TaskArtifact + signed_url (1-hour expiry)
 ```
 
 ### Downstream prompt injection (extends Calendar PRD-4)
@@ -186,6 +225,21 @@ def _build_downstream_prompt(run, task) -> str:
 
 A 100MB artifact consumed by 5 downstream agent tasks = ~500MB egress per run. At GCP pricing (~$0.12/GB egress), that's ~$0.06 per run. Hot automations firing every 15 minutes = ~$5/day. **Document this in the Risks section.** Mitigation: inline small text artifacts so only large/binary outputs cost egress.
 
+### Audit events
+
+Every successful `attach_task_artifact` call writes an audit entry via DM-PRD-07's `write_audit(...)` helper:
+
+| Field | Value |
+|-------|-------|
+| `parent_kind` | `"account"` |
+| `parent_id` | `{account_id}` |
+| `audit_subcollection` | `"project_plan_audit"` |
+| `resource_type` | `"task_artifact"` *(new — requires the additive registry update described in §3)* |
+| `action` | `"attach_artifact"` *(new)* |
+| metadata | `{artifact_id, run_id, plan_id, task_id, filename, mime_type, size_bytes, sha256, created_by_agent}` |
+
+Failed uploads (size cap, mime allowlist, base64 decode) do **not** write audit — they're rejected before the metadata doc is created. The list-artifacts and download endpoints are pure reads and do not write audit.
+
 ## 6. API contract
 
 | Method | Path | Purpose |
@@ -198,7 +252,7 @@ All endpoints reuse the access-control dependency from A-PRD-1.
 
 ## 7. Acceptance criteria
 
-1. An agent calling `attach_task_artifact` with a 1MB file returns success and the file is in GCS
+1. An agent calling `attach_task_artifact` with a 1MB file returns success and the file is in GCS; the persisted `TaskArtifact.created_by` is `"agent:<agent_name>"` resolved from `tool_context.state["agent_name"]`.
 2. Calling with a 150MB file returns `{"status": "error", "error": "size_limit_exceeded"}` and nothing is written
 3. The file metadata appears in Firestore `accounts/{account_id}/plan_runs/{run_id}/artifacts/`
 4. An audit log entry is created for every artifact
@@ -207,7 +261,9 @@ All endpoints reuse the access-control dependency from A-PRD-1.
 7. `GET .../artifacts/{artifact_id}/download` returns a fresh signed URL valid for 1 hour
 8. The bucket lifecycle rule is configured in Terraform; an integration test against a 1-day-lifecycle test bucket confirms deletion after the rule's TTL elapses (mocked clock OK)
 9. Cross-account access on any endpoint returns 403
-10. All tests pass
+10. `artifact_store.create()` accepts a non-agent caller passing `created_by="data_pipeline:ga.transactions_by_date"`, persists the artifact, and the prompt-builder treats it identically to agent-produced artifacts when injecting upstream context. `created_by` values not matching `^(agent|data_pipeline|human):[\w@.\-]+$` raise `ValidationError` at model construction.
+11. Idempotency: two `artifact_store.create()` calls with the same `(account_id, run_id, task_id, sha256)` produce one Firestore doc and one GCS object; the second call returns the existing `TaskArtifact`.
+12. All tests pass
 
 ## 8. Test plan
 
@@ -245,6 +301,7 @@ All endpoints reuse the access-control dependency from A-PRD-1.
 | Concurrent uploads to the same task by the same agent | Each `attach_task_artifact` call generates a fresh `artifact_id`; multiple artifacts per task is supported and intentional. |
 | Agents with binary outputs hitting base64 transport limits | Base64 inflates payloads ~33%. For 100MB max output, the agent tool call payload is ~133MB — verify ADK transport handles this. If not, switch to a presigned-PUT flow where the agent uploads directly to GCS. |
 | Test-mode artifacts pollute the recent-artifacts list | The `is_test` filter in the recent endpoint defaults to `false`. Test-run artifacts are visible only when explicitly requested. |
+| **Account deletion does not immediately purge GCS objects.** DM-PRD-05's `firestore.recursive_delete(accounts/{account_id})` clears Firestore (artifact metadata + audit), but the underlying GCS objects under `gs://kene-task-artifacts-{env}/{account_id}/...` are not deleted synchronously. | The 30-day GCS lifecycle rule sweeps orphaned objects within 30 days of upload; since artifacts always belong to a specific account, no cross-account leakage is possible during that window (signed URLs require server-side authorization to mint, and the serving endpoints reject queries on a deleted account_id). For accelerated cleanup, a future enhancement can add a `delete_account_artifacts(account_id)` GCS sweep hook called from DM-PRD-05's deletion path — track as a follow-up. v1 ships with lifecycle-only cleanup. |
 
 ## 10. Reference
 

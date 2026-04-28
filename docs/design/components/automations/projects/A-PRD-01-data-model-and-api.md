@@ -39,6 +39,7 @@ This is the **foundation** — all other Automations PRDs build against the cont
 - **PR-PRD-01 (Project Tasks — Data Model & API):** extends the existing `ProjectPlan` / `PlanTask` models; reuses `accounts/{account_id}/project_plans` subcollection.
 - **DM-PRD-00 (Migration Foundation):** hard prerequisite. Provisions the two `plan_runs` collection-scope composite indexes (`template_plan_id ASC, started_at DESC` and `template_plan_id ASC, is_test ASC, started_at DESC`) in `deployment/firestore.indexes.json` and wraps them via `deployment/terraform/firestore_indexes.tf`. This PRD verifies the indexes are present and consumes them; it does not create or modify those index resources.
 - **DM-PRD-05 (Deletion Sweep Rewrite):** hard prerequisite. DM-PRD-05 replaces the enumerated sweep in `routers/accounts.py:968-997` with `firestore.recursive_delete(accounts/{account_id})`, which automatically covers the new `plan_runs` subcollection and its nested `artifacts/` subcollection (A-PRD-3). Without it, `DELETE /accounts/{account_id}` would orphan plan-run and artifact metadata.
+- **DM-PRD-07 (Roles, Members, Audit Substrate):** hard prerequisite. The `PATCH /recurrence` endpoint calls `require_role(min_role=editor, scope=Account)` and `write_audit(parent_kind="account", parent_id=account_id, audit_subcollection="project_plan_audit", resource_type="project_plan", action="update", before=..., after=...)`. The `project_plan_audit` registry already lists `project_plan` as a `resource_type` and `update` as an `action` (DM-PRD-07 §registry).
 - **External:** `croniter` (cron parsing + next-fire computation), `zoneinfo` (stdlib timezone validation)
 - **Existing files to study:**
   - `api/src/kene_api/models/project_plan_models.py` (PR-PRD-01)
@@ -67,15 +68,13 @@ type: Literal["freeform", "dashboard"] = "freeform"
                                             # runtime behavior change here; the Dashboard
                                             # frontend renders based on this discriminator.
 
-# External linkage — added here because Automations care about both values
-# (routing a run to a specific extension; scoring progress against a goal).
-# Both are nullable and uninterpreted at this layer; consumers (extensions
-# registry, goals service) resolve them at use-time.
-extension_id: str | None = None             # FK to an entry in the extensions registry;
-                                            # used by the orchestrator (A-PRD-2) when a run
-                                            # should dispatch through a specific extension
-goal_id: str | None = None                  # FK to a Goal document; used by reporting and
-                                            # by the Dashboard frontend to group plans
+# External linkage — opaque forward-looking fields with NO current consumer.
+# A-PRD-01 stores and returns them verbatim; orchestration (A-PRD-02), dispatch,
+# artifact handling (A-PRD-03), test mode (A-PRD-04), and the list/details pages
+# (A-PRD-05/06) all ignore both fields. Future PRDs in an extensions registry /
+# goals service will define the contract; until then, treat them as tags.
+extension_id: str | None = None             # reserved for a future extensions registry
+goal_id: str | None = None                  # reserved for a future goals service
 ```
 
 ### `PlanRun` — new model
@@ -127,7 +126,7 @@ revision_comment: str | None = None
 - `save_as_automation == True` → `is_active` must be set (defaults are fine).
 - `next_run_at` is read-only via the API (computed server-side by A-PRD-2).
 - `type`: one of `"freeform"` or `"dashboard"`. Mutable (a plan can be re-classified by the UI).
-- `extension_id` / `goal_id`: opaque strings. The model does not verify existence of the referenced entity; resolution is lazy at use-time (extensions registry, goals service).
+- `extension_id` / `goal_id`: opaque strings, reserved for future use. The model does not verify existence (no extensions registry or goals service exists yet). Whitespace-only values are rejected; non-empty strings and `None` round-trip.
 
 ### Pagination contract
 
@@ -159,6 +158,21 @@ Responses include:
 | Create | `api/tests/unit/test_automation_pagination.py` |
 | Create | `api/tests/integration/test_automations_router.py` |
 
+### Audit events
+
+The `PATCH /api/v1/automations/{account_id}/{plan_id}/recurrence` endpoint writes an audit entry via DM-PRD-07's `write_audit(...)` helper:
+
+| Field | Value |
+|-------|-------|
+| `parent_kind` | `"account"` |
+| `parent_id` | `{account_id}` |
+| `audit_subcollection` | `"project_plan_audit"` |
+| `resource_type` | `"project_plan"` |
+| `action` | `"update"` |
+| `before` / `after` | the recurrence config snapshot (`{recurrence_cron, recurrence_timezone, is_active}`) |
+
+A-PRD-02 owns audit writes for `PlanRun` lifecycle events (`run_start` / `run_complete`); A-PRD-03 owns artifact-creation audit; A-PRD-04 owns cancel audit. This PRD only writes for the recurrence PATCH.
+
 ### Firestore layout (delta from Calendar PRD-1)
 
 > **Revised 2026-04-20** — Firestore paths follow the Shape B layout (`accounts/{account_id}/{resource}/...`). See [Review 15 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1) for rationale.
@@ -177,10 +191,10 @@ This PRD owns the **4 `project_plans` collection-scope indexes** for the list pa
 
 ```
 collection: accounts/*/project_plans   (queryScope: COLLECTION)  — owned by this PRD
-  fields: [save_as_automation ASC, is_system ASC, is_active ASC, updated_at DESC]
-  fields: [save_as_automation ASC, is_system ASC, status ASC, updated_at DESC]
-  fields: [save_as_automation ASC, is_system ASC, campaign ASC, updated_at DESC]
-  fields: [save_as_automation ASC, is_system ASC, created_by ASC, updated_at DESC]
+  fields: [save_as_automation ASC, is_system ASC, type ASC, is_active ASC, updated_at DESC]
+  fields: [save_as_automation ASC, is_system ASC, type ASC, status ASC, updated_at DESC]
+  fields: [save_as_automation ASC, is_system ASC, type ASC, campaign_id ASC, updated_at DESC]
+  fields: [save_as_automation ASC, is_system ASC, type ASC, created_by ASC, updated_at DESC]
 ```
 
 The **2 `plan_runs` collection-scope indexes** consumed by the runs-list endpoint ship from DM-PRD-00 — this PRD only verifies their presence:
@@ -193,13 +207,15 @@ collection: accounts/*/plan_runs   (queryScope: COLLECTION)  — owned by DM-PRD
 
 Cross-account reads (e.g., the scheduler's due-task query under PR-PRD-06) use collection-group indexes on `project_plans` — also owned by DM-PRD-00, not duplicated here.
 
-Every automation list query includes `is_system` as a leading equality filter (default `false`), so the composite indexes above lead with `save_as_automation, is_system`. Tags filter uses `array_contains_any` (no composite index needed beyond the base filters).
+The `campaign_id` index field name is the post-rename name owned by [PR-PRD-08](../../project-tasks/projects/PR-PRD-08-campaign-management.md). PR-PRD-08 supports a one-release alias (`campaign` → `campaign_id`) for backwards compatibility on the input/output shape; this PRD's index uses the post-rename name. Sequencing: PR-PRD-08 lands the rename + alias + backfill before A-PRD-01's index is queried in production.
+
+Every automation list query includes `is_system` AND `type` as leading equality filters, so the composite indexes lead with `save_as_automation, is_system, type`. The `type` slot is reserved here (not consumed yet by A-PRD-01's own list endpoint, which still defaults to no `type` filter); [DB-PRD-01](../../dashboards/projects/DB-PRD-01-data-model-and-api.md) lands the default `type="freeform"` filter on the same endpoint and uses these indexes — so DB-PRD-01 does **not** need to add new indexes when it ships. Tags filter uses `array_contains_any` (no composite index needed beyond the base filters).
 
 ## 6. API contract
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET` | `/api/v1/automations/{account_id}` | List automations. Query params: `goal` (substring), `campaign[]`, `tags[]`, `status[]`, `created_by[]`, `is_active`, `is_system` (default `false`), `cursor`, `page_size` |
+| `GET` | `/api/v1/automations/{account_id}` | List automations. Query params: `goal` (substring), `campaign_id[]`, `tags[]`, `status[]`, `created_by[]`, `is_active`, `is_system` (default `false`), `cursor`, `page_size` |
 | `GET` | `/api/v1/automations/{account_id}/{plan_id}` | Fetch one automation enriched with `last_run_at`, `next_run_at`, `last_run.status` |
 | `PATCH` | `/api/v1/automations/{account_id}/{plan_id}/recurrence` | Body: `{recurrence_cron, recurrence_timezone, is_active}` — updates schedule config. A-PRD-2 will re-compute `next_run_at` on the next tick. |
 | `GET` | `/api/v1/automations/{account_id}/{plan_id}/runs` | List runs for an automation. Query params: `is_test`, `status[]`, `cursor`, `page_size` |
@@ -211,7 +227,7 @@ Endpoints reuse the existing access-control dependency (`check_strategy_access`-
 
 1. Setting `save_as_automation=true` on a `ProjectPlan` succeeds; `GET /api/v1/automations/{account_id}` returns it
 2. Setting `recurrence_cron="0 9 * * MON"` and `recurrence_timezone="America/Los_Angeles"` is accepted; invalid cron or invalid timezone returns `422`
-3. List endpoint with `campaign=["Spring"]&status=["active"]` returns only matching automations; pagination cursor walks the full result set without duplicates or skips
+3. List endpoint with `campaign_id=["cc-spring-2026"]&status=["active"]` returns only matching automations; pagination cursor walks the full result set without duplicates or skips
 4. Patching `recurrence_cron` updates the field and clears `next_run_at` (so A-PRD-2's next tick will re-compute it)
 5. A `PlanRun` doc can be created (manually for tests; A-PRD-2 owns the production path) and is returned by the runs-list endpoint
 5a. The `inputs` field on `PlanRun` round-trips through create + fetch without coercion (stored as a nested map in Firestore, returned as a JSON object)
@@ -221,7 +237,7 @@ Endpoints reuse the existing access-control dependency (`check_strategy_access`-
 5e. `type` round-trips: `POST` with `type="dashboard"` persists and `GET` returns it. `type` unset on a create defaults to `"freeform"`. Invalid value → `422`.
 5f. `extension_id` and `goal_id` round-trip as opaque strings: `POST` with values persists; `GET` returns them unchanged; `None` is accepted and returned.
 6. Cross-account access returns `403` on every endpoint
-7. The 4 `project_plans` collection-scope composite indexes owned by this PRD are present in `firestore_indexes_automations.tf`; the 2 `plan_runs` collection-scope indexes shipped by DM-PRD-00 are verified to exist in `deployment/firestore.indexes.json` before merging. The Firestore emulator runs all list / runs-list queries without scan-warning logs.
+7. The 4 `project_plans` collection-scope composite indexes owned by this PRD (each leading with `save_as_automation, is_system, type`) are present in `firestore_indexes_automations.tf`; the 2 `plan_runs` collection-scope indexes shipped by DM-PRD-00 are verified to exist in `deployment/firestore.indexes.json` before merging. The Firestore emulator runs all list / runs-list queries without scan-warning logs, including a probe query that adds `type == "freeform"` (so DB-PRD-01's later default filter inherits the same index).
 8. All unit and integration tests pass
 
 ## 8. Test plan
@@ -259,6 +275,8 @@ Endpoints reuse the existing access-control dependency (`check_strategy_access`-
 | Tag filter with multiple tags: AND vs OR semantics | Default to OR (`array_contains_any`); document. AND requires app-side filtering. |
 | `total_count_estimate` may be expensive at scale | Optional in v1 — frontend can hide it; revisit if product wants it |
 | `template_version` snapshot vs. live template | A-PRD-2 snapshots template_version at trigger time so a run reflects the recipe as it was when fired, not as edited later. Document the contract here so the run-engine PRD inherits it. |
+| **`PlanRun` docs accumulate without retention.** A high-frequency automation (e.g. every-minute) produces ~1,440 PlanRun docs/day per automation; over a year that's ~525k docs per active automation. Firestore handles this fine for a while, but it's not free. | **v1 has no PlanRun retention.** Account deletion is covered by DM-PRD-05's `firestore.recursive_delete(accounts/{account_id})`, which sweeps `plan_runs` and the nested `artifacts/` subcollection. While the account is active, runs persist indefinitely. Future enhancement: add a TTL (e.g. 90 days) + a sibling sweeper as a follow-up project (track in PROJECT-PLANNER if it becomes a problem). Document this v1 limitation in the model docstring on `PlanRun`. |
+| `extension_id` and `goal_id` have no current consumer | Both fields are persisted as opaque strings with no model-level resolution. Future PRDs in the extensions registry / goals service will define the contract. v1 stores and returns them verbatim; they do not affect orchestration or routing. |
 
 ## 10. Reference
 

@@ -42,7 +42,7 @@ No new user-facing endpoints are introduced. The observable change is: an existi
 - Agent builder skill-picker (Sprint 2.6-D)
 - Attach-time validation of script-bearing skills onto non-sandbox agents (Sprint 2.6-D owns the `PUT agent-configs` enforcement)
 - Any Firestore schema change (AH-PRD-02 already did it)
-- Skill content/prompt-injection scanning (Sprint 2.6-D optional stretch)
+- **Skill content/prompt-injection scanning — deferred to v2.** v1 mitigates by: (a) all user-authored content is rendered to agents with a system-level wrapper noting the source is user-provided; (b) MER-E consumes the new `skill.list` / `skill.load` / `skill.load_resource` spans to score skill-triggered sessions, surfacing poisoned skills in quality metrics. A heuristic scan-on-save is the v2 design surface and is not on any v1 PRD.
 
 ## 3. Dependencies
 
@@ -208,6 +208,10 @@ No new HTTP endpoints. The observable contract change is:
 
 1. **Skill wiring:** Given an agent config with `skill_ids=["A", "B"]`, when `build_agent()` runs, the resulting `LlmAgent` has a `SkillToolset` in its tools, and `list_skills` returns both A's and B's L1 metadata.
 2. **Missing skill tolerance:** Given `skill_ids=["A", "archived_B"]` where B is soft-archived, `build_agent()` succeeds with only A loaded and emits a `skill_load_skipped` warning log for B.
+2a. **All-skills-fail edge case:** Given `skill_ids=["archived_A", "archived_B"]` where every attached skill fails to load, `build_agent()` succeeds (does NOT raise) and:
+   - emits a structured **error**-level log `skill_load_total_failure` with `account_id`, `config_id`, and the requested `skill_ids` (operators alert on this signal),
+   - sets `skill_load_total_failure=true` as an attribute on the agent's `skill.list` Weave span so MER-E can score sessions as degraded,
+   - constructs the agent with **no** `SkillToolset` (rather than an empty one — the LLM should not see `list_skills` returning nothing).
 3. **Empty skill list:** Given `skill_ids=[]`, no `SkillToolset` is attached. The agent's tools are unchanged from a no-skills config.
 4. **Sandbox wiring:** Given `sandbox_code_executor_enabled=true`, the constructed `LlmAgent.code_executor` is an `AgentEngineSandboxCodeExecutor` instance. Given `false` or absent, `code_executor` is `None` or unchanged from pre-Sprint-9 default.
 5. **Sandbox decoupled from skills:** Setting `sandbox_code_executor_enabled=true` with `skill_ids=[]` works (sandbox available without skills). Setting `skill_ids=["with_scripts"]` with `sandbox_code_executor_enabled=false` does NOT attempt to execute scripts — the scripts are present in `load_skill_resource` response but the agent has no runtime to run them. (Attach-time rejection is Sprint 2.6-D's job.)

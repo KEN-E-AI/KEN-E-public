@@ -1,6 +1,6 @@
 # Skills — Product Requirements Document
 
-> **Linear Team:** [KEN-E] SKILLS
+> **Linear Team:** [KEN-E] Skills
 > **Last Updated:** 2026-04-20
 > **Status:** Active
 
@@ -8,7 +8,7 @@
 
 The Skills component gives end-users a way to **capture and reuse their domain expertise** as modular, agent-loadable bundles. A **Skill** is a self-contained unit of instructions (plus optional reference files, assets, and scripts) that an agent loads via progressive disclosure to perform a specific task. Skills follow the open [agentskills.io specification](https://agentskills.io/specification) and integrate with Google ADK via `SkillToolset` (ADK v1.25.0+, experimental). A user authors a `SKILL.md` in the Workflows UI, saves it, and attaches it to a **custom specialist agent** built on the [AH-PRD-02](../agentic-harness/projects/AH-PRD-02-agent-factory.md) Agent Factory; when that agent runs, `SkillToolset` auto-generates discovery tools (`list_skills`, `load_skill`, `load_skill_resource`) so the agent loads only the skill it needs, when it needs it.
 
-The component spans three architectural pillars — a **storage split** (metadata in Firestore `accounts/{account_id}/skills/{skill_id}`, content in GCS `gs://kene-skills-{env}/accounts/{account_id}/{skill_name}/{version}/…`), **progressive disclosure via `SkillToolset`** (L1 frontmatter hydrated at agent construction, L2 body on activation, L3 references/assets/scripts lazily streamed from GCS), and **gated script execution** (a skill's `scripts/` cannot run unless the owning agent is configured with `sandbox_code_executor_enabled=true`, which attaches `AgentEngineSandboxCodeExecutor` as the agent's `code_executor`). On top of those, a Skills tab under `/workflows/skills` and an Agent Builder skills-picker on `/workflows/agents` close the authoring + attachment loop.
+The component spans three architectural pillars — a **storage split** (metadata in Firestore `accounts/{account_id}/skills/{skill_id}`, content in GCS `gs://kene-skills-{env}/accounts/{account_id}/{skill_id}/{version}/…` keyed by `skill_id` so renames don't split version history), **progressive disclosure via `SkillToolset`** (L1 frontmatter hydrated at agent construction, L2 body on activation, L3 references/assets/scripts lazily streamed from GCS), and **gated script execution** (a skill's `scripts/` cannot run unless the owning agent is configured with `sandbox_code_executor_enabled=true`, which attaches `AgentEngineSandboxCodeExecutor` as the agent's `code_executor`). On top of those, a Skills tab under `/workflows/skills` and an Agent Builder skills-picker on `/workflows/agents` close the authoring + attachment loop. KEN-E also ships **system-owned predefined skills** (one placeholder `example-skill` in v1) attached to the root agent via [SK-PRD-05](./projects/SK-PRD-05-predefined-skill-foundation.md).
 
 A developer reading only this section should understand: this component owns the `Skill` / `SkillVersion` data model, the `/api/v1/accounts/{account_id}/skills/*` API, the `kene-skills-{env}` GCS bucket (plus a `-trash` sibling with a 30-day lifecycle), the skill loader that hydrates ADK `Skill` objects with lazy L3 callables, the agent-factory wiring that constructs `SkillToolset` + sandbox `code_executor` from config, the Skills authoring UI, and the agent-builder controls that enforce attach-time validation. It rides on top of [AH-PRD-02](../agentic-harness/projects/AH-PRD-02-agent-factory.md) (Agent Factory) for the two `agent_configs` fields (`skill_ids`, `sandbox_code_executor_enabled`) that turn a config into a skill-bearing agent.
 
@@ -28,7 +28,7 @@ A developer reading only this section should understand: this component owns the
 │  │ Agent Builder │  │                                       │  GCS                    │
 │  │ (picker +     │──┼───────────────────────────────────────┼─▶  kene-skills-{env}/   │
 │  │  sandbox      │  │  PUT /.../agent-configs/{cfg_id}      │   accounts/{id}/        │
-│  │  toggle)      │  │   { skill_ids, sandbox_enabled }      │     {skill_name}/       │
+│  │  toggle)      │  │   { skill_ids, sandbox_enabled }      │     {skill_id}/         │
 │  └───────────────┘  │                                       │       {version}/        │
 │                     │  POST .../agents/_ephemeral_chat      │         SKILL.md        │
 │  ┌───────────────┐  │                                       │         references/     │
@@ -95,8 +95,8 @@ A developer reading only this section should understand: this component owns the
 
 ### 2.2 Data Flow
 
-1. **Authoring (SK-PRD-03):** A user visits `/workflows/skills`, fills the frontmatter form, writes the `SKILL.md` body in a Monaco editor, and optionally uploads reference/asset/script files. Client-side validation mirrors the backend rules (name regex, size caps, 20-file limit). Clicking Save submits a multipart `POST /api/v1/accounts/{account_id}/skills` with `skill_md` + `files[]`.
-2. **Persistence (SK-PRD-01):** The backend validates frontmatter, enforces size caps (SKILL.md ≤ 5 kB, reference file ≤ 100 kB, total bundle ≤ 2 MB, ≤ 20 reference files), generates a manifest with sha256 checksums, allocates `skill_id` (UUID) and `version=1`, writes the bundle to `gs://kene-skills-{env}/accounts/{account_id}/{skill_name}/1/`, and writes the Firestore doc + `versions/1` subcollection doc in a single transaction.
+1. **Authoring (SK-PRD-03):** A user visits `/workflows/skills`, fills the frontmatter form, writes the `SKILL.md` body in a Monaco editor, and optionally uploads reference/asset/script files. Client-side validation mirrors the backend rules (name regex, size caps, 20-file cap on `references/` only). Clicking Save submits a multipart `POST /api/v1/accounts/{account_id}/skills` with `skill_md` + `files[]`.
+2. **Persistence (SK-PRD-01):** The backend validates frontmatter, enforces size caps (SKILL.md ≤ 5 kB, individual file ≤ 100 kB, total bundle ≤ 2 MB; `references/` ≤ 20 files; `assets/` and `scripts/` constrained by total-bundle cap only), generates a manifest with sha256 checksums, allocates `skill_id` (UUID) and `version=1`, writes the bundle to `gs://kene-skills-{env}/accounts/{account_id}/{skill_id}/1/`, and writes the Firestore doc + `versions/1` subcollection doc in a single Firestore transaction (PUTs use a retry loop on `current_version` contention).
 3. **Versioning (SK-PRD-01):** A `PUT /api/v1/accounts/{account_id}/skills/{skill_id}` creates a new immutable version under `…/{version+1}/`. Previous versions stay in GCS and can be read via `?version=N`. Soft-delete moves the skill's prefix to `gs://kene-skills-{env}-trash/…` with a 30-day lifecycle rule.
 4. **Attachment (SK-PRD-04):** An admin opens `/workflows/agents/{config_id}`, the `SkillsPicker` fetches `GET /api/v1/accounts/{account_id}/skills`, and the admin selects up to 10 skills + toggles Sandbox. Submitting sends `PUT /api/v1/accounts/{account_id}/agent-configs/{config_id}` with the `skill_ids` + `sandbox_code_executor_enabled` fields. The router runs three attach-time checks: 10-skill cap, existence-in-this-account, and scripts-require-sandbox. Violations return 422 with a structured error body.
 5. **Agent construction (SK-PRD-02):** When the agent factory builds an `LlmAgent`, `_build_skill_toolset(account_id, skill_ids)` calls `skill_loader.load_skill(account_id, sid)` for each attached skill (L1 frontmatter + L2 body eager, L3 resources lazy), constructs a `SkillToolset`, and attaches it to the agent's tools. If `sandbox_code_executor_enabled=true`, `_build_code_executor` attaches `AgentEngineSandboxCodeExecutor(...)` as the agent's `code_executor`.
@@ -176,7 +176,7 @@ Schema source of truth: `api/src/kene_api/models/skill_models.py` (Pydantic), mi
 
 ## 5. Project Index
 
-The component's work is split across **5 independently shippable project PRDs** under [`projects/`](./projects/). The split follows team boundaries and a dependency arc that deliberately isolates the sandbox spike: its findings can reshape SK-PRD-02's scope, so it is pulled out as a sprint-0 artifact. SK-PRD-01 publishes the API contract every other sprint stubs against; SK-PRD-02 (only sprint requiring AH-PRD-02) lights up agent-factory wiring; SK-PRD-03 (authoring UI) runs in parallel against the contract; SK-PRD-04 closes the loop with the agent-builder controls + end-to-end test.
+The component's work is split across **6 independently shippable project PRDs** under [`projects/`](./projects/). The split follows team boundaries and a dependency arc that deliberately isolates the sandbox spike: its findings can reshape SK-PRD-02's scope, so it is pulled out as a sprint-0 artifact. SK-PRD-01 publishes the API contract every other sprint stubs against; SK-PRD-02 (only sprint requiring AH-PRD-02) lights up agent-factory wiring; SK-PRD-03 (authoring UI) runs in parallel against the contract; SK-PRD-04 closes the loop with the agent-builder controls + end-to-end test; SK-PRD-05 ships the system-owned-skill scaffolding plus a single `example-skill` placeholder so System Architecture §6's "predefined skills" promise is fulfilled.
 
 ### 5.1 Dependency graph
 
@@ -193,6 +193,9 @@ The component's work is split across **5 independently shippable project PRDs** 
                                                                       SK-PRD-04 (Agent Builder
                                                                         Controls + E2E)
                                                                       (needs AH-PRD-02 + SK-PRDs 01 + 02 + 03)
+
+                AH-PRD-02 + SK-PRD-01 + SK-PRD-02 ─► SK-PRD-05 (Predefined Skill Foundation)
+                                                     (parallel with SK-PRDs 03, 04)
 ```
 
 ### 5.2 Projects
@@ -204,6 +207,7 @@ The component's work is split across **5 independently shippable project PRDs** 
 | 02 | [Agent Factory — Skills & Sandbox Integration](./projects/SK-PRD-02-agent-integration.md) | Agent Platform | AH-PRD-02, SK-PRD-00, SK-PRD-01 | SK-PRD-03 | 5–7 days |
 | 03 | [Skills Authoring UI](./projects/SK-PRD-03-authoring-ui.md) | Frontend | SK-PRD-01 (contract) | AH-PRD-02, SK-PRD-02 | 6–8 days |
 | 04 | [Agent Builder Controls + E2E](./projects/SK-PRD-04-agent-builder-controls.md) | Frontend + Backend | AH-PRD-02, SK-PRDs 01, 02, 03 | — | 4–5 days |
+| 05 | [Predefined Skill Foundation](./projects/SK-PRD-05-predefined-skill-foundation.md) | Backend + Agent Platform | AH-PRD-02, SK-PRDs 01, 02 | SK-PRDs 03, 04 | 2–3 days |
 
 ### 5.3 Cross-PRD coordination points
 
@@ -238,8 +242,8 @@ Four touchpoints do not fit cleanly inside one PRD and need an owning team to co
 ### Data model
 - Skills are **account-scoped**, not user-scoped. `owner = {account_id}`; `created_by` captures the authoring user for audit only. A user with membership in multiple accounts sees a different skill set per account; skills do not follow users across accounts.
 - `name` is kebab-case (`^[a-z0-9]+(-[a-z0-9]+)*$`), max 64 chars, **unique per account**. Different accounts may reuse the same `name`.
-- `description` is 1–1024 chars. `compatibility` is ≤ 500 chars. SKILL.md body is ≤ 5 kB. Reference files are ≤ 100 kB each, ≤ 20 total, total bundle ≤ 2 MB.
-- `visibility = "private"` in v1; the enum reserves `"org"` for v2 cross-account sharing. `shared_with_accounts: list[str]` is persisted but ignored in v1.
+- `description` is 1–1024 chars. `compatibility` is ≤ 500 chars. SKILL.md body is ≤ 5 kB. Individual file ≤ 100 kB. Total bundle ≤ 2 MB. **`references/` ≤ 20 files** — `assets/` and `scripts/` have no separate file-count cap and are constrained by the total-bundle cap only.
+- `visibility = "private"` in v1; the enum reserves `"org"` for v2 cross-account sharing. `SkillOwner.shared_with_accounts: list[str]` is persisted but ignored in v1.
 - `status ∈ {"draft", "published", "archived"}`. Archived is soft-delete; 30-day GCS lifecycle purges the trash prefix.
 - Each `PUT` creates a new **immutable version** under `…/{version+1}/`. Previous versions remain readable via `?version=N`.
 - `has_scripts: bool` is set when a version's `scripts/` directory is non-empty. The picker (SK-PRD-04) disables the row when `sandboxEnabled=false`; the attach-time validator rejects the save.
@@ -252,7 +256,8 @@ Four touchpoints do not fit cleanly inside one PRD and need an owning team to co
 - Account deletion uses `firestore.recursive_delete(accounts/{account_id})` — covered by DM-PRD-05.
 
 ### GCS layout
-- `gs://kene-skills-{env}/accounts/{account_id}/{skill_name}/{version}/`
+- `gs://kene-skills-{env}/accounts/{account_id}/{skill_id}/{version}/` (keyed by `skill_id` so renames don't split version history)
+- `gs://kene-skills-{env}/_system/{skill_name}/{version}/` for system-owned predefined skills (SK-PRD-05; keyed by `skill_name` because system-skill names are globally unique and renames are operations events)
 - Contents: `SKILL.md` (required), `references/` (optional, L3), `assets/` (optional, L3), `scripts/` (optional, L3, sandbox-gated), `.manifest.json` (generated on write).
 - Soft-delete moves the prefix to `gs://kene-skills-{env}-trash/accounts/{account_id}/…`; a 30-day GCS lifecycle rule purges it. No human intervention to restore — document in the authoring UI that archive is effectively-permanent after 30 days.
 - Uniform access, no public ACLs, CMEK with the project default key.
@@ -266,6 +271,42 @@ Four touchpoints do not fit cleanly inside one PRD and need an owning team to co
 - Frontmatter `allowed-tools` is a space-separated string (e.g. `"Bash(git:*) Bash(jq:*) Read"`). Parsed into a set of patterns; exact match + suffix `*` only in v1. Full glob compliance is a v2 story.
 - Honored as a **restriction filter**: when a skill is the active skill, the agent's `before_tool_callback` narrows the available tools to the intersection with `allowed-tools`. Never grants a tool not already on the agent.
 - Applies to the **skill-activation window** (not the entire agent turn). The callback clears the restriction when a new turn starts without an active skill.
+
+### Skill version pinning at attachment — latest-wins (v1)
+
+Agents attach skills by `skill_id` only — there is **no per-attachment version pin** in v1. The skill loader resolves each ID to its `current_version` at agent-construction time. Editing a skill propagates to every attached agent on the next session, with no re-attach action. The trade-off:
+
+- **Pro:** Authors can iterate quickly. A skill bugfix lands across all consuming agents immediately.
+- **Con:** A breaking change in a new version silently affects every attached agent.
+
+Mitigations in v1:
+1. **SK-PRD-03 attachment-aware banner.** When a user begins editing a skill that is currently attached to ≥ 1 agents, the editor shows a sticky banner with the count.
+2. **Save-confirmation dialog.** The "Save" / "Publish" confirm dialog repeats the count and links to the affected agents.
+3. **Counts endpoint.** SK-PRD-04 ships `GET /api/v1/accounts/{account_id}/skills/{skill_id}/attached-agents-count` so the editor banner reflects current state.
+4. **User guide.** `docs/skills-user-guide.md` (SK-PRD-04) has a "Skill versions and attached agents" section that calls this trade-off out prominently.
+
+Per-attachment version pinning (`skill_ids: [{id, version}]` instead of `[id]`) is reserved for v2.
+
+### System-owned predefined skills (SK-PRD-05)
+
+Beyond user-authored skills, KEN-E ships predefined skills attached to the root agent and selected specialists. These are stored separately from per-account skills:
+
+- **Firestore:** `system_skills/{skill_id}` (global, NOT under `accounts/`)
+- **GCS:** `gs://kene-skills-{env}/_system/{skill_name}/{version}/` (sibling to `accounts/`)
+- **Loader:** `skill_loader.load_skill(account_id, skill_id)` first checks `system_skills/{skill_id}`; on miss, falls back to the per-account path. `account_id` is still threaded through for tracing.
+- **User-facing API isolation:** System skills are invisible from `GET /api/v1/accounts/{account_id}/skills` and direct GETs of system skill IDs return 404. There is no UI to author or edit them.
+- **Operations:** System skills are written via Terraform (`deployment/terraform/system_skills_seed.tf`). Renames are operations events handled in Terraform diff — that's why the GCS prefix is keyed by `{skill_name}` (globally unique, ops-controlled), not `{skill_id}` (the per-account convention which absorbs arbitrary user renames).
+- **Tracing:** The three skill spans (`skill.list` / `skill.load` / `skill.load_resource`) carry a `skill_owner_type: "account" | "system"` attribute so MER-E can distinguish system-skill use from user-skill use.
+
+v1 ships exactly one placeholder system skill (`example-skill`) attached to the root agent. Real predefined-skill content (e.g., `kene-ga-attribution-checklist`) is the work of follow-up content PRDs; once SK-PRD-05 lands, those are content-only changes (one SKILL.md + one config update).
+
+### User deletion impact (account-scoped storage)
+
+Skills are account-scoped. When a user is deleted via DM-PRD-05's `delete_user_data(user_id)`, their `created_by` / `updated_by` IDs on `Skill` / `SkillVersion` docs become orphan references. This is acceptable — the IDs are audit-only and persist with the account. Skills does **not** register an `on_user_removed` hook (unlike Integrations). Account deletion *does* sweep `accounts/{account_id}/skills/*` via `firestore.recursive_delete` plus the matching GCS prefix purge (SK-PRD-01 AC #13).
+
+### Audit substrate
+
+Skills opts out of DM-PRD-07's six-audit-subcollection registry by design. Per-version `created_by` + `created_at` + `commit_message` on each `versions/{N}` doc is the audit trail. Add a dedicated audit subcollection only if v2 requirements surface (e.g., view tracking, non-version-bumping field edits).
 
 ### Sandbox gating (defense-in-depth)
 - `scripts/` is **uploaded unconditionally** (SK-PRD-01 accepts the files; the `has_scripts` flag flips to `true`).

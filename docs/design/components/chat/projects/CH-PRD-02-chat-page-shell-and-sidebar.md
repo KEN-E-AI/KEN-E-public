@@ -54,7 +54,7 @@ Landing the shell first means CH-PRD-03/04/05 each ship in-place under the `/cha
 | **[CH-PRD-01](./CH-PRD-01-session-metadata-substrate.md)** | Side-table + callbacks + `GET /conversations` signature + composite indexes. Without this, sidebar has no data to render. | This PRD package |
 | **[UI-PRD-01](../../ui/README.md)** | `LayoutC`, `Sidebar` (primary), `TopNav`, `AccountSwitcher`, `BackgroundEffects`, Tailwind tokens, shadcn primitives (`Button`, `Input`, `Select`, `ScrollArea`, `Tooltip`). Text-size preference infrastructure. | `../../ui/README.md` |
 | **[FF-PRD-03](../../feature-flags/projects/FF-PRD-03-frontend-sdk-and-e2e.md)** | `useFeatureFlag("chat_v2_enabled")`, `useFeatureFlag("chat_categories_enabled")` hooks. | `../../feature-flags/README.md` |
-| **[UI-PRD-02](../../ui/README.md)** (coordination only) | Scope adjustment: `/chat` page creation absorbed by CH-PRD-02. See [`../implementation-plan.md`](../implementation-plan.md) §5.3. | Chat team flags the PROJECT-PLANNER edit. |
+| **[UI-PRD-02](../../ui/projects/UI-PRD-02-core-shell-pages.md)** (coordination only) | UI-PRD-02 owns the `/` → `/chat` redirect and legacy `Home.tsx` deletion. CH-PRD-02 owns the `/chat` destination. Both PRDs land in Release 1 — coordinate `App.tsx` route registration. The historical scope adjustment (`/chat` page absorption) is complete in UI-PRD-02 and the PROJECT-PLANNER. | [`../../ui/projects/UI-PRD-02-core-shell-pages.md`](../../ui/projects/UI-PRD-02-core-shell-pages.md) |
 | Existing `/api/v1/chat/*` surface | The 9 existing endpoints + CH-PRD-01's extensions. | `api/src/kene_api/routers/chat.py` |
 | `docs/figma-export/src/app/components/*` | Design contract for every component ported. | `docs/figma-export/` |
 | Existing `frontend/src/services/chatService.ts` | Internally delegated to new `lib/chatApi.ts` during the CH-PRD-02 PR; **a follow-up PR (tracked in the CH-PRD-02 exit checklist) deletes `chatService.ts` entirely once callers are migrated.** No indefinite shim. | `frontend/src/services/chatService.ts` |
@@ -259,7 +259,7 @@ Idempotent; returns `{last_viewed_at}` so the client can optimistically set loca
 
 ```typescript
 // frontend/src/App.tsx
-const chatEnabled = useFeatureFlag("chat_v2_enabled");
+const { enabled: chatEnabled } = useFeatureFlag("chat_v2_enabled");
 // ...
 {chatEnabled && <Route path="/chat" element={<ChatPage />} />}
 ```

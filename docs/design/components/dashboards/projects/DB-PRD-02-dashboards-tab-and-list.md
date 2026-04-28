@@ -1,8 +1,8 @@
 # DB-PRD-02 — Dashboards Tab & List Page
 
-**Status:** Blocked — resumes once DB-PRD-01 ships
+**Status:** Blocked — resumes once DB-PRD-01 and PE-PRD-01 ship
 **Owner team:** Frontend
-**Blocked by:** DB-PRD-01 (API contract this page consumes); UI-PRD-07 (Performance page shell — soft dep, see §3)
+**Blocked by:** DB-PRD-01 (API contract this page consumes); PE-PRD-01 (Performance page shell — owns the Dashboards tab slot + route)
 **Blocks:** DB-PRD-03 (shares the Performance tab shell)
 **Estimated effort:** 2 days
 
@@ -10,17 +10,17 @@
 
 ## 1. Context
 
-Dashboards is a new tab on the Performance page (`/performance?tab=dashboards`). This PRD delivers the **shell** for that tab and the **list page** users land on when they select it: a scrollable list of the account's dashboards with create / edit / run shortcuts, an empty state for first-time users, and a New Dashboard creation flow.
+Dashboards is the **2nd tab** on the Performance page (between Analysis and Simulations) — full tab order per Figma: Analysis / **Dashboards** / Simulations / Targets / Diagnostics / Configuration. PE-PRD-01 reserves the tab slot, route (`/performance/dashboards`), placeholder component, and feature flag (`performance_dashboards_tab`); this PRD swaps the placeholder for a real list view. Dashboards is **not gated by SAR-E** — it remains visible regardless of `ForecastingEnabledGate` state, since dashboards are powered by Project Tasks + Automations rather than the analytical backend.
+
+This PRD delivers the **shell** for that tab and the **list page** users land on when they select it: a scrollable list of the account's dashboards with create / edit / run shortcuts, an empty state for first-time users, and a New Dashboard creation flow.
 
 It does **not** deliver the dashboard details canvas (DB-PRD-03). Details page deep-links are routed but land on a stub that DB-PRD-03 fills in.
-
-The Performance page itself is being redesigned under UI-PRD-07. This PRD coordinates with the UI-PRD-07 team on tab mechanics but ships independently: if UI-PRD-07 hasn't merged, the Dashboards tab lands as a sibling tab using the same Soft Maximalism tokens.
 
 ## 2. Scope
 
 ### In scope
-- Add Dashboards tab to `PerformancePage` alongside Analysis / Simulations / Goals / Diagnostics / Config
-- URL state: `/performance?tab=dashboards` selects it; deep-links from Sidebar / Notifications work
+- Replace PE-PRD-01's `<DashboardsTabPlaceholder />` at `/performance/dashboards` with the real `DashboardsSection` (this PRD's deliverable). Tab order locked by PE-PRD-01: Analysis / **Dashboards** / Simulations / Targets / Diagnostics / Configuration.
+- URL state: `/performance/dashboards` selects the tab; deep-links from Sidebar / Notifications work
 - Dashboards list view: per-row title, description, schedule summary, last-run timestamp, status badge (Active / Inactive), configure button, row-level menu (Run Now / Duplicate / Delete)
 - Empty state: illustration + copy + "New Dashboard" CTA
 - Create flow: modal with title (required, ≤200 chars), description (optional, ≤1000 chars), tags (multi-select typeahead from account-wide tag list). Submit → `POST /api/v1/dashboards/{account_id}` → redirect to `/performance/dashboards/{plan_id}`
@@ -41,11 +41,12 @@ The Performance page itself is being redesigned under UI-PRD-07. This PRD coordi
 ## 3. Dependencies
 
 - **DB-PRD-01:** publishes `GET /api/v1/dashboards/{account_id}` (list) and `POST /api/v1/dashboards/{account_id}` (create). Also provides `DashboardSummary` and `ProjectPlan` types mirrored client-side.
-- **UI-PRD-07 (Performance page shell):** soft dependency. If merged, this PRD adds the Dashboards tab to the existing tab container. If not merged, this PRD ships a minimal tab container sized for 6 tabs using the Soft Maximalism tokens from UI-PRD-01. Coordinate with the UI-PRD-07 owner at planning time.
+- **PE-PRD-01 (Performance Page Shell):** owns the Performance tab container, the `/performance/dashboards` route, the `<DashboardsTabPlaceholder />` stub this PRD replaces, the `performance_dashboards_tab` feature flag, and the gating decision (Dashboards is **not** wrapped in `ForecastingEnabledGate`). PE-PRD-01 must be merged before this PRD starts.
 - **UI-PRD-01 (Design System):** consumes tokens from `theme.css`, Tailwind config, and the redesigned shadcn primitives under `frontend/src/components/ui/`.
-- **Notifications (existing):** "Dashboard ready" notifications (from A-PRD-04's run-complete payload for `type="dashboard"` plans) deep-link to `/performance/dashboards/{plan_id}?runId={run_id}`. No change here; just verify the deep-link format is honored.
+- **Notifications (A-PRD-02 producer):** "Dashboard ready" notifications come from A-PRD-02's `AUTOMATION_RUN_COMPLETE` notification, fired on every `PlanRun` terminal state for `plan.created_by` (skipped for `is_test=true` runs). For `plan.type=='dashboard'` the deep-link is `/performance/dashboards/{plan_id}?runId={run_id}` (for `type='freeform'`, A-PRD-02 routes to `/workflows/automations/{plan_id}?run={run_id}` — same producer, two consumers). No work in this PRD; verify the deep-link format renders the right run highlighted in DB-PRD-03 (`?runId={run_id}` is a query param read by the details page, not a route). PE-PRD-01 owns the `/performance/dashboards/{plan_id}` route registration.
 - **Existing files to study:**
-  - `frontend/src/pages/PerformancePage.tsx` (UI-PRD-07 target) — tab container to extend
+  - `frontend/src/pages/Performance/PerformancePage.tsx` (PE-PRD-01 target) — tab container to plug into
+  - `frontend/src/pages/Performance/DashboardsTabPlaceholder.tsx` (PE-PRD-01) — the stub this PRD replaces
   - `frontend/src/pages/WorkflowsPage.tsx` (A-PRD-05) — sibling tab-and-list pattern to mirror
   - `frontend/src/pages/workflows/AutomationsList.tsx` (A-PRD-05) — list-row component to mirror
   - `docs/figma-export/src/app/components/DashboardsSection.tsx` — reference UX (but rebuilt in the Soft Maximalism design system, not literal)
@@ -85,7 +86,8 @@ Brand types per CLAUDE.md C-5.
 
 | Action | File |
 |--------|------|
-| Modify | `frontend/src/pages/PerformancePage.tsx` — register `Dashboards` tab; route `?tab=dashboards` to the new section |
+| Modify | `frontend/src/pages/Performance/PerformancePage.tsx` — replace PE-PRD-01's `<DashboardsTabPlaceholder />` mount with `<DashboardsSection />` at `/performance/dashboards` |
+| Delete | `frontend/src/pages/Performance/DashboardsTabPlaceholder.tsx` — placeholder shipped by PE-PRD-01; this PRD removes it |
 | Create | `frontend/src/pages/performance/DashboardsSection.tsx` — list + empty state |
 | Create | `frontend/src/components/dashboards/DashboardListRow.tsx` — per-row card |
 | Create | `frontend/src/components/dashboards/NewDashboardDialog.tsx` — create modal |
@@ -101,14 +103,16 @@ Brand types per CLAUDE.md C-5.
 
 ### URL / routing contract
 
+PE-PRD-01 owns the route shape (path-based, not query-string). This PRD consumes:
+
 ```
-/performance                                   → default tab (analysis)
-/performance?tab=dashboards                    → Dashboards list
+/performance                                   → gate-driven redirect (PE-PRD-01)
+/performance/dashboards                        → Dashboards list (this PRD)
 /performance/dashboards/{plan_id}              → Dashboard details (stub until DB-PRD-03)
 /performance/dashboards/{plan_id}?runId={...}  → details with a specific run highlighted (DB-PRD-03)
 ```
 
-Sidebar "Performance" link goes to `/performance` (default). No direct Sidebar entry for "Dashboards" in v1; users navigate Performance → Dashboards tab.
+Sidebar "Performance" link goes to `/performance` (PE-PRD-01's gate-driven default). No direct Sidebar entry for "Dashboards" in v1; users navigate Performance → Dashboards tab.
 
 ### List-row UX
 
@@ -198,15 +202,15 @@ Cache policy (TanStack Query):
 5. Each list row renders title, schedule summary, last-run relative time, status badge, and a Configure button linking to the details URL.
 6. Row-menu "Run Now" POSTs to the A-PRD-02 trigger endpoint; the row's `last_run_status` updates to "running" on the next re-fetch.
 7. Row-menu "Delete" shows a confirmation (Cancel / Delete), then DELETEs on confirm; the row disappears from the list after invalidation.
-7a. Row-menu "Duplicate" opens `DuplicateDashboardDialog` pre-filled with `"{source.title} (Copy)"`. Submitting POSTs to the duplicate endpoint; on 201, a toast shows with an "Open new dashboard" link; the list re-fetches and the new dashboard appears at the top.
-7b. Duplicate of a dashboard with an active schedule creates a new dashboard with `is_active=false` (schedule preserved but disabled). The new dashboard's row shows the schedule summary but a toned-down / paused visual state.
-8. Deep-linking to `/performance?tab=dashboards` selects the Dashboards tab on page load (URL → state sync).
-9. Deep-linking to `/performance/dashboards/{plan_id}` renders the stub until DB-PRD-03 replaces it.
-10. Viewer-role users see the list and rows but the "+ New Dashboard" CTA and row-menu destructive actions (Delete, Run Now) are disabled with tooltips.
-11. Cross-account access returns `403` at the API layer; UI renders a toast and navigates to `/accounts`.
-12. List is paginated: loading 30 dashboards shows the first page with `page_size=25` default; scrolling to bottom triggers the next-page fetch via `cursor`.
-13. `npm run build` clean; `npm run typecheck` clean; `npm run format.fix` clean.
-14. All unit tests pass; Playwright `dashboards-create-flow.spec.ts` passes.
+8. Row-menu "Duplicate" opens `DuplicateDashboardDialog` pre-filled with `"{source.title} (Copy)"`. Submitting POSTs to the duplicate endpoint; on 201, a toast shows with an "Open new dashboard" link; the list re-fetches and the new dashboard appears at the top.
+9. Duplicate of a dashboard with an active schedule creates a new dashboard with `is_active=false` (schedule preserved but disabled). The new dashboard's row shows the schedule summary but a toned-down / paused visual state.
+10. Deep-linking to `/performance/dashboards` selects the Dashboards tab on page load (URL → state sync).
+11. Deep-linking to `/performance/dashboards/{plan_id}` renders the stub until DB-PRD-03 replaces it.
+12. Viewer-role users see the list and rows but the "+ New Dashboard" CTA and row-menu destructive actions (Delete, Run Now) are disabled with tooltips.
+13. Cross-account access returns `403` at the API layer; UI renders a toast and navigates to `/accounts`.
+14. List is paginated: loading 30 dashboards shows the first page with `page_size=25` default; scrolling to bottom triggers the next-page fetch via `cursor`.
+15. `npm run build` clean; `npm run typecheck` clean; `npm run format.fix` clean.
+16. All unit tests pass; Playwright `dashboards-create-flow.spec.ts` passes.
 
 ## 8. Test plan
 
@@ -215,7 +219,7 @@ Cache policy (TanStack Query):
 - Renders empty state when API returns zero
 - Row-menu actions fire the correct axios calls
 - Viewer role disables destructive actions
-- Deep-link `?tab=dashboards` selects the tab on mount
+- Deep-link `/performance/dashboards` selects the tab on mount
 
 **Unit tests** (`NewDashboardDialog.test.tsx`):
 - Required-field validation on title (empty, whitespace-only, >200 chars)
@@ -234,7 +238,7 @@ Cache policy (TanStack Query):
 
 | Risk | Mitigation |
 |---|---|
-| UI-PRD-07 hasn't merged when this PRD starts | Ship a minimal tab container using the Soft Maximalism tokens from UI-PRD-01. Replace with UI-PRD-07's tab container in a follow-up PR once UI-PRD-07 lands. No user-visible regression. |
+| PE-PRD-01 hasn't merged when this PRD starts | Hard block — DB-PRD-02 cannot start until PE-PRD-01 is merged (it relies on PE-PRD-01's tab slot, route registration, and `<DashboardsTabPlaceholder />` to swap out). Sequencing is enforced via `blocked_by` in `PROJECT-PLANNER.md`. |
 | Sidebar navigation convention for "Dashboards" not yet decided | v1 lives under Performance tab only. Revisit if product wants a top-level "Dashboards" sidebar entry. |
 | Last-run status lags until the next 30-s list re-fetch | Acceptable for v1. Future enhancement: subscribe to run-status updates via SSE or push from the notification system. |
 | Tags typeahead hits an endpoint that doesn't yet exist | Verify `/api/v1/accounts/{account_id}/tags` or equivalent at implementation start. If absent, degrade the field to a free-text comma-separated input (tags deduped server-side). |
@@ -247,7 +251,7 @@ Cache policy (TanStack Query):
 
 - Parent plan: [`../implementation-plan.md`](../implementation-plan.md)
 - Foundation: [DB-PRD-01](./DB-PRD-01-data-model-and-api.md)
-- Sibling (shared tab container): [UI-PRD-07 Performance page](../../ui/projects/UI-PRD-07-performance-page.md) *(if exists; otherwise this PRD adds the tab container ad-hoc per §3)*
+- Sibling (shared tab container): [PE-PRD-01 Performance page shell](../../performance/projects/PE-PRD-01-page-shell-and-routing.md) — owns the Dashboards tab slot, route, placeholder, and feature flag. (UI-PRD-07 — the original presentation-only redesign — is **retired and subsumed by PE-PRD-01**.)
 - Pattern to mirror: [A-PRD-05 Automations list](../../automations/projects/A-PRD-05-automations-list-page.md)
 - Figma reference: `docs/figma-export/src/app/components/DashboardsSection.tsx` (UX only — rebuild in Soft Maximalism)
 - Frontend conventions: `frontend/CLAUDE.md` (CSS architecture, component library, branded types)

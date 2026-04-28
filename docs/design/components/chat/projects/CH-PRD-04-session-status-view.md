@@ -39,6 +39,7 @@ Landing the status view completes the "see everything about a session" surface t
 - **`TokenUsagePanel.tsx`** — renders: context bar + badge (Healthy <60%, Moderate 60–80%, Near-limit >80%), 3-card token grid (Input / Output / Total). **No cost line.**
 - **`SummaryCard.tsx`** — read-only. "Auto-generated during compaction" caption + summary text or placeholder "No summary yet. KEN-E compacts long sessions automatically."
 - **`TitleCard.tsx`** — editable `Input` + debounced save (500ms after last keystroke).
+- **Auto-title generation** — once per session, after the first assistant response completes, generate a 3–6 word session title via `gemini-2.5-flash` and write it to `chat_sessions.title` (only if the user hasn't already set one). Implementation in `api/src/kene_api/chat/auto_title.py` (§5.7); fired from CH-PRD-01's completion-endpoint `finally` block when the per-turn flush detects `message_count == 2 AND title is None AND auto_title_attempted_at is None`. Fire-and-forget background task — does not block the streaming response. Tokens consumed pass through `extract_billable_tokens` (BL-PRD-02) and increment the org's monthly meter. Manual title edits (PUT `/conversations/{id}`) suppress auto-title by setting `auto_title_attempted_at` synchronously; once set, the field never resets, so auto-title runs at most once per session regardless of outcome (success / failure / suppressed). Gated by `chat_auto_title_enabled` (default `true`; provides ops a kill switch for prompt-quality regressions).
 - **`ActivityCard.tsx`** — last-activity, duration, activity summary lines.
 - **`AuthStatusCard.tsx`** — account-level integration auth status. Header: "Authentication Status" + aggregate count badge (e.g. "6/8 connected"). Per-platform row: colored status dot + platform display name + "Last Checked" timestamp (from `PlatformConnection.last_tested_at` when IN-PRD-07 ships; falls back to `connected_at` otherwise) + state-dependent right-side CTA. Row click deep-links to `/settings/integrations/{connection_id}` (or `/settings/integrations` for not-connected platforms). Data source: the existing `useConnections(accountId)` hook from IN-PRD-03 — no new backend endpoint. Four rendered states: **Authenticated** (green dot + "Authenticated" badge), **Needs re-auth** (red dot + "Reconnect" CTA; covers `status ∈ {expired, revoked, error}` or definitive IN-PRD-07 failure), **Transient error** (amber dot + "Retry" button; only when IN-PRD-07 is present and the last test was `is_transient=true`), **Not connected** (grey dot + "Connect" CTA). The "Check Status" button is gated by `integrations_connection_test_enabled` — hidden in the read-only ship, visible and functional once IN-PRD-07 ships. Subtitle reads "Account-wide connection status" to make the scope explicit.
 - **`useChatSession.ts`** — TanStack `useQuery` hook consuming `/status-detail`. Polls every 10s while the status view is open (so tokens + activity counts update during an in-flight response); pauses on `visibilitychange` hidden.
@@ -75,10 +76,11 @@ Landing the status view completes the "see everything about a session" surface t
 | **[CH-PRD-05](./CH-PRD-05-todo-lists-and-artifacts.md)** (soft + integration) | `TodoListsPanel.tsx`, `ArtifactsPanel.tsx` — CH-PRD-04 reserves slots. The ADK-session orphan scan owned by CH-PRD-05 is the final safety net when the CH-PRD-04 delete cleanup task fails. If CH-PRD-05 hasn't shipped, the cards render "Coming soon" placeholders + a manual scan script is available for ops. | This PRD package |
 | **[IN-PRD-03](../../integrations/projects/IN-PRD-03-connection-management-ui.md)** (hard) | `GET /api/v1/integrations/{account_id}/connections` + `useConnections(accountId)` TanStack Query hook + `ConnectionCardView` / `PlatformConnectionPublic` types. The Authentication Status card is a pure frontend composition over this endpoint; no new backend endpoint is required from Chat. | [`../../integrations/README.md`](../../integrations/README.md) |
 | **[IN-PRD-07](../../integrations/projects/IN-PRD-07-on-demand-connection-test.md)** (soft) | `POST /connections/{id}/test` + `useTestConnectionMutation` hook + `ConnectionTestResult` type + `PlatformConnection.last_tested_at` field + `integrations_connection_test_enabled` flag. Optional at CH-PRD-04 ship time: if present, the Auth Status card renders the per-row "Check Status" button and reacts to test results; if absent, the card ships read-only and IN-PRD-07's frontend scope adds the button later. | [`../../integrations/projects/IN-PRD-07-on-demand-connection-test.md`](../../integrations/projects/IN-PRD-07-on-demand-connection-test.md) |
+| **[BL-PRD-02](../../billing/projects/BL-PRD-02-token-meter-monthly-enforcement.md)** (soft) | **For auto-title generation** — the `gemini-2.5-flash` call passes through `extract_billable_tokens(event)` and increments the org's monthly token meter. Same shared helper Chat already uses for per-turn aggregation (CH-PRD-01); no new contract. | `../../billing/README.md` §7.4 |
 | **[BL-PRD-05](../../billing/projects/BL-PRD-05-failure-modes-permissions.md)** (soft) | Rate-limit substrate for the export endpoint. Fallback: minimal in-process limiter. | `../../billing/README.md` |
 | Existing `DELETE /conversations/{id}` | Base endpoint; CH-PRD-04 adds the side-table tombstone + async cleanup. | `api/src/kene_api/routers/chat.py` |
 | GCS signed URLs | 10-minute TTL for in-app listing; 24-hour TTL for export-embedded links. | GCP |
-| **[FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api.md)**, **[FF-PRD-03](../../feature-flags/projects/FF-PRD-03-frontend-sdk-and-e2e.md)** | `chat_status_detail_enabled` flag (gates the status view). `integrations_connection_test_enabled` flag (inherited from IN-PRD-07; gates the Check Status button and state-reactive CTAs on the Auth Status card). | `../../feature-flags/README.md` |
+| **[FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api.md)**, **[FF-PRD-03](../../feature-flags/projects/FF-PRD-03-frontend-sdk-and-e2e.md)** | `chat_status_detail_enabled` flag (gates the status view). `integrations_connection_test_enabled` flag (inherited from IN-PRD-07; gates the Check Status button and state-reactive CTAs on the Auth Status card). `chat_auto_title_enabled` flag (default `true`; ops kill switch for the auto-title generator). | `../../feature-flags/README.md` |
 
 ## 4. Data contract
 
@@ -171,14 +173,19 @@ Response returns after the side-table write (synchronous). ADK + GCS cleanup hap
 | Modify | `frontend/src/lib/chatApi.ts` — wrappers for status-detail, export, delete (extend), put-title. **Also:** ship a no-op stub `useTestConnectionMutation` hook here (returns `{ mutate: noop, mutateAsync: async () => null, isPending: false, data: undefined }`) so `AuthStatusCard.tsx` has a stable import to build against even before IN-PRD-07 ships. IN-PRD-07's frontend scope replaces the stub's body with a one-line re-export from `frontend/src/app/lib/api/integrations.ts`. The component-side call site never changes. |
 | Create | `api/src/kene_api/chat/status_detail.py` — `get_status_detail(session_id) → ChatStatusDetail` |
 | Create | `api/src/kene_api/chat/export.py` — `export_session_as_markdown(session_id)` using `yaml.safe_dump` |
-| Modify | `api/src/kene_api/routers/chat.py` — 4 endpoints: `/status-detail`, `/export`, `DELETE` extended, `PUT` title |
-| Modify | `api/src/kene_api/chat/side_table.py` — `tombstone(session_id)` fleshed out (creates Cloud Run task) |
+| Create | `api/src/kene_api/chat/auto_title.py` — `generate_session_title(session_id, user_id)` async generator using `gemini-2.5-flash`. See §5.7. |
+| Modify | `api/src/kene_api/routers/chat.py` — 4 endpoints: `/status-detail`, `/export`, `DELETE` extended, `PUT` title (PUT also stamps `auto_title_attempted_at = now()` synchronously to suppress auto-title when the user beats it). |
+| Modify | `api/src/kene_api/chat/side_table.py` — `tombstone(session_id)` fleshed out (creates Cloud Run task); add `update_from_delta` callsite that sets `auto_title_attempted_at` on PUT-title. |
+| Modify | `api/src/kene_api/chat/accumulator.py` (from CH-PRD-01) — at end of `build_delta()`, hook a check: if `message_count == 2 AND title is None AND auto_title_attempted_at is None` after applying the delta, return a side-channel "should_fire_auto_title" signal that the completion endpoint's `finally` reads; if true, fire-and-forget `generate_session_title(...)`. |
+| Modify | `api/src/kene_api/routers/chat.py` (completion endpoint, from CH-PRD-01) — `finally` block reads the accumulator's auto-title signal and fires the background task. |
 | Create | `api/src/kene_api/chat/cleanup_task.py` — Cloud Run background handler for async ADK + GCS delete |
 | Modify | `deployment/terraform/cloud_run.tf` — optional: separate cleanup worker (or piggy-back on existing job runner) |
 | Create | `api/tests/unit/chat/test_status_detail.py` |
 | Create | `api/tests/unit/chat/test_export_markdown.py` |
 | Create | `api/tests/unit/chat/test_export_yaml_safe.py` |
+| Create | `api/tests/unit/chat/test_auto_title.py` — happy path; race with manual edit; flag-off skip; failure path leaves title null + `auto_title_attempted_at` set; second turn does not retry. |
 | Create | `api/tests/integration/chat/test_delete_two_phase.py` |
+| Create | `api/tests/integration/chat/test_auto_title_billing_meter.py` — assert tokens consumed by `gemini-2.5-flash` flow through `extract_billable_tokens` and increment the org's BL-PRD-02 meter. |
 | Create | `frontend/src/components/chat/__tests__/SessionStatusView.spec.tsx` |
 | Create | `frontend/src/components/chat/__tests__/TokenUsagePanel.spec.tsx` |
 | Create | `frontend/src/components/chat/__tests__/AuthStatusCard.spec.tsx` |
@@ -391,13 +398,88 @@ When IN-PRD-07 **is shipped**: the "Check Status" button appears on every connec
 | on | off | Card renders; Check Status button hidden; row states derive from `status` only; "Connected: {date}" label |
 | on | on | Card renders; Check Status button visible; row states react to live test results; "Last Checked: {date}" label |
 
+### 5.7 Auto-title generation
+
+Once-per-session, after the first assistant response completes. Asynchronous (no impact on streaming UX), billable through the org's monthly meter, suppressed by manual title edits, and never retried after the first attempt regardless of outcome.
+
+**Trigger condition.** CH-PRD-01's `SessionTurnAccumulator.build_delta()` includes the `message_count` increment for the just-completed turn. After the side-table update lands, the completion endpoint's `finally` block re-reads the resulting metadata and checks:
+
+```text
+should_fire_auto_title = (
+    message_count == 2                       # first user message + first assistant response
+    AND title is None                        # user has not set one
+    AND auto_title_attempted_at is None      # we have not already tried
+    AND chat_auto_title_enabled              # ops kill switch
+)
+```
+
+If true, the endpoint fires `asyncio.create_task(generate_session_title(session_id, user_id))` and continues. The streaming response has already finished by the time `finally` runs; the user sees no latency.
+
+**Generator (`api/src/kene_api/chat/auto_title.py`):**
+
+```python
+AUTO_TITLE_PROMPT = """Generate a concise 3-6 word title that captures
+what this conversation is about. Return ONLY the title text — no quotes,
+no punctuation at the end, no leading/trailing whitespace.
+
+User message: {user_msg}
+Assistant response: {assistant_msg}"""
+
+async def generate_session_title(session_id: str, user_id: str) -> None:
+    # Re-read in case user beat us to it (race-safe).
+    meta = await side_table.get(session_id)
+    if meta is None or meta.title is not None or meta.auto_title_attempted_at is not None:
+        return
+    if not feature_flags.is_enabled("chat_auto_title_enabled"):
+        return
+
+    events = await adk_session_service.get_session_events(session_id)
+    user_msg = first_user_text(events)[:500]            # truncate to bound prompt cost
+    assistant_msg = first_assistant_text(events)[:500]
+
+    try:
+        resp = await gemini_client.generate(
+            model="gemini-2.5-flash",
+            prompt=AUTO_TITLE_PROMPT.format(user_msg=user_msg, assistant_msg=assistant_msg),
+            max_output_tokens=30,
+            temperature=0.2,
+        )
+        # Bill the call against the org's BL-PRD-02 meter (same path as agent calls).
+        billing.meter_increment(meta.organization_id, extract_billable_tokens(resp))
+        title = resp.text.strip()[:120]
+    except (GeminiError, asyncio.TimeoutError, ValueError) as e:
+        log.warning("auto_title_failed", session_id=session_id, error=str(e))
+        title = None  # leave title null; do not retry
+
+    # Re-read again before write (race with manual edit).
+    meta = await side_table.get(session_id)
+    if meta is None or meta.title is not None:
+        # User beat us to it. Stamp auto_title_attempted_at so we don't retry.
+        await side_table.update_from_delta(session_id, {"auto_title_attempted_at": now_utc()})
+        return
+
+    delta = {"auto_title_attempted_at": now_utc()}
+    if title:  # success path
+        delta["title"] = title
+        delta["search_text"] = casefold_search_text(meta, override_title=title)
+    await side_table.update_from_delta(session_id, delta)
+```
+
+**Manual-edit suppression.** `PUT /conversations/{id}` (title-edit) is extended in this PRD to set `auto_title_attempted_at = now()` in the same Firestore update as the title write. This means: if a user types a title within the first ~2 seconds of the first agent reply (before the auto-title call lands), the suppression race is resolved synchronously by the user write; the in-flight auto-title generator's final re-read sees the user title and skips the title overwrite, only stamping `auto_title_attempted_at` (which is a no-op since the user already set it).
+
+**Billing.** The Gemini call's `usage_metadata` is extracted via the shared `extract_billable_tokens(event)` helper (per CH-PRD-01 §5.4 — Billing-owned, in `app/adk/token_accounting.py`) and incremented against the org via `billing.meter_increment`. Same code path as agent calls; no duplicate metering. `test_auto_title_billing_meter.py` integration test asserts the meter advances.
+
+**Failure semantics.** Any failure (Gemini API error, timeout, malformed response, empty string, post-strip 0-length) → log warning, leave title null, stamp `auto_title_attempted_at` to prevent retry. The user sees "Untitled session" until they edit. Acceptable v1 behavior; not worth a retry queue.
+
+**Cost-of-feature ceiling.** With `gemini-2.5-flash` at ~30 output tokens × ~250 input tokens per call, average cost is well under $0.001 per session. At 100K sessions/month, that's <$100 — bounded and tracked through BL-PRD-02 like any other agent call.
+
 ## 6. API contract
 
 ### Extended
 
 | Method | Path | Purpose |
 |---|---|---|
-| `PUT` | `/api/v1/chat/conversations/{id}` | Body `{title}` (renamed from `conversation_name`). Updates side-table + `search_text` (casefold). |
+| `PUT` | `/api/v1/chat/conversations/{id}` | Body `{title}` (renamed from `conversation_name`). Updates side-table + `search_text` (casefold) + sets `auto_title_attempted_at = now()` synchronously to suppress an in-flight auto-title call. |
 | `DELETE` | `/api/v1/chat/conversations/{id}` | Two-phase tombstone. Returns 200 after side-table write; async ADK + GCS cleanup. |
 
 ### New
@@ -439,6 +521,12 @@ Auth on all: authenticated user + session ownership. 404 on mismatch.
 22. **Auth Status card — no probe configured** — for a platform whose `PlatformDefinition.health_check_endpoint` is null, last-test result `code="no_probe_configured"` does NOT degrade the row — it renders "Authenticated" based on `status=connected`. The Check Status button on that row is rendered **disabled** (not hidden) with tooltip text "Live verification not available for this platform"; the button's disabled state is detectable via `aria-disabled="true"` + the standard disabled attribute.
 23. **Auth Status card — loading state** — while `useConnections` is pending (initial fetch or refetch after an invalidation), the card renders a skeleton with N rows where N = (a) the count of rows cached by TanStack Query from a prior fetch if available, (b) otherwise 3 skeleton rows as a neutral default. Header badge reads "Loading…" during the pending state. The skeleton uses the same row height as real rows to prevent layout shift when data arrives.
 24. **Auth Status card — accessibility** — (a) each platform row has `role="button"` + `aria-label` summarizing `"{platform_display_name} — {state_label}"` (e.g. `"Google Ads — Authenticated"`, `"Mailchimp — Needs re-auth"`); (b) inner CTA buttons (Check Status / Reconnect / Retry / Connect) have their own accessible labels and stop-propagation on click so the row-click deep-link doesn't also fire; (c) keyboard navigation: Tab moves focus across rows, Enter on a focused row triggers the row-click deep-link, Tab-then-Enter on an inner button triggers its action; (d) the card region is `aria-live="polite"` so state changes after a Check Status call are announced to screen readers; (e) color is never the only cue — every state pairs the dot color with a text badge. Verified by an axe-core assertion in the component spec.
+25. **Auto-title — happy path.** Send the first user message → first assistant response completes → within 10 seconds the side-table row's `title` is populated by `gemini-2.5-flash` with a 3–6 word title; `auto_title_attempted_at` is non-null; the sidebar reflects the title on its next poll. `search_text` is recomputed using the new title.
+26. **Auto-title — manual edit beats auto-title.** Send the first user message → before the assistant response completes (or within ~1s after), the user PUTs a manual title via `PUT /conversations/{id}`. The PUT sets `auto_title_attempted_at` synchronously. The auto-title generator's final re-read sees a non-null title, skips the title write, and stamps `auto_title_attempted_at` (idempotent — already set). End state: user's manual title preserved; only one `auto_title_attempted_at` write.
+27. **Auto-title — billing meter.** Integration test asserts the `gemini-2.5-flash` call's tokens flow through `extract_billable_tokens(event)` and increment the org's BL-PRD-02 monthly meter. Verifies the `usage_records` row has the right `organization_id` and tokens >0.
+28. **Auto-title — flag off.** With `chat_auto_title_enabled=false`, no Gemini call fires; `auto_title_attempted_at` stays null; sessions retain `title=null` until the user edits. Asserted by network-mock count == 0.
+29. **Auto-title — failure path.** Mock the Gemini client to raise `GeminiError` (or return empty string) → the generator catches, leaves `title=null`, sets `auto_title_attempted_at=now()`. Second turn does NOT retry (precondition `auto_title_attempted_at is None` fails). Asserted by network-mock count == 1 across 5 subsequent turns.
+30. **Auto-title — idempotency.** Even if the trigger fires twice (e.g. duplicate side-table flush), the generator's first re-read finds `auto_title_attempted_at` non-null on the second invocation and returns immediately. Asserted by network-mock count == 1 when the trigger is invoked twice in rapid succession.
 
 ## 8. Test plan
 
@@ -486,6 +574,10 @@ Auth on all: authenticated user + session ownership. 404 on mismatch.
 | Account-level integrations surfaced inside a per-session panel is confusing — the same list appears across every session | Card subtitle reads "Account-wide connection status"; row-click deep-links to `/settings/integrations` which is the canonical management surface. Not a novel pattern — the Context & Token Usage card is also per-session while the integrations it depends on are account-level. |
 | IN-PRD-07 slips past CH-PRD-04 ship | Card ships read-only behind the soft-dep branch (no Check Status button, `"Connected: {date}"` timestamp label). IN-PRD-07's frontend scope explicitly includes the extension to turn the button on. No CH-PRD-04 re-release required — the flag flip does it. |
 | Check Status button gives the impression of a per-session preflight | Button label is "Check Status" (not "Preflight"); result updates the shared account-level state, not anything session-scoped. Documented in the card's help tooltip if added later. |
+| Auto-title produces inappropriate or hallucinated content (e.g. for sessions in unusual languages, prompt-injection-flavored first messages, or low-context exchanges) | Max 30 output tokens + temperature 0.2 + post-strip-and-truncate to 120 chars + `chat_auto_title_enabled` ops kill switch. Qualitative review on a stratified sample (10 sessions × 5 demographic buckets) during the first 2 weeks of rollout; if quality is unacceptable, flip flag off, re-tune prompt, re-enable. Runtime safety: if the model returns empty/whitespace-only, treat as failure (leave `title=null`). |
+| Race between async auto-title generation and user manual edit | Two re-reads of `meta.title` inside `generate_session_title` (once before the LLM call, once before the side-table write); manual PUT also sets `auto_title_attempted_at` synchronously to suppress an in-flight call. Final-write check guarantees the user's title wins regardless of timing. AC #26 covers this. |
+| `gemini-2.5-flash` not in `MODEL_CONTEXT_WINDOW_REGISTRY` | The model is registered at CH-PRD-01 ship time as part of the registry's coverage of every model referenced in `app/adk/agents/**/*.py`. CH-PRD-04 expands the registry's coverage spec to also include any model referenced from `app/adk/` more broadly (auto-title doesn't live under `agents/` but still must be registered). CI lint catches a missing entry. |
+| Cost of auto-title at high session volume balloons | Bounded by design: 30 max output tokens × ~250 input tokens × `gemini-2.5-flash` rates → <$0.001/session. At 100K sessions/month: <$100. Tracked in Billing's existing per-org meter. If volume grows beyond plan, the kill switch is the immediate lever. |
 
 ### Open questions
 - **Q:** Is 10 exports/hour/session too restrictive for power users? → **Proposal:** start there; revisit based on observed abuse patterns. Easy to loosen via config.

@@ -2,7 +2,7 @@
 
 **Status:** Draft — ready to start once DM-PRD-00, DM-PRD-07, and PR-PRD-08 ship
 **Owner team:** SAR-E component team (backend)
-**Blocked by:** DM-PRD-00 (Shape B convention + per-account subcollection fixtures — every SAR-E collection is Shape B from day one); DM-PRD-07 (`UserRole` + `require_role` dependency + `write_audit` helper — every mutation here writes an audit entry); PR-PRD-08 (`Campaign` + `CampaignObjective` enum — the four `FunnelObjective` values bind one-to-one to the campaign objectives)
+**Blocked by:** DM-PRD-00 (Shape B convention + per-account subcollection fixtures — every SAR-E collection is Shape B from day one); DM-PRD-07 (`AccountRole` + `require_role(AccountRole.EDITOR \| AccountRole.ADMIN, scope="account")` dependency + generalized `write_audit(...)` helper — every mutation here writes an audit entry to `accounts/{account_id}/sar_e_audit/`); PR-PRD-08 (`Campaign` + `CampaignObjective` enum — the four `FunnelObjective` values bind one-to-one to the campaign objectives); A-PRD-01 (`ProjectPlan` automation fields — `is_system=true`, `recurrence_cron`, `save_as_automation`, plus the `PlanRun` model — that `/config/setup`'s side-effect step writes via the stub `automation_seeder` shipped here)
 **Blocks:** SE-PRD-02 (weekly ingestion reads `sar_e_config` + `EffectivenessKPI` + the setup-created automation); SE-PRD-03 (VAR training reads `FunnelStageMapping` + `ChannelCoverage`); SE-PRD-06 (analytical queries resolve historical mappings); PE-PRD-04 (Configuration tab); PE-PRD-05 (Setup Wizard)
 **Estimated effort:** 4 days
 
@@ -31,8 +31,8 @@ No KPI catalog is global. Every `EffectivenessKPI` is per-account and tied to a 
   - `FunnelMappingHistoryEntry` — snapshot of the mapping at each version, plus `diff_summary` and `updated_by`
   - `Threshold` — `{kpi_id, warn_low, warn_high, critical_low, critical_high}` with cross-field validator `critical_low ≤ warn_low ≤ warn_high ≤ critical_high` (nulls permitted anywhere in the chain)
   - `ChannelCoverage` + `ChannelCoveragePoint` — matrix of `{channel, week_start, has_data}` triples
-  - `SarEConfig` — `{enabled, setup_wizard_completed, forecast_horizon_weeks, initial_backfill_weeks, updated_at, updated_by}`
-- **`accounts/{account_id}/sar_e_config` account-creation hook** — extend the account-creation path in `api/src/kene_api/routers/accounts.py` (or the existing post-creation seed helper) to write the default `SarEConfig` with `enabled=false, setup_wizard_completed=false, forecast_horizon_weeks=12, initial_backfill_weeks=104`. Plus default empty `FunnelStageMapping` (no mappings, `version=0`) and default `Threshold` set (empty list — populated post-wizard when KPIs exist).
+  - `SarEConfig` — `{enabled, setup_wizard_completed, forecast_horizon_weeks, initial_backfill_weeks, ab_harness_opt_out, updated_at, updated_by}`. `ab_harness_opt_out: bool = False` is forward-compat for SE-PRD-07's model A/B harness — set to `true` to keep the account on the champion model regardless of harness traffic-pct routing. Seeded `false` by the account-creation hook; user-facing toggle does not exist in v1 (super-admin edit only).
+- **`accounts/{account_id}/sar_e_config` account-creation hook** — extend the account-creation path in `api/src/kene_api/routers/accounts.py` (or the existing post-creation seed helper) to write the default `SarEConfig` with `enabled=false, setup_wizard_completed=false, forecast_horizon_weeks=12, initial_backfill_weeks=104, ab_harness_opt_out=false`. Plus default empty `FunnelStageMapping` (no mappings, `version=0`) and default `Threshold` set (empty list — populated post-wizard when KPIs exist).
 - **`/api/v1/sar-e/{account_id}/config/status`** read endpoint (`GET`) returning `SarEConfigStatus` — superset of `SarEConfig` with two joined fields: `connected_integrations: list[PlatformConnectionSummary]` (from Integrations) and `available_kpi_sources: list[AvailableKPISource]` (from Data Pipeline's job catalog filtered by currently-connected platforms). The Performance tab (PE-PRD-01) reads `enabled`; the wizard (PE-PRD-05) reads the two joined lists.
 - **`/api/v1/sar-e/{account_id}/config/setup`** wizard-completion endpoint (`POST`) — body `{kpis: list[EffectivenessKPIInput], funnel_mapping: dict[FunnelObjective, EffectivenessKPIId], initial_backfill_weeks: int}`. In one Firestore transaction: (a) write each KPI under `accounts/{account_id}/effectiveness_kpis/{kpi_id}` with `created_via="setup_wizard"`; (b) write `FunnelStageMapping` v1 + `FunnelMappingHistory` v1; (c) flip `SarEConfig.enabled=true` + `setup_wizard_completed=true`. Outside the transaction (same request): (d) call the Automations service to create the `is_system=true` weekly ingestion automation (recurrence `0 7 * * 1 UTC`); (e) call the orchestrator to kick off the one-shot backfill plan. p95 target ≤5s; on any failure during (a-c) the transaction rolls back; on failure during (d-e) the endpoint surfaces a compensating-delete error and keeps `enabled=false` so the wizard can retry cleanly.
 - **Post-setup config routers** under `/api/v1/sar-e/{account_id}/config/`:
@@ -45,8 +45,8 @@ No KPI catalog is global. Every `EffectivenessKPI` is per-account and tied to a 
   - `FunnelStageMapping` validator — exactly 4 entries; every value must reference an existing `EffectivenessKPI` with `is_active=true`; no duplicate KPI ids across Objectives
   - `EffectivenessKPI.source_job_id` validator — job must exist; job's connector `platform_id` must have an active Integrations connection for the account
   - `Threshold` cross-field validator — `critical_low ≤ warn_low ≤ warn_high ≤ critical_high` (nulls allowed anywhere)
-- **Audit integration (DM-PRD-07)** — every mutation (`/config/setup`, `PUT /funnel-mapping`, `PUT /thresholds`, `PUT /channel-coverage`, KPI CRUD) writes an `AuditEntry` via `write_audit(...)` with `before` / `after` diffs. Funnel-mapping changes additionally include the `diff_summary` string in the audit payload.
-- **Role gating (DM-PRD-07)** — all mutation endpoints require `role >= editor`; `/config/setup` additionally requires `role >= admin` (kicking off backfill is an operation with cost implications). Reads are `role >= viewer`.
+- **Audit integration via DM-PRD-07's generalized `write_audit`** — every mutation (`/config/setup`, `PUT /funnel-mapping`, `PUT /thresholds`, `PUT /channel-coverage`, KPI CRUD) writes an `AuditEntry` via `write_audit(parent_kind="account", parent_id=account_id, audit_subcollection="sar_e_audit", resource_type=<one of "sar_e_config"|"effectiveness_kpi"|"funnel_mapping"|"thresholds"|"channel_coverage"|"target">, action=<registered SAR-E action — "create"|"update"|"delete"|"setup_completed"|"ingest"|"retrain"|"ab_config_update"|"target_derive"|"target_save">, before_state, after_state, ...)`. The tuple set is registered in DM-PRD-07's audit registry. Funnel-mapping changes additionally include the `diff_summary` string in the audit payload. SE-PRD-02 reuses the same path with `action="ingest"` and `action="retrain"`; SE-PRD-05 with `action="target_derive"`/`"target_save"`; SE-PRD-07 with `action="ab_config_update"`.
+- **Role gating (DM-PRD-07)** — all mutation endpoints require `require_role(AccountRole.EDITOR, scope="account")`; `/config/setup` additionally requires `require_role(AccountRole.ADMIN, scope="account")` (kicking off backfill is an operation with cost implications). Reads are `require_role(AccountRole.VIEWER, scope="account")`.
 - **Tests**:
   - Unit tests for all validators (Funnel mapping uniqueness, Threshold inequality, KPI source-job compatibility)
   - Integration tests for every endpoint (happy path + role-denial + invalid-payload)
@@ -69,7 +69,7 @@ No KPI catalog is global. Every `EffectivenessKPI` is per-account and tied to a 
 ## 3. Dependencies
 
 - **DM-PRD-00 (Migration Foundation):** Shape B convention landed in `api/CLAUDE.md`; `_migrate_shape_b/resources.py` registry is the authoritative list of per-account subcollections. This PRD registers four new subcollections there (`effectiveness_kpis`, `funnel_mapping_history`, `thresholds`, `channel_coverage`) plus the `sar_e_config` single-doc path. The composite index definitions land in `deployment/terraform/firestore-indexes.tf` alongside the others DM-PRD-00 establishes.
-- **DM-PRD-07 (Approval Workflow & Audit):** `UserRole` + `require_role(UserRole.EDITOR)` / `require_role(UserRole.ADMIN)` FastAPI dependencies; `write_audit(...)` helper. Every mutation endpoint here uses both.
+- **DM-PRD-07 (Roles, Members, Audit Substrate):** `AccountRole` enum + `require_role(AccountRole.EDITOR | AccountRole.ADMIN, scope="account")` FastAPI dependencies; generalized `write_audit(parent_kind, parent_id, audit_subcollection, resource_type, action, ...)` helper. Every mutation endpoint here uses both. The `(account, sar_e_audit, ...)` tuple set is registered in DM-PRD-07's audit registry (§4.8).
 - **PR-PRD-08 (Campaign Management):** exports `CampaignObjective` enum (`Problem Awareness | Brand Awareness | Consideration | Conversion`). SAR-E's `FunnelObjective` is a type-alias re-export — not a parallel enum — so any future Objective addition in PR-PRD-08 propagates automatically. The four per-objective fallback campaigns PR-PRD-08 seeds are what SE-PRD-06's cost-rollup queries aggregate against.
 - **Integrations (read-only):** `GET /api/v1/internal/integrations/{account_id}/connections` returns the connected-platforms summary the `/config/status` endpoint joins into its response. No OAuth-flow coupling here — this PRD only reads the connection roster.
 - **Data Pipeline (read-only):** `GET /api/v1/internal/data-pipeline/jobs?account_id={id}` returns the job catalog (global + per-account overlays). SAR-E filters by platforms the account has connected and exposes the filtered list as `available_kpi_sources` on `/config/status`. The KPI-source validator on `POST /config/effectiveness-kpis` calls this endpoint too.
@@ -175,6 +175,8 @@ class SarEConfig(BaseModel):
     setup_wizard_completed: bool = False
     forecast_horizon_weeks: int = 12
     initial_backfill_weeks: int = 104
+    ab_harness_opt_out: bool = False                         # forward-compat for SE-PRD-07's model A/B harness;
+                                                             # super-admin-edited only in v1
     updated_at: datetime
     updated_by: str
 ```
@@ -346,11 +348,14 @@ async def complete_setup(account_id: str, request: SetupRequest, user_id: str) -
 
         await write_audit(
             txn,
-            account_id=account_id,
+            parent_kind="account",
+            parent_id=account_id,
+            audit_subcollection="sar_e_audit",
+            resource_type="sar_e_config",
+            action="setup_completed",                            # registered in DM-PRD-07's audit registry
             user_id=user_id,
-            action="sar_e.setup.complete",
-            before=None,
-            after={"kpi_count": len(request.kpis), "mapping_version": 1},
+            before_state=None,
+            after_state={"kpi_count": len(request.kpis), "mapping_version": 1},
         )
 
     # Phase 2 — side effects (non-transactional; idempotent on retry)
@@ -384,7 +389,8 @@ Every `PUT /config/funnel-mapping` call:
    - Writes the new `FunnelStageMapping` doc with `version = N+1`.
    - Writes `FunnelMappingHistoryEntry` at `funnel_mapping_history/{N+1}` with the snapshot + diff.
    - Writes audit entry with before/after.
-4. Invalidates downstream Performance API caches via a small internal event (the Performance API's `/configuration` + `/analysis` + `/simulations` bundles set `Cache-Control: no-store` on the next read; no Redis here — the caches are in-process TanStack Query state on the frontend, invalidated client-side per PE-PRD-04 §5.4).
+4. **Outside the transaction (best-effort, fire-and-forget):** calls SE-PRD-03's `flag_baselines_for_retrain(account_id, reason="config_changed")` helper to flip `retrain_needed=True` + `retrain_reason="config_changed"` on all of the account's `Baseline` docs. Powers the Performance Diagnostics tab's `RetrainNeededBadge` (PE-PRD-07). Failures are logged but do not fail the mapping save — the next Monday's retrain self-heals the staleness signal. No-op when the account has zero baselines (pre-first-retrain).
+5. Invalidates downstream Performance API caches via a small internal event (the Performance API's `/configuration` + `/analysis` + `/simulations` bundles set `Cache-Control: no-store` on the next read; no Redis here — the caches are in-process TanStack Query state on the frontend, invalidated client-side per PE-PRD-04 §5.4).
 
 ### 6.3 Account-creation seed hook
 
@@ -419,10 +425,10 @@ Validation errors return `422 Unprocessable Entity` with a structured body point
 
 ## 7. Acceptance criteria
 
-1. **Account creation seeds defaults.** Creating a new account via `POST /api/v1/accounts/` produces a Firestore state where `accounts/{account_id}/sar_e_config` exists with `enabled=false, setup_wizard_completed=false, forecast_horizon_weeks=12, initial_backfill_weeks=104`, `funnel_mapping` exists with `version=0, mappings={}`, and `channel_coverage` exists with empty `matrix`.
-2. **`GET /config/status` pre-wizard.** On a freshly seeded account with no connected integrations, returns `{enabled: false, setup_wizard_completed: false, forecast_horizon_weeks: 12, initial_backfill_weeks: 104, connected_integrations: [], available_kpi_sources: []}`.
+1. **Account creation seeds defaults.** Creating a new account via `POST /api/v1/accounts/` produces a Firestore state where `accounts/{account_id}/sar_e_config` exists with `enabled=false, setup_wizard_completed=false, forecast_horizon_weeks=12, initial_backfill_weeks=104, ab_harness_opt_out=false`, `funnel_mapping` exists with `version=0, mappings={}`, and `channel_coverage` exists with empty `matrix`.
+2. **`GET /config/status` pre-wizard.** On a freshly seeded account with no connected integrations, returns `{enabled: false, setup_wizard_completed: false, forecast_horizon_weeks: 12, initial_backfill_weeks: 104, connected_integrations: [], available_kpi_sources: []}`. (`ab_harness_opt_out` is intentionally not surfaced on `/config/status` — admin-only field.)
 3. **`GET /config/status` with integrations.** After connecting Google Analytics via Integrations + seeding at least one `DataPipelineJob` for the account, `/config/status` returns a non-empty `connected_integrations` + non-empty `available_kpi_sources`, still `enabled=false`.
-4. **`POST /config/setup` happy path.** Submitting 4 valid KPIs + a valid mapping + `initial_backfill_weeks=52` returns `{enabled: true, setup_wizard_completed: true, automation_id, backfill_plan_run_id}` within 5s; Firestore now has 4 `effectiveness_kpis` docs + `funnel_mapping` v1 + `funnel_mapping_history/1` + the `is_system=true` automation created with recurrence `0 7 * * 1 UTC`; audit entry `sar_e.setup.complete` is written.
+4. **`POST /config/setup` happy path.** Submitting 4 valid KPIs + a valid mapping + `initial_backfill_weeks=52` returns `{enabled: true, setup_wizard_completed: true, automation_id, backfill_plan_run_id}` within 5s; Firestore now has 4 `effectiveness_kpis` docs + `funnel_mapping` v1 + `funnel_mapping_history/1` + the `is_system=true` automation created with recurrence `0 7 * * 1 UTC`; an audit entry with `action="setup_completed"` (DM-PRD-07's registered action) and `resource_type="sar_e_config"` is written to `accounts/{account_id}/sar_e_audit/`.
 5. **`POST /config/setup` validator rejection.** Submitting 4 KPIs where two share the same `source_job_id` + a mapping that points at 3 distinct KPIs (duplicating one) returns `422` with field-scoped errors; Firestore is unchanged.
 6. **`POST /config/setup` transaction rollback.** If the Automations `create_system_automation` call fails after the transaction commits, the endpoint returns `503` and the account's `sar_e_config.enabled` is reset to `false`; subsequent wizard retries succeed cleanly (the transaction can re-run without duplicate-id conflicts because KPIs are idempotent on `kpi_id`).
 7. **`PUT /config/funnel-mapping` bumps version + history.** Replacing Consideration's KPI produces `funnel_mapping.version = N+1`, a new `funnel_mapping_history/{N+1}` entry with `diff_summary = "Consideration: kpi_abc → kpi_def"`, and an audit entry. Repeating the same PUT returns `304 Not Modified` and does not bump version.

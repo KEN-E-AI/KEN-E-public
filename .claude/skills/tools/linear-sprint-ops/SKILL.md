@@ -215,28 +215,50 @@ query TeamWorkflowStates($teamId: String!) {
 }
 ```
 
-**Valid status transitions (enforced by workflow SKILLs):**
+**Valid issue status transitions (enforced by workflow SKILLs):**
 
 | From | To | Triggered By |
 |------|----|-------------|
-| Scheduled | Awaiting Assignment | SCRUM Master (sprint planning) |
-| Awaiting Assignment | Planning | Dev Team (begins work) |
-| Planning | Awaiting Review | Dev Team (Implementation Plan ready) |
-| Awaiting Review | Planning | PO feedback requires plan revision |
+| (new) | Scheduled | PO assigns issue to a Cycle (entry point) |
+| (new) | Backlog | PO creates issue without a Cycle |
+| (new) | Triage | PO creates issue with known gaps to be filled |
+| Backlog | Scheduled | PO assigns to a Cycle (routes to SCRUM Master) |
+| Triage | Scheduled | PO fills gaps (routes to SCRUM Master for re-validation) |
+| Triage | Cancelled | PO rejects issue |
+| Scheduled | Awaiting Assignment | SCRUM Master after `validate-issue-completeness` passes |
+| Scheduled | Triage | SCRUM Master after `validate-issue-completeness` fails (missing fields) |
+| Awaiting Assignment | Planning | Dev Team (begins work — Flow 1 Step 1) |
+| Planning | Awaiting Review | Dev Team — Implementation Plan posted with one or more "Questions for PO (Blocking)" (Flow 1 Step 3 Path B) |
+| Planning | In Progress | Dev Team — Implementation Plan posted with no blocking questions; auto-approved (Flow 1 Step 3 Path A) |
+| Awaiting Review | Planning | PO requests plan revisions (feedback comment added) |
 | Awaiting Review | In Progress | PO approves Implementation Plan |
-| In Progress | In Review | Dev Team (draft PR created, automated review starting) |
-| In Review | Ready for Testing | Dev Team (review + verify pass, Test Instructions posted) |
+| In Progress | In Review | Dev Team (draft PR created, Review & Verify loop starting — Flow 2 Step 6) |
+| In Review | Ready for Testing | Dev Team (review + verify pass, Test Instructions posted — Flow 2 Step 7) |
 | Ready for Testing | Testing | Test Team (begins browser testing) |
 | Ready for Testing | Resolving Test Issues | Test Team (Test Instructions missing or build fails) |
 | Testing | Testing Complete | Test Team (all browser tests pass) |
 | Testing | Resolving Test Issues | Test Team (browser test failures found) |
-| Resolving Test Issues | In Progress | Dev Team (begins fixing test failures) |
-| In Progress | In Review | Dev Team (fixes complete, review loop restarting) |
-| Testing Complete | In Progress | PO rejects at Cycle review (feedback comment added) |
-| Testing Complete | Done | PO approves at Cycle review → SCRUM Master merges draft PR |
-| Triage | Backlog | PO accepts issue |
-| Triage | Cancelled | PO rejects issue |
-| Backlog | Scheduled | PO assigns to Cycle |
+| Resolving Test Issues | In Progress | Dev Team (begins fixing test failures — Flow 3 Step 10) |
+| Testing Complete | Done | PO merges integration PR (single-issue or multi-issue wave) and approves issue in Linear |
+| Testing Complete | In Progress | PO rejects at Wave Integration review (Flow 4 — feedback comment added) |
+| Done | (terminal) | SCRUM Master runs Wave / Project / Cycle Completion checks |
+| Cancelled | (terminal) | PO removes issue from scope |
+
+---
+
+### Linear Project state transitions
+
+Linear Projects (the parent container of an issue group, see `docs/dev-workflow.md` §1) have their own state machine, distinct from individual issues.
+
+| From | To | Triggered By | Notes |
+|------|----|-------------|-------|
+| (new) | Backlog / Planned | PO creates Project via `create-project` | Naming: `<PRD-ID>: <PRD title>` (e.g., `A-PRD-01: Data Model and API`) |
+| Backlog / Planned | Started | PO begins delivery (typically when first child issue moves to Scheduled) | Standard Linear behavior |
+| Started | Started (with `pm-action` label) | SCRUM Master after all child issues reach "Done" / "Cancelled" — applies `pm-action`, posts hand-off comment @mentioning PM | See operation 17 (`apply-pm-action-label`) and `dev-workflow.md` §8 |
+| Started | Completed | PM verifies project-level ACs satisfied, marks Project "Completed" via `update-project-state` (Linear sets `completedAt` automatically) | See operation 16 |
+| Started (with `pm-action`) | Started (no label, with rework issues) | PM finds AC gaps — opens new rework issues in next Cycle, Project stays Started until rework is Done | SCRUM Master keeps `pm-action` label until re-review passes |
+| Backlog / Planned | Cancelled | PO/PM rejects scope before any child issues exist (rare) | No label cleanup needed; Project is terminal |
+| Started | Cancelled | Flow 2 rollback when `validate-project-completeness` fails after Project creation, OR PO/PM aborts mid-flight (rare) | Caller must remove `pm-action` if present and either reassign or cancel any child issues — Cancelling the Project does NOT cascade to its issues |
 
 ---
 
@@ -323,19 +345,26 @@ Assess whether an issue has sufficient information for the Dev Team to begin wor
 
 **Validation criteria:**
 
+**Universal checks (apply to ALL issue types):**
+- [ ] Issue belongs to a Linear Project (`issue.project` is non-null) — orphan issues skip Project Completion Review and the PM cannot validate them against project-level ACs
+- [ ] The parent Linear Project follows the naming convention `<PRD-ID>: <PRD title>` (e.g., `A-PRD-01: Data Model and API`)
+- [ ] Design References section uses the canonical format `docs/design/components/[component]/[doc]: §[section]` — one reference per line under a `## Design References` heading
+- [ ] At least one Design Reference points to the parent Project's PRD at `docs/design/components/{component}/projects/{PRD-ID}*.md` (the issue should cite the spec it derives from)
+
 For User Stories, check:
 - [ ] User Story statement present ("As a... I want... so that...")
 - [ ] At least 3 Acceptance Criteria with Given/When/Then structure
+- [ ] At least one of the issue's ACs corresponds to a §7 acceptance criterion in the parent Project's PRD (verbatim or near-verbatim — issues are 1:1 with PRD §7 ACs per `CLAUDE.md` §Linear Issue Structure)
 - [ ] Context section with 1+ paragraphs of background
 - [ ] Implementation Notes with specific file references
-- [ ] Design References with at least 1 entry
+- [ ] Design References with at least 1 entry (in canonical format above)
 - [ ] Estimate is set (non-zero)
 - [ ] Priority is set
 
 For Features, check:
 - [ ] Description with 2+ paragraphs
 - [ ] At least 3 Acceptance Criteria
-- [ ] Design References with at least 1 entry
+- [ ] Design References with at least 1 entry (in canonical format above)
 - [ ] Has child issues (User Stories) linked
 
 For Bugs, check:
@@ -349,6 +378,8 @@ For Bugs, check:
 1. Post a comment on the issue listing the gaps and @mentioning the issue's PO (resolve via `resolve-po-for-issue`, operation 13; Linear sends them a direct notification and the comment also appears in the team Slack channel)
 2. Add the `escalation` label if the gaps are blocking sprint planning (for Linear-side filtering)
 3. Set the status to "Triage"
+
+**Note on the universal checks:** The Linear Project membership and Design References format checks are NEW as of the project-PRD alignment (see `CLAUDE.md` §Linear Issue Structure and §Context Loading Sequence). Older issues authored before this convention may fail these checks even though they are otherwise complete. If an issue fails ONLY on these new checks and is otherwise sufficient for Dev Team execution, the SCRUM Master may set it to Awaiting Assignment AND post a comment flagging the missing Project / Design References for retroactive cleanup by the PO.
 
 ---
 
@@ -388,6 +419,8 @@ _Agent: {component}-scrum-master | Timestamp: {ISO 8601}_
 ### 9. apply-po-action-label
 
 Apply the `po-action` label to an issue that requires Product Owner action. This label powers the PO's saved Linear View — a persistent, always-current action queue across all components.
+
+**See also:** Operation 17 (`apply-pm-action-label`) — the parallel operation for `pm-action`, applied to **Linear Projects** (not issues) at Project Completion Review hand-off.
 
 **When to use:** When an issue enters a state that requires PO input AND the labeling is conditional or context-dependent. Simple state-based labeling (TO "Awaiting Review", TO "Triage") is handled automatically by the webhook receiver — agents do NOT apply `po-action` at those transitions.
 
@@ -657,6 +690,261 @@ return {"pm": PM}
 
 **Usage in comment templates:**
 - Emit `@{pm}` at the top of Project Completion Review hand-off comments and PM SLA escalations.
+
+---
+
+### 16. query-project
+
+Fetch a Linear Project's full state — name, description, lead, child issues, completion status. Used to load Level 3 (project PRD) context, audit AC coverage, and prepare PM hand-off comments.
+
+**When to use:** Before any operation that needs Project state — Project Completion Detection (SCRUM Master), Project Completion Review (PM via product-assistant), audit-project-coverage (operation 19), or product-assistant Flow 2 (Linear Project Creation, when extending an existing Project).
+
+**GraphQL query:**
+```graphql
+query ProjectDetails($projectId: String!) {
+  project(id: $projectId) {
+    id
+    name
+    description
+    content
+    state
+    completedAt
+    lead { id displayName name }
+    teams { nodes { id name key } }
+    labels { nodes { id name } }
+    issues(first: 100) {
+      nodes {
+        id
+        identifier
+        title
+        estimate
+        priority
+        state { name type }
+        assignee { id displayName }
+        labels { nodes { name } }
+      }
+    }
+  }
+}
+```
+
+**Naming convention check:** The Project's `name` field MUST follow `<PRD-ID>: <PRD title>` (e.g., `A-PRD-01: Data Model and API`). Callers should extract the `<PRD-ID>` prefix and use it to locate the matching PRD file at `docs/design/components/{component}/projects/{PRD-ID}*.md`.
+
+**Return:** The full Project object. If the Project has no Lead, the operation logs a warning — callers fall back to `ken` per `resolve-po-for-issue` rules.
+
+---
+
+### 17. apply-pm-action-label
+
+Apply the `pm-action` label to a **Linear Project** (NOT an issue) that requires Product Manager action — specifically, Project Completion Review (`docs/dev-workflow.md` §8). This is the parallel to operation 9 (`apply-po-action-label`), but operates at the Project level.
+
+**When to use:** When the SCRUM Master detects that all child issues of a Linear Project have reached "Done" or "Cancelled" and the Project is not yet marked "Completed". Applied alongside the hand-off comment that @mentions the PM (resolved via operation 15).
+
+**Label application path:** Linear Projects support labels via the `projectLabels` association. The `pm-action` label is a workspace-level label (same scope as `po-action`).
+
+**GraphQL mutation:**
+```graphql
+mutation AddLabelToProject($projectId: String!, $labelId: String!) {
+  projectUpdate(id: $projectId, input: { labelIds: [$labelId] }) {
+    success
+    project { id name labels { nodes { name } } }
+  }
+}
+```
+
+> Note: `projectUpdate` with `labelIds` REPLACES the label set. To preserve existing labels, first query the Project's current labels (operation 16) and pass the union: `[...existingLabelIds, pmActionLabelId]`. De-dup before sending.
+
+**Removal:** When the PM marks the Project "Completed" (state change webhook routes to SCRUM Master per `dev-workflow.md` §14), the SCRUM Master removes the label by calling `projectUpdate` with the existing label set minus `pm_action_label_id`.
+
+**Idempotency:** If the Project already has the `pm-action` label, the union-then-set pattern is a no-op.
+
+---
+
+### 18. update-project-state
+
+Mark a Linear Project "Completed" (or any other valid project state). Used by the PM at Project Completion Review when all project-level ACs are verified.
+
+**When to use:** At the close of `docs/dev-workflow.md` §8 (Project Completion Review), after the PM has confirmed every project-level AC is satisfied by the delivered issues. Called from the product-assistant Project Completion Review flow on PM instruction.
+
+**GraphQL mutation:**
+```graphql
+mutation CompleteProject($projectId: String!) {
+  projectUpdate(id: $projectId, input: { state: "completed" }) {
+    success
+    project {
+      id
+      name
+      state
+      completedAt
+    }
+  }
+}
+```
+
+**Pre-conditions before marking Completed:**
+- ALL child issues must be in "Done" or "Cancelled" status (verified via operation 19 `audit-project-coverage`)
+- Every project-level AC named in the PRD's §7 must map to at least one delivered issue
+- The PM has @approved (handle resolved via operation 15)
+
+**Side effects:** Linear sets `completedAt` automatically. The webhook `Linear Project state -> "Completed"` routes to the SCRUM Master, which removes the `pm-action` label and runs the Cycle Completion check (`dev-workflow.md` §9).
+
+**Rejection path:** If the PM finds AC gaps, do NOT call this operation. Instead, the PM opens new rework issues in the next Cycle (see `dev-workflow.md` §11 "PM Rejection at Project Completion") — the Project remains in `Started` state until rework is delivered.
+
+---
+
+### 19. audit-project-coverage
+
+Compare a Linear Project's PRD §7 acceptance criteria against the issues actually delivered. Returns a coverage map showing which ACs are satisfied, partially covered, or missing.
+
+**When to use:**
+- Before SCRUM Master applies `pm-action` to a Project — sanity-check that the project's ACs are actually covered by delivered issues
+- During PM's Project Completion Review — to walk the AC-to-issue mapping
+- During product-assistant Flow 2 (Project Creation) — to verify the new issue set covers every §7 AC the PRD lists
+
+**Inputs:**
+- `projectId` (Linear Project ID)
+- `prdPath` (path to PRD file at `docs/design/components/{component}/projects/{PRD-ID}*.md`)
+
+**Algorithm:**
+
+1. Fetch Project + child issues via operation 16 (`query-project`)
+2. Read the PRD file from disk; extract the §7 Acceptance Criteria section
+3. Parse each PRD §7 AC into a numbered list (AC-1, AC-2, ...)
+4. For each child issue, parse its Acceptance Criteria from the issue description
+5. For each PRD AC, find candidate issue ACs that match (verbatim or near-verbatim — use string similarity ≥ 0.7 as a heuristic)
+6. Classify each PRD AC:
+   - **Covered** — at least one child issue's AC matches AND that issue is "Done"
+   - **Pending** — at least one child issue's AC matches AND that issue is in an active status
+   - **Partial** — multiple PRD ACs map to a single overloaded issue (red flag for sub-divided ACs)
+   - **Missing** — no child issue's AC matches this PRD AC
+
+**Output:**
+```json
+{
+  "projectId": "...",
+  "prdId": "A-PRD-01",
+  "prdPath": "docs/design/components/automations/projects/A-PRD-01-data-model-and-api.md",
+  "totalAcs": 9,
+  "coverage": {
+    "covered": ["AC-1", "AC-2", "AC-4"],
+    "pending": ["AC-3", "AC-5"],
+    "partial": [],
+    "missing": ["AC-6", "AC-7", "AC-8", "AC-9"]
+  },
+  "issueCount": 5,
+  "sizeAssessment": "under-scoped (5 issues — guideline is 8–12)"
+}
+```
+
+**Caller responsibility:** This operation is read-only and does NOT mutate Linear or the filesystem. The caller decides whether missing ACs warrant new issues, whether partial coverage warrants splitting an issue, etc.
+
+---
+
+### 20. validate-project-completeness
+
+Project-level analog of operation 7 (`validate-issue-completeness`). Verifies the Linear Project itself is structurally sound before its child issues enter the development pipeline.
+
+**When to use:** During SCRUM Master Sprint Planning (before validating individual issues), and during product-assistant Flow 2 (Project Creation) as a self-check after creating the Project.
+
+**Validation criteria:**
+
+- [ ] Project name follows `<PRD-ID>: <PRD title>` convention (regex: `^[A-Z]+-PRD-\d{2}: .+`)
+- [ ] PRD file exists at `docs/design/components/{component}/projects/{PRD-ID}*.md` (extract `{PRD-ID}` from name; use the issue's team to resolve `{component}` via `TEAM_COMPONENT_MAP` in `Fun-E/agents/webhook-receiver/main.py`)
+- [ ] PRD file contains a `## 7.` or `## §7` or `## Acceptance Criteria` heading with at least 3 numbered ACs
+- [ ] Project Lead is set (resolves to a valid Linear user; if null, fallback to `ken` is logged but does NOT fail validation per `resolve-po-for-issue` rules)
+- [ ] Project description references the PRD file path (one-paragraph pointer per `CLAUDE.md` §Linear Issue Structure — full PRD content does NOT belong in the project description)
+- [ ] Project size: 8–12 child issues (per `CLAUDE.md` §Linear Issue Structure and `dev-workflow.md` §1 PM duty). **Warn (don't fail)** outside that range — small projects (<8) are flagged for under-scoping; large projects (>12) are flagged for splitting
+
+**Output:** Pass / fail / warn with a list of gaps. Failures block child issue delegation — the SCRUM Master should comment on the Project @mentioning the PO (via `resolve-po-for-issue` on any child issue, since Projects don't have an owning PO field directly) and apply `escalation` label.
+
+---
+
+### 21. query-pm-action-projects
+
+List Linear Projects currently labeled `pm-action` — the PM's project-level inbox. Used by the product-assistant Project Completion Review flow when the PM (Ken) asks "what's waiting on me?".
+
+**When to use:** At the start of the Project Completion Review flow, or whenever the PM needs to triage the queue.
+
+**GraphQL query:**
+```graphql
+query PmActionProjects {
+  projects(filter: { labels: { name: { eq: "pm-action" } } }) {
+    nodes {
+      id
+      name
+      state
+      completedAt
+      lead { displayName }
+      teams { nodes { name key } }
+      issues(first: 1) {
+        nodes { completedAt }
+      }
+    }
+  }
+}
+```
+
+**Sort:** By the most-recent issue `completedAt` ascending (oldest project first) — matches the PM Action Queue saved Linear View described in `dev-workflow.md` §13.
+
+**Return:** Array of project summaries, ready to render in the terminal for the PM.
+
+**Schema note:** This query assumes Linear's current `ProjectFilter` accepts `labels: { name: { eq: "..." } }`. If the schema returns an error or yields zero results when projects ARE labeled `pm-action` (verify by checking the PM Action Queue saved view in Linear), fall back to listing all in-progress projects via `projects(filter: { state: { eq: "started" } })` and filter client-side by inspecting each project's `labels.nodes[].name`.
+
+---
+
+### 22. create-project
+
+Create a new Linear Project for a unit of work. Used by the product-assistant Flow 2 (Linear Project Creation) when scoping out a new wave of work (8–12 issues' worth).
+
+**When to use:** When the PO is initiating a new project that maps to a new PRD. Always paired with creating the matching PRD file (caller's responsibility — typically `update-design-docs` or the product-assistant flow itself).
+
+**Inputs:**
+- `name` — must follow `<PRD-ID>: <PRD title>` convention. Caller derives next available `<PRD-ID>` by scanning `docs/design/components/{component}/projects/` for existing PRD-IDs and incrementing the trailing number. The `<PRD-ID>` prefix (e.g., `A-PRD`, `P-PRD`) is per-component; if no PRDs exist in the component yet, ask the PO/PM to confirm the prefix rather than inventing one. Once chosen, document it in the component's `README.md` so future Projects use the same prefix.
+- `description` — one-paragraph summary that points to the PRD file (NOT a copy of the PRD content)
+- `teamIds` — array of Linear team IDs (each Project belongs to one component-team; cross-team projects are rare)
+- `leadId` — Linear user ID of the PO (set as the Project Lead per `dev-workflow.md` §12 "PO Assignment")
+- `state` — typically `"backlog"` or `"planned"` at creation
+
+**GraphQL mutation:**
+```graphql
+mutation CreateProject(
+  $name: String!,
+  $description: String!,
+  $teamIds: [String!]!,
+  $leadId: String,
+  $state: String
+) {
+  projectCreate(input: {
+    name: $name,
+    description: $description,
+    teamIds: $teamIds,
+    leadId: $leadId,
+    state: $state
+  }) {
+    success
+    project {
+      id
+      name
+      state
+      lead { displayName }
+    }
+  }
+}
+```
+
+**Naming convention:** The `name` field is load-bearing — every downstream tool (Dev Team Level 3 context loading, SCRUM Master Project Completion Detection, PM Project Completion Review) extracts the `<PRD-ID>` prefix from this field to locate the matching PRD file. Callers MUST validate the format before submitting (regex: `^[A-Z]+-PRD-\d{2}: .+`).
+
+**Description template:**
+```
+{One-paragraph summary of the project goal and scope.}
+
+PRD: docs/design/components/{component}/projects/{PRD-ID}-{slug}.md
+```
+
+**Post-create:** The caller should immediately:
+1. Run operation 20 (`validate-project-completeness`) as a self-check
+2. Create the matching PRD file at the path named in the description
+3. Begin issue creation (one per PRD §7 AC, per the 1:1 convention in `CLAUDE.md`)
 
 ---
 
