@@ -30,10 +30,12 @@ Landing the substrate first lets CH-PRD-02 build the sidebar against real data a
 - **ADK callbacks** (`app/adk/agents/chat_callbacks.py`) — registered on the root runner via the Agent Factory (AH-PRD-02) or hardcoded root fallback. Two top-level callbacks:
   - `before_agent_callback` → stamps `last_agent_started_at = now()` on the side-table.
   - `after_agent_callback` → flushes the per-invocation accumulator, stamps `last_agent_stopped_at = now()`, writes all token / tool-call / compaction-summary deltas in one Firestore update.
-  
+
+  **Root-only firing.** AH-PRD-02 wires `before_agent_callback` + `after_agent_callback` on **every factory-built specialist** (Weave parent-span open/close), so during a turn ADK fires these callbacks once per agent dispatch — root.before → specialist.before → specialist.after → root.after. Chat must filter to the **root** invocation only; otherwise nested specialist firings would overwrite `last_agent_started_at` mid-turn (corrupting the running-state derivation, since `last_agent_stopped_at` from a returning specialist would arrive with `last_agent_started_at` already advanced past it). Both callbacks therefore guard with `if invocation_context.agent.parent is not None: return` at entry — see §5.2 for the exact code. AH-PRD-02's Weave-span use of these callbacks is unaffected (Weave wants per-agent spans; Chat wants per-turn semantics).
+
   **Per-event work** happens inside the completion endpoint's event loop (`async for event in runner.run_async(...)`). The endpoint maintains a `SessionTurnAccumulator` and calls `.add_event(event)` as events stream. At end-of-turn the accumulator posts a single delta to the side-table via the internal endpoint — this is the handoff that `after_agent_callback` also covers for ADK-native invocation paths.
 
-  **Pre-implementation spike:** Day 1 of CH-PRD-01 is a spike to confirm ADK callback signatures against the deployed ADK version (`before_agent_callback` / `after_agent_callback` are the public names I expect; per-event callbacks may not be first-class). The spike output is a short `docs/spike-adk-chat-callbacks.md` with confirmed signatures + an "if the expected callbacks don't exist, here is the fallback" section. Findings feed §5.2.
+  **Pre-implementation spike (Day 1).** Confirms two questions before any callback code lands: (a) does ADK fire `before_agent_callback` / `after_agent_callback` on nested sub-agents during dispatch, or only on the runner-level invocation? (b) is `invocation_context.agent.parent is None` the canonical way to detect root-vs-nested? If ADK fires only on the runner-level (no nested firings), the root-only guard becomes a defensive no-op but still ships. If ADK fires on every nested agent (the AH-PRD-02 wiring assumes), the guard is load-bearing. Spike findings + confirmed callback signatures land in `docs/spike-adk-chat-callbacks.md` with an "if the expected callbacks don't exist, here is the fallback" section. Findings feed §5.2.
 - **Events-based `is_agent_running` derivation** (no in-process sweeper). Instead of a boolean field, the side-table stores `last_agent_started_at` and `last_agent_stopped_at`. `is_agent_running` is *derived at read time*:
   ```
   is_agent_running = (
@@ -75,7 +77,7 @@ Landing the substrate first lets CH-PRD-02 build the sidebar against real data a
 | Component | Dependency | Reference |
 |-----------|------------|-----------|
 | **[DM-PRD-00](../../data-management/projects/DM-PRD-00-migration-foundation.md)** | Shape B convention + `_migrate_shape_b/resources.py` registry. `chat_sessions` + nested `artifacts` registered here. | `../../data-management/README.md` |
-| **[DM-PRD-05](../../data-management/projects/DM-PRD-05-deletion-sweep-rewrite.md)** | `recursive_delete` on account deletion cleans `chat_sessions/*` and sub-`artifacts/*`. `users/{user_id}/chat_categories/*` cleans on user deletion (first user-scoped subcollection). | `../../data-management/README.md` |
+| **[DM-PRD-05](../../data-management/projects/DM-PRD-05-deletion-sweep-rewrite.md)** | `recursive_delete(accounts/{account_id})` on account deletion cleans `chat_sessions/*` and sub-`artifacts/*`. `delete_user_data(user_id)` on user deletion cleans `users/{user_id}/chat_categories/*` via the `USER_SUBCOLLECTIONS` registry — the third user-scoped subcollection after `notification_status` and `preferences`. | `../../data-management/README.md` |
 | **[FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api.md)** | Backend feature-flag SDK. Three Chat flags registered here. | `../../feature-flags/README.md` |
 | **[AH-PRD-02](../../agentic-harness/projects/AH-PRD-02-agent-factory.md)** | **Soft.** Agent Factory is the idiomatic callback-registration site. If unshipped, register against current hardcoded root + TODO. | `../../agentic-harness/README.md` |
 | **[BL-PRD-02](../../billing/projects/BL-PRD-02-token-meter-monthly-enforcement.md)** | **Peer — Billing owns `extract_billable_tokens`.** Chat consumes. If Billing hasn't shipped, Chat lands the helper under Billing's namespace with Billing as reviewer + maintainer. Same token definition (input + output + reasoning, cached-input excluded) per Billing README §7.4. | `../../billing/README.md` §7.4 |
@@ -127,6 +129,8 @@ class ChatSessionMetadata(BaseModel):
     message_count: int = 0                   # +1 per event with author=="user" or author=="model"
     # Sidebar preview
     last_message_preview: str | None = None  # truncated to 160 chars
+    # Auto-title state (CH-PRD-04 owns the generator; field declared here)
+    auto_title_attempted_at: datetime | None = None  # set once after the first-turn auto-title call (success or failure); None means not yet attempted; non-None suppresses retry
     # Lifecycle
     deleted_at: datetime | None = None       # two-phase tombstone
 
@@ -306,13 +310,21 @@ Enforcement belt-and-braces: the API layer additionally checks ownership server-
 
 ### 5.2 Callback wiring — detail
 
-**Day-1 spike deliverable.** Confirmed ADK callback names before any implementation begins. The names below are the expected public names (`before_agent_callback`, `after_agent_callback`) — if the spike finds different names, the spike doc is updated and this PRD file is amended in a one-line commit before implementation starts.
+**Day-1 spike deliverable.** Confirmed ADK callback names + nested-firing semantics before any implementation begins. The names below are the expected public names (`before_agent_callback`, `after_agent_callback`); the root-only guard (`invocation_context.agent.parent is None`) is the expected canonical detection mechanism — if the spike finds different names or a different way to detect the root invocation, the spike doc is updated and this PRD file is amended in a one-line commit before implementation starts.
 
 ```
 # app/adk/agents/chat_callbacks.py
 
 @before_agent_callback
 def on_agent_start(invocation_context):
+    # Root-only firing: AH-PRD-02 wires these callbacks on every factory-built
+    # specialist for Weave spans; Chat wants per-turn semantics, not per-agent.
+    # Without this guard, a nested specialist invocation would overwrite
+    # last_agent_started_at mid-turn and corrupt the is_agent_running derivation
+    # (specialist.after fires while root is still running → derivation reports
+    # stopped). See §2 ADK callbacks.
+    if invocation_context.agent.parent is not None:
+        return
     session_id = invocation_context.session.id
     post_side_table_update(session_id, {
         "last_agent_started_at": now(),
@@ -321,6 +333,11 @@ def on_agent_start(invocation_context):
 
 @after_agent_callback
 def on_agent_stop(invocation_context):
+    # Root-only firing — same rationale as on_agent_start. Without this guard,
+    # a nested specialist's after-callback would flush an incomplete accumulator
+    # and stamp last_agent_stopped_at while the root is still processing.
+    if invocation_context.agent.parent is not None:
+        return
     session_id = invocation_context.session.id
     # The accumulator was built by the completion endpoint iterating events;
     # at after_agent_callback time, we also flush anything we observed.
@@ -526,6 +543,7 @@ Auth gates:
 16. **Internal side-table-update endpoint** — OIDC-authed; rejects unauthenticated requests with 401; applies deltas correctly; idempotent on `idempotency_key`.
 17. **Feature flags** — three flags registered; `chat_v2_enabled=false` keeps new endpoints returning 404; existing endpoints always functional. `chat_manual_compaction_enabled` is NOT registered (Compact-now is out of v1).
 18. **No user-visible change** from CH-PRD-01 alone beyond the window-lift. The `/chat` frontend is unchanged; session creation + history still works; sidebar is not yet wired.
+19. **Nested-specialist callbacks do not corrupt timestamps.** Integration test simulates a turn that dispatches a sub-agent: root-before → specialist-before → specialist-after → root-after. Asserts (a) `last_agent_started_at` reflects root-before's timestamp (not specialist-before's), (b) `last_agent_stopped_at` reflects root-after's timestamp (not specialist-after's), (c) only one accumulator flush hits Firestore per turn (not three), (d) the `invocation_context.agent.parent is not None` guard returns early on the two specialist invocations. Critical: without the guard, `is_agent_running` derivation would briefly report `false` mid-turn.
 
 ## 8. Test plan
 
@@ -558,6 +576,7 @@ Auth gates:
 | Risk | Mitigation |
 |------|------------|
 | Day-1 ADK callback spike finds different names or no per-event callbacks at all | Spike is the gating first task. If names differ, §5.2 is amended before implementation. Per-event updates are already handled by the completion endpoint's event loop (not a callback), so the fallback is already in the design. |
+| Callbacks fire on every nested specialist (per AH-PRD-02 wiring) → `last_agent_started_at` corrupted mid-turn → `is_agent_running` derivation reports false-stopped while root still running | Root-only filter at callback entry: `if invocation_context.agent.parent is not None: return`. Day-1 spike confirms (a) ADK's nested-firing semantics and (b) `agent.parent is None` is the canonical detection. AC #19 (integration test simulating root → specialist → root invocation flow) gates merge. AH-PRD-02's Weave-span use of the same callbacks is unaffected — Weave wants per-agent spans; Chat wants per-turn semantics. |
 | Callbacks fire on the hot path with unbounded latency (Firestore slow) | Fire-and-forget writes from the callback; one `update` per turn (batch-coalesce); log + meter callback latency; alert on p95 > 1s. |
 | SSE cancellation doesn't fire `after_agent_callback` | `finally` block in the completion endpoint is the authoritative flush site — runs regardless of ADK callback behavior. |
 | Token definition drifts from Billing | Shared `extract_billable_tokens` under Billing ownership + parity test on every PR. Divergence fails CI. |

@@ -2,7 +2,7 @@
 
 **Status:** Ready for development (after A-PRD-1 merges)
 **Owner team:** Frontend
-**Blocked by:** A-PRD-1
+**Blocked by:** A-PRD-1; UI-PRD-03 (provides the `WorkflowsLayout` tab container, the `/workflows/automations` route, the Sidebar nav entry, and the empty-state `AutomationsPage` shell that this PRD wires data into)
 **Parallel with:** A-PRDs 2, 3, 6
 **Estimated effort:** 2 days
 
@@ -17,31 +17,33 @@ The list may be large — accounts with mature automation programs could have hu
 ## 2. Scope
 
 ### In scope
-- New `/workflows` route with tab container
-- "Automations" tab containing the list
+- Wire data into the existing `AutomationsPage` shell at `/workflows/automations` shipped by UI-PRD-03 (replace its empty-state with the data-wired list). The `WorkflowsLayout` tab container, the `/workflows` route group, and the Sidebar nav entry are already in place — this PRD does not re-create them.
 - Filter bar: goal (text search), campaign (multi-select), tags (multi-select), status (multi-select), created_by (multi-select), is_active (toggle)
 - **Default query excludes `is_system=true` automations** (platform-owned templates — see §is_system handling)
 - Cursor-based pagination ("Load more" button)
 - Row actions: Configure → navigate to A-PRD-6, Run Now, Pause / Resume, Delete (with confirmation)
-- URL state sync: filters and tab persist in query params
+- URL state sync: filters persist in query params on `/workflows/automations`
 - Component tests with `*.test.tsx`
 
 ### Out of scope
+- The `WorkflowsLayout` tab container, the `/workflows/*` routes, the Sidebar nav entry, and the empty-state shells for sibling tabs (Agents / Skills) — owned by UI-PRD-03
 - The Automation Details page (A-PRD-6)
-- Other Workflows tabs (Projects, Templates, etc. — future PRDs)
+- Other Workflows tabs' data wiring (Agents → AH-PRD-02; Skills → SK-PRD-03)
 - Bulk actions (multi-select rows + bulk pause / delete) — future
 - Server-side text search beyond simple substring (no full-text index)
 - A dedicated "System" tab or admin UI for browsing `is_system=true` automations (deferred; debug-only access via direct URL to A-PRD-6 is enough for v1)
 
 ## 3. Dependencies
 
+- **UI-PRD-03 (hard prerequisite):** ships `frontend/src/pages/workflows/WorkflowsLayout.tsx` (tab container with URL-synced active tab), `frontend/src/pages/workflows/AutomationsPage.tsx` (empty-state shell this PRD modifies), the `/workflows/automations` route under `LayoutC` in `frontend/src/App.tsx`, and the Sidebar "Workflows" nav entry. The tab contract is frozen at UI-PRD-03 merge.
 - **A-PRD-1:** consumes `GET /api/v1/automations/{account_id}` + `PATCH .../recurrence` + `DELETE .../{plan_id}` (DELETE inherited from Calendar PRD-1)
 - **A-PRD-2:** "Run Now" button calls `POST .../runs`
 - **Calendar PRD-3:** reuses branded types (`PlanId`, `AccountId`), service-layer pattern, and `useAuth().selectedOrgAccount` context
 - **Existing files to study:**
+  - `frontend/src/pages/workflows/AutomationsPage.tsx` (UI-PRD-03) — empty-state shell this PRD replaces
+  - `frontend/src/pages/workflows/WorkflowsLayout.tsx` (UI-PRD-03) — tab contract this PRD consumes (do **not** modify)
   - `frontend/src/pages/CalendarPage.tsx` (Calendar PRD-3) — list-view filtering pattern
   - `frontend/src/services/projectPlanService.ts` (Calendar PRD-3) — extend with automation methods
-  - `frontend/src/components/Sidebar.tsx` — add "Workflows" nav entry
 
 ## 4. Data contract (TypeScript)
 
@@ -86,43 +88,46 @@ type PaginatedResponse<T> = {
 
 | Action | File |
 |--------|------|
-| Create | `frontend/src/pages/WorkflowsPage.tsx` (tab container) |
+| Modify | `frontend/src/pages/workflows/AutomationsPage.tsx` (UI-PRD-03 shell) — replace empty state with `<AutomationsList />` |
 | Create | `frontend/src/components/automations/AutomationsList.tsx` |
 | Create | `frontend/src/components/automations/AutomationFilterBar.tsx` |
 | Create | `frontend/src/components/automations/AutomationListRow.tsx` |
 | Create | `frontend/src/components/automations/RecurrenceSummary.tsx` (renders cron → "Every Monday 9:00 AM PT") |
 | Modify | `frontend/src/services/projectPlanService.ts` — add `listAutomations`, `runAutomationNow`, `toggleAutomationActive` |
 | Modify | `frontend/src/types/projectPlan.ts` — add `Automation`, `AutomationFilters`, `RunStatus` |
-| Modify | `frontend/src/App.tsx` — add `/workflows` route |
-| Modify | `frontend/src/components/Sidebar.tsx` — add "Workflows" nav entry |
 | Create | `frontend/src/contexts/AutomationListContext.tsx` (filter state + pagination state) |
-| Create | `frontend/src/pages/WorkflowsPage.test.tsx` |
+| Modify | `frontend/src/pages/workflows/AutomationsPage.test.tsx` (UI-PRD-03 shell test) — extend with data-wired assertions |
 | Create | `frontend/src/components/automations/AutomationsList.test.tsx` |
 | Create | `frontend/src/components/automations/AutomationFilterBar.test.tsx` |
 
+> **Out of scope (already shipped by UI-PRD-03):** `frontend/src/pages/workflows/WorkflowsLayout.tsx`, the `/workflows/*` route registrations in `frontend/src/App.tsx`, and the "Workflows" entry in `frontend/src/components/layout/Sidebar.tsx`. Do not re-create or modify these files.
+
 ### Page structure
 
+UI-PRD-03 owns the outer shell (`WorkflowsLayout` with three tabs: Agents / Automations / Skills). This PRD replaces `AutomationsPage`'s empty state with the data-wired list:
+
 ```
-WorkflowsPage
-  ├─ Tabs: [Automations] [Projects (future)] [Templates (future)]
-  └─ AutomationsList (active tab)
-       ├─ AutomationFilterBar
-       └─ table:
-            AutomationListRow × N
-              ├─ Title + RecurrenceSummary
-              ├─ Last run (timestamp + status badge)
-              ├─ Next run (timestamp)
-              ├─ Status badge (Active / Paused)
-              ├─ Created by
-              └─ Actions menu: Configure / Run Now / Pause | Resume / Delete
-       └─ "Load more" button (when next_cursor)
+WorkflowsLayout                                  ← UI-PRD-03 (do not modify)
+  ├─ Tabs: [Agents] [Automations] [Skills]      ← UI-PRD-03
+  └─ AutomationsPage (active tab)               ← this PRD modifies
+       └─ AutomationsList                       ← this PRD creates
+            ├─ AutomationFilterBar
+            └─ table:
+                 AutomationListRow × N
+                   ├─ Title + RecurrenceSummary
+                   ├─ Last run (timestamp + status badge)
+                   ├─ Next run (timestamp)
+                   ├─ Status badge (Active / Paused)
+                   ├─ Created by
+                   └─ Actions menu: Configure / Run Now / Pause | Resume / Delete
+            └─ "Load more" button (when next_cursor)
 ```
 
 ### Filter bar behavior
 
 - All filters are multi-select except `goal` (substring) and `is_active` (toggle)
 - Changing any filter resets pagination cursor (fetches first page)
-- Filters serialize to URL query params, e.g., `/workflows?tab=automations&campaign=Spring,Summer&is_active=true`
+- Filters serialize to URL query params on the path-based route, e.g., `/workflows/automations?campaign=Spring,Summer&is_active=true` (the active tab is determined by the path, not a query param — per UI-PRD-03's tab contract)
 - "Clear filters" button resets to no filters + first page
 
 ### Pagination
@@ -171,29 +176,30 @@ This PRD only consumes — no new endpoints. Calls:
 
 ## 7. Acceptance criteria
 
-1. Navigating to `/workflows` renders the page with the Automations tab selected by default
+1. Navigating to `/workflows/automations` renders the data-wired Automations list inside UI-PRD-03's `AutomationsPage` shell (the empty state is replaced when at least one automation exists for the account; otherwise the existing empty-state copy from UI-PRD-03 still renders)
 2. The list loads automations for the current account; pagination "Load more" appends 25 at a time without duplicates
 2a. The list excludes `is_system=true` automations even when none of the other filters are active (verified with a fixture that includes a seeded system template — it must not appear)
-3. Applying any filter combination updates the list and the URL query params
-4. Clicking "Configure" navigates to `/workflows/automations/{plan_id}` (A-PRD-6 route)
+3. Applying any filter combination updates the list and the URL query params on `/workflows/automations`
+4. Clicking "Configure" navigates to `/workflows/automations/{plan_id}` (A-PRD-6 route — the `AutomationDetailsPage` shell shipped by UI-PRD-03)
 5. Clicking "Run Now" calls the manual-trigger endpoint and shows a success toast with a link to the new run
 6. Pause toggles `is_active` to false; the row reflects the change immediately and persists on reload
 7. Delete prompts for confirmation, then removes the row optimistically; on server error, the row is restored and a toast surfaces
-8. URL deep links work: pasting `/workflows?tab=automations&is_active=false&campaign=Spring` loads the filtered view directly
+8. URL deep links work: pasting `/workflows/automations?is_active=false&campaign=Spring` loads the filtered view directly
 9. Account switch (via header) clears state and reloads for the new account
-10. All component tests pass; `npm run typecheck` and `npm run format.fix` pass
+10. The `WorkflowsLayout` tab container (UI-PRD-03) renders unchanged — Agents / Automations / Skills tabs remain visible and functional; Automations tab no longer renders the empty state when data is present
+11. All component tests pass; `npm run typecheck` and `npm run format.fix` pass
 
 ## 8. Test plan
 
 **Component tests:**
-- `WorkflowsPage.test.tsx`: renders tab container; default tab is Automations
+- `AutomationsPage.test.tsx` (extends UI-PRD-03's existing test): renders the data-wired list when automations are present; falls back to UI-PRD-03's empty state when none exist; does **not** assert on the `WorkflowsLayout` tab container behavior (covered by UI-PRD-03)
 - `AutomationsList.test.tsx`: renders rows from a mock service; "Load more" appends; empty state renders when no automations
 - `AutomationFilterBar.test.tsx`: each filter type (text, multi-select, toggle) updates context + URL; clear-filters resets all
 - `AutomationListRow.test.tsx`: each action calls the right service method; pause/resume optimistic update + rollback path
 - `RecurrenceSummary.test.tsx`: known cron strings → expected human strings
 
 **Manual smoke (record steps for A-PRD-7):**
-- Open `/workflows`, apply 3 filters in combination, paste a deep link with filters, switch accounts, run-now an automation, pause an automation
+- Open `/workflows/automations`, apply 3 filters in combination, paste a deep link with filters, switch accounts, run-now an automation, pause an automation
 
 ## 9. Risks & open questions
 
@@ -202,12 +208,13 @@ This PRD only consumes — no new endpoints. Calls:
 | Filter state lost on browser back-button | URL query params drive state; back-button restores naturally |
 | Optimistic delete race with concurrent edit | On 4xx/409, restore the row + toast "automation was modified — refresh" |
 | Cron-to-human translation gaps for exotic patterns | Fall back to "Custom schedule: `<cron>` (`<tz>`)"; full coverage not required |
-| Tab routing convention conflicts with existing app router | Verify `/workflows?tab=automations` pattern; if app prefers nested routes (`/workflows/automations`), adjust before implementation |
+| Tab routing convention | Locked in by UI-PRD-03 — path-based routing (`/workflows/automations`), not query-param tabs. This PRD consumes that contract; do not change. |
 
 ## 10. Reference
 
 - Parent plan: [`../README.md`](../README.md) §5 (Phase 5)
 - Foundation: [A-PRD-1](./A-PRD-01-data-model-and-api.md)
+- Shell: [UI-PRD-03](../../ui/projects/UI-PRD-03-workflows-shell.md) — `WorkflowsLayout` + `AutomationsPage` shell + `/workflows/automations` route
 - Pattern files: `frontend/src/pages/CalendarPage.tsx` (Calendar PRD-3), `frontend/src/services/projectPlanService.ts`
 - Figma: [KEN-E UI V2 — Soft Maximalism](https://www.figma.com/make/fhkgWZyTHdKtvDNRoQrcMT/KEN-E-UI-V2---Soft-Maximalism) — Workflows page, Automations tab
 - CLAUDE.md rules in scope: C-5 (branded types), C-6 (`import type`), C-8 (`type` over `interface`), G-2, G-3, T-2

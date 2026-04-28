@@ -90,8 +90,8 @@ After this component's Release 1 projects complete, adding a new specialist is a
 | `app/adk/agents/agent_factory/` | Config-driven assembly: `build_hierarchy()`, `build_agent()`, config loader with overlay merge, MCP toolset creation, header provider factory, dispatch generator. Created by AH-PRD-02. |
 | `app/adk/agents/registry.py` | Existing lazy-loading registry + capability search. Preserved; factory populates it. |
 | `app/adk/agents/google_analytics_agent_v4.py` | Transitional (R1.0) hand-wired GA agent. Marked deprecated by AH-PRD-03; removed in a follow-up once no callers remain. |
-| `app/adk/agents/company_news_chatbot/agent.py` | Transitional news agent. Wraps well inside a review loop; remains until an Automation Specialist replacement lands. |
-| `app/adk/agents/create_strategy_docs_supervisor.py` | Strategy document supervisor. Separate entry point — not dispatched from root; not part of the narrow-specialist path (will be revisited by KG-PRD-05). |
+| `app/adk/agents/company_news_chatbot/agent.py` | Transitional news agent. Wraps well inside a review loop; remains as a transitional agent until a long-term replacement is scoped. |
+| `app/adk/agents/create_strategy_docs_supervisor.py` | Strategy document supervisor. Separate entry point — not dispatched from root; not part of the narrow-specialist path. **Long-term disposition TBD** — KG-PRD-05 refactors only the four downstream graph builders the supervisor invokes (write path → `GraphSyncService`); the supervisor itself is not factory-migrated and remains a parallel Agent Engine entry point. A future PRD will scope its replacement once the planning specialist (PR-PRD-02) and KG learning loop (KG-PRD-04) prove out the post-strategy-supervisor flow. |
 | `app/adk/tools/registry/tool_registry.py` | ToolRegistry — **build-time metadata catalog** the factory reads to assemble specialist rosters. Not a runtime routing index; root-agent routing is specialist-description-based. See §2.5. |
 | `api/src/kene_api/routers/agent_configs.py` | `/api/v1/accounts/{account_id}/agent-configs/` CRUD. Created by AH-PRD-02. |
 | `frontend/src/app/pages/workflows/agents/` | Workflows > Agents list, detail/customization, AgentCreatePage. Created by AH-PRD-02. |
@@ -127,7 +127,7 @@ This component does **not** own the chat endpoint or the session-management API 
 |-------------|------|---------|
 | `build_review_pipeline(specialist, criteria, prefix, max_iterations)` | `app/adk/agents/utils/review_pipeline.py` | Factory producing a `LoopAgent` with specialist + reviewer as direct sub-agents. No `SequentialAgent` wrapper (would swallow `escalate`). Reviewer is `gemini-2.0-flash` with `include_contents='none'`. (AH-PRD-01) |
 | `agent_factory.build_hierarchy(account_id=None)` | `app/adk/agents/agent_factory/__init__.py` | Deploy-time assembly: reads Firestore, applies overlay, creates specialists + MCP toolsets + dispatch functions, returns root agent. (AH-PRD-02) |
-| `_make_header_provider(auth_type)` | `app/adk/agents/agent_factory/header_provider.py` | Closure factory mapping `ga_oauth` / `google_ads_oauth` / `hubspot_oauth` / `meta_ads_oauth` → session-state credential key → HTTP headers. Fail-fast on unknown `auth_type`. (AH-PRD-02 §5.3) |
+| `_make_header_provider(auth_type)` | `app/adk/agents/agent_factory/header_provider.py` | Closure factory mapping `ga_oauth` / `google_ads_oauth` / `meta_ads_oauth` / `mailchimp_oauth` → session-state credential key → HTTP headers. Fail-fast on unknown `auth_type`. (AH-PRD-02 §5.3) |
 | `MergedAgentConfig` | `api/src/kene_api/models/agent_config_models.py` | Pydantic view over global + overlay, with a `customization_status: "default" \| "customized" \| "custom_agent"` discriminator and `based_on_version` for customized/custom. (AH-PRD-02) |
 | `InstructionProvider` (existing) | `app/adk/agents/ken_e_agent.py` | Closure-based dynamic instruction injection reading `organization_context` from session state. Preserved; factory wraps every specialist with it. |
 | `ToolRegistry` (existing) | `app/adk/tools/registry/tool_registry.py` | **Build-time metadata catalog** the factory reads to assemble each specialist's ≤30-tool roster. Not a runtime router; root-agent routing is specialist-description-based (see §2.5). Also consumed by admin UI + docs. |
@@ -153,7 +153,7 @@ The root agent picks a specialist by **LLM reasoning over specialist description
 
 Why description-based, not tool-index-based:
 
-- **Shared tools don't imply shared scope.** Google Ads Specialist and an Execution Specialist might both carry the Google Ads SDK; GA Specialist and a (future) Meta Ads Specialist might both carry read-only Meta metrics. A tool-level router would be ambiguous — a description-level router isn't, because scope ("Google Ads optimization" vs. "cross-channel execution") lives naturally at the specialist level.
+- **Shared tools don't imply shared scope.** Two narrow specialists may legitimately carry the same tool — e.g., a future Google Ads Specialist and a future Mailchimp Specialist might both carry a generic `create_visualization()` tool, and a Google Ads Specialist and a Meta Ads Specialist might both expose campaign-level metric reads even though they target different platforms. A tool-level router would be ambiguous in those cases — a description-level router isn't, because scope ("Google Ads optimization" vs. "Mailchimp campaign management") lives naturally at the specialist level.
 - **Narrow specialists are few and distinct.** With ~5–10 specialists each sized at ~5–15 tools, specialist descriptions fit comfortably in the root's context and are easier for the LLM to reason over than a tool search.
 - **The specialist's tool roster stays an implementation detail.** Callers don't need to know; routing stays stable even when a specialist's tools change.
 
@@ -203,7 +203,7 @@ Transitional agents (`google_analytics_agent_v4.py`, `company_news_chatbot/agent
 | **[Project Tasks](../project-tasks/README.md)** | PR-PRD-02 (Planning Agent & Tools) writes a Firestore `agent_configs/project_planning` document and the agent factory from AH-PRD-02 assembles the `LlmAgent`. The factory's auto-generated `dispatch_to_project_planning()` replaces any hand-written dispatch. |
 | **[Knowledge Graph](../knowledge-graph/README.md)** | KG-PRD-05 (Research-on-Creation Refactor) refactors strategy-agent research builders to use `GraphSyncService`; those builders still run inside the review-loop dispatch owned here. KG-PRD-03's ADK read tools are registered with the ToolRegistry that the harness consumes. |
 | **[Automations](../automations/README.md)** | Consumes factory-assembled agents indirectly — the orchestrator calls `AgentEngineClient` which invokes whatever hierarchy `deploy_ken_e.py` built. No direct integration; transitive only. |
-| Future narrow-specialist sprints | Google Ads, Meta Ads, Content Specialist, Execution Specialist, Automation Specialist — each is a Firestore `agent_configs/*` document and optional `mcp_servers/*` registration. The pattern established in AH-PRD-03 is the template; AH-PRD-04 ensures every new specialist automatically receives `create_visualization()` via the factory's default function-tool roster. |
+| Future narrow-specialist sprints | Google Ads, Meta Ads, Mailchimp (R5, planned per §2.6) — each is a Firestore `agent_configs/*` document and optional `mcp_servers/*` registration. The pattern established in AH-PRD-03 is the template; AH-PRD-04 ensures every new specialist automatically receives `create_visualization()` via the factory's default function-tool roster. |
 
 ## 4. Design System References
 
@@ -215,7 +215,7 @@ Transitional agents (`google_analytics_agent_v4.py`, `company_news_chatbot/agent
 
 ## 5. Project Index
 
-The component's work is split across **4 project PRDs** under [`projects/`](./projects/). The first three (AH-PRD-01 → AH-PRD-02 → AH-PRD-03) form a strictly serial Release 1 chain because each layer is a prerequisite for the next. AH-PRD-04 (Data Visualization, Release 3 / Expertise) sits on top of all three and adds chart-artifact output to the platform. Future specialist PRDs (Google Ads, Meta Ads, Content, Execution) would land here as AH-PRD-05+, consuming the pattern established in AH-PRD-03 and automatically inheriting `create_visualization()` via the factory's default function-tool roster (see AH-PRD-04).
+The component's work is split across **5 project PRDs** under [`projects/`](./projects/). The first three (AH-PRD-01 → AH-PRD-02 → AH-PRD-03) form a strictly serial Release 1 chain because each layer is a prerequisite for the next. AH-PRD-04 (Data Visualization) and AH-PRD-05 (Multi-Step Workflow Orchestration) both land in Release 3 / Expertise and sit on top of the R1 trio — AH-PRD-04 adds chart-artifact output, AH-PRD-05 adds the multi-step workflow primitive (`build_workflow_pipeline` + `execute_workflow` + approval-via-conversation-turns) deferred from AH-PRD-01 §2. Future per-platform specialist PRDs (Google Ads, Meta Ads, Mailchimp — see §2.6) land as AH-PRD-06+, consuming the pattern established in AH-PRD-03 and automatically inheriting `create_visualization()` via the factory's default function-tool roster (see AH-PRD-04).
 
 ### 5.1 Dependency graph
 
@@ -223,7 +223,7 @@ The component's work is split across **4 project PRDs** under [`projects/`](./pr
 DM-PRD-00 (Migration Foundation) ──┐
                                     │
                                     ▼
-AH-PRD-01 (Review Loop) ──────────► AH-PRD-02 (Agent Factory) ─────► AH-PRD-03 (GA Specialist) ─────► AH-PRD-04 (Data Visualization)
+AH-PRD-01 (Review Loop) ──────────► AH-PRD-02 (Agent Factory) ─────► AH-PRD-03 (GA Specialist) ─────► AH-PRD-04 (Data Visualization) ─────► AH-PRD-05 (Multi-Step Workflows)
                                          ▲
                                          │
                                     (soft) DM-PRD-05 (Deletion Sweep Rewrite)
@@ -237,6 +237,7 @@ AH-PRD-01 (Review Loop) ──────────► AH-PRD-02 (Agent Facto
 | 02 | [Agent Factory](./projects/AH-PRD-02-agent-factory.md) | Core AI (backend + frontend) | AH-PRD-01, DM-PRD-00 | Data-migration projects | ~8–11 days |
 | 03 | [Google Analytics Specialist](./projects/AH-PRD-03-google-analytics-specialist.md) | Core AI | AH-PRD-01, AH-PRD-02 | Data-migration projects, SK-PRDs | 5–7 days |
 | 04 | [Data Visualization](./projects/AH-PRD-04-data-visualization.md) | Core AI (backend + frontend) | AH-PRD-01, AH-PRD-02, AH-PRD-03 | UI-PRD-01/02, KG / PR / Automations projects | 5–7 days |
+| 05 | [Multi-Step Workflow Orchestration](./projects/AH-PRD-05-multi-step-workflows.md) | Core AI | AH-PRD-01, AH-PRD-02, AH-PRD-03, AH-PRD-04 | KG-PRDs, SK-PRDs, Performance / SAR-E projects | 3–5 days |
 
 ### 5.3 Cross-PRD coordination points
 
@@ -253,6 +254,7 @@ Three touchpoints do not fit cleanly inside one PRD and need an owning team to c
 3. **Day ~11 (AH-PRD-02 merged):** AH-PRD-03 kickoff. Small project; mostly config + tests. Deprecation banner on `google_analytics_agent_v4.py`; full removal is a follow-up once no callers remain.
 4. **Release 1 exit:** Review loop, factory, and first specialist all working in staging. MER-E consuming Weave spans. Ready for downstream components (Skills, Project Tasks, KG-PRD-05) to pick up.
 5. **Release 3 (Expertise):** AH-PRD-04 kickoff once AH-PRD-03 is in staging. Phase 1 (Pydantic model → `create_visualization()` tool → `ChatResponse` extension → frontend renderer) can parallelize between backend and frontend once the `Artifact` model ships; Phase 2 (reviewer template + E2E against the GA specialist) requires Phase 1 in place.
+6. **Release 3 (Expertise) — multi-step:** AH-PRD-05 kickoff once AH-PRD-04 is in staging (or in parallel once `Artifact` lands and the artifact session-state convention is stable; the workflow factory threads `<step_id>_artifacts` through the same path). Single Core AI track; the four stories (4.1–4.4) are largely sequential within a 3–5-day window. After this lands, the harness has a complete review-loop story across single-step and multi-step composition.
 
 ## 6. Global Document References
 
@@ -321,7 +323,7 @@ Every PRD follows the shared 10-section structure used across sibling components
 <!-- PRD MAINTENANCE NOTES
 
 Updating this PRD:
-- When a new specialist PRD is authored (e.g. AH-PRD-04 Content Specialist): add it to §5.2 Projects and to §3.2 Depended On By if anything downstream changes.
+- When a new specialist PRD is authored (e.g. AH-PRD-05 Google Ads Specialist, per the §2.6 roadmap): add it to §5.2 Projects and to §3.2 Depended On By if anything downstream changes.
 - When a transitional agent is fully removed (e.g. google_analytics_agent_v4.py): update §2.1 Key Directories to remove the row.
 - When architecture changes (new directories, new abstractions, new API endpoints): update §2.
 - When a new cross-component dependency is introduced: update §3.

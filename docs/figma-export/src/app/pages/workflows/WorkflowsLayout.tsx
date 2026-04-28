@@ -14,7 +14,7 @@ export function useWorkflowFilter() {
 const tabs = [
   { name: 'Agents', href: '/workflows', icon: Bot },
   { name: 'Skills', href: '/workflows/skills', icon: Sparkles },
-  { name: 'Projects', href: '/workflows/automations', icon: RefreshCw },
+  { name: 'Automations', href: '/workflows/automations', icon: RefreshCw },
 ];
 
 const filterOptions: { value: WorkflowSourceFilter; label: string; icon?: typeof Puzzle }[] = [

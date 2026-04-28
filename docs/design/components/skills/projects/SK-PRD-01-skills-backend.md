@@ -22,10 +22,10 @@ Skills follow the [`agentskills.io`](https://agentskills.io/specification) spec:
 ### In scope
 - Pydantic models for skill metadata and frontmatter
 - Account-scoped Firestore subcollection `accounts/{account_id}/skills/{skill_id}` — metadata (Shape B layout per [Review 15 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1))
-- GCS bucket layout: `gs://kene-skills-{env}/accounts/{account_id}/{skill_name}/{version}/…`
+- GCS bucket layout: `gs://kene-skills-{env}/accounts/{account_id}/{skill_id}/{version}/…` (keyed by `skill_id`, not `skill_name`, so renames don't split a skill's version history across two prefixes)
 - CRUD REST API under `/api/v1/accounts/{account_id}/skills/` (consistent with `agent-configs`)
 - Frontmatter validation per agentskills.io spec (name regex, description length, etc.)
-- Size caps (SKILL.md ≤ 5kB, reference file ≤ 100 kB, total bundle ≤ 2 MB, ≤ 20 reference files)
+- Size caps (SKILL.md ≤ 5 kB, individual file ≤ 100 kB, total bundle ≤ 2 MB; references-only file count ≤ 20 — assets and scripts are constrained by the total-bundle cap, not a per-directory file count)
 - Skill loader service — reads metadata + GCS content, returns `models.Skill` instance with lazy L3 resources
 - Soft-delete with 30-day retention
 - Immutable versioning — each PUT creates a new version; previous versions remain in GCS
@@ -81,8 +81,13 @@ MAX_REFERENCE_FILES = 20
 
 class SkillOwner(BaseModel):
     """Account-scoped ownership. Skills belong to an account, not an individual user;
-    `created_by` on the Skill doc captures the authoring user for audit purposes."""
+    `created_by` on the Skill doc captures the authoring user for audit purposes.
+
+    `shared_with_accounts` is forward-compat for v2 cross-account sharing. Persisted
+    but ignored in v1; no API surface reads or writes it.
+    """
     account_id: str
+    shared_with_accounts: list[str] = Field(default_factory=list)
 
 
 class SkillSource(BaseModel):
@@ -138,15 +143,17 @@ class Skill(BaseModel):
     created_by: str                            # user_id of the authoring user (audit only)
     updated_at: datetime
     updated_by: str                            # user_id of the user who last edited
-    # Forward-compat, unused in v1 (v2 cross-account sharing):
-    shared_with_accounts: list[str] = Field(default_factory=list)
+    # `shared_with_accounts` lives on `SkillOwner` (forward-compat for v2 cross-account sharing).
 
 
 class SkillVersion(BaseModel):
     """Immutable per-version snapshot. Stored at
     accounts/{account_id}/skills/{skill_id}/versions/{version_number}."""
     version: int
-    gcs_prefix: str                            # e.g. accounts/acc_123/seo-checklist/3/
+    gcs_prefix: str                            # e.g. accounts/acc_123/sk_8c3f.../3/
+                                               # Keyed by skill_id (not skill_name) so renames
+                                               # don't split a skill's version history across
+                                               # two GCS prefixes.
     frontmatter: SkillFrontmatter
     file_manifest: list["SkillFileEntry"]
     created_at: datetime
@@ -184,27 +191,28 @@ collection: accounts/*/skills   (queryScope: COLLECTION)
 
 ```
 gs://kene-skills-{env}/
-  accounts/{account_id}/{skill_name}/{version}/
+  accounts/{account_id}/{skill_id}/{version}/
     SKILL.md                        # required
     references/{filename}           # optional, 0..MAX_REFERENCE_FILES files
-    assets/{filename}               # optional
-    scripts/{filename}              # optional
+    assets/{filename}               # optional, no separate file-count cap (constrained by total-bundle cap only)
+    scripts/{filename}              # optional, no separate file-count cap (constrained by total-bundle cap only)
     .manifest.json                  # generated on write: list of files + checksums + sizes
 ```
 
+- The GCS prefix is keyed by `{skill_id}`, not `{skill_name}`. Renaming a skill (changing `name` in frontmatter on a PUT) does **not** move existing versions; every version's `gcs_prefix` is recorded on its `SkillVersion` doc and is stable for the life of that version.
 - Each version is an **immutable snapshot**. Updating a skill creates `{version+1}/` alongside the previous version; previous versions are not deleted except by the soft-delete job.
-- Soft-delete moves the skill's entire prefix to `gs://kene-skills-{env}-trash/accounts/{account_id}/...` with a 30-day GCS lifecycle rule; no human intervention needed to purge.
+- Soft-delete moves the skill's entire prefix to `gs://kene-skills-{env}-trash/accounts/{account_id}/{skill_id}/...` with a 30-day GCS lifecycle rule; archive is effectively permanent — no UI restoration is provided in v1.
 - Bucket has **uniform access**, no public ACLs, CMEK with the project default key.
 
 ### Frontmatter validation
 
 Beyond Pydantic validators above, on POST / PUT:
 - `name` field in SKILL.md frontmatter MUST match the skill's root-level `name` (case-sensitive).
-- `name` MUST be unique within the calling account (409 on conflict — see §6).
-- SKILL.md body MUST not exceed `MAX_SKILL_MD_BYTES` (5kB).
-- Total reference file count ≤ `MAX_REFERENCE_FILES` (20).
-- Each reference/asset/script file ≤ `MAX_REFERENCE_FILE_BYTES` (100kB).
-- Total bundle ≤ `MAX_TOTAL_BUNDLE_BYTES` (2MB).
+- `name` MUST be unique within the calling account at write-time (409 on conflict — see §6). `name` is mutable across versions: a PUT may change it (subject to the same regex + uniqueness rules); existing versions retain their original GCS prefixes (keyed by `skill_id`, not `name`).
+- SKILL.md body MUST not exceed `MAX_SKILL_MD_BYTES` (5 kB).
+- Files in `references/` MUST be ≤ `MAX_REFERENCE_FILES` (20). `assets/` and `scripts/` have **no per-directory file-count cap** — they are constrained by the total-bundle cap only.
+- Each individual file (reference, asset, or script) ≤ `MAX_REFERENCE_FILE_BYTES` (100 kB). The constant is named for the original validation surface and applies uniformly to all bundle files.
+- Total bundle ≤ `MAX_TOTAL_BUNDLE_BYTES` (2 MB).
 - Reference paths must be 1 level deep from the skill root (per spec).
 
 ## 5. Implementation outline
@@ -269,8 +277,8 @@ Server-side:
 2. Enforce all size / count caps.
 3. Generate manifest (`file_manifest: list[SkillFileEntry]`) with sha256 checksums.
 4. Allocate `skill_id` (UUID) and `version=1`.
-5. Write files to `gs://kene-skills-{env}/accounts/{account_id}/{frontmatter.name}/1/` with `Cache-Control: no-cache`.
-6. Write `accounts/{account_id}/skills/{skill_id}` Firestore doc and `accounts/{account_id}/skills/{skill_id}/versions/1` doc in a single transaction.
+5. Write files to `gs://kene-skills-{env}/accounts/{account_id}/{skill_id}/1/` with `Cache-Control: no-cache`.
+6. Run a Firestore transaction (see §9 Concurrent PUTs) that writes both `accounts/{account_id}/skills/{skill_id}` and `accounts/{account_id}/skills/{skill_id}/versions/1`. The version doc records the explicit `gcs_prefix` (so future renames don't break version-pinned reads).
 7. Return the created `Skill`.
 
 ## 6. API contract
@@ -285,7 +293,8 @@ All endpoints require Firebase authentication (existing middleware) and are scop
 | `GET` | `/api/v1/accounts/{account_id}/skills/{skill_id}/content` | Fetch SKILL.md body as `text/markdown`. Accept `?version=N` to pin. |
 | `GET` | `/api/v1/accounts/{account_id}/skills/{skill_id}/resources/{rel_path}` | Fetch one reference/asset/script file. Path validated to stay within the skill prefix. Accept `?version=N`. |
 | `PUT` | `/api/v1/accounts/{account_id}/skills/{skill_id}` | Create new version. Same multipart shape as POST plus optional `commit_message`. Increments `current_version`. Returns updated `Skill`. |
-| `DELETE` | `/api/v1/accounts/{account_id}/skills/{skill_id}` | Soft-archive: sets `status="archived"`, moves GCS prefix to trash bucket, does NOT immediately delete. Lifecycle rule purges after 30 days. |
+| `PATCH` | `/api/v1/accounts/{account_id}/skills/{skill_id}` | Status transition only — body `{"status": "draft" \| "published"}`. Idempotent. Does **not** create a new version. Used by the SK-PRD-03 "Publish" button. Returns updated `Skill`. |
+| `DELETE` | `/api/v1/accounts/{account_id}/skills/{skill_id}` | Soft-archive: sets `status="archived"`, moves GCS prefix to trash bucket, does NOT immediately delete. Lifecycle rule purges after 30 days; archive is effectively permanent (no UI restore in v1). |
 | `POST` | `/api/v1/accounts/{account_id}/skills/validate` | Dry-run validation. Same multipart shape as POST but no state is written. Returns validation report (OK or list of errors). |
 
 Error responses follow the existing API error schema. Notable cases:
@@ -300,7 +309,7 @@ Access control is a two-layer check:
 1. The **account-access dependency** (`check_account_access(account_id, user)` — reuse the strategy router's pattern) confirms the caller is a member of `account_id` with the appropriate role.
 2. The handler then asserts `skill.owner.account_id == path.account_id`. Any mismatch → 403.
 
-This means the path's `account_id` is the single source of truth for which collection is read/written, and skills can never be accessed through a different account's path. The `shared_with_accounts` field is persisted but ignored in v1; v2's cross-account sharing logic hooks in here (add `or account_id in skill.owner.shared_with_accounts` to the second check).
+This means the path's `account_id` is the single source of truth for which collection is read/written, and skills can never be accessed through a different account's path. The `SkillOwner.shared_with_accounts` field is persisted but ignored in v1; v2's cross-account sharing logic hooks in here (add `or account_id in skill.owner.shared_with_accounts` to the second check).
 
 ## 7. Acceptance criteria
 
@@ -375,12 +384,15 @@ Confirm a single POST of a 2MB bundle completes in <3s against a local Firestore
 | Accidental storage cost runaway | 30-day GCS lifecycle rule on trash bucket; per-user skill count cap (none in v1 — monitor) |
 | Firebase auth middleware and the account-access dependency diverge | Reuse the existing `check_strategy_access` pattern verbatim (single source of truth for account-membership resolution); add a test asserting the skills dependency and the strategy dependency agree on access for the same `(user, account)` pair. |
 | A user belongs to multiple accounts and expects skills to follow them | Account-scoped storage is deliberate — skills stay with the account they were authored in. If a real "move skill across accounts" use case emerges, build an explicit "copy skill to account" action (v2); do NOT widen the ownership model. |
+| Concurrent PUTs racing on `current_version` | A Firestore transaction wraps each PUT: (1) read the `Skill` doc to get `current_version=N`; (2) write the new `versions/{N+1}` subcollection doc using `transaction.create()` (fails if the path already exists); (3) update `Skill.current_version = N+1` atomically. Firestore retries on contention, and the loser observes `current_version=N+1` and re-attempts with `N+2`. The GCS write happens **before** the transaction commits, using the predicted `{skill_id}/{N+1}/` prefix; on retry the GCS write re-runs with `{N+2}/`. Orphan GCS prefixes from failed transactions are cleaned by a daily sweeper job that compares Firestore `versions/*` against GCS prefixes and deletes prefixes with no matching version doc older than 1 hour. |
+| User deletion (DM-PRD-05) leaves orphan `created_by` / `updated_by` IDs on Skill / SkillVersion docs | Acceptable — these fields are audit-only string IDs. Skills does **not** register an `on_user_removed` hook (unlike Integrations) because skills are account-scoped and persist with the account. Document the policy in the README. |
+| User edits a skill's content and breaks every agent that has it attached (latest-wins skill version pinning) | See §9 latest-wins note in the README + SK-PRD-03 UI warning + SK-PRD-04 user-guide section. v1 ships latest-wins by deliberate trade-off; per-attachment version pinning is reserved for a v2 enhancement. |
 
 ### Open questions
 
 - **Q:** Should the `name` field be **unique per account** or globally? → **v1 answer: per account.** An account can't have two skills named `seo-checklist`, but different accounts can. Enforced at the POST handler via a query on `accounts/{account_id}/skills` before write; returns 409 on conflict.
 - **Q:** What's the policy when a user deletes a skill that's attached to an agent? → **Out of this sprint.** Sprint 2.6-D handles attach-time validation; the agent-config endpoint rejects PUTs referencing archived skill IDs. Soft-archive does NOT cascade — attached agents silently lose the skill from their L1 metadata next session.
-- **Q:** Do we need a separate audit collection (`skills_audit_{account_id}`)? → **v1 answer: no.** The `versions/` subcollection already captures who changed what and when (created_by, created_at, commit_message on each version doc). Add a dedicated audit collection only if v2 requirements surface (e.g., who viewed a skill, non-version-bumping field edits).
+- **Q:** Do we need a separate audit collection (`skills_audit_{account_id}`)? → **v1 answer: no.** The `versions/` subcollection already captures who changed what and when (created_by, created_at, commit_message on each version doc). Skills opts out of DM-PRD-07's audit substrate by design; per-version `created_by` + `commit_message` is the audit trail. Add a dedicated audit collection only if v2 requirements surface (e.g., who viewed a skill, non-version-bumping field edits).
 
 ## 10. Reference
 

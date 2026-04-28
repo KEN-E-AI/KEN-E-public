@@ -78,15 +78,22 @@ from collections.abc import Callable
 
 @dataclass(frozen=True)
 class MigrateConfig:
-    old_prefix: str                                       # e.g., "strategy_docs_"
+    old_prefix: str                                       # e.g., "strategy_docs_"; "" when source_is_single_collection=True
     new_subcollection: str                                # e.g., "strategy_docs"
     has_versions: bool = False                            # copies /versions/{n} subcollection too
     account_id_extractor: Callable[[str], str] | None = None
     # Default extractor strips `old_prefix` from collection name to get account_id.
     # Custom extractor needed for e.g. `performance_profiles_acc_{account_id}`.
+
+    # DM-PRD-04 use case — "whole collection where doc-id is account_id" → subcollection
+    source_is_single_collection: bool = False             # if True, source is a global collection (e.g. "monitoring_topics") whose doc-ids ARE account_ids
+    destination_doc_id: str | None = None                 # if set, all migrated docs land at accounts/{account_id}/{new_subcollection}/{destination_doc_id}; default None preserves source doc-id
+
+    # DM-PRD-07 use case — migrate a field tree on existing docs (not a collection move)
+    is_field_migration: bool = False                      # if True, runner walks source field paths instead of source collections; the resource ships its own migration class registered alongside this entry
 ```
 
-The `RESOURCES` registry starts empty. DM-PRD-01–DM-PRD-04 populate it via pull requests.
+The `RESOURCES` registry starts empty. DM-PRD-01–DM-PRD-04 and DM-PRD-07 populate it via pull requests.
 
 ```python
 # api/scripts/_migrate_shape_b/resources.py
@@ -150,7 +157,7 @@ Append to `deployment/firestore.indexes.json` (full JSON shown in `../multi-tena
       ]
     },
 
-    // Scheduler / automations cross-account due-task scan (for PRD-6)
+    // Scheduler cross-account due-task scan (for PR-PRD-06 time-based scheduler)
     {
       "collectionGroup": "project_plans",
       "queryScope": "COLLECTION_GROUP",
@@ -158,6 +165,37 @@ Append to `deployment/firestore.indexes.json` (full JSON shown in `../multi-tena
         {"fieldPath": "status",      "order": "ASCENDING"},
         {"fieldPath": "launched_at", "order": "ASCENDING"},
         {"fieldPath": "due_date",    "order": "ASCENDING"}
+      ]
+    },
+
+    // Recurring-automations cross-account scan (for A-PRD-02 scheduler tick)
+    {
+      "collectionGroup": "project_plans",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {"fieldPath": "save_as_automation", "order": "ASCENDING"},
+        {"fieldPath": "is_active",          "order": "ASCENDING"},
+        {"fieldPath": "next_run_at",        "order": "ASCENDING"}
+      ]
+    },
+
+    // Project-plan audit nightly BigQuery export scan (for DM-PRD-07)
+    {
+      "collectionGroup": "project_plan_audit",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {"fieldPath": "at", "order": "ASCENDING"}
+      ]
+    },
+
+    // Cross-org/account members lookup by user_id (for DM-PRD-05 user-deletion sweep
+    // and DM-PRD-07 effective-role resolution)
+    {
+      "collectionGroup": "members",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {"fieldPath": "user_id",     "order": "ASCENDING"},
+        {"fieldPath": "parent_kind", "order": "ASCENDING"}
       ]
     },
 
@@ -201,6 +239,8 @@ Append to `deployment/firestore.indexes.json` (full JSON shown in `../multi-tena
 }
 ```
 
+**Index-budget note:** the additional `audit_subcollection`-specific collection-group indexes (one per registered audit subcollection: `integrations_audit`, `billing_audit`, `sar_e_audit`, `data_pipeline_audit`, `account_member_audit`) are added as part of DM-PRD-07's terraform — they don't all need to ship in DM-PRD-00 because the audit substrate isn't live until DM-PRD-07. DM-PRD-00 only ships the indexes whose consumers ship in Release 1 (above).
+
 ### 5.2 Shape B convention (to append to `api/CLAUDE.md`)
 
 ```markdown
@@ -230,8 +270,8 @@ See [Review 15 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-15-mul
 4. Re-running the same invocation after success is a no-op (log: "already migrated").
 5. `--resource=example --confirm-delete` deletes source collections only after verification passes; running `--confirm-delete` without a prior successful copy exits 1.
 6. `--dry-run` writes nothing and prints the plan.
-7. All 6 new indexes appear in `deployment/firestore.indexes.json` with correct `queryScope`.
-8. After Terraform apply in dev, `gcloud firestore indexes composite list --project=ken-e-dev --database='(default)'` shows all 6 new indexes with state `READY` (operator-verified; not gated in CI).
+7. All 9 new indexes appear in `deployment/firestore.indexes.json` with correct `queryScope`.
+8. After Terraform apply in dev, `gcloud firestore indexes composite list --project=ken-e-dev --database='(default)'` shows all 9 new indexes with state `READY` (operator-verified; not gated in CI).
 9. `api/CLAUDE.md` has the new "Shape B Multi-Tenant Data Model Convention" section.
 10. `make lint` passes. `pytest api/tests/unit/test_migrate_to_shape_b.py api/tests/integration/test_migration_script_against_emulator.py` passes.
 11. `api/scripts/seed_shape_b_fixtures.py` seeds a realistic test account at `accounts/test_acc_fixture/...` with at least one doc under `strategy_docs`, `strategy_audit`, and `skills` subcollections. Used by DM-PRD-01–DM-PRD-04 and feature teams.

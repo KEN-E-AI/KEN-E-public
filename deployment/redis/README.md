@@ -324,7 +324,7 @@ git push origin feature/redis-integration
 ### Additional Resources
 - [Google Cloud Memorystore Documentation](https://cloud.google.com/memorystore/docs/redis)
 - [Redis Documentation](https://redis.io/documentation)
-- [KEN-E Architecture Documentation](../CLAUDE.md)
+- [KEN-E Architecture Documentation](../../docs/KEN-E-System-Architecture.md)
 
 ### Getting Help
 1. Check this README and troubleshooting section

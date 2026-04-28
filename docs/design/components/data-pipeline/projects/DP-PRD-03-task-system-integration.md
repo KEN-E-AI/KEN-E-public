@@ -29,7 +29,7 @@ What this PRD is **not:** any new connector (DP-PRD-02 owns GA; DP-PRD-05 owns A
 - `TaskOrchestrator.on_task_due` gains a `data_pipeline` branch: resolves the task's `pipeline_spec`, applies `{inputs.*}` substitution (reusing A-PRD-02's helper), dispatches via `DataPipelineDispatcher`, enters the `running` waiting state
 - `TaskOrchestrator.on_task_status_change` — on `Complete` from the data-pipeline branch, unblocks downstream tasks the same way agent completion does; on `Failed`, marks the task failed, notifies the owner, halts dependent branches (same semantics as a failed agent task)
 - Revision loop **disabled** for pipeline tasks: `POST /plans/.../tasks/{task_id}/revision` on a pipeline task returns `409 Conflict` with `{"reason": "pipeline_tasks_are_deterministic"}`
-- `TaskArtifact` write path: `DataPipelineDispatcher` calls A-PRD-03's artifact-write helper after a successful run to persist the `PipelineOutput` under the task's `output_artifact_name` (from `PipelineJobSpec`); the artifact's `created_by_agent` is set to `"data_pipeline:{job_id}"`
+- `TaskArtifact` write path: `DataPipelineDispatcher` calls A-PRD-03's artifact-write helper after a successful run to persist the `PipelineOutput` under the task's `output_artifact_name` (from `PipelineJobSpec`); the artifact's `created_by` is set to `"data_pipeline:{job_id}"`
 - Downstream prompt injection: A-PRD-03's prompt-builder already lists upstream artifacts for agent tasks; this PRD verifies that pipeline-produced artifacts appear in that list with their signed URL and filename (no code change to A-PRD-03 required — the contract is satisfied by writing a conformant `TaskArtifact`)
 - `is_test` honored per `DataPipelineJob.test_mode_policy` (from DP-PRD-01):
   - `run_normally` (default, all current jobs) — test runs execute the connector as usual and write a real `TaskArtifact`
@@ -367,7 +367,7 @@ Owned by this PRD. OIDC-authed (sibling service SA). Invoked when a `DataPipelin
 4. A `PlanTask` with `assignee_type="agent"` AND `pipeline_spec` set raises `ValueError`.
 5. `POST /api/v1/plans/{account_id}` with a task whose `pipeline_spec.job_id` does not resolve returns `422` naming the offending `job_id`.
 6. Activating a plan with a root `data_pipeline` task causes `DataPipelineDispatcher.dispatch` to be called exactly once with the resolved `PipelineJobSpec`, `is_test=False`, and the current `run_id` (if the plan is part of a `PlanRun`).
-7. On a successful pipeline run, the callback endpoint writes a `TaskArtifact` with `filename == pipeline_spec.output_artifact_name` and `created_by_agent == f"data_pipeline:{pipeline_spec.job_id}"`; the downstream agent task's dispatch prompt lists that artifact in its upstream-artifact section (A-PRD-03 contract — verified by observing the prompt in the test).
+7. On a successful pipeline run, the callback endpoint writes a `TaskArtifact` with `filename == pipeline_spec.output_artifact_name` and `created_by == f"data_pipeline:{pipeline_spec.job_id}"`; the downstream agent task's dispatch prompt lists that artifact in its upstream-artifact section (A-PRD-03 contract — verified by observing the prompt in the test).
 8. On a `failed` callback with `error_class="semantic"`, the task moves to `Failed`, a notification of category `"Integration Error"` is created, and transitively-downstream tasks are blocked (existing PR-PRD-04 semantics).
 9. On a `failed` callback with `error_class="auth"`, the task moves to `Failed` and a notification of category `"Integration Needs Re-auth"` is created (if IN-PRD-05 has merged; otherwise `"Integration Error"` is used and a TODO log is emitted).
 10. `POST /api/v1/plans/{account_id}/{plan_id}/tasks/{task_id}/revision` on a data-pipeline task returns `409` with body `{"reason": "pipeline_tasks_are_deterministic"}`; a revision request on an adjacent agent task within the same plan is unaffected.
@@ -396,7 +396,7 @@ Owned by this PRD. OIDC-authed (sibling service SA). Invoked when a `DataPipelin
   - `dispatch` posts the right JSON body to the sibling service URL; OIDC token attached
   - Sibling-service 2xx → dispatcher returns (fire-and-forget)
   - Sibling-service 5xx on first call → surfaces the error (callback flow never runs); orchestrator marks task `Failed` with `transient_after_retry` message
-  - `_on_pipeline_complete` on `succeeded`: reads GCS, writes `TaskArtifact` with correct `filename` + `created_by_agent`, calls `on_task_status_change(..., "Complete")`
+  - `_on_pipeline_complete` on `succeeded`: reads GCS, writes `TaskArtifact` with correct `filename` + `created_by`, calls `on_task_status_change(..., "Complete")`
   - `_on_pipeline_complete` on `failed` with `error_class="auth"`: creates `"Integration Needs Re-auth"` notification, calls `on_task_status_change(..., "Failed")`
   - `_on_pipeline_complete` on `cached`: reuses prior artifact id; no new GCS read; calls `on_task_status_change(..., "Complete")`
   - Duplicate callback for the same `pipeline_run_id` → idempotent no-op
@@ -413,7 +413,7 @@ Owned by this PRD. OIDC-authed (sibling service SA). Invoked when a `DataPipelin
 - `test_pipeline_task_e2e.py`
   - Seed global catalog with a `StubConnector`-backed job `stub.echo`. Create a plan with T1 (`assignee_type="data_pipeline"`, `job_id="stub.echo"`, `output_artifact_name="stub_output.parquet"`) and T2 (`assignee_type="agent"`, `depends_on=[T1]`). Activate the plan. Assert:
     - T1 transitions `Draft → Running → Complete` within 5s
-    - `TaskArtifact` exists at `accounts/{account_id}/plan_runs/{run_id}/artifacts/<id>` with the expected `filename` and `created_by_agent`
+    - `TaskArtifact` exists at `accounts/{account_id}/plan_runs/{run_id}/artifacts/<id>` with the expected `filename` and `created_by`
     - T2 is dispatched; its mock agent prompt contains the T1 artifact's signed URL
   - Same scenario with an artificially-slow `StubConnector` (sleep 2s) → behavior identical
   - Cross-account isolation: account A's activation writes no runs under account B

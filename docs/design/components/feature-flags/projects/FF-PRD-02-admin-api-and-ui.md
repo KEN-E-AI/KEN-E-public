@@ -21,7 +21,7 @@ See [`../README.md`](../README.md) §2.3 and §7.6 for the component-level API a
 ### In scope
 - `/api/v1/admin/feature-flags/*` super-admin CRUD (list, get, create, update, delete, audit)
 - `feature_flag_audit/{audit_id}` writes on every mutation (action, actor email, diff, timestamp)
-- TypeScript type surface mirroring FF-PRD-01's Pydantic models (`FeatureFlag`, `TargetingRules`, `FlagKey` branded type)
+- TypeScript type surface (`frontend/src/lib/featureFlags/types.ts`) mirroring FF-PRD-01's Pydantic models (`FeatureFlag`, `TargetingRules`, `FlagKey` branded type) — **this PRD is the sole owner of `types.ts`**; FF-PRD-03 imports from it and appends runtime-only types
 - `/admin/feature-flags` React page: list table, create/edit drawer, kill-switch toggle, audit log tab per flag
 - React Query hooks for the admin endpoints (`useFeatureFlags`, `useFeatureFlag`, `useCreateFlag`, `useUpdateFlag`, `useDeleteFlag`, `useFlagAudit`)
 - Admin-nav entry for super-admins only (visible in `Sidebar` when `isSuperAdmin === true`)
@@ -115,7 +115,7 @@ All endpoints 403 for non-super-admins.
 
 | Action | File |
 |--------|------|
-| Create | `frontend/src/lib/featureFlags/types.ts` — shared with FF-PRD-03 |
+| Create | `frontend/src/lib/featureFlags/types.ts` — **canonical shared types file owned by this PRD**; FF-PRD-03 imports from it |
 | Create | `frontend/src/lib/featureFlags/adminClient.ts` — typed axios wrappers |
 | Create | `frontend/src/lib/featureFlags/hooks.ts` — React Query hooks (`useFeatureFlags`, `useCreateFlag`, etc.) |
 | Create | `frontend/src/pages/admin/FeatureFlagsPage.tsx` — list + create drawer + edit drawer + audit tab |
@@ -137,11 +137,15 @@ The admin nav entry lives in a new "Admin" section of `Sidebar`, rendered condit
 
 ### 5.3 UI details
 
-- **List table** columns: `key`, `description` (truncated), `is_active` (toggle switch; one-click kill), `default_enabled` (badge), `rollout %`, `owner`, `updated_at`. Sort by `updated_at` descending by default.
+- **List table** columns: `key`, `description` (truncated), `is_active` (toggle switch; one-click kill), `default_enabled` (badge), `rollout %`, `owner`, `expected_ga_release`, `updated_at`. Sortable on `expected_ga_release` (text-sort, blanks last) so admins can scan for stale flags. Sort by `updated_at` descending by default.
 - **Create / Edit drawer**: form fields for every `FeatureFlag` property. `bucketing_entity` dropdown has helper text: *"'account' is correct for most product flags. Choose 'user' only if the feature travels with the person across accounts (e.g., profile settings). 'organization' for org-wide capabilities."*
 - **Targeting rules editor**: comma- or newline-separated inputs for each list plus a `0-100` slider for `rollout_percentage`.
 - **Kill switch**: `is_active` toggle in the table row and in the drawer. Flipping it off requires no confirmation; flipping a currently-failing feature off quickly matters more than a confirmation prompt.
 - **Audit tab**: chronological list inside the edit drawer, paginated via `next_cursor`.
+
+### 5.4 Schema-contract sync (Pydantic ↔ TypeScript)
+
+`frontend/src/lib/featureFlags/types.ts` (this PRD) and `api/src/kene_api/models/feature_flag_models.py` (FF-PRD-01) are hand-mirrored. Drift is gated by FF-PRD-01's `test_feature_flag_schema_contract.py` which snapshots `FeatureFlag.model_json_schema()` to `feature_flag_schema.snapshot.json`. **Code review checklist:** any change to `feature_flag_models.py` produces a snapshot diff; the reviewer verifies that diff is reflected in `types.ts` in the same PR. The same checklist applies to `TargetingRules`, `EvaluationContext`, `FlagEvaluation`, and `FeatureFlagAuditEntry`.
 
 ## 6. API contract
 
@@ -161,9 +165,10 @@ See §4.
 10. Kill-switch toggle in the list row calls `PUT` with the new `is_active` value and optimistically updates the row. On failure, the optimistic update reverts and a toast shows the error.
 11. Audit tab renders the chronological log for the currently open flag; paginates on "Load more".
 12. The `bucketing_entity` dropdown help text matches the wording in `../README.md` §7.3 (verified by a snapshot test).
-13. All component tests, `npm run typecheck`, `npm run format.fix`, `npm run build`, and `npm test` pass.
-14. `pytest api/tests/integration/test_admin_feature_flags_endpoints.py api/tests/unit/test_feature_flag_audit_diff.py` passes.
-15. `make lint` passes.
+13. The list table renders an `expected_ga_release` column (free-text, blanks shown as "—") and is sortable on it (blanks sort last). Admins use this to spot stale flags during routine reviews.
+14. All component tests, `npm run typecheck`, `npm run format.fix`, `npm run build`, and `npm test` pass.
+15. `pytest api/tests/integration/test_admin_feature_flags_endpoints.py api/tests/unit/test_feature_flag_audit_diff.py` passes.
+16. `make lint` passes.
 
 ## 8. Test plan
 

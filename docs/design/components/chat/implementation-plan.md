@@ -19,6 +19,7 @@ Six facts shape the design:
 4. **`is_agent_running` is a derived field, not a persistent boolean.** Computed from `last_agent_started_at`, `last_agent_stopped_at`, and a 10-minute stuck threshold. No in-process sweeper, no Cloud Run cron. A crashed invocation becomes "not running" automatically at read time.
 5. **Multi-session concurrency is first-class.** A user can interleave sessions across tabs and watch the sidebar flip dots from active to needs-review to idle as state changes. Server-authoritative timestamps + 5–10s polling + `mark-read` endpoint is the whole mechanism.
 6. **Token counts — but not cost — are surfaced in Chat.** Subscription-level pricing is Billing's concern; adding per-session cost would require session → org → subscription → rate lookups that are deliberately out of scope. Chat and Billing share the same `extract_billable_tokens(event)` helper (Billing-owned) with the same token definition (input + output + reasoning; cached-input excluded); Chat aggregates for display, Billing aggregates for enforcement. Same source, different consumers.
+7. **Auto-title is once-per-session and billable.** After the first assistant response completes, CH-PRD-04 fires a fire-and-forget `gemini-2.5-flash` call (3–6 word title from the first user message + first assistant response). The generator: re-reads the side-table before writing (race-safe with manual edits); stamps `auto_title_attempted_at` on every outcome (success, failure, suppression) so it never retries; bills tokens through the same BL-PRD-02 meter agent calls use; degrades gracefully if Gemini fails (leaves title null, no retry). Manual title edits via PUT `/conversations/{id}` set `auto_title_attempted_at` synchronously to suppress in-flight generation. Gated by `chat_auto_title_enabled` (default `true`; ops kill switch).
 
 **Scoped out of v1** (following the qreview pass on 2026-04-24):
 - **Per-session cost display** — subscription-level pricing complexity deferred.
@@ -150,7 +151,7 @@ class ChatStatusDetail(BaseModel):
 |---|---|
 | `accounts/{account_id}/chat_sessions/{session_id}` | Side-table row. One per ADK session. |
 | `accounts/{account_id}/chat_sessions/{session_id}/artifacts/{artifact_id}` | Artifact metadata index. |
-| `users/{user_id}/chat_categories/{category_id}` | Per-user categories. **First user-scoped subcollection in the codebase** — see README §7.2. |
+| `users/{user_id}/chat_categories/{category_id}` | Per-user categories. Third user-scoped subcollection in the codebase (after the existing `notification_status` and `preferences` per `firestore_notification_repository.py`). Registered in DM-PRD-05's `USER_SUBCOLLECTIONS` so the user-deletion sweep covers it. — see README §7.2. |
 
 **Four composite indexes** (CH-PRD-01 §4.3) — two sidebar variants (with/without category filter; both include `deleted_at` for index-covered tombstone exclusion), artifact listing, category dedup. Firestore security rules (`firestore.rules`) enforce per-user-per-account access; API-layer checks are belt-and-braces.
 
@@ -243,9 +244,9 @@ Chat owns the `/chat` route and mounts inside UI-PRD-01's `LayoutC`. The top-nav
 
 Chat registers two ADK callbacks on the root runner: `before_agent_callback` (stamps `last_agent_started_at`) and `after_agent_callback` (flushes the per-turn accumulator, stamps `last_agent_stopped_at`). Per-event updates live in the completion endpoint's `async for event in runner.run_async(...)` loop, feeding a `SessionTurnAccumulator` that calls `.add_event(event)` per event. At end-of-turn, one Firestore `update` is issued. The completion endpoint's `finally` block ensures cancellation / exception still flushes the accumulator — no stuck state. The Agent Factory (AH-PRD-02) is the idiomatic registration site; if AH-PRD-02 hasn't shipped, CH-PRD-01 registers against the current hardcoded root path with a TODO.
 
-### 5.3 UI-PRD-02 (coordination — scope adjustment required)
+### 5.3 UI-PRD-02 (coordination — scope adjustment complete)
 
-UI-PRD-02 as registered in PROJECT-PLANNER today includes "new `/chat` page with `ChatInterface`, `ThinkingBlock`, wired `SessionsSidebar`." Chat's CH-PRD-02 delivers the same surface end-to-end with full feature parity. Before CH-PRD-02 starts, UI-PRD-02 must be scope-adjusted: its description becomes "Redesign Authentication / AcceptInvitation / OrganizationSettings / AccountSettings / UserSettings onto the new shell." The `/chat` page, `ChatInterface`, `ThinkingBlock`, and `SessionsSidebar` are removed from UI-PRD-02 and absorbed into CH-PRD-02. Coordination step: the PROJECT-PLANNER edit and a UI-PRD-02 README update; happens alongside CH-PRD-01 in Sprint 1.
+UI-PRD-02's scope has been adjusted in `PROJECT-PLANNER.md`, `docs/design/components/ui/README.md`, and `docs/design/components/ui/projects/UI-PRD-02-core-shell-pages.md`. The `/chat` page, `ChatInterface`, `ThinkingBlock`, and `SessionsSidebar` are no longer in UI-PRD-02; CH-PRD-02 owns them end-to-end. UI-PRD-02 is now responsible for redesigning Authentication / AcceptInvitation / OrganizationSettings / AccountSettings / UserSettings onto the new shell, deleting legacy `Home.tsx`, and registering `/` as `<Navigate to="/chat" replace />`. Both PRDs land in Release 1 and must coordinate the `App.tsx` route registration (UI-PRD-02 lands the redirect; CH-PRD-02 lands the destination behind `chat_v2_enabled`).
 
 ### 5.4 Billing
 
@@ -313,11 +314,11 @@ Five PRDs. Proposed prefix: `CH-PRD-NN`.
 
 **Parallel with:** CH-PRD-04, CH-PRD-05.
 
-### CH-PRD-04 — Session status view (5 days, full-stack — base 4 days + ~1 day for the Authentication Status card and graceful-degradation branches)
+### CH-PRD-04 — Session status view (~6 days, full-stack — base 4 days + ~1 day for the Authentication Status card + ~1 day for auto-title generation)
 
-**Delivers:** `SessionStatusView.tsx` (port + scope-adjusted — **no Compact-now, no Permissions Approved card, no cost line**); **`AuthStatusCard.tsx` (§5.6)** replacing the figma's Loaded Tools card — pure frontend composition over IN-PRD-03's `useConnections(accountId)` with four per-row states and deep-links to `/settings/integrations/{connection_id}`; ships **read-only** (soft dep on IN-PRD-07 — the per-row Check Status button turns on once IN-PRD-07's flag + hook + `last_tested_at` field land); "Session Status" header toggle button; `status-detail` composite endpoint; `TokenUsagePanel.tsx` (context bar + 3-card token grid — no cost); `chat/export.py` markdown-export streamer using `yaml.safe_dump` with 24-hour signed artifact URLs; PUT title endpoint with casefold search_text recomputation; DELETE two-phase tombstone with async Cloud Run cleanup; summary figma deviation fix (read-only); rate limits via BL-PRD-05.
+**Delivers:** `SessionStatusView.tsx` (port + scope-adjusted — **no Compact-now, no Permissions Approved card, no cost line**); **`AuthStatusCard.tsx` (§5.6)** replacing the figma's Loaded Tools card — pure frontend composition over IN-PRD-03's `useConnections(accountId)` with four per-row states and deep-links to `/settings/integrations/{connection_id}`; ships **read-only** (soft dep on IN-PRD-07 — the per-row Check Status button turns on once IN-PRD-07's flag + hook + `last_tested_at` field land); "Session Status" header toggle button; `status-detail` composite endpoint; `TokenUsagePanel.tsx` (context bar + 3-card token grid — no cost); `chat/export.py` markdown-export streamer using `yaml.safe_dump` with 24-hour signed artifact URLs; **once-per-session auto-title generation in `chat/auto_title.py` using `gemini-2.5-flash` (§5.7) — fired async after the first assistant response, billable through BL-PRD-02, suppressed by manual edits, gated by `chat_auto_title_enabled`**; PUT title endpoint with casefold search_text recomputation **+ synchronous `auto_title_attempted_at` stamp**; DELETE two-phase tombstone with async Cloud Run cleanup; summary figma deviation fix (read-only); rate limits via BL-PRD-05.
 
-**Exit criteria:** user can open the status view for any session and see every field populated; visual regression asserts absence of Compact-now button + Permissions card + cost line AND presence of the Authentication Status card; Auth Status card renders all four row states correctly against a seeded account (one connected, one expired, one not-connected); Delete tombstones the session and sidebar refreshes; Export downloads a valid markdown transcript with `yaml.safe_dump` front-matter + 24-hour artifact links.
+**Exit criteria:** user can open the status view for any session and see every field populated; visual regression asserts absence of Compact-now button + Permissions card + cost line AND presence of the Authentication Status card; Auth Status card renders all four row states correctly against a seeded account (one connected, one expired, one not-connected); Delete tombstones the session and sidebar refreshes; Export downloads a valid markdown transcript with `yaml.safe_dump` front-matter + 24-hour artifact links; first-turn auto-title populates within 10s on the happy path, leaves title null + stamps `auto_title_attempted_at` on Gemini failure, never retries, and is suppressed by a manual title edit racing the generator.
 
 **Blocked by:** CH-PRD-02.
 
@@ -406,7 +407,7 @@ Soft peers: BL-PRD-02 (extract_billable_tokens, Billing-owned)
 | Artifact blob exists in GCS but no Firestore index row (raw save_artifact bypass) | CI lint rule + nightly GCS orphan scan; orphans reported to ops. |
 | Token-definition drift between Chat and Billing | Shared `extract_billable_tokens` under Billing ownership + CI parity test. Divergence fails build. |
 | Export endpoint leaks a signed GCS URL | Authorization check (session owner); 24-hour TTL on export URLs is a deliberate UX tradeoff (links usable hours after download); `artifact_links_valid_until` surfaced in front-matter. |
-| UI-PRD-02 scope adjustment conflict | Explicit coordination in §5.3 during Sprint 1. If disagreement, CH-PRD-02 defers start. |
+| `App.tsx` route registration race between UI-PRD-02 and CH-PRD-02 | Both ship in Release 1; coordinate landing order at PR review. UI-PRD-02 lands `/` redirect; CH-PRD-02 lands `/chat` destination behind `chat_v2_enabled`. The flag-gated fallback (CH-PRD-02 §2.1) handles the ordering gap if they merge out of order. |
 | ADK `list_sessions` Issue #3154 returns empty `user_id` | Back-fill reads `user_id` from iteration loop, never trusts `Session.user_id`. ADK-session orphan scan uses same guard. |
 | 30-day window cutoff hides an active session | `updated_at` is rolling on every event; opening/editing bumps it. |
 | Post-compaction context baseline miscomputes | Unit-tested pure function; worst case is transient display oddity (much better than naive reset-to-0). |
@@ -415,7 +416,7 @@ Soft peers: BL-PRD-02 (extract_billable_tokens, Billing-owned)
 
 Decisions that need a product / ops call before or during implementation.
 
-1. **UI-PRD-02 scope adjustment** (§5.3). Is the UI team aligned to narrow UI-PRD-02 to auth / settings redesigns and hand the `/chat` page to CH-PRD-02? Strongly recommended. Confirm before CH-PRD-02 starts.
+1. ~~**UI-PRD-02 scope adjustment** (§5.3).~~ **Resolved** — UI-PRD-02 scope adjustment is complete in `PROJECT-PLANNER.md`, `docs/design/components/ui/README.md`, and `docs/design/components/ui/projects/UI-PRD-02-core-shell-pages.md`. UI-PRD-02 owns the `/` → `/chat` redirect; CH-PRD-02 owns `/chat`.
 2. **Artifact user-upload surface timing.** v1 has no user-upload UI; `created_by_tool=None` is latent. Is there a v2 PRD already scheduled to surface user uploads? → If not, the latent shape stays; if yes, schedule it.
 3. **Export format in v2.** Markdown v1 is settled. JSON / PDF demand should be driven by data.
 4. **`STUCK_THRESHOLD` for `is_agent_running` derivation.** 10 min is the proposal; revisit if users report stuck "working…" indicators.

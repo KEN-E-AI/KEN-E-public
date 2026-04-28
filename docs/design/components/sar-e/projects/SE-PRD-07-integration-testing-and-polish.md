@@ -47,7 +47,7 @@ Five deliverables anchor the project:
   - Both responses (champion + challenger when both fire) are stored in Weave with a `variant: "champion" | "challenger"` tag; only the champion's output is returned to the caller
   - Shadow mode: `mode="shadow"` (default) runs the challenger in the background without blocking the response; `mode="active"` returns the challenger's output to the caller for the routed traffic pct
   - Admin endpoint `PUT /api/v1/internal/admin/sar-e/model-ab` (OIDC + super-admin) to update the doc; `GET` returns current state
-  - Opt-out: per-account `accounts/{account_id}/sar_e_config.ab_harness_opt_out: bool` (default false) skips the challenger entirely — used for SLA-sensitive accounts
+  - Opt-out: per-account `accounts/{account_id}/sar_e_config.ab_harness_opt_out: bool` (defined on `SarEConfig` in SE-PRD-01 §4.1, default `false`) skips the challenger entirely — used for SLA-sensitive accounts. This PRD reads the field; it does not declare it.
 - **Runbook additions** (append to `api/CLAUDE.md`):
   - "SAR-E operations" section covering:
     - How to trigger an ad-hoc VAR retrain (`curl POST /internal/sar-e/retrain-var` + OIDC snippet)
@@ -329,7 +329,21 @@ Sticky bucketing by `(account_id, context_hash)` prevents a user from flipping m
 
 @router.put("/internal/admin/sar-e/model-ab")
 async def update_ab_config(body: SarEModelABConfig, user=Depends(require_super_admin)) -> SarEModelABConfig:
-    await write_audit(user=user, action="sar_e.ab_config.update", before=..., after=body.model_dump())
+    # The A/B config doc is global (`config/sar_e_model_ab`), but the audit registry only registers
+    # `(parent_kind="account", audit_subcollection="sar_e_audit", ..., action="ab_config_update")`.
+    # Until DM-PRD-07's registry grows a global-scope `sar_e_audit` descriptor, this PRD uses a
+    # synthetic `parent_kind="account"` with `parent_id="__system__"` (matching the convention
+    # other super-admin actions use) so the action stays inside the registered tuple set.
+    await write_audit(
+        parent_kind="account",
+        parent_id="__system__",
+        audit_subcollection="sar_e_audit",
+        resource_type="sar_e_config",
+        action="ab_config_update",                            # registered in DM-PRD-07's audit registry
+        user_id=user.id,
+        before_state=...,
+        after_state=body.model_dump(),
+    )
     await firestore_client.set(_ab_config_doc(), body.model_dump(mode="json"))
     return body
 
@@ -426,7 +440,7 @@ No user-facing endpoints.
 8. **A/B harness active mode.** Same config but `mode=active` → 50% of callers receive Flash output; Weave tags `variant=challenger` for those calls.
 9. **A/B harness stickiness.** Two sequential `/targets/derive` calls for the same `(account_id, derivation_context_hash)` route to the same variant in both shadow and active modes.
 10. **A/B harness opt-out.** Account with `sar_e_config.ab_harness_opt_out=true` always sees champion (Pro) regardless of A/B config.
-11. **A/B admin endpoint.** `PUT /internal/admin/sar-e/model-ab` requires super-admin; non-admin → 403; update writes audit entry `sar_e.ab_config.update`.
+11. **A/B admin endpoint.** `PUT /internal/admin/sar-e/model-ab` requires super-admin; non-admin → 403; update writes an audit entry with `action="ab_config_update"` (DM-PRD-07's registered action) and `resource_type="sar_e_config"`.
 12. **Cache-coherence tests.** All four scenarios in §5.x (retrain, mapping PUT, KPI PATCH, target save) pass — subsequent reads return fresh values without manual invalidation.
 13. **Runbook in `api/CLAUDE.md`.** Section "SAR-E operations" exists with all 7 bullets from §2 in-scope; each bullet has a runnable command or clear procedure.
 14. **Component README created.** `docs/design/components/sar-e/README.md` exists with all sections from §5.6; PRD index links to every shipped PRD; verification-report appendix references the load-test artifacts.
