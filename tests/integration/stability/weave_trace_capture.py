@@ -1,11 +1,13 @@
 """In-memory Weave span capture for Sprint 6 trace-compliance validation.
 
-**Approach:** monkey-patch
-``weave.trace.context.call_context.push_call`` at fixture entry. KEN-E
-creates parent spans via ``client.create_call(...)`` (see
-``app/adk/tracking/callbacks.py``), which in turn pushes the resulting
-``Call`` onto the weave call stack. Intercepting ``push_call`` gives us
-every span (root + children) without touching the wandb HTTP exporter.
+**Approach:** monkey-patch the weave ``Client``'s ``finish_call`` at
+fixture entry. KEN-E creates parent spans via ``client.create_call(...)``
+(see ``app/adk/tracking/callbacks.py``); ``@weave.op()`` decorators
+create child spans automatically. Intercepting ``finish_call`` is the
+right hook because that's when the call has its **final** attributes
+materialised from the ``weave.attributes()`` contextvar — capturing at
+``push_call`` time misses parent-span attributes since they're not
+populated yet at push.
 
 **Why this approach over the HTTP-exporter route:** weave is pinned
 narrowly (``>=0.51.0,<0.51.57``) so monkey-patching internals is safe
@@ -29,33 +31,53 @@ from typing import Any
 
 
 class TraceCapture:
-    """Context manager that records every weave Call pushed onto the stack."""
+    """Context manager that records every weave Call as it finishes.
+
+    Spans are recorded at ``finish_call`` time, not ``push_call``, so
+    parent-span attributes set via ``weave.attributes(...)`` are present
+    in ``call.attributes`` when we read them. (At push time the parent
+    call's attributes contextvar has been set but the call object hasn't
+    yet been populated from it — children happen to be created at a
+    later point in the lifecycle, masking the bug.)
+    """
 
     def __init__(self) -> None:
         self._traces: list[dict[str, Any]] = []
         self._lock = threading.Lock()
-        self._original_push: Callable[..., Any] | None = None
-        self._call_context_module: Any = None
+        self._original_finish: Callable[..., Any] | None = None
+        self._client: Any = None
 
     def __enter__(self) -> TraceCapture:
         # Imported lazily so non-trace harness paths don't pay the weave
         # import cost or fail when weave is partially configured.
-        from weave.trace.context import call_context
+        from weave.trace.weave_client import WeaveClient
 
-        self._call_context_module = call_context
-        self._original_push = call_context.push_call
+        self._client_class = WeaveClient
+        self._original_finish = WeaveClient.finish_call
 
-        def _patched_push_call(call: Any) -> Any:
+        capture = self
+
+        def _patched_finish_call(
+            self: Any,
+            call: Any,
+            output: Any = None,
+            exception: BaseException | None = None,
+            *args: Any,
+            **kwargs: Any,
+        ) -> Any:
+            assert capture._original_finish is not None
+            result = capture._original_finish(
+                self, call, output, exception, *args, **kwargs
+            )
             try:
-                self._record(call)
+                capture._record(call)
             except Exception:
                 # Capture must never break the workload — swallow extraction
-                # failures and let the original push proceed.
+                # failures and let the finish proceed.
                 pass
-            assert self._original_push is not None
-            return self._original_push(call)
+            return result
 
-        call_context.push_call = _patched_push_call  # type: ignore[assignment]
+        WeaveClient.finish_call = _patched_finish_call  # type: ignore[assignment]
         return self
 
     def __exit__(
@@ -64,10 +86,10 @@ class TraceCapture:
         exc_val: BaseException | None,
         exc_tb: TracebackType | None,
     ) -> None:
-        if self._original_push is not None and self._call_context_module is not None:
-            self._call_context_module.push_call = self._original_push
-        self._original_push = None
-        self._call_context_module = None
+        if self._original_finish is not None and self._client_class is not None:
+            self._client_class.finish_call = self._original_finish
+        self._original_finish = None
+        self._client_class = None
 
     @property
     def traces(self) -> list[dict[str, Any]]:

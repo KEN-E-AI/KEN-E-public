@@ -46,7 +46,7 @@ want.
 |---|---|---|---|
 | 1.1.1-3 (ADK stability) | 6.10–6.13 | `runs/run_adk_stability.py` | `query_corpus` (direct ADK ``Runner``, not HTTP) |
 | 1.14.5 (OTEL stability) | 6.14–6.17 | _TBD_ | `diverse_invocation_runner` + `memory_profiler` + `weave_trace_capture` |
-| 1.1.2-3 (trace compliance) | 6.18–6.20 | _TBD_ | `diverse_invocation_runner` + `weave_trace_capture` |
+| 1.1.2-3 (trace compliance) | 6.18–6.20 | `runs/run_trace_compliance.py` | `query_corpus` + `weave_trace_capture` |
 | 1.1.5-4 (session stability) | 6.21–6.24 | _TBD_ | `memory_profiler` + `redis_ttl_fixture` + `stream_reconnect_fixture` |
 
 ## Driving a run by hand
@@ -88,6 +88,25 @@ Writes `tests/integration/stability/runs/run_adk_stability_<ts>.json`
 with per-invocation outcomes, callback-bus log records, the org-context
 merge sweep, and the config-cache refresh check. Exit code 0 when all
 four checks pass.
+
+### Trace compliance driver (`runs/run_trace_compliance.py`)
+
+Drives 20+ corpus queries via direct ADK Runner inside a `TraceCapture`
+block, then feeds every captured span through
+`app.adk.tracking.compliance.generate_compliance_report`. Captures at
+`finish_call` time so parent-span attributes set via
+`weave.attributes(...)` are populated in `call.attributes` when read.
+
+```bash
+PYTHONPATH=.:api/src uv run --project api python \
+  tests/integration/stability/runs/run_trace_compliance.py --invocations 20
+```
+
+Writes `runs/run_trace_compliance_<ts>.json` with per-invocation
+outcomes (Weave call URL for the AC-6.20 spot-check), the full
+`TraceComplianceReport`, and a per-op-name compliance breakdown so it's
+obvious which span types fail when compliance < 100%. Exit code 0 only
+at 100% compliance.
 
 ## Notes & known gaps
 
