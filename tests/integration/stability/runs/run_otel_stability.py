@@ -25,11 +25,11 @@ ACs 6.14–6.17 in four sequential steps:
    ``mcp.client.session.ClientSession.call_tool.*`` (HTTP) span show
    up across the 20+ invocation set.
 
-The probe step also applies the consistency cleanup: based on outcome,
-either re-enables the workaround everywhere (A) or strips it
-everywhere and marks the spike doc resolved (B). Run with
-``--no-apply-cleanup`` to skip the file mutations and only write the
-JSON report.
+The probe step can apply the consistency cleanup: based on outcome,
+either re-enable the workaround everywhere (A) or strip it everywhere
+and mark the spike doc resolved (B). Cleanup is **opt-in** — pass
+``--apply-cleanup`` to mutate ``.env.*`` files, ``deploy_ken_e.py``,
+and the spike doc. The default is report-only.
 
 Output: ``runs/run_otel_stability_<ts>.json`` plus a console summary.
 Exit 0 only when **all four steps pass**.
@@ -121,6 +121,12 @@ async def run_step1_probe() -> StepResult:
     google-genai bug is still present, ``model_dump()`` will throw a
     ``TypeError`` on the Pydantic class — caught + reported here as
     Outcome A.
+
+    The probe runs inside ``TraceCapture`` and counts genai spans. A
+    clean run that produced **zero** genai spans means the bug-path was
+    not actually exercised (e.g. silent auth failure, model unreachable),
+    and is reported as ``indeterminate`` rather than Outcome B — we will
+    not strip the workaround on a vacuous pass.
     """
     print("[1/4] probe — running strategy formatter with output_schema "
           "(OTEL google-genai instrumentation ENABLED)...")
@@ -130,6 +136,9 @@ async def run_step1_probe() -> StepResult:
 
     error_text: str | None = None
     crashed_in_otel = False
+    genai_span_count = 0
+
+    TraceCapture = _load_trace_capture()
 
     try:
         from google.adk.agents import Agent
@@ -177,12 +186,19 @@ async def run_step1_probe() -> StepResult:
             "to mid-market companies. Their main competitors are Tableau "
             "and Looker. Their unique value is real-time alerting."
         )
-        async for _event in runner.run_async(
-            user_id="otel_probe_user",
-            session_id="otel_probe_session",
-            new_message=Content(role="user", parts=[Part.from_text(text=prompt)]),
-        ):
-            pass
+        with TraceCapture() as cap:
+            async for _event in runner.run_async(
+                user_id="otel_probe_user",
+                session_id="otel_probe_session",
+                new_message=Content(role="user", parts=[Part.from_text(text=prompt)]),
+            ):
+                pass
+        genai_span_count = sum(
+            1
+            for s in cap.traces
+            if "google.genai" in (s.get("_weave_op_name") or "")
+            and "generate_content" in (s.get("_weave_op_name") or "")
+        )
 
     except TypeError as e:
         # The signature of the OTEL google-genai bug: TypeError mentioning
@@ -202,6 +218,7 @@ async def run_step1_probe() -> StepResult:
             details={
                 "outcome": "A",
                 "error": error_text,
+                "genai_span_count": genai_span_count,
                 "interpretation": (
                     "Workaround required: OTEL_PYTHON_DISABLED_INSTRUMENTATIONS"
                     "=google-genai must remain set in .env files."
@@ -219,6 +236,7 @@ async def run_step1_probe() -> StepResult:
             details={
                 "outcome": "indeterminate",
                 "error": error_text,
+                "genai_span_count": genai_span_count,
                 "interpretation": (
                     "Probe failed for non-OTEL reasons; cannot conclude bug "
                     "state. Inspect the error and re-run."
@@ -226,12 +244,39 @@ async def run_step1_probe() -> StepResult:
             },
         )
 
-    print("      OUTCOME B — google-genai OTEL bug RESOLVED (clean run)")
+    if genai_span_count == 0:
+        # Clean run, but no genai span ever fired — the bug-path was not
+        # exercised, so we cannot conclude Outcome B. Refuse cleanup.
+        print(
+            "      INDETERMINATE — clean run produced zero genai spans; "
+            "bug path not exercised (auth/model issue?)"
+        )
+        return StepResult(
+            name="probe",
+            passed=False,
+            details={
+                "outcome": "indeterminate",
+                "genai_span_count": 0,
+                "interpretation": (
+                    "Probe completed without errors but no "
+                    "google.genai.*generate_content span was captured. The "
+                    "OTEL google-genai bug-path was not actually exercised "
+                    "— refusing to strip the workaround. Verify Vertex "
+                    "auth/model access and re-run."
+                ),
+            },
+        )
+
+    print(
+        f"      OUTCOME B — google-genai OTEL bug RESOLVED "
+        f"(clean run, {genai_span_count} genai span(s) captured)"
+    )
     return StepResult(
         name="probe",
         passed=True,
         details={
             "outcome": "B",
+            "genai_span_count": genai_span_count,
             "interpretation": (
                 "Workaround can be removed: OTEL_PYTHON_DISABLED_INSTRUMENTATIONS"
                 "=google-genai is no longer needed on this ADK version."
@@ -251,35 +296,94 @@ _ENV_FILES = (
 _DEPLOY_PY = _REPO_ROOT / "app" / "adk" / "deploy_ken_e.py"
 
 
+_WORKAROUND_KEY = "OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=google-genai"
+_DEPLOY_ANCHOR = (
+    '        os.environ.setdefault(\n'
+    '            "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", _capture_content\n'
+    '        )\n'
+)
+
+
 def _apply_outcome_a(verification_date: str) -> dict[str, Any]:
-    """Re-enable the workaround everywhere consistently."""
+    """Re-enable the workaround everywhere consistently.
+
+    Idempotent: if the workaround is already active in a file, the file
+    is left untouched. If the line is commented out, it is uncommented.
+    If the line is absent entirely (the post-Sprint-6 state), it is
+    inserted at a stable anchor.
+    """
+    import re
+
     changes: dict[str, Any] = {}
+    active_re = re.compile(rf"^{re.escape(_WORKAROUND_KEY)}\s*$", re.MULTILINE)
+    commented_re = re.compile(
+        rf"^#\s*{re.escape(_WORKAROUND_KEY)}\s*$", re.MULTILINE
+    )
+    insert_block = (
+        f"# Workaround for buggy google-genai OTEL instrumentation "
+        f"(re-enabled by run_otel_stability.py probe Outcome A on {verification_date}).\n"
+        f"# See docs/spike-otel-pydantic-findings.md.\n"
+        f"{_WORKAROUND_KEY}\n"
+    )
+
     for env_file in _ENV_FILES:
         if not env_file.exists():
             continue
         text = env_file.read_text()
-        if "# OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=google-genai" in text:
-            new_text = text.replace(
-                "# OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=google-genai",
-                "OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=google-genai",
-            )
+        rel = str(env_file.relative_to(_REPO_ROOT))
+
+        if active_re.search(text):
+            changes[rel] = "already-active"
+            continue
+
+        if commented_re.search(text):
+            new_text = commented_re.sub(_WORKAROUND_KEY, text, count=1)
             env_file.write_text(new_text)
-            changes[str(env_file.relative_to(_REPO_ROOT))] = "uncommented"
-        else:
-            changes[str(env_file.relative_to(_REPO_ROOT))] = "already-active-or-absent"
+            changes[rel] = "uncommented"
+            continue
+
+        # Absent entirely — append at end of file.
+        suffix = "" if text.endswith("\n") else "\n"
+        env_file.write_text(text + suffix + insert_block)
+        changes[rel] = "inserted"
 
     if _DEPLOY_PY.exists():
         text = _DEPLOY_PY.read_text()
-        if (
-            '# os.environ.setdefault("OTEL_PYTHON_DISABLED_INSTRUMENTATIONS"'
-            in text
-        ):
-            new_text = text.replace(
-                '        # os.environ.setdefault("OTEL_PYTHON_DISABLED_INSTRUMENTATIONS", "google-genai")',
-                '        os.environ.setdefault("OTEL_PYTHON_DISABLED_INSTRUMENTATIONS", "google-genai")',
+        rel = "app/adk/deploy_ken_e.py"
+
+        deploy_active_re = re.compile(
+            r'^\s*os\.environ\.setdefault\(\s*"OTEL_PYTHON_DISABLED_INSTRUMENTATIONS"',
+            re.MULTILINE,
+        )
+        deploy_commented_re = re.compile(
+            r'^\s*#\s*os\.environ\.setdefault\(\s*"OTEL_PYTHON_DISABLED_INSTRUMENTATIONS"[^\n]*\n',
+            re.MULTILINE,
+        )
+
+        if deploy_active_re.search(text):
+            changes[rel] = "already-active"
+        elif deploy_commented_re.search(text):
+            new_text = deploy_commented_re.sub(
+                '        os.environ.setdefault("OTEL_PYTHON_DISABLED_INSTRUMENTATIONS", "google-genai")\n',
+                text,
+                count=1,
             )
             _DEPLOY_PY.write_text(new_text)
-            changes["app/adk/deploy_ken_e.py"] = "uncommented"
+            changes[rel] = "uncommented"
+        elif _DEPLOY_ANCHOR in text:
+            insertion = (
+                "\n        # Workaround for buggy google-genai OTEL "
+                f"instrumentation (re-enabled {verification_date}).\n"
+                "        # See docs/spike-otel-pydantic-findings.md.\n"
+                '        os.environ.setdefault("OTEL_PYTHON_DISABLED_INSTRUMENTATIONS", "google-genai")\n'
+            )
+            new_text = text.replace(
+                _DEPLOY_ANCHOR, _DEPLOY_ANCHOR + insertion, 1
+            )
+            _DEPLOY_PY.write_text(new_text)
+            changes[rel] = "inserted"
+        else:
+            changes[rel] = "anchor-not-found"
     return changes
 
 
@@ -405,49 +509,52 @@ def _run_subprocess_with_rss_sample(
     # OS pipe buffer fills (~64 KB on macOS), wedging the whole step.
     import tempfile
 
-    with tempfile.NamedTemporaryFile(
-        mode="w+",
-        prefix="otel_subprocess_",
-        suffix=".log",
-        delete=False,
-    ) as log_file:
-        subprocess_log_path = log_file.name
+    fd, subprocess_log_path = tempfile.mkstemp(prefix="otel_subprocess_", suffix=".log")
+    os.close(fd)
 
     started = time.monotonic()
-    proc = subprocess.Popen(  # noqa: S603
-        cmd,
-        env=env,
-        stdout=open(subprocess_log_path, "w"),  # noqa: SIM115
-        stderr=subprocess.STDOUT,
-        cwd=str(_REPO_ROOT),
-    )
-
-    try:
-        ps = psutil.Process(proc.pid)
-        peak_rss = 0
-        while proc.poll() is None:
-            try:
-                rss = ps.memory_info().rss
-                # Include child process trees (genai client may spawn).
-                for child in ps.children(recursive=True):
-                    try:
-                        rss += child.memory_info().rss
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        pass
-                peak_rss = max(peak_rss, rss)
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                break
-            time.sleep(0.5)
-    finally:
-        proc.wait()
+    peak_rss = 0
+    with open(subprocess_log_path, "w") as log_fh:
+        proc = subprocess.Popen(  # noqa: S603
+            cmd,
+            env=env,
+            stdout=log_fh,
+            stderr=subprocess.STDOUT,
+            cwd=str(_REPO_ROOT),
+        )
+        try:
+            ps = psutil.Process(proc.pid)
+            while proc.poll() is None:
+                try:
+                    rss = ps.memory_info().rss
+                    # Include child process trees (genai client may spawn).
+                    for child in ps.children(recursive=True):
+                        try:
+                            rss += child.memory_info().rss
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            pass
+                    peak_rss = max(peak_rss, rss)
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    break
+                time.sleep(0.5)
+        finally:
+            proc.wait()
 
     duration = time.monotonic() - started
+    log_kept: str | None = subprocess_log_path
+    if proc.returncode == 0:
+        try:
+            os.unlink(subprocess_log_path)
+            log_kept = None
+        except OSError:
+            # Keep the path in the report so the operator can clean up manually.
+            pass
     return {
         "peak_rss_bytes": peak_rss,
         "peak_rss_mb": peak_rss / (1024 * 1024),
         "duration_s": duration,
         "exit_code": proc.returncode,
-        "subprocess_log": subprocess_log_path,
+        "subprocess_log": log_kept,
     }
 
 
@@ -470,6 +577,9 @@ def run_step2_memory_delta(invocations: int) -> StepResult:
           f"exit={b['exit_code']}")
 
     if a["exit_code"] != 0 or b["exit_code"] != 0:
+        for label, run in (("A", a), ("B", b)):
+            if run["exit_code"] != 0 and run.get("subprocess_log"):
+                print(f"      run {label} log retained: {run['subprocess_log']}")
         return StepResult(
             name="memory_delta",
             passed=False,
@@ -782,9 +892,12 @@ def _cli() -> None:
         help="Invocations for span coverage steps 3 + 4 (default 20).",
     )
     parser.add_argument(
-        "--no-apply-cleanup",
+        "--apply-cleanup",
         action="store_true",
-        help="Skip Outcome A/B file mutations; report only.",
+        help=(
+            "Apply Outcome A/B file mutations (.env.* + deploy_ken_e.py + "
+            "spike doc). Default: report only, no files touched."
+        ),
     )
     parser.add_argument(
         "--output",
@@ -824,7 +937,7 @@ def _cli() -> None:
         run_all(
             memory_invocations=args.memory_invocations,
             span_invocations=args.span_invocations,
-            apply_cleanup=not args.no_apply_cleanup,
+            apply_cleanup=args.apply_cleanup,
             output_path=args.output,
         )
     )

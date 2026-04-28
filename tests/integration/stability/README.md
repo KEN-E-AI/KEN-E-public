@@ -128,13 +128,13 @@ Four-step OTEL validation:
    the run.
 
 ```bash
-# With cleanup (applies Outcome A or B to .env files + deploy_ken_e.py)
+# Report-only (default — no file mutations)
 PYTHONPATH=.:api/src uv run --project api python \
   tests/integration/stability/runs/run_otel_stability.py
 
-# Report-only (no file mutations)
+# Apply Outcome A or B cleanup to .env.* + deploy_ken_e.py + spike doc
 PYTHONPATH=.:api/src uv run --project api python \
-  tests/integration/stability/runs/run_otel_stability.py --no-apply-cleanup
+  tests/integration/stability/runs/run_otel_stability.py --apply-cleanup
 ```
 
 Step 2 spawns subprocesses with stdout/stderr redirected to a temp log
