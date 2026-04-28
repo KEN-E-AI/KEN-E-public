@@ -421,6 +421,18 @@
     line-height: var(--lh-heading-md);
   }
 
+  h5 {
+    font-size: var(--text-heading-sm);
+    font-weight: var(--font-semibold);
+    line-height: var(--lh-heading-sm);
+  }
+
+  h6 {
+    font-size: var(--text-body-lg);
+    font-weight: var(--font-semibold);
+    line-height: var(--lh-body);
+  }
+
   p {
     font-size: var(--text-body-lg);
     font-weight: var(--font-regular);
@@ -460,18 +472,14 @@
   .accordion-trigger:hover .accordion-chevron {
     color: var(--color-text-secondary);
   }
-}
 
-/* ============================================
-   REDUCED MOTION SUPPORT
-   ============================================ */
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }

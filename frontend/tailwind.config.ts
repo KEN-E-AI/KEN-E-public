@@ -10,13 +10,6 @@ export default {
   ],
   prefix: "",
   theme: {
-    screens: {
-      sm: "640px",
-      md: "768px",
-      lg: "1024px",
-      xl: "1200px",
-      "2xl": "1536px",
-    },
     container: {
       center: true,
       padding: "2rem",
@@ -25,6 +18,9 @@ export default {
       },
     },
     extend: {
+      screens: {
+        xl: "1200px",
+      },
       spacing: {
         "0": "0px",
         "1": "4px",
