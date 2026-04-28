@@ -21,6 +21,7 @@ export default {
       screens: {
         xl: "1200px",
       },
+      // SoMx 8px-base grid — steps 0-12 intentionally diverge from Tailwind defaults (e.g. space-8 = 40px = 8×5)
       spacing: {
         "0": "0px",
         "1": "4px",
@@ -233,6 +234,7 @@ export default {
         "gradient-cta": "var(--gradient-cta)",
         "gradient-subtle": "var(--gradient-subtle)",
       },
+      // DEFAULT governs the bare `ease` / `duration` utilities, not the `transition` shorthand
       transitionTimingFunction: {
         DEFAULT: "var(--ease-default)",
         bounce: "var(--ease-bounce)",
@@ -248,6 +250,7 @@ export default {
         slow: "var(--duration-slow)",
         dramatic: "var(--duration-dramatic)",
       },
+      // CSS var references; Tailwind emits `z-index: var(--z-*)` — values resolve at runtime from :root
       zIndex: {
         background: "var(--z-background)",
         base: "var(--z-base)",
