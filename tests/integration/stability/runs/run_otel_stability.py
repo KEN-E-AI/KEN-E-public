@@ -122,11 +122,15 @@ async def run_step1_probe() -> StepResult:
     ``TypeError`` on the Pydantic class — caught + reported here as
     Outcome A.
 
-    The probe runs inside ``TraceCapture`` and counts genai spans. A
-    clean run that produced **zero** genai spans means the bug-path was
-    not actually exercised (e.g. silent auth failure, model unreachable),
-    and is reported as ``indeterminate`` rather than Outcome B — we will
-    not strip the workaround on a vacuous pass.
+    The probe also confirms the bug-path was actually exercised by
+    counting events from the runner that carry ``usage_metadata`` (the
+    ADK populates this only when the LLM was invoked and produced a
+    response). A clean run that produced **zero** model-output events
+    means the model wasn't actually called (e.g. silent auth failure,
+    model unreachable), and is reported as ``indeterminate`` rather
+    than Outcome B — we will not strip the workaround on a vacuous
+    pass. We deliberately do not rely on ``TraceCapture`` here because
+    the minimal probe agent has no Weave wiring of its own.
     """
     print("[1/4] probe — running strategy formatter with output_schema "
           "(OTEL google-genai instrumentation ENABLED)...")
@@ -136,9 +140,9 @@ async def run_step1_probe() -> StepResult:
 
     error_text: str | None = None
     crashed_in_otel = False
-    genai_span_count = 0
-
-    TraceCapture = _load_trace_capture()
+    model_event_count = 0
+    total_event_count = 0
+    last_error_event: str | None = None
 
     try:
         from google.adk.agents import Agent
@@ -186,19 +190,19 @@ async def run_step1_probe() -> StepResult:
             "to mid-market companies. Their main competitors are Tableau "
             "and Looker. Their unique value is real-time alerting."
         )
-        with TraceCapture() as cap:
-            async for _event in runner.run_async(
-                user_id="otel_probe_user",
-                session_id="otel_probe_session",
-                new_message=Content(role="user", parts=[Part.from_text(text=prompt)]),
-            ):
-                pass
-        genai_span_count = sum(
-            1
-            for s in cap.traces
-            if "google.genai" in (s.get("_weave_op_name") or "")
-            and "generate_content" in (s.get("_weave_op_name") or "")
-        )
+        async for event in runner.run_async(
+            user_id="otel_probe_user",
+            session_id="otel_probe_session",
+            new_message=Content(role="user", parts=[Part.from_text(text=prompt)]),
+        ):
+            total_event_count += 1
+            if getattr(event, "usage_metadata", None) is not None:
+                model_event_count += 1
+            err_msg = getattr(event, "error_message", None)
+            if err_msg:
+                last_error_event = (
+                    f"{getattr(event, 'error_code', '<no-code>')}: {err_msg}"
+                )
 
     except TypeError as e:
         # The signature of the OTEL google-genai bug: TypeError mentioning
@@ -218,7 +222,8 @@ async def run_step1_probe() -> StepResult:
             details={
                 "outcome": "A",
                 "error": error_text,
-                "genai_span_count": genai_span_count,
+                "model_event_count": model_event_count,
+                "total_event_count": total_event_count,
                 "interpretation": (
                     "Workaround required: OTEL_PYTHON_DISABLED_INSTRUMENTATIONS"
                     "=google-genai must remain set in .env files."
@@ -236,7 +241,8 @@ async def run_step1_probe() -> StepResult:
             details={
                 "outcome": "indeterminate",
                 "error": error_text,
-                "genai_span_count": genai_span_count,
+                "model_event_count": model_event_count,
+                "total_event_count": total_event_count,
                 "interpretation": (
                     "Probe failed for non-OTEL reasons; cannot conclude bug "
                     "state. Inspect the error and re-run."
@@ -244,39 +250,43 @@ async def run_step1_probe() -> StepResult:
             },
         )
 
-    if genai_span_count == 0:
-        # Clean run, but no genai span ever fired — the bug-path was not
-        # exercised, so we cannot conclude Outcome B. Refuse cleanup.
+    if model_event_count == 0:
+        # Clean run, but the model was never actually invoked — the
+        # bug-path wasn't exercised, so we cannot conclude Outcome B.
         print(
-            "      INDETERMINATE — clean run produced zero genai spans; "
-            "bug path not exercised (auth/model issue?)"
+            "      INDETERMINATE — clean run, but no model-output events "
+            f"(total events: {total_event_count}; "
+            f"last error event: {last_error_event or 'n/a'})"
         )
         return StepResult(
             name="probe",
             passed=False,
             details={
                 "outcome": "indeterminate",
-                "genai_span_count": 0,
+                "model_event_count": 0,
+                "total_event_count": total_event_count,
+                "last_error_event": last_error_event,
                 "interpretation": (
-                    "Probe completed without errors but no "
-                    "google.genai.*generate_content span was captured. The "
-                    "OTEL google-genai bug-path was not actually exercised "
-                    "— refusing to strip the workaround. Verify Vertex "
-                    "auth/model access and re-run."
+                    "Probe completed without errors but the runner yielded "
+                    "no event with usage_metadata (i.e. the LLM was never "
+                    "actually invoked). The OTEL google-genai bug-path was "
+                    "not exercised — refusing to strip the workaround. "
+                    "Verify Vertex auth/model access and re-run."
                 ),
             },
         )
 
     print(
         f"      OUTCOME B — google-genai OTEL bug RESOLVED "
-        f"(clean run, {genai_span_count} genai span(s) captured)"
+        f"(clean run, {model_event_count}/{total_event_count} events with model output)"
     )
     return StepResult(
         name="probe",
         passed=True,
         details={
             "outcome": "B",
-            "genai_span_count": genai_span_count,
+            "model_event_count": model_event_count,
+            "total_event_count": total_event_count,
             "interpretation": (
                 "Workaround can be removed: OTEL_PYTHON_DISABLED_INSTRUMENTATIONS"
                 "=google-genai is no longer needed on this ADK version."
