@@ -20,6 +20,7 @@ from .agent_retry import (
     invoke_agent_with_retry,
 )
 from .review_pipeline import (
+    _check_hallucinated_approval,
     build_review_pipeline,
     extract_iterations,
     extract_pipeline_result,
@@ -116,6 +117,7 @@ def dispatch_to_company_news(
                 output_key_prefix="news_review",
             )
             _text, final_state, events = invoke_pipeline_with_events(pipeline, query)
+            _check_hallucinated_approval(events, "news_review")
             outcome = extract_pipeline_result(final_state, "news_review")
             worker_name = pipeline.sub_agents[0].name
             reviewer_name = pipeline.sub_agents[1].name
@@ -245,6 +247,7 @@ def dispatch_to_google_analytics(
             _text, final_state, events = invoke_pipeline_with_events(
                 pipeline, query, state=initial_state
             )
+            _check_hallucinated_approval(events, "ga_review")
             outcome = extract_pipeline_result(final_state, "ga_review")
             worker_name = pipeline.sub_agents[0].name
             reviewer_name = pipeline.sub_agents[1].name

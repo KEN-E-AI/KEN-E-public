@@ -1080,3 +1080,105 @@ class TestDispatchReviewLoopTracingGA:
         call_args = mock_extract_iters.call_args
         assert call_args.args[1] == "google_analytics_worker"
         assert call_args.args[2] == "ga_review_reviewer"
+
+
+# ── TestHallucinatedApprovalDetectionDispatch ─────────────────────────────────
+
+
+def _make_event(author: str, text: str, escalate: bool | None = None, partial: bool = False):
+    """Build a minimal mock ADK Event for hallucination detection tests."""
+    event = MagicMock()
+    event.author = author
+    event.partial = partial
+    part = MagicMock()
+    part.text = text
+    content = MagicMock()
+    content.parts = [part]
+    event.content = content
+    if escalate is not None:
+        event.actions = MagicMock()
+        event.actions.escalate = escalate
+    else:
+        event.actions = None
+    return event
+
+
+class TestHallucinatedApprovalDetectionDispatch:
+    """dispatch_to_company_news and dispatch_to_google_analytics call
+    _check_hallucinated_approval with the events returned by invoke_pipeline."""
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.extract_pipeline_result")
+    @patch("adk.agents.utils.dispatch_handlers._check_hallucinated_approval")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_pipeline")
+    @patch("adk.agents.utils.dispatch_handlers.build_review_pipeline")
+    def test_news_check_called_with_events(
+        self,
+        mock_build_pipeline,
+        mock_invoke_pipeline,
+        mock_check_hallucination,
+        mock_extract,
+        mock_get_registry,
+    ):
+        """dispatch_to_company_news passes events to _check_hallucinated_approval."""
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+        mock_build_pipeline.return_value = MagicMock()
+
+        reviewer_event = _make_event("news_review_reviewer", "All criteria met.")
+        mock_invoke_pipeline.return_value = ("draft", {"news_review_draft": "draft"}, [reviewer_event])
+        mock_extract.return_value = {"result": "draft", "approved": True}
+
+        dispatch_to_company_news("Get news", acceptance_criteria="Must cite sources.")
+
+        mock_check_hallucination.assert_called_once_with([reviewer_event], "news_review")
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.extract_pipeline_result")
+    @patch("adk.agents.utils.dispatch_handlers._check_hallucinated_approval")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_pipeline")
+    @patch("adk.agents.utils.dispatch_handlers.build_review_pipeline")
+    def test_ga_check_called_with_events(
+        self,
+        mock_build_pipeline,
+        mock_invoke_pipeline,
+        mock_check_hallucination,
+        mock_extract,
+        mock_get_registry,
+    ):
+        """dispatch_to_google_analytics passes events to _check_hallucinated_approval."""
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+        mock_build_pipeline.return_value = MagicMock()
+
+        reviewer_event = _make_event("ga_review_reviewer", "Approved.")
+        mock_invoke_pipeline.return_value = ("draft", {"ga_review_draft": "draft"}, [reviewer_event])
+        mock_extract.return_value = {"result": "draft", "approved": True}
+
+        dispatch_to_google_analytics("bounce rate", acceptance_criteria="Include table.")
+
+        mock_check_hallucination.assert_called_once_with([reviewer_event], "ga_review")
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.extract_pipeline_result")
+    @patch("adk.agents.utils.dispatch_handlers._check_hallucinated_approval")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_pipeline")
+    @patch("adk.agents.utils.dispatch_handlers.build_review_pipeline")
+    def test_news_check_called_with_empty_events_on_timeout(
+        self,
+        mock_build_pipeline,
+        mock_invoke_pipeline,
+        mock_check_hallucination,
+        mock_extract,
+        mock_get_registry,
+    ):
+        """Empty events list (timeout sentinel) is passed through unchanged."""
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+        mock_build_pipeline.return_value = MagicMock()
+        mock_invoke_pipeline.return_value = ("Error: timed out", {}, [])
+        mock_extract.return_value = {"result": "", "approved": False, "warning": "no draft"}
+
+        dispatch_to_company_news("Get news", acceptance_criteria="Must cite sources.")
+
+        mock_check_hallucination.assert_called_once_with([], "news_review")

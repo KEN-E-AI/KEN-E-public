@@ -95,7 +95,7 @@ def invoke_pipeline(
     user_id: str | None = None,
     session_id: str | None = None,
     state: dict[str, Any] | None = None,
-) -> tuple[str, dict[str, Any]]:
+) -> tuple[str, dict[str, Any], list]:
     """Synchronous wrapper for pipeline invocation that returns both the response text
     and the final session state.
 
@@ -111,8 +111,8 @@ def invoke_pipeline(
         state: Optional initial session state dict. Passed to session creation.
 
     Returns:
-        tuple[str, dict[str, Any]]: (response_text, final_session_state)
-        On timeout or error: (error_sentinel_text, {})
+        tuple[str, dict[str, Any], list[Event]]: (response_text, final_session_state, events)
+        On timeout or error: (error_sentinel_text, {}, [])
     """
     text, final_state, _ = _invoke_pipeline_collecting_events(
         agent, query, user_id, session_id, state
@@ -174,9 +174,19 @@ def _invoke_pipeline_collecting_events(
     if session_id is None:
         session_id = f"session_{uuid.uuid4().hex[:8]}"
 
+    # Check if a loop is already running (e.g. inside an async framework).
+    # asyncio.get_running_loop() raises RuntimeError when no loop is active,
+    # which is the correct Python 3.12+ way to probe loop state — unlike
+    # asyncio.get_event_loop(), which raises RuntimeError after a prior
+    # asyncio.run() call closes the loop.
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
+        asyncio.get_running_loop()
+        running = True
+    except RuntimeError:
+        running = False
+
+    try:
+        if running:
             executor_cls = (
                 weave.ThreadPoolExecutor
                 if HAS_WEAVE
@@ -191,7 +201,7 @@ def _invoke_pipeline_collecting_events(
                 )
                 return future.result(timeout=300)
         else:
-            return loop.run_until_complete(
+            return asyncio.run(
                 _run_pipeline_collecting_events(
                     agent, query, user_id, session_id, state
                 )
@@ -206,6 +216,7 @@ def _invoke_pipeline_collecting_events(
     except Exception as e:
         logger.error(f"Error in sync pipeline invocation: {e!s}")
         return (f"Error: Failed to complete the request - {e!s}", {}, [])
+
 
 
 def invoke_pipeline_with_events(
@@ -250,7 +261,7 @@ def invoke_agent_sync(
     Thin adapter over invoke_pipeline() — use invoke_pipeline() directly when
     you need to inspect post-run session state.
     """
-    text, _ = invoke_pipeline(agent, query, user_id, session_id, state)
+    text, _, _ = invoke_pipeline(agent, query, user_id, session_id, state)
     return text
 
 
@@ -276,12 +287,9 @@ def dispatch_with_context(dispatch_func: Callable) -> Callable[[str], str]:
         logger.info(f"[DISPATCH-WRAPPER] tool_context type: {type(tool_context)}")
         logger.info(f"[DISPATCH-WRAPPER] kwargs keys: {list(kwargs.keys()) if kwargs else []}")
 
-        # CRITICAL DEBUG: Log if tool_context exists and what's in its state
         if tool_context:
             logger.info("[DISPATCH-WRAPPER] ✅ ToolContext received!")
             logger.info(f"[DISPATCH-WRAPPER] State keys: {list(tool_context.state.keys()) if hasattr(tool_context, 'state') else 'no state attr'}")
-            if hasattr(tool_context, 'state'):
-                logger.info(f"[DISPATCH-WRAPPER] Full state: {tool_context.state}")
         else:
             logger.warning("[DISPATCH-WRAPPER] ⚠️  NO ToolContext - will use fallback")
         logger.info("[DISPATCH-WRAPPER] ========== TOOL CALL INFO END ==========")

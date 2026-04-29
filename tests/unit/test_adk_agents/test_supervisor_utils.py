@@ -300,10 +300,11 @@ class TestInvokePipelineState:
         result = invoke_pipeline(mock_agent, "show traffic trends")
 
         assert isinstance(result, tuple)
-        assert len(result) == 2
-        text, state = result
+        assert len(result) == 3
+        text, state, events = result
         assert isinstance(text, str)
         assert isinstance(state, dict)
+        assert isinstance(events, list)
 
     @patch("adk.agents.utils.supervisor_utils.Runner")
     @patch("adk.agents.utils.supervisor_utils.InMemoryArtifactService")
@@ -383,17 +384,17 @@ class TestInvokePipelineState:
         mock_runner_cls.return_value = mock_runner
 
         with patch("adk.agents.utils.supervisor_utils.asyncio") as mock_asyncio:
-            mock_loop = MagicMock()
-            mock_asyncio.get_event_loop.return_value = mock_loop
-            mock_loop.is_running.return_value = False
-            mock_loop.run_until_complete.side_effect = concurrent.futures.TimeoutError()
+            # Simulate no running event loop (Python 3.12+ pattern).
+            mock_asyncio.get_running_loop.side_effect = RuntimeError("no running loop")
+            mock_asyncio.run.side_effect = concurrent.futures.TimeoutError()
 
             mock_agent = MagicMock()
             mock_agent.name = "test_pipeline"
-            text, state = invoke_pipeline(mock_agent, "test query")
+            text, state, events = invoke_pipeline(mock_agent, "test query")
 
         assert "timed out" in text.lower() or "error" in text.lower()
         assert state == {}
+        assert events == []
 
     @patch("adk.agents.utils.supervisor_utils.Runner")
     @patch("adk.agents.utils.supervisor_utils.InMemoryArtifactService")
@@ -408,14 +409,14 @@ class TestInvokePipelineState:
         mock_runner_cls.return_value = mock_runner
 
         with patch("adk.agents.utils.supervisor_utils.asyncio") as mock_asyncio:
-            mock_loop = MagicMock()
-            mock_asyncio.get_event_loop.return_value = mock_loop
-            mock_loop.is_running.return_value = False
-            mock_loop.run_until_complete.side_effect = RuntimeError("ADK error")
+            # Simulate no running event loop, then a runtime error from asyncio.run().
+            mock_asyncio.get_running_loop.side_effect = RuntimeError("no running loop")
+            mock_asyncio.run.side_effect = RuntimeError("ADK error")
 
             mock_agent = MagicMock()
             mock_agent.name = "test_pipeline"
-            text, state = invoke_pipeline(mock_agent, "test query")
+            text, state, events = invoke_pipeline(mock_agent, "test query")
 
         assert "error" in text.lower()
         assert state == {}
+        assert events == []
