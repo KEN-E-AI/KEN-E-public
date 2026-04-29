@@ -70,7 +70,8 @@ No new shapes. This PRD uses IN-PRD-01's `kms_key_version` field for the re-wrap
 |--------|------|
 | Create | `api/src/kene_api/integrations/workers/kms_rewrap_sweeper.py` + Cloud Scheduler handler route |
 | Modify | `deployment/terraform/` — add the re-wrap sweeper Cloud Scheduler job (disabled by default; enabled post-rotation via IaC toggle or manual gcloud) |
-| Create | `docs/design/components/integrations/operations/kms-key-rotation.md` — the playbook |
+| Create | `docs/design/components/integrations/operations/kms-key-rotation.md` — the KMS key-rotation playbook |
+| Create | `docs/design/components/integrations/operations/state-token-hmac-rotation.md` — JWT state-token HMAC rotation runbook (rotate Secret Manager value; rotation invalidates only in-flight `initiate` flows, ≤10-min window; no persisted-data migration) |
 | Modify | `app/adk/agents/agent_factory/header_provider.py` — replace session-state read with Integrations credential-read |
 | Modify | `app/adk/agents/agent_factory/config_loader.py` (or equivalent) — drop the `auth_type` → session-state key map; replace with `auth_type` → `platform_id` map |
 | Modify | `api/src/kene_api/routers/chat.py` (or wherever session-state is seeded) — stop writing `ga_credentials` / `google_ads_credentials` / `hubspot_credentials` / `meta_ads_credentials` keys |
@@ -175,6 +176,7 @@ No new public endpoints. One new internal OIDC endpoint:
 11. **Feature-flag defaults updated** — `integrations_enabled`, `integrations_ui_enabled`, `integrations_reauth_lifecycle_enabled` default `true` in prod after verification. Per-platform flags remain.
 12. **Verification report appended** — `docs/design/components/integrations/README.md` ends with a "Verification (2026-MM-DD)" section capturing E2E, rotation, and grep results.
 13. **Regression guard** — `test_legacy_removed.py` runs `grep` as a subprocess and fails CI if legacy patterns return. Becomes part of `make lint` or equivalent gate.
+14. **State-token HMAC rotation runbook** — `operations/state-token-hmac-rotation.md` authored and smoke-tested against dev (rotate the Secret Manager value, confirm new `initiate` flows succeed, confirm in-flight pre-rotation flows fail at callback with the standard 400 — acceptable per the ≤10-min flow window).
 
 ## 8. Test plan
 

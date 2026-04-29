@@ -14,7 +14,7 @@ The Configuration tab is the settings surface for SAR-E. Once forecasting is ena
 
 Three facts shape this PRD:
 
-1. **Configuration has two distinct modes — pre-wizard and post-wizard — driven entirely by `forecasting_enabled`.** Pre-wizard, Analysis / Simulations / Targets / Diagnostics are hidden from the nav by `ForecastingEnabledGate` (PE-PRD-01); the user only sees Configuration, and Configuration only shows the CTA. Post-wizard, all five tabs appear and Configuration renders the three editor panels. No middle state — the wizard-completion event from SE-PRD-01 flips the gate atomically.
+1. **Configuration has two distinct modes — pre-wizard and post-wizard — driven entirely by `forecasting_enabled`.** Pre-wizard, the four SAR-E-backed tabs (Analysis / Simulations / Targets / Diagnostics) are hidden from the nav by `ForecastingEnabledGate` (PE-PRD-01); the user sees **Dashboards + Configuration**, and Configuration only shows the CTA. Post-wizard, all six tabs appear and Configuration renders the three editor panels. No middle state — the wizard-completion event from SE-PRD-01 flips the gate atomically.
 2. **The Funnel Stage Mapping editor is reused by the wizard.** PE-PRD-05's Step 2 ("Define KPIs") presents the same 4-row Objective → KPI selection primitive with the same uniqueness validator. This PRD ships that primitive as a standalone `<FunnelStageMappingEditor />` component so the wizard can compose it without re-implementing validation logic.
 3. **CLV editor is descoped; ExogenousEventsSection has moved to Calendar.** The Figma export shows both inside Configuration. Per the Performance implementation plan (§8 Non-goals), CLV does not ship in v1, and exogenous events live as Calendar activities with `category in ["holiday", "promotion", "event"]` (owned by project-tasks PR-PRD-03). This PRD **removes** both surfaces. Copy on the Analysis tab's External Factors panel links users to the Calendar for edits; no Configuration entry point is needed.
 
@@ -193,6 +193,10 @@ Brand types per CLAUDE.md C-5.
 | Create | `frontend/src/hooks/useChannelCoverageMutation.ts` |
 | Create | `frontend/src/hooks/useFunnelMappingHistory.ts` |
 | Create | `frontend/src/services/performanceConfigApi.ts` — axios wrappers for the `PUT /sar-e/config/*` endpoints + history read |
+| Modify | `api/src/kene_api/routers/performance.py` (scaffolded by PE-PRD-01) — add `GET /api/v1/performance/{account_id}/configuration` endpoint; declares `require_role(AccountRole.VIEWER, scope="account")`; delegates composition to `PerformanceBundleComposer.compose_configuration_bundle` |
+| Modify | `api/src/kene_api/services/performance_bundle_composer.py` (scaffolded by PE-PRD-01) — add `async compose_configuration_bundle(account_id)` method; reads SAR-E `/config/funnel-mapping`, `/config/thresholds`, `/config/channel-coverage`, `/config/effectiveness-kpis`, `/config/status` (for `connected_integrations` + `available_kpi_sources`) + the wizard-draft Firestore doc (PE-PRD-05's `accounts/{account_id}/performance_wizard_draft`) for the resume-banner signal |
+| Modify | `api/src/kene_api/models/performance_models.py` (scaffolded by PE-PRD-01) — add `ConfigurationBundle`, `EffectivenessKPI`, `FunnelStageMapping`, `Threshold`, `ChannelCoverageMatrix`, `ChannelCoveragePoint`, `PlatformConnectionSummary`, `AvailableKPISource`, `PerformanceWizardDraftSummary` Pydantic models per §4.1 |
+| Create | `api/tests/integration/test_performance_configuration_bundle.py` — pre-wizard variant (no draft, with draft, no integrations, with integrations) + post-wizard variant (full bundle) + `forecasting_enabled=false` short-circuit |
 | Create | `frontend/src/types/performance/configuration.ts` — branded types + form state + `ConfigurationMode` |
 | Create | `frontend/src/pages/Performance/__tests__/ConfigurationTab.test.tsx` |
 | Create | `frontend/src/components/performance/config/__tests__/FunnelStageMappingEditor.test.tsx` |

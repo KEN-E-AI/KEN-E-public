@@ -7,7 +7,7 @@
 
 ## 1. Overview
 
-The Chat component is KEN-E's **conversational surface**. It owns the `/chat` page, the session history sidebar, the session status view, the per-user category system, the session metadata substrate that mirrors ADK sessions into Firestore for pagination / search / listing, and every ADK hook that feeds the substrate (token counters, compaction summaries, tool-call counts, artifact provenance). No other component renders chat messages, lists sessions, writes to `accounts/{account_id}/chat_sessions/*`, maintains the per-user `chat_categories` collection, or reads `session.state["todo_lists"]` for the UI.
+The Chat component is KEN-E's **conversational surface**. It owns the `/chat` page, the session history sidebar, the session status view, the per-user category system, the session metadata substrate that mirrors ADK sessions into Firestore for pagination / search / listing, the once-per-session auto-title generator (`gemini-2.5-flash`, fired after the first assistant response, billable through BL-PRD-02), and every ADK hook that feeds the substrate (token counters, compaction summaries, tool-call counts, artifact provenance). No other component renders chat messages, lists sessions, writes to `accounts/{account_id}/chat_sessions/*`, maintains the per-user `chat_categories` collection, or reads `session.state["todo_lists"]` for the UI.
 
 Six facts shape the design. **Sessions are per-user-per-account** — every session is scoped to exactly one `(user_id, account_id)` tuple, matching how the existing `/api/v1/chat/completions` code path already scopes its state; the sidebar lists only that user's sessions for the currently selected account. Firestore security rules enforce this server-side. **ADK is the source of truth for conversation events**, but ADK's `VertexAiSessionService` has no native pagination, no sorting, no full-text search, no session title, and sparse artifact metadata — so a **Firestore `chat_sessions` side-table** mirrors every ADK session and adds the product fields (title, category, summary cache, search text, activity timestamps, token aggregates, artifact index). **State denormalization happens in ADK callbacks + the completion endpoint's event loop**, not on the read path — `before_agent_callback` / `after_agent_callback` stamp start/stop timestamps + flush per-turn token counters, keeping the hot-read sidebar fast. **`is_agent_running` is a derived field**, not a persistent boolean — computed at read time from `last_agent_started_at`, `last_agent_stopped_at`, and a 10-minute stuck-threshold; no in-process sweeper is needed. **Multi-session concurrency is a first-class capability** — a user can send messages in session A, switch to session B, and see session A transition from active to needs-review without reloading; the sidebar polls a lightweight status endpoint. **"Read-only" on the user's side, for summary and todo lists** — the compaction summary and todo-list checkboxes are agent-authored state; the user views but does not edit them, so there is no merge conflict between user writes and agent state updates.
 
@@ -238,11 +238,11 @@ Schema source of truth: `api/src/kene_api/models/chat.py` (Pydantic), mirrored i
 
 | Component | Dependency | Reference |
 |-----------|------------|-----------|
-| **[Data Management — DM-PRD-00](../data-management/projects/DM-PRD-00-migration-foundation.md)** | **Hard prerequisite for CH-PRD-01.** Shape B convention + registry for new subcollections. Chat lands `accounts/{account_id}/chat_sessions/*`, `accounts/{account_id}/chat_sessions/{session_id}/artifacts/*`, and adds the user-scoped `users/{user_id}/chat_categories/*` pattern (first user-scoped subcollection in the codebase — see §7.2). | [`../data-management/README.md`](../data-management/README.md) §2 |
+| **[Data Management — DM-PRD-00](../data-management/projects/DM-PRD-00-migration-foundation.md)** | **Hard prerequisite for CH-PRD-01.** Shape B convention + registry for new subcollections. Chat lands `accounts/{account_id}/chat_sessions/*`, `accounts/{account_id}/chat_sessions/{session_id}/artifacts/*`, and adds `users/{user_id}/chat_categories/*` (the third user-scoped subcollection in the codebase, after `notification_status` and `preferences`; registered with DM-PRD-05's `USER_SUBCOLLECTIONS` — see §7.2). | [`../data-management/README.md`](../data-management/README.md) §2 |
 | **[Data Management — DM-PRD-05](../data-management/projects/DM-PRD-05-deletion-sweep-rewrite.md)** | **Hard prerequisite for CH-PRD-04.** `recursive_delete` for chat_sessions + artifacts subcollection on account deletion. User deletion covers `chat_categories`. | [`../data-management/README.md`](../data-management/README.md) deletion section |
 | **[Data Management — DM-PRD-07](../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md)** | **Soft.** `write_audit` for chat-session lifecycle events. Optional at v1 — plain structured logging is acceptable if DM-PRD-07 hasn't shipped. | [`../data-management/README.md`](../data-management/README.md) audit section |
 | **[UI — UI-PRD-01](../ui/README.md)** | **Hard prerequisite for CH-PRD-02, CH-PRD-04, CH-PRD-05.** Design-system foundation (tokens, shell, Tailwind config, shadcn primitives, `Sidebar`, `TopNav`, `AccountSwitcher`, text-size preference). Every Chat component renders inside `LayoutC`. | [`../ui/README.md`](../ui/README.md) |
-| **[UI — UI-PRD-02](../ui/README.md)** | **Coordination.** UI-PRD-02 currently lists `/chat` page creation as in-scope; Chat subsumes this. UI-PRD-02 must be scope-adjusted to auth/settings redesigns only. See [`./implementation-plan.md`](./implementation-plan.md) §5.3. | [`../ui/README.md`](../ui/README.md) |
+| **[UI — UI-PRD-02](../ui/README.md)** | **Coordination.** UI-PRD-02 has been scope-adjusted to auth/settings redesigns only — `/chat` page creation is absorbed by CH-PRD-02. UI-PRD-02 owns the `/` → `/chat` redirect (delete legacy `Home.tsx`); CH-PRD-02 owns the `/chat` destination behind `chat_v2_enabled`. The two PRDs must coordinate `App.tsx` route registration in the same release window. | [`../ui/README.md`](../ui/README.md) |
 | **[Feature Flags — FF-PRD-01](../feature-flags/projects/FF-PRD-01-data-model-evaluation-api.md), [FF-PRD-03](../feature-flags/projects/FF-PRD-03-frontend-sdk-and-e2e.md)** | **Hard prerequisite.** Three flags: `chat_v2_enabled` (master kill switch — reverts UI to pre-component state), `chat_status_detail_enabled` (gates the status view separately), `chat_categories_enabled` (gates CH-PRD-03 surface). **No `chat_manual_compaction_enabled`** (Compact-now out of v1). **No placeholder-cards flag** (Permissions / Tools UIs out of v1). | [`../feature-flags/README.md`](../feature-flags/README.md) |
 | **[Agentic Harness — AH-PRD-02](../agentic-harness/projects/AH-PRD-02-agent-factory.md)** | **Soft.** The Agent Factory is where Chat registers its two ADK callbacks (`before_agent_callback`, `after_agent_callback`) + the two todo-list tools. If AH-PRD-02 hasn't shipped, Chat registers against the current hardcoded root path with a TODO comment referencing AH-PRD-02's landing. | [`../agentic-harness/README.md`](../agentic-harness/README.md) |
 | **[Billing — BL-PRD-02](../billing/projects/BL-PRD-02-token-meter-monthly-enforcement.md)** | **Peer — Billing owns `extract_billable_tokens`.** Chat consumes. Token-definition parity (input + output + reasoning, excluding cached-input) is preserved via the shared helper + CI parity test. If Billing hasn't shipped when Chat starts, Chat lands the helper under Billing's namespace with Billing as reviewer + future maintainer. **Chat does NOT implement cost display — Billing owns pricing entirely.** | [`../billing/README.md`](../billing/README.md) §7.4 |
@@ -262,6 +262,7 @@ Schema source of truth: `api/src/kene_api/models/chat.py` (Pydantic), mirrored i
 | **[Knowledge Graph — KG-PRD-04](../knowledge-graph/projects/KG-PRD-04-session-end-automation.md)** | The daily idle-session sweep queries ADK sessions, not the Chat side-table — but it respects `chat_sessions.deleted_at` via a thin read. If a session is tombstoned, the sweep skips it. |
 | **[Billing — BL-PRD-04](../billing/projects/BL-PRD-04-subscription-settings-ui-integration.md)** | The inactive banner sits in `LayoutC` above Chat; chat input disabled state is rendered by `ChatInterface` reading `useOrgStatus`. No API coupling — UI composition only. |
 | **[Agentic Harness](../agentic-harness/README.md)** | Registers two callbacks into the runner (`before_agent_callback`, `after_agent_callback`) + two todo-list tools. Agent specialists that use `save_artifact` MUST call `chat.artifacts.register_artifact` instead of the raw ADK method, or their artifacts won't surface in the UI (§7.5). |
+| **[Agentic Harness — AH-PRD-04](../agentic-harness/projects/AH-PRD-04-data-visualization.md)** | Modifies `frontend/src/components/chat/ChatInterface.tsx` (CH-PRD-02-owned) to thread `response.artifacts` into message render and delegate to a Vega-Lite chart block. Pure additive coupling — CH-PRD-02 ships the component first in R1; AH-PRD-04 lands the artifact-rendering extension in R3. No backend coupling. |
 | **[Automations](../automations/README.md)** | `PlanRun` sessions use a separate ADK `app_name` (not `ken_e_chatbot`); they do NOT appear in the Chat sidebar. Documented exclusion to prevent confusion. |
 
 ## 4. Design System References
@@ -278,7 +279,7 @@ Schema source of truth: `api/src/kene_api/models/chat.py` (Pydantic), mirrored i
 
 ## 5. Project Index
 
-The component's work is split across **5 project PRDs** under [`projects/`](./projects/). CH-PRD-01 is the strict substrate prerequisite. After CH-PRD-01, CH-PRD-02 (page + sidebar) blocks CH-PRD-03 / 04 / 05 because the page route is the container for all three. CH-PRD-03 (categories), CH-PRD-04 (status view), CH-PRD-05 (todos + artifacts) can run in parallel.
+The component's work is split across **5 feature PRDs (CH-PRD-01..05)** plus **1 tooling PRD (CH-PRD-06 — Documentation Link Integrity)** under [`projects/`](./projects/). CH-PRD-01 is the strict substrate prerequisite. After CH-PRD-01, CH-PRD-02 (page + sidebar) blocks CH-PRD-03 / 04 / 05 because the page route is the container for all three. CH-PRD-03 (categories), CH-PRD-04 (status view), CH-PRD-05 (todos + artifacts) can run in parallel. CH-PRD-06 is orthogonal — a small CI/tooling effort bundled under Chat for ownership convenience, not a chat-feature dependency; it can ship in any order relative to CH-PRD-01..05.
 
 ### 5.1 Dependency graph
 
@@ -314,6 +315,16 @@ UI-PRD-01 (design system)       ─┤
       │ filter, assign)   │ │ export, delete)   │ │ renderers, orphan │
       │                   │ │                   │ │ scans)            │
       └───────────────────┘ └───────────────────┘ └───────────────────┘
+
+(Tooling PRD — separate from the feature dependency chain above; no chat-feature deps)
+
+                                ┌───────────────────┐
+                                │    CH-PRD-06      │  Documentation link
+                                │                   │  integrity & CI
+                                │                   │  enforcement (lychee
+                                │                   │  config + CI gate +
+                                │                   │  G-4 in CLAUDE.md)
+                                └───────────────────┘
 ```
 
 ### 5.2 Projects
@@ -325,14 +336,15 @@ UI-PRD-01 (design system)       ─┤
 | 03 | [Session Categories](./projects/CH-PRD-03-session-categories.md) | Chat / Full-stack | CH-PRD-02 | CH-PRD-04, CH-PRD-05 | 3 days |
 | 04 | [Session Status View](./projects/CH-PRD-04-session-status-view.md) | Chat / Full-stack | CH-PRD-02 | CH-PRD-03, CH-PRD-05 | 4 days |
 | 05 | [Todo Lists + Artifacts](./projects/CH-PRD-05-todo-lists-and-artifacts.md) | Chat / Full-stack + ADK | CH-PRD-02 | CH-PRD-03, CH-PRD-04 | 4 days |
+| 06 | [Documentation Link Integrity](./projects/CH-PRD-06-documentation-link-integrity.md) | Chat / Tooling | — (PR #241 merge is the trigger event, not a strict blocker) | any | 0.5 day |
 
-**Total: 21 days** across 4 sprints (down from 22 after Compact-now, cost, and placeholder cards were scoped out of CH-PRD-04).
+**Total: 21 days for the 5 feature PRDs (CH-PRD-01..05) + 0.5 day for CH-PRD-06 tooling** across 4 sprints (down from 22 after Compact-now, cost, and placeholder cards were scoped out of CH-PRD-04). CH-PRD-06 is partially shipped (`lychee.toml` + G-4 in CLAUDE.md exist; pr_checks.yaml CI step pending).
 
 ### 5.3 Cross-PRD coordination points
 
 Four touchpoints need conscious coordination:
 
-- **UI-PRD-02 scope adjustment (CH-PRD-02).** UI-PRD-02 as registered in PROJECT-PLANNER today includes "new `/chat` page with `ChatInterface`, `ThinkingBlock`, wired `SessionsSidebar`." Chat's CH-PRD-02 delivers the same surface with full feature parity. Before CH-PRD-02 starts, UI-PRD-02's PROJECT-PLANNER row and README description must be scope-adjusted to drop the `/chat` page. Chat absorbs `/chat` page creation, and also the port of `ChatInterface` + `ThinkingBlock` components. Tracked as an open question in [`./implementation-plan.md`](./implementation-plan.md) §10.
+- **UI-PRD-02 scope adjustment (CH-PRD-02).** UI-PRD-02's PROJECT-PLANNER row, README description, and the project PRD itself have been scope-adjusted to drop the `/chat` page. CH-PRD-02 absorbs `/chat` page creation, including the port of `ChatInterface` + `ThinkingBlock` components. Coordination at landing: UI-PRD-02 lands the `/` → `/chat` redirect; CH-PRD-02 lands the `/chat` destination behind `chat_v2_enabled`.
 - **ADK callback registration site + Day-1 spike (CH-PRD-01 ↔ AH-PRD-02).** Chat needs two callbacks: `before_agent_callback`, `after_agent_callback`. The Agent Factory (AH-PRD-02) is the idiomatic registration site. If AH-PRD-02 hasn't shipped, CH-PRD-01 registers callbacks against the current hardcoded root-agent path. CH-PRD-01 Day 1 also runs a focused ADK spike to verify exact public callback names; findings captured in `docs/spike-adk-chat-callbacks.md`.
 - **Artifact tool-convention contract (CH-PRD-05 ↔ every specialist).** CH-PRD-05 introduces `chat.artifacts.register_artifact()` as the canonical artifact-save path for agent tools. Every future specialist that creates an artifact must call this wrapper or its artifacts do not appear in the UI. The existing `app/adk/agents/strategy_agent/artifact_utils.py` is migrated in the same PR. A lint rule (`check_artifact_register.py`) scans for raw `save_artifact` calls outside the wrapper and blocks them.
 - **Token-definition parity with Billing (CH-PRD-01 ↔ BL-PRD-02).** Both Chat's token aggregation and Billing's meter count input + output + reasoning tokens excluding cached-input discount (per Billing README §7.4). A single helper `extract_billable_tokens(event)` at `app/adk/token_accounting.py` is **owned by Billing**. If Billing hasn't shipped, Chat authors the helper in Billing's namespace with Billing as reviewer. CI parity test asserts both consumers read the same definition on every PR.
@@ -364,7 +376,7 @@ Every `chat_sessions/{session_id}` doc carries both `user_id` and `account_id`. 
 
 ### 7.2 Categories are per-user, not per-account
 
-Categories live at `users/{user_id}/chat_categories/{category_id}`. This is the first user-scoped subcollection in the codebase. DM-PRD-05's deletion sweep covers it as part of user-account deletion (not account deletion). A category applies across all of the user's accounts — but because sessions are per-account, only sessions matching the current account see the category in the sidebar. Name dedup uses `casefold()` (Unicode-safe) rather than `lower()`.
+Categories live at `users/{user_id}/chat_categories/{category_id}`. This is the third user-scoped subcollection in the codebase (after `users/{user_id}/notification_status` and `users/{user_id}/preferences`, which predate the Shape B migration and live in `firestore_notification_repository.py`). DM-PRD-05's `delete_user_data(user_id)` orchestrator covers it through the `USER_SUBCOLLECTIONS` registry — `recursive_delete(users/{user_id})` reaps the subcollection on user deletion (distinct from account deletion, which doesn't touch user-scoped state). A category applies across all of the user's accounts — but because sessions are per-account, only sessions matching the current account see the category in the sidebar. Name dedup uses `casefold()` (Unicode-safe) rather than `lower()`.
 
 ### 7.3 The side-table never writes to ADK, ADK never reads the side-table
 
@@ -416,14 +428,26 @@ DM-PRD-05's `recursive_delete` registry picks up all three paths.
 
 ### 7.11 Feature-flag structure
 
-- **Component-level kill switches:** `chat_v2_enabled` (master; reverts `/chat` to the pre-component UX), `chat_status_detail_enabled` (gates the status view), `chat_categories_enabled` (gates categories end-to-end).
+- **Component-level kill switches:** `chat_v2_enabled` (master; reverts `/chat` to the pre-component UX), `chat_status_detail_enabled` (gates the status view), `chat_categories_enabled` (gates categories end-to-end), `chat_auto_title_enabled` (default `true`; ops kill switch for the once-per-session `gemini-2.5-flash` auto-title generator owned by CH-PRD-04 §5.7).
 - **No `chat_manual_compaction_enabled`** — manual Compact-now is scoped out of v1. Auto-compaction always runs.
 - **No placeholder-card flag for Permissions Approved** — that card is not rendered at all in v1. Future PRD adds real feature + flag.
 - **Auth Status card inherits `integrations_connection_test_enabled`** (from IN-PRD-07) — when off, the card ships read-only (no Check Status button, no state-reactive CTAs); when on, the button appears per-row. No Chat-owned flag.
-- All three flags ship targeted-rollout-capable.
+- All four chat-owned flags ship targeted-rollout-capable.
 - `chat_v2_enabled=false` defaults ALL new endpoints to 404, not 500. Existing endpoints stay functional.
 
-### 7.12 Standard shape for a project PRD in [`projects/`](./projects/)
+### 7.12 Auto-title generation contract
+
+Sessions begin with `title=null`. After the **first assistant response completes** (i.e., when the per-turn flush detects `message_count == 2 AND title is None AND auto_title_attempted_at is None AND chat_auto_title_enabled`), the completion endpoint's `finally` block fires a fire-and-forget call to `generate_session_title(session_id, user_id)` (CH-PRD-04 §5.7). The generator:
+
+- uses `gemini-2.5-flash` with max 30 output tokens, temperature 0.2;
+- bills tokens through the shared `extract_billable_tokens(event)` helper into the org's BL-PRD-02 monthly meter (no separate metering path);
+- never overwrites a title the user has already set — re-reads the side-table both before the LLM call and before the side-table write;
+- always stamps `auto_title_attempted_at = now()` on completion (success, failure, or suppression), guaranteeing **at most one Gemini call per session**;
+- treats every failure mode (API error, timeout, empty response, oversized input) as "leave title null + stamp attempted" — never retries.
+
+`PUT /conversations/{id}` (manual title edit) sets `auto_title_attempted_at` synchronously to win the race against an in-flight generator call. Manual edits are forever respected; no auto-regeneration is performed even if the user later clears the title to null.
+
+### 7.13 Standard shape for a project PRD in [`projects/`](./projects/)
 
 Every PRD follows the shared 10-section structure used across sibling components:
 
@@ -448,7 +472,7 @@ Updating this PRD:
 - When a new LLM model is registered with the Agent Factory: add its entry to `MODEL_CONTEXT_WINDOW_REGISTRY` (§7.10) + assert via the CI coverage test.
 - When the ADK callback API changes (upgrade): re-validate `chat_callbacks.py` against the new ADK version + update §7.3 if the event shape changes.
 - When a new user-scoped collection lands: point it at the pattern documented in §7.2 + update DM-PRD-05's deletion sweep.
-- When cost display becomes a real feature (post-v1): design + Billing coordination needed; add a CH-PRD-06 (or similar) scoped to cost surfacing.
+- When cost display becomes a real feature (post-v1): design + Billing coordination needed; add a future CH-PRD scoped to cost surfacing (CH-PRD-06 is taken for the documentation-link-integrity tooling PRD — see [`./projects/CH-PRD-06-documentation-link-integrity.md`](./projects/CH-PRD-06-documentation-link-integrity.md)).
 - When manual compaction becomes a real feature (post-v1): add a CH-PRD for the Compact-now button; re-register the feature flag.
 - When the "Permissions Approved" card becomes a real feature: new PRD + flag registration + figma re-alignment.
 - When IN-PRD-07 ships after CH-PRD-04: the Auth Status card's Check Status button + state-reactive CTAs light up via `integrations_connection_test_enabled`. No CH-PRD-04 re-release — IN-PRD-07's frontend scope includes the extension to `AuthStatusCard.tsx`.

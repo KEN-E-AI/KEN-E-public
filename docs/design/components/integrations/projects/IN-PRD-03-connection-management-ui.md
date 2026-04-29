@@ -93,6 +93,7 @@ class PlatformConnectionPublic(BaseModel):
 | Create | `frontend/src/app/pages/settings/integrations/DisconnectDialog.tsx` |
 | Create | `frontend/src/app/pages/settings/integrations/AuditLogDrawer.tsx` |
 | Create | `frontend/src/app/pages/settings/integrations/EmptyState.tsx` |
+| Create | `frontend/src/app/pages/settings/integrations/ConnectionPicker.tsx` — reusable picker (filters `/connections` by `platform_id`, returns `connection_id`); consumed by **DP-PRD-04** custom-job authoring and **PE-PRD-05** setup wizard. |
 | Modify | `frontend/src/app/pages/settings/SettingsLayout.tsx` — add Integrations tab entry |
 | Create | `frontend/src/app/lib/api/integrations.ts` — typed API client + React Query hooks |
 | Create | `api/src/kene_api/routers/integrations_management.py` — `GET /connections` (enriched view), `GET /connections/{id}`, `GET /audit`, `GET /platforms` |
@@ -107,16 +108,18 @@ class PlatformConnectionPublic(BaseModel):
 Popup-based to avoid losing SPA state:
 
 ```text
-onClickConnect(platform_id):
-  1. POST /initiate → { authorization_url }
+onClickConnect(platform_id, return_to?):
+  1. POST /initiate {return_to?} → { authorization_url }
   2. window.open(authorization_url, "integrations-oauth", popup-config)
-  3. Listen on window 'message' channel for { type: "integrations:callback", outcome: "connected" | "error", connection_id?, error? }
+  3. Listen on window 'message' channel for { type: "integrations:callback", outcome: "connected" | "error", connection_id?, error?, return_to? }
   4. Callback page (loaded inside the popup after Google redirects back) posts that message to window.opener and closes itself.
   5. Parent invalidates the TanStack Query cache for connections → card re-renders with new state.
-  6. On outcome="error", surface the error message in an inline toast on the card.
+  6. On outcome="connected" with a return_to value, parent navigates to return_to (e.g., /performance/setup); on outcome="error", surface the error message in an inline toast on the card and stay on /settings/integrations.
 ```
 
-The callback page is the existing `GET /api/v1/integrations/callback/{platform_id}` route's redirect target — it renders a minimal HTML page that reads outcome + connection_id from the redirect query string, posts to opener, and closes.
+The callback page is the existing `GET /api/v1/integrations/callback/{platform_id}` route's redirect target — it renders a minimal HTML page that reads outcome + connection_id (+ return_to) from the redirect query string, posts to opener, and closes.
+
+**`return_to` propagation through the OAuth round-trip.** `POST /initiate` accepts an optional `return_to: str` body field (must be a same-origin path; rejected if it includes a host or starts with `//`). The path is included in the JWT `state` claim by `StateTokenService.issue(...)` and read back on callback. The callback's HTML stub appends `?return_to=<path>` to its `postMessage` payload so the parent can navigate after card refresh. Default landing remains `/settings/integrations/{connection_id}` for the standalone Settings flow. Consumed by PE-PRD-05's wizard (`?return_to=/performance/setup`).
 
 ### 5.3 Connected-by-user resolution
 

@@ -178,6 +178,12 @@ Brand types per CLAUDE.md C-5; `import type` for all type-only imports per C-6.
 | Create | `frontend/src/hooks/useRunSimulation.ts` — mutation hook calling `POST /performance/.../simulations/run` |
 | Create | `frontend/src/hooks/useSaveTargets.ts` — mutation hook iterating `POST /sar-e/{account_id}/targets`; rolls up N results; invalidates `useTargets` + `useSimulations` |
 | Create | `frontend/src/services/performanceSimulationsApi.ts` — axios wrappers |
+| Modify | `api/src/kene_api/routers/performance.py` (scaffolded by PE-PRD-01) — add `GET /api/v1/performance/{account_id}/simulations?horizon_weeks` (read bundle) + `POST /api/v1/performance/{account_id}/simulations/run` (orchestrator); declares `require_role(AccountRole.VIEWER, scope="account")` on the GET, `EDITOR` on the POST |
+| Modify | `api/src/kene_api/services/performance_bundle_composer.py` (scaffolded by PE-PRD-01) — add `async compose_simulations_bundle(account_id, horizon_weeks)` method; reads SAR-E `/forecasts/baseline` + `/targets` + project-tasks calendar summary in parallel |
+| Create | `api/src/kene_api/services/performance_simulation_orchestrator.py` — owns the `/simulations/run` flow; sequences SAR-E `/scenarios` (IRF) → `/targets/derive` (specialist) into one `SimulationRunResult`; emits Weave span `performance.simulations.run` per §5.2; error taxonomy per §5.2 |
+| Modify | `api/src/kene_api/models/performance_models.py` (scaffolded by PE-PRD-01) — add `SimulationsBundle`, `ForecastPoint`, `SavedTarget`, `CalendarSummary`, `SimulationRunResult`, `DerivedTarget` Pydantic models per §4.1 + §4.2 |
+| Create | `api/tests/integration/test_performance_simulations_bundle.py` — bundle composition + `forecasting_enabled=false` short-circuit |
+| Create | `api/tests/integration/test_performance_simulations_run_orchestrator.py` — happy path + error-taxonomy coverage (`baseline_unavailable`, `specialist_failure`, `network`); 30s timeout enforcement; Weave span shape |
 | Rename | `frontend/src/hooks/useGoals.ts` → `frontend/src/hooks/useTargets.ts` (callers updated in lockstep) |
 | Rename | `frontend/src/contexts/GoalsContext.tsx` → `frontend/src/contexts/TargetsContext.tsx` |
 | Rename | `setForecastAsGoals` → `setForecastAsTargets` (every occurrence) |

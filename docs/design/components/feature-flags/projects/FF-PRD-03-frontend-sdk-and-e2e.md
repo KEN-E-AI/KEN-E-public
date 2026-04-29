@@ -37,7 +37,7 @@ See [`../README.md`](../README.md) §2.2 step 3, §7.4, and §7.7 for the client
 ## 3. Dependencies
 
 - **FF-PRD-01** — `/api/v1/feature-flags/evaluate` endpoint + response shape
-- **FF-PRD-02** — shared `types.ts` (branded `FlagKey`, `FlagEvaluation`, etc.). Whichever PRD ships first owns the file; the other imports from it.
+- **FF-PRD-02** — owns `frontend/src/lib/featureFlags/types.ts` (branded `FlagKey`, `FeatureFlag`, `TargetingRules`, `FlagEvaluation`, `FeatureFlagAuditEntry`). This PRD imports from it and **appends** runtime-only types (`FeatureFlagsContextValue`, `UseFeatureFlagResult`) to the same file.
 - Existing `AuthContext` — provides `user.id`, `user.email`, `selectedOrgAccount`
 - Existing `QueryClientProvider` at the app root
 - Existing Playwright harness (if present) or a new minimal setup (≤1/2 day)
@@ -83,7 +83,7 @@ import type { FlagKey } from "./types";
 // Keys the app batch-evaluates on provider mount.
 // Add entries here before using useFeatureFlag(key) anywhere in the app.
 export const KNOWN_FLAGS: FlagKey[] = [
-  // "automations-beta" as FlagKey,
+  // "automations_beta" as FlagKey,
 ] satisfies FlagKey[];
 ```
 
@@ -91,7 +91,7 @@ export const KNOWN_FLAGS: FlagKey[] = [
 
 | Action | File |
 |--------|------|
-| Create (or extend) | `frontend/src/lib/featureFlags/types.ts` — extend FF-PRD-02's type file with runtime types |
+| Extend | `frontend/src/lib/featureFlags/types.ts` — append runtime-only types to FF-PRD-02's file (FF-PRD-02 owns it) |
 | Create | `frontend/src/lib/featureFlags/client.ts` — typed `evaluate(flagKeys)` call |
 | Create | `frontend/src/lib/featureFlags/registry.ts` — `KNOWN_FLAGS` array |
 | Create | `frontend/src/lib/featureFlags/devOverride.ts` — URL-param parser + sessionStorage persistence |
@@ -129,8 +129,8 @@ on explicit refetch()
 ### 5.3 Dev override
 
 ```ts
-// ?ff.automations-beta=on  →  override = true
-// ?ff.automations-beta=off →  override = false
+// ?ff.automations_beta=on  →  override = true
+// ?ff.automations_beta=off →  override = false
 // Any other value → ignored
 // Value persisted to sessionStorage under key "kene.ff-overrides"
 // Only honored when import.meta.env.VITE_ENVIRONMENT !== "production"
@@ -138,12 +138,12 @@ on explicit refetch()
 
 ### 5.4 E2E test outline (`frontend/e2e/featureFlags.spec.ts`)
 
-1. Seed flag `e2e-test-flag` in Firestore emulator with `targeting_rules.email_domains=["ken-e.ai"]`, `default_enabled=false`.
-2. Add `"e2e-test-flag"` to `KNOWN_FLAGS` (via a test-only registry shim) or ship a test-mode env that unions a fixture registry.
-3. Log in as a `@ken-e.ai` user → assert `useFeatureFlag("e2e-test-flag")` returns `{ enabled: true, reason: "domain_match" }` on the test harness page.
+1. Seed flag `e2e_test_flag` in Firestore emulator with `targeting_rules.email_domains=["ken-e.ai"]`, `default_enabled=false`.
+2. Add `"e2e_test_flag"` to `KNOWN_FLAGS` (via a test-only registry shim) or ship a test-mode env that unions a fixture registry.
+3. Log in as a `@ken-e.ai` user → assert `useFeatureFlag("e2e_test_flag")` returns `{ enabled: true, reason: "domain_match" }` on the test harness page.
 4. Log out, log in as a non-`@ken-e.ai` user → assert `{ enabled: false, reason: "default" }`.
 5. Flip `is_active=false` via the admin API → wait ≤60 s → assert `{ enabled: false, reason: "kill_switch" }` for both users.
-6. In a non-production env, navigate with `?ff.e2e-test-flag=on` as the non-`@ken-e.ai` user → assert `{ enabled: true, reason: "dev_override" }`.
+6. In a non-production env, navigate with `?ff.e2e_test_flag=on` as the non-`@ken-e.ai` user → assert `{ enabled: true, reason: "dev_override" }`.
 
 ### 5.5 Documentation recipes
 
@@ -152,18 +152,18 @@ on explicit refetch()
 ```ts
 // 1. Add the key to frontend/src/lib/featureFlags/registry.ts
 export const KNOWN_FLAGS = [
-  "automations-beta" as FlagKey,
+  "automations_beta" as FlagKey,
 ];
 
 // 2. Use the hook where the feature is rendered
-const { enabled } = useFeatureFlag("automations-beta" as FlagKey);
+const { enabled } = useFeatureFlag("automations_beta" as FlagKey);
 if (!enabled) return <LegacyView />;
 return <NewView />;
 
 // 3. Ask a super-admin to create the flag in /admin/feature-flags
 //    with targeting rules + owner + expected_ga_release.
 
-// 4. In dev, toggle with ?ff.automations-beta=on
+// 4. In dev, toggle with ?ff.automations_beta=on
 ```
 
 `api/CLAUDE.md` gains a "Feature flag kill-switch" runbook:

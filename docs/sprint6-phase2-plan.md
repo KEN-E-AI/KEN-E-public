@@ -259,9 +259,9 @@ Phase 2 delivered as a 5-PR stack: #260 (harness) → #262 (1.1.1-3) → #263 (1
 | 1.1.x harness | #260 | landed | gitignore + dev-deps in root pyproject.toml; renamed `sprint6_harness/` → `stability/` for naming hygiene |
 | 1.1.1-3 ADK | #262 | PASS — 50/50, 12/12 org_context, callback bus 0/0, config refresh ✓ | construction 0.92s · p50 10.15s · p95 25.57s |
 | 1.1.2-3 trace | #263 | PASS — **85/85 spans compliant (100%)** across 8 op_types | uncovered + fixed real agent-emitter bug (parent span missing all required attrs) AND harness-capture bug (push_call too early) |
-| 1.14.5 OTEL | #265 | PASS — **Outcome B** confirmed; workaround-line removal deferred to #270 | memory delta +0.8%; GenAI coverage 100% (39/39); spike doc updated; subprocess pipe deadlock fix |
+| 1.14.5 OTEL | #265 | PASS — **Outcome B**, workaround removed everywhere | memory delta +0.8%; GenAI coverage 100% (39/39); spike doc closed; subprocess pipe deadlock fix |
 | 1.1.5-4 session | #269 | PASS — Tests 1+3+4 + Test 2 with live token | 2hr sustained delta_pct **-67.4%**; harness fixture rewritten to match KEN-E SSE contract |
-| Closeout | #270 | docs + workaround-line removal | Review 29 + plan execution notes; deleted `OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=google-genai` line from `.env.development` / `.env.staging` / `.env.production` / `deploy_ken_e.py` (#265 confirmed Outcome B but didn't touch the env files) |
+| Closeout | #270 | docs-only | Review 31 + plan execution notes |
 
 ### Deviations from plan
 
@@ -274,7 +274,7 @@ Phase 2 delivered as a 5-PR stack: #260 (harness) → #262 (1.1.1-3) → #263 (1
 
 1. Agent emitter not passing `attributes=` to `client.create_call` → parent span shipped without `account_id`/`session_id`/`agent_id`/`agent_version`. Fixed in PR #263.
 2. Harness `weave_trace_capture` patched `push_call` (too early) instead of `finish_call`. Fixed in PR #263.
-3. OTEL probe was left half-applied across .env files for ~2 months (Sprint 5 → Sprint 6). PR #265 ran the probe (Outcome B); PR #270 deletes the workaround line from all four files (`.env.development` / `.env.staging` / `.env.production` / `deploy_ken_e.py`).
+3. OTEL probe was left half-applied across .env files for ~2 months (Sprint 5 → Sprint 6). PR #265 ran the probe (Outcome B) and deleted the workaround line from all four files (`.env.development` / `.env.staging` / `.env.production` / `deploy_ken_e.py`) in the same PR.
 4. OTEL stability runner subprocess used `stdout=PIPE` without draining → deadlocked on >64 KB output. Fixed in PR #265.
 5. Stream-reconnect fixture extracted `session_id` from a non-existent header. Fixed in PR #269.
 

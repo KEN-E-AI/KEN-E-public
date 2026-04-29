@@ -1156,9 +1156,113 @@ The initial MCP admin implementation resolved `${VAR}` patterns at Pydantic mode
 
 Sprint 6 Phase 2 (stability validation stories 1.1.1-3, 1.14.5, 1.1.2-3, 1.1.5-4) remains Backlog; those stories share the proposed `tests/integration/stability/` infrastructure, not yet built.
 
-## Review 29: Sprint 6 Phase 2 — Stability validation delivered (Stories 1.1.x harness + 1.1.1-3, 1.14.5, 1.1.2-3, 1.1.5-4)
+## Review 29: Project-Tasks PRDs — Cross-Component Alignment Pass
 
-**Date:** 2026-04-27 (workaround-removal addendum 2026-04-29)
+**Date:** 2026-04-27
+**Branch:** `docs/align-project-tasks-prds`
+**Scope:** Pre-Linear-issue review of the eight project-tasks PRDs (PR-PRD-01 through PR-PRD-08), the project-tasks README, the System Architecture's project-tasks coverage, and cross-component dependencies (A-PRD-01, DM-PRD-07, DB-PRD-01, DP-PRD-03, KG-PRD-04, AH-PRD-02). Goal: surface contradictions, gaps, and stale references before the work hits Linear and gets dispatched to autonomous dev teams.
+
+### What changed
+
+**(A) Duplicate ownership of `ProjectPlan.type`.** A-PRD-01 §4 and PR-PRD-07 §4 both claimed to add `type: Literal["freeform", "dashboard"]`. Removed the field from PR-PRD-07's data contract (§4 reframed as "consumed fields, not added here"); dropped AC #11 + the `type` enum unit test. A-PRD-01 retains sole ownership.
+
+**(B) `Failed` and `Blocked` task statuses missing from PR-PRD-01.** PR-PRD-04's §5 algorithm referenced `Failed` (revision-cap, dispatch-failure) and `Blocked` (transitively-downstream of Rejected) as if shipped, but PR-PRD-01's enum only had six values. Added both to PR-PRD-01's `TaskStatus` from v1, with a §4 "TaskStatus semantics" subsection clarifying that PRD-01 ships the enum values; PRD-04 enforces the transition policy. PR-PRD-04's §9 risk row cleaned up to drop the "coordinate with PRD-1 to add" note.
+
+**(C) `campaign` vs `campaign_id` rename in A-PRD-01.** A-PRD-01's composite index field and list-endpoint query param still used the legacy `campaign` name. Updated both to `campaign_id` and added a sequencing note: PR-PRD-08 lands the rename + alias + backfill before A-PRD-01's index is queried in production.
+
+**(D) Firestore config-doc path inconsistency `agents/...` vs `agent_configs/...`.** AH-PRD-02 and PR-PRD-02 use `agent_configs/{config_id}` (canonical). The project-tasks README §2.1 + §2.4 and System Architecture §8.2 line 404 still said `agents/project_planning` / `agents/*`. Fixed all three.
+
+**(E) DM-PRD-07 ↔ PR-PRD-08 dependency mismatch.** DM-PRD-07's "Blocks" line listed PR-PRD-08, but PR-PRD-08's own dependencies, PROJECT-PLANNER, and the README workflow all assumed PR-PRD-08 ships in parallel with PR-PRD-01 (before DM-PRD-07). Resolved by removing PR-PRD-08 from DM-PRD-07's "Blocks"; PR-PRD-08 retrofits its `write_audit` calls after DM-PRD-07 ships, mirroring PR-PRD-01's interim approach.
+
+**(F + G) System Architecture §8.2 stale.** Said "six PRDs (PR-PRD-01 through PR-PRD-06)" — out of date once PRDs 07/08 landed. Updated to nine (PRDs 01–09) and added a paragraph block covering multi-category activities (categories + sparse fields + recurrence + owner_email + unscheduled), the Campaign entity (`accounts/{account_id}/campaigns/...` + four-objective enum + per-account generic-fallback seeding), and orphan-task lifecycle.
+
+**(H) `assignee_type="data_pipeline"` extension not acknowledged in PR-PRD-01 / PR-PRD-04.** Added forward-coordination notes in both PRDs noting DP-PRD-03 lands the third `assignee_type` value and the orchestrator's third dispatch branch as additive patches.
+
+**(I) Planning specialist's instruction never updated for the multi-category model.** Added new project **PR-PRD-09 — Planning Agent Multi-Category Update** (Agent / ML team, 1–2 days, blocked by PR-PRD-02 + PR-PRD-07 + PR-PRD-08). Scope: instruction update on `agent_configs/project_planning`; new `resolve_or_create_campaign` tool function; eight golden-path evals exercising every category + recurrence + campaign-resolution path. Without this PRD, every plan the agent emits collapses to `category="task"` and never assigns a campaign — undercutting the value of PRDs 7 and 8.
+
+**(J) PR-PRD-03 header + scope stale.** Header listed only PRD-1 as a blocker; data contract used pre-PRD-7 `PlanTask`; scope omitted the Unscheduled Tasks panel, Batch Activity Wizard, Group Edit drawer, and inline campaign-create flow. Refreshed: header now includes PR-PRD-07 as a hard prerequisite; §1 Context names the multi-category contract; §2 Scope adds the orphan panel + batch wizard + group edit + campaign picker + recurrence rendering; §4 Data contract publishes the full multi-category TypeScript shape; §5 Implementation outline adds the new components + services; §6 API contract enumerates every consumed endpoint (plans, orphan tasks, campaigns, schedules/preview); §7 Acceptance criteria expanded from 10 to 16; §8 Test plan updated with new component tests.
+
+### Cross-cutting decisions taken
+
+| Decision | Rationale | Consequence |
+|---|---|---|
+| `Failed` and `Blocked` ship in PR-PRD-01's enum from v1 (not as a PR-PRD-04 follow-up) | Consumers (PR-PRD-04, DP-PRD-03) already depend on the values; making PR-PRD-01 the source of truth removes the cross-PRD coordination note and avoids a schema migration mid-release. | PR-PRD-01's tests gain one assertion; PR-PRD-04 publishes the transition policy that uses them. |
+| Drop PR-PRD-08 from DM-PRD-07's `Blocks` list rather than adding DM-PRD-07 to PR-PRD-08's `Blocked by` | DM-PRD-07 itself is blocked by PR-PRD-01. Adding DM-PRD-07 to PR-PRD-08's chain would push PR-PRD-08 (and the campaign rename PR-PRD-07 needs) past DM-PRD-07's ship — extending the critical path with no functional benefit, since PR-PRD-08's audit writes can be retrofitted later. | PR-PRD-08 ships its own raw audit writes (mirroring PR-PRD-01's interim pattern) and retrofits to `write_audit` once DM-PRD-07 ships. |
+| Add PR-PRD-09 as a separate ninth project (not extend PR-PRD-02 or PR-PRD-07's scope) | PR-PRD-02's owner is Agent/ML; PR-PRD-07's is Backend. Splitting ownership across the agent-instruction update would muddy responsibility. PR-PRD-09 is small (1–2 days) and consistent with how PRDs 06 / 07 / 08 were added. | Component PRD count goes from 8 → 9; sequencing places PR-PRD-09 alongside PR-PRD-05 close-out so the closing sprint isn't extended. |
+
+### Documents updated
+
+- `docs/design/components/project-tasks/README.md` — §1 Overview, §2.1 Key Directories (path fix), §2.4 Key Abstractions (path fix + Failed/Blocked + DP-PRD-03 note), §5 Project Index (count 8→9, dependency-graph rewrite, projects table, recommended workflow rewrite)
+- `docs/design/components/project-tasks/projects/PR-PRD-01-data-model-and-api.md` — §4 TaskStatus expanded to eight values + new "TaskStatus semantics" + "Forward-coordination" subsections; §8 unit-test list extended
+- `docs/design/components/project-tasks/projects/PR-PRD-03-calendar-page-frontend.md` — header (PR-PRD-07 added as blocker), §1 Context, §2 Scope, §3 Dependencies, §4 Data contract (full multi-category TypeScript shape), §5 Implementation outline, §6 API contract, §7 ACs (10→16), §8 Test plan
+- `docs/design/components/project-tasks/projects/PR-PRD-04-event-driven-orchestrator.md` — §3 Dependencies (DP-PRD-03 forward-coord), §9 risk row cleaned up
+- `docs/design/components/project-tasks/projects/PR-PRD-07-calendar-activities.md` — §4 ProjectPlan-fields-added section reframed (consumes A-PRD-01's `type`); AC #11 dropped; §8 unit test for `type` removed
+- `docs/design/components/project-tasks/projects/PR-PRD-09-planning-agent-multi-category-update.md` — **new file**
+- `docs/design/components/automations/projects/A-PRD-01-data-model-and-api.md` — §5 composite index `campaign` → `campaign_id`; §6 query param rename; §7 AC-3 rewrite; sequencing note added
+- `docs/design/components/data-management/projects/DM-PRD-07-approval-workflow-and-audit.md` — header `Blocks` line + §2 scope bullet + §3 PR-PRD-08 dependency reframed as "later consumer"
+- `docs/KEN-E-System-Architecture.md` — §8.2 closing pointer (six → nine PRDs), `agents/project_planning` → `agent_configs/project_planning`, new paragraph block for multi-category activities + Campaigns + orphan tasks
+- `docs/design/components/PROJECT-PLANNER.md` — PR-PRD-02 row description (path fix), new PR-PRD-09 row
+
+### Follow-ups (filed)
+
+- Apply the same pre-Linear alignment pass to the other component PRD sets before issues are created (Automations, Knowledge Graph, Data Pipeline, Performance, SAR-E). The pattern surfaced here — duplicate field ownership across components, stale enum-coordination notes, mismatched `Blocks` / `Blocked by` edges, planner-doc count drift — likely repeats elsewhere.
+
+## Review 30: Feature Flags PRDs — Cross-Component Alignment Pass
+
+**Date:** 2026-04-27
+**Branch:** `docs/align-component-prds`
+**Scope:** Pre-Linear-issue review of the three feature-flags PRDs (FF-PRD-01 through FF-PRD-03), the feature-flags README, the System Architecture's feature-flags coverage (§10.1, §11.7, glossary), and every cross-component caller (CH-PRD-01/02/03, BL-PRD-01/06, PE-PRD-01/03/04/05/06/07/08, IN-PRD-03, DP-PRD-04). Goal: surface contradictions, gaps, and stale references before the work hits Linear and gets dispatched to autonomous dev teams.
+
+### What changed
+
+**(A) Flag-key naming convention contradicted every consumer PRD.** FF-PRD-01's `FLAG_KEY_REGEX = r"^[a-z0-9][a-z0-9-]{2,63}$"` was kebab-case-only, but every consumer PRD used snake_case (`chat_v2_enabled`, `billing_enabled`, `performance_dashboards_tab`, `data_pipeline_task_assignee`, `integrations_ui_enabled`, etc. — 15+ flags across 5 components). Chat ships in Release 1 alongside FF, so this would surface day-one. Resolved by switching to **snake_case-only** (regex `^[a-z0-9][a-z0-9_]{2,63}$`); updated FF README §7.1 + §2.3, FF-PRD-01 §4 regex + §4 examples + §5.2 example, FF-PRD-03 §4 + §5.5 examples + §5.4 E2E test flag (`automations-beta` → `automations_beta`, `new-ui` → `new_ui`, `e2e-test-flag` → `e2e_test_flag`).
+
+**(B) PE-PRD-01's "default-on, target-off" pattern was impossible with FF-PRD-01's targeting model.** PE-PRD-01 §214 said "each flag defaults to `enabled=true` in the registry with a targeting rule (FF-PRD-02) flipping it off to dark-launch a tab." But FF-PRD-01's evaluation ladder (README §7.2) is allowlist-only — rules can only flip a default-off flag **on**, never off. Setting `default_enabled=true` makes the flag unconditionally on; only `is_active=false` disables, and that disables for everyone. Rewrote §214 to describe the standard dark-launch lifecycle: create with `default_enabled=false` + populate allowlist for early-access users; flip `default_enabled=true` at GA; post-GA kill requires flipping `default_enabled=false` (since `is_active=false` falls through to `default_enabled` per the ladder).
+
+**(C) Hook return-type misuse in CH-PRD-02 and CH-PRD-03 example code.** `useFeatureFlag(key)` returns `{ enabled, reason, isLoading }` (FF-PRD-03 §4), but two example snippets treated the return value as a bare boolean: CH-PRD-02:262 (`const chatEnabled = useFeatureFlag("chat_v2_enabled");` then `{chatEnabled && <Route ...>}` — always truthy → route always renders) and CH-PRD-03:174 (`const enabled = useFeatureFlag("chat_categories_enabled");` then passed to React Query's `enabled` option). Fixed both with destructuring (`const { enabled } = useFeatureFlag(...)`).
+
+**(D) System Architecture §10.1 listed feature flags as a Shape B per-account collection.** The prose introduction of the Firestore bullet listed "feature flags" alongside "skills, observations metadata, and audit logs," then later in the same bullet correctly said `feature_flags/*` is a global collection. Fixed by removing "feature flags" from the per-account list; also added the missing `feature_flag_audit/*` to the global-collections list.
+
+**(E) System Architecture §11.7 was incomplete and contradictory.** Said "percentage-based bucketing per entity (account or user)" — missing organization, which FF-PRD-01:76's `BucketingEntity` Literal explicitly supports. Said "allowlist precedence (always-on / always-off)" — but allowlists are positive-match only; "always-off" doesn't exist in the model. Updated both lines: the entity list now reads "(account, organization, or user)" and the targeting bullet now correctly describes that allowlists are positive-only and the kill switch (`is_active=false`) is the only "off" path (and even that requires `default_enabled=false` for a true global disable, since the kill switch falls through to default).
+
+**(F) `types.ts` ownership was ambiguous between FF-PRD-02 and FF-PRD-03.** README §5.3 said "owned by whichever PRD ships first" while FF-PRD-02 §5 said "Create" and FF-PRD-03 §5 said "Create (or extend)" — three voices, no canonical owner, recipe for merge conflicts when the two parallel teams ship. Resolved by nominating **FF-PRD-02 as sole owner**: README §5.3 now explicitly assigns the file to FF-PRD-02; FF-PRD-02 §5 marks it "canonical, owned by this PRD"; FF-PRD-03 §3 + §5 now say "imports from FF-PRD-02; appends runtime-only types" (no "Create").
+
+**(G) No observability scope on FF-PRD-01.** The component README claims a 60s kill-switch SLO but neither PRD specified instrumentation. Added to FF-PRD-01 §2 (in-scope), §5.3 (new "Observability" sub-section), §5 implementation table (modify `feature_flag_service.py` to emit per-evaluation log), AC #13, and §8 unit-test list: `FeatureFlagService.evaluate` emits exactly one INFO log per call with field shape `{flag_key, reason, cache_hit}` and **no** PII (`user_id`, `user_email`, `organization_id`, `account_id` never logged). Updated the §9 PII risk row to reference the new fixed-shape log.
+
+**(H) No Pydantic ↔ TypeScript contract test.** `feature_flag_models.py` and `frontend/src/lib/featureFlags/types.ts` were hand-mirrored with no drift detection beyond reviewer discipline. Added a lightweight JSON-schema snapshot test to FF-PRD-01: `test_feature_flag_schema_contract.py` calls `FeatureFlag.model_json_schema()` and asserts byte-equality against `feature_flag_schema.snapshot.json` (committed). When Pydantic models change, the test fails, the dev regenerates the snapshot in the same PR, and the snapshot diff is what the reviewer compares against the matching `types.ts` change. Documented in FF-PRD-01 §5.4, AC #14, §8 test list; FF-PRD-02 §5.4 carries the matching code-review checklist.
+
+**(I) FF-PRD-02's admin UI shipped no surface for spotting stale flags.** README §7.1 mentions an `expected_ga_release` field "for the admin UI's old-flags report" — but FF-PRD-02 §5.3 List-table columns didn't include it. Added `expected_ga_release` (sortable, blanks last) to the list table + AC #13. No automated stale-detection (the field is free-text — can't be programmatically compared to today's date); admins eyeball during routine reviews.
+
+### Cross-cutting decisions taken
+
+| Decision | Rationale | Consequence |
+|---|---|---|
+| Snake_case-only flag keys (regex `^[a-z0-9][a-z0-9_]{2,63}$`) | Every consumer PRD (Chat, Billing, Performance, Integrations, Data Pipeline) already uses snake_case. Allowing both invites drift (`chat-v2-enabled` and `chat_v2_enabled` as two distinct flags). Snake_case also matches Python identifier and Firestore field conventions. | FF-PRD-01 regex + README §7.1 + all example code in FF README, FF-PRD-01, FF-PRD-03 changed (`new-ui`/`automations-beta`/`e2e-test-flag` → snake_case equivalents). No consumer PRDs needed renames — they were already snake_case. |
+| FF-PRD-02 owns `frontend/src/lib/featureFlags/types.ts` (not "whichever ships first") | Two parallel PRDs both claiming "Create" on the same file invites merge conflicts and ambiguity at code review. FF-PRD-02 owns the admin UI which uses every type field, so it's the natural owner of the schema mirror. | FF-PRD-03 changes "Create (or extend)" → "Extend"; README §5.3 + FF-PRD-02 §3 + FF-PRD-03 §3 carry the same wording. |
+| Lightweight JSON-schema snapshot for Python ↔ TS contract (not codegen) | The type surface is ~50 lines and changes rarely. A snapshot test is ~30 lines, has no codegen dependencies, and produces a reviewer-friendly diff. Codegen would have been over-engineered for the surface area. | FF-PRD-01 ships the test + fixture; FF-PRD-02 ships the matching code-review checklist. No new tooling (no `datamodel-code-generator`, no `pydantic-to-typescript`). |
+| Stale-flag detection stays manual (sortable column, not auto-flagging) | `expected_ga_release` is free-text in the model — auto-comparing to "today" requires either a structured date field (model migration) or fuzzy parsing (brittle). Sortable column gets 80% of the value at near-zero cost. | FF-PRD-02 §5.3 + AC #13 carry the column. Future structured stale-detection can land as FF-PRD-04 if pain emerges. |
+
+### Documents updated
+
+- `docs/design/components/feature-flags/projects/FF-PRD-01-data-model-evaluation-api.md` — §2 in-scope (observability + snapshot test), §4 regex + examples, §5 implementation table (3 row changes / additions), §5.2 example, new §5.3 (Observability), new §5.4 (Schema-contract snapshot), §7 ACs (added #13 + #14, renumbered final), §8 unit-test list (added schema-contract + log-shape cases), §9 PII risk row reworded
+- `docs/design/components/feature-flags/projects/FF-PRD-02-admin-api-and-ui.md` — §2 in-scope (sole-owner clarification), §5 frontend implementation row (sole-owner wording), §5.3 list-table columns (added `expected_ga_release`), new §5.4 (Schema-contract sync code-review checklist), §7 ACs (inserted #13, renumbered)
+- `docs/design/components/feature-flags/projects/FF-PRD-03-frontend-sdk-and-e2e.md` — §3 dependencies (rephrased types.ts ownership to "imports from FF-PRD-02; appends"), §4 example renames, §5 implementation row ("Create (or extend)" → "Extend"), §5.4 E2E test flag rename, §5.5 documentation recipe renames
+- `docs/design/components/feature-flags/README.md` — §2 architecture-diagram example renames, §2.2 step 3/6 renames, §2.3 added flag-key snake_case + drift-gate sentences, §5.3 Cross-PRD coordination rewritten (sole-owner + contract-test pointer), §7.1 kebab-case → snake_case
+- `docs/KEN-E-System-Architecture.md` — §10.1 removed "feature flags" from Shape B per-account list + added `feature_flag_audit/*` to globals; §11.7 entity list (`account or user` → `account, organization, or user`) and targeting bullet (allowlist always-on/always-off → allowlist positive-only + kill-switch nuance)
+- `docs/design/components/performance/projects/PE-PRD-01-page-shell-and-routing.md` — §214 ("Feature-flag behavior") rewritten to describe the correct dark-launch lifecycle
+- `docs/design/components/chat/projects/CH-PRD-02-chat-page-shell-and-sidebar.md` — §5.6 example destructured
+- `docs/design/components/chat/projects/CH-PRD-03-session-categories.md` — example destructured
+
+### Follow-ups (filed)
+
+- If structured stale-flag detection becomes desirable (e.g., "highlight flags whose `expected_ga_release` is more than 60 days past today"), open FF-PRD-04 to migrate `expected_ga_release` to a structured release-id enum or ISO date and add automated reporting.
+- The next pre-Linear alignment pass (Automations, Knowledge Graph, Data Pipeline, Performance, SAR-E component reviews) should specifically grep for any remaining kebab-case flag keys in case any were missed by the consumer-PRD audit done here.
+
+---
+
+## Review 31: Sprint 6 Phase 2 — Stability validation delivered (Stories 1.1.x harness + 1.1.1-3, 1.14.5, 1.1.2-3, 1.1.5-4)
+
+**Date:** 2026-04-27
 **Stack:** PR #260 → #262 → #263 → #265 → #269 → #270 (closeout)
 **Scope:** five-PR stack delivering Sprint 6 Phase 2 — the local stability harness (Story 1.1.x) and the four stability validation stories. ACs 6.10–6.24 all PASS locally. Closes the OTEL google-genai workaround probe that had been open since Sprint 5.
 
@@ -1167,14 +1271,14 @@ Sprint 6 Phase 2 (stability validation stories 1.1.1-3, 1.14.5, 1.1.2-3, 1.1.5-4
 - **Harness** (`tests/integration/stability/`) — `query_corpus.py` (28 prompts × 5 categories), `diverse_invocation_runner.py` (HTTP driver with JSON report + p50/p95), `memory_profiler.py` (psutil RSS sampler context manager), `weave_trace_capture.py` (in-memory weave-call capture for compliance replay), `redis_ttl_fixture.py` (TTL controller), `stream_reconnect_fixture.py` (uvicorn-subprocess fixture for mid-stream-kill tests). 19 self-tests pass green.
 - **Story 1.1.1-3 (PR #262)** — `runs/run_adk_stability.py` drives `ken_e_agent` via `InMemorySessionService` + `Runner` (no HTTP, no auth-token mint). 50/50 invocations zero ADK / callback errors; config-cache hot-reload sentinel picked up; 12/12 org_context shapes (missing, empty, >10KB, malformed, unicode/emoji, deeply nested, etc.) merge cleanly. ACs 6.10–6.13.
 - **Story 1.1.2-3 (PR #263)** — `runs/run_trace_compliance.py` drives 20+ corpus queries inside `TraceCapture`, validates every captured span via `app.adk.tracking.compliance.generate_compliance_report`, and emits per-op-name compliance breakdown. **85/85 spans compliant (100.0%) across 8 op_types**. Two real bugs fixed (see below). ACs 6.18–6.20.
-- **Story 1.14.5 (PR #265)** — `runs/run_otel_stability.py` (probe + paired memory delta + GenAI span coverage + non-GenAI span presence). **Outcome B** confirmed — the OTEL `google-genai` Pydantic `model_dump()` crash is resolved on ADK 1.27.5; spike doc updated. Memory delta +0.8% (well under 10%); GenAI span coverage 100% (39/39 spans carry `model_used` + `temperature`); non-GenAI DB + HTTP spans present. ACs 6.14–6.17. Workaround-line removal across `.env.development` / `.env.staging` / `.env.production` / `app/adk/deploy_ken_e.py` was deferred to PR #270 — see "Real bugs fixed" #3 below.
+- **Story 1.14.5 (PR #265)** — `runs/run_otel_stability.py` (probe + paired memory delta + GenAI span coverage + non-GenAI span presence). **Outcome B** confirmed — the OTEL `google-genai` Pydantic `model_dump()` crash is resolved on ADK 1.27.5; workaround line removed from `.env.development`, `.env.staging`, `.env.production`, and `app/adk/deploy_ken_e.py` in the same PR; spike doc closed. Memory delta +0.8% (well under 10%); GenAI span coverage 100% (39/39 spans carry `model_used` + `temperature`); non-GenAI DB + HTTP spans present. ACs 6.14–6.17.
 - **Story 1.1.5-4 (PR #269)** — `runs/run_session_stability.py` with `--tests {1,2,3,4}`. Test 1 (2-hour sustained): 24/24 invocations, 0 errors, RSS 405 MB → 132 MB (delta_pct **-67.4%**). Test 2 (stream reconnect): live super-admin token + pre-created session → 2 chunks streamed → mid-stream kill → restart → follow-up returned HTTP 200. Test 3 (Redis TTL cycle): seed → expire → confirm absent. Test 4 (long session integrity): 25/25 invocations in single session, `_last_reasoning` set 25/25, `_previous_tool_calls` set 16/25, cache-expiry triggered. ACs 6.21–6.24.
 
 ### Real bugs fixed (uncovered by validation)
 
 1. **Agent emitter — root span attributes never set on parent call.** `app/adk/tracking/callbacks.py:weave_before_agent_callback` was setting the `weave.attributes()` contextvar then calling `client.create_call(op="ken_e_agent")` without `attributes=`. The contextvar propagates to `@weave.op()`-decorated children, but is **not snapshotted onto a directly-created parent call**. Result: every `ken_e_agent` root span shipped without `account_id`, `session_id`, `agent_id`, `agent_version` — a permanent 0% compliance on the parent. Fix: pass `attributes=root_attrs` explicitly to `create_call(...)`.
 2. **Harness — wrong patch point for span capture.** `weave_trace_capture.py` was patching `weave.trace.context.call_context.push_call`. Push happens *before* a call's attributes are materialised from the contextvar — so even though weave eventually serialises full attributes for the call, the harness was reading them too early and recording empty dicts. Children happened to have attrs at push time (different code path), masking the parent's emptiness. Fix: patch `WeaveClient.finish_call` instead.
-3. **OTEL probe never closed (latent inconsistency).** Sprint 5 commit `8360b02` (landed on `main`) re-enabled Agent Engine tracing AND commented out `OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=google-genai` in `.env.development` + `deploy_ken_e.py` "to test if bug still triggers on ADK 1.26.0" — but the diagnostic was never run, and `.env.staging` + `.env.production` kept the workaround active. Dev was therefore inconsistent with staging/prod for ~2 months. PR #265 ran the probe and confirmed Outcome B but did not touch the env files; PR #270 deletes the workaround line from all four files to make the cleanup match the probe outcome. The probe runner remains at `tests/integration/stability/runs/run_otel_stability.py` for re-validation on future ADK upgrades.
+3. **OTEL probe never closed (Sprint 5 latent inconsistency).** Sprint 5 commit `8360b02` (landed on `main`) re-enabled Agent Engine tracing AND commented out `OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=google-genai` in `.env.development` + `deploy_ken_e.py` "to test if bug still triggers on ADK 1.26.0" — but the diagnostic was never run, and `.env.staging` + `.env.production` kept the workaround active. Dev was therefore inconsistent with staging/prod for ~2 months. PR #265 ran the probe (Outcome B, clean run on ADK 1.27.5) AND deleted the workaround line from all four files in the same PR, closing the inconsistency. The probe runner remains at `tests/integration/stability/runs/run_otel_stability.py` for re-validation on future ADK upgrades.
 4. **OTEL stability subprocess pipe deadlock.** First Step 2 attempt used `subprocess.Popen(stdout=PIPE)` and never drained the pipe in the parent's psutil sampling loop. The OS pipe buffer (~64 KB on macOS) filled within seconds and wedged the child. Fix: per-run temp log file.
 5. **Stream-reconnect fixture mismatch with KEN-E SSE contract.** `stream_reconnect_fixture.py` extracted `session_id` from an `X-Session-Id` response header. KEN-E's `/api/v1/chat/completions` streaming response is plain SSE (`data: <text>\n\n`) — no session_id is ever exposed back to the client. The fixture worked against the unit-test stub (which set the header) but failed against the real API. Fix: caller pre-creates the session via `POST /api/v1/chat/conversations` and passes the session_id into the fixture.
 
@@ -1187,8 +1291,8 @@ Sprint 6 Phase 2 (stability validation stories 1.1.1-3, 1.14.5, 1.1.2-3, 1.1.5-4
 - `tests/integration/stability/` — five new `runs/run_*.py` driver scripts (one per validation story); `weave_trace_capture.py` rewritten; `stream_reconnect_fixture.py` API change; README updated with each driver.
 - `app/adk/tracking/callbacks.py` — `attributes=root_attrs` passed to `create_call`; `temperature` + `max_output_tokens` surfaced.
 - `app/adk/agents/strategy_agent/config_loader.py` — `get_current_config_metadata` returns `temperature` + `max_output_tokens`.
-- `app/adk/.env.development`, `.env.staging`, `.env.production`, `app/adk/deploy_ken_e.py` — `OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=google-genai` line deleted (PR #270). Pre-PR-#270 state: dev + `deploy_ken_e.py` were `#`-prefixed since Sprint 5; staging + production were still active.
-- `docs/spike-otel-pydantic-findings.md` — Status → "Workaround removed; Outcome B confirmed on ADK 1.27.5"; Stage 2 resolution section appended (PR #270).
+- `app/adk/.env.development`, `.env.staging`, `.env.production`, `app/adk/deploy_ken_e.py` — `OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=google-genai` line deleted (PR #265).
+- `docs/spike-otel-pydantic-findings.md` — Status → "Workaround removed"; Sprint 6 verification section added (PR #265).
 - `pyproject.toml` already updated in PR #260 (psutil, redis, pytest-httpx as dev deps).
 
 ### Known gaps + follow-ups (filed for Sprint 7)

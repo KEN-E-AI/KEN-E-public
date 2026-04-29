@@ -2,10 +2,10 @@
 
 **Version:** 1.1
 **Date:** April 2026
-**Status:** [IN PROGRESS] — frontend shipped on `main`; backend pipeline pending
+**Status:** [IN PROGRESS] — design contract captured in `docs/figma-export/src/app/components/dashboard/`; production frontend renderer to be delivered by Dashboards (DB-PRD-03 `VisualizationWidget`) + Chat (CH-PRD-02) and consumed/extended by AH-PRD-04. Backend pipeline pending.
 
 **Changes from v1.0 (March 2026):**
-- Bumped Vega-Lite schema target from **v5 → v6** to match the shipped frontend (`react-vega` 8 / `vega-lite` 6.4.2).
+- Bumped Vega-Lite schema target from **v5 → v6** to match the Figma-export reference (`react-vega` 8 / `vega-lite` 6.4.2). The production frontend currently ships `recharts`; the Vega-Lite renderer is delivered by Dashboards / Chat sibling PRDs (see DB-PRD-03 / CH-PRD-02).
 - Normalized `chart_type_suggestion` to the Vega-Lite mark vocabulary (`point` replaces `scatter`; `text` reserved for frontend layering).
 - Formalized the artifact `type` union (`visualization | text | table | file`) — chat emits only `visualization`, the dashboards surface emits the others.
 - Forbade backend-emitted `spec.config` blocks and hardcoded mark colors — theme + user color overrides are applied by the frontend.
@@ -388,7 +388,7 @@ A multi-step workflow for "Increase budgets for Meta Ads campaigns that result i
 
 ```
 Phase 1 — Data Gathering (ParallelAgent):
-  Step 1a: Analytics Specialist
+  Step 1a: Google Analytics Specialist
     • Queries GA MCP for engagement by campaign UTM
     • Calls create_visualization(chart_type="bar",
         title="Website Engagement by Campaign",
@@ -396,7 +396,7 @@ Phase 1 — Data Gathering (ParallelAgent):
         encoding={"x": {"field": "campaign"}, "y": {"field": "engagement_rate"}})
     • Writes: step_1a_draft (text) + step_1a_artifacts (bar chart)
 
-  Step 1b: Execution Specialist
+  Step 1b: Meta Ads Specialist
     • Queries Meta Ads SDK for spend by campaign
     • Calls create_visualization(chart_type="bar",
         title="Meta Ads Daily Spend by Campaign",
@@ -409,21 +409,21 @@ Phase 2 — Synthesis:
   → User sees engagement chart + spend chart + recommendation text
 
 Phase 3 — Execution (after user approval):
-  Execution Specialist applies budget changes in Meta Ads
+  Meta Ads Specialist applies budget changes in Meta Ads
 ```
 
 ---
 
 ## 8. Frontend Rendering
 
-### 8.1 Renderer (shipped)
+### 8.1 Renderer (planned)
 
-The app renders artifacts with `react-vega` 8 (Vega-Lite 6.4.2) via `src/app/components/dashboard/ArtifactRenderer.tsx`. The same renderer is shared by:
+The renderer is **not yet on `main`** — the production frontend currently ships `recharts`. The Figma export at `docs/figma-export/src/app/components/dashboard/ArtifactRenderer.tsx` (`react-vega` 8 / Vega-Lite 6.4.2) is the design contract for production delivery, which is owned by sibling components:
 
-- **Chat** — `ChatInterface.tsx` → `ChatArtifact` wrapper → `ArtifactRenderer`.
-- **Dashboards** (Performance → Dashboards) — workflow `OutputFile` → `toArtifactPayload` → `ArtifactRenderer`.
+- **Dashboards** ([DB-PRD-03](../dashboards/projects/DB-PRD-03-dashboard-details-and-canvas.md)) creates `frontend/src/components/dashboards/widgets/VisualizationWidget.tsx` (react-vega-backed).
+- **Chat** ([CH-PRD-02](../chat/projects/CH-PRD-02-chat-page-shell-and-sidebar.md)) ports the chat-side renderer (`frontend/src/components/chat/ChatInterface.tsx` + chart block) from the same Figma source.
 
-The Vega-Lite spec is the contract between backend and frontend; the renderer is an implementation detail.
+Both consume the same Vega-Lite spec contract. The Vega-Lite spec is the contract between backend and frontend; the renderer is an implementation detail. AH-PRD-04 wires `response.artifacts` into chat message state and uses whichever production renderer is available; if neither sibling has shipped when AH-PRD-04 starts, AH-PRD-04 ports the minimal renderer needed to render a Vega-Lite v6 spec inline.
 
 ### 8.2 Message Layout
 
@@ -477,7 +477,7 @@ The renderer applies these transforms after receiving the spec. Backends should 
 
 | Channel | Rendering Approach | Status |
 |---------|--------------------|--------|
-| **Web UI** | Full Vega-Lite v6 rendering via `ArtifactRenderer` (interactive charts with hover, configurable chart type / color / data labels) | Primary target — shipped |
+| **Web UI** | Full Vega-Lite v6 rendering via `ArtifactRenderer` (interactive charts with hover, configurable chart type / color / data labels) | Primary target — production renderer to be delivered by DB-PRD-03 / CH-PRD-02 (or this PRD as fallback); see §8.1 |
 | **Slack** `[PLANNED]` | Server-side render Vega-Lite to PNG via `vega-lite-to-png` or Vega CLI, send as image attachment. Apply the same app-theme config server-side for consistency. | Requires server-side rendering pipeline |
 | **Voice** `[PLANNED]` | No visual rendering. Agent describes the data verbally: "Sessions peaked on Thursday at 1,423" | `create_visualization()` still produces the artifact for session history; voice channel skips rendering |
 
@@ -506,7 +506,8 @@ See [`api-gateway-multi-channel.md`](../backlog/api-gateway-multi-channel.md) Se
 - [`api-gateway-multi-channel.md`](../backlog/api-gateway-multi-channel.md) Section 6 — Stable Components Across Channels
 - [`mcp-architecture.md`](./mcp-architecture.md) §4 — SDK Function Tools Pattern
 - [`review-loop-implementation-plan.md`](../../review-loop-implementation-plan.md) Section 3 — Architecture
-- Frontend renderer: `src/app/components/dashboard/ArtifactRenderer.tsx`
-- Shared config UI: `src/app/components/dashboard/TileSettingsPopover.tsx`
-- Artifact union + adapter: `src/app/components/dashboard/artifactTypes.ts`
+- Frontend renderer (Figma export, design contract): `docs/figma-export/src/app/components/dashboard/ArtifactRenderer.tsx`
+- Shared config UI (Figma export): `docs/figma-export/src/app/components/dashboard/TileSettingsPopover.tsx`
+- Artifact union + adapter (Figma export): `docs/figma-export/src/app/components/dashboard/artifactTypes.ts`
+- Production-tree equivalents: [DB-PRD-03](../dashboards/projects/DB-PRD-03-dashboard-details-and-canvas.md) (`frontend/src/components/dashboards/widgets/VisualizationWidget.tsx`) + [CH-PRD-02](../chat/projects/CH-PRD-02-chat-page-shell-and-sidebar.md) chat surface
 - [Vega-Lite v6 Specification](https://vega.github.io/vega-lite/)

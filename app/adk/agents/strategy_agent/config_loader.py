@@ -283,12 +283,15 @@ def get_current_config_metadata(
                 f"Falling back to {DEFAULT_VERSION}. Fix the version in Firestore."
             )
 
+        gcc = config_data.get("generate_content_config") or {}
         return {
             "doc_id": doc_id,
             "version": normalized_version,
             "variant_name": metadata.get("variant_name", "baseline"),
             "experiment_id": metadata.get("experiment_id", "baseline"),
             "model": config_data.get("model", "unknown"),
+            "temperature": gcc.get("temperature"),
+            "max_output_tokens": gcc.get("max_output_tokens"),
             "updated_at": metadata.get("updated_at", "unknown"),
         }
     except Exception as e:

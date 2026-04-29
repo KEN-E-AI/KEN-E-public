@@ -73,7 +73,9 @@ A developer reading only this section should understand: this component owns the
 │    2. idempotency: read billing_stripe_events/{event.id}                    │
 │       if already processed → return 200 (replay)                            │
 │    3. dispatch handler:                                                     │
-│         checkout.session.completed   → activate subscription                │
+│         checkout.session.completed    → activate subscription               │
+│         customer.subscription.created → defensive duplicate; no-op if       │
+│                                          stripe_subscription_id matches     │
 │         customer.subscription.updated → re-derive tier; audit; notify       │
 │         customer.subscription.deleted → revert to Free; recompute status    │
 │         invoice.payment_succeeded     → if past_due → active                │
@@ -127,7 +129,7 @@ A developer reading only this section should understand: this component owns the
 | `api/src/kene_api/billing/meter.py` | `meter_increment(...)`, `check_status(...)`, `invalidate_status_cache(...)`. The hot-path API for the Agentic Harness. (BL-PRD-02) |
 | `api/src/kene_api/billing/state_machine.py` | Pure transition functions; testable without Firestore. (BL-PRD-02) |
 | `api/src/kene_api/billing/counters.py` | Distributed-counter read/write helpers (10-shard pattern). (BL-PRD-02) |
-| `api/src/kene_api/billing/notifications.py` | `Approaching Token Limit`, `Token Limit Exceeded`, `Payment Failed`, `Subscription Updated` factories. (BL-PRD-02 + BL-PRD-03) |
+| `api/src/kene_api/billing/notifications.py` | `Approaching Token Limit`, `Token Limit Exceeded`, `Scheduled Run Skipped — Billing`, `Payment Failed`, `Subscription Updated` factories. (BL-PRD-02 + BL-PRD-03) |
 | `api/src/kene_api/billing/exceptions.py` | `BillingInactiveError` — typed exception mapped to HTTP 402 by the API exception handler. (BL-PRD-02) |
 | `api/src/kene_api/billing/checkout.py` | `create_checkout_session(org_id, tier_stop_index)`. (BL-PRD-03) |
 | `api/src/kene_api/billing/subscription.py` | `change_subscription`, `cancel_subscription`. (BL-PRD-03) |
@@ -138,7 +140,7 @@ A developer reading only this section should understand: this component owns the
 | `api/src/kene_api/billing/handlers/invoice_payment.py` | `succeeded`, `failed` + grace-period logic. (BL-PRD-03) |
 | `api/src/kene_api/billing/email.py` | SendGrid wrapper for payment-failure template. (BL-PRD-03) |
 | `api/src/kene_api/billing/manual_override.py` | `credit_tokens`, `uplift_cap`, `force_downgrade`, `force_status` actions; mandatory `reason` audit. (BL-PRD-05) |
-| `api/src/kene_api/billing/permissions.py` | `require_billing_role(["owner"|"admin"])` FastAPI dependency. (BL-PRD-05) |
+| (no Billing-specific permissions module) | Authorization uses DM-PRD-07's `require_role(OrgRole.ADMIN \| OrgRole.MEMBER, scope="org")` directly. (BL-PRD-05) |
 | `api/src/kene_api/billing/rate_limit.py` | Firestore-backed sliding-window limiter for `/checkout-session`, `/sales-handoff`, etc. (BL-PRD-05) |
 | `api/src/kene_api/billing/sales_handoff.py` | `/sales-handoff` handler — sends email + Slack webhook + audit. (BL-PRD-06) |
 | `api/src/kene_api/billing/monthly_reset.py` | Reset-job entry point; idempotent per `YYYY-MM` via marker doc. (BL-PRD-02) |
@@ -182,11 +184,11 @@ Owned endpoints:
 | `/api/v1/billing/{org_id}/profile` | GET | BL-PRD-01 (extended BL-PRD-03) | Any org member. Current plan, allowance, billing email, payment-method summary. |
 | `/api/v1/billing/{org_id}/usage/current` | GET | BL-PRD-02 | Any org member. This month's tokens used, allowance, status. |
 | `/api/v1/billing/{org_id}/usage/daily?from=&to=&breakdown=none\|account\|user` | GET | BL-PRD-02 | Any org member. Daily aggregates feeding the chart. |
-| `/api/v1/billing/{org_id}/checkout-session` | POST | BL-PRD-03 | **Owner or admin** (BL-PRD-05). Body `{tier_stop_index}` → `{checkout_url}`. Rate-limited 10/hour/org. |
-| `/api/v1/billing/{org_id}/subscription/change` | POST | BL-PRD-03 | **Owner or admin** (BL-PRD-05). Mid-cycle plan change with proration. Rate-limited 20/hour/org. |
-| `/api/v1/billing/{org_id}/subscription/cancel` | POST | BL-PRD-03 | **Owner only** (BL-PRD-05). Schedules cancellation at period end. |
-| `/api/v1/billing/{org_id}/customer-portal-session` | POST | BL-PRD-03 | **Owner only** (BL-PRD-05). Returns Stripe Customer Portal URL (payment + invoices only). |
-| `/api/v1/billing/{org_id}/sales-handoff` | POST | BL-PRD-06 (contract BL-PRD-04) | **Owner or admin** (BL-PRD-05). Routes to sales via email + Slack. Rate-limited 3/day/org. |
+| `/api/v1/billing/{org_id}/checkout-session` | POST | BL-PRD-03 | **Org admin** (BL-PRD-05). Body `{tier_stop_index}` → `{checkout_url}`. Rate-limited 10/hour/org. |
+| `/api/v1/billing/{org_id}/subscription/change` | POST | BL-PRD-03 | **Org admin** (BL-PRD-05). Mid-cycle plan change with proration. Rate-limited 20/hour/org. |
+| `/api/v1/billing/{org_id}/subscription/cancel` | POST | BL-PRD-03 | **Org admin** (BL-PRD-05). Schedules cancellation at period end. |
+| `/api/v1/billing/{org_id}/customer-portal-session` | POST | BL-PRD-03 | **Org admin** (BL-PRD-05). Returns Stripe Customer Portal URL (payment + invoices only). |
+| `/api/v1/billing/{org_id}/sales-handoff` | POST | BL-PRD-06 (contract BL-PRD-04) | **Org admin** (BL-PRD-05). Routes to sales via email + Slack. Rate-limited 3/day/org. |
 | `/api/v1/internal/billing/status/{org_id}` | GET | BL-PRD-01 (real impl BL-PRD-02) | OIDC. Returns `OrganizationStatus`. 30s in-process cache. Read on every gated request. |
 | `/api/v1/internal/billing/meter-increment` | POST | BL-PRD-02 | OIDC. Body `{org_id, account_id, user_id, tokens, trace_id}`. Idempotent on `trace_id`. |
 | `/api/v1/internal/billing/stripe-webhook` | POST | BL-PRD-03 | Stripe-signed; idempotent via `billing_stripe_events`. Multi-secret rotation support (BL-PRD-05). |
@@ -211,7 +213,7 @@ Schema source of truth: `api/src/kene_api/models/billing.py` (Pydantic), mirrore
 | `create_checkout_session(org_id, tier_stop_index)` | `api/src/kene_api/billing/checkout.py` | Stripe Checkout Session creation. `client_reference_id=org_id` is the canonical link the webhook reads. |
 | `stripe_client` driver dispatch | `api/src/kene_api/billing/stripe_client.py` | `BILLING_STRIPE_DRIVER=stub` selects `StubStripe` (default in dev/test); `=real` selects the Stripe SDK with key from Secret Manager. **Production refuses to boot if `=stub`.** |
 | `StubStripe` | `api/src/kene_api/billing/stub_stripe.py` | In-memory fake Stripe — Customer / Subscription / CheckoutSession / Webhook surfaces. Lets every test run hermetically without a Stripe account. |
-| `require_billing_role(allowed)` | `api/src/kene_api/billing/permissions.py` | FastAPI `Depends` enforcing org-role auth on state-changing endpoints. 403 with structured body on rejection. |
+| `require_role(min_role, scope="org")` (DM-PRD-07) | `api/src/kene_api/dependencies/rbac.py` | FastAPI `Depends` from DM-PRD-07 enforcing org-role auth on Billing's state-changing endpoints. 403 with structured body on rejection. Billing does not maintain its own role middleware. |
 | `write_billing_audit(...)` | `api/src/kene_api/billing/audit.py` | Wraps DM-PRD-07's `write_audit`. Lint rule blocks card substrings in `metadata`. |
 | `useOrgStatus()` | `frontend/src/app/hooks/useOrgStatus.ts` | Single frontend source of truth for org status. Polls `/bff/billing/status/{org_id}` every 60s + on tab focus + on Stripe-return query param. Drives the banner, chat-disabled state, and 402 interceptor. |
 
@@ -225,7 +227,7 @@ Schema source of truth: `api/src/kene_api/models/billing.py` (Pydantic), mirrore
 | **[Data Management — DM-PRD-07 (Approval Workflow & Audit)](../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md)** | **Hard prerequisite for BL-PRD-01.** `AuditEntry` schema + `write_audit(actor_id, event, ...)`. Billing subclasses into `BillingAuditEntry`. | `../data-management/README.md` audit section |
 | **[Feature Flags — FF-PRD-01](../feature-flags/projects/FF-PRD-01-data-model-evaluation-api.md)** | **Hard prerequisite.** Three flags: `billing_enabled` (master kill switch), `billing_enforce_limits` (separate enforcement gate so observe-only mode works), `billing_show_subscription_ui` (gates the Subscription tab visibility). | `../feature-flags/README.md` |
 | Existing org-creation flow | Single hook insertion — calls `create_billing_profile_for_org(org_id, owner_email)` after the org doc commits. Spike required to confirm where this lives today. | `api/src/kene_api/routers/organizations.py` |
-| Existing role model | `accounts/{account_id}/users/{user_id}` (or wherever org-level role lives). Read by `require_billing_role` middleware. | `api/src/kene_api/auth/` |
+| Org role model (DM-PRD-07) | `organizations/{org_id}/members/{user_id}.role` (`OrgRole`). Read by DM-PRD-07's `require_role` dependency. | `../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md` §4.1 |
 | Existing notification system | `create_notification(category, org_id, user_ids, ...)`. Four new categories: `Approaching Token Limit`, `Token Limit Exceeded`, `Payment Failed`, `Subscription Updated`. | `api/src/kene_api/notifications/` |
 | Existing email service (SendGrid) | Templated send for payment failure (BL-PRD-03) and sales handoff (BL-PRD-06). Templates stored in Secret Manager (`billing-payment-failed-template-id-{env}`, `billing-sales-handoff-template-id-{env}`). | `api/CLAUDE.md` Email Service Setup |
 | **W&B Weave tracing** (existing) | `docs/trace-structure-spec.md` already captures token counts on LLM-call spans. Reconciliation reads from Weave's exported span store. The meter increment is a *sibling* of Weave span emission, not a downstream consumer — so a Weave outage cannot un-bill a customer. | `docs/trace-structure-spec.md` |
@@ -240,7 +242,8 @@ Schema source of truth: `api/src/kene_api/models/billing.py` (Pydantic), mirrore
 | Component | Dependency |
 |-----------|------------|
 | **[Agentic Harness](../agentic-harness/README.md)** | **Every LLM-consuming agent invocation** wraps `billing.check_status` (pre-call) + `billing.meter_increment` (post-call). On `BillingInactiveError`, the runtime refuses with a typed exception that the API layer maps to HTTP 402. The integration is one helper at the LLM-call site — see `app/adk/agents/...`. The hook is the single place tokens are metered for chat (no global middleware that double-counts). |
-| **[Project Tasks](../project-tasks/README.md) + [Automations](../automations/README.md)** | `TaskOrchestrator` calls `billing.check_status(org_id)` before firing any scheduled run. On `inactive_*`, the run is skipped, the task is marked `skipped_billing`, and a notification fires (deduped per day to avoid spam). |
+| **[Chat — CH-PRD-04 auto-title](../chat/projects/CH-PRD-04-session-status-view.md)** | Once-per-session `gemini-2.5-flash` call after the first assistant response generates a session title (3–6 words). The call's `usage_metadata` flows through the shared `extract_billable_tokens(event)` helper (per §7.4) and increments the org's monthly meter via `billing.meter_increment` — same code path agent calls use, no duplicate metering. Auto-title respects `check_status` indirectly: when the org is `inactive_*`, the agent call that would trigger auto-title cannot fire in the first place (there's no first assistant response), so no special pre-call gating is needed. |
+| **[Project Tasks](../project-tasks/README.md) + [Automations](../automations/README.md)** | BL-PRD-02 layers a `billing.check_status(org_id)` gate into both `TaskOrchestrator.on_task_status_change` / `on_task_due` (PR-PRD-04) and `AutomationRunEngine.on_scheduler_tick` (A-PRD-02). On `inactive_*` + enforce-on, dispatch is skipped (the task stays in its current status; the automation tick does not clone a `PlanRun`, leaving `next_run_at` unchanged so the next tick retries naturally), a `scheduled_run_skipped` audit row is written, and a `Scheduled Run Skipped — Billing` notification fires deduped per `(org_id, day)`. Manual "Run now" rides the Agentic Harness 402 path instead. See BL-PRD-02 §2 (scope) and §5.5 (gate logic) for details — no `TaskStatus` / `RunStatus` enum changes are required. |
 | **[Data Pipeline](../data-pipeline/README.md)** | Deterministic platform-API extraction jobs **do not count** against the token meter (zero LLM tokens consumed). They continue running while an org is inactive. Intentional — data freshness shouldn't lapse with paused chat. Flagged as `implementation-plan.md` §10 Q3. |
 | **[UI](../ui/README.md)** | Subscription tab (BL-PRD-04) lives in the production frontend; figma-export prototype is the design contract. Global app-shell `OrganizationStatusBanner` mounted in `LayoutC.tsx`. `ChatInterface` renders the disabled state when `useOrgStatus().status` is `inactive_*`. The 402 response interceptor in `apiClient.ts` triggers a status refetch + dedup'd toast. |
 | **[Performance / Setup Wizard](../performance/README.md)** | If a customer's wizard requires an LLM-driven step and the org is inactive, the wizard surfaces the same banner copy and links to the Subscription tab. No direct billing dependency beyond `useOrgStatus()`. |
@@ -329,7 +332,7 @@ Four touchpoints need conscious coordination:
 
 1. **Sprint 1:** BL-PRD-01 lands (4 days, backend). No downstream work possible — gate. Pre-launch: ops creates 41 Stripe Prices in dev test mode and writes the IDs to `stripe-price-ids-dev`.
 2. **Sprint 2:** BL-PRD-02 (backend) and BL-PRD-03 (backend) run in parallel. Both ship behind `billing_enabled=true` + `billing_enforce_limits=false` in dev. BL-PRD-02's reconciliation script starts producing reports.
-3. **Sprint 3:** BL-PRD-04 (frontend) and BL-PRD-05 (backend) run in parallel. Frontend ships against the unsecured BL-PRD-03 endpoints first; BL-PRD-05's owner-only auth layers on after. The 402 interceptor and inactive banner light up automatically once status enforcement works in dev.
+3. **Sprint 3:** BL-PRD-04 (frontend) and BL-PRD-05 (backend) run in parallel. Frontend ships against the unsecured BL-PRD-03 endpoints first; BL-PRD-05's `require_role(OrgRole.ADMIN, scope="org")` gate (via DM-PRD-07) layers on after. The 402 interceptor and inactive banner light up automatically once status enforcement works in dev.
 4. **Sprint 4:** BL-PRD-06 capstone — E2E suite, sales handoff, finance dashboard, rollout playbook execution begins. Day 0 of the 30-day observe-only window starts. Verification report appended once the early-access cohort onboards a paying customer.
 
 ## 6. Global Document References
@@ -389,15 +392,17 @@ The single point that extracts the count is the LLM-provider-response-to-int hel
 
 ### 7.6 Permissions
 
+Authorization rides on DM-PRD-07's `OrgRole` enum (`admin | member`) — Billing does not maintain a separate role enum. The earlier `owner / admin` distinction has been collapsed (see [BL-PRD-05 §1 Role-model decision](./projects/BL-PRD-05-failure-modes-permissions.md#1-context)).
+
 | Endpoint class | Required role |
 |---|---|
 | Public reads (`/pricing-tiers`) | (public) |
-| Org reads (`/profile`, `/usage/*`, `/bff/billing/status/{org_id}`) | any org member |
-| Upgrade-class (`/checkout-session`, `/subscription/change`, `/sales-handoff`) | owner OR admin (`BILLING_ALLOW_ADMIN_UPGRADE=true`) |
-| Cancel + payment-method (`/subscription/cancel`, `/customer-portal-session`) | owner only |
-| Manual override | internal-staff allow-list only |
+| Org reads (`/profile`, `/usage/*`, `/bff/billing/status/{org_id}`) | `OrgRole.MEMBER` |
+| Upgrade-class (`/checkout-session`, `/subscription/change`, `/sales-handoff`) | `OrgRole.ADMIN` |
+| Cancel + payment-method (`/subscription/cancel`, `/customer-portal-session`) | `OrgRole.ADMIN` |
+| Manual override | internal-staff allow-list only (super-admin / `@ken-e.ai`) |
 
-Per `implementation-plan.md` §10 Q6: admins can upgrade so a sole-owner-unavailable scenario doesn't block recovery; only owners can cancel or downgrade.
+Multi-admin orgs coordinate destructive actions out-of-band; the audit trail (DM-PRD-07's generalized `write_audit`) lets ops detect if a tighter cancel-protection tier becomes necessary later.
 
 ### 7.7 Observe-only rollout
 
@@ -426,6 +431,7 @@ Per `implementation-plan.md` §10 Q6: admins can upgrade so a sole-owner-unavail
 - `organizations/{org_id}/billing_reconciliation/{date}` — Shape B. Daily report row.
 - `billing_monthly_reset_marker/{YYYY-MM}` — Shape C. Per-period idempotency marker for the reset job.
 - `billing_rate_limits/{org_id}/{endpoint}` — Shape B. Sliding-window event log; trimmed in-place.
+- `billing_skipped_run_dedup/{org_id}_{YYYY-MM-DD}` — Shape C. Per-`(org, day)` dedup marker for `Scheduled Run Skipped — Billing` notifications. 24h TTL.
 
 ### 7.10 Feature-flag structure
 

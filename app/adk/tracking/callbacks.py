@@ -150,7 +150,7 @@ def _build_chatbot_root_attrs(callback_context: CallbackContext) -> dict[str, An
         logger.debug(f"Could not read session/user from invocation_context: {e}")
 
     cfg = _get_chatbot_config_metadata()
-    return {
+    attrs: dict[str, Any] = {
         "account_id": state.get("account_id", "unknown"),
         "session_id": session_id,
         "user_id": user_id,
@@ -162,6 +162,14 @@ def _build_chatbot_root_attrs(callback_context: CallbackContext) -> dict[str, An
         "variant_name": cfg.get("variant_name", "baseline"),
         "model_used": cfg.get("model", "unknown"),
     }
+    # Optional generation-config fields — included when the Firestore doc
+    # surfaces them, omitted otherwise (the trace-spec marks them
+    # ``Required: No`` for L2 sub-agent spans).
+    if cfg.get("temperature") is not None:
+        attrs["temperature"] = cfg["temperature"]
+    if cfg.get("max_output_tokens") is not None:
+        attrs["max_output_tokens"] = cfg["max_output_tokens"]
+    return attrs
 
 
 def _extract_user_goal(callback_context: CallbackContext) -> str | None:
@@ -213,12 +221,19 @@ def weave_before_agent_callback(
         attrs_ctx.__enter__()
         _current_agent_goal_ctx.set(attrs_ctx)
 
+        # ``weave.attributes(...)`` propagates to ``@weave.op()`` child spans
+        # via contextvar, but ``client.create_call(...)`` does not snapshot
+        # that contextvar onto the call it creates — we have to pass
+        # ``attributes=`` explicitly or the parent root span ships without
+        # ``account_id``, ``session_id``, ``agent_id``, ``agent_version``
+        # set, which fails ``validate_trace_compliance``.
         call = client.create_call(
             op="ken_e_agent",
             inputs={
                 "agent": "ken_e",
                 "context_agent_goal": agent_goal,
             },
+            attributes=root_attrs,
             use_stack=True,
         )
         _current_agent_call.set(call)

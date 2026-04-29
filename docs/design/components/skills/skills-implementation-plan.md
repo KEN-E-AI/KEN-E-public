@@ -1,5 +1,17 @@
 # Feature 2.6 — User-Authored Skills: Implementation Plan
 
+> ⚠️ **SUPERSEDED — DO NOT USE FOR NEW WORK.** This document is retained as historical record of the original Feature 2.6 design (April 2026). The authoritative spec is now:
+> - [`README.md`](./README.md) — current architecture, conventions, project index
+> - [`projects/SK-PRD-00`](./projects/SK-PRD-00-skills-experiment.md) through [`SK-PRD-05`](./projects/SK-PRD-05-predefined-skill-foundation.md) — six implementation PRDs
+>
+> Specifically, this plan reflects the legacy **user-scoped** storage model (`gs://kene-skills-{env}/users/{user_id}/{skill}/{ver}/`, root `skills/{skill_id}` Firestore collection). The current model is **account-scoped Shape B** (`accounts/{account_id}/skills/{skill_id}` Firestore subcollection + GCS prefix keyed by `skill_id`). See `README.md` and SK-PRD-01 for the live data model. Predefined system-owned skills are owned by SK-PRD-05.
+>
+> **For historical context only.** Do not edit or extend this file.
+
+---
+
+## Original (April 2026) header
+
 > **Status (2026-04-19):** This plan is split into 5 independently shippable PRDs in [`projects/`](./projects/) for parallel execution by multiple dev teams. See [`README.md`](./README.md) for the dependency graph and team workflow.
 >
 > **Prerequisite:** [AH-PRD-02](../agentic-harness/projects/AH-PRD-02-agent-factory.md) (Agent Factory) must ship the **forward-compat schema fields** (`skill_ids`, `sandbox_code_executor_enabled`) before Sprint 2.6-B (Agent Integration) can start. All other Skills PRDs can run in parallel with AH-PRD-02.

@@ -273,9 +273,9 @@ Seven PRDs.
 
 ### SE-PRD-01 — Configuration foundation + setup state
 
-**Delivers:** `EffectivenessKPI`, `FunnelStageMapping`, `FunnelMappingHistory`, `Threshold`, `ChannelCoverage` Pydantic models; `sar_e_config` per-account doc with `{enabled, setup_wizard_completed, forecast_horizon_weeks, initial_backfill_weeks}`; account-creation hook sets `enabled=false` + empty mapping + default thresholds; `/config/status` read endpoint; `/config/setup` wizard-completion endpoint that in one transaction seeds KPIs + writes mapping + creates the ingestion automation + triggers backfill; `/config/funnel-mapping`, `/config/thresholds`, `/config/channel-coverage`, `/config/effectiveness-kpis` routers for post-setup edits; `FunnelStageMapping` uniqueness validator; audit via DM-PRD-07.
+**Delivers:** `EffectivenessKPI`, `FunnelStageMapping`, `FunnelMappingHistory`, `Threshold`, `ChannelCoverage` Pydantic models; `sar_e_config` per-account doc with `{enabled, setup_wizard_completed, forecast_horizon_weeks, initial_backfill_weeks, ab_harness_opt_out}`; account-creation hook sets `enabled=false` + empty mapping + default thresholds; `/config/status` read endpoint; `/config/setup` wizard-completion endpoint that in one transaction seeds KPIs + writes mapping + creates the ingestion automation + triggers backfill; `/config/funnel-mapping`, `/config/thresholds`, `/config/channel-coverage`, `/config/effectiveness-kpis` routers for post-setup edits; `FunnelStageMapping` uniqueness validator; audit via DM-PRD-07.
 
-**Blocked by:** DM-PRD-00, DM-PRD-07, PR-PRD-08.
+**Blocked by:** DM-PRD-00, DM-PRD-07, PR-PRD-08, A-PRD-01 (`ProjectPlan` automation fields + `PlanRun` model — `/config/setup`'s side-effect step writes via the stub seeder shipped here).
 
 **Blocks:** SE-PRD-02, SE-PRD-03, SE-PRD-06.
 
@@ -285,7 +285,7 @@ Seven PRDs.
 
 **Delivers:** `KPIDataPoint` weekly model + Firestore layout; `POST /internal/sar-e/ingest-kpi-series` reading Data Pipeline artifacts for the past ISO week and aggregating per KPI (`sum` / `mean` / `weighted_mean` per `EffectivenessKPI.aggregation`); partial-week handling (`is_partial=true` for current in-progress week, excluded from VAR input); upsert semantics on `(kpi_id, week_start)` for idempotency; backfill-path helper for wizard-triggered initial load up to 104 weeks.
 
-**Blocked by:** SE-PRD-01, DP-PRD-01, DP-PRD-02.
+**Blocked by:** SE-PRD-01, DP-PRD-01, DP-PRD-02, DP-PRD-03 (`TaskOrchestrator` `data_pipeline` branch the ingestion plan's extract tasks run through), AH-PRD-02 (factory builds the `sar_e_ingestion` glue agent), A-PRDs 01–04 (data model + recurring scheduler + artifact system + test-mode honoring; the ingestion automation rides on this platform).
 
 **Blocks:** SE-PRD-03, SE-PRD-06.
 
@@ -295,7 +295,7 @@ Seven PRDs.
 
 **Delivers:** `VAREstimator` wrapping statsmodels VAR on log-transformed weekly series (lag selection via AIC/BIC with a min-sample guard of **26 weeks**); under-covered channels excluded from the training input matrix per `ChannelCoverage`; `ForecastEngine` producing **12-week** horizon with 80% prediction intervals; `Baseline` persistence per KPI; `GET /forecasts/baseline`; `POST /internal/sar-e/retrain-var` called by a weekly `is_system` automation (the same plan that does ingestion, with retrain as a final step); model-version tagging; Weave span `sar_e.var_retrain`; `confidence_level` derived from `training_weeks`.
 
-**Blocked by:** SE-PRD-02.
+**Blocked by:** SE-PRD-02, AH-PRD-02 (factory builds the `sar_e_retrain` glue agent), A-PRDs 01–02 (the retrain task is appended to SE-PRD-02's recurring `is_system=true` plan).
 
 **Blocks:** SE-PRD-04, SE-PRD-05, SE-PRD-06.
 
@@ -341,48 +341,16 @@ Seven PRDs.
 
 ## 7. Dependency graph
 
+See [`README.md`](./README.md) §5.1 for the canonical, fully-fanned-out dependency graph (includes A-PRD + AH-PRD-02 edges into SE-PRDs 01/02/03 and the DP-PRD-03 edge into SE-PRD-02). The summary chain is:
+
 ```
-┌─────────────────────────┐    ┌────────────────────────┐    ┌───────────────────┐
-│     DM-PRD-00/07        │    │      PR-PRD-08         │    │     AH-PRD-02     │
-│  (migration + audit)    │    │  (Campaign + objective)│    │  (agent factory)  │
-└────────────┬────────────┘    └───────────┬────────────┘    └─────────┬─────────┘
-             │                              │                          │
-             └──────────┬───────────────────┘                          │
-                        ▼                                              │
-              ┌───────────────────┐                                    │
-              │     SE-PRD-01     │ Configuration foundation + setup   │
-              └─────────┬─────────┘                                    │
-                        │                                              │
-                        ▼                                              │
-              ┌───────────────────┐     ┌──────────────────────┐       │
-              │     SE-PRD-02     │◄────│  DP-PRD-01 + DP-PRD-02│      │
-              │  Weekly ingestion │     │  (foundation + GA)   │       │
-              └─────────┬─────────┘     └──────────────────────┘       │
-                        │                                              │
-                        ▼                                              │
-              ┌───────────────────┐                                    │
-              │     SE-PRD-03     │ VAR + 12-week baseline             │
-              └─────────┬─────────┘                                    │
-                        │                                              │
-                        ▼                                              │
-              ┌───────────────────┐                                    │
-              │     SE-PRD-04     │ IRF + scenarios                    │
-              └─────────┬─────────┘                                    │
-                        │                                              │
-                        ▼                                              │
-              ┌───────────────────┐◄───────────────────────────────────┘
-              │     SE-PRD-05     │ Target derivation specialist
-              └─────────┬─────────┘
-                        │
-                        ▼
-              ┌───────────────────┐
-              │     SE-PRD-06     │ Analytical query layer
-              └─────────┬─────────┘
-                        │
-                        ▼
-              ┌───────────────────┐
-              │     SE-PRD-07     │ Integration testing
-              └───────────────────┘
+DM-PRD-00/07 + PR-PRD-08 + A-PRD-01      ──▶  SE-PRD-01
+SE-PRD-01 + DP-PRDs 01+02+03 + AH-PRD-02 + A-PRDs 01–04 ──▶  SE-PRD-02
+SE-PRD-02 + AH-PRD-02 + A-PRDs 01–02     ──▶  SE-PRD-03
+SE-PRD-03                                ──▶  SE-PRD-04
+SE-PRD-03 + SE-PRD-04 + AH-PRD-02        ──▶  SE-PRD-05
+SE-PRDs 01+02+03 + PR-PRDs 07+08         ──▶  SE-PRD-06
+SE-PRDs 01–06                            ──▶  SE-PRD-07
 ```
 
 ## 8. Non-goals

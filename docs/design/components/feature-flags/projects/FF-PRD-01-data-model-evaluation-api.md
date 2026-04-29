@@ -27,7 +27,9 @@ See [`../README.md`](../README.md) §2 Architecture and §7 Conventions for the 
 - `POST /api/v1/feature-flags/evaluate` authenticated endpoint
 - `feature_flags/{flag_key}` + `feature_flag_audit/{audit_id}` Firestore collections (collections themselves — docs added by FF-PRD-02)
 - One composite index on `feature_flag_audit` (`flag_key ASC, created_at DESC`) in `deployment/firestore.indexes.json`
-- Unit tests for evaluator precedence, hashing, and cache behavior
+- Per-evaluation structured log `{flag_key, reason, cache_hit}` emitted from `FeatureFlagService.evaluate` (no PII)
+- JSON-schema snapshot test (`feature_flag_schema.snapshot.json`) that gates Pydantic-model drift; the snapshot diff is the contract reviewer's signal that the matching `types.ts` (owned by FF-PRD-02) needs updating in the same PR
+- Unit tests for evaluator precedence, hashing, cache behavior, log shape, and schema contract
 - Integration tests against the Firestore emulator for the evaluate endpoint
 
 ### Out of scope
@@ -53,7 +55,7 @@ from datetime import datetime
 from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
-FLAG_KEY_REGEX = r"^[a-z0-9][a-z0-9-]{2,63}$"
+FLAG_KEY_REGEX = r"^[a-z0-9][a-z0-9_]{2,63}$"
 
 class TargetingRules(BaseModel):
     user_emails: list[str] = Field(default_factory=list)
@@ -146,12 +148,12 @@ def hash_bucket(flag_key: str, entity_id: str) -> int:
 ```
 POST /api/v1/feature-flags/evaluate
 Auth: Firebase JWT (any authenticated user)
-Request: { "flag_keys": ["new-ui", "automations-beta"] }
+Request: { "flag_keys": ["new_ui", "automations_beta"] }
 Response:
   200 {
     "evaluations": {
-      "new-ui":          { "key": "new-ui",          "enabled": true,  "reason": "domain_match" },
-      "automations-beta":{ "key": "automations-beta","enabled": false, "reason": "default" }
+      "new_ui":          { "key": "new_ui",          "enabled": true,  "reason": "domain_match" },
+      "automations_beta":{ "key": "automations_beta","enabled": false, "reason": "default" }
     }
   }
   422 Validation error (flag_keys empty or > 100 entries)
@@ -164,12 +166,14 @@ The server constructs `EvaluationContext` from the authenticated user — caller
 | Action | File |
 |--------|------|
 | Create | `api/src/kene_api/models/feature_flag_models.py` |
-| Create | `api/src/kene_api/services/feature_flag_service.py` — service class, evaluator, LRU cache, hash_bucket, `is_feature_enabled` helper |
+| Create | `api/src/kene_api/services/feature_flag_service.py` — service class, evaluator, LRU cache, hash_bucket, `is_feature_enabled` helper, per-evaluation structured log `{flag_key, reason, cache_hit}` (see §5.3) |
 | Create | `api/src/kene_api/routers/feature_flags.py` — `POST /evaluate` endpoint |
 | Modify | `api/src/kene_api/main.py` — register the new router |
 | Modify | `deployment/firestore.indexes.json` — add `feature_flag_audit (flag_key ASC, created_at DESC)` |
 | Create | `api/tests/unit/test_feature_flag_evaluator.py` |
 | Create | `api/tests/unit/test_feature_flag_hash_bucket.py` |
+| Create | `api/tests/unit/test_feature_flag_schema_contract.py` — JSON-schema snapshot test (see §5.4) |
+| Create | `api/tests/fixtures/feature_flag_schema.snapshot.json` — committed snapshot of `FeatureFlag.model_json_schema()` |
 | Create | `api/tests/integration/test_feature_flag_evaluate_endpoint.py` |
 | Modify | `api/CLAUDE.md` — add short "Feature Flags" section with helper usage + kill-switch runbook |
 
@@ -183,13 +187,21 @@ Cache is keyed by `flag_key` and holds the resolved `FeatureFlag` (not an evalua
 # Usage in a router:
 from kene_api.services.feature_flag_service import is_feature_enabled
 
-if await is_feature_enabled("automations-beta", user_context):
+if await is_feature_enabled("automations_beta", user_context):
     # new path
 else:
     # old path
 ```
 
 The helper catches every exception raised by the service and returns the `default` argument (default `False`). A flag-system outage must never take down a caller.
+
+### 5.3 Observability
+
+`FeatureFlagService.evaluate(flag, ctx)` emits exactly one structured `INFO`-level log per call with the fields `{flag_key, reason, cache_hit}` (no PII — never log `user_id`, `user_email`, `organization_id`, or `account_id`). `cache_hit` is a boolean indicating whether the flag config came from the in-process LRU or a Firestore read. This is the single source of truth for the kill-switch SLO check (§9 risk row) and lets ops verify cache behavior in production without enabling debug logging.
+
+### 5.4 Schema-contract snapshot
+
+`test_feature_flag_schema_contract.py` calls `FeatureFlag.model_json_schema()` and asserts byte-equality against `api/tests/fixtures/feature_flag_schema.snapshot.json`. When the Pydantic model changes intentionally, the dev regenerates the snapshot in the same PR. The snapshot diff is what the code reviewer compares against the matching `frontend/src/lib/featureFlags/types.ts` change (owned by FF-PRD-02). This is the lightweight contract gate between Python and TypeScript — no codegen tooling.
 
 ## 6. API contract
 
@@ -209,7 +221,9 @@ See §4 — `POST /api/v1/feature-flags/evaluate`.
 10. The endpoint rejects requests with `flag_keys=[]` or `len(flag_keys) > 100` with a 422.
 11. The new composite index appears in `deployment/firestore.indexes.json` and Terraform apply in dev shows it `READY` (operator-verified).
 12. `api/CLAUDE.md` has a new "Feature Flags" section linking to the component README and documenting the kill-switch SLO.
-13. `make lint` passes. All unit + integration tests pass via `pytest api/tests/`.
+13. Each `FeatureFlagService.evaluate` call emits one INFO log with `{flag_key, reason, cache_hit}` and **no** PII fields (verified by a unit test that captures log records and asserts the field set).
+14. `test_feature_flag_schema_contract.py` passes against the committed `feature_flag_schema.snapshot.json`; intentionally mutating the `FeatureFlag` model in the test environment fails the test (proving drift is caught).
+15. `make lint` passes. All unit + integration tests pass via `pytest api/tests/`.
 
 ## 8. Test plan
 
@@ -227,6 +241,12 @@ See §4 — `POST /api/v1/feature-flags/evaluate`.
   - return value in `[0, 99]` for 10 000 random `(key, id)` pairs
   - same `(key, id)` → same bucket across 1 000 repeat calls
   - different keys produce different distributions for the same entity ID (spot-check 3 keys)
+- `test_feature_flag_schema_contract.py`:
+  - `FeatureFlag.model_json_schema()` matches the committed `feature_flag_schema.snapshot.json` byte-for-byte
+  - mutating `FeatureFlag` in the test (e.g., adding a field via a subclass) yields a schema that **does not** match the snapshot — proves drift is caught
+- evaluator log assertions (`test_feature_flag_evaluator.py`, additional cases):
+  - capture `caplog` records during one `evaluate(...)` call → exactly one INFO record with field set `{flag_key, reason, cache_hit}` and no other fields
+  - none of `user_id`, `user_email`, `organization_id`, `account_id` appear in any log record
 
 ### Integration tests (`api/tests/integration/`)
 
@@ -245,7 +265,7 @@ See §4 — `POST /api/v1/feature-flags/evaluate`.
 |---|---|
 | Cache-coherence across Cloud Run instances — a kill-switch flip may take up to 60 s to fully propagate while old cache entries age out on every instance | Accept the 60 s SLO for Release 1; document in the runbook. If engineering needs tighter guarantees later, add a Firestore listener or Redis pub/sub (follow-up PRD). |
 | A flag-system outage (Firestore unreachable) could block every caller that uses `is_feature_enabled` | `is_feature_enabled` catches all exceptions and returns the `default` argument. Service-level retries are not added — `default=False` is the safe floor. |
-| Targeting on `user_email` / `email_domains` might leak PII into logs if we aren't careful | Do not log the evaluation context at `INFO` or above. Structured-log only the `flag_key` + `reason` in the evaluate endpoint. |
+| Targeting on `user_email` / `email_domains` might leak PII into logs if we aren't careful | The per-evaluation log (§5.3) is fixed-shape `{flag_key, reason, cache_hit}` — `user_id`, `user_email`, `organization_id`, and `account_id` are never logged. Enforced by AC #13. |
 | `hash_bucket` collisions across flags for the same entity | Negligible because we salt with `flag_key`. Verified in unit tests. |
 | A developer bucketing on `user` instead of `account` by mistake produces flickering behavior for multi-account users | Default the model field to `"account"` and surface a prominent tooltip in FF-PRD-02's admin UI. |
 
