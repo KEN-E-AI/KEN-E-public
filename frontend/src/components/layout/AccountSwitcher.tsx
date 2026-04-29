@@ -113,7 +113,7 @@ export function AccountSwitcher({ compact = false }: AccountSwitcherProps) {
           {selectedOrgAccount != null ? (
             <>
               <span
-                className="text-[var(--color-text-tertiary)] truncate max-w-[100px]"
+                className="text-[var(--color-text-secondary)] truncate max-w-[100px]"
                 style={{ fontSize: compact ? "12px" : "13px" }}
               >
                 {selectedOrgAccount.metadata.organization_name}
