@@ -5,25 +5,29 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap font-bold text-[var(--text-body-md)] transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        default:
+          "bg-[var(--color-violet-500)] text-[var(--color-text-inverse)] border-2 border-[var(--color-violet-500)] shadow-[var(--shadow-color-violet)] hover:-translate-y-0.5 active:translate-y-0 disabled:bg-[var(--color-surface-muted)] disabled:text-[var(--color-text-disabled)] disabled:shadow-none disabled:transform-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-violet-300)]",
+        gradient:
+          "bg-[image:var(--gradient-cta)] text-[var(--color-text-inverse)] border-0 shadow-[var(--shadow-color-violet)] hover:-translate-y-0.5 active:translate-y-0 disabled:bg-[var(--color-surface-muted)] disabled:text-[var(--color-text-disabled)] disabled:shadow-none disabled:transform-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-violet-300)]",
         destructive:
-          "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+          "bg-[var(--color-error)] text-[var(--color-text-inverse)] border-2 border-[var(--color-error)] shadow-[var(--shadow-color-violet)] hover:-translate-y-0.5 active:translate-y-0 disabled:bg-[var(--color-surface-muted)] disabled:text-[var(--color-text-disabled)] disabled:shadow-none disabled:transform-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-error)]",
         outline:
-          "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
+          "bg-transparent text-[var(--color-text-tertiary)] border-2 border-[var(--color-border-default)] hover:border-[var(--color-violet-300)] hover:text-[var(--color-violet-500)] hover:-translate-y-0.5 active:translate-y-0 disabled:text-[var(--color-text-disabled)] disabled:border-[var(--color-border-subtle)] disabled:transform-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-violet-300)]",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        ghost: "hover:bg-accent hover:text-accent-foreground",
-        link: "text-primary underline-offset-4 hover:underline",
+          "bg-[var(--color-teal-500)] text-[var(--color-text-inverse)] border-2 border-[var(--color-teal-500)] shadow-[var(--shadow-color-teal)] hover:-translate-y-0.5 active:translate-y-0 disabled:bg-[var(--color-surface-muted)] disabled:text-[var(--color-text-disabled)] disabled:shadow-none disabled:transform-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-teal-300)]",
+        ghost:
+          "hover:bg-[var(--color-violet-100)] hover:text-[var(--color-violet-500)] text-[var(--color-text-tertiary)] disabled:text-[var(--color-text-disabled)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-violet-300)]",
+        link: "text-[var(--color-violet-500)] underline-offset-4 hover:underline disabled:text-[var(--color-text-disabled)]",
       },
       size: {
-        default: "h-10 px-4 py-2",
-        sm: "h-9 rounded-md px-3",
-        lg: "h-11 rounded-md px-8",
-        icon: "h-10 w-10",
+        default: "h-9 px-4 py-2 rounded-[var(--radius-md)] has-[>svg]:px-3",
+        sm: "h-8 rounded-[var(--radius-md)] gap-1.5 px-3 has-[>svg]:px-2.5",
+        lg: "h-10 rounded-[var(--radius-md)] px-6 has-[>svg]:px-4",
+        icon: "size-9 rounded-[var(--radius-md)]",
       },
     },
     defaultVariants: {
@@ -44,7 +48,12 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const Comp = asChild ? Slot : "button";
     return (
       <Comp
+        data-slot="button"
         className={cn(buttonVariants({ variant, size, className }))}
+        style={{
+          transitionTimingFunction: "var(--ease-bounce)",
+          transitionDuration: "var(--duration-fast)",
+        }}
         ref={ref}
         {...props}
       />
