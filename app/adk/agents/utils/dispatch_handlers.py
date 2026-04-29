@@ -18,6 +18,8 @@ from .agent_retry import (
     FAST_RETRY_CONFIG,
     invoke_agent_with_retry,
 )
+from .review_pipeline import build_review_pipeline, extract_pipeline_result
+from .supervisor_utils import invoke_pipeline
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,7 @@ def dispatch_to_company_news(
     query: str,
     tool_context: ToolContext | None = None,
     tenant_context: dict[str, Any] | None = None,
+    acceptance_criteria: str | None = None,
 ) -> dict[str, Any]:
     """
     Dispatch company news queries to the specialized news agent.
@@ -36,6 +39,10 @@ def dispatch_to_company_news(
         query: User's question about company news
         tool_context: ADK ToolContext with session state (auto-injected)
         tenant_context: Legacy parameter for backward compatibility
+        acceptance_criteria: Optional 2-4 measurable criteria the specialist's
+            response must satisfy. None or empty string → single-pass dispatch
+            (no review loop). Non-empty → builds a review pipeline via
+            build_review_pipeline() and returns the §5.2-idiom outcome.
     """
     from shared.context_utils import inject_organization_context
 
@@ -69,6 +76,29 @@ def dispatch_to_company_news(
         else:
             logger.info("[NEWS-DISPATCH] No tool_context available for org context")
 
+        criteria = (acceptance_criteria or "").strip()
+        if len(criteria) > 2000:
+            logger.warning(
+                f"[NEWS-DISPATCH] acceptance_criteria truncated from {len(criteria)} to 2000 chars"
+            )
+            criteria = criteria[:2000]
+        if criteria:
+            logger.info("🔄 Building review pipeline for company news query...")
+            pipeline = build_review_pipeline(
+                specialist=news_agent,
+                acceptance_criteria=criteria,
+                output_key_prefix="news_review",
+            )
+            _text, final_state = invoke_pipeline(pipeline, query)
+            outcome = extract_pipeline_result(final_state, "news_review")
+            return {
+                **outcome,
+                "status": "success",
+                "query": query,
+                "source": "company_news_specialist",
+                "agent": "news",
+            }
+
         logger.info("🔄 Routing company news query to specialized agent...")
         result = invoke_agent_with_retry(news_agent, query, retry_config=FAST_RETRY_CONFIG)
 
@@ -95,6 +125,7 @@ def dispatch_to_google_analytics(
     query: str,
     tool_context: ToolContext | None = None,
     tenant_context: dict[str, Any] | None = None,
+    acceptance_criteria: str | None = None,
 ) -> dict[str, Any]:
     """Dispatch Google Analytics queries to the specialized agent.
 
@@ -105,6 +136,12 @@ def dispatch_to_google_analytics(
         query: The Google Analytics query or question from the user
         tool_context: ADK ToolContext with session state (auto-injected by ADK)
         tenant_context: Legacy parameter for backward compatibility
+        acceptance_criteria: Optional 2-4 measurable criteria the specialist's
+            response must satisfy. None or empty string → single-pass dispatch
+            (no review loop). Non-empty → builds a review pipeline via
+            build_review_pipeline() and returns the §5.2-idiom outcome.
+            GA credentials initial_state is forwarded to invoke_pipeline() so
+            the specialist's McpToolset header_provider can read them.
     """
     from shared.context_utils import (
         inject_campaign_context,
@@ -158,6 +195,30 @@ def dispatch_to_google_analytics(
         initial_state: dict[str, Any] | None = None
         if ga_credentials:
             initial_state = {"ga_credentials": ga_credentials}
+
+        criteria = (acceptance_criteria or "").strip()
+        if len(criteria) > 2000:
+            logger.warning(
+                f"[GA-DISPATCH] acceptance_criteria truncated from {len(criteria)} to 2000 chars"
+            )
+            criteria = criteria[:2000]
+        if criteria:
+            logger.info("🔄 Building review pipeline for Google Analytics query...")
+            pipeline = build_review_pipeline(
+                specialist=google_analytics_agent_v4,
+                acceptance_criteria=criteria,
+                output_key_prefix="ga_review",
+            )
+            _text, final_state = invoke_pipeline(pipeline, query, state=initial_state)
+            outcome = extract_pipeline_result(final_state, "ga_review")
+            return {
+                **outcome,
+                "status": "success",
+                "query": query,
+                "source": "google_analytics_specialist",
+                "agent": "analytics",
+                "tenant_id": tenant_id,
+            }
 
         result = invoke_agent_with_retry(
             google_analytics_agent_v4, query, state=initial_state, retry_config=DEFAULT_RETRY_CONFIG
