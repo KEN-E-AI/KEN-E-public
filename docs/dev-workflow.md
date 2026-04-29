@@ -417,7 +417,7 @@ The Test Team posts a structured **Test Results** comment:
 - Acceptance criteria verification (checkbox mapping each AC to test case)
 - Observations: UX notes, performance, visual polish, accessibility
 
-Status set to **"Testing Complete."**
+Status set to **"Testing Complete"** and the issue is reassigned to the PO (the Project Lead, falling back to Ken if no Lead is set). This complements the existing `po-action` label flow — POs see incoming work via both their Linear "assigned to me" filter and the PO Action Queue saved view.
 
 ### Any Test Fails
 
@@ -960,7 +960,7 @@ The webhook receiver uses the state IDs to automatically add/remove the `po-acti
 | In Progress | In Review | Dev Team | Code complete, review starting |
 | In Review | Ready for Testing | Dev Team | Review passes, Test Instructions posted |
 | Ready for Testing | Testing | Test Team | Begins test execution |
-| Testing | Testing Complete | Test Team | All tests pass |
+| Testing | Testing Complete | Test Team | All tests pass; issue reassigned to PO (Project Lead, fallback to Ken) |
 | Testing | Resolving Test Issues | Test Team | Any test fails |
 | Resolving Test Issues | In Progress | Dev Team | Begins fixing |
 | Testing Complete | Done | PO | Merges integration PR, approves in Linear |
