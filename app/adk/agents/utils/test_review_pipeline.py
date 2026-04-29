@@ -734,6 +734,32 @@ async def _run_pipeline(pipeline) -> dict:
     return dict(final.state)
 
 
+async def _run_pipeline_with_events(pipeline) -> tuple[dict, list]:
+    """Run *pipeline* and return (final_session_state, events)."""
+    session_service = InMemorySessionService()
+    session = await session_service.create_session(
+        app_name="behavioral_test", user_id="u1"
+    )
+    runner = Runner(
+        agent=pipeline,
+        app_name="behavioral_test",
+        session_service=session_service,
+    )
+    events = []
+    async for event in runner.run_async(
+        user_id="u1",
+        session_id=session.id,
+        new_message=genai_types.Content(
+            role="user", parts=[genai_types.Part(text="Go.")]
+        ),
+    ):
+        events.append(event)
+    final = await session_service.get_session(
+        app_name="behavioral_test", user_id="u1", session_id=session.id
+    )
+    return dict(final.state), events
+
+
 async def _run_two_pipelines_same_session(
     pipeline1: LoopAgent, pipeline2: LoopAgent
 ) -> dict:
@@ -846,6 +872,71 @@ class TestBehavioralLoop:
         # no text, so output_key extracts the empty string — key must be present).
         assert state["ap_draft"] == "good draft — detailed response"
         assert state["ap_feedback"] == ""
+
+    def test_hallucinating_reviewer_loop_continues_and_span_emitted(self):
+        """Reviewer writes approval text without calling exit_loop: loop advances to next iteration.
+
+        PRD AC#11: reviewer emits 'All criteria are met. Calling exit_loop.' as text
+        only (no FunctionCall). Because escalate is not set, the LoopAgent must
+        continue normally to the next iteration.
+
+        Sequence (max_iterations=2):
+          worker iter 1   → "initial draft"
+          reviewer iter 1 → "All criteria are met. Calling exit_loop." (text, no FunctionCall)
+          worker iter 2   → "improved draft"
+          reviewer iter 2 → "All criteria are met. Calling exit_loop." (text, no FunctionCall)
+
+        Asserts:
+          - state["hall_draft"] == "improved draft"  (iter 2 ran; loop continued past iter 1)
+          - _check_hallucinated_approval fires _emit_hallucination_span for the final event
+        """
+        hallucination_text = "All criteria are met. Calling exit_loop."
+        _fake_response_queue.extend(
+            [
+                LlmResponse(
+                    content=genai_types.Content(
+                        role="model",
+                        parts=[genai_types.Part(text="initial draft")],
+                    )
+                ),
+                LlmResponse(
+                    content=genai_types.Content(
+                        role="model",
+                        parts=[genai_types.Part(text=hallucination_text)],
+                    )
+                ),
+                LlmResponse(
+                    content=genai_types.Content(
+                        role="model",
+                        parts=[genai_types.Part(text="improved draft")],
+                    )
+                ),
+                LlmResponse(
+                    content=genai_types.Content(
+                        role="model",
+                        parts=[genai_types.Part(text=hallucination_text)],
+                    )
+                ),
+            ]
+        )
+
+        pipeline = build_review_pipeline(
+            self._make_specialist("hall_spec"),
+            "Be detailed.",
+            output_key_prefix="hall",
+            max_iterations=2,
+            reviewer_model="fake-behavioral-reviewer",
+        )
+        state, events = _run(_run_pipeline_with_events(pipeline))
+
+        # Iter 2 draft retained — proves the loop advanced past the hallucinated approval
+        assert state["hall_draft"] == "improved draft"
+
+        # Span fires when _check_hallucinated_approval is called on the collected events
+        with patch.object(_rp, "_emit_hallucination_span") as mock_span:
+            _check_hallucinated_approval(events, "hall")
+        mock_span.assert_called_once()
+        assert "all criteria" in mock_span.call_args.kwargs["reviewer_text"].lower()
 
     def test_exhaustion_no_exception_draft_retained(self):
         """`max_iterations=1` exhausts without approval; no exception; last draft retained."""

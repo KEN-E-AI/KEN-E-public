@@ -233,12 +233,9 @@ def dispatch_with_context(dispatch_func: Callable) -> Callable[[str], str]:
         logger.info(f"[DISPATCH-WRAPPER] tool_context type: {type(tool_context)}")
         logger.info(f"[DISPATCH-WRAPPER] kwargs keys: {list(kwargs.keys()) if kwargs else []}")
 
-        # CRITICAL DEBUG: Log if tool_context exists and what's in its state
         if tool_context:
             logger.info("[DISPATCH-WRAPPER] ✅ ToolContext received!")
             logger.info(f"[DISPATCH-WRAPPER] State keys: {list(tool_context.state.keys()) if hasattr(tool_context, 'state') else 'no state attr'}")
-            if hasattr(tool_context, 'state'):
-                logger.info(f"[DISPATCH-WRAPPER] Full state: {tool_context.state}")
         else:
             logger.warning("[DISPATCH-WRAPPER] ⚠️  NO ToolContext - will use fallback")
         logger.info("[DISPATCH-WRAPPER] ========== TOOL CALL INFO END ==========")
