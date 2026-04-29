@@ -10,6 +10,7 @@ observing the exit_loop termination signal.
 """
 
 import re
+from typing import Any
 
 from google.adk.agents import LlmAgent, LoopAgent
 from google.adk.tools import exit_loop
@@ -22,6 +23,8 @@ _EXCLUDED_WORKER_FIELDS = {"parent_agent", "sub_agents"}
 # Fields the factory sets explicitly on the worker; copy from specialist would
 # clobber the factory's intended values.
 _OVERRIDDEN_WORKER_FIELDS = {"name", "instruction", "tools", "output_key"}
+
+_SENTINEL_TOKENS = ("<<<CRITERIA_START>>>", "<<<CRITERIA_END>>>")
 
 
 def build_review_pipeline(
@@ -41,8 +44,8 @@ def build_review_pipeline(
         acceptance_criteria: Plain-text criteria injected into both the worker
             instruction (so the worker knows what to satisfy) and the reviewer
             instruction (so the reviewer knows what to check). Must be a
-            non-empty string and must not contain the literal sentinel
-            `<<<CRITERIA_END>>>`.
+            non-empty string and must not contain either sentinel token
+            (`<<<CRITERIA_START>>>` or `<<<CRITERIA_END>>>`).
         output_key_prefix: Namespace for session-state keys. The worker writes
             its draft to `f"{output_key_prefix}_draft"` and the reviewer writes
             feedback to `f"{output_key_prefix}_feedback"`. Must be lowercase
@@ -63,9 +66,12 @@ def build_review_pipeline(
         TypeError: If `specialist.instruction` is not a `str`. ADK supports
             callable instructions, but this factory composes the instruction
             string at build time and cannot wrap a callable.
-        ValueError: If `acceptance_criteria` is not a non-empty string or
-            contains the `<<<CRITERIA_END>>>` sentinel; if `output_key_prefix`
-            does not match the required format; or if `max_iterations` is
+        ValueError: If `specialist.instruction` contains a
+            `<<<CRITERIA_START>>>` or `<<<CRITERIA_END>>>` sentinel token,
+            which would corrupt the prompt structure; if `acceptance_criteria`
+            is not a non-empty string or contains either sentinel token; if
+            `output_key_prefix` does not match the required format or cannot
+            be auto-derived from `specialist.name`; or if `max_iterations` is
             outside the allowed range.
     """
     if not isinstance(specialist.instruction, str):
@@ -74,19 +80,32 @@ def build_review_pipeline(
             f"got {type(specialist.instruction).__name__}. Callable instructions "
             "are not supported by this factory."
         )
+    for _token in _SENTINEL_TOKENS:
+        if _token in specialist.instruction:
+            raise ValueError(
+                f"specialist.instruction must not contain the literal {_token!r} sentinel"
+            )
 
     if not isinstance(acceptance_criteria, str) or not acceptance_criteria.strip():
         raise ValueError(
             "acceptance_criteria must be a non-empty string; "
             f"got {type(acceptance_criteria).__name__!r}"
         )
-    if "<<<CRITERIA_END>>>" in acceptance_criteria:
-        raise ValueError(
-            "acceptance_criteria must not contain the literal '<<<CRITERIA_END>>>' sentinel"
-        )
+    for _token in _SENTINEL_TOKENS:
+        if _token in acceptance_criteria:
+            raise ValueError(
+                f"acceptance_criteria must not contain the literal {_token!r} sentinel"
+            )
 
     if output_key_prefix is None:
-        output_key_prefix = f"{specialist.name}_review"
+        _candidate = f"{specialist.name}_review".lower()
+        if not _VALID_PREFIX_RE.match(_candidate):
+            raise ValueError(
+                f"Cannot derive a valid output_key_prefix from specialist.name "
+                f"{specialist.name!r} (candidate {_candidate!r} is invalid). "
+                "Pass output_key_prefix explicitly."
+            )
+        output_key_prefix = _candidate
 
     if not _VALID_PREFIX_RE.match(output_key_prefix):
         raise ValueError(
@@ -126,7 +145,7 @@ def build_review_pipeline(
     # affecting fields (callbacks, generate_content_config, planner, etc.) are
     # preserved. Exclude ADK-managed structural fields and fields this factory
     # overrides explicitly below.
-    worker_kwargs: dict = {}
+    worker_kwargs: dict[str, Any] = {}
     for field in LlmAgent.model_fields:
         if field in _EXCLUDED_WORKER_FIELDS or field in _OVERRIDDEN_WORKER_FIELDS:
             continue
