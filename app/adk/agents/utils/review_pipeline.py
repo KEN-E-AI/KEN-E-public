@@ -209,3 +209,50 @@ def build_review_pipeline(
         sub_agents=[specialist_worker, reviewer],
         max_iterations=max_iterations,
     )
+
+
+def extract_pipeline_result(
+    session_state: dict[str, Any], output_key_prefix: str
+) -> dict[str, Any]:
+    """Extract the pipeline's terminal result via the §5.2 approval-vs-exhaustion idiom.
+
+    Three outcomes:
+
+    1. Draft key absent — pipeline never produced output (timeout, runner error,
+       worker never ran). Returns approved=False with a "no draft" warning. This
+       is **not** equivalent to an approved-but-empty draft; an upstream failure
+       must not be reported as success.
+    2. Draft present, feedback empty (or absent) — reviewer called exit_loop,
+       which wipes the reviewer's output_key. Approved.
+    3. Draft present, feedback non-empty — max_iterations reached without
+       approval; the last reviewer rejection is retained as the warning.
+
+    Args:
+        session_state: A dict-like mapping of session state keys to values.
+            Typically tool_context.state or the dict returned by invoke_pipeline().
+        output_key_prefix: The prefix used when building the review pipeline
+            (e.g., "news_review" or "ga_review"). Must match the prefix passed to
+            build_review_pipeline().
+
+    Returns:
+        {"result": "", "approved": False, "warning": "pipeline produced no draft"}
+            when the draft key is absent.
+        {"result": draft, "approved": True} when feedback is empty (approved).
+        {"result": draft, "approved": False, "warning": feedback} when feedback is
+            non-empty (exhausted).
+    """
+    draft_key = f"{output_key_prefix}_draft"
+    feedback_key = f"{output_key_prefix}_feedback"
+
+    if draft_key not in session_state:
+        return {
+            "result": "",
+            "approved": False,
+            "warning": "pipeline produced no draft",
+        }
+
+    draft = session_state[draft_key]
+    feedback = session_state.get(feedback_key, "")
+    if feedback == "":
+        return {"result": draft, "approved": True}
+    return {"result": draft, "approved": False, "warning": feedback}

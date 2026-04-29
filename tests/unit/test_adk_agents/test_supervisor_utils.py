@@ -6,7 +6,7 @@ Tests the new session state integration for credentials and organization context
 import json
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -27,6 +27,7 @@ from adk.agents.utils.supervisor_utils import (
     dispatch_with_context,
     extract_tenant_context,
     invoke_agent_sync,
+    invoke_pipeline,
 )
 
 
@@ -223,6 +224,7 @@ class TestInvokeAgentSyncState:
         """Should pass state dict to create_session when provided."""
         mock_session_service = MagicMock()
         mock_session_cls.return_value = mock_session_service
+        mock_session_service.create_session = AsyncMock()
 
         mock_runner = MagicMock()
         mock_runner_cls.return_value = mock_runner
@@ -250,6 +252,7 @@ class TestInvokeAgentSyncState:
         """Should pass state=None to create_session when not provided."""
         mock_session_service = MagicMock()
         mock_session_cls.return_value = mock_session_service
+        mock_session_service.create_session = AsyncMock()
 
         mock_runner = MagicMock()
         mock_runner_cls.return_value = mock_runner
@@ -263,3 +266,156 @@ class TestInvokeAgentSyncState:
         mock_session_service.create_session.assert_called_once()
         call_kwargs = mock_session_service.create_session.call_args[1]
         assert call_kwargs["state"] is None
+
+
+class TestInvokePipelineState:
+    """Test that invoke_pipeline passes state and returns (text, state) tuple."""
+
+    @patch("adk.agents.utils.supervisor_utils.Runner")
+    @patch("adk.agents.utils.supervisor_utils.InMemoryArtifactService")
+    @patch("adk.agents.utils.supervisor_utils.InMemorySessionService")
+    def test_returns_tuple_with_state(
+        self, mock_session_cls, mock_artifact_cls, mock_runner_cls
+    ):
+        """Should return (response_text, final_state) tuple."""
+        mock_session_service = MagicMock()
+        mock_session_cls.return_value = mock_session_service
+
+        mock_session = MagicMock()
+        mock_session.state = {"ga_review_draft": "traffic up 12%", "ga_review_feedback": ""}
+        mock_session_service.create_session = AsyncMock()
+        mock_session_service.get_session = AsyncMock(return_value=mock_session)
+
+        async def _no_events(*a, **kw):
+            return
+            yield  # makes it an async generator
+
+        mock_runner = MagicMock()
+        mock_runner_cls.return_value = mock_runner
+        mock_runner.run_async = _no_events
+
+        mock_agent = MagicMock()
+        mock_agent.name = "test_pipeline"
+
+        result = invoke_pipeline(mock_agent, "show traffic trends")
+
+        assert isinstance(result, tuple)
+        assert len(result) == 2
+        text, state = result
+        assert isinstance(text, str)
+        assert isinstance(state, dict)
+
+    @patch("adk.agents.utils.supervisor_utils.Runner")
+    @patch("adk.agents.utils.supervisor_utils.InMemoryArtifactService")
+    @patch("adk.agents.utils.supervisor_utils.InMemorySessionService")
+    def test_create_session_called_with_initial_state(
+        self, mock_session_cls, mock_artifact_cls, mock_runner_cls
+    ):
+        """Should pass initial state dict to create_session."""
+        mock_session_service = MagicMock()
+        mock_session_cls.return_value = mock_session_service
+
+        mock_session = MagicMock()
+        mock_session.state = {}
+        mock_session_service.create_session = AsyncMock()
+        mock_session_service.get_session = AsyncMock(return_value=mock_session)
+
+        async def _no_events(*a, **kw):
+            return
+            yield
+
+        mock_runner = MagicMock()
+        mock_runner_cls.return_value = mock_runner
+        mock_runner.run_async = _no_events
+
+        mock_agent = MagicMock()
+        mock_agent.name = "test_pipeline"
+
+        initial_state = {"ga_credentials": {"access_token": "tok_abc"}}
+        invoke_pipeline(mock_agent, "test query", state=initial_state)
+
+        mock_session_service.create_session.assert_called_once()
+        call_kwargs = mock_session_service.create_session.call_args[1]
+        assert call_kwargs["state"] == initial_state
+
+    @patch("adk.agents.utils.supervisor_utils.Runner")
+    @patch("adk.agents.utils.supervisor_utils.InMemoryArtifactService")
+    @patch("adk.agents.utils.supervisor_utils.InMemorySessionService")
+    def test_get_session_called_after_run(
+        self, mock_session_cls, mock_artifact_cls, mock_runner_cls
+    ):
+        """Should call get_session to retrieve final state after runner completes."""
+        mock_session_service = MagicMock()
+        mock_session_cls.return_value = mock_session_service
+
+        mock_session = MagicMock()
+        mock_session.state = {"ga_review_draft": "draft text", "ga_review_feedback": ""}
+        mock_session_service.create_session = AsyncMock()
+        mock_session_service.get_session = AsyncMock(return_value=mock_session)
+
+        async def _no_events(*a, **kw):
+            return
+            yield
+
+        mock_runner = MagicMock()
+        mock_runner_cls.return_value = mock_runner
+        mock_runner.run_async = _no_events
+
+        mock_agent = MagicMock()
+        mock_agent.name = "test_pipeline"
+
+        invoke_pipeline(mock_agent, "test query")
+
+        mock_session_service.get_session.assert_called_once()
+
+    @patch("adk.agents.utils.supervisor_utils.Runner")
+    @patch("adk.agents.utils.supervisor_utils.InMemoryArtifactService")
+    @patch("adk.agents.utils.supervisor_utils.InMemorySessionService")
+    def test_timeout_returns_error_tuple(
+        self, mock_session_cls, mock_artifact_cls, mock_runner_cls
+    ):
+        """On TimeoutError, should return (error_text, {}) tuple."""
+        import concurrent.futures
+
+        mock_session_service = MagicMock()
+        mock_session_cls.return_value = mock_session_service
+        mock_runner = MagicMock()
+        mock_runner_cls.return_value = mock_runner
+
+        with patch("adk.agents.utils.supervisor_utils.asyncio") as mock_asyncio:
+            mock_loop = MagicMock()
+            mock_asyncio.get_event_loop.return_value = mock_loop
+            mock_loop.is_running.return_value = False
+            mock_loop.run_until_complete.side_effect = concurrent.futures.TimeoutError()
+
+            mock_agent = MagicMock()
+            mock_agent.name = "test_pipeline"
+            text, state = invoke_pipeline(mock_agent, "test query")
+
+        assert "timed out" in text.lower() or "error" in text.lower()
+        assert state == {}
+
+    @patch("adk.agents.utils.supervisor_utils.Runner")
+    @patch("adk.agents.utils.supervisor_utils.InMemoryArtifactService")
+    @patch("adk.agents.utils.supervisor_utils.InMemorySessionService")
+    def test_exception_returns_error_tuple(
+        self, mock_session_cls, mock_artifact_cls, mock_runner_cls
+    ):
+        """On a general exception, should return (error_text, {}) tuple."""
+        mock_session_service = MagicMock()
+        mock_session_cls.return_value = mock_session_service
+        mock_runner = MagicMock()
+        mock_runner_cls.return_value = mock_runner
+
+        with patch("adk.agents.utils.supervisor_utils.asyncio") as mock_asyncio:
+            mock_loop = MagicMock()
+            mock_asyncio.get_event_loop.return_value = mock_loop
+            mock_loop.is_running.return_value = False
+            mock_loop.run_until_complete.side_effect = RuntimeError("ADK error")
+
+            mock_agent = MagicMock()
+            mock_agent.name = "test_pipeline"
+            text, state = invoke_pipeline(mock_agent, "test query")
+
+        assert "error" in text.lower()
+        assert state == {}
