@@ -728,7 +728,9 @@ async def _run_pipeline(pipeline) -> dict:
     return dict(final.state)
 
 
-async def _run_two_pipelines_same_session(pipeline1, pipeline2) -> dict:
+async def _run_two_pipelines_same_session(
+    pipeline1: LoopAgent, pipeline2: LoopAgent
+) -> dict:
     """Run two pipelines sequentially in the same session; return final state."""
     session_service = InMemorySessionService()
     session = await session_service.create_session(
@@ -889,6 +891,10 @@ class TestStateIsolationBehavioral:
     def clear_queue(self):
         _fake_response_queue.clear()
         yield
+        assert not _fake_response_queue, (
+            f"Test left {len(_fake_response_queue)} unconsumed response(s) — "
+            "check the queued response sequence matches the pipeline's iterations."
+        )
         _fake_response_queue.clear()
 
     def _make_specialist(self, name: str) -> LlmAgent:
