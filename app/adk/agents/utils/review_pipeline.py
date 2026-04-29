@@ -216,15 +216,16 @@ def extract_pipeline_result(
 ) -> dict[str, Any]:
     """Extract the pipeline's terminal result via the §5.2 approval-vs-exhaustion idiom.
 
-    The §5.2 idiom: when exit_loop fires, the reviewer writes no text, so its
-    output_key (f"{output_key_prefix}_feedback") is overwritten to "". A non-empty
-    feedback value means max_iterations was reached and the last reviewer rejection
-    is retained.
+    Three outcomes:
 
-    Both keys are read with defensive .get(..., "") so a missing key (e.g., a test
-    stub passing {}) does not raise KeyError. An empty session state therefore
-    returns {result: "", approved: True} — the dispatch handler is responsible for
-    validating that the result is non-empty when criteria required output.
+    1. Draft key absent — pipeline never produced output (timeout, runner error,
+       worker never ran). Returns approved=False with a "no draft" warning. This
+       is **not** equivalent to an approved-but-empty draft; an upstream failure
+       must not be reported as success.
+    2. Draft present, feedback empty (or absent) — reviewer called exit_loop,
+       which wipes the reviewer's output_key. Approved.
+    3. Draft present, feedback non-empty — max_iterations reached without
+       approval; the last reviewer rejection is retained as the warning.
 
     Args:
         session_state: A dict-like mapping of session state keys to values.
@@ -234,11 +235,24 @@ def extract_pipeline_result(
             build_review_pipeline().
 
     Returns:
-        {"result": draft, "approved": True} when feedback == "" (approved).
-        {"result": draft, "approved": False, "warning": feedback} when feedback != "" (exhausted).
+        {"result": "", "approved": False, "warning": "pipeline produced no draft"}
+            when the draft key is absent.
+        {"result": draft, "approved": True} when feedback is empty (approved).
+        {"result": draft, "approved": False, "warning": feedback} when feedback is
+            non-empty (exhausted).
     """
-    draft = session_state.get(f"{output_key_prefix}_draft", "")
-    feedback = session_state.get(f"{output_key_prefix}_feedback", "")
+    draft_key = f"{output_key_prefix}_draft"
+    feedback_key = f"{output_key_prefix}_feedback"
+
+    if draft_key not in session_state:
+        return {
+            "result": "",
+            "approved": False,
+            "warning": "pipeline produced no draft",
+        }
+
+    draft = session_state[draft_key]
+    feedback = session_state.get(feedback_key, "")
     if feedback == "":
         return {"result": draft, "approved": True}
     return {"result": draft, "approved": False, "warning": feedback}

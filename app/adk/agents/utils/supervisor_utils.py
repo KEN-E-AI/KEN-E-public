@@ -88,70 +88,6 @@ def extract_tenant_context(
     return tenant_id, tenant_context, message
 
 
-def invoke_agent_sync(
-    agent: Agent,
-    query: str,
-    user_id: str | None = None,
-    session_id: str | None = None,
-    state: dict[str, Any] | None = None,
-) -> str:
-    """
-    Synchronous wrapper for agent invocation with proper async handling.
-    Following ADK best practices from the codebase.
-    """
-    if user_id is None:
-        user_id = f"user_{uuid.uuid4().hex[:8]}"
-    if session_id is None:
-        session_id = f"session_{uuid.uuid4().hex[:8]}"
-
-    async def invoke_agent():
-        session_service = InMemorySessionService()
-        artifact_service = InMemoryArtifactService()
-
-        runner = Runner(
-            agent=agent,
-            app_name=agent.name,
-            session_service=session_service,
-            artifact_service=artifact_service,
-        )
-
-        await session_service.create_session(
-            app_name=agent.name, user_id=user_id, session_id=session_id, state=state
-        )
-
-        user_message = Content(role="user", parts=[Part.from_text(text=query)])
-
-        response_text = ""
-        async for event in runner.run_async(
-            user_id=user_id, session_id=session_id, new_message=user_message
-        ):
-            # Follow ADK's official pattern
-            if event.content and event.content.parts:
-                if text := "".join(part.text or "" for part in event.content.parts):
-                    # Accumulate all text responses
-                    response_text += text
-
-        return response_text
-
-    try:
-        # Handle event loop scenarios (following ADK pattern)
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            executor_cls = weave.ThreadPoolExecutor if HAS_WEAVE else concurrent.futures.ThreadPoolExecutor
-            with executor_cls() as executor:
-                future = executor.submit(asyncio.run, invoke_agent())
-                return future.result(timeout=300)
-        else:
-            # If no event loop is running, create one
-            return loop.run_until_complete(invoke_agent())
-    except concurrent.futures.TimeoutError as e:
-        logger.error(f"Agent invocation timed out after 5 minutes: {e!s}")
-        return "Error: Request timed out after 5 minutes. Please try again with simpler requirements."
-    except Exception as e:
-        logger.error(f"Error in sync agent invocation: {e!s}")
-        return f"Error: Failed to complete the request - {e!s}"
-
-
 def invoke_pipeline(
     agent: Agent,
     query: str,
@@ -248,6 +184,22 @@ def invoke_pipeline(
     except Exception as e:
         logger.error(f"Error in sync pipeline invocation: {e!s}")
         return (f"Error: Failed to complete the request - {e!s}", {})
+
+
+def invoke_agent_sync(
+    agent: Agent,
+    query: str,
+    user_id: str | None = None,
+    session_id: str | None = None,
+    state: dict[str, Any] | None = None,
+) -> str:
+    """Synchronous wrapper for agent invocation. Returns response text only.
+
+    Thin adapter over invoke_pipeline() — use invoke_pipeline() directly when
+    you need to inspect post-run session state.
+    """
+    text, _ = invoke_pipeline(agent, query, user_id, session_id, state)
+    return text
 
 
 def dispatch_with_context(dispatch_func: Callable) -> Callable[[str], str]:

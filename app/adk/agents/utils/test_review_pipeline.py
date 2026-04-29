@@ -873,14 +873,28 @@ class TestExtractPipelineResult:
             "warning": "missing: include a table with campaign names",
         }
 
-    def test_empty_state_returns_approved_empty_draft(self):
-        """Defensive .get(..., '') — missing keys should not raise."""
+    def test_missing_draft_returns_not_approved(self):
+        """Absent draft key (e.g., timeout before worker ran) → not approved with warning."""
         result = extract_pipeline_result({}, "any_prefix")
-        assert result == {"result": "", "approved": True}
-        assert "warning" not in result
+        assert result == {
+            "result": "",
+            "approved": False,
+            "warning": "pipeline produced no draft",
+        }
+
+    def test_missing_draft_with_feedback_still_not_approved(self):
+        """Draft-absent precedence: feedback presence does not override missing draft."""
+        # Hypothetical inconsistent state — missing draft must dominate.
+        state = {"any_prefix_feedback": "criteria not met"}
+        result = extract_pipeline_result(state, "any_prefix")
+        assert result == {
+            "result": "",
+            "approved": False,
+            "warning": "pipeline produced no draft",
+        }
 
     def test_only_draft_present(self):
-        """Only draft key present (no feedback key) → approved."""
+        """Only draft key present (no feedback key) → approved (feedback defaults to '')."""
         state = {"p_draft": "ok content"}
         result = extract_pipeline_result(state, "p")
         assert result == {"result": "ok content", "approved": True}
