@@ -169,37 +169,40 @@ export default {
         // @deprecated — legacy color groups retained to prevent ~863 silent regressions
         // across the existing codebase while a component sweep is completed in a follow-up PR.
         // Do NOT use these in new components; use SoMx tokens (somx-*, success, error, etc.) instead.
+        // Values backed by --color-legacy-* CSS vars (defined in index.css :root) so all color
+        // references go through the custom property system. These vars intentionally have no .dark
+        // override because the legacy colors are fixed marketing values that don't participate in theming.
         brand: {
-          charcoal: "#1f1f1f",
-          "dark-blue": "#163354",
-          "medium-blue": "#468FD0",
-          "light-green": "#B8E2AF",
-          "dark-green": "#3A7439",
-          red: "#FF6B6B",
-          "light-red": "#FF9999",
-          yellow: "#EAB946",
-          "light-blue": "#8DC4F9",
+          charcoal: "var(--color-legacy-charcoal)",
+          "dark-blue": "var(--color-legacy-dark-blue)",
+          "medium-blue": "var(--color-legacy-medium-blue)",
+          "light-green": "var(--color-legacy-light-green)",
+          "dark-green": "var(--color-legacy-dark-green)",
+          red: "var(--color-legacy-red)",
+          "light-red": "var(--color-legacy-light-red)",
+          yellow: "var(--color-legacy-yellow)",
+          "light-blue": "var(--color-legacy-light-blue)",
         },
         effectiveness: {
-          DEFAULT: "#B8E2AF",
-          foreground: "#163354",
+          DEFAULT: "var(--color-legacy-effectiveness)",
+          foreground: "var(--color-legacy-effectiveness-fg)",
         },
         efficiency: {
-          DEFAULT: "#FF6B6B",
-          foreground: "#ffffff",
+          DEFAULT: "var(--color-legacy-efficiency)",
+          foreground: "var(--color-text-inverse)",
         },
         dashboard: {
           gray: {
-            50: "#f8fafc",
-            100: "#f1f5f9",
-            200: "#e2e8f0",
-            300: "#cbd5e1",
-            400: "#94a3b8",
-            500: "#64748b",
-            600: "#475569",
-            700: "#334155",
-            800: "#1e293b",
-            900: "#0f172a",
+            50: "var(--color-legacy-gray-50)",
+            100: "var(--color-legacy-gray-100)",
+            200: "var(--color-legacy-gray-200)",
+            300: "var(--color-legacy-gray-300)",
+            400: "var(--color-legacy-gray-400)",
+            500: "var(--color-legacy-gray-500)",
+            600: "var(--color-legacy-gray-600)",
+            700: "var(--color-legacy-gray-700)",
+            800: "var(--color-legacy-gray-800)",
+            900: "var(--color-legacy-gray-900)",
           },
         },
       },
@@ -264,7 +267,11 @@ export default {
         "gradient-cta": "var(--gradient-cta)",
         "gradient-subtle": "var(--gradient-subtle)",
       },
+      // `default` key maps --ease-default as the `ease-default` utility.
+      // It also wires up the timing function used by Tailwind's .transition shorthand;
+      // --ease-default resolves to cubic-bezier(0.4,0,0.2,1) — same as Tailwind's stock default.
       transitionTimingFunction: {
+        default: "var(--ease-default)",
         bounce: "var(--ease-bounce)",
         spring: "var(--ease-spring)",
         smooth: "var(--ease-smooth)",

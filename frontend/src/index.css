@@ -203,7 +203,7 @@
   --z-max: 100;
 
   /* --- Mode-independent utility tokens (no .dark override needed) --- */
-  --font-size: 14px;
+  --font-size: var(--text-body-md);
   --font-weight-medium: var(--font-medium);
   --font-weight-normal: var(--font-regular);
 
@@ -236,6 +236,33 @@
   --sidebar-accent-foreground: var(--color-text-secondary);
   --sidebar-border: var(--color-border-default);
   --sidebar-ring: var(--color-violet-500);
+
+  /* --- Legacy Brand Color Tokens (@deprecated — backing vars for the deprecated Tailwind
+     brand/effectiveness/efficiency/dashboard.gray groups; intentionally not overridden in
+     .dark because these are fixed marketing/product colors that do not participate in theming.
+     Do NOT use in new components; reference somx-* tokens or semantic groups instead.) --- */
+  --color-legacy-charcoal: #1f1f1f;
+  --color-legacy-dark-blue: #163354;
+  --color-legacy-medium-blue: #468fd0;
+  --color-legacy-light-green: #b8e2af;
+  --color-legacy-dark-green: #3a7439;
+  --color-legacy-red: #ff6b6b;
+  --color-legacy-light-red: #ff9999;
+  --color-legacy-yellow: #eab946;
+  --color-legacy-light-blue: #8dc4f9;
+  --color-legacy-effectiveness: #b8e2af;
+  --color-legacy-effectiveness-fg: #163354;
+  --color-legacy-efficiency: #ff6b6b;
+  --color-legacy-gray-50: #f8fafc;
+  --color-legacy-gray-100: #f1f5f9;
+  --color-legacy-gray-200: #e2e8f0;
+  --color-legacy-gray-300: #cbd5e1;
+  --color-legacy-gray-400: #94a3b8;
+  --color-legacy-gray-500: #64748b;
+  --color-legacy-gray-600: #475569;
+  --color-legacy-gray-700: #334155;
+  --color-legacy-gray-800: #1e293b;
+  --color-legacy-gray-900: #0f172a;
 }
 
 /* ============================================
