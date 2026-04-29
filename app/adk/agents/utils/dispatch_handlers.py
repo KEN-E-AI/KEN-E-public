@@ -3,6 +3,7 @@ Dispatch handlers for routing to specialized agents.
 """
 
 import logging
+import re
 import time
 import uuid
 from typing import Any
@@ -22,6 +23,25 @@ from .review_pipeline import build_review_pipeline, extract_pipeline_result
 from .supervisor_utils import invoke_pipeline
 
 logger = logging.getLogger(__name__)
+
+# Allow only printable ASCII minus control characters (no angle brackets, backtick,
+# or curly braces that could be misread as template variables or HTML by the LLM).
+_UNSAFE_CRITERIA_RE = re.compile(r"[^\w\s.,;:()\-'\"!?%@&=+/#*]")
+_MAX_CRITERIA_LINES = 10
+_MAX_CRITERIA_LINE_LEN = 200
+
+
+def _sanitise_criteria(raw: str) -> str:
+    """Remove characters that could break prompt structure or inject template variables.
+
+    Applied to acceptance_criteria before it is interpolated into LLM system
+    prompts by build_review_pipeline(), so that a manipulated root-agent
+    response cannot redirect sub-agent behaviour via structural injection.
+    """
+    sanitised = _UNSAFE_CRITERIA_RE.sub("", raw)
+    lines = [ln.strip() for ln in sanitised.splitlines() if ln.strip()]
+    lines = [ln[:_MAX_CRITERIA_LINE_LEN] for ln in lines[:_MAX_CRITERIA_LINES]]
+    return "\n".join(lines)
 
 
 @safe_weave_op(name="dispatch_to_company_news")
@@ -82,6 +102,7 @@ def dispatch_to_company_news(
                 f"[NEWS-DISPATCH] acceptance_criteria truncated from {len(criteria)} to 2000 chars"
             )
             criteria = criteria[:2000]
+        criteria = _sanitise_criteria(criteria)
         if criteria:
             logger.info("🔄 Building review pipeline for company news query...")
             pipeline = build_review_pipeline(
@@ -202,6 +223,7 @@ def dispatch_to_google_analytics(
                 f"[GA-DISPATCH] acceptance_criteria truncated from {len(criteria)} to 2000 chars"
             )
             criteria = criteria[:2000]
+        criteria = _sanitise_criteria(criteria)
         if criteria:
             logger.info("🔄 Building review pipeline for Google Analytics query...")
             pipeline = build_review_pipeline(

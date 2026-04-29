@@ -230,13 +230,23 @@ def create_ken_e_agent(config_doc_id: str = "ken_e_chatbot"):
         generate_content_config.thinking_config = ThinkingConfig(include_thoughts=True)
 
     # Create tool wrappers that expose ToolContext and return strings
-    def search_company_news(query: str, tool_context: ToolContext | None = None) -> str:
+    def search_company_news(
+        query: str,
+        acceptance_criteria: str = "",
+        tool_context: ToolContext | None = None,
+    ) -> str:
         """Search for company news, financial updates, earnings reports, market analysis, and business announcements.
 
         Args:
             query: The user's question about company news, earnings, market updates, or business intelligence
+            acceptance_criteria: Optional 2-4 measurable criteria the specialist's response must satisfy.
+                Empty string = single-pass dispatch (no review loop).
         """
-        result = dispatch_to_company_news(query, tool_context)
+        result = dispatch_to_company_news(
+            query,
+            tool_context,
+            acceptance_criteria=acceptance_criteria or None,
+        )
         return (
             result.get("result", str(result))
             if isinstance(result, dict)
@@ -244,14 +254,22 @@ def create_ken_e_agent(config_doc_id: str = "ken_e_chatbot"):
         )
 
     def query_google_analytics(
-        query: str, tool_context: ToolContext | None = None
+        query: str,
+        acceptance_criteria: str = "",
+        tool_context: ToolContext | None = None,
     ) -> str:
         """Query Google Analytics data, run reports, get real-time metrics, analyze website/app performance, and access GA4 properties.
 
         Args:
             query: The user's question about website analytics, traffic, user behavior, or GA4 data
+            acceptance_criteria: Optional 2-4 measurable criteria the specialist's response must satisfy.
+                Empty string = single-pass dispatch (no review loop).
         """
-        result = dispatch_to_google_analytics(query, tool_context)
+        result = dispatch_to_google_analytics(
+            query,
+            tool_context,
+            acceptance_criteria=acceptance_criteria or None,
+        )
         return (
             result.get("result", str(result))
             if isinstance(result, dict)
