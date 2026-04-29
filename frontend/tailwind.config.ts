@@ -21,21 +21,12 @@ export default {
       screens: {
         xl: "1200px",
       },
-      // SoMx 8px-base grid — steps 0-12 intentionally diverge from Tailwind defaults (e.g. space-8 = 40px = 8×5)
+      // SoMx spacing extras — only keys outside Tailwind's default scale (1–12) are defined
+      // here to avoid silently shifting existing p-7 / p-8 / m-9 etc. usages.
+      // The SoMx CSS vars (--space-7 through --space-12) remain in index.css for direct
+      // CSS use; new components should use those vars or utility classes once the component
+      // sweep (follow-up PR) migrates existing references.
       spacing: {
-        "0": "0px",
-        "1": "4px",
-        "2": "8px",
-        "3": "12px",
-        "4": "16px",
-        "5": "20px",
-        "6": "24px",
-        "7": "32px",
-        "8": "40px",
-        "9": "48px",
-        "10": "56px",
-        "11": "64px",
-        "12": "80px",
         "15": "3.75rem",
         "18": "4.5rem",
       },
@@ -91,36 +82,39 @@ export default {
           border: "var(--sidebar-border)",
           ring: "var(--sidebar-ring)",
         },
-        // SoMx primitive color scales
-        slate: {
+        // SoMx primitive color scales — namespaced as somx-* to avoid partially clobbering
+        // Tailwind's default palette (extend.colors shallow-merges, so blue-50 and blue-600..950
+        // would survive at Tailwind defaults while 100..500 became SoMx values — inconsistent
+        // dark-mode behavior across the range). Use bg-somx-violet-500, text-somx-teal-300, etc.
+        "somx-slate": {
           100: "var(--color-slate-100)",
           200: "var(--color-slate-200)",
           300: "var(--color-slate-300)",
           400: "var(--color-slate-400)",
           500: "var(--color-slate-500)",
         },
-        blue: {
+        "somx-blue": {
           100: "var(--color-blue-100)",
           200: "var(--color-blue-200)",
           300: "var(--color-blue-300)",
           400: "var(--color-blue-400)",
           500: "var(--color-blue-500)",
         },
-        teal: {
+        "somx-teal": {
           100: "var(--color-teal-100)",
           200: "var(--color-teal-200)",
           300: "var(--color-teal-300)",
           400: "var(--color-teal-400)",
           500: "var(--color-teal-500)",
         },
-        violet: {
+        "somx-violet": {
           100: "var(--color-violet-100)",
           200: "var(--color-violet-200)",
           300: "var(--color-violet-300)",
           400: "var(--color-violet-400)",
           500: "var(--color-violet-500)",
         },
-        amber: {
+        "somx-amber": {
           100: "var(--color-amber-100)",
           200: "var(--color-amber-200)",
           300: "var(--color-amber-300)",
@@ -171,6 +165,42 @@ export default {
           4: "var(--color-accent-slot-4)",
           5: "var(--color-accent-slot-5)",
           6: "var(--color-accent-slot-6)",
+        },
+        // @deprecated — legacy color groups retained to prevent ~863 silent regressions
+        // across the existing codebase while a component sweep is completed in a follow-up PR.
+        // Do NOT use these in new components; use SoMx tokens (somx-*, success, error, etc.) instead.
+        brand: {
+          charcoal: "#1f1f1f",
+          "dark-blue": "#163354",
+          "medium-blue": "#468FD0",
+          "light-green": "#B8E2AF",
+          "dark-green": "#3A7439",
+          red: "#FF6B6B",
+          "light-red": "#FF9999",
+          yellow: "#EAB946",
+          "light-blue": "#8DC4F9",
+        },
+        effectiveness: {
+          DEFAULT: "#B8E2AF",
+          foreground: "#163354",
+        },
+        efficiency: {
+          DEFAULT: "#FF6B6B",
+          foreground: "#ffffff",
+        },
+        dashboard: {
+          gray: {
+            50: "#f8fafc",
+            100: "#f1f5f9",
+            200: "#e2e8f0",
+            300: "#cbd5e1",
+            400: "#94a3b8",
+            500: "#64748b",
+            600: "#475569",
+            700: "#334155",
+            800: "#1e293b",
+            900: "#0f172a",
+          },
         },
       },
       fontFamily: {
@@ -234,18 +264,20 @@ export default {
         "gradient-cta": "var(--gradient-cta)",
         "gradient-subtle": "var(--gradient-subtle)",
       },
-      // DEFAULT governs the bare `ease` / `duration` utilities, not the `transition` shorthand
       transitionTimingFunction: {
-        DEFAULT: "var(--ease-default)",
         bounce: "var(--ease-bounce)",
         spring: "var(--ease-spring)",
         smooth: "var(--ease-smooth)",
         out: "var(--ease-out)",
       },
+      // Named duration tokens only — DEFAULT is intentionally absent.
+      // Tailwind's transition shorthand (.transition, .transition-all, etc.) uses the DEFAULT
+      // key from transitionDuration to set transition-duration, so setting DEFAULT would change
+      // every transition in the app from Tailwind's stock 150ms to var(--duration-default) (300ms).
+      // Use explicit named utilities (duration-fast, duration-moderate, etc.) on individual elements.
       transitionDuration: {
         instant: "var(--duration-instant)",
         fast: "var(--duration-fast)",
-        DEFAULT: "var(--duration-default)",
         moderate: "var(--duration-moderate)",
         slow: "var(--duration-slow)",
         dramatic: "var(--duration-dramatic)",
@@ -272,6 +304,8 @@ export default {
           to: { height: "0" },
         },
       },
+      // 0.2s matches --duration-fast (200ms); ease-out matches --ease-out.
+      // If either token changes, update these string values to stay in sync.
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
