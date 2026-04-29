@@ -1,103 +1,402 @@
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  :root {
-    --font-size: 14px;
+/* ============================================
+   KEN-E DESIGN SYSTEM — "Soft Maximalism"
+   ============================================ */
 
-    /* Brand Colors */
-    --brand-charcoal: #1f1f1f;
-    --brand-dark-blue: #163354;
-    --brand-medium-blue: #468fd0;
-    --brand-light-green: #b8e2af;
-    --brand-dark-green: #3a7439;
-    --brand-red: #ff6b6b;
-    --brand-yellow: #eab946;
-    --brand-light-blue: #8dc4f9;
+:root {
+  /* --- Core Brand Colors (Cooler Palette) --- */
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-blue-100: #eff6ff;
+  --color-blue-200: #dbeafe;
+  --color-blue-300: #bfdbfe;
+  --color-blue-400: #60a5fa;
+  --color-blue-500: #3b82f6;
+  --color-teal-100: #e8f8f6;
+  --color-teal-200: #c4ede8;
+  --color-teal-300: #a8e6e0;
+  --color-teal-400: #6ad8cc;
+  --color-teal-500: #2ec4b6;
+  --color-violet-100: #eef2ff;
+  --color-violet-200: #e0e7ff;
+  --color-violet-300: #c7d2fe;
+  --color-violet-400: #818cf8;
+  --color-violet-500: #6366f1;
+  --color-amber-100: #fef3c7;
+  --color-amber-200: #fde68a;
+  --color-amber-300: #fcd34d;
+  --color-amber-400: #fbbf24;
+  --color-amber-500: #f59e0b;
 
-    /* Theme Colors */
-    --background: #ffffff;
-    --foreground: oklch(0.145 0 0);
-    --card: #ffffff;
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: #468fd0; /* Brand medium blue for primary actions */
-    --primary-foreground: #ffffff;
-    --secondary: oklch(0.95 0.0058 264.53);
-    --secondary-foreground: #030213;
-    --muted: #ececf0;
-    --muted-foreground: #717182;
-    --accent: #8dc4f9; /* Brand light blue for accents */
-    --accent-foreground: #163354;
-    --destructive: #ff6b6b; /* Brand red for errors */
-    --destructive-foreground: #ffffff;
-    --border: rgba(0, 0, 0, 0.1);
-    --input: transparent;
-    --input-background: #f3f3f5;
-    --switch-background: #cbced4;
-    --font-weight-medium: 500;
-    --font-weight-normal: 400;
-    --ring: #8dc4f9; /* Brand light blue for focus rings */
-    --chart-1: #468fd0; /* Brand medium blue */
-    --chart-2: #b8e2af; /* Brand light green */
-    --chart-3: #8dc4f9; /* Brand light blue */
-    --chart-4: #eab946; /* Brand yellow */
-    --chart-5: #ff6b6b; /* Brand red */
-    --radius: 0.625rem;
-    --sidebar-background: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: #468fd0;
-    --sidebar-primary-foreground: #ffffff;
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: #8dc4f9;
+  /* --- Surfaces --- */
+  --color-bg-primary: #fafbfc;
+  --color-bg-secondary: #f3f4f6;
+  --color-bg-elevated: #ffffff;
+  --color-bg-overlay: rgba(30, 41, 59, 0.5);
+  --color-surface-muted: #f8f9fa;
 
-    /* Semantic Colors */
-    --success: #b8e2af;
-    --warning: #eab946;
-    --error: #ff6b6b;
-    --info: #8dc4f9;
-  }
+  /* --- Text --- */
+  --color-text-primary: #1e293b;
+  --color-text-secondary: #475569;
+  --color-text-tertiary: #94a3b8;
+  --color-text-disabled: #cbd5e1;
+  --color-text-inverse: #ffffff;
 
-  .dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.145 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.145 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.985 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.396 0.141 25.723);
-    --destructive-foreground: oklch(0.637 0.237 25.331);
-    --border: oklch(0.269 0 0);
-    --input: oklch(0.269 0 0);
-    --ring: oklch(0.439 0 0);
-    --font-weight-medium: 500;
-    --font-weight-normal: 400;
-    --chart-1: oklch(0.488 0.243 264.376);
-    --chart-2: oklch(0.696 0.17 162.48);
-    --chart-3: oklch(0.769 0.188 70.08);
-    --chart-4: oklch(0.627 0.265 303.9);
-    --chart-5: oklch(0.645 0.246 16.439);
-    --sidebar-background: #1f1f1f;
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(0.269 0 0);
-    --sidebar-ring: oklch(0.439 0 0);
-  }
+  /* --- Borders --- */
+  --color-border-default: #e2e8f0;
+  --color-border-subtle: #f1f5f9;
+  --color-border-strong: #cbd5e1;
+
+  /* --- Semantic Colors --- */
+  --color-success: #10b981;
+  --color-success-bg: #d1fae5;
+  --color-success-text: #065f46;
+  --color-error: #ef4444;
+  --color-error-bg: #fee2e2;
+  --color-error-text: #991b1b;
+  --color-warning: #f59e0b;
+  --color-warning-bg: #fef3c7;
+  --color-warning-text: #92400e;
+  --color-info: #6366f1;
+  --color-info-bg: #eef2ff;
+  --color-info-text: #3730a3;
+  --color-disconnected: #94a3b8;
+  --color-disconnected-bg: #f1f5f9;
+
+  /* --- Gradients --- */
+  --gradient-rainbow: linear-gradient(
+    90deg,
+    #3b82f6,
+    #6366f1,
+    #2ec4b6,
+    #f59e0b
+  );
+  --gradient-cta: linear-gradient(135deg, #3b82f6, #6366f1);
+  --gradient-subtle: linear-gradient(135deg, #a8e6e0, #c7d2fe);
+
+  /* --- Background Blobs --- */
+  --color-blob-blue: rgba(59, 130, 246, 0.08);
+  --color-blob-violet: rgba(99, 102, 241, 0.08);
+  --color-blob-teal: rgba(46, 196, 182, 0.08);
+  --color-blob-slate: rgba(100, 116, 139, 0.05);
+  --grain-opacity: 0.02;
+
+  /* --- Card Accent Slots (rotating colors for left borders) --- */
+  --color-accent-slot-1: #6366f1;
+  --color-accent-slot-2: #3b82f6;
+  --color-accent-slot-3: #2ec4b6;
+  --color-accent-slot-4: #f59e0b;
+  --color-accent-slot-5: #6366f1;
+  --color-accent-slot-6: #3b82f6;
+
+  /* --- Typography --- */
+  --font-display:
+    "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --font-body:
+    "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --font-regular: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+  --font-extrabold: 800;
+
+  /* --- Type Scale --- */
+  --text-display-xl: 48px;
+  --text-display-lg: 40px;
+  --text-display-md: 32px;
+  --text-heading-lg: 24px;
+  --text-heading-md: 20px;
+  --text-heading-sm: 18px;
+  --text-body-lg: 16px;
+  --text-body-md: 14px;
+  --text-body-sm: 13px;
+  --text-caption: 12px;
+  --text-overline: 11px;
+
+  /* --- Line Heights --- */
+  --lh-display-xl: 1.1;
+  --lh-display-lg: 1.15;
+  --lh-display-md: 1.2;
+  --lh-heading-lg: 1.3;
+  --lh-heading-md: 1.35;
+  --lh-heading-sm: 1.4;
+  --lh-body: 1.6;
+  --lh-body-md: 1.55;
+  --lh-body-sm: 1.5;
+  --lh-caption: 1.5;
+
+  /* --- Spacing (4px base unit, 8px major stops) --- */
+  --space-0: 0px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  --space-9: 48px;
+  --space-10: 56px;
+  --space-11: 64px;
+  --space-12: 80px;
+
+  /* --- Border Radii --- */
+  --radius-none: 0px;
+  --radius-sm: 4px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 24px;
+  --radius-circle: 50%;
+
+  /* --- Border Widths --- */
+  --border-thin: 1px;
+  --border-default: 2px;
+  --border-thick: 3px;
+  --border-accent: 4px;
+
+  /* --- Shadows --- */
+  --shadow-none: none;
+  --shadow-sm: 0 2px 8px rgba(30, 41, 59, 0.04);
+  --shadow-md: 0 4px 16px rgba(30, 41, 59, 0.06);
+  --shadow-lg: 0 12px 32px rgba(30, 41, 59, 0.08);
+  --shadow-xl: 0 20px 48px rgba(30, 41, 59, 0.12);
+  --shadow-color-violet: 0 4px 16px rgba(99, 102, 241, 0.25);
+  --shadow-color-teal: 0 4px 16px rgba(46, 196, 182, 0.3);
+  --shadow-color-blue: 0 4px 16px rgba(59, 130, 246, 0.25);
+  --shadow-glow: 0 0 8px currentColor;
+
+  /* --- Easing Curves --- */
+  --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-bounce: cubic-bezier(0.34, 1.2, 0.64, 1);
+  --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.15);
+  --ease-smooth: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+
+  /* --- Duration Scale --- */
+  --duration-instant: 100ms;
+  --duration-fast: 200ms;
+  --duration-default: 300ms;
+  --duration-moderate: 400ms;
+  --duration-slow: 600ms;
+  --duration-dramatic: 800ms;
+
+  /* --- Z-Index Scale --- */
+  --z-background: -1;
+  --z-base: 0;
+  --z-card: 1;
+  --z-sticky: 10;
+  --z-dropdown: 20;
+  --z-modal: 30;
+  --z-toast: 40;
+  --z-tooltip: 50;
+  --z-max: 100;
+
+  /* --- Mode-independent utility tokens (no .dark override needed) --- */
+  --font-size: var(--text-body-md);
+  --font-weight-medium: var(--font-medium);
+  --font-weight-normal: var(--font-regular);
+
+  /* --- Legacy Tailwind Compatibility --- */
+  --background: var(--color-bg-primary);
+  --foreground: var(--color-text-primary);
+  --card: var(--color-bg-elevated);
+  --card-foreground: var(--color-text-primary);
+  --popover: var(--color-bg-elevated);
+  --popover-foreground: var(--color-text-primary);
+  --primary: var(--color-violet-500);
+  --primary-foreground: var(--color-text-inverse);
+  --secondary: var(--color-bg-secondary);
+  --secondary-foreground: var(--color-text-primary);
+  --muted: var(--color-surface-muted);
+  --muted-foreground: var(--color-text-tertiary);
+  --accent: var(--color-violet-100);
+  --accent-foreground: var(--color-violet-500);
+  --destructive: var(--color-error);
+  --destructive-foreground: var(--color-text-inverse);
+  --border: var(--color-border-default);
+  --input: var(--color-border-default);
+  --ring: var(--color-violet-500);
+  --radius: var(--radius-xl);
+  --sidebar-background: var(--color-bg-elevated);
+  --sidebar-foreground: var(--color-text-primary);
+  --sidebar-primary: var(--color-violet-500);
+  --sidebar-primary-foreground: var(--color-text-inverse);
+  --sidebar-accent: var(--color-bg-secondary);
+  --sidebar-accent-foreground: var(--color-text-secondary);
+  --sidebar-border: var(--color-border-default);
+  --sidebar-ring: var(--color-violet-500);
+
+  /* --- Legacy Brand Color Tokens (@deprecated — backing vars for the deprecated Tailwind
+     brand/effectiveness/efficiency/dashboard.gray groups; intentionally not overridden in
+     .dark because these are fixed marketing/product colors that do not participate in theming.
+     Do NOT use in new components; reference somx-* tokens or semantic groups instead.) --- */
+  --color-legacy-charcoal: #1f1f1f;
+  --color-legacy-dark-blue: #163354;
+  --color-legacy-medium-blue: #468fd0;
+  --color-legacy-light-green: #b8e2af;
+  --color-legacy-dark-green: #3a7439;
+  --color-legacy-red: #ff6b6b;
+  --color-legacy-light-red: #ff9999;
+  --color-legacy-yellow: #eab946;
+  --color-legacy-light-blue: #8dc4f9;
+  --color-legacy-effectiveness: #b8e2af;
+  --color-legacy-effectiveness-fg: #163354;
+  --color-legacy-efficiency: #ff6b6b;
+  --color-legacy-efficiency-fg: #ffffff;
+  --color-legacy-gray-50: #f8fafc;
+  --color-legacy-gray-100: #f1f5f9;
+  --color-legacy-gray-200: #e2e8f0;
+  --color-legacy-gray-300: #cbd5e1;
+  --color-legacy-gray-400: #94a3b8;
+  --color-legacy-gray-500: #64748b;
+  --color-legacy-gray-600: #475569;
+  --color-legacy-gray-700: #334155;
+  --color-legacy-gray-800: #1e293b;
+  --color-legacy-gray-900: #0f172a;
+}
+
+/* ============================================
+   DARK MODE OVERRIDES
+   ============================================ */
+
+.dark {
+  /* --- Core Brand Colors (Dark Mode) --- */
+  --color-slate-100: #1e293b;
+  --color-slate-200: #334155;
+  --color-slate-300: #475569;
+  --color-slate-400: #64748b;
+  --color-slate-500: #94a3b8;
+  --color-blue-100: #1e3a8a;
+  --color-blue-200: #1e40af;
+  --color-blue-300: #2563eb;
+  --color-blue-400: #3b82f6;
+  --color-blue-500: #60a5fa;
+  --color-teal-100: #134e4a;
+  --color-teal-200: #115e59;
+  --color-teal-300: #14b8a6;
+  --color-teal-400: #2dd4bf;
+  --color-teal-500: #5eead4;
+  --color-violet-100: #312e81;
+  --color-violet-200: #3730a3;
+  --color-violet-300: #4f46e5;
+  --color-violet-400: #6366f1;
+  --color-violet-500: #818cf8;
+  --color-amber-100: #78350f;
+  --color-amber-200: #92400e;
+  --color-amber-300: #b45309;
+  --color-amber-400: #d97706;
+  --color-amber-500: #f59e0b;
+
+  /* --- Surfaces (Dark Mode) --- */
+  --color-bg-primary: #0f172a;
+  --color-bg-secondary: #1e293b;
+  --color-bg-elevated: #1e293b;
+  --color-bg-overlay: rgba(0, 0, 0, 0.6);
+  --color-surface-muted: #334155;
+
+  /* --- Text (Dark Mode) --- */
+  --color-text-primary: #f8fafc;
+  --color-text-secondary: #cbd5e1;
+  --color-text-tertiary: #64748b;
+  --color-text-disabled: #475569;
+  --color-text-inverse: #0f172a;
+
+  /* --- Borders (Dark Mode) --- */
+  --color-border-default: #334155;
+  --color-border-subtle: #1e293b;
+  --color-border-strong: #475569;
+
+  /* --- Semantic Colors (Dark Mode) --- */
+  --color-success: #10b981;
+  --color-success-bg: #134e4a;
+  --color-success-text: #6ee7b7;
+  --color-error: #ef4444;
+  --color-error-bg: #7f1d1d;
+  --color-error-text: #fca5a5;
+  --color-warning: #f59e0b;
+  --color-warning-bg: #78350f;
+  --color-warning-text: #fcd34d;
+  --color-info: #818cf8;
+  --color-info-bg: #312e81;
+  --color-info-text: #c7d2fe;
+  --color-disconnected: #64748b;
+  --color-disconnected-bg: #334155;
+
+  /* --- Gradients (Dark Mode) --- */
+  --gradient-rainbow: linear-gradient(
+    90deg,
+    #60a5fa,
+    #818cf8,
+    #5eead4,
+    #fbbf24
+  );
+  --gradient-cta: linear-gradient(135deg, #60a5fa, #818cf8);
+  --gradient-subtle: linear-gradient(135deg, #14b8a6, #4f46e5);
+
+  /* --- Background Blobs (Dark Mode) --- */
+  --color-blob-blue: rgba(59, 130, 246, 0.06);
+  --color-blob-violet: rgba(99, 102, 241, 0.06);
+  --color-blob-teal: rgba(46, 196, 182, 0.05);
+  --color-blob-slate: rgba(148, 163, 184, 0.04);
+  --grain-opacity: 0.03;
+
+  /* --- Card Accent Slots (Dark Mode) --- */
+  --color-accent-slot-1: #818cf8;
+  --color-accent-slot-2: #60a5fa;
+  --color-accent-slot-3: #5eead4;
+  --color-accent-slot-4: #fbbf24;
+  --color-accent-slot-5: #818cf8;
+  --color-accent-slot-6: #60a5fa;
+
+  /* --- Shadows (Dark Mode) --- */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 20px 48px rgba(0, 0, 0, 0.5);
+  --shadow-color-violet: 0 4px 16px rgba(129, 140, 248, 0.25);
+  --shadow-color-teal: 0 4px 16px rgba(94, 234, 212, 0.2);
+  --shadow-color-blue: 0 4px 16px rgba(96, 165, 250, 0.25);
+  --shadow-glow: 0 0 12px currentColor;
+
+  /* --- Legacy Tailwind Compatibility (Dark Mode) --- */
+  --background: var(--color-bg-primary);
+  --foreground: var(--color-text-primary);
+  --card: var(--color-bg-elevated);
+  --card-foreground: var(--color-text-primary);
+  --popover: var(--color-bg-elevated);
+  --popover-foreground: var(--color-text-primary);
+  --primary: var(--color-violet-500);
+  --primary-foreground: var(--color-text-inverse);
+  --secondary: var(--color-bg-secondary);
+  --secondary-foreground: var(--color-text-primary);
+  --muted: var(--color-surface-muted);
+  --muted-foreground: var(--color-text-tertiary);
+  --accent: var(--color-violet-200);
+  --accent-foreground: var(--color-violet-500);
+  --destructive: var(--color-error);
+  --destructive-foreground: var(--color-text-inverse);
+  --border: var(--color-border-default);
+  --input: var(--color-border-default);
+  --ring: var(--color-violet-500);
+  --sidebar-background: var(--color-bg-elevated);
+  --sidebar-foreground: var(--color-text-primary);
+  --sidebar-primary: var(--color-violet-500);
+  --sidebar-primary-foreground: var(--color-text-inverse);
+  --sidebar-accent: var(--color-bg-secondary);
+  --sidebar-accent-foreground: var(--color-text-secondary);
+  --sidebar-border: var(--color-border-default);
+  --sidebar-ring: var(--color-violet-500);
 }
 
 @layer base {
@@ -107,24 +406,88 @@
 
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-body);
+    font-weight: var(--font-regular);
+    position: relative;
+    /* overflow-x: hidden prevents horizontal scroll on the app shell.
+       Known side-effect: position:sticky descendants lose their sticky behavior
+       if the scrolling ancestor is the body. Sidebar and header use fixed/flex
+       positioning so this does not affect them, but flag here for future sticky work. */
+    overflow-x: hidden;
   }
 
   html {
     font-size: var(--font-size);
   }
 
+  /* Heading defaults — sets font-family and weight only.
+     Radix/shadcn components that render headings can still override via className. */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-display);
+  }
+
+  h1 {
+    font-size: var(--text-display-lg);
+    font-weight: var(--font-extrabold);
+    line-height: var(--lh-display-lg);
+  }
+
+  h2 {
+    font-size: var(--text-display-md);
+    font-weight: var(--font-bold);
+    line-height: var(--lh-display-md);
+  }
+
+  h3 {
+    font-size: var(--text-heading-lg);
+    font-weight: var(--font-bold);
+    line-height: var(--lh-heading-lg);
+  }
+
+  h4 {
+    font-size: var(--text-heading-md);
+    font-weight: var(--font-bold);
+    line-height: var(--lh-heading-md);
+  }
+
+  h5 {
+    font-size: var(--text-heading-sm);
+    font-weight: var(--font-semibold);
+    line-height: var(--lh-heading-sm);
+  }
+
+  h6 {
+    font-size: var(--text-body-lg);
+    font-weight: var(--font-semibold);
+    line-height: var(--lh-body);
+  }
+
   /* Accordion chevron rotation */
   .accordion-chevron {
-    transition: transform 0.2s ease-in-out;
-    color: #6b7280; /* Ensure chevron has visible color */
+    transition: transform var(--duration-fast) var(--ease-default);
+    color: var(--color-text-tertiary);
   }
 
   [data-state="open"] .accordion-chevron {
     transform: rotate(180deg);
   }
 
-  /* Ensure accordion trigger is clickable */
   .accordion-trigger:hover .accordion-chevron {
-    color: #374151;
+    color: var(--color-text-secondary);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
