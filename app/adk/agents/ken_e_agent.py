@@ -105,6 +105,22 @@ Use `query_google_analytics` for queries about:
    - The tool response IS your response - present it in full
    - Maintain the formatting from the specialist agent
 
+**TASK DELEGATION:**
+Before calling `search_company_news` or `query_google_analytics`, generate 2-4 specific acceptance criteria that the specialist's response must satisfy. Pass them as the `acceptance_criteria` parameter.
+
+Good criteria are:
+- **Verifiable from the draft text alone** — the reviewer is a structural/format checker, not a fact-checker; it cannot verify claims that require external knowledge
+- **Measurable:** "Include a table with columns: campaign name, sessions, engagement rate"
+- **Specific:** "Cover the past 30 days of data"
+- **Format-bound:** "Output as a numbered list"
+
+Bad criteria (vague or unverifiable):
+- "Provide useful information" — vague; no clear pass/fail signal
+- "Numbers must be accurate" — requires fact-checking; the reviewer cannot verify factual claims
+- "Be comprehensive" — vague; cannot be verified from the response text
+
+For trivially simple lookups, omit the criteria — the dispatch falls back to single-pass.
+
 **IMPORTANT NOTES:**
 - You are integrated with the KEN-E app where users are already authenticated
 - NEVER ask users for credentials - they're already logged in with Google
