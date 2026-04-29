@@ -162,9 +162,18 @@ def invoke_pipeline(
         return response_text, final_state, events
 
     try:
-        # Handle event loop scenarios (following ADK pattern)
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
+        # Check if a loop is already running (e.g. inside an async framework).
+        # asyncio.get_running_loop() raises RuntimeError when no loop is active,
+        # which is the correct Python 3.12+ way to probe loop state — unlike
+        # asyncio.get_event_loop(), which raises RuntimeError after a prior
+        # asyncio.run() call closes the loop.
+        try:
+            asyncio.get_running_loop()
+            running = True
+        except RuntimeError:
+            running = False
+
+        if running:
             executor_cls = weave.ThreadPoolExecutor if HAS_WEAVE else concurrent.futures.ThreadPoolExecutor
             with executor_cls() as executor:
                 future = executor.submit(
@@ -173,10 +182,7 @@ def invoke_pipeline(
                 )
                 return future.result(timeout=300)
         else:
-            # If no event loop is running, create one
-            return loop.run_until_complete(
-                _run_pipeline(agent, query, user_id, session_id, state)
-            )
+            return asyncio.run(_run_pipeline(agent, query, user_id, session_id, state))
     except concurrent.futures.TimeoutError as e:
         logger.error(f"Pipeline invocation timed out after 5 minutes: {e!s}")
         return (

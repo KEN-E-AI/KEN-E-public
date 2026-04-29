@@ -384,10 +384,9 @@ class TestInvokePipelineState:
         mock_runner_cls.return_value = mock_runner
 
         with patch("adk.agents.utils.supervisor_utils.asyncio") as mock_asyncio:
-            mock_loop = MagicMock()
-            mock_asyncio.get_event_loop.return_value = mock_loop
-            mock_loop.is_running.return_value = False
-            mock_loop.run_until_complete.side_effect = concurrent.futures.TimeoutError()
+            # Simulate no running event loop (Python 3.12+ pattern).
+            mock_asyncio.get_running_loop.side_effect = RuntimeError("no running loop")
+            mock_asyncio.run.side_effect = concurrent.futures.TimeoutError()
 
             mock_agent = MagicMock()
             mock_agent.name = "test_pipeline"
@@ -410,10 +409,9 @@ class TestInvokePipelineState:
         mock_runner_cls.return_value = mock_runner
 
         with patch("adk.agents.utils.supervisor_utils.asyncio") as mock_asyncio:
-            mock_loop = MagicMock()
-            mock_asyncio.get_event_loop.return_value = mock_loop
-            mock_loop.is_running.return_value = False
-            mock_loop.run_until_complete.side_effect = RuntimeError("ADK error")
+            # Simulate no running event loop, then a runtime error from asyncio.run().
+            mock_asyncio.get_running_loop.side_effect = RuntimeError("no running loop")
+            mock_asyncio.run.side_effect = RuntimeError("ADK error")
 
             mock_agent = MagicMock()
             mock_agent.name = "test_pipeline"
