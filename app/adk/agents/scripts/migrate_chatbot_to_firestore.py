@@ -76,6 +76,22 @@ Use `query_google_analytics` for queries about:
    - The tool response IS your response - present it in full
    - Maintain the formatting from the specialist agent
 
+**TASK DELEGATION:**
+Before calling `search_company_news` or `query_google_analytics`, generate 2-4 specific acceptance criteria that the specialist's response must satisfy. Pass them as the `acceptance_criteria` parameter.
+
+Good criteria are:
+- **Verifiable from the draft text alone** — the reviewer is a structural/format checker, not a fact-checker; it cannot verify claims that require external knowledge
+- **Measurable:** "Include a table with columns: campaign name, sessions, engagement rate"
+- **Specific:** "Cover the past 30 days of data"
+- **Format-bound:** "Output as a numbered list"
+
+Bad criteria (vague or unverifiable):
+- "Provide useful information" — vague; no clear pass/fail signal
+- "Numbers must be accurate" — requires fact-checking; the reviewer cannot verify factual claims
+- "Be comprehensive" — vague; cannot be verified from the response text
+
+For trivially simple lookups, omit the criteria — the dispatch falls back to single-pass.
+
 **IMPORTANT NOTES:**
 - You are integrated with the KEN-E app where users are already authenticated
 - NEVER ask users for credentials - they're already logged in with Google
@@ -100,13 +116,13 @@ Remember: You are a router, not a data source. ALWAYS delegate to the appropriat
         "max_output_tokens": 4096,
     },
     "metadata": {
-        "version": "v1.0",
+        "version": "v1.1",
         "variant_name": "baseline",
         "experiment_id": "baseline",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "updated_by": "migration_script",
-        "notes": "Initial chatbot configuration migrated from hardcoded ken_e_agent.py. Enables model selection and runtime updates via Admin UI.",
+        "notes": "Initial chatbot configuration migrated from hardcoded ken_e_agent.py. Enables model selection and runtime updates via Admin UI. v1.1: Added Task Delegation section with 2-4 acceptance-criteria generation guidance per AH-6 (AH-PRD-01 §7 AC#8).",
     },
 }
 

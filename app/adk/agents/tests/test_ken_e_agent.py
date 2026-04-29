@@ -1,7 +1,9 @@
 """Test KEN-E agent routing and InstructionProvider."""
 
 import importlib
+import importlib.util
 import inspect
+import pathlib
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -284,3 +286,84 @@ class TestMakeInstructionProvider:
             result = provider(ctx)
             assert "Acme" in result
             assert _BASE_INSTRUCTION in result
+
+
+def _load_migration_script():
+    """Load migrate_chatbot_to_firestore by file path (scripts/ has no __init__.py)."""
+    script_path = (
+        pathlib.Path(__file__).parent.parent / "scripts" / "migrate_chatbot_to_firestore.py"
+    )
+    spec = importlib.util.spec_from_file_location("migrate_chatbot_to_firestore", script_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class TestCriteriaGenerationGuidance:
+    """Structural tests for the Task Delegation section in root-agent instructions.
+
+    AH-PRD-01 §7 AC#8 (criteria-generation portion) and AH-6 acceptance criteria.
+    Live-LLM verification of actual criteria generation is owned by AH-9.
+    """
+
+    def test_base_instruction_has_task_delegation_header(self):
+        """_BASE_INSTRUCTION contains a Task Delegation section header."""
+        assert "TASK DELEGATION" in _BASE_INSTRUCTION.upper()
+
+    def test_base_instruction_names_both_tool_parameters(self):
+        """The Task Delegation section references both tools and the acceptance_criteria parameter."""
+        assert "search_company_news" in _BASE_INSTRUCTION
+        assert "query_google_analytics" in _BASE_INSTRUCTION
+        assert "acceptance_criteria" in _BASE_INSTRUCTION
+
+    def test_base_instruction_verifiable_from_draft_constraint(self):
+        """Good-criteria list leads with the verifiable-from-draft-text-alone constraint (AH-PRD-01 §9)."""
+        assert "verifiable from the draft text alone" in _BASE_INSTRUCTION.lower()
+
+    def test_base_instruction_bad_example_forbids_fact_checking(self):
+        """Bad-criteria list explicitly calls out factual-accuracy as unverifiable by the reviewer."""
+        assert "fact-check" in _BASE_INSTRUCTION.lower() or "cannot verify factual" in _BASE_INSTRUCTION.lower()
+        assert "Numbers must be accurate" in _BASE_INSTRUCTION
+
+    def test_base_instruction_trivially_simple_lookup_escape_hatch(self):
+        """Prose explicitly tells the LLM to omit criteria for trivially simple lookups."""
+        assert "trivially simple lookups" in _BASE_INSTRUCTION.lower()
+
+    def test_task_delegation_section_placement(self):
+        """Task Delegation section appears after ROUTING INSTRUCTIONS and before IMPORTANT NOTES."""
+        routing_idx = _BASE_INSTRUCTION.find("ROUTING INSTRUCTIONS")
+        delegation_idx = _BASE_INSTRUCTION.upper().find("TASK DELEGATION")
+        important_idx = _BASE_INSTRUCTION.find("IMPORTANT NOTES")
+
+        assert routing_idx != -1, "ROUTING INSTRUCTIONS block not found in _BASE_INSTRUCTION"
+        assert delegation_idx != -1, "TASK DELEGATION section not found in _BASE_INSTRUCTION"
+        assert important_idx != -1, "IMPORTANT NOTES block not found in _BASE_INSTRUCTION"
+        assert routing_idx < delegation_idx < important_idx, (
+            "Expected order: ROUTING INSTRUCTIONS < TASK DELEGATION < IMPORTANT NOTES"
+        )
+
+    def test_migration_script_has_same_task_delegation_section(self):
+        """KEN_E_CHATBOT_CONFIG instruction mirrors the Task Delegation section (drift guard)."""
+        migration = _load_migration_script()
+        script_instruction = migration.KEN_E_CHATBOT_CONFIG["instruction"]
+
+        assert "TASK DELEGATION" in script_instruction.upper(), (
+            "Migration script instruction is missing the TASK DELEGATION section"
+        )
+        assert "acceptance_criteria" in script_instruction, (
+            "Migration script instruction is missing the acceptance_criteria parameter reference"
+        )
+        assert "verifiable from the draft text alone" in script_instruction.lower(), (
+            "Migration script instruction is missing the verifiable-from-draft-text-alone constraint"
+        )
+        assert "Numbers must be accurate" in script_instruction, (
+            "Migration script instruction is missing the Numbers-must-be-accurate bad example"
+        )
+        assert "trivially simple lookups" in script_instruction.lower(), (
+            "Migration script instruction is missing the trivially-simple-lookups escape hatch"
+        )
+
+    def test_migration_script_version_bumped(self):
+        """Migration script metadata.version is v1.1 after the criteria-guidance addition."""
+        migration = _load_migration_script()
+        assert migration.KEN_E_CHATBOT_CONFIG["metadata"]["version"] == "v1.1"
