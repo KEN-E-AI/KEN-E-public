@@ -3,7 +3,7 @@
 Not a public API — do not import from outside the migration script.
 """
 
-from _migrate_shape_b.config import MigrateConfig
-from _migrate_shape_b.resources import RESOURCES
+from .config import MigrateConfig
+from .resources import RESOURCES
 
 __all__ = ["RESOURCES", "MigrateConfig"]

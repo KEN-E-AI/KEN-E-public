@@ -28,7 +28,13 @@ from _migrate_shape_b.config import MigrateConfig  # noqa: E402
 # ---------------------------------------------------------------------------
 
 def run_cli(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
-    """Run the CLI in a subprocess and return the result."""
+    """Run the CLI in a subprocess with an explicit environment.
+
+    ``env`` replaces the child's entire environment (no ambient vars inherited).
+    Callers that need the real OS environment should pass ``{**os.environ, ...}``.
+    Tests that verify missing-env-var behaviour must pass a sparse dict (or ``{}``)
+    to strip ``GOOGLE_CLOUD_PROJECT_ID`` from the child's scope.
+    """
     script = str(SCRIPTS_DIR / "migrate_to_shape_b.py")
     return subprocess.run(
         [sys.executable, script, *args],
@@ -100,7 +106,7 @@ class TestMigrateConfig:
 
     def test_frozen_config_is_immutable(self) -> None:
         cfg = MigrateConfig(old_prefix="x_", new_subcollection="x")
-        with pytest.raises((AttributeError, TypeError)):
+        with pytest.raises(AttributeError):  # FrozenInstanceError (subclass of AttributeError)
             cfg.old_prefix = "changed"  # type: ignore[misc]
 
     def test_account_id_extractor_accepted(self) -> None:

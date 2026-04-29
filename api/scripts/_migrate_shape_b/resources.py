@@ -4,7 +4,7 @@ Each downstream project appends one or more entries here via a pull request.
 DM-PRD-00 ships this empty; no data is migrated until the downstream PRDs land.
 """
 
-from _migrate_shape_b.config import MigrateConfig
+from .config import MigrateConfig
 
 RESOURCES: dict[str, MigrateConfig] = {
     # DM-PRD-01 will add: strategy_docs, strategy_audit, strategy_processing_state
