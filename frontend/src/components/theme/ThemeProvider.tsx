@@ -35,7 +35,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const toggle = () => setMode(mode === "dark" ? "light" : "dark");
+  const toggle = () =>
+    setModeState((prev) => {
+      const next = prev === "dark" ? "light" : "dark";
+      try {
+        localStorage.setItem(STORAGE_KEY, next);
+      } catch {
+        // localStorage unavailable in sandboxed environments
+      }
+      return next;
+    });
 
   useEffect(() => {
     try {

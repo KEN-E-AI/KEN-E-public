@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { vi } from "vitest";
+import { vi, afterEach } from "vitest";
 import { BackgroundEffects } from "./BackgroundEffects";
 
 describe("BackgroundEffects", () => {
@@ -10,19 +10,25 @@ describe("BackgroundEffects", () => {
     expect(blobs.length).toBeGreaterThanOrEqual(4);
   });
 
-  it("renders static gradient and no animated blobs when reduced-motion is preferred", () => {
-    vi.mocked(window.matchMedia).mockImplementation((query: string) => ({
-      matches: true,
-      media: query,
-      onchange: null,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn().mockReturnValue(false),
-    }));
+  describe("when prefers-reduced-motion: reduce is set", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
 
-    render(<BackgroundEffects />);
+    it("renders static gradient and no animated blobs", () => {
+      vi.spyOn(window, "matchMedia").mockImplementation((query: string) => ({
+        matches: true,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn().mockReturnValue(false),
+      }));
 
-    expect(screen.getByTestId("bg-static")).toBeInTheDocument();
-    expect(screen.queryByTestId("bg-blobs")).not.toBeInTheDocument();
+      render(<BackgroundEffects />);
+
+      expect(screen.getByTestId("bg-static")).toBeInTheDocument();
+      expect(screen.queryByTestId("bg-blobs")).not.toBeInTheDocument();
+    });
   });
 });

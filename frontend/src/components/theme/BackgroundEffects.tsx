@@ -1,7 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useId } from "react";
 
 export function BackgroundEffects() {
   const [reducedMotion, setReducedMotion] = useState(false);
+  const uid = useId();
+  const filterId = `grain-${uid.replace(/:/g, "")}`;
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -14,12 +16,10 @@ export function BackgroundEffects() {
   if (reducedMotion) {
     return (
       <div
+        aria-hidden="true"
         data-testid="bg-static"
+        className="fixed inset-0 pointer-events-none z-background"
         style={{
-          position: "fixed",
-          inset: 0,
-          pointerEvents: "none",
-          zIndex: "var(--z-background)" as string,
           background:
             "linear-gradient(135deg, var(--color-blob-blue), var(--color-blob-violet), var(--color-blob-teal), var(--color-blob-slate))",
         }}
@@ -30,9 +30,9 @@ export function BackgroundEffects() {
   return (
     <>
       <div
+        aria-hidden="true"
         data-testid="bg-blobs"
-        className="fixed inset-0 pointer-events-none overflow-hidden"
-        style={{ zIndex: "var(--z-background)" as string }}
+        className="fixed inset-0 pointer-events-none overflow-hidden z-background"
       >
         <div
           className="absolute rounded-full blur-[80px] animate-blob-drift"
@@ -80,14 +80,11 @@ export function BackgroundEffects() {
       </div>
 
       <div
-        className="fixed inset-0 pointer-events-none"
-        style={{
-          zIndex: "var(--z-background)" as string,
-          opacity: "var(--grain-opacity)" as string,
-        }}
+        aria-hidden="true"
+        className="fixed inset-0 pointer-events-none z-background [opacity:var(--grain-opacity)]"
       >
         <svg className="w-full h-full">
-          <filter id="grain">
+          <filter id={filterId}>
             <feTurbulence
               type="fractalNoise"
               baseFrequency="0.8"
@@ -96,31 +93,9 @@ export function BackgroundEffects() {
             />
             <feColorMatrix type="saturate" values="0" />
           </filter>
-          <rect width="100%" height="100%" filter="url(#grain)" />
+          <rect width="100%" height="100%" filter={`url(#${filterId})`} />
         </svg>
       </div>
-
-      <style>{`
-        @keyframes blobDrift {
-          0%, 100% { transform: translate(0, 0); }
-          33% { transform: translate(15px, -10px); }
-          66% { transform: translate(-10px, 15px); }
-        }
-
-        @keyframes blobDriftDelayed {
-          0%, 100% { transform: translate(0, 0); }
-          33% { transform: translate(-15px, 10px); }
-          66% { transform: translate(10px, -15px); }
-        }
-
-        .animate-blob-drift {
-          animation: blobDrift 20s ease-in-out infinite;
-        }
-
-        .animate-blob-drift-delayed {
-          animation: blobDriftDelayed 25s ease-in-out infinite;
-        }
-      `}</style>
     </>
   );
 }

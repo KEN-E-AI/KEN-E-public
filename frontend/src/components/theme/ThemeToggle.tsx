@@ -6,6 +6,7 @@ export function ThemeToggle() {
 
   return (
     <button
+      type="button"
       aria-label="Toggle theme"
       onClick={toggle}
       className="size-9 rounded-[var(--radius-md)] border-2 border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] flex items-center justify-center rotate-[8deg] transition-all hover:rotate-0 hover:scale-110"

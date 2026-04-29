@@ -4,12 +4,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { ThemeProvider } from "./ThemeProvider";
 import { ThemeToggle } from "./ThemeToggle";
 
-beforeEach(() => {
-  localStorage.clear();
-  document.documentElement.classList.remove("dark");
-});
-
 describe("ThemeToggle", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    document.documentElement.classList.remove("dark");
+  });
+
   it("renders with correct aria-label", () => {
     render(
       <ThemeProvider>
