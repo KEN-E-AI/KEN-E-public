@@ -18,6 +18,11 @@ from google.adk.tools import exit_loop
 _MAX_ITERATIONS_LIMIT = 10
 _VALID_PREFIX_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
+# Field-propagation policy is pinned against google-adk 1.27.5; see
+# TestModelFieldsSnapshot in test_review_pipeline.py — that test fails on ADK
+# upgrades and forces re-categorization of any new LlmAgent fields into one of
+# the four buckets below.
+#
 # Structural fields owned by ADK's agent graph; must not be copied to a worker.
 _EXCLUDED_WORKER_FIELDS = {"parent_agent", "sub_agents"}
 # Fields the factory sets explicitly on the worker; copy from specialist would

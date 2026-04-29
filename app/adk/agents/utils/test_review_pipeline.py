@@ -445,6 +445,86 @@ class TestWorkerFieldPropagation:
         worker, _ = pipeline.sub_agents
         assert worker.model == "gemini-2.0-pro"
 
+    def test_include_contents_propagated(self):
+        """Specialist's `include_contents` propagates to the worker.
+
+        A specialist authored with include_contents='none' produces a worker
+        that doesn't see conversation history — including the user's turn and
+        prior drafts carried via default conversation history. Locking down
+        propagation here makes that constraint explicit; if a future change
+        overrides include_contents on the worker, this test will fail and
+        force a documented decision.
+        """
+        specialist = LlmAgent(
+            name="ic_specialist",
+            model="gemini-2.0-flash",
+            instruction="You are helpful.",
+            include_contents="none",
+        )
+        pipeline = build_review_pipeline(specialist, "Crit.", output_key_prefix="p")
+        worker, _ = pipeline.sub_agents
+        assert worker.include_contents == "none"
+
+
+# ── ADK field-set snapshot ────────────────────────────────────────────────────
+
+
+class TestModelFieldsSnapshot:
+    """Locks down LlmAgent.model_fields against ADK upgrades.
+
+    When ADK adds, removes, or renames a field on LlmAgent, this test fails
+    and forces the developer to categorize the new field into one of the four
+    buckets defined in review_pipeline.py:
+      - _EXCLUDED_WORKER_FIELDS   (ADK-managed structural)
+      - _OVERRIDDEN_WORKER_FIELDS (factory sets explicitly)
+      - _DROPPED_WORKER_FIELDS    (would break worker if propagated)
+      - leave to auto-propagate   (behavior-preserving default)
+    Then update _EXPECTED_LLM_AGENT_FIELDS below and bump the ADK version
+    pin in review_pipeline.py.
+    """
+
+    # Pinned for google-adk 1.27.5.
+    _EXPECTED_LLM_AGENT_FIELDS = frozenset(
+        {
+            "after_agent_callback",
+            "after_model_callback",
+            "after_tool_callback",
+            "before_agent_callback",
+            "before_model_callback",
+            "before_tool_callback",
+            "code_executor",
+            "description",
+            "disallow_transfer_to_parent",
+            "disallow_transfer_to_peers",
+            "generate_content_config",
+            "global_instruction",
+            "include_contents",
+            "input_schema",
+            "instruction",
+            "model",
+            "name",
+            "on_model_error_callback",
+            "on_tool_error_callback",
+            "output_key",
+            "output_schema",
+            "parent_agent",
+            "planner",
+            "static_instruction",
+            "sub_agents",
+            "tools",
+        }
+    )
+
+    def test_llm_agent_model_fields_match_snapshot(self):
+        actual = frozenset(LlmAgent.model_fields.keys())
+        added = actual - self._EXPECTED_LLM_AGENT_FIELDS
+        removed = self._EXPECTED_LLM_AGENT_FIELDS - actual
+        assert actual == self._EXPECTED_LLM_AGENT_FIELDS, (
+            "LlmAgent.model_fields changed since pin. "
+            f"Added: {sorted(added)}. Removed: {sorted(removed)}. "
+            "See TestModelFieldsSnapshot docstring for the decision matrix."
+        )
+
 
 # ── Validation: max_iterations ───────────────────────────────────────────────
 
