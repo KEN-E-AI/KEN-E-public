@@ -24,17 +24,17 @@ from .review_pipeline import (
     build_review_pipeline,
     extract_iterations,
     extract_pipeline_result,
+    get_reviewer_name,
+    get_worker_name,
 )
 from .review_pipeline_tracing import emit_iteration_span, set_pipeline_attrs
-from .supervisor_utils import invoke_pipeline_with_events
+from .supervisor_utils import invoke_pipeline
 
 logger = logging.getLogger(__name__)
 
 # Allow only printable ASCII minus control characters (no angle brackets, backtick,
 # or curly braces that could be misread as template variables or HTML by the LLM).
 _UNSAFE_CRITERIA_RE = re.compile(r"[^\w\s.,;:()\-'\"!?%@&=+/#*]")
-_MAX_CRITERIA_LINES = 10
-_MAX_CRITERIA_LINE_LEN = 200
 
 
 def _sanitise_criteria(raw: str) -> str:
@@ -43,11 +43,9 @@ def _sanitise_criteria(raw: str) -> str:
     Applied to acceptance_criteria before it is interpolated into LLM system
     prompts by build_review_pipeline(), so that a manipulated root-agent
     response cannot redirect sub-agent behaviour via structural injection.
+    The 2000-char hard cap upstream bounds the total length.
     """
-    sanitised = _UNSAFE_CRITERIA_RE.sub("", raw)
-    lines = [ln.strip() for ln in sanitised.splitlines() if ln.strip()]
-    lines = [ln[:_MAX_CRITERIA_LINE_LEN] for ln in lines[:_MAX_CRITERIA_LINES]]
-    return "\n".join(lines)
+    return _UNSAFE_CRITERIA_RE.sub("", raw)
 
 
 @safe_weave_op(name="dispatch_to_company_news")
@@ -116,11 +114,11 @@ def dispatch_to_company_news(
                 acceptance_criteria=criteria,
                 output_key_prefix="news_review",
             )
-            _text, final_state, events = invoke_pipeline_with_events(pipeline, query)
+            _text, final_state, events = invoke_pipeline(pipeline, query)
             _check_hallucinated_approval(events, "news_review")
             outcome = extract_pipeline_result(final_state, "news_review")
-            worker_name = pipeline.sub_agents[0].name
-            reviewer_name = pipeline.sub_agents[1].name
+            worker_name = get_worker_name(news_agent)
+            reviewer_name = get_reviewer_name("news_review")
             iterations = extract_iterations(events, worker_name, reviewer_name, "news_review")
             for it in iterations:
                 emit_iteration_span(it.iteration, it.specialist_output, it.reviewer_output)
@@ -174,7 +172,7 @@ def dispatch_to_google_analytics(
             response must satisfy. None or empty string → single-pass dispatch
             (no review loop). Non-empty → builds a review pipeline via
             build_review_pipeline() and returns the §5.2-idiom outcome.
-            GA credentials initial_state is forwarded to invoke_pipeline_with_events() so
+            GA credentials initial_state is forwarded to invoke_pipeline() so
             the specialist's McpToolset header_provider can read them.
     """
     from shared.context_utils import (
@@ -244,13 +242,13 @@ def dispatch_to_google_analytics(
                 acceptance_criteria=criteria,
                 output_key_prefix="ga_review",
             )
-            _text, final_state, events = invoke_pipeline_with_events(
+            _text, final_state, events = invoke_pipeline(
                 pipeline, query, state=initial_state
             )
             _check_hallucinated_approval(events, "ga_review")
             outcome = extract_pipeline_result(final_state, "ga_review")
-            worker_name = pipeline.sub_agents[0].name
-            reviewer_name = pipeline.sub_agents[1].name
+            worker_name = get_worker_name(google_analytics_agent_v4)
+            reviewer_name = get_reviewer_name("ga_review")
             iterations = extract_iterations(events, worker_name, reviewer_name, "ga_review")
             for it in iterations:
                 emit_iteration_span(it.iteration, it.specialist_output, it.reviewer_output)

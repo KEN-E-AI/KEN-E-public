@@ -1468,14 +1468,59 @@ class TestHallucinatedApprovalDetection:
 
         mock_span.assert_called_once()
 
-    def test_exit_loop_as_literal_text_triggers_detection(self):
-        """'exit_loop' written as text (not a tool call) triggers detection."""
-        event = _make_reviewer_event("p", "I would call exit_loop but the draft is great.")
+    def test_calling_exit_loop_triggers_detection(self):
+        """'calling exit_loop' (declarative) triggers detection."""
+        event = _make_reviewer_event("p", "All good. Calling exit_loop now.")
 
         with patch.object(_rp, "_emit_hallucination_span") as mock_span:
             _check_hallucinated_approval([event], "p")
 
         mock_span.assert_called_once()
+
+    def test_exit_loop_call_syntax_triggers_detection(self):
+        """exit_loop() written as a call triggers detection."""
+        event = _make_reviewer_event("p", "Result: exit_loop().")
+
+        with patch.object(_rp, "_emit_hallucination_span") as mock_span:
+            _check_hallucinated_approval([event], "p")
+
+        mock_span.assert_called_once()
+
+    def test_conditional_exit_loop_mention_does_not_trigger(self):
+        """Reasoning about exit_loop ('would call', not declared) is not a hallucination."""
+        event = _make_reviewer_event("p", "I would call exit_loop but the draft needs work.")
+
+        with patch.object(_rp, "_emit_hallucination_span") as mock_span:
+            _check_hallucinated_approval([event], "p")
+
+        mock_span.assert_not_called()
+
+    def test_not_approved_does_not_trigger(self):
+        """'not approved' (negation) is not flagged as a hallucination."""
+        event = _make_reviewer_event("p", "The criteria are not approved.")
+
+        with patch.object(_rp, "_emit_hallucination_span") as mock_span:
+            _check_hallucinated_approval([event], "p")
+
+        mock_span.assert_not_called()
+
+    def test_cannot_approve_does_not_trigger(self):
+        """'cannot approved' (negation) is not flagged as a hallucination."""
+        event = _make_reviewer_event("p", "Cannot approved until section 2 is fixed.")
+
+        with patch.object(_rp, "_emit_hallucination_span") as mock_span:
+            _check_hallucinated_approval([event], "p")
+
+        mock_span.assert_not_called()
+
+    def test_negated_all_criteria_does_not_trigger(self):
+        """'not all criteria are met' (negation) is not flagged as a hallucination."""
+        event = _make_reviewer_event("p", "Not all criteria are met yet.")
+
+        with patch.object(_rp, "_emit_hallucination_span") as mock_span:
+            _check_hallucinated_approval([event], "p")
+
+        mock_span.assert_not_called()
 
     def test_real_approval_with_escalate_not_flagged(self):
         """escalate=True means exit_loop was actually invoked — not a hallucination."""

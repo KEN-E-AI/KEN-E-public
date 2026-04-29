@@ -140,7 +140,7 @@ def set_pipeline_attrs(
     Args:
         criteria: The acceptance_criteria string passed to the dispatch handler.
         final_state: The final session state dict returned by
-            ``invoke_pipeline_with_events()``.
+            ``invoke_pipeline()``.
         prefix: The ``output_key_prefix`` used for the review pipeline.
         total_iterations: Total number of complete review iterations
             (specialist-final + reviewer-final pairs).

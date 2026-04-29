@@ -217,37 +217,6 @@ def _invoke_pipeline_collecting_events(
         return (f"Error: Failed to complete the request - {e!s}", {}, [])
 
 
-
-def invoke_pipeline_with_events(
-    agent: Agent,
-    query: str,
-    user_id: str | None = None,
-    session_id: str | None = None,
-    state: dict[str, Any] | None = None,
-) -> tuple[str, dict[str, Any], list[Event]]:
-    """Synchronous wrapper for pipeline invocation that returns the response text,
-    final session state, and the ordered list of ADK Event objects.
-
-    Use this when you need access to the raw event stream — e.g., to synthesize
-    per-iteration sub-spans for a LoopAgent run by pairing specialist-final and
-    reviewer-final events.
-
-    Args:
-        agent: The ADK Agent (or LoopAgent / SequentialAgent / etc.) to invoke.
-        query: The user message to send.
-        user_id: Optional user identifier. Defaults to a random UUID-based value.
-        session_id: Optional session identifier. Defaults to a random UUID-based value.
-        state: Optional initial session state dict. Passed to session creation.
-
-    Returns:
-        tuple[str, dict[str, Any], list[Event]]: (response_text, final_session_state, events)
-        On timeout or error: (error_sentinel_text, {}, [])
-    """
-    return _invoke_pipeline_collecting_events(
-        agent, query, user_id, session_id, state
-    )
-
-
 def invoke_agent_sync(
     agent: Agent,
     query: str,

@@ -21,7 +21,16 @@ from app.utils.weave_observability import safe_weave_op
 
 logger = logging.getLogger(__name__)
 
-_APPROVAL_PATTERN = re.compile(r"approved|all criteria|exit_loop", re.IGNORECASE)
+# Hallucinated-approval patterns. Tightened to filter common negation/conditional
+# false positives ("not approved", "cannot approve", "would call exit_loop").
+# Observability-only: false positives waste log volume but don't change loop behavior.
+_APPROVAL_PATTERN = re.compile(
+    r"(?<!not\s)(?<!cannot\s)\bapproved\b"
+    r"|(?<!not\s)\ball criteria(?:\s+are)?\s+met\b"
+    r"|\bcalling\s+exit_loop\b"
+    r"|\bexit_loop\s*\(",
+    re.IGNORECASE,
+)
 
 
 @safe_weave_op(name="review_loop.hallucinated_approval")
@@ -287,6 +296,16 @@ def extract_pipeline_result(
     if feedback == "":
         return {"result": draft, "approved": True}
     return {"result": draft, "approved": False, "warning": feedback}
+
+
+def get_worker_name(specialist: LlmAgent) -> str:
+    """The name `build_review_pipeline()` assigns to the worker child."""
+    return f"{specialist.name}_worker"
+
+
+def get_reviewer_name(output_key_prefix: str) -> str:
+    """The name `build_review_pipeline()` assigns to the reviewer child."""
+    return f"{output_key_prefix}_reviewer"
 
 
 def _event_text(event: Any) -> str:
