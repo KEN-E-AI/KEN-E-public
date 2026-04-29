@@ -126,7 +126,7 @@ export function Sidebar() {
                       collapsed && "justify-center px-2",
                       isActive
                         ? "bg-[var(--color-violet-500)] text-[var(--color-text-inverse)] shadow-[var(--shadow-color-violet)]"
-                        : "text-[var(--color-text-tertiary)] hover:bg-accent hover:text-[var(--color-violet-500)]",
+                        : "text-[var(--color-text-secondary)] hover:bg-accent hover:text-[var(--color-violet-500)]",
                     )}
                   >
                     <item.icon className="size-5 shrink-0" aria-hidden="true" />
@@ -149,7 +149,7 @@ export function Sidebar() {
       {showAdminSection && (
         <div className="border-t border-[var(--color-border-default)] p-2">
           {!collapsed && (
-            <p className="px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
+            <p className="px-3 py-1 text-xs font-semibold uppercase tracking-wider text-[var(--color-text-secondary)]">
               Admin
             </p>
           )}
@@ -167,7 +167,7 @@ export function Sidebar() {
                         collapsed && "justify-center px-2",
                         isActive
                           ? "bg-[var(--color-violet-500)] text-[var(--color-text-inverse)] shadow-[var(--shadow-color-violet)]"
-                          : "text-[var(--color-text-tertiary)] hover:bg-accent hover:text-[var(--color-violet-500)]",
+                          : "text-[var(--color-text-secondary)] hover:bg-accent hover:text-[var(--color-violet-500)]",
                       )}
                     >
                       <AdminIcon
