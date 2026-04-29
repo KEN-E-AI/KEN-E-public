@@ -189,7 +189,7 @@ export default {
         },
         efficiency: {
           DEFAULT: "var(--color-legacy-efficiency)",
-          foreground: "var(--color-text-inverse)",
+          foreground: "var(--color-legacy-efficiency-fg)",
         },
         dashboard: {
           gray: {
@@ -267,9 +267,9 @@ export default {
         "gradient-cta": "var(--gradient-cta)",
         "gradient-subtle": "var(--gradient-subtle)",
       },
-      // `default` key maps --ease-default as the `ease-default` utility.
-      // It also wires up the timing function used by Tailwind's .transition shorthand;
-      // --ease-default resolves to cubic-bezier(0.4,0,0.2,1) — same as Tailwind's stock default.
+      // `default` key maps --ease-default as the `ease-default` utility class.
+      // Tailwind's .transition shorthand uses the uppercase DEFAULT key (deep-merged from
+      // Tailwind's own config via `extend`) — the lowercase `default` key here has no effect on it.
       transitionTimingFunction: {
         default: "var(--ease-default)",
         bounce: "var(--ease-bounce)",
