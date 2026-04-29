@@ -8,6 +8,7 @@ from .supervisor_utils import (
     extract_tenant_context,
     invoke_agent_sync,
     invoke_pipeline,
+    invoke_pipeline_with_events,
 )
 
 __all__ = [
@@ -17,4 +18,5 @@ __all__ = [
     "extract_tenant_context",
     "invoke_agent_sync",
     "invoke_pipeline",
+    "invoke_pipeline_with_events",
 ]
