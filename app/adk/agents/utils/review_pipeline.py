@@ -5,8 +5,8 @@ specialist worker and a gemini-2.0-flash reviewer as direct children. The review
 calls exit_loop to approve, or writes feedback to session state for the next iteration.
 
 Architecture note: specialist and reviewer must be *direct* children of LoopAgent.
-An intermediate SequentialAgent wrapper prevents the LoopAgent from correctly
-observing the exit_loop termination signal.
+An intermediate SequentialAgent wrapper does not propagate the reviewer's `escalate`
+action up to the LoopAgent, so the loop never terminates on approval.
 """
 
 import re
@@ -23,6 +23,11 @@ _EXCLUDED_WORKER_FIELDS = {"parent_agent", "sub_agents"}
 # Fields the factory sets explicitly on the worker; copy from specialist would
 # clobber the factory's intended values.
 _OVERRIDDEN_WORKER_FIELDS = {"name", "instruction", "tools", "output_key"}
+# Fields that must NOT be propagated to the worker: output_schema enables
+# structured-output mode in ADK and disables tool use. A worker with
+# output_schema would lose its MCP/function tools and could not write a
+# free-form text draft for the reviewer's {prefix}_draft template.
+_DROPPED_WORKER_FIELDS = {"output_schema"}
 
 _SENTINEL_TOKENS = ("<<<CRITERIA_START>>>", "<<<CRITERIA_END>>>")
 
@@ -145,9 +150,17 @@ def build_review_pipeline(
     # affecting fields (callbacks, generate_content_config, planner, etc.) are
     # preserved. Exclude ADK-managed structural fields and fields this factory
     # overrides explicitly below.
+    # Note: before_agent_callback and after_agent_callback are propagated
+    # intentionally. Inside a LoopAgent they fire once per iteration (up to
+    # max_iterations times per user turn). Specialist authors must design
+    # these callbacks to be idempotent.
     worker_kwargs: dict[str, Any] = {}
     for field in LlmAgent.model_fields:
-        if field in _EXCLUDED_WORKER_FIELDS or field in _OVERRIDDEN_WORKER_FIELDS:
+        if (
+            field in _EXCLUDED_WORKER_FIELDS
+            or field in _OVERRIDDEN_WORKER_FIELDS
+            or field in _DROPPED_WORKER_FIELDS
+        ):
             continue
         worker_kwargs[field] = getattr(specialist, field)
 
