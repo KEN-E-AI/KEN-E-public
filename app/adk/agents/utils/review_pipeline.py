@@ -241,5 +241,4 @@ def extract_pipeline_result(
     feedback = session_state.get(f"{output_key_prefix}_feedback", "")
     if feedback == "":
         return {"result": draft, "approved": True}
-    else:
-        return {"result": draft, "approved": False, "warning": feedback}
+    return {"result": draft, "approved": False, "warning": feedback}
