@@ -152,6 +152,104 @@ def invoke_agent_sync(
         return f"Error: Failed to complete the request - {e!s}"
 
 
+def invoke_pipeline(
+    agent: Agent,
+    query: str,
+    user_id: str | None = None,
+    session_id: str | None = None,
+    state: dict[str, Any] | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """Synchronous wrapper for pipeline invocation that returns both the response text
+    and the final session state.
+
+    Use this instead of invoke_agent_sync() when you need to inspect post-run session
+    state (e.g., to call extract_pipeline_result() on the result of a review pipeline).
+    invoke_agent_sync() is preserved for callers that only need the response text.
+
+    Args:
+        agent: The ADK Agent (or LoopAgent / SequentialAgent / etc.) to invoke.
+        query: The user message to send.
+        user_id: Optional user identifier. Defaults to a random UUID-based value.
+        session_id: Optional session identifier. Defaults to a random UUID-based value.
+        state: Optional initial session state dict. Passed to session creation.
+
+    Returns:
+        tuple[str, dict[str, Any]]: (response_text, final_session_state)
+        On timeout or error: (error_sentinel_text, {})
+    """
+    if user_id is None:
+        user_id = f"user_{uuid.uuid4().hex[:8]}"
+    if session_id is None:
+        session_id = f"session_{uuid.uuid4().hex[:8]}"
+
+    async def _run_pipeline(
+        agent: Agent,
+        query: str,
+        user_id: str,
+        session_id: str,
+        state: dict[str, Any] | None,
+    ) -> tuple[str, dict[str, Any]]:
+        session_service = InMemorySessionService()
+        artifact_service = InMemoryArtifactService()
+
+        runner = Runner(
+            agent=agent,
+            app_name=agent.name,
+            session_service=session_service,
+            artifact_service=artifact_service,
+        )
+
+        await session_service.create_session(
+            app_name=agent.name, user_id=user_id, session_id=session_id, state=state
+        )
+
+        user_message = Content(role="user", parts=[Part.from_text(text=query)])
+
+        response_text = ""
+        async for event in runner.run_async(
+            user_id=user_id, session_id=session_id, new_message=user_message
+        ):
+            # Follow ADK's official pattern
+            if event.content and event.content.parts:
+                if text := "".join(part.text or "" for part in event.content.parts):
+                    # Accumulate all text responses
+                    response_text += text
+
+        session = await session_service.get_session(
+            app_name=agent.name, user_id=user_id, session_id=session_id
+        )
+        final_state: dict[str, Any] = (
+            dict(session.state) if session and session.state else {}
+        )
+        return response_text, final_state
+
+    try:
+        # Handle event loop scenarios (following ADK pattern)
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            executor_cls = weave.ThreadPoolExecutor if HAS_WEAVE else concurrent.futures.ThreadPoolExecutor
+            with executor_cls() as executor:
+                future = executor.submit(
+                    asyncio.run,
+                    _run_pipeline(agent, query, user_id, session_id, state),
+                )
+                return future.result(timeout=300)
+        else:
+            # If no event loop is running, create one
+            return loop.run_until_complete(
+                _run_pipeline(agent, query, user_id, session_id, state)
+            )
+    except concurrent.futures.TimeoutError as e:
+        logger.error(f"Pipeline invocation timed out after 5 minutes: {e!s}")
+        return (
+            "Error: Request timed out after 5 minutes. Please try again with simpler requirements.",
+            {},
+        )
+    except Exception as e:
+        logger.error(f"Error in sync pipeline invocation: {e!s}")
+        return (f"Error: Failed to complete the request - {e!s}", {})
+
+
 def dispatch_with_context(dispatch_func: Callable) -> Callable[[str], str]:
     """Wrapper to extract tenant context from session state or fallback to message parsing.
 

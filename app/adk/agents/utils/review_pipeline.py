@@ -209,3 +209,37 @@ def build_review_pipeline(
         sub_agents=[specialist_worker, reviewer],
         max_iterations=max_iterations,
     )
+
+
+def extract_pipeline_result(
+    session_state: dict[str, Any], output_key_prefix: str
+) -> dict[str, Any]:
+    """Extract the pipeline's terminal result via the §5.2 approval-vs-exhaustion idiom.
+
+    The §5.2 idiom: when exit_loop fires, the reviewer writes no text, so its
+    output_key (f"{output_key_prefix}_feedback") is overwritten to "". A non-empty
+    feedback value means max_iterations was reached and the last reviewer rejection
+    is retained.
+
+    Both keys are read with defensive .get(..., "") so a missing key (e.g., a test
+    stub passing {}) does not raise KeyError. An empty session state therefore
+    returns {result: "", approved: True} — the dispatch handler is responsible for
+    validating that the result is non-empty when criteria required output.
+
+    Args:
+        session_state: A dict-like mapping of session state keys to values.
+            Typically tool_context.state or the dict returned by invoke_pipeline().
+        output_key_prefix: The prefix used when building the review pipeline
+            (e.g., "news_review" or "ga_review"). Must match the prefix passed to
+            build_review_pipeline().
+
+    Returns:
+        {"result": draft, "approved": True} when feedback == "" (approved).
+        {"result": draft, "approved": False, "warning": feedback} when feedback != "" (exhausted).
+    """
+    draft = session_state.get(f"{output_key_prefix}_draft", "")
+    feedback = session_state.get(f"{output_key_prefix}_feedback", "")
+    if feedback == "":
+        return {"result": draft, "approved": True}
+    else:
+        return {"result": draft, "approved": False, "warning": feedback}

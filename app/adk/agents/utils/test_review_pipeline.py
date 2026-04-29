@@ -13,7 +13,7 @@ from google.adk.sessions import InMemorySessionService
 from google.adk.tools import exit_loop
 from google.genai import types as genai_types
 
-from .review_pipeline import build_review_pipeline
+from .review_pipeline import build_review_pipeline, extract_pipeline_result
 
 # ── Fake LLM for behavioral tests ────────────────────────────────────────────
 
@@ -845,3 +845,42 @@ class TestBehavioralLoop:
 
         assert state["ex_draft"] == "only draft"
         assert state.get("ex_feedback", "sentinel") != ""  # last rejection retained
+
+
+# ── §5.2 detection idiom ─────────────────────────────────────────────────────
+
+
+class TestExtractPipelineResult:
+    """Unit tests for the §5.2 approval-vs-exhaustion detection idiom."""
+
+    def test_approved_branch(self):
+        """Empty feedback → approved."""
+        state = {"ga_review_draft": "The traffic increased 12%.", "ga_review_feedback": ""}
+        result = extract_pipeline_result(state, "ga_review")
+        assert result == {"result": "The traffic increased 12%.", "approved": True}
+        assert "warning" not in result
+
+    def test_exhausted_branch(self):
+        """Non-empty feedback → exhausted, warning included."""
+        state = {
+            "ga_review_draft": "Some draft.",
+            "ga_review_feedback": "missing: include a table with campaign names",
+        }
+        result = extract_pipeline_result(state, "ga_review")
+        assert result == {
+            "result": "Some draft.",
+            "approved": False,
+            "warning": "missing: include a table with campaign names",
+        }
+
+    def test_empty_state_returns_approved_empty_draft(self):
+        """Defensive .get(..., '') — missing keys should not raise."""
+        result = extract_pipeline_result({}, "any_prefix")
+        assert result == {"result": "", "approved": True}
+        assert "warning" not in result
+
+    def test_only_draft_present(self):
+        """Only draft key present (no feedback key) → approved."""
+        state = {"p_draft": "ok content"}
+        result = extract_pipeline_result(state, "p")
+        assert result == {"result": "ok content", "approved": True}
