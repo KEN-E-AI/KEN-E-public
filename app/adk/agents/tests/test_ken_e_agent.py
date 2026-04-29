@@ -1,6 +1,7 @@
 """Test KEN-E agent routing and InstructionProvider."""
 
 import importlib
+import inspect
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -42,8 +43,6 @@ def test_tool_wrappers_accept_acceptance_criteria():
     root-agent tool surface so the LLM can populate it (AH-6 will instruct it
     to do so; this issue opens the surface).
     """
-    import inspect
-
     agent = create_ken_e_agent()
     tools_by_name = {tool.__name__: tool for tool in agent.tools}
 

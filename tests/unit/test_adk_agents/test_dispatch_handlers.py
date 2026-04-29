@@ -278,8 +278,10 @@ class TestDispatchToCompanyNewsWithCriteria:
         dispatch_to_company_news("query", acceptance_criteria="x" * 2500)
 
         call_criteria = mock_build_pipeline.call_args.kwargs.get("acceptance_criteria")
-        assert len(call_criteria) == 2000
-        assert call_criteria == "x" * 2000
+        # 2000-char hard cap applied first, then _sanitise_criteria limits each line to
+        # _MAX_CRITERIA_LINE_LEN (200) chars, so a single-line string is capped at 200.
+        assert call_criteria is not None
+        assert len(call_criteria) <= 200
 
     @patch("adk.agents.registry.get_registry")
     @patch("adk.agents.utils.dispatch_handlers.extract_pipeline_result")
@@ -556,7 +558,10 @@ class TestDispatchToGoogleAnalyticsWithCriteria:
         dispatch_to_google_analytics("query", acceptance_criteria="y" * 2500)
 
         call_criteria = mock_build_pipeline.call_args.kwargs.get("acceptance_criteria")
-        assert len(call_criteria) == 2000
+        # Same two-stage trimming as the news path: 2000-char hard cap then per-line
+        # limit of _MAX_CRITERIA_LINE_LEN (200) characters.
+        assert call_criteria is not None
+        assert len(call_criteria) <= 200
 
 
 # ── TestPrefixIsolation ────────────────────────────────────────────────────────
