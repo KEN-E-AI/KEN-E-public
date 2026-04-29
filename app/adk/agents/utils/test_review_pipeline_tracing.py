@@ -27,7 +27,6 @@ from .review_pipeline_tracing import (
     set_pipeline_attrs,
 )
 
-
 # ── _truncate_output boundary tests ──────────────────────────────────────────
 
 
