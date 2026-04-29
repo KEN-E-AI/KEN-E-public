@@ -366,6 +366,8 @@ This is the only human checkpoint within the development workflow itself.
    - Test Instructions focus on **visual/browser verification only** — not code internals
 8. Status set to **"Ready for Testing"**
 
+**Terminal-state rule.** Flow 2 always ends with the issue in `Ready for Testing`. The `In Review` status (set in step 6) is transient — it exists only during the self-review/lint/test loop and must be replaced by `Ready for Testing` once Test Instructions are posted. If the Dev Team session ever exits with the issue still in `In Review`, the Test Team webhook never fires and the issue stalls silently — Linear returns `success: true` for any valid state mutation, so the wrong terminal state is invisible to the agent's own exit handler. The Dev Team SKILL has a mandatory pre-exit verification step (re-query the issue, retry the mutation once, escalate to the PO with the `escalation` and `po-action` labels if still wrong), and the SCRUM Master runs a stalled-`In Review` watchdog every 15 minutes as defense in depth (see §11 *Stalled In Review*).
+
 ### Flow 3: Resolving Test Issues
 
 **Trigger:** Test Team reports failures. Status set to "Resolving Test Issues."
@@ -777,6 +779,20 @@ If a Dev Team agent appears unresponsive (issue stuck in "Planning" for more tha
 3. Attempts re-delegation to the Dev Team agent (creates a new GCE VM session)
 4. If re-delegation also stalls: posts an escalation comment @mentioning the issue's PO and backup PO (deduped to one @mention if they resolve to the same user)
 
+### Stalled In Review (Dev Team Flow 2 silent failure)
+
+If an issue sits in `In Review` status for more than 30 minutes with no recent activity, a Cloud Scheduler-driven watchdog (every 15 minutes) detects it and dispatches the SCRUM Master in **Stalled-Issue Triage** mode. The watchdog exists because the most common Flow 2 failure mode is the Dev Team agent setting `In Review` instead of `Ready for Testing` as its terminal state — Linear returns `success: true` for the mutation, so the failure is invisible to the agent's own exit handler and the issue stalls silently (`In Review` is not in the webhook routing table).
+
+The webhook receiver pre-filters cheaply (status + `updatedAt`) and only dispatches a SCRUM Master VM (per affected team) when at least one issue is genuinely stalled. Most ticks find nothing.
+
+The SCRUM Master classifies each candidate into one of three buckets:
+
+- **Bucket A — Likely Dev Team Flow 2 terminal-state failure.** Test Instructions are present on the issue and a PR is attached. The SCRUM Master applies `escalation` + `po-action`, @mentions the PO with a diagnostic comment, and recommends the PO verify the PR and promote the issue to `Ready for Testing` themselves. **No auto-promotion** — the PO confirms PR health before flipping state.
+- **Bucket B — Mid-Flow-2 stall.** The issue is in `In Review` but no Test Instructions exist. The Dev Team session likely died during the review-and-verify loop. The SCRUM Master applies `escalation` + `po-action` and asks the PO to inspect Cloud Logging for the most recent Dev Team VM and either re-trigger the Dev Team or move the issue back to `In Progress`.
+- **Bucket C — Active rework (false positive).** The most recent unresolved comment is from the PO (rejection feedback) or the Test Team (Test Failure Report) and the issue is iterating normally. **The SCRUM Master skips silently** — no labels, no comment. Repeated benign comments on an actively-iterating issue add noise.
+
+After processing every candidate, the SCRUM Master posts a single Flow 3 summary on the team's most recent active Cycle showing per-issue bucket assignments and actions taken.
+
 ### Incomplete Issues at Sprint Start
 
 If an issue fails `validate-issue-completeness` during Sprint Planning:
@@ -978,6 +994,7 @@ The webhook receiver uses the state IDs to automatically add/remove the `po-acti
 | Status -> "Scheduled" | Previous = Backlog | SCRUM Master |
 | Linear Project state -> "Completed" | Any | SCRUM Master (removes `pm-action` label, checks for Cycle completion) |
 | Cloud Scheduler (9 AM ET) | `/daily-summary` endpoint | Sprint Manager |
+| Cloud Scheduler (every 15 min) | `/check-stalled-in-review` endpoint | SCRUM Master (per affected team) — Stalled-Issue Triage (see §11) |
 
 The SCRUM Master's "Done" handler runs **Wave Completion Detection** (§7), **Project Completion Detection** (§8), and **Cycle Completion Detection** (§9) in order. No separate webhook is registered for project or cycle completion detection — they are sub-flows of the Done handler.
 
