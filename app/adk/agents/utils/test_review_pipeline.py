@@ -214,10 +214,10 @@ class TestReviewerConfig:
             simple_specialist,
             "Crit.",
             output_key_prefix="p",
-            reviewer_model="gemini-2.0-pro",
+            reviewer_model="gemini-2.5-flash",
         )
         _, reviewer = pipeline.sub_agents
-        assert reviewer.model == "gemini-2.0-pro"
+        assert reviewer.model == "gemini-2.5-flash"
 
     def test_reviewer_output_key_uses_prefix(self, simple_specialist):
         pipeline = build_review_pipeline(
@@ -728,6 +728,34 @@ async def _run_pipeline(pipeline) -> dict:
     return dict(final.state)
 
 
+async def _run_two_pipelines_same_session(
+    pipeline1: LoopAgent, pipeline2: LoopAgent
+) -> dict:
+    """Run two pipelines sequentially in the same session; return final state."""
+    session_service = InMemorySessionService()
+    session = await session_service.create_session(
+        app_name="isolation_test", user_id="u1"
+    )
+    for pipeline in (pipeline1, pipeline2):
+        runner = Runner(
+            agent=pipeline,
+            app_name="isolation_test",
+            session_service=session_service,
+        )
+        async for _ in runner.run_async(
+            user_id="u1",
+            session_id=session.id,
+            new_message=genai_types.Content(
+                role="user", parts=[genai_types.Part(text="Go.")]
+            ),
+        ):
+            pass
+    final = await session_service.get_session(
+        app_name="isolation_test", user_id="u1", session_id=session.id
+    )
+    return dict(final.state)
+
+
 class TestBehavioralLoop:
     """Runtime behavioral tests using InMemorySessionService + Runner with a fake LLM.
 
@@ -845,6 +873,105 @@ class TestBehavioralLoop:
 
         assert state["ex_draft"] == "only draft"
         assert state.get("ex_feedback", "sentinel") != ""  # last rejection retained
+
+
+# ── Behavioral state isolation ───────────────────────────────────────────────
+
+
+class TestStateIsolationBehavioral:
+    """Runtime state-isolation: two pipelines run back-to-back in the same session.
+
+    Verifies that distinct output_key_prefix values produce truly isolated state
+    keys at runtime — not just structurally distinct names at construction time.
+    Complements the structural checks in TestStateIsolation (which only verify
+    that the constructed output_key strings differ).
+    """
+
+    @pytest.fixture(autouse=True)
+    def clear_queue(self):
+        _fake_response_queue.clear()
+        yield
+        assert not _fake_response_queue, (
+            f"Test left {len(_fake_response_queue)} unconsumed response(s) — "
+            "check the queued response sequence matches the pipeline's iterations."
+        )
+        _fake_response_queue.clear()
+
+    def _make_specialist(self, name: str) -> LlmAgent:
+        return LlmAgent(
+            name=name,
+            model="fake-behavioral-worker",
+            instruction="You are helpful.",
+        )
+
+    def test_two_pipelines_distinct_prefixes_no_state_collision(self):
+        """Two pipelines share one session; each prefix's draft/feedback stay isolated."""
+        _fake_response_queue.extend(
+            [
+                # Pipeline 1 (news_review): worker draft → reviewer approves
+                LlmResponse(
+                    content=genai_types.Content(
+                        role="model",
+                        parts=[genai_types.Part(text="news draft content")],
+                    )
+                ),
+                LlmResponse(
+                    content=genai_types.Content(
+                        role="model",
+                        parts=[
+                            genai_types.Part(
+                                function_call=genai_types.FunctionCall(
+                                    name="exit_loop", args={}
+                                )
+                            )
+                        ],
+                    )
+                ),
+                # Pipeline 2 (ga_review): worker draft → reviewer approves
+                LlmResponse(
+                    content=genai_types.Content(
+                        role="model",
+                        parts=[genai_types.Part(text="ga draft content")],
+                    )
+                ),
+                LlmResponse(
+                    content=genai_types.Content(
+                        role="model",
+                        parts=[
+                            genai_types.Part(
+                                function_call=genai_types.FunctionCall(
+                                    name="exit_loop", args={}
+                                )
+                            )
+                        ],
+                    )
+                ),
+            ]
+        )
+
+        pipeline1 = build_review_pipeline(
+            self._make_specialist("news_spec"),
+            "Be accurate.",
+            output_key_prefix="news_review",
+            reviewer_model="fake-behavioral-reviewer",
+        )
+        pipeline2 = build_review_pipeline(
+            self._make_specialist("ga_spec"),
+            "Be detailed.",
+            output_key_prefix="ga_review",
+            reviewer_model="fake-behavioral-reviewer",
+        )
+
+        state = _run(_run_two_pipelines_same_session(pipeline1, pipeline2))
+
+        # All four state keys present and pipeline-specific
+        assert state["news_review_draft"] == "news draft content"
+        assert state["ga_review_draft"] == "ga draft content"
+        # exit_loop produces no text, so feedback is "" on approval
+        assert state["news_review_feedback"] == ""
+        assert state["ga_review_feedback"] == ""
+        # No cross-pollution: each prefix's draft is independent
+        assert state["news_review_draft"] != state["ga_review_draft"]
 
 
 # ── §5.2 detection idiom ─────────────────────────────────────────────────────
