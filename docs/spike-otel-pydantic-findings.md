@@ -1,8 +1,8 @@
 # Spike 1.14.1: OTEL Pydantic Bug in ADK >=1.23.0
 
-**Status**: RESOLVED — Tracing re-enabled with workaround (2026-03-06)
-**ADK Version installed**: 1.26.0
-**Date**: 2026-02-24 (updated 2026-03-06)
+**Status**: RESOLVED — Workaround removed; Outcome B confirmed on ADK 1.27.5 (2026-04-29)
+**ADK Version installed**: 1.27.5
+**Date**: 2026-02-24 (updated 2026-04-29)
 
 ## Summary
 
@@ -83,11 +83,9 @@ Before enabling OTEL in production:
 | OTEL + Weave interference | None | Independent systems |
 | Strategy agent output_schema breakage | Med | Test before enabling OTEL |
 
-## Resolution (2026-03-06)
+## Resolution — Stage 1: Tracing re-enabled with workaround (2026-03-06)
 
-Tracing has been re-enabled across all environments:
-
-1. `deploy_ken_e.py` now sets `enable_tracing=True` and applies the workaround via
+1. `deploy_ken_e.py` set `enable_tracing=True` and applied the workaround via
    `os.environ.setdefault("OTEL_PYTHON_DISABLED_INSTRUMENTATIONS", "google-genai")`
    before creating `AdkApp`.
 2. `.env.development`, `.env.staging`, `.env.production` all set:
@@ -96,6 +94,24 @@ Tracing has been re-enabled across all environments:
 3. GCP Agent Engine dashboards (Tools, Traces, Models, Usage) now auto-populate.
 4. A direct GA MCP server health ping was added at `api/src/kene_api/services/mcp_health_service.py`
    for proactive detection of MCP server outages.
+
+## Resolution — Stage 2: Workaround removed, Outcome B confirmed (2026-04-29)
+
+Sprint 6 Story 1.14.5 (PR #265) ran the diagnostic probe that Sprint 5 commit `8360b02`
+deferred. The probe drives a strategy agent (which uses `output_schema`) on ADK 1.27.5
+with `OTEL_SDK_DISABLED=false` and **no** `OTEL_PYTHON_DISABLED_INSTRUMENTATIONS` setting,
+and inspects `google-genai` instrumentation behaviour.
+
+**Outcome B (no crash)** confirmed: the instrumentation no longer calls
+`BaseModel.model_dump()` on a Pydantic class on ADK 1.27.5. Subsequent stability runs
+(50+ invocations, paired memory profile, GenAI span coverage 100% on 39/39 spans, non-GenAI
+HTTP+DB spans present) showed no related failures.
+
+**Action taken (Sprint 6 closeout, PR #270):** the workaround line was deleted from
+`.env.development`, `.env.staging`, `.env.production`, and the matching commented block
+in `deploy_ken_e.py`. The probe runner lives at
+`tests/integration/stability/runs/run_otel_stability.py` for re-validation if a future
+ADK upgrade re-introduces the bug.
 
 ## Weave Version Pin & polyfile-weave Issue (2026-03-26)
 
