@@ -1,27 +1,12 @@
 """Review pipeline factory for the KEN-E agentic harness.
 
-Implements the §5.1 Generator-Critic contract: every specialist delegation is
-wrapped in a `LoopAgent` containing a cloned worker (the specialist) and a
-reviewer that evaluates the worker's draft against caller-supplied acceptance
-criteria. The reviewer either invokes `exit_loop` to escalate out of the loop
-or writes feedback into session state for the worker's next iteration.
+Builds a Generator-Critic review loop (§5.1 contract): a LoopAgent containing a
+specialist worker and a gemini-2.0-flash reviewer as direct children. The reviewer
+calls exit_loop to approve, or writes feedback to session state for the next iteration.
 
-Design notes:
-    * The factory clones the specialist into a fresh `LlmAgent` named
-      `<specialist>_worker` so the original specialist remains reusable in
-      other contexts and untouched by this wrapping.
-    * The reviewer uses `include_contents='none'` so it sees only the rendered
-      instruction (the draft via template substitution), not the full chat
-      history - this keeps it isolated from prior turns.
-    * The caller is responsible for choosing a unique `output_key_prefix` per
-      concurrent pipeline; the prefix namespaces both `<prefix>_draft` and
-      `<prefix>_feedback` keys in session state.
-    * The `LoopAgent` directly contains `[worker, reviewer]` - wrapping these
-      in a `SequentialAgent` would swallow the `escalate` signal that
-      `exit_loop` emits to terminate the loop.
-    * `exit_loop` is explicitly stripped from the worker's tool list even if it
-      was present on the source specialist, ensuring only the reviewer can
-      terminate the loop.
+Architecture note: specialist and reviewer must be *direct* children of LoopAgent.
+An intermediate SequentialAgent wrapper prevents the LoopAgent from correctly
+observing the exit_loop termination signal.
 """
 
 import re
@@ -32,11 +17,17 @@ from google.adk.tools import exit_loop
 _MAX_ITERATIONS_LIMIT = 10
 _VALID_PREFIX_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
+# Structural fields owned by ADK's agent graph; must not be copied to a worker.
+_EXCLUDED_WORKER_FIELDS = {"parent_agent", "sub_agents"}
+# Fields the factory sets explicitly on the worker; copy from specialist would
+# clobber the factory's intended values.
+_OVERRIDDEN_WORKER_FIELDS = {"name", "instruction", "tools", "output_key"}
+
 
 def build_review_pipeline(
     specialist: LlmAgent,
     acceptance_criteria: str,
-    output_key_prefix: str = "review",
+    output_key_prefix: str | None = None,
     max_iterations: int = 3,
     reviewer_model: str = "gemini-2.0-flash",
 ) -> LoopAgent:
@@ -44,32 +35,38 @@ def build_review_pipeline(
 
     Args:
         specialist: The specialist `LlmAgent` to wrap. Must have a string
-            `instruction`. The specialist is cloned (not mutated) into a worker
-            named `f"{specialist.name}_worker"`.
+            `instruction`. The specialist is not mutated; this factory
+            constructs a new worker `LlmAgent` from the specialist's full
+            field set, named `f"{specialist.name}_worker"`.
         acceptance_criteria: Plain-text criteria injected into both the worker
             instruction (so the worker knows what to satisfy) and the reviewer
-            instruction (so the reviewer knows what to check).
+            instruction (so the reviewer knows what to check). Must be a
+            non-empty string and must not contain the literal sentinel
+            `<<<CRITERIA_END>>>`.
         output_key_prefix: Namespace for session-state keys. The worker writes
             its draft to `f"{output_key_prefix}_draft"` and the reviewer writes
             feedback to `f"{output_key_prefix}_feedback"`. Must be lowercase
             alphanumeric/underscore starting with a letter, max 64 chars.
             Callers MUST choose a unique prefix per concurrent pipeline to avoid
-            state collisions.
+            state collisions. Defaults to `f'{specialist.name}_review'` when
+            not provided.
         max_iterations: Maximum review iterations before the loop exits without
             reviewer approval. Must be between 1 and 10 inclusive. Defaults to 3.
         reviewer_model: Model identifier for the reviewer LLM. Defaults to
             `"gemini-2.0-flash"`.
 
     Returns:
-        A `LoopAgent` named `f"{output_key_prefix}_loop"` containing the cloned
-        worker and the reviewer as its sub-agents.
+        A `LoopAgent` named `f"{output_key_prefix}_loop"` containing the worker
+        and the reviewer as its sub-agents.
 
     Raises:
         TypeError: If `specialist.instruction` is not a `str`. ADK supports
             callable instructions, but this factory composes the instruction
             string at build time and cannot wrap a callable.
-        ValueError: If `output_key_prefix` does not match the required format or
-            `max_iterations` is outside the allowed range.
+        ValueError: If `acceptance_criteria` is not a non-empty string or
+            contains the `<<<CRITERIA_END>>>` sentinel; if `output_key_prefix`
+            does not match the required format; or if `max_iterations` is
+            outside the allowed range.
     """
     if not isinstance(specialist.instruction, str):
         raise TypeError(
@@ -77,6 +74,19 @@ def build_review_pipeline(
             f"got {type(specialist.instruction).__name__}. Callable instructions "
             "are not supported by this factory."
         )
+
+    if not isinstance(acceptance_criteria, str) or not acceptance_criteria.strip():
+        raise ValueError(
+            "acceptance_criteria must be a non-empty string; "
+            f"got {type(acceptance_criteria).__name__!r}"
+        )
+    if "<<<CRITERIA_END>>>" in acceptance_criteria:
+        raise ValueError(
+            "acceptance_criteria must not contain the literal '<<<CRITERIA_END>>>' sentinel"
+        )
+
+    if output_key_prefix is None:
+        output_key_prefix = f"{specialist.name}_review"
 
     if not _VALID_PREFIX_RE.match(output_key_prefix):
         raise ValueError(
@@ -101,17 +111,37 @@ def build_review_pipeline(
         f"{{{output_key_prefix}_feedback?}}"
     )
 
-    # Strip exit_loop from worker tools so only the reviewer can terminate the loop.
-    worker_tools = [t for t in list(specialist.tools or []) if t is not exit_loop]
+    # Strip exit_loop from worker tools (attribute-based to survive future
+    # wrappers like FunctionTool) so only the reviewer can terminate the loop.
+    worker_tools = [
+        t
+        for t in list(specialist.tools or [])
+        if not (
+            getattr(t, "name", None) == "exit_loop"
+            or getattr(t, "__name__", None) == "exit_loop"
+        )
+    ]
 
-    specialist_worker = LlmAgent(
-        name=f"{specialist.name}_worker",
-        model=specialist.model,
-        description=specialist.description,
-        instruction=worker_instruction,
-        tools=worker_tools,
-        output_key=f"{output_key_prefix}_draft",
+    # Propagate the specialist's full field set to the worker so behavior-
+    # affecting fields (callbacks, generate_content_config, planner, etc.) are
+    # preserved. Exclude ADK-managed structural fields and fields this factory
+    # overrides explicitly below.
+    worker_kwargs: dict = {}
+    for field in LlmAgent.model_fields:
+        if field in _EXCLUDED_WORKER_FIELDS or field in _OVERRIDDEN_WORKER_FIELDS:
+            continue
+        worker_kwargs[field] = getattr(specialist, field)
+
+    worker_kwargs.update(
+        {
+            "name": f"{specialist.name}_worker",
+            "instruction": worker_instruction,
+            "tools": worker_tools,
+            "output_key": f"{output_key_prefix}_draft",
+        }
     )
+
+    specialist_worker = LlmAgent(**worker_kwargs)
 
     reviewer_instruction = (
         "## Acceptance Criteria\n"
