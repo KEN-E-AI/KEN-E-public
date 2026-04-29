@@ -78,6 +78,11 @@ class TestSeedConstants:
     def test_parent_account_seed_has_organization_id(self):
         assert "organization_id" in PARENT_ACCOUNT_SEED
 
+    def test_strategy_docs_versions_account_id_is_placeholder(self):
+        """Version seeds must carry PLACEHOLDER so build_seed_paths() replaces it."""
+        assert STRATEGY_DOCS_VERSIONS_SEEDS[0]["account_id"] == "PLACEHOLDER"
+        assert STRATEGY_DOCS_VERSIONS_SEEDS[1]["account_id"] == "PLACEHOLDER"
+
 
 # ---------------------------------------------------------------------------
 # is_dev_project guard tests
@@ -228,6 +233,7 @@ class TestMainGuard:
 
     def test_main_proceeds_with_override_flag(self, monkeypatch):
         monkeypatch.setenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-staging")
+        monkeypatch.setenv("KENE_SEED_NON_DEV_CONFIRM", "ken-e-staging")
         mock_service = MagicMock()
         mock_service.health_check.return_value = True
         mock_service.create_document.return_value = "doc_id"
@@ -276,3 +282,50 @@ class TestMainGuard:
             result = main([])
 
         assert result == 1
+
+    def test_main_override_flag_requires_confirm_env_var(self, monkeypatch):
+        """bypass flag without KENE_SEED_NON_DEV_CONFIRM must be rejected."""
+        monkeypatch.setenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-staging")
+        monkeypatch.delenv("KENE_SEED_NON_DEV_CONFIRM", raising=False)
+        result = main(["--yes-i-know-its-not-dev"])
+        assert result == 1
+
+    def test_main_override_flag_with_correct_confirm_env_var_succeeds(
+        self, monkeypatch
+    ):
+        monkeypatch.setenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-staging")
+        monkeypatch.setenv("KENE_SEED_NON_DEV_CONFIRM", "ken-e-staging")
+        mock_service = MagicMock()
+        mock_service.health_check.return_value = True
+        mock_service.create_document.return_value = "doc_id"
+
+        with patch(
+            "seed_shape_b_fixtures.get_firestore_service", return_value=mock_service
+        ):
+            result = main(["--yes-i-know-its-not-dev"])
+
+        assert result == 0
+
+    def test_main_override_flag_with_wrong_confirm_env_var_rejected(self, monkeypatch):
+        monkeypatch.setenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-staging")
+        monkeypatch.setenv("KENE_SEED_NON_DEV_CONFIRM", "wrong-project")
+        result = main(["--yes-i-know-its-not-dev"])
+        assert result == 1
+
+    def test_main_rejects_invalid_account_id(self, monkeypatch):
+        monkeypatch.setenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
+        result = main(["--account-id", "bad/account/id"])
+        assert result == 1
+
+    def test_main_accepts_valid_account_id(self, monkeypatch):
+        monkeypatch.setenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
+        mock_service = MagicMock()
+        mock_service.health_check.return_value = True
+        mock_service.create_document.return_value = "doc_id"
+
+        with patch(
+            "seed_shape_b_fixtures.get_firestore_service", return_value=mock_service
+        ):
+            result = main(["--account-id", "valid_acc-123"])
+
+        assert result == 0

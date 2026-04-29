@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Seed a realistic Shape B test account for local dev.
 
-Seeds `accounts/{account_id}/...` with deterministic, idempotent fixtures.
-Used by DM-PRD-01-DM-PRD-04 verification and by feature teams writing against
-a known Shape B starting state.
+Seeds `accounts/{account_id}/...` with deterministic fixtures using upsert
+semantics (Firestore .set() overwrites with identical bytes on re-run, so the
+resulting database state is identical each time). Used by DM-PRD-01-DM-PRD-04
+verification and by feature teams writing against a known Shape B starting state.
 
 Usage:
     python api/scripts/seed_shape_b_fixtures.py
@@ -15,9 +16,11 @@ Exit codes: 0 success, 1 failure.
 
 import argparse
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 # Add parent directory to path so kene_api imports resolve
 sys.path.append(str(Path(__file__).parent.parent))
@@ -35,7 +38,7 @@ FIXED_TS2 = datetime(2026, 1, 2, 0, 0, 0, tzinfo=timezone.utc)
 
 # Parent account doc — provides organization_id back-reference (Shape D-aware).
 # Written at accounts/{account_id}.
-PARENT_ACCOUNT_SEED: dict = {
+PARENT_ACCOUNT_SEED: dict[str, Any] = {
     "organization_id": "org_fixture_acme",
     "display_name": "Fixture Account (Seed)",
     "created_at": FIXED_TS,
@@ -45,7 +48,7 @@ PARENT_ACCOUNT_SEED: dict = {
 
 # strategy_docs current-version doc.
 # Matches StrategyDocument field set so StrategyDocument(**payload) parses cleanly.
-STRATEGY_DOCS_SEED: dict = {
+STRATEGY_DOCS_SEED: dict[str, Any] = {
     "doc_type": "business_strategy",
     "content": {
         "executive_summary": "Seed fixture — placeholder business strategy.",
@@ -65,7 +68,7 @@ STRATEGY_DOCS_SEED: dict = {
 }
 
 # Version history payloads — two versions so has_versions=True integration tests pass.
-STRATEGY_DOCS_VERSIONS_SEEDS: list[dict] = [
+STRATEGY_DOCS_VERSIONS_SEEDS: list[dict[str, Any]] = [
     {
         "doc_type": "business_strategy",
         "content": {
@@ -102,7 +105,7 @@ STRATEGY_DOCS_VERSIONS_SEEDS: list[dict] = [
 
 # strategy_audit entries — two docs so list/query tests have ≥ 1 result.
 # Matches StrategyAuditEntry field set.
-STRATEGY_AUDIT_SEEDS: list[dict] = [
+STRATEGY_AUDIT_SEEDS: list[dict[str, Any]] = [
     {
         "action": "created",
         "user_id": "user_seed_fixture",
@@ -129,7 +132,7 @@ STRATEGY_AUDIT_SEEDS: list[dict] = [
 # skills — minimal realistic shape.  SK-PRD-01 will redefine this payload when
 # the Skills model ships; for now, this schema is documented here as the source
 # of truth for the fixture until that point.
-SKILLS_SEED: dict = {
+SKILLS_SEED: dict[str, Any] = {
     "skill_id": "skill_seed_outreach_v1",
     "name": "Outreach Playbook v1",
     "description": "Seed fixture skill for Shape B migration testing.",
@@ -142,7 +145,7 @@ SKILLS_SEED: dict = {
     "tags": ["fixture", "outreach"],
 }
 
-SKILLS_VERSIONS_SEEDS: list[dict] = [
+SKILLS_VERSIONS_SEEDS: list[dict[str, Any]] = [
     {
         "skill_id": "skill_seed_outreach_v1",
         "version": 1,
@@ -182,7 +185,7 @@ def is_dev_project(project_id: str) -> bool:
     return project_id.endswith("-dev")
 
 
-def build_seed_paths(account_id: str) -> list[tuple[str, str, dict]]:
+def build_seed_paths(account_id: str) -> list[tuple[str, str, dict[str, Any]]]:
     """Return a list of (collection_path, document_id, data) tuples to write.
 
     All paths are rooted under accounts/{account_id}/ — no Shape A, no Shape C.
@@ -302,10 +305,26 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if args.yes_i_know_its_not_dev and not is_dev_project(project_id):
+        confirm = os.getenv("KENE_SEED_NON_DEV_CONFIRM", "")
+        if confirm != project_id:
+            print(
+                f"ERROR: --yes-i-know-its-not-dev requires KENE_SEED_NON_DEV_CONFIRM "
+                f"to be set to the target project ID to prevent accidental runs.\n"
+                f"  export KENE_SEED_NON_DEV_CONFIRM={project_id}\n"
+                f"  # then re-run"
+            )
+            return 1
         print(
             f"WARNING: Running against non-dev project {project_id!r}. "
             "Proceeding because --yes-i-know-its-not-dev was passed.\n"
         )
+
+    if not re.fullmatch(r"[a-zA-Z0-9_\-]{1,128}", args.account_id):
+        print(
+            f"ERROR: account_id {args.account_id!r} contains invalid characters. "
+            "Only [a-zA-Z0-9_-] (1-128 chars) are allowed."
+        )
+        return 1
 
     print("=== seed_shape_b_fixtures ===")
     success = seed_account(args.account_id)
