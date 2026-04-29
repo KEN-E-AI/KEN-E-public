@@ -8,6 +8,7 @@ import {
   BookOpen,
   Puzzle,
   Settings,
+  ShieldCheck,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -19,9 +20,8 @@ import {
 } from "@/components/ui/tooltip";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
+import type { Brand } from "@/lib/branded-types";
 
-// Width constants consumed by LayoutC (UI-15) for page-content padding math.
-// Encode as Tailwind utilities so dark-mode and responsive variants stay in sync.
 export const SIDEBAR_WIDTH_EXPANDED = "md:w-64";
 export const SIDEBAR_WIDTH_COLLAPSED = "md:w-16";
 
@@ -35,20 +35,26 @@ const navigation = [
   { name: "Settings", href: "/settings/account", icon: Settings },
 ] as const;
 
+type NavRowId = Brand<string, "NavRowId">;
+
 export type SuperAdminNavRow = {
-  id: string;
+  id: NavRowId;
   label: string;
   path: string;
   order: number;
+  icon?: React.ComponentType<{ className?: string }>;
   isVisible?: boolean;
 };
 
-// Module-scoped registry — FF-PRD-02 appends entries via registerSuperAdminNavRow()
-// without modifying Sidebar.tsx. Mirrors the SETTINGS_NAV_REGISTRY pattern from UI-PRD-02.
 export const SUPER_ADMIN_NAV: SuperAdminNavRow[] = [];
 
 export function registerSuperAdminNavRow(row: SuperAdminNavRow): void {
-  SUPER_ADMIN_NAV.push(row);
+  if (!/^\/[a-zA-Z0-9/_-]*$/.test(row.path)) {
+    return;
+  }
+  if (!SUPER_ADMIN_NAV.some((r) => r.id === row.id)) {
+    SUPER_ADMIN_NAV.push(row);
+  }
 }
 
 export function Sidebar() {
@@ -59,8 +65,6 @@ export function Sidebar() {
   );
 
   useEffect(() => {
-    // Sync --sidebar-width CSS variable so LayoutC can read it for padding math
-    // without importing component state.
     const width = collapsed ? "4rem" : "16rem";
     document.documentElement.style.setProperty("--sidebar-width", width);
   }, [collapsed]);
@@ -80,27 +84,18 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        "hidden md:flex md:flex-col h-full border-r border-[var(--color-border-default)] transition-all shrink-0",
+        "hidden md:flex md:flex-col h-full border-r border-[var(--color-border-default)] transition-all duration-fast ease-default shrink-0",
         collapsed ? "md:w-16" : "md:w-64",
       )}
-      style={{
-        backgroundColor: "var(--color-bg-primary)",
-        transitionTimingFunction: "var(--ease-default)",
-        transitionDuration: "var(--duration-fast)",
-      }}
+      style={{ backgroundColor: "var(--color-bg-primary)" }}
     >
-      {/* Collapse/expand toggle */}
       <div className="flex items-center justify-end px-2 py-3 border-b border-[var(--color-border-default)]">
         <button
           type="button"
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           aria-expanded={!collapsed}
           onClick={handleToggle}
-          className="flex items-center justify-center w-8 h-8 rounded-[var(--radius-md)] text-[var(--color-text-tertiary)] hover:bg-accent hover:text-[var(--color-violet-500)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-violet-500)] focus-visible:ring-offset-2"
-          style={{
-            transitionTimingFunction: "var(--ease-bounce)",
-            transitionDuration: "var(--duration-fast)",
-          }}
+          className="flex items-center justify-center w-8 h-8 rounded-[var(--radius-md)] text-[var(--color-text-tertiary)] hover:bg-accent hover:text-[var(--color-violet-500)] transition-colors duration-fast ease-bounce focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-violet-500)] focus-visible:ring-offset-2"
         >
           {collapsed ? (
             <ChevronRight className="size-4" aria-hidden="true" />
@@ -110,7 +105,6 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* Primary navigation */}
       <nav
         aria-label="Primary navigation"
         className="flex-1 flex flex-col gap-1 p-2 overflow-y-auto"
@@ -128,16 +122,12 @@ export function Sidebar() {
                   <Link
                     to={item.href}
                     className={cn(
-                      "flex items-center gap-3 px-3 py-2 rounded-[var(--radius-md)] text-sm font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-violet-500)] focus-visible:ring-offset-2",
+                      "flex items-center gap-3 px-3 py-2 rounded-[var(--radius-md)] text-sm font-bold transition-all duration-fast ease-bounce focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-violet-500)] focus-visible:ring-offset-2",
                       collapsed && "justify-center px-2",
                       isActive
                         ? "bg-[var(--color-violet-500)] text-[var(--color-text-inverse)] shadow-[var(--shadow-color-violet)]"
                         : "text-[var(--color-text-tertiary)] hover:bg-accent hover:text-[var(--color-violet-500)]",
                     )}
-                    style={{
-                      transitionTimingFunction: "var(--ease-bounce)",
-                      transitionDuration: "var(--duration-fast)",
-                    }}
                   >
                     <item.icon className="size-5 shrink-0" aria-hidden="true" />
                     {collapsed ? (
@@ -156,7 +146,6 @@ export function Sidebar() {
         </TooltipProvider>
       </nav>
 
-      {/* Super-admin section — only when isSuperAdmin && registry has entries */}
       {showAdminSection && (
         <div className="border-t border-[var(--color-border-default)] p-2">
           {!collapsed && (
@@ -167,23 +156,24 @@ export function Sidebar() {
           <TooltipProvider>
             {visibleAdminRows.map((row) => {
               const isActive = location.pathname.startsWith(row.path);
+              const AdminIcon = row.icon ?? ShieldCheck;
               return (
                 <Tooltip key={row.id}>
                   <TooltipTrigger asChild>
                     <Link
                       to={row.path}
                       className={cn(
-                        "flex items-center gap-3 px-3 py-2 rounded-[var(--radius-md)] text-sm font-bold transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-violet-500)] focus-visible:ring-offset-2",
+                        "flex items-center gap-3 px-3 py-2 rounded-[var(--radius-md)] text-sm font-bold transition-all duration-fast ease-bounce focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-violet-500)] focus-visible:ring-offset-2",
                         collapsed && "justify-center px-2",
                         isActive
                           ? "bg-[var(--color-violet-500)] text-[var(--color-text-inverse)] shadow-[var(--shadow-color-violet)]"
                           : "text-[var(--color-text-tertiary)] hover:bg-accent hover:text-[var(--color-violet-500)]",
                       )}
-                      style={{
-                        transitionTimingFunction: "var(--ease-bounce)",
-                        transitionDuration: "var(--duration-fast)",
-                      }}
                     >
+                      <AdminIcon
+                        className="size-5 shrink-0"
+                        aria-hidden="true"
+                      />
                       {collapsed ? (
                         <span className="sr-only">{row.label}</span>
                       ) : (

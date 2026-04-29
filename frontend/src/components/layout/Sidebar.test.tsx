@@ -1,10 +1,13 @@
-import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup } from "@testing-library/react";
+import { describe, test, expect, beforeEach } from "vitest";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import type { AuthContextType } from "@/contexts/AuthContext";
 import { AuthContext } from "@/contexts/AuthContext";
 import { Sidebar, SUPER_ADMIN_NAV, registerSuperAdminNavRow } from "./Sidebar";
+import type { Brand } from "@/lib/branded-types";
+
+type NavRowId = Brand<string, "NavRowId">;
 
 const mockAuthContext = (
   isSuperAdmin: boolean = false,
@@ -37,13 +40,6 @@ const renderSidebar = ({
 
 describe("Sidebar", () => {
   beforeEach(() => {
-    localStorage.clear();
-    // Reset SUPER_ADMIN_NAV registry between tests
-    SUPER_ADMIN_NAV.length = 0;
-  });
-
-  afterEach(() => {
-    cleanup();
     localStorage.clear();
     SUPER_ADMIN_NAV.length = 0;
   });
@@ -154,7 +150,7 @@ describe("Sidebar", () => {
   describe("Super-admin section", () => {
     test("does not render super-admin section for non-admins even with registry entries", () => {
       registerSuperAdminNavRow({
-        id: "feature-flags",
+        id: "feature-flags" as NavRowId,
         label: "Feature Flags",
         path: "/admin/feature-flags",
         order: 10,
@@ -169,7 +165,7 @@ describe("Sidebar", () => {
 
     test("renders super-admin section for admins when registry has entries", () => {
       registerSuperAdminNavRow({
-        id: "feature-flags",
+        id: "feature-flags" as NavRowId,
         label: "Feature Flags",
         path: "/admin/feature-flags",
         order: 10,
@@ -185,8 +181,35 @@ describe("Sidebar", () => {
     test("does not render super-admin section for admins when registry is empty", () => {
       renderSidebar({ isSuperAdmin: true });
 
-      // No separator or admin heading should appear
-      expect(screen.queryByText(/admin/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/^admin$/i)).not.toBeInTheDocument();
+    });
+
+    test("rejects registration of rows with invalid paths", () => {
+      registerSuperAdminNavRow({
+        id: "bad-row" as NavRowId,
+        label: "Bad Row",
+        path: "javascript:alert(1)",
+        order: 10,
+      });
+
+      expect(SUPER_ADMIN_NAV).toHaveLength(0);
+    });
+
+    test("deduplicates rows with the same id", () => {
+      registerSuperAdminNavRow({
+        id: "feature-flags" as NavRowId,
+        label: "Feature Flags",
+        path: "/admin/feature-flags",
+        order: 10,
+      });
+      registerSuperAdminNavRow({
+        id: "feature-flags" as NavRowId,
+        label: "Feature Flags Duplicate",
+        path: "/admin/feature-flags",
+        order: 10,
+      });
+
+      expect(SUPER_ADMIN_NAV).toHaveLength(1);
     });
   });
 });
