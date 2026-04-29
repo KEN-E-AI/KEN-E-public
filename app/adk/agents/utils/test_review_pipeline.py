@@ -2,6 +2,7 @@
 
 import asyncio
 import re
+from unittest.mock import MagicMock, patch
 
 import pytest
 from google.adk.agents import LlmAgent, LoopAgent, SequentialAgent
@@ -13,7 +14,12 @@ from google.adk.sessions import InMemorySessionService
 from google.adk.tools import exit_loop
 from google.genai import types as genai_types
 
-from .review_pipeline import build_review_pipeline, extract_pipeline_result
+from . import review_pipeline as _rp
+from .review_pipeline import (
+    _check_hallucinated_approval,
+    build_review_pipeline,
+    extract_pipeline_result,
+)
 
 # ── Fake LLM for behavioral tests ────────────────────────────────────────────
 
@@ -1025,3 +1031,166 @@ class TestExtractPipelineResult:
         state = {"p_draft": "ok content"}
         result = extract_pipeline_result(state, "p")
         assert result == {"result": "ok content", "approved": True}
+
+
+# ── Hallucinated approval detection ──────────────────────────────────────────
+
+
+def _make_reviewer_event(
+    prefix: str,
+    text: str,
+    escalate: bool | None = None,
+    partial: bool = False,
+):
+    """Build a minimal mock ADK Event that _check_hallucinated_approval inspects."""
+    event = MagicMock()
+    event.author = f"{prefix}_reviewer"
+    event.partial = partial
+    part = MagicMock()
+    part.text = text
+    content = MagicMock()
+    content.parts = [part]
+    event.content = content
+    if escalate is not None:
+        event.actions = MagicMock()
+        event.actions.escalate = escalate
+    else:
+        event.actions = None
+    return event
+
+
+class TestHallucinatedApprovalDetection:
+    """Unit tests for _check_hallucinated_approval().
+
+    Each test builds mock ADK Events with the minimal attributes the helper
+    reads: author, partial, content.parts[n].text, actions.escalate.
+    _emit_hallucination_span is patched via patch.object on the module reference
+    to avoid both Weave I/O and the double-import module-name ambiguity that
+    arises when the file is accessible under two sys.path roots.
+    """
+
+    def test_approval_text_without_escalate_logs_warning(self, caplog):
+        """'approved' in text + no escalate → warning logged."""
+        import logging
+        event = _make_reviewer_event("news_review", "All criteria are approved.")
+
+        with patch.object(_rp, "_emit_hallucination_span"):
+            with caplog.at_level(logging.WARNING, logger=_rp.__name__):
+                _check_hallucinated_approval([event], "news_review")
+
+        assert any("Hallucinated approval" in r.message for r in caplog.records)
+
+    def test_approval_text_emits_span(self):
+        """'approved' text + no escalate → _emit_hallucination_span called."""
+        event = _make_reviewer_event("news_review", "The draft is approved.")
+
+        with patch.object(_rp, "_emit_hallucination_span") as mock_span:
+            _check_hallucinated_approval([event], "news_review")
+
+        mock_span.assert_called_once()
+        kwargs = mock_span.call_args.kwargs
+        assert kwargs["output_key_prefix"] == "news_review"
+        assert kwargs["iteration"] == 1
+        assert "approved" in kwargs["reviewer_text"].lower()
+
+    def test_case_insensitive_match(self):
+        """'APPROVED' (upper-case) triggers detection."""
+        event = _make_reviewer_event("p", "APPROVED — everything looks good.")
+
+        with patch.object(_rp, "_emit_hallucination_span") as mock_span:
+            _check_hallucinated_approval([event], "p")
+
+        mock_span.assert_called_once()
+
+    def test_all_criteria_phrase_triggers_detection(self):
+        """'all criteria' phrase triggers detection."""
+        event = _make_reviewer_event("p", "Checked: all criteria met.")
+
+        with patch.object(_rp, "_emit_hallucination_span") as mock_span:
+            _check_hallucinated_approval([event], "p")
+
+        mock_span.assert_called_once()
+
+    def test_exit_loop_as_literal_text_triggers_detection(self):
+        """'exit_loop' written as text (not a tool call) triggers detection."""
+        event = _make_reviewer_event("p", "I would call exit_loop but the draft is great.")
+
+        with patch.object(_rp, "_emit_hallucination_span") as mock_span:
+            _check_hallucinated_approval([event], "p")
+
+        mock_span.assert_called_once()
+
+    def test_real_approval_with_escalate_not_flagged(self):
+        """escalate=True means exit_loop was actually invoked — not a hallucination."""
+        event = _make_reviewer_event("p", "All criteria approved.", escalate=True)
+
+        with patch.object(_rp, "_emit_hallucination_span") as mock_span:
+            _check_hallucinated_approval([event], "p")
+
+        mock_span.assert_not_called()
+
+    def test_no_reviewer_events_is_noop(self):
+        """No reviewer events → no span, no warning."""
+        worker_event = _make_reviewer_event("p", "draft text")
+        worker_event.author = "p_worker"  # not a reviewer
+
+        with patch.object(_rp, "_emit_hallucination_span") as mock_span:
+            _check_hallucinated_approval([worker_event], "p")
+            _check_hallucinated_approval([], "p")
+
+        mock_span.assert_not_called()
+
+    def test_final_event_only_inspected(self):
+        """First reviewer event has approval text; last does not → no detection."""
+        first = _make_reviewer_event("p", "This looks approved to me.")
+        last = _make_reviewer_event("p", "Still needs improvement on section 2.")
+
+        with patch.object(_rp, "_emit_hallucination_span") as mock_span:
+            _check_hallucinated_approval([first, last], "p")
+
+        mock_span.assert_not_called()
+
+    def test_correct_iteration_count_passed_to_span(self):
+        """iteration count in span equals the number of non-partial reviewer events."""
+        events = [
+            _make_reviewer_event("p", "needs work"),
+            _make_reviewer_event("p", "All criteria approved."),
+        ]
+
+        with patch.object(_rp, "_emit_hallucination_span") as mock_span:
+            _check_hallucinated_approval(events, "p")
+
+        mock_span.assert_called_once()
+        assert mock_span.call_args.kwargs["iteration"] == 2
+
+    def test_partial_events_excluded_from_reviewer_list(self):
+        """Partial=True streaming chunks are not counted as final reviewer events."""
+        partial_chunk = _make_reviewer_event("p", "approved", partial=True)
+        normal_feedback = _make_reviewer_event("p", "needs more detail")
+
+        with patch.object(_rp, "_emit_hallucination_span") as mock_span:
+            _check_hallucinated_approval([partial_chunk, normal_feedback], "p")
+
+        # normal_feedback doesn't match pattern → no detection
+        mock_span.assert_not_called()
+
+    def test_reviewer_text_truncated_at_500_chars(self):
+        """reviewer_text passed to span is truncated to 500 chars."""
+        long_text = "approved " + ("x" * 600)
+        event = _make_reviewer_event("p", long_text)
+
+        with patch.object(_rp, "_emit_hallucination_span") as mock_span:
+            _check_hallucinated_approval([event], "p")
+
+        reviewer_text_arg = mock_span.call_args.kwargs["reviewer_text"]
+        assert len(reviewer_text_arg) == 500
+
+    def test_helper_exception_swallowed(self):
+        """Malformed event (missing content) must not propagate an exception."""
+        bad_event = MagicMock()
+        bad_event.author = "p_reviewer"
+        bad_event.partial = False
+        bad_event.content = None  # will cause AttributeError on parts access
+
+        with patch.object(_rp, "_emit_hallucination_span"):
+            _check_hallucinated_approval([bad_event], "p")  # must not raise

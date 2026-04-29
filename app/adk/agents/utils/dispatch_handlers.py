@@ -18,7 +18,11 @@ from .agent_retry import (
     FAST_RETRY_CONFIG,
     invoke_agent_with_retry,
 )
-from .review_pipeline import build_review_pipeline, extract_pipeline_result
+from .review_pipeline import (
+    _check_hallucinated_approval,
+    build_review_pipeline,
+    extract_pipeline_result,
+)
 from .supervisor_utils import invoke_pipeline
 
 logger = logging.getLogger(__name__)
@@ -89,7 +93,8 @@ def dispatch_to_company_news(
                 acceptance_criteria=criteria,
                 output_key_prefix="news_review",
             )
-            _text, final_state = invoke_pipeline(pipeline, query)
+            _text, final_state, events = invoke_pipeline(pipeline, query)
+            _check_hallucinated_approval(events, "news_review")
             outcome = extract_pipeline_result(final_state, "news_review")
             return {
                 **outcome,
@@ -209,7 +214,8 @@ def dispatch_to_google_analytics(
                 acceptance_criteria=criteria,
                 output_key_prefix="ga_review",
             )
-            _text, final_state = invoke_pipeline(pipeline, query, state=initial_state)
+            _text, final_state, events = invoke_pipeline(pipeline, query, state=initial_state)
+            _check_hallucinated_approval(events, "ga_review")
             outcome = extract_pipeline_result(final_state, "ga_review")
             return {
                 **outcome,

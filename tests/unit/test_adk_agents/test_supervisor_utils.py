@@ -300,10 +300,11 @@ class TestInvokePipelineState:
         result = invoke_pipeline(mock_agent, "show traffic trends")
 
         assert isinstance(result, tuple)
-        assert len(result) == 2
-        text, state = result
+        assert len(result) == 3
+        text, state, events = result
         assert isinstance(text, str)
         assert isinstance(state, dict)
+        assert isinstance(events, list)
 
     @patch("adk.agents.utils.supervisor_utils.Runner")
     @patch("adk.agents.utils.supervisor_utils.InMemoryArtifactService")
@@ -390,10 +391,11 @@ class TestInvokePipelineState:
 
             mock_agent = MagicMock()
             mock_agent.name = "test_pipeline"
-            text, state = invoke_pipeline(mock_agent, "test query")
+            text, state, events = invoke_pipeline(mock_agent, "test query")
 
         assert "timed out" in text.lower() or "error" in text.lower()
         assert state == {}
+        assert events == []
 
     @patch("adk.agents.utils.supervisor_utils.Runner")
     @patch("adk.agents.utils.supervisor_utils.InMemoryArtifactService")
@@ -415,7 +417,8 @@ class TestInvokePipelineState:
 
             mock_agent = MagicMock()
             mock_agent.name = "test_pipeline"
-            text, state = invoke_pipeline(mock_agent, "test query")
+            text, state, events = invoke_pipeline(mock_agent, "test query")
 
         assert "error" in text.lower()
         assert state == {}
+        assert events == []

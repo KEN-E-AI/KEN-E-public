@@ -94,7 +94,7 @@ def invoke_pipeline(
     user_id: str | None = None,
     session_id: str | None = None,
     state: dict[str, Any] | None = None,
-) -> tuple[str, dict[str, Any]]:
+) -> tuple[str, dict[str, Any], list]:
     """Synchronous wrapper for pipeline invocation that returns both the response text
     and the final session state.
 
@@ -110,8 +110,8 @@ def invoke_pipeline(
         state: Optional initial session state dict. Passed to session creation.
 
     Returns:
-        tuple[str, dict[str, Any]]: (response_text, final_session_state)
-        On timeout or error: (error_sentinel_text, {})
+        tuple[str, dict[str, Any], list[Event]]: (response_text, final_session_state, events)
+        On timeout or error: (error_sentinel_text, {}, [])
     """
     if user_id is None:
         user_id = f"user_{uuid.uuid4().hex[:8]}"
@@ -124,7 +124,7 @@ def invoke_pipeline(
         user_id: str,
         session_id: str,
         state: dict[str, Any] | None,
-    ) -> tuple[str, dict[str, Any]]:
+    ) -> tuple[str, dict[str, Any], list]:
         session_service = InMemorySessionService()
         artifact_service = InMemoryArtifactService()
 
@@ -142,9 +142,11 @@ def invoke_pipeline(
         user_message = Content(role="user", parts=[Part.from_text(text=query)])
 
         response_text = ""
+        events: list = []
         async for event in runner.run_async(
             user_id=user_id, session_id=session_id, new_message=user_message
         ):
+            events.append(event)
             # Follow ADK's official pattern
             if event.content and event.content.parts:
                 if text := "".join(part.text or "" for part in event.content.parts):
@@ -157,7 +159,7 @@ def invoke_pipeline(
         final_state: dict[str, Any] = (
             dict(session.state) if session and session.state else {}
         )
-        return response_text, final_state
+        return response_text, final_state, events
 
     try:
         # Handle event loop scenarios (following ADK pattern)
@@ -180,10 +182,11 @@ def invoke_pipeline(
         return (
             "Error: Request timed out after 5 minutes. Please try again with simpler requirements.",
             {},
+            [],
         )
     except Exception as e:
         logger.error(f"Error in sync pipeline invocation: {e!s}")
-        return (f"Error: Failed to complete the request - {e!s}", {})
+        return (f"Error: Failed to complete the request - {e!s}", {}, [])
 
 
 def invoke_agent_sync(
@@ -198,7 +201,7 @@ def invoke_agent_sync(
     Thin adapter over invoke_pipeline() — use invoke_pipeline() directly when
     you need to inspect post-run session state.
     """
-    text, _ = invoke_pipeline(agent, query, user_id, session_id, state)
+    text, _, _ = invoke_pipeline(agent, query, user_id, session_id, state)
     return text
 
 
