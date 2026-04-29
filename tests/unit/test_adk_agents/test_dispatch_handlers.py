@@ -1110,12 +1110,12 @@ class TestHallucinatedApprovalDetectionDispatch:
     @patch("adk.agents.registry.get_registry")
     @patch("adk.agents.utils.dispatch_handlers.extract_pipeline_result")
     @patch("adk.agents.utils.dispatch_handlers._check_hallucinated_approval")
-    @patch("adk.agents.utils.dispatch_handlers.invoke_pipeline")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_pipeline_with_events")
     @patch("adk.agents.utils.dispatch_handlers.build_review_pipeline")
     def test_news_check_called_with_events(
         self,
         mock_build_pipeline,
-        mock_invoke_pipeline,
+        mock_invoke_with_events,
         mock_check_hallucination,
         mock_extract,
         mock_get_registry,
@@ -1126,7 +1126,7 @@ class TestHallucinatedApprovalDetectionDispatch:
         mock_build_pipeline.return_value = MagicMock()
 
         reviewer_event = _make_event("news_review_reviewer", "All criteria met.")
-        mock_invoke_pipeline.return_value = ("draft", {"news_review_draft": "draft"}, [reviewer_event])
+        mock_invoke_with_events.return_value = ("draft", {"news_review_draft": "draft"}, [reviewer_event])
         mock_extract.return_value = {"result": "draft", "approved": True}
 
         dispatch_to_company_news("Get news", acceptance_criteria="Must cite sources.")
@@ -1136,12 +1136,12 @@ class TestHallucinatedApprovalDetectionDispatch:
     @patch("adk.agents.registry.get_registry")
     @patch("adk.agents.utils.dispatch_handlers.extract_pipeline_result")
     @patch("adk.agents.utils.dispatch_handlers._check_hallucinated_approval")
-    @patch("adk.agents.utils.dispatch_handlers.invoke_pipeline")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_pipeline_with_events")
     @patch("adk.agents.utils.dispatch_handlers.build_review_pipeline")
     def test_ga_check_called_with_events(
         self,
         mock_build_pipeline,
-        mock_invoke_pipeline,
+        mock_invoke_with_events,
         mock_check_hallucination,
         mock_extract,
         mock_get_registry,
@@ -1152,7 +1152,7 @@ class TestHallucinatedApprovalDetectionDispatch:
         mock_build_pipeline.return_value = MagicMock()
 
         reviewer_event = _make_event("ga_review_reviewer", "Approved.")
-        mock_invoke_pipeline.return_value = ("draft", {"ga_review_draft": "draft"}, [reviewer_event])
+        mock_invoke_with_events.return_value = ("draft", {"ga_review_draft": "draft"}, [reviewer_event])
         mock_extract.return_value = {"result": "draft", "approved": True}
 
         dispatch_to_google_analytics("bounce rate", acceptance_criteria="Include table.")
@@ -1162,12 +1162,12 @@ class TestHallucinatedApprovalDetectionDispatch:
     @patch("adk.agents.registry.get_registry")
     @patch("adk.agents.utils.dispatch_handlers.extract_pipeline_result")
     @patch("adk.agents.utils.dispatch_handlers._check_hallucinated_approval")
-    @patch("adk.agents.utils.dispatch_handlers.invoke_pipeline")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_pipeline_with_events")
     @patch("adk.agents.utils.dispatch_handlers.build_review_pipeline")
     def test_news_check_called_with_empty_events_on_timeout(
         self,
         mock_build_pipeline,
-        mock_invoke_pipeline,
+        mock_invoke_with_events,
         mock_check_hallucination,
         mock_extract,
         mock_get_registry,
@@ -1176,7 +1176,7 @@ class TestHallucinatedApprovalDetectionDispatch:
         mock_get_registry.return_value = MagicMock()
         mock_get_registry.return_value.get.return_value = MagicMock()
         mock_build_pipeline.return_value = MagicMock()
-        mock_invoke_pipeline.return_value = ("Error: timed out", {}, [])
+        mock_invoke_with_events.return_value = ("Error: timed out", {}, [])
         mock_extract.return_value = {"result": "", "approved": False, "warning": "no draft"}
 
         dispatch_to_company_news("Get news", acceptance_criteria="Must cite sources.")
