@@ -19,8 +19,13 @@ from .agent_retry import (
     FAST_RETRY_CONFIG,
     invoke_agent_with_retry,
 )
-from .review_pipeline import build_review_pipeline, extract_pipeline_result
-from .supervisor_utils import invoke_pipeline
+from .review_pipeline import (
+    build_review_pipeline,
+    extract_iterations,
+    extract_pipeline_result,
+)
+from .review_pipeline_tracing import emit_iteration_span, set_pipeline_attrs
+from .supervisor_utils import invoke_pipeline_with_events
 
 logger = logging.getLogger(__name__)
 
@@ -110,8 +115,14 @@ def dispatch_to_company_news(
                 acceptance_criteria=criteria,
                 output_key_prefix="news_review",
             )
-            _text, final_state = invoke_pipeline(pipeline, query)
+            _text, final_state, events = invoke_pipeline_with_events(pipeline, query)
             outcome = extract_pipeline_result(final_state, "news_review")
+            worker_name = pipeline.sub_agents[0].name
+            reviewer_name = pipeline.sub_agents[1].name
+            iterations = extract_iterations(events, worker_name, reviewer_name, "news_review")
+            for it in iterations:
+                emit_iteration_span(it.iteration, it.specialist_output, it.reviewer_output)
+            set_pipeline_attrs(criteria, final_state, "news_review", len(iterations))
             return {
                 **outcome,
                 "status": "success",
@@ -161,7 +172,7 @@ def dispatch_to_google_analytics(
             response must satisfy. None or empty string → single-pass dispatch
             (no review loop). Non-empty → builds a review pipeline via
             build_review_pipeline() and returns the §5.2-idiom outcome.
-            GA credentials initial_state is forwarded to invoke_pipeline() so
+            GA credentials initial_state is forwarded to invoke_pipeline_with_events() so
             the specialist's McpToolset header_provider can read them.
     """
     from shared.context_utils import (
@@ -231,8 +242,16 @@ def dispatch_to_google_analytics(
                 acceptance_criteria=criteria,
                 output_key_prefix="ga_review",
             )
-            _text, final_state = invoke_pipeline(pipeline, query, state=initial_state)
+            _text, final_state, events = invoke_pipeline_with_events(
+                pipeline, query, state=initial_state
+            )
             outcome = extract_pipeline_result(final_state, "ga_review")
+            worker_name = pipeline.sub_agents[0].name
+            reviewer_name = pipeline.sub_agents[1].name
+            iterations = extract_iterations(events, worker_name, reviewer_name, "ga_review")
+            for it in iterations:
+                emit_iteration_span(it.iteration, it.specialist_output, it.reviewer_output)
+            set_pipeline_attrs(criteria, final_state, "ga_review", len(iterations))
             return {
                 **outcome,
                 "status": "success",

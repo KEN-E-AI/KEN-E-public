@@ -1,10 +1,11 @@
-"""Tests for build_review_pipeline() factory."""
+"""Tests for build_review_pipeline() factory and extract_iterations()."""
 
 import asyncio
 import re
 
 import pytest
 from google.adk.agents import LlmAgent, LoopAgent, SequentialAgent
+from google.adk.events import Event, EventActions
 from google.adk.models.base_llm import BaseLlm
 from google.adk.models.llm_response import LlmResponse
 from google.adk.models.registry import LLMRegistry
@@ -13,7 +14,12 @@ from google.adk.sessions import InMemorySessionService
 from google.adk.tools import exit_loop
 from google.genai import types as genai_types
 
-from .review_pipeline import build_review_pipeline, extract_pipeline_result
+from .review_pipeline import (
+    ReviewIteration,
+    build_review_pipeline,
+    extract_iterations,
+    extract_pipeline_result,
+)
 
 # ── Fake LLM for behavioral tests ────────────────────────────────────────────
 
@@ -1025,3 +1031,266 @@ class TestExtractPipelineResult:
         state = {"p_draft": "ok content"}
         result = extract_pipeline_result(state, "p")
         assert result == {"result": "ok content", "approved": True}
+
+
+# ── extract_iterations() ──────────────────────────────────────────────────────
+
+
+def _make_event(
+    author: str,
+    text: str = "",
+    state_delta: dict | None = None,
+    escalate: bool = False,
+    is_final: bool = True,
+) -> Event:
+    """Create a synthetic ADK Event for testing extract_iterations.
+
+    ``is_final_response()`` returns True when the event has no function calls,
+    no function responses, and ``partial=False`` (the default).  Setting
+    ``is_final=False`` sets ``partial=True`` so the event is skipped.
+    """
+    content = (
+        genai_types.Content(role="model", parts=[genai_types.Part(text=text)])
+        if text
+        else None
+    )
+    actions = EventActions(state_delta=state_delta or {}, escalate=escalate)
+    return Event(
+        author=author,
+        content=content,
+        actions=actions,
+        invocation_id="test_invocation",
+        partial=not is_final,
+    )
+
+
+class TestExtractIterations:
+    """Unit tests for extract_iterations() — AH-7 per-iteration record synthesis."""
+
+    _WORKER = "news_worker"
+    _REVIEWER = "news_reviewer"
+    _PREFIX = "news_review"
+
+    def _extract(self, events: list) -> list[ReviewIteration]:
+        return extract_iterations(events, self._WORKER, self._REVIEWER, self._PREFIX)
+
+    # ── AC: two-iteration approval ────────────────────────────────────────────
+
+    def test_two_iteration_approval_returns_two_records(self):
+        """[worker1, reviewer1-reject, worker2, reviewer2-approve] → 2 records."""
+        events = [
+            _make_event(self._WORKER, text="draft 1"),
+            _make_event(self._REVIEWER, text="Not good enough", escalate=False),
+            _make_event(self._WORKER, text="draft 2"),
+            _make_event(self._REVIEWER, text="", escalate=True),
+        ]
+        result = self._extract(events)
+        assert result == [
+            ReviewIteration(
+                iteration=1,
+                specialist_output="draft 1",
+                reviewer_output="Not good enough",
+                escalate=False,
+            ),
+            ReviewIteration(
+                iteration=2,
+                specialist_output="draft 2",
+                reviewer_output="",
+                escalate=True,
+            ),
+        ]
+
+    def test_two_iteration_iteration_numbers_are_one_based(self):
+        """iteration field is 1-based; first record is 1, second is 2."""
+        events = [
+            _make_event(self._WORKER, text="d1"),
+            _make_event(self._REVIEWER, text="feedback", escalate=False),
+            _make_event(self._WORKER, text="d2"),
+            _make_event(self._REVIEWER, text="", escalate=True),
+        ]
+        result = self._extract(events)
+        assert result[0].iteration == 1
+        assert result[1].iteration == 2
+
+    def test_two_iteration_first_record_escalate_false(self):
+        """First iteration (rejected): escalate=False."""
+        events = [
+            _make_event(self._WORKER, text="d1"),
+            _make_event(self._REVIEWER, text="feedback", escalate=False),
+            _make_event(self._WORKER, text="d2"),
+            _make_event(self._REVIEWER, text="", escalate=True),
+        ]
+        result = self._extract(events)
+        assert result[0].escalate is False
+
+    def test_two_iteration_second_record_escalate_true(self):
+        """Second iteration (approved): escalate=True."""
+        events = [
+            _make_event(self._WORKER, text="d1"),
+            _make_event(self._REVIEWER, text="feedback", escalate=False),
+            _make_event(self._WORKER, text="d2"),
+            _make_event(self._REVIEWER, text="", escalate=True),
+        ]
+        result = self._extract(events)
+        assert result[1].escalate is True
+
+    # ── AC: single-pass approval ──────────────────────────────────────────────
+
+    def test_single_pass_approval_returns_one_record(self):
+        """[worker1, reviewer1-approve] → 1 record with escalate=True."""
+        events = [
+            _make_event(self._WORKER, text="perfect draft"),
+            _make_event(self._REVIEWER, text="", escalate=True),
+        ]
+        result = self._extract(events)
+        assert result == [
+            ReviewIteration(
+                iteration=1,
+                specialist_output="perfect draft",
+                reviewer_output="",
+                escalate=True,
+            )
+        ]
+
+    # ── AC: exhaustion (no escalate) ──────────────────────────────────────────
+
+    def test_exhaustion_one_iteration_escalate_false(self):
+        """[worker1, reviewer1-reject] → 1 record with escalate=False, non-empty reviewer."""
+        events = [
+            _make_event(self._WORKER, text="only draft"),
+            _make_event(self._REVIEWER, text="criteria not met", escalate=False),
+        ]
+        result = self._extract(events)
+        assert len(result) == 1
+        assert result[0].escalate is False
+        assert result[0].reviewer_output == "criteria not met"
+        assert result[0].specialist_output == "only draft"
+
+    # ── AC: mid-iteration abort ───────────────────────────────────────────────
+
+    def test_mid_iteration_abort_no_reviewer_final(self):
+        """[worker1-final] with no reviewer → 1 record with reviewer_output='' and escalate=False."""
+        events = [
+            _make_event(self._WORKER, text="final draft"),
+        ]
+        result = self._extract(events)
+        assert result == [
+            ReviewIteration(
+                iteration=1,
+                specialist_output="final draft",
+                reviewer_output="",
+                escalate=False,
+            )
+        ]
+
+    # ── AC: state_delta vs text-parts fallback ────────────────────────────────
+
+    def test_specialist_output_from_state_delta_when_present(self):
+        """When state_delta has the draft key, specialist_output comes from state_delta."""
+        events = [
+            _make_event(
+                self._WORKER,
+                text="text parts version",
+                state_delta={"news_review_draft": "state_delta_version"},
+            ),
+            _make_event(self._REVIEWER, text="", escalate=True),
+        ]
+        result = self._extract(events)
+        assert result[0].specialist_output == "state_delta_version"
+
+    def test_specialist_output_falls_back_to_text_parts(self):
+        """When state_delta does not have the draft key, specialist_output comes from text parts."""
+        events = [
+            _make_event(self._WORKER, text="text parts value"),
+            _make_event(self._REVIEWER, text="", escalate=True),
+        ]
+        result = self._extract(events)
+        assert result[0].specialist_output == "text parts value"
+
+    def test_state_delta_empty_string_falls_back_to_text_parts(self):
+        """When state_delta draft value is empty string, fall back to text parts."""
+        events = [
+            _make_event(
+                self._WORKER,
+                text="text parts fallback",
+                state_delta={"news_review_draft": ""},
+            ),
+            _make_event(self._REVIEWER, text="", escalate=True),
+        ]
+        result = self._extract(events)
+        assert result[0].specialist_output == "text parts fallback"
+
+    def test_reviewer_output_from_state_delta_when_present(self):
+        """Reviewer output comes from state_delta[feedback_key] when present."""
+        events = [
+            _make_event(self._WORKER, text="draft"),
+            _make_event(
+                self._REVIEWER,
+                text="text version",
+                state_delta={"news_review_feedback": "state_delta_feedback"},
+                escalate=False,
+            ),
+        ]
+        result = self._extract(events)
+        assert result[0].reviewer_output == "state_delta_feedback"
+
+    # ── AC: non-matching author events ignored ────────────────────────────────
+
+    def test_non_matching_author_events_ignored(self):
+        """Events from authors other than worker/reviewer are skipped."""
+        events = [
+            _make_event("other_agent", text="noise 1"),
+            _make_event(self._WORKER, text="draft 1"),
+            _make_event("another_agent", text="noise 2"),
+            _make_event(self._REVIEWER, text="", escalate=True),
+            _make_event("root_agent", text="noise 3"),
+        ]
+        result = self._extract(events)
+        assert len(result) == 1
+        assert result[0].specialist_output == "draft 1"
+
+    def test_non_final_events_skipped(self):
+        """Events with is_final=False (partial=True) are skipped by the pairer."""
+        events = [
+            _make_event(self._WORKER, text="streaming chunk", is_final=False),
+            _make_event(self._WORKER, text="final draft", is_final=True),
+            _make_event(self._REVIEWER, text="", escalate=True, is_final=True),
+        ]
+        result = self._extract(events)
+        assert len(result) == 1
+        assert result[0].specialist_output == "final draft"
+
+    # ── AC: empty event list ──────────────────────────────────────────────────
+
+    def test_empty_event_list_returns_empty(self):
+        """Empty event list → []."""
+        assert self._extract([]) == []
+
+    # ── Edge cases ─────────────────────────────────────────────────────────────
+
+    def test_reviewer_without_prior_specialist_is_skipped(self):
+        """Reviewer-final event with no preceding specialist-final is ignored."""
+        events = [
+            _make_event(self._REVIEWER, text="orphan review", escalate=False),
+            _make_event(self._WORKER, text="actual draft"),
+            _make_event(self._REVIEWER, text="", escalate=True),
+        ]
+        result = self._extract(events)
+        assert len(result) == 1
+        assert result[0].specialist_output == "actual draft"
+
+    def test_consecutive_worker_finals_emit_abort_record_then_normal(self):
+        """Two consecutive worker-final events → first emits an abort record (empty reviewer)."""
+        events = [
+            _make_event(self._WORKER, text="draft 1"),
+            _make_event(self._WORKER, text="draft 2"),
+            _make_event(self._REVIEWER, text="", escalate=True),
+        ]
+        result = self._extract(events)
+        assert len(result) == 2
+        assert result[0] == ReviewIteration(
+            iteration=1, specialist_output="draft 1", reviewer_output="", escalate=False
+        )
+        assert result[1] == ReviewIteration(
+            iteration=2, specialist_output="draft 2", reviewer_output="", escalate=True
+        )

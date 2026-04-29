@@ -6,10 +6,6 @@ import logging
 import os
 from unittest.mock import MagicMock, patch
 
-import pytest
-from pydantic import ValidationError
-
-from ..models.strategy_models import StrategyParameters
 from .dispatch_handlers import (
     dispatch_to_company_news,
     dispatch_to_google_analytics,
