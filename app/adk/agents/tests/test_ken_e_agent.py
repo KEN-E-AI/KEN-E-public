@@ -35,6 +35,44 @@ def test_ken_e_has_correct_tools():
     assert len(tool_names) == 2  # Only two tools
 
 
+def test_tool_wrappers_accept_acceptance_criteria():
+    """Both tool wrappers expose acceptance_criteria with the empty-string default.
+
+    Regression guard for AH-PRD-01 §7 AC#6 — the parameter must exist on the
+    root-agent tool surface so the LLM can populate it (AH-6 will instruct it
+    to do so; this issue opens the surface).
+    """
+    import inspect
+
+    agent = create_ken_e_agent()
+    tools_by_name = {tool.__name__: tool for tool in agent.tools}
+
+    for tool_name in ("search_company_news", "query_google_analytics"):
+        tool = tools_by_name[tool_name]
+        params = inspect.signature(tool).parameters
+
+        assert "acceptance_criteria" in params, (
+            f"{tool_name} must have acceptance_criteria parameter"
+        )
+
+        ac_param = params["acceptance_criteria"]
+        assert ac_param.default == "", (
+            f"{tool_name}.acceptance_criteria default must be '' (empty string), "
+            f"got {ac_param.default!r}"
+        )
+        assert ac_param.annotation is str, (
+            f"{tool_name}.acceptance_criteria annotation must be str"
+        )
+
+        param_order = list(params.keys())
+        assert param_order.index("query") < param_order.index("acceptance_criteria"), (
+            f"In {tool_name}, 'query' must come before 'acceptance_criteria'"
+        )
+        assert param_order.index("acceptance_criteria") < param_order.index("tool_context"), (
+            f"In {tool_name}, 'acceptance_criteria' must come before 'tool_context'"
+        )
+
+
 def test_ken_e_agent_name():
     """Test agent has correct name regardless of config."""
     agent = create_ken_e_agent()
