@@ -6,7 +6,7 @@ type TopNavProps = {
   compact?: boolean;
 };
 
-export function TopNav({ compact }: TopNavProps) {
+export function TopNav({ compact = false }: TopNavProps) {
   return (
     <div className="flex items-center h-16 px-6">
       <div className="flex items-center gap-2 shrink-0">

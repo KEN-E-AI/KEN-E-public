@@ -18,9 +18,9 @@ type ProfileMenuProps = {
 export function ProfileMenu({ compact = false }: ProfileMenuProps) {
   const { user, logout } = useAuth();
 
-  const initials = (
-    user ? (user.firstName?.[0] ?? "") + (user.lastName?.[0] ?? "") || "U" : "U"
-  ).toUpperCase();
+  const first = user?.firstName?.[0] ?? "";
+  const last = user?.lastName?.[0] ?? "";
+  const initials = (first + last).toUpperCase() || "U";
 
   const fullName = user
     ? `${user.firstName} ${user.lastName}`.trim() || user.email
@@ -30,6 +30,7 @@ export function ProfileMenu({ compact = false }: ProfileMenuProps) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
+          aria-label={`Profile menu for ${fullName || user?.email || "user"}`}
           className={cn(
             "rounded-full transition-all outline-none flex items-center justify-center shrink-0",
             "hover:ring-2 hover:ring-[var(--color-violet-500)] hover:ring-offset-2",

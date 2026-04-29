@@ -100,7 +100,7 @@ export function AccountSwitcher({ compact = false }: AccountSwitcherProps) {
         <button
           className={cn(
             "flex items-center gap-1.5 rounded-[var(--radius-md)] transition-all outline-none",
-            "hover:bg-[var(--color-accent)] active:scale-[0.98]",
+            "hover:bg-[var(--accent)] active:scale-[0.98]",
             "focus-visible:ring-2 focus-visible:ring-[var(--color-violet-500)]",
             compact ? "px-2 py-1.5" : "px-2.5 py-1.5",
           )}
