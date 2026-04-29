@@ -136,6 +136,7 @@ dmypy.json
 
 # macOS
 .DS_Store
+._*
 
 # PyCharm
 .idea

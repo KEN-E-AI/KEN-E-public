@@ -157,7 +157,7 @@ class TestDispatchToCompanyNewsWithCriteria:
 
         mock_pipeline = MagicMock()
         mock_build_pipeline.return_value = mock_pipeline
-        mock_invoke_pipeline.return_value = ("draft text", {"news_review_draft": "draft text"})
+        mock_invoke_pipeline.return_value = ("draft text", {"news_review_draft": "draft text"}, [])
         mock_extract.return_value = {"result": "draft text", "approved": True}
 
         result = dispatch_to_company_news("Get news", acceptance_criteria="Must cite sources.")
@@ -190,7 +190,7 @@ class TestDispatchToCompanyNewsWithCriteria:
 
         mock_pipeline = MagicMock()
         mock_build_pipeline.return_value = mock_pipeline
-        mock_invoke_pipeline.return_value = ("", {})
+        mock_invoke_pipeline.return_value = ("", {}, [])
         mock_extract.return_value = {"result": "", "approved": True}
 
         criteria = "Must be factual. Must include date."
@@ -219,7 +219,7 @@ class TestDispatchToCompanyNewsWithCriteria:
         mock_get_registry.return_value.get.return_value = MagicMock()
 
         mock_build_pipeline.return_value = MagicMock()
-        mock_invoke_pipeline.return_value = ("last draft", {"news_review_feedback": "needs sources"})
+        mock_invoke_pipeline.return_value = ("last draft", {"news_review_feedback": "needs sources"}, [])
         mock_extract.return_value = {
             "result": "last draft",
             "approved": False,
@@ -250,7 +250,7 @@ class TestDispatchToCompanyNewsWithCriteria:
         mock_get_registry.return_value = MagicMock()
         mock_get_registry.return_value.get.return_value = MagicMock()
         mock_build_pipeline.return_value = MagicMock()
-        mock_invoke_pipeline.return_value = ("", {})
+        mock_invoke_pipeline.return_value = ("", {}, [])
         mock_extract.return_value = {"result": "answer", "approved": True}
 
         result = dispatch_to_company_news("my query", acceptance_criteria="be concise")
@@ -272,7 +272,7 @@ class TestDispatchToCompanyNewsWithCriteria:
         mock_get_registry.return_value = MagicMock()
         mock_get_registry.return_value.get.return_value = MagicMock()
         mock_build_pipeline.return_value = MagicMock()
-        mock_invoke_pipeline.return_value = ("", {})
+        mock_invoke_pipeline.return_value = ("", {}, [])
         mock_extract.return_value = {"result": "", "approved": True}
 
         dispatch_to_company_news("query", acceptance_criteria="x" * 2500)
@@ -296,7 +296,7 @@ class TestDispatchToCompanyNewsWithCriteria:
         mock_get_registry.return_value = MagicMock()
         mock_get_registry.return_value.get.return_value = MagicMock()
         mock_build_pipeline.return_value = MagicMock()
-        mock_invoke_pipeline.return_value = ("", {})
+        mock_invoke_pipeline.return_value = ("", {}, [])
         mock_extract.return_value = {
             "result": "draft",
             "approved": True,
@@ -404,7 +404,7 @@ class TestDispatchToGoogleAnalyticsWithCriteria:
         mock_get_registry.return_value.get.return_value = mock_agent
 
         mock_build_pipeline.return_value = MagicMock()
-        mock_invoke_pipeline.return_value = ("draft", {"ga_review_draft": "draft"})
+        mock_invoke_pipeline.return_value = ("draft", {"ga_review_draft": "draft"}, [])
         mock_extract.return_value = {"result": "draft", "approved": True}
 
         result = dispatch_to_google_analytics(
@@ -442,7 +442,7 @@ class TestDispatchToGoogleAnalyticsWithCriteria:
         mock_get_registry.return_value.get.return_value = mock_agent
 
         mock_build_pipeline.return_value = MagicMock()
-        mock_invoke_pipeline.return_value = ("", {})
+        mock_invoke_pipeline.return_value = ("", {}, [])
         mock_extract.return_value = {"result": "", "approved": True}
 
         tool_ctx = _mock_tool_context({"account_id": "acc_123", "ga_credentials": ga_creds})
@@ -469,7 +469,7 @@ class TestDispatchToGoogleAnalyticsWithCriteria:
         mock_get_registry.return_value = MagicMock()
         mock_get_registry.return_value.get.return_value = MagicMock()
         mock_build_pipeline.return_value = MagicMock()
-        mock_invoke_pipeline.return_value = ("", {})
+        mock_invoke_pipeline.return_value = ("", {}, [])
         mock_extract.return_value = {"result": "", "approved": True}
 
         tool_ctx = _mock_tool_context({"account_id": "acc_123"})
@@ -497,7 +497,7 @@ class TestDispatchToGoogleAnalyticsWithCriteria:
         mock_get_registry.return_value.get.return_value = mock_agent
 
         mock_build_pipeline.return_value = MagicMock()
-        mock_invoke_pipeline.return_value = ("", {})
+        mock_invoke_pipeline.return_value = ("", {}, [])
         mock_extract.return_value = {"result": "", "approved": True}
 
         dispatch_to_google_analytics("query", acceptance_criteria="criteria")
@@ -522,7 +522,7 @@ class TestDispatchToGoogleAnalyticsWithCriteria:
         mock_get_registry.return_value = MagicMock()
         mock_get_registry.return_value.get.return_value = MagicMock()
         mock_build_pipeline.return_value = MagicMock()
-        mock_invoke_pipeline.return_value = ("last draft", {})
+        mock_invoke_pipeline.return_value = ("last draft", {}, [])
         mock_extract.return_value = {
             "result": "last draft",
             "approved": False,
@@ -550,13 +550,14 @@ class TestDispatchToGoogleAnalyticsWithCriteria:
         mock_get_registry.return_value = MagicMock()
         mock_get_registry.return_value.get.return_value = MagicMock()
         mock_build_pipeline.return_value = MagicMock()
-        mock_invoke_pipeline.return_value = ("", {})
+        mock_invoke_pipeline.return_value = ("", {}, [])
         mock_extract.return_value = {"result": "", "approved": True}
 
         dispatch_to_google_analytics("query", acceptance_criteria="y" * 2500)
 
         call_criteria = mock_build_pipeline.call_args.kwargs.get("acceptance_criteria")
         assert len(call_criteria) == 2000
+        assert call_criteria == "y" * 2000
 
 
 # ── TestPrefixIsolation ────────────────────────────────────────────────────────
@@ -573,3 +574,601 @@ class TestPrefixIsolation:
 
     def test_ga_prefix_value(self):
         assert _GA_PREFIX == "ga_review"
+
+
+# ── TestDispatchReviewLoopTracing (AH-7) ──────────────────────────────────────
+
+
+def _make_iteration(iteration: int, escalate: bool):
+    """Return a ReviewIteration for use in dispatch tracing tests."""
+    from adk.agents.utils.review_pipeline import ReviewIteration
+
+    return ReviewIteration(
+        iteration=iteration,
+        specialist_output=f"specialist output {iteration}",
+        reviewer_output="" if escalate else f"feedback {iteration}",
+        escalate=escalate,
+    )
+
+
+def _standard_pipeline_mock(worker_name: str = "worker", reviewer_name: str = "reviewer"):
+    """Return a MagicMock pipeline with two named sub_agents."""
+    mock_worker = MagicMock()
+    mock_worker.name = worker_name
+    mock_reviewer = MagicMock()
+    mock_reviewer.name = reviewer_name
+    mock_pipeline = MagicMock()
+    mock_pipeline.sub_agents = [mock_worker, mock_reviewer]
+    return mock_pipeline
+
+
+# Common patch stack for criteria-branch tests (bottom to top as listed in decorator order,
+# which is reversed in argument order).  Both handlers share the same criteria-branch structure.
+_CRITERIA_PATCHES = [
+    "adk.agents.utils.dispatch_handlers.build_review_pipeline",
+    "adk.agents.utils.dispatch_handlers.invoke_pipeline",
+    "adk.agents.utils.dispatch_handlers.emit_iteration_span",
+    "adk.agents.utils.dispatch_handlers.set_pipeline_attrs",
+    "adk.agents.utils.dispatch_handlers.extract_iterations",
+    "adk.agents.utils.dispatch_handlers.extract_pipeline_result",
+    "adk.agents.registry.get_registry",
+]
+
+
+class TestDispatchReviewLoopTracingNews:
+    """AH-7: per-iteration tracing wiring for dispatch_to_company_news criteria branch."""
+
+    # ── criteria branch uses invoke_pipeline ────────────────────
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.extract_pipeline_result")
+    @patch("adk.agents.utils.dispatch_handlers.extract_iterations")
+    @patch("adk.agents.utils.dispatch_handlers.set_pipeline_attrs")
+    @patch("adk.agents.utils.dispatch_handlers.emit_iteration_span")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_pipeline")
+    @patch("adk.agents.utils.dispatch_handlers.build_review_pipeline")
+    def test_criteria_branch_uses_pipeline_with_events(
+        self,
+        mock_build_pipeline,
+        mock_invoke_pipeline,
+        mock_emit,
+        mock_set_attrs,
+        mock_extract_iters,
+        mock_extract_result,
+        mock_get_registry,
+    ):
+        """Criteria branch must call invoke_pipeline."""
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+        mock_build_pipeline.return_value = _standard_pipeline_mock()
+        mock_invoke_pipeline.return_value = (
+            "result text",
+            {"news_review_draft": "draft", "news_review_feedback": ""},
+            [],
+        )
+        mock_extract_iters.return_value = []
+        mock_extract_result.return_value = {"result": "result text", "approved": True}
+
+        dispatch_to_company_news("query", acceptance_criteria="Be concise.")
+
+        mock_invoke_pipeline.assert_called_once()
+
+    # ── emit_iteration_span called per iteration ─────────────────────────────
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.extract_pipeline_result")
+    @patch("adk.agents.utils.dispatch_handlers.extract_iterations")
+    @patch("adk.agents.utils.dispatch_handlers.set_pipeline_attrs")
+    @patch("adk.agents.utils.dispatch_handlers.emit_iteration_span")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_pipeline")
+    @patch("adk.agents.utils.dispatch_handlers.build_review_pipeline")
+    def test_emit_iteration_span_called_once_per_iteration(
+        self,
+        mock_build_pipeline,
+        mock_invoke_pipeline,
+        mock_emit,
+        mock_set_attrs,
+        mock_extract_iters,
+        mock_extract_result,
+        mock_get_registry,
+    ):
+        """emit_iteration_span is called once for each ReviewIteration record."""
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+        mock_build_pipeline.return_value = _standard_pipeline_mock()
+        mock_invoke_pipeline.return_value = ("text", {"news_review_feedback": ""}, [])
+
+        iterations = [_make_iteration(1, escalate=False), _make_iteration(2, escalate=True)]
+        mock_extract_iters.return_value = iterations
+        mock_extract_result.return_value = {"result": "text", "approved": True}
+
+        dispatch_to_company_news("query", acceptance_criteria="Be concise.")
+
+        assert mock_emit.call_count == 2
+        assert mock_emit.call_args_list[0].args[0] == 1
+        assert mock_emit.call_args_list[1].args[0] == 2
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.extract_pipeline_result")
+    @patch("adk.agents.utils.dispatch_handlers.extract_iterations")
+    @patch("adk.agents.utils.dispatch_handlers.set_pipeline_attrs")
+    @patch("adk.agents.utils.dispatch_handlers.emit_iteration_span")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_pipeline")
+    @patch("adk.agents.utils.dispatch_handlers.build_review_pipeline")
+    def test_emit_iteration_span_receives_specialist_and_reviewer_outputs(
+        self,
+        mock_build_pipeline,
+        mock_invoke_pipeline,
+        mock_emit,
+        mock_set_attrs,
+        mock_extract_iters,
+        mock_extract_result,
+        mock_get_registry,
+    ):
+        """emit_iteration_span receives the iteration index and both output strings."""
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+        mock_build_pipeline.return_value = _standard_pipeline_mock()
+        mock_invoke_pipeline.return_value = ("text", {}, [])
+
+        it = _make_iteration(1, escalate=True)
+        mock_extract_iters.return_value = [it]
+        mock_extract_result.return_value = {"result": "text", "approved": True}
+
+        dispatch_to_company_news("query", acceptance_criteria="crit")
+
+        mock_emit.assert_called_once_with(
+            it.iteration, it.specialist_output, it.reviewer_output
+        )
+
+    # ── set_pipeline_attrs called exactly once ────────────────────────────────
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.extract_pipeline_result")
+    @patch("adk.agents.utils.dispatch_handlers.extract_iterations")
+    @patch("adk.agents.utils.dispatch_handlers.set_pipeline_attrs")
+    @patch("adk.agents.utils.dispatch_handlers.emit_iteration_span")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_pipeline")
+    @patch("adk.agents.utils.dispatch_handlers.build_review_pipeline")
+    def test_set_pipeline_attrs_called_exactly_once(
+        self,
+        mock_build_pipeline,
+        mock_invoke_pipeline,
+        mock_emit,
+        mock_set_attrs,
+        mock_extract_iters,
+        mock_extract_result,
+        mock_get_registry,
+    ):
+        """set_pipeline_attrs is called exactly once after iteration emission."""
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+        mock_build_pipeline.return_value = _standard_pipeline_mock()
+        final_state = {"news_review_feedback": ""}
+        mock_invoke_pipeline.return_value = ("text", final_state, [])
+
+        iterations = [_make_iteration(1, escalate=False), _make_iteration(2, escalate=True)]
+        mock_extract_iters.return_value = iterations
+        mock_extract_result.return_value = {"result": "text", "approved": True}
+
+        dispatch_to_company_news("query", acceptance_criteria="crit")
+
+        mock_set_attrs.assert_called_once()
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.extract_pipeline_result")
+    @patch("adk.agents.utils.dispatch_handlers.extract_iterations")
+    @patch("adk.agents.utils.dispatch_handlers.set_pipeline_attrs")
+    @patch("adk.agents.utils.dispatch_handlers.emit_iteration_span")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_pipeline")
+    @patch("adk.agents.utils.dispatch_handlers.build_review_pipeline")
+    def test_set_pipeline_attrs_total_iterations_matches_extract_count(
+        self,
+        mock_build_pipeline,
+        mock_invoke_pipeline,
+        mock_emit,
+        mock_set_attrs,
+        mock_extract_iters,
+        mock_extract_result,
+        mock_get_registry,
+    ):
+        """set_pipeline_attrs receives total_iterations == len(extract_iterations result)."""
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+        mock_build_pipeline.return_value = _standard_pipeline_mock()
+        final_state = {"news_review_feedback": ""}
+        mock_invoke_pipeline.return_value = ("text", final_state, [])
+
+        iterations = [_make_iteration(1, escalate=False), _make_iteration(2, escalate=True)]
+        mock_extract_iters.return_value = iterations
+        mock_extract_result.return_value = {"result": "text", "approved": True}
+
+        dispatch_to_company_news("query", acceptance_criteria="crit")
+
+        call_kwargs = mock_set_attrs.call_args
+        # set_pipeline_attrs(criteria, final_state, prefix, total_iterations)
+        assert call_kwargs.args[3] == 2
+
+    # ── empty-criteria path emits ZERO tracing calls ─────────────────────────
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.set_pipeline_attrs")
+    @patch("adk.agents.utils.dispatch_handlers.emit_iteration_span")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_agent_with_retry")
+    def test_empty_criteria_no_tracing_calls(
+        self,
+        mock_invoke,
+        mock_emit,
+        mock_set_attrs,
+        mock_get_registry,
+    ):
+        """When acceptance_criteria is absent/empty, tracing helpers must not be called."""
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+        mock_invoke.return_value = "result"
+
+        dispatch_to_company_news("query")
+
+        mock_emit.assert_not_called()
+        mock_set_attrs.assert_not_called()
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.set_pipeline_attrs")
+    @patch("adk.agents.utils.dispatch_handlers.emit_iteration_span")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_agent_with_retry")
+    def test_none_criteria_no_tracing_calls(
+        self,
+        mock_invoke,
+        mock_emit,
+        mock_set_attrs,
+        mock_get_registry,
+    ):
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+        mock_invoke.return_value = "result"
+
+        dispatch_to_company_news("query", acceptance_criteria=None)
+
+        mock_emit.assert_not_called()
+        mock_set_attrs.assert_not_called()
+
+    # ── worker/reviewer names derived from specialist + prefix ───────────────
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.extract_pipeline_result")
+    @patch("adk.agents.utils.dispatch_handlers.extract_iterations")
+    @patch("adk.agents.utils.dispatch_handlers.set_pipeline_attrs")
+    @patch("adk.agents.utils.dispatch_handlers.emit_iteration_span")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_pipeline")
+    @patch("adk.agents.utils.dispatch_handlers.build_review_pipeline")
+    def test_extract_iterations_called_with_derived_names(
+        self,
+        mock_build_pipeline,
+        mock_invoke_pipeline,
+        mock_emit,
+        mock_set_attrs,
+        mock_extract_iters,
+        mock_extract_result,
+        mock_get_registry,
+    ):
+        """extract_iterations receives names derived from specialist.name and prefix."""
+        mock_specialist = MagicMock()
+        mock_specialist.name = "news"
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = mock_specialist
+
+        mock_build_pipeline.return_value = _standard_pipeline_mock()
+        mock_invoke_pipeline.return_value = ("text", {}, [])
+        mock_extract_iters.return_value = []
+        mock_extract_result.return_value = {"result": "text", "approved": True}
+
+        dispatch_to_company_news("query", acceptance_criteria="crit")
+
+        mock_extract_iters.assert_called_once()
+        call_args = mock_extract_iters.call_args
+        # extract_iterations(events, specialist_worker_name, reviewer_name, prefix)
+        assert call_args.args[1] == "news_worker"
+        assert call_args.args[2] == "news_review_reviewer"
+
+
+class TestDispatchReviewLoopTracingGA:
+    """AH-7: per-iteration tracing wiring for dispatch_to_google_analytics criteria branch."""
+
+    # ── criteria branch uses invoke_pipeline ────────────────────
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.extract_pipeline_result")
+    @patch("adk.agents.utils.dispatch_handlers.extract_iterations")
+    @patch("adk.agents.utils.dispatch_handlers.set_pipeline_attrs")
+    @patch("adk.agents.utils.dispatch_handlers.emit_iteration_span")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_pipeline")
+    @patch("adk.agents.utils.dispatch_handlers.build_review_pipeline")
+    def test_criteria_branch_uses_pipeline_with_events(
+        self,
+        mock_build_pipeline,
+        mock_invoke_pipeline,
+        mock_emit,
+        mock_set_attrs,
+        mock_extract_iters,
+        mock_extract_result,
+        mock_get_registry,
+    ):
+        """GA criteria branch must call invoke_pipeline."""
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+        mock_build_pipeline.return_value = _standard_pipeline_mock()
+        mock_invoke_pipeline.return_value = (
+            "result text",
+            {"ga_review_draft": "draft", "ga_review_feedback": ""},
+            [],
+        )
+        mock_extract_iters.return_value = []
+        mock_extract_result.return_value = {"result": "result text", "approved": True}
+
+        dispatch_to_google_analytics("query", acceptance_criteria="Include a table.")
+
+        mock_invoke_pipeline.assert_called_once()
+
+    # ── emit_iteration_span called per iteration ─────────────────────────────
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.extract_pipeline_result")
+    @patch("adk.agents.utils.dispatch_handlers.extract_iterations")
+    @patch("adk.agents.utils.dispatch_handlers.set_pipeline_attrs")
+    @patch("adk.agents.utils.dispatch_handlers.emit_iteration_span")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_pipeline")
+    @patch("adk.agents.utils.dispatch_handlers.build_review_pipeline")
+    def test_emit_iteration_span_called_once_per_iteration(
+        self,
+        mock_build_pipeline,
+        mock_invoke_pipeline,
+        mock_emit,
+        mock_set_attrs,
+        mock_extract_iters,
+        mock_extract_result,
+        mock_get_registry,
+    ):
+        """emit_iteration_span is called once for each ReviewIteration record."""
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+        mock_build_pipeline.return_value = _standard_pipeline_mock()
+        mock_invoke_pipeline.return_value = ("text", {"ga_review_feedback": ""}, [])
+
+        iterations = [_make_iteration(1, escalate=False), _make_iteration(2, escalate=True)]
+        mock_extract_iters.return_value = iterations
+        mock_extract_result.return_value = {"result": "text", "approved": True}
+
+        dispatch_to_google_analytics("query", acceptance_criteria="Include a table.")
+
+        assert mock_emit.call_count == 2
+        assert mock_emit.call_args_list[0].args[0] == 1
+        assert mock_emit.call_args_list[1].args[0] == 2
+
+    # ── set_pipeline_attrs called exactly once ────────────────────────────────
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.extract_pipeline_result")
+    @patch("adk.agents.utils.dispatch_handlers.extract_iterations")
+    @patch("adk.agents.utils.dispatch_handlers.set_pipeline_attrs")
+    @patch("adk.agents.utils.dispatch_handlers.emit_iteration_span")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_pipeline")
+    @patch("adk.agents.utils.dispatch_handlers.build_review_pipeline")
+    def test_set_pipeline_attrs_called_exactly_once(
+        self,
+        mock_build_pipeline,
+        mock_invoke_pipeline,
+        mock_emit,
+        mock_set_attrs,
+        mock_extract_iters,
+        mock_extract_result,
+        mock_get_registry,
+    ):
+        """set_pipeline_attrs is called exactly once after GA iteration emission."""
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+        mock_build_pipeline.return_value = _standard_pipeline_mock()
+        final_state = {"ga_review_feedback": ""}
+        mock_invoke_pipeline.return_value = ("text", final_state, [])
+
+        iterations = [_make_iteration(1, escalate=False), _make_iteration(2, escalate=True)]
+        mock_extract_iters.return_value = iterations
+        mock_extract_result.return_value = {"result": "text", "approved": True}
+
+        dispatch_to_google_analytics("query", acceptance_criteria="Include a table.")
+
+        mock_set_attrs.assert_called_once()
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.extract_pipeline_result")
+    @patch("adk.agents.utils.dispatch_handlers.extract_iterations")
+    @patch("adk.agents.utils.dispatch_handlers.set_pipeline_attrs")
+    @patch("adk.agents.utils.dispatch_handlers.emit_iteration_span")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_pipeline")
+    @patch("adk.agents.utils.dispatch_handlers.build_review_pipeline")
+    def test_set_pipeline_attrs_total_iterations_matches_extract_count(
+        self,
+        mock_build_pipeline,
+        mock_invoke_pipeline,
+        mock_emit,
+        mock_set_attrs,
+        mock_extract_iters,
+        mock_extract_result,
+        mock_get_registry,
+    ):
+        """GA set_pipeline_attrs receives total_iterations == len(extract_iterations result)."""
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+        mock_build_pipeline.return_value = _standard_pipeline_mock()
+        final_state = {"ga_review_feedback": ""}
+        mock_invoke_pipeline.return_value = ("text", final_state, [])
+
+        iterations = [_make_iteration(1, escalate=False), _make_iteration(2, escalate=True)]
+        mock_extract_iters.return_value = iterations
+        mock_extract_result.return_value = {"result": "text", "approved": True}
+
+        dispatch_to_google_analytics("query", acceptance_criteria="Include a table.")
+
+        call_kwargs = mock_set_attrs.call_args
+        assert call_kwargs.args[3] == 2
+
+    # ── empty-criteria path emits ZERO tracing calls ─────────────────────────
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.set_pipeline_attrs")
+    @patch("adk.agents.utils.dispatch_handlers.emit_iteration_span")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_agent_with_retry")
+    def test_empty_criteria_no_tracing_calls(
+        self,
+        mock_invoke,
+        mock_emit,
+        mock_set_attrs,
+        mock_get_registry,
+    ):
+        """When GA acceptance_criteria is absent/empty, tracing helpers must not be called."""
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+        mock_invoke.return_value = "result"
+
+        dispatch_to_google_analytics("query")
+
+        mock_emit.assert_not_called()
+        mock_set_attrs.assert_not_called()
+
+    # ── worker/reviewer names derived from specialist + prefix ───────────────
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.extract_pipeline_result")
+    @patch("adk.agents.utils.dispatch_handlers.extract_iterations")
+    @patch("adk.agents.utils.dispatch_handlers.set_pipeline_attrs")
+    @patch("adk.agents.utils.dispatch_handlers.emit_iteration_span")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_pipeline")
+    @patch("adk.agents.utils.dispatch_handlers.build_review_pipeline")
+    def test_extract_iterations_called_with_derived_names(
+        self,
+        mock_build_pipeline,
+        mock_invoke_pipeline,
+        mock_emit,
+        mock_set_attrs,
+        mock_extract_iters,
+        mock_extract_result,
+        mock_get_registry,
+    ):
+        """extract_iterations receives names derived from specialist.name and GA prefix."""
+        mock_specialist = MagicMock()
+        mock_specialist.name = "google_analytics"
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = mock_specialist
+
+        mock_build_pipeline.return_value = _standard_pipeline_mock()
+        mock_invoke_pipeline.return_value = ("text", {}, [])
+        mock_extract_iters.return_value = []
+        mock_extract_result.return_value = {"result": "text", "approved": True}
+
+        dispatch_to_google_analytics("query", acceptance_criteria="crit")
+
+        mock_extract_iters.assert_called_once()
+        call_args = mock_extract_iters.call_args
+        assert call_args.args[1] == "google_analytics_worker"
+        assert call_args.args[2] == "ga_review_reviewer"
+
+
+# ── TestHallucinatedApprovalDetectionDispatch ─────────────────────────────────
+
+
+def _make_event(author: str, text: str, escalate: bool | None = None, partial: bool = False):
+    """Build a minimal mock ADK Event for hallucination detection tests."""
+    event = MagicMock()
+    event.author = author
+    event.partial = partial
+    part = MagicMock()
+    part.text = text
+    content = MagicMock()
+    content.parts = [part]
+    event.content = content
+    if escalate is not None:
+        event.actions = MagicMock()
+        event.actions.escalate = escalate
+    else:
+        event.actions = None
+    return event
+
+
+class TestHallucinatedApprovalDetectionDispatch:
+    """dispatch_to_company_news and dispatch_to_google_analytics call
+    _check_hallucinated_approval with the events returned by invoke_pipeline."""
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.extract_pipeline_result")
+    @patch("adk.agents.utils.dispatch_handlers._check_hallucinated_approval")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_pipeline")
+    @patch("adk.agents.utils.dispatch_handlers.build_review_pipeline")
+    def test_news_check_called_with_events(
+        self,
+        mock_build_pipeline,
+        mock_invoke_pipeline,
+        mock_check_hallucination,
+        mock_extract,
+        mock_get_registry,
+    ):
+        """dispatch_to_company_news passes events to _check_hallucinated_approval."""
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+        mock_build_pipeline.return_value = MagicMock()
+
+        reviewer_event = _make_event("news_review_reviewer", "All criteria met.")
+        mock_invoke_pipeline.return_value = ("draft", {"news_review_draft": "draft"}, [reviewer_event])
+        mock_extract.return_value = {"result": "draft", "approved": True}
+
+        dispatch_to_company_news("Get news", acceptance_criteria="Must cite sources.")
+
+        mock_check_hallucination.assert_called_once_with([reviewer_event], "news_review")
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.extract_pipeline_result")
+    @patch("adk.agents.utils.dispatch_handlers._check_hallucinated_approval")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_pipeline")
+    @patch("adk.agents.utils.dispatch_handlers.build_review_pipeline")
+    def test_ga_check_called_with_events(
+        self,
+        mock_build_pipeline,
+        mock_invoke_pipeline,
+        mock_check_hallucination,
+        mock_extract,
+        mock_get_registry,
+    ):
+        """dispatch_to_google_analytics passes events to _check_hallucinated_approval."""
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+        mock_build_pipeline.return_value = MagicMock()
+
+        reviewer_event = _make_event("ga_review_reviewer", "Approved.")
+        mock_invoke_pipeline.return_value = ("draft", {"ga_review_draft": "draft"}, [reviewer_event])
+        mock_extract.return_value = {"result": "draft", "approved": True}
+
+        dispatch_to_google_analytics("bounce rate", acceptance_criteria="Include table.")
+
+        mock_check_hallucination.assert_called_once_with([reviewer_event], "ga_review")
+
+    @patch("adk.agents.registry.get_registry")
+    @patch("adk.agents.utils.dispatch_handlers.extract_pipeline_result")
+    @patch("adk.agents.utils.dispatch_handlers._check_hallucinated_approval")
+    @patch("adk.agents.utils.dispatch_handlers.invoke_pipeline")
+    @patch("adk.agents.utils.dispatch_handlers.build_review_pipeline")
+    def test_news_check_called_with_empty_events_on_timeout(
+        self,
+        mock_build_pipeline,
+        mock_invoke_pipeline,
+        mock_check_hallucination,
+        mock_extract,
+        mock_get_registry,
+    ):
+        """Empty events list (timeout sentinel) is passed through unchanged."""
+        mock_get_registry.return_value = MagicMock()
+        mock_get_registry.return_value.get.return_value = MagicMock()
+        mock_build_pipeline.return_value = MagicMock()
+        mock_invoke_pipeline.return_value = ("Error: timed out", {}, [])
+        mock_extract.return_value = {"result": "", "approved": False, "warning": "no draft"}
+
+        dispatch_to_company_news("Get news", acceptance_criteria="Must cite sources.")
+
+        mock_check_hallucination.assert_called_once_with([], "news_review")

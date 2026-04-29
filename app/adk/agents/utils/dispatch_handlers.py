@@ -3,6 +3,7 @@ Dispatch handlers for routing to specialized agents.
 """
 
 import logging
+import re
 import time
 import uuid
 from typing import Any
@@ -18,10 +19,33 @@ from .agent_retry import (
     FAST_RETRY_CONFIG,
     invoke_agent_with_retry,
 )
-from .review_pipeline import build_review_pipeline, extract_pipeline_result
+from .review_pipeline import (
+    _check_hallucinated_approval,
+    build_review_pipeline,
+    extract_iterations,
+    extract_pipeline_result,
+    get_reviewer_name,
+    get_worker_name,
+)
+from .review_pipeline_tracing import emit_iteration_span, set_pipeline_attrs
 from .supervisor_utils import invoke_pipeline
 
 logger = logging.getLogger(__name__)
+
+# Allow only printable ASCII minus control characters (no angle brackets, backtick,
+# or curly braces that could be misread as template variables or HTML by the LLM).
+_UNSAFE_CRITERIA_RE = re.compile(r"[^\w\s.,;:()\-'\"!?%@&=+/#*]")
+
+
+def _sanitise_criteria(raw: str) -> str:
+    """Remove characters that could break prompt structure or inject template variables.
+
+    Applied to acceptance_criteria before it is interpolated into LLM system
+    prompts by build_review_pipeline(), so that a manipulated root-agent
+    response cannot redirect sub-agent behaviour via structural injection.
+    The 2000-char hard cap upstream bounds the total length.
+    """
+    return _UNSAFE_CRITERIA_RE.sub("", raw)
 
 
 @safe_weave_op(name="dispatch_to_company_news")
@@ -82,6 +106,7 @@ def dispatch_to_company_news(
                 f"[NEWS-DISPATCH] acceptance_criteria truncated from {len(criteria)} to 2000 chars"
             )
             criteria = criteria[:2000]
+        criteria = _sanitise_criteria(criteria)
         if criteria:
             logger.info("🔄 Building review pipeline for company news query...")
             pipeline = build_review_pipeline(
@@ -89,8 +114,15 @@ def dispatch_to_company_news(
                 acceptance_criteria=criteria,
                 output_key_prefix="news_review",
             )
-            _text, final_state = invoke_pipeline(pipeline, query)
+            _text, final_state, events = invoke_pipeline(pipeline, query)
+            _check_hallucinated_approval(events, "news_review")
             outcome = extract_pipeline_result(final_state, "news_review")
+            worker_name = get_worker_name(news_agent)
+            reviewer_name = get_reviewer_name("news_review")
+            iterations = extract_iterations(events, worker_name, reviewer_name, "news_review")
+            for it in iterations:
+                emit_iteration_span(it.iteration, it.specialist_output, it.reviewer_output)
+            set_pipeline_attrs(criteria, final_state, "news_review", len(iterations))
             return {
                 **outcome,
                 "status": "success",
@@ -202,6 +234,7 @@ def dispatch_to_google_analytics(
                 f"[GA-DISPATCH] acceptance_criteria truncated from {len(criteria)} to 2000 chars"
             )
             criteria = criteria[:2000]
+        criteria = _sanitise_criteria(criteria)
         if criteria:
             logger.info("🔄 Building review pipeline for Google Analytics query...")
             pipeline = build_review_pipeline(
@@ -209,8 +242,17 @@ def dispatch_to_google_analytics(
                 acceptance_criteria=criteria,
                 output_key_prefix="ga_review",
             )
-            _text, final_state = invoke_pipeline(pipeline, query, state=initial_state)
+            _text, final_state, events = invoke_pipeline(
+                pipeline, query, state=initial_state
+            )
+            _check_hallucinated_approval(events, "ga_review")
             outcome = extract_pipeline_result(final_state, "ga_review")
+            worker_name = get_worker_name(google_analytics_agent_v4)
+            reviewer_name = get_reviewer_name("ga_review")
+            iterations = extract_iterations(events, worker_name, reviewer_name, "ga_review")
+            for it in iterations:
+                emit_iteration_span(it.iteration, it.specialist_output, it.reviewer_output)
+            set_pipeline_attrs(criteria, final_state, "ga_review", len(iterations))
             return {
                 **outcome,
                 "status": "success",

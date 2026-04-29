@@ -9,11 +9,51 @@ An intermediate SequentialAgent wrapper does not propagate the reviewer's `escal
 action up to the LoopAgent, so the loop never terminates on approval.
 """
 
+import logging
 import re
+from dataclasses import dataclass
 from typing import Any
 
 from google.adk.agents import LlmAgent, LoopAgent
 from google.adk.tools import exit_loop
+
+from app.utils.weave_observability import safe_weave_op
+
+logger = logging.getLogger(__name__)
+
+# Hallucinated-approval patterns. Tightened to filter common negation/conditional
+# false positives ("not approved", "cannot approve", "would call exit_loop").
+# Observability-only: false positives waste log volume but don't change loop behavior.
+_APPROVAL_PATTERN = re.compile(
+    r"(?<!not\s)(?<!cannot\s)\bapproved\b"
+    r"|(?<!not\s)\ball criteria(?:\s+are)?\s+met\b"
+    r"|\bcalling\s+exit_loop\b"
+    r"|\bexit_loop\s*\(",
+    re.IGNORECASE,
+)
+
+
+@safe_weave_op(name="review_loop.hallucinated_approval")
+def _emit_hallucination_span(
+    reviewer_text: str, iteration: int, output_key_prefix: str
+) -> None:
+    """Weave span emitted when a hallucinated approval is detected.
+
+    Called by _check_hallucinated_approval() when the final reviewer event
+    contains approval-sounding text but actions.escalate is unset/False.
+    The decorated function's inputs become the span's attributes in Weave.
+    """
+
+
+@dataclass
+class ReviewIteration:
+    """One complete specialist+reviewer iteration in a review loop."""
+
+    iteration: int  # 1-based
+    specialist_output: str
+    reviewer_output: str
+    escalate: bool  # True if reviewer called exit_loop on this iteration
+
 
 _MAX_ITERATIONS_LIMIT = 10
 _VALID_PREFIX_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
@@ -256,3 +296,227 @@ def extract_pipeline_result(
     if feedback == "":
         return {"result": draft, "approved": True}
     return {"result": draft, "approved": False, "warning": feedback}
+
+
+def get_worker_name(specialist: LlmAgent) -> str:
+    """The name `build_review_pipeline()` assigns to the worker child."""
+    return f"{specialist.name}_worker"
+
+
+def get_reviewer_name(output_key_prefix: str) -> str:
+    """The name `build_review_pipeline()` assigns to the reviewer child."""
+    return f"{output_key_prefix}_reviewer"
+
+
+def _event_text(event: Any) -> str:
+    """Concatenate text parts from an ADK event's content, if any."""
+    if not event.content or not event.content.parts:
+        return ""
+    return "".join(part.text or "" for part in event.content.parts)
+
+
+def extract_iterations(
+    events: list[Any],
+    specialist_worker_name: str,
+    reviewer_name: str,
+    output_key_prefix: str,
+) -> list[ReviewIteration]:
+    """Synthesize per-iteration records from a flat list of ADK events.
+
+    ADK does not natively delimit LoopAgent iterations — all events inside a
+    LoopAgent run share one ``invocation_id`` with ``branch=None``. This helper
+    pairs each specialist-final event with the immediately following
+    reviewer-final event to reconstruct iteration boundaries.
+
+    Args:
+        events: Ordered list of ADK ``Event`` objects from a single LoopAgent
+            run. Events from outside the loop are tolerated and ignored.
+        specialist_worker_name: ``name`` of the worker LlmAgent (typically
+            ``f"{specialist.name}_worker"``).
+        reviewer_name: ``name`` of the reviewer LlmAgent (typically
+            ``f"{output_key_prefix}_reviewer"``).
+        output_key_prefix: Same prefix passed to ``build_review_pipeline``.
+            Used to look up ``{prefix}_draft`` and ``{prefix}_feedback`` values
+            in event ``actions.state_delta``.
+
+    Returns:
+        A list of ``ReviewIteration`` records in iteration order. If the
+        runner aborted mid-iteration (specialist-final with no following
+        reviewer-final), the trailing record has ``reviewer_output=""`` and
+        ``escalate=False``.
+    """
+    draft_key = f"{output_key_prefix}_draft"
+    feedback_key = f"{output_key_prefix}_feedback"
+
+    iterations: list[ReviewIteration] = []
+    pending_specialist_output: str | None = None
+    iteration_num = 0
+
+    for event in events:
+        author = getattr(event, "author", None)
+        is_final = False
+        is_final_fn = getattr(event, "is_final_response", None)
+        if callable(is_final_fn):
+            try:
+                is_final = bool(is_final_fn())
+            except Exception:
+                is_final = False
+
+        if not is_final:
+            continue
+
+        if author == specialist_worker_name:
+            # If we already have a pending specialist output without a
+            # matching reviewer-final, the previous iteration was aborted
+            # mid-flight; emit it with an empty reviewer record before
+            # starting the next iteration.
+            if pending_specialist_output is not None:
+                iteration_num += 1
+                iterations.append(
+                    ReviewIteration(
+                        iteration=iteration_num,
+                        specialist_output=pending_specialist_output,
+                        reviewer_output="",
+                        escalate=False,
+                    )
+                )
+
+            specialist_output = ""
+            actions = getattr(event, "actions", None)
+            state_delta = getattr(actions, "state_delta", None) if actions else None
+            if state_delta:
+                specialist_output = state_delta.get(draft_key, "") or ""
+            if not specialist_output:
+                specialist_output = _event_text(event)
+            pending_specialist_output = specialist_output
+
+        elif author == reviewer_name:
+            if pending_specialist_output is None:
+                # Reviewer-final with no prior specialist-final; nothing to
+                # pair, skip.
+                continue
+
+            reviewer_output = ""
+            actions = getattr(event, "actions", None)
+            state_delta = getattr(actions, "state_delta", None) if actions else None
+            if state_delta:
+                reviewer_output = state_delta.get(feedback_key, "") or ""
+            if not reviewer_output:
+                reviewer_output = _event_text(event)
+
+            escalate = bool(getattr(actions, "escalate", False)) if actions else False
+
+            iteration_num += 1
+            iterations.append(
+                ReviewIteration(
+                    iteration=iteration_num,
+                    specialist_output=pending_specialist_output,
+                    reviewer_output=reviewer_output,
+                    escalate=escalate,
+                )
+            )
+            pending_specialist_output = None
+
+    # Trailing specialist-final with no reviewer-final — runner aborted.
+    if pending_specialist_output is not None:
+        iteration_num += 1
+        iterations.append(
+            ReviewIteration(
+                iteration=iteration_num,
+                specialist_output=pending_specialist_output,
+                reviewer_output="",
+                escalate=False,
+            )
+        )
+
+    return iterations
+
+
+def _check_hallucinated_approval(events: list, output_key_prefix: str) -> None:
+    """Check for hallucinated approvals in the final reviewer event.
+
+    After a review pipeline run, inspects the final reviewer event to detect
+    the rare failure mode where the reviewer emits approval-sounding text
+    (matching 'approved|all criteria|exit_loop') without invoking exit_loop
+    (i.e., actions.escalate is unset/False). When detected, emits a warning
+    Weave span and a logger.warning for the standard log pipeline.
+
+    This is observability only — loop behavior is unchanged. The missing tool
+    call already keeps the loop running normally (escalate unset means the
+    LoopAgent continues to the next iteration). We emit telemetry to track
+    the real-world rate of this failure mode.
+
+    Args:
+        events: The list of ADK Event objects returned by invoke_pipeline().
+            May be empty (e.g., on timeout or error).
+        output_key_prefix: The output_key_prefix used when building the review
+            pipeline (e.g., "news_review" or "ga_review"). Used to identify
+            reviewer events by their author name.
+
+    Returns:
+        None always. Internal exceptions are caught and logged; observability
+        must not break the dispatch.
+    """
+    try:
+        reviewer_name = f"{output_key_prefix}_reviewer"
+
+        # Collect non-partial reviewer events (partial=True events are streaming
+        # chunks; we only want final events that represent complete responses).
+        reviewer_events = [
+            e
+            for e in events
+            if getattr(e, "author", None) == reviewer_name
+            and not getattr(e, "partial", False)
+        ]
+        if not reviewer_events:
+            return
+
+        # PRD §5.2 + AC#11: inspect only the FINAL reviewer event.
+        final_event = reviewer_events[-1]
+        iteration_count = len(reviewer_events)
+
+        # Extract text from content parts.
+        text_parts: list[str] = []
+        content = getattr(final_event, "content", None)
+        if content:
+            for part in getattr(content, "parts", []):
+                t = getattr(part, "text", None)
+                if t:
+                    text_parts.append(t)
+        text = " ".join(text_parts)
+
+        if not text:
+            return
+
+        if not _APPROVAL_PATTERN.search(text):
+            return
+
+        # Check whether exit_loop was actually invoked (escalate=True).
+        actions = getattr(final_event, "actions", None)
+        escalate_set = bool(actions and getattr(actions, "escalate", False))
+        if escalate_set:
+            # Real approval — exit_loop was called; not a hallucination.
+            return
+
+        # Hallucinated approval detected: pattern match but no escalate.
+        _emit_hallucination_span(
+            reviewer_text=text[:500],
+            iteration=iteration_count,
+            output_key_prefix=output_key_prefix,
+        )
+        logger.warning(
+            "[REVIEW-LOOP] Hallucinated approval detected in '%s' reviewer "
+            "(iteration %d). Text matched approval pattern but exit_loop was "
+            "not invoked. Loop behavior unchanged — continuing normally. "
+            "Text snippet: %.200s",
+            output_key_prefix,
+            iteration_count,
+            text,
+        )
+    except Exception:
+        logger.error(
+            "[REVIEW-LOOP] _check_hallucinated_approval raised unexpectedly "
+            "for prefix '%s'. Swallowing to protect dispatch.",
+            output_key_prefix,
+            exc_info=True,
+        )
