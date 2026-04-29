@@ -114,10 +114,9 @@ def invoke_pipeline(
         tuple[str, dict[str, Any], list[Event]]: (response_text, final_session_state, events)
         On timeout or error: (error_sentinel_text, {}, [])
     """
-    text, final_state, _ = _invoke_pipeline_collecting_events(
+    return _invoke_pipeline_collecting_events(
         agent, query, user_id, session_id, state
     )
-    return text, final_state
 
 
 async def _run_pipeline_collecting_events(
