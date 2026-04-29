@@ -95,7 +95,7 @@ export function Sidebar() {
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           aria-expanded={!collapsed}
           onClick={handleToggle}
-          className="flex items-center justify-center w-8 h-8 rounded-[var(--radius-md)] text-[var(--color-text-tertiary)] hover:bg-accent hover:text-[var(--color-violet-500)] transition-colors duration-fast ease-bounce focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-violet-500)] focus-visible:ring-offset-2"
+          className="flex items-center justify-center w-8 h-8 rounded-[var(--radius-md)] text-[var(--color-text-secondary)] hover:bg-accent hover:text-[var(--color-violet-500)] transition-colors duration-fast ease-bounce focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-violet-500)] focus-visible:ring-offset-2"
         >
           {collapsed ? (
             <ChevronRight className="size-4" aria-hidden="true" />
