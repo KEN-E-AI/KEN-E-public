@@ -37,7 +37,7 @@ export interface ExtensionInstance {
   config: Record<string, unknown>;
 }
 
-interface ExtensionsContextValue {
+export interface ExtensionsContextValue {
   activeExtensions: Map<string, ExtensionInstance>;
   isActive: (extensionId: string) => boolean;
   activateExtension: (
@@ -56,7 +56,9 @@ const stubValue: ExtensionsContextValue = {
   getActiveExtensionDefinitions: () => [],
 };
 
-const ExtensionsContext = createContext<ExtensionsContextValue | null>(null);
+export const ExtensionsContext = createContext<ExtensionsContextValue | null>(
+  null,
+);
 
 export function ExtensionsProvider({ children }: { children: ReactNode }) {
   return (
