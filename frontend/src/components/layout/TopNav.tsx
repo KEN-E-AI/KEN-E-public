@@ -22,13 +22,13 @@ import { ProfileMenu } from "./ProfileMenu";
 import { ExtensionsNavItem } from "./ExtensionsNavItem";
 import { cn } from "@/lib/utils";
 
-interface NavItem {
+export interface NavItem {
   name: string;
   href: string;
   icon: LucideIcon;
 }
 
-const NAVIGATION: readonly NavItem[] = [
+export const NAVIGATION: readonly NavItem[] = [
   { name: "Chat", href: "/", icon: MessageSquare },
   { name: "Performance", href: "/performance", icon: TrendingUp },
   { name: "Calendar", href: "/calendar", icon: Calendar },
