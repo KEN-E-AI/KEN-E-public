@@ -1,6 +1,5 @@
 import { useNavigate } from "react-router-dom";
 import CustomerKeywordsConfiguration from "@/components/configuration/CustomerKeywordsConfiguration";
-import Layout from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 
@@ -8,7 +7,10 @@ export default function KnowledgeCustomers() {
   const navigate = useNavigate();
 
   return (
-    <Layout pageTitle="Customer Knowledge" maxWidth={false}>
+    <>
+      <header className="px-6 pt-6 pb-4">
+        <h1 className="text-3xl font-bold">Customer Knowledge</h1>
+      </header>
       <div className="space-y-6">
         {/* Back to Knowledge Base Link */}
         <div>
@@ -29,6 +31,6 @@ export default function KnowledgeCustomers() {
 
         <CustomerKeywordsConfiguration />
       </div>
-    </Layout>
+    </>
   );
 }

@@ -1,6 +1,5 @@
 import type React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import Layout from "./Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EntitySelector } from "@/components/ui/entity-selector";
 import { ContextBreadcrumb } from "@/components/ui/context-breadcrumb";
@@ -49,7 +48,10 @@ export const SettingsLayout: React.FC<SettingsLayoutProps> = ({
   };
 
   return (
-    <Layout pageTitle={pageTitle} hideContextSidebar={!showContextSidebar}>
+    <>
+      <header className="px-6 pt-6 pb-4">
+        <h1 className="text-3xl font-bold">{pageTitle}</h1>
+      </header>
       <div className={cn("space-y-6", className)}>
         {/* Back Button - Only show for account-specific settings */}
         {showBackButton && currentPage === "account" && (
@@ -120,7 +122,7 @@ export const SettingsLayout: React.FC<SettingsLayoutProps> = ({
         {/* Settings Content */}
         <div className="space-y-6">{children}</div>
       </div>
-    </Layout>
+    </>
   );
 };
 

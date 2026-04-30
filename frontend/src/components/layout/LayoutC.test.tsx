@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { AuthContextType } from "@/contexts/AuthContext";
 import { AuthContext } from "@/contexts/AuthContext";
 import type { UserId } from "@/lib/branded-types";
@@ -14,8 +14,7 @@ import {
 import type { LayoutBannerId } from "./LayoutC";
 
 vi.mock("./TopNav", async () => {
-  const actual =
-    await vi.importActual<typeof import("./TopNav")>("./TopNav");
+  const actual = await vi.importActual<typeof import("./TopNav")>("./TopNav");
   return {
     ...actual,
     TopNav: () => <div data-testid="top-nav" />,
@@ -58,7 +57,11 @@ function renderLayoutC({
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <AuthContext.Provider value={mockAuthContext() as AuthContextType}>
-        <LayoutC>{children}</LayoutC>
+        <Routes>
+          <Route element={<LayoutC />}>
+            <Route path="*" element={children} />
+          </Route>
+        </Routes>
       </AuthContext.Provider>
     </MemoryRouter>,
   );
@@ -119,7 +122,9 @@ describe("LayoutC", () => {
     });
 
     test("clicking the widget trigger opens it and mounts ChatInterface in compact mode", async () => {
-      const { default: userEvent } = await import("@testing-library/user-event");
+      const { default: userEvent } = await import(
+        "@testing-library/user-event"
+      );
       const user = userEvent.setup();
       renderLayoutC({ initialPath: "/performance" });
 
@@ -142,7 +147,7 @@ describe("LayoutC", () => {
   });
 
   describe("mobile bottom tab bar", () => {
-    test("renders <nav aria-label=\"Primary navigation (mobile)\"> with 7 links", () => {
+    test('renders <nav aria-label="Primary navigation (mobile)"> with 7 links', () => {
       renderLayoutC();
       const mobileNav = screen.getByRole("navigation", {
         name: /Primary navigation \(mobile\)/i,
@@ -271,7 +276,9 @@ describe("LayoutC", () => {
         component: () => <div />,
       });
       expect(LAYOUT_BANNER_REGISTRY).toHaveLength(1);
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("dup-banner"));
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("dup-banner"),
+      );
       warnSpy.mockRestore();
     });
 

@@ -1,5 +1,4 @@
 import { useState } from "react";
-import Layout from "@/components/layout/Layout";
 
 const Recommendations = () => {
   const [dateRange, setDateRange] = useState({
@@ -15,14 +14,10 @@ const Recommendations = () => {
   >(undefined);
 
   return (
-    <Layout
-      pageTitle="Recommendations"
-      selectedTab="Recommendations"
-      dateRange={dateRange}
-      setDateRange={setDateRange}
-      comparisonDateRange={comparisonDateRange}
-      setComparisonDateRange={setComparisonDateRange}
-    >
+    <>
+      <header className="px-6 pt-6 pb-4">
+        <h1 className="text-3xl font-bold">Recommendations</h1>
+      </header>
       <div className="space-y-6">
         <div className="bg-white rounded-lg p-6 border border-dashboard-gray-200">
           <h2 className="text-xl font-semibold text-dashboard-gray-900 mb-4">
@@ -35,7 +30,7 @@ const Recommendations = () => {
           </p>
         </div>
       </div>
-    </Layout>
+    </>
   );
 };
 

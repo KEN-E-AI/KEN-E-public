@@ -1,5 +1,5 @@
 import { useRef, useState, useSyncExternalStore } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, Outlet, useLocation } from "react-router-dom";
 import { ChevronDown, MessageSquare } from "lucide-react";
 import type { Brand } from "@/lib/branded-types";
 import {
@@ -70,10 +70,6 @@ export function resetLayoutBannersForTesting(): void {
   _bannerListeners.clear();
 }
 
-type LayoutCProps = {
-  children: React.ReactNode;
-};
-
 const MINI_CHAT_DEFAULT_HEIGHT = 400;
 const MINI_CHAT_MIN_HEIGHT = 200;
 
@@ -81,15 +77,15 @@ function isItemActive(pathname: string, href: string): boolean {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);
 }
 
-export function LayoutC({ children }: LayoutCProps) {
+export function LayoutC() {
   return (
     <ExtensionsProvider>
-      <LayoutCInner>{children}</LayoutCInner>
+      <LayoutCInner />
     </ExtensionsProvider>
   );
 }
 
-function LayoutCInner({ children }: LayoutCProps) {
+function LayoutCInner() {
   const location = useLocation();
   const [miniChatOpen, setMiniChatOpen] = useState(false);
   const [miniChatHeight, setMiniChatHeight] = useState(
@@ -179,7 +175,7 @@ function LayoutCInner({ children }: LayoutCProps) {
                 : { borderRight: "2px dashed var(--color-border-default)" }
             }
           >
-            {children}
+            <Outlet />
           </div>
         </main>
       </div>

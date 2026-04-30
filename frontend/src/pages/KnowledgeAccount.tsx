@@ -2,7 +2,6 @@ import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import CompanyKeywordsConfiguration from "@/components/configuration/CompanyKeywordsConfiguration";
-import Layout from "@/components/layout/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -210,7 +209,10 @@ export default function KnowledgeAccount() {
   };
 
   return (
-    <Layout pageTitle="Account" maxWidth={false}>
+    <>
+      <header className="px-6 pt-6 pb-4">
+        <h1 className="text-3xl font-bold">Account</h1>
+      </header>
       <div className="space-y-6">
         {/* Back to Knowledge Base Link */}
         <div>
@@ -680,6 +682,6 @@ export default function KnowledgeAccount() {
           </AlertDialogContent>
         </AlertDialog>
       </div>
-    </Layout>
+    </>
   );
 }

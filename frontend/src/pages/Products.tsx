@@ -1,6 +1,5 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import Layout from "@/components/layout/Layout";
 import { useAuth } from "@/contexts/AuthContext";
 import { ProductCategoriesManagement } from "@/components/products/ProductCategoriesManagement";
 import { Button } from "@/components/ui/button";
@@ -39,15 +38,10 @@ const Products = () => {
   }, [selectedOrgAccount, user, isSuperAdmin]);
 
   return (
-    <Layout
-      pageTitle="Products and Services"
-      selectedTab="Products"
-      dateRange={dateRange}
-      setDateRange={setDateRange}
-      comparisonDateRange={comparisonDateRange}
-      setComparisonDateRange={setComparisonDateRange}
-      maxWidth={false}
-    >
+    <>
+      <header className="px-6 pt-6 pb-4">
+        <h1 className="text-3xl font-bold">Products and Services</h1>
+      </header>
       <div className="space-y-6">
         {/* Back to Knowledge Base Link */}
         <div>
@@ -64,7 +58,7 @@ const Products = () => {
 
         <ProductCategoriesManagement hasEditAccess={hasEditAccess} />
       </div>
-    </Layout>
+    </>
   );
 };
 
