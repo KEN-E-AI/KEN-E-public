@@ -50,6 +50,7 @@ import AcceptInvitation from "./pages/AcceptInvitation";
 import NotFound from "./pages/NotFound";
 import EmailActionHandler from "./components/auth/EmailActionHandler";
 import Authentication from "./pages/Authentication";
+import { LayoutSettingsHarness } from "./pages/__dev__/LayoutSettingsHarness";
 
 // Import test utilities in development
 if (import.meta.env.DEV) {
@@ -384,6 +385,13 @@ const App = () => (
                         </ProtectedRoute>
                       }
                     />
+                    {/* Dev-only harness routes — excluded from production by Vite */}
+                    {import.meta.env.DEV && (
+                      <Route
+                        path="/__dev__/layout-settings"
+                        element={<LayoutSettingsHarness />}
+                      />
+                    )}
                     {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                     <Route path="*" element={<NotFound />} />
                   </Routes>
