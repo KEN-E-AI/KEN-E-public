@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { BrowserRouter } from "react-router-dom";
 import { AccountSwitcher } from "./AccountSwitcher";
 import { AuthContext } from "@/contexts/AuthContext";
+import type { AccountId, OrganizationId } from "@/lib/branded-types";
 
 const mockAuthContext = {
   user: {
@@ -105,7 +106,19 @@ describe("AccountSwitcher", () => {
     await user.click(secondAccount);
 
     expect(setSelectedOrgAccount).toHaveBeenCalledTimes(1);
+    expect(setSelectedOrgAccount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "org-1" as OrganizationId,
+        accountId: "acct-2" as AccountId,
+        metadata: expect.objectContaining({
+          account_name: "Secondary Account",
+        }),
+      }),
+    );
     expect(setCurrentOrganization).toHaveBeenCalledTimes(1);
+    expect(setCurrentOrganization).toHaveBeenCalledWith(
+      "org-1" as OrganizationId,
+    );
   });
 
   test("active account row has Check icon", async () => {

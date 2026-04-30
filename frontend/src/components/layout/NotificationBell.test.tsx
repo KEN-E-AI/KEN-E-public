@@ -86,6 +86,17 @@ describe("NotificationBell", () => {
     expect(screen.getByText("9+")).toBeInTheDocument();
   });
 
+  test('shows "9" (not "9+") for exactly 9 unread', () => {
+    const notifications = Array.from({ length: 9 }, (_, i) => ({
+      id: String(i),
+      status: "unread",
+      account_id: "acct-1" as any,
+    }));
+    renderWithProviders({ notifications });
+    expect(screen.getByText("9")).toBeInTheDocument();
+    expect(screen.queryByText("9+")).not.toBeInTheDocument();
+  });
+
   test("no badge when all read", () => {
     renderWithProviders({
       notifications: [{ id: "1", status: "read", account_id: "acct-1" as any }],
