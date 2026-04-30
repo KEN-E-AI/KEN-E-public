@@ -265,7 +265,7 @@ The figma ProfileMenu does not include a super-admin section; that section is th
 2. Active route's nav pill has violet background, inverse text, violet shadow.
 3. The `Extensions` pill, when hovered, opens a panel listing the active extensions provided by `useExtensions()`. With the stub provider, the panel renders with the figma's empty/zero state.
 4. The left side of `/` renders the stubbed `SessionsSidebar` component (visible at `md:flex+`). The component file lives at `frontend/src/components/chat/SessionsSidebar.tsx` so CH-PRD-02 replaces the file in place.
-5. Navigating to a non-home route (e.g., `/performance`) renders the Mini Chat Widget docked at the bottom (desktop only). The widget is collapsible; expanded, it shows the figma's drag-resize handle and the stubbed `<ChatInterface compact />`.
+5. ~~Navigating to a non-home route (e.g., `/performance`) renders the Mini Chat Widget docked at the bottom (desktop only). The widget is collapsible; expanded, it shows the figma's drag-resize handle and the stubbed `<ChatInterface compact />`.~~ **Deferred — see §10.2.** The Mini Chat Widget code is in place inside `LayoutC`, but `LayoutC` only wraps `/` in `App.tsx` today (the other ~40 protected routes use legacy `<Layout>`). The widget is verifiable in the LayoutC unit test suite (`LayoutC.test.tsx` exercises `/performance` via `MemoryRouter` and confirms the widget renders + opens). End-to-end visibility on `/performance` requires the route-migration follow-up.
 6. On mobile (`<768px`), `/` renders: compact top header (Logo + AccountSwitcher + NotificationBell + ProfileMenu, 3 px rainbow bottom border) AND a bottom tab bar (`grid grid-cols-7`, all 7 nav items as icon + tiny label, active state `text-[var(--color-violet-500)] scale-110`, top border `--gradient-rainbow`). The Mini Chat Widget is hidden on mobile.
 7. ThemeToggle UI lives **inside** `ProfileMenu`'s dropdown. Clicking it flips `<html>` between `.dark` and no-class state; reload preserves the choice; `<ThemeToggle />` is not rendered anywhere else.
 8. `SUPER_ADMIN_NAV` registered rows render in `ProfileMenu`'s dropdown under an "Admin" sub-section. Section is gated on `useAuth().isSuperAdmin === true`. With zero rows, no section renders.
@@ -339,11 +339,12 @@ getComputedStyle(topNavDesktop).borderImage; // includes "var(--gradient-rainbow
 document.querySelector('nav.icon-navigation, [data-component="icon-navigation"]') === null;
 ```
 
-At a non-home route (e.g., `/performance`) on desktop:
+At a non-home route (e.g., `/performance`) on desktop **— deferred until §10.2 ships**:
 ```js
 // Mini Chat Widget visible:
 document.querySelector('[data-testid="mini-chat-widget"]') !== null;
 ```
+At present this returns `null` because `LayoutC` does not wrap `/performance` in `App.tsx` (the route still uses the legacy `<Layout>`). The widget itself is in `LayoutC` and is exercised by `LayoutC.test.tsx` against a `MemoryRouter` on `/performance`. End-to-end visibility requires §10.2.
 
 At mobile (set viewport to 375 × 812):
 ```js
@@ -398,3 +399,25 @@ These failures predate the layout refactor; they are surfaced here only because 
 4. While here, fix or document the Radix Pointer Capture failures so the suite is meaningfully green, not just no-longer-erroring on `localStorage`.
 
 **Verifier.** Run `npm test` at HEAD before and after the follow-up; diff failure counts.
+
+### 10.2 Migrate non-`/` protected routes from legacy `<Layout>` onto `LayoutC`
+
+**Status:** scope gap surfaced during Phase 2 verification on 2026-04-30.
+
+**Problem.** `App.tsx` wraps only `/` in `<LayoutC>`. The other ~40 protected routes (e.g., `/performance`, `/calendar`, `/workflows`, `/strategy`, `/extensions`, `/settings/*`, plus all the deeper detail routes) each render their own `<Layout />` from `@/components/layout/Layout` — the legacy chrome (`IconNavigation` + `ContextSidebar` + `GlobalHeader`) that this refactor is supposed to be phasing out. Result: only the home route shows the figma layout; every other route still shows the old chrome. This makes Plan §6 AC-5 (Mini Chat Widget on `/performance`) impossible to satisfy in this PR — the widget is in `LayoutC`, but `LayoutC` never mounts on `/performance`.
+
+**Why this PR doesn't fix it.** This refactor's plan was scoped to the `LayoutC` component itself (TopNav, ProfileMenu, LayoutC's children, deletion of the vertical Sidebar). The route migration is a different concern — touching `App.tsx` plus every page that imports the legacy `<Layout>`, with likely visual regressions to chase per page (since pages may have implicit dependencies on the legacy layout's padding / sidebar spacing). Doing both in one PR would balloon scope and risk.
+
+**Action in the follow-up PR(s).**
+1. Pick a migration shape:
+   - **(A) Layout route + `<Outlet />`.** Refactor `LayoutC` to use `<Outlet />` instead of `children` and restructure `App.tsx` to nest protected routes under a single `<Route element={<LayoutC />}>` parent. One change to `App.tsx`, one signature change to `LayoutC` + its tests; every page just stops wrapping itself in `<Layout>`. Cleanest target end-state.
+   - **(B) Per-route opt-in.** Keep `LayoutC`'s `children` signature; wrap routes individually in `App.tsx` and remove inner `<Layout>` per page. Verbose but allows incremental migration.
+2. Either way: remove the inner `<Layout>...</Layout>` wrapper from each migrated page. Confirm each page still renders correctly (no hard-coded margins or sidebar offsets that the legacy layout was masking).
+3. Re-attach AC-5 (`/performance` renders Mini Chat Widget) and re-run the §9 verification snippet block at `/performance`.
+4. Once every protected route is on `LayoutC`, delete `frontend/src/components/layout/Layout.tsx`, `frontend/src/components/layout/IconNavigation.tsx`, `frontend/src/components/layout/ContextSidebar.tsx`, and `frontend/src/components/home/HomeLayout.tsx` along with their tests. Deletion target list:
+   - `Layout.tsx` / no test file
+   - `IconNavigation.tsx` / `IconNavigation.spec.tsx`
+   - `ContextSidebar.tsx` / `ContextSidebar.spec.tsx`
+   - `HomeLayout.tsx` / no test file (used at `/` historically)
+
+**Verifier.** Manually navigate to `/`, `/performance`, `/calendar`, `/workflows`, `/strategy`, `/extensions`, `/settings/account`, `/settings/user`, `/settings/organization` on desktop and mobile. Confirm in each case: TopNav present (desktop) / compact header present (mobile), SessionsSidebar present (desktop), Mini Chat Widget present and collapsible (desktop, non-`/`), mobile bottom tab bar present (mobile), no `IconNavigation`/`ContextSidebar`/`GlobalHeader` in the DOM. Re-run §9 DevTools snippets at `/performance` and confirm both deferred checks now return `true`.
