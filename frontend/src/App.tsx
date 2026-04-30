@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -50,12 +51,20 @@ import AcceptInvitation from "./pages/AcceptInvitation";
 import NotFound from "./pages/NotFound";
 import EmailActionHandler from "./components/auth/EmailActionHandler";
 import Authentication from "./pages/Authentication";
-import { LayoutSettingsHarness } from "./pages/__dev__/LayoutSettingsHarness";
-
 // Import test utilities in development
 if (import.meta.env.DEV) {
   import("./utils/testNotification");
 }
+
+// Dev-only lazy component — dynamic import is tree-shaken from the production bundle
+// because import.meta.env.DEV evaluates to false at build time
+const LazyLayoutSettingsHarness = import.meta.env.DEV
+  ? lazy(() =>
+      import("./pages/__dev__/LayoutSettingsHarness").then((m) => ({
+        default: m.LayoutSettingsHarness,
+      })),
+    )
+  : undefined;
 
 const queryClient = new QueryClient();
 
@@ -385,11 +394,15 @@ const App = () => (
                         </ProtectedRoute>
                       }
                     />
-                    {/* Dev-only harness routes — excluded from production by Vite */}
-                    {import.meta.env.DEV && (
+                    {/* Dev-only harness routes — tree-shaken from production bundle */}
+                    {import.meta.env.DEV && LazyLayoutSettingsHarness && (
                       <Route
                         path="/__dev__/layout-settings"
-                        element={<LayoutSettingsHarness />}
+                        element={
+                          <Suspense fallback={null}>
+                            <LazyLayoutSettingsHarness />
+                          </Suspense>
+                        }
                       />
                     )}
                     {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

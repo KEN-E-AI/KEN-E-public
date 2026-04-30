@@ -254,6 +254,30 @@ describe("LayoutSettings", () => {
         screen.queryByRole("link", { name: "Unsafe Link" }),
       ).not.toBeInTheDocument();
     });
+
+    test("excludes rows with /__dev__ paths", () => {
+      const rows: SettingsNavRow[] = [
+        {
+          id: "safe" as SettingsNavRowId,
+          label: "Safe Link",
+          path: "/settings/safe",
+          order: 10,
+        },
+        {
+          id: "dev-route" as SettingsNavRowId,
+          label: "Dev Route",
+          path: "/__dev__/something",
+          order: 20,
+        },
+      ];
+      renderLayoutSettings({ subNavItems: rows });
+      expect(
+        screen.getByRole("link", { name: "Safe Link" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("link", { name: "Dev Route" }),
+      ).not.toBeInTheDocument();
+    });
   });
 
   describe("Active row highlighting", () => {
