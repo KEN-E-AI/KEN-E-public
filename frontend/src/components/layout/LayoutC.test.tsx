@@ -4,7 +4,6 @@ import { MemoryRouter } from "react-router-dom";
 import type { AuthContextType } from "@/contexts/AuthContext";
 import { AuthContext } from "@/contexts/AuthContext";
 import type { UserId } from "@/lib/branded-types";
-import type { Brand } from "@/lib/branded-types";
 import {
   LayoutC,
   LAYOUT_BANNER_REGISTRY,
@@ -12,9 +11,7 @@ import {
   unregisterLayoutBanner,
   resetLayoutBannersForTesting,
 } from "./LayoutC";
-import type { LayoutBannerRow } from "./LayoutC";
-
-type LayoutBannerId = Brand<string, "LayoutBannerId">;
+import type { LayoutBannerId } from "./LayoutC";
 
 vi.mock("./Sidebar", () => ({
   Sidebar: () => <div data-testid="sidebar" />,

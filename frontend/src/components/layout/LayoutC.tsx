@@ -3,7 +3,7 @@ import type { Brand } from "@/lib/branded-types";
 import { Sidebar } from "./Sidebar";
 import { TopNav } from "./TopNav";
 
-type LayoutBannerId = Brand<string, "LayoutBannerId">;
+export type LayoutBannerId = Brand<string, "LayoutBannerId">;
 
 export type LayoutBannerRow = {
   id: LayoutBannerId;
@@ -12,7 +12,9 @@ export type LayoutBannerRow = {
   isVisible?: boolean;
 };
 
-export const LAYOUT_BANNER_REGISTRY: LayoutBannerRow[] = [];
+const _LAYOUT_BANNER_REGISTRY: LayoutBannerRow[] = [];
+export const LAYOUT_BANNER_REGISTRY: ReadonlyArray<LayoutBannerRow> =
+  _LAYOUT_BANNER_REGISTRY;
 
 let _bannerVersion = 0;
 const _bannerListeners = new Set<() => void>();
@@ -29,28 +31,31 @@ function _getBannerSnapshot(): number {
 }
 
 export function registerLayoutBanner(row: LayoutBannerRow): void {
-  if (LAYOUT_BANNER_REGISTRY.some((r) => r.id === row.id)) {
-    console.warn(
-      `[registerLayoutBanner] Rejected row "${row.id}": duplicate id`,
-    );
+  if (_LAYOUT_BANNER_REGISTRY.some((r) => r.id === row.id)) {
+    if (import.meta.env.DEV) {
+      console.warn(
+        `[registerLayoutBanner] Rejected row "${row.id}": duplicate id`,
+      );
+    }
     return;
   }
-  LAYOUT_BANNER_REGISTRY.push(row);
+  _LAYOUT_BANNER_REGISTRY.push(row);
   _bannerVersion += 1;
   _bannerListeners.forEach((listener) => listener());
 }
 
 export function unregisterLayoutBanner(id: LayoutBannerId): void {
-  const index = LAYOUT_BANNER_REGISTRY.findIndex((r) => r.id === id);
+  const index = _LAYOUT_BANNER_REGISTRY.findIndex((r) => r.id === id);
   if (index !== -1) {
-    LAYOUT_BANNER_REGISTRY.splice(index, 1);
+    _LAYOUT_BANNER_REGISTRY.splice(index, 1);
     _bannerVersion += 1;
     _bannerListeners.forEach((listener) => listener());
   }
 }
 
 export function resetLayoutBannersForTesting(): void {
-  LAYOUT_BANNER_REGISTRY.length = 0;
+  if (!import.meta.env.DEV) return;
+  _LAYOUT_BANNER_REGISTRY.length = 0;
   _bannerVersion = 0;
   _bannerListeners.clear();
 }
@@ -71,10 +76,7 @@ export function LayoutC({ children }: LayoutCProps) {
   ).sort((a, b) => a.order - b.order);
 
   return (
-    <div
-      className="flex h-screen overflow-hidden"
-      style={{ backgroundColor: "var(--color-bg-primary)" }}
-    >
+    <div className="flex h-screen overflow-hidden bg-[var(--color-bg-primary)]">
       <Sidebar />
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <header className="shrink-0">
