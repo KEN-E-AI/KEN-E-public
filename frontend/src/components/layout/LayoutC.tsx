@@ -284,7 +284,7 @@ function LayoutCInner() {
                   "flex flex-col items-center justify-center gap-1 transition-all",
                   isActive
                     ? "text-[var(--color-violet-500)] scale-110"
-                    : "text-[var(--color-text-tertiary)]",
+                    : "text-[var(--color-text-secondary)]",
                 )}
                 style={{
                   transitionTimingFunction: "var(--ease-bounce)",

@@ -234,6 +234,21 @@ describe("LayoutC", () => {
       expect(performanceLink).toHaveClass("scale-110");
     });
 
+    test("inactive tab uses the secondary-text class (WCAG AA contrast)", () => {
+      // Mirror of TopNav's desktop-pill assertion. The pre-fix tertiary-text
+      // failed WCAG AA contrast on this site too (axe flagged 9 light / 7
+      // dark violations across the two nav surfaces). See plan §10.3.
+      renderLayoutC({ initialPath: "/performance" });
+      const mobileNav = screen.getByRole("navigation", {
+        name: /Primary navigation \(mobile\)/i,
+      });
+      const chatLink = within(mobileNav).getByRole("link", {
+        name: /^chat$/i,
+      });
+      expect(chatLink).toHaveClass("text-[var(--color-text-secondary)]");
+      expect(chatLink).not.toHaveClass("text-[var(--color-text-tertiary)]");
+    });
+
     test("nav block carries `md:hidden` so it is mobile-only", () => {
       renderLayoutC();
       const mobileNav = screen.getByRole("navigation", {

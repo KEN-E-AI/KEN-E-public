@@ -44,14 +44,18 @@ describe("TopNav", () => {
     test("renders a Primary navigation landmark with all 7 nav links", () => {
       renderTopNav();
 
-      const nav = screen.getByRole("navigation", { name: "Primary navigation" });
+      const nav = screen.getByRole("navigation", {
+        name: "Primary navigation",
+      });
       const links = within(nav).getAllByRole("link");
       expect(links).toHaveLength(7);
     });
 
     test("each nav link has the correct href", () => {
       renderTopNav();
-      const nav = screen.getByRole("navigation", { name: "Primary navigation" });
+      const nav = screen.getByRole("navigation", {
+        name: "Primary navigation",
+      });
 
       EXPECTED_NAV.forEach(({ name, href }) => {
         const link = within(nav).getByRole("link", {
@@ -63,31 +67,43 @@ describe("TopNav", () => {
 
     test("active route's nav link has the violet-pill class", () => {
       renderTopNav("/performance");
-      const nav = screen.getByRole("navigation", { name: "Primary navigation" });
+      const nav = screen.getByRole("navigation", {
+        name: "Primary navigation",
+      });
       const performanceLink = within(nav).getByRole("link", {
         name: /^performance$/i,
       });
       expect(performanceLink).toHaveClass("bg-[var(--color-violet-500)]");
     });
 
-    test("inactive nav link has the tertiary-text class", () => {
+    test("inactive nav link uses the secondary-text class (WCAG AA contrast)", () => {
+      // text-secondary (#475569 light / #cbd5e1 dark) gives ≥7.5:1 against
+      // the page background. The pre-fix tertiary-text (#94a3b8 / #64748b)
+      // failed AA at 2.47:1 / 3.75:1 — see plan §10.3.
       renderTopNav("/performance");
-      const nav = screen.getByRole("navigation", { name: "Primary navigation" });
+      const nav = screen.getByRole("navigation", {
+        name: "Primary navigation",
+      });
       const chatLink = within(nav).getByRole("link", { name: /^chat$/i });
-      expect(chatLink).toHaveClass("text-[var(--color-text-tertiary)]");
+      expect(chatLink).toHaveClass("text-[var(--color-text-secondary)]");
+      expect(chatLink).not.toHaveClass("text-[var(--color-text-tertiary)]");
       expect(chatLink).not.toHaveClass("bg-[var(--color-violet-500)]");
     });
 
     test("Chat is the active link at /", () => {
       renderTopNav("/");
-      const nav = screen.getByRole("navigation", { name: "Primary navigation" });
+      const nav = screen.getByRole("navigation", {
+        name: "Primary navigation",
+      });
       const chatLink = within(nav).getByRole("link", { name: /^chat$/i });
       expect(chatLink).toHaveClass("bg-[var(--color-violet-500)]");
     });
 
     test("Extensions slot renders the ExtensionsNavItem (hover panel hidden until hover)", () => {
       renderTopNav();
-      const nav = screen.getByRole("navigation", { name: "Primary navigation" });
+      const nav = screen.getByRole("navigation", {
+        name: "Primary navigation",
+      });
       const extensionsLink = within(nav).getByRole("link", {
         name: /^extensions$/i,
       });
@@ -131,7 +147,9 @@ describe("TopNav", () => {
         "data-compact",
         "true",
       );
-      expect(within(mobile).getByTestId("notification-bell")).toBeInTheDocument();
+      expect(
+        within(mobile).getByTestId("notification-bell"),
+      ).toBeInTheDocument();
       expect(within(mobile).getByTestId("profile-menu")).toBeInTheDocument();
     });
 
@@ -153,7 +171,9 @@ describe("TopNav", () => {
       renderTopNav();
       const mobile = screen.getByTestId("topnav-mobile");
       expect(
-        within(mobile).queryByRole("navigation", { name: "Primary navigation" }),
+        within(mobile).queryByRole("navigation", {
+          name: "Primary navigation",
+        }),
       ).not.toBeInTheDocument();
     });
   });
