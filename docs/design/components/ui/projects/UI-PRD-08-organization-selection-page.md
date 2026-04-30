@@ -43,6 +43,7 @@ This PRD ships the redesigned `/select-organization` page — the first screen a
 
 ## 3. Dependencies
 
+- **Canonical reference — special case for this PRD:** `docs/figma-export/` does **not** yet contain a node for `/select-organization`. Until it does, the canonical reference for this page is **§5 of this PRD** (visual treatment, layout, behaviour) **plus** the auth-page treatment in `docs/figma-export/src/app/pages/` (`Authentication` / sign-in) — which this page mirrors for visual continuity. Build to match those exactly: same `BackgroundEffects`, same gradient + animated blobs, same rainbow accent bar, same logo float, same card styling, same primary-button treatment. **Do not deviate** — if a deviation seems necessary, raise it as an open question on the Linear issue and wait for explicit approval. Once Figma adds a matching node, back-fill the export and update this section.
 - **UI-PRD-01:** `BackgroundEffects`, `ThemeProvider`, re-skinned `Card`/`Button`/`Badge`/`Input`/`Select`/`Dialog`, Soft Maximalism tokens in `index.css`
 - **Existing files to preserve verbatim:**
   - `frontend/src/contexts/AuthContext.tsx` — all hooks + setters consumed by this page
@@ -138,7 +139,8 @@ No new endpoints. Consumes existing endpoints via `frontend/src/data/organizatio
 8. Zero-orgs case: user with no org permissions (and not super-admin) is redirected to `/create-organization`.
 9. Dark mode renders correctly.
 10. Legacy file `frontend/src/pages/OrganizationSelection.tsx` is deleted; `App.tsx` no longer references it.
-11. `npm run typecheck`, `npm run format.fix`, `npm run build`, `npm test` pass.
+11. **Canonical-reference parity (special case).** Because `docs/figma-export/` has no node for this page yet, the canonical reference is §5 of this PRD plus the export's auth-page treatment (`docs/figma-export/src/app/pages/Authentication*`). The redesigned `SelectOrganizationPage` matches the auth pages in `BackgroundEffects`, gradient + animated blobs, rainbow accent bar, logo float, card styling, primary-button treatment, and dark-mode tokens. Any deviation from §5's spec or the auth-page treatment is documented as an open question on the Linear issue *before* implementation and approved by the PRD owner.
+12. `npm run typecheck`, `npm run format.fix`, `npm run build`, `npm test` pass.
 
 ## 8. Test plan
 

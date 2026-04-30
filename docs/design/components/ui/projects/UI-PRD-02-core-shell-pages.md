@@ -48,6 +48,11 @@ Authentication and settings are the "day one" non-conversational surfaces every 
 
 ## 3. Dependencies
 
+- **Canonical reference (`docs/figma-export/`):** the source of truth for every page redesigned by this PRD. Build to match the export exactly. **Do not deviate** — if a deviation seems necessary, raise it as an open question on the Linear issue and wait for explicit approval. Specific paths to read for this PRD:
+  - Pages: `docs/figma-export/src/app/pages/` — `Authentication` (sign-in/sign-up/email-verification), `AcceptInvitation`, `AccountSettings`, `UserSettings`, `CreateOrganization` (match by file/route name)
+  - Settings layout: `docs/figma-export/src/app/layouts/LayoutSettings*` and the sub-nav structure
+  - Tokens & shared components: `docs/figma-export/src/styles/`, `src/app/components/`
+  - Design rationale: `docs/figma-export/guidelines/Guidelines.md`, `guidelines/ken-e_design_guidelines.md`
 - **UI-PRD-01:** shell tokens, `LayoutSettings`, `LayoutC`, re-skinned shadcn primitives
 - **CH-PRD-02 (coordination):** owns the `/chat` route this PRD's `/` redirect points at. CH-PRD-02 must land before or in the same release window as UI-PRD-02 so the redirect resolves to a real page (behind `chat_v2_enabled`). If CH-PRD-02 hasn't shipped yet, the redirect can land first — `/chat` will render the `chat_v2_enabled=false` fallback (a "coming soon" placeholder per CH-PRD-02 §2.1).
 - **UI-PRD-08 (coordination):** UI-PRD-08 lands the `<Navigate to="/select-organization">` gate in `ProtectedRoute`. UI-PRD-02 mirrors that pattern for `<Authentication>` (`<Navigate to="/sign-in">`). The two PRDs touch the same `ProtectedRoute.tsx` file; coordinate landing order at PR review.
@@ -121,7 +126,8 @@ This PRD consumes only existing endpoints — no new contracts.
 8. Backward-compat route redirects (`/login` → `/sign-in`, `/signup` → `/sign-up`, `/organization-settings`, `/account-settings`, `/user-settings`) still work. (`/organization-selection` is converted to a redirect by **UI-PRD-08**, not this PRD.)
 9. `LayoutSettings` reads its sub-nav from `SETTINGS_NAV_REGISTRY`; visiting each registered route highlights the correct row. Adding / removing entries in the registry changes the sub-nav without modifying `LayoutSettings`.
 10. **Responsive (per UI-PRD-01 breakpoints):** every page renders correctly at 375 / 768 / 1200 / 1440 / 1920 widths; `LayoutSettings` sub-nav collapses to a top tab strip on mobile.
-11. Component tests pass; `npm run typecheck`, `npm run format.fix`, `npm run build`, `npm test` pass.
+11. **Canonical-reference parity.** Every page delivered by this PRD matches `docs/figma-export/src/app/pages/<corresponding-path>` in structure, variants, tokens, DOM landmarks, and a11y semantics. Any deviation is documented as an open question on the Linear issue *before* implementation and approved by the PRD owner; un-flagged deviations block the PR.
+12. Component tests pass; `npm run typecheck`, `npm run format.fix`, `npm run build`, `npm test` pass.
 
 ## 8. Test plan
 

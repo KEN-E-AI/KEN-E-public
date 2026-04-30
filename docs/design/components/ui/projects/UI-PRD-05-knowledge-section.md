@@ -36,6 +36,11 @@ The Knowledge section is KEN-E's surface for exploring everything it knows about
 
 ## 3. Dependencies
 
+- **Canonical reference (`docs/figma-export/`):** the source of truth for every Knowledge sub-page, the section layout, and every shared section component in this PRD. Build to match the export exactly. **Do not deviate** — if a deviation seems necessary, raise it as an open question on the Linear issue and wait for explicit approval. Specific paths to read for this PRD:
+  - Pages: `docs/figma-export/src/app/pages/knowledge/` (or matching path) — `Knowledge` index, `KnowledgeAccount`, `KnowledgeBrand`, `KnowledgeCompetitors`, `KnowledgeCustomers`, `KnowledgeMetrics`, `KnowledgeStrategy`, `KnowledgeActivities`, `Products`, `Customers`, `Insights`, `JourneyPage`, `MarketingPage`, `KnowledgeGraphPage`
+  - Section layout & shared components: `docs/figma-export/src/app/layouts/`, `src/app/components/` — `KnowledgeLayout` (left sub-nav), `SectionHeader`, `ContentCard`, `MetricTile`, `InsightList`, `EntityTable`
+  - Tokens & shared primitives: `docs/figma-export/src/styles/`, `src/app/components/`
+  - Design rationale: `docs/figma-export/guidelines/Guidelines.md`, `guidelines/ken-e_design_guidelines.md`
 - **UI-PRD-01:** `LayoutC`, shadcn primitives (Card, Table, Chart, Tabs, Accordion, Badge, Progress)
 - **Downstream consumer:** [`KG-PRD-03`](../../knowledge-graph/projects/KG-PRD-03-orchestrator-read-tools.md) — ADK read tools back the redesigned pages' dynamic content
 - **Existing files to study:**
@@ -99,7 +104,8 @@ N/A — this PRD consumes no new APIs. Existing strategy endpoints remain consum
 5. Shared section components (`SectionHeader`, `ContentCard`, `MetricTile`, etc.) are used consistently across all pages.
 6. Backward-compat redirects preserved (none removed in this PRD).
 7. Dark mode renders correctly on every page.
-8. Component tests pass; `npm run typecheck`, `npm run format.fix`, `npm run build`, `npm test` pass.
+8. **Canonical-reference parity.** `KnowledgeLayout`, every Knowledge sub-page, and every shared section component delivered by this PRD matches `docs/figma-export/src/app/<corresponding-path>` in structure, variants, tokens, DOM landmarks, and a11y semantics. Any deviation is documented as an open question on the Linear issue *before* implementation and approved by the PRD owner; un-flagged deviations block the PR.
+9. Component tests pass; `npm run typecheck`, `npm run format.fix`, `npm run build`, `npm test` pass.
 
 ## 8. Test plan
 

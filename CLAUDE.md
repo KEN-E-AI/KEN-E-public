@@ -61,6 +61,7 @@ One table, ordered from most general (start here) to most specific (consult for 
 | Document | Read when... |
 |----------|--------------|
 | **— System-level —** | |
+| [`docs/figma-export/`](docs/figma-export/) | **Canonical reference implementation of the frontend.** Read before any UI work; do not deviate without explicit approval on the issue. See `docs/design/components/ui/README.md: §4`. |
 | [`docs/KEN-E-System-Architecture.md`](docs/KEN-E-System-Architecture.md) | Start of every story. Gives the canonical 15-component map + cross-cutting concerns (context management, orchestration, MER-E, infrastructure, resilience/security, feature flags). |
 | [`docs/KEN-E_User_Stories.md`](docs/KEN-E_User_Stories.md) | Understanding the three guiding product scenarios. |
 | [`docs/design/components/PROJECT-PLANNER.md`](docs/design/components/PROJECT-PLANNER.md) | Project sequencing across all components — what's blocked by what, what's ready to start, what release each targets. |

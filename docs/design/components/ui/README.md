@@ -72,6 +72,7 @@ A developer reading only this section should understand: this component owns the
 | `frontend/src/components/theme/` | `ThemeProvider`, `BackgroundEffects`, `ThemeToggle`. Created by UI-PRD-01. |
 | `frontend/src/contexts/` | React contexts (Auth, Chat, Account). Consumed by pages; no new contexts owned by this component. |
 | `frontend/src/App.tsx` | Routing configuration. Each UI-PRD adds or renames its routes here. |
+| `docs/figma-export/` | **Canonical reference implementation of every page, primitive, token, and layout.** Source-of-truth code bundle exported from the Figma "Soft Maximalism" design. Every UI task must read the matching file here before writing or modifying a component. See §4 and §7. |
 
 ### 2.2 Data Flow
 
@@ -139,10 +140,25 @@ Every user-facing capability in KEN-E renders through this component's shell and
 
 ## 4. Design System References
 
-| Document | Sections | When to Read |
-|----------|----------|--------------|
-| Figma: [KEN-E UI V2 — Soft Maximalism](https://www.figma.com/make/fhkgWZyTHdKtvDNRoQrcMT/KEN-E-UI-V2---Soft-Maximalism) | Entire file | Before writing any UI code for this component. The Figma Make output provides reference React + Tailwind that should be adapted to this repo's conventions (see server instructions for `get_design_context`). |
+> **`docs/figma-export/` is the canonical reference implementation for this component.**
+> Before writing or modifying any UI code (token, primitive, layout, page, or chrome
+> component), locate and read the matching file in `docs/figma-export/` and build to
+> match it. **Do not make design decisions that differ from the export.** If a
+> deviation seems necessary (token gap, missing variant, a11y conflict, repo
+> convention mismatch), raise it as an open question on the issue and wait for
+> explicit approval before deviating. The Figma URL is the upstream artifact;
+> the export is what you build against.
+
+| Reference | Where | When to read |
+|-----------|-------|--------------|
+| **Figma export — canonical** | `docs/figma-export/` | **Before writing any UI code.** Match the export exactly; raise an open question on the issue before deviating. |
+| Tokens | `docs/figma-export/src/styles/theme.css`, `tailwind.css`, `fonts.css` | Migrating `frontend/src/index.css` and `tailwind.config.ts`. |
+| Components & layouts | `docs/figma-export/src/app/components/`, `src/app/layouts/`, `src/app/pages/` | Building any shell, primitive, layout, or page. |
+| Design rationale | `docs/figma-export/guidelines/Guidelines.md`, `guidelines/ken-e_design_guidelines.md` | When the export's intent isn't obvious from the code alone. |
+| Implementation overview | `docs/figma-export/IMPLEMENTATION_SUMMARY.md`, `PROJECT_SUMMARY.md` | Orientation pass before starting a UI-PRD. |
+| Figma (upstream) | [KEN-E UI V2 — Soft Maximalism](https://www.figma.com/make/fhkgWZyTHdKtvDNRoQrcMT/KEN-E-UI-V2---Soft-Maximalism) | When you need to inspect a design that isn't in the export, or to confirm intent. The export is canonical; the Figma file is the artifact it was generated from. |
 | `frontend/CLAUDE.md` | CSS architecture, UI Component Library, Layout Troubleshooting | Before touching global styles or sidebar-aware layout padding. |
+| `frontend/src/components/CLAUDE.md` | Auto-loaded into Dev Team agent context — restates the canonical-reference rule. | — |
 | Root `CLAUDE.md` | §2 While Coding, §3 Testing, §6 Tooling Gates | Branded types (C-5), `import type` (C-6), type-over-interface (C-8), test colocation (T-2), gates (G-2, G-3). |
 
 ## 5. Project Index
@@ -195,6 +211,7 @@ Several touchpoints need conscious coordination across components because a page
 
 ### 5.4 Recommended workflow
 
+0. **Day 0 (every UI-PRD):** Read `docs/figma-export/IMPLEMENTATION_SUMMARY.md` and `guidelines/Guidelines.md`, then walk the `src/app/{layouts,components,pages}/` paths for the PRD's scope. Open questions about any deviation go on the Linear issue **before** writing code.
 1. **Day 1:** Frontend kicks off UI-PRD-01. Every other UI-PRD is blocked on it.
 2. **Day ~10 (UI-PRD-01 merged):** UI-PRD-02, UI-PRD-03, and UI-PRD-08 start in parallel (Release 1 surfaces). UI-PRD-02 coordinates `/` redirect with the Chat team's CH-PRD-02 (Release 1) and the `<Authentication>` route gate with UI-PRD-08's `<OrganizationSelection>` route gate. UI-PRD-03 lands ahead of AH-PRD-02's frontend phase (also Release 1).
 3. **Release 2 kickoff:** UI-PRD-04 begins ahead of PR-PRD-03. A-PRD-06 ships the shared `frontend/src/components/dag/TaskGraph.tsx`; DB-PRD-03 reuses it; DP-PRD-04 plugs into the same DAG editor's side-panel.
@@ -212,6 +229,18 @@ Several touchpoints need conscious coordination across components because a page
 | Figma: [KEN-E UI V2 — Soft Maximalism](https://www.figma.com/make/fhkgWZyTHdKtvDNRoQrcMT/KEN-E-UI-V2---Soft-Maximalism) | Entire file | Source of truth for every page, token, and component. |
 
 ## 7. Conventions and Constraints
+
+### Design source of truth — `docs/figma-export/`
+
+Every UI task in this component is built against the canonical reference at
+`docs/figma-export/`. The rule is simple:
+
+1. Find the matching file in the export before writing code (token, primitive, layout, page).
+2. Build to match the export. Same structure, same tokens, same variants, same DOM, same a11y semantics.
+3. **Do not make design decisions that differ from the export.** If something looks wrong, missing, or in conflict with repo conventions (branded types, `cn()`, dark-mode tokens, test colocation), **raise it as an open question on the issue and wait for explicit approval before deviating.**
+4. Adapt only to repo *plumbing*: import paths, branded ID types, the existing `cn()` utility, the existing `useAuth()` / context providers, and test colocation. Visual design, structure, and tokens come from the export verbatim.
+
+This rule supersedes the Figma MCP server's default guidance ("the output is a REFERENCE, not final code"). For this repo, the export *is* the spec.
 
 ### Scope boundary with backend-owned frontend work
 
@@ -266,6 +295,8 @@ Every PRD follows the shared 10-section structure used across sibling components
 8. Test plan — component / visual / (optional) integration coverage
 9. Risks & open questions
 10. Reference — links back to sibling PRDs, upstream design docs, Figma
+
+> Every PRD's §3 (Dependencies) **must** include a row pointing at the matching path(s) under `docs/figma-export/` and restate the "do not deviate without approval" rule. Every PRD's §7 (Acceptance criteria) **must** include an AC of the form: "Component matches `docs/figma-export/<path>` — structure, variants, tokens, DOM landmarks, and a11y semantics. Deviations are documented as open questions on the issue *before* implementation and approved by the PRD owner; un-flagged deviations block the PR."
 
 ---
 

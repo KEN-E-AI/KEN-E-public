@@ -37,6 +37,12 @@ Release 2 introduces project planning. The primary UI is a calendar view at `/ca
 
 ## 3. Dependencies
 
+- **Canonical reference (`docs/figma-export/`):** the source of truth for the calendar page shell, both views, and both detail panels in this PRD. Build to match the export exactly. **Do not deviate** — if a deviation seems necessary, raise it as an open question on the Linear issue and wait for explicit approval. Specific paths to read for this PRD:
+  - Page shell + views: `docs/figma-export/src/app/pages/` — `CalendarPage` (or matching path), calendar grid, list-view table
+  - Panels & drawers: `docs/figma-export/src/app/components/` — `ActivityDetailPanel`, `ProjectEditDrawer` (or matching `GroupEditDrawer`), `MonthYearPicker`
+  - Filter bar + platform color palette: confirm exact token mapping against the export
+  - Tokens & shared primitives: `docs/figma-export/src/styles/`, `src/app/components/`
+  - Design rationale: `docs/figma-export/guidelines/Guidelines.md`, `guidelines/ken-e_design_guidelines.md`
 - **UI-PRD-01:** `LayoutC`, shadcn primitives (Dialog, Sheet, Popover, DropdownMenu, Tabs, Table, Badge, Select)
 - **Downstream consumer:** [`PR-PRD-03`](../../project-tasks/projects/PR-PRD-03-calendar-page-frontend.md) — replaces the mock context with real wiring
 - **Existing files to study:**
@@ -129,7 +135,8 @@ N/A — this PRD consumes no APIs. `PR-PRD-03` wires `/api/v1/plans/*`.
 7. Month navigation via `MonthYearPicker` updates the visible month.
 8. Platform color palette matches Figma; axe DevTools reports no contrast violations at AA.
 9. Dark mode renders correctly.
-10. Component tests pass; `npm run typecheck`, `npm run format.fix`, `npm run build`, `npm test` pass.
+10. **Canonical-reference parity.** `CalendarPage`, both views, both detail panels, the filter bar, and the platform color palette match `docs/figma-export/src/app/<corresponding-path>` in structure, variants, tokens, DOM landmarks, and a11y semantics. Any deviation is documented as an open question on the Linear issue *before* implementation and approved by the PRD owner; un-flagged deviations block the PR.
+11. Component tests pass; `npm run typecheck`, `npm run format.fix`, `npm run build`, `npm test` pass.
 
 ## 8. Test plan
 

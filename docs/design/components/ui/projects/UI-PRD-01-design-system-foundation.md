@@ -40,7 +40,13 @@ The Figma design ([KEN-E UI V2 — Soft Maximalism](https://www.figma.com/make/f
 
 ## 3. Dependencies
 
-- **Figma file key:** `fhkgWZyTHdKtvDNRoQrcMT` — pull each shell component with `get_design_context` by nodeId
+- **Canonical reference (`docs/figma-export/`):** the source of truth for every token, primitive, layout, and page in this PRD. Build to match the export exactly. **Do not deviate** — if a deviation seems necessary, raise it as an open question on the Linear issue and wait for explicit approval. Specific paths to read for this PRD:
+  - Tokens: `docs/figma-export/src/styles/theme.css`, `tailwind.css`, `fonts.css`
+  - Shell layouts & chrome: `docs/figma-export/src/app/layouts/`, `src/app/components/` (match by file/component name — `LayoutC`, `LayoutSettings`, `Sidebar`, `TopNav`, `AccountSwitcher`, `NotificationBell`, `ProfileMenu`, `BackgroundEffects`, `ThemeToggle`, error-boundary fallback, 404 page)
+  - shadcn primitive re-skins: every file under `frontend/src/components/ui/` matches its counterpart in `docs/figma-export/src/app/components/` (or the `ui/` subfolder if present)
+  - Design rationale: `docs/figma-export/guidelines/Guidelines.md`, `guidelines/ken-e_design_guidelines.md`
+  - Implementation overview: `docs/figma-export/IMPLEMENTATION_SUMMARY.md`, `PROJECT_SUMMARY.md`
+- **Figma file key (upstream):** `fhkgWZyTHdKtvDNRoQrcMT` — the export above is generated from this file. Use the Figma file via `get_design_context` only when the export is unclear or to confirm intent; the export is canonical.
 - **Existing files to study:**
   - `frontend/src/index.css` — current token system to replace
   - `frontend/src/components/ui/*` — current shadcn primitives to re-skin
@@ -152,6 +158,7 @@ N/A — this project consumes no APIs.
 14. `Sidebar` shows the super-admin section only when `useAuth().isSuperAdmin === true`; the section is empty in this PRD (FF-PRD-02 plugs in its entry).
 15. **Responsive breakpoints (§ Responsive breakpoints) verified at 375 / 768 / 1200 / 1440 / 1920** — Sidebar, TopNav, LayoutC, LayoutSettings, and the dev preview render correctly in mobile / tablet / desktop modes; mobile drawer opens from `TopNav`'s hamburger; LayoutSettings sub-nav collapses to a top tab strip on mobile.
 16. **Accessibility baseline (§ Accessibility baseline) holds:** axe-core CI passes on every re-skinned primitive and shell component; every interactive element shows a visible focus ring under both themes; semantic landmarks present in `LayoutC` and `LayoutSettings`.
+17. **Canonical-reference parity.** Every token, primitive, layout, page, and chrome component delivered by this PRD matches `docs/figma-export/<corresponding-path>` in structure, variants, tokens, DOM landmarks, and a11y semantics. Any deviation is documented as an open question on the Linear issue *before* implementation and approved by the PRD owner; un-flagged deviations block the PR. Visual diff against the export at light/dark + 375/768/1200/1440/1920 widths via the dev preview route.
 
 **Definition of Done (applies to every AC above):** `npm run typecheck`, `npm run format.fix`, `npm run build`, and `npm test` all pass; component tests for any new shell component are colocated and passing.
 
