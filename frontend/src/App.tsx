@@ -19,6 +19,7 @@ import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import "./App.css";
 
+import { LayoutC } from "@/components/layout/LayoutC";
 import Index from "./pages/Index";
 import Home from "./pages/Home";
 import Performance from "./pages/Performance";
@@ -142,7 +143,9 @@ const App = () => (
                       path="/"
                       element={
                         <ProtectedRoute>
-                          <Home />
+                          <LayoutC>
+                            <Home />
+                          </LayoutC>
                         </ProtectedRoute>
                       }
                     />
