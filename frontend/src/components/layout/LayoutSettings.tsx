@@ -84,7 +84,7 @@ export function LayoutSettings({ subNavItems, children }: LayoutSettingsProps) {
             </Button>
 
             <img
-              src="/KEN-E Logo E Small.png"
+              src="/KEN-E Logo E Small Charcoal.png"
               alt="KEN-E"
               className="h-6 shrink-0"
             />
