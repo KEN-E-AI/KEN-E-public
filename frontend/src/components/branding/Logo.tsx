@@ -35,7 +35,9 @@ export function Logo({ size = "md", variant = "full" }: LogoProps) {
           viewBox="5 53 190 156"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
+          role="img"
         >
+          <title>KEN-E</title>
           <defs>
             {/* Ribbon gradients */}
             <linearGradient

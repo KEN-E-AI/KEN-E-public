@@ -66,6 +66,24 @@ describe("Logo", () => {
     });
   });
 
+  describe("accessibility", () => {
+    test('SVG exposes role="img" with accessible name "KEN-E" for variant="icon"', () => {
+      render(<Logo variant="icon" />);
+      expect(
+        screen.getByRole("img", { name: /KEN-E/i }),
+      ).toBeInTheDocument();
+    });
+
+    test('SVG exposes role="img" with accessible name "KEN-E" for variant="full" too', () => {
+      render(<Logo variant="full" />);
+      // Both the SVG (role=img, name=KEN-E from <title>) and the <h2>KEN-E</h2>
+      // wordmark are present; the SVG must still be queryable by role.
+      expect(
+        screen.getByRole("img", { name: /KEN-E/i }),
+      ).toBeInTheDocument();
+    });
+  });
+
   describe("size prop drives wordmark text class", () => {
     (Object.keys(TEXT_CLASS_BY_PROP) as Array<keyof typeof TEXT_CLASS_BY_PROP>).forEach(
       (size) => {
