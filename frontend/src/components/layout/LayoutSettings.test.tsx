@@ -278,6 +278,54 @@ describe("LayoutSettings", () => {
         screen.queryByRole("link", { name: "Dev Route" }),
       ).not.toBeInTheDocument();
     });
+
+    test("excludes rows with bare / path", () => {
+      const rows: SettingsNavRow[] = [
+        {
+          id: "safe" as SettingsNavRowId,
+          label: "Safe Link",
+          path: "/settings/safe",
+          order: 10,
+        },
+        {
+          id: "home" as SettingsNavRowId,
+          label: "Home Route",
+          path: "/",
+          order: 20,
+        },
+      ];
+      renderLayoutSettings({ subNavItems: rows });
+      expect(
+        screen.getByRole("link", { name: "Safe Link" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("link", { name: "Home Route" }),
+      ).not.toBeInTheDocument();
+    });
+
+    test("excludes rows with dot-segment traversal paths", () => {
+      const rows: SettingsNavRow[] = [
+        {
+          id: "safe" as SettingsNavRowId,
+          label: "Safe Link",
+          path: "/settings/safe",
+          order: 10,
+        },
+        {
+          id: "traversal" as SettingsNavRowId,
+          label: "Traversal Link",
+          path: "/settings/../admin",
+          order: 20,
+        },
+      ];
+      renderLayoutSettings({ subNavItems: rows });
+      expect(
+        screen.getByRole("link", { name: "Safe Link" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("link", { name: "Traversal Link" }),
+      ).not.toBeInTheDocument();
+    });
   });
 
   describe("Active row highlighting", () => {

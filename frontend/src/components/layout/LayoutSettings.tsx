@@ -21,12 +21,17 @@ type LayoutSettingsProps = {
   children?: React.ReactNode;
 };
 
-const SAFE_PATH_RE = /^\/[a-zA-Z0-9/_-]*$/;
+const SAFE_PATH_RE = /^\/[a-zA-Z0-9/_-]+$/;
 const SAFE_PATH_MAX_LEN = 200;
 
 function isSafePath(path: string): boolean {
-  // Block over-length paths and /__* dev-harness routes from appearing in production nav
-  if (path.length > SAFE_PATH_MAX_LEN || path.startsWith("/__")) return false;
+  // Block over-length paths, dot-segment traversal, and /__* dev-harness routes
+  if (
+    path.length > SAFE_PATH_MAX_LEN ||
+    path.includes("..") ||
+    path.startsWith("/__")
+  )
+    return false;
   return SAFE_PATH_RE.test(path);
 }
 
