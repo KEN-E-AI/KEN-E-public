@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import Layout from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -547,16 +546,10 @@ const Performance = () => {
   };
 
   return (
-    <Layout
-      pageTitle="Performance"
-      selectedTab={selectedTab}
-      selectedChannel={selectedChannel}
-      selectedTactic={selectedTactic}
-      dateRange={dateRange}
-      setDateRange={setDateRange}
-      comparisonDateRange={comparisonDateRange}
-      setComparisonDateRange={setComparisonDateRange}
-    >
+    <>
+      <header className="px-6 pt-6 pb-4">
+        <h1 className="text-3xl font-bold">Performance</h1>
+      </header>
       <TooltipProvider>
         <div className="space-y-6">
           <div className="bg-white rounded-lg p-6 border border-dashboard-gray-200">
@@ -1203,7 +1196,7 @@ const Performance = () => {
           </div>
         </div>
       </TooltipProvider>
-    </Layout>
+    </>
   );
 };
 

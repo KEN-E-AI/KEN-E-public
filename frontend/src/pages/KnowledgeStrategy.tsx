@@ -2,7 +2,6 @@ import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Node, Edge } from "reactflow";
 import { ArrowLeft, Blocks, Filter, Users, Loader2 } from "lucide-react";
-import Layout from "@/components/layout/Layout";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -713,7 +712,10 @@ function KnowledgeStrategy() {
   };
 
   return (
-    <Layout pageTitle="Marketing Strategy" maxWidth={false}>
+    <>
+      <header className="px-6 pt-6 pb-4">
+        <h1 className="text-3xl font-bold">Marketing Strategy</h1>
+      </header>
       <div className="space-y-6">
         {/* Back Button */}
         <div>
@@ -1149,7 +1151,7 @@ function KnowledgeStrategy() {
           </AlertDialogContent>
         </AlertDialog>
       </div>
-    </Layout>
+    </>
   );
 }
 

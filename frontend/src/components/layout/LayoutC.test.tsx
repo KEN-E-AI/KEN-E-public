@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { AuthContextType } from "@/contexts/AuthContext";
 import { AuthContext } from "@/contexts/AuthContext";
 import type { UserId } from "@/lib/branded-types";
@@ -14,8 +14,7 @@ import {
 import type { LayoutBannerId } from "./LayoutC";
 
 vi.mock("./TopNav", async () => {
-  const actual =
-    await vi.importActual<typeof import("./TopNav")>("./TopNav");
+  const actual = await vi.importActual<typeof import("./TopNav")>("./TopNav");
   return {
     ...actual,
     TopNav: () => <div data-testid="top-nav" />,
@@ -58,7 +57,11 @@ function renderLayoutC({
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
       <AuthContext.Provider value={mockAuthContext() as AuthContextType}>
-        <LayoutC>{children}</LayoutC>
+        <Routes>
+          <Route element={<LayoutC />}>
+            <Route path="*" element={children} />
+          </Route>
+        </Routes>
       </AuthContext.Provider>
     </MemoryRouter>,
   );
@@ -107,6 +110,50 @@ describe("LayoutC", () => {
     });
   });
 
+  describe("content-area max-width (isFullWidth allowlist)", () => {
+    // Allowlisted routes opt out of `max-w-screen-2xl` to avoid horizontally
+    // clipping wide tables on large monitors. Preserves the intent of pre-
+    // migration commit 8042599 (`maxWidth={false}` on /knowledge/*, /products,
+    // /insights, /measurement-plan), now expressed as a route allowlist.
+    const fullWidthRoutes: Array<[string, string]> = [
+      ["/knowledge", "Knowledge index"],
+      ["/knowledge/strategy", "Knowledge sub-route"],
+      ["/knowledge/products", "Products under /knowledge"],
+      ["/knowledge/insights", "Insights under /knowledge"],
+      ["/knowledge/competitors", "Competitors under /knowledge"],
+      ["/measurement-plan", "Marketing Strategies (Index)"],
+      ["/strategy", "pre-existing"],
+      ["/workflows/automations", "pre-existing"],
+      ["/performance/dashboards/foo", "pre-existing"],
+    ];
+
+    fullWidthRoutes.forEach(([path, label]) => {
+      test(`${path} renders full-bleed (${label})`, () => {
+        renderLayoutC({ initialPath: path });
+        const content = screen.getByTestId("layout-content");
+        expect(content).toHaveAttribute("data-full-width", "true");
+        expect(content.className).not.toMatch(/\bmax-w-screen-2xl\b/);
+      });
+    });
+
+    const constrainedRoutes: Array<[string, string]> = [
+      ["/", "Home"],
+      ["/performance", "Performance (top-level, not /dashboards/)"],
+      ["/reports", "Reports"],
+      ["/settings/user", "User settings"],
+      ["/campaigns", "Campaigns"],
+    ];
+
+    constrainedRoutes.forEach(([path, label]) => {
+      test(`${path} keeps the max-w-screen-2xl constraint (${label})`, () => {
+        renderLayoutC({ initialPath: path });
+        const content = screen.getByTestId("layout-content");
+        expect(content).toHaveAttribute("data-full-width", "false");
+        expect(content.className).toMatch(/\bmax-w-screen-2xl\b/);
+      });
+    });
+  });
+
   describe("Mini Chat Widget", () => {
     test("does NOT render at home (/)", () => {
       renderLayoutC({ initialPath: "/" });
@@ -119,7 +166,9 @@ describe("LayoutC", () => {
     });
 
     test("clicking the widget trigger opens it and mounts ChatInterface in compact mode", async () => {
-      const { default: userEvent } = await import("@testing-library/user-event");
+      const { default: userEvent } = await import(
+        "@testing-library/user-event"
+      );
       const user = userEvent.setup();
       renderLayoutC({ initialPath: "/performance" });
 
@@ -142,7 +191,7 @@ describe("LayoutC", () => {
   });
 
   describe("mobile bottom tab bar", () => {
-    test("renders <nav aria-label=\"Primary navigation (mobile)\"> with 7 links", () => {
+    test('renders <nav aria-label="Primary navigation (mobile)"> with 7 links', () => {
       renderLayoutC();
       const mobileNav = screen.getByRole("navigation", {
         name: /Primary navigation \(mobile\)/i,
@@ -271,7 +320,9 @@ describe("LayoutC", () => {
         component: () => <div />,
       });
       expect(LAYOUT_BANNER_REGISTRY).toHaveLength(1);
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("dup-banner"));
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("dup-banner"),
+      );
       warnSpy.mockRestore();
     });
 

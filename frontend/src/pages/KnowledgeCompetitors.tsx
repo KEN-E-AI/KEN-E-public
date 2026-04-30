@@ -2,7 +2,6 @@ import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { CompetitorsManagement } from "@/components/competitors/CompetitorsManagement";
-import Layout from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -109,7 +108,10 @@ export default function KnowledgeCompetitors() {
   };
 
   return (
-    <Layout pageTitle="Competitor Knowledge" maxWidth={false}>
+    <>
+      <header className="px-6 pt-6 pb-4">
+        <h1 className="text-3xl font-bold">Competitor Knowledge</h1>
+      </header>
       <div className="space-y-6">
         {/* Back to Knowledge Base Link */}
         <div>
@@ -227,6 +229,6 @@ export default function KnowledgeCompetitors() {
           </SheetContent>
         </Sheet>
       </div>
-    </Layout>
+    </>
   );
 }

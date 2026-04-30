@@ -12,7 +12,6 @@ import {
   ArrowLeft,
   Trash2,
 } from "lucide-react";
-import Layout from "@/components/layout/Layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -230,7 +229,10 @@ const Insights = () => {
   };
 
   return (
-    <Layout pageTitle="Insights" maxWidth={false}>
+    <>
+      <header className="px-6 pt-6 pb-4">
+        <h1 className="text-3xl font-bold">Insights</h1>
+      </header>
       <div className="space-y-6 flex flex-col">
         {/* Back to Knowledge Base Link */}
         <div>
@@ -482,7 +484,7 @@ const Insights = () => {
           </Card>
         )}
       </div>
-    </Layout>
+    </>
   );
 };
 

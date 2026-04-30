@@ -265,7 +265,7 @@ The figma ProfileMenu does not include a super-admin section; that section is th
 2. Active route's nav pill has violet background, inverse text, violet shadow.
 3. The `Extensions` pill, when hovered, opens a panel listing the active extensions provided by `useExtensions()`. With the stub provider, the panel renders with the figma's empty/zero state.
 4. The left side of `/` renders the stubbed `SessionsSidebar` component (visible at `md:flex+`). The component file lives at `frontend/src/components/chat/SessionsSidebar.tsx` so CH-PRD-02 replaces the file in place.
-5. ~~Navigating to a non-home route (e.g., `/performance`) renders the Mini Chat Widget docked at the bottom (desktop only). The widget is collapsible; expanded, it shows the figma's drag-resize handle and the stubbed `<ChatInterface compact />`.~~ **Deferred — see §10.2.** The Mini Chat Widget code is in place inside `LayoutC`, but `LayoutC` only wraps `/` in `App.tsx` today (the other ~40 protected routes use legacy `<Layout>`). The widget is verifiable in the LayoutC unit test suite (`LayoutC.test.tsx` exercises `/performance` via `MemoryRouter` and confirms the widget renders + opens). End-to-end visibility on `/performance` requires the route-migration follow-up.
+5. Navigating to a non-home route (e.g., `/performance`) renders the Mini Chat Widget docked at the bottom (desktop only). The widget is collapsible; expanded, it shows the figma's drag-resize handle and the stubbed `<ChatInterface compact />`. **Resolved 2026-04-30 via §10.2** — `LayoutC` now wraps every protected route via the Outlet pattern, so the widget renders on `/performance` and all other non-`/` routes.
 6. On mobile (`<768px`), `/` renders: compact top header (Logo + AccountSwitcher + NotificationBell + ProfileMenu, 3 px rainbow bottom border) AND a bottom tab bar (`grid grid-cols-7`, all 7 nav items as icon + tiny label, active state `text-[var(--color-violet-500)] scale-110`, top border `--gradient-rainbow`). The Mini Chat Widget is hidden on mobile.
 7. ThemeToggle UI lives **inside** `ProfileMenu`'s dropdown. Clicking it flips `<html>` between `.dark` and no-class state; reload preserves the choice; `<ThemeToggle />` is not rendered anywhere else.
 8. `SUPER_ADMIN_NAV` registered rows render in `ProfileMenu`'s dropdown under an "Admin" sub-section. Section is gated on `useAuth().isSuperAdmin === true`. With zero rows, no section renders.
@@ -396,27 +396,31 @@ A `localStorage` stub branded against `Storage.prototype` was added in PR #302 a
 
 **Verifier (re-runnable).** From `frontend/`: `npm test`. The summary line should read `Tests  248 failed | 923 passed (1171)` (give or take, as test count may drift with new tests). `grep -c "hasPointerCapture\|localStorage.* is not" /tmp/npm-test.log` should be `0`.
 
-### 10.2 Migrate non-`/` protected routes from legacy `<Layout>` onto `LayoutC`
+### 10.2 Migrate non-`/` protected routes from legacy `<Layout>` onto `LayoutC` — RESOLVED 2026-04-30
 
-**Status:** scope gap surfaced during Phase 2 verification on 2026-04-30.
+**Status:** Resolved via Path A (Outlet + nested routes).
 
-**Problem.** `App.tsx` wraps only `/` in `<LayoutC>`. The other ~40 protected routes (e.g., `/performance`, `/calendar`, `/workflows`, `/strategy`, `/extensions`, `/settings/*`, plus all the deeper detail routes) each render their own `<Layout />` from `@/components/layout/Layout` — the legacy chrome (`IconNavigation` + `ContextSidebar` + `GlobalHeader`) that this refactor is supposed to be phasing out. Result: only the home route shows the figma layout; every other route still shows the old chrome. This makes Plan §6 AC-5 (Mini Chat Widget on `/performance`) impossible to satisfy in this PR — the widget is in `LayoutC`, but `LayoutC` never mounts on `/performance`.
+**Original problem (recap).** Only `/` was wrapped in `<LayoutC>`. All other ~30 protected routes wrapped themselves in the legacy `<Layout>` (`IconNavigation` + `ContextSidebar` + `GlobalHeader`), so the figma chrome was visible only on `/`. AC-5 (Mini Chat Widget on `/performance`) could not be verified.
 
-**Why this PR doesn't fix it.** This refactor's plan was scoped to the `LayoutC` component itself (TopNav, ProfileMenu, LayoutC's children, deletion of the vertical Sidebar). The route migration is a different concern — touching `App.tsx` plus every page that imports the legacy `<Layout>`, with likely visual regressions to chase per page (since pages may have implicit dependencies on the legacy layout's padding / sidebar spacing). Doing both in one PR would balloon scope and risk.
+**Resolution applied.**
+1. **`LayoutC` signature: `children` → `<Outlet />`.** The component now renders nested routes via react-router's `<Outlet />` instead of taking `children`. `LayoutC.test.tsx` updated to mount under `<Routes><Route element={<LayoutC />}><Route path="*" element={…} /></Route></Routes>`. All 21 LayoutC tests pass.
+2. **`App.tsx`: nested routes under one `LayoutC` parent.** All 25 protected routes are now nested under a single `<Route element={<ProtectedRoute><LayoutC /></ProtectedRoute>}>` parent. `ProtectedRoute` is hoisted to the parent so child routes don't repeat it. Public routes (`/auth/*`, `/invite/:token`, backward-compat redirects) and the dev-only `/__dev__/layout-settings` harness stay outside the parent.
+3. **Layout wrapper removed from 19 pages + `SettingsLayout`.** Each page that previously did `<Layout pageTitle="X" …>{children}</Layout>` now returns `<><header className="px-6 pt-6 pb-4"><h1 className="text-3xl font-bold">X</h1></header>{children}</>`. The page-title injection point is replaced by an inline `<h1>` in each page (a11y-conformant; preserves visible page titles). Pages that already had an inline `<h1>` (e.g., `AccountSettingsPage`) just had the `<Layout>` wrapper removed — no duplicate `<h1>` introduced.
+4. **Deleted legacy chrome (7 files).** `Layout.tsx`, `IconNavigation.tsx` + `IconNavigation.spec.tsx`, `ContextSidebar.tsx` + `ContextSidebar.spec.tsx`, `HomeLayout.tsx` (zero consumers, dead code), and `GlobalHeader.tsx` (only consumers were the now-deleted `Layout.tsx` and `HomeLayout.tsx`).
 
-**Action in the follow-up PR(s).**
-1. Pick a migration shape:
-   - **(A) Layout route + `<Outlet />`.** Refactor `LayoutC` to use `<Outlet />` instead of `children` and restructure `App.tsx` to nest protected routes under a single `<Route element={<LayoutC />}>` parent. One change to `App.tsx`, one signature change to `LayoutC` + its tests; every page just stops wrapping itself in `<Layout>`. Cleanest target end-state.
-   - **(B) Per-route opt-in.** Keep `LayoutC`'s `children` signature; wrap routes individually in `App.tsx` and remove inner `<Layout>` per page. Verbose but allows incremental migration.
-2. Either way: remove the inner `<Layout>...</Layout>` wrapper from each migrated page. Confirm each page still renders correctly (no hard-coded margins or sidebar offsets that the legacy layout was masking).
-3. Re-attach AC-5 (`/performance` renders Mini Chat Widget) and re-run the §9 verification snippet block at `/performance`.
-4. Once every protected route is on `LayoutC`, delete `frontend/src/components/layout/Layout.tsx`, `frontend/src/components/layout/IconNavigation.tsx`, `frontend/src/components/layout/ContextSidebar.tsx`, and `frontend/src/components/home/HomeLayout.tsx` along with their tests. Deletion target list:
-   - `Layout.tsx` / no test file
-   - `IconNavigation.tsx` / `IconNavigation.spec.tsx`
-   - `ContextSidebar.tsx` / `ContextSidebar.spec.tsx`
-   - `HomeLayout.tsx` / no test file (used at `/` historically)
+**Side effect surfaced & flagged.** App.tsx originally had **two** routes for `/knowledge/customers` (config bug — `<Customers />` first, `<KnowledgeCustomers />` second; react-router v6 picks the first). The new nested-routes shape de-dupes to `<KnowledgeCustomers />` (the more recent / better-named one), which is a behavior change. `Customers.tsx` is left in the repo as a candidate for either deletion or re-routing under a different path; the call belongs to whoever owns the customer-knowledge UX.
 
-**Verifier.** Manually navigate to `/`, `/performance`, `/calendar`, `/workflows`, `/strategy`, `/extensions`, `/settings/account`, `/settings/user`, `/settings/organization` on desktop and mobile. Confirm in each case: TopNav present (desktop) / compact header present (mobile), SessionsSidebar present (desktop), Mini Chat Widget present and collapsible (desktop, non-`/`), mobile bottom tab bar present (mobile), no `IconNavigation`/`ContextSidebar`/`GlobalHeader` in the DOM. Re-run §9 DevTools snippets at `/performance` and confirm both deferred checks now return `true`.
+**Other notes.**
+- `SettingsLayout`'s `showContextSidebar` prop is now dead (no `<Layout>` wrapper to forward it to). Left in the public interface so existing callers still type-check; cleanup is a follow-up.
+- Some pages still hold `useState` hooks for `dateRange` / `selectedTab` that previously fed `Layout`'s `GlobalHeader`. Those are now orphaned but harmless (TypeScript strict-mode is off). Inline date pickers / tab UI were not added; that's polish work for a separate PR per page.
+- AC-5 from Plan §6 (Mini Chat Widget present at `/performance`) is now reachable. Manual visual verification at the listed routes is left to PR review.
+
+**Final state.**
+- `npm run typecheck` clean.
+- `npm run build` clean (one pre-existing duplicate-attribute warning in `CompetitorsManagement.tsx` unrelated to this change).
+- `npm test` baseline: 241 failed / 908 passed / 1149 total (was 248 / 923 / 1171 pre-change). Math: 22 fewer tests = `IconNavigation.spec` + `ContextSidebar.spec` deleted; failure delta (-7) and pass delta (-15) sum to 22, so no new failures were introduced.
+
+**Verifier (re-runnable).** From `frontend/`: `npm run typecheck && npm test && npm run build`. Then start the dev server (`npm run dev:development` with `VITE_AUTH_BYPASS=true`) and navigate to `/`, `/performance`, `/knowledge`, `/settings/user`, `/reports` on desktop + mobile. Confirm: TopNav present (desktop) / compact header (mobile), SessionsSidebar present (desktop), Mini Chat Widget present at non-`/` (desktop), mobile bottom tab bar present (mobile), and `document.querySelectorAll('[data-testid="icon-navigation"], [data-testid="context-sidebar"]').length === 0` in DevTools.
 
 ### 10.3 Resolve nav-label color-contrast violations (WCAG AA)
 

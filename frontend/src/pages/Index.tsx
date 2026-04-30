@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import Layout from "@/components/layout/Layout";
 import DashboardView from "@/components/dashboard/DashboardView";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
@@ -24,17 +23,10 @@ const Index = () => {
   >(undefined);
 
   return (
-    <Layout
-      pageTitle="Marketing Strategies"
-      selectedTab={selectedTab}
-      selectedChannel={selectedChannel}
-      selectedTactic={selectedTactic}
-      dateRange={dateRange}
-      setDateRange={setDateRange}
-      comparisonDateRange={comparisonDateRange}
-      setComparisonDateRange={setComparisonDateRange}
-      maxWidth={false}
-    >
+    <>
+      <header className="px-6 pt-6 pb-4">
+        <h1 className="text-3xl font-bold">Marketing Strategies</h1>
+      </header>
       {/* Back to Knowledge Base Link */}
       <div className="mb-6">
         <Button
@@ -60,7 +52,7 @@ const Index = () => {
         onChannelChange={setSelectedChannel}
         onTacticChange={setSelectedTactic}
       />
-    </Layout>
+    </>
   );
 };
 

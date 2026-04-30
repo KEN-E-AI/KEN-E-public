@@ -1,5 +1,5 @@
 import { useRef, useState, useSyncExternalStore } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, Outlet, useLocation } from "react-router-dom";
 import { ChevronDown, MessageSquare } from "lucide-react";
 import type { Brand } from "@/lib/branded-types";
 import {
@@ -70,10 +70,6 @@ export function resetLayoutBannersForTesting(): void {
   _bannerListeners.clear();
 }
 
-type LayoutCProps = {
-  children: React.ReactNode;
-};
-
 const MINI_CHAT_DEFAULT_HEIGHT = 400;
 const MINI_CHAT_MIN_HEIGHT = 200;
 
@@ -81,15 +77,15 @@ function isItemActive(pathname: string, href: string): boolean {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);
 }
 
-export function LayoutC({ children }: LayoutCProps) {
+export function LayoutC() {
   return (
     <ExtensionsProvider>
-      <LayoutCInner>{children}</LayoutCInner>
+      <LayoutCInner />
     </ExtensionsProvider>
   );
 }
 
-function LayoutCInner({ children }: LayoutCProps) {
+function LayoutCInner() {
   const location = useLocation();
   const [miniChatOpen, setMiniChatOpen] = useState(false);
   const [miniChatHeight, setMiniChatHeight] = useState(
@@ -111,10 +107,18 @@ function LayoutCInner({ children }: LayoutCProps) {
   ).sort((a, b) => a.order - b.order);
 
   const isHome = location.pathname === "/";
+  // Routes that opt out of the max-w-screen-2xl content constraint and render
+  // full-bleed. The /knowledge family + /measurement-plan are preserved from
+  // pre-migration commit 8042599 ("add max-width constraint to improve UX on
+  // large screens"), which set maxWidth={false} on those pages so wide tables
+  // (MetricsConfiguration, CompetitorsManagement, CustomerProfilesManagement,
+  // DashboardView) don't horizontally clip on large monitors.
   const isFullWidth =
     location.pathname.startsWith("/strategy") ||
     location.pathname.startsWith("/workflows/automations") ||
-    location.pathname.startsWith("/performance/dashboards/");
+    location.pathname.startsWith("/performance/dashboards/") ||
+    location.pathname.startsWith("/knowledge") ||
+    location.pathname.startsWith("/measurement-plan");
 
   const handleResizePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -169,6 +173,8 @@ function LayoutCInner({ children }: LayoutCProps) {
         {/* Page content */}
         <main className="flex-1 min-h-0 overflow-hidden flex flex-col bg-[var(--color-bg-secondary)]">
           <div
+            data-testid="layout-content"
+            data-full-width={isFullWidth ? "true" : "false"}
             className={cn(
               isFullWidth ? "" : "max-w-screen-2xl",
               "w-full flex-1 min-h-0 flex flex-col bg-[var(--color-bg-primary)]",
@@ -179,7 +185,7 @@ function LayoutCInner({ children }: LayoutCProps) {
                 : { borderRight: "2px dashed var(--color-border-default)" }
             }
           >
-            {children}
+            <Outlet />
           </div>
         </main>
       </div>

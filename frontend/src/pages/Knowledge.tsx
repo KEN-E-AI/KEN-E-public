@@ -1,5 +1,4 @@
 import { useNavigate } from "react-router-dom";
-import Layout from "@/components/layout/Layout";
 import {
   BarChart3,
   Activity,
@@ -16,7 +15,10 @@ const Knowledge = () => {
   const navigate = useNavigate();
 
   return (
-    <Layout pageTitle="Knowledge Base">
+    <>
+      <header className="px-6 pt-6 pb-4">
+        <h1 className="text-3xl font-bold">Knowledge Base</h1>
+      </header>
       <div>
         {/* Header */}
         <div className="mb-8">
@@ -121,7 +123,7 @@ const Knowledge = () => {
           )}
         </div>
       </div>
-    </Layout>
+    </>
   );
 };
 

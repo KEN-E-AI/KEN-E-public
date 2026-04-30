@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import Layout from "@/components/layout/Layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ContextBreadcrumb } from "@/components/ui/context-breadcrumb";
 import { Badge } from "@/components/ui/badge";
@@ -43,13 +42,13 @@ const AccountSettingsPage = () => {
 
   if (!currentAccount) {
     return (
-      <Layout pageTitle="Account Settings">
+      <>
         <div>
           <div className="text-center py-8">
             <p className="text-gray-500">Account not found</p>
           </div>
         </div>
-      </Layout>
+      </>
     );
   }
 
@@ -278,7 +277,7 @@ const AccountSettingsPage = () => {
   };
 
   return (
-    <Layout pageTitle="Account Settings">
+    <>
       <div className="space-y-8">
         <ContextBreadcrumb currentPage="account" />
 
@@ -463,7 +462,7 @@ const AccountSettingsPage = () => {
           </CardContent>
         </Card>
       </div>
-    </Layout>
+    </>
   );
 };
 

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import Layout from "@/components/layout/Layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import ChannelControlsSnapshot from "@/components/dashboard/ChannelControlsSnapshot";
@@ -134,16 +133,10 @@ const AnalysisReport = () => {
   ];
 
   return (
-    <Layout
-      pageTitle="Analysis Report"
-      selectedTab={selectedTab}
-      selectedChannel={selectedChannel}
-      selectedTactic={selectedTactic}
-      dateRange={dateRange}
-      setDateRange={setDateRange}
-      comparisonDateRange={comparisonDateRange}
-      setComparisonDateRange={setComparisonDateRange}
-    >
+    <>
+      <header className="px-6 pt-6 pb-4">
+        <h1 className="text-3xl font-bold">Analysis Report</h1>
+      </header>
       <div className="space-y-6">
         {/* Back to Performance Link */}
         <div className="mb-4 flex flex-col">
@@ -364,7 +357,7 @@ const AnalysisReport = () => {
           </div>
         </div>
       </div>
-    </Layout>
+    </>
   );
 };
 

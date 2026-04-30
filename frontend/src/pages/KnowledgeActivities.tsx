@@ -1,5 +1,4 @@
 import { useNavigate } from "react-router-dom";
-import Layout from "@/components/layout/Layout";
 import { ActivitiesConfiguration } from "@/components/configuration";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
@@ -8,7 +7,10 @@ const KnowledgeActivities = () => {
   const navigate = useNavigate();
 
   return (
-    <Layout pageTitle="Activities Configuration" maxWidth={false}>
+    <>
+      <header className="px-6 pt-6 pb-4">
+        <h1 className="text-3xl font-bold">Activities Configuration</h1>
+      </header>
       <div className="space-y-6">
         {/* Back to Knowledge Base Link */}
         <div>
@@ -28,7 +30,7 @@ const KnowledgeActivities = () => {
           <ActivitiesConfiguration />
         </div>
       </div>
-    </Layout>
+    </>
   );
 };
 
