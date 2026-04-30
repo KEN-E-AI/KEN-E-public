@@ -81,7 +81,11 @@ export const ChatProvider = ({ children }: ChatProviderProps) => {
     const currentAccountId = selectedOrgAccount?.accountId;
     prevAccountIdRef.current = currentAccountId;
 
-    if (prevAccountId && currentAccountId && prevAccountId !== currentAccountId) {
+    if (
+      prevAccountId &&
+      currentAccountId &&
+      prevAccountId !== currentAccountId
+    ) {
       setSessionId(null);
       setCurrentConversation(null);
       setMessages([
@@ -321,9 +325,5 @@ export const ChatProvider = ({ children }: ChatProviderProps) => {
     updateChatContext,
   };
 
-  return (
-    <ChatContext.Provider value={value}>
-      {children}
-    </ChatContext.Provider>
-  );
+  return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
 };

@@ -9,10 +9,20 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ className, ...props }, ref) => {
     return (
       <textarea
+        data-slot="textarea"
         className={cn(
-          "flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+          "placeholder:text-[var(--color-text-tertiary)]",
+          "flex min-h-[80px] w-full rounded-[var(--radius-md)] border-2 border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] px-3 py-2 text-[var(--text-body-md)] text-[var(--color-text-primary)]",
+          "transition-all outline-none resize-y",
+          "focus-visible:border-[var(--color-violet-500)] focus-visible:shadow-[0_0_0_3px_var(--color-violet-100)]",
+          "aria-invalid:border-[var(--color-error)] aria-invalid:shadow-[0_0_0_3px_var(--color-error-bg)]",
+          "disabled:bg-[var(--color-surface-muted)] disabled:text-[var(--color-text-disabled)] disabled:border-[var(--color-border-subtle)] disabled:cursor-not-allowed disabled:resize-none",
           className,
         )}
+        style={{
+          transitionTimingFunction: "var(--ease-default)",
+          transitionDuration: "var(--duration-fast)",
+        }}
         ref={ref}
         {...props}
       />

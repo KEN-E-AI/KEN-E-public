@@ -26,6 +26,7 @@ const DrawerOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DrawerPrimitive.Overlay
     ref={ref}
+    data-slot="drawer-overlay"
     className={cn("fixed inset-0 z-50 bg-black/80", className)}
     {...props}
   />
@@ -40,13 +41,14 @@ const DrawerContent = React.forwardRef<
     <DrawerOverlay />
     <DrawerPrimitive.Content
       ref={ref}
+      data-slot="drawer-content"
       className={cn(
-        "fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col rounded-t-[10px] border bg-background",
+        "fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col rounded-t-[10px] border border-[var(--color-border-default)] bg-[var(--color-bg-elevated)]",
         className,
       )}
       {...props}
     >
-      <div className="mx-auto mt-4 h-2 w-[100px] rounded-full bg-muted" />
+      <div className="mx-auto mt-4 h-2 w-[100px] rounded-full bg-[var(--color-surface-muted)]" />
       {children}
     </DrawerPrimitive.Content>
   </DrawerPortal>
@@ -58,6 +60,7 @@ const DrawerHeader = ({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
+    data-slot="drawer-header"
     className={cn("grid gap-1.5 p-4 text-center sm:text-left", className)}
     {...props}
   />
@@ -69,6 +72,7 @@ const DrawerFooter = ({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
+    data-slot="drawer-footer"
     className={cn("mt-auto flex flex-col gap-2 p-4", className)}
     {...props}
   />
@@ -81,8 +85,9 @@ const DrawerTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DrawerPrimitive.Title
     ref={ref}
+    data-slot="drawer-title"
     className={cn(
-      "text-lg font-semibold leading-none tracking-tight",
+      "text-lg font-semibold leading-none tracking-tight text-[var(--color-text-primary)]",
       className,
     )}
     {...props}
@@ -96,7 +101,11 @@ const DrawerDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DrawerPrimitive.Description
     ref={ref}
-    className={cn("text-sm text-muted-foreground", className)}
+    data-slot="drawer-description"
+    className={cn(
+      "text-[var(--text-body-md)] text-[var(--color-text-tertiary)]",
+      className,
+    )}
     {...props}
   />
 ));
