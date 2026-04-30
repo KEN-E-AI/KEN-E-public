@@ -2,8 +2,11 @@ import { describe, test, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { AuthContext } from "@/contexts/AuthContext";
-import type { SelectedOrgAccount } from "@/contexts/AuthContext";
-import type { OrganizationId, AccountId } from "@/lib/branded-types";
+import type {
+  AuthContextType,
+  SelectedOrgAccount,
+} from "@/contexts/AuthContext";
+import type { OrganizationId, AccountId, UserId } from "@/lib/branded-types";
 import Home from "./Home";
 
 vi.mock("@/components/home/HomeChatArea", () => ({
@@ -24,39 +27,41 @@ const mockOrgAccount: SelectedOrgAccount = {
 function renderHome(
   selectedOrgAccount: SelectedOrgAccount | null = mockOrgAccount,
 ) {
+  const ctx: Partial<AuthContextType> = {
+    selectedOrgAccount,
+    user: {
+      id: "test-user" as UserId,
+      email: "test@example.com",
+      firstName: "Test",
+      lastName: "User",
+    },
+    isAuthenticated: true,
+    isAuthLoading: false,
+    hasSelectedWorkspace: true,
+    currentOrganizationId: null,
+    login: vi.fn(),
+    logout: vi.fn(),
+    updateUser: vi.fn(),
+    completeWorkspaceSelection: vi.fn(),
+    resetWorkspaceSelection: vi.fn(),
+    setCurrentOrganization: vi.fn(),
+    setSelectedOrgAccount: vi.fn(),
+    orgMetadata: {},
+    accountMetadata: {},
+    setOrgMetadata: vi.fn(),
+    setAccountMetadata: vi.fn(),
+    notifications: [],
+    setNotifications: vi.fn(),
+    refreshNotifications: vi.fn(),
+    notificationSettings: [],
+    securitySettings: [],
+    setNotificationSettings: vi.fn(),
+    setSecuritySettings: vi.fn(),
+    isSuperAdmin: false,
+  };
   return render(
     <MemoryRouter>
-      <AuthContext.Provider
-        value={
-          {
-            selectedOrgAccount,
-            user: null,
-            isAuthenticated: true,
-            isAuthLoading: false,
-            hasSelectedWorkspace: true,
-            currentOrganizationId: null,
-            login: vi.fn(),
-            logout: vi.fn(),
-            updateUser: vi.fn(),
-            completeWorkspaceSelection: vi.fn(),
-            resetWorkspaceSelection: vi.fn(),
-            setCurrentOrganization: vi.fn(),
-            setSelectedOrgAccount: vi.fn(),
-            orgMetadata: {},
-            accountMetadata: {},
-            setOrgMetadata: vi.fn(),
-            setAccountMetadata: vi.fn(),
-            notifications: [],
-            setNotifications: vi.fn(),
-            refreshNotifications: vi.fn(),
-            notificationSettings: [],
-            securitySettings: [],
-            setNotificationSettings: vi.fn(),
-            setSecuritySettings: vi.fn(),
-            isSuperAdmin: false,
-          } as any
-        }
-      >
+      <AuthContext.Provider value={ctx as AuthContextType}>
         <Home />
       </AuthContext.Provider>
     </MemoryRouter>,
@@ -70,15 +75,11 @@ describe("Home", () => {
   });
 
   // Regression guard: Home must NOT render IconNavigation or ContextSidebar.
-  // This test failed before Home.tsx was migrated off HomeLayout.
-  // If HomeLayout is reintroduced into Home's render tree, these assertions will fail.
+  // If HomeLayout is reintroduced into Home's render tree, those components
+  // will render with their data-testid attributes and these assertions will fail.
   test("does not render legacy chrome (IconNavigation, ContextSidebar)", () => {
     renderHome();
-    expect(
-      document.querySelector('[data-testid="icon-navigation"]'),
-    ).not.toBeInTheDocument();
-    expect(
-      document.querySelector('[data-testid="context-sidebar"]'),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("icon-navigation")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("context-sidebar")).not.toBeInTheDocument();
   });
 });
