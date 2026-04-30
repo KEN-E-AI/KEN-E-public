@@ -2,7 +2,8 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-const ACCENT_COLOR_RE = /^(#[0-9a-fA-F]{3,8}|(rgb|hsl)a?\(|var\(--[\w-]+\))/;
+const ACCENT_COLOR_RE =
+  /^(#[0-9a-fA-F]{3,8}|(rgb|hsl)a?\([^)]*\)|var\(--[\w-]+\))$/;
 
 const Card = React.forwardRef<
   HTMLDivElement,
@@ -10,6 +11,13 @@ const Card = React.forwardRef<
 >(({ className, accentColor, style, ...props }, ref) => {
   const safeAccentColor =
     accentColor && ACCENT_COLOR_RE.test(accentColor) ? accentColor : undefined;
+  // Strip guarded style keys so callers cannot bypass the accentColor guard
+  // by passing borderLeftColor / borderLeftWidth directly via the style prop.
+  const {
+    borderLeftColor: _blc,
+    borderLeftWidth: _blw,
+    ...safeStyle
+  } = style ?? {};
   return (
     <div
       ref={ref}
@@ -23,7 +31,7 @@ const Card = React.forwardRef<
         borderLeftColor: safeAccentColor,
         transitionTimingFunction: "var(--ease-bounce)",
         transitionDuration: "var(--duration-default)",
-        ...style,
+        ...safeStyle,
       }}
       {...props}
     />

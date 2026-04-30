@@ -37,6 +37,10 @@ describe("Card", () => {
     "javascript:void(0)",
     "  #fff",
     "",
+    // suffix-bypass: valid prefix followed by injected payload
+    "var(--color-primary) url(https://evil.example/track)",
+    "#fff; background: red",
+    "rgb(255,0,0); position: fixed",
   ])(
     "does not apply borderLeftColor for invalid accentColor %j (XSS guard)",
     (value) => {
@@ -46,6 +50,22 @@ describe("Card", () => {
       ).toBeFalsy();
     },
   );
+
+  it("accepts a standalone var() token as accentColor", () => {
+    const { container } = render(
+      <Card accentColor="var(--color-violet-500)" />,
+    );
+    expect((container.firstChild as HTMLElement).style.borderLeftColor).toBe(
+      "var(--color-violet-500)",
+    );
+  });
+
+  it("does not apply caller style borderLeftColor (guard strip)", () => {
+    const { container } = render(<Card style={{ borderLeftColor: "red" }} />);
+    expect(
+      (container.firstChild as HTMLElement).style.borderLeftColor,
+    ).toBeFalsy();
+  });
 
   it("forwards ref to the DOM node", () => {
     const ref = createRef<HTMLDivElement>();
