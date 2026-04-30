@@ -4,6 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>KEN-E | Marketing Analyst</title>
+    <!-- CSP note: if adding script-src, include the sha256 hash of this script or use a nonce -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("kene-theme");
+          if (stored === "dark") document.documentElement.classList.add("dark");
+        } catch (e) {
+          console.warn("[theme] FOUC script error", e);
+        }
+      })();
+    </script>
   </head>
 
   <body>

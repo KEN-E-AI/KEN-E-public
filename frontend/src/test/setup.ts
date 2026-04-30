@@ -14,6 +14,19 @@ global.ResizeObserver = vi.fn().mockImplementation(() => ({
   disconnect: vi.fn(),
 }));
 
+// jsdom does not implement matchMedia; stub it so components using it don't throw
+Object.defineProperty(window, "matchMedia", {
+  writable: true,
+  value: vi.fn().mockImplementation((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn().mockReturnValue(false),
+  })),
+});
+
 // Reset mocks before each test
 beforeEach(() => {
   vi.clearAllMocks();
