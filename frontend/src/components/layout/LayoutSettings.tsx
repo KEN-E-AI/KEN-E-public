@@ -68,7 +68,7 @@ export function LayoutSettings({ subNavItems, children }: LayoutSettingsProps) {
               variant="ghost"
               size="sm"
               asChild
-              className="md:hidden p-2 shrink-0"
+              className="md:hidden p-2 shrink-0 text-[var(--color-text-primary)]"
             >
               <Link to="/" aria-label="Back to App">
                 <ChevronLeft className="size-5" aria-hidden="true" />
@@ -90,7 +90,7 @@ export function LayoutSettings({ subNavItems, children }: LayoutSettingsProps) {
               variant="ghost"
               size="sm"
               asChild
-              className="gap-2 hidden md:flex"
+              className="gap-2 hidden md:flex text-[var(--color-text-primary)]"
             >
               <Link to="/">
                 <ChevronLeft className="size-4" aria-hidden="true" />

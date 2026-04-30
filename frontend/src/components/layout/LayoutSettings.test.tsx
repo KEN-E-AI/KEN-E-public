@@ -95,6 +95,16 @@ describe("LayoutSettings", () => {
       backLinks.forEach((link) => expect(link).toHaveAttribute("href", "/"));
     });
 
+    test("Back to App links use primary text color for WCAG AA contrast", () => {
+      renderLayoutSettings();
+      const backLinks = screen.getAllByRole("link", { name: /back to app/i });
+      // ghost variant defaults to --color-text-tertiary (#94a3b8, 2.47:1 against bg)
+      // both buttons must explicitly override to --color-text-primary (#1e293b, ~12:1)
+      backLinks.forEach((link) => {
+        expect(link).toHaveClass("text-[var(--color-text-primary)]");
+      });
+    });
+
     test("renders ProfileMenu with compact prop", () => {
       renderLayoutSettings();
       const profileMenu = screen.getByTestId("profile-menu");
