@@ -203,7 +203,6 @@
   --z-max: 100;
 
   /* --- Mode-independent utility tokens (no .dark override needed) --- */
-  --font-size: var(--text-body-md);
   --font-weight-medium: var(--font-medium);
   --font-weight-normal: var(--font-regular);
 
@@ -414,10 +413,6 @@
        if the scrolling ancestor is the body. Sidebar and header use fixed/flex
        positioning so this does not affect them, but flag here for future sticky work. */
     overflow-x: hidden;
-  }
-
-  html {
-    font-size: var(--font-size);
   }
 
   /* Heading defaults — sets font-family and weight only.
