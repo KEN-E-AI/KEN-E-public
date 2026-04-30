@@ -2,6 +2,9 @@
   "name": "fusion-starter",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22 <23"
+  },
   "scripts": {
     "dev": "vite",
     "dev:development": "node scripts/resolve-secrets.js .env.development && vite --mode development",
@@ -11,7 +14,7 @@
     "build:staging": "node scripts/resolve-secrets.js .env.staging && vite build --mode staging",
     "build:production": "node scripts/resolve-secrets.js .env.production && vite build --mode production",
     "resolve-secrets": "node scripts/resolve-secrets.js",
-    "test": "vitest --run",
+    "test": "NODE_OPTIONS=--no-experimental-webstorage vitest --run",
     "format.fix": "prettier --write .",
     "typecheck": "tsc"
   },
