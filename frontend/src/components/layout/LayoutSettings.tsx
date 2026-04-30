@@ -2,6 +2,7 @@ import type React from "react";
 import { Outlet, useLocation, Link } from "react-router-dom";
 import { ChevronLeft } from "lucide-react";
 import { ProfileMenu } from "./ProfileMenu";
+import { Logo } from "@/components/branding/Logo";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Brand } from "@/lib/branded-types";
@@ -83,11 +84,7 @@ export function LayoutSettings({ subNavItems, children }: LayoutSettingsProps) {
               </Link>
             </Button>
 
-            <img
-              src="/KEN-E Logo E Small Charcoal.png"
-              alt="KEN-E"
-              className="h-6 shrink-0"
-            />
+            <Logo variant="icon" size="sm" />
 
             <div
               className="h-8 w-px shrink-0 hidden md:block"
