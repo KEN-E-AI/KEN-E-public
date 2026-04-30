@@ -6,7 +6,7 @@ describe("BackgroundEffects", () => {
   it("renders four animated blob elements when motion is allowed", () => {
     render(<BackgroundEffects />);
     const blobsContainer = screen.getByTestId("bg-blobs");
-    expect(blobsContainer.children.length).toBeGreaterThanOrEqual(4);
+    expect(blobsContainer.children.length).toBe(4);
   });
 
   describe("when prefers-reduced-motion: reduce is set", () => {

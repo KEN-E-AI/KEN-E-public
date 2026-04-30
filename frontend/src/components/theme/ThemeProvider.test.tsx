@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { describe, it, expect, beforeEach } from "vitest";
 import { ThemeProvider, useTheme } from "./ThemeProvider";
+import type { ThemeMode } from "./ThemeProvider";
 
 function ToggleConsumer() {
   const { mode, toggle } = useTheme();
@@ -12,7 +13,7 @@ function ToggleConsumer() {
   );
 }
 
-function SetModeConsumer({ next }: { next: "light" | "dark" }) {
+function SetModeConsumer({ next }: { next: ThemeMode }) {
   const { mode, setMode } = useTheme();
   return (
     <div>
