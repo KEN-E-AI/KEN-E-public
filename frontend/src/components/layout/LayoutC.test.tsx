@@ -110,6 +110,50 @@ describe("LayoutC", () => {
     });
   });
 
+  describe("content-area max-width (isFullWidth allowlist)", () => {
+    // Allowlisted routes opt out of `max-w-screen-2xl` to avoid horizontally
+    // clipping wide tables on large monitors. Preserves the intent of pre-
+    // migration commit 8042599 (`maxWidth={false}` on /knowledge/*, /products,
+    // /insights, /measurement-plan), now expressed as a route allowlist.
+    const fullWidthRoutes: Array<[string, string]> = [
+      ["/knowledge", "Knowledge index"],
+      ["/knowledge/strategy", "Knowledge sub-route"],
+      ["/knowledge/products", "Products under /knowledge"],
+      ["/knowledge/insights", "Insights under /knowledge"],
+      ["/knowledge/competitors", "Competitors under /knowledge"],
+      ["/measurement-plan", "Marketing Strategies (Index)"],
+      ["/strategy", "pre-existing"],
+      ["/workflows/automations", "pre-existing"],
+      ["/performance/dashboards/foo", "pre-existing"],
+    ];
+
+    fullWidthRoutes.forEach(([path, label]) => {
+      test(`${path} renders full-bleed (${label})`, () => {
+        renderLayoutC({ initialPath: path });
+        const content = screen.getByTestId("layout-content");
+        expect(content).toHaveAttribute("data-full-width", "true");
+        expect(content.className).not.toMatch(/\bmax-w-screen-2xl\b/);
+      });
+    });
+
+    const constrainedRoutes: Array<[string, string]> = [
+      ["/", "Home"],
+      ["/performance", "Performance (top-level, not /dashboards/)"],
+      ["/reports", "Reports"],
+      ["/settings/user", "User settings"],
+      ["/campaigns", "Campaigns"],
+    ];
+
+    constrainedRoutes.forEach(([path, label]) => {
+      test(`${path} keeps the max-w-screen-2xl constraint (${label})`, () => {
+        renderLayoutC({ initialPath: path });
+        const content = screen.getByTestId("layout-content");
+        expect(content).toHaveAttribute("data-full-width", "false");
+        expect(content.className).toMatch(/\bmax-w-screen-2xl\b/);
+      });
+    });
+  });
+
   describe("Mini Chat Widget", () => {
     test("does NOT render at home (/)", () => {
       renderLayoutC({ initialPath: "/" });
