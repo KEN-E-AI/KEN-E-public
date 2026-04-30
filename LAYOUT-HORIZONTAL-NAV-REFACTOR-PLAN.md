@@ -274,7 +274,9 @@ The figma ProfileMenu does not include a super-admin section; that section is th
 11. Semantic-landmark assertion at `/`: `<header>` wraps TopNav; `<main>` wraps page content; both `<nav aria-label="Primary navigation">` (desktop, inside `<header>`) and `<nav aria-label="Primary navigation (mobile)">` (mobile, outside `<header>`) are present in the DOM (only one visible at a given breakpoint).
 12. `LayoutSettings.tsx` uses `<Logo variant="icon" size="sm" />` (already in commit `1828994`).
 13. `npm run typecheck`, `npm run format.fix`, `npm run build`, `npm test` all pass.
-14. axe-core scan of `/` reports zero new violations under both light and dark themes (excluding pre-existing violations in not-yet-migrated descendants such as `HomeChatArea` — tracked as **CH-6**).
+14. ~~axe-core scan of `/` reports zero new violations under both light and dark themes (excluding pre-existing violations in not-yet-migrated descendants such as `HomeChatArea` — tracked as **CH-6**).~~ **Partially met — see §10.3.** Phase 3 axe scan (Playwright + `@axe-core/playwright`, viewport 1440×900) at `http://localhost:8081/` reports:
+    - **2 critical button-name violations** in `HomeChatArea` (Mic icon button + a 32×32 anonymous icon button) — covered by the original "excluding pre-existing" clause; tracked as CH-6.
+    - **9 (light) / 7 (dark) serious color-contrast violations** on the TopNav primary-nav labels and mobile bottom-tab labels — these are *not* in `HomeChatArea` and are introduced by this refactor (the deleted `Sidebar.tsx` used `text-[var(--color-text-secondary)]`; the figma-faithful port uses `text-[var(--color-text-tertiary)]`). Deferred to §10.3 to keep figma fidelity in this PR.
 
 ---
 
@@ -421,3 +423,25 @@ These failures predate the layout refactor; they are surfaced here only because 
    - `HomeLayout.tsx` / no test file (used at `/` historically)
 
 **Verifier.** Manually navigate to `/`, `/performance`, `/calendar`, `/workflows`, `/strategy`, `/extensions`, `/settings/account`, `/settings/user`, `/settings/organization` on desktop and mobile. Confirm in each case: TopNav present (desktop) / compact header present (mobile), SessionsSidebar present (desktop), Mini Chat Widget present and collapsible (desktop, non-`/`), mobile bottom tab bar present (mobile), no `IconNavigation`/`ContextSidebar`/`GlobalHeader` in the DOM. Re-run §9 DevTools snippets at `/performance` and confirm both deferred checks now return `true`.
+
+### 10.3 Resolve nav-label color-contrast violations (WCAG AA)
+
+**Status:** surfaced by the Phase 3 axe-core scan on 2026-04-30; deferred for figma fidelity.
+
+**Problem.** The figma-faithful TopNav (and the matching mobile bottom tab bar in `LayoutC`) renders inactive primary-nav labels with `text-[var(--color-text-tertiary)]` — the figma's choice (`docs/figma-export/src/app/layouts/LayoutC.tsx:120`). At the actual computed token values that ship with KEN-E's Soft Maximalism, that color fails WCAG 2.1 AA contrast for normal text:
+
+| Element | Light contrast | Dark contrast | WCAG AA (≥4.5:1 normal text) |
+|---|---|---|---|
+| Inactive nav labels (TopNav desktop, TopNav mobile compact, mobile bottom-tab bar) | `slate-400` on near-white = **2.47:1** | `slate-500` on `slate-900` = **3.75:1** | **Fails both** |
+| Active nav pill label (Chat at `/`) | white on `violet-500` = **4.47:1** | `slate-900` on `violet-400` = 5.98:1 | Light: 0.03 below threshold (borderline; would pass if treated as "large text" — `body-sm` + `font-bold`); Dark: passes |
+
+axe-core reports **9 violations in light, 7 in dark** across the two surfaces. None of them are in `HomeChatArea` (which is excluded by Plan §6 AC-14's pre-existing-descendants clause); they are all in chrome introduced by this refactor.
+
+**Why deferred.** The user explicitly chose figma fidelity over WCAG AA in this PR (the "do not make design decisions; ASK before deviating from figma" guardrail in the original task brief). The previous chrome — the now-deleted `Sidebar.tsx` — used `text-[var(--color-text-secondary)]`, one tier higher contrast, and would have passed; switching back is a one-line-per-site fix but a deviation from the figma. That deviation is a design call, not a refactor call.
+
+**Action in the follow-up PR.** Pick one resolution path and ship it as its own change:
+1. **Local override:** change the inactive nav label class from `text-[var(--color-text-tertiary)]` to `text-[var(--color-text-secondary)]` in three sites — `TopNav.tsx` desktop pills, `TopNav.tsx` mobile compact (no labels there today, but verify), and `LayoutC.tsx` mobile bottom tab bar. Re-run axe; expect zero TopNav/LayoutC nav-label violations.
+2. **Token-level fix:** bump the rendered value of `--color-text-tertiary` in `frontend/src/index.css` so it passes 4.5:1 against `--color-bg-primary` in both themes. Affects every consumer of that token; warrants a design-system review.
+3. **Defer to design / UX review:** confirm with whoever owns Soft Maximalism whether the figma's choice is intentional (low contrast as visual hierarchy device) or an oversight. If intentional, document the AA non-conformance as a design-system known issue and stop.
+
+**Verifier.** Re-run the Phase 3 axe scan (`/tmp/axe-scan/axe-scan.mjs` against `http://localhost:8081/` with `VITE_AUTH_BYPASS=true`) and confirm no `color-contrast` violations remain that target `[aria-label="Primary navigation"] a > span` or `[aria-label="Primary navigation (mobile)"] a > span`.
