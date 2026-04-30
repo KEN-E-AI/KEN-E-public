@@ -1,14 +1,8 @@
 import { describe, test, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import type { AuthContextType } from "@/contexts/AuthContext";
-import { AuthContext } from "@/contexts/AuthContext";
-import type { UserId } from "@/lib/branded-types";
 import { LayoutSettings } from "./LayoutSettings";
-import type { SettingsNavRow } from "./LayoutSettings";
-import type { Brand } from "@/lib/branded-types";
-
-type SettingsNavRowId = Brand<string, "SettingsNavRowId">;
+import type { SettingsNavRow, SettingsNavRowId } from "./LayoutSettings";
 
 vi.mock("./ProfileMenu", () => ({
   ProfileMenu: ({ compact }: { compact?: boolean }) => (
@@ -17,19 +11,6 @@ vi.mock("./ProfileMenu", () => ({
     </div>
   ),
 }));
-
-const mockAuthContext: Partial<AuthContextType> = {
-  user: {
-    id: "test-user" as UserId,
-    email: "user@example.com",
-    firstName: "Test",
-    lastName: "User",
-  },
-  isAuthenticated: true,
-  isAuthLoading: false,
-  hasSelectedWorkspace: true,
-  isSuperAdmin: false,
-};
 
 const seedRows: SettingsNavRow[] = [
   {
@@ -63,11 +44,9 @@ function renderLayoutSettings({
 } = {}) {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
-      <AuthContext.Provider value={mockAuthContext as AuthContextType}>
-        <LayoutSettings subNavItems={subNavItems}>
-          {children ?? <div>Page content</div>}
-        </LayoutSettings>
-      </AuthContext.Provider>
+      <LayoutSettings subNavItems={subNavItems}>
+        {children ?? <div>Page content</div>}
+      </LayoutSettings>
     </MemoryRouter>,
   );
 }
@@ -150,6 +129,13 @@ describe("LayoutSettings", () => {
         screen.getByRole("heading", { name: "Settings" }),
       ).toBeInTheDocument();
     });
+
+    test("does not match breadcrumb on substring — /settings/user-prefs is not User Settings", () => {
+      renderLayoutSettings({ initialPath: "/settings/user-prefs" });
+      expect(
+        screen.getByRole("heading", { name: "Settings" }),
+      ).toBeInTheDocument();
+    });
   });
 
   describe("Sub-nav rows", () => {
@@ -218,7 +204,7 @@ describe("LayoutSettings", () => {
       ];
       renderLayoutSettings({ subNavItems: outOfOrder });
       const links = screen.getAllByRole("link", {
-        name: /organization|account|user/i,
+        name: /^(Organization|Account|User)$/i,
       });
       expect(links[0]).toHaveTextContent("Organization");
       expect(links[1]).toHaveTextContent("Account");
@@ -232,6 +218,30 @@ describe("LayoutSettings", () => {
       ).toBeInTheDocument();
       expect(
         screen.queryByRole("link", { name: /organization|account|user/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    test("excludes rows with unsafe (non-relative) paths", () => {
+      const rows: SettingsNavRow[] = [
+        {
+          id: "safe" as SettingsNavRowId,
+          label: "Safe Link",
+          path: "/settings/safe",
+          order: 10,
+        },
+        {
+          id: "unsafe" as SettingsNavRowId,
+          label: "Unsafe Link",
+          path: "javascript:alert(1)" as unknown as string,
+          order: 20,
+        },
+      ];
+      renderLayoutSettings({ subNavItems: rows });
+      expect(
+        screen.getByRole("link", { name: "Safe Link" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("link", { name: "Unsafe Link" }),
       ).not.toBeInTheDocument();
     });
   });

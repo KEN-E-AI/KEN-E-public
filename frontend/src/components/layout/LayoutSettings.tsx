@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { Brand } from "@/lib/branded-types";
 
-type SettingsNavRowId = Brand<string, "SettingsNavRowId">;
+export type SettingsNavRowId = Brand<string, "SettingsNavRowId">;
 
 export type SettingsNavRow = {
   id: SettingsNavRowId;
@@ -21,14 +21,26 @@ type LayoutSettingsProps = {
   children?: React.ReactNode;
 };
 
+const SAFE_PATH_RE = /^\/[a-zA-Z0-9/_-]*$/;
+
+function isSafePath(path: string): boolean {
+  return SAFE_PATH_RE.test(path);
+}
+
 function getBreadcrumb(pathname: string): string {
-  if (pathname.includes("/settings/organization")) {
+  if (
+    pathname === "/settings/organization" ||
+    pathname.startsWith("/settings/organization/")
+  ) {
     return "Organization Settings";
   }
-  if (pathname.includes("/settings/user")) {
+  if (pathname === "/settings/user" || pathname.startsWith("/settings/user/")) {
     return "User Settings";
   }
-  if (pathname.includes("/settings/account")) {
+  if (
+    pathname === "/settings/account" ||
+    pathname.startsWith("/settings/account/")
+  ) {
     return "Account Settings";
   }
   return "Settings";
@@ -38,7 +50,7 @@ export function LayoutSettings({ subNavItems, children }: LayoutSettingsProps) {
   const location = useLocation();
 
   const visibleRows = subNavItems
-    .filter((row) => row.isVisible !== false)
+    .filter((row) => row.isVisible !== false && isSafePath(row.path))
     .sort((a, b) => a.order - b.order);
 
   return (
@@ -58,7 +70,7 @@ export function LayoutSettings({ subNavItems, children }: LayoutSettingsProps) {
               asChild
               className="md:hidden p-2 shrink-0"
             >
-              <Link to="/" aria-label="Back to app">
+              <Link to="/" aria-label="Back to App">
                 <ChevronLeft className="size-5" aria-hidden="true" />
               </Link>
             </Button>
