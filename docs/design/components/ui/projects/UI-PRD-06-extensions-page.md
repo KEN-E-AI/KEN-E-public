@@ -34,6 +34,11 @@ The Figma design introduces an Extensions concept — a marketplace-style galler
 
 ## 3. Dependencies
 
+- **Canonical reference (`docs/figma-export/`):** the source of truth for the Extensions index, both extension landing pages, and the shared `ExtensionCard` / `ExtensionLanding` components in this PRD. Build to match the export exactly. **Do not deviate** — if a deviation seems necessary, raise it as an open question on the Linear issue and wait for explicit approval. Specific paths to read for this PRD:
+  - Pages: `docs/figma-export/src/app/pages/extensions/` (or matching path) — `ExtensionsIndex`, `DashboardCreatorExtension`, `PerformanceOptimizerExtension`
+  - Shared components: `docs/figma-export/src/app/components/` — `ExtensionCard`, `ExtensionLanding`
+  - Tokens & shared primitives: `docs/figma-export/src/styles/`, `src/app/components/`
+  - Design rationale: `docs/figma-export/guidelines/Guidelines.md`, `guidelines/ken-e_design_guidelines.md`
 - **UI-PRD-01:** `LayoutC`, shadcn primitives (Card, Button, Dialog)
 - **Future backend (not yet scoped):** a component PRD for Extensions runtime and activation API. Flag to product/engineering leadership at UI-PRD-06 kickoff to confirm the backend track.
 - **Figma nodes:** ExtensionsIndex, DashboardCreatorExtension, PerformanceOptimizerExtension
@@ -93,7 +98,8 @@ N/A. Future Extensions backend PRD will own activation endpoints.
 4. Each landing page renders hero + feature list + Activate button; clicking Activate shows the mocked toast.
 5. `coming-soon` extensions render a disabled Activate button and a "Coming soon" badge.
 6. Dark mode renders correctly.
-7. Component tests pass; `npm run typecheck`, `npm run format.fix`, `npm run build`, `npm test` pass.
+7. **Canonical-reference parity.** `ExtensionsIndex`, both extension landing pages, and the shared `ExtensionCard` / `ExtensionLanding` components delivered by this PRD match `docs/figma-export/src/app/<corresponding-path>` in structure, variants, tokens, DOM landmarks, and a11y semantics. Any deviation is documented as an open question on the Linear issue *before* implementation and approved by the PRD owner; un-flagged deviations block the PR.
+8. Component tests pass; `npm run typecheck`, `npm run format.fix`, `npm run build`, `npm test` pass.
 
 ## 8. Test plan
 

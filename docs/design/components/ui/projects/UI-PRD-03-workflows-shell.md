@@ -40,6 +40,11 @@ Three Release-1-and-2 features — Agents (AH-PRD-02), Automations (A-PRD-05 / A
 
 ## 3. Dependencies
 
+- **Canonical reference (`docs/figma-export/`):** the source of truth for the workflows shell, every tab page, and every detail page in this PRD. Build to match the export exactly. **Do not deviate** — if a deviation seems necessary, raise it as an open question on the Linear issue and wait for explicit approval. Specific paths to read for this PRD:
+  - Workflows shell + tabs: `docs/figma-export/src/app/pages/workflows/` (or matching path) — `WorkflowsLayout`, `AgentsPage`, `AutomationsPage`, `SkillsPage`, `AgentCreatePage`, `AutomationDetailsPage`
+  - Empty-state copy + CTAs: confirm against the export's tab pages (Agents / Automations / Skills)
+  - Tokens & shared primitives: `docs/figma-export/src/styles/`, `src/app/components/`
+  - Design rationale: `docs/figma-export/guidelines/Guidelines.md`, `guidelines/ken-e_design_guidelines.md`
 - **UI-PRD-01:** `LayoutC`, `Sidebar`, re-skinned shadcn primitives (Tabs, Card, Button, Input, Table)
 - **Downstream consumers** (informational — they will consume the shell this PRD builds):
   - [`AH-PRD-02`](../../agentic-harness/projects/AH-PRD-02-agent-factory.md) — Agents tab + AgentCreatePage data wiring
@@ -108,7 +113,8 @@ N/A — this PRD consumes no APIs. Downstream PRDs wire their own endpoints.
 5. `AutomationDetailsPage` renders the header with title, status badge, and two sub-tabs (Overview / Outputs); Overview shows a mocked DAG placeholder; Outputs shows an empty-state.
 6. All routes are wrapped in `LayoutC` with correct sidebar padding.
 7. Dark mode renders correctly on every page.
-8. Component tests pass; `npm run typecheck`, `npm run format.fix`, `npm run build`, `npm test` pass.
+8. **Canonical-reference parity.** `WorkflowsLayout` and every tab/detail page delivered by this PRD matches `docs/figma-export/src/app/pages/workflows/<corresponding-path>` in structure, variants, tokens, DOM landmarks, and a11y semantics. Empty-state copy and CTAs match the export verbatim. Any deviation is documented as an open question on the Linear issue *before* implementation and approved by the PRD owner; un-flagged deviations block the PR.
+9. Component tests pass; `npm run typecheck`, `npm run format.fix`, `npm run build`, `npm test` pass.
 
 ## 8. Test plan
 
