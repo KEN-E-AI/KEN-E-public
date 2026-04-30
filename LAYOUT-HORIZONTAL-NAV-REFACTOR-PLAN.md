@@ -376,31 +376,25 @@ If every check passes, the refactor is functionally complete; the remaining work
 
 Items intentionally left out of this refactor's scope. Each needs a separate PR.
 
-### 10.1 Restore `npm test` to a meaningful baseline (Node 25 / jsdom env breakage)
+### 10.1 Restore `npm test` to a meaningful baseline (Node 25 / jsdom env breakage) — RESOLVED 2026-04-30
 
-**Status:** workaround in place; real fix deferred.
-**Search marker for the follow-up:** `TODO(test-env-node25)` — present in `frontend/src/test/setup.ts` next to the stub, and referenced from this plan.
+**Status:** Resolved on `main` post-PR-302 via a hybrid Path C fix.
 
-**Problem (observed 2026-04-30 on Node 25.8.2 / macOS 25.4.0).** A baseline `npm test` at the branch tip reports **58 failing test files / 281 failing tests / 1 unhandled error**, none of which are assertion-level. The dominant categories:
+**Original problem (observed on Node 25.8.2 / macOS 25.4.0).** Baseline `npm test` reported 281 failing tests + 1 unhandled error, dominated by two env-level cascades:
+- `localStorage.clear is not a function` — Node 25 ships a built-in partial `localStorage` (gated by `--experimental-webstorage`, which is on by default) that leaks into the jsdom environment, replacing jsdom's own `Storage` implementation with one that lacks the standard methods.
+- `target.hasPointerCapture is not a function` — jsdom does not implement the Pointer Capture API; Radix Select / Collapsible primitives call it during pointer interactions and throw an unhandled error.
 
-- `localStorage.clear is not a function` in every test that does `localStorage.clear()` in `beforeEach` (e.g. `Sidebar.test.tsx` — 22/22 failing for this reason alone, identical before and after the registry extraction). Preceded by the Node warning `Warning: --localstorage-file was provided without a valid path`. Node 25 ships a built-in partial `localStorage` whose surface differs from jsdom's, and it is leaking into the jsdom environment.
-- `target.hasPointerCapture is not a function` on Radix UI `Select` / `Collapsible` interactions — jsdom does not implement Pointer Capture.
+A `localStorage` stub branded against `Storage.prototype` was added in PR #302 as a workaround (281 → 252 failing). The stub did not address Pointer Capture, and was fragile against any test that called `new StorageEvent({ storageArea })` (jsdom's StorageEvent constructor uses an internal-slot brand check, not `instanceof Storage`).
 
-These failures predate the layout refactor; they are surfaced here only because Phase 1 step 1 needed to "run `npm test` scoped to those files to confirm parity" and could not, since the old `Sidebar.test.tsx` baseline was already red.
+**Resolution applied.**
+1. **Pointer Capture polyfills** added to `frontend/src/test/setup.ts` — stub `Element.prototype.hasPointerCapture` (returns `false`), `setPointerCapture`, `releasePointerCapture`, and `HTMLElement.prototype.scrollIntoView` with `vi.fn()`. Inert in tests, satisfies Radix's runtime checks.
+2. **Disabled Node 25's built-in `localStorage`** via `NODE_OPTIONS=--no-experimental-webstorage` in the `test` npm script. With the flag set, `localStorage` is `undefined` in Node, which lets jsdom install its own native implementation cleanly. No leakage, no warning.
+3. **Removed the `localStorage` stub** from `setup.ts` (and its `TODO(test-env-node25)` comment).
+4. **Advisory Node version pin** added: `frontend/.nvmrc` = `22` and `"engines": { "node": ">=22 <23" }` in `frontend/package.json`. Documents Node 22 LTS as the supported version (matching Vite/Vitest's tested matrix) without forcing a hard error on Node 25 — `engine-strict` is left at the default (advisory). Future CI can opt into strict enforcement.
 
-**Workaround applied in this PR.** A `localStorage` stub in `frontend/src/test/setup.ts`, branded against `Storage.prototype` so it satisfies `instanceof Storage`. Reduces the suite from 281 → 252 failing tests. It is **not** a fix and does not address the Pointer Capture failures. Marked with the `TODO(test-env-node25)` comment for grep-ability.
+**Final baseline post-fix:** 248 failed / 923 passed / 1171 total, **0 unhandled errors**, 0 `localStorage` errors, 0 Pointer Capture errors. The 248 remaining failures are entirely assertion / mock-quality issues that predate this work — separate follow-up.
 
-**Known limitation of the stub (2 tests in `Sidebar.test.tsx`).** Two storage-event tests in `Sidebar.test.tsx` (`syncs collapsed state from another tab via storage event`, `ignores storage events for unrelated keys`) construct `new StorageEvent("storage", { storageArea: localStorage, ... })`. jsdom's `StorageEvent` constructor uses an **internal-slot** brand check (private symbols), not just `instanceof Storage` — so even a prototype-branded stub is rejected with `Failed to construct 'StorageEvent': parameter 2 has member 'storageArea' that is not of type 'Storage'`. Patching this would require constructing a real jsdom `Storage` instance from inside jsdom internals, which is brittle. These 2 cases are confined to `Sidebar.test.tsx`; Phase 2.4 deletes that file, so the failures self-resolve when the layout refactor lands. Until then they are **expected ambient failures** in this branch only — do not treat them as regressions.
-
-**Action in the follow-up PR.**
-1. Choose one fix path:
-   - **(A) Pin Node to 22 LTS** via `frontend/.nvmrc` and `engines.node` in `frontend/package.json`. Narrowest fix — matches Vite/Vitest's currently tested matrix and stops Node 25 from injecting its built-in `localStorage`.
-   - **(B) Stay on Node 25**, upgrade jsdom (and/or vitest) to a version that wins the global-storage race against Node 25, AND add Pointer Capture polyfills (e.g. via `@testing-library/user-event` + a small jsdom patch). More work; lets the team stay on the current Node.
-2. Remove the `localStorage` stub from `setup.ts`.
-3. Confirm `npm test` at HEAD is green (or at least: the 281 pre-existing env failures are gone; only assertion-level failures remain — those are separate work).
-4. While here, fix or document the Radix Pointer Capture failures so the suite is meaningfully green, not just no-longer-erroring on `localStorage`.
-
-**Verifier.** Run `npm test` at HEAD before and after the follow-up; diff failure counts.
+**Verifier (re-runnable).** From `frontend/`: `npm test`. The summary line should read `Tests  248 failed | 923 passed (1171)` (give or take, as test count may drift with new tests). `grep -c "hasPointerCapture\|localStorage.* is not" /tmp/npm-test.log` should be `0`.
 
 ### 10.2 Migrate non-`/` protected routes from legacy `<Layout>` onto `LayoutC`
 
