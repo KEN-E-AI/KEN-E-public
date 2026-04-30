@@ -4,12 +4,12 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import type { AuthContextType } from "@/contexts/AuthContext";
 import { AuthContext } from "@/contexts/AuthContext";
+import { Sidebar } from "./Sidebar";
 import {
-  Sidebar,
   SUPER_ADMIN_NAV,
   registerSuperAdminNavRow,
   resetSuperAdminNavForTesting,
-} from "./Sidebar";
+} from "./super-admin-nav-registry";
 import type { Brand, UserId } from "@/lib/branded-types";
 
 type NavRowId = Brand<string, "NavRowId">;

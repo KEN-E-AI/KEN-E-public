@@ -20,7 +20,11 @@ import {
 } from "@/components/ui/tooltip";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
-import type { Brand } from "@/lib/branded-types";
+import {
+  SUPER_ADMIN_NAV,
+  _getNavSnapshot,
+  _navSubscribe,
+} from "./super-admin-nav-registry";
 
 export const SIDEBAR_WIDTH_EXPANDED = "md:w-64";
 export const SIDEBAR_WIDTH_COLLAPSED = "md:w-16";
@@ -34,57 +38,6 @@ const navigation = [
   { name: "Extensions", href: "/extensions", icon: Puzzle },
   { name: "Settings", href: "/settings/account", icon: Settings },
 ] as const;
-
-type NavRowId = Brand<string, "NavRowId">;
-
-export type SuperAdminNavRow = {
-  id: NavRowId;
-  label: string;
-  path: string;
-  order: number;
-  icon?: React.ComponentType<{ className?: string }>;
-  isVisible?: boolean;
-};
-
-export const SUPER_ADMIN_NAV: SuperAdminNavRow[] = [];
-
-let _navVersion = 0;
-const _navListeners = new Set<() => void>();
-
-function _navSubscribe(listener: () => void): () => void {
-  _navListeners.add(listener);
-  return () => {
-    _navListeners.delete(listener);
-  };
-}
-
-function _getNavSnapshot(): number {
-  return _navVersion;
-}
-
-export function registerSuperAdminNavRow(row: SuperAdminNavRow): void {
-  if (!/^\/[a-zA-Z0-9/_-]*$/.test(row.path)) {
-    console.warn(
-      `[registerSuperAdminNavRow] Rejected row "${row.id}": invalid path`,
-    );
-    return;
-  }
-  if (SUPER_ADMIN_NAV.some((r) => r.id === row.id)) {
-    console.warn(
-      `[registerSuperAdminNavRow] Rejected row "${row.id}": duplicate id`,
-    );
-    return;
-  }
-  SUPER_ADMIN_NAV.push(row);
-  _navVersion += 1;
-  _navListeners.forEach((listener) => listener());
-}
-
-export function resetSuperAdminNavForTesting(): void {
-  SUPER_ADMIN_NAV.length = 0;
-  _navVersion = 0;
-  _navListeners.clear();
-}
 
 export function Sidebar() {
   const location = useLocation();
