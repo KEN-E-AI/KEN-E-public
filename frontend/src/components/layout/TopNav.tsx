@@ -91,7 +91,7 @@ export function TopNav() {
                           "flex items-center gap-2 p-2 lg:px-4 lg:py-2 rounded-[var(--radius-pill)] transition-all text-[var(--text-body-sm)] font-bold",
                           isActive
                             ? "bg-[var(--color-violet-500)] text-[var(--color-text-inverse)] shadow-[var(--shadow-color-violet)]"
-                            : "text-[var(--color-text-tertiary)] hover:bg-[var(--color-accent)] hover:text-[var(--color-violet-500)] hover:-translate-y-0.5",
+                            : "text-[var(--color-text-secondary)] hover:bg-[var(--color-accent)] hover:text-[var(--color-violet-500)] hover:-translate-y-0.5",
                         )}
                         style={{
                           transitionTimingFunction: "var(--ease-bounce)",
