@@ -163,4 +163,24 @@ describe("ExtensionsNavItem", () => {
     expect(menuItems).toHaveLength(1);
     expect(menuItems[0]).toHaveTextContent(/browse all extensions/i);
   });
+
+  test("clears the pending hover-close timer on unmount (no leaked setTimeout)", () => {
+    const { unmount } = renderWith();
+    const wrapper = screen.getByRole("link", { name: /extensions/i })
+      .parentElement!;
+
+    fireEvent.mouseEnter(wrapper);
+    fireEvent.mouseLeave(wrapper);
+
+    // The 150ms close-delay timer is now pending.
+    const pendingDuringMount = vi.getTimerCount();
+    expect(pendingDuringMount).toBeGreaterThan(0);
+
+    // Unmount before the timer fires — the routine case where the user clicks a
+    // different nav link mid-hover and ExtensionsNavItem leaves the tree.
+    unmount();
+
+    // The cleanup effect must have cleared the timer; the pending count drops.
+    expect(vi.getTimerCount()).toBeLessThan(pendingDuringMount);
+  });
 });

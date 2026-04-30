@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -36,6 +36,18 @@ export function ExtensionsNavItem({ item, isActive }: ExtensionsNavItemProps) {
       timeoutRef.current = null;
     }, HOVER_CLOSE_DELAY_MS);
   };
+
+  // Clear any pending close-delay timer on unmount so the setHovered callback
+  // can't fire on an unmounted component (state-update-on-unmounted warning in
+  // React 18 StrictMode, and a real state leak otherwise).
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
+  }, []);
 
   return (
     <div
