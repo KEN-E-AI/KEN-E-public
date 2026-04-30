@@ -18,12 +18,18 @@ vi.mock("./ProfileMenu", () => ({
     <div data-testid="profile-menu" data-compact={compact ? "true" : "false"} />
   ),
 }));
+vi.mock("@/components/theme/ThemeToggle", () => ({
+  ThemeToggle: () => (
+    <button data-testid="theme-toggle" aria-label="Toggle theme" />
+  ),
+}));
 
 describe("TopNav", () => {
-  test("renders all three children", () => {
+  test("renders all four children including ThemeToggle", () => {
     render(<TopNav />);
     expect(screen.getByTestId("account-switcher")).toBeInTheDocument();
     expect(screen.getByTestId("notification-bell")).toBeInTheDocument();
+    expect(screen.getByTestId("theme-toggle")).toBeInTheDocument();
     expect(screen.getByTestId("profile-menu")).toBeInTheDocument();
   });
 

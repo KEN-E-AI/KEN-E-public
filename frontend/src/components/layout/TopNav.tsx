@@ -1,6 +1,7 @@
 import { AccountSwitcher } from "./AccountSwitcher";
 import { NotificationBell } from "./NotificationBell";
 import { ProfileMenu } from "./ProfileMenu";
+import { ThemeToggle } from "@/components/theme/ThemeToggle";
 
 type TopNavProps = {
   compact?: boolean;
@@ -16,6 +17,7 @@ export function TopNav({ compact = false }: TopNavProps) {
       <div className="flex-1" />
       <div className="flex items-center gap-2">
         <NotificationBell />
+        <ThemeToggle />
         <ProfileMenu compact={compact} />
       </div>
     </div>
