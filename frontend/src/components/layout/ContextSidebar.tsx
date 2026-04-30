@@ -366,6 +366,7 @@ export const ContextSidebar: React.FC<ContextSidebarProps> = ({
 
   return (
     <div
+      data-testid="context-sidebar"
       className={cn(
         "fixed top-0 left-14 h-full bg-white border-r border-dashboard-gray-200 z-30 transition-all duration-300 flex flex-col",
         isCollapsed ? "w-14" : "w-[360px]",
