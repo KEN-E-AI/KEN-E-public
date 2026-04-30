@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>KEN-E | Marketing Analyst</title>
+    <script>
+      try {
+        var stored = localStorage.getItem("kene-theme");
+        if (stored === "dark") document.documentElement.classList.add("dark");
+      } catch (e) {}
+    </script>
   </head>
 
   <body>

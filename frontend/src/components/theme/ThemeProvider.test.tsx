@@ -22,11 +22,6 @@ function SetModeConsumer({ next }: { next: "light" | "dark" }) {
   );
 }
 
-function OutsideConsumer() {
-  const { mode } = useTheme();
-  return <span data-testid="mode">{mode}</span>;
-}
-
 describe("ThemeProvider", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -62,7 +57,22 @@ describe("ThemeProvider", () => {
     expect(document.documentElement.classList.contains("dark")).toBe(true);
   });
 
-  it("persists mode across remount", () => {
+  it("setMode persists mode to localStorage", () => {
+    render(
+      <ThemeProvider>
+        <SetModeConsumer next="dark" />
+      </ThemeProvider>,
+    );
+
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "set" }));
+    });
+
+    expect(screen.getByTestId("mode").textContent).toBe("dark");
+    expect(localStorage.getItem("kene-theme")).toBe("dark");
+  });
+
+  it("persists mode across remount via setMode", () => {
     const { unmount } = render(
       <ThemeProvider>
         <SetModeConsumer next="dark" />
@@ -85,11 +95,28 @@ describe("ThemeProvider", () => {
     expect(document.documentElement.classList.contains("dark")).toBe(true);
   });
 
-  it("useTheme outside provider returns safe fallback without throwing", () => {
-    expect(() => {
-      render(<OutsideConsumer />);
-    }).not.toThrow();
+  it("toggle persists mode to localStorage", () => {
+    render(
+      <ThemeProvider>
+        <ToggleConsumer />
+      </ThemeProvider>,
+    );
 
-    expect(screen.getByTestId("mode").textContent).toBe("light");
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "toggle" }));
+    });
+
+    expect(screen.getByTestId("mode").textContent).toBe("dark");
+    expect(localStorage.getItem("kene-theme")).toBe("dark");
+  });
+
+  it("useTheme outside provider throws", () => {
+    function OutsideConsumer() {
+      useTheme();
+      return null;
+    }
+    expect(() => render(<OutsideConsumer />)).toThrow(
+      "useTheme must be used within ThemeProvider",
+    );
   });
 });

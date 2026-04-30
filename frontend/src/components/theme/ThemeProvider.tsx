@@ -17,8 +17,8 @@ function getInitialTheme(): ThemeMode {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === "dark" || stored === "light") return stored;
-  } catch {
-    // localStorage unavailable in sandboxed environments
+  } catch (err) {
+    console.warn("[theme] Could not read from localStorage:", err);
   }
   return "light";
 }
@@ -30,8 +30,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setModeState(next);
     try {
       localStorage.setItem(STORAGE_KEY, next);
-    } catch {
-      // localStorage unavailable in sandboxed environments
+    } catch (err) {
+      console.warn("[theme] Could not write to localStorage:", err);
     }
   };
 
@@ -40,8 +40,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       const next = prev === "dark" ? "light" : "dark";
       try {
         localStorage.setItem(STORAGE_KEY, next);
-      } catch {
-        // localStorage unavailable in sandboxed environments
+      } catch (err) {
+        console.warn("[theme] Could not write to localStorage:", err);
       }
       return next;
     });
@@ -53,8 +53,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       } else {
         document.documentElement.classList.remove("dark");
       }
-    } catch {
-      // DOM manipulation may fail in sandboxed environments
+    } catch (err) {
+      console.warn("[theme] Could not update document class:", err);
     }
   }, [mode]);
 
@@ -68,7 +68,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 export function useTheme(): ThemeContextValue {
   const context = useContext(ThemeContext);
   if (!context) {
-    return { mode: "light", setMode: () => {}, toggle: () => {} };
+    throw new Error("useTheme must be used within ThemeProvider");
   }
   return context;
 }
