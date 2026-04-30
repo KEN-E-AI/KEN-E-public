@@ -1,11 +1,10 @@
 # UI Primitive Deviations
 
 This file records known intentional deviations from the Figma export reference
-(`docs/figma-export/src/app/components/ui/`) for the UI-14 Pass 3 review.
-Each entry explains what differs, why the decision was made, and what callers
-should be aware of.
+(`docs/figma-export/src/app/components/ui/`). Each entry explains what differs,
+why the decision was made, and what callers should be aware of.
 
-Last updated: 2026-04-29 (UI-14)
+Tracked since: UI-14
 
 ---
 

@@ -125,7 +125,8 @@ const AgentConfigManagement = () => {
         "Failed to update config";
       toast({
         title: "Update Failed",
-        description: typeof detail === "string" ? detail : JSON.stringify(detail),
+        description:
+          typeof detail === "string" ? detail : JSON.stringify(detail),
         variant: "destructive",
       });
     },
@@ -161,9 +162,11 @@ const AgentConfigManagement = () => {
       description: editedConfig.description,
       temperature: editedConfig.generate_content_config.temperature,
       max_output_tokens: editedConfig.generate_content_config.max_output_tokens,
-      version: config?.metadata?.version && editedConfig.metadata.version !== config.metadata.version
-        ? editedConfig.metadata.version
-        : undefined,
+      version:
+        config?.metadata?.version &&
+        editedConfig.metadata.version !== config.metadata.version
+          ? editedConfig.metadata.version
+          : undefined,
       variant_name: editedConfig.metadata.variant_name,
       experiment_id: editedConfig.metadata.experiment_id,
       updated_by: user.email || "unknown",
@@ -247,8 +250,7 @@ const AgentConfigManagement = () => {
                 ) : (
                   Object.entries(categorizedConfigs)
                     .filter(
-                      ([, configs]) =>
-                        configs.researcher || configs.formatter,
+                      ([, configs]) => configs.researcher || configs.formatter,
                     )
                     .map(([strategy, configs]) => (
                       <div key={strategy} className="space-y-1">

@@ -21,7 +21,7 @@ const buttonVariants = cva(
           "bg-[var(--color-teal-500)] text-[var(--color-text-inverse)] border-2 border-[var(--color-teal-500)] shadow-[var(--shadow-color-teal)] hover:-translate-y-0.5 active:translate-y-0 disabled:bg-[var(--color-surface-muted)] disabled:text-[var(--color-text-disabled)] disabled:shadow-none disabled:transform-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-teal-300)]",
         ghost:
           "hover:bg-[var(--color-violet-100)] hover:text-[var(--color-violet-500)] text-[var(--color-text-tertiary)] disabled:text-[var(--color-text-disabled)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-violet-300)]",
-        link: "text-[var(--color-violet-500)] underline-offset-4 hover:underline disabled:text-[var(--color-text-disabled)]",
+        link: "text-[var(--color-violet-500)] underline-offset-4 hover:underline disabled:text-[var(--color-text-disabled)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-violet-300)]",
       },
       size: {
         default: "h-9 px-4 py-2 rounded-[var(--radius-md)] has-[>svg]:px-3",

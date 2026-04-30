@@ -306,7 +306,6 @@ class ChatService {
       return false;
     }
   }
-
 }
 
 // Export a singleton instance

@@ -63,4 +63,19 @@ describe("Button", () => {
     expect(ref.current).toBeInstanceOf(HTMLButtonElement);
     expect(ref.current).toBe(screen.getByRole("button", { name: "Ref" }));
   });
+
+  it("gradient variant applies gradient-cta background distinct from default", () => {
+    const { rerender } = render(<Button variant="default">Test</Button>);
+    const defaultClass = screen
+      .getByRole("button", { name: "Test" })
+      .getAttribute("class");
+
+    rerender(<Button variant="gradient">Test</Button>);
+    const gradientClass = screen
+      .getByRole("button", { name: "Test" })
+      .getAttribute("class");
+
+    expect(gradientClass).toContain("gradient-cta");
+    expect(gradientClass).not.toBe(defaultClass);
+  });
 });

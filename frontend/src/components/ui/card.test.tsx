@@ -31,6 +31,22 @@ describe("Card", () => {
     ).toBeFalsy();
   });
 
+  it.each([
+    "red; background: url(javascript:...)",
+    "expression(alert(1))",
+    "javascript:void(0)",
+    "  #fff",
+    "",
+  ])(
+    "does not apply borderLeftColor for invalid accentColor %j (XSS guard)",
+    (value) => {
+      const { container } = render(<Card accentColor={value} />);
+      expect(
+        (container.firstChild as HTMLElement).style.borderLeftColor,
+      ).toBeFalsy();
+    },
+  );
+
   it("forwards ref to the DOM node", () => {
     const ref = createRef<HTMLDivElement>();
     const { container } = render(<Card ref={ref} />);
