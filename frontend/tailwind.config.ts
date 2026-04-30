@@ -310,12 +310,24 @@ export default {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        "blob-drift": {
+          "0%, 100%": { transform: "translate(0, 0)" },
+          "33%": { transform: "translate(15px, -10px)" },
+          "66%": { transform: "translate(-10px, 15px)" },
+        },
+        "blob-drift-delayed": {
+          "0%, 100%": { transform: "translate(0, 0)" },
+          "33%": { transform: "translate(-15px, 10px)" },
+          "66%": { transform: "translate(10px, -15px)" },
+        },
       },
       // 0.2s matches --duration-fast (200ms); ease-out matches --ease-out.
       // If either token changes, update these string values to stay in sync.
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "blob-drift": "blob-drift 20s ease-in-out infinite",
+        "blob-drift-delayed": "blob-drift-delayed 25s ease-in-out infinite",
       },
     },
   },
