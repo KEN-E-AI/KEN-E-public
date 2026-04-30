@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useSyncExternalStore } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   MessageSquare,
@@ -48,31 +48,87 @@ export type SuperAdminNavRow = {
 
 export const SUPER_ADMIN_NAV: SuperAdminNavRow[] = [];
 
+let _navVersion = 0;
+const _navListeners = new Set<() => void>();
+
+function _navSubscribe(listener: () => void): () => void {
+  _navListeners.add(listener);
+  return () => {
+    _navListeners.delete(listener);
+  };
+}
+
+function _getNavSnapshot(): number {
+  return _navVersion;
+}
+
 export function registerSuperAdminNavRow(row: SuperAdminNavRow): void {
   if (!/^\/[a-zA-Z0-9/_-]*$/.test(row.path)) {
+    console.warn(
+      `[registerSuperAdminNavRow] Rejected row "${row.id}": invalid path`,
+    );
     return;
   }
-  if (!SUPER_ADMIN_NAV.some((r) => r.id === row.id)) {
-    SUPER_ADMIN_NAV.push(row);
+  if (SUPER_ADMIN_NAV.some((r) => r.id === row.id)) {
+    console.warn(
+      `[registerSuperAdminNavRow] Rejected row "${row.id}": duplicate id`,
+    );
+    return;
   }
+  SUPER_ADMIN_NAV.push(row);
+  _navVersion += 1;
+  _navListeners.forEach((listener) => listener());
+}
+
+export function resetSuperAdminNavForTesting(): void {
+  SUPER_ADMIN_NAV.length = 0;
+  _navVersion = 0;
+  _navListeners.clear();
 }
 
 export function Sidebar() {
   const location = useLocation();
   const { isSuperAdmin } = useAuth();
-  const [collapsed, setCollapsed] = useState(
-    () => localStorage.getItem("sidebarCollapsed") === "true",
-  );
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("sidebarCollapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  // Triggers re-render whenever a new row is registered; actual rows are read from SUPER_ADMIN_NAV directly.
+  useSyncExternalStore(_navSubscribe, _getNavSnapshot, _getNavSnapshot);
 
   useEffect(() => {
     const width = collapsed ? "4rem" : "16rem";
     document.documentElement.style.setProperty("--sidebar-width", width);
   }, [collapsed]);
 
+  useEffect(() => {
+    const handler = (event: StorageEvent) => {
+      if (
+        event.key === "sidebarCollapsed" &&
+        event.storageArea === localStorage
+      ) {
+        if (event.newValue === null) return;
+        setCollapsed(event.newValue === "true");
+      }
+    };
+    window.addEventListener("storage", handler);
+    return () => {
+      window.removeEventListener("storage", handler);
+    };
+  }, []);
+
   const handleToggle = () => {
     const next = !collapsed;
     setCollapsed(next);
-    localStorage.setItem("sidebarCollapsed", String(next));
+    try {
+      localStorage.setItem("sidebarCollapsed", String(next));
+    } catch {
+      // fail-soft: localStorage unavailable
+    }
   };
 
   const visibleAdminRows = SUPER_ADMIN_NAV.filter(
