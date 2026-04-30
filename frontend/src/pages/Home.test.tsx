@@ -13,6 +13,13 @@ vi.mock("@/components/home/HomeChatArea", () => ({
   default: () => <div data-testid="home-chat-area">Chat Area</div>,
 }));
 
+const mockNavigate = vi.fn();
+vi.mock("react-router-dom", async () => {
+  const actual =
+    await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
+  return { ...actual, useNavigate: () => mockNavigate };
+});
+
 const mockOrgAccount: SelectedOrgAccount = {
   orgId: "org-1" as OrganizationId,
   accountId: "acc-1" as AccountId,
@@ -81,5 +88,11 @@ describe("Home", () => {
     renderHome();
     expect(screen.queryByTestId("icon-navigation")).not.toBeInTheDocument();
     expect(screen.queryByTestId("context-sidebar")).not.toBeInTheDocument();
+  });
+
+  test("redirects to /organization-selection when no account is selected", () => {
+    renderHome(null);
+    expect(mockNavigate).toHaveBeenCalledWith("/organization-selection");
+    expect(screen.queryByTestId("home-chat-area")).not.toBeInTheDocument();
   });
 });

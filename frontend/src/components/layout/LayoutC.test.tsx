@@ -161,4 +161,13 @@ describe("LayoutC", () => {
     unregisterLayoutBanner(id);
     expect(LAYOUT_BANNER_REGISTRY).toHaveLength(0);
   });
+
+  test("legacy chrome (IconNavigation, ContextSidebar) is absent from LayoutC render tree", () => {
+    // Regression guard: LayoutC must not introduce legacy chrome. The mocked Sidebar and
+    // TopNav do not render IconNavigation or ContextSidebar — if either data-testid ever
+    // appears in LayoutC's output it means legacy components leaked back in.
+    renderLayoutC(<div data-testid="page-content" />);
+    expect(screen.queryByTestId("icon-navigation")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("context-sidebar")).not.toBeInTheDocument();
+  });
 });
