@@ -203,7 +203,6 @@
   --z-max: 100;
 
   /* --- Mode-independent utility tokens (no .dark override needed) --- */
-  --font-size: var(--text-body-md);
   --font-weight-medium: var(--font-medium);
   --font-weight-normal: var(--font-regular);
 
@@ -416,10 +415,6 @@
     overflow-x: hidden;
   }
 
-  html {
-    font-size: var(--font-size);
-  }
-
   /* Heading defaults — sets font-family and weight only.
      Radix/shadcn components that render headings can still override via className. */
   h1,
@@ -465,6 +460,36 @@
     font-size: var(--text-body-lg);
     font-weight: var(--font-semibold);
     line-height: var(--lh-body);
+  }
+
+  /* Body-element typography defaults — match the figma-export design system
+     (docs/figma-export/src/styles/theme.css). Shadcn UI primitives (Button,
+     Input, Label, etc.) override these via CVA classes; only native unstyled
+     elements pick up these rules. */
+  p {
+    font-size: var(--text-body-lg);
+    font-weight: var(--font-regular);
+    line-height: var(--lh-body);
+  }
+
+  label {
+    font-size: var(--text-body-sm);
+    font-weight: var(--font-semibold);
+    line-height: var(--lh-body-sm);
+  }
+
+  button {
+    font-size: var(--text-body-sm);
+    font-weight: var(--font-bold);
+    line-height: var(--lh-body-sm);
+  }
+
+  input,
+  textarea,
+  select {
+    font-size: var(--text-body-md);
+    font-weight: var(--font-regular);
+    line-height: var(--lh-body-md);
   }
 
   /* Accordion chevron rotation */
