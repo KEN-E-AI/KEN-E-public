@@ -429,7 +429,13 @@ class TestUnknownResource:
 
         buf = io.StringIO()
         with redirect_stderr(buf):
-            exit_code = cli_module.cmd_resource("missing_name")
+            exit_code = cli_module.cmd_resource(
+                "missing_name",
+                "test-project-id",
+                "(default)",
+                dry_run=False,
+                confirm_delete=False,
+            )
 
         stderr_output = buf.getvalue()
         assert exit_code == 2
@@ -455,12 +461,21 @@ class TestUnknownResource:
 
         buf = io.StringIO()
         with redirect_stderr(buf):
-            exit_code = cli_module.cmd_resource("strategy_docs")
+            exit_code = cli_module.cmd_resource(
+                "strategy_docs",
+                "test-project-id",
+                "(default)",
+                dry_run=False,
+                confirm_delete=False,
+            )
 
         stderr_output = buf.getvalue()
-        assert exit_code == 3
+        # A recognised resource must NOT produce the "unknown resource" error —
+        # proving cmd_resource distinguishes the two failure modes.  DM-3's real
+        # runner now runs for known resources; without live Firestore it exits
+        # non-zero (runtime error) rather than the old DM-3-stub exit code 3.
+        assert exit_code != 0
         assert "unknown resource:" not in stderr_output
-        assert "DM-3" in stderr_output
 
 
 # ---------------------------------------------------------------------------

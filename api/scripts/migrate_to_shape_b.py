@@ -107,27 +107,6 @@ def cmd_list() -> int:
     return EXIT_SUCCESS
 
 
-def cmd_resource(name: str) -> int:
-    """Handle --resource=<name>.
-
-    Validates *name* against RESOURCES.  Unknown names exit 2 (usage error).
-    Known names exit 3 (runtime — runner not yet implemented, see DM-3).
-    """
-    if name not in RESOURCES:
-        print(
-            f"unknown resource: '{name}'. Run --list to see available resources.",
-            file=sys.stderr,
-        )
-        return EXIT_USAGE_ERROR
-
-    print(
-        f"ERROR: --resource runner for '{name}' is not yet implemented.\n"
-        f"It will be added by DM-3.",
-        file=sys.stderr,
-    )
-    return EXIT_RUNTIME_ERROR
-
-
 def cmd_resource_not_implemented(flag: str, sibling: str) -> int:
     """Stub for flags owned by sibling issues (used by --all)."""
     print(
