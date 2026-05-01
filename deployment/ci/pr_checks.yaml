@@ -80,6 +80,28 @@ steps:
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
 
+  # Run frontend accessibility test suite (axe-core, WCAG contrast, focus-ring audit,
+  # keyboard navigation, and reduced-motion smoke tests).
+  # Covers: src/test/axe*, wcag*, token-contrast*, focus-ring-audit*, a11y-*, keyboard-nav*, reduced-motion*.
+  # See docs/design/components/ui/accessibility-baseline.md for the full gate description.
+  - name: "node:20-slim"
+    id: frontend-a11y-tests
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        cd frontend
+        npm ci --prefer-offline
+        npx vitest --run \
+          src/test/axe.test.ts \
+          src/test/wcag.test.ts \
+          src/test/token-contrast.test.ts \
+          src/test/focus-ring-audit.test.ts \
+          src/test/a11y-primitives.test.tsx \
+          src/test/a11y-shell.test.tsx \
+          src/test/keyboard-nav.test.tsx \
+          src/test/reduced-motion.test.ts
+
   # Validate markdown link integrity using lychee (offline mode — file:// links only).
   # Scope: docs/**/*.md and root-level *.md per lychee.toml. No network calls.
   # See docs/design/components/chat/projects/CH-PRD-06-documentation-link-integrity.md (CH-3)

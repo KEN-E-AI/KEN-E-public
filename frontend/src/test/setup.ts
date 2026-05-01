@@ -1,5 +1,12 @@
-import { vi } from "vitest";
+import { vi, expect } from "vitest";
 import "@testing-library/jest-dom";
+import * as axeMatchers from "vitest-axe/matchers";
+import "vitest-axe/extend-expect";
+
+// Register vitest-axe's toHaveNoViolations matcher with Vitest's expect.
+// The "extend-expect" import above provides TypeScript types only; the
+// expect.extend() call below is required for the runtime matcher.
+expect.extend(axeMatchers);
 
 // Mock import.meta.env globally for all tests
 vi.stubEnv("VITE_API_BASE_URL", "http://test-api.com");

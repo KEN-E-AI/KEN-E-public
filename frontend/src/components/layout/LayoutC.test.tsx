@@ -108,6 +108,12 @@ describe("LayoutC", () => {
       const main = screen.getByRole("main");
       expect(within(main).getByTestId("inner-content")).toBeInTheDocument();
     });
+
+    test("renders <aside aria-label='Chat sessions'> wrapping SessionsSidebar", () => {
+      renderLayoutC();
+      const aside = screen.getByRole("complementary", { name: /chat sessions/i });
+      expect(within(aside).getByTestId("sessions-sidebar")).toBeInTheDocument();
+    });
   });
 
   describe("content-area max-width (isFullWidth allowlist)", () => {

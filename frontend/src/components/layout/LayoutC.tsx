@@ -166,9 +166,12 @@ function LayoutCInner() {
 
       <div className="flex-1 overflow-hidden flex">
         {/* Sessions Sidebar — desktop only */}
-        <div className="hidden md:flex md:flex-col md:min-h-0 md:h-full">
+        <aside
+          aria-label="Chat sessions"
+          className="hidden md:flex md:flex-col md:min-h-0 md:h-full"
+        >
           <SessionsSidebar sessions={[]} />
-        </div>
+        </aside>
 
         {/* Page content */}
         <main className="flex-1 min-h-0 overflow-hidden flex flex-col bg-[var(--color-bg-secondary)]">
