@@ -977,7 +977,7 @@ class TestDryRun:
 
         assert any(ln.startswith("Resource:") and "example" in ln for ln in lines), lines
         assert any("Source collections found:" in ln for ln in lines), lines
-        assert any("Source doc count:" in ln and "2" in ln for ln in lines), lines
+        assert any("Source doc count:" in ln and ln.rstrip().endswith("2") for ln in lines), lines
         assert any(
             "Destination path:" in ln and "accounts/{id}/example" in ln for ln in lines
         ), lines

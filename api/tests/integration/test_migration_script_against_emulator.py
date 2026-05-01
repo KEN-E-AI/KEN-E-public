@@ -337,8 +337,10 @@ def test_dry_run_writes_nothing(
     assert _count_docs(emulator_client, f"{prefix}acc_B") == 2
 
     # (d) Summary block contains Source doc count matching the seeded total (5)
-    assert "Source doc count:" in output
-    assert "5" in output  # 3 + 2 = 5 total seeded docs
+    assert any(
+        "Source doc count:" in ln and ln.rstrip().endswith("5")
+        for ln in output.splitlines()
+    ), f"Expected 'Source doc count: 5' in output:\n{output}"
 
     # (e) Status reads DRY RUN (not VERIFIED or FAILED)
     assert "DRY RUN" in output

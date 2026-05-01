@@ -408,7 +408,10 @@ def dry_run_resource(client: Client, name: str, config: MigrateConfig) -> int:
                 "[%s] dry-run: walking single source collection: %s", name, source_col_name
             )
             source_col = client.collection(source_col_name)
-            for _src_doc in source_col.stream():
+            # Collect account_ids in one pass to avoid a second stream() call for dest count.
+            account_ids: list[str] = []
+            for src_doc in source_col.stream():
+                account_ids.append(src_doc.id)
                 source_collections_found += 1
                 # Each top-level doc represents one account; count it as 1 doc.
                 total_source_docs += 1
@@ -419,6 +422,7 @@ def dry_run_resource(client: Client, name: str, config: MigrateConfig) -> int:
                 name,
                 config.old_prefix,
             )
+            account_ids = []
             for col_ref in client.collections():
                 col_name = col_ref.id
                 if not col_name.startswith(config.old_prefix):
@@ -426,27 +430,17 @@ def dry_run_resource(client: Client, name: str, config: MigrateConfig) -> int:
                 source_collections_found += 1
                 src_count = _count_collection(client, col_name)
                 total_source_docs += src_count
+                account_ids.append(_extract_account_id(config, col_name))
                 logger.debug(
                     "[%s] dry-run: found %s with %d docs", name, col_name, src_count
                 )
 
         dest_path_sample = f"accounts/{{id}}/{config.new_subcollection}"
-        dest_count = 0
         # Count what's already at the destination (typically 0 on first run).
-        if config.source_is_single_collection:
-            source_col = client.collection(config.new_subcollection)
-            for src_doc in source_col.stream():
-                account_id = src_doc.id
-                dest_col_path = f"accounts/{account_id}/{config.new_subcollection}"
-                dest_count += _count_collection(client, dest_col_path)
-        else:
-            for col_ref in client.collections():
-                col_name = col_ref.id
-                if not col_name.startswith(config.old_prefix):
-                    continue
-                account_id = _extract_account_id(config, col_name)
-                dest_col_path = f"accounts/{account_id}/{config.new_subcollection}"
-                dest_count += _count_collection(client, dest_col_path)
+        dest_count = sum(
+            _count_collection(client, f"accounts/{aid}/{config.new_subcollection}")
+            for aid in account_ids
+        )
 
         print(f"Resource: {name}")
         print(f"  Source collections found:   {source_collections_found}")
