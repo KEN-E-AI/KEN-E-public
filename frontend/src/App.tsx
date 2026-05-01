@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/toaster";
+import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
@@ -17,7 +18,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ChatProvider } from "@/contexts/ChatContext";
 import { AccountOperationsProvider } from "@/contexts/AccountOperationsContext";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
-import ErrorBoundary from "@/components/ErrorBoundary";
+import { AppErrorBoundary } from "@/components/layout/AppErrorBoundary";
 import "./App.css";
 
 import { LayoutC } from "@/components/layout/LayoutC";
@@ -48,7 +49,7 @@ import AgentConfigManagement from "./pages/AgentConfigManagement";
 import ToolUsageDashboard from "./pages/ToolUsageDashboard";
 import OrganizationSelection from "./pages/OrganizationSelection";
 import AcceptInvitation from "./pages/AcceptInvitation";
-import NotFound from "./pages/NotFound";
+import NotFoundPage from "./pages/NotFoundPage";
 import EmailActionHandler from "./components/auth/EmailActionHandler";
 import Authentication from "./pages/Authentication";
 // Import test utilities in development
@@ -116,14 +117,14 @@ const AuthenticationPage = () => {
 };
 
 const App = () => (
-  <ErrorBoundary>
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <ThemeProvider>
-          <AuthProvider>
-            <ChatProvider>
-              <AccountOperationsProvider>
-                <BrowserRouter>
+  <QueryClientProvider client={queryClient}>
+    <TooltipProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <ChatProvider>
+            <AccountOperationsProvider>
+              <BrowserRouter>
+                <AppErrorBoundary>
                   <BackgroundEffects />
                   <Routes>
                     {/* Unprotected routes */}
@@ -258,6 +259,8 @@ const App = () => (
                         path="/organization-selection"
                         element={<OrganizationSelectionPage />}
                       />
+                      {/* Catch-all inside LayoutC so authenticated users see the 404 with chrome */}
+                      <Route path="*" element={<NotFoundPage />} />
                     </Route>
                     {/* Dev-only harness routes — tree-shaken from production bundle */}
                     {import.meta.env.DEV && LazyLayoutSettingsHarness && (
@@ -270,18 +273,18 @@ const App = () => (
                         }
                       />
                     )}
-                    {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-                    <Route path="*" element={<NotFound />} />
                   </Routes>
+                  {/* Legacy Radix Toaster (88 callsites use useToast()) and sonner Toaster coexist */}
                   <Toaster />
-                </BrowserRouter>
-              </AccountOperationsProvider>
-            </ChatProvider>
-          </AuthProvider>
-        </ThemeProvider>
-      </TooltipProvider>
-    </QueryClientProvider>
-  </ErrorBoundary>
+                  <SonnerToaster />
+                </AppErrorBoundary>
+              </BrowserRouter>
+            </AccountOperationsProvider>
+          </ChatProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </TooltipProvider>
+  </QueryClientProvider>
 );
 
 export default App;
