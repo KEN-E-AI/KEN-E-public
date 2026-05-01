@@ -26,9 +26,13 @@ locals {
 }
 
 resource "google_firestore_index" "all" {
+  # Key: "{project}_{collectionGroup}_{queryScope}_{offset}" is stable for appends.
+  # IMPORTANT: reordering or removing entries from firestore.indexes.json is a
+  # breaking change — Terraform will plan to destroy and recreate every resource
+  # at or after the changed position. Always append; never reorder or remove.
   for_each = {
     for pair in setproduct(var.firestore_index_project_ids, range(length(local.firestore_indexes_raw))) :
-    "${pair[0]}_${pair[1]}" => {
+    "${pair[0]}_${local.firestore_indexes_raw[pair[1]].collectionGroup}_${local.firestore_indexes_raw[pair[1]].queryScope}_${pair[1]}" => {
       project_id = pair[0]
       index      = local.firestore_indexes_raw[pair[1]]
     }
@@ -42,8 +46,9 @@ resource "google_firestore_index" "all" {
   dynamic "fields" {
     for_each = each.value.index.fields
     content {
-      field_path = fields.value.fieldPath
-      order      = fields.value.order
+      field_path   = fields.value.fieldPath
+      order        = try(fields.value.order, null)
+      array_config = try(fields.value.arrayConfig, null)
     }
   }
 }

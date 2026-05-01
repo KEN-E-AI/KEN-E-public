@@ -130,4 +130,9 @@ variable "firestore_index_project_ids" {
   description = "GCP project IDs into which Firestore indexes (deployment/firestore.indexes.json) are provisioned by firestore_indexes.tf. Default scopes the first apply to dev only; DM-PRD-06 staging cutover overrides to add ken-e-staging (and later prod) without touching this file."
   type        = list(string)
   default     = ["ken-e-dev"]
+
+  validation {
+    condition     = length(var.firestore_index_project_ids) > 0
+    error_message = "At least one project ID is required."
+  }
 }
