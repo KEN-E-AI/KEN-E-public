@@ -66,6 +66,10 @@ class _FakeDocRef:
         return self._path.rsplit("/", 1)[-1]
 
     @property
+    def path(self) -> str:
+        return self._path
+
+    @property
     def reference(self) -> "_FakeDocRef":
         return self
 
@@ -583,6 +587,51 @@ class TestRunner:
         assert client._store.get("accounts/acc_A/strategy_docs/swot/versions/2") == {
             "v": 2
         }
+
+    # ------------------------------------------------------------------
+    # copy_resource — idempotency (skip-already-migrated, AC-4)
+    # ------------------------------------------------------------------
+
+    def test_skip_already_migrated_main_doc(self) -> None:
+        """copy_resource skips a main doc already at the destination; docs_written == 0."""
+        client = FakeFirestoreClient()
+        # Source doc
+        client.seed("example_acc_A/doc1", {"v": 1})
+        # Pre-seed the destination — simulates a prior successful run
+        client.seed("accounts/acc_A/example/doc1", {"v": 1})
+
+        config = MigrateConfig(old_prefix="example_", new_subcollection="example")
+        result = copy_resource(client, "example", config)
+
+        # No new docs written — the destination already had doc1
+        assert result.total_docs == 0
+        # Destination doc is still intact (not overwritten)
+        assert client._store.get("accounts/acc_A/example/doc1") == {"v": 1}
+
+    def test_skip_already_migrated_partial_versions(self) -> None:
+        """Main doc already at destination; only missing versions are written (partial resume)."""
+        client = FakeFirestoreClient()
+        # Source: main doc + 2 versions
+        client.seed("strategy_docs_acc_A/swot", {"title": "SWOT"})
+        client.seed("strategy_docs_acc_A/swot/versions/1", {"v": 1})
+        client.seed("strategy_docs_acc_A/swot/versions/2", {"v": 2})
+        # Destination: main doc already written; version 1 already there; version 2 missing
+        client.seed("accounts/acc_A/strategy_docs/swot", {"title": "SWOT"})
+        client.seed("accounts/acc_A/strategy_docs/swot/versions/1", {"v": 1})
+
+        config = MigrateConfig(
+            old_prefix="strategy_docs_",
+            new_subcollection="strategy_docs",
+            has_versions=True,
+        )
+        result = copy_resource(client, "strategy_docs", config)
+
+        # Only version 2 was newly written; main doc and version 1 were skipped
+        assert result.total_docs == 1
+        # All three destination docs are present and correct
+        assert client._store.get("accounts/acc_A/strategy_docs/swot") == {"title": "SWOT"}
+        assert client._store.get("accounts/acc_A/strategy_docs/swot/versions/1") == {"v": 1}
+        assert client._store.get("accounts/acc_A/strategy_docs/swot/versions/2") == {"v": 2}
 
     # ------------------------------------------------------------------
     # copy_resource — source_is_single_collection + destination_doc_id

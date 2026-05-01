@@ -339,6 +339,8 @@ def test_idempotency_rerun_is_noop(
     assert any(
         "already migrated" in r.message for r in caplog.records
     ), "expected at least one 'already migrated' debug log on the second run"
+    # (d) summary still reports VERIFIED (destination count still equals source count)
+    assert "VERIFIED" in buf2.getvalue()
 
 
 # ---------------------------------------------------------------------------
