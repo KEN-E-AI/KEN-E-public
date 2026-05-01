@@ -8,8 +8,10 @@ Covers:
 - --resource=unknown exits with code 2 and a clear "unknown resource" message (DM-2)
 """
 
+import io
 import subprocess
 import sys
+from contextlib import redirect_stderr
 from pathlib import Path
 
 import pytest
@@ -149,7 +151,6 @@ class TestListCommand:
         monkeypatch.setattr(cli_module, "RESOURCES", fake_resources)
         monkeypatch.setenv("GOOGLE_CLOUD_PROJECT_ID", "test-project-id")
 
-        import io
         from contextlib import redirect_stdout
 
         buf = io.StringIO()
@@ -208,7 +209,6 @@ class TestUnknownResource:
             env={"GOOGLE_CLOUD_PROJECT_ID": "test-project-id"},
         )
         assert result.returncode == 2
-        # Error goes to stderr; stdout should be empty
         assert result.stdout == ""
         assert "unknown resource:" in result.stderr
         assert "'unknown'" in result.stderr
@@ -230,9 +230,6 @@ class TestUnknownResource:
         }
         monkeypatch.setattr(cli_module, "RESOURCES", fake_resources)
         monkeypatch.setenv("GOOGLE_CLOUD_PROJECT_ID", "test-project-id")
-
-        import io
-        from contextlib import redirect_stderr
 
         buf = io.StringIO()
         with redirect_stderr(buf):
@@ -260,16 +257,11 @@ class TestUnknownResource:
         monkeypatch.setattr(cli_module, "RESOURCES", fake_resources)
         monkeypatch.setenv("GOOGLE_CLOUD_PROJECT_ID", "test-project-id")
 
-        import io
-        from contextlib import redirect_stderr
-
         buf = io.StringIO()
         with redirect_stderr(buf):
             exit_code = cli_module.cmd_resource("strategy_docs")
 
         stderr_output = buf.getvalue()
-        assert exit_code == 2
-        # Must NOT contain the unknown-resource message
+        assert exit_code == 3
         assert "unknown resource:" not in stderr_output
-        # Must reference DM-3 (runner stub)
         assert "DM-3" in stderr_output

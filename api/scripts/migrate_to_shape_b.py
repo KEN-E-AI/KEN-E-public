@@ -107,26 +107,22 @@ def cmd_list() -> int:
 def cmd_resource(name: str) -> int:
     """Handle --resource=<name>.
 
-    Validates *name* against the RESOURCES registry.  If the name is unknown,
-    prints a clear error to stderr and returns EXIT_USAGE_ERROR (exit code 2,
-    per PRD §4 exit-code contract).  If known, returns a stub pending the
-    copy/verify runner that will be added by DM-3.
+    Validates *name* against RESOURCES.  Unknown names exit 2 (usage error).
+    Known names exit 3 (runtime — runner not yet implemented, see DM-3).
     """
     if name not in RESOURCES:
-        # PRD §4: exit code 2 for usage errors (unknown resource name).
         print(
             f"unknown resource: '{name}'. Run --list to see available resources.",
             file=sys.stderr,
         )
         return EXIT_USAGE_ERROR
 
-    # Known resource — runner not yet implemented; will be added by DM-3.
     print(
         f"ERROR: --resource runner for '{name}' is not yet implemented.\n"
         f"It will be added by DM-3.",
         file=sys.stderr,
     )
-    return EXIT_USAGE_ERROR
+    return EXIT_RUNTIME_ERROR
 
 
 def cmd_resource_not_implemented(flag: str, sibling: str) -> int:
