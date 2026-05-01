@@ -221,9 +221,9 @@ describe("super-admin-nav-registry", () => {
         order: 10,
       });
 
-      const result = SUPER_ADMIN_NAV.filter(
-        (r) => r.isVisible !== false,
-      ).sort((a, b) => a.order - b.order);
+      const result = SUPER_ADMIN_NAV.filter((r) => r.isVisible !== false).sort(
+        (a, b) => a.order - b.order,
+      );
 
       expect(result.map((r) => r.id)).toEqual(["visible-low", "visible-high"]);
     });

@@ -73,8 +73,8 @@ export function ChatInterface({
         </div>
         <p className="text-[var(--text-caption)] text-[var(--color-text-tertiary)] mt-3 flex items-center gap-2">
           <Sparkles className="size-3" />
-          Chat is disabled in the layout stub. Replaced by the real implementation in
-          CH-PRD-02.
+          Chat is disabled in the layout stub. Replaced by the real
+          implementation in CH-PRD-02.
         </p>
       </div>
     </div>

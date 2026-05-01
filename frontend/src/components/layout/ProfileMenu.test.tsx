@@ -68,7 +68,9 @@ function Providers({
   );
 }
 
-const renderWithProviders = (contextOverrides: Partial<typeof mockContext> = {}) =>
+const renderWithProviders = (
+  contextOverrides: Partial<typeof mockContext> = {},
+) =>
   render(
     <Providers contextOverrides={contextOverrides}>
       <ProfileMenu />

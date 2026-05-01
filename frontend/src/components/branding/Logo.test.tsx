@@ -26,16 +26,14 @@ function getSvgWrapper(container: HTMLElement): HTMLElement {
 
 describe("Logo", () => {
   describe("size prop", () => {
-    (Object.keys(SIZE_CLASS_BY_PROP) as Array<keyof typeof SIZE_CLASS_BY_PROP>).forEach(
-      (size) => {
-        test(`size="${size}" applies the ${SIZE_CLASS_BY_PROP[size]} class to the SVG wrapper`, () => {
-          const { container } = render(<Logo size={size} />);
-          expect(getSvgWrapper(container)).toHaveClass(
-            SIZE_CLASS_BY_PROP[size],
-          );
-        });
-      },
-    );
+    (
+      Object.keys(SIZE_CLASS_BY_PROP) as Array<keyof typeof SIZE_CLASS_BY_PROP>
+    ).forEach((size) => {
+      test(`size="${size}" applies the ${SIZE_CLASS_BY_PROP[size]} class to the SVG wrapper`, () => {
+        const { container } = render(<Logo size={size} />);
+        expect(getSvgWrapper(container)).toHaveClass(SIZE_CLASS_BY_PROP[size]);
+      });
+    });
 
     test('default size is "md"', () => {
       const { container } = render(<Logo />);
@@ -69,31 +67,27 @@ describe("Logo", () => {
   describe("accessibility", () => {
     test('SVG exposes role="img" with accessible name "KEN-E" for variant="icon"', () => {
       render(<Logo variant="icon" />);
-      expect(
-        screen.getByRole("img", { name: /KEN-E/i }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole("img", { name: /KEN-E/i })).toBeInTheDocument();
     });
 
     test('SVG exposes role="img" with accessible name "KEN-E" for variant="full" too', () => {
       render(<Logo variant="full" />);
       // Both the SVG (role=img, name=KEN-E from <title>) and the <h2>KEN-E</h2>
       // wordmark are present; the SVG must still be queryable by role.
-      expect(
-        screen.getByRole("img", { name: /KEN-E/i }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole("img", { name: /KEN-E/i })).toBeInTheDocument();
     });
   });
 
   describe("size prop drives wordmark text class", () => {
-    (Object.keys(TEXT_CLASS_BY_PROP) as Array<keyof typeof TEXT_CLASS_BY_PROP>).forEach(
-      (size) => {
-        test(`size="${size}" applies ${TEXT_CLASS_BY_PROP[size]} to the wordmark`, () => {
-          render(<Logo size={size} variant="full" />);
-          expect(screen.getByRole("heading", { name: /KEN-E/ })).toHaveClass(
-            TEXT_CLASS_BY_PROP[size],
-          );
-        });
-      },
-    );
+    (
+      Object.keys(TEXT_CLASS_BY_PROP) as Array<keyof typeof TEXT_CLASS_BY_PROP>
+    ).forEach((size) => {
+      test(`size="${size}" applies ${TEXT_CLASS_BY_PROP[size]} to the wordmark`, () => {
+        render(<Logo size={size} variant="full" />);
+        expect(screen.getByRole("heading", { name: /KEN-E/ })).toHaveClass(
+          TEXT_CLASS_BY_PROP[size],
+        );
+      });
+    });
   });
 });
