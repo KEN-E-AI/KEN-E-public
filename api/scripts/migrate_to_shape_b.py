@@ -104,10 +104,35 @@ def cmd_list() -> int:
     return EXIT_SUCCESS
 
 
-def cmd_resource_not_implemented(flag: str, sibling: str) -> int:
-    """Stub for flags owned by sibling issues."""
+def cmd_resource(name: str) -> int:
+    """Handle --resource=<name>.
+
+    Validates *name* against the RESOURCES registry.  If the name is unknown,
+    prints a clear error to stderr and returns EXIT_USAGE_ERROR (exit code 2,
+    per PRD §4 exit-code contract).  If known, returns a stub pending the
+    copy/verify runner that will be added by DM-3.
+    """
+    if name not in RESOURCES:
+        # PRD §4: exit code 2 for usage errors (unknown resource name).
+        print(
+            f"unknown resource: '{name}'. Run --list to see available resources.",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE_ERROR
+
+    # Known resource — runner not yet implemented; will be added by DM-3.
     print(
-        f"ERROR: {flag} is not yet implemented in DM-1.\n"
+        f"ERROR: --resource runner for '{name}' is not yet implemented.\n"
+        f"It will be added by DM-3.",
+        file=sys.stderr,
+    )
+    return EXIT_USAGE_ERROR
+
+
+def cmd_resource_not_implemented(flag: str, sibling: str) -> int:
+    """Stub for flags owned by sibling issues (used by --all)."""
+    print(
+        f"ERROR: {flag} is not yet implemented.\n"
         f"It will be added by {sibling}.",
         file=sys.stderr,
     )
@@ -183,7 +208,7 @@ def main() -> int:
         return cmd_list()
 
     if args.resource is not None:
-        return cmd_resource_not_implemented("--resource", "DM-2 / DM-3 / DM-5 / DM-6")
+        return cmd_resource(args.resource)
 
     if args.all:
         return cmd_resource_not_implemented("--all", "DM-3")

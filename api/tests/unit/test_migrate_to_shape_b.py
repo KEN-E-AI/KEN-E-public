@@ -1,10 +1,11 @@
-"""Unit tests for migrate_to_shape_b.py CLI scaffolding (DM-1).
+"""Unit tests for migrate_to_shape_b.py CLI scaffolding (DM-1 / DM-2).
 
 Covers:
 - MigrateConfig validation (empty old_prefix / new_subcollection, special-case flags)
 - --list exit code 0 with empty RESOURCES (subprocess, real CLI)
 - --list rendering with a non-empty RESOURCES (monkeypatch + main() invocation)
 - Missing GOOGLE_CLOUD_PROJECT_ID → exit code 2
+- --resource=unknown exits with code 2 and a clear "unknown resource" message (DM-2)
 """
 
 import subprocess
@@ -191,3 +192,84 @@ class TestListCommand:
         )
         assert result.returncode == 0
         assert "(default)" in result.stderr
+
+
+# ---------------------------------------------------------------------------
+# TestUnknownResource
+# ---------------------------------------------------------------------------
+
+class TestUnknownResource:
+    """--resource=<name> validation against the RESOURCES registry (DM-2 / AC-2)."""
+
+    def test_unknown_resource_empty_registry_exits_two(self) -> None:
+        """AC-2: --resource=unknown with empty RESOURCES exits 2 and prints the error."""
+        result = run_cli(
+            "--resource=unknown",
+            env={"GOOGLE_CLOUD_PROJECT_ID": "test-project-id"},
+        )
+        assert result.returncode == 2
+        # Error goes to stderr; stdout should be empty
+        assert result.stdout == ""
+        assert "unknown resource:" in result.stderr
+        assert "'unknown'" in result.stderr
+        assert "--list" in result.stderr
+
+    def test_unknown_resource_non_empty_registry_exits_two(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Registry presence does not change the unknown-name verdict.
+
+        Even when RESOURCES has entries, an unrecognised name must still exit 2
+        with the AC-2 message (regression-guard against accidentally short-circuiting
+        on registry emptiness).
+        """
+        fake_resources = {
+            "strategy_docs": MigrateConfig(
+                old_prefix="strategy_docs_", new_subcollection="strategy_docs"
+            ),
+        }
+        monkeypatch.setattr(cli_module, "RESOURCES", fake_resources)
+        monkeypatch.setenv("GOOGLE_CLOUD_PROJECT_ID", "test-project-id")
+
+        import io
+        from contextlib import redirect_stderr
+
+        buf = io.StringIO()
+        with redirect_stderr(buf):
+            exit_code = cli_module.cmd_resource("missing_name")
+
+        stderr_output = buf.getvalue()
+        assert exit_code == 2
+        assert "unknown resource:" in stderr_output
+        assert "'missing_name'" in stderr_output
+        assert "--list" in stderr_output
+
+    def test_known_resource_returns_runner_stub_not_unknown_message(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A recognised name returns the DM-3 runner stub — not the unknown-resource message.
+
+        This proves cmd_resource correctly distinguishes "name not in registry"
+        from "name in registry but runner not yet implemented".
+        """
+        fake_resources = {
+            "strategy_docs": MigrateConfig(
+                old_prefix="strategy_docs_", new_subcollection="strategy_docs"
+            ),
+        }
+        monkeypatch.setattr(cli_module, "RESOURCES", fake_resources)
+        monkeypatch.setenv("GOOGLE_CLOUD_PROJECT_ID", "test-project-id")
+
+        import io
+        from contextlib import redirect_stderr
+
+        buf = io.StringIO()
+        with redirect_stderr(buf):
+            exit_code = cli_module.cmd_resource("strategy_docs")
+
+        stderr_output = buf.getvalue()
+        assert exit_code == 2
+        # Must NOT contain the unknown-resource message
+        assert "unknown resource:" not in stderr_output
+        # Must reference DM-3 (runner stub)
+        assert "DM-3" in stderr_output
