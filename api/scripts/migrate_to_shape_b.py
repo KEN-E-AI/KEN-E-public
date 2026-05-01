@@ -42,6 +42,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
 from _migrate_shape_b.resources import RESOURCES  # noqa: E402
+from _migrate_shape_b.runner import migrate_resource  # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
@@ -62,6 +63,7 @@ EXIT_RUNTIME_ERROR = 3
 # ---------------------------------------------------------------------------
 # Startup contract
 # ---------------------------------------------------------------------------
+
 
 def _load_env() -> tuple[str, str]:
     """Read and validate required environment variables.
@@ -93,6 +95,7 @@ def _load_env() -> tuple[str, str]:
 # Subcommand handlers
 # ---------------------------------------------------------------------------
 
+
 def cmd_list() -> int:
     """Print the RESOURCES registry and exit 0."""
     if not RESOURCES:
@@ -114,9 +117,79 @@ def cmd_resource_not_implemented(flag: str, sibling: str) -> int:
     return EXIT_USAGE_ERROR
 
 
+def cmd_resource(
+    name: str, project_id: str, database_id: str, *, dry_run: bool, confirm_delete: bool
+) -> int:
+    """Migrate a single named resource.
+
+    Dispatches to DM-5/DM-6 stubs for --confirm-delete / --dry-run until those
+    issues implement the full behaviour.  The plain copy + verify path (no modifiers)
+    is fully implemented here.
+    """
+    if name not in RESOURCES:
+        # Unknown resource — DM-2 owns the error message; preserve its output.
+        print(
+            f"unknown resource: '{name}'. Run --list to see available resources.",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE_ERROR
+
+    if dry_run:
+        return cmd_resource_not_implemented("--dry-run", "DM-6")
+
+    if confirm_delete:
+        return cmd_resource_not_implemented("--confirm-delete", "DM-5")
+
+    config = RESOURCES[name]
+    try:
+        from google.cloud import firestore as _fs  # type: ignore[import]
+
+        client = _fs.Client(project=project_id, database=database_id)
+    except Exception as exc:
+        print(f"ERROR: Failed to initialise Firestore client: {exc}", file=sys.stderr)
+        return EXIT_RUNTIME_ERROR
+
+    return migrate_resource(client, name, config)
+
+
+def cmd_all(
+    project_id: str, database_id: str, *, dry_run: bool, confirm_delete: bool
+) -> int:
+    """Migrate all registered resources in alphabetical order.
+
+    Stops at the first non-zero exit code and returns that code.
+    """
+    if not RESOURCES:
+        print("(no resources registered — nothing to migrate)")
+        return EXIT_SUCCESS
+
+    try:
+        from google.cloud import firestore as _fs  # type: ignore[import]
+
+        client = _fs.Client(project=project_id, database=database_id)
+    except Exception as exc:
+        print(f"ERROR: Failed to initialise Firestore client: {exc}", file=sys.stderr)
+        return EXIT_RUNTIME_ERROR
+
+    for name in sorted(RESOURCES):
+        if dry_run:
+            code = cmd_resource_not_implemented("--dry-run", "DM-6")
+        elif confirm_delete:
+            code = cmd_resource_not_implemented("--confirm-delete", "DM-5")
+        else:
+            config = RESOURCES[name]
+            code = migrate_resource(client, name, config)
+
+        if code != EXIT_SUCCESS:
+            return code
+
+    return EXIT_SUCCESS
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def build_parser() -> argparse.ArgumentParser:
     """Construct the argument parser."""
@@ -147,17 +220,13 @@ def build_parser() -> argparse.ArgumentParser:
     group.add_argument(
         "--all",
         action="store_true",
-        help=(
-            "Migrate all configured resources in sequence.  "
-            "(Implemented by DM-3)"
-        ),
+        help=("Migrate all configured resources in sequence.  (Implemented by DM-3)"),
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
         help=(
-            "Print the migration plan without writing anything.  "
-            "(Implemented by DM-6)"
+            "Print the migration plan without writing anything.  (Implemented by DM-6)"
         ),
     )
     parser.add_argument(
@@ -183,10 +252,21 @@ def main() -> int:
         return cmd_list()
 
     if args.resource is not None:
-        return cmd_resource_not_implemented("--resource", "DM-2 / DM-3 / DM-5 / DM-6")
+        return cmd_resource(
+            args.resource,
+            project_id,
+            database_id,
+            dry_run=args.dry_run,
+            confirm_delete=args.confirm_delete,
+        )
 
     if args.all:
-        return cmd_resource_not_implemented("--all", "DM-3")
+        return cmd_all(
+            project_id,
+            database_id,
+            dry_run=args.dry_run,
+            confirm_delete=args.confirm_delete,
+        )
 
     # Unreachable (argparse requires exactly one of the mutually-exclusive group)
     return EXIT_USAGE_ERROR  # pragma: no cover
