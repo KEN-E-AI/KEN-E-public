@@ -7,7 +7,9 @@ Usage
   python api/scripts/migrate_to_shape_b.py --resource=<name> --dry-run
   python api/scripts/migrate_to_shape_b.py --resource=<name>
   python api/scripts/migrate_to_shape_b.py --resource=<name> --confirm-delete
+  python api/scripts/migrate_to_shape_b.py --resource=<name> --confirm-delete --yes
   python api/scripts/migrate_to_shape_b.py --all
+  python api/scripts/migrate_to_shape_b.py --all --confirm-delete --yes
 
 Exit codes
 ----------
@@ -42,7 +44,11 @@ if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
 from _migrate_shape_b.resources import RESOURCES  # noqa: E402
-from _migrate_shape_b.runner import migrate_resource  # noqa: E402
+from _migrate_shape_b.runner import (  # noqa: E402
+    delete_source_collections,
+    dry_run_resource,
+    migrate_resource,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -117,14 +123,40 @@ def cmd_resource_not_implemented(flag: str, sibling: str) -> int:
     return EXIT_USAGE_ERROR
 
 
+def _prompt_confirm_delete(name: str) -> bool:
+    """Prompt the operator to confirm deletion of source collections.
+
+    Returns True only if the operator types the literal string ``YES``
+    (case-sensitive). Any other input — including ``yes``, ``y``, empty string,
+    or EOF — is treated as a decline.
+    """
+    print(
+        f"\nAbout to delete all source collections for resource '{name}'.\n"
+        f"Type 'YES' to confirm: ",
+        end="",
+        flush=True,
+    )
+    try:
+        answer = input()
+    except EOFError:
+        answer = ""
+    return answer == "YES"
+
+
 def cmd_resource(
-    name: str, project_id: str, database_id: str, *, dry_run: bool, confirm_delete: bool
+    name: str,
+    project_id: str,
+    database_id: str,
+    *,
+    dry_run: bool,
+    confirm_delete: bool,
+    assume_yes: bool = False,
 ) -> int:
     """Migrate a single named resource.
 
-    Dispatches to DM-5/DM-6 stubs for --confirm-delete / --dry-run until those
-    issues implement the full behaviour.  The plain copy + verify path (no modifiers)
-    is fully implemented here.
+    Dispatches to the dry-run path when ``--dry-run`` is passed, to the
+    confirm-delete path when ``--confirm-delete`` is passed, or to the plain
+    copy + verify path otherwise. All three modes are fully implemented.
     """
     if name not in RESOURCES:
         # Unknown resource — DM-2 owns the error message; preserve its output.
@@ -133,12 +165,6 @@ def cmd_resource(
             file=sys.stderr,
         )
         return EXIT_USAGE_ERROR
-
-    if dry_run:
-        return cmd_resource_not_implemented("--dry-run", "DM-6")
-
-    if confirm_delete:
-        return cmd_resource_not_implemented("--confirm-delete", "DM-5")
 
     config = RESOURCES[name]
     try:
@@ -149,15 +175,57 @@ def cmd_resource(
         print(f"ERROR: Failed to initialise Firestore client: {exc}", file=sys.stderr)
         return EXIT_RUNTIME_ERROR
 
-    return migrate_resource(client, name, config)
+    if dry_run:
+        return dry_run_resource(client, name, config)
+
+    if not confirm_delete:
+        return migrate_resource(client, name, config)
+
+    # --confirm-delete path: copy + verify → prompt → delete
+    exit_code = migrate_resource(client, name, config)
+    if exit_code != EXIT_SUCCESS:
+        return exit_code
+
+    # Verification passed — prompt unless --yes was supplied
+    if assume_yes:
+        logger.warning(
+            "[%s] --yes supplied: skipping interactive confirmation for deletion",
+            name,
+        )
+    else:
+        confirmed = _prompt_confirm_delete(name)
+        if not confirmed:
+            print(
+                f"Aborted by operator (no source collections deleted for '{name}').",
+                file=sys.stderr,
+            )
+            return EXIT_SUCCESS
+
+    try:
+        delete_result = delete_source_collections(client, name, config)
+        print(f"Resource: {name} — deletion complete")
+        print(f"  Source collections deleted: {delete_result.source_collections_deleted}")
+        print(f"  Total docs deleted:         {delete_result.total_docs:,}")
+        return EXIT_SUCCESS
+    except NotImplementedError:
+        raise
+    except Exception:
+        logger.exception("[%s] Unexpected error during deletion", name)
+        return EXIT_RUNTIME_ERROR
 
 
 def cmd_all(
-    project_id: str, database_id: str, *, dry_run: bool, confirm_delete: bool
+    project_id: str,
+    database_id: str,
+    *,
+    dry_run: bool,
+    confirm_delete: bool,
+    assume_yes: bool = False,
 ) -> int:
     """Migrate all registered resources in alphabetical order.
 
     Stops at the first non-zero exit code and returns that code.
+    When --confirm-delete is active, prompts once per resource (unless --yes).
     """
     if not RESOURCES:
         print("(no resources registered — nothing to migrate)")
@@ -172,12 +240,45 @@ def cmd_all(
         return EXIT_RUNTIME_ERROR
 
     for name in sorted(RESOURCES):
+        config = RESOURCES[name]
         if dry_run:
-            code = cmd_resource_not_implemented("--dry-run", "DM-6")
+            code = dry_run_resource(client, name, config)
         elif confirm_delete:
-            code = cmd_resource_not_implemented("--confirm-delete", "DM-5")
-        else:
             config = RESOURCES[name]
+            code = migrate_resource(client, name, config)
+            if code != EXIT_SUCCESS:
+                return code
+
+            # Verification passed — prompt unless --yes was supplied
+            if assume_yes:
+                logger.warning(
+                    "[%s] --yes supplied: skipping interactive confirmation for deletion",
+                    name,
+                )
+            else:
+                confirmed = _prompt_confirm_delete(name)
+                if not confirmed:
+                    print(
+                        f"Aborted by operator (no source collections deleted for '{name}').",
+                        file=sys.stderr,
+                    )
+                    # Declined for this resource — continue to next (not a failure)
+                    continue
+
+            try:
+                delete_result = delete_source_collections(client, name, config)
+                print(f"Resource: {name} — deletion complete")
+                print(
+                    f"  Source collections deleted: {delete_result.source_collections_deleted}"
+                )
+                print(f"  Total docs deleted:         {delete_result.total_docs:,}")
+                code = EXIT_SUCCESS
+            except NotImplementedError:
+                raise
+            except Exception:
+                logger.exception("[%s] Unexpected error during deletion", name)
+                code = EXIT_RUNTIME_ERROR
+        else:
             code = migrate_resource(client, name, config)
 
         if code != EXIT_SUCCESS:
@@ -222,19 +323,26 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=("Migrate all configured resources in sequence.  (Implemented by DM-3)"),
     )
-    parser.add_argument(
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
         "--dry-run",
         action="store_true",
-        help=(
-            "Print the migration plan without writing anything.  (Implemented by DM-6)"
-        ),
+        help="Print the migration plan without writing anything.",
     )
-    parser.add_argument(
+    mode_group.add_argument(
         "--confirm-delete",
         action="store_true",
         help=(
             "After a successful copy + verify, delete the source collections.  "
             "(Implemented by DM-5)"
+        ),
+    )
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help=(
+            "Skip the interactive confirmation prompt when using --confirm-delete.  "
+            "Use only for automation/CI."
         ),
     )
     return parser
@@ -244,6 +352,14 @@ def main() -> int:
     """Entry point.  Returns an exit code."""
     parser = build_parser()
     args = parser.parse_args()
+
+    # --yes without --confirm-delete is a usage error
+    if args.yes and not args.confirm_delete:
+        print(
+            "ERROR: --yes has no effect without --confirm-delete.",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE_ERROR
 
     project_id, database_id = _load_env()
     logger.info("project_id=%s database_id=%s", project_id, database_id)
@@ -258,6 +374,7 @@ def main() -> int:
             database_id,
             dry_run=args.dry_run,
             confirm_delete=args.confirm_delete,
+            assume_yes=args.yes,
         )
 
     if args.all:
@@ -266,6 +383,7 @@ def main() -> int:
             database_id,
             dry_run=args.dry_run,
             confirm_delete=args.confirm_delete,
+            assume_yes=args.yes,
         )
 
     # Unreachable (argparse requires exactly one of the mutually-exclusive group)
@@ -273,4 +391,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except NotImplementedError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(EXIT_USAGE_ERROR)
