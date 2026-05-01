@@ -667,6 +667,8 @@ export function DesignSystemPreview() {
                 width={width}
                 height={600}
                 title={`Shell preview at ${width}px`}
+                sandbox="allow-scripts allow-same-origin allow-forms"
+                referrerPolicy="no-referrer"
                 style={{
                   border: `2px solid var(--color-border-default)`,
                   borderRadius: "var(--radius-md)",

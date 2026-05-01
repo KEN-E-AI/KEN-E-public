@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { DesignSystemPreview } from "./DesignSystemPreview";
 
@@ -16,6 +16,10 @@ describe("DesignSystemPreview", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     localStorage.clear();
     document.documentElement.classList.remove("dark");
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("renders without throwing", () => {
@@ -52,5 +56,15 @@ describe("DesignSystemPreview", () => {
     expect(
       screen.getByRole("heading", { name: /shell at viewport widths/i }),
     ).toBeInTheDocument();
+  });
+
+  it("ThemeToggle toggles dark class on documentElement", () => {
+    renderWithTheme();
+    const toggle = screen.getByRole("button", { name: /toggle theme/i });
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
+    fireEvent.click(toggle);
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    fireEvent.click(toggle);
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
   });
 });
