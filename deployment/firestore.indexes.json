@@ -55,6 +55,140 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "strategy_audit",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "user_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "timestamp",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "project_plans",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "launched_at",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "due_date",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "project_plans",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "save_as_automation",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "is_active",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "next_run_at",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "project_plan_audit",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "at",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "members",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {
+          "fieldPath": "user_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "parent_kind",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "skills",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updated_at",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "skills",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "has_scripts",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updated_at",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "plan_runs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "template_plan_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "started_at",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "plan_runs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "template_plan_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "is_test",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "started_at",
+          "order": "DESCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []

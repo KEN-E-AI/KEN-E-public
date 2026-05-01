@@ -202,3 +202,20 @@ Check Agent Engine connectivity and status.
 - **Key fixture:** `mock_firebase_auth()` — patches `verify_id_token`, Firestore service, and environment variables
 - **Structure:** Unit tests colocated with source or in `tests/unit/`, integration tests in `tests/integration/`
 - **Pattern:** Use `@pytest.fixture` with appropriate scope; prefer integration tests over heavy mocking
+
+## Shape B Multi-Tenant Data Model Convention
+
+All account-scoped Firestore data lives under `accounts/{account_id}/{resource}/...`.
+
+Examples:
+- Skill: `accounts/acc_abc/skills/sk_123`
+- Strategy doc version: `accounts/acc_abc/strategy_docs/swot/versions/3`
+- Audit entry: `accounts/acc_abc/strategy_audit/audit_42`
+
+Account-level deletion sweeps via `firestore.recursive_delete(db.collection("accounts").document(account_id))` — one call, all subcollections gone.
+
+Exceptions (Shape C — global collection with `account_id` field):
+- `notifications` — users query N accounts at once via `where("account_id","in",[batch])`
+- `usage_records` — org-level billing aggregation
+
+See [Review 15 in DESIGN-REVIEW-LOG](../docs/design/DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1) for full rationale.
