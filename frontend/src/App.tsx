@@ -66,6 +66,14 @@ const LazyLayoutSettingsHarness = import.meta.env.DEV
     )
   : undefined;
 
+const LazyDesignSystemPreview = import.meta.env.DEV
+  ? lazy(() =>
+      import("./pages/__dev__/DesignSystemPreview").then((m) => ({
+        default: m.DesignSystemPreview,
+      })),
+    )
+  : undefined;
+
 const queryClient = new QueryClient();
 
 // Wrapper component to handle navigation after organization selection
@@ -266,6 +274,16 @@ const App = () => (
                         element={
                           <Suspense fallback={null}>
                             <LazyLayoutSettingsHarness />
+                          </Suspense>
+                        }
+                      />
+                    )}
+                    {import.meta.env.DEV && LazyDesignSystemPreview && (
+                      <Route
+                        path="/__dev__/design-system"
+                        element={
+                          <Suspense fallback={null}>
+                            <LazyDesignSystemPreview />
                           </Suspense>
                         }
                       />
