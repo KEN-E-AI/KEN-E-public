@@ -1,4 +1,4 @@
-"""Integration tests for migrate_to_shape_b.py copy + verify runner (DM-3).
+"""Integration tests for migrate_to_shape_b.py copy + verify runner (DM-3 / DM-5).
 
 These tests run against the Firestore emulator and are **skipped by default**.
 Enable them by setting the ``FIRESTORE_EMULATOR_HOST`` environment variable
@@ -286,3 +286,108 @@ def test_partial_data_handled_correctly(
     assert exit_code == 0, f"stdout={buf.getvalue()}"
     assert _count_docs(emulator_client, f"accounts/acc_Y/{res_name}") == 3
     assert "VERIFIED" in buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Test: --confirm-delete --yes happy path (DM-5)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_confirm_delete_yes_drops_source_collections(
+    emulator_client: Any,
+    run_id: str,
+) -> None:
+    """--confirm-delete --yes: source collections deleted after verified copy."""
+    from _migrate_shape_b.config import MigrateConfig
+    from _migrate_shape_b.runner import delete_source_collections, migrate_resource
+
+    prefix = f"todel_{run_id}_"
+    res_name = f"todel_{run_id}"
+
+    _seed_doc(emulator_client, f"{prefix}acc_A/doc1", {"val": "a1"})
+    _seed_doc(emulator_client, f"{prefix}acc_A/doc2", {"val": "a2"})
+    _seed_doc(emulator_client, f"{prefix}acc_B/doc1", {"val": "b1"})
+
+    config = MigrateConfig(old_prefix=prefix, new_subcollection=res_name)
+
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        exit_code = migrate_resource(emulator_client, res_name, config)
+
+    assert exit_code == 0, f"migrate stdout:\n{buf.getvalue()}"
+
+    delete_result = delete_source_collections(emulator_client, res_name, config)
+
+    # Source collections gone
+    assert _count_docs(emulator_client, f"{prefix}acc_A") == 0
+    assert _count_docs(emulator_client, f"{prefix}acc_B") == 0
+
+    # Destination intact
+    assert _count_docs(emulator_client, f"accounts/acc_A/{res_name}") == 2
+    assert _count_docs(emulator_client, f"accounts/acc_B/{res_name}") == 1
+
+    # DeleteResult totals
+    assert delete_result.source_collections_deleted == 2
+    assert delete_result.total_docs == 3
+
+
+# ---------------------------------------------------------------------------
+# Test: verify-fail prevents deletion (DM-5)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_confirm_delete_skips_deletion_when_verify_fails(
+    emulator_client: Any,
+    run_id: str,
+) -> None:
+    """When migrate_resource returns 1 (verify mismatch), sources must not be deleted."""
+    from _migrate_shape_b.config import MigrateConfig
+    from _migrate_shape_b.runner import migrate_resource
+
+    prefix = f"fail_{run_id}_"
+    res_name = f"fail_{run_id}"
+
+    # Seed 2 source docs but pre-seed an extra orphan in destination so counts diverge.
+    _seed_doc(emulator_client, f"{prefix}acc_A/doc1", {"val": "a1"})
+    _seed_doc(emulator_client, f"{prefix}acc_A/doc2", {"val": "a2"})
+    _seed_doc(emulator_client, f"accounts/acc_A/{res_name}/orphan", {"val": "orphan"})
+
+    config = MigrateConfig(old_prefix=prefix, new_subcollection=res_name)
+
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        exit_code = migrate_resource(emulator_client, res_name, config)
+
+    # Verification must fail: source=2, destination=3 (2 copied + orphan pre-existing)
+    assert exit_code == 1, f"Expected exit 1 (verify fail). stdout:\n{buf.getvalue()}"
+    assert "FAILED" in buf.getvalue()
+
+    # Source must still exist (deletion never ran)
+    assert _count_docs(emulator_client, f"{prefix}acc_A") == 2
+
+
+# ---------------------------------------------------------------------------
+# Test: --yes without --confirm-delete exits 2 (DM-5 CLI guard, subprocess)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_yes_without_confirm_delete_exits_two(run_id: str) -> None:
+    """--yes without --confirm-delete exits 2 with a usage error message."""
+    import subprocess
+    import sys
+
+    script = str(SCRIPTS_DIR / "migrate_to_shape_b.py")
+    result = subprocess.run(
+        [sys.executable, script, "--resource=whatever", "--yes"],
+        capture_output=True,
+        text=True,
+        env={
+            "GOOGLE_CLOUD_PROJECT_ID": "test-project",
+            "FIRESTORE_EMULATOR_HOST": os.environ.get("FIRESTORE_EMULATOR_HOST", ""),
+        },
+    )
+    assert result.returncode == 2
+    assert "--yes" in result.stderr

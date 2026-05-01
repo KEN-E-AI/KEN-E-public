@@ -89,6 +89,31 @@ class VerifyResult:
         return [a for a in self.accounts if not a.matches]
 
 
+@dataclass
+class AccountDeleteResult:
+    """Deletion outcome for a single account."""
+
+    account_id: str
+    source_collection: str
+    docs_deleted: int = 0
+
+
+@dataclass
+class DeleteResult:
+    """Aggregate deletion outcome for an entire resource."""
+
+    resource_name: str
+    accounts: list[AccountDeleteResult] = field(default_factory=list)
+
+    @property
+    def total_docs(self) -> int:
+        return sum(a.docs_deleted for a in self.accounts)
+
+    @property
+    def source_collections_deleted(self) -> int:
+        return len(self.accounts)
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -361,6 +386,152 @@ def verify_resource(client: Client, name: str, config: MigrateConfig) -> VerifyR
             mismatch.source_count,
             mismatch.destination_count,
         )
+
+    return result
+
+
+def delete_source_collections(
+    client: Client, name: str, config: MigrateConfig
+) -> DeleteResult:
+    """Delete all source documents for *config* after a verified copy.
+
+    Walks the same source collections used by ``copy_resource`` /
+    ``verify_resource``, batch-deletes every document (and ``versions/{n}``
+    sub-docs when ``has_versions=True``), and returns per-account deletion stats.
+
+    Does **not** prompt or print — those responsibilities belong to the CLI layer.
+    Raises ``NotImplementedError`` for ``is_field_migration=True`` resources (owned
+    by DM-PRD-07).
+
+    Parameters
+    ----------
+    client:
+        Firestore synchronous client pointing at the correct project/database.
+    name:
+        Resource name (used for logging only).
+    config:
+        Migration specification.
+
+    Returns
+    -------
+    DeleteResult
+        Per-account deletion statistics.
+    """
+    if config.is_field_migration:
+        raise NotImplementedError(
+            "is_field_migration=True is owned by DM-PRD-07 (members_migration); "
+            "delete logic for field migrations must be handled separately."
+        )
+
+    result = DeleteResult(resource_name=name)
+
+    if config.source_is_single_collection:
+        source_col_name = config.new_subcollection
+        logger.info(
+            "[%s] Deleting source documents from single collection: %s",
+            name,
+            source_col_name,
+        )
+
+        source_col = client.collection(source_col_name)
+        batch = client.batch()
+        pending: list[object] = []
+        batch_state = [batch, pending]
+
+        for src_doc in source_col.stream():
+            account_id = src_doc.id
+            acc_result = AccountDeleteResult(
+                account_id=account_id,
+                source_collection=source_col_name,
+            )
+
+            # Delete versions subcollection first if needed
+            if config.has_versions:
+                versions_col = src_doc.reference.collection("versions")
+                for version_doc in versions_col.stream():
+                    batch_state[0].delete(version_doc.reference)
+                    batch_state[1].append(version_doc.reference)
+                    acc_result.docs_deleted += 1
+                    if len(batch_state[1]) >= _BATCH_SIZE:
+                        batch_state[0].commit()
+                        batch_state[0] = client.batch()
+                        batch_state[1] = []
+
+            # Delete the source doc itself
+            batch_state[0].delete(src_doc.reference)
+            batch_state[1].append(src_doc.reference)
+            acc_result.docs_deleted += 1
+            if len(batch_state[1]) >= _BATCH_SIZE:
+                batch_state[0].commit()
+                batch_state[0] = client.batch()
+                batch_state[1] = []
+
+            result.accounts.append(acc_result)
+            logger.debug(
+                "[%s] account=%s deleted=%d from %s",
+                name,
+                account_id,
+                acc_result.docs_deleted,
+                source_col_name,
+            )
+
+        if batch_state[1]:
+            batch_state[0].commit()
+
+    else:
+        logger.info(
+            "[%s] Deleting source collections with prefix '%s'",
+            name,
+            config.old_prefix,
+        )
+
+        batch = client.batch()
+        pending_: list[object] = []
+        batch_state = [batch, pending_]
+
+        for col_ref in client.collections():
+            col_name = col_ref.id
+            if not col_name.startswith(config.old_prefix):
+                continue
+
+            account_id = _extract_account_id(config, col_name)
+            acc_result = AccountDeleteResult(
+                account_id=account_id,
+                source_collection=col_name,
+            )
+
+            for src_doc in col_ref.stream():
+                # Delete versions subcollection first if needed
+                if config.has_versions:
+                    versions_col = src_doc.reference.collection("versions")
+                    for version_doc in versions_col.stream():
+                        batch_state[0].delete(version_doc.reference)
+                        batch_state[1].append(version_doc.reference)
+                        acc_result.docs_deleted += 1
+                        if len(batch_state[1]) >= _BATCH_SIZE:
+                            batch_state[0].commit()
+                            batch_state[0] = client.batch()
+                            batch_state[1] = []
+
+                # Delete the source doc itself
+                batch_state[0].delete(src_doc.reference)
+                batch_state[1].append(src_doc.reference)
+                acc_result.docs_deleted += 1
+                if len(batch_state[1]) >= _BATCH_SIZE:
+                    batch_state[0].commit()
+                    batch_state[0] = client.batch()
+                    batch_state[1] = []
+
+            result.accounts.append(acc_result)
+            logger.info(
+                "[%s] Deleted %d docs from %s",
+                name,
+                acc_result.docs_deleted,
+                col_name,
+            )
+
+        if batch_state[1]:
+            batch_state[0].commit()
 
     return result
 
