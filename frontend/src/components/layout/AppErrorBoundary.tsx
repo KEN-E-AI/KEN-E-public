@@ -64,25 +64,23 @@ class AppErrorBoundaryInner extends Component<
 
   render() {
     if (this.state.hasError) {
-      const isProduction = import.meta.env.VITE_ENVIRONMENT === "production";
-
       return (
         <div className="min-h-screen flex items-center justify-center bg-[var(--color-bg-secondary)] p-4">
           <Card className="max-w-2xl w-full">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-red-600">
+              <CardTitle className="flex items-center gap-2 text-destructive">
                 <AlertCircle className="h-6 w-6" />
                 Something went wrong
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-[var(--color-text-secondary)]">
-                {isProduction
-                  ? "We encountered an unexpected error. This might be related to your account or organization data."
-                  : "An error occurred in the application. This could be due to corrupted local data or deleted entities."}
+                {import.meta.env.DEV
+                  ? "An error occurred in the application. This could be due to corrupted local data or deleted entities."
+                  : "We encountered an unexpected error. This might be related to your account or organization data."}
               </p>
 
-              {!isProduction && this.state.error && (
+              {import.meta.env.DEV && this.state.error && (
                 <details className="bg-[var(--color-surface-muted)] p-4 rounded-[var(--radius-md)] text-sm text-[var(--color-text-secondary)]">
                   <summary className="cursor-pointer font-semibold">
                     Error Details

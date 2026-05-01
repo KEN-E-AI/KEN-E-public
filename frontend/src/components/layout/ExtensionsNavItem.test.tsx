@@ -94,7 +94,9 @@ describe("ExtensionsNavItem", () => {
     });
     renderWith({ extensions: [ext1, ext2] });
 
-    fireEvent.mouseEnter(screen.getByRole("link", { name: /extensions/i }).parentElement!);
+    fireEvent.mouseEnter(
+      screen.getByRole("link", { name: /extensions/i }).parentElement!,
+    );
 
     expect(screen.getByRole("menu")).toBeInTheDocument();
     expect(
@@ -110,8 +112,9 @@ describe("ExtensionsNavItem", () => {
 
   test("mouse-leave keeps the panel open until the 150ms timer elapses", () => {
     renderWith();
-    const wrapper = screen.getByRole("link", { name: /extensions/i })
-      .parentElement!;
+    const wrapper = screen.getByRole("link", {
+      name: /extensions/i,
+    }).parentElement!;
 
     fireEvent.mouseEnter(wrapper);
     expect(screen.getByRole("menu")).toBeInTheDocument();
@@ -133,8 +136,9 @@ describe("ExtensionsNavItem", () => {
 
   test("re-entering before the timer fires cancels the close", () => {
     renderWith();
-    const wrapper = screen.getByRole("link", { name: /extensions/i })
-      .parentElement!;
+    const wrapper = screen.getByRole("link", {
+      name: /extensions/i,
+    }).parentElement!;
 
     fireEvent.mouseEnter(wrapper);
     fireEvent.mouseLeave(wrapper);
@@ -166,8 +170,9 @@ describe("ExtensionsNavItem", () => {
 
   test("clears the pending hover-close timer on unmount (no leaked setTimeout)", () => {
     const { unmount } = renderWith();
-    const wrapper = screen.getByRole("link", { name: /extensions/i })
-      .parentElement!;
+    const wrapper = screen.getByRole("link", {
+      name: /extensions/i,
+    }).parentElement!;
 
     fireEvent.mouseEnter(wrapper);
     fireEvent.mouseLeave(wrapper);

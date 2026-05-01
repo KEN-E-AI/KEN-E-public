@@ -79,9 +79,7 @@ describe("LayoutSettings", () => {
   describe("Header content", () => {
     test("renders KEN-E logo", () => {
       renderLayoutSettings();
-      expect(
-        screen.getByRole("img", { name: /KEN-E/i }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole("img", { name: /KEN-E/i })).toBeInTheDocument();
     });
 
     test("renders Back to App links (mobile icon + desktop text)", () => {

@@ -94,9 +94,7 @@ export function SessionsSidebar({
         <div className="flex flex-col gap-2 mt-4">
           {sessions
             .slice(0, 10)
-            .filter(
-              (session) => session.isActive || session.hasUnreviewedTasks,
-            )
+            .filter((session) => session.isActive || session.hasUnreviewedTasks)
             .map((session) => {
               return (
                 <button

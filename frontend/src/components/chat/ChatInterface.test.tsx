@@ -18,6 +18,8 @@ describe("ChatInterface (stub)", () => {
   test("renders the figma intro greeting in the message area", () => {
     render(<ChatInterface />);
 
-    expect(screen.getByText(/I'm your KEN-E AI assistant/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/I'm your KEN-E AI assistant/i),
+    ).toBeInTheDocument();
   });
 });
