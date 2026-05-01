@@ -46,6 +46,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
 from _migrate_shape_b.resources import RESOURCES  # noqa: E402
 from _migrate_shape_b.runner import (  # noqa: E402
     delete_source_collections,
+    dry_run_resource,
     migrate_resource,
 )
 
@@ -153,9 +154,9 @@ def cmd_resource(
 ) -> int:
     """Migrate a single named resource.
 
-    Dispatches to DM-6 stub for --dry-run until that issue implements the full
-    behaviour. The plain copy + verify path and the --confirm-delete path are
-    fully implemented here.
+    Dispatches to the dry-run path when ``--dry-run`` is passed, to the
+    confirm-delete path when ``--confirm-delete`` is passed, or to the plain
+    copy + verify path otherwise. All three modes are fully implemented.
     """
     if name not in RESOURCES:
         # Unknown resource — DM-2 owns the error message; preserve its output.
@@ -165,9 +166,6 @@ def cmd_resource(
         )
         return EXIT_USAGE_ERROR
 
-    if dry_run:
-        return cmd_resource_not_implemented("--dry-run", "DM-6")
-
     config = RESOURCES[name]
     try:
         from google.cloud import firestore as _fs  # type: ignore[import]
@@ -176,6 +174,9 @@ def cmd_resource(
     except Exception as exc:
         print(f"ERROR: Failed to initialise Firestore client: {exc}", file=sys.stderr)
         return EXIT_RUNTIME_ERROR
+
+    if dry_run:
+        return dry_run_resource(client, name, config)
 
     if not confirm_delete:
         return migrate_resource(client, name, config)
@@ -239,8 +240,9 @@ def cmd_all(
         return EXIT_RUNTIME_ERROR
 
     for name in sorted(RESOURCES):
+        config = RESOURCES[name]
         if dry_run:
-            code = cmd_resource_not_implemented("--dry-run", "DM-6")
+            code = dry_run_resource(client, name, config)
         elif confirm_delete:
             config = RESOURCES[name]
             code = migrate_resource(client, name, config)
@@ -277,7 +279,6 @@ def cmd_all(
                 logger.exception("[%s] Unexpected error during deletion", name)
                 code = EXIT_RUNTIME_ERROR
         else:
-            config = RESOURCES[name]
             code = migrate_resource(client, name, config)
 
         if code != EXIT_SUCCESS:
@@ -322,14 +323,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=("Migrate all configured resources in sequence.  (Implemented by DM-3)"),
     )
-    parser.add_argument(
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
         "--dry-run",
         action="store_true",
-        help=(
-            "Print the migration plan without writing anything.  (Implemented by DM-6)"
-        ),
+        help="Print the migration plan without writing anything.",
     )
-    parser.add_argument(
+    mode_group.add_argument(
         "--confirm-delete",
         action="store_true",
         help=(

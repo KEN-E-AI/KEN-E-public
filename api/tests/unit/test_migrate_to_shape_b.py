@@ -1,5 +1,5 @@
 """Unit tests for migrate_to_shape_b.py CLI scaffolding (DM-1 / DM-2), runner (DM-3),
-and --confirm-delete orchestration (DM-5).
+--confirm-delete orchestration (DM-5), and --dry-run (DM-6).
 
 Covers:
 - MigrateConfig validation (empty old_prefix / new_subcollection, special-case flags)
@@ -13,6 +13,7 @@ Covers:
   custom extractor, is_field_migration, empty registry, per-account counts (DM-5)
 - CLI orchestration: --confirm-delete --yes, prompt-accept, prompt-decline, verify-fail
   short-circuit, --yes without --confirm-delete rejection (DM-5)
+- dry_run_resource: source-walk, no writes, summary block, mutual exclusion (DM-6)
 """
 
 import io
@@ -40,6 +41,7 @@ from _migrate_shape_b.runner import (  # noqa: E402
     VerifyResult,
     copy_resource,
     delete_source_collections,
+    dry_run_resource,
     migrate_resource,
     verify_resource,
 )
@@ -887,23 +889,36 @@ class TestRunner:
         )
         assert exit_code == 0
 
-    def test_resource_dry_run_returns_usage_error(
+    def test_resource_dry_run_invokes_runner(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """--resource=<name> --dry-run routes to DM-6 stub (exit 2)."""
+        """--resource=<name> --dry-run calls dry_run_resource and returns its exit code."""
+        fake_config = MigrateConfig(old_prefix="example_", new_subcollection="example")
         monkeypatch.setattr(
             cli_module,
             "RESOURCES",
-            {
-                "example": MigrateConfig(
-                    old_prefix="example_", new_subcollection="example"
-                )
-            },
+            {"example": fake_config},
         )
-        exit_code = cli_module.cmd_resource(
-            "example", "proj", "(default)", dry_run=True, confirm_delete=False
-        )
-        assert exit_code == 2
+
+        calls: list[tuple[str, object]] = []
+
+        def fake_dry_run(client: object, name: str, config: object) -> int:
+            calls.append((name, config))
+            return 0
+
+        monkeypatch.setattr(cli_module, "dry_run_resource", fake_dry_run)
+
+        mock_fs = MagicMock()
+        mock_fs.Client.return_value = MagicMock()
+        with patch.dict("sys.modules", {"google.cloud.firestore": mock_fs}):
+            exit_code = cli_module.cmd_resource(
+                "example", "proj", "(default)", dry_run=True, confirm_delete=False
+            )
+
+        assert exit_code == 0
+        assert len(calls) == 1
+        assert calls[0][0] == "example"
+        assert calls[0][1] is fake_config
 
     def test_resource_confirm_delete_with_assume_yes_invokes_deletion(
         self, monkeypatch: pytest.MonkeyPatch
@@ -1306,3 +1321,193 @@ class TestConfirmDeleteOrchestration:
         )
         assert result.returncode == 2
         assert "--yes" in result.stderr
+
+
+# ---------------------------------------------------------------------------
+# TestDryRun — dry_run_resource via FakeFirestoreClient (DM-6)
+# ---------------------------------------------------------------------------
+
+
+class TestDryRun:
+    """dry_run_resource tested against FakeFirestoreClient."""
+
+    # ------------------------------------------------------------------
+    # dry_run_resource — default extractor (prefix-strip)
+    # ------------------------------------------------------------------
+
+    def test_dry_run_default_extractor(self) -> None:
+        """dry_run_resource counts source docs without writing to the destination."""
+        client = FakeFirestoreClient()
+        client.seed("example_acc_A/doc1", {"x": 1})
+        client.seed("example_acc_A/doc2", {"x": 2})
+        client.seed("example_acc_B/doc1", {"x": 3})
+
+        config = MigrateConfig(old_prefix="example_", new_subcollection="example")
+
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            exit_code = dry_run_resource(client, "example", config)
+
+        output = buf.getvalue()
+        assert exit_code == 0, output
+        # No writes to destination
+        dest_keys = [k for k in client._store if k.startswith("accounts/")]
+        assert dest_keys == [], f"dry-run must not write: {dest_keys}"
+        # Summary block present
+        assert "Source doc count:" in output
+        assert "DRY RUN" in output
+        assert "re-run without --dry-run to copy" in output
+
+    def test_dry_run_source_is_single_collection(self) -> None:
+        """dry_run_resource handles source_is_single_collection=True without writes."""
+        client = FakeFirestoreClient()
+        client.seed("monitoring_topics/acc_X", {"topic": "seo"})
+        client.seed("monitoring_topics/acc_Y", {"topic": "ppc"})
+
+        config = MigrateConfig(
+            old_prefix="",
+            new_subcollection="monitoring_topics",
+            source_is_single_collection=True,
+            destination_doc_id="default",
+        )
+
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            exit_code = dry_run_resource(client, "monitoring_topics", config)
+
+        output = buf.getvalue()
+        assert exit_code == 0, output
+        dest_keys = [k for k in client._store if k.startswith("accounts/")]
+        assert dest_keys == [], f"dry-run must not write: {dest_keys}"
+        assert "DRY RUN" in output
+        assert "Source collections found:" in output
+
+    def test_dry_run_field_migration_raises_not_implemented(self) -> None:
+        """dry_run_resource raises NotImplementedError for is_field_migration=True."""
+        client = FakeFirestoreClient()
+        config = MigrateConfig(
+            old_prefix="",
+            new_subcollection="members_migration",
+            is_field_migration=True,
+        )
+        with pytest.raises(NotImplementedError, match="DM-PRD-07"):
+            dry_run_resource(client, "members_migration", config)
+
+    def test_dry_run_does_not_write_to_destination(self) -> None:
+        """dry_run_resource leaves the _store completely unchanged for destination paths."""
+        client = FakeFirestoreClient()
+        client.seed("example_acc_A/doc1", {"x": 1})
+        client.seed("example_acc_A/doc2", {"x": 2})
+
+        config = MigrateConfig(old_prefix="example_", new_subcollection="example")
+
+        store_before = dict(client._store)
+        dry_run_resource(client, "example", config)
+        # Only the two original source docs may exist — no new accounts/... paths
+        store_after = dict(client._store)
+        assert store_before == store_after, (
+            f"dry-run must not modify _store. "
+            f"Added: {set(store_after) - set(store_before)}"
+        )
+
+    def test_dry_run_prints_summary_block_with_status(self) -> None:
+        """dry_run_resource output contains the 6-line PRD §4 summary block."""
+        client = FakeFirestoreClient()
+        client.seed("example_acc_A/doc1", {"x": 1})
+        client.seed("example_acc_A/doc2", {"x": 2})
+
+        config = MigrateConfig(old_prefix="example_", new_subcollection="example")
+
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            dry_run_resource(client, "example", config)
+
+        output = buf.getvalue()
+        lines = output.splitlines()
+
+        assert any(ln.startswith("Resource:") and "example" in ln for ln in lines), lines
+        assert any("Source collections found:" in ln for ln in lines), lines
+        assert any("Source doc count:" in ln and ln.rstrip().endswith("2") for ln in lines), lines
+        assert any(
+            "Destination path:" in ln and "accounts/{id}/example" in ln for ln in lines
+        ), lines
+        assert any("Destination doc count:" in ln for ln in lines), lines
+        assert any("Status:" in ln and "DRY RUN" in ln for ln in lines), lines
+        assert any(
+            "Next step:" in ln and "re-run without --dry-run" in ln for ln in lines
+        ), lines
+
+    # ------------------------------------------------------------------
+    # CLI mutual exclusion: --dry-run + --confirm-delete → exit 2
+    # ------------------------------------------------------------------
+
+    def test_dry_run_and_confirm_delete_mutually_exclusive(self) -> None:
+        """Passing --dry-run and --confirm-delete together exits with code 2."""
+        result = run_cli(
+            "--resource=foo",
+            "--dry-run",
+            "--confirm-delete",
+            env={"GOOGLE_CLOUD_PROJECT_ID": "test-project-id"},
+        )
+        assert result.returncode == 2
+        # argparse writes to stderr on mutual-exclusion failure
+        assert "dry-run" in result.stderr or "confirm-delete" in result.stderr
+
+    def test_dry_run_and_confirm_delete_mutually_exclusive_with_all(self) -> None:
+        """--all --dry-run --confirm-delete together also exits with code 2."""
+        result = run_cli(
+            "--all",
+            "--dry-run",
+            "--confirm-delete",
+            env={"GOOGLE_CLOUD_PROJECT_ID": "test-project-id"},
+        )
+        assert result.returncode == 2
+        assert "dry-run" in result.stderr or "confirm-delete" in result.stderr
+
+    # ------------------------------------------------------------------
+    # CLI wiring: unknown resource with --dry-run still exits 2
+    # ------------------------------------------------------------------
+
+    def test_dry_run_unknown_resource_exits_two(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """--resource=unknown --dry-run hits the unknown-resource check first (exit 2)."""
+        monkeypatch.setattr(cli_module, "RESOURCES", {})
+        buf = io.StringIO()
+        with redirect_stderr(buf):
+            exit_code = cli_module.cmd_resource(
+                "nonexistent", "proj", "(default)", dry_run=True, confirm_delete=False
+            )
+        assert exit_code == 2
+        assert "unknown resource:" in buf.getvalue()
+
+    # ------------------------------------------------------------------
+    # cmd_all: --dry-run invokes dry_run_resource per entry
+    # ------------------------------------------------------------------
+
+    def test_all_dry_run_calls_dry_run_resource_per_entry(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """--all --dry-run calls dry_run_resource for each registered resource."""
+        cfg_a = MigrateConfig(old_prefix="aaa_", new_subcollection="aaa")
+        cfg_b = MigrateConfig(old_prefix="bbb_", new_subcollection="bbb")
+        fake_resources = {"bbb": cfg_b, "aaa": cfg_a}
+        monkeypatch.setattr(cli_module, "RESOURCES", fake_resources)
+
+        called: list[str] = []
+
+        def fake_dry_run(client: object, name: str, config: object) -> int:
+            called.append(name)
+            return 0
+
+        monkeypatch.setattr(cli_module, "dry_run_resource", fake_dry_run)
+
+        mock_fs = MagicMock()
+        mock_fs.Client.return_value = MagicMock()
+        with patch.dict("sys.modules", {"google.cloud.firestore": mock_fs}):
+            exit_code = cli_module.cmd_all(
+                "proj", "(default)", dry_run=True, confirm_delete=False
+            )
+
+        assert exit_code == 0
+        assert called == ["aaa", "bbb"]  # alphabetical order

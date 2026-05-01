@@ -1,4 +1,4 @@
-"""Integration tests for migrate_to_shape_b.py copy + verify runner (DM-3, DM-4, DM-5).
+"""Integration tests for migrate_to_shape_b.py copy + verify runner (DM-3, DM-4, DM-5, DM-6).
 
 These tests run against the Firestore emulator and are **skipped by default**.
 Enable them by setting the ``FIRESTORE_EMULATOR_HOST`` environment variable
@@ -9,14 +9,15 @@ before running pytest, e.g.:
     GOOGLE_CLOUD_PROJECT_ID=test-project \\
     pytest api/tests/integration/test_migration_script_against_emulator.py -v
 
-Covers PRD §7 acceptance criteria (AC-3, AC-4):
-- Seed 3 dummy source collections and assert copy lands in Shape B paths
+Covers PRD §7 acceptance criteria (AC-3, AC-4, AC-6):
+- AC-3: Seed 3 dummy source collections and assert copy lands in Shape B paths
 - Source collections are untouched (--confirm-delete not passed)
 - Per-account counts match after copy
 - Exit code 0 for a fully-verified run
 - has_versions=True: /versions/{n} sub-docs copied correctly
 - Partial-data: one source empty, another with docs — runner handles gracefully
 - Idempotency (AC-4): re-running is a no-op; partially-migrated state resumes correctly
+- AC-6 (DM-6): --dry-run writes nothing and prints the plan
 """
 
 from __future__ import annotations
@@ -499,3 +500,65 @@ def test_yes_without_confirm_delete_exits_two(run_id: str) -> None:
     )
     assert result.returncode == 2
     assert "--yes" in result.stderr
+
+
+# ---------------------------------------------------------------------------
+# Test: --dry-run writes nothing (AC-6 / DM-6)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_dry_run_writes_nothing(
+    emulator_client: Any,
+    run_id: str,
+) -> None:
+    """Dry-run: source data seeded; runner prints plan; destination has zero docs after."""
+    from _migrate_shape_b.config import MigrateConfig
+    from _migrate_shape_b.runner import dry_run_resource
+
+    prefix = f"dry_{run_id}_"
+    res_name = f"dry_{run_id}"
+
+    # Seed source collections across 2 accounts (total 5 docs)
+    _seed_doc(emulator_client, f"{prefix}acc_A/doc1", {"val": "a1"})
+    _seed_doc(emulator_client, f"{prefix}acc_A/doc2", {"val": "a2"})
+    _seed_doc(emulator_client, f"{prefix}acc_A/doc3", {"val": "a3"})
+    _seed_doc(emulator_client, f"{prefix}acc_B/doc1", {"val": "b1"})
+    _seed_doc(emulator_client, f"{prefix}acc_B/doc2", {"val": "b2"})
+
+    config = MigrateConfig(old_prefix=prefix, new_subcollection=res_name)
+
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        exit_code = dry_run_resource(emulator_client, res_name, config)
+
+    output = buf.getvalue()
+
+    # (a) Exit code 0
+    assert exit_code == 0, f"stdout={output}"
+
+    # (b) Destination subcollection has zero documents for every account
+    assert _count_docs(emulator_client, f"accounts/acc_A/{res_name}") == 0, (
+        "dry-run must not write to accounts/acc_A"
+    )
+    assert _count_docs(emulator_client, f"accounts/acc_B/{res_name}") == 0, (
+        "dry-run must not write to accounts/acc_B"
+    )
+
+    # (c) Source collections still have their original doc counts
+    assert _count_docs(emulator_client, f"{prefix}acc_A") == 3
+    assert _count_docs(emulator_client, f"{prefix}acc_B") == 2
+
+    # (d) Summary block contains Source doc count matching the seeded total (5)
+    assert any(
+        "Source doc count:" in ln and ln.rstrip().endswith("5")
+        for ln in output.splitlines()
+    ), f"Expected 'Source doc count: 5' in output:\n{output}"
+
+    # (e) Status reads DRY RUN (not VERIFIED or FAILED)
+    assert "DRY RUN" in output
+    assert "VERIFIED" not in output
+    assert "FAILED" not in output
+
+    # (f) Next step instructs operator to re-run without --dry-run
+    assert "re-run without --dry-run" in output

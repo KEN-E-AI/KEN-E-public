@@ -16,6 +16,17 @@ if TYPE_CHECKING:
 
 from .config import MigrateConfig
 
+__all__ = [
+    "AccountCopyResult",
+    "AccountVerifyResult",
+    "CopyResult",
+    "VerifyResult",
+    "copy_resource",
+    "dry_run_resource",
+    "migrate_resource",
+    "verify_resource",
+]
+
 logger = logging.getLogger(__name__)
 
 # Maximum number of write operations per Firestore WriteBatch (SDK limit).
@@ -550,6 +561,89 @@ def delete_source_collections(
             batch_state[0].commit()
 
     return result
+
+
+def dry_run_resource(client: Client, name: str, config: MigrateConfig) -> int:
+    """Walk source collections, count docs, and print the PRD §4 summary block.
+
+    Does **not** write to the destination or delete any source data.
+    Mirrors ``copy_resource``'s source-discovery logic so a dry-run accurately
+    reflects what a real run will copy.
+
+    Note: if the source-walk logic in ``copy_resource`` ever changes, this
+    function must be updated in parallel to keep the dry-run honest.
+
+    Returns
+    -------
+    int
+        0 on success, 3 on unexpected runtime error.
+    """
+    if config.is_field_migration:
+        raise NotImplementedError(
+            "is_field_migration=True is owned by DM-PRD-07 (members_migration); "
+            "use migrate_shape_d_split.py for DM-PRD-03 field-tree work."
+        )
+
+    try:
+        source_collections_found = 0
+        total_source_docs = 0
+
+        if config.source_is_single_collection:
+            # DM-PRD-04 case: single global collection whose doc-IDs are account_ids.
+            source_col_name = config.new_subcollection
+            logger.info(
+                "[%s] dry-run: walking single source collection: %s", name, source_col_name
+            )
+            source_col = client.collection(source_col_name)
+            # Collect account_ids in one pass to avoid a second stream() call for dest count.
+            account_ids: list[str] = []
+            for src_doc in source_col.stream():
+                account_ids.append(src_doc.id)
+                source_collections_found += 1
+                # Each top-level doc represents one account; count it as 1 doc.
+                total_source_docs += 1
+        else:
+            # Standard case: walk collections whose names start with old_prefix.
+            logger.info(
+                "[%s] dry-run: scanning top-level collections with prefix '%s'",
+                name,
+                config.old_prefix,
+            )
+            account_ids = []
+            for col_ref in client.collections():
+                col_name = col_ref.id
+                if not col_name.startswith(config.old_prefix):
+                    continue
+                source_collections_found += 1
+                src_count = _count_collection(client, col_name)
+                total_source_docs += src_count
+                account_ids.append(_extract_account_id(config, col_name))
+                logger.debug(
+                    "[%s] dry-run: found %s with %d docs", name, col_name, src_count
+                )
+
+        dest_path_sample = f"accounts/{{id}}/{config.new_subcollection}"
+        # Count what's already at the destination (typically 0 on first run).
+        dest_count = sum(
+            _count_collection(client, f"accounts/{aid}/{config.new_subcollection}")
+            for aid in account_ids
+        )
+
+        print(f"Resource: {name}")
+        print(f"  Source collections found:   {source_collections_found}")
+        print(f"  Source doc count:            {total_source_docs:,}")
+        print(f"  Destination path:            {dest_path_sample}")
+        print(f"  Destination doc count:       {dest_count:,}")
+        print("  Status:                      DRY RUN")
+        print("  Next step:                   re-run without --dry-run to copy")
+
+        return 0
+
+    except NotImplementedError:
+        raise
+    except Exception:
+        logger.exception("[%s] Unexpected error during dry-run", name)
+        return 3
 
 
 def migrate_resource(client: Client, name: str, config: MigrateConfig) -> int:
