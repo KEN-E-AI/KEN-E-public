@@ -1,4 +1,4 @@
-"""Integration tests for migrate_to_shape_b.py copy + verify runner (DM-3).
+"""Integration tests for migrate_to_shape_b.py copy + verify runner (DM-3, DM-4).
 
 These tests run against the Firestore emulator and are **skipped by default**.
 Enable them by setting the ``FIRESTORE_EMULATOR_HOST`` environment variable
@@ -9,18 +9,20 @@ before running pytest, e.g.:
     GOOGLE_CLOUD_PROJECT_ID=test-project \\
     pytest api/tests/integration/test_migration_script_against_emulator.py -v
 
-Covers PRD §7 acceptance criteria (AC-3):
+Covers PRD §7 acceptance criteria (AC-3, AC-4):
 - Seed 3 dummy source collections and assert copy lands in Shape B paths
 - Source collections are untouched (--confirm-delete not passed)
 - Per-account counts match after copy
 - Exit code 0 for a fully-verified run
 - has_versions=True: /versions/{n} sub-docs copied correctly
 - Partial-data: one source empty, another with docs — runner handles gracefully
+- Idempotency (AC-4): re-running is a no-op; partially-migrated state resumes correctly
 """
 
 from __future__ import annotations
 
 import io
+import logging
 import os
 import sys
 import uuid
@@ -285,4 +287,108 @@ def test_partial_data_handled_correctly(
 
     assert exit_code == 0, f"stdout={buf.getvalue()}"
     assert _count_docs(emulator_client, f"accounts/acc_Y/{res_name}") == 3
+    assert "VERIFIED" in buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Test: idempotency — re-run is a no-op (AC-4)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_idempotency_rerun_is_noop(
+    emulator_client: Any,
+    run_id: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Run migrate_resource() twice; assert the second run is a no-op (AC-4).
+
+    Checks:
+    (a) second run returns exit code 0
+    (b) destination doc count is unchanged after the second run
+    (c) the runner logs at least one "already migrated" record on the second run
+    """
+    from _migrate_shape_b.config import MigrateConfig
+    from _migrate_shape_b.runner import migrate_resource
+
+    prefix = f"idem_{run_id}_"
+    res_name = f"idem_{run_id}"
+
+    _seed_doc(emulator_client, f"{prefix}acc_A/doc1", {"v": 1})
+    _seed_doc(emulator_client, f"{prefix}acc_A/doc2", {"v": 2})
+
+    config = MigrateConfig(old_prefix=prefix, new_subcollection=res_name)
+
+    # First run — copies both docs
+    buf1 = io.StringIO()
+    with redirect_stdout(buf1):
+        exit_code_1 = migrate_resource(emulator_client, res_name, config)
+    assert exit_code_1 == 0, f"first run failed: {buf1.getvalue()}"
+    assert _count_docs(emulator_client, f"accounts/acc_A/{res_name}") == 2
+
+    # Second run — all destination docs already present; must be a no-op
+    with caplog.at_level(logging.DEBUG, logger="_migrate_shape_b.runner"):
+        buf2 = io.StringIO()
+        with redirect_stdout(buf2):
+            exit_code_2 = migrate_resource(emulator_client, res_name, config)
+
+    assert exit_code_2 == 0, f"second run failed: {buf2.getvalue()}"
+    # (b) count unchanged
+    assert _count_docs(emulator_client, f"accounts/acc_A/{res_name}") == 2
+    # (c) at least one "already migrated" log record
+    assert any(
+        "already migrated" in r.message for r in caplog.records
+    ), "expected at least one 'already migrated' debug log on the second run"
+
+
+# ---------------------------------------------------------------------------
+# Test: partial-state resume (AC-4 — resume mid-run)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_partial_state_resume(
+    emulator_client: Any,
+    run_id: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Half the destination docs pre-seeded; runner writes only the missing half.
+
+    Checks:
+    (a) all 4 doc-ids present at the destination after one run
+    (b) at least one "already migrated" debug record (pre-seeded docs were skipped)
+    (c) printed summary contains "VERIFIED"
+    """
+    from _migrate_shape_b.config import MigrateConfig
+    from _migrate_shape_b.runner import migrate_resource
+
+    prefix = f"resume_{run_id}_"
+    res_name = f"resume_{run_id}"
+
+    # Seed 4 source docs
+    for i in range(1, 5):
+        _seed_doc(emulator_client, f"{prefix}acc_R/doc{i}", {"n": i})
+
+    # Pre-seed only doc1 and doc2 at the Shape B destination (simulates a
+    # previous run that died after writing those two docs).
+    _seed_doc(emulator_client, f"accounts/acc_R/{res_name}/doc1", {"n": 1})
+    _seed_doc(emulator_client, f"accounts/acc_R/{res_name}/doc2", {"n": 2})
+
+    config = MigrateConfig(old_prefix=prefix, new_subcollection=res_name)
+
+    with caplog.at_level(logging.DEBUG, logger="_migrate_shape_b.runner"):
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            exit_code = migrate_resource(emulator_client, res_name, config)
+
+    # (a) all 4 docs now present
+    assert exit_code == 0, f"stdout={buf.getvalue()}"
+    assert _count_docs(emulator_client, f"accounts/acc_R/{res_name}") == 4
+
+    # (b) pre-seeded docs were skipped (logged)
+    assert any(
+        "already migrated" in r.message for r in caplog.records
+    ), "expected at least one 'already migrated' debug log for the pre-seeded docs"
+
+    # (c) migration reports VERIFIED
     assert "VERIFIED" in buf.getvalue()

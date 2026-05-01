@@ -132,7 +132,15 @@ def _copy_doc_and_versions(
     Uses a shared mutable *batch_state* list ``[batch, ops_list]`` so that the
     caller can flush across multiple calls without rebuilding the batch.
 
-    Returns the number of documents written (1 + len(versions)).
+    Idempotency: before queuing each write, the destination doc is fetched.
+    When the destination already exists the write is skipped and logged at
+    DEBUG level (message contains the literal substring "already migrated" per
+    PRD §4 / AC-4).  The main doc and each ``versions/{n}`` sub-doc are
+    checked independently so that a run that died after writing the main doc
+    but before its versions resumes cleanly.
+
+    Returns the number of documents *newly written* this invocation (skipped
+    docs do not increment the count).
     """
     batch = batch_state[0]
     pending = batch_state[1]
@@ -144,19 +152,23 @@ def _copy_doc_and_versions(
         return 0
     src_data = src_snap.to_dict() or {}
 
-    # Write the main doc
+    # Write the main doc (skip if already present at the destination)
     dest_ref = client.document(f"{dest_col_path}/{dest_doc_id}")
-    batch.set(dest_ref, src_data)  # type: ignore[union-attr]
-    pending.append(dest_ref)
-    written += 1
+    dest_snap = dest_ref.get()  # type: ignore[union-attr]
+    if dest_snap.exists:
+        logger.debug("already migrated: %s (skipping)", dest_ref.path)
+    else:
+        batch.set(dest_ref, src_data)  # type: ignore[union-attr]
+        pending.append(dest_ref)
+        written += 1
 
-    if len(pending) >= _BATCH_SIZE:
-        batch.commit()
-        batch_state[0] = client.batch()
-        batch_state[1] = []
-        pending = batch_state[1]
+        if len(pending) >= _BATCH_SIZE:
+            batch.commit()
+            batch_state[0] = client.batch()
+            batch_state[1] = []
+            pending = batch_state[1]
 
-    # Copy versions subcollection if requested
+    # Copy versions subcollection if requested; each version is checked independently.
     if has_versions:
         versions_col = src_doc_ref.collection("versions")  # type: ignore[union-attr]
         for version_doc in versions_col.stream():
@@ -164,14 +176,18 @@ def _copy_doc_and_versions(
             v_dest = client.document(
                 f"{dest_col_path}/{dest_doc_id}/versions/{version_doc.id}"
             )
-            batch_state[0].set(v_dest, v_data)
-            batch_state[1].append(v_dest)
-            written += 1
+            v_dest_snap = v_dest.get()  # type: ignore[union-attr]
+            if v_dest_snap.exists:
+                logger.debug("already migrated: %s (skipping)", v_dest.path)
+            else:
+                batch_state[0].set(v_dest, v_data)
+                batch_state[1].append(v_dest)
+                written += 1
 
-            if len(batch_state[1]) >= _BATCH_SIZE:
-                batch_state[0].commit()
-                batch_state[0] = client.batch()
-                batch_state[1] = []
+                if len(batch_state[1]) >= _BATCH_SIZE:
+                    batch_state[0].commit()
+                    batch_state[0] = client.batch()
+                    batch_state[1] = []
 
     return written
 
