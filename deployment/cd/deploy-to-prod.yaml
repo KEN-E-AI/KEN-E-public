@@ -175,7 +175,13 @@ substitutions:
   _VITE_FIREBASE_AUTH_DOMAIN: ken-e-production.firebaseapp.com
   _VITE_API_BASE_URL: https://kene-api-prod-395770269870.us-central1.run.app # You can update this later
   _API_SERVICE_ACCOUNT_EMAIL: ken-e-api@ken-e-production.iam.gserviceaccount.com
-  _RECAPTCHA_SITE_KEY_PROD: projects/395770269870/secrets/recaptcha-site-key/versions/latest
+  # reCAPTCHA site keys are public (shipped in the JS bundle), so we inline the
+  # value rather than passing a Secret Manager path. The frontend Vite build has
+  # no Secret Manager resolver — passing a path would bake the literal string
+  # "projects/.../secrets/recaptcha-site-key/versions/latest" into the bundle as
+  # the site key. The companion secret key (`_RECAPTCHA_SECRET_KEY_PROD`) stays
+  # a path because the API resolves it at runtime via shared/secrets.py.
+  _RECAPTCHA_SITE_KEY_PROD: 6LdOa4grAAAAAKAitE1UXiHDBZ0EW7m83LM_5UJ2
   _RECAPTCHA_SECRET_KEY_PROD: projects/395770269870/secrets/recaptcha-secret-key/versions/latest
   _VERTEX_AI_LOCATION: us-central1
   _VERTEX_AI_AGENT_ENGINE_ID_PROD: projects/395770269870/secrets/strategy-supervisor-engine-id/versions/latest
