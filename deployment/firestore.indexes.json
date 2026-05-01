@@ -47,16 +47,6 @@
       ]
     },
     {
-      "collectionGroup": "notification_status",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "status",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
       "collectionGroup": "strategy_audit",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
@@ -102,16 +92,6 @@
         },
         {
           "fieldPath": "next_run_at",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "project_plan_audit",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        {
-          "fieldPath": "at",
           "order": "ASCENDING"
         }
       ]
@@ -191,5 +171,16 @@
       ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "project_plan_audit",
+      "fieldPath": "at",
+      "indexes": [
+        {
+          "queryScope": "COLLECTION_GROUP",
+          "order": "ASCENDING"
+        }
+      ]
+    }
+  ]
 }
