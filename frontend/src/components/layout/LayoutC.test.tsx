@@ -92,6 +92,17 @@ describe("LayoutC", () => {
       // simply needs to complete without throwing.
       expect(() => renderLayoutC()).not.toThrow();
     });
+
+    test("SessionsSidebar wrapper carries desktop-only classes (hidden md:flex md:flex-col md:min-h-0 md:h-full)", () => {
+      renderLayoutC({ initialPath: "/performance" });
+      const sidebar = screen.getByTestId("sessions-sidebar");
+      const wrapper = sidebar.parentElement!;
+      expect(wrapper.className).toMatch(/\bhidden\b/);
+      expect(wrapper.className).toMatch(/\bmd:flex\b/);
+      expect(wrapper.className).toMatch(/\bmd:flex-col\b/);
+      expect(wrapper.className).toMatch(/\bmd:min-h-0\b/);
+      expect(wrapper.className).toMatch(/\bmd:h-full\b/);
+    });
   });
 
   describe("semantic landmarks", () => {
