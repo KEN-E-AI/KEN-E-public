@@ -146,7 +146,7 @@ describe("TopNav", () => {
 
       // Hamburger trigger opens the nav drawer
       expect(
-        within(mobile).getByRole("button", { name: "Open navigation menu" }),
+        within(mobile).getByRole("button", { name: "Navigation menu" }),
       ).toBeInTheDocument();
       // NotificationBell and ProfileMenu remain in the header
       expect(
@@ -183,10 +183,10 @@ describe("TopNav", () => {
       ).not.toBeInTheDocument();
     });
 
-    test("renders a hamburger button (Open navigation menu) at mobile breakpoint", () => {
+    test("renders a hamburger button (Navigation menu) at mobile breakpoint", () => {
       renderTopNav();
       const trigger = screen.getByRole("button", {
-        name: "Open navigation menu",
+        name: "Navigation menu",
       });
       expect(trigger).toBeInTheDocument();
       expect(trigger).toHaveAttribute("data-testid", "mobile-nav-trigger");
@@ -199,7 +199,7 @@ describe("TopNav", () => {
       renderTopNav();
 
       const trigger = screen.getByRole("button", {
-        name: "Open navigation menu",
+        name: "Navigation menu",
       });
       await user.click(trigger);
 
@@ -214,9 +214,7 @@ describe("TopNav", () => {
       const user = userEvent.setup();
       renderTopNav();
 
-      await user.click(
-        screen.getByRole("button", { name: "Open navigation menu" }),
-      );
+      await user.click(screen.getByRole("button", { name: "Navigation menu" }));
 
       const drawer = screen.getByTestId("mobile-nav-drawer");
       const nav = within(drawer).getByRole("navigation", {
@@ -237,13 +235,77 @@ describe("TopNav", () => {
       const user = userEvent.setup();
       renderTopNav();
 
-      await user.click(
-        screen.getByRole("button", { name: "Open navigation menu" }),
-      );
+      await user.click(screen.getByRole("button", { name: "Navigation menu" }));
       expect(screen.getByTestId("mobile-nav-drawer")).toBeInTheDocument();
 
       await user.keyboard("{Escape}");
       expect(screen.queryByTestId("mobile-nav-drawer")).not.toBeInTheDocument();
+    });
+
+    test("aria-expanded attribute flips on the hamburger trigger when drawer opens and closes", async () => {
+      const user = userEvent.setup();
+      renderTopNav();
+
+      const trigger = screen.getByRole("button", { name: "Navigation menu" });
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+      await user.click(trigger);
+      expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+      await user.keyboard("{Escape}");
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+    });
+
+    test("focus returns to hamburger trigger after pressing Escape", async () => {
+      const user = userEvent.setup();
+      renderTopNav();
+
+      const trigger = screen.getByRole("button", { name: "Navigation menu" });
+      await user.click(trigger);
+      expect(screen.getByTestId("mobile-nav-drawer")).toBeInTheDocument();
+
+      await user.keyboard("{Escape}");
+      expect(screen.queryByTestId("mobile-nav-drawer")).not.toBeInTheDocument();
+      expect(trigger).toHaveFocus();
+    });
+
+    test("body scroll-lock is applied while drawer is open", async () => {
+      const user = userEvent.setup();
+      renderTopNav();
+
+      await user.click(screen.getByRole("button", { name: "Navigation menu" }));
+      // Radix Dialog sets data-scroll-locked="1" on the body when a modal is open.
+      expect(document.body).toHaveAttribute("data-scroll-locked", "1");
+
+      await user.keyboard("{Escape}");
+      expect(document.body).not.toHaveAttribute("data-scroll-locked");
+    });
+
+    test("clicking the overlay backdrop dismisses the drawer", async () => {
+      const user = userEvent.setup();
+      renderTopNav();
+
+      await user.click(screen.getByRole("button", { name: "Navigation menu" }));
+      expect(screen.getByTestId("mobile-nav-drawer")).toBeInTheDocument();
+
+      // The SheetOverlay (data-slot="sheet-overlay") is the Radix backdrop element.
+      const overlay = document.querySelector(
+        "[data-slot='sheet-overlay']",
+      ) as HTMLElement;
+      expect(overlay).not.toBeNull();
+      await user.click(overlay);
+      expect(screen.queryByTestId("mobile-nav-drawer")).not.toBeInTheDocument();
+    });
+
+    test("drawer element does not expose aria-describedby attribute", async () => {
+      const user = userEvent.setup();
+      renderTopNav();
+
+      await user.click(screen.getByRole("button", { name: "Navigation menu" }));
+      const drawer = screen.getByTestId("mobile-nav-drawer");
+      // aria-describedby={undefined} in the SheetContent suppresses the Radix
+      // missing-description warning in JSDOM; verify no dangling reference ships.
+      expect(drawer).not.toHaveAttribute("aria-describedby");
     });
   });
 });

@@ -141,7 +141,8 @@ export function TopNav() {
           <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
             <SheetTrigger asChild>
               <button
-                aria-label="Open navigation menu"
+                aria-label="Navigation menu"
+                aria-expanded={drawerOpen}
                 data-testid="mobile-nav-trigger"
                 className="p-2 rounded-[var(--radius-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-accent)] transition-colors"
               >
@@ -149,7 +150,7 @@ export function TopNav() {
               </button>
             </SheetTrigger>
 
-            {/* aria-describedby={undefined}: no SheetDescription present; suppresses Radix missing-description warning in JSDOM. UI-21. */}
+            {/* aria-describedby={undefined}: no SheetDescription present; suppresses Radix missing-description warning in JSDOM. */}
             <SheetContent
               side="left"
               className="p-0 w-72 flex flex-col"
@@ -167,7 +168,7 @@ export function TopNav() {
                 aria-label="Primary navigation (mobile drawer)"
                 className="flex-1 overflow-y-auto py-2"
               >
-                {/* Extensions renders as a plain drawer link (mobile sub-menu deferred — no Figma spec for mobile drawer). TODO(UI-21): add nested extension list when mobile drawer spec ships. */}
+                {/* Nested extensions list deferred until mobile-drawer spec ships. */}
                 {NAVIGATION.map((item) => {
                   const isActive = isItemActive(location.pathname, item.href);
                   return (
