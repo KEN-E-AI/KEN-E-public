@@ -4,40 +4,39 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Logo } from "@/components/branding/Logo";
 import { cn } from "@/lib/utils";
+import type { OrganizationId, AccountId } from "@/lib/branded-types";
 
 type PlaceholderOrg = {
-  id: string;
+  id: OrganizationId;
   name: string;
   plan: string;
 };
 
 type PlaceholderAccount = {
-  id: string;
+  id: AccountId;
   name: string;
-  orgId: string;
+  orgId: OrganizationId;
 };
 
-const PLACEHOLDER_ORGS: PlaceholderOrg[] = [
-  { id: "org-1", name: "Acme Corporation", plan: "Pro" },
-  { id: "org-2", name: "Globex Ventures", plan: "Starter" },
+export const PLACEHOLDER_ORGS: PlaceholderOrg[] = [
+  { id: "org-1" as OrganizationId, name: "Acme Corporation", plan: "Pro" },
+  { id: "org-2" as OrganizationId, name: "Globex Ventures", plan: "Starter" },
 ];
 
-const PLACEHOLDER_ACCOUNTS: PlaceholderAccount[] = [
-  { id: "acc-1", name: "Main Account", orgId: "org-1" },
-  { id: "acc-2", name: "EMEA Account", orgId: "org-1" },
+export const PLACEHOLDER_ACCOUNTS: PlaceholderAccount[] = [
+  { id: "acc-1" as AccountId, name: "Main Account", orgId: "org-1" as OrganizationId },
+  { id: "acc-2" as AccountId, name: "EMEA Account", orgId: "org-1" as OrganizationId },
 ];
 
 export default function SelectOrganizationPage() {
-  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
-  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(
-    null,
-  );
+  const [selectedOrgId, setSelectedOrgId] = useState<OrganizationId | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState<AccountId | null>(null);
 
   const visibleAccounts = PLACEHOLDER_ACCOUNTS.filter(
     (a) => a.orgId === selectedOrgId,
   );
 
-  function handleOrgSelect(orgId: string) {
+  function handleOrgSelect(orgId: OrganizationId) {
     setSelectedOrgId(orgId);
     setSelectedAccountId(null);
   }
@@ -65,7 +64,7 @@ export default function SelectOrganizationPage() {
         {/* Two-column grid */}
         <div className="grid lg:grid-cols-2 gap-6 mb-8">
           {/* Organizations card */}
-          <Card className="hover:translate-y-0 hover:border-[var(--color-border-default)] shadow-lg">
+          <Card className="shadow-lg">
             <CardHeader>
               <CardTitle>Organizations</CardTitle>
             </CardHeader>
@@ -116,7 +115,7 @@ export default function SelectOrganizationPage() {
           </Card>
 
           {/* Accounts card */}
-          <Card className="hover:translate-y-0 hover:border-[var(--color-border-default)] shadow-lg">
+          <Card className="shadow-lg">
             <CardHeader>
               <CardTitle>Accounts</CardTitle>
             </CardHeader>
@@ -175,7 +174,7 @@ export default function SelectOrganizationPage() {
           <Button
             type="button"
             disabled={!(selectedOrgId && selectedAccountId)}
-            className="gap-2 bg-[var(--color-cta-coral)] hover:bg-[var(--color-cta-coral-hover)] shadow-[var(--shadow-color-coral)] text-white border-0 transition-all duration-200 hover:-translate-y-0.5"
+            className="gap-2 bg-[var(--color-cta-coral)] hover:bg-[var(--color-cta-coral-hover)] shadow-[var(--shadow-color-coral)] text-[var(--color-text-inverse)] border-0 transition-all duration-200 hover:-translate-y-0.5"
           >
             Continue
             <ArrowRight className="size-4" />

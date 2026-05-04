@@ -84,8 +84,8 @@ describe("Button", () => {
     const cls = screen
       .getByRole("button", { name: "Create new organization" })
       .getAttribute("class");
-    expect(cls).toContain("color-text-secondary");
-    expect(cls).not.toContain("color-text-tertiary");
+    expect(cls).toContain("text-[var(--color-text-secondary)]");
+    expect(cls).not.toContain("text-[var(--color-text-tertiary)]");
   });
 
   it("ghost variant uses color-text-secondary (not color-text-tertiary) for WCAG AA compliance", () => {
@@ -93,7 +93,7 @@ describe("Button", () => {
     const cls = screen
       .getByRole("button", { name: "Cancel" })
       .getAttribute("class");
-    expect(cls).toContain("color-text-secondary");
-    expect(cls).not.toContain("color-text-tertiary");
+    expect(cls).toContain("text-[var(--color-text-secondary)]");
+    expect(cls).not.toContain("text-[var(--color-text-tertiary)]");
   });
 });

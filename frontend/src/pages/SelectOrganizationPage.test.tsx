@@ -2,7 +2,10 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import SelectOrganizationPage from "./SelectOrganizationPage";
+import SelectOrganizationPage, {
+  PLACEHOLDER_ORGS,
+  PLACEHOLDER_ACCOUNTS,
+} from "./SelectOrganizationPage";
 
 function renderPage() {
   return render(
@@ -40,13 +43,13 @@ describe("SelectOrganizationPage", () => {
 
     // Select an organization placeholder row
     const orgRows = screen.getAllByRole("button", {
-      name: /acme corporation/i,
+      name: new RegExp(PLACEHOLDER_ORGS[0].name, "i"),
     });
     await user.click(orgRows[0]);
 
     // Account rows now appear; select one
     const accountRows = screen.getAllByRole("button", {
-      name: /main account/i,
+      name: new RegExp(PLACEHOLDER_ACCOUNTS[0].name, "i"),
     });
     await user.click(accountRows[0]);
 
