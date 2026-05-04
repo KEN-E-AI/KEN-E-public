@@ -10,7 +10,8 @@ export type SettingsNavRow = {
   isVisible?: () => boolean;
 };
 
-export const SETTINGS_NAV_REGISTRY: SettingsNavRow[] = [];
+const _registry: SettingsNavRow[] = [];
+export const SETTINGS_NAV_REGISTRY: ReadonlyArray<SettingsNavRow> = _registry;
 
 const SAFE_PATH_RE = /^\/[a-zA-Z0-9/_-]+$/;
 const SAFE_PATH_MAX_LEN = 200;
@@ -46,19 +47,20 @@ export function registerSettingsNavRow(row: SettingsNavRow): void {
     );
     return;
   }
-  if (SETTINGS_NAV_REGISTRY.some((r) => r.id === row.id)) {
+  if (_registry.some((r) => r.id === row.id)) {
     console.warn(
       `[registerSettingsNavRow] Rejected row "${row.id}": duplicate id`,
     );
     return;
   }
-  SETTINGS_NAV_REGISTRY.push(row);
+  _registry.push(row);
   _settingsNavVersion += 1;
   _settingsNavListeners.forEach((listener) => listener());
 }
 
 export function resetSettingsNavForTesting(): void {
-  SETTINGS_NAV_REGISTRY.length = 0;
+  if (import.meta.env.MODE !== "test") return;
+  _registry.length = 0;
   _settingsNavVersion = 0;
   _settingsNavListeners.clear();
 }

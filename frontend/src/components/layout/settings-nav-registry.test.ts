@@ -243,9 +243,10 @@ describe("settings-nav-registry", () => {
   });
 
   describe("seed rows", () => {
-    test("three rows present after module import (Organization, Account, User in that order)", () => {
-      // resetSettingsNavForTesting is called in beforeEach, so re-seed by importing
-      // The seed rows are loaded at module import time; after reset we register manually to match
+    test("registers default rows (Organization, Account, User) when called in seed order", () => {
+      // Simulates the seed block at the bottom of settings-nav-registry.ts.
+      // resetSettingsNavForTesting() clears module-load-time seeds in beforeEach,
+      // so we re-register manually here to verify the expected registry shape.
       registerSettingsNavRow({
         id: sId("organization"),
         label: "Organization",

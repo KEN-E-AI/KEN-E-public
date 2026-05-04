@@ -6,25 +6,8 @@ import type { SettingsNavRowId } from "@/components/layout/LayoutSettings";
 
 const sId = (value: string) => value as SettingsNavRowId;
 
-// Register fixture rows at module load — demonstrates the registry-driven API
-registerSettingsNavRow({
-  id: sId("organization"),
-  label: "Organization",
-  path: "/settings/organization",
-  order: 10,
-});
-registerSettingsNavRow({
-  id: sId("account"),
-  label: "Account",
-  path: "/settings/account",
-  order: 20,
-});
-registerSettingsNavRow({
-  id: sId("user"),
-  label: "User",
-  path: "/settings/user",
-  order: 30,
-});
+// Organization / Account / User rows are seeded by settings-nav-registry.ts at import time.
+// Only register harness-specific extras here.
 registerSettingsNavRow({
   id: sId("hidden"),
   label: "Should Not Appear",
