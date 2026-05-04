@@ -79,8 +79,8 @@ describe("TopNav", () => {
 
     test("inactive nav link uses the secondary-text class (WCAG AA contrast)", () => {
       // text-secondary (#475569 light / #cbd5e1 dark) gives ≥7.5:1 against
-      // the page background. The pre-fix tertiary-text (#94a3b8 / #64748b)
-      // failed AA at 2.47:1 / 3.75:1 — see plan §10.3.
+      // the page background. text-tertiary (#94a3b8 / #64748b) would fail AA
+      // at ~2.47:1 / ~3.75:1.
       renderTopNav("/performance");
       const nav = screen.getByRole("navigation", {
         name: "Primary navigation",
@@ -144,16 +144,15 @@ describe("TopNav", () => {
       renderTopNav();
       const mobile = screen.getByTestId("topnav-mobile");
 
-      // Hamburger trigger opens the nav drawer
       expect(
         within(mobile).getByRole("button", { name: "Navigation menu" }),
       ).toBeInTheDocument();
-      // NotificationBell and ProfileMenu remain in the header
       expect(
         within(mobile).getByTestId("notification-bell"),
       ).toBeInTheDocument();
       expect(within(mobile).getByTestId("profile-menu")).toBeInTheDocument();
-      // AccountSwitcher is no longer inline in the mobile header (moved into the drawer)
+      // AccountSwitcher is no longer inline in the mobile header — it lives in
+      // the drawer (asserted in the drawer-content tests below).
       expect(
         within(mobile).queryByTestId("account-switcher"),
       ).not.toBeInTheDocument();

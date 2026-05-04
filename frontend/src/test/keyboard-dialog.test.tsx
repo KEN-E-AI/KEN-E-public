@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 describe("keyboard: Esc dismisses overlay components", () => {
-  it("Dialog: Esc closes an open dialog", async () => {
+  it("Dialog: Esc closes the dialog and returns focus to the trigger", async () => {
     const user = userEvent.setup();
     render(
       <Dialog>
@@ -38,14 +38,16 @@ describe("keyboard: Esc dismisses overlay components", () => {
       </Dialog>,
     );
 
-    await user.click(screen.getByRole("button", { name: "Open" }));
+    const trigger = screen.getByRole("button", { name: "Open" });
+    await user.click(trigger);
     expect(screen.getByRole("dialog")).toBeInTheDocument();
 
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
   });
 
-  it("Sheet: Esc closes an open sheet", async () => {
+  it("Sheet: Esc closes the sheet and returns focus to the trigger", async () => {
     const user = userEvent.setup();
     render(
       <Sheet>
@@ -57,14 +59,16 @@ describe("keyboard: Esc dismisses overlay components", () => {
       </Sheet>,
     );
 
-    await user.click(screen.getByRole("button", { name: "Open" }));
+    const trigger = screen.getByRole("button", { name: "Open" });
+    await user.click(trigger);
     expect(screen.getByRole("dialog")).toBeInTheDocument();
 
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
   });
 
-  it("Popover: Esc closes an open popover", async () => {
+  it("Popover: Esc closes the popover and returns focus to the trigger", async () => {
     const user = userEvent.setup();
     render(
       <Popover>
@@ -73,14 +77,16 @@ describe("keyboard: Esc dismisses overlay components", () => {
       </Popover>,
     );
 
-    await user.click(screen.getByRole("button", { name: "Open" }));
+    const trigger = screen.getByRole("button", { name: "Open" });
+    await user.click(trigger);
     expect(screen.getByText("Popover body")).toBeInTheDocument();
 
     await user.keyboard("{Escape}");
     expect(screen.queryByText("Popover body")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
   });
 
-  it("DropdownMenu: Esc closes an open dropdown", async () => {
+  it("DropdownMenu: Esc closes the dropdown and returns focus to the trigger", async () => {
     const user = userEvent.setup();
     render(
       <DropdownMenu>
@@ -92,10 +98,12 @@ describe("keyboard: Esc dismisses overlay components", () => {
       </DropdownMenu>,
     );
 
-    await user.click(screen.getByRole("button", { name: "Open" }));
+    const trigger = screen.getByRole("button", { name: "Open" });
+    await user.click(trigger);
     expect(screen.getByRole("menu")).toBeInTheDocument();
 
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
   });
 });

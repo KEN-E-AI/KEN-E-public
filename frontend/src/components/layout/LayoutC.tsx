@@ -108,11 +108,10 @@ function LayoutCInner() {
 
   const isHome = location.pathname === "/";
   // Routes that opt out of the max-w-screen-2xl content constraint and render
-  // full-bleed. The /knowledge family + /measurement-plan are preserved from
-  // pre-migration commit 8042599 ("add max-width constraint to improve UX on
-  // large screens"), which set maxWidth={false} on those pages so wide tables
-  // (MetricsConfiguration, CompetitorsManagement, CustomerProfilesManagement,
-  // DashboardView) don't horizontally clip on large monitors.
+  // full-bleed. /knowledge/*, /measurement-plan, /strategy, /workflows/automations,
+  // and /performance/dashboards/* host wide tables (MetricsConfiguration,
+  // CompetitorsManagement, CustomerProfilesManagement, DashboardView) that would
+  // horizontally clip on large monitors under the constrained width.
   const isFullWidth =
     location.pathname.startsWith("/strategy") ||
     location.pathname.startsWith("/workflows/automations") ||

@@ -8,6 +8,13 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 describe("keyboard: arrow key navigation in composite widgets", () => {
   describe("Tabs", () => {
@@ -56,6 +63,31 @@ describe("keyboard: arrow key navigation in composite widgets", () => {
       await user.keyboard("{ArrowLeft}");
       expect(screen.getByRole("tab", { name: "Tab 1" })).toHaveFocus();
     });
+
+    it("Home jumps to the first tab; End jumps to the last", async () => {
+      const user = userEvent.setup();
+      render(
+        <Tabs defaultValue="tab2">
+          <TabsList>
+            <TabsTrigger value="tab1">Tab 1</TabsTrigger>
+            <TabsTrigger value="tab2">Tab 2</TabsTrigger>
+            <TabsTrigger value="tab3">Tab 3</TabsTrigger>
+          </TabsList>
+          <TabsContent value="tab1">Content 1</TabsContent>
+          <TabsContent value="tab2">Content 2</TabsContent>
+          <TabsContent value="tab3">Content 3</TabsContent>
+        </Tabs>,
+      );
+
+      await user.tab();
+      expect(screen.getByRole("tab", { name: "Tab 2" })).toHaveFocus();
+
+      await user.keyboard("{End}");
+      expect(screen.getByRole("tab", { name: "Tab 3" })).toHaveFocus();
+
+      await user.keyboard("{Home}");
+      expect(screen.getByRole("tab", { name: "Tab 1" })).toHaveFocus();
+    });
   });
 
   describe("DropdownMenu", () => {
@@ -100,6 +132,75 @@ describe("keyboard: arrow key navigation in composite widgets", () => {
 
       await user.keyboard("{ArrowUp}");
       expect(screen.getByRole("menuitem", { name: "Item A" })).toHaveFocus();
+    });
+
+    it("Home jumps to the first item; End jumps to the last", async () => {
+      const user = userEvent.setup();
+      render(
+        <DropdownMenu>
+          <DropdownMenuTrigger>Open</DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem>Item A</DropdownMenuItem>
+            <DropdownMenuItem>Item B</DropdownMenuItem>
+            <DropdownMenuItem>Item C</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Open" }));
+      await user.keyboard("{ArrowDown}");
+
+      await user.keyboard("{End}");
+      expect(screen.getByRole("menuitem", { name: "Item C" })).toHaveFocus();
+
+      await user.keyboard("{Home}");
+      expect(screen.getByRole("menuitem", { name: "Item A" })).toHaveFocus();
+    });
+
+    it("Trigger is keyboard-activatable (Enter opens the menu and focuses the first item)", async () => {
+      const user = userEvent.setup();
+      render(
+        <DropdownMenu>
+          <DropdownMenuTrigger>Open</DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem>Item A</DropdownMenuItem>
+            <DropdownMenuItem>Item B</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>,
+      );
+
+      // Tab to the trigger — keyboard-only invocation, no mouse.
+      await user.tab();
+      expect(screen.getByRole("button", { name: "Open" })).toHaveFocus();
+
+      await user.keyboard("{Enter}");
+      expect(screen.getByRole("menu")).toBeInTheDocument();
+      expect(screen.getByRole("menuitem", { name: "Item A" })).toHaveFocus();
+    });
+  });
+
+  describe("Select (Listbox)", () => {
+    it("Trigger is keyboard-activatable (Enter opens the listbox)", async () => {
+      const user = userEvent.setup();
+      render(
+        <Select>
+          <SelectTrigger aria-label="Pick a fruit">
+            <SelectValue placeholder="Pick one" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="apple">Apple</SelectItem>
+            <SelectItem value="banana">Banana</SelectItem>
+            <SelectItem value="cherry">Cherry</SelectItem>
+          </SelectContent>
+        </Select>,
+      );
+
+      const trigger = screen.getByRole("combobox", { name: "Pick a fruit" });
+      await user.tab();
+      expect(trigger).toHaveFocus();
+
+      await user.keyboard("{Enter}");
+      expect(await screen.findByRole("listbox")).toBeInTheDocument();
     });
   });
 });

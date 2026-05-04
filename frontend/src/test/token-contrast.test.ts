@@ -130,6 +130,9 @@ const darkPairs = buildPairs(darkTokens, "dark");
 // inside buildPairs() where only a single token map is available.
 // Usage is restricted to large interactive text (≥14pt bold); large-text AA (3:1)
 // applies. Light ≈ 3.995:1, dark ≈ 3.330:1 — both ≥ 3:1 ✅.
+// NOTE: dark margin is only +0.33 above the 3:1 floor. Do not lighten
+// --color-violet-200 (or darken --color-violet-500) without re-checking this
+// pair; CI will catch a drop below 3:1 but a near-miss tweak could ship.
 // See docs/design/components/ui/accessibility-baseline.md §Exemptions.
 const accentFgPairs: Pair[] = [
   {

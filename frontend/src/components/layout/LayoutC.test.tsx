@@ -14,6 +14,13 @@ import {
 } from "./LayoutC";
 import type { LayoutBannerId } from "./LayoutC";
 
+// TopNav is mocked here to keep this file focused on LayoutC composition.
+// The TopNav <nav aria-label="Primary navigation"> landmark and its mobile
+// drawer counterpart are exercised in TopNav.test.tsx — including landmark
+// presence, drawer behaviour, and ARIA state. If you need to verify the
+// real-TopNav-inside-LayoutC composition, mount LayoutC without this mock
+// (be aware TopNav pulls in AccountSwitcher / NotificationBell / ProfileMenu
+// — each requires its own context).
 vi.mock("./TopNav", async () => {
   const actual = await vi.importActual<typeof import("./TopNav")>("./TopNav");
   return {
@@ -148,9 +155,7 @@ describe("LayoutC", () => {
 
   describe("content-area max-width (isFullWidth allowlist)", () => {
     // Allowlisted routes opt out of `max-w-screen-2xl` to avoid horizontally
-    // clipping wide tables on large monitors. Preserves the intent of pre-
-    // migration commit 8042599 (`maxWidth={false}` on /knowledge/*, /products,
-    // /insights, /measurement-plan), now expressed as a route allowlist.
+    // clipping wide tables on large monitors. Expressed as a route allowlist.
     const fullWidthRoutes: Array<[string, string]> = [
       ["/knowledge", "Knowledge index"],
       ["/knowledge/strategy", "Knowledge sub-route"],
@@ -271,9 +276,9 @@ describe("LayoutC", () => {
     });
 
     test("inactive tab uses the secondary-text class (WCAG AA contrast)", () => {
-      // Mirror of TopNav's desktop-pill assertion. The pre-fix tertiary-text
-      // failed WCAG AA contrast on this site too (axe flagged 9 light / 7
-      // dark violations across the two nav surfaces). See plan §10.3.
+      // Mirror of TopNav's desktop-pill assertion. text-tertiary would fail
+      // WCAG AA contrast on this surface (and used to — axe flagged 9 light /
+      // 7 dark violations across the two nav surfaces before the fix).
       renderLayoutC({ initialPath: "/performance" });
       const mobileNav = screen.getByRole("navigation", {
         name: /Primary navigation \(mobile\)/i,

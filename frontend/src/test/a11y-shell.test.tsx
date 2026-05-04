@@ -7,22 +7,30 @@ import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
 import { AppErrorBoundary } from "@/components/layout/AppErrorBoundary";
 import { NotificationBell } from "@/components/layout/NotificationBell";
-import { SidebarProvider, SidebarRail } from "@/components/ui/sidebar";
+import { useAuth } from "@/contexts/AuthContext";
+import { Sidebar, SidebarProvider, SidebarRail } from "@/components/ui/sidebar";
 
 vi.mock("@/utils/authRecovery", () => ({
   forceCleanLogout: vi.fn(),
 }));
 
 vi.mock("@/contexts/AuthContext", () => ({
-  useAuth: () => ({
-    notifications: [],
-    selectedOrgAccount: null,
-  }),
+  useAuth: vi.fn(),
 }));
 
 vi.mock("@/components/notifications/NotificationSidebar", () => ({
   NotificationSidebar: () => null,
 }));
+
+beforeEach(() => {
+  // Default: no notifications, no selected account. Individual tests override
+  // via mockReturnValueOnce when they need different state.
+  vi.mocked(useAuth).mockReturnValue({
+    notifications: [],
+    selectedOrgAccount: null,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any);
+});
 
 describe("axe sweep — shell components", () => {
   describe("ThemeToggle", () => {
@@ -41,13 +49,41 @@ describe("axe sweep — shell components", () => {
       const { container } = render(<NotificationBell />);
       expect(await runAxe(container)).toHaveNoViolations();
     });
+
+    it("has no axe violations with unread badge visible", async () => {
+      vi.mocked(useAuth).mockReturnValueOnce({
+        notifications: [
+          {
+            id: "n1",
+            status: "unread",
+            title: "Test 1",
+            message: "Body 1",
+          },
+          {
+            id: "n2",
+            status: "unread",
+            title: "Test 2",
+            message: "Body 2",
+          },
+        ],
+        selectedOrgAccount: { accountId: "acct-1" },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+      const { container } = render(<NotificationBell />);
+      expect(await runAxe(container)).toHaveNoViolations();
+    });
   });
 
   describe("SidebarRail", () => {
-    it("has no axe violations inside a SidebarProvider", async () => {
+    // SidebarRail's visibility/styling depends on data-side selectors set by
+    // the parent <Sidebar>. Rendering bare under SidebarProvider would axe-sweep
+    // a stripped element that doesn't match the production tree.
+    it("has no axe violations inside a Sidebar parent (left side)", async () => {
       const { container } = render(
         <SidebarProvider>
-          <SidebarRail />
+          <Sidebar side="left">
+            <SidebarRail />
+          </Sidebar>
         </SidebarProvider>,
       );
       expect(await runAxe(container)).toHaveNoViolations();
