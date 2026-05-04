@@ -136,6 +136,8 @@ const App = () => (
                   <BackgroundEffects />
                   <Routes>
                     {/* Unprotected routes */}
+                    <Route path="/sign-in" element={<AuthenticationPage />} />
+                    <Route path="/sign-up" element={<AuthenticationPage />} />
                     <Route
                       path="/auth/signin"
                       element={<AuthenticationPage />}

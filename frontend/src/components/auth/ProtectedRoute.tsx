@@ -1,7 +1,6 @@
 import { ReactNode } from "react";
-import { useLocation } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import Authentication from "@/pages/Authentication";
 import OrganizationSelection from "@/pages/OrganizationSelection";
 
 interface ProtectedRouteProps {
@@ -14,7 +13,6 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
     isAuthenticated,
     isAuthLoading,
     hasSelectedWorkspace,
-    login,
     completeWorkspaceSelection,
   } = useAuth();
 
@@ -30,9 +28,10 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
     );
   }
 
-  // If not authenticated, show authentication page
+  // If not authenticated, redirect to /sign-in carrying the original path for
+  // post-auth return navigation (AuthenticationPage already reads location.state?.from)
   if (!isAuthenticated) {
-    return <Authentication onAuthenticated={() => {}} />;
+    return <Navigate to="/sign-in" replace state={{ from: location }} />;
   }
 
   // If authenticated but hasn't selected workspace, show organization selection
