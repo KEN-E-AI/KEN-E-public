@@ -24,7 +24,7 @@ const EXPECTED_NAV = [
   { name: "Chat", href: "/" },
   { name: "Performance", href: "/performance" },
   { name: "Calendar", href: "/calendar" },
-  { name: "Workflows", href: "/workflows" },
+  { name: "Workflows", href: "/workflows/agents" },
   { name: "Knowledge", href: "/strategy" },
   { name: "Extensions", href: "/extensions" },
   { name: "Settings", href: "/settings/account" },
@@ -75,6 +75,28 @@ describe("TopNav", () => {
         name: /^performance$/i,
       });
       expect(performanceLink).toHaveClass("bg-[var(--color-violet-500)]");
+    });
+
+    test("Workflows link is active on /workflows/agents (direct route)", () => {
+      renderTopNav("/workflows/agents");
+      const nav = screen.getByRole("navigation", {
+        name: "Primary navigation",
+      });
+      const workflowsLink = within(nav).getByRole("link", {
+        name: /^workflows$/i,
+      });
+      expect(workflowsLink).toHaveClass("bg-[var(--color-violet-500)]");
+    });
+
+    test("Workflows link is active on every /workflows/* sub-path", () => {
+      renderTopNav("/workflows/automations");
+      const nav = screen.getByRole("navigation", {
+        name: "Primary navigation",
+      });
+      const workflowsLink = within(nav).getByRole("link", {
+        name: /^workflows$/i,
+      });
+      expect(workflowsLink).toHaveClass("bg-[var(--color-violet-500)]");
     });
 
     test("inactive nav link uses the secondary-text class (WCAG AA contrast)", () => {

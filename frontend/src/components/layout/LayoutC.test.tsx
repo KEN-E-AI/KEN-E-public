@@ -250,7 +250,7 @@ describe("LayoutC", () => {
         ["Chat", "/"],
         ["Performance", "/performance"],
         ["Calendar", "/calendar"],
-        ["Workflows", "/workflows"],
+        ["Workflows", "/workflows/agents"],
         ["Knowledge", "/strategy"],
         ["Extensions", "/extensions"],
         ["Settings", "/settings/account"],
