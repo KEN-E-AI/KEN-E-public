@@ -52,6 +52,7 @@ import AcceptInvitation from "./pages/AcceptInvitation";
 import NotFoundPage from "./pages/NotFoundPage";
 import EmailActionHandler from "./components/auth/EmailActionHandler";
 import Authentication from "./pages/Authentication";
+import { WorkflowsLayout } from "./pages/workflows/WorkflowsLayout";
 // Import test utilities in development
 if (import.meta.env.DEV) {
   import("./utils/testNotification");
@@ -231,6 +232,53 @@ const App = () => (
                       <Route
                         path="/knowledge/brand"
                         element={<KnowledgeBrand />}
+                      />
+                      {/* Workflows shell — production stubs for WorkflowsLayout (UI-35).
+                          Tab page content is owned by UI-38/39/40/41; these routes
+                          ship the layout chrome so the nav entry and URL-sync work today. */}
+                      <Route
+                        path="/workflows"
+                        element={<Navigate to="/workflows/agents" replace />}
+                      />
+                      <Route
+                        path="/workflows/agents"
+                        element={
+                          <WorkflowsLayout activeTab="agents">
+                            <div className="p-6 text-sm text-muted-foreground">
+                              Agents tab — content coming in UI-38
+                            </div>
+                          </WorkflowsLayout>
+                        }
+                      />
+                      <Route
+                        path="/workflows/skills"
+                        element={
+                          <WorkflowsLayout activeTab="skills">
+                            <div className="p-6 text-sm text-muted-foreground">
+                              Skills tab — content coming in UI-40
+                            </div>
+                          </WorkflowsLayout>
+                        }
+                      />
+                      <Route
+                        path="/workflows/automations"
+                        element={
+                          <WorkflowsLayout activeTab="automations">
+                            <div className="p-6 text-sm text-muted-foreground">
+                              Automations tab — content coming in UI-39
+                            </div>
+                          </WorkflowsLayout>
+                        }
+                      />
+                      <Route
+                        path="/workflows/agents/new"
+                        element={
+                          <WorkflowsLayout activeTab="agents">
+                            <div className="p-6 text-sm text-muted-foreground">
+                              Agent create form — coming in UI-41
+                            </div>
+                          </WorkflowsLayout>
+                        }
                       />
                       <Route path="/measurement-plan" element={<Index />} />
                       <Route

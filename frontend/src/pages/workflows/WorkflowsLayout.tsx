@@ -16,6 +16,12 @@ const tabs = [
   { value: "automations" as const, name: "Automations", icon: RefreshCw },
 ];
 
+const ALLOWED_TABS: readonly WorkflowTab[] = [
+  "agents",
+  "skills",
+  "automations",
+];
+
 export function WorkflowsLayout({ activeTab, children }: WorkflowsLayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -45,7 +51,10 @@ export function WorkflowsLayout({ activeTab, children }: WorkflowsLayoutProps) {
           <Tabs
             value={activeTab}
             onValueChange={(value) => {
-              if (value !== activeTab) {
+              if (
+                value !== activeTab &&
+                (ALLOWED_TABS as string[]).includes(value)
+              ) {
                 navigate(`/workflows/${value}`);
               }
             }}
