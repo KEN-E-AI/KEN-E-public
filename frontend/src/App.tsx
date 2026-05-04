@@ -244,7 +244,7 @@ const App = () => (
                         path="/workflows/agents"
                         element={
                           <WorkflowsLayout activeTab="agents">
-                            <div className="p-6 text-sm text-muted-foreground">
+                            <div className="p-6 text-sm text-foreground">
                               Agents tab — content coming in UI-38
                             </div>
                           </WorkflowsLayout>
@@ -254,7 +254,7 @@ const App = () => (
                         path="/workflows/skills"
                         element={
                           <WorkflowsLayout activeTab="skills">
-                            <div className="p-6 text-sm text-muted-foreground">
+                            <div className="p-6 text-sm text-foreground">
                               Skills tab — content coming in UI-40
                             </div>
                           </WorkflowsLayout>
@@ -264,7 +264,7 @@ const App = () => (
                         path="/workflows/automations"
                         element={
                           <WorkflowsLayout activeTab="automations">
-                            <div className="p-6 text-sm text-muted-foreground">
+                            <div className="p-6 text-sm text-foreground">
                               Automations tab — content coming in UI-39
                             </div>
                           </WorkflowsLayout>
@@ -274,7 +274,7 @@ const App = () => (
                         path="/workflows/agents/new"
                         element={
                           <WorkflowsLayout activeTab="agents">
-                            <div className="p-6 text-sm text-muted-foreground">
+                            <div className="p-6 text-sm text-foreground">
                               Agent create form — coming in UI-41
                             </div>
                           </WorkflowsLayout>
