@@ -71,9 +71,7 @@ describe("AgentCreatePage", () => {
     filterButtons.forEach((btn) => expect(btn).toBeDisabled());
 
     // Tool rows are disabled
-    const toolButtons = screen
-      .getAllByRole("button")
-      .filter((b) => b.classList.contains("w-full"));
+    const toolButtons = screen.getAllByTestId("tool-row");
     expect(toolButtons.length).toBeGreaterThan(0);
     toolButtons.forEach((btn) => expect(btn).toBeDisabled());
   });

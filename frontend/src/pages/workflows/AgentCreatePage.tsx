@@ -208,6 +208,8 @@ const skillTools: AgentTool[] = [
   },
 ];
 
+const allTools: AgentTool[] = [...availableTools, ...skillTools];
+
 // ─── Stepper ───
 
 const STEPS = [
@@ -228,11 +230,9 @@ export function AgentCreatePage() {
     new Set(),
   );
 
-  const allTools = useMemo(() => [...availableTools, ...skillTools], []);
-
   const equippedTools = useMemo(
     () => allTools.filter((t) => equippedToolIds.has(t.id)),
-    [allTools, equippedToolIds],
+    [equippedToolIds],
   );
 
   const selectedModel = availableModels.find((m) => m.id === model);
@@ -295,7 +295,7 @@ export function AgentCreatePage() {
               {s.id < step ? (
                 <Check className="size-3.5" />
               ) : (
-                <span className="size-5 flex items-center justify-center rounded-full bg-white/20 text-xs">
+                <span className="size-5 flex items-center justify-center rounded-full bg-[var(--color-text-inverse)]/20 text-xs">
                   {s.id}
                 </span>
               )}
@@ -573,6 +573,7 @@ function StepTools({
             return (
               <button
                 key={tool.id}
+                data-testid="tool-row"
                 onClick={() => toggleTool(tool.id)}
                 disabled
                 className={cn(
@@ -603,7 +604,7 @@ function StepTools({
                     {isDisconnected && (
                       <Badge
                         variant="outline"
-                        className="text-[10px] px-1.5 py-0 gap-1 text-amber-600 border-amber-300"
+                        className="text-[10px] px-1.5 py-0 gap-1 text-[var(--color-amber-500)] border-[var(--color-amber-300)]"
                       >
                         <Link2Off className="size-3" />
                         Not Connected
@@ -617,7 +618,7 @@ function StepTools({
                 <div className="shrink-0 mt-1">
                   {isEquipped ? (
                     <div className="size-6 rounded-full bg-[var(--color-teal-500)] flex items-center justify-center">
-                      <Check className="size-3.5 text-white" />
+                      <Check className="size-3.5 text-[var(--color-text-inverse)]" />
                     </div>
                   ) : (
                     <div className="size-6 rounded-full border-2 border-[var(--color-border-default)] flex items-center justify-center">
@@ -788,7 +789,7 @@ function StepReview({
                       <Badge key={t.id} variant="outline" className="gap-1">
                         {t.name}
                         {t.connected === false && (
-                          <Link2Off className="size-3 text-amber-500" />
+                          <Link2Off className="size-3 text-[var(--color-amber-500)]" />
                         )}
                       </Badge>
                     ))}
@@ -818,9 +819,9 @@ function StepReview({
       {/* Disconnected integrations warning */}
       {integrationTools.some((t) => t.connected === false) && (
         <div className="flex items-start gap-3 p-4 rounded-[var(--radius-md)] bg-[var(--color-amber-100)] border border-[var(--color-amber-300)]">
-          <Link2Off className="size-4 text-amber-600 mt-0.5 shrink-0" />
+          <Link2Off className="size-4 text-[var(--color-amber-500)] mt-0.5 shrink-0" />
           <div>
-            <p className="text-sm text-amber-800">
+            <p className="text-sm text-[var(--color-amber-500)]">
               Some integration tools are not connected yet. The agent will be
               created, but those tools won&apos;t function until you connect
               them in Settings.
