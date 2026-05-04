@@ -127,8 +127,15 @@ const AuthenticationPage = () => {
         // Redirect to invitation acceptance page after authentication
         navigate(`/invite/${invitationToken}`);
       } else {
-        // Check if there's a redirect location in state
-        const from = location.state?.from || "/";
+        // Check if there's a redirect location in state.
+        // Only accept same-origin relative paths to prevent open-redirect attacks.
+        const raw = location.state?.from;
+        const from =
+          typeof raw === "string" &&
+          raw.startsWith("/") &&
+          !raw.startsWith("//")
+            ? raw
+            : "/";
         navigate(from);
       }
     } catch (error) {
@@ -217,7 +224,12 @@ const App = () => (
                       element={<Navigate to="/settings/user" replace />}
                     />
                     {/* Settings routes — wrapped in LayoutSettings with sub-nav.
-                        UI-28 will replace SETTINGS_NAV_ITEMS with SETTINGS_NAV_REGISTRY. */}
+                        UI-28 will replace SETTINGS_NAV_ITEMS with SETTINGS_NAV_REGISTRY.
+                        ProtectedRoute uses the children-render pattern (pre-UI-23): it renders
+                        children (LayoutSettings) only when authenticated. LayoutSettings then
+                        renders <Outlet /> for its child routes. When UI-23 converts ProtectedRoute
+                        to the outlet pattern, move it to a path-less parent route and remove the
+                        children wrapper here. */}
                     <Route
                       element={
                         <ProtectedRoute>

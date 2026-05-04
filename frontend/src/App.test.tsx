@@ -13,7 +13,8 @@ vi.mock("@/components/layout/ProfileMenu", () => ({
   ProfileMenu: () => <div data-testid="profile-menu">ProfileMenu</div>,
 }));
 
-// Settings seed matching SETTINGS_NAV_ITEMS in App.tsx
+// Settings seed matching SETTINGS_NAV_ITEMS in App.tsx.
+// If you add/remove items in App.tsx, update this fixture too (tracked: UI-28).
 const SETTINGS_NAV_ITEMS: SettingsNavRow[] = [
   {
     id: "organization" as SettingsNavRowId,

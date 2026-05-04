@@ -241,7 +241,7 @@ const AcceptInvitation = () => {
                 className="flex-1"
                 onClick={() => {
                   logout();
-                  navigate("/login", { state: { from: `/invite/${token}` } });
+                  navigate("/sign-in", { state: { from: `/invite/${token}` } });
                 }}
               >
                 Sign In with Different Account
