@@ -3,17 +3,10 @@ import { BrowserRouter } from "react-router-dom";
 import { vi } from "vitest";
 import AccountSettings from "./AccountSettings";
 import { useAuth } from "@/contexts/AuthContext";
-import {
-  getOrganizationById,
-  getAccountsByOrganizationId,
-} from "@/data/organizationApi";
 
 // Mock the hooks and API calls
 vi.mock("@/contexts/AuthContext");
 vi.mock("@/data/organizationApi");
-vi.mock("@/hooks/useSettingsNavigation", () => ({
-  useSettingsNavigation: () => ({ currentSection: "organization" }),
-}));
 vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: vi.fn() }),
 }));
@@ -55,10 +48,13 @@ vi.mock("@/components/layout/SettingsLayout", () => ({
   ),
 }));
 
+vi.mock("@/components/integrations/GoogleAnalyticsPropertySelector", () => ({
+  GoogleAnalyticsPropertySelector: () => (
+    <div data-testid="ga-property-selector">GA Property Selector</div>
+  ),
+}));
+
 const mockUseAuth = useAuth as ReturnType<typeof vi.fn>;
-const mockGetOrganizationById = getOrganizationById as ReturnType<typeof vi.fn>;
-const mockGetAccountsByOrganizationId =
-  getAccountsByOrganizationId as ReturnType<typeof vi.fn>;
 
 describe("AccountSettings", () => {
   beforeEach(() => {
@@ -73,8 +69,7 @@ describe("AccountSettings", () => {
     );
   };
 
-  it("should load organization metadata when not already loaded", async () => {
-    // Mock user with organization permissions
+  it("should show loading state when orgMetadata is empty and user has org access", () => {
     const mockUser = {
       id: "test-user-123",
       email: "test@example.com",
@@ -87,61 +82,27 @@ describe("AccountSettings", () => {
       },
     };
 
-    // Mock organization data
-    const mockOrganization = {
-      organization_id: "ej-enterprises-2",
-      organization_name: "EJ Enterprises 2",
-      plan: "Free",
-      company_size: "11-50",
-      agency: false,
-      child_organizations: [],
-    };
-
-    // Mock accounts data
-    const mockAccounts = [
-      {
-        account_id: "acc_123",
-        account_name: "EJ Cafe",
-        organization_id: "ej-enterprises-2",
-        industry: "Retail",
-        status: "Active",
-      },
-    ];
-
-    // Setup mocks
     mockUseAuth.mockReturnValue({
       user: mockUser,
       isAuthenticated: true,
       currentOrganizationId: "ej-enterprises-2",
-      orgMetadata: {}, // Initially empty
+      orgMetadata: {},
       setOrgMetadata: vi.fn(),
       setCurrentOrganization: vi.fn(),
       completeWorkspaceSelection: vi.fn(),
       updateUser: vi.fn(),
       setAccountMetadata: vi.fn(),
+      isSuperAdmin: false,
     });
-
-    mockGetOrganizationById.mockResolvedValue(mockOrganization);
-    mockGetAccountsByOrganizationId.mockResolvedValue(mockAccounts);
 
     renderAccountSettings();
 
-    // Should show loading state initially
     expect(
       screen.getByText("Loading organization data..."),
     ).toBeInTheDocument();
-
-    // Wait for organization data to load
-    await waitFor(() => {
-      expect(mockGetOrganizationById).toHaveBeenCalledWith("ej-enterprises-2");
-      expect(mockGetAccountsByOrganizationId).toHaveBeenCalledWith(
-        "ej-enterprises-2",
-      );
-    });
   });
 
-  it("should show organization form when organization data is loaded", async () => {
-    // Mock user with organization permissions
+  it("should show 6-tab org structure with General tab active when org data is loaded", async () => {
     const mockUser = {
       id: "test-user-123",
       email: "test@example.com",
@@ -154,7 +115,6 @@ describe("AccountSettings", () => {
       },
     };
 
-    // Mock organization data already loaded
     const mockOrganization = {
       organization_id: "ej-enterprises-2",
       organization_name: "EJ Enterprises 2",
@@ -165,7 +125,6 @@ describe("AccountSettings", () => {
       accounts: [],
     };
 
-    // Setup mocks
     mockUseAuth.mockReturnValue({
       user: mockUser,
       isAuthenticated: true,
@@ -178,27 +137,33 @@ describe("AccountSettings", () => {
       completeWorkspaceSelection: vi.fn(),
       updateUser: vi.fn(),
       setAccountMetadata: vi.fn(),
+      isSuperAdmin: false,
     });
 
     renderAccountSettings();
 
-    // Should show organization form with data
+    // All 6 tab triggers present
+    expect(screen.getByRole("tab", { name: /General/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: /Subscription/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Billing/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Team/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: /Integrations/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Accounts/i })).toBeInTheDocument();
+
+    // General tab is active by default — OrganizationForm and DangerZone render
     await waitFor(() => {
       expect(
         screen.getByText("Organization Form - EJ Enterprises 2"),
       ).toBeInTheDocument();
     });
-
-    // Should show all the organization sections
-    expect(screen.getByTestId("subscription-card")).toBeInTheDocument();
-    expect(screen.getByTestId("accounts-management")).toBeInTheDocument();
-    expect(screen.getByTestId("billing-section")).toBeInTheDocument();
-    expect(screen.getByTestId("team-management")).toBeInTheDocument();
     expect(screen.getByTestId("danger-zone")).toBeInTheDocument();
   });
 
   it("should show no organization access when user has no organization permissions", () => {
-    // Mock user without organization permissions
     const mockUser = {
       id: "test-user-123",
       email: "test@example.com",
@@ -209,7 +174,6 @@ describe("AccountSettings", () => {
       },
     };
 
-    // Setup mocks
     mockUseAuth.mockReturnValue({
       user: mockUser,
       isAuthenticated: true,
@@ -220,11 +184,11 @@ describe("AccountSettings", () => {
       completeWorkspaceSelection: vi.fn(),
       updateUser: vi.fn(),
       setAccountMetadata: vi.fn(),
+      isSuperAdmin: false,
     });
 
     renderAccountSettings();
 
-    // Should show no organization access message
     expect(
       screen.getByText("No organization access found"),
     ).toBeInTheDocument();

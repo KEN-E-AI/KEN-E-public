@@ -22,6 +22,8 @@ import { AppErrorBoundary } from "@/components/layout/AppErrorBoundary";
 import "./App.css";
 
 import { LayoutC } from "@/components/layout/LayoutC";
+import { LayoutSettings } from "@/components/layout/LayoutSettings";
+import { SETTINGS_NAV_ITEMS } from "@/lib/settingsNav";
 import Index from "./pages/Index";
 import Home from "./pages/Home";
 import Performance from "./pages/Performance";
@@ -239,15 +241,6 @@ const App = () => (
                       />
                       <Route path="/settings" element={<Settings />} />
                       <Route
-                        path="/settings/organization"
-                        element={<AccountSettings />}
-                      />
-                      <Route
-                        path="/settings/account/:accountId"
-                        element={<AccountSettings />}
-                      />
-                      <Route path="/settings/user" element={<UserSettings />} />
-                      <Route
                         path="/settings/admin"
                         element={<AdminSettings />}
                       />
@@ -269,6 +262,28 @@ const App = () => (
                       />
                       {/* Catch-all inside LayoutC so authenticated users see the 404 with chrome */}
                       <Route path="*" element={<NotFoundPage />} />
+                    </Route>
+                    {/* Settings routes — inside LayoutSettings (left-rail nav shell) */}
+                    <Route
+                      element={
+                        <ProtectedRoute>
+                          <LayoutSettings subNavItems={SETTINGS_NAV_ITEMS} />
+                        </ProtectedRoute>
+                      }
+                    >
+                      <Route
+                        path="/settings/organization"
+                        element={<AccountSettings />}
+                      />
+                      <Route
+                        path="/settings/account"
+                        element={<AccountSettings />}
+                      />
+                      <Route
+                        path="/settings/account/:accountId"
+                        element={<AccountSettings />}
+                      />
+                      <Route path="/settings/user" element={<UserSettings />} />
                     </Route>
                     {/* Dev-only harness routes — tree-shaken from production bundle */}
                     {import.meta.env.DEV && LazyLayoutSettingsHarness && (
