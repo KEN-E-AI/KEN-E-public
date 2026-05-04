@@ -1,3 +1,4 @@
+// NOTE: Class-contract lock only — runtime breakpoint behaviour is not verified by JSDOM.
 import { describe, test, expect, beforeEach, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";

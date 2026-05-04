@@ -1,4 +1,5 @@
 import { describe, test, expect, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
 import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ExtensionsProvider } from "@/contexts/ExtensionsContext";
@@ -139,18 +140,23 @@ describe("TopNav", () => {
   });
 
   describe("mobile compact header", () => {
-    test("renders Logo + compact AccountSwitcher + NotificationBell + ProfileMenu", () => {
+    test("renders hamburger trigger + Logo + NotificationBell + ProfileMenu (AccountSwitcher moved to drawer)", () => {
       renderTopNav();
       const mobile = screen.getByTestId("topnav-mobile");
 
-      expect(within(mobile).getByTestId("account-switcher")).toHaveAttribute(
-        "data-compact",
-        "true",
-      );
+      // Hamburger trigger opens the nav drawer
+      expect(
+        within(mobile).getByRole("button", { name: "Open navigation menu" }),
+      ).toBeInTheDocument();
+      // NotificationBell and ProfileMenu remain in the header
       expect(
         within(mobile).getByTestId("notification-bell"),
       ).toBeInTheDocument();
       expect(within(mobile).getByTestId("profile-menu")).toBeInTheDocument();
+      // AccountSwitcher is no longer inline in the mobile header (moved into the drawer)
+      expect(
+        within(mobile).queryByTestId("account-switcher"),
+      ).not.toBeInTheDocument();
     });
 
     test("renders the rainbow gradient bottom border at 3px (vs 4px on desktop)", () => {
@@ -175,6 +181,69 @@ describe("TopNav", () => {
           name: "Primary navigation",
         }),
       ).not.toBeInTheDocument();
+    });
+
+    test("renders a hamburger button (Open navigation menu) at mobile breakpoint", () => {
+      renderTopNav();
+      const trigger = screen.getByRole("button", {
+        name: "Open navigation menu",
+      });
+      expect(trigger).toBeInTheDocument();
+      expect(trigger).toHaveAttribute("data-testid", "mobile-nav-trigger");
+    });
+  });
+
+  describe("mobile nav drawer", () => {
+    test("hamburger click opens the drawer containing AccountSwitcher", async () => {
+      const user = userEvent.setup();
+      renderTopNav();
+
+      const trigger = screen.getByRole("button", {
+        name: "Open navigation menu",
+      });
+      await user.click(trigger);
+
+      const drawer = screen.getByTestId("mobile-nav-drawer");
+      expect(drawer).toBeInTheDocument();
+      expect(
+        within(drawer).getByTestId("account-switcher"),
+      ).toBeInTheDocument();
+    });
+
+    test("drawer contains all 7 navigation links with correct hrefs", async () => {
+      const user = userEvent.setup();
+      renderTopNav();
+
+      await user.click(
+        screen.getByRole("button", { name: "Open navigation menu" }),
+      );
+
+      const drawer = screen.getByTestId("mobile-nav-drawer");
+      const nav = within(drawer).getByRole("navigation", {
+        name: "Primary navigation (mobile drawer)",
+      });
+      const links = within(nav).getAllByRole("link");
+      expect(links).toHaveLength(7);
+
+      EXPECTED_NAV.forEach(({ name, href }) => {
+        const link = within(nav).getByRole("link", {
+          name: new RegExp(`^${name}$`, "i"),
+        });
+        expect(link).toHaveAttribute("href", href);
+      });
+    });
+
+    test("pressing Escape closes the drawer", async () => {
+      const user = userEvent.setup();
+      renderTopNav();
+
+      await user.click(
+        screen.getByRole("button", { name: "Open navigation menu" }),
+      );
+      expect(screen.getByTestId("mobile-nav-drawer")).toBeInTheDocument();
+
+      await user.keyboard("{Escape}");
+      expect(screen.queryByTestId("mobile-nav-drawer")).not.toBeInTheDocument();
     });
   });
 });

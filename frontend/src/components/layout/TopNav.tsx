@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   MessageSquare,
@@ -7,6 +8,7 @@ import {
   BookOpen,
   Puzzle,
   Settings,
+  Menu,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -15,6 +17,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Sheet,
+  SheetContent,
+  SheetClose,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { Logo } from "@/components/branding/Logo";
 import { AccountSwitcher } from "./AccountSwitcher";
 import { NotificationBell } from "./NotificationBell";
@@ -44,6 +53,7 @@ function isItemActive(pathname: string, href: string): boolean {
 
 export function TopNav() {
   const location = useLocation();
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   return (
     <>
@@ -127,14 +137,63 @@ export function TopNav() {
           borderImage: "var(--gradient-rainbow) 1",
         }}
       >
-        <div className="flex items-center gap-2 min-w-0 flex-1">
-          <div className="shrink-0">
-            <Logo variant="icon" size="sm" />
-          </div>
-          <div className="min-w-0">
-            <AccountSwitcher compact />
-          </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Sheet open={drawerOpen} onOpenChange={setDrawerOpen}>
+            <SheetTrigger asChild>
+              <button
+                aria-label="Open navigation menu"
+                data-testid="mobile-nav-trigger"
+                className="p-2 rounded-[var(--radius-sm)] text-[var(--color-text-secondary)] hover:bg-[var(--color-accent)] transition-colors"
+              >
+                <Menu className="size-5" aria-hidden="true" />
+              </button>
+            </SheetTrigger>
+
+            {/* aria-describedby={undefined}: no SheetDescription present; suppresses Radix missing-description warning in JSDOM. UI-21. */}
+            <SheetContent
+              side="left"
+              className="p-0 w-72 flex flex-col"
+              data-testid="mobile-nav-drawer"
+              aria-describedby={undefined}
+            >
+              <SheetTitle className="sr-only">Navigation</SheetTitle>
+
+              {/* pt-10 clears the built-in SheetContent close button (absolute right-4 top-4). */}
+              <div className="pt-10 px-4 pb-4 border-b border-[var(--color-border-default)]">
+                <AccountSwitcher />
+              </div>
+
+              <nav
+                aria-label="Primary navigation (mobile drawer)"
+                className="flex-1 overflow-y-auto py-2"
+              >
+                {/* Extensions renders as a plain drawer link (mobile sub-menu deferred — no Figma spec for mobile drawer). TODO(UI-21): add nested extension list when mobile drawer spec ships. */}
+                {NAVIGATION.map((item) => {
+                  const isActive = isItemActive(location.pathname, item.href);
+                  return (
+                    <SheetClose asChild key={item.name}>
+                      <Link
+                        to={item.href}
+                        className={cn(
+                          "flex items-center gap-3 px-4 py-3 text-[var(--text-body-md)] font-bold transition-colors",
+                          isActive
+                            ? "bg-[var(--color-accent)] text-[var(--color-violet-500)]"
+                            : "text-[var(--color-text-secondary)] hover:bg-[var(--color-accent)] hover:text-[var(--color-violet-500)]",
+                        )}
+                      >
+                        <item.icon className="size-5 shrink-0" />
+                        {item.name}
+                      </Link>
+                    </SheetClose>
+                  );
+                })}
+              </nav>
+            </SheetContent>
+          </Sheet>
+
+          <Logo variant="icon" size="sm" />
         </div>
+
         <div className="flex items-center gap-2 shrink-0">
           <NotificationBell />
           <ProfileMenu />

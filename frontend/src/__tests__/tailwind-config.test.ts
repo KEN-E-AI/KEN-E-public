@@ -1,3 +1,4 @@
+// NOTE: Class-contract lock only — runtime breakpoint behaviour is not verified by JSDOM.
 import { describe, test, expect } from "vitest";
 import config from "../../tailwind.config";
 
