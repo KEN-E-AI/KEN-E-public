@@ -1,8 +1,9 @@
+import type { ReactNode } from "react";
 import { MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 type EmptyStateProps = {
-  icon?: React.ReactNode;
+  icon?: ReactNode;
   title: string;
   description?: string;
   actionLabel?: string;

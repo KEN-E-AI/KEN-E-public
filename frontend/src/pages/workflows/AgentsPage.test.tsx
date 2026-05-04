@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
@@ -11,6 +11,10 @@ vi.mock("react-router-dom", async () => {
       "react-router-dom",
     );
   return { ...actual, useNavigate: () => mockNavigate };
+});
+
+beforeEach(() => {
+  mockNavigate.mockReset();
 });
 
 function renderAgentsPage() {
