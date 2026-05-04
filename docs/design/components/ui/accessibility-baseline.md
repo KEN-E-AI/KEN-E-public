@@ -23,8 +23,10 @@ The `frontend-a11y-tests` step in `deployment/ci/pr_checks.yaml` runs on every P
 | `src/test/token-contrast.test.ts` | In-use token-pair WCAG AA verification |
 | `src/test/focus-ring-audit.test.ts` | Static `outline-none` / focus-ring audit |
 | `src/test/a11y-primitives.test.tsx` | axe sweeps — Button, Input, Alert, Badge, Card |
-| `src/test/a11y-shell.test.tsx` | axe sweeps — ThemeToggle, AppErrorBoundary fallback |
+| `src/test/a11y-shell.test.tsx` | axe sweeps — ThemeToggle, AppErrorBoundary fallback, NotificationBell, SidebarRail |
 | `src/test/keyboard-nav.test.tsx` | Keyboard Tab + Enter/Space activation smoke tests |
+| `src/test/keyboard-dialog.test.tsx` | Esc dismisses Dialog, Sheet, Popover, DropdownMenu |
+| `src/test/keyboard-menu.test.tsx` | Arrow key navigation — Tabs, DropdownMenu, Select |
 | `src/test/reduced-motion.test.ts` | `prefers-reduced-motion` CSS rule smoke test |
 
 ### axe configuration
@@ -46,12 +48,16 @@ The following token pairs are verified in `token-contrast.test.ts`. All must mee
 | `text-secondary` on `bg-primary` | ✅ | ✅ |
 | `text-secondary` on `bg-secondary` | ✅ | ✅ |
 | `text-primary` on `bg-secondary` | ✅ | ✅ |
+| `success-text` on `success-bg` | ✅ | ✅ |
+| `error-text` on `error-bg` | ✅ | ✅ |
+| `warning-text` on `warning-bg` | ✅ | ✅ |
+| `info-text` on `info-bg` | ✅ | ✅ |
 
 ### Large text (≥ 3:1) — bold ≥ 14pt or regular ≥ 18pt
 
 | Pair | Light ratio | Dark ratio | Usage restriction |
 |------|------------|------------|-------------------|
-| `text-inverse` on `violet-500` | ~4.47:1 ✅ | ~9.2:1 ✅ | Active nav pills, badge labels only — always large/bold |
+| `text-inverse` on `violet-500` | ~4.47:1 ✅ | ~6.0:1 ✅ | Active nav pills, badge labels only — always large/bold |
 
 ---
 
@@ -61,16 +67,16 @@ The following token pairs are verified in `token-contrast.test.ts`. All must mee
 
 `--color-border-strong` (`#cbd5e1` light / `#475569` dark) is used as a visual separator between surface regions — not as text or an interactive component indicator. WCAG 1.4.11 (Non-text Contrast, 3:1) applies to UI components and graphical objects, not decorative borders. `border-strong` is intentionally excluded from the token-pair test list.
 
-**If `border-strong` is ever used for input borders or focus indicators, re-audit immediately** — those uses would require 3:1 minimum and should be flagged in UI-54.
+**If `border-strong` is ever used for input borders or focus indicators, re-audit immediately** — those uses would require 3:1 minimum and must be flagged for contrast hardening.
 
 ### `violet-500` on light `bg-primary` as normal body text
 
-`--color-violet-500` (`#6366f1`) on `--color-bg-primary` (`#ffffff`) = ~3.4:1, which does not meet AA for normal text (4.5:1). This pair is intentionally absent from the test. Its usage is limited to:
+`--color-violet-500` (`#6366f1`) on `--color-bg-primary` (`#fafbfc`) = ~4.31:1, which does not meet AA for normal text (4.5:1). This pair is intentionally absent from the test. Its usage is limited to:
 
 - Large interactive labels (nav pill text, badge labels — large text AA 3:1 ✅)
 - Icon fills where non-text contrast (3:1) applies ✅
 
-Using violet-500 for small body copy is a WCAG violation and will fail axe sweeps.
+Using violet-500 for small body copy would be a WCAG violation.
 
 ### `text-inverse` on `violet-500` — large text only
 
@@ -137,8 +143,9 @@ This universal rule suppresses all CSS transitions and animations when the user 
 
 ## Backlog
 
-Open items tracked in Linear UI-54 (contrast hardening):
+Open items (contrast hardening):
 
-- Consider bumping `violet-500` to `violet-600` to achieve ≥ 4.5:1 on white for normal text uses.
+- Consider bumping `violet-500` to `violet-600` to achieve ≥ 4.5:1 on `bg-primary` for normal text uses.
 - Audit input focus borders — if `border-strong` is ever used as a focus outline, it needs a color update.
 - Extend axe sweep coverage to `src/components/chat/` and `src/pages/` as those components stabilize.
+- Add exemptions for `text-tertiary` on `bg-primary` (~2.5:1, fails AA — decorative/disabled text only) and `accent-foreground` on `accent` (~3.94:1, fails AA — large-text interactive only).

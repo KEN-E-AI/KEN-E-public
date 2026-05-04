@@ -88,14 +88,39 @@ function buildPairs(
       kind: "normal",
       label: `${label}: text-primary on bg-secondary`,
     },
+    // Semantic alert text on semantic alert background
+    {
+      fg: t("--color-success-text"),
+      bg: t("--color-success-bg"),
+      kind: "normal",
+      label: `${label}: success-text on success-bg`,
+    },
+    {
+      fg: t("--color-error-text"),
+      bg: t("--color-error-bg"),
+      kind: "normal",
+      label: `${label}: error-text on error-bg`,
+    },
+    {
+      fg: t("--color-warning-text"),
+      bg: t("--color-warning-bg"),
+      kind: "normal",
+      label: `${label}: warning-text on warning-bg`,
+    },
+    {
+      fg: t("--color-info-text"),
+      bg: t("--color-info-bg"),
+      kind: "normal",
+      label: `${label}: info-text on info-bg`,
+    },
   ];
   // Note: border-strong token is intentionally excluded from this pair list.
   // Border colors (#cbd5e1 light / #475569 dark) are decorative separators used
   // to visually differentiate surface regions — they are not text or interactive
   // component indicators per WCAG 1.4.11, and their subtlety is a design choice.
   // If input borders or focus boundaries ever use border-strong, that would be a
-  // WCAG violation and should be audited separately. See UI-54 for the full
-  // contrast hardening backlog.
+  // WCAG violation and should be audited separately. See the contrast hardening
+  // backlog in accessibility-baseline.md §Backlog.
 }
 
 const lightPairs = buildPairs(lightTokens, "light");
@@ -104,16 +129,21 @@ const darkPairs = buildPairs(darkTokens, "dark");
 // Note: violet-500 on light bg-primary as BODY TEXT is intentionally excluded
 // from this list — it fails AA for normal text (small body copy). That usage
 // is limited to large interactive labels / icons (large-text AA = 3:1 is met).
-// See docs/design/components/ui/accessibility-baseline.md §Exemptions and UI-54.
+// See docs/design/components/ui/accessibility-baseline.md §Exemptions.
 
 describe("WCAG AA token-pair contrast", () => {
+  it("light token set is populated (sanity check against parse failures)", () => {
+    expect(Object.keys(lightTokens).length).toBeGreaterThan(10);
+  });
+
+  it("dark token set is populated (sanity check against parse failures)", () => {
+    expect(Object.keys(darkTokens).length).toBeGreaterThan(10);
+  });
+
   [...lightPairs, ...darkPairs].forEach(({ fg, bg, kind, label }) => {
     it(`${label}`, () => {
-      if (!fg || !bg) {
-        // Token not found — skip gracefully with a warning
-        console.warn(`Token not found for pair: ${label}`);
-        return;
-      }
+      expect(fg, `Missing foreground token for: ${label}`).not.toBe("");
+      expect(bg, `Missing background token for: ${label}`).not.toBe("");
       const ratio = contrastRatio(fg, bg);
       expect(
         meetsAa(ratio, kind),

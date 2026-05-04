@@ -10,17 +10,13 @@ const AUDITED_DIRS = [
 
 function getAllTsxFiles(dir: string): string[] {
   const files: string[] = [];
-  try {
-    for (const entry of readdirSync(dir)) {
-      const full = join(dir, entry);
-      if (statSync(full).isDirectory()) {
-        files.push(...getAllTsxFiles(full));
-      } else if (entry.endsWith(".tsx") || entry.endsWith(".ts")) {
-        files.push(full);
-      }
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) {
+      files.push(...getAllTsxFiles(full));
+    } else if (entry.endsWith(".tsx") || entry.endsWith(".ts")) {
+      files.push(full);
     }
-  } catch {
-    // dir may not exist
   }
   return files;
 }
@@ -55,6 +51,10 @@ describe("outline-none focus-ring audit", () => {
   const allFiles = AUDITED_DIRS.flatMap(getAllTsxFiles).filter((f) =>
     f.endsWith(".tsx"),
   );
+
+  it("audited directories contain tsx files (guards against directory rename)", () => {
+    expect(allFiles.length).toBeGreaterThan(20);
+  });
 
   // Group by file to produce readable errors
   const violations: string[] = [];

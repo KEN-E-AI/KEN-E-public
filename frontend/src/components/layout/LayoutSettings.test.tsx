@@ -119,6 +119,11 @@ describe("LayoutSettings", () => {
       ).toBeInTheDocument();
     });
 
+    test("breadcrumb heading is the sole <h1> in the shell", () => {
+      renderLayoutSettings({ initialPath: "/settings/organization" });
+      expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    });
+
     test("renders User Settings breadcrumb at /settings/user", () => {
       renderLayoutSettings({ initialPath: "/settings/user" });
       expect(
