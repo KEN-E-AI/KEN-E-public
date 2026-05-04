@@ -14,7 +14,7 @@ import {
   useLocation,
   useSearchParams,
 } from "react-router-dom";
-import { AuthProvider } from "@/contexts/AuthContext";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { ChatProvider } from "@/contexts/ChatContext";
 import { AccountOperationsProvider } from "@/contexts/AccountOperationsContext";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
@@ -80,6 +80,32 @@ const queryClient = new QueryClient();
 // Wrapper component to handle navigation after organization selection
 const OrganizationSelectionPage = () => {
   const navigate = useNavigate();
+
+  return <OrganizationSelection onComplete={() => navigate("/")} />;
+};
+
+// Standalone wrapper for the new /select-organization route.
+// Lives outside <ProtectedRoute> to avoid an infinite redirect when
+// !hasSelectedWorkspace, but gates on Firebase auth itself so
+// unauthenticated users are still sent to sign-in.
+const SelectOrganizationPage = () => {
+  const navigate = useNavigate();
+  const { isAuthenticated, isAuthLoading } = useAuth();
+
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="flex items-center space-x-2">
+          <div className="w-8 h-8 border-4 border-brand-medium-blue border-t-transparent rounded-full animate-spin" />
+          <span className="text-gray-600">Loading...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/auth/signin" replace />;
+  }
 
   return <OrganizationSelection onComplete={() => navigate("/")} />;
 };
@@ -155,6 +181,12 @@ const App = () => (
                     <Route
                       path="/auth/action"
                       element={<EmailActionHandler />}
+                    />
+                    {/* Standalone workspace-selection page — outside ProtectedRoute to avoid
+                        circular redirect when !hasSelectedWorkspace, but internally gated on auth */}
+                    <Route
+                      path="/select-organization"
+                      element={<SelectOrganizationPage />}
                     />
                     {/* Backward compatibility redirects */}
                     <Route
