@@ -189,17 +189,20 @@ describe("WCAG AA token-pair contrast", () => {
     expect(Object.keys(darkTokens).length).toBeGreaterThan(10);
   });
 
-  [...lightPairs, ...darkPairs, ...accentFgPairs, ...violetSixHundredPairs].forEach(
-    ({ fg, bg, kind, label }) => {
-      it(`${label}`, () => {
-        expect(fg, `Missing foreground token for: ${label}`).not.toBe("");
-        expect(bg, `Missing background token for: ${label}`).not.toBe("");
-        const ratio = contrastRatio(fg, bg);
-        expect(
-          meetsAa(ratio, kind),
-          `${label}: ratio ${ratio.toFixed(2)}:1 must be ≥ ${kind === "normal" ? "4.5" : "3.0"}:1 for WCAG AA`,
-        ).toBe(true);
-      });
-    },
-  );
+  [
+    ...lightPairs,
+    ...darkPairs,
+    ...accentFgPairs,
+    ...violetSixHundredPairs,
+  ].forEach(({ fg, bg, kind, label }) => {
+    it(`${label}`, () => {
+      expect(fg, `Missing foreground token for: ${label}`).not.toBe("");
+      expect(bg, `Missing background token for: ${label}`).not.toBe("");
+      const ratio = contrastRatio(fg, bg);
+      expect(
+        meetsAa(ratio, kind),
+        `${label}: ratio ${ratio.toFixed(2)}:1 must be ≥ ${kind === "normal" ? "4.5" : "3.0"}:1 for WCAG AA`,
+      ).toBe(true);
+    });
+  });
 });
