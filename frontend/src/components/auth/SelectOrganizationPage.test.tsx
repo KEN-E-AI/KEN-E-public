@@ -51,6 +51,7 @@ describe("SelectOrganizationPage", () => {
       screen.queryByText("ORG_SELECTION_SENTINEL"),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("SIGNIN_SENTINEL")).not.toBeInTheDocument();
+    expect(screen.queryByText("HOME_SENTINEL")).not.toBeInTheDocument();
   });
 
   test("redirects unauthenticated user to /auth/signin", () => {

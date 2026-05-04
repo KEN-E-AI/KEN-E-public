@@ -26,7 +26,11 @@ const SelectOrganizationPage = () => {
     return <Navigate to="/" replace />;
   }
 
-  return <OrganizationSelection onComplete={() => navigate("/")} />;
+  return (
+    <OrganizationSelection
+      onComplete={() => navigate("/", { replace: true })}
+    />
+  );
 };
 
 export default SelectOrganizationPage;
