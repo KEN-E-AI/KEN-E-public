@@ -435,15 +435,14 @@ const AccountSettings = () => {
               );
             }
           } else {
-            console.warn(
-              `[AccountSettings] Organization ${currentOrgId} not found in Neo4j`,
-            );
+            if (import.meta.env.DEV) {
+              console.warn(
+                `[AccountSettings] Organization ${currentOrgId} not found in Neo4j`,
+              );
+            }
           }
         } catch (err) {
-          console.error(
-            `[AccountSettings] Failed to load org metadata for ${currentOrgId}`,
-            err,
-          );
+          console.error("[AccountSettings] Failed to load org metadata", err);
           toast({
             title: "Error loading organization",
             description: "Failed to load organization data. Please try again.",
@@ -1460,9 +1459,13 @@ const AccountSettings = () => {
               setAccountsInSetup={setAccountsInSetup}
             />
           ) : (
-            <div className="text-center py-8">
-              <p className="text-gray-500">Loading accounts...</p>
-            </div>
+            <Card className="p-6">
+              <p className="text-sm text-muted-foreground">
+                {isLoadingOrgData
+                  ? "Loading..."
+                  : "Admin access required to view accounts."}
+              </p>
+            </Card>
           )}
         </TabsContent>
       </Tabs>
