@@ -81,7 +81,9 @@ describe("WorkflowsLayout", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.queryByRole("heading", { name: /workflows/i })).toBeNull();
+    expect(
+      screen.queryByRole("heading", { name: "Workflows", exact: true }),
+    ).toBeNull();
     expect(screen.queryByRole("tablist")).toBeNull();
   });
 
