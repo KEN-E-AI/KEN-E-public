@@ -41,6 +41,7 @@ import KnowledgeBrand from "./pages/KnowledgeBrand";
 import KnowledgeStrategy from "./pages/KnowledgeStrategy";
 import Insights from "./pages/Insights";
 import AccountSettings from "./pages/AccountSettings";
+import CreateOrganization from "./pages/CreateOrganization";
 import UserSettings from "./pages/UserSettings";
 import Settings from "./pages/Settings";
 import AdminSettings from "./pages/AdminSettings";
@@ -146,7 +147,7 @@ const App = () => (
                     />
                     <Route
                       path="/create-organization"
-                      element={<AccountSettings />}
+                      element={<CreateOrganization />}
                     />
                     <Route
                       path="/invite/:token"
