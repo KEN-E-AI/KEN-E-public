@@ -38,8 +38,8 @@ vi.mock("@/data/subscriptionPlansApi", () => ({
   }),
 }));
 
-// Mock axios for Firestore permission write
-vi.mock("axios", () => ({
+// Mock api client for Firestore permission write
+vi.mock("@/lib/api", () => ({
   default: { put: vi.fn().mockResolvedValue({ data: {} }) },
 }));
 

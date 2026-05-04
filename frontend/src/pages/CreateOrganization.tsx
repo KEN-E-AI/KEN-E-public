@@ -1,5 +1,5 @@
 import { useState } from "react";
-import axios from "axios";
+import api from "@/lib/api";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { createOrganization } from "@/data/organizationApi";
@@ -11,7 +11,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Logo } from "@/components/branding/Logo";
-import { cn } from "@/lib/utils";
 import { Building2 } from "lucide-react";
 
 type NewOrgFormData = {
@@ -41,8 +40,6 @@ export function CreateOrganization() {
     orgMetadata,
     setOrgMetadata,
   } = useAuth();
-
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
   const [newOrgFormData, setNewOrgFormData] = useState<NewOrgFormData>({
     organization_name: "",
@@ -148,8 +145,8 @@ export function CreateOrganization() {
     userId: string,
     organizationId: string,
   ) => {
-    await axios.put(
-      `${API_BASE_URL}/api/v1/firestore/documents/users/${userId}?account_id=${userId}`,
+    await api.put(
+      `/api/v1/firestore/documents/users/${userId}?account_id=${userId}`,
       {
         update: {
           field: `permissions.organizations.${organizationId}`,
@@ -228,6 +225,16 @@ export function CreateOrganization() {
   };
 
   const handleCreateOrganization = async () => {
+    if (!user) {
+      toast({
+        title: "Session expired",
+        description: "Please sign in again to create an organization.",
+        variant: "destructive",
+      });
+      navigate("/auth/signin");
+      return;
+    }
+
     const validationResult = validateOrganizationData(newOrgFormData);
     if (!validationResult.isValid) {
       toast({
@@ -244,7 +251,7 @@ export function CreateOrganization() {
 
       const newOrg = await createOrganization(payload);
 
-      await updateUserPermissions(user?.id!, newOrg.organization_id);
+      await updateUserPermissions(user.id, newOrg.organization_id);
 
       updateLocalUserState(newOrg.organization_id);
       updateOrganizationMetadata(newOrg);
@@ -357,9 +364,7 @@ export function CreateOrganization() {
                         .filter(Boolean),
                     }))
                   }
-                  className={cn(
-                    "mt-1.5 transition-all duration-200 focus:ring-2 focus:ring-[var(--color-violet-500)]/20",
-                  )}
+                  className="mt-1.5 transition-all duration-200 focus:ring-2 focus:ring-[var(--color-violet-500)]/20"
                 />
               </div>
             )}
