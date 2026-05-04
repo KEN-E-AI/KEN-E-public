@@ -108,7 +108,7 @@ export default function SelectOrganizationPage() {
                   </div>
                 ))}
               </div>
-              <Button variant="outline" className="w-full gap-2">
+              <Button type="button" variant="outline" className="w-full gap-2">
                 <Plus className="size-4" />
                 Create new organization
               </Button>
@@ -162,7 +162,7 @@ export default function SelectOrganizationPage() {
                   </p>
                 )}
               </div>
-              <Button variant="outline" className="w-full gap-2">
+              <Button type="button" variant="outline" className="w-full gap-2">
                 <Plus className="size-4" />
                 Create new account
               </Button>
@@ -175,8 +175,7 @@ export default function SelectOrganizationPage() {
           <Button
             type="button"
             disabled={!(selectedOrgId && selectedAccountId)}
-            className="gap-2 bg-[var(--color-cta-coral)] hover:bg-[var(--color-cta-coral)]/90 text-white border-0 transition-all duration-200 hover:-translate-y-0.5"
-            style={{ boxShadow: "0 4px 12px rgba(249, 112, 102, 0.3)" }}
+            className="gap-2 bg-[var(--color-cta-coral)] hover:bg-[var(--color-cta-coral-hover)] shadow-[var(--shadow-color-coral)] text-white border-0 transition-all duration-200 hover:-translate-y-0.5"
           >
             Continue
             <ArrowRight className="size-4" />
@@ -230,10 +229,6 @@ export default function SelectOrganizationPage() {
           .animate-page-enter,
           .animate-logo-float {
             animation: none;
-          }
-
-          * {
-            transition-duration: 0.01ms !important;
           }
         }
       `}</style>
