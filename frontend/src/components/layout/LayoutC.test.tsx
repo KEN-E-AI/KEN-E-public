@@ -1,3 +1,4 @@
+// NOTE: Class-contract lock only — runtime breakpoint behaviour is not verified by JSDOM.
 import { describe, test, expect, beforeEach, vi } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -91,6 +92,17 @@ describe("LayoutC", () => {
       // If ExtensionsProvider were missing, useExtensions would warn. The render
       // simply needs to complete without throwing.
       expect(() => renderLayoutC()).not.toThrow();
+    });
+
+    test("SessionsSidebar wrapper carries desktop-only classes (hidden md:flex md:flex-col md:min-h-0 md:h-full)", () => {
+      renderLayoutC({ initialPath: "/performance" });
+      const sidebar = screen.getByTestId("sessions-sidebar");
+      const wrapper = sidebar.parentElement!;
+      expect(wrapper.className).toMatch(/\bhidden\b/);
+      expect(wrapper.className).toMatch(/\bmd:flex\b/);
+      expect(wrapper.className).toMatch(/\bmd:flex-col\b/);
+      expect(wrapper.className).toMatch(/\bmd:min-h-0\b/);
+      expect(wrapper.className).toMatch(/\bmd:h-full\b/);
     });
   });
 
