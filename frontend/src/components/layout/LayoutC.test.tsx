@@ -123,7 +123,9 @@ describe("LayoutC", () => {
 
     test("renders <aside aria-label='Chat sessions'> wrapping SessionsSidebar", () => {
       renderLayoutC();
-      const aside = screen.getByRole("complementary", { name: /chat sessions/i });
+      const aside = screen.getByRole("complementary", {
+        name: /chat sessions/i,
+      });
       expect(within(aside).getByTestId("sessions-sidebar")).toBeInTheDocument();
     });
 

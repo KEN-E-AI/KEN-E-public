@@ -58,6 +58,7 @@ The following token pairs are verified in `token-contrast.test.ts`. All must mee
 | Pair | Light ratio | Dark ratio | Usage restriction |
 |------|------------|------------|-------------------|
 | `text-inverse` on `violet-500` | ~4.47:1 ✅ | ~6.0:1 ✅ | Active nav pills, badge labels only — always large/bold |
+| `accent-foreground` on `accent` | ~3.995:1 ✅ | ~3.330:1 ✅ | Large interactive labels only (≥ 14pt bold or ≥ 18pt regular) |
 
 ---
 
@@ -81,6 +82,28 @@ Using violet-500 for small body copy would be a WCAG violation.
 ### `text-inverse` on `violet-500` — large text only
 
 Light mode: `#ffffff` on `#6366f1` = ~4.47:1. Passes large-text AA (3:1) but not normal-text AA (4.5:1). Usage is restricted to bold badge labels and active nav pill text (≥ 14pt bold). This constraint is enforced by design convention; no runtime enforcement is currently wired.
+
+### `accent-foreground` on `accent` — large interactive text only
+
+`--accent-foreground` resolves to `--color-violet-500`; `--accent` resolves to `--color-violet-100` in light mode and `--color-violet-200` in dark mode.
+
+| Mode | Foreground | Background | Ratio | AA verdict |
+|------|------------|------------|-------|------------|
+| Light | `#6366f1` (violet-500) | `#eef2ff` (violet-100) | ~3.995:1 | ✅ large text (3:1) |
+| Dark | `#818cf8` (violet-500) | `#3730a3` (violet-200) | ~3.330:1 | ✅ large text (3:1) |
+
+Both modes fail normal-text AA (4.5:1) but pass large-text AA (3:1). Usage is restricted to large interactive labels (≥ 14pt bold or ≥ 18pt regular). Using `accent-foreground` on `accent` for small body copy would be a WCAG violation. This pair is tested in `token-contrast.test.ts` (`accentFgPairs`, `kind: "large"`) — CI will fail if either mode drops below 3:1.
+
+### `text-tertiary` on `bg-primary` — decorative/disabled text only
+
+`--color-text-tertiary` is `#94a3b8` in light mode and `#64748b` in dark mode; `--color-bg-primary` is `#fafbfc` in light mode and `#0f172a` in dark mode.
+
+| Mode | Foreground | Background | Ratio | AA verdict |
+|------|------------|------------|-------|------------|
+| Light | `#94a3b8` | `#fafbfc` | ~2.475:1 | ❌ fails normal (4.5:1) and large (3:1) |
+| Dark | `#64748b` | `#0f172a` | ~3.751:1 | ❌ fails normal (4.5:1); ✅ large (3:1) |
+
+Light mode fails both AA thresholds. Usage is **strictly limited to decorative or disabled text** — timestamps, secondary metadata, and supplementary labels that are never the sole carrier of required information. Examples: session timestamps in `SessionsSidebar`, placeholder copy in disabled form fields. Any `text-tertiary` usage where the text conveys standalone required meaning would be a WCAG violation and must be re-styled with `text-secondary` or `text-primary`. No CI pair test exists for this token (light mode fails the 3:1 floor for any `kind`); the constraint is enforced by design convention and this documentation.
 
 ---
 
@@ -148,4 +171,3 @@ Open items (contrast hardening):
 - Consider bumping `violet-500` to `violet-600` to achieve ≥ 4.5:1 on `bg-primary` for normal text uses.
 - Audit input focus borders — if `border-strong` is ever used as a focus outline, it needs a color update.
 - Extend axe sweep coverage to `src/components/chat/` and `src/pages/` as those components stabilize.
-- Add exemptions for `text-tertiary` on `bg-primary` (~2.5:1, fails AA — decorative/disabled text only) and `accent-foreground` on `accent` (~3.94:1, fails AA — large-text interactive only).

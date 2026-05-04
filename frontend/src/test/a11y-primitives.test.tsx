@@ -6,12 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-} from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 
 describe("axe sweep — UI primitives", () => {
   it("Button: default variant has no violations", async () => {
@@ -20,9 +15,7 @@ describe("axe sweep — UI primitives", () => {
   });
 
   it("Button: destructive variant has no violations", async () => {
-    const { container } = render(
-      <Button variant="destructive">Delete</Button>,
-    );
+    const { container } = render(<Button variant="destructive">Delete</Button>);
     expect(await runAxe(container)).toHaveNoViolations();
   });
 
@@ -52,9 +45,7 @@ describe("axe sweep — UI primitives", () => {
     const { container } = render(
       <Alert>
         <AlertTitle>Heads up!</AlertTitle>
-        <AlertDescription>
-          You can add components to your app.
-        </AlertDescription>
+        <AlertDescription>You can add components to your app.</AlertDescription>
       </Alert>,
     );
     expect(await runAxe(container)).toHaveNoViolations();
