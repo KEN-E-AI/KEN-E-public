@@ -153,6 +153,24 @@ const accentFgPairs: Pair[] = [
 // from this list — it fails AA for normal text (small body copy). That usage
 // is limited to large interactive labels / icons (large-text AA = 3:1 is met).
 // See docs/design/components/ui/accessibility-baseline.md §Exemptions.
+//
+// violet-600 is the brand-preserving alternative for body text. Light = #4f46e5
+// (~6.04:1 on bg-primary), dark = #a5b4fc (~8.95:1 on bg-primary). UI-54
+// introduced it as the recommended replacement for `text-primary` body text.
+const violetSixHundredPairs: Pair[] = [
+  {
+    fg: lightTokens["--color-violet-600"] ?? "",
+    bg: lightTokens["--color-bg-primary"] ?? "",
+    kind: "normal",
+    label: "light: violet-600 on bg-primary (body text)",
+  },
+  {
+    fg: darkTokens["--color-violet-600"] ?? "",
+    bg: darkTokens["--color-bg-primary"] ?? "",
+    kind: "normal",
+    label: "dark: violet-600 on bg-primary (body text)",
+  },
+];
 
 // Note: text-tertiary on bg-primary is intentionally excluded from this pair list.
 // Light mode: #94a3b8 on #fafbfc ≈ 2.475:1 — fails both normal (4.5:1) and large
@@ -171,17 +189,20 @@ describe("WCAG AA token-pair contrast", () => {
     expect(Object.keys(darkTokens).length).toBeGreaterThan(10);
   });
 
-  [...lightPairs, ...darkPairs, ...accentFgPairs].forEach(
-    ({ fg, bg, kind, label }) => {
-      it(`${label}`, () => {
-        expect(fg, `Missing foreground token for: ${label}`).not.toBe("");
-        expect(bg, `Missing background token for: ${label}`).not.toBe("");
-        const ratio = contrastRatio(fg, bg);
-        expect(
-          meetsAa(ratio, kind),
-          `${label}: ratio ${ratio.toFixed(2)}:1 must be ≥ ${kind === "normal" ? "4.5" : "3.0"}:1 for WCAG AA`,
-        ).toBe(true);
-      });
-    },
-  );
+  [
+    ...lightPairs,
+    ...darkPairs,
+    ...accentFgPairs,
+    ...violetSixHundredPairs,
+  ].forEach(({ fg, bg, kind, label }) => {
+    it(`${label}`, () => {
+      expect(fg, `Missing foreground token for: ${label}`).not.toBe("");
+      expect(bg, `Missing background token for: ${label}`).not.toBe("");
+      const ratio = contrastRatio(fg, bg);
+      expect(
+        meetsAa(ratio, kind),
+        `${label}: ratio ${ratio.toFixed(2)}:1 must be ≥ ${kind === "normal" ? "4.5" : "3.0"}:1 for WCAG AA`,
+      ).toBe(true);
+    });
+  });
 });

@@ -178,7 +178,7 @@ export const WizardStep4StrategySelection = ({
                       {override_product_categories.map((category) => (
                         <div
                           key={category}
-                          className="flex items-center gap-1 px-3 py-1 bg-primary/10 text-primary rounded-full text-sm"
+                          className="flex items-center gap-1 px-3 py-1 bg-primary/10 text-[var(--color-violet-600)] rounded-full text-sm"
                         >
                           <span>{category}</span>
                           <Button
