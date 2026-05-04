@@ -37,10 +37,7 @@ const darkTokens = parseTokens(extractBlock(cssContent, ".dark"));
 
 type Pair = { fg: string; bg: string; kind: TextKind; label: string };
 
-function buildPairs(
-  tokens: Record<string, string>,
-  label: string,
-): Pair[] {
+function buildPairs(tokens: Record<string, string>, label: string): Pair[] {
   const t = (k: string): string => tokens[k] ?? "";
   return [
     // Primary body text on primary background
@@ -126,9 +123,40 @@ function buildPairs(
 const lightPairs = buildPairs(lightTokens, "light");
 const darkPairs = buildPairs(darkTokens, "dark");
 
+// accent-foreground (--color-violet-500) on accent surface.
+// In light mode --accent = var(--color-violet-100) (#eef2ff);
+// in dark mode  --accent = var(--color-violet-200) (#3730a3).
+// The bg alias differs per mode so we build these pairs explicitly rather than
+// inside buildPairs() where only a single token map is available.
+// Usage is restricted to large interactive text (≥14pt bold); large-text AA (3:1)
+// applies. Light ≈ 3.995:1, dark ≈ 3.330:1 — both ≥ 3:1 ✅.
+// See docs/design/components/ui/accessibility-baseline.md §Exemptions.
+const accentFgPairs: Pair[] = [
+  {
+    fg: lightTokens["--color-violet-500"] ?? "",
+    bg: lightTokens["--color-violet-100"] ?? "",
+    kind: "large",
+    label: "light: accent-foreground on accent",
+  },
+  {
+    fg: darkTokens["--color-violet-500"] ?? "",
+    bg: darkTokens["--color-violet-200"] ?? "",
+    kind: "large",
+    label: "dark: accent-foreground on accent",
+  },
+];
+
 // Note: violet-500 on light bg-primary as BODY TEXT is intentionally excluded
 // from this list — it fails AA for normal text (small body copy). That usage
 // is limited to large interactive labels / icons (large-text AA = 3:1 is met).
+// See docs/design/components/ui/accessibility-baseline.md §Exemptions.
+
+// Note: text-tertiary on bg-primary is intentionally excluded from this pair list.
+// Light mode: #94a3b8 on #fafbfc ≈ 2.475:1 — fails both normal (4.5:1) and large
+// (3:1) AA thresholds. Dark mode: #64748b on #0f172a ≈ 3.751:1 — fails normal AA.
+// Usage is restricted to decorative/disabled text only (timestamps, secondary metadata
+// supplementary to primary content). No testable pair exists for this token; the
+// constraint is enforced by design convention and documented as a formal exemption.
 // See docs/design/components/ui/accessibility-baseline.md §Exemptions.
 
 describe("WCAG AA token-pair contrast", () => {
@@ -140,15 +168,17 @@ describe("WCAG AA token-pair contrast", () => {
     expect(Object.keys(darkTokens).length).toBeGreaterThan(10);
   });
 
-  [...lightPairs, ...darkPairs].forEach(({ fg, bg, kind, label }) => {
-    it(`${label}`, () => {
-      expect(fg, `Missing foreground token for: ${label}`).not.toBe("");
-      expect(bg, `Missing background token for: ${label}`).not.toBe("");
-      const ratio = contrastRatio(fg, bg);
-      expect(
-        meetsAa(ratio, kind),
-        `${label}: ratio ${ratio.toFixed(2)}:1 must be ≥ ${kind === "normal" ? "4.5" : "3.0"}:1 for WCAG AA`,
-      ).toBe(true);
-    });
-  });
+  [...lightPairs, ...darkPairs, ...accentFgPairs].forEach(
+    ({ fg, bg, kind, label }) => {
+      it(`${label}`, () => {
+        expect(fg, `Missing foreground token for: ${label}`).not.toBe("");
+        expect(bg, `Missing background token for: ${label}`).not.toBe("");
+        const ratio = contrastRatio(fg, bg);
+        expect(
+          meetsAa(ratio, kind),
+          `${label}: ratio ${ratio.toFixed(2)}:1 must be ≥ ${kind === "normal" ? "4.5" : "3.0"}:1 for WCAG AA`,
+        ).toBe(true);
+      });
+    },
+  );
 });

@@ -10,7 +10,15 @@ describe("keyboard navigation", () => {
     it("is reachable via Tab and activatable via Enter", async () => {
       const user = userEvent.setup();
       let clicked = false;
-      render(<Button onClick={() => { clicked = true; }}>Save</Button>);
+      render(
+        <Button
+          onClick={() => {
+            clicked = true;
+          }}
+        >
+          Save
+        </Button>,
+      );
 
       await user.tab();
       expect(screen.getByRole("button", { name: "Save" })).toHaveFocus();
@@ -22,7 +30,15 @@ describe("keyboard navigation", () => {
     it("is activatable via Space", async () => {
       const user = userEvent.setup();
       let clicked = false;
-      render(<Button onClick={() => { clicked = true; }}>Save</Button>);
+      render(
+        <Button
+          onClick={() => {
+            clicked = true;
+          }}
+        >
+          Save
+        </Button>,
+      );
 
       await user.tab();
       await user.keyboard(" ");
@@ -41,7 +57,9 @@ describe("keyboard navigation", () => {
       await user.tab();
       // The disabled button is skipped; the "After" button should receive focus
       expect(screen.getByRole("button", { name: "After" })).toHaveFocus();
-      expect(screen.getByRole("button", { name: "Unavailable" })).not.toHaveFocus();
+      expect(
+        screen.getByRole("button", { name: "Unavailable" }),
+      ).not.toHaveFocus();
     });
   });
 

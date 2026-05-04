@@ -11,7 +11,9 @@ describe("reduced-motion CSS smoke test", () => {
   });
 
   it("the reduced-motion block zeros transition-duration via !important", () => {
-    const rmStart = cssContent.indexOf("@media (prefers-reduced-motion: reduce)");
+    const rmStart = cssContent.indexOf(
+      "@media (prefers-reduced-motion: reduce)",
+    );
     expect(rmStart).toBeGreaterThan(-1);
 
     // Grab the block content up to 400 chars after the rule — enough to capture
@@ -23,7 +25,9 @@ describe("reduced-motion CSS smoke test", () => {
   });
 
   it("the reduced-motion block targets * (all elements)", () => {
-    const rmStart = cssContent.indexOf("@media (prefers-reduced-motion: reduce)");
+    const rmStart = cssContent.indexOf(
+      "@media (prefers-reduced-motion: reduce)",
+    );
     const snippet = cssContent.slice(rmStart, rmStart + 400);
     // Universal selector: *, *::before, *::after should be present
     expect(snippet).toMatch(/\*\s*[,{]/);
