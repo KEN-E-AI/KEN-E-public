@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Bot, Sparkles, RefreshCw, Network } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -22,10 +23,28 @@ const ALLOWED_TABS: readonly WorkflowTab[] = [
   "automations",
 ];
 
+// Persists focus-restoration intent across the unmount/remount cycle caused by
+// React Router navigation. Set before navigate(), cleared after focus is restored.
+let pendingFocusTab: WorkflowTab | null = null;
+
 export function WorkflowsLayout({ activeTab, children }: WorkflowsLayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const isCreatePage = location.pathname === "/workflows/agents/new";
+
+  // Refs for each tab trigger — indexed to match the `tabs` array order.
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([null, null, null]);
+
+  // After React Router navigation remounts this component with a new activeTab,
+  // restore keyboard focus to the newly-active tab trigger so arrow-key users
+  // retain their position in the tab strip (WCAG 2.4.3 Focus Order).
+  useEffect(() => {
+    if (pendingFocusTab === activeTab) {
+      pendingFocusTab = null;
+      const idx = tabs.findIndex((t) => t.value === activeTab);
+      if (idx >= 0) tabRefs.current[idx]?.focus();
+    }
+  }, [activeTab]);
 
   return (
     <div className="flex flex-col h-full">
@@ -55,16 +74,24 @@ export function WorkflowsLayout({ activeTab, children }: WorkflowsLayoutProps) {
                 value !== activeTab &&
                 (ALLOWED_TABS as string[]).includes(value)
               ) {
+                pendingFocusTab = value as WorkflowTab;
                 navigate(`/workflows/${value}`);
               }
             }}
           >
             <TabsList className="p-1 bg-[var(--color-bg-secondary)] rounded-[var(--radius-md)] w-fit h-auto gap-0">
-              {tabs.map((tab) => (
+              {tabs.map((tab, i) => (
                 <TabsTrigger
                   key={tab.value}
                   value={tab.value}
-                  className="flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] text-sm font-medium border-0 bg-transparent shadow-none data-[state=active]:bg-[var(--color-bg-elevated)] data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=active]:border-0 data-[state=inactive]:text-muted-foreground data-[state=inactive]:bg-transparent data-[state=inactive]:border-0 data-[state=inactive]:shadow-none"
+                  // Override Radix's React useId()-generated IDs (which contain colons
+                  // that break axe-core's CSS-selector-based aria-controls validation).
+                  id={`workflows-tab-${tab.value}`}
+                  aria-controls={`workflows-panel-${tab.value}`}
+                  ref={(el) => {
+                    tabRefs.current[i] = el;
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] text-sm font-medium border-0 bg-transparent shadow-none data-[state=active]:bg-[var(--color-bg-elevated)] data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=active]:border-0 data-[state=inactive]:text-[var(--color-text-secondary)] data-[state=inactive]:bg-transparent data-[state=inactive]:border-0 data-[state=inactive]:shadow-none"
                   style={{
                     transitionTimingFunction: "var(--ease-default)",
                     transitionDuration: "var(--duration-fast)",
@@ -79,7 +106,27 @@ export function WorkflowsLayout({ activeTab, children }: WorkflowsLayoutProps) {
         </div>
       )}
 
-      <div className="flex-1 overflow-auto">{children}</div>
+      {isCreatePage ? (
+        // Create-page layout has no tab chrome — plain container, no tabpanel semantics.
+        <div className="flex-1 overflow-auto">{children}</div>
+      ) : (
+        // Three tabpanel divs: one active (visible, contains children), two hidden.
+        // All three must exist so each trigger's aria-controls resolves to a real element.
+        tabs.map((tab) => (
+          <div
+            key={tab.value}
+            id={`workflows-panel-${tab.value}`}
+            role="tabpanel"
+            aria-labelledby={`workflows-tab-${tab.value}`}
+            hidden={tab.value !== activeTab}
+            className={
+              tab.value === activeTab ? "flex-1 overflow-auto" : undefined
+            }
+          >
+            {tab.value === activeTab ? children : null}
+          </div>
+        ))
+      )}
     </div>
   );
 }
