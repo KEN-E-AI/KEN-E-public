@@ -34,6 +34,8 @@ import { EmailVerificationView } from "./auth/EmailVerificationView";
 
 type View = "signin" | "signup" | "email-verification";
 
+const SIGN_UP_PATHS = new Set(["/signup", "/sign-up", "/create-account"]);
+
 interface AuthenticationProps {
   onAuthenticated: () => void;
 }
@@ -71,7 +73,6 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
 
   // Derive which view to show from the URL pathname (exact-match to avoid false positives)
   const pathname = location.pathname;
-  const SIGN_UP_PATHS = new Set(["/signup", "/sign-up", "/create-account"]);
   const isSignUp = SIGN_UP_PATHS.has(pathname);
   const isVerifyEmail = pathname === "/verify-email";
 

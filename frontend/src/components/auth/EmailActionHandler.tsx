@@ -38,6 +38,17 @@ const EmailActionHandler = () => {
   const oobCode = searchParams.get("oobCode");
   const continueUrl = searchParams.get("continueUrl");
 
+  // Pre-validate continueUrl: only allow same-origin redirects
+  const safeContinueUrl = (() => {
+    if (!continueUrl) return null;
+    try {
+      const u = new URL(continueUrl);
+      return u.origin === window.location.origin ? continueUrl : null;
+    } catch {
+      return null;
+    }
+  })();
+
   // Helper function to find user by email
   const findUserByEmail = async (userEmail: string) => {
     const queryResponse = await axios.post(
@@ -103,7 +114,7 @@ const EmailActionHandler = () => {
 
     if (mode !== "verifyEmail") {
       setError(
-        `This page only handles email verification. Mode "${mode}" is not supported.`,
+        "Invalid verification link. Please request a new verification email.",
       );
       setIsLoading(false);
       return;
@@ -184,16 +195,9 @@ const EmailActionHandler = () => {
   };
 
   const handleContinue = () => {
-    if (continueUrl) {
-      try {
-        const url = new URL(continueUrl);
-        if (url.origin === window.location.origin) {
-          window.location.href = continueUrl;
-          return;
-        }
-      } catch {
-        // invalid URL — fall through to default navigate
-      }
+    if (safeContinueUrl) {
+      window.location.href = safeContinueUrl;
+      return;
     }
     navigate("/", { replace: true });
   };
@@ -279,13 +283,13 @@ const EmailActionHandler = () => {
                     Go to Sign In
                   </Button>
 
-                  {continueUrl && (
+                  {safeContinueUrl && (
                     <Button
                       variant="outline"
                       onClick={handleContinue}
                       className="w-full"
                     >
-                      Continue to {new URL(continueUrl).hostname}
+                      Continue
                     </Button>
                   )}
                 </div>
