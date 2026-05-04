@@ -1,3 +1,4 @@
+// NOTE: Class-contract lock only — runtime breakpoint behaviour is not verified by JSDOM.
 import { describe, test, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
@@ -117,6 +118,11 @@ describe("LayoutSettings", () => {
       expect(
         screen.getByRole("heading", { name: "Organization Settings" }),
       ).toBeInTheDocument();
+    });
+
+    test("breadcrumb heading is the sole <h1> in the shell", () => {
+      renderLayoutSettings({ initialPath: "/settings/organization" });
+      expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     });
 
     test("renders User Settings breadcrumb at /settings/user", () => {
@@ -385,6 +391,36 @@ describe("LayoutSettings", () => {
       const aside = container.querySelector("aside");
       expect(aside).toHaveClass("md:flex-col");
       expect(aside).toHaveClass("md:w-48");
+    });
+
+    test("aside mobile horizontal-scroll and xl:w-56 rail-widening classes present", () => {
+      const { container } = renderLayoutSettings();
+      const aside = container.querySelector("aside");
+      expect(aside).toHaveClass("flex-row");
+      expect(aside).toHaveClass("overflow-x-auto");
+      expect(aside).toHaveClass("xl:w-56");
+    });
+
+    test("mobile back-button carries md:hidden", () => {
+      const { container } = renderLayoutSettings();
+      const mobileBackBtn = container.querySelector(
+        '[aria-label="Back to App"]',
+      );
+      expect(mobileBackBtn).toHaveClass("md:hidden");
+    });
+
+    test("desktop Back to App button carries hidden md:flex", () => {
+      renderLayoutSettings();
+      const allBackLinks = screen.getAllByRole("link", {
+        name: /back to app/i,
+      });
+      const desktopLink = allBackLinks.find(
+        (el) =>
+          el.classList.contains("hidden") && el.classList.contains("md:flex"),
+      );
+      expect(desktopLink).toBeDefined();
+      expect(desktopLink).toHaveClass("hidden");
+      expect(desktopLink).toHaveClass("md:flex");
     });
   });
 });

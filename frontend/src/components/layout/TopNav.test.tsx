@@ -1,4 +1,5 @@
 import { describe, test, expect, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
 import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { ExtensionsProvider } from "@/contexts/ExtensionsContext";
@@ -78,8 +79,8 @@ describe("TopNav", () => {
 
     test("inactive nav link uses the secondary-text class (WCAG AA contrast)", () => {
       // text-secondary (#475569 light / #cbd5e1 dark) gives ≥7.5:1 against
-      // the page background. The pre-fix tertiary-text (#94a3b8 / #64748b)
-      // failed AA at 2.47:1 / 3.75:1 — see plan §10.3.
+      // the page background. text-tertiary (#94a3b8 / #64748b) would fail AA
+      // at ~2.47:1 / ~3.75:1.
       renderTopNav("/performance");
       const nav = screen.getByRole("navigation", {
         name: "Primary navigation",
@@ -139,18 +140,22 @@ describe("TopNav", () => {
   });
 
   describe("mobile compact header", () => {
-    test("renders Logo + compact AccountSwitcher + NotificationBell + ProfileMenu", () => {
+    test("renders hamburger trigger + Logo + NotificationBell + ProfileMenu (AccountSwitcher moved to drawer)", () => {
       renderTopNav();
       const mobile = screen.getByTestId("topnav-mobile");
 
-      expect(within(mobile).getByTestId("account-switcher")).toHaveAttribute(
-        "data-compact",
-        "true",
-      );
+      expect(
+        within(mobile).getByRole("button", { name: "Navigation menu" }),
+      ).toBeInTheDocument();
       expect(
         within(mobile).getByTestId("notification-bell"),
       ).toBeInTheDocument();
       expect(within(mobile).getByTestId("profile-menu")).toBeInTheDocument();
+      // AccountSwitcher is no longer inline in the mobile header — it lives in
+      // the drawer (asserted in the drawer-content tests below).
+      expect(
+        within(mobile).queryByTestId("account-switcher"),
+      ).not.toBeInTheDocument();
     });
 
     test("renders the rainbow gradient bottom border at 3px (vs 4px on desktop)", () => {
@@ -175,6 +180,131 @@ describe("TopNav", () => {
           name: "Primary navigation",
         }),
       ).not.toBeInTheDocument();
+    });
+
+    test("renders a hamburger button (Navigation menu) at mobile breakpoint", () => {
+      renderTopNav();
+      const trigger = screen.getByRole("button", {
+        name: "Navigation menu",
+      });
+      expect(trigger).toBeInTheDocument();
+      expect(trigger).toHaveAttribute("data-testid", "mobile-nav-trigger");
+    });
+  });
+
+  describe("mobile nav drawer", () => {
+    test("hamburger click opens the drawer containing AccountSwitcher", async () => {
+      const user = userEvent.setup();
+      renderTopNav();
+
+      const trigger = screen.getByRole("button", {
+        name: "Navigation menu",
+      });
+      await user.click(trigger);
+
+      const drawer = screen.getByTestId("mobile-nav-drawer");
+      expect(drawer).toBeInTheDocument();
+      expect(
+        within(drawer).getByTestId("account-switcher"),
+      ).toBeInTheDocument();
+    });
+
+    test("drawer contains all 7 navigation links with correct hrefs", async () => {
+      const user = userEvent.setup();
+      renderTopNav();
+
+      await user.click(screen.getByRole("button", { name: "Navigation menu" }));
+
+      const drawer = screen.getByTestId("mobile-nav-drawer");
+      const nav = within(drawer).getByRole("navigation", {
+        name: "Primary navigation (mobile drawer)",
+      });
+      const links = within(nav).getAllByRole("link");
+      expect(links).toHaveLength(7);
+
+      EXPECTED_NAV.forEach(({ name, href }) => {
+        const link = within(nav).getByRole("link", {
+          name: new RegExp(`^${name}$`, "i"),
+        });
+        expect(link).toHaveAttribute("href", href);
+      });
+    });
+
+    test("pressing Escape closes the drawer", async () => {
+      const user = userEvent.setup();
+      renderTopNav();
+
+      await user.click(screen.getByRole("button", { name: "Navigation menu" }));
+      expect(screen.getByTestId("mobile-nav-drawer")).toBeInTheDocument();
+
+      await user.keyboard("{Escape}");
+      expect(screen.queryByTestId("mobile-nav-drawer")).not.toBeInTheDocument();
+    });
+
+    test("aria-expanded attribute flips on the hamburger trigger when drawer opens and closes", async () => {
+      const user = userEvent.setup();
+      renderTopNav();
+
+      const trigger = screen.getByRole("button", { name: "Navigation menu" });
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+
+      await user.click(trigger);
+      expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+      await user.keyboard("{Escape}");
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+    });
+
+    test("focus returns to hamburger trigger after pressing Escape", async () => {
+      const user = userEvent.setup();
+      renderTopNav();
+
+      const trigger = screen.getByRole("button", { name: "Navigation menu" });
+      await user.click(trigger);
+      expect(screen.getByTestId("mobile-nav-drawer")).toBeInTheDocument();
+
+      await user.keyboard("{Escape}");
+      expect(screen.queryByTestId("mobile-nav-drawer")).not.toBeInTheDocument();
+      expect(trigger).toHaveFocus();
+    });
+
+    test("body scroll-lock is applied while drawer is open", async () => {
+      const user = userEvent.setup();
+      renderTopNav();
+
+      await user.click(screen.getByRole("button", { name: "Navigation menu" }));
+      // Radix Dialog sets data-scroll-locked="1" on the body when a modal is open.
+      expect(document.body).toHaveAttribute("data-scroll-locked", "1");
+
+      await user.keyboard("{Escape}");
+      expect(document.body).not.toHaveAttribute("data-scroll-locked");
+    });
+
+    test("clicking the overlay backdrop dismisses the drawer", async () => {
+      const user = userEvent.setup();
+      renderTopNav();
+
+      await user.click(screen.getByRole("button", { name: "Navigation menu" }));
+      expect(screen.getByTestId("mobile-nav-drawer")).toBeInTheDocument();
+
+      // The SheetOverlay (data-slot="sheet-overlay") is the Radix backdrop element.
+      const overlay = document.querySelector(
+        "[data-slot='sheet-overlay']",
+      ) as HTMLElement;
+      expect(overlay).not.toBeNull();
+      await user.click(overlay);
+      expect(screen.queryByTestId("mobile-nav-drawer")).not.toBeInTheDocument();
+    });
+
+    test("drawer element does not expose aria-describedby attribute", async () => {
+      const user = userEvent.setup();
+      renderTopNav();
+
+      await user.click(screen.getByRole("button", { name: "Navigation menu" }));
+      const drawer = screen.getByTestId("mobile-nav-drawer");
+      // aria-describedby={undefined} in the SheetContent suppresses the Radix
+      // missing-description warning in JSDOM; verify no dangling reference ships.
+      expect(drawer).not.toHaveAttribute("aria-describedby");
     });
   });
 });
