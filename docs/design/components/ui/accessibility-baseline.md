@@ -58,6 +58,7 @@ The following token pairs are verified in `token-contrast.test.ts`. All must mee
 | Pair | Light ratio | Dark ratio | Usage restriction |
 |------|------------|------------|-------------------|
 | `text-inverse` on `violet-500` | ~4.47:1 ✅ | ~6.0:1 ✅ | Active nav pills, badge labels only — always large/bold |
+| `accent-foreground` on `accent` | ~3.995:1 ✅ | ~3.330:1 ✅ | Large interactive labels only (≥ 14pt bold or ≥ 18pt regular) |
 
 ---
 
