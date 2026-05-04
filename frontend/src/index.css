@@ -71,9 +71,9 @@
   --color-info-text: #3730a3;
   --color-disconnected: #94a3b8;
   --color-disconnected-bg: #f1f5f9;
-  --color-cta-coral: #f97066;
-  --color-cta-coral-hover: #e85f55;
-  --shadow-color-coral: 0 4px 12px rgba(249, 112, 102, 0.3);
+  --color-cta-coral: #c0422f; /* AA contrast: 5.17:1 vs white (was #f97066 @ 2.78:1 — FAIL) */
+  --color-cta-coral-hover: #a63728; /* AA contrast: 6.57:1 vs white */
+  --shadow-color-coral: 0 4px 12px rgba(192, 66, 47, 0.3);
 
   /* --- Gradients --- */
   --gradient-rainbow: linear-gradient(
@@ -336,9 +336,9 @@
   --color-info-text: #c7d2fe;
   --color-disconnected: #64748b;
   --color-disconnected-bg: #334155;
-  --color-cta-coral: #f8867d;
-  --color-cta-coral-hover: #f06b62;
-  --shadow-color-coral: 0 4px 12px rgba(248, 134, 125, 0.3);
+  --color-cta-coral: #c0422f; /* AA contrast: 5.17:1 vs white (was #f8867d @ ~2.41:1 — FAIL) */
+  --color-cta-coral-hover: #a63728; /* AA contrast: 6.57:1 vs white */
+  --shadow-color-coral: 0 4px 12px rgba(192, 66, 47, 0.3);
 
   /* --- Gradients (Dark Mode) --- */
   --gradient-rainbow: linear-gradient(
