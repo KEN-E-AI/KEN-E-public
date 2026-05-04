@@ -33,11 +33,17 @@ export function WorkflowsLayout({ activeTab, children }: WorkflowsLayoutProps) {
   const isCreatePage = location.pathname === "/workflows/agents/new";
 
   // Refs for each tab trigger — indexed to match the `tabs` array order.
-  const tabRefs = useRef<(HTMLButtonElement | null)[]>([null, null, null]);
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   // After React Router navigation remounts this component with a new activeTab,
   // restore keyboard focus to the newly-active tab trigger so arrow-key users
   // retain their position in the tab strip (WCAG 2.4.3 Focus Order).
+  //
+  // No unmount-cleanup effect clears pendingFocusTab: React runs unmounted
+  // components' cleanup effects *before* newly mounted components' setup effects,
+  // so a cleanup here would erase the value before the new instance can read it.
+  // A stale value across unrelated navigations is benign — it only fires when
+  // pendingFocusTab === activeTab, meaning focus lands on the current active tab.
   useEffect(() => {
     if (pendingFocusTab === activeTab) {
       pendingFocusTab = null;

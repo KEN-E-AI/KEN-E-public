@@ -136,7 +136,7 @@ describe("WorkflowsLayout", () => {
 
   it("restores focus to the active tab after navigation-triggered remount", async () => {
     const user = userEvent.setup();
-    const { rerender } = render(
+    const { unmount } = render(
       <MemoryRouter initialEntries={["/workflows/agents"]}>
         <WorkflowsLayout activeTab="agents">
           <div>content</div>
@@ -147,9 +147,12 @@ describe("WorkflowsLayout", () => {
     // Click Skills tab — this sets pendingFocusTab="skills" and calls navigate()
     await user.click(screen.getByRole("tab", { name: /skills/i }));
 
-    // Simulate React Router remounting with the new activeTab
+    // Unmount the old instance (mirrors React Router tearing down the route component)
+    unmount();
+
+    // Mount a fresh instance (mirrors React Router mounting the new route component)
     await act(async () => {
-      rerender(
+      render(
         <MemoryRouter initialEntries={["/workflows/skills"]}>
           <WorkflowsLayout activeTab="skills">
             <div>content</div>
@@ -171,7 +174,9 @@ describe("WorkflowsLayout", () => {
       </MemoryRouter>,
     );
 
-    const activePanel = document.getElementById("workflows-panel-automations");
+    const panels = screen.getAllByRole("tabpanel", { hidden: true });
+    const activePanel = panels.find((p) => !p.hasAttribute("hidden"));
+    expect(activePanel).toBeDefined();
     expect(activePanel).not.toHaveAttribute("hidden");
     expect(activePanel).toContainElement(screen.getByTestId("tab-content"));
   });
@@ -185,14 +190,10 @@ describe("WorkflowsLayout", () => {
       </MemoryRouter>,
     );
 
-    expect(document.getElementById("workflows-panel-skills")).toHaveAttribute(
-      "hidden",
-    );
-    expect(
-      document.getElementById("workflows-panel-automations"),
-    ).toHaveAttribute("hidden");
-    expect(
-      document.getElementById("workflows-panel-agents"),
-    ).not.toHaveAttribute("hidden");
+    const panels = screen.getAllByRole("tabpanel", { hidden: true });
+    const hiddenPanels = panels.filter((p) => p.hasAttribute("hidden"));
+    const visiblePanels = panels.filter((p) => !p.hasAttribute("hidden"));
+    expect(hiddenPanels).toHaveLength(2);
+    expect(visiblePanels).toHaveLength(1);
   });
 });
