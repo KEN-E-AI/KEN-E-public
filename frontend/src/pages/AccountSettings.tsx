@@ -111,6 +111,7 @@ const AccountSettings = () => {
 
   // Enhanced debug logging - moved inside useMemo to avoid hooks order issues
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
     console.log("[AccountSettings] URL params debug:", {
       fullURL: window.location.href,
       search: location.search,
@@ -144,28 +145,32 @@ const AccountSettings = () => {
   // Initialize property selector state based on URL params
   // This ensures the state is set immediately on component mount
   useEffect(() => {
-    console.log(
-      "[AccountSettings] Mount effect - checking for property selector trigger",
-      {
-        oauthSuccess,
-        oauthAccount,
-        shouldSelectProperties,
-        condition:
-          oauthSuccess === "google_analytics" &&
-          oauthAccount &&
+    if (import.meta.env.DEV) {
+      console.log(
+        "[AccountSettings] Mount effect - checking for property selector trigger",
+        {
+          oauthSuccess,
+          oauthAccount,
           shouldSelectProperties,
-      },
-    );
+          condition:
+            oauthSuccess === "google_analytics" &&
+            oauthAccount &&
+            shouldSelectProperties,
+        },
+      );
+    }
 
     if (
       oauthSuccess === "google_analytics" &&
       oauthAccount &&
       shouldSelectProperties
     ) {
-      console.log(
-        "[AccountSettings] CONDITIONS MET! Showing property selector for account:",
-        oauthAccount,
-      );
+      if (import.meta.env.DEV) {
+        console.log(
+          "[AccountSettings] CONDITIONS MET! Showing property selector for account:",
+          oauthAccount,
+        );
+      }
       setPropertySelectionAccountId(oauthAccount);
       setShowPropertySelector(true);
 
@@ -184,8 +189,6 @@ const AccountSettings = () => {
         );
       }, 500);
       return () => clearTimeout(timer);
-    } else {
-      console.log("[AccountSettings] Property selector conditions NOT met");
     }
   }, [
     oauthSuccess,
@@ -197,6 +200,7 @@ const AccountSettings = () => {
 
   // Debug logging for component state
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
     console.log("[AccountSettings] Component rendering with state:", {
       showPropertySelector,
       propertySelectionAccountId,
@@ -221,22 +225,26 @@ const AccountSettings = () => {
 
   // Handle OAuth return - mark account as in setup
   useEffect(() => {
-    console.log(
-      "[AccountSettings] OAuth handling useEffect triggered - OAuth params:",
-      {
-        oauthSuccess,
-        oauthAccount,
-        shouldSelectProperties,
-        showPropertySelector,
-        propertySelectionAccountId,
-      },
-    );
+    if (import.meta.env.DEV) {
+      console.log(
+        "[AccountSettings] OAuth handling useEffect triggered - OAuth params:",
+        {
+          oauthSuccess,
+          oauthAccount,
+          shouldSelectProperties,
+          showPropertySelector,
+          propertySelectionAccountId,
+        },
+      );
+    }
 
     if (oauthSuccess === "google_analytics" && oauthAccount) {
-      console.log(
-        "[AccountSettings] OAuth completed for account:",
-        oauthAccount,
-      );
+      if (import.meta.env.DEV) {
+        console.log(
+          "[AccountSettings] OAuth completed for account:",
+          oauthAccount,
+        );
+      }
 
       // Add the account to the setup tracking
       setAccountsInSetup((prev) => new Set(prev).add(oauthAccount));
@@ -244,9 +252,11 @@ const AccountSettings = () => {
       // Check if we should show property selector
       // Note: We already set the state in the mount effect, but also handle it here for completeness
       if (shouldSelectProperties && !showPropertySelector) {
-        console.log(
-          "[AccountSettings] Setting up property selector from OAuth effect",
-        );
+        if (import.meta.env.DEV) {
+          console.log(
+            "[AccountSettings] Setting up property selector from OAuth effect",
+          );
+        }
         setPropertySelectionAccountId(oauthAccount);
         setShowPropertySelector(true);
       } else if (!shouldSelectProperties) {
@@ -287,6 +297,7 @@ const AccountSettings = () => {
 
   // Debug effect to monitor state changes
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
     console.log("[AccountSettings] State changed:", {
       showPropertySelector,
       propertySelectionAccountId,
@@ -316,21 +327,25 @@ const AccountSettings = () => {
   const currentOrgId = useMemo(() => {
     if (isCreatingNew) return null;
 
-    console.log(`[AccountSettings] Determining currentOrgId...`);
-    console.log(
-      `[AccountSettings] currentOrganizationId:`,
-      currentOrganizationId,
-    );
-    console.log(
-      `[AccountSettings] user permissions:`,
-      user?.permissions?.organizations,
-    );
+    if (import.meta.env.DEV) {
+      console.log(`[AccountSettings] Determining currentOrgId...`);
+      console.log(
+        `[AccountSettings] currentOrganizationId:`,
+        currentOrganizationId,
+      );
+      console.log(
+        `[AccountSettings] user permissions:`,
+        user?.permissions?.organizations,
+      );
+    }
 
     // If currentOrganizationId is set, use it
     if (currentOrganizationId) {
-      console.log(
-        `[AccountSettings] Using currentOrganizationId: ${currentOrganizationId}`,
-      );
+      if (import.meta.env.DEV) {
+        console.log(
+          `[AccountSettings] Using currentOrganizationId: ${currentOrganizationId}`,
+        );
+      }
       return currentOrganizationId;
     }
 
@@ -340,23 +355,27 @@ const AccountSettings = () => {
     );
     const firstOrgId = userOrganizations[0] || null;
 
-    console.log(
-      `[AccountSettings] Available user organizations:`,
-      userOrganizations,
-    );
-    console.log(`[AccountSettings] Selected firstOrgId: ${firstOrgId}`);
+    if (import.meta.env.DEV) {
+      console.log(
+        `[AccountSettings] Available user organizations:`,
+        userOrganizations,
+      );
+      console.log(`[AccountSettings] Selected firstOrgId: ${firstOrgId}`);
+    }
 
     return firstOrgId;
   }, [isCreatingNew, currentOrganizationId, user?.permissions?.organizations]);
 
   const orgData = useMemo(() => {
     const data = currentOrgId ? orgMetadata[currentOrgId] || null : null;
-    console.log(`[AccountSettings] orgData calculation:`, {
-      currentOrgId,
-      hasOrgMetadata: !!orgMetadata[currentOrgId],
-      orgDataExists: !!data,
-      orgMetadataKeys: Object.keys(orgMetadata),
-    });
+    if (import.meta.env.DEV) {
+      console.log(`[AccountSettings] orgData calculation:`, {
+        currentOrgId,
+        hasOrgMetadata: !!orgMetadata[currentOrgId],
+        orgDataExists: !!data,
+        orgMetadataKeys: Object.keys(orgMetadata),
+      });
+    }
     return data;
   }, [currentOrgId, orgMetadata]);
 
@@ -381,13 +400,15 @@ const AccountSettings = () => {
   useEffect(() => {
     const loadOrganizationMetadata = async () => {
       if (currentOrgId && !orgMetadata[currentOrgId] && !isCreatingNew) {
-        console.log(
-          `[AccountSettings] Loading organization metadata for ${currentOrgId}`,
-        );
-        console.log(
-          `[AccountSettings] Current orgMetadata:`,
-          Object.keys(orgMetadata),
-        );
+        if (import.meta.env.DEV) {
+          console.log(
+            `[AccountSettings] Loading organization metadata for ${currentOrgId}`,
+          );
+          console.log(
+            `[AccountSettings] Current orgMetadata:`,
+            Object.keys(orgMetadata),
+          );
+        }
         setIsLoadingOrgData(true);
 
         try {
@@ -395,7 +416,12 @@ const AccountSettings = () => {
           const batchResult = await getOrganizationsBatch([currentOrgId], true);
           const orgWithAccounts = batchResult[currentOrgId];
 
-          console.log(`[AccountSettings] Batch API response:`, orgWithAccounts);
+          if (import.meta.env.DEV) {
+            console.log(
+              `[AccountSettings] Batch API response:`,
+              orgWithAccounts,
+            );
+          }
 
           if (orgWithAccounts) {
             setOrgMetadata((prev) => ({
@@ -403,9 +429,11 @@ const AccountSettings = () => {
               [currentOrgId]: orgWithAccounts,
             }));
 
-            console.log(
-              `[AccountSettings] Organization metadata loaded for ${currentOrgId}`,
-            );
+            if (import.meta.env.DEV) {
+              console.log(
+                `[AccountSettings] Organization metadata loaded for ${currentOrgId}`,
+              );
+            }
           } else {
             console.warn(
               `[AccountSettings] Organization ${currentOrgId} not found in Neo4j`,
@@ -425,9 +453,11 @@ const AccountSettings = () => {
           setIsLoadingOrgData(false);
         }
       } else if (currentOrgId && orgMetadata[currentOrgId]) {
-        console.log(
-          `[AccountSettings] Organization metadata already loaded for ${currentOrgId}`,
-        );
+        if (import.meta.env.DEV) {
+          console.log(
+            `[AccountSettings] Organization metadata already loaded for ${currentOrgId}`,
+          );
+        }
       }
     };
 
@@ -468,22 +498,6 @@ const AccountSettings = () => {
       setEditOrgName(orgData.organization_name || "");
     }
   }, [orgData, isCreatingNew]);
-
-  // Early return for org path when data is not yet loaded
-  if (!isCreatingNew && !isAccountSpecific && !orgData) {
-    if (currentOrgId) {
-      return (
-        <div className="text-center py-8">
-          <p className="text-gray-500">Loading organization data...</p>
-        </div>
-      );
-    }
-    return (
-      <div className="text-center py-8">
-        <p className="text-gray-500">No organization access found</p>
-      </div>
-    );
-  }
 
   // Helper functions for organization creation
   const validateOrganizationData = (
@@ -763,7 +777,9 @@ const AccountSettings = () => {
       <GoogleAnalyticsPropertySelector
         accountId={propertySelectionAccountId}
         onComplete={(selectedProperties) => {
-          console.log("Properties selected:", selectedProperties);
+          if (import.meta.env.DEV) {
+            console.log("Properties selected:", selectedProperties);
+          }
           setShowPropertySelector(false);
           setPropertySelectionAccountId(null);
           const newSearchParams = new URLSearchParams(location.search);

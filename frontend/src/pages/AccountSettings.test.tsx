@@ -163,7 +163,7 @@ describe("AccountSettings", () => {
     expect(screen.getByTestId("danger-zone")).toBeInTheDocument();
   });
 
-  it("should show no organization access when user has no organization permissions", () => {
+  it("should show org settings tabs when user has no organization permissions", () => {
     const mockUser = {
       id: "test-user-123",
       email: "test@example.com",
@@ -189,8 +189,10 @@ describe("AccountSettings", () => {
 
     renderAccountSettings();
 
+    // Tab shell always renders; no early return blocking the 6-tab structure
+    expect(screen.getByRole("tab", { name: /general/i })).toBeInTheDocument();
     expect(
-      screen.getByText("No organization access found"),
+      screen.getByRole("tab", { name: /subscription/i }),
     ).toBeInTheDocument();
   });
 });
