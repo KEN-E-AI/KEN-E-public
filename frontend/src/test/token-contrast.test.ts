@@ -155,8 +155,8 @@ const accentFgPairs: Pair[] = [
 // See docs/design/components/ui/accessibility-baseline.md §Exemptions.
 //
 // violet-600 is the brand-preserving alternative for body text. Light = #4f46e5
-// (~6.4:1 on bg-primary), dark = #a5b4fc (~7.5:1 on bg-primary). UI-54 introduced
-// it as the recommended replacement for `text-primary` body text.
+// (~6.04:1 on bg-primary), dark = #a5b4fc (~8.95:1 on bg-primary). UI-54
+// introduced it as the recommended replacement for `text-primary` body text.
 const violetSixHundredPairs: Pair[] = [
   {
     fg: lightTokens["--color-violet-600"] ?? "",

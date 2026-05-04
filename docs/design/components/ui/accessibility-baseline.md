@@ -52,7 +52,7 @@ The following token pairs are verified in `token-contrast.test.ts`. All must mee
 | `error-text` on `error-bg` | ✅ | ✅ |
 | `warning-text` on `warning-bg` | ✅ | ✅ |
 | `info-text` on `info-bg` | ✅ | ✅ |
-| `violet-600` on `bg-primary` (body text) | ~6.4:1 ✅ | ~7.5:1 ✅ |
+| `violet-600` on `bg-primary` (body text) | ~6.04:1 ✅ | ~8.95:1 ✅ |
 
 ### Large text (≥ 3:1) — bold ≥ 14pt or regular ≥ 18pt
 
@@ -86,7 +86,7 @@ When you need brand-tinted text, the choice depends on size:
 
 | Context | Token | Light ratio | Dark ratio |
 |---------|-------|-------------|------------|
-| Body text (small, regular weight) — chips, paragraphs, captions | `--color-violet-600` (`#4f46e5` / `#a5b4fc`) | ~6.4:1 ✅ AA normal | ~7.5:1 ✅ AA normal |
+| Body text (small, regular weight) — chips, paragraphs, captions | `--color-violet-600` (`#4f46e5` / `#a5b4fc`) | ~6.04:1 ✅ AA normal | ~8.95:1 ✅ AA normal |
 | Large interactive labels (≥ 14pt bold or ≥ 18pt regular) — nav pills, badge labels, button text | `--color-violet-500` (`#6366f1` / `#818cf8`) | ~4.31:1 ✅ AA large | ~6.0:1 ✅ AA normal |
 | Icons / focus rings / non-text UI | `--color-violet-500` | ✅ 3:1 non-text | ✅ |
 
