@@ -185,10 +185,17 @@ const EmailActionHandler = () => {
 
   const handleContinue = () => {
     if (continueUrl) {
-      window.location.href = continueUrl;
-    } else {
-      navigate("/", { replace: true });
+      try {
+        const url = new URL(continueUrl);
+        if (url.origin === window.location.origin) {
+          window.location.href = continueUrl;
+          return;
+        }
+      } catch {
+        // invalid URL — fall through to default navigate
+      }
     }
+    navigate("/", { replace: true });
   };
 
   const handleSignIn = () => {
@@ -197,32 +204,33 @@ const EmailActionHandler = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-brand-light-blue/20 via-white to-slate-50 flex items-center justify-center p-4">
-        <Card className="w-full max-w-md shadow-lg border-0 bg-white/80 backdrop-blur-sm">
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-brand-medium-blue mb-4" />
-            <p className="text-gray-600">Verifying your email...</p>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen bg-gradient-to-br from-[var(--color-violet-50)] via-[var(--color-bg-default)] to-[var(--color-blue-50)] flex items-center justify-center p-4">
+        <div className="bg-card rounded-[var(--radius-lg)] border-2 border-[var(--color-border-default)] w-full max-w-md p-12 shadow-lg">
+          <div className="flex flex-col items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-[var(--color-violet-500)] mb-4" />
+            <p className="text-muted-foreground">Verifying your email...</p>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-brand-light-blue/20 via-white to-slate-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-[var(--color-violet-50)] via-[var(--color-bg-default)] to-[var(--color-blue-50)] flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="flex items-center justify-center mb-4">
-            <div className="w-12 h-12 bg-brand-medium-blue rounded-lg flex items-center justify-center">
-              <Mail className="h-6 w-6 text-white" />
+          <div className="relative inline-block mb-4">
+            <div
+              className="size-16 rounded-full bg-gradient-to-br from-[var(--color-violet-500)] to-[var(--color-blue-500)] flex items-center justify-center mx-auto"
+              style={{ boxShadow: "var(--shadow-color-violet)" }}
+            >
+              <Mail className="h-8 w-8 text-white" />
             </div>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Email Verification
-          </h1>
+          <h1 className="mb-2">Email Verification</h1>
         </div>
 
-        <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-sm">
+        <Card className="bg-card rounded-[var(--radius-lg)] border-2 border-[var(--color-border-default)] shadow-lg">
           <CardHeader>
             <CardTitle className="text-center">
               {success ? "Email Verified!" : "Verification Failed"}
@@ -257,7 +265,7 @@ const EmailActionHandler = () => {
                 )}
 
                 {!warning && (
-                  <div className="text-center text-sm text-gray-600">
+                  <div className="text-center text-sm text-muted-foreground">
                     <p>
                       You can now sign in to your account with your verified
                       email.
@@ -290,7 +298,7 @@ const EmailActionHandler = () => {
                   <AlertDescription>{error}</AlertDescription>
                 </Alert>
 
-                <div className="text-center text-sm text-gray-600">
+                <div className="text-center text-sm text-muted-foreground">
                   <p>
                     If you continue to have issues, please sign in and request a
                     new verification email.

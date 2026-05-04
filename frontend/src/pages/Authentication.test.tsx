@@ -1,15 +1,24 @@
-import { describe, test, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { describe, test, expect, vi } from "vitest";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { signInWithPopup } from "firebase/auth";
-import axios from "axios";
+import { MemoryRouter } from "react-router-dom";
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signInWithPopup,
+} from "firebase/auth";
+import api from "@/lib/api";
 import Authentication from "./Authentication";
 import { AuthContext } from "@/contexts/AuthContext";
 import type { ReactNode } from "react";
 
-// Mock Firebase auth
+// ─── Module mocks ─────────────────────────────────────────────────────────────
+
 vi.mock("@/lib/firebase", () => ({
-  auth: {},
+  auth: {
+    signOut: vi.fn().mockResolvedValue(undefined),
+    currentUser: null,
+  },
   googleProvider: {},
   authInitialized: true,
   authBypassEnabled: false,
@@ -19,113 +28,149 @@ vi.mock("firebase/auth", () => ({
   signInWithEmailAndPassword: vi.fn(),
   createUserWithEmailAndPassword: vi.fn(),
   signInWithPopup: vi.fn(),
+  getRedirectResult: vi.fn().mockResolvedValue(null),
+  sendEmailVerification: vi.fn().mockResolvedValue(undefined),
 }));
 
-// Mock axios
-vi.mock("axios", () => ({
+vi.mock("@/lib/api", () => ({
   default: {
     get: vi.fn(),
     post: vi.fn(),
-    isAxiosError: (error: any) => error.isAxiosError === true,
+    put: vi.fn(),
   },
 }));
-const mockedAxios = vi.mocked(axios);
 
-// Mock ReCAPTCHA components
 vi.mock("@/components/auth/ReCaptchaProvider", () => ({
   default: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 
+// Calls onVerify(true) on the next tick so captcha is auto-verified in tests.
 vi.mock("@/components/auth/ReCaptchaV3", () => ({
-  default: ({ onVerify }: { onVerify: () => void }) => {
-    // Auto-verify for tests
-    setTimeout(() => onVerify(), 0);
+  default: ({ onVerify }: { onVerify: (verified: boolean) => void }) => {
+    setTimeout(() => onVerify(true), 0);
     return null;
   },
 }));
 
-describe("Authentication - Google Sign-In", () => {
-  const mockLogin = vi.fn();
-  const mockSetNotificationSettings = vi.fn();
-  const mockSetSecuritySettings = vi.fn();
-  const mockOnAuthenticated = vi.fn();
+vi.mock("@/data/teamApi", () => ({
+  verifyInvitationToken: vi
+    .fn()
+    .mockRejectedValue({ response: { status: 404 } }),
+}));
 
-  const renderWithAuth = () => {
-    const mockAuthValue = {
-      user: null,
-      login: mockLogin,
-      signOut: vi.fn(),
-      updateUser: vi.fn(),
-      setNotificationSettings: mockSetNotificationSettings,
-      setSecuritySettings: mockSetSecuritySettings,
-      selectedOrganization: null,
-      setSelectedOrganization: vi.fn(),
-      selectedAccount: null,
-      setSelectedAccount: vi.fn(),
-    };
+// ─── Shared helpers ───────────────────────────────────────────────────────────
 
-    return render(
-      <AuthContext.Provider value={mockAuthValue}>
-        <Authentication onAuthenticated={mockOnAuthenticated} />
-      </AuthContext.Provider>,
-    );
-  };
+const mockedApi = vi.mocked(api);
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    // Setup default environment
-    import.meta.env.VITE_API_BASE_URL = "http://localhost:8000";
+const makeAuthValue = () => ({
+  user: null,
+  login: vi.fn(),
+  signOut: vi.fn(),
+  updateUser: vi.fn(),
+  setNotificationSettings: vi.fn(),
+  setSecuritySettings: vi.fn(),
+  selectedOrganization: null,
+  setSelectedOrganization: vi.fn(),
+  selectedAccount: null,
+  setSelectedAccount: vi.fn(),
+});
+
+const renderAt = (
+  path: string,
+  authValue = makeAuthValue(),
+  onAuthenticated = vi.fn(),
+) =>
+  render(
+    <MemoryRouter initialEntries={[path]}>
+      <AuthContext.Provider value={authValue}>
+        <Authentication onAuthenticated={onAuthenticated} />
+      </AuthContext.Provider>
+    </MemoryRouter>,
+  );
+
+// ─── Sign In view ─────────────────────────────────────────────────────────────
+
+describe("Authentication — Sign In view", () => {
+  test("renders heading, email input, password input, and Google button", () => {
+    renderAt("/sign-in");
+    expect(
+      screen.getByRole("heading", { name: /welcome to ken-e/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/^email/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^password/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /google/i })).toBeInTheDocument();
   });
 
-  test("renders Google sign-in button", () => {
-    renderWithAuth();
+  test("renders a link to create account", () => {
+    renderAt("/sign-in");
+    expect(
+      screen.getByRole("link", { name: /create account/i }),
+    ).toBeInTheDocument();
+  });
 
-    const googleButton = screen.getByRole("button", { name: /google/i });
-    expect(googleButton).toBeInTheDocument();
-    expect(googleButton).not.toBeDisabled();
+  test("shows error on invalid credentials", async () => {
+    const user = userEvent.setup();
+    vi.mocked(signInWithEmailAndPassword).mockRejectedValueOnce({
+      code: "auth/invalid-credential",
+    });
+
+    renderAt("/sign-in");
+
+    await user.type(screen.getByLabelText(/^email/i), "bad@example.com");
+    await user.type(screen.getByLabelText(/^password/i), "wrong");
+    await user.click(screen.getByRole("button", { name: /^sign in$/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/invalid email or password/i),
+      ).toBeInTheDocument();
+    });
+  });
+
+  // ─── Google Sign-In scenarios ─────────────────────────────────────────────
+
+  test("Google button is enabled by default", () => {
+    renderAt("/sign-in");
+    expect(screen.getByRole("button", { name: /google/i })).not.toBeDisabled();
   });
 
   test("successful Google sign-in for existing user", async () => {
     const user = userEvent.setup();
-    const mockFirebaseUser = {
+    const authValue = makeAuthValue();
+    const onAuthenticated = vi.fn();
+
+    const firebaseUser = {
       uid: "test-uid",
       email: "test@example.com",
       displayName: "Test User",
     };
-
-    const mockUserData = {
-      profile: {
-        email: "test@example.com",
-        first_name: "Test",
-        last_name: "User",
-        job_title: "Developer",
-      },
-      permissions: { organizations: {}, accounts: {} },
-      preferences: {},
-    };
-
-    // Mock successful Google sign-in
     vi.mocked(signInWithPopup).mockResolvedValueOnce({
-      user: mockFirebaseUser,
+      user: firebaseUser,
     } as any);
 
-    // Mock API calls for existing user
-    mockedAxios.get.mockResolvedValueOnce({
-      data: { data: mockUserData },
+    mockedApi.get.mockResolvedValueOnce({
+      data: {
+        data: {
+          profile: {
+            email: "test@example.com",
+            first_name: "Test",
+            last_name: "User",
+            job_title: "Developer",
+          },
+          permissions: { organizations: {}, accounts: {} },
+          preferences: {},
+        },
+      },
     });
-
-    mockedAxios.post.mockResolvedValueOnce({
+    mockedApi.post.mockResolvedValueOnce({
       data: { documents: [{ data: { emailNotifications: true } }] },
     });
-
-    mockedAxios.post.mockResolvedValueOnce({
+    mockedApi.post.mockResolvedValueOnce({
       data: { documents: [{ data: { twoFactorEnabled: false } }] },
     });
 
-    renderWithAuth();
-
-    const googleButton = screen.getByRole("button", { name: /google/i });
-    await user.click(googleButton);
+    renderAt("/sign-in", authValue, onAuthenticated);
+    await user.click(screen.getByRole("button", { name: /google/i }));
 
     await waitFor(() => {
       expect(signInWithPopup).toHaveBeenCalledWith(
@@ -135,7 +180,7 @@ describe("Authentication - Google Sign-In", () => {
     });
 
     await waitFor(() => {
-      expect(mockLogin).toHaveBeenCalledWith({
+      expect(authValue.login).toHaveBeenCalledWith({
         id: "test-uid",
         email: "test@example.com",
         firstName: "Test",
@@ -146,51 +191,46 @@ describe("Authentication - Google Sign-In", () => {
       });
     });
 
-    expect(mockSetNotificationSettings).toHaveBeenCalledWith({
-      emailNotifications: true,
-    });
-    expect(mockSetSecuritySettings).toHaveBeenCalledWith({
-      twoFactorEnabled: false,
-    });
-    expect(mockOnAuthenticated).toHaveBeenCalled();
+    expect(authValue.setNotificationSettings).toHaveBeenCalledWith([
+      { emailNotifications: true, id: "default" },
+    ]);
+    expect(authValue.setSecuritySettings).toHaveBeenCalledWith([
+      { twoFactorEnabled: false, id: "default" },
+    ]);
+    expect(onAuthenticated).toHaveBeenCalled();
   });
 
   test("successful Google sign-in for new user", async () => {
     const user = userEvent.setup();
-    const mockFirebaseUser = {
+    const authValue = makeAuthValue();
+    const onAuthenticated = vi.fn();
+
+    const firebaseUser = {
       uid: "new-user-uid",
       email: "newuser@example.com",
       displayName: "New User",
     };
-
-    // Mock successful Google sign-in
     vi.mocked(signInWithPopup).mockResolvedValueOnce({
-      user: mockFirebaseUser,
+      user: firebaseUser,
     } as any);
 
-    // Mock 404 for non-existent user
-    mockedAxios.get.mockRejectedValueOnce({
+    mockedApi.get.mockRejectedValueOnce({
       isAxiosError: true,
       response: { status: 404 },
     });
-
-    // Mock successful user creation
-    mockedAxios.post.mockImplementation((url) => {
-      if (url === "http://localhost:8000/api/v1/firestore/documents") {
+    mockedApi.post.mockImplementation((url: string) => {
+      if (url === "/api/v1/firestore/documents") {
         return Promise.resolve({ data: { success: true } });
       }
-      // Return empty documents for notifications/security queries
       return Promise.resolve({ data: { documents: [] } });
     });
 
-    renderWithAuth();
-
-    const googleButton = screen.getByRole("button", { name: /google/i });
-    await user.click(googleButton);
+    renderAt("/sign-in", authValue, onAuthenticated);
+    await user.click(screen.getByRole("button", { name: /google/i }));
 
     await waitFor(() => {
-      expect(mockedAxios.post).toHaveBeenCalledWith(
-        "http://localhost:8000/api/v1/firestore/documents",
+      expect(mockedApi.post).toHaveBeenCalledWith(
+        "/api/v1/firestore/documents",
         expect.objectContaining({
           account_id: "new-user-uid",
           collection: "users",
@@ -207,7 +247,7 @@ describe("Authentication - Google Sign-In", () => {
     });
 
     await waitFor(() => {
-      expect(mockLogin).toHaveBeenCalledWith({
+      expect(authValue.login).toHaveBeenCalledWith({
         id: "new-user-uid",
         email: "newuser@example.com",
         firstName: "New",
@@ -217,170 +257,131 @@ describe("Authentication - Google Sign-In", () => {
         preferences: {},
       });
     });
-
-    expect(mockOnAuthenticated).toHaveBeenCalled();
+    expect(onAuthenticated).toHaveBeenCalled();
   });
 
   test("handles Google sign-in cancellation", async () => {
     const user = userEvent.setup();
-
-    // Mock user cancelling the popup
+    const authValue = makeAuthValue();
     vi.mocked(signInWithPopup).mockRejectedValueOnce({
       code: "auth/popup-closed-by-user",
     });
 
-    renderWithAuth();
-
-    const googleButton = screen.getByRole("button", { name: /google/i });
-    await user.click(googleButton);
+    renderAt("/sign-in", authValue);
+    await user.click(screen.getByRole("button", { name: /google/i }));
 
     await waitFor(() => {
       expect(
         screen.getByText("Sign-in cancelled. Please try again."),
       ).toBeInTheDocument();
     });
-
-    expect(mockLogin).not.toHaveBeenCalled();
-    expect(mockOnAuthenticated).not.toHaveBeenCalled();
+    expect(authValue.login).not.toHaveBeenCalled();
   });
 
   test("handles popup blocked error", async () => {
     const user = userEvent.setup();
-
-    // Mock popup blocked error
     vi.mocked(signInWithPopup).mockRejectedValueOnce({
       code: "auth/popup-blocked",
     });
 
-    renderWithAuth();
-
-    const googleButton = screen.getByRole("button", { name: /google/i });
-    await user.click(googleButton);
+    renderAt("/sign-in");
+    await user.click(screen.getByRole("button", { name: /google/i }));
 
     await waitFor(() => {
       expect(
         screen.getByText("Pop-up blocked. Please allow pop-ups for this site."),
       ).toBeInTheDocument();
     });
-
-    expect(mockLogin).not.toHaveBeenCalled();
   });
 
-  test("handles API server error", async () => {
+  test("handles API server error during Google sign-in", async () => {
     const user = userEvent.setup();
-    const mockFirebaseUser = {
+    const firebaseUser = {
       uid: "test-uid",
       email: "test@example.com",
       displayName: "Test User",
     };
-
-    // Mock successful Google sign-in
     vi.mocked(signInWithPopup).mockResolvedValueOnce({
-      user: mockFirebaseUser,
+      user: firebaseUser,
     } as any);
-
-    // Mock 500 server error
-    mockedAxios.get.mockRejectedValueOnce({
+    mockedApi.get.mockRejectedValueOnce({
       isAxiosError: true,
       response: { status: 500 },
     });
 
-    renderWithAuth();
-
-    const googleButton = screen.getByRole("button", { name: /google/i });
-    await user.click(googleButton);
+    renderAt("/sign-in");
+    await user.click(screen.getByRole("button", { name: /google/i }));
 
     await waitFor(() => {
       expect(
         screen.getByText("Server error. Please try again later."),
       ).toBeInTheDocument();
     });
-
-    expect(mockLogin).not.toHaveBeenCalled();
   });
 
-  test("handles network error", async () => {
+  test("handles network error during Google sign-in", async () => {
     const user = userEvent.setup();
-
-    // Mock network error
     vi.mocked(signInWithPopup).mockRejectedValueOnce({
       code: "auth/network-request-failed",
     });
 
-    renderWithAuth();
-
-    const googleButton = screen.getByRole("button", { name: /google/i });
-    await user.click(googleButton);
+    renderAt("/sign-in");
+    await user.click(screen.getByRole("button", { name: /google/i }));
 
     await waitFor(() => {
       expect(
         screen.getByText("Network error. Please check your connection."),
       ).toBeInTheDocument();
     });
-
-    expect(mockLogin).not.toHaveBeenCalled();
   });
 
   test("disables Google button while loading", async () => {
     const user = userEvent.setup();
-
-    // Mock a delayed response
     vi.mocked(signInWithPopup).mockImplementation(
       () => new Promise((resolve) => setTimeout(resolve, 1000)),
     );
 
-    renderWithAuth();
-
+    renderAt("/sign-in");
     const googleButton = screen.getByRole("button", { name: /google/i });
-
     expect(googleButton).not.toBeDisabled();
 
     await user.click(googleButton);
-
-    // Button should be disabled while loading
     expect(googleButton).toBeDisabled();
   });
 
-  test("handles single name users correctly", async () => {
+  test("handles single-name Google users correctly", async () => {
     const user = userEvent.setup();
-    const mockFirebaseUser = {
+    const authValue = makeAuthValue();
+    const firebaseUser = {
       uid: "single-name-uid",
       email: "prince@example.com",
-      displayName: "Prince", // Single name
+      displayName: "Prince",
     };
-
-    // Mock successful Google sign-in
     vi.mocked(signInWithPopup).mockResolvedValueOnce({
-      user: mockFirebaseUser,
+      user: firebaseUser,
     } as any);
-
-    // Mock 404 for non-existent user
-    mockedAxios.get.mockRejectedValueOnce({
+    mockedApi.get.mockRejectedValueOnce({
       isAxiosError: true,
       response: { status: 404 },
     });
-
-    // Mock successful user creation
-    mockedAxios.post.mockImplementation((url) => {
-      if (url === "http://localhost:8000/api/v1/firestore/documents") {
+    mockedApi.post.mockImplementation((url: string) => {
+      if (url === "/api/v1/firestore/documents") {
         return Promise.resolve({ data: { success: true } });
       }
       return Promise.resolve({ data: { documents: [] } });
     });
 
-    renderWithAuth();
-
-    const googleButton = screen.getByRole("button", { name: /google/i });
-    await user.click(googleButton);
+    renderAt("/sign-in", authValue);
+    await user.click(screen.getByRole("button", { name: /google/i }));
 
     await waitFor(() => {
-      expect(mockedAxios.post).toHaveBeenCalledWith(
-        "http://localhost:8000/api/v1/firestore/documents",
+      expect(mockedApi.post).toHaveBeenCalledWith(
+        "/api/v1/firestore/documents",
         expect.objectContaining({
           data: expect.objectContaining({
             profile: expect.objectContaining({
               first_name: "Prince",
-              last_name: "", // Empty last name for single name
+              last_name: "",
             }),
           }),
         }),
@@ -388,41 +389,34 @@ describe("Authentication - Google Sign-In", () => {
     });
   });
 
-  test("handles users with no display name", async () => {
+  test("handles Google users with no display name", async () => {
     const user = userEvent.setup();
-    const mockFirebaseUser = {
+    const authValue = makeAuthValue();
+    const firebaseUser = {
       uid: "no-name-uid",
       email: "noname@example.com",
-      displayName: null, // No display name
+      displayName: null,
     };
-
-    // Mock successful Google sign-in
     vi.mocked(signInWithPopup).mockResolvedValueOnce({
-      user: mockFirebaseUser,
+      user: firebaseUser,
     } as any);
-
-    // Mock 404 for non-existent user
-    mockedAxios.get.mockRejectedValueOnce({
+    mockedApi.get.mockRejectedValueOnce({
       isAxiosError: true,
       response: { status: 404 },
     });
-
-    // Mock successful user creation
-    mockedAxios.post.mockImplementation((url) => {
-      if (url === "http://localhost:8000/api/v1/firestore/documents") {
+    mockedApi.post.mockImplementation((url: string) => {
+      if (url === "/api/v1/firestore/documents") {
         return Promise.resolve({ data: { success: true } });
       }
       return Promise.resolve({ data: { documents: [] } });
     });
 
-    renderWithAuth();
-
-    const googleButton = screen.getByRole("button", { name: /google/i });
-    await user.click(googleButton);
+    renderAt("/sign-in", authValue);
+    await user.click(screen.getByRole("button", { name: /google/i }));
 
     await waitFor(() => {
-      expect(mockedAxios.post).toHaveBeenCalledWith(
-        "http://localhost:8000/api/v1/firestore/documents",
+      expect(mockedApi.post).toHaveBeenCalledWith(
+        "/api/v1/firestore/documents",
         expect.objectContaining({
           data: expect.objectContaining({
             profile: expect.objectContaining({
@@ -433,5 +427,148 @@ describe("Authentication - Google Sign-In", () => {
         }),
       );
     });
+  });
+});
+
+// ─── Create Account view ──────────────────────────────────────────────────────
+
+describe("Authentication — Create Account view", () => {
+  test("renders heading and all form fields", () => {
+    renderAt("/create-account");
+    expect(
+      screen.getByRole("heading", { name: /create your account/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/full name/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^email/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^password/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/confirm password/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /create account/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /google/i })).toBeInTheDocument();
+  });
+
+  test("shows password strength indicator when typing", async () => {
+    const user = userEvent.setup();
+    renderAt("/create-account");
+
+    await user.type(screen.getByLabelText(/^password/i), "pass");
+    expect(screen.getByText(/weak/i)).toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText(/^password/i));
+    await user.type(screen.getByLabelText(/^password/i), "Password1234X");
+    expect(screen.getByText(/strong/i)).toBeInTheDocument();
+  });
+
+  test("shows field error when passwords do not match", async () => {
+    const user = userEvent.setup();
+    renderAt("/create-account");
+
+    await user.type(screen.getByLabelText(/full name/i), "Jane Smith");
+    await user.type(screen.getByLabelText(/^email/i), "jane@example.com");
+    await user.type(screen.getByLabelText(/^password/i), "password123");
+    await user.type(screen.getByLabelText(/confirm password/i), "different123");
+    // Password mismatch is validated before terms — no need to check terms box
+    await user.click(screen.getByRole("button", { name: /create account/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/passwords do not match/i)).toBeInTheDocument();
+    });
+  });
+
+  test("shows error when email is already registered", async () => {
+    const user = userEvent.setup();
+    vi.mocked(createUserWithEmailAndPassword).mockRejectedValueOnce({
+      code: "auth/email-already-in-use",
+    });
+
+    renderAt("/create-account");
+
+    await user.type(screen.getByLabelText(/full name/i), "Jane Smith");
+    await user.type(screen.getByLabelText(/^email/i), "existing@example.com");
+    await user.type(screen.getByLabelText(/^password/i), "password123");
+    await user.type(screen.getByLabelText(/confirm password/i), "password123");
+    // Use fireEvent for Radix Checkbox — userEvent pointer events don't trigger onCheckedChange in jsdom
+    fireEvent.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: /create account/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/this email is already registered/i),
+      ).toBeInTheDocument();
+    });
+  });
+
+  test("shows field error when terms checkbox is not checked", async () => {
+    const user = userEvent.setup();
+    renderAt("/create-account");
+
+    await user.type(screen.getByLabelText(/full name/i), "Jane Smith");
+    await user.type(screen.getByLabelText(/^email/i), "jane@example.com");
+    await user.type(screen.getByLabelText(/^password/i), "password123");
+    await user.type(screen.getByLabelText(/confirm password/i), "password123");
+    // Do NOT check the terms checkbox
+    await user.click(screen.getByRole("button", { name: /create account/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/you must agree to the terms of service/i),
+      ).toBeInTheDocument();
+    });
+  });
+
+  test("transitions to email-verification view after successful sign-up", async () => {
+    const user = userEvent.setup();
+    vi.mocked(createUserWithEmailAndPassword).mockResolvedValueOnce({
+      user: {
+        uid: "new-uid",
+        email: "new@example.com",
+        emailVerified: false,
+      },
+    } as any);
+    mockedApi.post.mockResolvedValue({ data: { success: true } });
+
+    renderAt("/create-account");
+
+    await user.type(screen.getByLabelText(/full name/i), "New User");
+    await user.type(screen.getByLabelText(/^email/i), "new@example.com");
+    await user.type(screen.getByLabelText(/^password/i), "password123");
+    await user.type(screen.getByLabelText(/confirm password/i), "password123");
+    // Use fireEvent for Radix Checkbox — userEvent pointer events don't trigger onCheckedChange in jsdom
+    fireEvent.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: /create account/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { name: /check your email/i }),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByText("new@example.com")).toBeInTheDocument();
+  });
+});
+
+// ─── Email Verification view ──────────────────────────────────────────────────
+
+describe("Authentication — Email Verification view", () => {
+  test("renders heading and resend button at /verify-email route", () => {
+    renderAt("/verify-email");
+    expect(
+      screen.getByRole("heading", { name: /check your email/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /resend verification email/i }),
+    ).toBeInTheDocument();
+  });
+
+  test("resend button is enabled by default", () => {
+    renderAt("/verify-email");
+    expect(
+      screen.getByRole("button", { name: /resend verification email/i }),
+    ).not.toBeDisabled();
+  });
+
+  test("shows sign-in link for already-verified users", () => {
+    renderAt("/verify-email");
+    expect(screen.getByRole("link", { name: /sign in/i })).toBeInTheDocument();
   });
 });
