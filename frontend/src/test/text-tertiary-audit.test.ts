@@ -63,8 +63,12 @@ const ALLOWED_FILES = new Set<string>([
 ]);
 
 const PER_LINE_ANNOTATION = "allow-text-tertiary";
+// Use look-arounds (rather than \b) so the rule matches `text-tertiary` exactly
+// and does NOT misfire on hypothetical Tailwind variants like `text-tertiary-50`
+// or hyphenated identifiers. `\b` treats `-` as a non-word boundary, so
+// `\btext-tertiary\b` would still match inside `text-tertiary-50`.
 const TARGET_PATTERNS = [
-  /\btext-tertiary\b/, // tailwind shorthand
+  /(?<![\w-])text-tertiary(?![\w-])/, // tailwind shorthand
   /text-\[var\(--color-text-tertiary\)\]/, // arbitrary value
 ];
 
@@ -88,7 +92,12 @@ function getAllSourceFiles(dir: string): string[] {
 }
 
 function lineMatchesTarget(line: string): boolean {
-  return TARGET_PATTERNS.some((re) => re.test(line));
+  // Strip line comments so a comment that mentions `text-tertiary` (e.g. a
+  // migration TODO or rationale note) does not falsely trigger the gate.
+  // Block comments / JSX comments are rare on a single class-applying line;
+  // the per-line `// allow-text-tertiary` escape hatch handles edge cases.
+  const codeOnly = line.replace(/\/\/.*$/, "");
+  return TARGET_PATTERNS.some((re) => re.test(codeOnly));
 }
 
 function lineHasAllowAnnotation(line: string, prevLine: string): boolean {
@@ -101,7 +110,11 @@ describe("text-tertiary usage audit", () => {
   const allFiles = AUDITED_DIRS.flatMap(getAllSourceFiles);
 
   it("audited directories contain source files (guards against directory rename)", () => {
-    expect(allFiles.length).toBeGreaterThan(50);
+    // Floor pegged near current count (~247). A loose floor (e.g. >50) would
+    // let a developer accidentally delete ~80% of the UI tree before the
+    // guard fires; the audit would then report zero violations because no
+    // files containing text-tertiary were scanned.
+    expect(allFiles.length).toBeGreaterThan(200);
   });
 
   const violations: string[] = [];
