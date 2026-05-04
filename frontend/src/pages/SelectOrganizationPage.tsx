@@ -51,7 +51,7 @@ export default function SelectOrganizationPage() {
             <Logo size="2xl" variant="icon" />
           </div>
           <h1 className="mb-2">Choose a workspace</h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-[var(--color-text-secondary)]">
             Select the organization and account you want to work with.
           </p>
         </div>
@@ -95,7 +95,7 @@ export default function SelectOrganizationPage() {
                       <p className="text-sm font-medium text-[var(--color-text-primary)]">
                         {org.name}
                       </p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-[var(--color-text-secondary)]">
                         {org.plan}
                       </p>
                     </div>
@@ -155,7 +155,7 @@ export default function SelectOrganizationPage() {
                     </div>
                   ))
                 ) : (
-                  <p className="text-sm text-muted-foreground py-6 text-center">
+                  <p className="text-sm text-[var(--color-text-secondary)] py-6 text-center">
                     {selectedOrgId
                       ? "No accounts found for this organization."
                       : "Select an organization to view its accounts."}
@@ -184,11 +184,11 @@ export default function SelectOrganizationPage() {
 
         {/* Footer */}
         <div className="mt-6 text-center">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-[var(--color-text-secondary)]">
             Need help?{" "}
             <a
               href="mailto:support@ken-e.com"
-              className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] transition-colors"
+              className="text-[var(--color-violet-600)] hover:underline transition-colors"
             >
               Contact Support
             </a>
