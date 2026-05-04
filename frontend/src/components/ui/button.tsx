@@ -10,7 +10,7 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-[var(--color-violet-500)] text-[var(--color-text-inverse)] border-2 border-[var(--color-violet-500)] shadow-[var(--shadow-color-violet)] hover:-translate-y-0.5 active:translate-y-0 disabled:bg-[var(--color-surface-muted)] disabled:text-[var(--color-text-disabled)] disabled:shadow-none disabled:transform-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-violet-300)]",
+          "bg-[var(--color-violet-600)] text-[var(--color-text-inverse)] border-2 border-[var(--color-violet-600)] shadow-[var(--shadow-color-violet)] hover:-translate-y-0.5 active:translate-y-0 disabled:bg-[var(--color-surface-muted)] disabled:text-[var(--color-text-disabled)] disabled:shadow-none disabled:transform-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-violet-300)]",
         gradient:
           "bg-[image:var(--gradient-cta)] text-[var(--color-text-inverse)] border-0 shadow-[var(--shadow-color-violet)] hover:-translate-y-0.5 active:translate-y-0 disabled:bg-[var(--color-surface-muted)] disabled:text-[var(--color-text-disabled)] disabled:shadow-none disabled:transform-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-violet-300)]",
         destructive:
