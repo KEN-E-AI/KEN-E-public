@@ -108,6 +108,28 @@ describe("LayoutC", () => {
       const main = screen.getByRole("main");
       expect(within(main).getByTestId("inner-content")).toBeInTheDocument();
     });
+
+    test("renders <aside aria-label='Chat sessions'> wrapping SessionsSidebar", () => {
+      renderLayoutC();
+      const aside = screen.getByRole("complementary", { name: /chat sessions/i });
+      expect(within(aside).getByTestId("sessions-sidebar")).toBeInTheDocument();
+    });
+
+    test("renders mobile <nav aria-label='Primary navigation (mobile)'>", () => {
+      renderLayoutC();
+      expect(
+        screen.getByRole("navigation", {
+          name: /Primary navigation \(mobile\)/i,
+        }),
+      ).toBeInTheDocument();
+    });
+
+    test("layout shell does not inject extra <h1> — page h1 count stays at one", () => {
+      // The layout must not duplicate page-provided headings.
+      // If a page supplies one <h1>, the rendered tree must have exactly one.
+      renderLayoutC({ children: <h1>Page title</h1> });
+      expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    });
   });
 
   describe("content-area max-width (isFullWidth allowlist)", () => {
