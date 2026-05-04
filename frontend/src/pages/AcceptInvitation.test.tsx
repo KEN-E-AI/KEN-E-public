@@ -15,8 +15,9 @@ vi.mock("@/lib/api", () => ({
     post: vi.fn(),
   },
 }));
+const mockToast = vi.fn();
 vi.mock("@/hooks/use-toast", () => ({
-  useToast: () => ({ toast: vi.fn() }),
+  useToast: () => ({ toast: mockToast }),
 }));
 
 const mockNavigate = vi.fn();

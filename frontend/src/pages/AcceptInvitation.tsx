@@ -13,11 +13,8 @@ import {
   Loader2,
   ArrowRight,
 } from "lucide-react";
-import {
-  verifyInvitationToken,
-  acceptInvitation,
-  type Invitation,
-} from "@/data/teamApi";
+import { verifyInvitationToken, acceptInvitation } from "@/data/teamApi";
+import type { Invitation } from "@/data/teamApi";
 
 type InvitationStatus =
   | "loading"
@@ -139,7 +136,7 @@ const AcceptInvitation = () => {
   };
 
   const outerClass =
-    "min-h-screen bg-gradient-to-br from-[var(--color-violet-50)] via-[var(--color-bg-default)] to-[var(--color-blue-50)] flex items-center justify-center p-4";
+    "min-h-screen bg-gradient-to-br from-[var(--color-violet-100)] via-[var(--color-bg-primary)] to-[var(--color-blue-100)] flex items-center justify-center p-4";
 
   // Loading state
   if (status === "loading") {
@@ -241,7 +238,9 @@ const AcceptInvitation = () => {
                 className="flex-1"
                 onClick={() => {
                   logout();
-                  navigate("/login", { state: { from: `/invite/${token}` } });
+                  navigate("/auth/signin", {
+                    state: { from: `/invite/${token}` },
+                  });
                 }}
               >
                 Sign In with Different Account
@@ -285,7 +284,8 @@ const AcceptInvitation = () => {
                   {invitation.inviter_name
                     .split(" ")
                     .map((n) => n[0])
-                    .join("")}
+                    .filter(Boolean)
+                    .join("") || "?"}
                 </div>
                 <div>
                   <p className="text-sm font-medium">
