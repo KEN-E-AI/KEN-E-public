@@ -275,6 +275,18 @@ describe("LayoutC", () => {
       expect(performanceLink).toHaveClass("scale-110");
     });
 
+    test("Workflows mobile tab is active on a /workflows/* sub-path other than the direct href", () => {
+      renderLayoutC({ initialPath: "/workflows/automations" });
+      const mobileNav = screen.getByRole("navigation", {
+        name: /Primary navigation \(mobile\)/i,
+      });
+      const workflowsLink = within(mobileNav).getByRole("link", {
+        name: /^workflows$/i,
+      });
+      expect(workflowsLink).toHaveClass("text-[var(--color-violet-500)]");
+      expect(workflowsLink).toHaveClass("scale-110");
+    });
+
     test("inactive tab uses the secondary-text class (WCAG AA contrast)", () => {
       // Mirror of TopNav's desktop-pill assertion. text-tertiary would fail
       // WCAG AA contrast on this surface (and used to — axe flagged 9 light /
