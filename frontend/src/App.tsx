@@ -110,7 +110,7 @@ const queryClient = new QueryClient();
 const OrganizationSelectionPage = () => {
   const navigate = useNavigate();
 
-  return <OrganizationSelection onComplete={() => navigate("/")} />;
+  return <OrganizationSelection onComplete={() => navigate("/chat")} />;
 };
 
 // Wrapper component for Authentication with navigation
