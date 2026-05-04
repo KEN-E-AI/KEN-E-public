@@ -22,7 +22,9 @@ describe("AutomationDetailsPage", () => {
     expect(
       screen.getByRole("heading", { name: /sample automation/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Active")).toBeInTheDocument();
+    expect(
+      screen.getByText("Active").closest("[data-slot='badge']"),
+    ).toBeTruthy();
   });
 
   it("renders both Overview and Outputs tab triggers", () => {

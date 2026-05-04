@@ -13,7 +13,6 @@ export function AutomationDetailsPage() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Header */}
       <div className="shrink-0 px-6 py-4 border-b border-[var(--color-border-default)] bg-card">
         <div className="flex items-center gap-3 mb-2">
           <button
@@ -42,7 +41,6 @@ export function AutomationDetailsPage() {
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="flex-1 overflow-auto px-6 py-4">
         <Tabs
           value={activeTab}
@@ -65,7 +63,7 @@ export function AutomationDetailsPage() {
                 DAG renders here
               </p>
               <p className="text-xs text-[var(--color-text-tertiary)]">
-                React Flow editor lands in A-PRD-06
+                Visual editor coming soon.
               </p>
             </div>
           </TabsContent>
