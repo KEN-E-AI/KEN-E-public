@@ -14,3 +14,5 @@ export function SkillsPage() {
     </div>
   );
 }
+
+export default SkillsPage;

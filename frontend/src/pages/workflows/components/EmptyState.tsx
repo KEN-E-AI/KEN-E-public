@@ -1,3 +1,4 @@
+import type React from "react";
 import { MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -24,10 +25,7 @@ export function EmptyState({
       <h3 className="mb-2">{title}</h3>
       <p className="text-muted-foreground mb-6 max-w-md">{description}</p>
       {actionLabel && onAction && (
-        <Button onClick={onAction}>
-          <MessageSquare className="size-4 mr-2" />
-          {actionLabel}
-        </Button>
+        <Button onClick={onAction}>{actionLabel}</Button>
       )}
     </div>
   );
