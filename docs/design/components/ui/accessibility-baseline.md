@@ -52,6 +52,7 @@ The following token pairs are verified in `token-contrast.test.ts`. All must mee
 | `error-text` on `error-bg` | ✅ | ✅ |
 | `warning-text` on `warning-bg` | ✅ | ✅ |
 | `info-text` on `info-bg` | ✅ | ✅ |
+| `violet-600` on `bg-primary` (body text) | ~6.4:1 ✅ | ~7.5:1 ✅ |
 
 ### Large text (≥ 3:1) — bold ≥ 14pt or regular ≥ 18pt
 
@@ -77,7 +78,19 @@ The following token pairs are verified in `token-contrast.test.ts`. All must mee
 - Large interactive labels (nav pill text, badge labels — large text AA 3:1 ✅)
 - Icon fills where non-text contrast (3:1) applies ✅
 
-Using violet-500 for small body copy would be a WCAG violation.
+Using violet-500 for small body copy would be a WCAG violation. **Use `--color-violet-600` instead** — see usage rule below.
+
+### Brand violet usage rule (UI-54)
+
+When you need brand-tinted text, the choice depends on size:
+
+| Context | Token | Light ratio | Dark ratio |
+|---------|-------|-------------|------------|
+| Body text (small, regular weight) — chips, paragraphs, captions | `--color-violet-600` (`#4f46e5` / `#a5b4fc`) | ~6.4:1 ✅ AA normal | ~7.5:1 ✅ AA normal |
+| Large interactive labels (≥ 14pt bold or ≥ 18pt regular) — nav pills, badge labels, button text | `--color-violet-500` (`#6366f1` / `#818cf8`) | ~4.31:1 ✅ AA large | ~6.0:1 ✅ AA normal |
+| Icons / focus rings / non-text UI | `--color-violet-500` | ✅ 3:1 non-text | ✅ |
+
+The brand identity is preserved via `--color-violet-500` everywhere it visually meets AA at its intended use; for small body text the slightly darker `--color-violet-600` keeps the brand feel while clearing the 4.5:1 floor.
 
 ### `text-inverse` on `violet-500` — large text only
 
