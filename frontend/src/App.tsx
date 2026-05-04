@@ -182,7 +182,7 @@ const App = () => (
                     >
                       <Route
                         path="/"
-                        element={<Navigate to="/chat" replace />}
+                        element={<Navigate to="/performance" replace />}
                       />
                       <Route
                         path="/settings"
