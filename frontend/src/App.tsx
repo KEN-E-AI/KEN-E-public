@@ -98,9 +98,26 @@ const AuthenticationPage = () => {
         // Redirect to invitation acceptance page after authentication
         navigate(`/invite/${invitationToken}`);
       } else {
-        // Check if there's a redirect location in state
-        const from = location.state?.from || "/";
-        navigate(from);
+        // Extract only the path components from the location state to prevent
+        // stale `state`/`key` bleedthrough and guard against protocol-relative
+        // strings (e.g. "//evil.example.com") that navigate() would treat as
+        // external navigations. Always produces a same-origin relative path.
+        const rawFrom = location.state?.from;
+        const safePath =
+          rawFrom &&
+          typeof rawFrom === "object" &&
+          typeof rawFrom.pathname === "string"
+            ? rawFrom.pathname +
+              (typeof rawFrom.search === "string" ? rawFrom.search : "") +
+              (typeof rawFrom.hash === "string" ? rawFrom.hash : "")
+            : typeof rawFrom === "string"
+              ? rawFrom
+              : "/";
+        const from =
+          safePath.startsWith("/") && !safePath.startsWith("//")
+            ? safePath
+            : "/";
+        navigate(from, { replace: true });
       }
     } catch (error) {
       console.error("[AuthenticationPage] Navigation error:", error);
