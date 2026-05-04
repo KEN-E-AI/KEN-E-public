@@ -180,6 +180,16 @@ const App = () => (
                         </ProtectedRoute>
                       }
                     >
+                      <Route
+                        path="/"
+                        element={<Navigate to="/chat" replace />}
+                      />
+                      <Route
+                        path="/settings"
+                        element={
+                          <Navigate to="/settings/organization" replace />
+                        }
+                      />
                       <Route path="/performance" element={<Performance />} />
                       <Route
                         path="/recommendations"
