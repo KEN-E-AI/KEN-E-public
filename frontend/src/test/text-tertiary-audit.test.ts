@@ -94,9 +94,12 @@ function getAllSourceFiles(dir: string): string[] {
 function lineMatchesTarget(line: string): boolean {
   // Strip line comments so a comment that mentions `text-tertiary` (e.g. a
   // migration TODO or rationale note) does not falsely trigger the gate.
+  // Match `//` only when preceded by whitespace or line-start so URLs like
+  // `https://docs.example.com` are preserved (otherwise we'd silently erase
+  // the className that follows the URL on the same line — a false negative).
   // Block comments / JSX comments are rare on a single class-applying line;
   // the per-line `// allow-text-tertiary` escape hatch handles edge cases.
-  const codeOnly = line.replace(/\/\/.*$/, "");
+  const codeOnly = line.replace(/(^|\s)\/\/.*$/, "$1");
   return TARGET_PATTERNS.some((re) => re.test(codeOnly));
 }
 
