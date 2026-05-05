@@ -9,7 +9,6 @@ dependencies = [
     "google-cloud-aiplatform>=1.140.0",
     "google-cloud-firestore>=2.23.0",
     "neo4j>=5.14.0",
-    "newsapi-python>=0.2.7",
     "openai>=1.0.0",
     "pypdf2>=3.0.1",
     "python-dotenv",
