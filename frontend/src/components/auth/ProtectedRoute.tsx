@@ -1,24 +1,15 @@
-import { ReactNode } from "react";
-import { useLocation } from "react-router-dom";
+import type { ReactNode } from "react";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import Authentication from "@/pages/Authentication";
-import OrganizationSelection from "@/pages/OrganizationSelection";
 
-interface ProtectedRouteProps {
+type ProtectedRouteProps = {
   children: ReactNode;
-}
+};
 
 const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   const location = useLocation();
-  const {
-    isAuthenticated,
-    isAuthLoading,
-    hasSelectedWorkspace,
-    login,
-    completeWorkspaceSelection,
-  } = useAuth();
+  const { isAuthenticated, isAuthLoading, hasSelectedWorkspace } = useAuth();
 
-  // Show loading state while checking authentication
   if (isAuthLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -30,23 +21,16 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
     );
   }
 
-  // If not authenticated, show authentication page
+  // If not authenticated, redirect to /sign-in carrying the original path for
+  // post-auth return navigation (AuthenticationPage already reads location.state?.from)
   if (!isAuthenticated) {
-    return <Authentication onAuthenticated={() => {}} />;
+    return <Navigate to="/sign-in" replace state={{ from: location }} />;
   }
 
-  // If authenticated but hasn't selected workspace, show organization selection
   if (!hasSelectedWorkspace) {
-    return (
-      <OrganizationSelection
-        onComplete={() => {
-          completeWorkspaceSelection();
-        }}
-      />
-    );
+    return <Navigate to="/select-organization" replace />;
   }
 
-  // If authenticated and has selected workspace, show the protected content
   return <>{children}</>;
 };
 

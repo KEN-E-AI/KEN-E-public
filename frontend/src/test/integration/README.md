@@ -6,23 +6,11 @@ This directory contains comprehensive integration tests for the KEN-E frontend a
 
 ### Test Files
 
-1. **`settings-workflow.test.tsx`** - Settings management workflows
-2. **`account-management-workflow.test.tsx`** - Organization and account management
-3. **`auth-navigation-workflow.test.tsx`** - Authentication and navigation flows
-4. **`dashboard-workflow.test.tsx`** - Dashboard interactions and data flows
-5. **`index.test.tsx`** - Test suite orchestration
+1. **`account-management-workflow.test.tsx`** - Organization and account management
+2. **`account-creation-marketing-fields.test.tsx`** - Account creation form and marketing fields
+3. **`index.test.tsx`** - Test suite orchestration
 
 ### Test Categories
-
-#### Settings Workflow Tests
-
-- Settings navigation flow
-- User profile updates
-- Notification preferences
-- User preferences changes
-- Form validation integration
-- Error handling scenarios
-- End-to-end settings configuration
 
 #### Account Management Tests
 
@@ -34,24 +22,11 @@ This directory contains comprehensive integration tests for the KEN-E frontend a
 - Permission-based access control
 - Data persistence and state management
 
-#### Authentication & Navigation Tests
+#### Account Creation Tests
 
-- User authentication flow
-- Login and signup workflows
-- Protected route navigation
-- Organization context management
-- Session management
-- Error handling and recovery
-
-#### Dashboard Workflow Tests
-
-- Home dashboard functionality
-- Performance metrics display
-- Big bets tracking
-- Insights and recommendations
-- Cross-dashboard navigation
-- Real-time data updates
-- User interaction workflows
+- Account creation form validation
+- Marketing fields configuration
+- Form submission workflows
 
 ## Running Tests
 
@@ -64,7 +39,7 @@ npm run test:integration
 ### Run Specific Test Suite
 
 ```bash
-npm run vitest src/test/integration/settings-workflow.test.tsx
+npm run vitest src/test/integration/account-management-workflow.test.tsx
 ```
 
 ### Run with Coverage

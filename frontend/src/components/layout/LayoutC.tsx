@@ -73,8 +73,13 @@ export function resetLayoutBannersForTesting(): void {
 const MINI_CHAT_DEFAULT_HEIGHT = 400;
 const MINI_CHAT_MIN_HEIGHT = 200;
 
-function isItemActive(pathname: string, href: string): boolean {
-  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+function isItemActive(
+  pathname: string,
+  href: string,
+  matchPrefix?: string,
+): boolean {
+  const prefix = matchPrefix ?? href;
+  return prefix === "/" ? pathname === "/" : pathname.startsWith(prefix);
 }
 
 export function LayoutC() {
@@ -106,7 +111,7 @@ function LayoutCInner() {
     (row) => row.isVisible !== false,
   ).sort((a, b) => a.order - b.order);
 
-  const isHome = location.pathname === "/";
+  const isHome = location.pathname === "/chat";
   // Routes that opt out of the max-w-screen-2xl content constraint and render
   // full-bleed. /knowledge/*, /measurement-plan, /strategy, /workflows/automations,
   // and /performance/dashboards/* host wide tables (MetricsConfiguration,
@@ -277,7 +282,11 @@ function LayoutCInner() {
       >
         <div className="grid grid-cols-7 h-16">
           {NAVIGATION.map((item) => {
-            const isActive = isItemActive(location.pathname, item.href);
+            const isActive = isItemActive(
+              location.pathname,
+              item.href,
+              item.matchPrefix,
+            );
             return (
               <Link
                 key={item.name}

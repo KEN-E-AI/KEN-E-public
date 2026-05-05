@@ -58,6 +58,9 @@ const ALLOWED_FILES = new Set<string>([
   "components/layout/LayoutC.tsx",
   "components/layout/ProfileMenu.tsx",
 
+  // workflows pages — schedule/last-run metadata, DAG placeholder help text, empty-state dim icon + description
+  "pages/workflows/AutomationDetailsPage.tsx",
+
   // dev preview — renders every primitive intentionally
   "pages/__dev__/DesignSystemPreview.tsx",
 ]);

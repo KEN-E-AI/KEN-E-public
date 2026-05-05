@@ -218,7 +218,7 @@ export async function acceptInvitation(
   data: AcceptInvitationData,
 ): Promise<{ success: boolean; message: string }> {
   try {
-    const response = await apiPublic.post(
+    const response = await api.post(
       `/api/v1/firestore/invitations/accept/${token}`,
       data,
     );

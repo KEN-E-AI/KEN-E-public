@@ -250,7 +250,7 @@ describe("LayoutC", () => {
         ["Chat", "/"],
         ["Performance", "/performance"],
         ["Calendar", "/calendar"],
-        ["Workflows", "/workflows"],
+        ["Workflows", "/workflows/agents"],
         ["Knowledge", "/strategy"],
         ["Extensions", "/extensions"],
         ["Settings", "/settings/account"],
@@ -273,6 +273,18 @@ describe("LayoutC", () => {
       });
       expect(performanceLink).toHaveClass("text-[var(--color-violet-500)]");
       expect(performanceLink).toHaveClass("scale-110");
+    });
+
+    test("Workflows mobile tab is active on a /workflows/* sub-path other than the direct href", () => {
+      renderLayoutC({ initialPath: "/workflows/automations" });
+      const mobileNav = screen.getByRole("navigation", {
+        name: /Primary navigation \(mobile\)/i,
+      });
+      const workflowsLink = within(mobileNav).getByRole("link", {
+        name: /^workflows$/i,
+      });
+      expect(workflowsLink).toHaveClass("text-[var(--color-violet-500)]");
+      expect(workflowsLink).toHaveClass("scale-110");
     });
 
     test("inactive tab uses the secondary-text class (WCAG AA contrast)", () => {

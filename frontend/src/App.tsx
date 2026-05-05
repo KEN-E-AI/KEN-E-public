@@ -18,12 +18,13 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ChatProvider } from "@/contexts/ChatContext";
 import { AccountOperationsProvider } from "@/contexts/AccountOperationsContext";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import SelectOrganizationPage from "@/components/auth/SelectOrganizationPage";
 import { AppErrorBoundary } from "@/components/layout/AppErrorBoundary";
 import "./App.css";
 
 import { LayoutC } from "@/components/layout/LayoutC";
+import { LayoutSettings } from "@/components/layout/LayoutSettings";
 import Index from "./pages/Index";
-import Home from "./pages/Home";
 import Performance from "./pages/Performance";
 import Recommendations from "./pages/Recommendations";
 import Products from "./pages/Products";
@@ -41,17 +42,15 @@ import KnowledgeBrand from "./pages/KnowledgeBrand";
 import KnowledgeStrategy from "./pages/KnowledgeStrategy";
 import Insights from "./pages/Insights";
 import AccountSettings from "./pages/AccountSettings";
+import CreateOrganization from "./pages/CreateOrganization";
 import UserSettings from "./pages/UserSettings";
-import Settings from "./pages/Settings";
-import AdminSettings from "./pages/AdminSettings";
-import AdminIndustryKeywords from "./pages/AdminIndustryKeywords";
-import AgentConfigManagement from "./pages/AgentConfigManagement";
-import ToolUsageDashboard from "./pages/ToolUsageDashboard";
 import OrganizationSelection from "./pages/OrganizationSelection";
 import AcceptInvitation from "./pages/AcceptInvitation";
 import NotFoundPage from "./pages/NotFoundPage";
 import EmailActionHandler from "./components/auth/EmailActionHandler";
 import Authentication from "./pages/Authentication";
+import { ChatInterface } from "@/components/chat/ChatInterface";
+import { WorkflowsLayout } from "./pages/workflows/WorkflowsLayout";
 // Import test utilities in development
 if (import.meta.env.DEV) {
   import("./utils/testNotification");
@@ -81,7 +80,7 @@ const queryClient = new QueryClient();
 const OrganizationSelectionPage = () => {
   const navigate = useNavigate();
 
-  return <OrganizationSelection onComplete={() => navigate("/")} />;
+  return <OrganizationSelection onComplete={() => navigate("/chat")} />;
 };
 
 // Wrapper component for Authentication with navigation
@@ -98,9 +97,26 @@ const AuthenticationPage = () => {
         // Redirect to invitation acceptance page after authentication
         navigate(`/invite/${invitationToken}`);
       } else {
-        // Check if there's a redirect location in state
-        const from = location.state?.from || "/";
-        navigate(from);
+        // Extract only the path components from the location state to prevent
+        // stale `state`/`key` bleedthrough and guard against protocol-relative
+        // strings (e.g. "//evil.example.com") that navigate() would treat as
+        // external navigations. Always produces a same-origin relative path.
+        const rawFrom = location.state?.from;
+        const safePath =
+          rawFrom &&
+          typeof rawFrom === "object" &&
+          typeof rawFrom.pathname === "string"
+            ? rawFrom.pathname +
+              (typeof rawFrom.search === "string" ? rawFrom.search : "") +
+              (typeof rawFrom.hash === "string" ? rawFrom.hash : "")
+            : typeof rawFrom === "string"
+              ? rawFrom
+              : "/";
+        const from =
+          safePath.startsWith("/") && !safePath.startsWith("//")
+            ? safePath
+            : "/";
+        navigate(from, { replace: true });
       }
     } catch (error) {
       console.error("[AuthenticationPage] Navigation error:", error);
@@ -136,6 +152,8 @@ const App = () => (
                   <BackgroundEffects />
                   <Routes>
                     {/* Unprotected routes */}
+                    <Route path="/sign-in" element={<AuthenticationPage />} />
+                    <Route path="/sign-up" element={<AuthenticationPage />} />
                     <Route
                       path="/auth/signin"
                       element={<AuthenticationPage />}
@@ -145,8 +163,12 @@ const App = () => (
                       element={<AuthenticationPage />}
                     />
                     <Route
+                      path="/create-account"
+                      element={<AuthenticationPage />}
+                    />
+                    <Route
                       path="/create-organization"
-                      element={<AccountSettings />}
+                      element={<CreateOrganization />}
                     />
                     <Route
                       path="/invite/:token"
@@ -156,14 +178,35 @@ const App = () => (
                       path="/auth/action"
                       element={<EmailActionHandler />}
                     />
+                    {/* Standalone workspace-selection page — outside ProtectedRoute to avoid
+                        circular redirect when !hasSelectedWorkspace, but internally gated on auth */}
+                    <Route
+                      path="/select-organization"
+                      element={<SelectOrganizationPage />}
+                    />
+                    {/* Top-level redirects — outside layouts so no chrome mounts before the
+                        redirect fires. Destinations inside ProtectedRoute handle auth gating. */}
+                    <Route path="/" element={<Navigate to="/chat" replace />} />
+                    <Route
+                      path="/settings"
+                      element={<Navigate to="/settings/organization" replace />}
+                    />
+                    <Route
+                      path="/verify-email"
+                      element={<AuthenticationPage />}
+                    />
                     {/* Backward compatibility redirects */}
                     <Route
+                      path="/organization-selection"
+                      element={<Navigate to="/select-organization" replace />}
+                    />
+                    <Route
                       path="/login"
-                      element={<Navigate to="/auth/signin" replace />}
+                      element={<Navigate to="/sign-in" replace />}
                     />
                     <Route
                       path="/signup"
-                      element={<Navigate to="/auth/signup" replace />}
+                      element={<Navigate to="/sign-up" replace />}
                     />
                     <Route
                       path="/organization-settings"
@@ -186,7 +229,11 @@ const App = () => (
                         </ProtectedRoute>
                       }
                     >
-                      <Route path="/" element={<Home />} />
+                      <Route path="/chat" element={<ChatInterface />} />
+                      <Route
+                        path="/"
+                        element={<Navigate to="/performance" replace />}
+                      />
                       <Route path="/performance" element={<Performance />} />
                       <Route
                         path="/recommendations"
@@ -232,36 +279,57 @@ const App = () => (
                         path="/knowledge/brand"
                         element={<KnowledgeBrand />}
                       />
+                      {/* Workflows shell — production stubs for WorkflowsLayout (UI-35).
+                          Tab page content is owned by UI-38/39/40/41; these routes
+                          ship the layout chrome so the nav entry and URL-sync work today. */}
+                      <Route
+                        path="/workflows"
+                        element={<Navigate to="/workflows/agents" replace />}
+                      />
+                      <Route
+                        path="/workflows/agents"
+                        element={
+                          <WorkflowsLayout activeTab="agents">
+                            <div className="p-6 text-sm text-foreground">
+                              Agents tab — content coming in UI-38
+                            </div>
+                          </WorkflowsLayout>
+                        }
+                      />
+                      <Route
+                        path="/workflows/skills"
+                        element={
+                          <WorkflowsLayout activeTab="skills">
+                            <div className="p-6 text-sm text-foreground">
+                              Skills tab — content coming in UI-40
+                            </div>
+                          </WorkflowsLayout>
+                        }
+                      />
+                      <Route
+                        path="/workflows/automations"
+                        element={
+                          <WorkflowsLayout activeTab="automations">
+                            <div className="p-6 text-sm text-foreground">
+                              Automations tab — content coming in UI-39
+                            </div>
+                          </WorkflowsLayout>
+                        }
+                      />
+                      <Route
+                        path="/workflows/agents/new"
+                        element={
+                          <WorkflowsLayout activeTab="agents">
+                            <div className="p-6 text-sm text-foreground">
+                              Agent create form — coming in UI-41
+                            </div>
+                          </WorkflowsLayout>
+                        }
+                      />
                       <Route path="/measurement-plan" element={<Index />} />
                       <Route
                         path="/analysis-report/:reportId"
                         element={<AnalysisReport />}
-                      />
-                      <Route path="/settings" element={<Settings />} />
-                      <Route
-                        path="/settings/organization"
-                        element={<AccountSettings />}
-                      />
-                      <Route
-                        path="/settings/account/:accountId"
-                        element={<AccountSettings />}
-                      />
-                      <Route path="/settings/user" element={<UserSettings />} />
-                      <Route
-                        path="/settings/admin"
-                        element={<AdminSettings />}
-                      />
-                      <Route
-                        path="/settings/admin/industry-keywords"
-                        element={<AdminIndustryKeywords />}
-                      />
-                      <Route
-                        path="/settings/admin/agent-configs"
-                        element={<AgentConfigManagement />}
-                      />
-                      <Route
-                        path="/settings/admin/tool-usage"
-                        element={<ToolUsageDashboard />}
                       />
                       <Route
                         path="/organization-selection"
@@ -269,6 +337,28 @@ const App = () => (
                       />
                       {/* Catch-all inside LayoutC so authenticated users see the 404 with chrome */}
                       <Route path="*" element={<NotFoundPage />} />
+                    </Route>
+                    {/* Settings routes — inside LayoutSettings (left-rail nav shell) */}
+                    <Route
+                      element={
+                        <ProtectedRoute>
+                          <LayoutSettings />
+                        </ProtectedRoute>
+                      }
+                    >
+                      <Route
+                        path="/settings/organization"
+                        element={<AccountSettings />}
+                      />
+                      <Route
+                        path="/settings/account"
+                        element={<AccountSettings />}
+                      />
+                      <Route
+                        path="/settings/account/:accountId"
+                        element={<AccountSettings />}
+                      />
+                      <Route path="/settings/user" element={<UserSettings />} />
                     </Route>
                     {/* Dev-only harness routes — tree-shaken from production bundle */}
                     {import.meta.env.DEV && LazyLayoutSettingsHarness && (

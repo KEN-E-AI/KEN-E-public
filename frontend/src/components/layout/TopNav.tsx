@@ -35,20 +35,32 @@ export interface NavItem {
   name: string;
   href: string;
   icon: LucideIcon;
+  /** When set, active-state matching uses this prefix instead of `href`. */
+  matchPrefix?: string;
 }
 
 export const NAVIGATION: readonly NavItem[] = [
-  { name: "Chat", href: "/", icon: MessageSquare },
+  { name: "Chat", href: "/chat", icon: MessageSquare },
   { name: "Performance", href: "/performance", icon: TrendingUp },
   { name: "Calendar", href: "/calendar", icon: Calendar },
-  { name: "Workflows", href: "/workflows", icon: Network },
+  {
+    name: "Workflows",
+    href: "/workflows/agents",
+    icon: Network,
+    matchPrefix: "/workflows",
+  },
   { name: "Knowledge", href: "/strategy", icon: BookOpen },
   { name: "Extensions", href: "/extensions", icon: Puzzle },
   { name: "Settings", href: "/settings/account", icon: Settings },
 ] as const;
 
-function isItemActive(pathname: string, href: string): boolean {
-  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+function isItemActive(
+  pathname: string,
+  href: string,
+  matchPrefix?: string,
+): boolean {
+  const prefix = matchPrefix ?? href;
+  return prefix === "/" ? pathname === "/" : pathname.startsWith(prefix);
 }
 
 export function TopNav() {
@@ -80,7 +92,11 @@ export function TopNav() {
           >
             <TooltipProvider>
               {NAVIGATION.map((item) => {
-                const isActive = isItemActive(location.pathname, item.href);
+                const isActive = isItemActive(
+                  location.pathname,
+                  item.href,
+                  item.matchPrefix,
+                );
 
                 if (item.name === "Extensions") {
                   return (
@@ -170,7 +186,11 @@ export function TopNav() {
               >
                 {/* Nested extensions list deferred until mobile-drawer spec ships. */}
                 {NAVIGATION.map((item) => {
-                  const isActive = isItemActive(location.pathname, item.href);
+                  const isActive = isItemActive(
+                    location.pathname,
+                    item.href,
+                    item.matchPrefix,
+                  );
                   return (
                     <SheetClose asChild key={item.name}>
                       <Link
