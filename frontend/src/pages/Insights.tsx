@@ -325,7 +325,9 @@ const Insights = () => {
           <Card>
             <CardContent className="text-center py-12">
               <div className="animate-spin h-8 w-8 border-2 border-brand-medium-blue border-t-transparent rounded-full mx-auto mb-4"></div>
-              <p className="text-[var(--color-text-tertiary)]">Loading insights...</p>
+              <p className="text-[var(--color-text-tertiary)]">
+                Loading insights...
+              </p>
             </CardContent>
           </Card>
         ) : error ? (

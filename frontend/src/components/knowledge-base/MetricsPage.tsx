@@ -298,7 +298,9 @@ const MetricsPage = () => {
 
   const getSortIcon = (field: SortField) => {
     if (sortField !== field) {
-      return <ArrowUpDown className="h-3 w-3 text-[var(--color-text-disabled)]" />;
+      return (
+        <ArrowUpDown className="h-3 w-3 text-[var(--color-text-disabled)]" />
+      );
     }
     return sortDirection === "asc" ? (
       <ArrowUp className="h-3 w-3 text-[var(--color-text-secondary)]" />
@@ -432,7 +434,9 @@ const MetricsPage = () => {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-center py-8">
-          <div className="text-[var(--color-text-tertiary)]">Loading metrics...</div>
+          <div className="text-[var(--color-text-tertiary)]">
+            Loading metrics...
+          </div>
         </div>
       </div>
     );
@@ -727,7 +731,9 @@ const MetricsPage = () => {
               <button
                 onClick={() => handleSort("name")}
                 className={`flex items-center gap-1 px-2 py-1 rounded whitespace-nowrap ${
-                  sortField === "name" ? "bg-[var(--color-bg-elevated)]" : "hover:bg-[var(--color-bg-elevated)]"
+                  sortField === "name"
+                    ? "bg-[var(--color-bg-elevated)]"
+                    : "hover:bg-[var(--color-bg-elevated)]"
                 }`}
               >
                 Name {getSortIcon("name")}
@@ -735,7 +741,9 @@ const MetricsPage = () => {
               <button
                 onClick={() => handleSort("dataset")}
                 className={`flex items-center gap-1 px-2 py-1 rounded whitespace-nowrap ${
-                  sortField === "dataset" ? "bg-[var(--color-bg-elevated)]" : "hover:bg-[var(--color-bg-elevated)]"
+                  sortField === "dataset"
+                    ? "bg-[var(--color-bg-elevated)]"
+                    : "hover:bg-[var(--color-bg-elevated)]"
                 }`}
               >
                 Dataset {getSortIcon("dataset")}
@@ -743,7 +751,9 @@ const MetricsPage = () => {
               <button
                 onClick={() => handleSort("product")}
                 className={`flex items-center gap-1 px-2 py-1 rounded whitespace-nowrap ${
-                  sortField === "product" ? "bg-[var(--color-bg-elevated)]" : "hover:bg-[var(--color-bg-elevated)]"
+                  sortField === "product"
+                    ? "bg-[var(--color-bg-elevated)]"
+                    : "hover:bg-[var(--color-bg-elevated)]"
                 }`}
               >
                 Product {getSortIcon("product")}

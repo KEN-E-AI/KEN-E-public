@@ -270,7 +270,9 @@ export const AutoSaveIndicator = ({
           {isAutoSaving ? "Auto-saving..." : "Auto-saved"}
         </span>
         {lastAutoSaved && (
-          <span className="text-[var(--color-text-tertiary)]">{lastAutoSaved}</span>
+          <span className="text-[var(--color-text-tertiary)]">
+            {lastAutoSaved}
+          </span>
         )}
       </div>
 

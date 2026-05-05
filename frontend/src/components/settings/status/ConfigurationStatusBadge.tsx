@@ -77,14 +77,16 @@ export const ConfigurationStatusBadge = ({
         return {
           icon: Info,
           label: "Pending",
-          color: "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] border-[var(--color-border-default)]",
+          color:
+            "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] border-[var(--color-border-default)]",
           iconColor: "text-[var(--color-text-tertiary)]",
         };
       default:
         return {
           icon: Clock,
           label: "Unknown",
-          color: "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] border-[var(--color-border-default)]",
+          color:
+            "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] border-[var(--color-border-default)]",
           iconColor: "text-[var(--color-text-tertiary)]",
         };
     }
@@ -132,7 +134,9 @@ export const ConfigurationStatusBadge = ({
 
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-[var(--color-text-tertiary)]">Overall Progress</span>
+                <span className="text-[var(--color-text-tertiary)]">
+                  Overall Progress
+                </span>
                 <span className="font-medium">{Math.round(progress)}%</span>
               </div>
               <Progress value={progress} className="h-2" />
@@ -140,7 +144,9 @@ export const ConfigurationStatusBadge = ({
               {requiredSteps < totalSteps && (
                 <>
                   <div className="flex justify-between text-sm">
-                    <span className="text-[var(--color-text-tertiary)]">Required Steps</span>
+                    <span className="text-[var(--color-text-tertiary)]">
+                      Required Steps
+                    </span>
                     <span className="font-medium">
                       {Math.round(requiredProgress)}%
                     </span>
@@ -268,7 +274,9 @@ export const ConfigurationOverview = ({
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span className="text-[var(--color-text-tertiary)]">Overall Progress</span>
+                  <span className="text-[var(--color-text-tertiary)]">
+                    Overall Progress
+                  </span>
                   <span className="font-medium">
                     {Math.round(overallProgress)}%
                   </span>
@@ -278,7 +286,9 @@ export const ConfigurationOverview = ({
 
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span className="text-[var(--color-text-tertiary)]">Required Steps</span>
+                  <span className="text-[var(--color-text-tertiary)]">
+                    Required Steps
+                  </span>
                   <span className="font-medium">
                     {Math.round(requiredProgress)}%
                   </span>
@@ -305,7 +315,9 @@ export const ConfigurationOverview = ({
             className="flex items-center justify-between p-3 bg-[var(--color-bg-secondary)] rounded-lg"
           >
             <div>
-              <h4 className="font-medium text-[var(--color-text-primary)]">{section.title}</h4>
+              <h4 className="font-medium text-[var(--color-text-primary)]">
+                {section.title}
+              </h4>
               {section.description && (
                 <p className="text-sm text-[var(--color-text-tertiary)] mt-1">
                   {section.description}

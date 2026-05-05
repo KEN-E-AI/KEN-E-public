@@ -171,7 +171,9 @@ export const AccountPerformanceSettings = ({
       case "down":
         return <TrendingUp className="h-4 w-4 text-red-500 rotate-180" />;
       default:
-        return <LineChart className="h-4 w-4 text-[var(--color-text-tertiary)]" />;
+        return (
+          <LineChart className="h-4 w-4 text-[var(--color-text-tertiary)]" />
+        );
     }
   };
 

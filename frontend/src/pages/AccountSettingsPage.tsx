@@ -45,7 +45,9 @@ const AccountSettingsPage = () => {
       <>
         <div>
           <div className="text-center py-8">
-            <p className="text-[var(--color-text-tertiary)]">Account not found</p>
+            <p className="text-[var(--color-text-tertiary)]">
+              Account not found
+            </p>
           </div>
         </div>
       </>

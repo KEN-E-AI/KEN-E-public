@@ -106,7 +106,8 @@ export function ConceptSearchDialog({
       topic: "bg-yellow-100 text-yellow-800 border-yellow-300",
       product: "bg-pink-100 text-pink-800 border-pink-300",
       event: "bg-orange-100 text-orange-800 border-orange-300",
-      other: "bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] border-[var(--color-border-default)]",
+      other:
+        "bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] border-[var(--color-border-default)]",
     };
     return colors[type as keyof typeof colors] || colors.other;
   };

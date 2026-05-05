@@ -910,7 +910,9 @@ const ActivitiesPage = () => {
         {/* Loading State */}
         {loading && (
           <div className="text-center py-8">
-            <div className="text-sm text-[var(--color-text-tertiary)]">Loading activities...</div>
+            <div className="text-sm text-[var(--color-text-tertiary)]">
+              Loading activities...
+            </div>
           </div>
         )}
 

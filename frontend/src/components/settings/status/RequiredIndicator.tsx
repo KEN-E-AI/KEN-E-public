@@ -47,7 +47,10 @@ export const RequiredIndicator = ({
         return (
           <Badge
             variant="outline"
-            className={cn("text-[var(--color-text-tertiary)] border-[var(--color-border-default)]", sizeClasses[size])}
+            className={cn(
+              "text-[var(--color-text-tertiary)] border-[var(--color-border-default)]",
+              sizeClasses[size],
+            )}
           >
             Optional
           </Badge>
@@ -231,7 +234,9 @@ export const RequiredFieldsOverview = ({
       </div>
 
       <div className="space-y-2">
-        <h4 className="text-sm font-medium text-[var(--color-text-primary)]">Field Status</h4>
+        <h4 className="text-sm font-medium text-[var(--color-text-primary)]">
+          Field Status
+        </h4>
         <div className="grid gap-2">
           {fields.map((field) => (
             <div

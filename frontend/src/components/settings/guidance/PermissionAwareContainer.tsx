@@ -67,7 +67,10 @@ export const PermissionAwareContainer = ({
           {children}
         </div>
         <div className="absolute top-2 right-2">
-          <Badge variant="outline" className="bg-[var(--color-bg-secondary)] text-[var(--color-text-tertiary)]">
+          <Badge
+            variant="outline"
+            className="bg-[var(--color-bg-secondary)] text-[var(--color-text-tertiary)]"
+          >
             <Lock className="h-3 w-3 mr-1" />
             Read-only
           </Badge>

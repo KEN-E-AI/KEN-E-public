@@ -162,9 +162,13 @@ const ObjectiveNode = ({ data }: { data: any }) => {
         <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2">
           <div className="w-6 h-6 bg-white border-2 border-[var(--color-border-default)] rounded-full flex items-center justify-center shadow-sm">
             {data.isSelected ? (
-              <span className="text-xs font-bold text-[var(--color-text-tertiary)]">-</span>
+              <span className="text-xs font-bold text-[var(--color-text-tertiary)]">
+                -
+              </span>
             ) : (
-              <span className="text-xs font-bold text-[var(--color-text-tertiary)]">+</span>
+              <span className="text-xs font-bold text-[var(--color-text-tertiary)]">
+                +
+              </span>
             )}
           </div>
         </div>
@@ -192,7 +196,9 @@ const ObjectiveNode = ({ data }: { data: any }) => {
           </DialogHeader>
 
           <div className="space-y-6">
-            <p className="text-[var(--color-text-secondary)]">{data.objective}</p>
+            <p className="text-[var(--color-text-secondary)]">
+              {data.objective}
+            </p>
 
             {/* Divider */}
             {(data.effectivenessKPI || data.efficiencyKPI) && (
@@ -240,10 +246,18 @@ const ObjectiveNode = ({ data }: { data: any }) => {
                           className="w-full h-full flex flex-col justify-center items-center"
                         >
                           {/* Y-axis labels */}
-                          <text x="10" y="15" className="text-xs fill-[var(--color-text-disabled)]">
+                          <text
+                            x="10"
+                            y="15"
+                            className="text-xs fill-[var(--color-text-disabled)]"
+                          >
                             2.0M
                           </text>
-                          <text x="10" y="65" className="text-xs fill-[var(--color-text-disabled)]">
+                          <text
+                            x="10"
+                            y="65"
+                            className="text-xs fill-[var(--color-text-disabled)]"
+                          >
                             1.0M
                           </text>
                           <text
@@ -359,10 +373,18 @@ const ObjectiveNode = ({ data }: { data: any }) => {
                           className="w-full h-full flex flex-col justify-center items-center"
                         >
                           {/* Y-axis labels */}
-                          <text x="10" y="15" className="text-xs fill-[var(--color-text-disabled)]">
+                          <text
+                            x="10"
+                            y="15"
+                            className="text-xs fill-[var(--color-text-disabled)]"
+                          >
                             $4.00
                           </text>
-                          <text x="10" y="65" className="text-xs fill-[var(--color-text-disabled)]">
+                          <text
+                            x="10"
+                            y="65"
+                            className="text-xs fill-[var(--color-text-disabled)]"
+                          >
                             $2.00
                           </text>
                           <text
@@ -465,7 +487,10 @@ const ObjectiveNode = ({ data }: { data: any }) => {
                         : "text-red-600";
 
                     return (
-                      <div key={metric} className="bg-[var(--color-bg-secondary)] p-4 rounded-lg">
+                      <div
+                        key={metric}
+                        className="bg-[var(--color-bg-secondary)] p-4 rounded-lg"
+                      >
                         <h4 className="font-medium text-sm text-[var(--color-text-primary)] mb-2">
                           {metric}
                         </h4>
@@ -603,9 +628,13 @@ const ChannelNode = ({ data }: { data: any }) => {
           <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2">
             <div className="w-6 h-6 bg-white border-2 border-[var(--color-border-default)] rounded-full flex items-center justify-center shadow-sm">
               {data.isSelected ? (
-                <span className="text-xs font-bold text-[var(--color-text-tertiary)]">-</span>
+                <span className="text-xs font-bold text-[var(--color-text-tertiary)]">
+                  -
+                </span>
               ) : (
-                <span className="text-xs font-bold text-[var(--color-text-tertiary)]">+</span>
+                <span className="text-xs font-bold text-[var(--color-text-tertiary)]">
+                  +
+                </span>
               )}
             </div>
           </div>

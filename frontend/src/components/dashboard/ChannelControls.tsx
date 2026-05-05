@@ -1275,10 +1275,18 @@ const ReactFlowComponent = () => {
                           className="w-full h-full flex flex-col justify-center items-center"
                         >
                           {/* Y-axis labels */}
-                          <text x="10" y="15" className="text-xs fill-[var(--color-text-disabled)]">
+                          <text
+                            x="10"
+                            y="15"
+                            className="text-xs fill-[var(--color-text-disabled)]"
+                          >
                             $50,000
                           </text>
-                          <text x="10" y="65" className="text-xs fill-[var(--color-text-disabled)]">
+                          <text
+                            x="10"
+                            y="65"
+                            className="text-xs fill-[var(--color-text-disabled)]"
+                          >
                             $25,000
                           </text>
                           <text
@@ -1394,10 +1402,18 @@ const ReactFlowComponent = () => {
                           className="w-full h-full flex flex-col justify-center items-center"
                         >
                           {/* Y-axis labels */}
-                          <text x="10" y="15" className="text-xs fill-[var(--color-text-disabled)]">
+                          <text
+                            x="10"
+                            y="15"
+                            className="text-xs fill-[var(--color-text-disabled)]"
+                          >
                             $4.00
                           </text>
-                          <text x="10" y="65" className="text-xs fill-[var(--color-text-disabled)]">
+                          <text
+                            x="10"
+                            y="65"
+                            className="text-xs fill-[var(--color-text-disabled)]"
+                          >
                             $2.00
                           </text>
                           <text
@@ -1502,7 +1518,10 @@ const ReactFlowComponent = () => {
                         : "text-red-600";
 
                     return (
-                      <div key={metric} className="bg-[var(--color-bg-secondary)] p-4 rounded-lg">
+                      <div
+                        key={metric}
+                        className="bg-[var(--color-bg-secondary)] p-4 rounded-lg"
+                      >
                         <h4 className="font-medium text-sm text-[var(--color-text-primary)] mb-2">
                           {metric}
                         </h4>

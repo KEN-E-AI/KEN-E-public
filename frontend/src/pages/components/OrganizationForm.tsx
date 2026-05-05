@@ -161,10 +161,7 @@ const OrganizationForm = ({
                   checked={currentAgencyValue}
                   onCheckedChange={handleAgencyChange}
                 />
-                <Label
-                  htmlFor="agency-switch"
-                  className="text-sm font-medium"
-                >
+                <Label htmlFor="agency-switch" className="text-sm font-medium">
                   This organization is an agency that manages other
                   organizations
                 </Label>

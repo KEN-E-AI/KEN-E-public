@@ -22,15 +22,21 @@ export const NotificationHandler: React.FC<NotificationHandlerProps> = ({
         {/* Header */}
         <div className="p-6 border-b">
           <h2 className="text-xl font-semibold">Notification Details</h2>
-          <p className="text-sm text-[var(--color-text-tertiary)] mt-1">{notification.category}</p>
+          <p className="text-sm text-[var(--color-text-tertiary)] mt-1">
+            {notification.category}
+          </p>
         </div>
 
         {/* Content */}
         <div className="p-6">
           <div className="space-y-4">
             <div>
-              <h3 className="font-medium text-[var(--color-text-primary)] mb-1">Description</h3>
-              <p className="text-[var(--color-text-secondary)]">{notification.description}</p>
+              <h3 className="font-medium text-[var(--color-text-primary)] mb-1">
+                Description
+              </h3>
+              <p className="text-[var(--color-text-secondary)]">
+                {notification.description}
+              </p>
             </div>
 
             {notification.data && Object.keys(notification.data).length > 0 && (

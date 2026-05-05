@@ -182,7 +182,9 @@ export const SettingsSection = ({
           <ScopeBadge scope={scope} size="sm" />
         </div>
         {description && (
-          <p className="text-sm text-[var(--color-text-tertiary)] mb-3">{description}</p>
+          <p className="text-sm text-[var(--color-text-tertiary)] mb-3">
+            {description}
+          </p>
         )}
       </div>
 
@@ -230,7 +232,12 @@ export const ScopeNavigation = ({
   ] as const;
 
   return (
-    <div className={cn("flex space-x-1 bg-[var(--color-bg-elevated)] p-1 rounded-lg", className)}>
+    <div
+      className={cn(
+        "flex space-x-1 bg-[var(--color-bg-elevated)] p-1 rounded-lg",
+        className,
+      )}
+    >
       {scopes.map(({ id, label, icon: Icon }) => (
         <button
           key={id}

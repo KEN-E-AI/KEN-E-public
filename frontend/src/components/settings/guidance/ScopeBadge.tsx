@@ -46,7 +46,8 @@ export const ScopeBadge = ({
       variant: "outline" as const,
       icon: User,
       label: "System",
-      color: "border-[var(--color-border-default)] text-[var(--color-text-secondary)] bg-[var(--color-bg-secondary)]",
+      color:
+        "border-[var(--color-border-default)] text-[var(--color-text-secondary)] bg-[var(--color-bg-secondary)]",
     },
   };
 
@@ -111,7 +112,9 @@ export const ScopeIndicator = ({
     >
       {badge}
       {source && (
-        <span className="text-xs text-[var(--color-text-tertiary)] hidden sm:inline">{source}</span>
+        <span className="text-xs text-[var(--color-text-tertiary)] hidden sm:inline">
+          {source}
+        </span>
       )}
     </div>
   );
@@ -136,7 +139,9 @@ export const InheritanceChain = ({
 
   return (
     <div className={cn("flex flex-wrap items-center gap-1", className)}>
-      <span className="text-xs text-[var(--color-text-tertiary)] mr-1">Inheritance:</span>
+      <span className="text-xs text-[var(--color-text-tertiary)] mr-1">
+        Inheritance:
+      </span>
       {chain.map((item, index) => (
         <div key={index} className="flex items-center">
           <ScopeIndicator
@@ -146,7 +151,9 @@ export const InheritanceChain = ({
             showTooltip={false}
           />
           {index < chain.length - 1 && (
-            <span className="text-xs text-[var(--color-text-disabled)] mx-1">→</span>
+            <span className="text-xs text-[var(--color-text-disabled)] mx-1">
+              →
+            </span>
           )}
         </div>
       ))}

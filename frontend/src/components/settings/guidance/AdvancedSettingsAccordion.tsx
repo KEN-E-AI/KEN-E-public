@@ -106,13 +106,17 @@ export const AdvancedSettingsAccordion = ({
         <AccordionContent className="px-4 pb-4">
           <div className="space-y-4">
             {description && (
-              <p className="text-sm text-[var(--color-text-tertiary)] mb-3">{description}</p>
+              <p className="text-sm text-[var(--color-text-tertiary)] mb-3">
+                {description}
+              </p>
             )}
 
             {showCompletionStatus && (
               <div className="space-y-2">
                 <div className="flex justify-between items-center text-sm">
-                  <span className="text-[var(--color-text-tertiary)]">Configuration Progress</span>
+                  <span className="text-[var(--color-text-tertiary)]">
+                    Configuration Progress
+                  </span>
                   <span className="text-[var(--color-text-primary)] font-medium">
                     {Math.round(progress)}%
                   </span>
@@ -169,8 +173,14 @@ export const SettingsGroup = ({
   return (
     <div className={className}>
       <div className="mb-4">
-        <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-1">{title}</h3>
-        {description && <p className="text-sm text-[var(--color-text-tertiary)]">{description}</p>}
+        <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-1">
+          {title}
+        </h3>
+        {description && (
+          <p className="text-sm text-[var(--color-text-tertiary)]">
+            {description}
+          </p>
+        )}
       </div>
       <div className="space-y-4">{children}</div>
     </div>

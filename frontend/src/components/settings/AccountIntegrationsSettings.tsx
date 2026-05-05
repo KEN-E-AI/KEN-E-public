@@ -108,7 +108,9 @@ export const AccountIntegrationsSettings = ({
       case "pending":
         return <AlertCircle className="h-4 w-4 text-brand-dark-blue" />;
       default:
-        return <XCircle className="h-4 w-4 text-[var(--color-text-disabled)]" />;
+        return (
+          <XCircle className="h-4 w-4 text-[var(--color-text-disabled)]" />
+        );
     }
   };
 
