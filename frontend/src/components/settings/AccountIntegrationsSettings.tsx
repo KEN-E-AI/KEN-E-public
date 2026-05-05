@@ -108,7 +108,7 @@ export const AccountIntegrationsSettings = ({
       case "pending":
         return <AlertCircle className="h-4 w-4 text-brand-dark-blue" />;
       default:
-        return <XCircle className="h-4 w-4 text-gray-400" />;
+        return <XCircle className="h-4 w-4 text-[var(--color-text-disabled)]" />;
     }
   };
 
@@ -121,7 +121,7 @@ export const AccountIntegrationsSettings = ({
       case "pending":
         return "bg-brand-yellow/20 text-brand-dark-blue border-brand-yellow/40";
       default:
-        return "bg-gray-50 text-gray-700 border-gray-200";
+        return "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] border-[var(--color-border-default)]";
     }
   };
 

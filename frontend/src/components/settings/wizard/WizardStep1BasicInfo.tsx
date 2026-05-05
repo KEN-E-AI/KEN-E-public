@@ -249,7 +249,7 @@ export const WizardStep1BasicInfo = ({
               <Label htmlFor="account_name">Account Name *</Label>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Info className="h-4 w-4 text-gray-400" />
+                  <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                 </TooltipTrigger>
                 <TooltipContent className="max-w-md">
                   <p>
@@ -280,7 +280,7 @@ export const WizardStep1BasicInfo = ({
               <Label htmlFor="industry">Industry *</Label>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Info className="h-4 w-4 text-gray-400" />
+                  <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                 </TooltipTrigger>
                 <TooltipContent className="max-w-md">
                   <p>
@@ -326,7 +326,7 @@ export const WizardStep1BasicInfo = ({
                 </Badge>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Info className="h-4 w-4 text-gray-400" />
+                    <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                   </TooltipTrigger>
                   <TooltipContent className="max-w-md">
                     <p>
@@ -382,7 +382,7 @@ export const WizardStep1BasicInfo = ({
               </Label>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Info className="h-4 w-4 text-gray-400" />
+                  <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                 </TooltipTrigger>
                 <TooltipContent className="max-w-md">
                   <p>
@@ -417,7 +417,7 @@ export const WizardStep1BasicInfo = ({
               <Label>Customer Region *</Label>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Info className="h-4 w-4 text-gray-400" />
+                  <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                 </TooltipTrigger>
                 <TooltipContent className="max-w-md">
                   <p>
@@ -457,7 +457,7 @@ export const WizardStep1BasicInfo = ({
                     return (
                       <div
                         key={option.value}
-                        className={`flex items-center space-x-2 p-2 hover:bg-gray-50 rounded ${
+                        className={`flex items-center space-x-2 p-2 hover:bg-[var(--color-bg-secondary)] rounded ${
                           isSelected ? "bg-blue-50 border border-blue-200" : ""
                         }`}
                       >
@@ -478,7 +478,7 @@ export const WizardStep1BasicInfo = ({
                     );
                   })}
                   {getOrganizedRegions().length === 0 && (
-                    <div className="p-2 text-center text-sm text-gray-500">
+                    <div className="p-2 text-center text-sm text-[var(--color-text-tertiary)]">
                       No regions found matching "{regionSearchTerm}"
                     </div>
                   )}
@@ -492,7 +492,7 @@ export const WizardStep1BasicInfo = ({
               <Label htmlFor="data-region">Data Region *</Label>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Info className="h-4 w-4 text-gray-400" />
+                  <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                 </TooltipTrigger>
                 <TooltipContent className="max-w-md">
                   <p>

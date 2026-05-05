@@ -171,7 +171,7 @@ export const AccountPerformanceSettings = ({
       case "down":
         return <TrendingUp className="h-4 w-4 text-red-500 rotate-180" />;
       default:
-        return <LineChart className="h-4 w-4 text-gray-500" />;
+        return <LineChart className="h-4 w-4 text-[var(--color-text-tertiary)]" />;
     }
   };
 
@@ -182,7 +182,7 @@ export const AccountPerformanceSettings = ({
       case "down":
         return "bg-red-50 text-red-700 border-red-200";
       default:
-        return "bg-gray-50 text-gray-700 border-gray-200";
+        return "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] border-[var(--color-border-default)]";
     }
   };
 
@@ -330,7 +330,7 @@ export const AccountPerformanceSettings = ({
                   </div>
 
                   {/* KPI Alerts */}
-                  <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                  <div className="mt-4 p-3 bg-[var(--color-bg-secondary)] rounded-lg">
                     <div className="flex items-center justify-between mb-2">
                       <Label className="text-sm font-medium">
                         Performance Alerts

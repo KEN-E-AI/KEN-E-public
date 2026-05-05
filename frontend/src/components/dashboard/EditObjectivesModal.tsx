@@ -312,7 +312,7 @@ const EditObjectivesModal = ({
         <select
           value={value}
           onChange={handleSelectChange}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-medium-blue focus:border-brand-medium-blue bg-white"
+          className="w-full px-3 py-2 border border-[var(--color-border-default)] rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-medium-blue focus:border-brand-medium-blue bg-white"
         >
           <option value="">{placeholder}</option>
           {availableKPIs.map((kpi) => (
@@ -331,7 +331,7 @@ const EditObjectivesModal = ({
       <div className="space-y-2">
         <div className="flex items-center justify-between mb-2">
           <Label>Supporting Metrics</Label>
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-[var(--color-text-tertiary)]">
             {editingObjective?.supportingMetrics.length || 0}/9
           </span>
         </div>
@@ -348,7 +348,7 @@ const EditObjectivesModal = ({
                   {metric}
                   <button
                     onClick={() => handleSupportingMetricRemove(metric)}
-                    className="ml-1 text-gray-500 hover:text-gray-700"
+                    className="ml-1 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]"
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>
@@ -362,7 +362,7 @@ const EditObjectivesModal = ({
           <select
             value=""
             onChange={(e) => handleSupportingMetricAdd(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-medium-blue focus:border-brand-medium-blue bg-white"
+            className="w-full px-3 py-2 border border-[var(--color-border-default)] rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-medium-blue focus:border-brand-medium-blue bg-white"
           >
             <option value="">Select a supporting metric...</option>
             {availableKPIs
@@ -418,7 +418,7 @@ const EditObjectivesModal = ({
               <Button
                 variant="ghost"
                 onClick={onReturnToView}
-                className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-800 p-0 h-auto"
+                className="flex items-center gap-2 text-sm text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] p-0 h-auto"
               >
                 <ArrowLeft className="w-4 h-4" />
                 Back to View
@@ -475,7 +475,7 @@ const EditObjectivesModal = ({
                     }
                     maxLength={40}
                   />
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-[var(--color-text-tertiary)] mt-1">
                     {editingObjective.step_name.length}/40 characters
                   </p>
                 </div>
@@ -498,7 +498,7 @@ const EditObjectivesModal = ({
                       maxLength={500}
                       rows={4}
                     />
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-[var(--color-text-tertiary)] mt-1">
                       {editingObjective.objective.length}/500 characters
                     </p>
                   </div>
@@ -623,7 +623,7 @@ const EditObjectivesModal = ({
 
               <div className="space-y-2">
                 {objectivesList.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
+                  <div className="text-center py-8 text-[var(--color-text-tertiary)]">
                     No objectives defined yet. Create your first objective to
                     get started.
                   </div>
@@ -631,9 +631,9 @@ const EditObjectivesModal = ({
                   objectivesList.map((objective) => (
                     <div
                       key={objective.id}
-                      className="flex items-center gap-3 p-4 border rounded-lg bg-gray-50"
+                      className="flex items-center gap-3 p-4 border rounded-lg bg-[var(--color-bg-secondary)]"
                     >
-                      <GripVertical className="w-4 h-4 text-gray-400" />
+                      <GripVertical className="w-4 h-4 text-[var(--color-text-disabled)]" />
 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start gap-2 mb-2">
@@ -647,7 +647,7 @@ const EditObjectivesModal = ({
                             {objective.step_name}
                           </span>
                         </div>
-                        <p className="text-sm text-gray-600 break-words">
+                        <p className="text-sm text-[var(--color-text-tertiary)] break-words">
                           {objective.objective}
                         </p>
                         <div className="flex gap-2 mt-2">
@@ -667,7 +667,7 @@ const EditObjectivesModal = ({
                         </div>
                         {objective.supportingMetrics &&
                           objective.supportingMetrics.length > 0 && (
-                            <div className="text-xs text-gray-600 mt-1">
+                            <div className="text-xs text-[var(--color-text-tertiary)] mt-1">
                               <span className="font-medium">
                                 Supporting Metrics:
                               </span>{" "}

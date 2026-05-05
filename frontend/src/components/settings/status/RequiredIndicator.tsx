@@ -47,7 +47,7 @@ export const RequiredIndicator = ({
         return (
           <Badge
             variant="outline"
-            className={cn("text-gray-500 border-gray-300", sizeClasses[size])}
+            className={cn("text-[var(--color-text-tertiary)] border-[var(--color-border-default)]", sizeClasses[size])}
           >
             Optional
           </Badge>
@@ -199,7 +199,7 @@ export const RequiredFieldsOverview = ({
               <RequiredIndicator required={true} variant="subtle" size="sm" />
               <span className="text-sm font-medium">Required Fields</span>
             </div>
-            <span className="text-sm text-gray-600">
+            <span className="text-sm text-[var(--color-text-tertiary)]">
               {completedRequired.length}/{requiredFields.length}
             </span>
           </div>
@@ -214,16 +214,16 @@ export const RequiredFieldsOverview = ({
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Info className="h-4 w-4 text-gray-500" />
+              <Info className="h-4 w-4 text-[var(--color-text-tertiary)]" />
               <span className="text-sm font-medium">Optional Fields</span>
             </div>
-            <span className="text-sm text-gray-600">
+            <span className="text-sm text-[var(--color-text-tertiary)]">
               {completedOptional.length}/{optionalFields.length}
             </span>
           </div>
-          <div className="w-full bg-gray-100 rounded-full h-2">
+          <div className="w-full bg-[var(--color-bg-elevated)] rounded-full h-2">
             <div
-              className="bg-gray-500 h-2 rounded-full transition-all duration-300"
+              className="bg-[var(--color-border-strong)] h-2 rounded-full transition-all duration-300"
               style={{ width: `${optionalProgress}%` }}
             />
           </div>
@@ -231,12 +231,12 @@ export const RequiredFieldsOverview = ({
       </div>
 
       <div className="space-y-2">
-        <h4 className="text-sm font-medium text-gray-900">Field Status</h4>
+        <h4 className="text-sm font-medium text-[var(--color-text-primary)]">Field Status</h4>
         <div className="grid gap-2">
           {fields.map((field) => (
             <div
               key={field.name}
-              className="flex items-center justify-between p-2 bg-gray-50 rounded"
+              className="flex items-center justify-between p-2 bg-[var(--color-bg-secondary)] rounded"
             >
               <div className="flex items-center gap-2">
                 <RequiredIndicator
@@ -255,7 +255,7 @@ export const RequiredFieldsOverview = ({
                     "text-xs",
                     field.completed
                       ? "bg-brand-light-green/30 text-brand-dark-blue border-brand-light-green/40"
-                      : "bg-gray-100 text-gray-700 border-gray-200",
+                      : "bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] border-[var(--color-border-default)]",
                   )}
                 >
                   {field.completed ? "Completed" : "Pending"}

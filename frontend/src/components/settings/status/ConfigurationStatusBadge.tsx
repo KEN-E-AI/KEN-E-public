@@ -77,15 +77,15 @@ export const ConfigurationStatusBadge = ({
         return {
           icon: Info,
           label: "Pending",
-          color: "bg-gray-50 text-gray-700 border-gray-200",
-          iconColor: "text-gray-600",
+          color: "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] border-[var(--color-border-default)]",
+          iconColor: "text-[var(--color-text-tertiary)]",
         };
       default:
         return {
           icon: Clock,
           label: "Unknown",
-          color: "bg-gray-50 text-gray-700 border-gray-200",
-          iconColor: "text-gray-600",
+          color: "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] border-[var(--color-border-default)]",
+          iconColor: "text-[var(--color-text-tertiary)]",
         };
     }
   };
@@ -125,14 +125,14 @@ export const ConfigurationStatusBadge = ({
                 <Icon className={cn(iconSizes[size], iconColor)} />
                 {label}
               </Badge>
-              <span className="text-sm text-gray-600">
+              <span className="text-sm text-[var(--color-text-tertiary)]">
                 {completedSteps}/{totalSteps} steps
               </span>
             </div>
 
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-600">Overall Progress</span>
+                <span className="text-[var(--color-text-tertiary)]">Overall Progress</span>
                 <span className="font-medium">{Math.round(progress)}%</span>
               </div>
               <Progress value={progress} className="h-2" />
@@ -140,7 +140,7 @@ export const ConfigurationStatusBadge = ({
               {requiredSteps < totalSteps && (
                 <>
                   <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Required Steps</span>
+                    <span className="text-[var(--color-text-tertiary)]">Required Steps</span>
                     <span className="font-medium">
                       {Math.round(requiredProgress)}%
                     </span>
@@ -159,7 +159,7 @@ export const ConfigurationStatusBadge = ({
             </div>
 
             {lastUpdated && (
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-[var(--color-text-tertiary)]">
                 Last updated: {lastUpdated}
               </p>
             )}
@@ -268,7 +268,7 @@ export const ConfigurationOverview = ({
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Overall Progress</span>
+                  <span className="text-[var(--color-text-tertiary)]">Overall Progress</span>
                   <span className="font-medium">
                     {Math.round(overallProgress)}%
                   </span>
@@ -278,7 +278,7 @@ export const ConfigurationOverview = ({
 
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Required Steps</span>
+                  <span className="text-[var(--color-text-tertiary)]">Required Steps</span>
                   <span className="font-medium">
                     {Math.round(requiredProgress)}%
                   </span>
@@ -302,12 +302,12 @@ export const ConfigurationOverview = ({
         {sections.map((section) => (
           <div
             key={section.id}
-            className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+            className="flex items-center justify-between p-3 bg-[var(--color-bg-secondary)] rounded-lg"
           >
             <div>
-              <h4 className="font-medium text-gray-900">{section.title}</h4>
+              <h4 className="font-medium text-[var(--color-text-primary)]">{section.title}</h4>
               {section.description && (
-                <p className="text-sm text-gray-600 mt-1">
+                <p className="text-sm text-[var(--color-text-tertiary)] mt-1">
                   {section.description}
                 </p>
               )}

@@ -191,7 +191,7 @@ export const GoogleAnalyticsManage = ({
                     className={
                       status?.configured
                         ? "bg-green-100 text-green-800"
-                        : "bg-gray-100 text-gray-800"
+                        : "bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)]"
                     }
                   >
                     {status?.configured ? "Configured" : "Not Configured"}

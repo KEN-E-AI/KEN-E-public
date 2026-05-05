@@ -22,7 +22,7 @@ export function ScrollChevronButton({
 
   return (
     <button
-      className={`absolute ${positionClass} top-0 bottom-0 z-20 bg-gray-500 bg-opacity-75 px-3 flex items-center justify-center hover:bg-opacity-90 transition-opacity`}
+      className={`absolute ${positionClass} top-0 bottom-0 z-20 bg-[var(--color-border-strong)] bg-opacity-75 px-3 flex items-center justify-center hover:bg-opacity-90 transition-opacity`}
       onClick={onClick}
       aria-label={`Scroll ${direction}`}
     >

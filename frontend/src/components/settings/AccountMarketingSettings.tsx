@@ -120,7 +120,7 @@ export const AccountMarketingSettings = ({
       case "low":
         return "bg-brand-light-green/20 text-brand-dark-blue border-brand-light-green/40";
       default:
-        return "bg-gray-50 text-gray-700 border-gray-200";
+        return "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] border-[var(--color-border-default)]";
     }
   };
 
@@ -133,7 +133,7 @@ export const AccountMarketingSettings = ({
       case "completed":
         return "bg-brand-light-blue/20 text-brand-dark-blue border-brand-light-blue/40";
       default:
-        return "bg-gray-50 text-gray-700 border-gray-200";
+        return "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] border-[var(--color-border-default)]";
     }
   };
 

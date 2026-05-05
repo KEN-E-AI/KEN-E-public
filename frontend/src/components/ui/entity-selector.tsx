@@ -269,7 +269,7 @@ export const EntitySelector = ({
           <SelectItem
             key="all-orgs-accounts"
             value="all-orgs-accounts"
-            className="border-t border-gray-200 mt-1 pt-2"
+            className="border-t border-[var(--color-border-default)] mt-1 pt-2"
           >
             <div className="flex items-center gap-2">
               <Building2 className="h-3 w-3 text-dashboard-gray-600" />

@@ -51,10 +51,10 @@ export const HierarchicalSettings = ({
         };
       default:
         return {
-          border: "border-gray-200",
-          background: "bg-gray-50/30",
+          border: "border-[var(--color-border-default)]",
+          background: "bg-[var(--color-bg-secondary)]/30",
           indent: "ml-0",
-          connector: "border-l-gray-300",
+          connector: "border-l-[var(--color-border-strong)]",
         };
     }
   };
@@ -68,7 +68,7 @@ export const HierarchicalSettings = ({
       case "incomplete":
         return "text-red-600";
       default:
-        return "text-gray-600";
+        return "text-[var(--color-text-tertiary)]";
     }
   };
 
@@ -142,7 +142,7 @@ export const HierarchicalSettings = ({
                 </div>
 
                 {group.description && (
-                  <p className="text-sm text-gray-600 mt-1">
+                  <p className="text-sm text-[var(--color-text-tertiary)] mt-1">
                     {group.description}
                   </p>
                 )}
@@ -182,7 +182,7 @@ export const SettingsSection = ({
           <ScopeBadge scope={scope} size="sm" />
         </div>
         {description && (
-          <p className="text-sm text-gray-600 mb-3">{description}</p>
+          <p className="text-sm text-[var(--color-text-tertiary)] mb-3">{description}</p>
         )}
       </div>
 
@@ -207,7 +207,7 @@ const getScopeStyles = (scope: string) => {
       };
     default:
       return {
-        connector: "border-l-gray-400",
+        connector: "border-l-[var(--color-border-strong)]",
       };
   }
 };
@@ -230,7 +230,7 @@ export const ScopeNavigation = ({
   ] as const;
 
   return (
-    <div className={cn("flex space-x-1 bg-gray-100 p-1 rounded-lg", className)}>
+    <div className={cn("flex space-x-1 bg-[var(--color-bg-elevated)] p-1 rounded-lg", className)}>
       {scopes.map(({ id, label, icon: Icon }) => (
         <button
           key={id}
@@ -238,8 +238,8 @@ export const ScopeNavigation = ({
           className={cn(
             "flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors",
             currentScope === id
-              ? "bg-white text-gray-900 shadow-sm"
-              : "text-gray-600 hover:text-gray-900 hover:bg-gray-50",
+              ? "bg-white text-[var(--color-text-primary)] shadow-sm"
+              : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-secondary)]",
           )}
         >
           <Icon className="h-4 w-4" />
