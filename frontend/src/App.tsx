@@ -156,6 +156,10 @@ const App = () => (
                       path="/auth/action"
                       element={<EmailActionHandler />}
                     />
+                    <Route
+                      path="/verify-email"
+                      element={<AuthenticationPage />}
+                    />
                     {/* Backward compatibility redirects */}
                     <Route
                       path="/login"

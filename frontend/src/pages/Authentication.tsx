@@ -34,7 +34,12 @@ import { EmailVerificationView } from "./auth/EmailVerificationView";
 
 type View = "signin" | "signup" | "email-verification";
 
-const SIGN_UP_PATHS = new Set(["/signup", "/sign-up", "/create-account"]);
+const SIGN_UP_PATHS = new Set([
+  "/signup",
+  "/sign-up",
+  "/create-account",
+  "/auth/signup",
+]);
 
 interface AuthenticationProps {
   onAuthenticated: () => void;

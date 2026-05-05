@@ -51,7 +51,7 @@ export function SignInView({
             <Logo size="2xl" variant="icon" />
           </div>
           <h1 className="mb-2">Welcome to KEN-E</h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-[var(--color-text-secondary)]">
             The AI Marketing Analyst
           </p>
         </div>
@@ -72,7 +72,7 @@ export function SignInView({
               </div>
               <div className="flex-1">
                 <p className="text-sm font-medium mb-1">You've been invited!</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-[var(--color-text-secondary)]">
                   Sign in to join{" "}
                   <strong>{invitationData.organization_name}</strong> with{" "}
                   <strong>{invitationData.access_level}</strong> access.
@@ -106,7 +106,7 @@ export function SignInView({
             onClick={onGoogleSignIn}
             disabled={isLoading}
           >
-            <svg className="size-5" viewBox="0 0 24 24">
+            <svg className="size-5" viewBox="0 0 24 24" aria-hidden="true">
               <path
                 fill="#4285F4"
                 d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -132,7 +132,7 @@ export function SignInView({
               <div className="w-full border-t border-[var(--color-border-default)]"></div>
             </div>
             <div className="relative flex justify-center text-xs">
-              <span className="bg-card px-2 text-muted-foreground">
+              <span className="bg-card px-2 text-[var(--color-text-secondary)]">
                 Or continue with email
               </span>
             </div>
@@ -142,7 +142,10 @@ export function SignInView({
             <div>
               <Label htmlFor="email">Email</Label>
               <div className="relative mt-1.5">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                <Mail
+                  className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground"
+                  aria-hidden="true"
+                />
                 <Input
                   id="email"
                   type="email"
@@ -158,7 +161,10 @@ export function SignInView({
             <div>
               <Label htmlFor="password">Password</Label>
               <div className="relative mt-1.5">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                <Lock
+                  className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground"
+                  aria-hidden="true"
+                />
                 <Input
                   id="password"
                   type="password"
@@ -175,6 +181,7 @@ export function SignInView({
               <div className="flex items-center gap-2">
                 <Checkbox
                   id="remember"
+                  aria-label="Remember me"
                   checked={rememberMe}
                   onCheckedChange={(checked) =>
                     onRememberMeChange(checked as boolean)
@@ -210,7 +217,7 @@ export function SignInView({
           </form>
 
           <div className="mt-6 text-center">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-[var(--color-text-secondary)]">
               Don't have an account?{" "}
               <Link
                 to={createAccountHref}
@@ -223,7 +230,7 @@ export function SignInView({
         </div>
 
         <div className="mt-6 text-center">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-[var(--color-text-secondary)]">
             Need help?{" "}
             <a
               href="mailto:support@ken-e.com"

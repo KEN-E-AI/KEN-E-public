@@ -70,7 +70,7 @@ export function CreateAccountView({
             <Logo size="xl" variant="icon" />
           </div>
           <h1 className="mb-2">Create your account</h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-[var(--color-text-secondary)]">
             The AI Marketing Analyst
           </p>
         </div>
@@ -87,11 +87,11 @@ export function CreateAccountView({
           <div className="mb-6 p-4 rounded-[var(--radius-md)] bg-gradient-to-r from-[#F97066]/10 to-[var(--color-violet-500)]/10 border-2 border-[#F97066]/30 animate-slide-in">
             <div className="flex items-start gap-3">
               <div className="size-10 rounded-[var(--radius-md)] bg-[#F97066] flex items-center justify-center shrink-0">
-                <Mail className="size-5 text-white" />
+                <Mail className="size-5 text-white" aria-hidden="true" />
               </div>
               <div className="flex-1">
                 <p className="text-sm font-medium mb-1">You've been invited!</p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-[var(--color-text-secondary)]">
                   Create your account to join{" "}
                   <strong>{invitationData.organization_name}</strong> with{" "}
                   <strong>{invitationData.access_level}</strong> access.
@@ -125,7 +125,7 @@ export function CreateAccountView({
             onClick={onGoogleSignUp}
             disabled={isLoading}
           >
-            <svg className="size-5" viewBox="0 0 24 24">
+            <svg className="size-5" viewBox="0 0 24 24" aria-hidden="true">
               <path
                 fill="#4285F4"
                 d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -151,7 +151,7 @@ export function CreateAccountView({
               <div className="w-full border-t border-[var(--color-border-default)]"></div>
             </div>
             <div className="relative flex justify-center text-xs">
-              <span className="bg-card px-2 text-muted-foreground">
+              <span className="bg-card px-2 text-[var(--color-text-secondary)]">
                 Or continue with email
               </span>
             </div>
@@ -161,7 +161,10 @@ export function CreateAccountView({
             <div>
               <Label htmlFor="name">Full Name</Label>
               <div className="relative mt-1.5">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                <User
+                  className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground"
+                  aria-hidden="true"
+                />
                 <Input
                   id="name"
                   name="name"
@@ -184,7 +187,10 @@ export function CreateAccountView({
             <div>
               <Label htmlFor="email">Email</Label>
               <div className="relative mt-1.5">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                <Mail
+                  className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground"
+                  aria-hidden="true"
+                />
                 <Input
                   id="email"
                   name="email"
@@ -207,7 +213,10 @@ export function CreateAccountView({
             <div>
               <Label htmlFor="password">Password</Label>
               <div className="relative mt-1.5">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                <Lock
+                  className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground"
+                  aria-hidden="true"
+                />
                 <Input
                   id="password"
                   name="password"
@@ -232,7 +241,7 @@ export function CreateAccountView({
                       }`}
                     />
                   </div>
-                  <span className="text-xs text-muted-foreground capitalize">
+                  <span className="text-xs text-[var(--color-text-secondary)] capitalize">
                     {passwordStrength}
                   </span>
                 </div>
@@ -248,7 +257,10 @@ export function CreateAccountView({
             <div>
               <Label htmlFor="confirmPassword">Confirm Password</Label>
               <div className="relative mt-1.5">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                <Lock
+                  className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground"
+                  aria-hidden="true"
+                />
                 <Input
                   id="confirmPassword"
                   name="confirmPassword"
@@ -260,7 +272,10 @@ export function CreateAccountView({
                   aria-invalid={!!fieldErrors.confirmPassword}
                 />
                 {confirmPassword && password === confirmPassword && (
-                  <Check className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-green-500" />
+                  <Check
+                    className="absolute right-3 top-1/2 -translate-y-1/2 size-4 text-green-500"
+                    aria-hidden="true"
+                  />
                 )}
               </div>
               {fieldErrors.confirmPassword && (
@@ -275,6 +290,7 @@ export function CreateAccountView({
               <div className="flex items-start gap-2">
                 <Checkbox
                   id="terms"
+                  aria-label="I agree to the Terms of Service and Privacy Policy"
                   checked={agreedToTerms}
                   onCheckedChange={(checked) =>
                     onAgreedToTermsChange(checked as boolean)
@@ -322,7 +338,7 @@ export function CreateAccountView({
                 </>
               ) : (
                 <>
-                  <UserPlus className="size-4" />
+                  <UserPlus className="size-4" aria-hidden="true" />
                   Create Account
                 </>
               )}
@@ -330,7 +346,7 @@ export function CreateAccountView({
           </form>
 
           <div className="mt-6 text-center">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-[var(--color-text-secondary)]">
               Already have an account?{" "}
               <Link
                 to={signInHref}
@@ -343,7 +359,7 @@ export function CreateAccountView({
         </div>
 
         <div className="mt-6 text-center">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-[var(--color-text-secondary)]">
             Need help?{" "}
             <a
               href="mailto:support@ken-e.com"
