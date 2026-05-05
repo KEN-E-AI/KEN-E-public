@@ -10,7 +10,10 @@ import { Logo } from "@/components/branding/Logo";
 import { cn } from "@/lib/utils";
 import type { OrganizationId } from "@/lib/branded-types";
 import { useAuth } from "@/contexts/AuthContext";
-import { getOrganizationsBatch } from "@/data/organizationApi";
+import {
+  getOrganizations,
+  getOrganizationsBatch,
+} from "@/data/organizationApi";
 import {
   resolveOrganizationAndAccount,
   formatWorkspaceMetadata,
@@ -76,7 +79,14 @@ export default function SelectOrganizationPage() {
     const fetchUserData = async () => {
       try {
         if (isSuperAdmin) {
-          if (!cancelled) setUserDataFetchStatus("success");
+          const allOrgs = await getOrganizations();
+          if (cancelled) return;
+          const superAdminOrgs: Record<string, string> = {};
+          allOrgs.forEach((org) => {
+            superAdminOrgs[org.organization_id] = "admin";
+          });
+          setOrgsFromFirestore(superAdminOrgs);
+          setUserDataFetchStatus("success");
           return;
         }
         const res = await api.get(
@@ -219,7 +229,7 @@ export default function SelectOrganizationPage() {
       };
     });
 
-  const shouldShowSearch = organizationList.length > 5;
+  const shouldShowSearch = isSuperAdmin || organizationList.length > 5;
 
   const filteredOrganizationList =
     shouldShowSearch && searchQuery
