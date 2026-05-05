@@ -167,6 +167,10 @@ const App = () => (
                     <Route path="/sign-in" element={<AuthenticationPage />} />
                     <Route path="/sign-up" element={<AuthenticationPage />} />
                     <Route
+                      path="/create-account"
+                      element={<AuthenticationPage />}
+                    />
+                    <Route
                       path="/create-organization"
                       element={<CreateOrganization />}
                     />
@@ -190,6 +194,10 @@ const App = () => (
                     <Route
                       path="/settings"
                       element={<Navigate to="/settings/organization" replace />}
+                    />
+                    <Route
+                      path="/verify-email"
+                      element={<AuthenticationPage />}
                     />
                     {/* Backward compatibility redirects */}
                     <Route
