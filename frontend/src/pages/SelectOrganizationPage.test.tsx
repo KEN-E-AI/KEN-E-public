@@ -590,13 +590,17 @@ describe("SelectOrganizationPage", () => {
 
     renderPage();
 
-    // After loading resolves, super-admin should NOT be redirected
-    await waitFor(() => {
-      expect(mockNavigate).not.toHaveBeenCalledWith(
-        "/create-organization",
-        expect.anything(),
-      );
-    });
+    // Search input only renders in success state, so its presence confirms the
+    // async fetch has resolved before we check the negative.
+    await waitFor(() =>
+      expect(
+        screen.getByPlaceholderText(/search organizations/i),
+      ).toBeInTheDocument(),
+    );
+    expect(mockNavigate).not.toHaveBeenCalledWith(
+      "/create-organization",
+      expect.anything(),
+    );
   });
 
   it("super-admin: calls getOrganizations() (not Firestore endpoint) and renders all orgs with 'admin' permission", async () => {
@@ -606,16 +610,17 @@ describe("SelectOrganizationPage", () => {
       setOrgMetadata: vi.fn(),
       setAccountMetadata: vi.fn(),
     });
-    // Return orgs without a `plan` field so the UI falls back to the permission
-    // value ("admin") in the `{org.plan || org.permission}` expression.
-    const orgNoPlan1 = { ...mockOrg1, plan: undefined };
-    const orgNoPlan2 = { ...mockOrg2, plan: undefined };
     mockGetOrganizations.mockResolvedValue([
       { organization_id: "org-1", organization_name: "Acme Corp" },
       { organization_id: "org-2", organization_name: "Globex Ventures" },
     ]);
+    // Batch response has no `plan` field so the UI falls back to the
+    // permission value ("admin") in the `{org.plan || org.permission}` expression.
     mockGetOrganizationsBatch.mockResolvedValue(
-      makeOrgBatchResponse([orgNoPlan1, orgNoPlan2]),
+      makeOrgBatchResponse([
+        { ...mockOrg1, plan: undefined },
+        { ...mockOrg2, plan: undefined },
+      ]),
     );
 
     renderPage();
@@ -625,11 +630,9 @@ describe("SelectOrganizationPage", () => {
     );
     expect(screen.getByText("Globex Ventures")).toBeInTheDocument();
 
-    // getOrganizations() should have been called, not the Firestore endpoint
     expect(mockGetOrganizations).toHaveBeenCalled();
     expect(mockAxiosGet).not.toHaveBeenCalled();
 
-    // Both orgs show "admin" as the permission/plan fallback (no plan set)
     const adminBadges = screen.getAllByText("admin");
     expect(adminBadges).toHaveLength(2);
   });
@@ -715,6 +718,39 @@ describe("SelectOrganizationPage", () => {
     const orgRow = screen.getByRole("button", { name: /broken org/i });
     await user.click(orgRow);
     expect(orgRow).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("super-admin: clicking Retry re-fires getOrganizations() and recovers on success", async () => {
+    const user = userEvent.setup();
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      isSuperAdmin: true,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    mockGetOrganizations
+      .mockRejectedValueOnce(new Error("first attempt fails"))
+      .mockResolvedValueOnce([
+        { organization_id: "org-1", organization_name: "Acme Corp" },
+      ]);
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([{ ...mockOrg1, plan: undefined }]),
+    );
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /retry/i }),
+      ).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /retry/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Acme Corp")).toBeInTheDocument();
+    });
+    expect(mockGetOrganizations).toHaveBeenCalledTimes(2);
   });
 
   // Regression guard for the original Critical #1: a transient API failure
