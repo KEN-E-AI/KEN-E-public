@@ -253,8 +253,8 @@ const AcceptInvitation = () => {
               </Button>
               <Button
                 className="flex-1"
-                onClick={() => {
-                  logout();
+                onClick={async () => {
+                  await logout();
                   navigate("/sign-in", { state: { from: `/invite/${token}` } });
                 }}
               >
