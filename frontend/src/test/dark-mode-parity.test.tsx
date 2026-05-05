@@ -121,12 +121,19 @@ vi.mock("@/components/notifications/NotificationSidebar", () => ({
   NotificationSidebar: () => null,
 }));
 
-vi.mock("@/components/notifications/NotificationPreferences", () => ({
-  NotificationPreferences: ({ onSave }: { onSave: () => void }) => (
-    <div>
-      <button onClick={onSave}>Save preferences</button>
-    </div>
-  ),
+vi.mock("@/api/notifications", () => ({
+  notificationApi: {
+    getPreferences: vi.fn().mockResolvedValue({
+      categories: ["Data Quality Alert", "News & Press"],
+      channels: ["ui"],
+      updated_at: new Date().toISOString(),
+    }),
+    updatePreferences: vi.fn().mockResolvedValue({}),
+    getNotifications: vi.fn().mockResolvedValue([]),
+    createNotification: vi.fn().mockResolvedValue({}),
+    getUnreadCount: vi.fn().mockResolvedValue(0),
+    updateNotificationStatus: vi.fn().mockResolvedValue({}),
+  },
 }));
 
 // AccountSettings child component mocks — paths are relative to AccountSettings.tsx
@@ -139,10 +146,6 @@ vi.mock("@/components/integrations/GoogleAnalyticsPropertySelector", () => ({
   GoogleAnalyticsPropertySelector: () => (
     <div aria-label="Google Analytics property selector" />
   ),
-}));
-
-vi.mock("@/pages/components/OrganizationForm", () => ({
-  default: () => <div data-testid="org-form" />,
 }));
 
 vi.mock("@/pages/components/SubscriptionCard", () => ({
