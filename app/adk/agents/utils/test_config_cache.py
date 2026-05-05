@@ -17,7 +17,7 @@ from google.adk.agents.llm_agent_config import LlmAgentConfig
 
 
 def _make_config(
-    instruction: str = "v1", model: str = "gemini-2.0-flash"
+    instruction: str = "v1", model: str = "gemini-2.5-pro"
 ) -> LlmAgentConfig:
     return LlmAgentConfig(
         name="ken_e_chatbot",
@@ -43,19 +43,20 @@ class TestTTLBehavior:
         from app.adk.agents.utils import config_cache
 
         with patch.object(config_cache, "load_config_from_firestore") as mock_load:
-            mock_load.return_value = (_make_config("v1"), {"version": "v1"})
+            mock_load.return_value = (_make_config("v1"), {"version": "v1"}, {})
 
-            cfg, meta = config_cache.get_cached_config("ken_e_chatbot")
+            cfg, meta, ext = config_cache.get_cached_config("ken_e_chatbot")
 
             assert mock_load.call_count == 1
             assert cfg.instruction == "v1"
             assert meta["version"] == "v1"
+            assert ext == {}
 
     def test_second_call_within_ttl_serves_cached(self) -> None:
         from app.adk.agents.utils import config_cache
 
         with patch.object(config_cache, "load_config_from_firestore") as mock_load:
-            mock_load.return_value = (_make_config("v1"), {"version": "v1"})
+            mock_load.return_value = (_make_config("v1"), {"version": "v1"}, {})
 
             config_cache.get_cached_config("ken_e_chatbot", ttl_seconds=60)
             config_cache.get_cached_config("ken_e_chatbot", ttl_seconds=60)
@@ -75,7 +76,7 @@ class TestTTLBehavior:
         monkeypatch.setattr(config_cache.time, "monotonic", fake_monotonic)
 
         with patch.object(config_cache, "load_config_from_firestore") as mock_load:
-            mock_load.return_value = (_make_config("v1"), {"version": "v1"})
+            mock_load.return_value = (_make_config("v1"), {"version": "v1"}, {})
 
             config_cache.get_cached_config("ken_e_chatbot", ttl_seconds=60)
             clock["now"] = 1059.0  # just before expiry
@@ -83,8 +84,8 @@ class TestTTLBehavior:
             assert mock_load.call_count == 1
 
             clock["now"] = 1061.0  # just past expiry
-            mock_load.return_value = (_make_config("v2"), {"version": "v2"})
-            cfg, _ = config_cache.get_cached_config("ken_e_chatbot", ttl_seconds=60)
+            mock_load.return_value = (_make_config("v2"), {"version": "v2"}, {})
+            cfg, _, _ = config_cache.get_cached_config("ken_e_chatbot", ttl_seconds=60)
             assert mock_load.call_count == 2
             assert cfg.instruction == "v2"
 
@@ -93,14 +94,14 @@ class TestTTLBehavior:
 
         def loader(
             doc_id: str, project_id: str = "ken-e-dev"
-        ) -> tuple[LlmAgentConfig, dict]:
-            return _make_config(f"{doc_id}_instr"), {"version": "v1"}
+        ) -> tuple[LlmAgentConfig, dict, dict]:
+            return _make_config(f"{doc_id}_instr"), {"version": "v1"}, {}
 
         with patch.object(
             config_cache, "load_config_from_firestore", side_effect=loader
         ) as mock_load:
-            a, _ = config_cache.get_cached_config("ken_e_chatbot")
-            b, _ = config_cache.get_cached_config("business_researcher")
+            a, _, _ = config_cache.get_cached_config("ken_e_chatbot")
+            b, _, _ = config_cache.get_cached_config("business_researcher")
 
             assert a.instruction == "ken_e_chatbot_instr"
             assert b.instruction == "business_researcher_instr"
@@ -122,16 +123,17 @@ class TestFailureHandling:
         caplog.set_level(logging.WARNING)
 
         with patch.object(config_cache, "load_config_from_firestore") as mock_load:
-            mock_load.return_value = (_make_config("v1"), {"version": "v1"})
+            mock_load.return_value = (_make_config("v1"), {"version": "v1"}, {})
             config_cache.get_cached_config("ken_e_chatbot", ttl_seconds=60)
 
             clock["now"] = 1100.0  # force re-fetch
             mock_load.side_effect = RuntimeError("Firestore unreachable")
 
-            cfg, meta = config_cache.get_cached_config("ken_e_chatbot", ttl_seconds=60)
+            cfg, meta, ext = config_cache.get_cached_config("ken_e_chatbot", ttl_seconds=60)
 
         assert cfg.instruction == "v1", "should serve the stale-but-last-good value"
         assert meta["version"] == "v1"
+        assert ext == {}
         assert any(
             "stale" in r.message.lower()
             for r in caplog.records
@@ -161,21 +163,21 @@ class TestFailureHandling:
         monkeypatch.setattr(config_cache.time, "monotonic", lambda: clock["now"])
 
         with patch.object(config_cache, "load_config_from_firestore") as mock_load:
-            mock_load.return_value = (_make_config("v1"), {"version": "v1"})
+            mock_load.return_value = (_make_config("v1"), {"version": "v1"}, {})
             config_cache.get_cached_config("ken_e_chatbot", ttl_seconds=60)
 
             # Expire → transient error → serve stale
             clock["now"] = 1100.0
             mock_load.side_effect = RuntimeError("transient")
-            cfg, _ = config_cache.get_cached_config("ken_e_chatbot", ttl_seconds=60)
+            cfg, _, _ = config_cache.get_cached_config("ken_e_chatbot", ttl_seconds=60)
             assert cfg.instruction == "v1"
 
             # Next call after TTL should try again, and a successful response
             # should overwrite the stale cache
             clock["now"] = 1200.0
             mock_load.side_effect = None
-            mock_load.return_value = (_make_config("v2"), {"version": "v2"})
-            cfg, _ = config_cache.get_cached_config("ken_e_chatbot", ttl_seconds=60)
+            mock_load.return_value = (_make_config("v2"), {"version": "v2"}, {})
+            cfg, _, _ = config_cache.get_cached_config("ken_e_chatbot", ttl_seconds=60)
             assert cfg.instruction == "v2"
 
 
@@ -194,13 +196,13 @@ class TestConcurrency:
 
         def slow_loader(
             doc_id: str, project_id: str = "ken-e-dev"
-        ) -> tuple[LlmAgentConfig, dict]:
+        ) -> tuple[LlmAgentConfig, dict, dict]:
             nonlocal load_count
             # Small sleep widens the race window so any naive implementation
             # (check-then-populate without a single lock) would lose.
             time.sleep(0.05)
             load_count += 1
-            return _make_config("v1"), {"version": "v1"}
+            return _make_config("v1"), {"version": "v1"}, {}
 
         def runner() -> None:
             start_sem.wait()
@@ -226,7 +228,7 @@ class TestClearCache:
         from app.adk.agents.utils import config_cache
 
         with patch.object(config_cache, "load_config_from_firestore") as mock_load:
-            mock_load.return_value = (_make_config("v1"), {"version": "v1"})
+            mock_load.return_value = (_make_config("v1"), {"version": "v1"}, {})
 
             config_cache.get_cached_config("ken_e_chatbot")
             config_cache.clear_config_cache()
@@ -260,7 +262,7 @@ class TestProjectIdEnvHonored:
         monkeypatch.setenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-staging")
 
         with patch.object(config_cache, "load_config_from_firestore") as mock_load:
-            mock_load.return_value = (_make_config("v1"), {"version": "v1"})
+            mock_load.return_value = (_make_config("v1"), {"version": "v1"}, {})
             config_cache.get_cached_config("ken_e_chatbot")
 
         assert mock_load.call_count == 1
@@ -282,7 +284,7 @@ class TestProjectIdEnvHonored:
         monkeypatch.delenv("GOOGLE_CLOUD_PROJECT_ID", raising=False)
 
         with patch.object(config_cache, "load_config_from_firestore") as mock_load:
-            mock_load.return_value = (_make_config("v1"), {"version": "v1"})
+            mock_load.return_value = (_make_config("v1"), {"version": "v1"}, {})
             config_cache.get_cached_config("ken_e_chatbot")
 
         kwargs = mock_load.call_args.kwargs

@@ -28,7 +28,7 @@ def test_news_agent_firestore_config_applied(mock_load, mock_search_tool):
         description="Custom news description",
         generate_content_config={"temperature": 0.5, "max_output_tokens": 8192},
     )
-    mock_load.return_value = (mock_config, {"version": "v2.0"})
+    mock_load.return_value = (mock_config, {"version": "v2.0"}, {})
 
     agent = create_main_agent()
 
@@ -48,7 +48,7 @@ def test_news_agent_fallback_on_failure(mock_load, mock_search_tool):
     agent = create_main_agent()
 
     assert agent.name == "company_news_chatbot"
-    assert agent.model == "gemini-2.0-flash"
+    assert agent.model == "gemini-2.5-pro"
     assert agent.instruction == NEWS_AGENT_INSTRUCTION
     assert agent.description == ""
 
@@ -64,7 +64,7 @@ def test_news_agent_uses_fallback_instruction_when_config_instruction_empty(
         model="gemini-2.5-flash",
         instruction="",
     )
-    mock_load.return_value = (mock_config, {"version": "v1.0"})
+    mock_load.return_value = (mock_config, {"version": "v1.0"}, {})
 
     agent = create_main_agent()
 

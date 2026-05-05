@@ -52,8 +52,8 @@ def _current_project_id() -> str:
 
 
 _CacheEntry = tuple[
-    LlmAgentConfig, dict[str, Any], float
-]  # (config, metadata, expires_at_monotonic)
+    LlmAgentConfig, dict[str, Any], dict[str, Any], float
+]  # (config, metadata, extensions, expires_at_monotonic)
 
 _cache: dict[str, _CacheEntry] = {}
 # Process-wide lock — held during the Firestore call inside get_cached_config,
@@ -65,16 +65,20 @@ _cache_lock = threading.Lock()
 
 def get_cached_config(
     doc_id: str, ttl_seconds: int = 60
-) -> tuple[LlmAgentConfig, dict[str, Any]]:
-    """Return the cached (config, metadata) for ``doc_id``, refreshing if expired.
+) -> tuple[LlmAgentConfig, dict[str, Any], dict[str, Any]]:
+    """Return the cached (config, metadata, extensions) for ``doc_id``.
+
+    Refreshes if expired.
 
     Args:
         doc_id: Firestore document ID in the ``agent_configs`` collection.
         ttl_seconds: How long a successful load stays fresh before re-fetching.
 
     Returns:
-        ``(LlmAgentConfig, metadata_dict)`` — same shape as
-        ``load_config_from_firestore`` returns.
+        ``(LlmAgentConfig, metadata_dict, extensions_dict)`` — same shape as
+        ``load_config_from_firestore`` returns. ``extensions_dict`` carries
+        KEN-E-specific top-level Firestore fields (e.g. ``deployment_status``)
+        that aren't part of the ADK ``LlmAgentConfig`` schema.
 
     Raises:
         Whatever ``load_config_from_firestore`` raises, *but only* when there
@@ -85,11 +89,11 @@ def get_cached_config(
 
     with _cache_lock:
         cached = _cache.get(doc_id)
-        if cached is not None and now < cached[2]:
-            return cached[0], cached[1]
+        if cached is not None and now < cached[3]:
+            return cached[0], cached[1], cached[2]
 
         try:
-            config, metadata = load_config_from_firestore(
+            config, metadata, extensions = load_config_from_firestore(
                 doc_id, project_id=_current_project_id()
             )
         except Exception as e:
@@ -101,11 +105,11 @@ def get_cached_config(
                     cached[1].get("version", "unknown"),
                     e,
                 )
-                return cached[0], cached[1]
+                return cached[0], cached[1], cached[2]
             raise
 
-        _cache[doc_id] = (config, metadata, now + ttl_seconds)
-        return config, metadata
+        _cache[doc_id] = (config, metadata, extensions, now + ttl_seconds)
+        return config, metadata, extensions
 
 
 def clear_config_cache() -> None:

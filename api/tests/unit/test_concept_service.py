@@ -38,7 +38,7 @@ class TestConceptDisambiguationService:
             {
                 "VERTEX_AI_PROJECT_ID": "test-project",
                 "VERTEX_AI_LOCATION": "us-central1",
-                "GEMINI_MODEL": "gemini-2.0-flash",
+                "GEMINI_MODEL": "gemini-2.5-pro",
             },
         ):
             # Mock the model initialization to succeed
@@ -289,7 +289,7 @@ class TestConceptDisambiguationService:
             "os.environ",
             {
                 "VERTEX_AI_PROJECT_ID": "test-project",
-                "GEMINI_MODEL": "gemini-2.0-flash",
+                "GEMINI_MODEL": "gemini-2.5-pro",
             },
         ):
             # First initialization
@@ -297,14 +297,14 @@ class TestConceptDisambiguationService:
             mock_gemini_model.return_value = mock_model_instance
 
             service1 = ConceptDisambiguationService()
-            assert ConceptDisambiguationService._gemini_model_name == "gemini-2.0-flash"
+            assert ConceptDisambiguationService._gemini_model_name == "gemini-2.5-pro"
 
             # Second initialization should use cached name
             mock_gemini_model.reset_mock()
             service2 = ConceptDisambiguationService()
 
             # Should have tried to use cached model name
-            mock_gemini_model.assert_called_once_with("gemini-2.0-flash")
+            mock_gemini_model.assert_called_once_with("gemini-2.5-pro")
 
     @pytest.mark.asyncio
     async def test_search_concepts_sorting(self, service):

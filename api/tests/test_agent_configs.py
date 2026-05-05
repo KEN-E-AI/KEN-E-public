@@ -50,7 +50,7 @@ def sample_config_data():
     """Sample agent configuration data."""
     return {
         "name": "business_researcher",
-        "model": "gemini-2.0-flash",
+        "model": "gemini-2.5-pro",
         "description": "Test description",
         "instruction": "Test instruction for the agent",
         "generate_content_config": {"temperature": 0.3, "max_output_tokens": 2500},
@@ -284,12 +284,12 @@ class TestBuildFirestoreUpdates:
     def test_ignores_none_values(self):
         """Should not include fields with None values."""
         updates = _build_firestore_updates(
-            instruction=None, model="gemini-2.0-flash", description=None
+            instruction=None, model="gemini-2.5-pro", description=None
         )
 
         assert "instruction" not in updates
         assert "description" not in updates
-        assert updates["model"] == "gemini-2.0-flash"
+        assert updates["model"] == "gemini-2.5-pro"
 
 
 class TestErrorHandling:
@@ -421,7 +421,7 @@ class TestWarningsOnRedeployRequiredFields:
         from src.kene_api.routers import agent_configs as router_mod
 
         pre = dict(sample_config_data)
-        pre["model"] = "gemini-2.0-flash"
+        pre["model"] = "gemini-2.5-flash"
         pre["metadata"] = {**pre["metadata"], "version": "v1.0.0"}
         post = {**pre, "model": "gemini-2.5-pro"}
         post["metadata"] = {**pre["metadata"], "version": "v1.0.1"}

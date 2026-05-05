@@ -23,7 +23,7 @@ def test_strategy_supervisor_name():
 def test_strategy_supervisor_model():
     """Test agent uses correct model."""
     agent = create_strategy_supervisor()
-    assert agent.model == "gemini-2.0-flash"
+    assert agent.model == "gemini-2.5-pro"
 
 
 def test_strategy_supervisor_instructions():

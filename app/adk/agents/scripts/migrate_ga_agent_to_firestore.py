@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 GA_AGENT_CONFIG = {
     "name": "google_analytics_agent",
-    "model": "gemini-2.0-flash",
+    "model": "gemini-2.5-pro",
     "description": "Google Analytics assistant for website and app data analysis",
     "instruction": """You are a Google Analytics assistant that helps users analyze their website and app data.
 

@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 # Baseline configurations extracted from business_agents.py
 BUSINESS_RESEARCHER_CONFIG = {
     "name": "business_researcher",
-    "model": "gemini-2.0-flash",
+    "model": "gemini-2.5-pro",
     "description": "Researches business strategy information",
     "instruction": """You are a business strategy researcher.
 

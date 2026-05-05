@@ -22,7 +22,7 @@ def create_strategy_supervisor():
 
     supervisor = Agent(
         name="create_strategy_docs_supervisor",
-        model="gemini-2.0-flash",
+        model="gemini-2.5-pro",
         instruction="""You are a specialized agent for generating strategy documents during account creation.
 
 **CRITICAL: You are ONLY invoked during account creation. You do not handle chat interactions.**

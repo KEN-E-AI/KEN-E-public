@@ -49,9 +49,9 @@ class ConceptDisambiguationService:
             vertexai.init(project=project_id, location=location)
             
             # Get model preference from environment or use defaults
-            preferred_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+            preferred_model = os.getenv("GEMINI_MODEL", "gemini-2.5-pro")
             model_fallbacks = [
-                "gemini-2.0-flash-exp",
+                "gemini-2.5-flash",
                 "gemini-1.5-flash-002",
                 "gemini-1.5-flash",
                 "gemini-pro"

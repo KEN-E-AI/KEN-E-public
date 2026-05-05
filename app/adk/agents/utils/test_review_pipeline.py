@@ -66,7 +66,7 @@ def simple_specialist() -> LlmAgent:
     """A minimal specialist with a string instruction."""
     return LlmAgent(
         name="test_specialist",
-        model="gemini-2.0-flash",
+        model="gemini-2.5-pro",
         instruction="You are a helpful assistant.",
     )
 
@@ -76,7 +76,7 @@ def specialist_with_exit_loop() -> LlmAgent:
     """A specialist that already carries exit_loop in its tools."""
     return LlmAgent(
         name="loop_specialist",
-        model="gemini-2.0-flash",
+        model="gemini-2.5-pro",
         instruction="You are helpful.",
         tools=[exit_loop],
     )
@@ -216,7 +216,7 @@ class TestReviewerConfig:
             simple_specialist, "Crit.", output_key_prefix="p"
         )
         _, reviewer = pipeline.sub_agents
-        assert reviewer.model == "gemini-2.0-flash"
+        assert reviewer.model == "gemini-2.5-pro"
 
     def test_reviewer_model_override(self, simple_specialist):
         pipeline = build_review_pipeline(
@@ -363,7 +363,7 @@ class TestDefaultPrefixSanitization:
     def test_uppercase_name_yields_lowercase_prefix(self):
         specialist = LlmAgent(
             name="GA_Analyst",
-            model="gemini-2.0-flash",
+            model="gemini-2.5-pro",
             instruction="You are helpful.",
         )
         pipeline = build_review_pipeline(specialist, "Crit.")
@@ -373,7 +373,7 @@ class TestDefaultPrefixSanitization:
         """Digit-first names remain invalid after sanitization; must emit clear error."""
         specialist = LlmAgent(
             name="base_specialist",
-            model="gemini-2.0-flash",
+            model="gemini-2.5-pro",
             instruction="You are helpful.",
         )
         # Force a digit-first name without relying on ADK accepting it at construction
@@ -394,7 +394,7 @@ class TestWorkerFieldPropagation:
 
         specialist = LlmAgent(
             name="callback_specialist",
-            model="gemini-2.0-flash",
+            model="gemini-2.5-pro",
             instruction="You are helpful.",
             before_tool_callback=my_callback,
         )
@@ -408,7 +408,7 @@ class TestWorkerFieldPropagation:
 
         specialist = LlmAgent(
             name="agent_cb_specialist",
-            model="gemini-2.0-flash",
+            model="gemini-2.5-pro",
             instruction="You are helpful.",
             before_agent_callback=my_before_agent_cb,
         )
@@ -422,7 +422,7 @@ class TestWorkerFieldPropagation:
 
         specialist = LlmAgent(
             name="after_agent_cb_specialist",
-            model="gemini-2.0-flash",
+            model="gemini-2.5-pro",
             instruction="You are helpful.",
             after_agent_callback=my_after_agent_cb,
         )
@@ -435,7 +435,7 @@ class TestWorkerFieldPropagation:
 
         specialist = LlmAgent(
             name="config_specialist",
-            model="gemini-2.0-flash",
+            model="gemini-2.5-pro",
             instruction="You are helpful.",
             generate_content_config=genai_types.GenerateContentConfig(temperature=0.3),
         )
@@ -466,7 +466,7 @@ class TestWorkerFieldPropagation:
         """
         specialist = LlmAgent(
             name="ic_specialist",
-            model="gemini-2.0-flash",
+            model="gemini-2.5-pro",
             instruction="You are helpful.",
             include_contents="none",
         )
@@ -596,7 +596,7 @@ class TestCallableInstructionValidation:
     def test_callable_instruction_raises_type_error(self):
         specialist = LlmAgent(
             name="closure_specialist",
-            model="gemini-2.0-flash",
+            model="gemini-2.5-pro",
             instruction=lambda ctx: "Dynamic instruction",
         )
         with pytest.raises(TypeError, match="str"):
@@ -613,7 +613,7 @@ class TestSpecialistInstructionValidation:
     def test_sentinel_in_instruction_raises_value_error(self, token):
         specialist = LlmAgent(
             name="sentinel_specialist",
-            model="gemini-2.0-flash",
+            model="gemini-2.5-pro",
             instruction=f"You are helpful. {token} break!",
         )
         with pytest.raises(ValueError, match=re.escape(token[3:-3])):
@@ -673,7 +673,7 @@ class TestDroppedWorkerFields:
 
         specialist = LlmAgent(
             name="schema_specialist",
-            model="gemini-2.0-flash",
+            model="gemini-2.5-pro",
             instruction="You are helpful.",
             output_schema=_ResponseModel,
         )
@@ -692,7 +692,7 @@ class TestDroppedWorkerFields:
 
         specialist = LlmAgent(
             name="schema_tool_specialist",
-            model="gemini-2.0-flash",
+            model="gemini-2.5-pro",
             instruction="You are helpful.",
             output_schema=_ResponseModel,
             tools=[my_tool],
