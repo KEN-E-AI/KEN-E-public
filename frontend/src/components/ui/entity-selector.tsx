@@ -127,7 +127,7 @@ export const EntitySelector = ({
 
   const handleValueChange = (value: string) => {
     if (value === "all-orgs-accounts") {
-      navigate("/organization-selection");
+      navigate("/select-organization");
       return;
     }
 

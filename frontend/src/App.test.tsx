@@ -26,6 +26,15 @@ function renderRoutes(initialPath: string) {
             path="/sign-up"
             element={<div data-testid="sign-up-page">Sign Up</div>}
           />
+          {/* Standalone workspace-selection — top-level unprotected, same as in App.tsx */}
+          <Route
+            path="/select-organization"
+            element={
+              <div data-testid="select-organization-page">
+                Select Organization
+              </div>
+            }
+          />
 
           {/* Top-level redirects — / and /settings */}
           <Route path="/" element={<Navigate to="/chat" replace />} />
@@ -48,6 +57,10 @@ function renderRoutes(initialPath: string) {
           <Route
             path="/user-settings"
             element={<Navigate to="/settings/user" replace />}
+          />
+          <Route
+            path="/organization-selection"
+            element={<Navigate to="/select-organization" replace />}
           />
 
           {/* Settings group — wrapped in LayoutSettings */}
@@ -123,6 +136,11 @@ describe("App routing — backward-compat redirects", () => {
   test("/user-settings redirects to /settings/user", () => {
     renderRoutes("/user-settings");
     expect(screen.getByTestId("settings-user-page")).toBeInTheDocument();
+  });
+
+  test("/organization-selection redirects to /select-organization", () => {
+    renderRoutes("/organization-selection");
+    expect(screen.getByTestId("select-organization-page")).toBeInTheDocument();
   });
 });
 
