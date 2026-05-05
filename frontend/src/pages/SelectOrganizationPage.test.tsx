@@ -4,17 +4,12 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import SelectOrganizationPage from "./SelectOrganizationPage";
 
-// ---------------------------------------------------------------------------
-// Top-level mock factories — defined before vi.mock() hoisting runs
-// ---------------------------------------------------------------------------
+// Mock factories must be declared before vi.mock() hoisting runs.
 const mockNavigate = vi.fn();
 const mockGetOrganizationsBatch = vi.fn();
 const mockAxiosGet = vi.fn();
 const mockUseAuth = vi.fn();
 
-// ---------------------------------------------------------------------------
-// Module mocks
-// ---------------------------------------------------------------------------
 vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => mockUseAuth() }));
 
 vi.mock("@/data/organizationApi", () => ({
@@ -50,9 +45,6 @@ vi.mock("react-router-dom", async () => {
   };
 });
 
-// ---------------------------------------------------------------------------
-// Test helper data
-// ---------------------------------------------------------------------------
 const mockOrg1 = {
   organization_id: "org-1",
   organization_name: "Acme Corp",
@@ -102,9 +94,6 @@ const makeOrgBatchResponse = (
 ): Record<string, typeof mockOrg1> =>
   Object.fromEntries(orgs.map((o) => [o.organization_id, o]));
 
-// ---------------------------------------------------------------------------
-// Default auth mock (authenticated, no workspace yet, regular user)
-// ---------------------------------------------------------------------------
 const defaultAuthMock = {
   user: { id: "user-1" },
   setSelectedOrgAccount: vi.fn(),
@@ -118,9 +107,6 @@ const defaultAuthMock = {
   hasSelectedWorkspace: false,
 };
 
-// ---------------------------------------------------------------------------
-// Render helper
-// ---------------------------------------------------------------------------
 function renderPage() {
   return render(
     <MemoryRouter initialEntries={["/select-organization"]}>
@@ -144,9 +130,6 @@ function renderPage() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 describe("SelectOrganizationPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -156,7 +139,6 @@ describe("SelectOrganizationPage", () => {
     vi.useRealTimers();
   });
 
-  // TC-1: Auth loading state
   it("renders loading spinner when isAuthLoading is true", () => {
     mockUseAuth.mockReturnValue({ ...defaultAuthMock, isAuthLoading: true });
     mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse([]));
@@ -164,7 +146,6 @@ describe("SelectOrganizationPage", () => {
     expect(screen.getByText("Loading...")).toBeInTheDocument();
   });
 
-  // TC-2: Unauthenticated redirect
   it("redirects to /sign-in when not authenticated", () => {
     mockUseAuth.mockReturnValue({
       ...defaultAuthMock,
@@ -176,7 +157,6 @@ describe("SelectOrganizationPage", () => {
     expect(screen.getByText("SIGNIN_SENTINEL")).toBeInTheDocument();
   });
 
-  // TC-3: Already-has-workspace redirect
   it("redirects to / when workspace is already selected", () => {
     mockUseAuth.mockReturnValue({
       ...defaultAuthMock,
@@ -187,7 +167,6 @@ describe("SelectOrganizationPage", () => {
     expect(screen.getByText("HOME_SENTINEL")).toBeInTheDocument();
   });
 
-  // TC-4: Continue-flow happy path
   it("continue flow: selects org + account → calls auth setters and navigates to /", async () => {
     const setSelectedOrgAccount = vi.fn();
     const completeWorkspaceSelection = vi.fn();
@@ -255,7 +234,6 @@ describe("SelectOrganizationPage", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/");
   });
 
-  // TC-5: Gear icon route
   it("gear icon navigates to /settings/organization without selecting the org row", async () => {
     const user = userEvent.setup();
     const setSelectedOrgAccount = vi.fn();
@@ -301,7 +279,6 @@ describe("SelectOrganizationPage", () => {
     );
   });
 
-  // TC-6: "+ Create new organization" CTA
   it("create new organization button navigates to /create-organization", async () => {
     const user = userEvent.setup();
     mockUseAuth.mockReturnValue({
@@ -325,7 +302,6 @@ describe("SelectOrganizationPage", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/create-organization");
   });
 
-  // TC-7: "+ Create new account" CTA
   it("create new account button calls setCurrentOrganization, completeWorkspaceSelection, and navigates", async () => {
     const user = userEvent.setup();
     const completeWorkspaceSelection = vi.fn();
@@ -360,7 +336,6 @@ describe("SelectOrganizationPage", () => {
     );
   });
 
-  // TC-8a: Search filter NOT visible when org count ≤ 5
   it("does NOT render search input when org count is ≤5", async () => {
     mockUseAuth.mockReturnValue({
       ...defaultAuthMock,
@@ -383,7 +358,6 @@ describe("SelectOrganizationPage", () => {
     ).not.toBeInTheDocument();
   });
 
-  // TC-8b: Search filter visible when org count > 5
   it("renders search input when org count is >5", async () => {
     mockUseAuth.mockReturnValue({
       ...defaultAuthMock,
@@ -409,7 +383,6 @@ describe("SelectOrganizationPage", () => {
     ).toBeInTheDocument();
   });
 
-  // TC-9: Search filter behavior
   it("filters org list based on search input", async () => {
     const user = userEvent.setup();
     mockUseAuth.mockReturnValue({
@@ -489,7 +462,6 @@ describe("SelectOrganizationPage", () => {
     expect(screen.getByText("Beta Inc")).toBeInTheDocument();
   });
 
-  // TC-10: Error-badge rendering
   it("renders Error Loading badge on orgs with metadata.error=true but keeps them clickable", async () => {
     const user = userEvent.setup();
     mockUseAuth.mockReturnValue({
@@ -521,7 +493,6 @@ describe("SelectOrganizationPage", () => {
     expect(orgRow).toHaveAttribute("aria-pressed", "true");
   });
 
-  // TC-11: Continue disabled until selection complete
   it("Continue is disabled initially and enabled after org + account selection", async () => {
     const user = userEvent.setup();
     mockUseAuth.mockReturnValue({
@@ -554,7 +525,6 @@ describe("SelectOrganizationPage", () => {
     expect(continueBtn).toBeEnabled();
   });
 
-  // TC-12: No BackgroundEffects inside the page (preserved from UI-42)
   it("does not render BackgroundEffects inside the page", () => {
     mockUseAuth.mockReturnValue({
       ...defaultAuthMock,
@@ -567,7 +537,6 @@ describe("SelectOrganizationPage", () => {
     expect(screen.queryAllByTestId("bg-static").length).toBe(0);
   });
 
-  // TC-13: Zero-orgs redirect (UI-51 feature)
   it("redirects to /create-organization when non-super-admin has no org permissions", async () => {
     mockUseAuth.mockReturnValue({
       ...defaultAuthMock,
@@ -592,7 +561,9 @@ describe("SelectOrganizationPage", () => {
       setAccountMetadata: vi.fn(),
     });
     mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse(["org-1"]));
-    mockGetOrganizationsBatch.mockResolvedValue(makeOrgBatchResponse([mockOrg1]));
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([mockOrg1]),
+    );
 
     renderPage();
 

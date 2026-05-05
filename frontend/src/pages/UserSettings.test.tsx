@@ -130,10 +130,7 @@ describe("UserSettings", () => {
   });
 });
 
-// ─── Responsive class structure ───────────────────────────────────────────────
-// Locks the two-column name grid in UserSettings (Profile tab, default view).
-// Figma-export reference: docs/figma-export/src/app/pages/UserSettingsPage.tsx
-
+// Figma reference: docs/figma-export/src/app/pages/UserSettingsPage.tsx
 describe("UserSettings — Responsive class structure", () => {
   beforeEach(() => {
     vi.clearAllMocks();

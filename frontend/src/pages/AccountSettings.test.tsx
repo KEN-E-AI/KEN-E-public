@@ -201,10 +201,7 @@ describe("AccountSettings", () => {
   });
 });
 
-// ─── Responsive class structure ───────────────────────────────────────────────
-// Locks the responsive integrations card grid in AccountSettings (org-settings path).
-// Figma-export reference: docs/figma-export/src/app/pages/OrganizationSettingsPage.tsx
-
+// Figma reference: docs/figma-export/src/app/pages/OrganizationSettingsPage.tsx
 describe("AccountSettings — Responsive class structure", () => {
   const orgUser = {
     id: "test-user-123",

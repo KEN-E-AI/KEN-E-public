@@ -1,6 +1,12 @@
 import { describe, test, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter, Routes, Route, Navigate } from "react-router-dom";
+import {
+  MemoryRouter,
+  Routes,
+  Route,
+  Navigate,
+  Outlet,
+} from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LayoutSettings } from "@/components/layout/LayoutSettings";
 
@@ -80,6 +86,34 @@ function renderRoutes(initialPath: string) {
               element={
                 <div data-testid="settings-user-page">User Settings</div>
               }
+            />
+          </Route>
+
+          {/* Workflows group — wrapped in LayoutC chrome (stubbed) */}
+          <Route
+            element={
+              <div data-testid="layout-c-chrome">
+                <Outlet />
+              </div>
+            }
+          >
+            <Route
+              path="/workflows"
+              element={<Navigate to="/workflows/agents" replace />}
+            />
+            <Route
+              path="/workflows/agents"
+              element={<div data-testid="workflows-agents-page">Agents</div>}
+            />
+            <Route
+              path="/workflows/automations"
+              element={
+                <div data-testid="workflows-automations-page">Automations</div>
+              }
+            />
+            <Route
+              path="/workflows/skills"
+              element={<div data-testid="workflows-skills-page">Skills</div>}
             />
           </Route>
 
@@ -189,6 +223,34 @@ describe("App routing — settings inside LayoutSettings", () => {
       screen.getByRole("navigation", { name: "Settings sections" }),
     ).toBeInTheDocument();
     expect(screen.getByTestId("settings-user-page")).toBeInTheDocument();
+  });
+});
+
+describe("App routing — workflows inside LayoutC", () => {
+  test("/workflows redirects to /workflows/agents", () => {
+    renderRoutes("/workflows");
+    expect(screen.getByTestId("workflows-agents-page")).toBeInTheDocument();
+    expect(screen.getByTestId("layout-c-chrome")).toBeInTheDocument();
+  });
+
+  test("/workflows/agents mounts inside LayoutC chrome", () => {
+    renderRoutes("/workflows/agents");
+    expect(screen.getByTestId("layout-c-chrome")).toBeInTheDocument();
+    expect(screen.getByTestId("workflows-agents-page")).toBeInTheDocument();
+  });
+
+  test("/workflows/automations mounts inside LayoutC chrome", () => {
+    renderRoutes("/workflows/automations");
+    expect(screen.getByTestId("layout-c-chrome")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("workflows-automations-page"),
+    ).toBeInTheDocument();
+  });
+
+  test("/workflows/skills mounts inside LayoutC chrome", () => {
+    renderRoutes("/workflows/skills");
+    expect(screen.getByTestId("layout-c-chrome")).toBeInTheDocument();
+    expect(screen.getByTestId("workflows-skills-page")).toBeInTheDocument();
   });
 });
 

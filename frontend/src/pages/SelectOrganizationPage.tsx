@@ -43,13 +43,19 @@ export default function SelectOrganizationPage() {
   const [orgsFromFirestore, setOrgsFromFirestore] = useState<
     Record<string, string>
   >({});
-  const [loadingUserData, setLoadingUserData] = useState(true);
+  // Fetch status — 'success' is required before the zero-orgs redirect can fire,
+  // so a transient API failure can never spuriously bounce a multi-org user to
+  // /create-organization (the empty initial state is indistinguishable from
+  // "user has no orgs" without this gate).
+  const [userDataFetchStatus, setUserDataFetchStatus] = useState<
+    "loading" | "success" | "error"
+  >("loading");
+  const [userDataFetchAttempt, setUserDataFetchAttempt] = useState(0);
   const [localOrgMetadata, setLocalOrgMetadata] = useState<Record<string, any>>(
     {},
   );
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Race-condition guard refs (verbatim from legacy)
   const lastRefreshTime = useRef<number>(0);
   const isFetchingRef = useRef<boolean>(false);
   const lastOrgKeysRef = useRef<string>("");
@@ -60,35 +66,45 @@ export default function SelectOrganizationPage() {
   const { childOrganizations, clearChildOrganizations } =
     useChildOrganizations();
 
-  // User-data fetch effect
   useEffect(() => {
     const FIRESTORE_USER_ID = user?.id;
     if (!FIRESTORE_USER_ID) return;
 
+    setUserDataFetchStatus("loading");
+    let cancelled = false;
+
     const fetchUserData = async () => {
       try {
         if (isSuperAdmin) {
-          // TODO(UI-48): super-admin fetch via getOrganizations()
-          setLoadingUserData(false);
+          if (!cancelled) setUserDataFetchStatus("success");
           return;
         }
-        // Regular users: fetch from Firestore permissions
         const res = await api.get(
           `/api/v1/firestore/documents/users/${FIRESTORE_USER_ID}`,
         );
-        const { data } = res.data;
-        setOrgsFromFirestore(data.permissions.organizations || {});
+        if (cancelled) return;
+        const orgs = res.data?.data?.permissions?.organizations;
+        // Distinguish missing-shape (server bug → error UI) from empty perms
+        // (genuine zero-orgs user → redirect). A {} fallback would silently
+        // conflate the two and bounce existing users to /create-organization.
+        if (orgs === undefined || orgs === null) {
+          throw new Error("User document missing permissions.organizations");
+        }
+        setOrgsFromFirestore(orgs);
+        setUserDataFetchStatus("success");
       } catch (error) {
+        if (cancelled) return;
         console.error("Failed to fetch user org/account data", error);
-      } finally {
-        setLoadingUserData(false);
+        setUserDataFetchStatus("error");
       }
     };
 
     fetchUserData();
-  }, [user?.id, isSuperAdmin]);
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, isSuperAdmin, userDataFetchAttempt]);
 
-  // Org metadata fetch helpers (defined before the effect that calls them)
   const fetchOrgMetadata = async () => {
     const orgIds = Object.keys(orgsFromFirestore);
     if (orgIds.length === 0) {
@@ -149,11 +165,13 @@ export default function SelectOrganizationPage() {
       return;
 
     isFetchingRef.current = true;
-    lastRefreshTime.current = now;
     lastOrgKeysRef.current = currentOrgKeys;
 
     try {
       await fetchOrgMetadata();
+      // Only commit the debounce window on success — failed fetches must be
+      // retryable immediately, otherwise a transient error locks the UI for 5s.
+      lastRefreshTime.current = now;
     } finally {
       isFetchingRef.current = false;
     }
@@ -166,12 +184,13 @@ export default function SelectOrganizationPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgsFromFirestore]);
 
-  // Zero-orgs redirect: non-super-admin with no org permissions → create-organization
+  // Zero-orgs redirect requires a successful fetch — see comment on
+  // userDataFetchStatus above.
   useEffect(() => {
     if (
       !isAuthLoading &&
       isAuthenticated &&
-      !loadingUserData &&
+      userDataFetchStatus === "success" &&
       Object.keys(orgsFromFirestore).length === 0 &&
       !isSuperAdmin
     ) {
@@ -180,13 +199,12 @@ export default function SelectOrganizationPage() {
   }, [
     isAuthLoading,
     isAuthenticated,
-    loadingUserData,
+    userDataFetchStatus,
     orgsFromFirestore,
     isSuperAdmin,
     navigate,
   ]);
 
-  // Organization list derivation
   const organizationList = Object.entries(orgsFromFirestore)
     .filter(([orgId]) => localOrgMetadata[orgId] !== undefined)
     .map(([orgId, permission]) => {
@@ -241,7 +259,6 @@ export default function SelectOrganizationPage() {
     getAccountsByOrganizationIdFromLocal,
   });
 
-  // Event handlers
   const handleOrganizationSelect = (orgId: string) => {
     if (orgId !== selectedOrganization) {
       setSelectedAccount("");
@@ -255,29 +272,36 @@ export default function SelectOrganizationPage() {
     if (!selectedOrganization || !selectedAccount) return;
     setIsLoading(true);
     continueTimerRef.current = setTimeout(() => {
-      const resolution = resolveOrganizationAndAccount(
-        selectedOrganization,
-        selectedAccount,
-        selectedChildOrg,
-        localOrgMetadata,
-        childOrganizations,
-      );
-      const metadata = formatWorkspaceMetadata(
-        resolution.organization?.organization_name || selectedOrganization,
-        resolution.account?.account_name || selectedAccount,
-        resolution.account?.industry || "Unknown",
-        resolution.account?.status || "Active",
-        resolution.account?.timezone,
-        resolution.organization?.plan,
-      );
-      setSelectedOrgAccount({
-        orgId: resolution.organizationId,
-        accountId: selectedAccount,
-        metadata,
-      });
-      setCurrentOrganization(resolution.organizationId as OrganizationId);
-      completeWorkspaceSelection();
-      navigate("/");
+      try {
+        const resolution = resolveOrganizationAndAccount(
+          selectedOrganization,
+          selectedAccount,
+          selectedChildOrg,
+          localOrgMetadata,
+          childOrganizations,
+        );
+        const metadata = formatWorkspaceMetadata(
+          resolution.organization?.organization_name || selectedOrganization,
+          resolution.account?.account_name || selectedAccount,
+          resolution.account?.industry || "Unknown",
+          resolution.account?.status || "Active",
+          resolution.account?.timezone,
+          resolution.organization?.plan,
+        );
+        setSelectedOrgAccount({
+          orgId: resolution.organizationId,
+          accountId: selectedAccount,
+          metadata,
+        });
+        setCurrentOrganization(resolution.organizationId as OrganizationId);
+        completeWorkspaceSelection();
+        navigate("/");
+      } catch (error) {
+        // Without this catch, any throw inside the deferred callback would leave
+        // isLoading=true forever, hanging the spinner with no recovery path.
+        console.error("Failed to complete workspace selection", error);
+        setIsLoading(false);
+      }
     }, WORKSPACE_SELECTION_DELAY);
   };
 
@@ -301,7 +325,6 @@ export default function SelectOrganizationPage() {
     navigate("/settings/organization");
   };
 
-  // Auth gating — after all hooks
   if (isAuthLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -321,7 +344,8 @@ export default function SelectOrganizationPage() {
     return <Navigate to="/" replace />;
   }
 
-  const isDataLoading = loadingUserData;
+  const isDataLoading = userDataFetchStatus === "loading";
+  const hasFetchError = userDataFetchStatus === "error";
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
@@ -367,6 +391,31 @@ export default function SelectOrganizationPage() {
               </CardContent>
             </Card>
           </div>
+        ) : hasFetchError ? (
+          <Card className="shadow-lg mb-8">
+            <CardContent className="py-10 text-center space-y-4">
+              <p className="text-sm text-[var(--color-text-primary)]">
+                We couldn't load your workspaces. Please try again.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setUserDataFetchAttempt((n) => n + 1)}
+              >
+                Retry
+              </Button>
+              <p className="text-xs text-[var(--color-text-secondary)]">
+                If the problem persists, contact{" "}
+                <a
+                  href="mailto:support@ken-e.com"
+                  className="text-[var(--color-violet-600)] hover:underline"
+                >
+                  support@ken-e.com
+                </a>
+                .
+              </p>
+            </CardContent>
+          </Card>
         ) : (
           <div className="grid lg:grid-cols-2 gap-6 mb-8">
             {/* Organizations card */}

@@ -165,11 +165,7 @@ describe("CreateOrganization", () => {
   });
 });
 
-// ─── Responsive class structure ───────────────────────────────────────────────
-// Locks the intrinsic responsive contract for CreateOrganization.
-// Figma-export: CreateOrganization shares the centered-card shell (no dedicated
-// figma-export page — layout mirrors SignInPage pattern).
-
+// Layout mirrors the SignInPage centered-card shell (no dedicated figma-export page).
 describe("CreateOrganization — Responsive class structure", () => {
   beforeEach(() => {
     vi.clearAllMocks();

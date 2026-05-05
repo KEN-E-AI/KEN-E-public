@@ -92,7 +92,10 @@ const AcceptInvitation = () => {
         user_name: `${user.firstName} ${user.lastName}`.trim() || user.email,
       });
 
-      // Check if user has notification preferences, create if missing
+      // Check if user has notification preferences, create if missing.
+      // Only 404 means "not yet created" — any other status is a real failure
+      // we should surface, otherwise the user joins the org but silently never
+      // receives email notifications.
       try {
         await api.get(
           `/api/v1/firestore/documents/users/${user.id}/preferences/notifications`,
@@ -116,6 +119,17 @@ const AcceptInvitation = () => {
               channels: ["ui"],
               updated_at: new Date().toISOString(),
             },
+          });
+        } else {
+          console.error(
+            "Failed to load notification preferences after invitation accept",
+            prefErr,
+          );
+          toast({
+            title: "Notification preferences unavailable",
+            description:
+              "You've joined the organization, but we couldn't load your notification settings. You may need to configure them manually under Settings.",
+            variant: "destructive",
           });
         }
       }

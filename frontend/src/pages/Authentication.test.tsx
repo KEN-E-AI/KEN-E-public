@@ -573,11 +573,7 @@ describe("Authentication — Email Verification view", () => {
   });
 });
 
-// ─── Responsive class structure ───────────────────────────────────────────────
-// Locks the intrinsic responsive contract for auth views (mirrors UI-21 pattern).
-// Figma-export reference: docs/figma-export/src/app/pages/SignInPage.tsx,
-//   CreateAccountPage.tsx, EmailVerificationPage.tsx
-
+// Figma reference: docs/figma-export/src/app/pages/{SignInPage,CreateAccountPage,EmailVerificationPage}.tsx
 describe("Authentication — Responsive class structure (SignIn view)", () => {
   test("outer wrapper carries min-h-screen flex items-center justify-center p-4", () => {
     const { container } = renderAt("/sign-in");

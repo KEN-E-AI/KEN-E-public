@@ -176,7 +176,6 @@ const violetSixHundredPairs: Pair[] = [
 // Button text is --text-body-md (14px bold ≈ 10.5pt), below the 14pt bold large-text
 // threshold, so normal-text AA (4.5:1) applies.
 // Light: #ffffff on #4f46e5 ≈ 6.28:1 ✅. Dark: #0f172a on #a5b4fc ≈ 8.96:1 ✅.
-// Fixed in UI-39 Flow 3 after Test Team identified 4.46:1 on violet-500 button.
 const textInverseVioletSixHundredPairs: Pair[] = [
   {
     fg: lightTokens["--color-text-inverse"] ?? "",
@@ -196,7 +195,6 @@ const textInverseVioletSixHundredPairs: Pair[] = [
 // text-inverse on teal-500 (active TabsTrigger — dark mode).
 // Tab trigger text is --text-body-sm at font-bold; normal-text AA (4.5:1) applies.
 // Light: #1e293b on #2ec4b6 ≈ 5.74:1 ✅. Dark: #0f172a on #5eead4 ≈ 10.56:1 ✅.
-// Fixed in UI-32 after Test Team identified text-inverse on teal-500 at 2.09:1 (light).
 const tabsActivePairs: Pair[] = [
   {
     fg: lightTokens["--color-text-primary"] ?? "",

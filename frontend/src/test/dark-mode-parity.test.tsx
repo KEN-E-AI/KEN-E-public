@@ -1,16 +1,5 @@
-/**
- * Dark-mode parity — UI-31
- *
- * Renders every redesigned UI-PRD-02 page under both light and dark themes and
- * asserts zero axe violations. Each describe block covers one page; `it.each`
- * runs the same assertion twice (light / dark).
- *
- * Contrast is intentionally excluded from axe (JSDOM has no layout engine).
- * Token-pair contrast is verified deterministically in token-contrast.test.ts.
- *
- * The `.dark` class is applied / removed on document.documentElement directly,
- * mirroring the mechanism used by ThemeProvider in production.
- */
+// Contrast is excluded from axe (JSDOM has no layout engine); token-pair
+// contrast is verified deterministically in token-contrast.test.ts.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -26,8 +15,6 @@ import AccountSettings from "@/pages/AccountSettings";
 import UserSettings from "@/pages/UserSettings";
 import { CreateOrganization } from "@/pages/CreateOrganization";
 import EmailActionHandler from "@/components/auth/EmailActionHandler";
-
-// ── Module-level mocks ──────────────────────────────────────────────────────
 
 vi.mock("@/contexts/AuthContext", () => ({
   useAuth: vi.fn(),
@@ -178,8 +165,6 @@ vi.mock("@/pages/components/DangerZone", () => ({
   default: () => <div data-testid="danger-zone" />,
 }));
 
-// ── Shared test state ───────────────────────────────────────────────────────
-
 const themes = [
   { theme: "light", isDark: false },
   { theme: "dark", isDark: true },
@@ -236,8 +221,6 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-// ── Authentication — sign-in view ───────────────────────────────────────────
-
 describe("dark-mode parity — Authentication (sign-in)", () => {
   beforeEach(() => {
     vi.mocked(useAuth).mockReturnValue(
@@ -260,8 +243,6 @@ describe("dark-mode parity — Authentication (sign-in)", () => {
     },
   );
 });
-
-// ── Authentication — sign-up view ───────────────────────────────────────────
 
 describe("dark-mode parity — Authentication (sign-up)", () => {
   beforeEach(() => {
@@ -286,8 +267,6 @@ describe("dark-mode parity — Authentication (sign-up)", () => {
   );
 });
 
-// ── Authentication — email-verification view ─────────────────────────────────
-
 describe("dark-mode parity — Authentication (email-verification)", () => {
   beforeEach(() => {
     vi.mocked(useAuth).mockReturnValue(
@@ -311,7 +290,6 @@ describe("dark-mode parity — Authentication (email-verification)", () => {
   );
 });
 
-// ── EmailActionHandler — unsupported-mode / error state ─────────────────────
 // EmailActionHandler only handles verifyEmail; any other mode sets error state
 // immediately and renders the "Verification Failed" error card.
 
@@ -340,8 +318,6 @@ describe("dark-mode parity — EmailActionHandler (error state)", () => {
   );
 });
 
-// ── EmailActionHandler — verifyEmail view ───────────────────────────────────
-
 describe("dark-mode parity — EmailActionHandler (verifyEmail)", () => {
   it.each(themes)(
     "has no axe violations in $theme mode",
@@ -363,8 +339,6 @@ describe("dark-mode parity — EmailActionHandler (verifyEmail)", () => {
     },
   );
 });
-
-// ── AcceptInvitation ─────────────────────────────────────────────────────────
 
 describe("dark-mode parity — AcceptInvitation", () => {
   beforeEach(() => {
@@ -393,8 +367,6 @@ describe("dark-mode parity — AcceptInvitation", () => {
   );
 });
 
-// ── AccountSettings (/settings/organization) ─────────────────────────────────
-
 describe("dark-mode parity — AccountSettings", () => {
   beforeEach(() => {
     vi.mocked(useAuth).mockReturnValue(
@@ -417,8 +389,6 @@ describe("dark-mode parity — AccountSettings", () => {
     },
   );
 });
-
-// ── UserSettings (/settings/user) ────────────────────────────────────────────
 
 describe("dark-mode parity — UserSettings", () => {
   beforeEach(() => {
@@ -443,8 +413,6 @@ describe("dark-mode parity — UserSettings", () => {
     },
   );
 });
-
-// ── CreateOrganization (/create-organization) ─────────────────────────────────
 
 describe("dark-mode parity — CreateOrganization", () => {
   beforeEach(() => {
