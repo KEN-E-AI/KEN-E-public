@@ -172,6 +172,26 @@ const violetSixHundredPairs: Pair[] = [
   },
 ];
 
+// text-inverse on violet-600 — default Button background (normal text).
+// Button text is --text-body-md (14px bold ≈ 10.5pt), below the 14pt bold large-text
+// threshold, so normal-text AA (4.5:1) applies.
+// Light: #ffffff on #4f46e5 ≈ 6.28:1 ✅. Dark: #0f172a on #a5b4fc ≈ 8.96:1 ✅.
+// Fixed in UI-39 Flow 3 after Test Team identified 4.46:1 on violet-500 button.
+const textInverseVioletSixHundredPairs: Pair[] = [
+  {
+    fg: lightTokens["--color-text-inverse"] ?? "",
+    bg: lightTokens["--color-violet-600"] ?? "",
+    kind: "normal",
+    label: "light: text-inverse on violet-600 (button background)",
+  },
+  {
+    fg: darkTokens["--color-text-inverse"] ?? "",
+    bg: darkTokens["--color-violet-600"] ?? "",
+    kind: "normal",
+    label: "dark: text-inverse on violet-600 (button background)",
+  },
+];
+
 // Note: text-tertiary on bg-primary is intentionally excluded from this pair list.
 // Light mode: #94a3b8 on #fafbfc ≈ 2.475:1 — fails both normal (4.5:1) and large
 // (3:1) AA thresholds. Dark mode: #64748b on #0f172a ≈ 3.751:1 — fails normal AA.
@@ -194,6 +214,7 @@ describe("WCAG AA token-pair contrast", () => {
     ...darkPairs,
     ...accentFgPairs,
     ...violetSixHundredPairs,
+    ...textInverseVioletSixHundredPairs,
   ].forEach(({ fg, bg, kind, label }) => {
     it(`${label}`, () => {
       expect(fg, `Missing foreground token for: ${label}`).not.toBe("");

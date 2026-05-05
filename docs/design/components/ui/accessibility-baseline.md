@@ -53,12 +53,13 @@ The following token pairs are verified in `token-contrast.test.ts`. All must mee
 | `warning-text` on `warning-bg` | ✅ | ✅ |
 | `info-text` on `info-bg` | ✅ | ✅ |
 | `violet-600` on `bg-primary` (body text) | ~6.04:1 ✅ | ~8.95:1 ✅ |
+| `text-inverse` on `violet-600` (default Button) | ~6.28:1 ✅ | ~8.96:1 ✅ |
 
 ### Large text (≥ 3:1) — bold ≥ 14pt or regular ≥ 18pt
 
 | Pair | Light ratio | Dark ratio | Usage restriction |
 |------|------------|------------|-------------------|
-| `text-inverse` on `violet-500` | ~4.47:1 ✅ | ~6.0:1 ✅ | Active nav pills, badge labels only — always large/bold |
+| `text-inverse` on `violet-500` | ~4.47:1 ✅ | ~6.0:1 ✅ | Active nav pills, badge labels only — always large/bold. **Not for buttons** — use `violet-600` (normal text AA). |
 | `accent-foreground` on `accent` | ~3.995:1 ✅ | ~3.330:1 ✅ | Large interactive labels only (≥ 14pt bold or ≥ 18pt regular) |
 
 ---
@@ -87,7 +88,8 @@ When you need brand-tinted text, the choice depends on size:
 | Context | Token | Light ratio | Dark ratio |
 |---------|-------|-------------|------------|
 | Body text (small, regular weight) — chips, paragraphs, captions | `--color-violet-600` (`#4f46e5` / `#a5b4fc`) | ~6.04:1 ✅ AA normal | ~8.95:1 ✅ AA normal |
-| Large interactive labels (≥ 14pt bold or ≥ 18pt regular) — nav pills, badge labels, button text | `--color-violet-500` (`#6366f1` / `#818cf8`) | ~4.31:1 ✅ AA large | ~6.0:1 ✅ AA normal |
+| Large interactive labels (≥ 14pt bold or ≥ 18pt regular) — nav pills, badge labels | `--color-violet-500` (`#6366f1` / `#818cf8`) | ~4.31:1 ✅ AA large | ~6.0:1 ✅ AA normal |
+| Button text (14px bold ≈ 10.5pt — normal text threshold applies) | `--color-violet-600` (`#4f46e5` / `#a5b4fc`) as bg; `text-inverse` as fg | ~6.28:1 ✅ AA normal | ~8.96:1 ✅ AA normal |
 | Icons / focus rings / non-text UI | `--color-violet-500` | ✅ 3:1 non-text | ✅ |
 
 The brand identity is preserved via `--color-violet-500` everywhere it visually meets AA at its intended use; for small body text the slightly darker `--color-violet-600` keeps the brand feel while clearing the 4.5:1 floor.
@@ -95,6 +97,8 @@ The brand identity is preserved via `--color-violet-500` everywhere it visually 
 ### `text-inverse` on `violet-500` — large text only
 
 Light mode: `#ffffff` on `#6366f1` = ~4.47:1. Passes large-text AA (3:1) but not normal-text AA (4.5:1). Usage is restricted to bold badge labels and active nav pill text (≥ 14pt bold). This constraint is enforced by design convention; no runtime enforcement is currently wired.
+
+**Default Button (`variant="default"`) uses `violet-600` since UI-39.** Button text is `--text-body-md` (14px bold ≈ 10.5pt), below the 14pt bold large-text threshold — normal-text AA (4.5:1) applies. `text-inverse` on `violet-600` = ~6.28:1 light / ~8.96:1 dark, both passing normal-text AA. See `token-contrast.test.ts` `textInverseVioletSixHundredPairs`.
 
 ### `accent-foreground` on `accent` — large interactive text only
 
