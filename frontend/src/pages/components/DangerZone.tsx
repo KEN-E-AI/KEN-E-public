@@ -94,10 +94,12 @@ const DangerZone = ({ orgData }: DangerZoneProps) => {
 
   const confirmDeleteOrganization = async () => {
     try {
-      console.log(
-        "[DangerZone] Deleting organization:",
-        orgData.organization_id,
-      );
+      if (import.meta.env.DEV) {
+        console.log(
+          "[DangerZone] Deleting organization:",
+          orgData.organization_id,
+        );
+      }
 
       // Delete organization from Neo4j
       await deleteOrganization(orgData.organization_id);
@@ -109,7 +111,9 @@ const DangerZone = ({ orgData }: DangerZoneProps) => {
       // Show success and navigate
       showSuccessMessageAndNavigate(orgData.organization_name);
 
-      console.log("[DangerZone] Organization deleted successfully");
+      if (import.meta.env.DEV) {
+        console.log("[DangerZone] Organization deleted successfully");
+      }
     } catch (error: any) {
       handleDeletionError(error);
     }

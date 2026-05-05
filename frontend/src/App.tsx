@@ -23,11 +23,8 @@ import { AppErrorBoundary } from "@/components/layout/AppErrorBoundary";
 import "./App.css";
 
 import { LayoutC } from "@/components/layout/LayoutC";
-import {
-  LayoutSettings,
-  type SettingsNavRow,
-  type SettingsNavRowId,
-} from "@/components/layout/LayoutSettings";
+import { LayoutSettings } from "@/components/layout/LayoutSettings";
+import { SETTINGS_NAV_ITEMS } from "@/lib/settingsNav";
 import Index from "./pages/Index";
 import Performance from "./pages/Performance";
 import Recommendations from "./pages/Recommendations";
@@ -53,29 +50,7 @@ import AcceptInvitation from "./pages/AcceptInvitation";
 import NotFoundPage from "./pages/NotFoundPage";
 import EmailActionHandler from "./components/auth/EmailActionHandler";
 import Authentication from "./pages/Authentication";
-
-// Settings sub-nav seed — Organization (10), Account (20), User (30).
-// UI-28 will replace this inline array with SETTINGS_NAV_REGISTRY.
-const SETTINGS_NAV_ITEMS: SettingsNavRow[] = [
-  {
-    id: "organization" as SettingsNavRowId,
-    label: "Organization",
-    path: "/settings/organization",
-    order: 10,
-  },
-  {
-    id: "account" as SettingsNavRowId,
-    label: "Account",
-    path: "/settings/account",
-    order: 20,
-  },
-  {
-    id: "user" as SettingsNavRowId,
-    label: "User",
-    path: "/settings/user",
-    order: 30,
-  },
-];
+import { ChatInterface } from "@/components/chat/ChatInterface";
 
 // Import test utilities in development
 if (import.meta.env.DEV) {
@@ -241,30 +216,6 @@ const App = () => (
                       path="/user-settings"
                       element={<Navigate to="/settings/user" replace />}
                     />
-                    {/* Settings routes — wrapped in LayoutSettings with sub-nav.
-                        UI-28 will replace SETTINGS_NAV_ITEMS with SETTINGS_NAV_REGISTRY.
-                        ProtectedRoute uses the children-render pattern (pre-UI-23): it renders
-                        children (LayoutSettings) only when authenticated. LayoutSettings then
-                        renders <Outlet /> for its child routes. When UI-23 converts ProtectedRoute
-                        to the outlet pattern, move it to a path-less parent route and remove the
-                        children wrapper here. */}
-                    <Route
-                      element={
-                        <ProtectedRoute>
-                          <LayoutSettings subNavItems={SETTINGS_NAV_ITEMS} />
-                        </ProtectedRoute>
-                      }
-                    >
-                      <Route
-                        path="/settings/organization"
-                        element={<AccountSettings />}
-                      />
-                      <Route
-                        path="/settings/account/:accountId"
-                        element={<AccountSettings />}
-                      />
-                      <Route path="/settings/user" element={<UserSettings />} />
-                    </Route>
                     {/* Protected routes — nested under LayoutC. ProtectedRoute
                         is hoisted to the parent so child routes don't repeat it. */}
                     <Route
@@ -274,7 +225,7 @@ const App = () => (
                         </ProtectedRoute>
                       }
                     >
-                      <Route path="/chat" element={<Home />} />
+                      <Route path="/chat" element={<ChatInterface />} />
                       <Route
                         path="/"
                         element={<Navigate to="/performance" replace />}
@@ -335,6 +286,28 @@ const App = () => (
                       />
                       {/* Catch-all inside LayoutC so authenticated users see the 404 with chrome */}
                       <Route path="*" element={<NotFoundPage />} />
+                    </Route>
+                    {/* Settings routes — inside LayoutSettings (left-rail nav shell) */}
+                    <Route
+                      element={
+                        <ProtectedRoute>
+                          <LayoutSettings subNavItems={SETTINGS_NAV_ITEMS} />
+                        </ProtectedRoute>
+                      }
+                    >
+                      <Route
+                        path="/settings/organization"
+                        element={<AccountSettings />}
+                      />
+                      <Route
+                        path="/settings/account"
+                        element={<AccountSettings />}
+                      />
+                      <Route
+                        path="/settings/account/:accountId"
+                        element={<AccountSettings />}
+                      />
+                      <Route path="/settings/user" element={<UserSettings />} />
                     </Route>
                     {/* Dev-only harness routes — tree-shaken from production bundle */}
                     {import.meta.env.DEV && LazyLayoutSettingsHarness && (

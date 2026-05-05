@@ -1,23 +1,49 @@
 import { useState, useMemo, useEffect } from "react";
 import axios from "axios";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, useParams } from "react-router-dom";
 import SettingsLayout from "@/components/layout/SettingsLayout";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   createOrganization,
   updateOrganization,
-  getOrganizationById,
   getOrganizationsBatch,
-  getAccountsByOrganizationId,
 } from "@/data/organizationApi";
 import { getDefaultPlan } from "@/data/subscriptionPlansApi";
 import { useToast } from "@/hooks/use-toast";
 import type { Organization } from "@/data/organizationTypes";
 import type { SubscriptionPlanDefinition } from "@/types/subscription";
-import { useSettingsNavigation } from "@/hooks/useSettingsNavigation";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Plus, Shield } from "lucide-react";
+import {
+  Plus,
+  Shield,
+  Building2,
+  Package,
+  CreditCard,
+  Users,
+  Plug,
+  Zap,
+  Globe,
+  AlertTriangle,
+  Trash2,
+  DollarSign,
+  FileText,
+  Check,
+  ExternalLink,
+} from "lucide-react";
 
 // Component imports
 import OrganizationForm from "./components/OrganizationForm";
@@ -53,8 +79,8 @@ const AccountSettings = () => {
   // Hooks
   const navigate = useNavigate();
   const location = useLocation();
+  useParams<{ accountId?: string }>();
   const { toast } = useToast();
-  const { currentSection } = useSettingsNavigation();
 
   // State to track accounts being set up
   const [accountsInSetup, setAccountsInSetup] = useState<Set<string>>(
@@ -85,6 +111,7 @@ const AccountSettings = () => {
 
   // Enhanced debug logging - moved inside useMemo to avoid hooks order issues
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
     console.log("[AccountSettings] URL params debug:", {
       fullURL: window.location.href,
       search: location.search,
@@ -102,21 +129,14 @@ const AccountSettings = () => {
     searchParams,
   ]);
 
-  // CRITICAL: Set up window.showPropertySelector IMMEDIATELY, before any conditional returns
-  // This must run on every render to ensure the function is available
   useEffect(() => {
-    // Expose function to manually trigger property selector for debugging
+    if (!import.meta.env.DEV) return;
     (window as any).showPropertySelector = (accountId?: string) => {
       const testAccountId =
         accountId || oauthAccount || "acc_ffe6269d30874f27b36a3cb1666a9037";
-      console.log(
-        "[DEBUG] Manually triggering property selector with account:",
-        testAccountId,
-      );
       setPropertySelectionAccountId(testAccountId);
       setShowPropertySelector(true);
     };
-
     return () => {
       delete (window as any).showPropertySelector;
     };
@@ -125,33 +145,36 @@ const AccountSettings = () => {
   // Initialize property selector state based on URL params
   // This ensures the state is set immediately on component mount
   useEffect(() => {
-    console.log(
-      "[AccountSettings] Mount effect - checking for property selector trigger",
-      {
-        oauthSuccess,
-        oauthAccount,
-        shouldSelectProperties,
-        condition:
-          oauthSuccess === "google_analytics" &&
-          oauthAccount &&
+    if (import.meta.env.DEV) {
+      console.log(
+        "[AccountSettings] Mount effect - checking for property selector trigger",
+        {
+          oauthSuccess,
+          oauthAccount,
           shouldSelectProperties,
-      },
-    );
+          condition:
+            oauthSuccess === "google_analytics" &&
+            oauthAccount &&
+            shouldSelectProperties,
+        },
+      );
+    }
 
     if (
       oauthSuccess === "google_analytics" &&
       oauthAccount &&
       shouldSelectProperties
     ) {
-      console.log(
-        "[AccountSettings] CONDITIONS MET! Showing property selector for account:",
-        oauthAccount,
-      );
+      if (import.meta.env.DEV) {
+        console.log(
+          "[AccountSettings] CONDITIONS MET! Showing property selector for account:",
+          oauthAccount,
+        );
+      }
       setPropertySelectionAccountId(oauthAccount);
       setShowPropertySelector(true);
 
-      // Delay clearing the URL params to ensure state is set first
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         const newSearchParams = new URLSearchParams(window.location.search);
         newSearchParams.delete("oauth_success");
         newSearchParams.delete("account");
@@ -164,9 +187,8 @@ const AccountSettings = () => {
           },
           { replace: true },
         );
-      }, 500); // Small delay to ensure state updates are processed
-    } else {
-      console.log("[AccountSettings] Property selector conditions NOT met");
+      }, 500);
+      return () => clearTimeout(timer);
     }
   }, [
     oauthSuccess,
@@ -178,6 +200,7 @@ const AccountSettings = () => {
 
   // Debug logging for component state
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
     console.log("[AccountSettings] Component rendering with state:", {
       showPropertySelector,
       propertySelectionAccountId,
@@ -202,22 +225,26 @@ const AccountSettings = () => {
 
   // Handle OAuth return - mark account as in setup
   useEffect(() => {
-    console.log(
-      "[AccountSettings] OAuth handling useEffect triggered - OAuth params:",
-      {
-        oauthSuccess,
-        oauthAccount,
-        shouldSelectProperties,
-        showPropertySelector,
-        propertySelectionAccountId,
-      },
-    );
+    if (import.meta.env.DEV) {
+      console.log(
+        "[AccountSettings] OAuth handling useEffect triggered - OAuth params:",
+        {
+          oauthSuccess,
+          oauthAccount,
+          shouldSelectProperties,
+          showPropertySelector,
+          propertySelectionAccountId,
+        },
+      );
+    }
 
     if (oauthSuccess === "google_analytics" && oauthAccount) {
-      console.log(
-        "[AccountSettings] OAuth completed for account:",
-        oauthAccount,
-      );
+      if (import.meta.env.DEV) {
+        console.log(
+          "[AccountSettings] OAuth completed for account:",
+          oauthAccount,
+        );
+      }
 
       // Add the account to the setup tracking
       setAccountsInSetup((prev) => new Set(prev).add(oauthAccount));
@@ -225,9 +252,11 @@ const AccountSettings = () => {
       // Check if we should show property selector
       // Note: We already set the state in the mount effect, but also handle it here for completeness
       if (shouldSelectProperties && !showPropertySelector) {
-        console.log(
-          "[AccountSettings] Setting up property selector from OAuth effect",
-        );
+        if (import.meta.env.DEV) {
+          console.log(
+            "[AccountSettings] Setting up property selector from OAuth effect",
+          );
+        }
         setPropertySelectionAccountId(oauthAccount);
         setShowPropertySelector(true);
       } else if (!shouldSelectProperties) {
@@ -268,6 +297,7 @@ const AccountSettings = () => {
 
   // Debug effect to monitor state changes
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
     console.log("[AccountSettings] State changed:", {
       showPropertySelector,
       propertySelectionAccountId,
@@ -289,27 +319,33 @@ const AccountSettings = () => {
 
   // Derived state
   const isCreatingNew = location.pathname === "/create-organization";
-  const isAccountSpecific = location.pathname.startsWith("/settings/account/");
+  const isAccountSpecific =
+    location.pathname === "/settings/account" ||
+    location.pathname.startsWith("/settings/account/");
 
   // Organization data
   const currentOrgId = useMemo(() => {
     if (isCreatingNew) return null;
 
-    console.log(`[AccountSettings] Determining currentOrgId...`);
-    console.log(
-      `[AccountSettings] currentOrganizationId:`,
-      currentOrganizationId,
-    );
-    console.log(
-      `[AccountSettings] user permissions:`,
-      user?.permissions?.organizations,
-    );
+    if (import.meta.env.DEV) {
+      console.log(`[AccountSettings] Determining currentOrgId...`);
+      console.log(
+        `[AccountSettings] currentOrganizationId:`,
+        currentOrganizationId,
+      );
+      console.log(
+        `[AccountSettings] user permissions:`,
+        user?.permissions?.organizations,
+      );
+    }
 
     // If currentOrganizationId is set, use it
     if (currentOrganizationId) {
-      console.log(
-        `[AccountSettings] Using currentOrganizationId: ${currentOrganizationId}`,
-      );
+      if (import.meta.env.DEV) {
+        console.log(
+          `[AccountSettings] Using currentOrganizationId: ${currentOrganizationId}`,
+        );
+      }
       return currentOrganizationId;
     }
 
@@ -319,23 +355,27 @@ const AccountSettings = () => {
     );
     const firstOrgId = userOrganizations[0] || null;
 
-    console.log(
-      `[AccountSettings] Available user organizations:`,
-      userOrganizations,
-    );
-    console.log(`[AccountSettings] Selected firstOrgId: ${firstOrgId}`);
+    if (import.meta.env.DEV) {
+      console.log(
+        `[AccountSettings] Available user organizations:`,
+        userOrganizations,
+      );
+      console.log(`[AccountSettings] Selected firstOrgId: ${firstOrgId}`);
+    }
 
     return firstOrgId;
   }, [isCreatingNew, currentOrganizationId, user?.permissions?.organizations]);
 
   const orgData = useMemo(() => {
     const data = currentOrgId ? orgMetadata[currentOrgId] || null : null;
-    console.log(`[AccountSettings] orgData calculation:`, {
-      currentOrgId,
-      hasOrgMetadata: !!orgMetadata[currentOrgId],
-      orgDataExists: !!data,
-      orgMetadataKeys: Object.keys(orgMetadata),
-    });
+    if (import.meta.env.DEV) {
+      console.log(`[AccountSettings] orgData calculation:`, {
+        currentOrgId,
+        hasOrgMetadata: !!orgMetadata[currentOrgId],
+        orgDataExists: !!data,
+        orgMetadataKeys: Object.keys(orgMetadata),
+      });
+    }
     return data;
   }, [currentOrgId, orgMetadata]);
 
@@ -360,13 +400,15 @@ const AccountSettings = () => {
   useEffect(() => {
     const loadOrganizationMetadata = async () => {
       if (currentOrgId && !orgMetadata[currentOrgId] && !isCreatingNew) {
-        console.log(
-          `[AccountSettings] Loading organization metadata for ${currentOrgId}`,
-        );
-        console.log(
-          `[AccountSettings] Current orgMetadata:`,
-          Object.keys(orgMetadata),
-        );
+        if (import.meta.env.DEV) {
+          console.log(
+            `[AccountSettings] Loading organization metadata for ${currentOrgId}`,
+          );
+          console.log(
+            `[AccountSettings] Current orgMetadata:`,
+            Object.keys(orgMetadata),
+          );
+        }
         setIsLoadingOrgData(true);
 
         try {
@@ -374,7 +416,12 @@ const AccountSettings = () => {
           const batchResult = await getOrganizationsBatch([currentOrgId], true);
           const orgWithAccounts = batchResult[currentOrgId];
 
-          console.log(`[AccountSettings] Batch API response:`, orgWithAccounts);
+          if (import.meta.env.DEV) {
+            console.log(
+              `[AccountSettings] Batch API response:`,
+              orgWithAccounts,
+            );
+          }
 
           if (orgWithAccounts) {
             setOrgMetadata((prev) => ({
@@ -382,19 +429,20 @@ const AccountSettings = () => {
               [currentOrgId]: orgWithAccounts,
             }));
 
-            console.log(
-              `[AccountSettings] Organization metadata loaded for ${currentOrgId}`,
-            );
+            if (import.meta.env.DEV) {
+              console.log(
+                `[AccountSettings] Organization metadata loaded for ${currentOrgId}`,
+              );
+            }
           } else {
-            console.warn(
-              `[AccountSettings] Organization ${currentOrgId} not found in Neo4j`,
-            );
+            if (import.meta.env.DEV) {
+              console.warn(
+                `[AccountSettings] Organization ${currentOrgId} not found in Neo4j`,
+              );
+            }
           }
         } catch (err) {
-          console.error(
-            `[AccountSettings] Failed to load org metadata for ${currentOrgId}`,
-            err,
-          );
+          console.error("[AccountSettings] Failed to load org metadata", err);
           toast({
             title: "Error loading organization",
             description: "Failed to load organization data. Please try again.",
@@ -404,9 +452,11 @@ const AccountSettings = () => {
           setIsLoadingOrgData(false);
         }
       } else if (currentOrgId && orgMetadata[currentOrgId]) {
-        console.log(
-          `[AccountSettings] Organization metadata already loaded for ${currentOrgId}`,
-        );
+        if (import.meta.env.DEV) {
+          console.log(
+            `[AccountSettings] Organization metadata already loaded for ${currentOrgId}`,
+          );
+        }
       }
     };
 
@@ -447,37 +497,6 @@ const AccountSettings = () => {
       setEditOrgName(orgData.organization_name || "");
     }
   }, [orgData, isCreatingNew]);
-
-  // Early return for missing organization data
-  if (!isCreatingNew && !orgData) {
-    // Show loading state if we have a currentOrgId but no orgData (still loading)
-    if (currentOrgId) {
-      return (
-        <SettingsLayout
-          pageTitle="Organization Settings"
-          currentPage="organization"
-          showContextSidebar={!isCreatingNew}
-        >
-          <div className="text-center py-8">
-            <p className="text-gray-500">Loading organization data...</p>
-          </div>
-        </SettingsLayout>
-      );
-    }
-
-    // Show error state if we have no organization access
-    return (
-      <SettingsLayout
-        pageTitle="Organization Settings"
-        currentPage="organization"
-        showContextSidebar={!isCreatingNew}
-      >
-        <div className="text-center py-8">
-          <p className="text-gray-500">No organization access found</p>
-        </div>
-      </SettingsLayout>
-    );
-  }
 
   // Helper functions for organization creation
   const validateOrganizationData = (
@@ -740,20 +759,6 @@ const AccountSettings = () => {
     }
   };
 
-  // Determine current page based on route
-  const getCurrentPage = () => {
-    if (isCreatingNew) return "organization";
-    if (isAccountSpecific) return "account";
-    return currentSection;
-  };
-
-  // Determine page title based on context
-  const getPageTitle = () => {
-    if (isCreatingNew) return "Create Organization";
-    if (isAccountSpecific) return "Account Settings";
-    return "Organization Settings";
-  };
-
   // Check if user has admin access to the current organization
   const hasAdminAccess =
     isSuperAdmin ||
@@ -763,182 +768,707 @@ const AccountSettings = () => {
 
   // NOTE: window.showPropertySelector is now set up earlier in the component before any conditional returns
 
-  return (
-    <>
-      {/* Google Analytics Property Selector Modal */}
-      {showPropertySelector && propertySelectionAccountId && (
-        <>
-          <div
-            className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4"
-            style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0 }}
-          >
-            <GoogleAnalyticsPropertySelector
-              accountId={propertySelectionAccountId}
-              onComplete={(selectedProperties) => {
-                console.log("Properties selected:", selectedProperties);
-                setShowPropertySelector(false);
-                setPropertySelectionAccountId(null);
+  const gaModal = showPropertySelector && propertySelectionAccountId && (
+    <div
+      className="fixed inset-0 bg-black/50 z-[9999] flex items-center justify-center p-4"
+      style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0 }}
+    >
+      <GoogleAnalyticsPropertySelector
+        accountId={propertySelectionAccountId}
+        onComplete={(selectedProperties) => {
+          if (import.meta.env.DEV) {
+            console.log("Properties selected:", selectedProperties);
+          }
+          setShowPropertySelector(false);
+          setPropertySelectionAccountId(null);
+          const newSearchParams = new URLSearchParams(location.search);
+          newSearchParams.delete("oauth_success");
+          newSearchParams.delete("account");
+          newSearchParams.delete("select_properties");
+          const newSearch = newSearchParams.toString();
+          navigate(
+            {
+              pathname: location.pathname,
+              search: newSearch ? `?${newSearch}` : "",
+            },
+            { replace: true },
+          );
+          toast({
+            title: "Properties Selected",
+            description: `Successfully selected ${selectedProperties.length} ${selectedProperties.length === 1 ? "property" : "properties"} for Google Analytics integration.`,
+          });
+        }}
+        onSkip={() => {
+          setShowPropertySelector(false);
+          setPropertySelectionAccountId(null);
+          const newSearchParams = new URLSearchParams(location.search);
+          newSearchParams.delete("oauth_success");
+          newSearchParams.delete("account");
+          newSearchParams.delete("select_properties");
+          const newSearch = newSearchParams.toString();
+          navigate(
+            {
+              pathname: location.pathname,
+              search: newSearch ? `?${newSearch}` : "",
+            },
+            { replace: true },
+          );
+        }}
+      />
+    </div>
+  );
 
-                // Clear URL params
-                const newSearchParams = new URLSearchParams(location.search);
-                newSearchParams.delete("oauth_success");
-                newSearchParams.delete("account");
-                newSearchParams.delete("select_properties");
-                const newSearch = newSearchParams.toString();
-                navigate(
-                  {
-                    pathname: location.pathname,
-                    search: newSearch ? `?${newSearch}` : "",
-                  },
-                  { replace: true },
-                );
-
-                toast({
-                  title: "Properties Selected",
-                  description: `Successfully selected ${selectedProperties.length} ${selectedProperties.length === 1 ? "property" : "properties"} for Google Analytics integration.`,
-                });
-              }}
-              onSkip={() => {
-                setShowPropertySelector(false);
-                setPropertySelectionAccountId(null);
-
-                // Clear URL params
-                const newSearchParams = new URLSearchParams(location.search);
-                newSearchParams.delete("oauth_success");
-                newSearchParams.delete("account");
-                newSearchParams.delete("select_properties");
-                const newSearch = newSearchParams.toString();
-                navigate(
-                  {
-                    pathname: location.pathname,
-                    search: newSearch ? `?${newSearch}` : "",
-                  },
-                  { replace: true },
-                );
-              }}
-            />
-          </div>
-        </>
-      )}
-
-      <SettingsLayout
-        pageTitle={getPageTitle()}
-        currentPage={getCurrentPage()}
-        showBackButton={!isCreatingNew}
-        showContextSidebar={!isCreatingNew}
-      >
-        {/* Organization Settings Header with create button - Always visible */}
-        {!isCreatingNew && !isAccountSpecific && (
-          <div className="space-y-6 mb-6">
-            {/* Description */}
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="text-dashboard-gray-600">
-                  Manage your organization profile, subscription, and team
-                  settings
-                </p>
-              </div>
-              <Button
-                onClick={() => navigate("/create-organization")}
-                className="flex items-center gap-2"
-              >
-                <Plus className="h-4 w-4" />
-                Create New Organization
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* View-only access alert */}
-        {!isCreatingNew && currentOrgId && !hasAdminAccess && (
-          <Alert className="mb-6">
-            <Shield className="h-4 w-4" />
-            <AlertDescription>
-              You have view-only access to this organization. You can view
-              settings but cannot make changes. To manage your own organization,
-              click "Create New Organization" above.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Organization Information - Show form for new org or if user has admin access */}
-        {(isCreatingNew || hasAdminAccess) && (
+  // Create Organization path — kept in SettingsLayout (unprotected route)
+  if (isCreatingNew) {
+    return (
+      <>
+        {gaModal}
+        <SettingsLayout
+          pageTitle="Create Organization"
+          currentPage="organization"
+          showBackButton={false}
+          showContextSidebar={false}
+        >
           <OrganizationForm
-            isCreatingNew={isCreatingNew}
-            orgData={orgData}
+            isCreatingNew
+            orgData={null}
             formData={newOrgFormData}
             setFormData={setNewOrgFormData}
             editAgencyData={editAgencyData}
             setEditAgencyData={setEditAgencyData}
             editOrgName={editOrgName}
             setEditOrgName={setEditOrgName}
-            onSubmit={
-              isCreatingNew
-                ? handleCreateOrganization
-                : handleUpdateOrganization
-            }
+            onSubmit={handleCreateOrganization}
             isLoading={isCreatingOrganization}
           />
-        )}
+        </SettingsLayout>
+      </>
+    );
+  }
 
-        {/* Show loading state while fetching organization data */}
-        {isLoadingOrgData && !isCreatingNew && (
-          <div className="text-center py-8">
-            <div className="inline-flex items-center space-x-2">
-              <div className="w-4 h-4 border-2 border-brand-medium-blue border-t-transparent rounded-full animate-spin" />
-              <span className="text-gray-600">
-                Loading organization data...
-              </span>
+  // Account-specific path — 4-tab Figma AccountSettingsPage structure
+  if (isAccountSpecific) {
+    return (
+      <>
+        {gaModal}
+        <Tabs defaultValue="general">
+          <TabsList className="mb-6">
+            <TabsTrigger value="general">
+              <Building2 className="size-4 mr-2" />
+              General
+            </TabsTrigger>
+            <TabsTrigger value="integrations">
+              <Zap className="size-4 mr-2" />
+              Integrations
+            </TabsTrigger>
+            <TabsTrigger value="channels">
+              <Globe className="size-4 mr-2" />
+              Channels
+            </TabsTrigger>
+            <TabsTrigger value="advanced">
+              <AlertTriangle className="size-4 mr-2" />
+              Advanced
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="general">
+            <div className="space-y-6 max-w-3xl">
+              <Card className="p-6">
+                <h2 className="mb-4">Account Details</h2>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="account-name">Account Name</Label>
+                    <Input
+                      id="account-name"
+                      placeholder="Account name"
+                      className="mt-1.5"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1.5">
+                      A descriptive name for this marketing account
+                    </p>
+                  </div>
+                  <div>
+                    <Label htmlFor="industry">Industry</Label>
+                    <Select defaultValue="saas">
+                      <SelectTrigger id="industry" className="mt-1.5">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="saas">SaaS</SelectItem>
+                        <SelectItem value="ecommerce">E-commerce</SelectItem>
+                        <SelectItem value="retail">Retail</SelectItem>
+                        <SelectItem value="healthcare">Healthcare</SelectItem>
+                        <SelectItem value="finance">Finance</SelectItem>
+                        <SelectItem value="education">Education</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="budget">Annual Advertising Budget</Label>
+                    <div className="relative mt-1.5">
+                      <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                      <Input
+                        id="budget"
+                        type="number"
+                        placeholder="500000"
+                        className="pl-9"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                      <Label htmlFor="account-status">Account Status</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Active accounts are visible to all team members
+                      </p>
+                    </div>
+                    <Switch id="account-status" defaultChecked />
+                  </div>
+                </div>
+              </Card>
+
+              <Card className="p-6">
+                <h2 className="mb-4">Regional Settings</h2>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="acct-timezone">Timezone</Label>
+                    <Select defaultValue="america-new-york">
+                      <SelectTrigger id="acct-timezone" className="mt-1.5">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="america-new-york">
+                          Eastern Time (ET)
+                        </SelectItem>
+                        <SelectItem value="america-chicago">
+                          Central Time (CT)
+                        </SelectItem>
+                        <SelectItem value="america-denver">
+                          Mountain Time (MT)
+                        </SelectItem>
+                        <SelectItem value="america-los-angeles">
+                          Pacific Time (PT)
+                        </SelectItem>
+                        <SelectItem value="europe-london">
+                          London (GMT)
+                        </SelectItem>
+                        <SelectItem value="europe-paris">
+                          Paris (CET)
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="data-region">Data Storage Region</Label>
+                    <Select defaultValue="us">
+                      <SelectTrigger id="data-region" className="mt-1.5">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="us">United States</SelectItem>
+                        <SelectItem value="eu">Europe</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground mt-1.5">
+                      Where your marketing data is stored for compliance
+                    </p>
+                  </div>
+                  <div>
+                    <Label htmlFor="customer-region">Customer Region</Label>
+                    <Select defaultValue="north-america">
+                      <SelectTrigger id="customer-region" className="mt-1.5">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="north-america">
+                          North America
+                        </SelectItem>
+                        <SelectItem value="south-america">
+                          South America
+                        </SelectItem>
+                        <SelectItem value="europe">Europe</SelectItem>
+                        <SelectItem value="asia">Asia</SelectItem>
+                        <SelectItem value="global">Global</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </Card>
             </div>
-          </div>
-        )}
+          </TabsContent>
 
-        {/* Conditional sections for existing organizations */}
-        {orgData && !isLoadingOrgData && (
-          <>
-            {/* Show all sections if user has admin access */}
-            {hasAdminAccess ? (
-              <>
-                <SubscriptionCard
-                  orgData={orgData}
-                  onOrganizationUpdate={(updatedOrg) => {
-                    setOrgMetadata({
-                      ...orgMetadata,
-                      [updatedOrg.organization_id]: updatedOrg,
-                    });
-                  }}
-                />
-                <AccountsManagement
-                  orgData={orgData}
-                  currentOrgId={currentOrgId!}
-                  openCreateModal={shouldOpenCreateAccount}
-                  hasAdminAccess={hasAdminAccess}
-                  accountsInSetup={accountsInSetup}
-                  setAccountsInSetup={setAccountsInSetup}
-                />
-                <BillingSection orgData={orgData} />
-                {(user?.permissions?.organizations?.[currentOrgId!] ===
-                  "admin" ||
-                  user?.permissions?.organizations?.[currentOrgId!] ===
-                    "owner") && <TeamManagement orgData={orgData} />}
-                <DangerZone orgData={orgData} />
-              </>
-            ) : (
-              <>
-                {/* View-only users can still see accounts (read-only) */}
-                <AccountsManagement
-                  orgData={orgData}
-                  currentOrgId={currentOrgId!}
-                  openCreateModal={shouldOpenCreateAccount}
-                  hasAdminAccess={hasAdminAccess}
-                  accountsInSetup={accountsInSetup}
-                  setAccountsInSetup={setAccountsInSetup}
-                />
-              </>
-            )}
-          </>
-        )}
-      </SettingsLayout>
+          <TabsContent value="integrations">
+            <div className="space-y-6">
+              <div>
+                <h2 className="mb-1">Active Integrations</h2>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Connect your marketing tools to enable AI-powered automation
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {["Google Analytics", "Google Ads", "Meta Ads"].map(
+                    (name) => (
+                      <Card key={name} className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium">{name}</p>
+                            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full mt-1 bg-[var(--color-error-bg)]">
+                              <span className="size-1.5 rounded-full bg-[var(--color-error)]" />
+                              <span
+                                className="text-xs text-[var(--color-error-text)]"
+                                style={{ fontWeight: 600 }}
+                              >
+                                Not Connected
+                              </span>
+                            </div>
+                          </div>
+                          <Button variant="outline" size="sm">
+                            Configure
+                          </Button>
+                        </div>
+                      </Card>
+                    ),
+                  )}
+                </div>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="channels">
+            <div className="space-y-6 max-w-3xl">
+              <Card className="p-6">
+                <h2 className="mb-4">Company Websites</h2>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Domains owned by your company
+                </p>
+                <div className="space-y-3 mb-4">
+                  {["example.com", "shop.example.com", "blog.example.com"].map(
+                    (domain) => (
+                      <div
+                        key={domain}
+                        className="flex items-center justify-between p-3 rounded-md bg-muted/50"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Globe className="size-4 text-muted-foreground" />
+                          <span className="font-mono text-sm">{domain}</span>
+                        </div>
+                        <Button variant="ghost" size="sm">
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
+                    ),
+                  )}
+                </div>
+                <Button variant="outline" size="sm">
+                  Add Website
+                </Button>
+              </Card>
+
+              <Card className="p-6">
+                <h2 className="mb-4">Marketing Channels</h2>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Select the channels you use for marketing
+                </p>
+                <div className="space-y-3">
+                  {[
+                    { label: "Email Marketing", on: true },
+                    { label: "Paid Search (Google Ads)", on: true },
+                    { label: "Social Media (Organic)", on: false },
+                    { label: "Social Media (Paid)", on: true },
+                    { label: "Content Marketing / SEO", on: false },
+                    { label: "Events & Webinars", on: false },
+                    { label: "Display Advertising", on: false },
+                    { label: "Affiliate Marketing", on: false },
+                  ].map(({ label, on }) => (
+                    <div
+                      key={label}
+                      className="flex items-center justify-between"
+                    >
+                      <Label htmlFor={`channel-${label}`}>{label}</Label>
+                      <Switch id={`channel-${label}`} defaultChecked={on} />
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="advanced">
+            <div className="space-y-6 max-w-3xl">
+              <Card className="p-6 border-amber-500/50">
+                <div className="flex items-start gap-3 mb-4">
+                  <AlertTriangle className="size-5 text-amber-500 shrink-0 mt-0.5" />
+                  <div>
+                    <h2 className="mb-1 text-amber-500">Transfer Account</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Move this account to a different organization. This cannot
+                      be undone.
+                    </p>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="target-org">Target Organization</Label>
+                    <Select>
+                      <SelectTrigger id="target-org" className="mt-1.5">
+                        <SelectValue placeholder="Select organization..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="org-2">ACME Global</SelectItem>
+                        <SelectItem value="org-3">TechStart Inc.</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button variant="outline">Transfer Account</Button>
+                </div>
+              </Card>
+
+              <Card className="p-6 border-destructive/50">
+                <div className="flex items-start gap-3 mb-4">
+                  <Trash2 className="size-5 text-destructive shrink-0 mt-0.5" />
+                  <div>
+                    <h2 className="mb-1 text-destructive">Delete Account</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Permanently delete this account and all its data. This
+                      action cannot be undone.
+                    </p>
+                  </div>
+                </div>
+                <Button variant="destructive">Delete Account</Button>
+              </Card>
+            </div>
+          </TabsContent>
+        </Tabs>
+      </>
+    );
+  }
+
+  // Organization settings path — 6-tab Figma OrganizationSettingsPage structure
+  return (
+    <>
+      {gaModal}
+      <div className="flex justify-between items-start mb-6">
+        <p className="text-sm text-muted-foreground">
+          Manage your organization profile, subscription, and team settings
+        </p>
+        <Button
+          onClick={() => navigate("/create-organization")}
+          className="flex items-center gap-2"
+        >
+          <Plus className="h-4 w-4" />
+          Create New Organization
+        </Button>
+      </div>
+
+      {currentOrgId && !hasAdminAccess && (
+        <Alert className="mb-6">
+          <Shield className="h-4 w-4" />
+          <AlertDescription>
+            You have view-only access to this organization. You can view
+            settings but cannot make changes. To manage your own organization,
+            click &quot;Create New Organization&quot; above.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <Tabs defaultValue="general">
+        <TabsList className="mb-6">
+          <TabsTrigger value="general">
+            <Building2 className="size-4 mr-2" />
+            General
+          </TabsTrigger>
+          <TabsTrigger value="subscription">
+            <Package className="size-4 mr-2" />
+            Subscription
+          </TabsTrigger>
+          <TabsTrigger value="billing">
+            <CreditCard className="size-4 mr-2" />
+            Billing
+          </TabsTrigger>
+          <TabsTrigger value="team">
+            <Users className="size-4 mr-2" />
+            Team
+          </TabsTrigger>
+          <TabsTrigger value="integrations">
+            <Plug className="size-4 mr-2" />
+            Integrations
+          </TabsTrigger>
+          <TabsTrigger value="accounts">
+            <Building2 className="size-4 mr-2" />
+            Accounts
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="general">
+          {isLoadingOrgData ? (
+            <div className="text-center py-8">
+              <div className="inline-flex items-center space-x-2">
+                <div className="w-4 h-4 border-2 border-brand-medium-blue border-t-transparent rounded-full animate-spin" />
+                <span className="text-gray-600">
+                  Loading organization data...
+                </span>
+              </div>
+            </div>
+          ) : hasAdminAccess ? (
+            <div className="space-y-6">
+              <OrganizationForm
+                isCreatingNew={false}
+                orgData={orgData}
+                formData={newOrgFormData}
+                setFormData={setNewOrgFormData}
+                editAgencyData={editAgencyData}
+                setEditAgencyData={setEditAgencyData}
+                editOrgName={editOrgName}
+                setEditOrgName={setEditOrgName}
+                onSubmit={handleUpdateOrganization}
+                isLoading={isCreatingOrganization}
+              />
+              {orgData && <DangerZone orgData={orgData} />}
+            </div>
+          ) : (
+            <Card className="p-6">
+              <p className="text-sm text-muted-foreground">
+                Organization:{" "}
+                <span className="font-medium text-foreground">
+                  {orgData?.organization_name}
+                </span>
+              </p>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="subscription">
+          {orgData && hasAdminAccess ? (
+            <SubscriptionCard
+              orgData={orgData}
+              onOrganizationUpdate={(updatedOrg) => {
+                setOrgMetadata({
+                  ...orgMetadata,
+                  [updatedOrg.organization_id]: updatedOrg,
+                });
+              }}
+            />
+          ) : (
+            <Card className="p-6">
+              <p className="text-sm text-muted-foreground">
+                Admin access required to view subscription details.
+              </p>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="billing">
+          {orgData && hasAdminAccess ? (
+            <BillingSection orgData={orgData} />
+          ) : (
+            <Card className="p-6">
+              <p className="text-sm text-muted-foreground">
+                Admin access required to view billing details.
+              </p>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="team">
+          {orgData && hasAdminAccess ? (
+            <TeamManagement orgData={orgData} />
+          ) : (
+            <Card className="p-6">
+              <p className="text-sm text-muted-foreground">
+                Admin or owner access required to manage team members.
+              </p>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="integrations">
+          <div className="space-y-6">
+            <Card className="p-6">
+              <div className="mb-6">
+                <h2 className="mb-1">Available Integrations</h2>
+                <p className="text-sm text-muted-foreground">
+                  Connect third-party tools to extend KEN-E&apos;s capabilities
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-start justify-between p-5 rounded-lg border-2 bg-muted/20">
+                  <div className="flex items-start gap-4">
+                    <div className="size-12 rounded-lg bg-white border flex items-center justify-center shrink-0">
+                      <span className="font-bold text-sm text-[#E01E5A]">
+                        Slack
+                      </span>
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <h3 className="font-bold">Slack</h3>
+                        <Badge
+                          className="gap-1"
+                          style={{
+                            background: "var(--color-teal-500)",
+                            color: "var(--color-text-inverse)",
+                          }}
+                        >
+                          <Check className="size-3" />
+                          Connected
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Receive notifications and updates from KEN-E directly in
+                        your Slack workspace
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm">
+                      Configure
+                    </Button>
+                    <Button variant="ghost" size="sm">
+                      Disconnect
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="flex items-start justify-between p-5 rounded-lg border-2">
+                  <div className="flex items-start gap-4">
+                    <div className="size-12 rounded-lg bg-[#5059C9] flex items-center justify-center shrink-0">
+                      <span className="text-white font-bold text-xs">
+                        Teams
+                      </span>
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-bold mb-2">Microsoft Teams</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Share campaign insights and collaborate with your team
+                        in Microsoft Teams
+                      </p>
+                      <Badge variant="outline" className="text-xs mt-2">
+                        Coming Soon
+                      </Badge>
+                    </div>
+                  </div>
+                  <Button variant="outline" size="sm" disabled>
+                    Connect
+                  </Button>
+                </div>
+
+                <div className="flex items-start justify-between p-5 rounded-lg border-2">
+                  <div className="flex items-start gap-4">
+                    <div className="size-12 rounded-lg bg-[#FF4A00] flex items-center justify-center shrink-0">
+                      <span className="text-white font-bold text-lg">Z</span>
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-bold mb-2">Zapier</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Automate workflows by connecting KEN-E with 5,000+ apps
+                      </p>
+                    </div>
+                  </div>
+                  <Button variant="outline" size="sm">
+                    Connect
+                  </Button>
+                </div>
+
+                <div className="flex items-start justify-between p-5 rounded-lg border-2">
+                  <div className="flex items-start gap-4">
+                    <div className="size-12 rounded-lg bg-gradient-to-br from-[var(--color-violet-500)] to-[var(--color-blue-500)] flex items-center justify-center shrink-0">
+                      <Plug className="size-6 text-white" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-bold mb-2">Webhooks</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Send real-time data to your custom endpoints when events
+                        occur
+                      </p>
+                    </div>
+                  </div>
+                  <Button variant="outline" size="sm">
+                    Configure
+                  </Button>
+                </div>
+              </div>
+            </Card>
+
+            <Card className="p-6">
+              <h2 className="mb-4">Slack Notification Settings</h2>
+              <p className="text-sm text-muted-foreground mb-6">
+                Choose what notifications to send to your Slack workspace
+              </p>
+              <div className="space-y-4">
+                {[
+                  {
+                    id: "slack-campaigns",
+                    label: "Campaign Alerts",
+                    desc: "Notify about campaign performance anomalies and important changes",
+                    checked: true,
+                  },
+                  {
+                    id: "slack-ai",
+                    label: "AI Recommendations",
+                    desc: "Share KEN-E's optimization suggestions with your team",
+                    checked: true,
+                  },
+                  {
+                    id: "slack-reports",
+                    label: "Daily Performance Reports",
+                    desc: "Receive daily summaries of account performance",
+                    checked: false,
+                  },
+                  {
+                    id: "slack-team",
+                    label: "Team Activity",
+                    desc: "Updates when team members make significant changes",
+                    checked: true,
+                  },
+                ].map((item) => (
+                  <div key={item.id} className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      id={item.id}
+                      defaultChecked={item.checked}
+                      className="mt-1"
+                    />
+                    <div>
+                      <Label
+                        htmlFor={item.id}
+                        className="font-medium cursor-pointer"
+                      >
+                        {item.label}
+                      </Label>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        {item.desc}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="pt-6">
+                <Button>Save Notification Settings</Button>
+              </div>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="accounts">
+          {orgData ? (
+            <AccountsManagement
+              orgData={orgData}
+              currentOrgId={currentOrgId!}
+              openCreateModal={shouldOpenCreateAccount}
+              hasAdminAccess={hasAdminAccess}
+              accountsInSetup={accountsInSetup}
+              setAccountsInSetup={setAccountsInSetup}
+            />
+          ) : (
+            <Card className="p-6">
+              <p className="text-sm text-muted-foreground">
+                {isLoadingOrgData
+                  ? "Loading..."
+                  : "Admin access required to view accounts."}
+              </p>
+            </Card>
+          )}
+        </TabsContent>
+      </Tabs>
     </>
   );
 };
