@@ -1,11 +1,11 @@
-import type React from "react";
+import type { ReactNode } from "react";
 import { MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 type EmptyStateProps = {
-  icon?: React.ReactNode;
+  icon?: ReactNode;
   title: string;
-  description: string;
+  description?: string;
   actionLabel?: string;
   onAction?: () => void;
 };
@@ -23,7 +23,9 @@ export function EmptyState({
         {icon || <MessageSquare className="size-8 text-muted-foreground" />}
       </div>
       <h3 className="mb-2">{title}</h3>
-      <p className="text-muted-foreground mb-6 max-w-md">{description}</p>
+      {description && (
+        <p className="text-muted-foreground mb-6 max-w-md">{description}</p>
+      )}
       {actionLabel && onAction && (
         <Button onClick={onAction}>{actionLabel}</Button>
       )}
