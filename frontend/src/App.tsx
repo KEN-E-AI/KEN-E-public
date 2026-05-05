@@ -165,6 +165,10 @@ const App = () => (
                     />
                     {/* Backward compatibility redirects */}
                     <Route
+                      path="/organization-selection"
+                      element={<Navigate to="/select-organization" replace />}
+                    />
+                    <Route
                       path="/login"
                       element={<Navigate to="/auth/signin" replace />}
                     />
