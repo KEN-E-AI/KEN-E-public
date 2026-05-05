@@ -212,13 +212,12 @@ const tabsActivePairs: Pair[] = [
   },
 ];
 
-// Note: text-tertiary on bg-primary is intentionally excluded from this pair list.
-// Light mode: #94a3b8 on #fafbfc ≈ 2.475:1 — fails both normal (4.5:1) and large
-// (3:1) AA thresholds. Dark mode: #64748b on #0f172a ≈ 3.751:1 — fails normal AA.
-// Usage is restricted to decorative/disabled text only (timestamps, secondary metadata
-// supplementary to primary content). No testable pair exists for this token; the
-// constraint is enforced by design convention and documented as a formal exemption.
-// See docs/design/components/ui/accessibility-baseline.md §Exemptions.
+// Note: text-tertiary on bg-primary — light mode now passes (see accessibility-baseline.md).
+// Light mode: #64748b on #fafbfc ≈ 4.57:1 — passes normal AA (4.5:1). A CI pair could
+// be added here. Dark mode: #64748b on #0f172a ≈ 3.751:1 — still fails normal AA;
+// a follow-on fix is needed to raise dark text-tertiary (e.g. to #94a3b8 ≈ 5.0:1 on
+// #0f172a). Dark-mode pair remains excluded until that fix ships.
+// See docs/design/components/ui/accessibility-baseline.md §text-tertiary.
 
 describe("WCAG AA token-pair contrast", () => {
   it("light token set is populated (sanity check against parse failures)", () => {

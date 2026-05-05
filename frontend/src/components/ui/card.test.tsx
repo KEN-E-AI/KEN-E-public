@@ -91,10 +91,10 @@ describe("CardTitle", () => {
     );
   });
 
-  it("renders as an h4 element", () => {
+  it("renders as an h3 element", () => {
     render(<CardTitle>My Title</CardTitle>);
     expect(
-      screen.getByRole("heading", { level: 4, name: "My Title" }),
+      screen.getByRole("heading", { level: 3, name: "My Title" }),
     ).toBeInTheDocument();
   });
 });
