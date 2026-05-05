@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 describe("axe sweep — UI primitives", () => {
   it("Button: default variant has no violations", async () => {
@@ -88,6 +89,50 @@ describe("axe sweep — UI primitives", () => {
           <p>Card body copy.</p>
         </CardContent>
       </Card>,
+    );
+    expect(await runAxe(container)).toHaveNoViolations();
+  });
+
+  it("TabsTrigger: inactive state has no violations", async () => {
+    const { container } = render(
+      <Tabs defaultValue="b">
+        <TabsList>
+          <TabsTrigger value="a">Overview</TabsTrigger>
+          <TabsTrigger value="b">Details</TabsTrigger>
+        </TabsList>
+        <TabsContent value="a">Overview content</TabsContent>
+        <TabsContent value="b">Details content</TabsContent>
+      </Tabs>,
+    );
+    expect(await runAxe(container)).toHaveNoViolations();
+  });
+
+  it("TabsTrigger: active state has no violations", async () => {
+    const { container } = render(
+      <Tabs defaultValue="a">
+        <TabsList>
+          <TabsTrigger value="a">Overview</TabsTrigger>
+          <TabsTrigger value="b">Details</TabsTrigger>
+        </TabsList>
+        <TabsContent value="a">Overview content</TabsContent>
+        <TabsContent value="b">Details content</TabsContent>
+      </Tabs>,
+    );
+    expect(await runAxe(container)).toHaveNoViolations();
+  });
+
+  it("TabsTrigger: disabled state has no violations", async () => {
+    const { container } = render(
+      <Tabs defaultValue="a">
+        <TabsList>
+          <TabsTrigger value="a">Overview</TabsTrigger>
+          <TabsTrigger value="b" disabled>
+            Details
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="a">Overview content</TabsContent>
+        <TabsContent value="b">Details content</TabsContent>
+      </Tabs>,
     );
     expect(await runAxe(container)).toHaveNoViolations();
   });
