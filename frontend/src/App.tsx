@@ -18,7 +18,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ChatProvider } from "@/contexts/ChatContext";
 import { AccountOperationsProvider } from "@/contexts/AccountOperationsContext";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
-import SelectOrganizationPage from "@/components/auth/SelectOrganizationPage";
+import SelectOrganizationPage from "@/pages/SelectOrganizationPage";
 import { AppErrorBoundary } from "@/components/layout/AppErrorBoundary";
 import "./App.css";
 

@@ -44,11 +44,20 @@ const mockGetOrganizations = getOrganizations as ReturnType<typeof vi.fn>;
 const mockAxiosGet = (axios as { get: ReturnType<typeof vi.fn> }).get;
 
 function buildAuthUser(
-  overrides: Partial<{ isSuperAdmin: boolean; id: string }> = {},
+  overrides: Partial<{
+    isSuperAdmin: boolean;
+    id: string;
+    isAuthenticated: boolean;
+    isAuthLoading: boolean;
+    hasSelectedWorkspace: boolean;
+  }> = {},
 ) {
   return {
     user: { id: "user-123", email: "user@example.com" },
     isSuperAdmin: overrides.isSuperAdmin ?? false,
+    isAuthenticated: overrides.isAuthenticated ?? true,
+    isAuthLoading: overrides.isAuthLoading ?? false,
+    hasSelectedWorkspace: overrides.hasSelectedWorkspace ?? false,
     ...overrides,
   };
 }

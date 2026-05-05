@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Check, Plus, ArrowRight } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,7 +44,13 @@ export const PLACEHOLDER_ACCOUNTS: PlaceholderAccount[] = [
 
 export default function SelectOrganizationPage() {
   const navigate = useNavigate();
-  const { user, isSuperAdmin } = useAuth();
+  const {
+    user,
+    isSuperAdmin,
+    isAuthenticated,
+    isAuthLoading,
+    hasSelectedWorkspace,
+  } = useAuth();
   const FIRESTORE_USER_ID = user?.id;
 
   const [orgsFromFirestore, setOrgsFromFirestore] = useState<
@@ -60,6 +66,8 @@ export default function SelectOrganizationPage() {
   );
 
   useEffect(() => {
+    if (isAuthLoading) return;
+
     if (!FIRESTORE_USER_ID) {
       setLoadingUserData(false);
       return;
@@ -89,17 +97,26 @@ export default function SelectOrganizationPage() {
     };
 
     fetchUserData();
-  }, [FIRESTORE_USER_ID, isSuperAdmin]);
+  }, [isAuthLoading, FIRESTORE_USER_ID, isSuperAdmin]);
 
   useEffect(() => {
     if (
+      !isAuthLoading &&
+      isAuthenticated &&
       !loadingUserData &&
       Object.keys(orgsFromFirestore).length === 0 &&
       !isSuperAdmin
     ) {
       navigate("/create-organization", { replace: true });
     }
-  }, [loadingUserData, orgsFromFirestore, isSuperAdmin, navigate]);
+  }, [
+    isAuthLoading,
+    isAuthenticated,
+    loadingUserData,
+    orgsFromFirestore,
+    isSuperAdmin,
+    navigate,
+  ]);
 
   const visibleAccounts = PLACEHOLDER_ACCOUNTS.filter(
     (a) => a.orgId === selectedOrgId,
@@ -110,7 +127,7 @@ export default function SelectOrganizationPage() {
     setSelectedAccountId(null);
   }
 
-  if (loadingUserData) {
+  if (isAuthLoading || loadingUserData) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
         <div className="flex flex-col items-center gap-4">
@@ -137,6 +154,14 @@ export default function SelectOrganizationPage() {
         `}</style>
       </div>
     );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/sign-in" replace />;
+  }
+
+  if (hasSelectedWorkspace) {
+    return <Navigate to="/" replace />;
   }
 
   return (

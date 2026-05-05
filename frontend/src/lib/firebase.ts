@@ -21,9 +21,16 @@ const firebaseConfig = {
 // available. Must never be set in any deployed environment.
 export const authBypassEnabled = import.meta.env.VITE_AUTH_BYPASS === "true";
 
+// VITE_AUTH_BYPASS_ROLE=regular injects a non-super-admin user (non @ken-e.ai
+// email) so the org-selection flow can be exercised. Defaults to super-admin.
+const authBypassRole = import.meta.env.VITE_AUTH_BYPASS_ROLE;
+
 const STUB_USER = {
   uid: "test-bypass-uid",
-  email: "test-bypass@ken-e.ai",
+  email:
+    authBypassRole === "regular"
+      ? "test-bypass@external-test.com"
+      : "test-bypass@ken-e.ai",
   emailVerified: true,
   displayName: "Test Bypass User",
   isAnonymous: false,
