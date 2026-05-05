@@ -40,7 +40,7 @@ export function EmailVerificationView({
         <div className="bg-card rounded-[var(--radius-lg)] border-2 border-[var(--color-border-default)] p-6 shadow-lg">
           <div className="space-y-4">
             <div className="p-4 rounded-[var(--radius-md)] bg-[var(--color-bg-elevated)]">
-              <h3 className="text-sm font-medium mb-2">Next steps:</h3>
+              <h2 className="text-sm font-medium mb-2">Next steps:</h2>
               <ol className="space-y-2 text-sm text-muted-foreground">
                 <li className="flex items-start gap-2">
                   <span className="text-[var(--color-violet-500)] font-medium shrink-0">

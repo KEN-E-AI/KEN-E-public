@@ -40,10 +40,10 @@ const Alert = React.forwardRef<
 Alert.displayName = "Alert";
 
 const AlertTitle = React.forwardRef<
-  HTMLHeadingElement,
-  React.HTMLAttributes<HTMLHeadingElement>
+  HTMLParagraphElement,
+  React.HTMLAttributes<HTMLParagraphElement>
 >(({ className, ...props }, ref) => (
-  <h5
+  <p
     ref={ref}
     data-slot="alert-title"
     className={cn(

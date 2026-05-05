@@ -28,6 +28,7 @@ The `frontend-a11y-tests` step in `deployment/ci/pr_checks.yaml` runs on every P
 | `src/test/keyboard-dialog.test.tsx` | Esc dismisses Dialog, Sheet, Popover, DropdownMenu |
 | `src/test/keyboard-menu.test.tsx` | Arrow key navigation — Tabs, DropdownMenu, Select |
 | `src/test/reduced-motion.test.ts` | `prefers-reduced-motion` CSS rule smoke test |
+| `src/test/dark-mode-parity.test.tsx` | axe sweeps — all UI-PRD-02 redesigned pages (Authentication sign-in/sign-up/email-verification, EmailActionHandler resetPassword/verifyEmail, AcceptInvitation, AccountSettings, UserSettings, CreateOrganization) rendered under both light and dark themes |
 
 ### axe configuration
 
@@ -187,4 +188,4 @@ Open items (contrast hardening):
 
 - Consider bumping `violet-500` to `violet-600` to achieve ≥ 4.5:1 on `bg-primary` for normal text uses.
 - Audit input focus borders — if `border-strong` is ever used as a focus outline, it needs a color update.
-- Extend axe sweep coverage to `src/components/chat/` and `src/pages/` as those components stabilize.
+- Extend axe sweep coverage to `src/components/chat/` as those components stabilize (UI-PRD-02 pages are now covered by `dark-mode-parity.test.tsx`; the remaining scope is CH-PRD-02 chat surfaces only).
