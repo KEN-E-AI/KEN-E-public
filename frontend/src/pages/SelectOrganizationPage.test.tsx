@@ -27,7 +27,7 @@ vi.mock("@/data/organizationApi", () => ({
   getOrganizations: vi.fn(),
 }));
 
-vi.mock("axios", () => ({
+vi.mock("@/lib/api", () => ({
   default: {
     get: vi.fn(),
   },
@@ -37,11 +37,11 @@ vi.mock("axios", () => ({
 
 import { useAuth } from "@/contexts/AuthContext";
 import { getOrganizations } from "@/data/organizationApi";
-import axios from "axios";
+import api from "@/lib/api";
 
 const mockUseAuth = useAuth as ReturnType<typeof vi.fn>;
 const mockGetOrganizations = getOrganizations as ReturnType<typeof vi.fn>;
-const mockAxiosGet = (axios as { get: ReturnType<typeof vi.fn> }).get;
+const mockApiGet = (api as { get: ReturnType<typeof vi.fn> }).get;
 
 function buildAuthUser(
   overrides: Partial<{
@@ -93,7 +93,7 @@ describe("SelectOrganizationPage", () => {
     it("shows a loading spinner while user data is being fetched", () => {
       mockUseAuth.mockReturnValue(buildAuthUser());
       // Axios never resolves — keeps the component in loading state
-      mockAxiosGet.mockReturnValue(new Promise(() => {}));
+      mockApiGet.mockReturnValue(new Promise(() => {}));
 
       renderPage();
 
@@ -110,7 +110,7 @@ describe("SelectOrganizationPage", () => {
   describe("zero-orgs redirect", () => {
     it("redirects to /create-organization when non-super-admin has no org permissions", async () => {
       mockUseAuth.mockReturnValue(buildAuthUser({ isSuperAdmin: false }));
-      mockAxiosGet.mockResolvedValue(makeAxiosOrgResponse({}));
+      mockApiGet.mockResolvedValue(makeAxiosOrgResponse({}));
 
       renderPage();
 
@@ -124,7 +124,7 @@ describe("SelectOrganizationPage", () => {
     it("does not render selector cards while user data is still loading (no-flash guarantee)", () => {
       mockUseAuth.mockReturnValue(buildAuthUser({ isSuperAdmin: false }));
       // Axios never resolves — component stays in loading state
-      mockAxiosGet.mockReturnValue(new Promise(() => {}));
+      mockApiGet.mockReturnValue(new Promise(() => {}));
 
       renderPage();
 
@@ -135,7 +135,7 @@ describe("SelectOrganizationPage", () => {
 
     it("does not redirect when non-super-admin has at least one org", async () => {
       mockUseAuth.mockReturnValue(buildAuthUser({ isSuperAdmin: false }));
-      mockAxiosGet.mockResolvedValue(
+      mockApiGet.mockResolvedValue(
         makeAxiosOrgResponse({ "org-abc": "member" }),
       );
 
@@ -168,14 +168,14 @@ describe("SelectOrganizationPage", () => {
         "/create-organization",
         expect.anything(),
       );
-      expect(mockAxiosGet).not.toHaveBeenCalled();
+      expect(mockApiGet).not.toHaveBeenCalled();
     });
   });
 
   describe("loaded state (with orgs)", () => {
     beforeEach(() => {
       mockUseAuth.mockReturnValue(buildAuthUser({ isSuperAdmin: false }));
-      mockAxiosGet.mockResolvedValue(
+      mockApiGet.mockResolvedValue(
         makeAxiosOrgResponse({ "org-abc": "member" }),
       );
     });

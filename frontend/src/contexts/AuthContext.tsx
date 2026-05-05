@@ -8,12 +8,12 @@ import {
 import api from "@/lib/api";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, authBypassEnabled, authInitialized } from "@/lib/firebase";
+import type { UserId, OrganizationId, AccountId } from "@/lib/branded-types";
 
 // VITE_AUTH_BYPASS_WORKSPACE_SELECTED=false keeps hasSelectedWorkspace=false so
 // ProtectedRoute redirects to /select-organization for org-selection flow testing.
 const authBypassWorkspaceSelected =
   import.meta.env.VITE_AUTH_BYPASS_WORKSPACE_SELECTED !== "false";
-import type { UserId, OrganizationId, AccountId } from "@/lib/branded-types";
 import {
   toUserId,
   toOrganizationId,

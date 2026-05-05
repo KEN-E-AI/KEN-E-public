@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Check, Plus, ArrowRight } from "lucide-react";
 import { Navigate, useNavigate } from "react-router-dom";
-import axios from "axios";
+import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Logo } from "@/components/branding/Logo";
@@ -9,8 +9,6 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { getOrganizations } from "@/data/organizationApi";
 import type { OrganizationId, AccountId } from "@/lib/branded-types";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 type PlaceholderOrg = {
   id: OrganizationId;
@@ -83,8 +81,8 @@ export default function SelectOrganizationPage() {
           });
           setOrgsFromFirestore(superAdminOrgs);
         } else {
-          const res = await axios.get(
-            `${API_BASE_URL}/api/v1/firestore/documents/users/${FIRESTORE_USER_ID}`,
+          const res = await api.get(
+            `/api/v1/firestore/documents/users/${FIRESTORE_USER_ID}`,
           );
           const { data } = res.data;
           setOrgsFromFirestore(data.permissions.organizations || {});
