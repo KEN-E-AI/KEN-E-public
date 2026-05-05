@@ -196,8 +196,8 @@ describe("LayoutC", () => {
   });
 
   describe("Mini Chat Widget", () => {
-    test("does NOT render at home (/)", () => {
-      renderLayoutC({ initialPath: "/" });
+    test("does NOT render at home (/chat)", () => {
+      renderLayoutC({ initialPath: "/chat" });
       expect(screen.queryByTestId("mini-chat-widget")).not.toBeInTheDocument();
     });
 
@@ -247,7 +247,7 @@ describe("LayoutC", () => {
         name: /Primary navigation \(mobile\)/i,
       });
       const expected: Array<[string, string]> = [
-        ["Chat", "/"],
+        ["Chat", "/chat"],
         ["Performance", "/performance"],
         ["Calendar", "/calendar"],
         ["Workflows", "/workflows/agents"],

@@ -21,7 +21,7 @@ vi.mock("./ProfileMenu", () => ({
 }));
 
 const EXPECTED_NAV = [
-  { name: "Chat", href: "/" },
+  { name: "Chat", href: "/chat" },
   { name: "Performance", href: "/performance" },
   { name: "Calendar", href: "/calendar" },
   { name: "Workflows", href: "/workflows/agents" },
@@ -113,8 +113,8 @@ describe("TopNav", () => {
       expect(chatLink).not.toHaveClass("bg-[var(--color-violet-500)]");
     });
 
-    test("Chat is the active link at /", () => {
-      renderTopNav("/");
+    test("Chat is the active link at /chat", () => {
+      renderTopNav("/chat");
       const nav = screen.getByRole("navigation", {
         name: "Primary navigation",
       });
