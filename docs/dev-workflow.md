@@ -22,6 +22,7 @@ This document describes the full lifecycle of an issue from sprint intake to pro
 12. [SLA Enforcement](#12-sla-enforcement)
 13. [PO and PM Visibility Tools](#13-po-and-pm-visibility-tools)
 14. [Quick Reference Tables](#14-quick-reference-tables)
+15. [Manually Triggering Agents](#15-manually-triggering-agents)
 
 ---
 
@@ -793,6 +794,19 @@ The SCRUM Master classifies each candidate into one of three buckets:
 
 After processing every candidate, the SCRUM Master posts a single Flow 3 summary on the team's most recent active Cycle showing per-issue bucket assignments and actions taken.
 
+### Manual In Progress transition does not fire Flow 2
+
+The webhook receiver only dispatches the Dev Team's Flow 2 (Implementation) when an issue moves to **In Progress** *from* one of three specific states: `Awaiting Review` (PO approved the plan), `Planning` (Dev Team auto-approved its own plan), or `Testing Complete` (PO rejected during integration review — fires Flow 4, not Flow 2). All other transitions to In Progress are logged as "self-triggered by Dev Team mid-flow" and **silently ignored**.
+
+This protects the pipeline from spawning a second Dev Team VM every time the Dev Team sets its own status to In Progress mid-flow (e.g. while resolving test failures). But it also means **manually moving an issue to In Progress from any other state will produce no agent action** — the issue will simply sit there.
+
+Common ways to trip this:
+
+- Moving an issue from `Backlog` or `Awaiting Assignment` directly to `In Progress` to "kick the Dev Team into gear." The receiver ignores it.
+- The issue is already In Progress when the Dev Team posts its plan (e.g. because the SCRUM Master moved it through In Progress earlier as part of validation). When the Dev Team's auto-proceed handoff *should* trigger a `Planning → In Progress` transition, there is no transition to fire — the status doesn't change, no webhook fires, no Flow 2 VM is created.
+
+**Recovery.** Move the issue to `Planning` first, then to `In Progress`. That gives the receiver a valid `planning → In Progress` transition and dispatches a fresh Dev Team Flow 2 session.
+
 ### Incomplete Issues at Sprint Start
 
 If an issue fails `validate-issue-completeness` during Sprint Planning:
@@ -978,25 +992,52 @@ The webhook receiver uses the state IDs to automatically add/remove the `po-acti
 
 ### Webhook Routing
 
+The dispatch logic lives entirely in `route_event()` and `handle_webhook()` in `agents/webhook-receiver/main.py`. Every row below maps to a code branch in one of those two functions.
+
 | Event | Condition | Routes To |
 |-------|-----------|-----------|
-| Cycle `startedAt` set | Was previously null | Sprint Manager (Flow 2: Initial Kickoff) |
-| Cycle `completedAt` set | Was previously null | Sprint Manager (Flow 1: Cycle Completion Cascade) |
-| Issue assignee changed | Assignee = SCRUM Master user | SCRUM Master |
-| Issue assignee changed | Assignee = Dev Team user | Dev Team |
-| Status -> "Planning" | Previous = Awaiting Review, Assignee = Dev Team user | Dev Team |
-| Status -> "In Progress" | Assignee = Dev Team user | Dev Team |
-| Status -> "Ready for Testing" | Any | Test Team |
-| Status -> "Resolving Test Issues" | Any | SCRUM Master + Dev Team (dual dispatch) |
-| Status -> "Testing Complete" | Any | SCRUM Master |
-| Status -> "Done" | Any | SCRUM Master (wave + project + cycle completion checks) |
-| Status -> "Scheduled" | Previous = Triage | SCRUM Master |
-| Status -> "Scheduled" | Previous = Backlog | SCRUM Master |
-| Linear Project state -> "Completed" | Any | SCRUM Master (removes `pm-action` label, checks for Cycle completion) |
-| Cloud Scheduler (9 AM ET) | `/daily-summary` endpoint | Sprint Manager |
-| Cloud Scheduler (every 15 min) | `/check-stalled-in-review` endpoint | SCRUM Master (per affected team) — Stalled-Issue Triage (see §11) |
+| `Cycle.create` | Cycle is currently active (now is between `startsAt` and `endsAt`, no `completedAt`) | Sprint Manager (Flow 2: Initial Kickoff) |
+| `Cycle.update` | `startsAt` newly changed **AND** cycle is currently active | Sprint Manager (Flow 2: Initial Kickoff) |
+| `Cycle.update` | `completedAt` newly set (was previously null) | Sprint Manager (Flow 1: Cycle Completion Cascade) |
+| Issue assignee changed | New assignee = SCRUM Master user | SCRUM Master (Flow 1: Sprint Planning) |
+| Issue assignee changed | New assignee = Dev Team user | Dev Team (Flow 1: Planning) |
+| Status → "Planning" | Previous = Awaiting Review **AND** assignee = Dev Team | Dev Team (plan revision after PO feedback) |
+| Status → "In Progress" | Previous = Awaiting Review **AND** assignee = Dev Team | Dev Team (Flow 2: Implementation, after PO approval) |
+| Status → "In Progress" | Previous = Planning **AND** assignee = Dev Team | Dev Team (Flow 2: Implementation, auto-approved) |
+| Status → "In Progress" | Previous = Testing Complete **AND** assignee = Dev Team | Dev Team (Flow 4: PO Rejection) |
+| Status → "In Progress" | **Any other previous state** | **No dispatch — logged and ignored.** See §11 *Manual In Progress transition does not fire Flow 2*. |
+| Status → "Ready for Testing" | Any | Test Team |
+| Status → "Resolving Test Issues" | Any | SCRUM Master + Dev Team (dual dispatch) |
+| Status → "Testing Complete" | Any | SCRUM Master (Flow 2: Ongoing — Testing Complete handler) |
+| Status → "Done" | Any | SCRUM Master (Wave / Project / Cycle Completion Detection) |
+| Status → "Scheduled" | Previous = Triage | SCRUM Master (Returned from Triage handler) |
+| Status → "Scheduled" | Previous = Backlog **AND** the issue's Cycle is currently started | SCRUM Master (Mid-Sprint Addition handler) |
+| Status → "Scheduled" | Previous = Backlog **AND** the issue's Cycle is **not** started | **No dispatch — logged and ignored.** Sprint Manager will pick the issue up at Initial Kickoff when the cycle starts. |
+| `POST /kickoff` (no signature check) | Any | Sprint Manager (manual kickoff — see §15) |
+| Cloud Scheduler (9 AM ET weekdays) | `POST /daily-summary` | Sprint Manager (Daily Briefing) |
+| Cloud Scheduler (every 15 min) | `POST /check-stalled-in-review` | SCRUM Master (per affected team) — Stalled-Issue Triage (see §11) |
 
-The SCRUM Master's "Done" handler runs **Wave Completion Detection** (§7), **Project Completion Detection** (§8), and **Cycle Completion Detection** (§9) in order. No separate webhook is registered for project or cycle completion detection — they are sub-flows of the Done handler.
+The SCRUM Master's "Done" handler runs **Wave Completion Detection** (§7), **Project Completion Detection** (§8), and **Cycle Completion Detection** (§9) in order. No separate webhook is registered for Project or Cycle completion detection — they are sub-flows of the Done handler. Linear `Project` events are **not** processed by the receiver at all; the PM marking a Project Completed has no agent-side effect today, and the `pm-action` label on a completed Project must be removed by hand.
+
+Linear webhook events outside this table (`Issue.create`, `Comment.*`, `IssueLabel.*`, `Project.*`, etc.) are accepted, logged as "Event ignored," and produce no dispatch.
+
+#### Why some transitions are silently ignored
+
+The two "no dispatch — logged and ignored" rows above are deliberate, not bugs. They protect against feedback loops:
+
+- **In Progress from any state other than Awaiting Review / Planning / Testing Complete.** When the Dev Team sets an issue to In Progress as part of its own flow (e.g. transitioning from `Resolving Test Issues` to begin a fix), we don't want that to spawn another Dev Team VM. The receiver only fires Flow 2 / Flow 4 from the three "external" transitions where a fresh agent session is the right response.
+- **Backlog → Scheduled when the cycle is not yet started.** The Sprint Manager's Initial Kickoff will sweep the cycle when the PO starts it; dispatching now would race the Sprint Manager and produce duplicate work.
+
+Both behaviors have implications for manual triggering — see §15.
+
+#### Dispatch deduplication
+
+Every dispatch is hashed by `(agent_type, event_id, prompt)` into a 16-char `dedup-key` (`create_agent_vm` in `main.py:846-896`). Before creating a VM, the receiver lists existing GCE instances filtered by that label and skips if a non-terminated VM was created within the last 15 minutes (`DEDUP_WINDOW_SECONDS = 900`).
+
+Two important consequences:
+
+- **Dedup is per-event.** Different `event_id`s never collide. For Issue events, `event_id` is the issue identifier (`UI-28`, `UI-29`, etc.) — so a bulk status change across 30 issues legitimately spawns 30 VMs, not one.
+- **Dedup only applies while the previous VM is alive.** Once a VM is `TERMINATED`, the dedup stops covering it. If a webhook for the same `(agent_type, event_id)` arrives shortly after the previous VM exited, a new VM is created.
 
 ### Agent Summary
 
@@ -1019,3 +1060,55 @@ Examples:
 - `integration/cycle-1-wave-1` (Cycle 1, Wave 0 issues)
 - `integration/cycle-1-wave-2` (Cycle 1, Wave 1 issues)
 - `integration/cycle-2-wave-1` (Cycle 2, Wave 0 issues)
+
+---
+
+## 15. Manually Triggering Agents
+
+Sometimes you need to fire an agent outside the normal flow — to retry a stuck issue, replay a missed event, or test a code change to the receiver. This section is the supported way to do that. It also documents the failure mode that's easy to hit by accident.
+
+### Triggering matrix (one issue at a time)
+
+| You want to... | Do this | What fires |
+|---|---|---|
+| Re-run the Sprint Manager (cross-component evaluation) | `curl -X POST https://<receiver-url>/kickoff` | One Sprint Manager VM. `/kickoff` has no signature check today — anyone with the URL can hit it. |
+| Re-run the Sprint Manager Daily Briefing | `curl -X POST https://<receiver-url>/daily-summary` | One Sprint Manager VM (Daily Briefing prompt) |
+| Re-run the Stalled-In-Review check now | `curl -X POST https://<receiver-url>/check-stalled-in-review` | Zero or one SCRUM Master VM per affected team |
+| Run a SCRUM Master against a specific issue (Mid-Sprint Addition) | Move that one issue from `Backlog` → `Scheduled` (cycle must be started) | One SCRUM Master VM |
+| Run a SCRUM Master against a triaged issue (Returned from Triage) | Move the issue from `Triage` → `Scheduled` | One SCRUM Master VM |
+| Run a SCRUM Master Sprint Planning over a whole cycle | Reassign the cycle's marker issue to the SCRUM Master user using the **two-step assign pattern** (clear assignee, wait 2s, set to SCRUM Master) | One SCRUM Master VM that walks the entire cycle |
+| Have the Dev Team begin Flow 1 on a specific issue | Reassign the issue to the Dev Team user (two-step pattern) | One Dev Team VM |
+| Have the Dev Team begin Flow 2 on a plan-approved issue | Move the issue from `Awaiting Review` → `In Progress` | One Dev Team VM (Flow 2: Implementation) |
+| Have the Dev Team rework after PO rejection | Move the issue from `Testing Complete` → `In Progress` with a feedback comment | One Dev Team VM (Flow 4: PO Rejection) |
+| Have the Test Team test an issue | Move the issue to `Ready for Testing` | One Test Team VM |
+| Have the Dev Team fix a test failure | Move the issue to `Resolving Test Issues` | One Dev Team VM **and** one SCRUM Master VM (dual dispatch) |
+
+The **two-step assign pattern** exists because Linear only fires an `assigneeId` webhook when the value actually changes. If the SCRUM Master is already assigned and you re-assign them, no webhook fires and no VM is created. The Sprint Manager's SKILL uses this pattern (clear → wait 2s → set) for exactly this reason.
+
+### Do NOT bulk-status-change
+
+Every issue's status transition is a separate webhook → separate VM. There is no batching at the receiver.
+
+If you bulk-move 30 issues from `Backlog` → `Scheduled` (cycle started), the receiver dispatches **30 SCRUM Master VMs in seconds**, one per issue. The dedup mechanism does not protect against this because each VM has a different `event_id`. Each VM then runs Flow 2's Mid-Sprint Addition handler against the same cycle, posting redundant validate-and-delegate noise on every issue in the cycle.
+
+If you genuinely need to "reset" or "kick off" a cycle:
+
+- The right primitive is **`POST /kickoff`** — one Sprint Manager VM that evaluates every team's cycles cleanly.
+- For a single issue that needs to enter the cycle mid-sprint, the right primitive is moving **just that issue** from `Backlog` → `Scheduled`.
+
+### Triggers that look like they should work, but don't
+
+These are listed in §14 as "no dispatch — logged and ignored":
+
+1. **`In Progress` from any state other than Awaiting Review / Planning / Testing Complete.** Manually setting an issue to In Progress to "wake up the Dev Team" produces nothing. See §11 *Manual In Progress transition does not fire Flow 2* for the recovery path.
+2. **`Backlog` → `Scheduled` when the issue's Cycle has not yet started.** The receiver drops the dispatch on the assumption the Sprint Manager's Initial Kickoff will pick the issue up when the cycle starts. If you need agent action immediately, start the cycle first (or use `/kickoff`).
+3. **Linear Project state changes.** The receiver does not subscribe to Project events. Marking a Project Completed has no agent-side effect today; the `pm-action` label must be removed by hand.
+
+### Watching what fires
+
+Two places to confirm a dispatch happened:
+
+- **GCE Console / `gcloud compute instances list`** — VMs are named `agent-<agent-type>-<event-id>-<timestamp>` (e.g. `agent-dev-team-ui-28-1777901183`). The `<event-id>` for issue events is the issue identifier; for `/kickoff` it is `kickoff`; for `/daily-summary` it is `daily-briefing`. Filter by `labels.managed-by="fun-e-agent-pipeline"`.
+- **Cloud Logging** — `resource.type="cloud_run_revision" AND resource.labels.service_name="fun-e-webhook-receiver-development"` shows webhook deliveries; `protoPayload.methodName="v1.compute.instances.insert"` on `gce_instance` shows successful VM dispatches.
+
+If a status change you expected to fire produced no VM, the receiver almost certainly logged the reason (`Ignoring In Progress transition for ...`, `Ignoring Backlog→Scheduled for ...`, etc.). Filter Cloud Logging for the issue identifier in the same window.
