@@ -248,9 +248,12 @@ describe("SelectOrganizationPage", () => {
       setOrgMetadata: vi.fn(),
       setAccountMetadata: vi.fn(),
     });
-    mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse(["org-1"]));
+    // Two orgs so auto-select does not fire (singleOrg === "multiple")
+    mockAxiosGet.mockResolvedValue(
+      makeUserPermissionsResponse(["org-1", "org-2"]),
+    );
     mockGetOrganizationsBatch.mockResolvedValue(
-      makeOrgBatchResponse([mockOrg1]),
+      makeOrgBatchResponse([mockOrg1, mockOrg2]),
     );
 
     renderPage();
@@ -500,9 +503,12 @@ describe("SelectOrganizationPage", () => {
       setOrgMetadata: vi.fn(),
       setAccountMetadata: vi.fn(),
     });
-    mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse(["org-1"]));
+    // Two orgs so auto-select does not fire (singleOrg === "multiple")
+    mockAxiosGet.mockResolvedValue(
+      makeUserPermissionsResponse(["org-1", "org-2"]),
+    );
     mockGetOrganizationsBatch.mockResolvedValue(
-      makeOrgBatchResponse([mockOrg1]),
+      makeOrgBatchResponse([mockOrg1, mockOrg2]),
     );
 
     renderPage();
@@ -673,5 +679,128 @@ describe("SelectOrganizationPage", () => {
       expect(screen.getByText("Acme Corp")).toBeInTheDocument();
     });
     expect(mockAxiosGet).toHaveBeenCalledTimes(2);
+  });
+
+  // AC-7: single-account auto-select + auto-navigate
+  it("auto-navigates to / after ~500 ms when exactly one account exists across all orgs", async () => {
+    const setSelectedOrgAccount = vi.fn();
+    const completeWorkspaceSelection = vi.fn();
+    const setCurrentOrganization = vi.fn();
+
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      setSelectedOrgAccount,
+      completeWorkspaceSelection,
+      setCurrentOrganization,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    // One org, one account — triggers auto-select
+    mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse(["org-1"]));
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([mockOrg1]),
+    );
+
+    renderPage();
+
+    // Wait for org metadata to settle; auto-select effect fires at this point,
+    // sets state synchronously, and schedules setTimeout(..., 500) with real timers.
+    await waitFor(() =>
+      expect(screen.getByText("Acme Corp")).toBeInTheDocument(),
+    );
+
+    // Sync setters should have already run
+    expect(setSelectedOrgAccount).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: "org-1", accountId: "acc-1" }),
+    );
+    expect(setCurrentOrganization).toHaveBeenCalledWith("org-1");
+    expect(completeWorkspaceSelection).toHaveBeenCalledTimes(1);
+
+    // Navigate fires after the 500 ms real-timer delay — wait for it
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/"), {
+      timeout: 2000,
+    });
+  });
+
+  it("does NOT auto-navigate when total account count is more than one", async () => {
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    // Two orgs, each with one account → totalAccounts === 2, singleOrg === "multiple"
+    mockAxiosGet.mockResolvedValue(
+      makeUserPermissionsResponse(["org-1", "org-2"]),
+    );
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([mockOrg1, mockOrg2]),
+    );
+
+    renderPage();
+
+    // Wait for orgs to render
+    await waitFor(() =>
+      expect(screen.getByText("Acme Corp")).toBeInTheDocument(),
+    );
+
+    vi.useFakeTimers();
+    act(() => vi.advanceTimersByTime(1000));
+    vi.useRealTimers();
+
+    // navigate should not have been called with "/"
+    expect(mockNavigate).not.toHaveBeenCalledWith("/");
+    // Org list should still be present
+    expect(screen.getByText("Acme Corp")).toBeInTheDocument();
+    // Continue button should still be disabled (no selection)
+    expect(screen.getByRole("button", { name: /^continue/i })).toBeDisabled();
+  });
+
+  it("race-condition guard: auto-select fires → isLoading=true disables Continue → completeWorkspaceSelection fires exactly once", async () => {
+    const setSelectedOrgAccount = vi.fn();
+    const completeWorkspaceSelection = vi.fn();
+    const setCurrentOrganization = vi.fn();
+
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      setSelectedOrgAccount,
+      completeWorkspaceSelection,
+      setCurrentOrganization,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    // One org, one account — triggers auto-select
+    mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse(["org-1"]));
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([mockOrg1]),
+    );
+
+    renderPage();
+
+    // Wait for org metadata to settle; auto-select sync setters (setIsLoading,
+    // setSelectedOrganization, setSelectedAccount, workspace setters) run here.
+    await waitFor(() =>
+      expect(screen.getByText("Acme Corp")).toBeInTheDocument(),
+    );
+
+    // After auto-select fires, isLoading=true — the Continue button is disabled
+    // and its label changes to "Setting up workspace…".
+    // A direct DOM click on the disabled button has no effect.
+    const continueBtn = screen.getByRole("button", {
+      name: /setting up workspace/i,
+    });
+    expect(continueBtn).toBeDisabled();
+    act(() => {
+      continueBtn.click();
+    });
+
+    // Wait for the 500 ms real-timer navigate to fire
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/"), {
+      timeout: 2000,
+    });
+
+    // completeWorkspaceSelection fires exactly once (from auto-select only)
+    expect(completeWorkspaceSelection).toHaveBeenCalledTimes(1);
+    expect(setSelectedOrgAccount).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
   });
 });

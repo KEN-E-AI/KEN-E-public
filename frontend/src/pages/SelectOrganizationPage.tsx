@@ -8,14 +8,17 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Logo } from "@/components/branding/Logo";
 import { cn } from "@/lib/utils";
-import type { OrganizationId } from "@/lib/branded-types";
+import type { OrganizationId, AccountId } from "@/lib/branded-types";
 import { useAuth } from "@/contexts/AuthContext";
 import { getOrganizationsBatch } from "@/data/organizationApi";
 import {
   resolveOrganizationAndAccount,
   formatWorkspaceMetadata,
 } from "@/lib/organizationUtils";
-import { WORKSPACE_SELECTION_DELAY } from "@/constants/organizationSelection";
+import {
+  WORKSPACE_SELECTION_DELAY,
+  SINGLE_ACCOUNT_AUTO_NAVIGATE_DELAY,
+} from "@/constants/organizationSelection";
 import { useChildOrganizations } from "@/hooks/useChildOrganizations";
 import { useAvailableAccounts } from "@/hooks/useAvailableAccounts";
 
@@ -60,8 +63,15 @@ export default function SelectOrganizationPage() {
   const isFetchingRef = useRef<boolean>(false);
   const lastOrgKeysRef = useRef<string>("");
   const continueTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const autoSelectTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
-  useEffect(() => () => clearTimeout(continueTimerRef.current), []);
+  useEffect(
+    () => () => {
+      clearTimeout(continueTimerRef.current);
+      clearTimeout(autoSelectTimerRef.current);
+    },
+    [],
+  );
 
   const { childOrganizations, clearChildOrganizations } =
     useChildOrganizations();
@@ -202,6 +212,71 @@ export default function SelectOrganizationPage() {
     userDataFetchStatus,
     orgsFromFirestore,
     isSuperAdmin,
+    navigate,
+  ]);
+
+  // Auto-select when exactly one account exists across all organizations.
+  // Ported verbatim in spirit from OrganizationSelection.tsx:540–606.
+  // The race-condition guard: (1) bails when selectedOrganization/selectedAccount
+  // is already set, (2) sets isLoading=true which disables the Continue button
+  // during the 500 ms window.
+  useEffect(() => {
+    if (userDataFetchStatus !== "success") return;
+    if (Object.keys(localOrgMetadata).length === 0) return;
+    if (selectedOrganization || selectedAccount) return;
+
+    let totalAccounts: any[] = [];
+    let singleOrg: string | null = null;
+
+    Object.entries(localOrgMetadata).forEach(([orgId, org]: [string, any]) => {
+      if (org && org.accounts && org.accounts.length > 0) {
+        totalAccounts = [...totalAccounts, ...org.accounts];
+        if (singleOrg === null) {
+          singleOrg = orgId;
+        } else if (singleOrg !== orgId) {
+          singleOrg = "multiple";
+        }
+      }
+    });
+
+    if (totalAccounts.length === 1 && singleOrg && singleOrg !== "multiple") {
+      const account = totalAccounts[0];
+      const org = localOrgMetadata[singleOrg];
+
+      setIsLoading(true);
+      setSelectedOrganization(singleOrg);
+      setSelectedAccount(account.account_id);
+
+      const metadata = formatWorkspaceMetadata(
+        org.organization_name || singleOrg,
+        account.account_name || account.account_id,
+        account.industry || "Unknown",
+        account.status || "Active",
+        account.timezone,
+        org.plan,
+      );
+
+      setSelectedOrgAccount({
+        orgId: singleOrg as OrganizationId,
+        accountId: account.account_id as AccountId,
+        metadata,
+      });
+      setCurrentOrganization(singleOrg as OrganizationId);
+      completeWorkspaceSelection();
+
+      autoSelectTimerRef.current = setTimeout(
+        () => navigate("/"),
+        SINGLE_ACCOUNT_AUTO_NAVIGATE_DELAY,
+      );
+    }
+  }, [
+    localOrgMetadata,
+    userDataFetchStatus,
+    selectedOrganization,
+    selectedAccount,
+    setSelectedOrgAccount,
+    setCurrentOrganization,
+    completeWorkspaceSelection,
     navigate,
   ]);
 
