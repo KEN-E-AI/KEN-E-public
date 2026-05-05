@@ -255,6 +255,24 @@ class TestConfigLoader:
 
     @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
     @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_load_missing_required_field_raises_config_validation_error(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        from app.adk.agents.agent_factory.config_loader import (
+            ConfigValidationError,
+            load_agent_config,
+        )
+
+        # Doc is missing the required `model` field.
+        invalid_doc = {"instruction": "Hello."}
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=invalid_doc)
+
+        with pytest.raises(ConfigValidationError):
+            load_agent_config("test_agent")
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
     def test_overlay_wins_per_field_not_deep_merged(
         self, mock_client: MagicMock, mock_auth: MagicMock
     ) -> None:
@@ -419,8 +437,9 @@ class TestConfigLoader:
 
         load_agent_config("test_agent", project_id="ken-e-staging")
 
-        _, kwargs = mock_client.call_args
-        assert kwargs.get("project") == "ken-e-staging" or mock_client.call_args[0][0] == "ken-e-staging"
+        args, kwargs = mock_client.call_args
+        project_passed = kwargs.get("project") or (args[0] if args else None)
+        assert project_passed == "ken-e-staging"
 
     @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
     @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
@@ -435,8 +454,8 @@ class TestConfigLoader:
 
         load_agent_config("test_agent")
 
-        call_args = mock_client.call_args
-        project_passed = call_args[1].get("project") if call_args[1] else call_args[0][0]
+        args, kwargs = mock_client.call_args
+        project_passed = kwargs.get("project") or (args[0] if args else None)
         assert project_passed == "ken-e-test"
 
     @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")

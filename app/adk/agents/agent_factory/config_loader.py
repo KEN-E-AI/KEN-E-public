@@ -11,7 +11,7 @@ from typing import Literal
 
 from google.auth import default as google_auth_default
 from google.cloud import firestore
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from shared.structured_logging import get_structured_logger
 
@@ -43,9 +43,9 @@ class MergedAgentConfig(BaseModel):
     description: str | None = None
     temperature: float | None = None
     code_execution_enabled: bool = False
-    mcp_servers: list[str] = []
+    mcp_servers: list[str] = Field(default_factory=list)
 
-    skill_ids: list[str] = []
+    skill_ids: list[str] = Field(default_factory=list)
     sandbox_code_executor_enabled: bool = False
     response_schema: dict | None = None
 
@@ -105,7 +105,12 @@ def load_agent_config(
         ) from e
 
     try:
-        return _load_and_merge(db, config_id, account_id)
+        config = _load_and_merge(db, config_id, account_id)
+        logger.info(
+            f"Loaded agent config {config_id!r} "
+            f"(account={account_id!r}, status={config.customization_status!r})"
+        )
+        return config
     except (ConfigNotFoundError, ConfigValidationError):
         raise
     except Exception as e:
