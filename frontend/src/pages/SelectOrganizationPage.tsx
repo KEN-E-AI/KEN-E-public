@@ -18,7 +18,10 @@ import {
   resolveOrganizationAndAccount,
   formatWorkspaceMetadata,
 } from "@/lib/organizationUtils";
-import { WORKSPACE_SELECTION_DELAY } from "@/constants/organizationSelection";
+import {
+  WORKSPACE_SELECTION_DELAY,
+  AGENCY_ORGANIZATION_MESSAGE,
+} from "@/constants/organizationSelection";
 import { useChildOrganizations } from "@/hooks/useChildOrganizations";
 import { useAvailableAccounts } from "@/hooks/useAvailableAccounts";
 
@@ -66,8 +69,13 @@ export default function SelectOrganizationPage() {
 
   useEffect(() => () => clearTimeout(continueTimerRef.current), []);
 
-  const { childOrganizations, clearChildOrganizations } =
-    useChildOrganizations();
+  const {
+    childOrganizations,
+    loading: childOrgsLoading,
+    error: childOrgsError,
+    fetchChildOrganizations,
+    clearChildOrganizations,
+  } = useChildOrganizations();
 
   useEffect(() => {
     const FIRESTORE_USER_ID = user?.id;
@@ -270,10 +278,11 @@ export default function SelectOrganizationPage() {
   });
 
   const handleOrganizationSelect = (orgId: string) => {
-    if (orgId !== selectedOrganization) {
-      setSelectedAccount("");
-      setSelectedChildOrg("");
-      clearChildOrganizations();
+    setSelectedAccount("");
+    setSelectedChildOrg("");
+    clearChildOrganizations();
+    if (orgId !== selectedOrganization && localOrgMetadata[orgId]?.agency) {
+      fetchChildOrganizations(orgId);
     }
     setSelectedOrganization(orgId);
   };
@@ -522,50 +531,185 @@ export default function SelectOrganizationPage() {
             {/* Accounts card */}
             <Card className="shadow-lg">
               <CardHeader>
-                <CardTitle>Accounts</CardTitle>
+                <CardTitle>
+                  {selectedOrgData?.agency
+                    ? "Client Organizations & Accounts"
+                    : "Accounts"}
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2 mb-4">
-                  {availableAccounts.length > 0 ? (
-                    availableAccounts.map((account) => (
-                      <div
-                        key={account.account_id}
-                        role="button"
-                        tabIndex={0}
-                        aria-pressed={selectedAccount === account.account_id}
-                        onClick={() => setSelectedAccount(account.account_id)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            setSelectedAccount(account.account_id);
-                          }
-                        }}
-                        className={cn(
-                          "flex items-center justify-between p-3 rounded-[var(--radius-md)] border-2 cursor-pointer transition-all duration-200 hover:-translate-y-0.5",
-                          selectedAccount === account.account_id
-                            ? "border-[var(--color-violet-500)] bg-[var(--color-violet-100)]/40"
-                            : "border-[var(--color-border-default)] hover:border-[var(--color-violet-300)]",
-                        )}
-                      >
-                        <p className="text-sm font-medium text-[var(--color-text-primary)]">
-                          {account.account_name}
-                        </p>
-                        {selectedAccount === account.account_id && (
-                          <Check
-                            className="size-4 text-[var(--color-violet-500)] shrink-0"
-                            aria-hidden="true"
-                          />
-                        )}
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-[var(--color-text-secondary)] py-6 text-center">
-                      {selectedOrganization
-                        ? "No accounts found for this organization."
-                        : "Select an organization to view its accounts."}
+                {selectedOrgData?.agency ? (
+                  <>
+                    {/* Agency hint banner */}
+                    <p className="text-sm text-[var(--color-text-secondary)] mb-4 leading-relaxed">
+                      {AGENCY_ORGANIZATION_MESSAGE}
                     </p>
-                  )}
-                </div>
+
+                    {/* Client Organizations section */}
+                    <p className="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide mb-2">
+                      Client Organizations
+                    </p>
+                    {childOrgsLoading ? (
+                      <p className="text-sm text-[var(--color-text-secondary)] py-4 text-center">
+                        Loading client organizations…
+                      </p>
+                    ) : childOrgsError ? (
+                      <div className="py-4 text-center space-y-2">
+                        <p className="text-sm text-[var(--color-text-secondary)]">
+                          Failed to load client organizations.
+                        </p>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            fetchChildOrganizations(selectedOrganization)
+                          }
+                        >
+                          Retry
+                        </Button>
+                      </div>
+                    ) : childOrganizations.length === 0 ? (
+                      <p className="text-sm text-[var(--color-text-secondary)] py-4 text-center">
+                        No client organizations available.
+                      </p>
+                    ) : (
+                      <div className="space-y-2 mb-4">
+                        {childOrganizations.map((childOrg) => (
+                          <div
+                            key={childOrg.organization_id}
+                            role="button"
+                            tabIndex={0}
+                            aria-pressed={
+                              selectedChildOrg === childOrg.organization_id
+                            }
+                            onClick={() => {
+                              setSelectedChildOrg(childOrg.organization_id);
+                              setSelectedAccount("");
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                setSelectedChildOrg(childOrg.organization_id);
+                                setSelectedAccount("");
+                              }
+                            }}
+                            className={cn(
+                              "flex items-center justify-between p-3 rounded-[var(--radius-md)] border-2 cursor-pointer transition-all duration-200 hover:-translate-y-0.5",
+                              selectedChildOrg === childOrg.organization_id
+                                ? "border-[var(--color-violet-500)] bg-[var(--color-violet-100)]/40"
+                                : "border-[var(--color-border-default)] hover:border-[var(--color-violet-300)]",
+                            )}
+                          >
+                            <p className="text-sm font-medium text-[var(--color-text-primary)]">
+                              {childOrg.organization_name}
+                            </p>
+                            {selectedChildOrg === childOrg.organization_id && (
+                              <Check
+                                className="size-4 text-[var(--color-violet-500)] shrink-0"
+                                aria-hidden="true"
+                              />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Accounts section — only visible when a child org is selected */}
+                    {selectedChildOrg && (
+                      <>
+                        <p className="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide mb-2 mt-4">
+                          Accounts
+                        </p>
+                        <div className="space-y-2 mb-4">
+                          {availableAccounts.length > 0 ? (
+                            availableAccounts.map((account) => (
+                              <div
+                                key={account.account_id}
+                                role="button"
+                                tabIndex={0}
+                                aria-pressed={
+                                  selectedAccount === account.account_id
+                                }
+                                onClick={() =>
+                                  setSelectedAccount(account.account_id)
+                                }
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" || e.key === " ") {
+                                    e.preventDefault();
+                                    setSelectedAccount(account.account_id);
+                                  }
+                                }}
+                                className={cn(
+                                  "flex items-center justify-between p-3 rounded-[var(--radius-md)] border-2 cursor-pointer transition-all duration-200 hover:-translate-y-0.5",
+                                  selectedAccount === account.account_id
+                                    ? "border-[var(--color-violet-500)] bg-[var(--color-violet-100)]/40"
+                                    : "border-[var(--color-border-default)] hover:border-[var(--color-violet-300)]",
+                                )}
+                              >
+                                <p className="text-sm font-medium text-[var(--color-text-primary)]">
+                                  {account.account_name}
+                                </p>
+                                {selectedAccount === account.account_id && (
+                                  <Check
+                                    className="size-4 text-[var(--color-violet-500)] shrink-0"
+                                    aria-hidden="true"
+                                  />
+                                )}
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-sm text-[var(--color-text-secondary)] py-4 text-center">
+                              No accounts found for this organization.
+                            </p>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <div className="space-y-2 mb-4">
+                    {availableAccounts.length > 0 ? (
+                      availableAccounts.map((account) => (
+                        <div
+                          key={account.account_id}
+                          role="button"
+                          tabIndex={0}
+                          aria-pressed={selectedAccount === account.account_id}
+                          onClick={() => setSelectedAccount(account.account_id)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setSelectedAccount(account.account_id);
+                            }
+                          }}
+                          className={cn(
+                            "flex items-center justify-between p-3 rounded-[var(--radius-md)] border-2 cursor-pointer transition-all duration-200 hover:-translate-y-0.5",
+                            selectedAccount === account.account_id
+                              ? "border-[var(--color-violet-500)] bg-[var(--color-violet-100)]/40"
+                              : "border-[var(--color-border-default)] hover:border-[var(--color-violet-300)]",
+                          )}
+                        >
+                          <p className="text-sm font-medium text-[var(--color-text-primary)]">
+                            {account.account_name}
+                          </p>
+                          {selectedAccount === account.account_id && (
+                            <Check
+                              className="size-4 text-[var(--color-violet-500)] shrink-0"
+                              aria-hidden="true"
+                            />
+                          )}
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-[var(--color-text-secondary)] py-6 text-center">
+                        {selectedOrganization
+                          ? "No accounts found for this organization."
+                          : "Select an organization to view its accounts."}
+                      </p>
+                    )}
+                  </div>
+                )}
                 <Button
                   type="button"
                   variant="outline"
