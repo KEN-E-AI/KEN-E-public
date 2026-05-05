@@ -139,7 +139,7 @@ const AcceptInvitation = () => {
   };
 
   const outerClass =
-    "min-h-screen bg-gradient-to-br from-[var(--color-violet-100)] via-[var(--color-bg-primary)] to-[var(--color-blue-100)] flex items-center justify-center p-4";
+    "min-h-screen bg-gradient-to-br from-[var(--color-violet-50)] via-[var(--color-bg-default)] to-[var(--color-blue-50)] flex items-center justify-center p-4";
 
   // Loading state
   if (status === "loading") {

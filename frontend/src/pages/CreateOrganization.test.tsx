@@ -164,3 +164,41 @@ describe("CreateOrganization", () => {
     );
   });
 });
+
+// ─── Responsive class structure ───────────────────────────────────────────────
+// Locks the intrinsic responsive contract for CreateOrganization.
+// Figma-export: CreateOrganization shares the centered-card shell (no dedicated
+// figma-export page — layout mirrors SignInPage pattern).
+
+describe("CreateOrganization — Responsive class structure", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("outer wrapper carries min-h-screen flex items-center justify-center p-4", () => {
+    const { container } = renderPage();
+    const outer = container.firstElementChild;
+    expect(outer).toHaveClass("min-h-screen");
+    expect(outer).toHaveClass("flex");
+    expect(outer).toHaveClass("items-center");
+    expect(outer).toHaveClass("justify-center");
+    expect(outer).toHaveClass("p-4");
+  });
+
+  test("inner container carries w-full max-w-md", () => {
+    const { container } = renderPage();
+    const inner = container.querySelector(".max-w-md");
+    expect(inner).toBeInTheDocument();
+    expect(inner).toHaveClass("w-full");
+  });
+
+  test("background gradient uses -50 shade tokens matching sign-in shell pattern", () => {
+    const { container } = renderPage();
+    const outer = container.firstElementChild;
+    // className.toContain (not toHaveClass) because toHaveClass cannot match
+    // arbitrary-value Tailwind tokens that contain square brackets.
+    expect(outer?.className).toContain("from-[var(--color-violet-50)]");
+    expect(outer?.className).toContain("via-[var(--color-bg-default)]");
+    expect(outer?.className).toContain("to-[var(--color-blue-50)]");
+  });
+});
