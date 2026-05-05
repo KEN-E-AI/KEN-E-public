@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Logo } from "@/components/branding/Logo";
 import { cn } from "@/lib/utils";
-import type { OrganizationId } from "@/lib/branded-types";
+import type { OrganizationId, AccountId } from "@/lib/branded-types";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   getOrganizations,
@@ -21,6 +21,7 @@ import {
 import {
   WORKSPACE_SELECTION_DELAY,
   AGENCY_ORGANIZATION_MESSAGE,
+  SINGLE_ACCOUNT_AUTO_NAVIGATE_DELAY,
 } from "@/constants/organizationSelection";
 import { useChildOrganizations } from "@/hooks/useChildOrganizations";
 import { useAvailableAccounts } from "@/hooks/useAvailableAccounts";
@@ -66,8 +67,15 @@ export default function SelectOrganizationPage() {
   const isFetchingRef = useRef<boolean>(false);
   const lastOrgKeysRef = useRef<string>("");
   const continueTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const autoSelectTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
-  useEffect(() => () => clearTimeout(continueTimerRef.current), []);
+  useEffect(
+    () => () => {
+      clearTimeout(continueTimerRef.current);
+      clearTimeout(autoSelectTimerRef.current);
+    },
+    [],
+  );
 
   const {
     childOrganizations,
@@ -220,6 +228,66 @@ export default function SelectOrganizationPage() {
     userDataFetchStatus,
     orgsFromFirestore,
     isSuperAdmin,
+    navigate,
+  ]);
+
+  useEffect(() => {
+    if (userDataFetchStatus !== "success") return;
+    if (Object.keys(localOrgMetadata).length === 0) return;
+    if (selectedOrganization || selectedAccount) return;
+
+    let totalAccounts: any[] = [];
+    let singleOrg: string | null = null;
+
+    Object.entries(localOrgMetadata).forEach(([orgId, org]: [string, any]) => {
+      if (org?.agency) return;
+      if (org && org.accounts && org.accounts.length > 0) {
+        totalAccounts = [...totalAccounts, ...org.accounts];
+        if (singleOrg === null) {
+          singleOrg = orgId;
+        } else if (singleOrg !== orgId) {
+          singleOrg = "multiple";
+        }
+      }
+    });
+
+    if (totalAccounts.length === 1 && singleOrg && singleOrg !== "multiple") {
+      const account = totalAccounts[0];
+      const org = localOrgMetadata[singleOrg];
+
+      setIsLoading(true);
+      setSelectedOrganization(singleOrg);
+      setSelectedAccount(account.account_id);
+
+      const metadata = formatWorkspaceMetadata(
+        org.organization_name || singleOrg,
+        account.account_name || account.account_id,
+        account.industry || "Unknown",
+        account.status || "Active",
+        account.timezone,
+        org.plan,
+      );
+
+      setSelectedOrgAccount({
+        orgId: singleOrg as OrganizationId,
+        accountId: account.account_id as AccountId,
+        metadata,
+      });
+      setCurrentOrganization(singleOrg as OrganizationId);
+
+      autoSelectTimerRef.current = setTimeout(() => {
+        completeWorkspaceSelection();
+        navigate("/");
+      }, SINGLE_ACCOUNT_AUTO_NAVIGATE_DELAY);
+    }
+  }, [
+    localOrgMetadata,
+    userDataFetchStatus,
+    selectedOrganization,
+    selectedAccount,
+    setSelectedOrgAccount,
+    setCurrentOrganization,
+    completeWorkspaceSelection,
     navigate,
   ]);
 
