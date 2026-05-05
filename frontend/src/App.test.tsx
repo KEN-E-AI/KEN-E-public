@@ -26,6 +26,15 @@ function renderRoutes(initialPath: string) {
             path="/sign-up"
             element={<div data-testid="sign-up-page">Sign Up</div>}
           />
+          {/* Standalone workspace-selection — top-level unprotected, same as in App.tsx */}
+          <Route
+            path="/select-organization"
+            element={
+              <div data-testid="select-organization-page">
+                Select Organization
+              </div>
+            }
+          />
 
           {/* Top-level redirects — / and /settings */}
           <Route path="/" element={<Navigate to="/chat" replace />} />
@@ -78,16 +87,6 @@ function renderRoutes(initialPath: string) {
           <Route
             path="/chat"
             element={<div data-testid="chat-page">Chat</div>}
-          />
-
-          {/* Select-organization destination (target of the /organization-selection redirect) */}
-          <Route
-            path="/select-organization"
-            element={
-              <div data-testid="select-organization-page">
-                Select Organization
-              </div>
-            }
           />
 
           {/* Admin routes remain under LayoutC (not LayoutSettings) */}
