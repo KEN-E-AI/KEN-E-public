@@ -1,9 +1,13 @@
 // NOTE: Class-contract lock only — runtime breakpoint behaviour is not verified by JSDOM.
-import { describe, test, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, test, expect, beforeEach, vi } from "vitest";
+import { render, screen, act } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { LayoutSettings } from "./LayoutSettings";
-import type { SettingsNavRow, SettingsNavRowId } from "./LayoutSettings";
+import {
+  registerSettingsNavRow,
+  resetSettingsNavForTesting,
+  type SettingsNavRowId,
+} from "./settings-nav-registry";
 
 vi.mock("./ProfileMenu", () => ({
   ProfileMenu: ({ compact }: { compact?: boolean }) => (
@@ -13,46 +17,49 @@ vi.mock("./ProfileMenu", () => ({
   ),
 }));
 
-const seedRows: SettingsNavRow[] = [
-  {
-    id: "organization" as SettingsNavRowId,
+const sId = (value: string) => value as SettingsNavRowId;
+
+function seedDefaultRows() {
+  registerSettingsNavRow({
+    id: sId("organization"),
     label: "Organization",
     path: "/settings/organization",
     order: 10,
-  },
-  {
-    id: "account" as SettingsNavRowId,
+  });
+  registerSettingsNavRow({
+    id: sId("account"),
     label: "Account",
     path: "/settings/account",
     order: 20,
-  },
-  {
-    id: "user" as SettingsNavRowId,
+  });
+  registerSettingsNavRow({
+    id: sId("user"),
     label: "User",
     path: "/settings/user",
     order: 30,
-  },
-];
+  });
+}
 
 function renderLayoutSettings({
-  subNavItems = seedRows,
   initialPath = "/settings/organization",
   children,
 }: {
-  subNavItems?: SettingsNavRow[];
   initialPath?: string;
   children?: React.ReactNode;
 } = {}) {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
-      <LayoutSettings subNavItems={subNavItems}>
-        {children ?? <div>Page content</div>}
-      </LayoutSettings>
+      <LayoutSettings>{children ?? <div>Page content</div>}</LayoutSettings>
     </MemoryRouter>,
   );
 }
 
 describe("LayoutSettings", () => {
+  beforeEach(() => {
+    resetSettingsNavForTesting();
+    seedDefaultRows();
+  });
+
   describe("Semantic landmarks", () => {
     test("renders header landmark", () => {
       renderLayoutSettings();
@@ -86,7 +93,6 @@ describe("LayoutSettings", () => {
     test("renders Back to App links (mobile icon + desktop text)", () => {
       renderLayoutSettings();
       const backLinks = screen.getAllByRole("link", { name: /back to app/i });
-      // Mobile (aria-label) + desktop (text span) — both rendered, CSS hides each at appropriate breakpoint
       expect(backLinks).toHaveLength(2);
     });
 
@@ -99,8 +105,6 @@ describe("LayoutSettings", () => {
     test("Back to App links use primary text color for WCAG AA contrast", () => {
       renderLayoutSettings();
       const backLinks = screen.getAllByRole("link", { name: /back to app/i });
-      // ghost variant defaults to --color-text-tertiary (#94a3b8, 2.47:1 against bg)
-      // both buttons must explicitly override to --color-text-primary (#1e293b, ~12:1)
       backLinks.forEach((link) => {
         expect(link).toHaveClass("text-[var(--color-text-primary)]");
       });
@@ -164,71 +168,75 @@ describe("LayoutSettings", () => {
       expect(screen.getByRole("link", { name: "User" })).toBeInTheDocument();
     });
 
-    test("excludes rows with isVisible: false", () => {
-      const rows: SettingsNavRow[] = [
-        ...seedRows,
-        {
-          id: "hidden" as SettingsNavRowId,
-          label: "Hidden Tab",
-          path: "/settings/hidden",
-          order: 40,
-          isVisible: false,
-        },
-      ];
-      renderLayoutSettings({ subNavItems: rows });
+    test("excludes rows with isVisible: () => false", () => {
+      registerSettingsNavRow({
+        id: sId("hidden"),
+        label: "Hidden Tab",
+        path: "/settings/hidden",
+        order: 40,
+        isVisible: () => false,
+      });
+      renderLayoutSettings();
       expect(
         screen.queryByRole("link", { name: "Hidden Tab" }),
       ).not.toBeInTheDocument();
     });
 
-    test("includes rows with isVisible: true", () => {
-      const rows: SettingsNavRow[] = [
-        {
-          id: "visible" as SettingsNavRowId,
-          label: "Visible Tab",
-          path: "/settings/visible",
-          order: 10,
-          isVisible: true,
-        },
-      ];
-      renderLayoutSettings({ subNavItems: rows });
+    test("includes rows with isVisible: () => true", () => {
+      resetSettingsNavForTesting();
+      registerSettingsNavRow({
+        id: sId("visible"),
+        label: "Visible Tab",
+        path: "/settings/visible",
+        order: 10,
+        isVisible: () => true,
+      });
+      renderLayoutSettings();
       expect(
         screen.getByRole("link", { name: "Visible Tab" }),
       ).toBeInTheDocument();
     });
 
+    test("includes rows with no isVisible (default visible)", () => {
+      renderLayoutSettings();
+      expect(
+        screen.getByRole("link", { name: "Organization" }),
+      ).toBeInTheDocument();
+    });
+
     test("renders rows sorted by order ascending", () => {
-      const outOfOrder: SettingsNavRow[] = [
-        {
-          id: "user" as SettingsNavRowId,
-          label: "User",
-          path: "/settings/user",
-          order: 30,
-        },
-        {
-          id: "organization" as SettingsNavRowId,
-          label: "Organization",
-          path: "/settings/organization",
-          order: 10,
-        },
-        {
-          id: "account" as SettingsNavRowId,
-          label: "Account",
-          path: "/settings/account",
-          order: 20,
-        },
-      ];
-      renderLayoutSettings({ subNavItems: outOfOrder });
+      resetSettingsNavForTesting();
+      // Register out of order
+      registerSettingsNavRow({
+        id: sId("user"),
+        label: "User",
+        path: "/settings/user",
+        order: 30,
+      });
+      registerSettingsNavRow({
+        id: sId("organization"),
+        label: "Organization",
+        path: "/settings/organization",
+        order: 10,
+      });
+      registerSettingsNavRow({
+        id: sId("account"),
+        label: "Account",
+        path: "/settings/account",
+        order: 20,
+      });
+      renderLayoutSettings();
       const links = screen.getAllByRole("link", {
-        name: /^(Organization|Account|User)$/i,
+        name: /^(Organization|Account|User)$/,
       });
       expect(links[0]).toHaveTextContent("Organization");
       expect(links[1]).toHaveTextContent("Account");
       expect(links[2]).toHaveTextContent("User");
     });
 
-    test("renders empty nav when subNavItems is empty", () => {
-      renderLayoutSettings({ subNavItems: [] });
+    test("renders empty nav when no rows are registered", () => {
+      resetSettingsNavForTesting();
+      renderLayoutSettings();
       expect(
         screen.getByRole("navigation", { name: "Settings sections" }),
       ).toBeInTheDocument();
@@ -237,100 +245,108 @@ describe("LayoutSettings", () => {
       ).not.toBeInTheDocument();
     });
 
-    test("excludes rows with unsafe (non-relative) paths", () => {
-      const rows: SettingsNavRow[] = [
-        {
-          id: "safe" as SettingsNavRowId,
-          label: "Safe Link",
-          path: "/settings/safe",
-          order: 10,
-        },
-        {
-          id: "unsafe" as SettingsNavRowId,
-          label: "Unsafe Link",
-          path: "javascript:alert(1)" as unknown as string,
-          order: 20,
-        },
-      ];
-      renderLayoutSettings({ subNavItems: rows });
-      expect(
-        screen.getByRole("link", { name: "Safe Link" }),
-      ).toBeInTheDocument();
+    test("excludes rows with unsafe (non-relative) paths — rejected at register time", () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      registerSettingsNavRow({
+        id: sId("unsafe"),
+        label: "Unsafe Link",
+        path: "javascript:alert(1)" as string,
+        order: 20,
+      });
+      renderLayoutSettings();
       expect(
         screen.queryByRole("link", { name: "Unsafe Link" }),
       ).not.toBeInTheDocument();
+      warnSpy.mockRestore();
     });
 
-    test("excludes rows with /__dev__ paths", () => {
-      const rows: SettingsNavRow[] = [
-        {
-          id: "safe" as SettingsNavRowId,
-          label: "Safe Link",
-          path: "/settings/safe",
-          order: 10,
-        },
-        {
-          id: "dev-route" as SettingsNavRowId,
-          label: "Dev Route",
-          path: "/__dev__/something",
-          order: 20,
-        },
-      ];
-      renderLayoutSettings({ subNavItems: rows });
-      expect(
-        screen.getByRole("link", { name: "Safe Link" }),
-      ).toBeInTheDocument();
+    test("excludes rows with /__dev__ paths — rejected at register time", () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      registerSettingsNavRow({
+        id: sId("dev-route"),
+        label: "Dev Route",
+        path: "/__dev__/something",
+        order: 20,
+      });
+      renderLayoutSettings();
       expect(
         screen.queryByRole("link", { name: "Dev Route" }),
       ).not.toBeInTheDocument();
+      warnSpy.mockRestore();
     });
 
-    test("excludes rows with bare / path", () => {
-      const rows: SettingsNavRow[] = [
-        {
-          id: "safe" as SettingsNavRowId,
-          label: "Safe Link",
-          path: "/settings/safe",
-          order: 10,
-        },
-        {
-          id: "home" as SettingsNavRowId,
-          label: "Home Route",
-          path: "/",
-          order: 20,
-        },
-      ];
-      renderLayoutSettings({ subNavItems: rows });
-      expect(
-        screen.getByRole("link", { name: "Safe Link" }),
-      ).toBeInTheDocument();
+    test("excludes rows with bare / path — rejected at register time", () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      registerSettingsNavRow({
+        id: sId("home"),
+        label: "Home Route",
+        path: "/",
+        order: 20,
+      });
+      renderLayoutSettings();
       expect(
         screen.queryByRole("link", { name: "Home Route" }),
       ).not.toBeInTheDocument();
+      warnSpy.mockRestore();
     });
 
-    test("excludes rows with dot-segment traversal paths", () => {
-      const rows: SettingsNavRow[] = [
-        {
-          id: "safe" as SettingsNavRowId,
-          label: "Safe Link",
-          path: "/settings/safe",
-          order: 10,
-        },
-        {
-          id: "traversal" as SettingsNavRowId,
-          label: "Traversal Link",
-          path: "/settings/../admin",
-          order: 20,
-        },
-      ];
-      renderLayoutSettings({ subNavItems: rows });
-      expect(
-        screen.getByRole("link", { name: "Safe Link" }),
-      ).toBeInTheDocument();
+    test("excludes rows with dot-segment traversal paths — rejected at register time", () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      registerSettingsNavRow({
+        id: sId("traversal"),
+        label: "Traversal Link",
+        path: "/settings/../admin",
+        order: 20,
+      });
+      renderLayoutSettings();
       expect(
         screen.queryByRole("link", { name: "Traversal Link" }),
       ).not.toBeInTheDocument();
+      warnSpy.mockRestore();
+    });
+
+    test("registry-driven sub-nav renders the three seeded rows in order", () => {
+      renderLayoutSettings();
+      const links = screen.getAllByRole("link", {
+        name: /^(Organization|Account|User)$/,
+      });
+      expect(links[0]).toHaveTextContent("Organization");
+      expect(links[1]).toHaveTextContent("Account");
+      expect(links[2]).toHaveTextContent("User");
+    });
+
+    test("appending a row via registerSettingsNavRow adds it without removing existing rows", () => {
+      const { rerender } = renderLayoutSettings();
+      expect(
+        screen.getByRole("link", { name: "Organization" }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Account" })).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "User" })).toBeInTheDocument();
+
+      act(() => {
+        registerSettingsNavRow({
+          id: sId("integrations"),
+          label: "Integrations",
+          path: "/settings/integrations",
+          order: 40,
+        });
+      });
+      rerender(
+        <MemoryRouter initialEntries={["/settings/organization"]}>
+          <LayoutSettings>
+            <div>Page content</div>
+          </LayoutSettings>
+        </MemoryRouter>,
+      );
+
+      expect(
+        screen.getByRole("link", { name: "Organization" }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Account" })).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "User" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("link", { name: "Integrations" }),
+      ).toBeInTheDocument();
     });
   });
 
@@ -363,6 +379,24 @@ describe("LayoutSettings", () => {
       renderLayoutSettings({ initialPath: "/settings/organization" });
       const accountLink = screen.getByRole("link", { name: "Account" });
       expect(accountLink).not.toHaveClass("bg-[var(--color-violet-100)]");
+    });
+
+    test.each([
+      ["/settings/organization", "Organization"],
+      ["/settings/account", "Account"],
+      ["/settings/user", "User"],
+    ])("visiting %s highlights %s row", (path, label) => {
+      renderLayoutSettings({ initialPath: path });
+      const link = screen.getByRole("link", { name: label });
+      expect(link).toHaveAttribute("aria-current", "page");
+      const allLinks = screen.getAllByRole("link", {
+        name: /^(Organization|Account|User)$/,
+      });
+      allLinks
+        .filter((l) => l.textContent !== label)
+        .forEach((l) => {
+          expect(l).not.toHaveAttribute("aria-current");
+        });
     });
   });
 

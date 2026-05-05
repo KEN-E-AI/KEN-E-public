@@ -1,40 +1,25 @@
-import type React from "react";
+import { useSyncExternalStore } from "react";
 import { Outlet, useLocation, Link } from "react-router-dom";
 import { ChevronLeft } from "lucide-react";
 import { ProfileMenu } from "./ProfileMenu";
 import { Logo } from "@/components/branding/Logo";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { Brand } from "@/lib/branded-types";
+import {
+  SETTINGS_NAV_REGISTRY,
+  _getSettingsNavSnapshot,
+  _settingsNavSubscribe,
+} from "./settings-nav-registry";
 
-export type SettingsNavRowId = Brand<string, "SettingsNavRowId">;
-
-export type SettingsNavRow = {
-  id: SettingsNavRowId;
-  label: string;
-  path: string;
-  order: number;
-  isVisible?: boolean;
-};
+export type { SettingsNavRowId, SettingsNavRow } from "./settings-nav-registry";
+export {
+  SETTINGS_NAV_REGISTRY,
+  registerSettingsNavRow,
+} from "./settings-nav-registry";
 
 type LayoutSettingsProps = {
-  subNavItems: SettingsNavRow[];
   children?: React.ReactNode;
 };
-
-const SAFE_PATH_RE = /^\/[a-zA-Z0-9/_-]+$/;
-const SAFE_PATH_MAX_LEN = 200;
-
-function isSafePath(path: string): boolean {
-  // Block over-length paths, dot-segment traversal, and /__* dev-harness routes
-  if (
-    path.length > SAFE_PATH_MAX_LEN ||
-    path.includes("..") ||
-    path.startsWith("/__")
-  )
-    return false;
-  return SAFE_PATH_RE.test(path);
-}
 
 function getBreadcrumb(pathname: string): string {
   if (
@@ -55,12 +40,17 @@ function getBreadcrumb(pathname: string): string {
   return "Settings";
 }
 
-export function LayoutSettings({ subNavItems, children }: LayoutSettingsProps) {
+export function LayoutSettings({ children }: LayoutSettingsProps) {
   const location = useLocation();
+  useSyncExternalStore(
+    _settingsNavSubscribe,
+    _getSettingsNavSnapshot,
+    _getSettingsNavSnapshot,
+  );
 
-  const visibleRows = subNavItems
-    .filter((row) => row.isVisible !== false && isSafePath(row.path))
-    .sort((a, b) => a.order - b.order);
+  const visibleRows = SETTINGS_NAV_REGISTRY.filter(
+    (r) => r.isVisible?.() !== false,
+  ).sort((a, b) => a.order - b.order);
 
   return (
     <div className="flex flex-col h-screen bg-[var(--color-bg-primary)]">
