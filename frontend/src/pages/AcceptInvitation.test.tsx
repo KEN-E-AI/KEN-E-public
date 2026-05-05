@@ -1,10 +1,11 @@
-import { describe, test, expect, vi, beforeEach } from "vitest";
+import { describe, test, expect, vi, beforeEach, Mock } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import AcceptInvitation from "./AcceptInvitation";
 import * as teamApi from "@/data/teamApi";
 import { useAuth } from "@/contexts/AuthContext";
+import api from "@/lib/api";
 
 // Mock dependencies
 vi.mock("@/contexts/AuthContext");
@@ -126,8 +127,7 @@ describe("AcceptInvitation", () => {
       mockVerifyInvitationToken.mockResolvedValue(validInvitation);
       mockAcceptInvitation.mockResolvedValue({});
 
-      const api = (await import("@/lib/api")).default;
-      (api.get as ReturnType<typeof vi.fn>).mockResolvedValue({});
+      (api.get as Mock).mockResolvedValue({});
 
       renderComponent();
 
@@ -156,8 +156,7 @@ describe("AcceptInvitation", () => {
       mockVerifyInvitationToken.mockResolvedValue(validInvitation);
       mockAcceptInvitation.mockResolvedValue({});
 
-      const api = (await import("@/lib/api")).default;
-      (api.get as ReturnType<typeof vi.fn>).mockResolvedValue({});
+      (api.get as Mock).mockResolvedValue({});
 
       renderComponent();
 
@@ -244,8 +243,12 @@ describe("AcceptInvitation", () => {
         expect(
           screen.getByRole("button", { name: /go to login/i }),
         ).toBeInTheDocument();
-      },
-    );
+      });
+
+      expect(
+        screen.getByRole("button", { name: /go to sign in/i }),
+      ).toBeInTheDocument();
+    });
 
     test("displays generic error for other 400 errors", async () => {
       mockUseAuth.mockReturnValue({
@@ -350,14 +353,13 @@ describe("AcceptInvitation", () => {
 
         renderComponent();
 
-        await waitFor(() => {
-          expect(mockNavigate).toHaveBeenCalledWith(
-            "/auth/signin?invitation=test-token-123",
-            { replace: true },
-          );
+      await waitFor(() => {
+        expect(mockNavigate).toHaveBeenCalledWith("/sign-in", {
+          replace: true,
+          state: { from: "/invite/test-token-123" },
         });
-      },
-    );
+      });
+    });
   });
 
   describe("Email mismatch", () => {
