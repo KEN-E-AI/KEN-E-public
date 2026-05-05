@@ -369,7 +369,7 @@ const AcceptInvitation = () => {
               Already have an account?{" "}
               <a
                 href="/auth/signin"
-                className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] font-medium"
+                className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] font-medium underline"
               >
                 Sign in
               </a>
@@ -378,7 +378,7 @@ const AcceptInvitation = () => {
               Need help?{" "}
               <a
                 href="mailto:support@mer-e.com"
-                className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)]"
+                className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] underline"
               >
                 Contact Support
               </a>

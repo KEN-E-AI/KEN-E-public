@@ -128,7 +128,7 @@ export function EmailVerificationView({
                 Wrong email address?{" "}
                 <Link
                   to="/create-account"
-                  className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] font-medium"
+                  className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] font-medium underline"
                 >
                   Create a new account
                 </Link>
@@ -137,7 +137,7 @@ export function EmailVerificationView({
                 Already verified?{" "}
                 <Link
                   to="/sign-in"
-                  className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] font-medium"
+                  className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] font-medium underline"
                 >
                   Sign in
                 </Link>
