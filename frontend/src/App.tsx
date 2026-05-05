@@ -29,7 +29,6 @@ import {
   type SettingsNavRowId,
 } from "@/components/layout/LayoutSettings";
 import Index from "./pages/Index";
-import Home from "./pages/Home";
 import Performance from "./pages/Performance";
 import Recommendations from "./pages/Recommendations";
 import Products from "./pages/Products";
@@ -49,11 +48,6 @@ import Insights from "./pages/Insights";
 import AccountSettings from "./pages/AccountSettings";
 import CreateOrganization from "./pages/CreateOrganization";
 import UserSettings from "./pages/UserSettings";
-import Settings from "./pages/Settings";
-import AdminSettings from "./pages/AdminSettings";
-import AdminIndustryKeywords from "./pages/AdminIndustryKeywords";
-import AgentConfigManagement from "./pages/AgentConfigManagement";
-import ToolUsageDashboard from "./pages/ToolUsageDashboard";
 import OrganizationSelection from "./pages/OrganizationSelection";
 import AcceptInvitation from "./pages/AcceptInvitation";
 import NotFoundPage from "./pages/NotFoundPage";
@@ -281,6 +275,10 @@ const App = () => (
                       }
                     >
                       <Route path="/chat" element={<Home />} />
+                      <Route
+                        path="/"
+                        element={<Navigate to="/performance" replace />}
+                      />
                       <Route path="/performance" element={<Performance />} />
                       <Route
                         path="/recommendations"
@@ -330,22 +328,6 @@ const App = () => (
                       <Route
                         path="/analysis-report/:reportId"
                         element={<AnalysisReport />}
-                      />
-                      <Route
-                        path="/settings/admin"
-                        element={<AdminSettings />}
-                      />
-                      <Route
-                        path="/settings/admin/industry-keywords"
-                        element={<AdminIndustryKeywords />}
-                      />
-                      <Route
-                        path="/settings/admin/agent-configs"
-                        element={<AgentConfigManagement />}
-                      />
-                      <Route
-                        path="/settings/admin/tool-usage"
-                        element={<ToolUsageDashboard />}
                       />
                       <Route
                         path="/organization-selection"
