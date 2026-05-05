@@ -7,6 +7,7 @@ import SelectOrganizationPage from "./SelectOrganizationPage";
 // Mock factories must be declared before vi.mock() hoisting runs.
 const mockNavigate = vi.fn();
 const mockGetOrganizationsBatch = vi.fn();
+const mockGetChildOrganizationsWithAccounts = vi.fn();
 const mockAxiosGet = vi.fn();
 const mockUseAuth = vi.fn();
 
@@ -15,6 +16,8 @@ vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => mockUseAuth() }));
 vi.mock("@/data/organizationApi", () => ({
   getOrganizationsBatch: (...args: unknown[]) =>
     mockGetOrganizationsBatch(...args),
+  getChildOrganizationsWithAccounts: (...args: unknown[]) =>
+    mockGetChildOrganizationsWithAccounts(...args),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -25,16 +28,6 @@ vi.mock("@/lib/firebase", () => ({
   auth: { currentUser: null },
   authInitialized: true,
   authBypassEnabled: false,
-}));
-
-vi.mock("@/hooks/useChildOrganizations", () => ({
-  useChildOrganizations: () => ({
-    childOrganizations: [],
-    loading: false,
-    error: null,
-    fetchChildOrganizations: vi.fn(),
-    clearChildOrganizations: vi.fn(),
-  }),
 }));
 
 vi.mock("react-router-dom", async () => {
@@ -73,6 +66,30 @@ const mockOrg2 = {
       account_id: "acc-2",
       account_name: "Dev Account",
       industry: "Finance",
+      status: "Active",
+      timezone: "UTC",
+    },
+  ],
+};
+
+const mockAgencyOrg = {
+  organization_id: "org-agency",
+  organization_name: "Big Agency",
+  plan: "Agency",
+  agency: true,
+  error: false,
+  accounts: [],
+};
+
+const mockChildOrg = {
+  organization_id: "child-1",
+  organization_name: "Client Alpha",
+  agency: false,
+  accounts: [
+    {
+      account_id: "child-acc-1",
+      account_name: "Alpha Account",
+      industry: "Retail",
       status: "Active",
       timezone: "UTC",
     },
@@ -133,6 +150,8 @@ function renderPage() {
 describe("SelectOrganizationPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: no child orgs (safe baseline for non-agency tests)
+    mockGetChildOrganizationsWithAccounts.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -673,5 +692,163 @@ describe("SelectOrganizationPage", () => {
       expect(screen.getByText("Acme Corp")).toBeInTheDocument();
     });
     expect(mockAxiosGet).toHaveBeenCalledTimes(2);
+  });
+
+  it("non-agency happy path: org → account → Continue still works unchanged", async () => {
+    const setSelectedOrgAccount = vi.fn();
+    const completeWorkspaceSelection = vi.fn();
+    const setCurrentOrganization = vi.fn();
+
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      setSelectedOrgAccount,
+      completeWorkspaceSelection,
+      setCurrentOrganization,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse(["org-1"]));
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([mockOrg1]),
+    );
+
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Acme Corp")).toBeInTheDocument(),
+    );
+
+    // Select org (non-agency) — accounts should appear directly
+    await user.click(screen.getByRole("button", { name: /acme corp/i }));
+    await waitFor(() =>
+      expect(screen.getByText("Main Account")).toBeInTheDocument(),
+    );
+
+    // Select account → Continue enabled
+    await user.click(screen.getByRole("button", { name: /main account/i }));
+    const continueBtn = screen.getByRole("button", { name: /^continue/i });
+    expect(continueBtn).toBeEnabled();
+
+    // getChildOrganizationsWithAccounts must NOT have been called for non-agency org
+    expect(mockGetChildOrganizationsWithAccounts).not.toHaveBeenCalled();
+  });
+
+  it("agency happy path: drill-down through child org → account → Continue", async () => {
+    const setSelectedOrgAccount = vi.fn();
+    const completeWorkspaceSelection = vi.fn();
+    const setCurrentOrganization = vi.fn();
+
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      setSelectedOrgAccount,
+      completeWorkspaceSelection,
+      setCurrentOrganization,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse(["org-agency"]));
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([mockAgencyOrg]),
+    );
+    mockGetChildOrganizationsWithAccounts.mockResolvedValue([mockChildOrg]);
+
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Big Agency")).toBeInTheDocument(),
+    );
+
+    // Select agency org → child orgs should load
+    await user.click(screen.getByRole("button", { name: /big agency/i }));
+
+    // Agency hint banner and Client Organizations section should appear
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          /agency organizations cannot create their own accounts/i,
+        ),
+      ).toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(screen.getByText("Client Alpha")).toBeInTheDocument(),
+    );
+
+    // Continue is still disabled (no child org or account selected)
+    expect(screen.getByRole("button", { name: /^continue/i })).toBeDisabled();
+
+    // Select child org → accounts should appear
+    await user.click(screen.getByRole("button", { name: /client alpha/i }));
+    await waitFor(() =>
+      expect(screen.getByText("Alpha Account")).toBeInTheDocument(),
+    );
+
+    // Continue is still disabled (account not selected yet)
+    expect(screen.getByRole("button", { name: /^continue/i })).toBeDisabled();
+
+    // Select account → Continue enabled
+    await user.click(screen.getByRole("button", { name: /alpha account/i }));
+    expect(screen.getByRole("button", { name: /^continue/i })).toBeEnabled();
+
+    // Click Continue and verify it resolves with the child org ID
+    vi.useFakeTimers();
+    act(() => {
+      screen.getByRole("button", { name: /^continue/i }).click();
+    });
+    act(() => vi.advanceTimersByTime(1001));
+    vi.useRealTimers();
+
+    expect(setSelectedOrgAccount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "child-1",
+        accountId: "child-acc-1",
+      }),
+    );
+    expect(completeWorkspaceSelection).toHaveBeenCalled();
+    expect(mockNavigate).toHaveBeenCalledWith("/");
+  });
+
+  it("agency Continue gating: disabled without child-org, disabled without account, enabled with full triple", async () => {
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse(["org-agency"]));
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([mockAgencyOrg]),
+    );
+    mockGetChildOrganizationsWithAccounts.mockResolvedValue([mockChildOrg]);
+
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Big Agency")).toBeInTheDocument(),
+    );
+
+    const continueBtn = screen.getByRole("button", { name: /^continue/i });
+
+    // No org selected yet → disabled
+    expect(continueBtn).toBeDisabled();
+
+    // Agency org selected, no child org → still disabled
+    await user.click(screen.getByRole("button", { name: /big agency/i }));
+    await waitFor(() =>
+      expect(screen.getByText("Client Alpha")).toBeInTheDocument(),
+    );
+    expect(continueBtn).toBeDisabled();
+
+    // Child org selected, no account → still disabled
+    await user.click(screen.getByRole("button", { name: /client alpha/i }));
+    await waitFor(() =>
+      expect(screen.getByText("Alpha Account")).toBeInTheDocument(),
+    );
+    expect(continueBtn).toBeDisabled();
+
+    // Account selected → enabled
+    await user.click(screen.getByRole("button", { name: /alpha account/i }));
+    expect(continueBtn).toBeEnabled();
   });
 });
