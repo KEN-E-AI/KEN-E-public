@@ -1,17 +1,16 @@
-import { describe, test, expect, vi } from "vitest";
+import { describe, test, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import ProtectedRoute from "./ProtectedRoute";
 import { useAuth } from "@/contexts/AuthContext";
 
 vi.mock("@/contexts/AuthContext");
-vi.mock("@/pages/OrganizationSelection", () => ({
-  default: ({ onComplete }: { onComplete: () => void }) => (
-    <div>
-      <span>ORGANIZATION SELECTION</span>
-      <button onClick={onComplete}>complete</button>
-    </div>
-  ),
+
+// Mock Firebase to avoid module initialisation errors
+vi.mock("@/lib/firebase", () => ({
+  auth: { currentUser: null },
+  authInitialized: true,
+  authBypassEnabled: false,
 }));
 
 const mockUseAuth = useAuth as vi.MockedFunction<typeof useAuth>;
@@ -65,6 +64,10 @@ const renderWithRouter = (initialPath = "/protected") => {
       <Routes>
         <Route path="/sign-in" element={<SignInSentinel />} />
         <Route
+          path="/select-organization"
+          element={<div data-testid="select-org-sentinel">SELECT_ORG</div>}
+        />
+        <Route
           path="/protected"
           element={
             <ProtectedRoute>
@@ -78,6 +81,10 @@ const renderWithRouter = (initialPath = "/protected") => {
 };
 
 describe("ProtectedRoute", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   test("unauthenticated user is redirected to /sign-in", () => {
     mockUseAuth.mockReturnValue(makeAuthState({ isAuthenticated: false }));
     renderWithRouter();
@@ -100,12 +107,12 @@ describe("ProtectedRoute", () => {
     expect(screen.queryByTestId("sign-in-sentinel")).not.toBeInTheDocument();
   });
 
-  test("authenticated user without selected workspace renders OrganizationSelection", () => {
+  test("authenticated user without selected workspace redirects to /select-organization", () => {
     mockUseAuth.mockReturnValue(
       makeAuthState({ isAuthenticated: true, hasSelectedWorkspace: false }),
     );
     renderWithRouter();
-    expect(screen.getByText("ORGANIZATION SELECTION")).toBeInTheDocument();
+    expect(screen.getByTestId("select-org-sentinel")).toBeInTheDocument();
     expect(screen.queryByText("PROTECTED CONTENT")).not.toBeInTheDocument();
     expect(screen.queryByTestId("sign-in-sentinel")).not.toBeInTheDocument();
   });

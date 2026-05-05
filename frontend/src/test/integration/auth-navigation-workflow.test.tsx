@@ -557,6 +557,65 @@ describe("Authentication and Navigation Workflow Integration Tests", () => {
     });
   });
 
+  describe("Workspace Selection Redirect", () => {
+    // Dedicated TestApp that includes the /select-organization sentinel route so we can
+    // assert the new ProtectedRoute redirect behaviour without mounting the real page.
+    const TestAppWithWorkspaceRoute = ({
+      authContext,
+      initialEntries = ["/"],
+    }: {
+      authContext: AuthContextType;
+      initialEntries?: string[];
+    }) => {
+      const queryClient = new QueryClient({
+        defaultOptions: {
+          queries: { retry: false },
+          mutations: { retry: false },
+        },
+      });
+
+      return (
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={initialEntries}>
+            <AuthContext.Provider value={authContext}>
+              <Routes>
+                <Route
+                  path="/select-organization"
+                  element={<div>SELECT_ORG_SENTINEL</div>}
+                />
+                <Route
+                  path="/"
+                  element={
+                    <ProtectedRoute>
+                      <Home />
+                    </ProtectedRoute>
+                  }
+                />
+              </Routes>
+            </AuthContext.Provider>
+          </MemoryRouter>
+        </QueryClientProvider>
+      );
+    };
+
+    test("redirects authenticated user with no selected workspace to /select-organization", async () => {
+      const noWorkspaceContext = createAuthContext({
+        user: mockUser,
+        isAuthenticated: true,
+        isAuthLoading: false,
+        hasSelectedWorkspace: false,
+        orgMetadata: mockOrgMetadata,
+      } as Partial<AuthContextType>);
+
+      render(<TestAppWithWorkspaceRoute authContext={noWorkspaceContext} />);
+
+      await waitFor(() => {
+        expect(screen.getByText("SELECT_ORG_SENTINEL")).toBeInTheDocument();
+      });
+      expect(screen.queryByText("KEN-E")).not.toBeInTheDocument();
+    });
+  });
+
   describe("Error Handling", () => {
     test("should handle authentication errors", async () => {
       const errorContext = createAuthContext({

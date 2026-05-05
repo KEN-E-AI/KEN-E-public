@@ -18,6 +18,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ChatProvider } from "@/contexts/ChatContext";
 import { AccountOperationsProvider } from "@/contexts/AccountOperationsContext";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
+import SelectOrganizationPage from "@/components/auth/SelectOrganizationPage";
 import { AppErrorBoundary } from "@/components/layout/AppErrorBoundary";
 import "./App.css";
 
@@ -208,6 +209,12 @@ const App = () => (
                       path="/auth/action"
                       element={<EmailActionHandler />}
                     />
+                    {/* Standalone workspace-selection page — outside ProtectedRoute to avoid
+                        circular redirect when !hasSelectedWorkspace, but internally gated on auth */}
+                    <Route
+                      path="/select-organization"
+                      element={<SelectOrganizationPage />}
+                    />
                     {/* Top-level redirects — outside layouts so no chrome mounts before the
                         redirect fires. Destinations inside ProtectedRoute handle auth gating. */}
                     <Route path="/" element={<Navigate to="/chat" replace />} />
@@ -216,6 +223,10 @@ const App = () => (
                       element={<Navigate to="/settings/organization" replace />}
                     />
                     {/* Backward compatibility redirects */}
+                    <Route
+                      path="/organization-selection"
+                      element={<Navigate to="/select-organization" replace />}
+                    />
                     <Route
                       path="/login"
                       element={<Navigate to="/sign-in" replace />}
