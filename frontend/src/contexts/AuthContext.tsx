@@ -9,6 +9,11 @@ import api from "@/lib/api";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, authBypassEnabled, authInitialized } from "@/lib/firebase";
 import type { UserId, OrganizationId, AccountId } from "@/lib/branded-types";
+
+// VITE_AUTH_BYPASS_WORKSPACE_SELECTED=false keeps hasSelectedWorkspace=false so
+// ProtectedRoute redirects to /select-organization for org-selection flow testing.
+const authBypassWorkspaceSelected =
+  import.meta.env.VITE_AUTH_BYPASS_WORKSPACE_SELECTED !== "false";
 import {
   toUserId,
   toOrganizationId,
@@ -307,33 +312,40 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       // Either bypass mode or init failed in firebase.ts. Either way, the
       // `auth` export is a stub and onAuthStateChanged would throw.
       if (authBypassEnabled) {
+        const bypassRole = import.meta.env.VITE_AUTH_BYPASS_ROLE;
+        const bypassEmail =
+          bypassRole === "regular"
+            ? "test-bypass@external-test.com"
+            : "test-bypass@ken-e.ai";
         console.warn(
-          "[AuthContext] auth bypass active — injecting synthetic test user and workspace",
+          `[AuthContext] auth bypass active — injecting synthetic test user (role: ${bypassRole ?? "superadmin"}, workspace: ${authBypassWorkspaceSelected})`,
         );
         const fakeUser: User = {
           id: toUserId("test-bypass-uid"),
-          email: "test-bypass@ken-e.ai",
+          email: bypassEmail,
           firstName: "Test",
           lastName: "Bypass",
         };
         setUser(fakeUser);
         localStorage.setItem("user", JSON.stringify(fakeUser));
-        setHasSelectedWorkspace(true);
-        localStorage.setItem("hasSelectedWorkspace", "true");
-        const orgId = toOrganizationId("org_bypass");
-        const accountId = toAccountId("acc_bypass");
-        setCurrentOrganizationId(orgId);
-        localStorage.setItem("currentOrganizationId", orgId);
-        setSelectedOrgAccountState({
-          orgId,
-          accountId,
-          metadata: {
-            organization_name: "Bypass Org",
-            account_name: "Bypass Account",
-            industry: "test",
-            status: "active",
-          },
-        });
+        if (authBypassWorkspaceSelected) {
+          setHasSelectedWorkspace(true);
+          localStorage.setItem("hasSelectedWorkspace", "true");
+          const orgId = toOrganizationId("org_bypass");
+          const accountId = toAccountId("acc_bypass");
+          setCurrentOrganizationId(orgId);
+          localStorage.setItem("currentOrganizationId", orgId);
+          setSelectedOrgAccountState({
+            orgId,
+            accountId,
+            metadata: {
+              organization_name: "Bypass Org",
+              account_name: "Bypass Account",
+              industry: "test",
+              status: "active",
+            },
+          });
+        }
       }
       setIsAuthLoading(false);
       return;

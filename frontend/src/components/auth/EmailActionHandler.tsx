@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { applyActionCode, checkActionCode } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import axios from "axios";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
@@ -236,9 +236,13 @@ const EmailActionHandler = () => {
 
         <Card className="bg-card rounded-[var(--radius-lg)] border-2 border-[var(--color-border-default)] shadow-lg">
           <CardHeader>
-            <CardTitle className="text-center">
+            <h2
+              data-slot="card-title"
+              className="leading-none font-bold text-[var(--text-heading-md)] text-center"
+              style={{ fontFamily: "var(--font-display)" }}
+            >
               {success ? "Email Verified!" : "Verification Failed"}
-            </CardTitle>
+            </h2>
           </CardHeader>
           <CardContent className="space-y-4">
             {success ? (

@@ -129,3 +129,26 @@ describe("UserSettings", () => {
     expect(screen.getByText("Loading...")).toBeInTheDocument();
   });
 });
+
+// Figma reference: docs/figma-export/src/app/pages/UserSettingsPage.tsx
+describe("UserSettings — Responsive class structure", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseAuth.mockReturnValue({
+      user: mockUser,
+      updateUser: vi.fn(),
+    });
+  });
+
+  test("personal information name fields use grid-cols-2 two-column layout", () => {
+    const { container } = render(
+      <BrowserRouter>
+        <UserSettings />
+      </BrowserRouter>,
+    );
+
+    const grid = container.querySelector(".grid-cols-2");
+    expect(grid).toBeInTheDocument();
+    expect(grid).toHaveClass("gap-4");
+  });
+});

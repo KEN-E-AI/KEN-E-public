@@ -572,3 +572,61 @@ describe("Authentication — Email Verification view", () => {
     expect(screen.getByRole("link", { name: /sign in/i })).toBeInTheDocument();
   });
 });
+
+// Figma reference: docs/figma-export/src/app/pages/{SignInPage,CreateAccountPage,EmailVerificationPage}.tsx
+describe("Authentication — Responsive class structure (SignIn view)", () => {
+  test("outer wrapper carries min-h-screen flex items-center justify-center p-4", () => {
+    const { container } = renderAt("/sign-in");
+    const outer = container.firstElementChild;
+    expect(outer).toHaveClass("min-h-screen");
+    expect(outer).toHaveClass("flex");
+    expect(outer).toHaveClass("items-center");
+    expect(outer).toHaveClass("justify-center");
+    expect(outer).toHaveClass("p-4");
+  });
+
+  test("inner card container carries w-full max-w-md", () => {
+    const { container } = renderAt("/sign-in");
+    const inner = container.querySelector(".max-w-md");
+    expect(inner).toBeInTheDocument();
+    expect(inner).toHaveClass("w-full");
+  });
+});
+
+describe("Authentication — Responsive class structure (CreateAccount view)", () => {
+  test("outer wrapper carries min-h-screen flex items-center justify-center p-4", () => {
+    const { container } = renderAt("/create-account");
+    const outer = container.firstElementChild;
+    expect(outer).toHaveClass("min-h-screen");
+    expect(outer).toHaveClass("flex");
+    expect(outer).toHaveClass("items-center");
+    expect(outer).toHaveClass("justify-center");
+    expect(outer).toHaveClass("p-4");
+  });
+
+  test("inner card container carries w-full max-w-md", () => {
+    const { container } = renderAt("/create-account");
+    const inner = container.querySelector(".max-w-md");
+    expect(inner).toBeInTheDocument();
+    expect(inner).toHaveClass("w-full");
+  });
+});
+
+describe("Authentication — Responsive class structure (EmailVerification view)", () => {
+  test("outer wrapper carries min-h-screen flex items-center justify-center p-4", () => {
+    const { container } = renderAt("/verify-email");
+    const outer = container.firstElementChild;
+    expect(outer).toHaveClass("min-h-screen");
+    expect(outer).toHaveClass("flex");
+    expect(outer).toHaveClass("items-center");
+    expect(outer).toHaveClass("justify-center");
+    expect(outer).toHaveClass("p-4");
+  });
+
+  test("inner card container carries w-full max-w-md", () => {
+    const { container } = renderAt("/verify-email");
+    const inner = container.querySelector(".max-w-md");
+    expect(inner).toBeInTheDocument();
+    expect(inner).toHaveClass("w-full");
+  });
+});

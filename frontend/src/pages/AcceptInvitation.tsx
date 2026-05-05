@@ -92,7 +92,10 @@ const AcceptInvitation = () => {
         user_name: `${user.firstName} ${user.lastName}`.trim() || user.email,
       });
 
-      // Check if user has notification preferences, create if missing
+      // Check if user has notification preferences, create if missing.
+      // Only 404 means "not yet created" — any other status is a real failure
+      // we should surface, otherwise the user joins the org but silently never
+      // receives email notifications.
       try {
         await api.get(
           `/api/v1/firestore/documents/users/${user.id}/preferences/notifications`,
@@ -117,6 +120,17 @@ const AcceptInvitation = () => {
               updated_at: new Date().toISOString(),
             },
           });
+        } else {
+          console.error(
+            "Failed to load notification preferences after invitation accept",
+            prefErr,
+          );
+          toast({
+            title: "Notification preferences unavailable",
+            description:
+              "You've joined the organization, but we couldn't load your notification settings. You may need to configure them manually under Settings.",
+            variant: "destructive",
+          });
         }
       }
 
@@ -139,7 +153,7 @@ const AcceptInvitation = () => {
   };
 
   const outerClass =
-    "min-h-screen bg-gradient-to-br from-[var(--color-violet-100)] via-[var(--color-bg-primary)] to-[var(--color-blue-100)] flex items-center justify-center p-4";
+    "min-h-screen bg-gradient-to-br from-[var(--color-violet-50)] via-[var(--color-bg-default)] to-[var(--color-blue-50)] flex items-center justify-center p-4";
 
   // Loading state
   if (status === "loading") {
@@ -369,7 +383,7 @@ const AcceptInvitation = () => {
               Already have an account?{" "}
               <a
                 href="/auth/signin"
-                className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] font-medium"
+                className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] font-medium underline"
               >
                 Sign in
               </a>
@@ -378,7 +392,7 @@ const AcceptInvitation = () => {
               Need help?{" "}
               <a
                 href="mailto:support@mer-e.com"
-                className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)]"
+                className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] underline"
               >
                 Contact Support
               </a>

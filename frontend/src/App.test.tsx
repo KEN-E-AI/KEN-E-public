@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LayoutSettings } from "@/components/layout/LayoutSettings";
+import { WorkflowsLayout } from "@/pages/workflows/WorkflowsLayout";
 
 // ProfileMenu is pulled in by LayoutSettings — stub it to avoid heavy auth dependencies
 vi.mock("@/components/layout/ProfileMenu", () => ({
@@ -25,6 +26,15 @@ function renderRoutes(initialPath: string) {
           <Route
             path="/sign-up"
             element={<div data-testid="sign-up-page">Sign Up</div>}
+          />
+          {/* Standalone workspace-selection — top-level unprotected, same as in App.tsx */}
+          <Route
+            path="/select-organization"
+            element={
+              <div data-testid="select-organization-page">
+                Select Organization
+              </div>
+            }
           />
 
           {/* Top-level redirects — / and /settings */}
@@ -49,6 +59,10 @@ function renderRoutes(initialPath: string) {
             path="/user-settings"
             element={<Navigate to="/settings/user" replace />}
           />
+          <Route
+            path="/organization-selection"
+            element={<Navigate to="/select-organization" replace />}
+          />
 
           {/* Settings group — wrapped in LayoutSettings */}
           <Route element={<LayoutSettings />}>
@@ -69,6 +83,38 @@ function renderRoutes(initialPath: string) {
               }
             />
           </Route>
+
+          {/* Workflows routes mirror App.tsx — each page uses the real
+              WorkflowsLayout so the test exercises the layout's tab strip,
+              not a stub. (LayoutC itself is asserted in dedicated layout tests.) */}
+          <Route
+            path="/workflows"
+            element={<Navigate to="/workflows/agents" replace />}
+          />
+          <Route
+            path="/workflows/agents"
+            element={
+              <WorkflowsLayout activeTab="agents">
+                <div data-testid="workflows-agents-page">Agents</div>
+              </WorkflowsLayout>
+            }
+          />
+          <Route
+            path="/workflows/automations"
+            element={
+              <WorkflowsLayout activeTab="automations">
+                <div data-testid="workflows-automations-page">Automations</div>
+              </WorkflowsLayout>
+            }
+          />
+          <Route
+            path="/workflows/skills"
+            element={
+              <WorkflowsLayout activeTab="skills">
+                <div data-testid="workflows-skills-page">Skills</div>
+              </WorkflowsLayout>
+            }
+          />
 
           {/* Chat destination (target of the / redirect) */}
           <Route
@@ -124,6 +170,11 @@ describe("App routing — backward-compat redirects", () => {
     renderRoutes("/user-settings");
     expect(screen.getByTestId("settings-user-page")).toBeInTheDocument();
   });
+
+  test("/organization-selection redirects to /select-organization", () => {
+    renderRoutes("/organization-selection");
+    expect(screen.getByTestId("select-organization-page")).toBeInTheDocument();
+  });
 });
 
 describe("App routing — canonical auth routes", () => {
@@ -171,6 +222,41 @@ describe("App routing — settings inside LayoutSettings", () => {
       screen.getByRole("navigation", { name: "Settings sections" }),
     ).toBeInTheDocument();
     expect(screen.getByTestId("settings-user-page")).toBeInTheDocument();
+  });
+});
+
+describe("App routing — workflows inside WorkflowsLayout", () => {
+  test("/workflows redirects to /workflows/agents", () => {
+    renderRoutes("/workflows");
+    expect(screen.getByTestId("workflows-agents-page")).toBeInTheDocument();
+    // Real WorkflowsLayout renders a tab strip with all three tabs
+    expect(screen.getByRole("tab", { name: /agents/i })).toBeInTheDocument();
+  });
+
+  test("/workflows/agents activates the Agents tab", () => {
+    renderRoutes("/workflows/agents");
+    expect(screen.getByTestId("workflows-agents-page")).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: /agents/i, selected: true }),
+    ).toBeInTheDocument();
+  });
+
+  test("/workflows/automations activates the Automations tab", () => {
+    renderRoutes("/workflows/automations");
+    expect(
+      screen.getByTestId("workflows-automations-page"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: /automations/i, selected: true }),
+    ).toBeInTheDocument();
+  });
+
+  test("/workflows/skills activates the Skills tab", () => {
+    renderRoutes("/workflows/skills");
+    expect(screen.getByTestId("workflows-skills-page")).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: /skills/i, selected: true }),
+    ).toBeInTheDocument();
   });
 });
 

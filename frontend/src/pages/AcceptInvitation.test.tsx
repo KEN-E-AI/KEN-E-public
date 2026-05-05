@@ -1,10 +1,11 @@
-import { describe, test, expect, vi, beforeEach } from "vitest";
+import { describe, test, expect, vi, beforeEach, Mock } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import AcceptInvitation from "./AcceptInvitation";
 import * as teamApi from "@/data/teamApi";
 import { useAuth } from "@/contexts/AuthContext";
+import api from "@/lib/api";
 
 // Mock dependencies
 vi.mock("@/contexts/AuthContext");
@@ -126,8 +127,7 @@ describe("AcceptInvitation", () => {
       mockVerifyInvitationToken.mockResolvedValue(validInvitation);
       mockAcceptInvitation.mockResolvedValue({});
 
-      const api = (await import("@/lib/api")).default;
-      (api.get as ReturnType<typeof vi.fn>).mockResolvedValue({});
+      (api.get as Mock).mockResolvedValue({});
 
       renderComponent();
 
@@ -151,13 +151,110 @@ describe("AcceptInvitation", () => {
     });
   });
 
+  describe("Notification preferences side-effect on accept", () => {
+    test("creates notification prefs when GET returns 404 (not-yet-created)", async () => {
+      mockVerifyInvitationToken.mockResolvedValue(validInvitation);
+      mockAcceptInvitation.mockResolvedValue({});
+      // GET rejects with 404 → component should POST defaults
+      (api.get as Mock).mockRejectedValue({ response: { status: 404 } });
+      (api.post as Mock).mockResolvedValue({});
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /accept invitation/i }),
+        ).toBeInTheDocument();
+      });
+
+      await userEvent.click(
+        screen.getByRole("button", { name: /accept invitation/i }),
+      );
+
+      await waitFor(() => {
+        expect(api.post).toHaveBeenCalledWith(
+          `/api/v1/firestore/documents`,
+          expect.objectContaining({
+            collection: `users/user-123/preferences`,
+            document_id: "notifications",
+          }),
+        );
+      });
+      // No destructive toast on the 404-create path
+      expect(mockToast).not.toHaveBeenCalledWith(
+        expect.objectContaining({ variant: "destructive" }),
+      );
+    });
+
+    test("fires destructive toast when GET fails with non-404 (5xx) — user joined org but prefs unavailable", async () => {
+      mockVerifyInvitationToken.mockResolvedValue(validInvitation);
+      mockAcceptInvitation.mockResolvedValue({});
+      // GET rejects with 500 → component should NOT silently swallow;
+      // user joins the org but is told prefs are unavailable.
+      (api.get as Mock).mockRejectedValue({
+        response: { status: 500, data: { detail: "internal error" } },
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /accept invitation/i }),
+        ).toBeInTheDocument();
+      });
+
+      await userEvent.click(
+        screen.getByRole("button", { name: /accept invitation/i }),
+      );
+
+      await waitFor(() => {
+        expect(mockToast).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: "Notification preferences unavailable",
+            variant: "destructive",
+          }),
+        );
+      });
+      // Accept still proceeds — user joins the org
+      expect(mockAcceptInvitation).toHaveBeenCalled();
+      // No POST attempted (only the 404-path posts defaults)
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
+    test("fires destructive toast when GET fails with 403 — same swallow regression guard", async () => {
+      mockVerifyInvitationToken.mockResolvedValue(validInvitation);
+      mockAcceptInvitation.mockResolvedValue({});
+      (api.get as Mock).mockRejectedValue({ response: { status: 403 } });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /accept invitation/i }),
+        ).toBeInTheDocument();
+      });
+
+      await userEvent.click(
+        screen.getByRole("button", { name: /accept invitation/i }),
+      );
+
+      await waitFor(() => {
+        expect(mockToast).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: "Notification preferences unavailable",
+            variant: "destructive",
+          }),
+        );
+      });
+    });
+  });
+
   describe("Success path — navigation after accept", () => {
     test("shows accepted state and navigates to / when Get Started is clicked", async () => {
       mockVerifyInvitationToken.mockResolvedValue(validInvitation);
       mockAcceptInvitation.mockResolvedValue({});
 
-      const api = (await import("@/lib/api")).default;
-      (api.get as ReturnType<typeof vi.fn>).mockResolvedValue({});
+      (api.get as Mock).mockResolvedValue({});
 
       renderComponent();
 
@@ -238,7 +335,7 @@ describe("AcceptInvitation", () => {
       });
 
       expect(
-        screen.getByRole("button", { name: /go to login/i }),
+        screen.getByRole("button", { name: /go to sign in/i }),
       ).toBeInTheDocument();
     });
 
@@ -341,10 +438,10 @@ describe("AcceptInvitation", () => {
       renderComponent();
 
       await waitFor(() => {
-        expect(mockNavigate).toHaveBeenCalledWith(
-          "/auth/signin?invitation=test-token-123",
-          { replace: true },
-        );
+        expect(mockNavigate).toHaveBeenCalledWith("/sign-in", {
+          replace: true,
+          state: { from: "/invite/test-token-123" },
+        });
       });
     });
   });
@@ -388,5 +485,51 @@ describe("AcceptInvitation", () => {
         screen.getByRole("button", { name: /go to dashboard/i }),
       ).toBeInTheDocument();
     });
+  });
+});
+
+// Figma reference: docs/figma-export/src/app/pages/InvitationAcceptancePage.tsx
+describe("AcceptInvitation — Responsive class structure", () => {
+  beforeEach(() => {
+    mockUseAuth.mockReturnValue({
+      user: authenticatedUser,
+      selectedOrganization: null,
+      selectedAccount: null,
+      signOut: vi.fn(),
+      logout: vi.fn(),
+    });
+    mockVerifyInvitationToken.mockReturnValue(new Promise(() => {}));
+  });
+
+  test("outer wrapper carries min-h-screen flex items-center justify-center p-4", () => {
+    const { container } = renderComponent();
+    const outer = container.firstElementChild;
+    expect(outer).toHaveClass("min-h-screen");
+    expect(outer).toHaveClass("flex");
+    expect(outer).toHaveClass("items-center");
+    expect(outer).toHaveClass("justify-center");
+    expect(outer).toHaveClass("p-4");
+  });
+
+  test("inner container carries w-full max-w-md (error state)", async () => {
+    mockVerifyInvitationToken.mockRejectedValue({
+      response: { status: 404, data: { detail: "Not found" } },
+    });
+    const { container } = renderComponent();
+    await waitFor(() => {
+      const inner = container.querySelector(".max-w-md");
+      expect(inner).toBeInTheDocument();
+      expect(inner).toHaveClass("w-full");
+    });
+  });
+
+  test("background gradient uses -50 shade tokens matching figma-export", () => {
+    const { container } = renderComponent();
+    const outer = container.firstElementChild;
+    // className.toContain (not toHaveClass) because toHaveClass cannot match
+    // arbitrary-value Tailwind tokens that contain square brackets.
+    expect(outer?.className).toContain("from-[var(--color-violet-50)]");
+    expect(outer?.className).toContain("via-[var(--color-bg-default)]");
+    expect(outer?.className).toContain("to-[var(--color-blue-50)]");
   });
 });

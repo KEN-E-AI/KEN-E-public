@@ -102,42 +102,10 @@ export function CreateOrganization() {
         },
       };
     } catch (error) {
-      console.error("Failed to fetch default plan:", error);
-      return {
-        organization_name: formData.organization_name,
-        plan: "Free",
-        website: "",
-        company_size: formData.company_size,
-        agency: formData.agency,
-        child_organizations: formData.child_organizations,
-        subscription: {
-          plan_name: "Free Plan",
-          plan_description: "Basic features for getting started",
-          price: 0,
-          currency: "USD",
-          billing_cycle: "monthly",
-          next_billing_date: new Date().toISOString(),
-          features: ["Basic Reports", "1 User"],
-          usage: {
-            reports_generated: 0,
-            reports_limit: 10,
-          },
-        },
-        billing: {
-          payment_method: {
-            last_four: "",
-            brand: "",
-            expires: "",
-          },
-          address: "",
-          tax_id: "",
-        },
-        team: {
-          members_used: 1,
-          members_limit: 1,
-          pending_invitations: 0,
-        },
-      };
+      // Re-throw so handleCreateOrganization aborts. Returning a fabricated
+      // "Free" plan stub here would silently provision the org with values
+      // that don't match billing reality (limits, pricing, features).
+      throw error;
     }
   };
 
@@ -387,7 +355,7 @@ export function CreateOrganization() {
             Need help?{" "}
             <a
               href="mailto:support@ken-e.com"
-              className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] transition-colors"
+              className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] transition-colors underline"
             >
               Contact Support
             </a>

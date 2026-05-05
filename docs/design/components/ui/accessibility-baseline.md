@@ -22,12 +22,13 @@ The `frontend-a11y-tests` step in `deployment/ci/pr_checks.yaml` runs on every P
 | `src/test/wcag.test.ts` | WCAG 2.1 contrast math unit tests |
 | `src/test/token-contrast.test.ts` | In-use token-pair WCAG AA verification |
 | `src/test/focus-ring-audit.test.ts` | Static `outline-none` / focus-ring audit |
-| `src/test/a11y-primitives.test.tsx` | axe sweeps — Button, Input, Alert, Badge, Card |
+| `src/test/a11y-primitives.test.tsx` | axe sweeps — Button, Input, Alert, Badge, Card, Tabs |
 | `src/test/a11y-shell.test.tsx` | axe sweeps — ThemeToggle, AppErrorBoundary fallback, NotificationBell, SidebarRail |
 | `src/test/keyboard-nav.test.tsx` | Keyboard Tab + Enter/Space activation smoke tests |
 | `src/test/keyboard-dialog.test.tsx` | Esc dismisses Dialog, Sheet, Popover, DropdownMenu |
 | `src/test/keyboard-menu.test.tsx` | Arrow key navigation — Tabs, DropdownMenu, Select |
 | `src/test/reduced-motion.test.ts` | `prefers-reduced-motion` CSS rule smoke test |
+| `src/test/dark-mode-parity.test.tsx` | axe sweeps — all UI-PRD-02 redesigned pages (Authentication sign-in/sign-up/email-verification, EmailActionHandler resetPassword/verifyEmail, AcceptInvitation, AccountSettings, UserSettings, CreateOrganization) rendered under both light and dark themes |
 
 ### axe configuration
 
@@ -54,6 +55,8 @@ The following token pairs are verified in `token-contrast.test.ts`. All must mee
 | `info-text` on `info-bg` | ✅ | ✅ |
 | `violet-600` on `bg-primary` (body text) | ~6.04:1 ✅ | ~8.95:1 ✅ |
 | `text-inverse` on `violet-600` (default Button) | ~6.28:1 ✅ | ~8.96:1 ✅ |
+| `text-primary` on `teal-500` (TabsTrigger active, light) | ~5.74:1 ✅ | — |
+| `text-inverse` on `teal-500` (TabsTrigger active, dark) | — | ~10.56:1 ✅ |
 
 ### Large text (≥ 3:1) — bold ≥ 14pt or regular ≥ 18pt
 
@@ -111,16 +114,18 @@ Light mode: `#ffffff` on `#6366f1` = ~4.47:1. Passes large-text AA (3:1) but not
 
 Both modes fail normal-text AA (4.5:1) but pass large-text AA (3:1). Usage is restricted to large interactive labels (≥ 14pt bold or ≥ 18pt regular). Using `accent-foreground` on `accent` for small body copy would be a WCAG violation. This pair is tested in `token-contrast.test.ts` (`accentFgPairs`, `kind: "large"`) — CI will fail if either mode drops below 3:1.
 
-### `text-tertiary` on `bg-primary` — decorative/disabled text only
+### `text-tertiary` on `bg-primary`
 
-`--color-text-tertiary` is `#94a3b8` in light mode and `#64748b` in dark mode; `--color-bg-primary` is `#fafbfc` in light mode and `#0f172a` in dark mode.
+`--color-text-tertiary` is `#64748b` in **both** light and dark mode; `--color-bg-primary` is `#fafbfc` in light mode and `#0f172a` in dark mode.
+
+> **Deviation from Figma export:** The Figma export specifies `#94A3B8` (slate-400) for light-mode `--color-text-tertiary`. That value produces ~2.47:1 on `#fafbfc`, which fails both WCAG AA thresholds. The implementation uses `#64748b` (slate-500) instead. This deviation was approved as a required WCAG compliance fix (same pattern as the TabsTrigger active-state deviation).
 
 | Mode | Foreground | Background | Ratio | AA verdict |
 |------|------------|------------|-------|------------|
-| Light | `#94a3b8` | `#fafbfc` | ~2.475:1 | ❌ fails normal (4.5:1) and large (3:1) |
+| Light | `#64748b` | `#fafbfc` | ~4.57:1 | ✅ passes normal (4.5:1) |
 | Dark | `#64748b` | `#0f172a` | ~3.751:1 | ❌ fails normal (4.5:1); ✅ large (3:1) |
 
-Light mode fails both AA thresholds. Usage is **strictly limited to decorative or disabled text** — timestamps, secondary metadata, and supplementary labels that are never the sole carrier of required information. Examples: session timestamps in `SessionsSidebar`, placeholder copy in disabled form fields. Any `text-tertiary` usage where the text conveys standalone required meaning would be a WCAG violation and must be re-styled with `text-secondary` or `text-primary`. No CI pair test exists for this token (light mode fails the 3:1 floor for any `kind`); the constraint is enforced by design convention and this documentation.
+Light mode now passes WCAG AA for normal text. Dark mode still fails normal-text AA — follow-on fix needed to raise dark `--color-text-tertiary` to a value that clears 4.5:1 on `#0f172a` (e.g. `#94a3b8` gives ~5.0:1 on the dark background). Dark mode usage remains **limited to secondary/decorative contexts** until the follow-on is applied.
 
 ---
 
@@ -187,4 +192,4 @@ Open items (contrast hardening):
 
 - Consider bumping `violet-500` to `violet-600` to achieve ≥ 4.5:1 on `bg-primary` for normal text uses.
 - Audit input focus borders — if `border-strong` is ever used as a focus outline, it needs a color update.
-- Extend axe sweep coverage to `src/components/chat/` and `src/pages/` as those components stabilize.
+- Extend axe sweep coverage to `src/components/chat/` as those components stabilize (UI-PRD-02 pages are now covered by `dark-mode-parity.test.tsx`; the remaining scope is CH-PRD-02 chat surfaces only).

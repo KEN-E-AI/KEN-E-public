@@ -215,7 +215,7 @@ export const getOrganizationActions = (orgId?: string): ActionConfig[] => [
     type: "switch_organization",
     label: "Switch Organization",
     icon: Building2,
-    route: "/organization-selection",
+    route: "/select-organization",
     variant: "outline",
     showInDropdown: true,
   },
@@ -246,7 +246,7 @@ export const getAccountActions = (accountId?: string): ActionConfig[] => [
     type: "switch_account",
     label: "Switch Account",
     icon: Users,
-    route: "/organization-selection",
+    route: "/select-organization",
     variant: "outline",
   },
   {

@@ -18,7 +18,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ChatProvider } from "@/contexts/ChatContext";
 import { AccountOperationsProvider } from "@/contexts/AccountOperationsContext";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
-import SelectOrganizationPage from "@/components/auth/SelectOrganizationPage";
+import SelectOrganizationPage from "@/pages/SelectOrganizationPage";
 import { AppErrorBoundary } from "@/components/layout/AppErrorBoundary";
 import "./App.css";
 
@@ -44,13 +44,17 @@ import Insights from "./pages/Insights";
 import AccountSettings from "./pages/AccountSettings";
 import CreateOrganization from "./pages/CreateOrganization";
 import UserSettings from "./pages/UserSettings";
-import OrganizationSelection from "./pages/OrganizationSelection";
 import AcceptInvitation from "./pages/AcceptInvitation";
 import NotFoundPage from "./pages/NotFoundPage";
 import EmailActionHandler from "./components/auth/EmailActionHandler";
 import Authentication from "./pages/Authentication";
 import { ChatInterface } from "@/components/chat/ChatInterface";
 import { WorkflowsLayout } from "./pages/workflows/WorkflowsLayout";
+import { AgentsPage } from "./pages/workflows/AgentsPage";
+import { AutomationsPage } from "./pages/workflows/AutomationsPage";
+import { SkillsPage } from "./pages/workflows/SkillsPage";
+import { AgentCreatePage } from "./pages/workflows/AgentCreatePage";
+import { AutomationDetailsPage } from "./pages/workflows/AutomationDetailsPage";
 // Import test utilities in development
 if (import.meta.env.DEV) {
   import("./utils/testNotification");
@@ -75,13 +79,6 @@ const LazyDesignSystemPreview = import.meta.env.DEV
   : undefined;
 
 const queryClient = new QueryClient();
-
-// Wrapper component to handle navigation after organization selection
-const OrganizationSelectionPage = () => {
-  const navigate = useNavigate();
-
-  return <OrganizationSelection onComplete={() => navigate("/chat")} />;
-};
 
 // Wrapper component for Authentication with navigation
 const AuthenticationPage = () => {
@@ -279,9 +276,7 @@ const App = () => (
                         path="/knowledge/brand"
                         element={<KnowledgeBrand />}
                       />
-                      {/* Workflows shell — production stubs for WorkflowsLayout (UI-35).
-                          Tab page content is owned by UI-38/39/40/41; these routes
-                          ship the layout chrome so the nav entry and URL-sync work today. */}
+                      {/* Workflows shell — UI-PRD-03 page shells wired to production components. */}
                       <Route
                         path="/workflows"
                         element={<Navigate to="/workflows/agents" replace />}
@@ -290,29 +285,7 @@ const App = () => (
                         path="/workflows/agents"
                         element={
                           <WorkflowsLayout activeTab="agents">
-                            <div className="p-6 text-sm text-foreground">
-                              Agents tab — content coming in UI-38
-                            </div>
-                          </WorkflowsLayout>
-                        }
-                      />
-                      <Route
-                        path="/workflows/skills"
-                        element={
-                          <WorkflowsLayout activeTab="skills">
-                            <div className="p-6 text-sm text-foreground">
-                              Skills tab — content coming in UI-40
-                            </div>
-                          </WorkflowsLayout>
-                        }
-                      />
-                      <Route
-                        path="/workflows/automations"
-                        element={
-                          <WorkflowsLayout activeTab="automations">
-                            <div className="p-6 text-sm text-foreground">
-                              Automations tab — content coming in UI-39
-                            </div>
+                            <AgentsPage />
                           </WorkflowsLayout>
                         }
                       />
@@ -320,9 +293,31 @@ const App = () => (
                         path="/workflows/agents/new"
                         element={
                           <WorkflowsLayout activeTab="agents">
-                            <div className="p-6 text-sm text-foreground">
-                              Agent create form — coming in UI-41
-                            </div>
+                            <AgentCreatePage />
+                          </WorkflowsLayout>
+                        }
+                      />
+                      <Route
+                        path="/workflows/automations"
+                        element={
+                          <WorkflowsLayout activeTab="automations">
+                            <AutomationsPage />
+                          </WorkflowsLayout>
+                        }
+                      />
+                      <Route
+                        path="/workflows/automations/:planId"
+                        element={
+                          <WorkflowsLayout activeTab="automations">
+                            <AutomationDetailsPage />
+                          </WorkflowsLayout>
+                        }
+                      />
+                      <Route
+                        path="/workflows/skills"
+                        element={
+                          <WorkflowsLayout activeTab="skills">
+                            <SkillsPage />
                           </WorkflowsLayout>
                         }
                       />
@@ -330,10 +325,6 @@ const App = () => (
                       <Route
                         path="/analysis-report/:reportId"
                         element={<AnalysisReport />}
-                      />
-                      <Route
-                        path="/organization-selection"
-                        element={<OrganizationSelectionPage />}
                       />
                       {/* Catch-all inside LayoutC so authenticated users see the 404 with chrome */}
                       <Route path="*" element={<NotFoundPage />} />

@@ -59,7 +59,7 @@ const CardTitle = React.forwardRef<
   HTMLHeadingElement,
   React.HTMLAttributes<HTMLHeadingElement>
 >(({ className, ...props }, ref) => (
-  <h4
+  <h3
     ref={ref}
     data-slot="card-title"
     className={cn(
