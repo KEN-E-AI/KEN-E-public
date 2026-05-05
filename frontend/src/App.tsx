@@ -44,7 +44,6 @@ import Insights from "./pages/Insights";
 import AccountSettings from "./pages/AccountSettings";
 import CreateOrganization from "./pages/CreateOrganization";
 import UserSettings from "./pages/UserSettings";
-import OrganizationSelection from "./pages/OrganizationSelection";
 import AcceptInvitation from "./pages/AcceptInvitation";
 import NotFoundPage from "./pages/NotFoundPage";
 import EmailActionHandler from "./components/auth/EmailActionHandler";
@@ -75,13 +74,6 @@ const LazyDesignSystemPreview = import.meta.env.DEV
   : undefined;
 
 const queryClient = new QueryClient();
-
-// Wrapper component to handle navigation after organization selection
-const OrganizationSelectionPage = () => {
-  const navigate = useNavigate();
-
-  return <OrganizationSelection onComplete={() => navigate("/chat")} />;
-};
 
 // Wrapper component for Authentication with navigation
 const AuthenticationPage = () => {
@@ -330,10 +322,6 @@ const App = () => (
                       <Route
                         path="/analysis-report/:reportId"
                         element={<AnalysisReport />}
-                      />
-                      <Route
-                        path="/organization-selection"
-                        element={<OrganizationSelectionPage />}
                       />
                       {/* Catch-all inside LayoutC so authenticated users see the 404 with chrome */}
                       <Route path="*" element={<NotFoundPage />} />

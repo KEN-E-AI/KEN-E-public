@@ -49,6 +49,10 @@ function renderRoutes(initialPath: string) {
             path="/user-settings"
             element={<Navigate to="/settings/user" replace />}
           />
+          <Route
+            path="/organization-selection"
+            element={<Navigate to="/select-organization" replace />}
+          />
 
           {/* Settings group — wrapped in LayoutSettings */}
           <Route element={<LayoutSettings />}>
@@ -74,6 +78,16 @@ function renderRoutes(initialPath: string) {
           <Route
             path="/chat"
             element={<div data-testid="chat-page">Chat</div>}
+          />
+
+          {/* Select-organization destination (target of the /organization-selection redirect) */}
+          <Route
+            path="/select-organization"
+            element={
+              <div data-testid="select-organization-page">
+                Select Organization
+              </div>
+            }
           />
 
           {/* Admin routes remain under LayoutC (not LayoutSettings) */}
@@ -123,6 +137,11 @@ describe("App routing — backward-compat redirects", () => {
   test("/user-settings redirects to /settings/user", () => {
     renderRoutes("/user-settings");
     expect(screen.getByTestId("settings-user-page")).toBeInTheDocument();
+  });
+
+  test("/organization-selection redirects to /select-organization", () => {
+    renderRoutes("/organization-selection");
+    expect(screen.getByTestId("select-organization-page")).toBeInTheDocument();
   });
 });
 
