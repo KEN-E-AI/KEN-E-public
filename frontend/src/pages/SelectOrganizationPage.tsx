@@ -24,13 +24,25 @@ export const PLACEHOLDER_ORGS: PlaceholderOrg[] = [
 ];
 
 export const PLACEHOLDER_ACCOUNTS: PlaceholderAccount[] = [
-  { id: "acc-1" as AccountId, name: "Main Account", orgId: "org-1" as OrganizationId },
-  { id: "acc-2" as AccountId, name: "EMEA Account", orgId: "org-1" as OrganizationId },
+  {
+    id: "acc-1" as AccountId,
+    name: "Main Account",
+    orgId: "org-1" as OrganizationId,
+  },
+  {
+    id: "acc-2" as AccountId,
+    name: "EMEA Account",
+    orgId: "org-1" as OrganizationId,
+  },
 ];
 
 export default function SelectOrganizationPage() {
-  const [selectedOrgId, setSelectedOrgId] = useState<OrganizationId | null>(null);
-  const [selectedAccountId, setSelectedAccountId] = useState<AccountId | null>(null);
+  const [selectedOrgId, setSelectedOrgId] = useState<OrganizationId | null>(
+    null,
+  );
+  const [selectedAccountId, setSelectedAccountId] = useState<AccountId | null>(
+    null,
+  );
 
   const visibleAccounts = PLACEHOLDER_ACCOUNTS.filter(
     (a) => a.orgId === selectedOrgId,

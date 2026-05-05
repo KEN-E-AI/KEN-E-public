@@ -24,7 +24,6 @@ import "./App.css";
 
 import { LayoutC } from "@/components/layout/LayoutC";
 import { LayoutSettings } from "@/components/layout/LayoutSettings";
-import { SETTINGS_NAV_ITEMS } from "@/lib/settingsNav";
 import Index from "./pages/Index";
 import Performance from "./pages/Performance";
 import Recommendations from "./pages/Recommendations";
@@ -163,9 +162,6 @@ const App = () => (
                       path="/auth/signup"
                       element={<AuthenticationPage />}
                     />
-                    {/* Canonical auth routes (UI-PRD-02) */}
-                    <Route path="/sign-in" element={<AuthenticationPage />} />
-                    <Route path="/sign-up" element={<AuthenticationPage />} />
                     <Route
                       path="/create-account"
                       element={<AuthenticationPage />}
@@ -346,7 +342,7 @@ const App = () => (
                     <Route
                       element={
                         <ProtectedRoute>
-                          <LayoutSettings subNavItems={SETTINGS_NAV_ITEMS} />
+                          <LayoutSettings />
                         </ProtectedRoute>
                       }
                     >

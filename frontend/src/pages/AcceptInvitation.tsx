@@ -74,7 +74,10 @@ const AcceptInvitation = () => {
   // Redirect unauthenticated users after successful verification
   useEffect(() => {
     if (status === "valid" && !user && token && invitation) {
-      navigate("/sign-in", { replace: true, state: { from: `/invite/${token}` } });
+      navigate("/sign-in", {
+        replace: true,
+        state: { from: `/invite/${token}` },
+      });
     }
   }, [status, user, token, invitation, navigate]);
 
@@ -200,8 +203,8 @@ const AcceptInvitation = () => {
           </p>
           <Button
             onClick={() => navigate("/")}
-            className="gap-2 bg-[#F97066] hover:bg-[#e85f55] text-white"
-            style={{ boxShadow: "0 4px 12px rgba(249, 112, 102, 0.3)" }}
+            className="gap-2 bg-[var(--color-cta-coral)] hover:bg-[var(--color-cta-coral-hover)] text-[var(--color-text-inverse)]"
+            style={{ boxShadow: "var(--shadow-color-coral)" }}
           >
             Get Started
             <ArrowRight className="size-4" />
@@ -333,8 +336,8 @@ const AcceptInvitation = () => {
                 <Button
                   onClick={handleAcceptInvitation}
                   disabled={status === "accepting"}
-                  className="w-full gap-2 bg-[#F97066] hover:bg-[#e85f55] text-white"
-                  style={{ boxShadow: "0 4px 12px rgba(249, 112, 102, 0.3)" }}
+                  className="w-full gap-2 bg-[var(--color-cta-coral)] hover:bg-[var(--color-cta-coral-hover)] text-[var(--color-text-inverse)]"
+                  style={{ boxShadow: "var(--shadow-color-coral)" }}
                 >
                   {status === "accepting" ? (
                     <>

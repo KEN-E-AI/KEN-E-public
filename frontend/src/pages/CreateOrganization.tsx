@@ -373,8 +373,8 @@ export function CreateOrganization() {
             <Button
               type="submit"
               disabled={isCreatingOrganization}
-              className="w-full gap-2 bg-[#F97066] hover:bg-[#e85f55] text-white transition-all duration-200 hover:-translate-y-0.5 hover:rotate-[-1deg]"
-              style={{ boxShadow: "0 4px 12px rgba(249, 112, 102, 0.3)" }}
+              className="w-full gap-2 bg-[var(--color-cta-coral)] hover:bg-[var(--color-cta-coral-hover)] text-[var(--color-text-inverse)] transition-all duration-200 hover:-translate-y-0.5 hover:rotate-[-1deg]"
+              style={{ boxShadow: "var(--shadow-color-coral)" }}
             >
               {isCreatingOrganization ? "Creating..." : "Create Organization"}
             </Button>

@@ -2,39 +2,12 @@ import { describe, test, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  LayoutSettings,
-  type SettingsNavRow,
-  type SettingsNavRowId,
-} from "@/components/layout/LayoutSettings";
+import { LayoutSettings } from "@/components/layout/LayoutSettings";
 
 // ProfileMenu is pulled in by LayoutSettings — stub it to avoid heavy auth dependencies
 vi.mock("@/components/layout/ProfileMenu", () => ({
   ProfileMenu: () => <div data-testid="profile-menu">ProfileMenu</div>,
 }));
-
-// Settings seed matching SETTINGS_NAV_ITEMS in App.tsx.
-// If you add/remove items in App.tsx, update this fixture too (tracked: UI-28).
-const SETTINGS_NAV_ITEMS: SettingsNavRow[] = [
-  {
-    id: "organization" as SettingsNavRowId,
-    label: "Organization",
-    path: "/settings/organization",
-    order: 10,
-  },
-  {
-    id: "account" as SettingsNavRowId,
-    label: "Account",
-    path: "/settings/account",
-    order: 20,
-  },
-  {
-    id: "user" as SettingsNavRowId,
-    label: "User",
-    path: "/settings/user",
-    order: 30,
-  },
-];
 
 function renderRoutes(initialPath: string) {
   const queryClient = new QueryClient({
@@ -78,7 +51,7 @@ function renderRoutes(initialPath: string) {
           />
 
           {/* Settings group — wrapped in LayoutSettings */}
-          <Route element={<LayoutSettings subNavItems={SETTINGS_NAV_ITEMS} />}>
+          <Route element={<LayoutSettings />}>
             <Route
               path="/settings/organization"
               element={<div data-testid="settings-org-page">Org Settings</div>}
