@@ -2030,7 +2030,7 @@ const AccountsManagement = ({
                                       </div>
                                     </div>
                                     {isSelected && (
-                                      <span className="text-xs text-[var(--color-text-disabled)] mt-1">
+                                      <span className="text-xs text-[var(--color-text-tertiary)] mt-1">
                                         Added
                                       </span>
                                     )}
@@ -2083,7 +2083,7 @@ const AccountsManagement = ({
                                           </div>
                                         </div>
                                         {isSelected && (
-                                          <span className="text-xs text-[var(--color-text-disabled)] mt-1">
+                                          <span className="text-xs text-[var(--color-text-tertiary)] mt-1">
                                             Added
                                           </span>
                                         )}

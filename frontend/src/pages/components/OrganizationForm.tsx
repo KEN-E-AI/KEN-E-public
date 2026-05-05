@@ -179,7 +179,7 @@ const OrganizationForm = ({
                   <Label className="text-sm font-medium">
                     Organizations this agency can manage:
                   </Label>
-                  <div className="space-y-2 max-h-40 overflow-y-auto border border-[var(--color-border-default)] rounded-md p-3 bg-white">
+                  <div className="space-y-2 max-h-40 overflow-y-auto border border-[var(--color-border-default)] rounded-md p-3 bg-[var(--color-bg-elevated)]">
                     {loading ? (
                       <p className="text-sm text-[var(--color-text-tertiary)]">
                         Loading organizations...

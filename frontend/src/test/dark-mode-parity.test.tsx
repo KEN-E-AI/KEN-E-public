@@ -126,7 +126,7 @@ vi.mock("@/api/notifications", () => ({
     getPreferences: vi.fn().mockResolvedValue({
       categories: ["Data Quality Alert", "News & Press"],
       channels: ["ui"],
-      updated_at: new Date().toISOString(),
+      updated_at: "2024-01-01T00:00:00.000Z",
     }),
     updatePreferences: vi.fn().mockResolvedValue({}),
     getNotifications: vi.fn().mockResolvedValue([]),
