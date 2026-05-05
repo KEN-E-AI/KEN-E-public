@@ -8,7 +8,7 @@ Usage:
     from app.adk.security.hooks import adk_before_tool_callback
 
     agent = Agent(
-        model='gemini-2.0-flash',
+        model='gemini-2.5-pro',
         name='ken_e',
         before_tool_callback=adk_before_tool_callback,
     )

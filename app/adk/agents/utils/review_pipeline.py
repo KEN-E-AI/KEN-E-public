@@ -1,7 +1,7 @@
 """Review pipeline factory for the KEN-E agentic harness.
 
 Builds a Generator-Critic review loop (§5.1 contract): a LoopAgent containing a
-specialist worker and a gemini-2.0-flash reviewer as direct children. The reviewer
+specialist worker and a gemini-2.5-pro reviewer as direct children. The reviewer
 calls exit_loop to approve, or writes feedback to session state for the next iteration.
 
 Architecture note: specialist and reviewer must be *direct* children of LoopAgent.
@@ -82,7 +82,7 @@ def build_review_pipeline(
     acceptance_criteria: str,
     output_key_prefix: str | None = None,
     max_iterations: int = 3,
-    reviewer_model: str = "gemini-2.0-flash",
+    reviewer_model: str = "gemini-2.5-pro",
 ) -> LoopAgent:
     """Build a Generator-Critic review loop wrapping a specialist agent.
 
@@ -106,7 +106,7 @@ def build_review_pipeline(
         max_iterations: Maximum review iterations before the loop exits without
             reviewer approval. Must be between 1 and 10 inclusive. Defaults to 3.
         reviewer_model: Model identifier for the reviewer LLM. Defaults to
-            `"gemini-2.0-flash"`.
+            `"gemini-2.5-pro"`.
 
     Returns:
         A `LoopAgent` named `f"{output_key_prefix}_loop"` containing the worker

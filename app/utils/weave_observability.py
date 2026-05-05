@@ -300,7 +300,7 @@ def track_token_usage(
     account_id: str,
     prompt_tokens: int,
     response_tokens: int,
-    model: str = "gemini-2.0-flash",
+    model: str = "gemini-2.5-pro",
     operation: str | None = None,
 ) -> dict[str, Any]:
     """Track token usage and calculate costs.
@@ -324,9 +324,10 @@ def track_token_usage(
         "gemini-1.5-pro": {"prompt": 3.50, "response": 10.50},
         "gemini-1.5-pro-002": {"prompt": 3.50, "response": 10.50},
         "gemini-2.5-flash": {"prompt": 0.075, "response": 0.30},
+        "gemini-2.5-pro": {"prompt": 1.25, "response": 10.00},
     }
 
-    model_pricing = pricing.get(model, pricing["gemini-2.0-flash"])
+    model_pricing = pricing.get(model, pricing["gemini-2.5-pro"])
 
     prompt_cost = (prompt_tokens / 1_000_000) * model_pricing["prompt"]
     response_cost = (response_tokens / 1_000_000) * model_pricing["response"]
@@ -356,7 +357,7 @@ def track_token_usage(
     return usage_data
 
 
-def create_cost_tracker(default_model: str = "gemini-2.0-flash") -> Callable:
+def create_cost_tracker(default_model: str = "gemini-2.5-pro") -> Callable:
     """Create a cost tracking function for an agent.
 
     Args:

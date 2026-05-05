@@ -178,7 +178,7 @@ def _make_instruction_provider(config_doc_id: str) -> Callable[[ReadonlyContext]
 
     def instruction_provider(context: ReadonlyContext) -> str:
         try:
-            cfg, _ = config_cache.get_cached_config(config_doc_id)
+            cfg, _, _ = config_cache.get_cached_config(config_doc_id)
             base_instruction = cfg.instruction or _BASE_INSTRUCTION
         except Exception as e:
             logger.warning(
@@ -218,7 +218,7 @@ def create_ken_e_agent(config_doc_id: str = "ken_e_chatbot"):
     # ``instruction`` is read live from the config cache on every turn, so
     # it is NOT bound here.
     try:
-        config, metadata = load_config_from_firestore(config_doc_id)
+        config, metadata, _ = load_config_from_firestore(config_doc_id)
         model = config.model
         description = config.description or ""
         generate_content_config = config.generate_content_config
@@ -231,7 +231,7 @@ def create_ken_e_agent(config_doc_id: str = "ken_e_chatbot"):
             f"Failed to load KEN-E chatbot config from Firestore ({config_doc_id}): {e}. "
             f"Falling back to hardcoded defaults"
         )
-        model = "gemini-2.0-flash"
+        model = "gemini-2.5-pro"
         description = ""
         generate_content_config = None
 

@@ -653,7 +653,7 @@ def _execute_single_strategy(
 
                 # Use environment-specific project ID
                 formatter_project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
-                config, _ = load_config_from_firestore(
+                config, _, _ = load_config_from_firestore(
                     strategy_config["formatter_doc_id"], project_id=formatter_project_id
                 )
                 firestore_instructions = getattr(
@@ -2225,7 +2225,7 @@ def create_strategy_agent_for_deployment():
     """
     return Agent(
         name="strategy_orchestrator",
-        model="gemini-2.0-flash",
+        model="gemini-2.5-pro",
         instruction="""You coordinate strategy document generation.
 
 When you receive a request to generate strategy documents, you MUST use the execute_strategy_generation tool.

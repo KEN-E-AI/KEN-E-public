@@ -23,12 +23,12 @@ class TestConfigLoader:
         mock_doc.exists = True
         mock_doc.to_dict.return_value = {
             "name": "test_agent",
-            "model": "gemini-2.0-flash",
+            "model": "gemini-2.5-pro",
             "description": "Test agent",
             "instruction": "Test instruction",
             "generate_content_config": {"temperature": 0.3, "max_output_tokens": 2500},
             "metadata": {
-                "version": "v1.0",
+                "version": "v1.0.0",
                 "variant_name": "test",
                 "experiment_id": "test_exp",
             },
@@ -43,13 +43,73 @@ class TestConfigLoader:
         mock_firestore_client.return_value = mock_db
 
         # Test
-        config, metadata = load_config_from_firestore("test_agent", "test-project")
+        config, metadata, extensions = load_config_from_firestore(
+            "test_agent", "test-project"
+        )
 
         # Verify
         assert config.name == "test_agent"
-        assert config.model == "gemini-2.0-flash"
-        assert metadata["version"] == "v1.0"
+        assert config.model == "gemini-2.5-pro"
+        assert metadata["version"] == "v1.0.0"
         assert metadata["variant_name"] == "test"
+        assert extensions == {}
+
+    @patch("app.adk.agents.strategy_agent.config_loader.firestore.Client")
+    def test_load_config_strips_unknown_fields_into_extensions(
+        self, mock_firestore_client
+    ):
+        """KEN-E-specific top-level fields (e.g. ``deployment_status``) must
+        be stripped before validation against ``LlmAgentConfig`` (which has
+        ``extra='forbid'``) and surfaced via the third return value.
+
+        Regression for the staging incident where adding ``deployment_status``
+        to ``agent_configs/ken_e_chatbot`` caused the loader to crash and the
+        agent to fall back to a retired model.
+        """
+        from app.adk.agents.strategy_agent.config_loader import (
+            load_config_from_firestore,
+        )
+
+        deployment_status = {
+            "smoke_test_status": "pending",
+            "rollout_percentage": 100,
+            "environment": "staging",
+        }
+        mock_doc = Mock()
+        mock_doc.exists = True
+        mock_doc.to_dict.return_value = {
+            "name": "test_agent",
+            "model": "gemini-2.5-pro",
+            "description": "Test agent",
+            "instruction": "Test instruction",
+            "generate_content_config": {"temperature": 0.3, "max_output_tokens": 2500},
+            "metadata": {"version": "v1.0.0", "variant_name": "test"},
+            "deployment_status": deployment_status,
+            "future_extension_field": "anything",
+        }
+
+        mock_collection = Mock()
+        mock_collection.document.return_value.get.return_value = mock_doc
+
+        mock_db = Mock()
+        mock_db.collection.return_value = mock_collection
+
+        mock_firestore_client.return_value = mock_db
+
+        config, metadata, extensions = load_config_from_firestore(
+            "test_agent", "test-project"
+        )
+
+        # Validation passed despite unknown top-level fields.
+        assert config.name == "test_agent"
+        assert config.model == "gemini-2.5-pro"
+        # metadata sub-dict is still surfaced.
+        assert metadata["version"] == "v1.0.0"
+        # Unknown top-level fields land in extensions.
+        assert extensions["deployment_status"] == deployment_status
+        assert extensions["future_extension_field"] == "anything"
+        # ``metadata`` itself is not duplicated into extensions.
+        assert "metadata" not in extensions
 
     @patch("app.adk.agents.strategy_agent.config_loader.firestore.Client")
     def test_load_config_not_found(self, mock_firestore_client):
@@ -89,7 +149,7 @@ class TestConfigLoader:
             "name": "test_agent",
             "model": "gemini-2.5-pro",
             "metadata": {
-                "version": "v2.0",
+                "version": "v2.0.0",
                 "variant_name": "advanced",
                 "experiment_id": "exp_123",
                 "updated_at": "2025-10-15T00:00:00Z",
@@ -109,7 +169,7 @@ class TestConfigLoader:
 
         # Verify
         assert metadata["doc_id"] == "test_agent"
-        assert metadata["version"] == "v2.0"
+        assert metadata["version"] == "v2.0.0"
         assert metadata["variant_name"] == "advanced"
         assert metadata["experiment_id"] == "exp_123"
         assert metadata["model"] == "gemini-2.5-pro"

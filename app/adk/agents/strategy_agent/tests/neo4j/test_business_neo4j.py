@@ -50,7 +50,7 @@ def create_google_search_agent():
     return adk.Agent(
         name="google_search",
         description="Searches the web for information",
-        model="gemini-2.0-flash",
+        model="gemini-2.5-pro",
         tools=[google_search],  # Using the ADK google_search tool
         instruction="""You are a web search specialist.
 When given a search query, use google_search to find relevant information.
@@ -69,7 +69,7 @@ def create_business_researcher():
     return adk.Agent(
         name="business_researcher",
         description="Researches business strategy information",
-        model="gemini-2.0-flash",
+        model="gemini-2.5-pro",
         tools=[AgentTool(agent=google_search_agent)],
         generate_content_config=GenerateContentConfig(
             temperature=0.3,

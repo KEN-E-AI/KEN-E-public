@@ -39,7 +39,7 @@ def _valid_metadata(**overrides: object) -> dict[str, object]:
 def _valid_agent_config(**overrides: object) -> dict[str, object]:
     base: dict[str, object] = {
         "name": "ken_e_chatbot",
-        "model": "gemini-2.0-flash",
+        "model": "gemini-2.5-pro",
         "description": "Frontend-facing chat agent",
         "instruction": "You are KEN-E...",
         "generate_content_config": {"temperature": 0.3, "max_output_tokens": 2500},
@@ -60,7 +60,7 @@ class TestAgentConfig:
 
         dumped = config.model_dump()
         assert dumped["name"] == "ken_e_chatbot"
-        assert dumped["model"] == "gemini-2.0-flash"
+        assert dumped["model"] == "gemini-2.5-pro"
         assert dumped["instruction"] == "You are KEN-E..."
         assert dumped["description"] == "Frontend-facing chat agent"
         assert dumped["generate_content_config"]["temperature"] == 0.3

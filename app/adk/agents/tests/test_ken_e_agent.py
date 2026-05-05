@@ -90,11 +90,11 @@ def _seed_cache(doc_id: str, instruction: str, version: str = "v1.0") -> None:
     """Helper: seed the cache so closure reads return a known value."""
     cfg = LlmAgentConfig(
         name=doc_id,
-        model="gemini-2.0-flash",
+        model="gemini-2.5-pro",
         instruction=instruction,
     )
     with patch.object(config_cache, "load_config_from_firestore") as mock_load:
-        mock_load.return_value = (cfg, {"version": version})
+        mock_load.return_value = (cfg, {"version": version}, {})
         config_cache.get_cached_config(doc_id)
 
 
@@ -108,7 +108,7 @@ def test_firestore_config_applied(mock_load):
         description="Custom description",
         generate_content_config={"temperature": 0.3, "max_output_tokens": 2048},
     )
-    mock_load.return_value = (mock_config, {"version": "v2.0"})
+    mock_load.return_value = (mock_config, {"version": "v2.0"}, {})
 
     agent = create_ken_e_agent()
 
@@ -132,7 +132,7 @@ def test_firestore_fallback_on_failure(mock_load):
 
     agent = create_ken_e_agent()
 
-    assert agent.model == "gemini-2.0-flash"
+    assert agent.model == "gemini-2.5-pro"
     assert agent.description == ""
     assert callable(agent.instruction)
 
@@ -150,10 +150,10 @@ def test_instruction_provider_uses_cached_firestore_instruction(mock_load):
     custom_instruction = "You are a custom KEN-E agent."
     mock_config = LlmAgentConfig(
         name="ken_e_chatbot",
-        model="gemini-2.0-flash",
+        model="gemini-2.5-pro",
         instruction=custom_instruction,
     )
-    mock_load.return_value = (mock_config, {"version": "v1.1"})
+    mock_load.return_value = (mock_config, {"version": "v1.1"}, {})
 
     agent = create_ken_e_agent()
 
@@ -176,10 +176,10 @@ def test_instruction_update_reflects_within_ttl(mock_load):
     the next turn after the cache entry expires."""
     initial = LlmAgentConfig(
         name="ken_e_chatbot",
-        model="gemini-2.0-flash",
+        model="gemini-2.5-pro",
         instruction="version one instruction",
     )
-    mock_load.return_value = (initial, {"version": "v1.0"})
+    mock_load.return_value = (initial, {"version": "v1.0"}, {})
 
     agent = create_ken_e_agent()
 
@@ -205,7 +205,7 @@ def test_agent_name_stays_ken_e(mock_load):
         model="gemini-2.5-flash",
         instruction="Some instruction",
     )
-    mock_load.return_value = (mock_config, {"version": "v1.0"})
+    mock_load.return_value = (mock_config, {"version": "v1.0"}, {})
 
     agent = create_ken_e_agent()
     assert agent.name == "ken_e"
@@ -236,10 +236,10 @@ class TestMakeInstructionProvider:
 
     def _seed(self, doc_id: str, instruction: str) -> None:
         cfg = LlmAgentConfig(
-            name=doc_id, model="gemini-2.0-flash", instruction=instruction
+            name=doc_id, model="gemini-2.5-pro", instruction=instruction
         )
         with patch.object(config_cache, "load_config_from_firestore") as mock_load:
-            mock_load.return_value = (cfg, {"version": "v1.0"})
+            mock_load.return_value = (cfg, {"version": "v1.0"}, {})
             config_cache.get_cached_config(doc_id)
 
     def test_reads_cached_instruction_each_turn(self):

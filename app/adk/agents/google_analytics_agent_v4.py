@@ -150,7 +150,7 @@ def create_google_analytics_agent(config_doc_id: str = "google_analytics_agent")
     """
     # Load configuration from Firestore with fallback to hardcoded values
     try:
-        config, metadata = load_config_from_firestore(config_doc_id)
+        config, metadata, _ = load_config_from_firestore(config_doc_id)
         model = config.model
         instruction = config.instruction or GA_AGENT_INSTRUCTION
         description = config.description or ""
@@ -164,7 +164,7 @@ def create_google_analytics_agent(config_doc_id: str = "google_analytics_agent")
             f"Failed to load GA agent config from Firestore ({config_doc_id}): {e}. "
             f"Falling back to hardcoded defaults"
         )
-        model = "gemini-2.0-flash"
+        model = "gemini-2.5-pro"
         instruction = GA_AGENT_INSTRUCTION
         description = ""
         generate_content_config = None

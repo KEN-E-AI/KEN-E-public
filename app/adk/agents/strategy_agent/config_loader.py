@@ -55,20 +55,26 @@ def _weave_op(func: Callable) -> Callable:
 @_weave_op
 def load_config_from_firestore(
     doc_id: str, project_id: str = "ken-e-dev"
-) -> tuple[LlmAgentConfig, dict[str, Any]]:
+) -> tuple[LlmAgentConfig, dict[str, Any], dict[str, Any]]:
     """
     Load agent configuration from Firestore.
 
     This function fetches the configuration document from Firestore,
-    parses it into an LlmAgentConfig, and returns both the config
-    and metadata for Weave tracing.
+    parses it into an LlmAgentConfig, and returns the config, the
+    Firestore-stored metadata, and any KEN-E-specific top-level
+    extension fields that aren't part of the ADK schema.
 
     Args:
         doc_id: Document ID in agent_configs collection
         project_id: GCP project ID
 
     Returns:
-        Tuple of (LlmAgentConfig, metadata_dict)
+        Tuple of (LlmAgentConfig, metadata_dict, extensions_dict).
+        ``extensions_dict`` holds top-level Firestore fields that are
+        neither part of ``LlmAgentConfig`` nor the ``metadata`` block —
+        e.g. ``deployment_status``. The ADK schema rejects unknown
+        fields under ``extra='forbid'``, so they are stripped here and
+        surfaced via this third return for KEN-E callers.
 
     Raises:
         ConfigNotFoundError: If document doesn't exist
@@ -111,8 +117,19 @@ def load_config_from_firestore(
                 f"Falling back to {DEFAULT_VERSION}. Fix the version in Firestore."
             )
 
-        # Remove metadata from config data (not needed for LlmAgentConfig)
-        config_dict = {k: v for k, v in config_data.items() if k != "metadata"}
+        # Split top-level fields into ADK-known config fields and
+        # KEN-E extension fields. ``LlmAgentConfig`` runs with
+        # ``extra='forbid'``, so anything outside its schema must be
+        # filtered out before validation. Allowlisting (rather than
+        # denylisting just ``metadata``) keeps the loader resilient as
+        # KEN-E adds further admin/orchestration fields to the doc.
+        allowed_keys = set(LlmAgentConfig.model_fields.keys())
+        config_dict = {k: v for k, v in config_data.items() if k in allowed_keys}
+        extensions = {
+            k: v
+            for k, v in config_data.items()
+            if k not in allowed_keys and k != "metadata"
+        }
 
         # Parse into LlmAgentConfig
         try:
@@ -139,7 +156,7 @@ def load_config_from_firestore(
             except Exception:
                 pass  # Silently continue if Weave not initialized
 
-        return config, metadata
+        return config, metadata, extensions
 
     except (ConfigNotFoundError, ConfigValidationError):
         # Re-raise our custom exceptions
@@ -183,7 +200,7 @@ def create_agent_from_firestore_config(
         project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
 
     # Load config from Firestore
-    config, metadata = load_config_from_firestore(doc_id, project_id)
+    config, metadata, _ = load_config_from_firestore(doc_id, project_id)
 
     logger.info(
         f"Creating agent from Firestore config: {doc_id} "

@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 # KEN-E Chatbot configuration
 KEN_E_CHATBOT_CONFIG = {
     "name": "ken_e_chatbot",
-    "model": "gemini-2.0-flash",
+    "model": "gemini-2.5-pro",
     "description": "KEN-E chat agent for company news and Google Analytics queries",
     "instruction": """You are KEN-E, an intelligent AI assistant specializing in business intelligence and analytics.
 

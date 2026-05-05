@@ -148,7 +148,7 @@ def create_main_agent(config_doc_id: str = "company_news_agent"):
     try:
         from app.adk.agents.strategy_agent.config_loader import load_config_from_firestore
 
-        config, metadata = load_config_from_firestore(config_doc_id)
+        config, metadata, _ = load_config_from_firestore(config_doc_id)
         model = config.model
         instruction = config.instruction or NEWS_AGENT_INSTRUCTION
         description = config.description or ""
@@ -162,7 +162,7 @@ def create_main_agent(config_doc_id: str = "company_news_agent"):
             f"Failed to load News agent config from Firestore ({config_doc_id}): {e}. "
             f"Falling back to hardcoded defaults"
         )
-        model = "gemini-2.0-flash"
+        model = "gemini-2.5-pro"
         instruction = NEWS_AGENT_INSTRUCTION
         description = ""
         generate_content_config = None

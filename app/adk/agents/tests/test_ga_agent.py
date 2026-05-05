@@ -22,7 +22,7 @@ def test_ga_agent_firestore_config_applied(mock_load):
         description="Custom GA description",
         generate_content_config={"temperature": 0.5, "max_output_tokens": 8192},
     )
-    mock_load.return_value = (mock_config, {"version": "v2.0"})
+    mock_load.return_value = (mock_config, {"version": "v2.0"}, {})
 
     agent = create_google_analytics_agent()
 
@@ -41,7 +41,7 @@ def test_ga_agent_fallback_on_failure(mock_load):
     agent = create_google_analytics_agent()
 
     assert agent.name == "google_analytics_agent_v4"
-    assert agent.model == "gemini-2.0-flash"
+    assert agent.model == "gemini-2.5-pro"
     assert agent.instruction == GA_AGENT_INSTRUCTION
     assert agent.description == ""
 
@@ -54,7 +54,7 @@ def test_ga_agent_uses_fallback_instruction_when_config_instruction_empty(mock_l
         model="gemini-2.5-flash",
         instruction="",
     )
-    mock_load.return_value = (mock_config, {"version": "v1.0"})
+    mock_load.return_value = (mock_config, {"version": "v1.0"}, {})
 
     agent = create_google_analytics_agent()
 

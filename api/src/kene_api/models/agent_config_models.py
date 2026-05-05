@@ -29,9 +29,8 @@ SUPPORTED_MODELS: frozenset[str] = frozenset(
         # Gemini 3 models (latest, preview)
         "gemini-3-flash-preview",
         "gemini-3-pro-preview",
-        # Gemini 2.x models (current stable)
-        "gemini-2.0-flash",
-        "gemini-2.0-flash-exp",
+        # Gemini 2.5 models (current stable). 2.0-flash and 2.0-flash-exp
+        # were retired upstream and are intentionally not listed here.
         "gemini-2.5-flash",
         "gemini-2.5-pro",
         # Gemini 1.5 models (stable fallback)

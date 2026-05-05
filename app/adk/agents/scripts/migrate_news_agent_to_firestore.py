@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 NEWS_AGENT_CONFIG = {
     "name": "company_news_agent",
-    "model": "gemini-2.0-flash",
+    "model": "gemini-2.5-pro",
     "description": "Company news assistant with curated news database access",
     "instruction": """You are a company news assistant with access to curated news databases.
 
