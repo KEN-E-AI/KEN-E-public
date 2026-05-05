@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import { BrowserRouter } from "react-router-dom";
+import userEvent from "@testing-library/user-event";
+import { BrowserRouter, MemoryRouter, Routes, Route } from "react-router-dom";
 import { vi } from "vitest";
 import AccountSettings from "./AccountSettings";
 import { useAuth } from "@/contexts/AuthContext";
@@ -197,5 +198,73 @@ describe("AccountSettings", () => {
     expect(
       screen.getByRole("tab", { name: /subscription/i }),
     ).toBeInTheDocument();
+  });
+});
+
+// ─── Responsive class structure ───────────────────────────────────────────────
+// Locks the responsive integrations card grid in AccountSettings (org-settings path).
+// Figma-export reference: docs/figma-export/src/app/pages/OrganizationSettingsPage.tsx
+
+describe("AccountSettings — Responsive class structure", () => {
+  const orgUser = {
+    id: "test-user-123",
+    email: "test@example.com",
+    firstName: "Test",
+    lastName: "User",
+    permissions: {
+      organizations: { "ej-enterprises-2": "admin" },
+    },
+  };
+
+  const orgData = {
+    organization_id: "ej-enterprises-2",
+    organization_name: "EJ Enterprises 2",
+    plan: "Free",
+    company_size: "11-50",
+    agency: false,
+    child_organizations: [],
+    accounts: [],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUseAuth.mockReturnValue({
+      user: orgUser,
+      isAuthenticated: true,
+      currentOrganizationId: "ej-enterprises-2",
+      orgMetadata: { "ej-enterprises-2": orgData },
+      setOrgMetadata: vi.fn(),
+      setCurrentOrganization: vi.fn(),
+      setSelectedOrgAccount: vi.fn(),
+      completeWorkspaceSelection: vi.fn(),
+      updateUser: vi.fn(),
+      setAccountMetadata: vi.fn(),
+      isSuperAdmin: false,
+    });
+  });
+
+  it("integrations card grid uses grid-cols-1 md:grid-cols-2 lg:grid-cols-3 for responsive reflow", async () => {
+    const user = userEvent.setup();
+    // Route must be registered so useParams returns accountId correctly
+    const { container } = render(
+      <MemoryRouter initialEntries={["/settings/account/acc_123"]}>
+        <Routes>
+          <Route
+            path="/settings/account/:accountId"
+            element={<AccountSettings />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await user.click(screen.getByRole("tab", { name: /Integrations/i }));
+
+    await waitFor(() => {
+      const grid = container.querySelector(".grid-cols-1");
+      expect(grid).toBeInTheDocument();
+      expect(grid).toHaveClass("md:grid-cols-2");
+      expect(grid).toHaveClass("lg:grid-cols-3");
+      expect(grid).toHaveClass("gap-4");
+    });
   });
 });

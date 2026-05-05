@@ -47,7 +47,7 @@
   /* --- Text --- */
   --color-text-primary: #1e293b;
   --color-text-secondary: #475569;
-  --color-text-tertiary: #94a3b8;
+  --color-text-tertiary: #64748b; /* WCAG AA fix: #94a3b8 was 2.47:1 on #fafbfc; #64748b gives 4.57:1 (deviates from Figma export — required for compliance) */
   --color-text-disabled: #cbd5e1;
   --color-text-inverse: #ffffff;
 
