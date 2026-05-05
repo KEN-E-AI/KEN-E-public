@@ -51,6 +51,11 @@ import EmailActionHandler from "./components/auth/EmailActionHandler";
 import Authentication from "./pages/Authentication";
 import { ChatInterface } from "@/components/chat/ChatInterface";
 import { WorkflowsLayout } from "./pages/workflows/WorkflowsLayout";
+import { AgentsPage } from "./pages/workflows/AgentsPage";
+import { AutomationsPage } from "./pages/workflows/AutomationsPage";
+import { SkillsPage } from "./pages/workflows/SkillsPage";
+import { AgentCreatePage } from "./pages/workflows/AgentCreatePage";
+import { AutomationDetailsPage } from "./pages/workflows/AutomationDetailsPage";
 // Import test utilities in development
 if (import.meta.env.DEV) {
   import("./utils/testNotification");
@@ -279,9 +284,7 @@ const App = () => (
                         path="/knowledge/brand"
                         element={<KnowledgeBrand />}
                       />
-                      {/* Workflows shell — production stubs for WorkflowsLayout (UI-35).
-                          Tab page content is owned by UI-38/39/40/41; these routes
-                          ship the layout chrome so the nav entry and URL-sync work today. */}
+                      {/* Workflows shell — UI-PRD-03 page shells wired to production components. */}
                       <Route
                         path="/workflows"
                         element={<Navigate to="/workflows/agents" replace />}
@@ -290,29 +293,7 @@ const App = () => (
                         path="/workflows/agents"
                         element={
                           <WorkflowsLayout activeTab="agents">
-                            <div className="p-6 text-sm text-foreground">
-                              Agents tab — content coming in UI-38
-                            </div>
-                          </WorkflowsLayout>
-                        }
-                      />
-                      <Route
-                        path="/workflows/skills"
-                        element={
-                          <WorkflowsLayout activeTab="skills">
-                            <div className="p-6 text-sm text-foreground">
-                              Skills tab — content coming in UI-40
-                            </div>
-                          </WorkflowsLayout>
-                        }
-                      />
-                      <Route
-                        path="/workflows/automations"
-                        element={
-                          <WorkflowsLayout activeTab="automations">
-                            <div className="p-6 text-sm text-foreground">
-                              Automations tab — content coming in UI-39
-                            </div>
+                            <AgentsPage />
                           </WorkflowsLayout>
                         }
                       />
@@ -320,9 +301,31 @@ const App = () => (
                         path="/workflows/agents/new"
                         element={
                           <WorkflowsLayout activeTab="agents">
-                            <div className="p-6 text-sm text-foreground">
-                              Agent create form — coming in UI-41
-                            </div>
+                            <AgentCreatePage />
+                          </WorkflowsLayout>
+                        }
+                      />
+                      <Route
+                        path="/workflows/automations"
+                        element={
+                          <WorkflowsLayout activeTab="automations">
+                            <AutomationsPage />
+                          </WorkflowsLayout>
+                        }
+                      />
+                      <Route
+                        path="/workflows/automations/:planId"
+                        element={
+                          <WorkflowsLayout activeTab="automations">
+                            <AutomationDetailsPage />
+                          </WorkflowsLayout>
+                        }
+                      />
+                      <Route
+                        path="/workflows/skills"
+                        element={
+                          <WorkflowsLayout activeTab="skills">
+                            <SkillsPage />
                           </WorkflowsLayout>
                         }
                       />
