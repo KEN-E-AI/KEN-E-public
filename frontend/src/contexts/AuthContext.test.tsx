@@ -282,9 +282,10 @@ describe("AuthContext - logout", () => {
     vi.resetAllMocks();
   });
 
-  // TC-A: happy path — signOut is called and local state is cleared
+  // TC-A: happy path — signOut is called with the auth object and local state is cleared
   test("TC-A: logout calls signOut(auth) and clears user state when authInitialized=true", async () => {
     const { signOut } = await import("firebase/auth");
+    const { auth } = await import("@/lib/firebase");
 
     renderWithAuth((ctx) => {
       authContext = ctx;
@@ -295,9 +296,13 @@ describe("AuthContext - logout", () => {
     });
 
     expect(signOut).toHaveBeenCalledTimes(1);
+    expect(signOut).toHaveBeenCalledWith(auth);
     expect(localStorageMock.removeItem).toHaveBeenCalledWith("user");
     expect(localStorageMock.removeItem).toHaveBeenCalledWith(
       "hasSelectedWorkspace",
+    );
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith(
+      "currentOrganizationId",
     );
     expect(localStorageMock.removeItem).toHaveBeenCalledWith(
       "selectedOrgAccount",
@@ -325,6 +330,9 @@ describe("AuthContext - logout", () => {
 
     expect(signOut).not.toHaveBeenCalled();
     expect(localStorageMock.removeItem).toHaveBeenCalledWith("user");
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith(
+      "currentOrganizationId",
+    );
   });
 
   // TC-C: failure path — signOut rejects; toast.error is shown; local state is still cleared
@@ -353,6 +361,9 @@ describe("AuthContext - logout", () => {
     );
     expect(toast.error).toHaveBeenCalledTimes(1);
     expect(localStorageMock.removeItem).toHaveBeenCalledWith("user");
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith(
+      "currentOrganizationId",
+    );
 
     consoleSpy.mockRestore();
   });

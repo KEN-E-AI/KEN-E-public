@@ -247,11 +247,13 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
     setUser(null);
     setHasSelectedWorkspace(false);
+    setCurrentOrganizationId(null);
     setSelectedOrgAccountState(null);
     setOrgMetadataState({});
     setAccountMetadataState({});
     localStorage.removeItem("user");
     localStorage.removeItem("hasSelectedWorkspace");
+    localStorage.removeItem("currentOrganizationId");
     localStorage.removeItem("selectedOrgAccount");
     localStorage.removeItem("orgMetadata");
     localStorage.removeItem("accountMetadata");
