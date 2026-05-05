@@ -451,6 +451,12 @@ describe("dark-mode parity — CreateOrganization", () => {
 });
 
 describe("dark-mode parity — Workflows: Agents", () => {
+  beforeEach(() => {
+    vi.mocked(useAuth).mockReturnValue(
+      baseAuthValue as ReturnType<typeof useAuth>,
+    );
+  });
+
   it.each(themes)(
     "has no axe violations in $theme mode",
     async ({ isDark }) => {
@@ -470,6 +476,12 @@ describe("dark-mode parity — Workflows: Agents", () => {
 });
 
 describe("dark-mode parity — Workflows: Automations", () => {
+  beforeEach(() => {
+    vi.mocked(useAuth).mockReturnValue(
+      baseAuthValue as ReturnType<typeof useAuth>,
+    );
+  });
+
   it.each(themes)(
     "has no axe violations in $theme mode",
     async ({ isDark }) => {
@@ -489,6 +501,12 @@ describe("dark-mode parity — Workflows: Automations", () => {
 });
 
 describe("dark-mode parity — Workflows: Skills", () => {
+  beforeEach(() => {
+    vi.mocked(useAuth).mockReturnValue(
+      baseAuthValue as ReturnType<typeof useAuth>,
+    );
+  });
+
   it.each(themes)(
     "has no axe violations in $theme mode",
     async ({ isDark }) => {
@@ -508,6 +526,12 @@ describe("dark-mode parity — Workflows: Skills", () => {
 });
 
 describe("dark-mode parity — Workflows: Agent Create", () => {
+  beforeEach(() => {
+    vi.mocked(useAuth).mockReturnValue(
+      baseAuthValue as ReturnType<typeof useAuth>,
+    );
+  });
+
   it.each(themes)(
     "has no axe violations in $theme mode",
     async ({ isDark }) => {
@@ -526,6 +550,12 @@ describe("dark-mode parity — Workflows: Agent Create", () => {
 });
 
 describe("dark-mode parity — Workflows: Automation Details", () => {
+  beforeEach(() => {
+    vi.mocked(useAuth).mockReturnValue(
+      baseAuthValue as ReturnType<typeof useAuth>,
+    );
+  });
+
   it.each(themes)(
     "has no axe violations in $theme mode",
     async ({ isDark }) => {
