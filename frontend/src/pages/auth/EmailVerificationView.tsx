@@ -110,7 +110,7 @@ export function EmailVerificationView({
                 Didn't receive the email? Check your spam folder or{" "}
                 <a
                   href="mailto:support@ken-e.com"
-                  className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)]"
+                  className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] underline"
                 >
                   contact support
                 </a>
