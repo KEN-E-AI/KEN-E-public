@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import axios from "axios";
+import api from "@/lib/api";
 import { useNavigate, Navigate } from "react-router-dom";
 import { Check, Plus, ArrowRight, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Logo } from "@/components/branding/Logo";
 import { cn } from "@/lib/utils";
-import type { OrganizationId, AccountId } from "@/lib/branded-types";
+import type { OrganizationId } from "@/lib/branded-types";
 import { useAuth } from "@/contexts/AuthContext";
 import { getOrganizationsBatch } from "@/data/organizationApi";
 import {
@@ -18,6 +18,8 @@ import {
 import { WORKSPACE_SELECTION_DELAY } from "@/constants/organizationSelection";
 import { useChildOrganizations } from "@/hooks/useChildOrganizations";
 import { useAvailableAccounts } from "@/hooks/useAvailableAccounts";
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 export default function SelectOrganizationPage() {
   const navigate = useNavigate();
@@ -33,23 +35,30 @@ export default function SelectOrganizationPage() {
     isAuthLoading,
     hasSelectedWorkspace,
   } = useAuth();
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
   const [selectedOrganization, setSelectedOrganization] = useState<string>("");
   const [selectedAccount, setSelectedAccount] = useState<string>("");
   const [selectedChildOrg, setSelectedChildOrg] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
-  const [orgsFromFirestore, setOrgsFromFirestore] = useState<Record<string, string>>({});
+  const [orgsFromFirestore, setOrgsFromFirestore] = useState<
+    Record<string, string>
+  >({});
   const [loadingUserData, setLoadingUserData] = useState(true);
-  const [localOrgMetadata, setLocalOrgMetadata] = useState<Record<string, any>>({});
+  const [localOrgMetadata, setLocalOrgMetadata] = useState<Record<string, any>>(
+    {},
+  );
   const [searchQuery, setSearchQuery] = useState("");
 
   // Race-condition guard refs (verbatim from legacy)
   const lastRefreshTime = useRef<number>(0);
   const isFetchingRef = useRef<boolean>(false);
   const lastOrgKeysRef = useRef<string>("");
+  const continueTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
-  const { childOrganizations, clearChildOrganizations } = useChildOrganizations();
+  useEffect(() => () => clearTimeout(continueTimerRef.current), []);
+
+  const { childOrganizations, clearChildOrganizations } =
+    useChildOrganizations();
 
   // User-data fetch effect
   useEffect(() => {
@@ -64,8 +73,8 @@ export default function SelectOrganizationPage() {
           return;
         }
         // Regular users: fetch from Firestore permissions
-        const res = await axios.get(
-          `${API_BASE_URL}/api/v1/firestore/documents/users/${FIRESTORE_USER_ID}`,
+        const res = await api.get(
+          `/api/v1/firestore/documents/users/${FIRESTORE_USER_ID}`,
         );
         const { data } = res.data;
         setOrgsFromFirestore(data.permissions.organizations || {});
@@ -77,7 +86,7 @@ export default function SelectOrganizationPage() {
     };
 
     fetchUserData();
-  }, [user?.id, isSuperAdmin, API_BASE_URL]);
+  }, [user?.id, isSuperAdmin]);
 
   // Org metadata fetch helpers (defined before the effect that calls them)
   const fetchOrgMetadata = async () => {
@@ -128,10 +137,16 @@ export default function SelectOrganizationPage() {
     if (Object.keys(orgsFromFirestore).length === 0) return;
 
     const now = Date.now();
-    const currentOrgKeys = JSON.stringify(Object.keys(orgsFromFirestore).sort());
+    const currentOrgKeys = JSON.stringify(
+      Object.keys(orgsFromFirestore).sort(),
+    );
 
     if (isFetchingRef.current) return;
-    if (now - lastRefreshTime.current < 5000 && currentOrgKeys === lastOrgKeysRef.current) return;
+    if (
+      now - lastRefreshTime.current < 5000 &&
+      currentOrgKeys === lastOrgKeysRef.current
+    )
+      return;
 
     isFetchingRef.current = true;
     lastRefreshTime.current = now;
@@ -158,7 +173,8 @@ export default function SelectOrganizationPage() {
       const metadata = localOrgMetadata[orgId] || {};
       return {
         organization_id: orgId,
-        organization_name: metadata.organization_name || orgId.replace(/-/g, " "),
+        organization_name:
+          metadata.organization_name || orgId.replace(/-/g, " "),
         permission,
         error: metadata.error || false,
         ...metadata,
@@ -170,7 +186,9 @@ export default function SelectOrganizationPage() {
   const filteredOrganizationList =
     shouldShowSearch && searchQuery
       ? organizationList.filter((org) =>
-          org.organization_name.toLowerCase().includes(searchQuery.toLowerCase()),
+          org.organization_name
+            .toLowerCase()
+            .includes(searchQuery.toLowerCase()),
         )
       : organizationList;
 
@@ -185,7 +203,8 @@ export default function SelectOrganizationPage() {
     return orgAccounts
       .map((account) => ({
         account_id: account.account_id,
-        account_name: account.account_name || account.account_id.replace(/-/g, " "),
+        account_name:
+          account.account_name || account.account_id.replace(/-/g, " "),
         industry: account.industry || "Unknown",
         status: account.status || "Active",
         permission: orgsFromFirestore[orgId],
@@ -215,7 +234,7 @@ export default function SelectOrganizationPage() {
   const handleContinue = () => {
     if (!selectedOrganization || !selectedAccount) return;
     setIsLoading(true);
-    setTimeout(() => {
+    continueTimerRef.current = setTimeout(() => {
       const resolution = resolveOrganizationAndAccount(
         selectedOrganization,
         selectedAccount,
@@ -282,7 +301,7 @@ export default function SelectOrganizationPage() {
     return <Navigate to="/" replace />;
   }
 
-  const isDataLoading = loadingUserData || Object.keys(localOrgMetadata).length === 0;
+  const isDataLoading = loadingUserData;
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
@@ -352,8 +371,12 @@ export default function SelectOrganizationPage() {
                       key={org.organization_id}
                       role="button"
                       tabIndex={0}
-                      aria-pressed={selectedOrganization === org.organization_id}
-                      onClick={() => handleOrganizationSelect(org.organization_id)}
+                      aria-pressed={
+                        selectedOrganization === org.organization_id
+                      }
+                      onClick={() =>
+                        handleOrganizationSelect(org.organization_id)
+                      }
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
@@ -471,7 +494,9 @@ export default function SelectOrganizationPage() {
                   disabled={!selectedOrganization}
                   onClick={() => {
                     if (!selectedOrganization) return;
-                    setCurrentOrganization(selectedOrganization as OrganizationId);
+                    setCurrentOrganization(
+                      selectedOrganization as OrganizationId,
+                    );
                     completeWorkspaceSelection();
                     navigate("/settings/organization?openCreateAccount=true");
                   }}

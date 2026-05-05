@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -22,7 +22,7 @@ vi.mock("@/data/organizationApi", () => ({
     mockGetOrganizationsBatch(...args),
 }));
 
-vi.mock("axios", () => ({
+vi.mock("@/lib/api", () => ({
   default: { get: (...args: unknown[]) => mockAxiosGet(...args) },
 }));
 
@@ -135,7 +135,10 @@ function renderPage() {
           path="/create-organization"
           element={<div>CREATE_ORG_SENTINEL</div>}
         />
-        <Route path="/select-organization" element={<SelectOrganizationPage />} />
+        <Route
+          path="/select-organization"
+          element={<SelectOrganizationPage />}
+        />
       </Routes>
     </MemoryRouter>,
   );
@@ -145,6 +148,10 @@ function renderPage() {
 // Tests
 // ---------------------------------------------------------------------------
 describe("SelectOrganizationPage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   afterEach(() => {
     vi.useRealTimers();
   });
@@ -238,9 +245,12 @@ describe("SelectOrganizationPage", () => {
     vi.useRealTimers();
 
     expect(setSelectedOrgAccount).toHaveBeenCalledWith(
-      expect.objectContaining({ orgId: expect.any(String), accountId: "acc-1" }),
+      expect.objectContaining({
+        orgId: "org-1",
+        accountId: "acc-1",
+      }),
     );
-    expect(setCurrentOrganization).toHaveBeenCalled();
+    expect(setCurrentOrganization).toHaveBeenCalledWith("org-1");
     expect(completeWorkspaceSelection).toHaveBeenCalled();
     expect(mockNavigate).toHaveBeenCalledWith("/");
   });
@@ -285,9 +295,10 @@ describe("SelectOrganizationPage", () => {
     expect(completeWorkspaceSelection).toHaveBeenCalled();
     expect(mockNavigate).toHaveBeenCalledWith("/settings/organization");
     // The org row should NOT be "pressed" (gear click stops propagation)
-    expect(
-      screen.getByRole("button", { name: /acme corp/i }),
-    ).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: /acme corp/i })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
   });
 
   // TC-6: "+ Create new organization" CTA
@@ -392,9 +403,7 @@ describe("SelectOrganizationPage", () => {
     );
     mockGetOrganizationsBatch.mockResolvedValue(makeOrgBatchResponse(sixOrgs));
     renderPage();
-    await waitFor(() =>
-      expect(screen.getByText("Org 0")).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText("Org 0")).toBeInTheDocument());
     expect(
       screen.getByPlaceholderText(/search organizations/i),
     ).toBeInTheDocument();
