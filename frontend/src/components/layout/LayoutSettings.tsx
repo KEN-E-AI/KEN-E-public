@@ -146,7 +146,7 @@ export function LayoutSettings({ subNavItems, children }: LayoutSettingsProps) {
                     "flex items-center px-3 py-2 rounded-[var(--radius-md)] text-[var(--text-body-sm)] font-bold whitespace-nowrap transition-colors",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-violet-500)] focus-visible:ring-offset-2",
                     isActive
-                      ? "bg-[var(--color-violet-100)] text-[var(--color-violet-500)] dark:bg-[var(--color-violet-500)]/10"
+                      ? "bg-[var(--color-violet-100)] text-[var(--color-violet-600)] dark:bg-[var(--color-violet-500)]/10 dark:text-[var(--color-violet-600)]"
                       : "text-[var(--color-text-secondary)] hover:bg-accent hover:text-[var(--color-violet-500)]",
                   )}
                 >

@@ -104,7 +104,7 @@ api.interceptors.response.use(
       } catch (refreshError) {
         console.error("Token refresh failed:", refreshError);
         // Redirect to login if token refresh fails
-        window.location.href = "/login";
+        window.location.href = "/sign-in";
       }
     }
 

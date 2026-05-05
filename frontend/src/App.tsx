@@ -22,6 +22,11 @@ import { AppErrorBoundary } from "@/components/layout/AppErrorBoundary";
 import "./App.css";
 
 import { LayoutC } from "@/components/layout/LayoutC";
+import {
+  LayoutSettings,
+  type SettingsNavRow,
+  type SettingsNavRowId,
+} from "@/components/layout/LayoutSettings";
 import Index from "./pages/Index";
 import Home from "./pages/Home";
 import Performance from "./pages/Performance";
@@ -52,6 +57,30 @@ import AcceptInvitation from "./pages/AcceptInvitation";
 import NotFoundPage from "./pages/NotFoundPage";
 import EmailActionHandler from "./components/auth/EmailActionHandler";
 import Authentication from "./pages/Authentication";
+
+// Settings sub-nav seed — Organization (10), Account (20), User (30).
+// UI-28 will replace this inline array with SETTINGS_NAV_REGISTRY.
+const SETTINGS_NAV_ITEMS: SettingsNavRow[] = [
+  {
+    id: "organization" as SettingsNavRowId,
+    label: "Organization",
+    path: "/settings/organization",
+    order: 10,
+  },
+  {
+    id: "account" as SettingsNavRowId,
+    label: "Account",
+    path: "/settings/account",
+    order: 20,
+  },
+  {
+    id: "user" as SettingsNavRowId,
+    label: "User",
+    path: "/settings/user",
+    order: 30,
+  },
+];
+
 // Import test utilities in development
 if (import.meta.env.DEV) {
   import("./utils/testNotification");
@@ -81,7 +110,7 @@ const queryClient = new QueryClient();
 const OrganizationSelectionPage = () => {
   const navigate = useNavigate();
 
-  return <OrganizationSelection onComplete={() => navigate("/")} />;
+  return <OrganizationSelection onComplete={() => navigate("/chat")} />;
 };
 
 // Wrapper component for Authentication with navigation
@@ -163,6 +192,9 @@ const App = () => (
                       path="/auth/signup"
                       element={<AuthenticationPage />}
                     />
+                    {/* Canonical auth routes (UI-PRD-02) */}
+                    <Route path="/sign-in" element={<AuthenticationPage />} />
+                    <Route path="/sign-up" element={<AuthenticationPage />} />
                     <Route
                       path="/create-organization"
                       element={<AccountSettings />}
@@ -175,14 +207,21 @@ const App = () => (
                       path="/auth/action"
                       element={<EmailActionHandler />}
                     />
+                    {/* Top-level redirects — outside layouts so no chrome mounts before the
+                        redirect fires. Destinations inside ProtectedRoute handle auth gating. */}
+                    <Route path="/" element={<Navigate to="/chat" replace />} />
+                    <Route
+                      path="/settings"
+                      element={<Navigate to="/settings/organization" replace />}
+                    />
                     {/* Backward compatibility redirects */}
                     <Route
                       path="/login"
-                      element={<Navigate to="/auth/signin" replace />}
+                      element={<Navigate to="/sign-in" replace />}
                     />
                     <Route
                       path="/signup"
-                      element={<Navigate to="/auth/signup" replace />}
+                      element={<Navigate to="/sign-up" replace />}
                     />
                     <Route
                       path="/organization-settings"
@@ -196,6 +235,30 @@ const App = () => (
                       path="/user-settings"
                       element={<Navigate to="/settings/user" replace />}
                     />
+                    {/* Settings routes — wrapped in LayoutSettings with sub-nav.
+                        UI-28 will replace SETTINGS_NAV_ITEMS with SETTINGS_NAV_REGISTRY.
+                        ProtectedRoute uses the children-render pattern (pre-UI-23): it renders
+                        children (LayoutSettings) only when authenticated. LayoutSettings then
+                        renders <Outlet /> for its child routes. When UI-23 converts ProtectedRoute
+                        to the outlet pattern, move it to a path-less parent route and remove the
+                        children wrapper here. */}
+                    <Route
+                      element={
+                        <ProtectedRoute>
+                          <LayoutSettings subNavItems={SETTINGS_NAV_ITEMS} />
+                        </ProtectedRoute>
+                      }
+                    >
+                      <Route
+                        path="/settings/organization"
+                        element={<AccountSettings />}
+                      />
+                      <Route
+                        path="/settings/account/:accountId"
+                        element={<AccountSettings />}
+                      />
+                      <Route path="/settings/user" element={<UserSettings />} />
+                    </Route>
                     {/* Protected routes — nested under LayoutC. ProtectedRoute
                         is hoisted to the parent so child routes don't repeat it. */}
                     <Route
@@ -205,7 +268,7 @@ const App = () => (
                         </ProtectedRoute>
                       }
                     >
-                      <Route path="/" element={<Home />} />
+                      <Route path="/chat" element={<Home />} />
                       <Route path="/performance" element={<Performance />} />
                       <Route
                         path="/recommendations"
@@ -256,16 +319,6 @@ const App = () => (
                         path="/analysis-report/:reportId"
                         element={<AnalysisReport />}
                       />
-                      <Route path="/settings" element={<Settings />} />
-                      <Route
-                        path="/settings/organization"
-                        element={<AccountSettings />}
-                      />
-                      <Route
-                        path="/settings/account/:accountId"
-                        element={<AccountSettings />}
-                      />
-                      <Route path="/settings/user" element={<UserSettings />} />
                       <Route
                         path="/settings/admin"
                         element={<AdminSettings />}

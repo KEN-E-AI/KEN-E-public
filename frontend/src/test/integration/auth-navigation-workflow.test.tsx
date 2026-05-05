@@ -131,6 +131,8 @@ const TestApp = ({
       <MemoryRouter initialEntries={initialEntries}>
         <AuthContext.Provider value={authContext}>
           <Routes>
+            <Route path="/sign-in" element={<Authentication />} />
+            <Route path="/sign-up" element={<Authentication />} />
             <Route path="/login" element={<Authentication />} />
             <Route path="/signup" element={<Authentication />} />
             <Route
@@ -224,9 +226,9 @@ describe("Authentication and Navigation Workflow Integration Tests", () => {
 
       render(<TestApp authContext={unauthenticatedContext} />);
 
-      // Should redirect to login page
+      // Should redirect to sign-in page
       await waitFor(() => {
-        expect(window.location.pathname).toBe("/login");
+        expect(window.location.pathname).toBe("/sign-in");
       });
     });
 
@@ -565,7 +567,7 @@ describe("Authentication and Navigation Workflow Integration Tests", () => {
 
       // Should handle authentication errors gracefully
       await waitFor(() => {
-        expect(window.location.pathname).toBe("/login");
+        expect(window.location.pathname).toBe("/sign-in");
       });
     });
 

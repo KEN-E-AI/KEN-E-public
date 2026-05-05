@@ -106,7 +106,7 @@ function LayoutCInner() {
     (row) => row.isVisible !== false,
   ).sort((a, b) => a.order - b.order);
 
-  const isHome = location.pathname === "/";
+  const isHome = location.pathname === "/chat";
   // Routes that opt out of the max-w-screen-2xl content constraint and render
   // full-bleed. /knowledge/*, /measurement-plan, /strategy, /workflows/automations,
   // and /performance/dashboards/* host wide tables (MetricsConfiguration,

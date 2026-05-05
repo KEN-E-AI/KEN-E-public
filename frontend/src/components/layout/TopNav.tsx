@@ -38,7 +38,7 @@ export interface NavItem {
 }
 
 export const NAVIGATION: readonly NavItem[] = [
-  { name: "Chat", href: "/", icon: MessageSquare },
+  { name: "Chat", href: "/chat", icon: MessageSquare },
   { name: "Performance", href: "/performance", icon: TrendingUp },
   { name: "Calendar", href: "/calendar", icon: Calendar },
   { name: "Workflows", href: "/workflows", icon: Network },
@@ -48,7 +48,7 @@ export const NAVIGATION: readonly NavItem[] = [
 ] as const;
 
 function isItemActive(pathname: string, href: string): boolean {
-  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+  return pathname.startsWith(href);
 }
 
 export function TopNav() {

@@ -182,9 +182,9 @@ const AcceptInvitation = () => {
             <div className="mt-6 text-center">
               <Button
                 variant="outline"
-                onClick={() => navigate(user ? "/" : "/login")}
+                onClick={() => navigate(user ? "/" : "/sign-in")}
               >
-                {user ? "Go to Dashboard" : "Go to Login"}
+                {user ? "Go to Dashboard" : "Go to Sign In"}
               </Button>
             </div>
           </CardContent>
@@ -197,7 +197,10 @@ const AcceptInvitation = () => {
   // This must happen before any conditional returns
   if (!user && token && !error && !isLoading) {
     // Only redirect if we haven't encountered an error and we're not loading
-    navigate(`/auth/signin?invitation=${token}`, { replace: true });
+    navigate("/sign-in", {
+      replace: true,
+      state: { from: `/invite/${token}` },
+    });
     return (
       <div className="min-h-screen bg-gradient-to-br from-brand-light-blue/20 via-white to-slate-50 flex items-center justify-center p-4">
         <Card className="w-full max-w-md shadow-lg border-0 bg-white/80 backdrop-blur-sm">
@@ -241,7 +244,7 @@ const AcceptInvitation = () => {
                 className="flex-1"
                 onClick={() => {
                   logout();
-                  navigate("/login", { state: { from: `/invite/${token}` } });
+                  navigate("/sign-in", { state: { from: `/invite/${token}` } });
                 }}
               >
                 Sign In with Different Account
