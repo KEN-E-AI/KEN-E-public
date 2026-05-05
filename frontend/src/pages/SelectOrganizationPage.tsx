@@ -1,10 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Check, Plus, ArrowRight } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import axios from "axios";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Logo } from "@/components/branding/Logo";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
+import { getOrganizations } from "@/data/organizationApi";
 import type { OrganizationId, AccountId } from "@/lib/branded-types";
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 type PlaceholderOrg = {
   id: OrganizationId;
@@ -37,12 +43,60 @@ export const PLACEHOLDER_ACCOUNTS: PlaceholderAccount[] = [
 ];
 
 export default function SelectOrganizationPage() {
+  const navigate = useNavigate();
+  const { user, isSuperAdmin } = useAuth();
+  const FIRESTORE_USER_ID = user?.id;
+
+  const [orgsFromFirestore, setOrgsFromFirestore] = useState<
+    Record<string, string>
+  >({});
+  const [loadingUserData, setLoadingUserData] = useState(true);
+
   const [selectedOrgId, setSelectedOrgId] = useState<OrganizationId | null>(
     null,
   );
   const [selectedAccountId, setSelectedAccountId] = useState<AccountId | null>(
     null,
   );
+
+  useEffect(() => {
+    if (!FIRESTORE_USER_ID) return;
+
+    const fetchUserData = async () => {
+      try {
+        if (isSuperAdmin) {
+          const allOrgs = await getOrganizations();
+          const superAdminOrgs: Record<string, string> = {};
+          allOrgs.forEach((org) => {
+            superAdminOrgs[org.organization_id] = "admin";
+          });
+          setOrgsFromFirestore(superAdminOrgs);
+        } else {
+          const res = await axios.get(
+            `${API_BASE_URL}/api/v1/firestore/documents/users/${FIRESTORE_USER_ID}`,
+          );
+          const { data } = res.data;
+          setOrgsFromFirestore(data.permissions.organizations || {});
+        }
+      } catch (error) {
+        console.error("Failed to fetch user org/account data", error);
+      } finally {
+        setLoadingUserData(false);
+      }
+    };
+
+    fetchUserData();
+  }, [FIRESTORE_USER_ID, isSuperAdmin]);
+
+  useEffect(() => {
+    if (
+      !loadingUserData &&
+      Object.keys(orgsFromFirestore).length === 0 &&
+      !isSuperAdmin
+    ) {
+      navigate("/create-organization", { replace: true });
+    }
+  }, [loadingUserData, orgsFromFirestore, isSuperAdmin, navigate]);
 
   const visibleAccounts = PLACEHOLDER_ACCOUNTS.filter(
     (a) => a.orgId === selectedOrgId,
@@ -51,6 +105,35 @@ export default function SelectOrganizationPage() {
   function handleOrgSelect(orgId: OrganizationId) {
     setSelectedOrgId(orgId);
     setSelectedAccountId(null);
+  }
+
+  if (loadingUserData) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
+        <div className="flex flex-col items-center gap-4">
+          <div className="animate-logo-float">
+            <Logo size="2xl" variant="icon" />
+          </div>
+          <div className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)]">
+            <div className="w-4 h-4 border-2 border-[var(--color-violet-300)] border-t-[var(--color-violet-600)] rounded-full animate-spin" />
+            Loading your workspace&hellip;
+          </div>
+        </div>
+
+        <style>{`
+          @keyframes logo-float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-12px); }
+          }
+          .animate-logo-float {
+            animation: logo-float 6s ease-in-out infinite;
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .animate-logo-float { animation: none; }
+          }
+        `}</style>
+      </div>
+    );
   }
 
   return (
