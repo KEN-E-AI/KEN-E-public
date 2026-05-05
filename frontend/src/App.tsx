@@ -145,6 +145,10 @@ const App = () => (
                       element={<AuthenticationPage />}
                     />
                     <Route
+                      path="/create-account"
+                      element={<AuthenticationPage />}
+                    />
+                    <Route
                       path="/create-organization"
                       element={<AccountSettings />}
                     />

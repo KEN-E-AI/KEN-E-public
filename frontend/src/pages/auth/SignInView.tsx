@@ -193,7 +193,7 @@ export function SignInView({
               </div>
               <Link
                 to="/forgot-password"
-                className="text-sm text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] transition-colors"
+                className="text-sm text-[var(--color-violet-600)] hover:text-[var(--color-violet-500)] transition-colors"
               >
                 Forgot password?
               </Link>
@@ -201,13 +201,13 @@ export function SignInView({
 
             <Button
               type="submit"
-              className="w-full gap-2 bg-[#F97066] hover:bg-[#e85f55] text-white transition-all duration-200 hover:-translate-y-0.5 hover:rotate-[-1deg]"
+              className="w-full gap-2 bg-[#F97066] hover:bg-[#e85f55] text-[var(--color-text-primary)] transition-all duration-200 hover:-translate-y-0.5 hover:rotate-[-1deg]"
               style={{ boxShadow: "0 4px 12px rgba(249, 112, 102, 0.3)" }}
               disabled={isLoading}
             >
               {isLoading ? (
                 <>
-                  <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <div className="size-4 border-2 border-gray-800/20 border-t-gray-800 rounded-full animate-spin" />
                   Signing in...
                 </>
               ) : (
@@ -221,7 +221,7 @@ export function SignInView({
               Don't have an account?{" "}
               <Link
                 to={createAccountHref}
-                className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] font-medium transition-colors"
+                className="text-[var(--color-violet-600)] hover:text-[var(--color-violet-500)] font-medium transition-colors"
               >
                 Create account
               </Link>
@@ -234,7 +234,7 @@ export function SignInView({
             Need help?{" "}
             <a
               href="mailto:support@ken-e.com"
-              className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] transition-colors"
+              className="text-[var(--color-violet-600)] hover:text-[var(--color-violet-500)] transition-colors"
             >
               Contact Support
             </a>

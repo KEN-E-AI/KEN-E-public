@@ -304,14 +304,14 @@ export function CreateAccountView({
                   I agree to the{" "}
                   <a
                     href="/terms"
-                    className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)]"
+                    className="text-[var(--color-violet-600)] hover:text-[var(--color-violet-500)]"
                   >
                     Terms of Service
                   </a>{" "}
                   and{" "}
                   <a
                     href="/privacy"
-                    className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)]"
+                    className="text-[var(--color-violet-600)] hover:text-[var(--color-violet-500)]"
                   >
                     Privacy Policy
                   </a>
@@ -327,13 +327,13 @@ export function CreateAccountView({
 
             <Button
               type="submit"
-              className="w-full gap-2 bg-[#F97066] hover:bg-[#e85f55] text-white transition-all duration-200 hover:-translate-y-0.5 hover:rotate-[-1deg]"
+              className="w-full gap-2 bg-[#F97066] hover:bg-[#e85f55] text-[var(--color-text-primary)] transition-all duration-200 hover:-translate-y-0.5 hover:rotate-[-1deg]"
               style={{ boxShadow: "0 4px 12px rgba(249, 112, 102, 0.3)" }}
               disabled={isLoading}
             >
               {isLoading ? (
                 <>
-                  <div className="size-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  <div className="size-4 border-2 border-gray-800/20 border-t-gray-800 rounded-full animate-spin" />
                   Creating account...
                 </>
               ) : (
@@ -350,7 +350,7 @@ export function CreateAccountView({
               Already have an account?{" "}
               <Link
                 to={signInHref}
-                className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] font-medium transition-colors"
+                className="text-[var(--color-violet-600)] hover:text-[var(--color-violet-500)] font-medium transition-colors"
               >
                 Sign in
               </Link>
@@ -363,7 +363,7 @@ export function CreateAccountView({
             Need help?{" "}
             <a
               href="mailto:support@ken-e.com"
-              className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] transition-colors"
+              className="text-[var(--color-violet-600)] hover:text-[var(--color-violet-500)] transition-colors"
             >
               Contact Support
             </a>
