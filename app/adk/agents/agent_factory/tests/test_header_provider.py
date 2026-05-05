@@ -245,3 +245,50 @@ class TestMakeHeaderProvider:
         assert CREDENTIAL_KEYS["google_ads_oauth"] == "google_ads_credentials"
         assert CREDENTIAL_KEYS["meta_ads_oauth"] == "meta_ads_credentials"
         assert CREDENTIAL_KEYS["mailchimp_oauth"] == "mailchimp_credentials"
+
+    def test_credential_keys_is_read_only(self) -> None:
+        """CREDENTIAL_KEYS must not be mutatable — prevents auth-type remapping."""
+        import types
+
+        assert isinstance(CREDENTIAL_KEYS, types.MappingProxyType)
+
+    # -----------------------------------------------------------------------
+    # Tests: type safety — non-string credential values
+    # -----------------------------------------------------------------------
+
+    def test_non_string_access_token_omits_authorization_header(self) -> None:
+        """Non-string access_token values must not produce an Authorization header."""
+        provider = _make_header_provider("ga_oauth")
+        for bad_value in [123, {"sub": "val"}, ["tok"], None, True]:
+            ctx = _make_context({"ga_credentials": {"access_token": bad_value, "tenant_id": "t"}})
+            headers = provider(ctx)
+            assert "Authorization" not in headers, f"Expected no Authorization header for {bad_value!r}"
+
+    def test_non_string_tenant_id_omits_x_tenant_id_header(self) -> None:
+        """Non-string tenant_id values must not produce an X-Tenant-ID header."""
+        provider = _make_header_provider("ga_oauth")
+        for bad_value in [123, {"org": "id"}, None]:
+            ctx = _make_context({"ga_credentials": {"access_token": "tok", "tenant_id": bad_value}})
+            headers = provider(ctx)
+            assert "X-Tenant-ID" not in headers, f"Expected no X-Tenant-ID header for {bad_value!r}"
+            assert headers == {"Authorization": "Bearer tok"}
+
+    # -----------------------------------------------------------------------
+    # Tests: CRLF header injection defence
+    # -----------------------------------------------------------------------
+
+    def test_crlf_in_access_token_raises(self) -> None:
+        """CRLF in access_token must raise ValueError to prevent header injection."""
+        provider = _make_header_provider("ga_oauth")
+        for malicious in ["valid\r\nX-Injected: evil", "valid\nX-Injected: evil", "tok\r"]:
+            ctx = _make_context({"ga_credentials": {"access_token": malicious}})
+            with pytest.raises(ValueError, match="illegal header characters"):
+                provider(ctx)
+
+    def test_crlf_in_tenant_id_raises(self) -> None:
+        """CRLF in tenant_id must raise ValueError to prevent header injection."""
+        provider = _make_header_provider("ga_oauth")
+        malicious_tenant = "org-123\r\nX-Tenant-ID: other-org"
+        ctx = _make_context({"ga_credentials": {"access_token": "tok", "tenant_id": malicious_tenant}})
+        with pytest.raises(ValueError, match="illegal header characters"):
+            provider(ctx)
