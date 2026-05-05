@@ -93,6 +93,8 @@ describe("axe sweep — UI primitives", () => {
     expect(await runAxe(container)).toHaveNoViolations();
   });
 
+  // color-contrast is disabled in runAxe (JSDOM cannot resolve CSS vars); dark-mode
+  // contrast for the active state is verified numerically in token-contrast.test.ts.
   it("TabsTrigger: inactive state has no violations", async () => {
     const { container } = render(
       <Tabs defaultValue="b">

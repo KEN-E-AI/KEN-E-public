@@ -22,7 +22,7 @@ The `frontend-a11y-tests` step in `deployment/ci/pr_checks.yaml` runs on every P
 | `src/test/wcag.test.ts` | WCAG 2.1 contrast math unit tests |
 | `src/test/token-contrast.test.ts` | In-use token-pair WCAG AA verification |
 | `src/test/focus-ring-audit.test.ts` | Static `outline-none` / focus-ring audit |
-| `src/test/a11y-primitives.test.tsx` | axe sweeps — Button, Input, Alert, Badge, Card |
+| `src/test/a11y-primitives.test.tsx` | axe sweeps — Button, Input, Alert, Badge, Card, Tabs |
 | `src/test/a11y-shell.test.tsx` | axe sweeps — ThemeToggle, AppErrorBoundary fallback, NotificationBell, SidebarRail |
 | `src/test/keyboard-nav.test.tsx` | Keyboard Tab + Enter/Space activation smoke tests |
 | `src/test/keyboard-dialog.test.tsx` | Esc dismisses Dialog, Sheet, Popover, DropdownMenu |
@@ -54,6 +54,8 @@ The following token pairs are verified in `token-contrast.test.ts`. All must mee
 | `info-text` on `info-bg` | ✅ | ✅ |
 | `violet-600` on `bg-primary` (body text) | ~6.04:1 ✅ | ~8.95:1 ✅ |
 | `text-inverse` on `violet-600` (default Button) | ~6.28:1 ✅ | ~8.96:1 ✅ |
+| `text-primary` on `teal-500` (TabsTrigger active, light) | ~5.74:1 ✅ | — |
+| `text-inverse` on `teal-500` (TabsTrigger active, dark) | — | ~10.56:1 ✅ |
 
 ### Large text (≥ 3:1) — bold ≥ 14pt or regular ≥ 18pt
 

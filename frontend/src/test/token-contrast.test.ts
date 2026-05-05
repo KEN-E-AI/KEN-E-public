@@ -192,6 +192,26 @@ const textInverseVioletSixHundredPairs: Pair[] = [
   },
 ];
 
+// text-primary on teal-500 (active TabsTrigger — light mode).
+// text-inverse on teal-500 (active TabsTrigger — dark mode).
+// Tab trigger text is --text-body-sm at font-bold; normal-text AA (4.5:1) applies.
+// Light: #1e293b on #2ec4b6 ≈ 5.74:1 ✅. Dark: #0f172a on #5eead4 ≈ 10.56:1 ✅.
+// Fixed in UI-32 after Test Team identified text-inverse on teal-500 at 2.09:1 (light).
+const tabsActivePairs: Pair[] = [
+  {
+    fg: lightTokens["--color-text-primary"] ?? "",
+    bg: lightTokens["--color-teal-500"] ?? "",
+    kind: "normal",
+    label: "light: text-primary on teal-500 (TabsTrigger active)",
+  },
+  {
+    fg: darkTokens["--color-text-inverse"] ?? "",
+    bg: darkTokens["--color-teal-500"] ?? "",
+    kind: "normal",
+    label: "dark: text-inverse on teal-500 (TabsTrigger active)",
+  },
+];
+
 // Note: text-tertiary on bg-primary is intentionally excluded from this pair list.
 // Light mode: #94a3b8 on #fafbfc ≈ 2.475:1 — fails both normal (4.5:1) and large
 // (3:1) AA thresholds. Dark mode: #64748b on #0f172a ≈ 3.751:1 — fails normal AA.
@@ -215,6 +235,7 @@ describe("WCAG AA token-pair contrast", () => {
     ...accentFgPairs,
     ...violetSixHundredPairs,
     ...textInverseVioletSixHundredPairs,
+    ...tabsActivePairs,
   ].forEach(({ fg, bg, kind, label }) => {
     it(`${label}`, () => {
       expect(fg, `Missing foreground token for: ${label}`).not.toBe("");
