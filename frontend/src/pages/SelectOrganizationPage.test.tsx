@@ -596,4 +596,82 @@ describe("SelectOrganizationPage", () => {
       );
     });
   });
+
+  // Regression guard for the original Critical #1: a transient API failure
+  // must NOT bounce a multi-org user to /create-organization. The redirect
+  // can only fire after a successful fetch confirms the user genuinely has
+  // zero orgs.
+  it("renders Retry UI and does NOT redirect when user-data fetch rejects", async () => {
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    mockAxiosGet.mockRejectedValue(new Error("network failure"));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("We couldn't load your workspaces. Please try again."),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalledWith(
+      "/create-organization",
+      expect.anything(),
+    );
+  });
+
+  it("renders Retry UI and does NOT redirect when user-data response is missing permissions shape", async () => {
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    // Malformed payload: no `permissions.organizations` field
+    mockAxiosGet.mockResolvedValue({ data: { data: {} } });
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /retry/i }),
+      ).toBeInTheDocument();
+    });
+    expect(mockNavigate).not.toHaveBeenCalledWith(
+      "/create-organization",
+      expect.anything(),
+    );
+  });
+
+  it("clicking Retry re-fires the user-data fetch and recovers on success", async () => {
+    const user = userEvent.setup();
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    mockAxiosGet
+      .mockRejectedValueOnce(new Error("first attempt fails"))
+      .mockResolvedValueOnce(makeUserPermissionsResponse(["org-1"]));
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([mockOrg1]),
+    );
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /retry/i }),
+      ).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /retry/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Acme Corp")).toBeInTheDocument();
+    });
+    expect(mockAxiosGet).toHaveBeenCalledTimes(2);
+  });
 });

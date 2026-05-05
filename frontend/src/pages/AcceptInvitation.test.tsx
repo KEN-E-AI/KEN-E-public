@@ -151,6 +151,104 @@ describe("AcceptInvitation", () => {
     });
   });
 
+  describe("Notification preferences side-effect on accept", () => {
+    test("creates notification prefs when GET returns 404 (not-yet-created)", async () => {
+      mockVerifyInvitationToken.mockResolvedValue(validInvitation);
+      mockAcceptInvitation.mockResolvedValue({});
+      // GET rejects with 404 → component should POST defaults
+      (api.get as Mock).mockRejectedValue({ response: { status: 404 } });
+      (api.post as Mock).mockResolvedValue({});
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /accept invitation/i }),
+        ).toBeInTheDocument();
+      });
+
+      await userEvent.click(
+        screen.getByRole("button", { name: /accept invitation/i }),
+      );
+
+      await waitFor(() => {
+        expect(api.post).toHaveBeenCalledWith(
+          `/api/v1/firestore/documents`,
+          expect.objectContaining({
+            collection: `users/user-123/preferences`,
+            document_id: "notifications",
+          }),
+        );
+      });
+      // No destructive toast on the 404-create path
+      expect(mockToast).not.toHaveBeenCalledWith(
+        expect.objectContaining({ variant: "destructive" }),
+      );
+    });
+
+    test("fires destructive toast when GET fails with non-404 (5xx) — user joined org but prefs unavailable", async () => {
+      mockVerifyInvitationToken.mockResolvedValue(validInvitation);
+      mockAcceptInvitation.mockResolvedValue({});
+      // GET rejects with 500 → component should NOT silently swallow;
+      // user joins the org but is told prefs are unavailable.
+      (api.get as Mock).mockRejectedValue({
+        response: { status: 500, data: { detail: "internal error" } },
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /accept invitation/i }),
+        ).toBeInTheDocument();
+      });
+
+      await userEvent.click(
+        screen.getByRole("button", { name: /accept invitation/i }),
+      );
+
+      await waitFor(() => {
+        expect(mockToast).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: "Notification preferences unavailable",
+            variant: "destructive",
+          }),
+        );
+      });
+      // Accept still proceeds — user joins the org
+      expect(mockAcceptInvitation).toHaveBeenCalled();
+      // No POST attempted (only the 404-path posts defaults)
+      expect(api.post).not.toHaveBeenCalled();
+    });
+
+    test("fires destructive toast when GET fails with 403 — same swallow regression guard", async () => {
+      mockVerifyInvitationToken.mockResolvedValue(validInvitation);
+      mockAcceptInvitation.mockResolvedValue({});
+      (api.get as Mock).mockRejectedValue({ response: { status: 403 } });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /accept invitation/i }),
+        ).toBeInTheDocument();
+      });
+
+      await userEvent.click(
+        screen.getByRole("button", { name: /accept invitation/i }),
+      );
+
+      await waitFor(() => {
+        expect(mockToast).toHaveBeenCalledWith(
+          expect.objectContaining({
+            title: "Notification preferences unavailable",
+            variant: "destructive",
+          }),
+        );
+      });
+    });
+  });
+
   describe("Success path — navigation after accept", () => {
     test("shows accepted state and navigates to / when Get Started is clicked", async () => {
       mockVerifyInvitationToken.mockResolvedValue(validInvitation);

@@ -1,14 +1,9 @@
 import { describe, test, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import {
-  MemoryRouter,
-  Routes,
-  Route,
-  Navigate,
-  Outlet,
-} from "react-router-dom";
+import { MemoryRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LayoutSettings } from "@/components/layout/LayoutSettings";
+import { WorkflowsLayout } from "@/pages/workflows/WorkflowsLayout";
 
 // ProfileMenu is pulled in by LayoutSettings — stub it to avoid heavy auth dependencies
 vi.mock("@/components/layout/ProfileMenu", () => ({
@@ -89,33 +84,37 @@ function renderRoutes(initialPath: string) {
             />
           </Route>
 
-          {/* Workflows group — wrapped in LayoutC chrome (stubbed) */}
+          {/* Workflows routes mirror App.tsx — each page uses the real
+              WorkflowsLayout so the test exercises the layout's tab strip,
+              not a stub. (LayoutC itself is asserted in dedicated layout tests.) */}
           <Route
+            path="/workflows"
+            element={<Navigate to="/workflows/agents" replace />}
+          />
+          <Route
+            path="/workflows/agents"
             element={
-              <div data-testid="layout-c-chrome">
-                <Outlet />
-              </div>
+              <WorkflowsLayout activeTab="agents">
+                <div data-testid="workflows-agents-page">Agents</div>
+              </WorkflowsLayout>
             }
-          >
-            <Route
-              path="/workflows"
-              element={<Navigate to="/workflows/agents" replace />}
-            />
-            <Route
-              path="/workflows/agents"
-              element={<div data-testid="workflows-agents-page">Agents</div>}
-            />
-            <Route
-              path="/workflows/automations"
-              element={
+          />
+          <Route
+            path="/workflows/automations"
+            element={
+              <WorkflowsLayout activeTab="automations">
                 <div data-testid="workflows-automations-page">Automations</div>
-              }
-            />
-            <Route
-              path="/workflows/skills"
-              element={<div data-testid="workflows-skills-page">Skills</div>}
-            />
-          </Route>
+              </WorkflowsLayout>
+            }
+          />
+          <Route
+            path="/workflows/skills"
+            element={
+              <WorkflowsLayout activeTab="skills">
+                <div data-testid="workflows-skills-page">Skills</div>
+              </WorkflowsLayout>
+            }
+          />
 
           {/* Chat destination (target of the / redirect) */}
           <Route
@@ -226,31 +225,38 @@ describe("App routing — settings inside LayoutSettings", () => {
   });
 });
 
-describe("App routing — workflows inside LayoutC", () => {
+describe("App routing — workflows inside WorkflowsLayout", () => {
   test("/workflows redirects to /workflows/agents", () => {
     renderRoutes("/workflows");
     expect(screen.getByTestId("workflows-agents-page")).toBeInTheDocument();
-    expect(screen.getByTestId("layout-c-chrome")).toBeInTheDocument();
+    // Real WorkflowsLayout renders a tab strip with all three tabs
+    expect(screen.getByRole("tab", { name: /agents/i })).toBeInTheDocument();
   });
 
-  test("/workflows/agents mounts inside LayoutC chrome", () => {
+  test("/workflows/agents activates the Agents tab", () => {
     renderRoutes("/workflows/agents");
-    expect(screen.getByTestId("layout-c-chrome")).toBeInTheDocument();
     expect(screen.getByTestId("workflows-agents-page")).toBeInTheDocument();
-  });
-
-  test("/workflows/automations mounts inside LayoutC chrome", () => {
-    renderRoutes("/workflows/automations");
-    expect(screen.getByTestId("layout-c-chrome")).toBeInTheDocument();
     expect(
-      screen.getByTestId("workflows-automations-page"),
+      screen.getByRole("tab", { name: /agents/i, selected: true }),
     ).toBeInTheDocument();
   });
 
-  test("/workflows/skills mounts inside LayoutC chrome", () => {
+  test("/workflows/automations activates the Automations tab", () => {
+    renderRoutes("/workflows/automations");
+    expect(
+      screen.getByTestId("workflows-automations-page"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: /automations/i, selected: true }),
+    ).toBeInTheDocument();
+  });
+
+  test("/workflows/skills activates the Skills tab", () => {
     renderRoutes("/workflows/skills");
-    expect(screen.getByTestId("layout-c-chrome")).toBeInTheDocument();
     expect(screen.getByTestId("workflows-skills-page")).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: /skills/i, selected: true }),
+    ).toBeInTheDocument();
   });
 });
 
