@@ -40,7 +40,7 @@ export function EmailVerificationView({
         <div className="bg-card rounded-[var(--radius-lg)] border-2 border-[var(--color-border-default)] p-6 shadow-lg">
           <div className="space-y-4">
             <div className="p-4 rounded-[var(--radius-md)] bg-[var(--color-bg-elevated)]">
-              <h3 className="text-sm font-medium mb-2">Next steps:</h3>
+              <h2 className="text-sm font-medium mb-2">Next steps:</h2>
               <ol className="space-y-2 text-sm text-muted-foreground">
                 <li className="flex items-start gap-2">
                   <span className="text-[var(--color-violet-500)] font-medium shrink-0">
@@ -110,7 +110,7 @@ export function EmailVerificationView({
                 Didn't receive the email? Check your spam folder or{" "}
                 <a
                   href="mailto:support@ken-e.com"
-                  className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)]"
+                  className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] underline"
                 >
                   contact support
                 </a>
@@ -128,7 +128,7 @@ export function EmailVerificationView({
                 Wrong email address?{" "}
                 <Link
                   to="/create-account"
-                  className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] font-medium"
+                  className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] font-medium underline"
                 >
                   Create a new account
                 </Link>
@@ -137,7 +137,7 @@ export function EmailVerificationView({
                 Already verified?{" "}
                 <Link
                   to="/sign-in"
-                  className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] font-medium"
+                  className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] font-medium underline"
                 >
                   Sign in
                 </Link>

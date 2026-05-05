@@ -387,7 +387,7 @@ export function CreateOrganization() {
             Need help?{" "}
             <a
               href="mailto:support@ken-e.com"
-              className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] transition-colors"
+              className="text-[var(--color-violet-500)] hover:text-[var(--color-violet-600)] transition-colors underline"
             >
               Contact Support
             </a>
