@@ -215,11 +215,6 @@ export default function SelectOrganizationPage() {
     navigate,
   ]);
 
-  // Auto-select when exactly one account exists across all organizations.
-  // Ported verbatim in spirit from OrganizationSelection.tsx:540–606.
-  // The race-condition guard: (1) bails when selectedOrganization/selectedAccount
-  // is already set, (2) sets isLoading=true which disables the Continue button
-  // during the 500 ms window.
   useEffect(() => {
     if (userDataFetchStatus !== "success") return;
     if (Object.keys(localOrgMetadata).length === 0) return;
@@ -229,6 +224,7 @@ export default function SelectOrganizationPage() {
     let singleOrg: string | null = null;
 
     Object.entries(localOrgMetadata).forEach(([orgId, org]: [string, any]) => {
+      if (org?.agency) return;
       if (org && org.accounts && org.accounts.length > 0) {
         totalAccounts = [...totalAccounts, ...org.accounts];
         if (singleOrg === null) {
@@ -262,12 +258,11 @@ export default function SelectOrganizationPage() {
         metadata,
       });
       setCurrentOrganization(singleOrg as OrganizationId);
-      completeWorkspaceSelection();
 
-      autoSelectTimerRef.current = setTimeout(
-        () => navigate("/"),
-        SINGLE_ACCOUNT_AUTO_NAVIGATE_DELAY,
-      );
+      autoSelectTimerRef.current = setTimeout(() => {
+        completeWorkspaceSelection();
+        navigate("/");
+      }, SINGLE_ACCOUNT_AUTO_NAVIGATE_DELAY);
     }
   }, [
     localOrgMetadata,

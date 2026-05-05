@@ -289,9 +289,12 @@ describe("SelectOrganizationPage", () => {
       setOrgMetadata: vi.fn(),
       setAccountMetadata: vi.fn(),
     });
-    mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse(["org-1"]));
+    // Two orgs so auto-select does not fire (singleOrg === "multiple")
+    mockAxiosGet.mockResolvedValue(
+      makeUserPermissionsResponse(["org-1", "org-2"]),
+    );
     mockGetOrganizationsBatch.mockResolvedValue(
-      makeOrgBatchResponse([mockOrg1]),
+      makeOrgBatchResponse([mockOrg1, mockOrg2]),
     );
 
     renderPage();
@@ -317,9 +320,12 @@ describe("SelectOrganizationPage", () => {
       setOrgMetadata: vi.fn(),
       setAccountMetadata: vi.fn(),
     });
-    mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse(["org-1"]));
+    // Two orgs so auto-select does not fire (singleOrg === "multiple")
+    mockAxiosGet.mockResolvedValue(
+      makeUserPermissionsResponse(["org-1", "org-2"]),
+    );
     mockGetOrganizationsBatch.mockResolvedValue(
-      makeOrgBatchResponse([mockOrg1]),
+      makeOrgBatchResponse([mockOrg1, mockOrg2]),
     );
 
     renderPage();
@@ -714,12 +720,12 @@ describe("SelectOrganizationPage", () => {
       expect.objectContaining({ orgId: "org-1", accountId: "acc-1" }),
     );
     expect(setCurrentOrganization).toHaveBeenCalledWith("org-1");
-    expect(completeWorkspaceSelection).toHaveBeenCalledTimes(1);
 
-    // Navigate fires after the 500 ms real-timer delay — wait for it
+    // completeWorkspaceSelection and navigate fire together after 500 ms
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/"), {
       timeout: 2000,
     });
+    expect(completeWorkspaceSelection).toHaveBeenCalledTimes(1);
   });
 
   it("does NOT auto-navigate when total account count is more than one", async () => {
@@ -752,6 +758,46 @@ describe("SelectOrganizationPage", () => {
     // Org list should still be present
     expect(screen.getByText("Acme Corp")).toBeInTheDocument();
     // Continue button should still be disabled (no selection)
+    expect(screen.getByRole("button", { name: /^continue/i })).toBeDisabled();
+  });
+
+  it("does NOT auto-navigate when one org has two accounts", async () => {
+    const orgWithTwoAccounts = {
+      ...mockOrg1,
+      accounts: [
+        mockOrg1.accounts[0],
+        {
+          account_id: "acc-2",
+          account_name: "Second Account",
+          industry: "Tech",
+          status: "Active",
+          timezone: "UTC",
+        },
+      ],
+    };
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    // One org, two accounts → totalAccounts.length === 2, no auto-select
+    mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse(["org-1"]));
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([orgWithTwoAccounts]),
+    );
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Acme Corp")).toBeInTheDocument(),
+    );
+
+    vi.useFakeTimers();
+    act(() => vi.advanceTimersByTime(1000));
+    vi.useRealTimers();
+
+    expect(mockNavigate).not.toHaveBeenCalledWith("/");
+    expect(screen.getByText("Acme Corp")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^continue/i })).toBeDisabled();
   });
 
