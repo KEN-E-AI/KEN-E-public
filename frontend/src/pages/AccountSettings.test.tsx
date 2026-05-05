@@ -249,7 +249,10 @@ describe("AccountSettings — Responsive class structure", () => {
     const { container } = render(
       <MemoryRouter initialEntries={["/settings/account/acc_123"]}>
         <Routes>
-          <Route path="/settings/account/:accountId" element={<AccountSettings />} />
+          <Route
+            path="/settings/account/:accountId"
+            element={<AccountSettings />}
+          />
         </Routes>
       </MemoryRouter>,
     );
