@@ -268,13 +268,11 @@ export default function SelectOrganizationPage() {
   });
 
   const handleOrganizationSelect = (orgId: string) => {
-    if (orgId !== selectedOrganization) {
-      setSelectedAccount("");
-      setSelectedChildOrg("");
-      clearChildOrganizations();
-      if (localOrgMetadata[orgId]?.agency) {
-        fetchChildOrganizations(orgId);
-      }
+    setSelectedAccount("");
+    setSelectedChildOrg("");
+    clearChildOrganizations();
+    if (orgId !== selectedOrganization && localOrgMetadata[orgId]?.agency) {
+      fetchChildOrganizations(orgId);
     }
     setSelectedOrganization(orgId);
   };
@@ -523,7 +521,11 @@ export default function SelectOrganizationPage() {
             {/* Accounts card */}
             <Card className="shadow-lg">
               <CardHeader>
-                <CardTitle>Accounts</CardTitle>
+                <CardTitle>
+                  {selectedOrgData?.agency
+                    ? "Client Organizations & Accounts"
+                    : "Accounts"}
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 {selectedOrgData?.agency ? (
@@ -542,9 +544,21 @@ export default function SelectOrganizationPage() {
                         Loading client organizations…
                       </p>
                     ) : childOrgsError ? (
-                      <p className="text-sm text-[var(--color-text-secondary)] py-4 text-center">
-                        Failed to load client organizations.
-                      </p>
+                      <div className="py-4 text-center space-y-2">
+                        <p className="text-sm text-[var(--color-text-secondary)]">
+                          Failed to load client organizations.
+                        </p>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            fetchChildOrganizations(selectedOrganization)
+                          }
+                        >
+                          Retry
+                        </Button>
+                      </div>
                     ) : childOrganizations.length === 0 ? (
                       <p className="text-sm text-[var(--color-text-secondary)] py-4 text-center">
                         No client organizations available.

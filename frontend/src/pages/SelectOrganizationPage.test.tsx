@@ -84,7 +84,9 @@ const mockAgencyOrg = {
 const mockChildOrg = {
   organization_id: "child-1",
   organization_name: "Client Alpha",
+  plan: "Standard",
   agency: false,
+  error: false,
   accounts: [
     {
       account_id: "child-acc-1",
@@ -850,5 +852,49 @@ describe("SelectOrganizationPage", () => {
     // Account selected → enabled
     await user.click(screen.getByRole("button", { name: /alpha account/i }));
     expect(continueBtn).toBeEnabled();
+  });
+
+  it("agency org re-select clears child state; switching to non-agency org also clears", async () => {
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    mockAxiosGet.mockResolvedValue(
+      makeUserPermissionsResponse(["org-agency", "org-1"]),
+    );
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([mockAgencyOrg, mockOrg1]),
+    );
+    mockGetChildOrganizationsWithAccounts.mockResolvedValue([mockChildOrg]);
+
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Big Agency")).toBeInTheDocument(),
+    );
+
+    // Select agency org → drill down to child + account
+    await user.click(screen.getByRole("button", { name: /big agency/i }));
+    await waitFor(() =>
+      expect(screen.getByText("Client Alpha")).toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole("button", { name: /client alpha/i }));
+    await waitFor(() =>
+      expect(screen.getByText("Alpha Account")).toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole("button", { name: /alpha account/i }));
+    expect(screen.getByRole("button", { name: /^continue/i })).toBeEnabled();
+
+    // Switch to non-agency org → child state must be cleared, Continue must be disabled
+    await user.click(screen.getByRole("button", { name: /acme corp/i }));
+
+    // Child org rows and account sub-section no longer visible
+    expect(screen.queryByText("Client Alpha")).not.toBeInTheDocument();
+    expect(screen.queryByText("Alpha Account")).not.toBeInTheDocument();
+
+    // Continue disabled (account not yet selected in new org)
+    expect(screen.getByRole("button", { name: /^continue/i })).toBeDisabled();
   });
 });
