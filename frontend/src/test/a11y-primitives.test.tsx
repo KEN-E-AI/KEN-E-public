@@ -24,6 +24,18 @@ describe("axe sweep — UI primitives", () => {
     expect(await runAxe(container)).toHaveNoViolations();
   });
 
+  it("Button: outline variant has no violations", async () => {
+    const { container } = render(
+      <Button variant="outline">Create new organization</Button>,
+    );
+    expect(await runAxe(container)).toHaveNoViolations();
+  });
+
+  it("Button: ghost variant has no violations", async () => {
+    const { container } = render(<Button variant="ghost">Cancel</Button>);
+    expect(await runAxe(container)).toHaveNoViolations();
+  });
+
   it("Input: unlabelled input (label wraps it) has no violations", async () => {
     const { container } = render(
       <label>

@@ -78,4 +78,22 @@ describe("Button", () => {
     expect(gradientClass).toContain("gradient-cta");
     expect(gradientClass).not.toBe(defaultClass);
   });
+
+  it("outline variant uses color-text-secondary (not color-text-tertiary) for WCAG AA compliance", () => {
+    render(<Button variant="outline">Create new organization</Button>);
+    const cls = screen
+      .getByRole("button", { name: "Create new organization" })
+      .getAttribute("class");
+    expect(cls).toContain("text-[var(--color-text-secondary)]");
+    expect(cls).not.toContain("text-[var(--color-text-tertiary)]");
+  });
+
+  it("ghost variant uses color-text-secondary (not color-text-tertiary) for WCAG AA compliance", () => {
+    render(<Button variant="ghost">Cancel</Button>);
+    const cls = screen
+      .getByRole("button", { name: "Cancel" })
+      .getAttribute("class");
+    expect(cls).toContain("text-[var(--color-text-secondary)]");
+    expect(cls).not.toContain("text-[var(--color-text-tertiary)]");
+  });
 });
