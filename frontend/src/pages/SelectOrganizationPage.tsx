@@ -60,7 +60,10 @@ export default function SelectOrganizationPage() {
   );
 
   useEffect(() => {
-    if (!FIRESTORE_USER_ID) return;
+    if (!FIRESTORE_USER_ID) {
+      setLoadingUserData(false);
+      return;
+    }
 
     const fetchUserData = async () => {
       try {

@@ -159,6 +159,7 @@ describe("SelectOrganizationPage", () => {
         "/create-organization",
         expect.anything(),
       );
+      expect(mockAxiosGet).not.toHaveBeenCalled();
     });
   });
 
