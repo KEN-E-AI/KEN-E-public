@@ -264,21 +264,62 @@ with tempfile.TemporaryDirectory() as temp_dir:
 
     logger.info(f"✅ Loaded app: {type(app)}")
 
-    # Deploy using Python API
+    # Deploy using Python API — update existing engine in place when possible
+    # (preserves the engine resource and avoids burning ReasoningEngineEntities-
+    # PerProjectPerRegion quota on every CI run).
     logger.info(f"📦 Deploying with sys_version='{PYTHON_VERSION}'...")
 
+    display_name = f"strategy-supervisor-py{PYTHON_VERSION.replace('.', '')}"
+    description = (
+        f"Strategy supervisor with Python {PYTHON_VERSION}, "
+        "split agents, Neo4j, W&B"
+    )
+
+    # Resolve existing engine ID from Secret Manager
+    sm_client = secretmanager.SecretManagerServiceClient()
+    secret_path = (
+        f"projects/{PROJECT_NUMBER}/secrets/"
+        "strategy-supervisor-engine-id/versions/latest"
+    )
+    existing_engine_id: str | None = None
     try:
-        deployed_engine = reasoning_engines.ReasoningEngine.create(
-            reasoning_engine=app,
-            requirements="requirements.txt",
-            display_name=f"strategy-supervisor-py{PYTHON_VERSION.replace('.', '')}",
-            description=(
-                f"Strategy supervisor with Python {PYTHON_VERSION}, "
-                "split agents, Neo4j, W&B"
-            ),
-            sys_version=PYTHON_VERSION,
-            extra_packages=["agents", "shared", "app"],
-        )
+        response = sm_client.access_secret_version(request={"name": secret_path})
+        existing_engine_id = response.payload.data.decode("UTF-8").strip()
+        logger.info(f"Found existing engine in Secret Manager: {existing_engine_id}")
+    except Exception as e:
+        logger.info(f"No existing engine ID in Secret Manager ({e}); will create new")
+
+    deployed_engine = None
+    if existing_engine_id:
+        try:
+            existing = reasoning_engines.ReasoningEngine(existing_engine_id)
+            deployed_engine = existing.update(
+                reasoning_engine=app,
+                requirements="requirements.txt",
+                display_name=display_name,
+                description=description,
+                sys_version=PYTHON_VERSION,
+                extra_packages=["agents", "shared", "app"],
+            )
+            logger.info("✅ Updated existing engine in place")
+        except Exception as update_error:
+            logger.warning(
+                f"Update of {existing_engine_id} failed: {update_error}. "
+                "Falling back to creating a new engine."
+            )
+            deployed_engine = None
+
+    try:
+        if deployed_engine is None:
+            logger.info("Creating new ReasoningEngine...")
+            deployed_engine = reasoning_engines.ReasoningEngine.create(
+                reasoning_engine=app,
+                requirements="requirements.txt",
+                display_name=display_name,
+                description=description,
+                sys_version=PYTHON_VERSION,
+                extra_packages=["agents", "shared", "app"],
+            )
 
         logger.info("✅ Deployment successful!")
         logger.info(f"Engine ID: {deployed_engine.resource_name}")
