@@ -6,6 +6,7 @@ import SelectOrganizationPage from "./SelectOrganizationPage";
 
 // Mock factories must be declared before vi.mock() hoisting runs.
 const mockNavigate = vi.fn();
+const mockGetOrganizations = vi.fn();
 const mockGetOrganizationsBatch = vi.fn();
 const mockAxiosGet = vi.fn();
 const mockUseAuth = vi.fn();
@@ -13,6 +14,7 @@ const mockUseAuth = vi.fn();
 vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => mockUseAuth() }));
 
 vi.mock("@/data/organizationApi", () => ({
+  getOrganizations: (...args: unknown[]) => mockGetOrganizations(...args),
   getOrganizationsBatch: (...args: unknown[]) =>
     mockGetOrganizationsBatch(...args),
 }));
@@ -577,14 +579,14 @@ describe("SelectOrganizationPage", () => {
     );
   });
 
-  it("does not redirect to /create-organization for super-admin with empty Firestore permissions", async () => {
+  it("does not redirect to /create-organization for super-admin with empty system org list", async () => {
     mockUseAuth.mockReturnValue({
       ...defaultAuthMock,
       isSuperAdmin: true,
       setOrgMetadata: vi.fn(),
       setAccountMetadata: vi.fn(),
     });
-    mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse([]));
+    mockGetOrganizations.mockResolvedValue([]);
 
     renderPage();
 
@@ -595,6 +597,124 @@ describe("SelectOrganizationPage", () => {
         expect.anything(),
       );
     });
+  });
+
+  it("super-admin: calls getOrganizations() (not Firestore endpoint) and renders all orgs with 'admin' permission", async () => {
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      isSuperAdmin: true,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    // Return orgs without a `plan` field so the UI falls back to the permission
+    // value ("admin") in the `{org.plan || org.permission}` expression.
+    const orgNoPlan1 = { ...mockOrg1, plan: undefined };
+    const orgNoPlan2 = { ...mockOrg2, plan: undefined };
+    mockGetOrganizations.mockResolvedValue([
+      { organization_id: "org-1", organization_name: "Acme Corp" },
+      { organization_id: "org-2", organization_name: "Globex Ventures" },
+    ]);
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([orgNoPlan1, orgNoPlan2]),
+    );
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Acme Corp")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("Globex Ventures")).toBeInTheDocument();
+
+    // getOrganizations() should have been called, not the Firestore endpoint
+    expect(mockGetOrganizations).toHaveBeenCalled();
+    expect(mockAxiosGet).not.toHaveBeenCalled();
+
+    // Both orgs show "admin" as the permission/plan fallback (no plan set)
+    const adminBadges = screen.getAllByText("admin");
+    expect(adminBadges).toHaveLength(2);
+  });
+
+  it("super-admin: search input is unconditionally visible even with only 1 org", async () => {
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      isSuperAdmin: true,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    mockGetOrganizations.mockResolvedValue([
+      { organization_id: "org-1", organization_name: "Acme Corp" },
+    ]);
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([mockOrg1]),
+    );
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Acme Corp")).toBeInTheDocument(),
+    );
+
+    // Search input visible even though count (1) is ≤ 5
+    expect(
+      screen.getByPlaceholderText(/search organizations/i),
+    ).toBeInTheDocument();
+  });
+
+  it("super-admin: getOrganizations() rejection shows Retry UI without redirecting", async () => {
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      isSuperAdmin: true,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    mockGetOrganizations.mockRejectedValue(new Error("network error"));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("We couldn't load your workspaces. Please try again."),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalledWith(
+      "/create-organization",
+      expect.anything(),
+    );
+  });
+
+  it("super-admin: orgs with metadata.error=true render Error Loading badge and remain clickable", async () => {
+    const user = userEvent.setup();
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      isSuperAdmin: true,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+      setSelectedOrgAccount: vi.fn(),
+    });
+    mockGetOrganizations.mockResolvedValue([
+      { organization_id: "org-err", organization_name: "Broken Org" },
+    ]);
+    const errorOrg = {
+      ...mockOrg1,
+      organization_id: "org-err",
+      organization_name: "Broken Org",
+      error: true,
+    };
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([errorOrg]),
+    );
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Broken Org")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("Error Loading")).toBeInTheDocument();
+
+    const orgRow = screen.getByRole("button", { name: /broken org/i });
+    await user.click(orgRow);
+    expect(orgRow).toHaveAttribute("aria-pressed", "true");
   });
 
   // Regression guard for the original Critical #1: a transient API failure
