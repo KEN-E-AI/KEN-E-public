@@ -6,7 +6,8 @@ import {
   ReactNode,
 } from "react";
 import api from "@/lib/api";
-import { onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
+import { toast } from "sonner";
 import { auth, authBypassEnabled, authInitialized } from "@/lib/firebase";
 import type { UserId, OrganizationId, AccountId } from "@/lib/branded-types";
 
@@ -106,7 +107,7 @@ interface AuthContextType {
   currentOrganizationId: OrganizationId | null;
   selectedOrgAccount: SelectedOrgAccount | null;
   login: (user: User) => void;
-  logout: () => void;
+  logout: () => Promise<void>;
   updateUser: (updates: Partial<User>) => void;
   completeWorkspaceSelection: () => void;
   resetWorkspaceSelection: () => void;
@@ -233,7 +234,17 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     });
   };
 
-  const logout = () => {
+  const logout = async () => {
+    if (authInitialized) {
+      try {
+        await signOut(auth);
+      } catch (err) {
+        console.error("[AuthContext] Firebase signOut failed", err);
+        toast.error(
+          "Failed to sign out completely. Please refresh and try again.",
+        );
+      }
+    }
     setUser(null);
     setHasSelectedWorkspace(false);
     setSelectedOrgAccountState(null);
