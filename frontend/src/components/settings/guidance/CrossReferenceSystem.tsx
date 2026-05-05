@@ -77,7 +77,7 @@ export const CrossReferenceIndicator = ({
       case "low":
         return "text-brand-dark-blue bg-brand-light-green/20 border-brand-light-green/40";
       default:
-        return "text-gray-600 bg-gray-50 border-gray-200";
+        return "text-[var(--color-text-tertiary)] bg-[var(--color-bg-secondary)] border-[var(--color-border-default)]";
     }
   };
 
@@ -109,7 +109,7 @@ export const CrossReferenceIndicator = ({
           {relatedSettings.map((related) => (
             <div
               key={related.id}
-              className="border rounded-lg p-4 hover:bg-gray-50 transition-colors"
+              className="border rounded-lg p-4 hover:bg-[var(--color-bg-secondary)] transition-colors"
             >
               <div className="flex items-start justify-between mb-2">
                 <div className="flex-1">
@@ -117,7 +117,7 @@ export const CrossReferenceIndicator = ({
                     <h4 className="font-medium text-sm">{related.name}</h4>
                     <ScopeBadge scope={related.scope} size="sm" />
                   </div>
-                  <p className="text-sm text-gray-600 mb-2">
+                  <p className="text-sm text-[var(--color-text-tertiary)] mb-2">
                     {related.description}
                   </p>
                 </div>
@@ -139,7 +139,7 @@ export const CrossReferenceIndicator = ({
 
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-[var(--color-text-tertiary)]">
                     {getRelationshipIcon(related.relationship)}{" "}
                     {getRelationshipText(related.relationship)}
                   </span>
@@ -164,7 +164,7 @@ export const CrossReferenceIndicator = ({
         </div>
 
         <div className="border-t pt-4">
-          <p className="text-xs text-gray-500 text-center">
+          <p className="text-xs text-[var(--color-text-tertiary)] text-center">
             Changes to related settings may affect the behavior of this setting.
           </p>
         </div>

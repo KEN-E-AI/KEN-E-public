@@ -98,7 +98,7 @@ export const ValidationAlert: React.FC<ValidationAlertProps> = ({
       })}
 
       {remainingCount > 0 && (
-        <Alert className="border-gray-300 text-gray-600 bg-gray-50">
+        <Alert className="border-[var(--color-border-default)] text-[var(--color-text-tertiary)] bg-[var(--color-bg-secondary)]">
           <Info className="h-4 w-4" />
           <AlertDescription>
             <span className="text-sm">

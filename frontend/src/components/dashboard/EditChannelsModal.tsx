@@ -213,7 +213,7 @@ const EditChannelsModal = ({
         <select
           value={value}
           onChange={handleSelectChange}
-          className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-medium-blue focus:border-brand-medium-blue bg-white"
+          className="w-full px-3 py-2 border border-[var(--color-border-default)] rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-medium-blue focus:border-brand-medium-blue bg-white"
         >
           <option value="">{placeholder}</option>
           {availableKPIs.map((kpi) => (
@@ -231,7 +231,7 @@ const EditChannelsModal = ({
       <div>
         <div className="flex items-center justify-between mb-2">
           <Label>Supporting Metrics</Label>
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-[var(--color-text-tertiary)]">
             {editingChannel?.supportingMetrics.length || 0}/9
           </span>
         </div>
@@ -287,7 +287,7 @@ const EditChannelsModal = ({
               }
               e.target.value = ""; // Reset select after selection
             }}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-medium-blue focus:border-brand-medium-blue bg-white"
+            className="w-full px-3 py-2 border border-[var(--color-border-default)] rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-medium-blue focus:border-brand-medium-blue bg-white"
             defaultValue=""
           >
             <option value="">Add supporting metric</option>
@@ -314,7 +314,7 @@ const EditChannelsModal = ({
               <Button
                 variant="ghost"
                 onClick={onReturnToView}
-                className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-800 p-0 h-auto"
+                className="flex items-center gap-2 text-sm text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] p-0 h-auto"
               >
                 <ArrowLeft className="w-4 h-4" />
                 Back to View
@@ -351,7 +351,7 @@ const EditChannelsModal = ({
                     }
                     maxLength={40}
                   />
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-[var(--color-text-tertiary)] mt-1">
                     {editingChannel.name.length}/40 characters
                   </p>
                 </div>

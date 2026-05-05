@@ -90,7 +90,9 @@ const ReCaptcha = ({ onVerify, onError, className }: ReCaptchaProps) => {
   if (loading) {
     return (
       <div className="flex justify-center py-4">
-        <div className="text-sm text-gray-500">Loading security check...</div>
+        <div className="text-sm text-[var(--color-text-tertiary)]">
+          Loading security check...
+        </div>
       </div>
     );
   }

@@ -116,9 +116,9 @@ const ReCaptchaV3 = ({
   if (isVerifying) {
     return (
       <div
-        className={`flex items-center justify-center gap-2 text-sm text-gray-500 ${className}`}
+        className={`flex items-center justify-center gap-2 text-sm text-[var(--color-text-tertiary)] ${className}`}
       >
-        <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+        <div className="w-4 h-4 border-2 border-[var(--color-border-default)] border-t-[var(--color-text-tertiary)] rounded-full animate-spin" />
         Verifying security...
       </div>
     );

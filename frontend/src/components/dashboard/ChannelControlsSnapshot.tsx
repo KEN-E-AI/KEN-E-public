@@ -160,11 +160,15 @@ const ObjectiveNode = ({ data }: { data: any }) => {
 
         {/* Expansion Indicator */}
         <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2">
-          <div className="w-6 h-6 bg-white border-2 border-gray-300 rounded-full flex items-center justify-center shadow-sm">
+          <div className="w-6 h-6 bg-white border-2 border-[var(--color-border-default)] rounded-full flex items-center justify-center shadow-sm">
             {data.isSelected ? (
-              <span className="text-xs font-bold text-gray-600">-</span>
+              <span className="text-xs font-bold text-[var(--color-text-tertiary)]">
+                -
+              </span>
             ) : (
-              <span className="text-xs font-bold text-gray-600">+</span>
+              <span className="text-xs font-bold text-[var(--color-text-tertiary)]">
+                +
+              </span>
             )}
           </div>
         </div>
@@ -192,11 +196,13 @@ const ObjectiveNode = ({ data }: { data: any }) => {
           </DialogHeader>
 
           <div className="space-y-6">
-            <p className="text-gray-700">{data.objective}</p>
+            <p className="text-[var(--color-text-secondary)]">
+              {data.objective}
+            </p>
 
             {/* Divider */}
             {(data.effectivenessKPI || data.efficiencyKPI) && (
-              <div className="border-t border-gray-200"></div>
+              <div className="border-t border-[var(--color-border-default)]"></div>
             )}
 
             <div className="mt-6 space-y-8">
@@ -205,17 +211,17 @@ const ObjectiveNode = ({ data }: { data: any }) => {
                   {/* Header with status dot */}
                   <div className="flex items-center gap-2 mb-4">
                     <div className="w-3 h-3 bg-brand-light-green rounded-full"></div>
-                    <h3 className="text-sm font-medium text-gray-600 uppercase tracking-wide">
+                    <h3 className="text-sm font-medium text-[var(--color-text-tertiary)] uppercase tracking-wide">
                       EFFECTIVENESS
                     </h3>
                   </div>
 
                   {/* Metric info */}
                   <div className="mb-3">
-                    <h4 className="font-semibold text-gray-900 mb-1">
+                    <h4 className="font-semibold text-[var(--color-text-primary)] mb-1">
                       {data.effectivenessKPI}
                     </h4>
-                    <p className="text-sm text-gray-600 mb-4">
+                    <p className="text-sm text-[var(--color-text-tertiary)] mb-4">
                       The estimated portion of impressions served to new
                       prospects across platforms, channels, websites and apps.
                     </p>
@@ -224,8 +230,8 @@ const ObjectiveNode = ({ data }: { data: any }) => {
                   {/* Scorecard and Chart Container */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
                     {/* Scorecard */}
-                    <div className="md:col-span-1 bg-gray-50 overflow-hidden flex flex-col justify-center items-center py-6">
-                      <div className="text-4xl font-bold text-gray-900 mb-2 text-center">
+                    <div className="md:col-span-1 bg-[var(--color-bg-secondary)] overflow-hidden flex flex-col justify-center items-center py-6">
+                      <div className="text-4xl font-bold text-[var(--color-text-primary)] mb-2 text-center">
                         1,529,204
                       </div>
                       <div className="text-brand-light-green font-medium text-center">
@@ -240,16 +246,24 @@ const ObjectiveNode = ({ data }: { data: any }) => {
                           className="w-full h-full flex flex-col justify-center items-center"
                         >
                           {/* Y-axis labels */}
-                          <text x="10" y="15" className="text-xs fill-gray-400">
+                          <text
+                            x="10"
+                            y="15"
+                            className="text-xs fill-[var(--color-text-disabled)]"
+                          >
                             2.0M
                           </text>
-                          <text x="10" y="65" className="text-xs fill-gray-400">
+                          <text
+                            x="10"
+                            y="65"
+                            className="text-xs fill-[var(--color-text-disabled)]"
+                          >
                             1.0M
                           </text>
                           <text
                             x="10"
                             y="115"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             0
                           </text>
@@ -267,42 +281,42 @@ const ObjectiveNode = ({ data }: { data: any }) => {
                           <text
                             x="50"
                             y="135"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             Jan
                           </text>
                           <text
                             x="80"
                             y="135"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             Feb
                           </text>
                           <text
                             x="110"
                             y="135"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             Mar
                           </text>
                           <text
                             x="140"
                             y="135"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             Apr
                           </text>
                           <text
                             x="170"
                             y="135"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             May
                           </text>
                           <text
                             x="200"
                             y="135"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             Jun
                           </text>
@@ -315,7 +329,7 @@ const ObjectiveNode = ({ data }: { data: any }) => {
 
               {/* Divider */}
               {data.effectivenessKPI && data.efficiencyKPI && (
-                <div className="border-t border-gray-200"></div>
+                <div className="border-t border-[var(--color-border-default)]"></div>
               )}
 
               {data.efficiencyKPI && (
@@ -323,17 +337,17 @@ const ObjectiveNode = ({ data }: { data: any }) => {
                   {/* Header with status dot */}
                   <div className="flex items-center gap-2 mb-4">
                     <div className="w-3 h-3 bg-brand-yellow rounded-full"></div>
-                    <h3 className="text-sm font-medium text-gray-600 uppercase tracking-wide">
+                    <h3 className="text-sm font-medium text-[var(--color-text-tertiary)] uppercase tracking-wide">
                       EFFICIENCY
                     </h3>
                   </div>
 
                   {/* Metric info */}
                   <div className="mb-3">
-                    <h4 className="font-semibold text-gray-900 mb-1">
+                    <h4 className="font-semibold text-[var(--color-text-primary)] mb-1">
                       {data.efficiencyKPI}
                     </h4>
-                    <p className="text-sm text-gray-600 mb-4">
+                    <p className="text-sm text-[var(--color-text-tertiary)] mb-4">
                       The average cost paid for each impression served to
                       prospects across all advertising channels and platforms.
                     </p>
@@ -342,8 +356,8 @@ const ObjectiveNode = ({ data }: { data: any }) => {
                   {/* Scorecard and Chart Container */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {/* Scorecard */}
-                    <div className="md:col-span-1 bg-gray-50 rounded-lg overflow-hidden flex flex-col justify-center items-center py-6">
-                      <div className="text-4xl font-bold text-gray-900 mb-2 text-center">
+                    <div className="md:col-span-1 bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden flex flex-col justify-center items-center py-6">
+                      <div className="text-4xl font-bold text-[var(--color-text-primary)] mb-2 text-center">
                         $2.47
                       </div>
                       <div className="text-brand-yellow font-medium text-center">
@@ -359,16 +373,24 @@ const ObjectiveNode = ({ data }: { data: any }) => {
                           className="w-full h-full flex flex-col justify-center items-center"
                         >
                           {/* Y-axis labels */}
-                          <text x="10" y="15" className="text-xs fill-gray-400">
+                          <text
+                            x="10"
+                            y="15"
+                            className="text-xs fill-[var(--color-text-disabled)]"
+                          >
                             $4.00
                           </text>
-                          <text x="10" y="65" className="text-xs fill-gray-400">
+                          <text
+                            x="10"
+                            y="65"
+                            className="text-xs fill-[var(--color-text-disabled)]"
+                          >
                             $2.00
                           </text>
                           <text
                             x="10"
                             y="115"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             $0
                           </text>
@@ -386,42 +408,42 @@ const ObjectiveNode = ({ data }: { data: any }) => {
                           <text
                             x="50"
                             y="135"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             Jan
                           </text>
                           <text
                             x="80"
                             y="135"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             Feb
                           </text>
                           <text
                             x="110"
                             y="135"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             Mar
                           </text>
                           <text
                             x="140"
                             y="135"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             Apr
                           </text>
                           <text
                             x="170"
                             y="135"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             May
                           </text>
                           <text
                             x="200"
                             y="135"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             Jun
                           </text>
@@ -437,13 +459,13 @@ const ObjectiveNode = ({ data }: { data: any }) => {
             {(data.effectivenessKPI || data.efficiencyKPI) &&
               data.supportingMetrics &&
               data.supportingMetrics.length > 0 && (
-                <div className="border-t border-gray-200"></div>
+                <div className="border-t border-[var(--color-border-default)]"></div>
               )}
 
             {/* Supporting Metrics */}
             {data.supportingMetrics && data.supportingMetrics.length > 0 && (
               <div className="mt-8">
-                <h3 className="text-sm font-medium text-gray-600 uppercase tracking-wide mb-6">
+                <h3 className="text-sm font-medium text-[var(--color-text-tertiary)] uppercase tracking-wide mb-6">
                   SUPPORTING METRICS
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -465,11 +487,14 @@ const ObjectiveNode = ({ data }: { data: any }) => {
                         : "text-red-600";
 
                     return (
-                      <div key={metric} className="bg-gray-50 p-4 rounded-lg">
-                        <h4 className="font-medium text-sm text-gray-900 mb-2">
+                      <div
+                        key={metric}
+                        className="bg-[var(--color-bg-secondary)] p-4 rounded-lg"
+                      >
+                        <h4 className="font-medium text-sm text-[var(--color-text-primary)] mb-2">
                           {metric}
                         </h4>
-                        <div className="text-2xl font-bold text-gray-900 mb-1">
+                        <div className="text-2xl font-bold text-[var(--color-text-primary)] mb-1">
                           {sampleData.value}
                         </div>
                         <div className={`${changeColor} font-medium text-sm`}>
@@ -563,7 +588,7 @@ const ChannelNode = ({ data }: { data: any }) => {
                 </DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
-                <p className="text-gray-700">
+                <p className="text-[var(--color-text-secondary)]">
                   Channel performance and configuration details for {data.label}
                   .
                 </p>
@@ -601,11 +626,15 @@ const ChannelNode = ({ data }: { data: any }) => {
           snapshotData[data.stepId]?.channels[data.channelKey]?.tactics || {},
         ).length > 0 && (
           <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2">
-            <div className="w-6 h-6 bg-white border-2 border-gray-300 rounded-full flex items-center justify-center shadow-sm">
+            <div className="w-6 h-6 bg-white border-2 border-[var(--color-border-default)] rounded-full flex items-center justify-center shadow-sm">
               {data.isSelected ? (
-                <span className="text-xs font-bold text-gray-600">-</span>
+                <span className="text-xs font-bold text-[var(--color-text-tertiary)]">
+                  -
+                </span>
               ) : (
-                <span className="text-xs font-bold text-gray-600">+</span>
+                <span className="text-xs font-bold text-[var(--color-text-tertiary)]">
+                  +
+                </span>
               )}
             </div>
           </div>
@@ -668,7 +697,7 @@ const TacticNode = ({ data }: { data: any }) => {
                 </DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
-                <p className="text-gray-700">
+                <p className="text-[var(--color-text-secondary)]">
                   Tactic performance details and configuration for {data.label}.
                 </p>
 

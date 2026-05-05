@@ -90,7 +90,7 @@ export function AuthDebug() {
           {isLoading ? "Running..." : "Run Debug Checks"}
         </Button>
         {debugInfo && (
-          <pre className="mt-4 p-4 bg-gray-100 rounded text-xs overflow-auto">
+          <pre className="mt-4 p-4 bg-[var(--color-bg-elevated)] rounded text-xs overflow-auto">
             {debugInfo}
           </pre>
         )}

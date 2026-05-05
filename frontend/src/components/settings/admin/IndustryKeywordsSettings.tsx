@@ -160,7 +160,7 @@ export const IndustryKeywordsSettings = () => {
     return (
       <Card>
         <CardContent className="flex items-center justify-center py-8">
-          <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+          <Loader2 className="h-8 w-8 animate-spin text-[var(--color-text-disabled)]" />
         </CardContent>
       </Card>
     );
@@ -193,7 +193,7 @@ export const IndustryKeywordsSettings = () => {
       <CardContent className="space-y-6">
         {/* Edit/Add Form */}
         {editingIndustry && (
-          <div className="border rounded-lg p-4 space-y-4 bg-gray-50">
+          <div className="border rounded-lg p-4 space-y-4 bg-[var(--color-bg-secondary)]">
             <div className="space-y-2">
               <Label htmlFor="industry-select">Industry</Label>
               <Select
@@ -284,14 +284,14 @@ export const IndustryKeywordsSettings = () => {
         {/* Existing Industries List */}
         <div className="space-y-3">
           {industryKeywords.length === 0 && !editingIndustry ? (
-            <div className="text-center py-8 text-gray-500">
+            <div className="text-center py-8 text-[var(--color-text-tertiary)]">
               No industry keywords configured yet
             </div>
           ) : (
             industryKeywords.map((item) => (
               <div
                 key={item.industry}
-                className="border rounded-lg p-4 hover:bg-gray-50 transition-colors"
+                className="border rounded-lg p-4 hover:bg-[var(--color-bg-secondary)] transition-colors"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -305,7 +305,7 @@ export const IndustryKeywordsSettings = () => {
                         </Badge>
                       ))}
                     </div>
-                    <p className="text-xs text-gray-500 mt-2">
+                    <p className="text-xs text-[var(--color-text-tertiary)] mt-2">
                       Last updated:{" "}
                       {new Date(item.updated_at).toLocaleDateString()}
                     </p>

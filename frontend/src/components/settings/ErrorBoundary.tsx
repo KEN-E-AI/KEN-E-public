@@ -29,7 +29,7 @@ const DefaultErrorFallback: React.FC<ErrorFallbackProps> = ({
     <AlertDescription className="mt-2">
       <div className="space-y-2">
         <p>An error occurred while loading this component:</p>
-        <p className="font-mono text-xs bg-gray-100 p-2 rounded">
+        <p className="font-mono text-xs bg-[var(--color-bg-elevated)] p-2 rounded">
           {error.message}
         </p>
         <Button onClick={resetError} variant="outline" size="sm">

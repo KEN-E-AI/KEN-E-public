@@ -25,7 +25,8 @@ export function ConceptBadge({ concept, onRemove, onEdit }: ConceptBadgeProps) {
       topic: "bg-yellow-100 text-yellow-800 hover:bg-yellow-200",
       product: "bg-pink-100 text-pink-800 hover:bg-pink-200",
       event: "bg-orange-100 text-orange-800 hover:bg-orange-200",
-      other: "bg-gray-100 text-gray-800 hover:bg-gray-200",
+      other:
+        "bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-elevated)]",
     };
     return colors[type as keyof typeof colors] || colors.other;
   };

@@ -208,7 +208,7 @@ export const AccountAccessSettings = ({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="text-sm text-gray-600">
+          <div className="text-sm text-[var(--color-text-tertiary)]">
             <p>
               Control who has access to this account. Users with
               organization-level admin permissions automatically have edit
@@ -217,7 +217,7 @@ export const AccountAccessSettings = ({
           </div>
 
           {isLoading ? (
-            <div className="text-center py-8 text-gray-500">
+            <div className="text-center py-8 text-[var(--color-text-tertiary)]">
               <p>Loading access permissions...</p>
             </div>
           ) : permissions.length > 0 ? (
@@ -225,19 +225,19 @@ export const AccountAccessSettings = ({
               {permissions.map((permission) => (
                 <div
                   key={permission.user_id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
+                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-[var(--color-bg-secondary)] transition-colors"
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-brand-light-blue/20 rounded-full flex items-center justify-center">
                       <Mail className="h-5 w-5 text-brand-medium-blue" />
                     </div>
                     <div>
-                      <h4 className="font-medium text-gray-900">
+                      <h4 className="font-medium text-[var(--color-text-primary)]">
                         {permission.email}
                       </h4>
                       <div className="flex items-center gap-2 mt-1">
                         {permission.first_name && permission.last_name && (
-                          <span className="text-sm text-gray-600">
+                          <span className="text-sm text-[var(--color-text-tertiary)]">
                             {permission.first_name} {permission.last_name}
                           </span>
                         )}
@@ -264,8 +264,8 @@ export const AccountAccessSettings = ({
               ))}
             </div>
           ) : (
-            <div className="text-center py-8 text-gray-500">
-              <Users className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+            <div className="text-center py-8 text-[var(--color-text-tertiary)]">
+              <Users className="h-12 w-12 mx-auto mb-4 text-[var(--color-text-disabled)]" />
               <p>No specific account permissions granted</p>
               <p className="text-sm mt-2">
                 Organization admins have automatic access to all accounts
@@ -301,7 +301,7 @@ export const AccountAccessSettings = ({
                     <SelectItem key={member.user_id} value={member.user_id}>
                       {member.email}
                       {member.first_name && member.last_name && (
-                        <span className="text-gray-500 ml-2">
+                        <span className="text-[var(--color-text-tertiary)] ml-2">
                           ({member.first_name} {member.last_name})
                         </span>
                       )}

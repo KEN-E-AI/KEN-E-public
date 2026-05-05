@@ -73,7 +73,7 @@ const HomeChatArea = () => {
                   >
                     {conversation.conversation_name ||
                       `Chat ${conversation.session_id.slice(-8)}`}
-                    <span className="ml-auto text-xs text-gray-500">
+                    <span className="ml-auto text-xs text-[var(--color-text-tertiary)]">
                       {new Date(conversation.last_updated).toLocaleDateString()}
                     </span>
                   </DropdownMenuItem>

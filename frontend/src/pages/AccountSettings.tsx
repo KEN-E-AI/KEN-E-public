@@ -1203,7 +1203,7 @@ const AccountSettings = () => {
             <div className="text-center py-8">
               <div className="inline-flex items-center space-x-2">
                 <div className="w-4 h-4 border-2 border-brand-medium-blue border-t-transparent rounded-full animate-spin" />
-                <span className="text-gray-600">
+                <span className="text-[var(--color-text-tertiary)]">
                   Loading organization data...
                 </span>
               </div>

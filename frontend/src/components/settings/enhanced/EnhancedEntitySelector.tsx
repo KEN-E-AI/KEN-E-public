@@ -83,11 +83,11 @@ export const EnhancedEntitySelector = ({
             />
 
             {showCurrentContext && selectedOrgAccount && (
-              <div className="flex items-center gap-2 text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
+              <div className="flex items-center gap-2 text-sm text-[var(--color-text-tertiary)] bg-[var(--color-bg-secondary)] p-3 rounded-lg">
                 <Building2 className="h-4 w-4" />
                 <span className="font-medium">Active Context:</span>
                 <span>{currentOrgName}</span>
-                <ArrowRight className="h-3 w-3 text-gray-400" />
+                <ArrowRight className="h-3 w-3 text-[var(--color-text-disabled)]" />
                 <span>{currentAccountName}</span>
               </div>
             )}
@@ -128,10 +128,10 @@ export const EnhancedEntitySelector = ({
 
       {showContextualActions && (
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm text-gray-600">
+          <div className="flex items-center gap-2 text-sm text-[var(--color-text-tertiary)]">
             <Building2 className="h-3 w-3" />
             <span>{currentOrgName}</span>
-            <ArrowRight className="h-3 w-3 text-gray-400" />
+            <ArrowRight className="h-3 w-3 text-[var(--color-text-disabled)]" />
             <span>{currentAccountName}</span>
           </div>
           <ContextualActionBar
@@ -169,7 +169,9 @@ export const ContextSwitcher = ({
   return (
     <div className={cn("bg-white border rounded-lg p-4", className)}>
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-medium text-gray-900">Context</h3>
+        <h3 className="text-sm font-medium text-[var(--color-text-primary)]">
+          Context
+        </h3>
         {showQuickActions && (
           <ContextualActionBar
             context="settings"
@@ -187,7 +189,7 @@ export const ContextSwitcher = ({
 
       {showCurrentPath && selectedOrgAccount && (
         <div className="mt-3 pt-3 border-t">
-          <div className="flex items-center text-xs text-gray-500">
+          <div className="flex items-center text-xs text-[var(--color-text-tertiary)]">
             <Building2 className="h-3 w-3 mr-1" />
             <span>{selectedOrgAccount.metadata?.organization_name}</span>
             <ArrowRight className="h-3 w-3 mx-1" />

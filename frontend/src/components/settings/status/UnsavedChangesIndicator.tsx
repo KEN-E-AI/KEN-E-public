@@ -155,7 +155,7 @@ export const UnsavedChangesIndicator = ({
               <div>
                 <p className="font-medium">{getStatusText()}</p>
                 {lastSaved && (
-                  <p className="text-sm text-gray-600 mt-1">
+                  <p className="text-sm text-[var(--color-text-tertiary)] mt-1">
                     Last saved: {lastSaved}
                   </p>
                 )}
@@ -205,7 +205,7 @@ export const UnsavedChangesIndicator = ({
           {getStatusText()}
         </span>
         {lastSaved && (
-          <span className="text-sm text-gray-500">
+          <span className="text-sm text-[var(--color-text-tertiary)]">
             • Last saved: {lastSaved}
           </span>
         )}
@@ -266,11 +266,13 @@ export const AutoSaveIndicator = ({
         ) : (
           <CheckCircle className="h-4 w-4 text-brand-dark-blue" />
         )}
-        <span className="text-gray-600">
+        <span className="text-[var(--color-text-tertiary)]">
           {isAutoSaving ? "Auto-saving..." : "Auto-saved"}
         </span>
         {lastAutoSaved && (
-          <span className="text-gray-500">{lastAutoSaved}</span>
+          <span className="text-[var(--color-text-tertiary)]">
+            {lastAutoSaved}
+          </span>
         )}
       </div>
 
@@ -336,7 +338,7 @@ export const FormStateIndicator = ({
   return (
     <div
       className={cn(
-        "flex items-center justify-between p-3 bg-gray-50 rounded-lg",
+        "flex items-center justify-between p-3 bg-[var(--color-bg-secondary)] rounded-lg",
         className,
       )}
     >
@@ -344,7 +346,7 @@ export const FormStateIndicator = ({
         <Icon className={cn("h-4 w-4", color)} />
         <span className="text-sm font-medium">{text}</span>
         {lastSaved && (
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-[var(--color-text-tertiary)]">
             • Last saved: {lastSaved}
           </span>
         )}

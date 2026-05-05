@@ -622,7 +622,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
 
   if (loadingUserData || Object.keys(localOrgMetadata).length === 0) {
     return (
-      <div className="text-center py-10 text-gray-500">
+      <div className="text-center py-10 text-[var(--color-text-tertiary)]">
         Loading organizations...
       </div>
     );
@@ -640,7 +640,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
               className="h-16 w-auto"
             />
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          <h1 className="text-3xl font-bold text-[var(--color-text-primary)] mb-2">
             Select An Account
           </h1>
         </div>
@@ -658,14 +658,14 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                   className={`p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
                     selectedOrganization === org.organization_id
                       ? "border-brand-medium-blue bg-brand-light-blue/20"
-                      : "border-gray-200 hover:border-gray-300"
+                      : "border-[var(--color-border-default)] hover:border-[var(--color-border-default)]"
                   }`}
                   onClick={() => handleOrganizationSelect(org.organization_id)}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
-                        <h3 className="font-semibold text-gray-900">
+                        <h3 className="font-semibold text-[var(--color-text-primary)]">
                           {org.organization_name}
                         </h3>
                         {org.error && (
@@ -756,14 +756,14 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                             className={`p-3 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
                               selectedChildOrg === childOrg.organization_id
                                 ? "border-brand-medium-blue bg-brand-light-blue/20"
-                                : "border-gray-200 hover:border-gray-300"
+                                : "border-[var(--color-border-default)] hover:border-[var(--color-border-default)]"
                             }`}
                             onClick={() =>
                               setSelectedChildOrg(childOrg.organization_id)
                             }
                           >
                             <div className="flex items-center gap-2">
-                              <h4 className="font-medium text-gray-900">
+                              <h4 className="font-medium text-[var(--color-text-primary)]">
                                 {childOrg.organization_name}
                               </h4>
                               {selectedChildOrg ===
@@ -787,7 +787,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                               className={`p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
                                 selectedAccount === account.account_id
                                   ? "border-brand-medium-blue bg-brand-light-blue/20"
-                                  : "border-gray-200 hover:border-gray-300"
+                                  : "border-[var(--color-border-default)] hover:border-[var(--color-border-default)]"
                               }`}
                               onClick={() =>
                                 setSelectedAccount(account.account_id)
@@ -796,7 +796,7 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                               <div className="flex items-start justify-between">
                                 <div className="flex-1">
                                   <div className="flex items-center gap-2 mb-2">
-                                    <h3 className="font-semibold text-gray-900">
+                                    <h3 className="font-semibold text-[var(--color-text-primary)]">
                                       {account.account_name}
                                     </h3>
                                     {selectedAccount === account.account_id && (
@@ -865,14 +865,14 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                           className={`p-4 border-2 rounded-lg cursor-pointer transition-all hover:shadow-md ${
                             selectedAccount === account.account_id
                               ? "border-brand-medium-blue bg-brand-light-blue/20"
-                              : "border-gray-200 hover:border-gray-300"
+                              : "border-[var(--color-border-default)] hover:border-[var(--color-border-default)]"
                           }`}
                           onClick={() => setSelectedAccount(account.account_id)}
                         >
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-2">
-                                <h3 className="font-semibold text-gray-900">
+                                <h3 className="font-semibold text-[var(--color-text-primary)]">
                                   {account.account_name}
                                 </h3>
                                 {selectedAccount === account.account_id && (
@@ -945,8 +945,8 @@ const OrganizationSelection = ({ onComplete }: OrganizationSelectionProps) => {
                   )}
                 </>
               ) : (
-                <div className="p-8 text-center text-gray-500">
-                  <Settings className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                <div className="p-8 text-center text-[var(--color-text-tertiary)]">
+                  <Settings className="h-12 w-12 mx-auto mb-4 text-[var(--color-text-disabled)]" />
                   <p>Please select an organization first</p>
                 </div>
               )}

@@ -120,7 +120,7 @@ export const AccountPrivacySettings = ({
   const getComplianceColor = (framework: ComplianceFramework) => {
     return framework.enabled
       ? "bg-brand-light-green/20 text-brand-dark-blue border-brand-light-green/40"
-      : "bg-gray-50 text-gray-700 border-gray-200";
+      : "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] border-[var(--color-border-default)]";
   };
 
   return (

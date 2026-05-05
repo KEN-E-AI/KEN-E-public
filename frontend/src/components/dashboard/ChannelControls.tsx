@@ -124,30 +124,30 @@ const ContextMenu = ({
     <div
       id={id}
       style={{ top, left }}
-      className="absolute z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-1 min-w-[120px]"
+      className="absolute z-50 bg-white border border-[var(--color-border-default)] rounded-lg shadow-lg p-1 min-w-[120px]"
     >
       <button
         onClick={handleView}
-        className="w-full px-3 py-2 text-xs text-left bg-black text-white rounded hover:bg-gray-800 transition-colors mb-1"
+        className="w-full px-3 py-2 text-xs text-left bg-black text-white rounded hover:bg-slate-800 transition-colors mb-1"
       >
         View
       </button>
       <button
         onClick={handleEdit}
-        className="w-full px-3 py-2 text-xs text-left bg-black text-white rounded hover:bg-gray-800 transition-colors mb-1"
+        className="w-full px-3 py-2 text-xs text-left bg-black text-white rounded hover:bg-slate-800 transition-colors mb-1"
       >
         Edit
       </button>
       <button
         onClick={handleRemove}
-        className={`w-full px-3 py-2 text-xs text-left bg-black text-white rounded hover:bg-gray-800 transition-colors ${showAddChild ? "mb-1" : ""}`}
+        className={`w-full px-3 py-2 text-xs text-left bg-black text-white rounded hover:bg-slate-800 transition-colors ${showAddChild ? "mb-1" : ""}`}
       >
         Remove
       </button>
       {showAddChild && (
         <button
           onClick={handleAddChild}
-          className="w-full px-3 py-2 text-xs text-left bg-black text-white rounded hover:bg-gray-800 transition-colors"
+          className="w-full px-3 py-2 text-xs text-left bg-black text-white rounded hover:bg-slate-800 transition-colors"
         >
           {getAddChildText()}
         </button>
@@ -1064,7 +1064,7 @@ const ReactFlowComponent = () => {
               setOpenDirectlyToForm(true);
               setEditObjectivesModalOpen(true);
             }}
-            className="bg-black text-white hover:bg-gray-800"
+            className="bg-black text-white hover:bg-slate-800"
           >
             Add Objective
           </Button>
@@ -1103,7 +1103,7 @@ const ReactFlowComponent = () => {
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
                   <div className="p-3 border-b">
-                    <h4 className="font-medium text-sm text-gray-900 mb-2">
+                    <h4 className="font-medium text-sm text-[var(--color-text-primary)] mb-2">
                       Primary Date Range
                     </h4>
                     <Calendar
@@ -1124,7 +1124,7 @@ const ReactFlowComponent = () => {
                     variant="outline"
                     size="sm"
                     className={cn(
-                      "justify-start text-left font-normal text-gray-600",
+                      "justify-start text-left font-normal text-[var(--color-text-tertiary)]",
                       !pendingComparisonDateRange && "text-muted-foreground",
                     )}
                   >
@@ -1145,7 +1145,7 @@ const ReactFlowComponent = () => {
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
                   <div className="p-3">
-                    <h4 className="font-medium text-sm text-gray-900 mb-2">
+                    <h4 className="font-medium text-sm text-[var(--color-text-primary)] mb-2">
                       Comparison Date Range
                     </h4>
                     <Calendar
@@ -1167,7 +1167,7 @@ const ReactFlowComponent = () => {
                   setOpenDirectlyToForm(true);
                   setEditObjectivesModalOpen(true);
                 }}
-                className="bg-black text-white hover:bg-gray-800"
+                className="bg-black text-white hover:bg-slate-800"
               >
                 Add Objective
               </Button>
@@ -1221,7 +1221,7 @@ const ReactFlowComponent = () => {
             {modalContent.title}
           </div>
           {modalContent.content && (
-            <div className="text-sm text-gray-600 mt-2">
+            <div className="text-sm text-[var(--color-text-tertiary)] mt-2">
               {modalContent.content}
             </div>
           )}
@@ -1229,7 +1229,7 @@ const ReactFlowComponent = () => {
           {/* Divider */}
           {modalContent.content &&
             (modalContent.effectivenessKPI || modalContent.efficiencyKPI) && (
-              <div className="border-t border-gray-200"></div>
+              <div className="border-t border-[var(--color-border-default)]"></div>
             )}
 
           {/* KPI Information */}
@@ -1240,17 +1240,17 @@ const ReactFlowComponent = () => {
                   {/* Header with status dot */}
                   <div className="flex items-center gap-2 mb-4">
                     <div className="w-3 h-3 bg-brand-light-green rounded-full"></div>
-                    <h3 className="text-sm font-medium text-gray-600 uppercase tracking-wide">
+                    <h3 className="text-sm font-medium text-[var(--color-text-tertiary)] uppercase tracking-wide">
                       EFFECTIVENESS
                     </h3>
                   </div>
 
                   {/* Metric info */}
                   <div className="mb-3">
-                    <h4 className="font-semibold text-gray-900 mb-1">
+                    <h4 className="font-semibold text-[var(--color-text-primary)] mb-1">
                       {modalContent.effectivenessKPI}
                     </h4>
-                    <p className="text-sm text-gray-600 mb-4">
+                    <p className="text-sm text-[var(--color-text-tertiary)] mb-4">
                       The estimated portion of impressions served to new
                       prospects across platforms, channels, websites and apps.
                     </p>
@@ -1259,8 +1259,8 @@ const ReactFlowComponent = () => {
                   {/* Scorecard and Chart Container */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
                     {/* Scorecard */}
-                    <div className="md:col-span-1 bg-gray-50 overflow-hidden flex flex-col justify-center items-center">
-                      <div className="text-4xl font-bold text-gray-900 mb-2 text-center">
+                    <div className="md:col-span-1 bg-[var(--color-bg-secondary)] overflow-hidden flex flex-col justify-center items-center">
+                      <div className="text-4xl font-bold text-[var(--color-text-primary)] mb-2 text-center">
                         1,529,204
                       </div>
                       <div className="text-brand-dark-green font-medium text-center">
@@ -1275,16 +1275,24 @@ const ReactFlowComponent = () => {
                           className="w-full h-full flex flex-col justify-center items-center"
                         >
                           {/* Y-axis labels */}
-                          <text x="10" y="15" className="text-xs fill-gray-400">
+                          <text
+                            x="10"
+                            y="15"
+                            className="text-xs fill-[var(--color-text-disabled)]"
+                          >
                             $50,000
                           </text>
-                          <text x="10" y="65" className="text-xs fill-gray-400">
+                          <text
+                            x="10"
+                            y="65"
+                            className="text-xs fill-[var(--color-text-disabled)]"
+                          >
                             $25,000
                           </text>
                           <text
                             x="10"
                             y="115"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             $0
                           </text>
@@ -1302,42 +1310,42 @@ const ReactFlowComponent = () => {
                           <text
                             x="50"
                             y="135"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             Jan
                           </text>
                           <text
                             x="80"
                             y="135"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             Feb
                           </text>
                           <text
                             x="110"
                             y="135"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             Mar
                           </text>
                           <text
                             x="140"
                             y="135"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             Apr
                           </text>
                           <text
                             x="170"
                             y="135"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             May
                           </text>
                           <text
                             x="200"
                             y="135"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             Jun
                           </text>
@@ -1350,7 +1358,7 @@ const ReactFlowComponent = () => {
 
               {/* Divider */}
               {modalContent.effectivenessKPI && modalContent.efficiencyKPI && (
-                <div className="border-t border-gray-200"></div>
+                <div className="border-t border-[var(--color-border-default)]"></div>
               )}
 
               {modalContent.efficiencyKPI && (
@@ -1358,17 +1366,17 @@ const ReactFlowComponent = () => {
                   {/* Header with status dot */}
                   <div className="flex items-center gap-2 mb-4">
                     <div className="w-3 h-3 bg-brand-yellow rounded-full"></div>
-                    <h3 className="text-sm font-medium text-gray-600 uppercase tracking-wide">
+                    <h3 className="text-sm font-medium text-[var(--color-text-tertiary)] uppercase tracking-wide">
                       EFFICIENCY
                     </h3>
                   </div>
 
                   {/* Metric info */}
                   <div className="mb-3">
-                    <h4 className="font-semibold text-gray-900 mb-1">
+                    <h4 className="font-semibold text-[var(--color-text-primary)] mb-1">
                       {modalContent.efficiencyKPI}
                     </h4>
-                    <p className="text-sm text-gray-600 mb-4">
+                    <p className="text-sm text-[var(--color-text-tertiary)] mb-4">
                       The average cost paid for each impression served to
                       prospects across all advertising channels and platforms.
                     </p>
@@ -1377,8 +1385,8 @@ const ReactFlowComponent = () => {
                   {/* Scorecard and Chart Container */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {/* Scorecard */}
-                    <div className="md:col-span-1 bg-gray-50 rounded-lg overflow-hidden flex flex-col justify-center items-center">
-                      <div className="text-4xl font-bold text-gray-900 mb-2 text-center">
+                    <div className="md:col-span-1 bg-[var(--color-bg-secondary)] rounded-lg overflow-hidden flex flex-col justify-center items-center">
+                      <div className="text-4xl font-bold text-[var(--color-text-primary)] mb-2 text-center">
                         $2.47
                       </div>
                       <div className="text-brand-yellow font-medium text-center">
@@ -1394,16 +1402,24 @@ const ReactFlowComponent = () => {
                           className="w-full h-full flex flex-col justify-center items-center"
                         >
                           {/* Y-axis labels */}
-                          <text x="10" y="15" className="text-xs fill-gray-400">
+                          <text
+                            x="10"
+                            y="15"
+                            className="text-xs fill-[var(--color-text-disabled)]"
+                          >
                             $4.00
                           </text>
-                          <text x="10" y="65" className="text-xs fill-gray-400">
+                          <text
+                            x="10"
+                            y="65"
+                            className="text-xs fill-[var(--color-text-disabled)]"
+                          >
                             $2.00
                           </text>
                           <text
                             x="10"
                             y="115"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             $0
                           </text>
@@ -1421,42 +1437,42 @@ const ReactFlowComponent = () => {
                           <text
                             x="50"
                             y="135"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             Jan
                           </text>
                           <text
                             x="80"
                             y="135"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             Feb
                           </text>
                           <text
                             x="110"
                             y="135"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             Mar
                           </text>
                           <text
                             x="140"
                             y="135"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             Apr
                           </text>
                           <text
                             x="170"
                             y="135"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             May
                           </text>
                           <text
                             x="200"
                             y="135"
-                            className="text-xs fill-gray-400"
+                            className="text-xs fill-[var(--color-text-disabled)]"
                           >
                             Jun
                           </text>
@@ -1473,14 +1489,14 @@ const ReactFlowComponent = () => {
           {(modalContent.effectivenessKPI || modalContent.efficiencyKPI) &&
             modalContent.supportingMetrics &&
             modalContent.supportingMetrics.length > 0 && (
-              <div className="border-t border-gray-200"></div>
+              <div className="border-t border-[var(--color-border-default)]"></div>
             )}
 
           {/* Supporting Metrics */}
           {modalContent.supportingMetrics &&
             modalContent.supportingMetrics.length > 0 && (
               <div className="mt-8">
-                <h3 className="text-sm font-medium text-gray-600 uppercase tracking-wide mb-6">
+                <h3 className="text-sm font-medium text-[var(--color-text-tertiary)] uppercase tracking-wide mb-6">
                   SUPPORTING METRICS
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -1502,11 +1518,14 @@ const ReactFlowComponent = () => {
                         : "text-red-600";
 
                     return (
-                      <div key={metric} className="bg-gray-50 p-4 rounded-lg">
-                        <h4 className="font-medium text-sm text-gray-900 mb-2">
+                      <div
+                        key={metric}
+                        className="bg-[var(--color-bg-secondary)] p-4 rounded-lg"
+                      >
+                        <h4 className="font-medium text-sm text-[var(--color-text-primary)] mb-2">
                           {metric}
                         </h4>
-                        <div className="text-2xl font-bold text-gray-900 mb-1">
+                        <div className="text-2xl font-bold text-[var(--color-text-primary)] mb-1">
                           {sampleData.value}
                         </div>
                         <div className={`${changeColor} font-medium text-sm`}>
@@ -1615,7 +1634,7 @@ const ReactFlowComponent = () => {
             </Button>
             <Button
               onClick={handleBeginAnalysis}
-              className="bg-black text-white hover:bg-gray-800"
+              className="bg-black text-white hover:bg-slate-800"
             >
               Analyze {modalContent.nodeType || "Tree"}
             </Button>
@@ -1812,7 +1831,7 @@ const ChannelControls = ({ data: propData }: ChannelControlsProps) => {
 
   return (
     <div className="w-full h-[641px] bg-white overflow-hidden">
-      <div className="text-sm text-gray-600 border-b border-gray-200 px-4 pb-4 flex justify-between items-center">
+      <div className="text-sm text-[var(--color-text-tertiary)] border-b border-[var(--color-border-default)] px-4 pb-4 flex justify-between items-center">
         <span>
           Use the diagram below to define what you business wants to accomplish
           and how you will know when you are successful. Click 'Help' to have

@@ -215,7 +215,7 @@ export const NotificationPreferences: React.FC<
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8">
-        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+        <Loader2 className="h-6 w-6 animate-spin text-[var(--color-text-disabled)]" />
       </div>
     );
   }
@@ -238,7 +238,7 @@ export const NotificationPreferences: React.FC<
       {/* Categories Section */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-medium text-gray-900">
+          <h3 className="text-lg font-medium text-[var(--color-text-primary)]">
             Notification Categories
           </h3>
           <button
@@ -255,7 +255,7 @@ export const NotificationPreferences: React.FC<
           {NOTIFICATION_CATEGORIES.map((category) => (
             <label
               key={category.value}
-              className="flex items-start gap-3 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+              className="flex items-start gap-3 p-3 border rounded-lg hover:bg-[var(--color-bg-secondary)] cursor-pointer transition-colors"
             >
               <input
                 type="checkbox"
@@ -264,11 +264,11 @@ export const NotificationPreferences: React.FC<
                 className="mt-1"
               />
               <div className="flex-1">
-                <div className="flex items-center gap-2 font-medium text-gray-900">
+                <div className="flex items-center gap-2 font-medium text-[var(--color-text-primary)]">
                   {category.icon}
                   {category.label}
                 </div>
-                <p className="text-sm text-gray-600 mt-1">
+                <p className="text-sm text-[var(--color-text-tertiary)] mt-1">
                   {category.description}
                 </p>
               </div>
@@ -279,7 +279,7 @@ export const NotificationPreferences: React.FC<
 
       {/* Channels Section */}
       <div>
-        <h3 className="text-lg font-medium text-gray-900 mb-4">
+        <h3 className="text-lg font-medium text-[var(--color-text-primary)] mb-4">
           Notification Channels
         </h3>
 
@@ -294,8 +294,8 @@ export const NotificationPreferences: React.FC<
                 key={channel.value}
                 className={`flex items-start gap-3 p-3 border rounded-lg transition-colors ${
                   isDisabled
-                    ? "opacity-50 cursor-not-allowed bg-gray-50"
-                    : "hover:bg-gray-50 cursor-pointer"
+                    ? "opacity-50 cursor-not-allowed bg-[var(--color-bg-secondary)]"
+                    : "hover:bg-[var(--color-bg-secondary)] cursor-pointer"
                 }`}
               >
                 <input
@@ -306,16 +306,16 @@ export const NotificationPreferences: React.FC<
                   className="mt-1"
                 />
                 <div className="flex-1">
-                  <div className="flex items-center gap-2 font-medium text-gray-900">
+                  <div className="flex items-center gap-2 font-medium text-[var(--color-text-primary)]">
                     {channel.icon}
                     {channel.label}
                     {isComingSoon && (
-                      <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
+                      <span className="text-xs bg-[var(--color-bg-elevated)] text-[var(--color-text-tertiary)] px-2 py-0.5 rounded-full">
                         Coming Soon
                       </span>
                     )}
                   </div>
-                  <p className="text-sm text-gray-600 mt-1">
+                  <p className="text-sm text-[var(--color-text-tertiary)] mt-1">
                     {channel.description}
                   </p>
                 </div>
@@ -330,7 +330,7 @@ export const NotificationPreferences: React.FC<
         <button
           onClick={handleSave}
           disabled={saving}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
+          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-[var(--color-text-disabled)] disabled:cursor-not-allowed flex items-center gap-2"
         >
           {saving ? (
             <>

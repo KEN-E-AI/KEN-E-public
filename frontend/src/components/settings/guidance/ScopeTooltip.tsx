@@ -162,7 +162,7 @@ export const ScopeTooltip = ({
               {tooltipContent.scopeExplanation}
             </div>
             {tooltipContent.location && (
-              <div className="text-xs text-gray-500 italic">
+              <div className="text-xs text-[var(--color-text-tertiary)] italic">
                 📍 {tooltipContent.location}
               </div>
             )}

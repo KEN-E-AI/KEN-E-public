@@ -298,12 +298,14 @@ const MetricsPage = () => {
 
   const getSortIcon = (field: SortField) => {
     if (sortField !== field) {
-      return <ArrowUpDown className="h-3 w-3 text-gray-400" />;
+      return (
+        <ArrowUpDown className="h-3 w-3 text-[var(--color-text-disabled)]" />
+      );
     }
     return sortDirection === "asc" ? (
-      <ArrowUp className="h-3 w-3 text-gray-700" />
+      <ArrowUp className="h-3 w-3 text-[var(--color-text-secondary)]" />
     ) : (
-      <ArrowDown className="h-3 w-3 text-gray-700" />
+      <ArrowDown className="h-3 w-3 text-[var(--color-text-secondary)]" />
     );
   };
 
@@ -432,7 +434,9 @@ const MetricsPage = () => {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-center py-8">
-          <div className="text-gray-500">Loading metrics...</div>
+          <div className="text-[var(--color-text-tertiary)]">
+            Loading metrics...
+          </div>
         </div>
       </div>
     );
@@ -462,7 +466,7 @@ const MetricsPage = () => {
       {/* Search and Filter */}
       <div className="flex items-center gap-3">
         <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-[var(--color-text-disabled)]" />
           <Input
             placeholder="Search metrics..."
             value={searchTerm}
@@ -495,7 +499,7 @@ const MetricsPage = () => {
               <div className="space-y-3">
                 {/* Dataset Filter */}
                 <div>
-                  <Label className="text-xs font-medium text-gray-700 mb-1 block">
+                  <Label className="text-xs font-medium text-[var(--color-text-secondary)] mb-1 block">
                     Filter by Dataset
                   </Label>
                   <Select
@@ -521,7 +525,7 @@ const MetricsPage = () => {
 
                 {/* Product Filter */}
                 <div>
-                  <Label className="text-xs font-medium text-gray-700 mb-1 block">
+                  <Label className="text-xs font-medium text-[var(--color-text-secondary)] mb-1 block">
                     Filter by Product
                   </Label>
                   <Select
@@ -570,12 +574,12 @@ const MetricsPage = () => {
         <div className="hidden md:block overflow-x-auto">
           <div className="min-w-[700px]">
             {/* Table Header */}
-            <div className="grid grid-cols-10 gap-4 p-4 border-b border-dashboard-gray-200 bg-gray-50 text-sm font-medium text-gray-700">
+            <div className="grid grid-cols-10 gap-4 p-4 border-b border-dashboard-gray-200 bg-[var(--color-bg-secondary)] text-sm font-medium text-[var(--color-text-secondary)]">
               <div className="col-span-1 text-center">Expand</div>
               <div className="col-span-4">
                 <button
                   onClick={() => handleSort("name")}
-                  className="flex items-center gap-2 hover:text-gray-900 transition-colors"
+                  className="flex items-center gap-2 hover:text-[var(--color-text-primary)] transition-colors"
                 >
                   Name
                   {getSortIcon("name")}
@@ -584,7 +588,7 @@ const MetricsPage = () => {
               <div className="col-span-3">
                 <button
                   onClick={() => handleSort("dataset")}
-                  className="flex items-center gap-2 hover:text-gray-900 transition-colors"
+                  className="flex items-center gap-2 hover:text-[var(--color-text-primary)] transition-colors"
                 >
                   Dataset
                   {getSortIcon("dataset")}
@@ -593,7 +597,7 @@ const MetricsPage = () => {
               <div className="col-span-1">
                 <button
                   onClick={() => handleSort("product")}
-                  className="flex items-center gap-2 hover:text-gray-900 transition-colors"
+                  className="flex items-center gap-2 hover:text-[var(--color-text-primary)] transition-colors"
                 >
                   Product
                   {getSortIcon("product")}
@@ -614,7 +618,7 @@ const MetricsPage = () => {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-8 w-8 p-0 hover:bg-gray-100"
+                          className="h-8 w-8 p-0 hover:bg-[var(--color-bg-elevated)]"
                           onClick={() => toggleExpanded(metric.id)}
                         >
                           {isExpanded ? (
@@ -630,14 +634,14 @@ const MetricsPage = () => {
                         </span>
                       </div>
                       <div className="col-span-3 min-w-0">
-                        <span className="text-sm text-gray-700 break-words">
+                        <span className="text-sm text-[var(--color-text-secondary)] break-words">
                           {datasetsData.find(
                             (d) => d.dataset_name === metric.dataset,
                           )?.dataset_name || metric.dataset}
                         </span>
                       </div>
                       <div className="col-span-1 min-w-0">
-                        <span className="text-sm text-gray-700 break-words">
+                        <span className="text-sm text-[var(--color-text-secondary)] break-words">
                           {metric.product}
                         </span>
                       </div>
@@ -647,7 +651,7 @@ const MetricsPage = () => {
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-8 w-8 p-0 hover:bg-gray-100 border border-gray-200"
+                              className="h-8 w-8 p-0 hover:bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)]"
                             >
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
@@ -671,13 +675,13 @@ const MetricsPage = () => {
 
                     {/* Expanded Details */}
                     {isExpanded && (
-                      <div className="mt-4 ml-12 grid grid-cols-1 gap-4 p-4 bg-gray-50 rounded-lg">
+                      <div className="mt-4 ml-12 grid grid-cols-1 gap-4 p-4 bg-[var(--color-bg-secondary)] rounded-lg">
                         {/* Description */}
                         <div className="min-w-0">
-                          <Label className="text-xs font-medium text-gray-700">
+                          <Label className="text-xs font-medium text-[var(--color-text-secondary)]">
                             Description
                           </Label>
-                          <p className="text-sm text-gray-600 mt-1 break-words hyphens-auto">
+                          <p className="text-sm text-[var(--color-text-tertiary)] mt-1 break-words hyphens-auto">
                             {metric.description}
                           </p>
                         </div>
@@ -685,26 +689,26 @@ const MetricsPage = () => {
                         {/* Format, Currency, SQL in a grid */}
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                           <div className="min-w-0">
-                            <Label className="text-xs font-medium text-gray-700">
+                            <Label className="text-xs font-medium text-[var(--color-text-secondary)]">
                               Format
                             </Label>
-                            <p className="text-sm text-gray-900 mt-1 break-words">
+                            <p className="text-sm text-[var(--color-text-primary)] mt-1 break-words">
                               {metric.format}
                             </p>
                           </div>
                           <div className="min-w-0">
-                            <Label className="text-xs font-medium text-gray-700">
+                            <Label className="text-xs font-medium text-[var(--color-text-secondary)]">
                               Currency
                             </Label>
-                            <p className="text-sm text-gray-900 mt-1 break-words">
+                            <p className="text-sm text-[var(--color-text-primary)] mt-1 break-words">
                               {metric.currency}
                             </p>
                           </div>
                           <div className="lg:col-span-3 min-w-0">
-                            <Label className="text-xs font-medium text-gray-700">
+                            <Label className="text-xs font-medium text-[var(--color-text-secondary)]">
                               SQL Expression
                             </Label>
-                            <div className="text-sm text-gray-900 mt-1 font-mono bg-white p-3 rounded border break-all whitespace-pre-wrap overflow-hidden">
+                            <div className="text-sm text-[var(--color-text-primary)] mt-1 font-mono bg-white p-3 rounded border break-all whitespace-pre-wrap overflow-hidden">
                               {metric.sqlExpression}
                             </div>
                           </div>
@@ -721,13 +725,15 @@ const MetricsPage = () => {
         {/* Mobile Card Layout */}
         <div className="md:hidden">
           {/* Mobile Sort Options */}
-          <div className="p-3 border-b border-dashboard-gray-200 bg-gray-50">
-            <div className="flex items-center gap-2 text-sm font-medium text-gray-700 overflow-x-auto">
+          <div className="p-3 border-b border-dashboard-gray-200 bg-[var(--color-bg-secondary)]">
+            <div className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-secondary)] overflow-x-auto">
               <span className="whitespace-nowrap">Sort:</span>
               <button
                 onClick={() => handleSort("name")}
                 className={`flex items-center gap-1 px-2 py-1 rounded whitespace-nowrap ${
-                  sortField === "name" ? "bg-gray-200" : "hover:bg-gray-100"
+                  sortField === "name"
+                    ? "bg-[var(--color-bg-elevated)]"
+                    : "hover:bg-[var(--color-bg-elevated)]"
                 }`}
               >
                 Name {getSortIcon("name")}
@@ -735,7 +741,9 @@ const MetricsPage = () => {
               <button
                 onClick={() => handleSort("dataset")}
                 className={`flex items-center gap-1 px-2 py-1 rounded whitespace-nowrap ${
-                  sortField === "dataset" ? "bg-gray-200" : "hover:bg-gray-100"
+                  sortField === "dataset"
+                    ? "bg-[var(--color-bg-elevated)]"
+                    : "hover:bg-[var(--color-bg-elevated)]"
                 }`}
               >
                 Dataset {getSortIcon("dataset")}
@@ -743,7 +751,9 @@ const MetricsPage = () => {
               <button
                 onClick={() => handleSort("product")}
                 className={`flex items-center gap-1 px-2 py-1 rounded whitespace-nowrap ${
-                  sortField === "product" ? "bg-gray-200" : "hover:bg-gray-100"
+                  sortField === "product"
+                    ? "bg-[var(--color-bg-elevated)]"
+                    : "hover:bg-[var(--color-bg-elevated)]"
                 }`}
               >
                 Product {getSortIcon("product")}
@@ -765,13 +775,13 @@ const MetricsPage = () => {
                           {metric.name}
                         </h3>
                         <div className="mt-1 space-y-1">
-                          <p className="text-xs text-gray-600">
+                          <p className="text-xs text-[var(--color-text-tertiary)]">
                             <span className="font-medium">Dataset:</span>{" "}
                             {datasetsData.find(
                               (d) => d.dataset_name === metric.dataset,
                             )?.dataset_name || metric.dataset}
                           </p>
-                          <p className="text-xs text-gray-600">
+                          <p className="text-xs text-[var(--color-text-tertiary)]">
                             <span className="font-medium">Product:</span>{" "}
                             {metric.product}
                           </p>
@@ -781,7 +791,7 @@ const MetricsPage = () => {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-8 w-8 p-0 hover:bg-gray-100"
+                          className="h-8 w-8 p-0 hover:bg-[var(--color-bg-elevated)]"
                           onClick={() => toggleExpanded(metric.id)}
                         >
                           {isExpanded ? (
@@ -795,7 +805,7 @@ const MetricsPage = () => {
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-8 w-8 p-0 hover:bg-gray-100 border border-gray-200"
+                              className="h-8 w-8 p-0 hover:bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)]"
                             >
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
@@ -819,40 +829,40 @@ const MetricsPage = () => {
 
                     {/* Mobile Expanded Details */}
                     {isExpanded && (
-                      <div className="mt-4 space-y-4 p-3 bg-gray-50 rounded-lg">
+                      <div className="mt-4 space-y-4 p-3 bg-[var(--color-bg-secondary)] rounded-lg">
                         <div>
-                          <Label className="text-xs font-medium text-gray-700">
+                          <Label className="text-xs font-medium text-[var(--color-text-secondary)]">
                             Description
                           </Label>
-                          <p className="text-sm text-gray-600 mt-1 break-words">
+                          <p className="text-sm text-[var(--color-text-tertiary)] mt-1 break-words">
                             {metric.description}
                           </p>
                         </div>
 
                         <div className="grid grid-cols-2 gap-3">
                           <div>
-                            <Label className="text-xs font-medium text-gray-700">
+                            <Label className="text-xs font-medium text-[var(--color-text-secondary)]">
                               Format
                             </Label>
-                            <p className="text-sm text-gray-900 mt-1">
+                            <p className="text-sm text-[var(--color-text-primary)] mt-1">
                               {metric.format}
                             </p>
                           </div>
                           <div>
-                            <Label className="text-xs font-medium text-gray-700">
+                            <Label className="text-xs font-medium text-[var(--color-text-secondary)]">
                               Currency
                             </Label>
-                            <p className="text-sm text-gray-900 mt-1">
+                            <p className="text-sm text-[var(--color-text-primary)] mt-1">
                               {metric.currency}
                             </p>
                           </div>
                         </div>
 
                         <div>
-                          <Label className="text-xs font-medium text-gray-700">
+                          <Label className="text-xs font-medium text-[var(--color-text-secondary)]">
                             SQL Expression
                           </Label>
-                          <div className="text-xs text-gray-900 mt-1 font-mono bg-white p-2 rounded border break-all whitespace-pre-wrap overflow-hidden">
+                          <div className="text-xs text-[var(--color-text-primary)] mt-1 font-mono bg-white p-2 rounded border break-all whitespace-pre-wrap overflow-hidden">
                             {metric.sqlExpression}
                           </div>
                         </div>
@@ -891,7 +901,7 @@ const MetricsPage = () => {
                   placeholder="Metric name"
                   maxLength={40}
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-[var(--color-text-tertiary)] mt-1">
                   {editingMetric.name.length}/40 characters
                 </p>
               </div>
@@ -911,7 +921,7 @@ const MetricsPage = () => {
                   maxLength={255}
                   rows={3}
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-[var(--color-text-tertiary)] mt-1">
                   {editingMetric.description.length}/255 characters
                 </p>
               </div>
@@ -944,7 +954,7 @@ const MetricsPage = () => {
                   <Input
                     value={editingMetric.product}
                     disabled
-                    className="bg-gray-50"
+                    className="bg-[var(--color-bg-secondary)]"
                     placeholder="Auto-set based on dataset"
                   />
                 </div>
@@ -1011,7 +1021,7 @@ const MetricsPage = () => {
                   rows={3}
                   className="font-mono text-sm"
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-[var(--color-text-tertiary)] mt-1">
                   {editingMetric.sqlExpression.length}/255 characters
                 </p>
               </div>

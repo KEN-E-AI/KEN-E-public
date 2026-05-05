@@ -22,31 +22,37 @@ export const NotificationHandler: React.FC<NotificationHandlerProps> = ({
         {/* Header */}
         <div className="p-6 border-b">
           <h2 className="text-xl font-semibold">Notification Details</h2>
-          <p className="text-sm text-gray-500 mt-1">{notification.category}</p>
+          <p className="text-sm text-[var(--color-text-tertiary)] mt-1">
+            {notification.category}
+          </p>
         </div>
 
         {/* Content */}
         <div className="p-6">
           <div className="space-y-4">
             <div>
-              <h3 className="font-medium text-gray-900 mb-1">Description</h3>
-              <p className="text-gray-700">{notification.description}</p>
+              <h3 className="font-medium text-[var(--color-text-primary)] mb-1">
+                Description
+              </h3>
+              <p className="text-[var(--color-text-secondary)]">
+                {notification.description}
+              </p>
             </div>
 
             {notification.data && Object.keys(notification.data).length > 0 && (
               <div>
-                <h3 className="font-medium text-gray-900 mb-1">
+                <h3 className="font-medium text-[var(--color-text-primary)] mb-1">
                   Additional Information
                 </h3>
-                <div className="bg-gray-50 rounded-md p-4">
-                  <pre className="text-sm text-gray-700 whitespace-pre-wrap">
+                <div className="bg-[var(--color-bg-secondary)] rounded-md p-4">
+                  <pre className="text-sm text-[var(--color-text-secondary)] whitespace-pre-wrap">
                     {JSON.stringify(notification.data, null, 2)}
                   </pre>
                 </div>
               </div>
             )}
 
-            <div className="text-sm text-gray-500">
+            <div className="text-sm text-[var(--color-text-tertiary)]">
               <p>
                 Created: {new Date(notification.created_at).toLocaleString()}
               </p>
@@ -70,7 +76,7 @@ export const NotificationHandler: React.FC<NotificationHandlerProps> = ({
         <div className="p-6 border-t flex justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+            className="px-4 py-2 bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] rounded-md hover:bg-[var(--color-bg-elevated)]"
           >
             Close
           </button>

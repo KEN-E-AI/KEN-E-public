@@ -333,7 +333,7 @@ export function CreateAccountView({
             >
               {isLoading ? (
                 <>
-                  <div className="size-4 border-2 border-gray-800/20 border-t-gray-800 rounded-full animate-spin" />
+                  <div className="size-4 border-2 border-[var(--color-text-primary)]/20 border-t-[var(--color-text-primary)] rounded-full animate-spin" />
                   Creating account...
                 </>
               ) : (
