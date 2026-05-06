@@ -97,7 +97,7 @@ sandbox_code_executor_enabled: bool = False
 
 # New in Phase 2 — forward-compat structured-output enforcement:
 response_schema: dict | None = None        # JSON schema (or Pydantic-derived dict) passed through to
-                                           # `GenerateContentConfig.response_schema` when not None.
+                                           # `LlmAgent.output_schema` when not None (ADK 1.27+).
                                            # First consumer: SE-PRD-05's `performance_forecasting` specialist
                                            # (Gemini 2.0 Pro) enforces `DerivedTargetsResponse` shape on
                                            # every target-derivation call. Optional for all other agents.
@@ -150,8 +150,8 @@ Each specialist receives a **fixed curated tool list (≤30 tools)** at construc
 | `mcp_servers/{id}.auth_type` | `McpToolset(header_provider=)` | Maps to credential key in session state (see §5.3) |
 | `mcp_servers/{id}.enabled` | Include/exclude from specialist | Disabled servers are not wired |
 | `mcp_servers/{id}.specialist_categories` | Groups server into specialist(s) | A server can belong to multiple specialists |
-| `agent_configs/{id}.code_execution_enabled` | `generate_content_config.tools` | If true, adds `Tool(code_execution=ToolCodeExecution())` to `GenerateContentConfig.tools` |
-| `agent_configs/{id}.response_schema` | `generate_content_config.response_schema` | If non-None, sets `GenerateContentConfig.response_schema` to enforce structured output at the ADK layer. Accepts either a JSON-schema dict or the dict produced by `PydanticModel.model_json_schema()`. First consumed by SE-PRD-05 (`DerivedTargetsResponse`); optional for other agents. |
+| `agent_configs/{id}.code_execution_enabled` | `LlmAgent.code_executor` | If true, sets `code_executor=BuiltInCodeExecutor()` on `LlmAgent` directly (ADK 1.27+ — `GenerateContentConfig.tools` is rejected for this purpose) |
+| `agent_configs/{id}.response_schema` | `LlmAgent.output_schema` | If non-None, sets `output_schema=` on `LlmAgent` directly (ADK 1.27+ — `GenerateContentConfig.response_schema` is rejected for this purpose). Accepts either a JSON-schema dict or the dict produced by `PydanticModel.model_json_schema()`. First consumed by SE-PRD-05 (`DerivedTargetsResponse`); optional for other agents. |
 | `agent_configs/{id}.available_to_copy` *(Phase 3)* | Frontend only | Account admins can fork this as the basis for a custom agent |
 | `agent_configs/{id}.automatically_available` *(Phase 3)* | Factory: include in account's hierarchy | Auto-attached to accounts without opt-in |
 | `agent_configs/{id}.visible_in_frontend` *(Phase 3)* | API filter | Shown on Workflows > Agents list |
