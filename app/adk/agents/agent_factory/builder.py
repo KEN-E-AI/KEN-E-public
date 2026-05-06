@@ -9,6 +9,10 @@ from google.adk.code_executors import BuiltInCodeExecutor
 from google.genai.types import GenerateContentConfig
 
 from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+from app.adk.agents.agent_factory.roster import (
+    MAX_TOOLS_PER_SPECIALIST,
+    RosterCapExceededError,
+)
 from app.adk.security.hooks import adk_before_tool_callback
 from app.adk.tracking.callbacks import (
     adk_after_tool_callback,
@@ -63,6 +67,20 @@ def build_agent(
     # ADK 1.27+ requires output_schema on LlmAgent directly (not via GenerateContentConfig.response_schema)
     output_schema = config.response_schema
 
+    # Defensive literal cap — catches gross misuse by direct callers that bypass
+    # resolve_specialist_roster.  One McpToolset counts as one item here even
+    # though it may resolve to many individual MCP tools at runtime, so this is
+    # intentionally weaker than the upstream logical cap in roster.py.
+    # The upstream resolver is the canonical enforcement point; this is defense
+    # in depth.  See AH-PRD-02 §4 Specialist tool rosters and agentic-harness
+    # README §2.5 for the full rationale.
+    if tools and len(tools) > MAX_TOOLS_PER_SPECIALIST:
+        raise RosterCapExceededError(
+            f"Specialist {name!r} was passed {len(tools)} items in tools=, "
+            f"which exceeds the {MAX_TOOLS_PER_SPECIALIST}-tool cap.  "
+            f"Use resolve_specialist_roster() to enforce the cap before construction."
+        )
+
     before_agent_callback: list[Callable] = [weave_before_agent_callback] + (
         additional_before_agent_callbacks or []
     )
@@ -75,8 +93,12 @@ def build_agent(
     after_tool_callback: list[Callable] = [adk_after_tool_callback] + (
         additional_after_tool_callbacks or []
     )
-    before_model_callback: list[Callable] | None = additional_before_model_callbacks or None
-    after_model_callback: list[Callable] | None = additional_after_model_callbacks or None
+    before_model_callback: list[Callable] | None = (
+        additional_before_model_callbacks or None
+    )
+    after_model_callback: list[Callable] | None = (
+        additional_after_model_callbacks or None
+    )
 
     return LlmAgent(
         name=name,
