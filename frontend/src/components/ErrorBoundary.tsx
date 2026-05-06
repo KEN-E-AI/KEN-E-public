@@ -47,7 +47,7 @@ class ErrorBoundary extends Component<Props, State> {
       error.message?.includes("organization") ||
       error.message?.includes("account") ||
       error.stack?.includes("AuthContext") ||
-      error.stack?.includes("OrganizationSelection");
+      error.stack?.includes("SelectOrganizationPage");
 
     if (isAuthError) {
       console.warn("Auth-related error detected, may require state cleanup");
