@@ -528,7 +528,7 @@ export default function SelectOrganizationPage() {
 
         {/* Two-column grid */}
         {isDataLoading ? (
-          <div className="grid lg:grid-cols-2 gap-6 mb-8">
+          <div className="grid xl:grid-cols-2 gap-6 mb-8">
             <Card className="shadow-lg">
               <CardHeader>
                 <CardTitle>Organizations</CardTitle>
@@ -572,7 +572,7 @@ export default function SelectOrganizationPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid lg:grid-cols-2 gap-6 mb-8">
+          <div className="grid xl:grid-cols-2 gap-6 mb-8">
             {/* Organizations card */}
             <Card className="shadow-lg">
               <CardHeader>
@@ -608,7 +608,7 @@ export default function SelectOrganizationPage() {
                         }
                       }}
                       className={cn(
-                        "flex items-center justify-between p-3 rounded-[var(--radius-md)] border-2 cursor-pointer transition-all duration-200 hover:-translate-y-0.5",
+                        "flex items-center justify-between p-3 rounded-[var(--radius-md)] border-2 cursor-pointer transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-violet-300)] focus-visible:ring-offset-2",
                         selectedOrganization === org.organization_id
                           ? "border-[var(--color-violet-500)] bg-[var(--color-violet-100)]/40"
                           : "border-[var(--color-border-default)] hover:border-[var(--color-violet-300)]",
@@ -731,7 +731,7 @@ export default function SelectOrganizationPage() {
                               }
                             }}
                             className={cn(
-                              "flex items-center justify-between p-3 rounded-[var(--radius-md)] border-2 cursor-pointer transition-all duration-200 hover:-translate-y-0.5",
+                              "flex items-center justify-between p-3 rounded-[var(--radius-md)] border-2 cursor-pointer transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-violet-300)] focus-visible:ring-offset-2",
                               selectedChildOrg === childOrg.organization_id
                                 ? "border-[var(--color-violet-500)] bg-[var(--color-violet-100)]/40"
                                 : "border-[var(--color-border-default)] hover:border-[var(--color-violet-300)]",
@@ -777,7 +777,7 @@ export default function SelectOrganizationPage() {
                                   }
                                 }}
                                 className={cn(
-                                  "flex items-center justify-between p-3 rounded-[var(--radius-md)] border-2 cursor-pointer transition-all duration-200 hover:-translate-y-0.5",
+                                  "flex items-center justify-between p-3 rounded-[var(--radius-md)] border-2 cursor-pointer transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-violet-300)] focus-visible:ring-offset-2",
                                   selectedAccount === account.account_id
                                     ? "border-[var(--color-violet-500)] bg-[var(--color-violet-100)]/40"
                                     : "border-[var(--color-border-default)] hover:border-[var(--color-violet-300)]",
@@ -820,7 +820,7 @@ export default function SelectOrganizationPage() {
                             }
                           }}
                           className={cn(
-                            "flex items-center justify-between p-3 rounded-[var(--radius-md)] border-2 cursor-pointer transition-all duration-200 hover:-translate-y-0.5",
+                            "flex items-center justify-between p-3 rounded-[var(--radius-md)] border-2 cursor-pointer transition-all duration-200 hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-violet-300)] focus-visible:ring-offset-2",
                             selectedAccount === account.account_id
                               ? "border-[var(--color-violet-500)] bg-[var(--color-violet-100)]/40"
                               : "border-[var(--color-border-default)] hover:border-[var(--color-violet-300)]",

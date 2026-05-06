@@ -3,6 +3,27 @@ import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import SelectOrganizationPage from "./SelectOrganizationPage";
+import { ThemeProvider } from "@/components/theme/ThemeProvider";
+import { configureAxe } from "vitest-axe";
+
+// Scoped axe ruleset for this surface. The role="button" rows intentionally
+// wrap nested <button> elements (gear icon, child-org expander) — replacing
+// the divs with <button> would create invalid nested-interactive HTML.
+// Restrict to structural a11y rules; visual contrast is verified separately
+// by token-contrast.test.ts.
+const runScopedAxe = configureAxe({
+  runOnly: {
+    type: "rule",
+    values: [
+      "focus-order-semantics",
+      "button-name",
+      "link-name",
+      "aria-allowed-attr",
+      "aria-valid-attr",
+      "label",
+    ],
+  },
+});
 
 // Mock factories must be declared before vi.mock() hoisting runs.
 const mockNavigate = vi.fn();
@@ -1287,5 +1308,113 @@ describe("SelectOrganizationPage", () => {
 
     // Continue disabled (account not yet selected in new org)
     expect(screen.getByRole("button", { name: /^continue/i })).toBeDisabled();
+  });
+
+  // ── UI-52: dark-mode rendering + a11y ───────────────────────────────────
+  // ThemeProvider reads its initial mode from localStorage["kene-theme"];
+  // pre-populating before render is the only entry point that doesn't
+  // require a ThemeProvider API change.
+
+  function renderPageWithTheme(mode: "light" | "dark") {
+    localStorage.setItem("kene-theme", mode);
+    return render(
+      <ThemeProvider>
+        <MemoryRouter initialEntries={["/select-organization"]}>
+          <Routes>
+            <Route path="/sign-in" element={<div>SIGNIN_SENTINEL</div>} />
+            <Route path="/" element={<div>HOME_SENTINEL</div>} />
+            <Route
+              path="/create-organization"
+              element={<div>CREATE_ORG_SENTINEL</div>}
+            />
+            <Route
+              path="/select-organization"
+              element={<SelectOrganizationPage />}
+            />
+          </Routes>
+        </MemoryRouter>
+      </ThemeProvider>,
+    );
+  }
+
+  function setupHappyPath() {
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    mockAxiosGet.mockResolvedValue(
+      makeUserPermissionsResponse(["org-1", "org-2"]),
+    );
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([mockOrg1, mockOrg2]),
+    );
+  }
+
+  it("renders without errors under dark mode and applies the .dark class", async () => {
+    setupHappyPath();
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    try {
+      renderPageWithTheme("dark");
+
+      await waitFor(() =>
+        expect(screen.getByText("Acme Corp")).toBeInTheDocument(),
+      );
+
+      // ThemeProvider's useEffect adds the dark class to <html>.
+      expect(document.documentElement.classList.contains("dark")).toBe(true);
+      expect(consoleError).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+      document.documentElement.classList.remove("dark");
+      localStorage.removeItem("kene-theme");
+    }
+  });
+
+  it("rendered DOM contains no hard-coded hex color literals (regression guard)", async () => {
+    setupHappyPath();
+
+    try {
+      const { container } = renderPageWithTheme("light");
+
+      await waitFor(() =>
+        expect(screen.getByText("Acme Corp")).toBeInTheDocument(),
+      );
+
+      // Strip <svg>...</svg> blocks before scanning — lucide icons inline
+      // their own fills/strokes, which are out of scope for token discipline.
+      const html = container.innerHTML.replace(/<svg[\s\S]*?<\/svg>/g, "");
+      const hexLiterals = html.match(/#[0-9a-fA-F]{3,8}\b/g) ?? [];
+
+      expect(hexLiterals).toEqual([]);
+    } finally {
+      localStorage.removeItem("kene-theme");
+    }
+  });
+
+  it("passes axe a11y checks in both light and dark mode", async () => {
+    // Light
+    setupHappyPath();
+    const lightRender = renderPageWithTheme("light");
+    await waitFor(() =>
+      expect(screen.getByText("Acme Corp")).toBeInTheDocument(),
+    );
+    expect(await runScopedAxe(lightRender.container)).toHaveNoViolations();
+    lightRender.unmount();
+    localStorage.removeItem("kene-theme");
+
+    // Dark
+    setupHappyPath();
+    const darkRender = renderPageWithTheme("dark");
+    await waitFor(() =>
+      expect(screen.getByText("Acme Corp")).toBeInTheDocument(),
+    );
+    expect(await runScopedAxe(darkRender.container)).toHaveNoViolations();
+    darkRender.unmount();
+    document.documentElement.classList.remove("dark");
+    localStorage.removeItem("kene-theme");
   });
 });
