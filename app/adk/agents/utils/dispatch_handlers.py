@@ -18,7 +18,7 @@ from .agent_retry import (
     FAST_RETRY_CONFIG,
     invoke_agent_with_retry,
 )
-from .criteria_utils import sanitise_criteria
+from .criteria_utils import MAX_CRITERIA_CHARS, sanitise_criteria
 from .review_pipeline import (
     _check_hallucinated_approval,
     build_review_pipeline,
@@ -86,11 +86,11 @@ def dispatch_to_company_news(
             logger.info("[NEWS-DISPATCH] No tool_context available for org context")
 
         criteria = (acceptance_criteria or "").strip()
-        if len(criteria) > 2000:
+        if len(criteria) > MAX_CRITERIA_CHARS:
             logger.warning(
-                f"[NEWS-DISPATCH] acceptance_criteria truncated from {len(criteria)} to 2000 chars"
+                f"[NEWS-DISPATCH] acceptance_criteria truncated from {len(criteria)} to {MAX_CRITERIA_CHARS} chars"
             )
-            criteria = criteria[:2000]
+            criteria = criteria[:MAX_CRITERIA_CHARS]
         criteria = sanitise_criteria(criteria)
         if criteria:
             logger.info("🔄 Building review pipeline for company news query...")
@@ -214,11 +214,11 @@ def dispatch_to_google_analytics(
             initial_state = {"ga_credentials": ga_credentials}
 
         criteria = (acceptance_criteria or "").strip()
-        if len(criteria) > 2000:
+        if len(criteria) > MAX_CRITERIA_CHARS:
             logger.warning(
-                f"[GA-DISPATCH] acceptance_criteria truncated from {len(criteria)} to 2000 chars"
+                f"[GA-DISPATCH] acceptance_criteria truncated from {len(criteria)} to {MAX_CRITERIA_CHARS} chars"
             )
-            criteria = criteria[:2000]
+            criteria = criteria[:MAX_CRITERIA_CHARS]
         criteria = sanitise_criteria(criteria)
         if criteria:
             logger.info("🔄 Building review pipeline for Google Analytics query...")

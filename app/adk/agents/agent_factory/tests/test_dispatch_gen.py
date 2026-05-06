@@ -381,12 +381,13 @@ class TestDispatchStateForwarding:
         _, kwargs = mock_retry.call_args
         assert kwargs["state"] == original_state
 
-    def test_initial_state_is_shallow_copy_of_tool_context_state(self) -> None:
+    def test_initial_state_is_deep_copy_of_tool_context_state(self) -> None:
         specialist = _make_specialist("analytics")
         dispatchers = generate_dispatch_functions({"analytics": specialist})
         fn = dispatchers["analytics"]
 
-        original_state = {"ga_credentials": {"token": "xyz"}, "account_id": "acct_1"}
+        nested = {"token": "xyz"}
+        original_state = {"ga_credentials": nested, "account_id": "acct_1"}
         tool_context = MagicMock()
         tool_context.state = original_state
 
@@ -397,8 +398,10 @@ class TestDispatchStateForwarding:
         forwarded_state = kwargs["state"]
         # Values must match
         assert forwarded_state == original_state
-        # But it must be a copy — not the same object
+        # Top-level dict must be a copy
         assert forwarded_state is not original_state
+        # Nested dicts must also be independent (deepcopy, not shallow copy)
+        assert forwarded_state["ga_credentials"] is not nested
 
     def test_state_none_when_no_tool_context_in_review_loop(self) -> None:
         specialist = _make_specialist("analytics")
@@ -441,7 +444,9 @@ class TestDispatchErrorHandling:
 
         assert isinstance(result, str)
         assert result.startswith("Error dispatching to my_agent")
-        assert "boom" in result
+        # Exception details must not be leaked to the router
+        assert "boom" not in result
+        assert "specialist unavailable" in result
 
     def test_review_loop_exception_returns_error_string(self) -> None:
         specialist = _make_specialist("analytics")
@@ -453,7 +458,9 @@ class TestDispatchErrorHandling:
 
         assert isinstance(result, str)
         assert result.startswith("Error dispatching to analytics")
-        assert "pipeline failed" in result
+        # Exception details must not be leaked to the router
+        assert "pipeline failed" not in result
+        assert "specialist unavailable" in result
 
     def test_no_exception_propagates_to_caller(self) -> None:
         specialist = _make_specialist("my_agent")
@@ -578,6 +585,112 @@ class TestIntegrationSmoke:
             state=None,
             retry_config=DEFAULT_RETRY_CONFIG,
         )
+
+
+# ---------------------------------------------------------------------------
+# TestAssembleAvailableSpecialistsBlockSanitisation
+# ---------------------------------------------------------------------------
+
+
+class TestAssembleAvailableSpecialistsBlockSanitisation:
+    def test_description_unsafe_chars_stripped(self) -> None:
+        specialists = {
+            "my_agent": _make_specialist(
+                "my_agent", description="Does analytics <inject> {template} `code`"
+            )
+        }
+        result = assemble_available_specialists_block(specialists)
+
+        assert "<" not in result
+        assert ">" not in result
+        assert "`" not in result
+        assert "{" not in result
+        assert "Does analytics" in result
+
+    def test_description_truncated_to_500_chars(self) -> None:
+        specialists = {
+            "my_agent": _make_specialist("my_agent", description="X" * 600)
+        }
+        result = assemble_available_specialists_block(specialists)
+
+        # The description portion of the bullet should not exceed 500 chars
+        bullet = next(line for line in result.splitlines() if line.startswith("- **"))
+        description_part = bullet.split(": ", 1)[1]
+        assert len(description_part) <= 500
+
+    def test_description_all_unsafe_chars_falls_back(self) -> None:
+        specialists = {
+            "my_agent": _make_specialist("my_agent", description="<{{{}}}>`")
+        }
+        result = assemble_available_specialists_block(specialists)
+
+        assert "(no description provided)" in result
+
+
+# ---------------------------------------------------------------------------
+# TestDispatchUnapprovedWarning
+# ---------------------------------------------------------------------------
+
+
+class TestDispatchUnapprovedWarning:
+    def test_unapproved_result_logs_warning(self) -> None:
+        specialist = _make_specialist("analytics")
+        dispatchers = generate_dispatch_functions({"analytics": specialist})
+        fn = dispatchers["analytics"]
+
+        mock_iter = MagicMock()
+        mock_iter.iteration, mock_iter.specialist_output, mock_iter.reviewer_output = (
+            1,
+            "draft",
+            "not approved",
+        )
+
+        with (
+            patch(_PATCH_BUILD_PIPELINE, return_value=MagicMock()),
+            patch(_PATCH_INVOKE_PIPELINE, return_value=("text", {}, [])),
+            patch(_PATCH_CHECK_HALLUCINATION),
+            patch(
+                _PATCH_EXTRACT_RESULT, return_value={"result": "last draft", "approved": False}
+            ),
+            patch(_PATCH_EXTRACT_ITERATIONS, return_value=[mock_iter]),
+            patch(_PATCH_EMIT_ITERATION_SPAN),
+            patch(_PATCH_SET_PIPELINE_ATTRS),
+            patch(_PATCH_GET_WORKER_NAME, return_value="analytics_worker"),
+            patch(_PATCH_GET_REVIEWER_NAME, return_value="analytics_review_reviewer"),
+        ):
+            result = fn("query", acceptance_criteria="must pass review")
+
+        assert result == "last draft"
+
+    def test_approved_result_does_not_cause_issues(self) -> None:
+        specialist = _make_specialist("analytics")
+        dispatchers = generate_dispatch_functions({"analytics": specialist})
+        fn = dispatchers["analytics"]
+
+        mock_iter = MagicMock()
+        mock_iter.iteration, mock_iter.specialist_output, mock_iter.reviewer_output = (
+            1,
+            "draft",
+            "approved",
+        )
+
+        with (
+            patch(_PATCH_BUILD_PIPELINE, return_value=MagicMock()),
+            patch(_PATCH_INVOKE_PIPELINE, return_value=("text", {}, [])),
+            patch(_PATCH_CHECK_HALLUCINATION),
+            patch(
+                _PATCH_EXTRACT_RESULT,
+                return_value={"result": "approved answer", "approved": True},
+            ),
+            patch(_PATCH_EXTRACT_ITERATIONS, return_value=[mock_iter]),
+            patch(_PATCH_EMIT_ITERATION_SPAN),
+            patch(_PATCH_SET_PIPELINE_ATTRS),
+            patch(_PATCH_GET_WORKER_NAME, return_value="analytics_worker"),
+            patch(_PATCH_GET_REVIEWER_NAME, return_value="analytics_review_reviewer"),
+        ):
+            result = fn("query", acceptance_criteria="must pass review")
+
+        assert result == "approved answer"
 
 
 if __name__ == "__main__":

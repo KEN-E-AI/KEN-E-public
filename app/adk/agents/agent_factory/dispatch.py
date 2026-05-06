@@ -15,6 +15,7 @@ Provides two public symbols consumed by the agent factory's build phase:
 
 from __future__ import annotations
 
+import copy
 import logging
 import re
 from collections.abc import Callable
@@ -27,7 +28,10 @@ from app.adk.agents.utils.agent_retry import (
     DEFAULT_RETRY_CONFIG,
     invoke_agent_with_retry,
 )
-from app.adk.agents.utils.criteria_utils import MAX_CRITERIA_CHARS, sanitise_criteria
+from app.adk.agents.utils.criteria_utils import (
+    MAX_CRITERIA_CHARS,
+    sanitise_criteria,
+)
 from app.adk.agents.utils.review_pipeline import (
     _check_hallucinated_approval,
     build_review_pipeline,
@@ -48,6 +52,9 @@ logger = logging.getLogger(__name__)
 # Specialist names must be lowercase, start with a letter, and contain only
 # letters, digits, and underscores — no longer than 64 characters total.
 _VALID_SPECIALIST_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+
+# Hard cap on specialist description length in the Available Specialists block.
+_MAX_DESCRIPTION_CHARS: int = 500
 
 
 def _build_dispatch(name: str, specialist: LlmAgent) -> Callable:
@@ -85,7 +92,7 @@ def _build_dispatch(name: str, specialist: LlmAgent) -> Callable:
         tool_context: ToolContext | None = None,
     ) -> str:
         initial_state: dict[str, Any] | None = (
-            dict(tool_context.state) if tool_context is not None else None
+            copy.deepcopy(dict(tool_context.state)) if tool_context is not None else None
         )
 
         criteria = acceptance_criteria.strip()
@@ -128,6 +135,12 @@ def _build_dispatch(name: str, specialist: LlmAgent) -> Callable:
                 set_pipeline_attrs(
                     criteria, final_state, output_key_prefix, len(iterations)
                 )
+                if not outcome.get("approved"):
+                    logger.warning(
+                        "[%s-DISPATCH] Review loop exhausted iterations without approval; "
+                        "returning last draft.",
+                        name.upper(),
+                    )
                 return outcome["result"]
 
             logger.info(
@@ -147,7 +160,7 @@ def _build_dispatch(name: str, specialist: LlmAgent) -> Callable:
                 e,
                 exc_info=True,
             )
-            return f"Error dispatching to {name}: {e}"
+            return f"Error dispatching to {name}: specialist unavailable"
 
     # Give the function a helpful __name__ for introspection / logging.
     _dispatch.__name__ = f"dispatch_to_{name}"
@@ -217,9 +230,13 @@ def assemble_available_specialists_block(
     lines: list[str] = []
     for name in sorted(specialists):
         agent = specialists[name]
-        description: str = (getattr(agent, "description", None) or "").strip()
-        if not description:
+        raw_desc: str = (getattr(agent, "description", None) or "").strip()
+        if not raw_desc:
             description = "(no description provided)"
+        else:
+            description = sanitise_criteria(raw_desc[:_MAX_DESCRIPTION_CHARS])
+            if not description:
+                description = "(no description provided)"
         lines.append(f"- **{name}**: {description}")
 
     return heading + "\n".join(lines)
