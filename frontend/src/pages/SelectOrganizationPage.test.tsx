@@ -864,6 +864,60 @@ describe("SelectOrganizationPage", () => {
     expect(mockAxiosGet).toHaveBeenCalledTimes(2);
   });
 
+  // Regression guard: a partial batch (some orgs returned, others missing
+  // from the response) used to make totalAccounts.length === 1 spuriously
+  // and auto-route a multi-org user to the surviving org.
+  it("does NOT auto-select when batch returns partial result (deleted org)", async () => {
+    const setSelectedOrgAccount = vi.fn();
+    const completeWorkspaceSelection = vi.fn();
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      setSelectedOrgAccount,
+      completeWorkspaceSelection,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    // User has 2 orgs in Firestore but the batch only returns 1.
+    mockAxiosGet.mockResolvedValue(
+      makeUserPermissionsResponse(["org-1", "org-2"]),
+    );
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([mockOrg1]), // org-2 is missing → "deleted"
+    );
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Acme Corp")).toBeInTheDocument();
+    });
+
+    // Auto-select must NOT fire; user has to pick manually.
+    expect(setSelectedOrgAccount).not.toHaveBeenCalled();
+    expect(completeWorkspaceSelection).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalledWith("/");
+  });
+
+  it("renders Retry UI when org-metadata batch fetch rejects", async () => {
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse(["org-1"]));
+    mockGetOrganizationsBatch.mockRejectedValue(new Error("batch failure"));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/we couldn't load your workspaces/i),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+    // Org list must NOT render (otherwise user could click into a half-loaded state)
+    expect(screen.queryByText("Acme Corp")).not.toBeInTheDocument();
+  });
+
   // AC-7: single-account auto-select + auto-navigate
   it("auto-navigates to / after ~500 ms when exactly one account exists across all orgs", async () => {
     const setSelectedOrgAccount = vi.fn();

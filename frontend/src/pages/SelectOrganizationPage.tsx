@@ -466,14 +466,37 @@ export default function SelectOrganizationPage() {
     return <Navigate to="/" replace />;
   }
 
+  // Loading covers two windows: user-data still in flight, OR user-data
+  // succeeded with non-empty orgs and metadata hasn't yet resolved (avoids a
+  // one-render flicker where status was 'idle' between user-data success and
+  // the orgsFromFirestore effect firing fetchOrgMetadata).
+  const metadataPending =
+    Object.keys(orgsFromFirestore).length > 0 &&
+    metadataFetchStatus !== "success" &&
+    metadataFetchStatus !== "error";
   const isDataLoading =
-    userDataFetchStatus === "loading" || metadataFetchStatus === "loading";
+    userDataFetchStatus === "loading" ||
+    (userDataFetchStatus === "success" && metadataPending);
   const hasFetchError =
     userDataFetchStatus === "error" || metadataFetchStatus === "error";
 
   const handleRetry = () => {
+    // Drop a stale in-flight metadata fetch so it can't land after we reset
+    // status — without this, a click during an in-flight fetch would set
+    // status="idle" while isFetchingRef stays true, the early-return below
+    // (in refreshOrgMetadata) skips the new call, and the user is stuck.
+    isFetchingRef.current = false;
+    // Retry user-data first if it errored; the user-data success effect will
+    // re-trigger metadata via the [orgsFromFirestore] effect.
     if (userDataFetchStatus === "error") {
       setUserDataFetchAttempt((n) => n + 1);
+      // If metadata also errored, also reset its state so the cascading
+      // refetch can land — otherwise it's stuck in 'error' forever.
+      if (metadataFetchStatus === "error") {
+        setMetadataFetchStatus("idle");
+        lastRefreshTime.current = 0;
+        lastOrgKeysRef.current = "";
+      }
       return;
     }
     // Metadata-only failure: bypass the 5s debounce and force a refetch.

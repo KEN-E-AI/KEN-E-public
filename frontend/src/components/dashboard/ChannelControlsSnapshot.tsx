@@ -249,21 +249,21 @@ const ObjectiveNode = ({ data }: { data: any }) => {
                           <text
                             x="10"
                             y="15"
-                            className="text-xs fill-[var(--color-text-tertiary)]"
+                            className="text-xs fill-[var(--color-text-secondary)]"
                           >
                             2.0M
                           </text>
                           <text
                             x="10"
                             y="65"
-                            className="text-xs fill-[var(--color-text-tertiary)]"
+                            className="text-xs fill-[var(--color-text-secondary)]"
                           >
                             1.0M
                           </text>
                           <text
                             x="10"
                             y="115"
-                            className="text-xs fill-[var(--color-text-tertiary)]"
+                            className="text-xs fill-[var(--color-text-secondary)]"
                           >
                             0
                           </text>
@@ -281,42 +281,42 @@ const ObjectiveNode = ({ data }: { data: any }) => {
                           <text
                             x="50"
                             y="135"
-                            className="text-xs fill-[var(--color-text-tertiary)]"
+                            className="text-xs fill-[var(--color-text-secondary)]"
                           >
                             Jan
                           </text>
                           <text
                             x="80"
                             y="135"
-                            className="text-xs fill-[var(--color-text-tertiary)]"
+                            className="text-xs fill-[var(--color-text-secondary)]"
                           >
                             Feb
                           </text>
                           <text
                             x="110"
                             y="135"
-                            className="text-xs fill-[var(--color-text-tertiary)]"
+                            className="text-xs fill-[var(--color-text-secondary)]"
                           >
                             Mar
                           </text>
                           <text
                             x="140"
                             y="135"
-                            className="text-xs fill-[var(--color-text-tertiary)]"
+                            className="text-xs fill-[var(--color-text-secondary)]"
                           >
                             Apr
                           </text>
                           <text
                             x="170"
                             y="135"
-                            className="text-xs fill-[var(--color-text-tertiary)]"
+                            className="text-xs fill-[var(--color-text-secondary)]"
                           >
                             May
                           </text>
                           <text
                             x="200"
                             y="135"
-                            className="text-xs fill-[var(--color-text-tertiary)]"
+                            className="text-xs fill-[var(--color-text-secondary)]"
                           >
                             Jun
                           </text>
@@ -376,21 +376,21 @@ const ObjectiveNode = ({ data }: { data: any }) => {
                           <text
                             x="10"
                             y="15"
-                            className="text-xs fill-[var(--color-text-tertiary)]"
+                            className="text-xs fill-[var(--color-text-secondary)]"
                           >
                             $4.00
                           </text>
                           <text
                             x="10"
                             y="65"
-                            className="text-xs fill-[var(--color-text-tertiary)]"
+                            className="text-xs fill-[var(--color-text-secondary)]"
                           >
                             $2.00
                           </text>
                           <text
                             x="10"
                             y="115"
-                            className="text-xs fill-[var(--color-text-tertiary)]"
+                            className="text-xs fill-[var(--color-text-secondary)]"
                           >
                             $0
                           </text>
@@ -408,42 +408,42 @@ const ObjectiveNode = ({ data }: { data: any }) => {
                           <text
                             x="50"
                             y="135"
-                            className="text-xs fill-[var(--color-text-tertiary)]"
+                            className="text-xs fill-[var(--color-text-secondary)]"
                           >
                             Jan
                           </text>
                           <text
                             x="80"
                             y="135"
-                            className="text-xs fill-[var(--color-text-tertiary)]"
+                            className="text-xs fill-[var(--color-text-secondary)]"
                           >
                             Feb
                           </text>
                           <text
                             x="110"
                             y="135"
-                            className="text-xs fill-[var(--color-text-tertiary)]"
+                            className="text-xs fill-[var(--color-text-secondary)]"
                           >
                             Mar
                           </text>
                           <text
                             x="140"
                             y="135"
-                            className="text-xs fill-[var(--color-text-tertiary)]"
+                            className="text-xs fill-[var(--color-text-secondary)]"
                           >
                             Apr
                           </text>
                           <text
                             x="170"
                             y="135"
-                            className="text-xs fill-[var(--color-text-tertiary)]"
+                            className="text-xs fill-[var(--color-text-secondary)]"
                           >
                             May
                           </text>
                           <text
                             x="200"
                             y="135"
-                            className="text-xs fill-[var(--color-text-tertiary)]"
+                            className="text-xs fill-[var(--color-text-secondary)]"
                           >
                             Jun
                           </text>
