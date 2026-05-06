@@ -124,7 +124,7 @@ const ContextMenu = ({
     <div
       id={id}
       style={{ top, left }}
-      className="absolute z-50 bg-white border border-[var(--color-border-default)] rounded-lg shadow-lg p-1 min-w-[120px]"
+      className="absolute z-50 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-lg shadow-lg p-1 min-w-[120px]"
     >
       <button
         onClick={handleView}
@@ -211,7 +211,7 @@ const ObjectiveNode = ({ data }: { data: any }) => {
       <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 flex gap-1 mb-2">
         <button
           onClick={handleViewObjective}
-          className="w-5 h-5 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-full flex items-center justify-center transition-colors"
+          className="w-5 h-5 bg-[var(--color-bg-elevated)] bg-opacity-20 hover:bg-opacity-30 rounded-full flex items-center justify-center transition-colors"
           title="View Objective"
         >
           <Eye className="w-3 h-3 text-white" />
@@ -219,7 +219,7 @@ const ObjectiveNode = ({ data }: { data: any }) => {
 
         <button
           onClick={handleAddChannel}
-          className="w-5 h-5 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-full flex items-center justify-center transition-colors"
+          className="w-5 h-5 bg-[var(--color-bg-elevated)] bg-opacity-20 hover:bg-opacity-30 rounded-full flex items-center justify-center transition-colors"
           title="Add Channel"
         >
           <Plus className="w-3 h-3 text-white" />
@@ -291,7 +291,7 @@ const ChannelNode = ({ data }: { data: any }) => {
       <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 flex gap-1 my-2">
         <button
           onClick={handleViewChannel}
-          className="w-5 h-5 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-full flex items-center justify-center transition-colors"
+          className="w-5 h-5 bg-[var(--color-bg-elevated)] bg-opacity-20 hover:bg-opacity-30 rounded-full flex items-center justify-center transition-colors"
           title="View Channel"
         >
           <Eye className="w-3 h-3 text-white" />
@@ -299,7 +299,7 @@ const ChannelNode = ({ data }: { data: any }) => {
 
         <button
           onClick={handleAddTactic}
-          className="w-5 h-5 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-full flex items-center justify-center transition-colors"
+          className="w-5 h-5 bg-[var(--color-bg-elevated)] bg-opacity-20 hover:bg-opacity-30 rounded-full flex items-center justify-center transition-colors"
           title="Add Tactic"
         >
           <Plus className="w-3 h-3 text-white" />
@@ -381,7 +381,7 @@ const TacticNode = ({ data }: { data: any }) => {
       <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 flex gap-1">
         <button
           onClick={handleViewTactic}
-          className="w-5 h-5 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-full flex items-center justify-center transition-colors"
+          className="w-5 h-5 bg-[var(--color-bg-elevated)] bg-opacity-20 hover:bg-opacity-30 rounded-full flex items-center justify-center transition-colors"
           title="View Tactic"
         >
           <Eye className="w-3 h-3 text-white" />
@@ -1830,7 +1830,7 @@ const ChannelControls = ({ data: propData }: ChannelControlsProps) => {
   console.log("ChannelControls component rendering with React Flow...");
 
   return (
-    <div className="w-full h-[641px] bg-white overflow-hidden">
+    <div className="w-full h-[641px] bg-[var(--color-bg-elevated)] overflow-hidden">
       <div className="text-sm text-[var(--color-text-tertiary)] border-b border-[var(--color-border-default)] px-4 pb-4 flex justify-between items-center">
         <span>
           Use the diagram below to define what you business wants to accomplish

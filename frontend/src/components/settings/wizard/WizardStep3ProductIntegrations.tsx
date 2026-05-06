@@ -116,7 +116,7 @@ export const WizardStep3ProductIntegrations = ({
           <Link className="h-5 w-5 text-brand-medium-blue" />
           Product Integrations
         </CardTitle>
-        <p className="text-sm text-dashboard-gray-600">
+        <p className="text-sm text-[var(--color-text-tertiary)]">
           Choose which marketing tools you'd like to connect with KEN-E.
           {selectedTemplate && (
             <span className="text-brand-medium-blue font-medium">
@@ -137,7 +137,7 @@ export const WizardStep3ProductIntegrations = ({
         {Object.entries(integrationsByCategory).map(
           ([category, integrations]) => (
             <div key={category}>
-              <h3 className="font-medium mb-4 text-dashboard-gray-800">
+              <h3 className="font-medium mb-4 text-[var(--color-text-secondary)]">
                 {
                   INTEGRATION_CATEGORIES[
                     category as keyof typeof INTEGRATION_CATEGORIES
@@ -163,7 +163,7 @@ export const WizardStep3ProductIntegrations = ({
                           ? "opacity-60 cursor-not-allowed"
                           : isSelected
                             ? "border-brand-medium-blue bg-brand-light-blue/10"
-                            : "hover:border-dashboard-gray-300 cursor-pointer"
+                            : "hover:border-[var(--color-border-default)] cursor-pointer"
                       }`}
                       onClick={() =>
                         isAvailable &&
@@ -177,7 +177,7 @@ export const WizardStep3ProductIntegrations = ({
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
-                              <h4 className="font-medium text-dashboard-gray-800">
+                              <h4 className="font-medium text-[var(--color-text-secondary)]">
                                 {integration.name}
                               </h4>
                               {isRecommended && (
@@ -186,11 +186,11 @@ export const WizardStep3ProductIntegrations = ({
                                 </Badge>
                               )}
                             </div>
-                            <p className="text-sm text-dashboard-gray-600 mb-2">
+                            <p className="text-sm text-[var(--color-text-tertiary)] mb-2">
                               {integration.description}
                             </p>
                             {integration.features && (
-                              <div className="text-xs text-dashboard-gray-500">
+                              <div className="text-xs text-[var(--color-text-tertiary)]">
                                 <span className="font-medium">Features:</span>{" "}
                                 {integration.features.slice(0, 2).join(", ")}
                                 {integration.features.length > 2 && "..."}
@@ -242,7 +242,7 @@ export const WizardStep3ProductIntegrations = ({
         {formData.product_integrations.length > 0 && (
           <Card className="bg-brand-light-blue/5 border-brand-light-blue/20">
             <CardContent className="pt-4">
-              <h4 className="font-medium text-sm text-dashboard-gray-800 mb-2">
+              <h4 className="font-medium text-sm text-[var(--color-text-secondary)] mb-2">
                 Selected Integrations ({formData.product_integrations.length})
               </h4>
               <div className="flex flex-wrap gap-2">

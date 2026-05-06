@@ -130,7 +130,7 @@ export const NotificationSidebar: React.FC<NotificationSidebarProps> = ({
       />
 
       {/* Sidebar */}
-      <div className="fixed right-0 top-0 h-full w-96 bg-white shadow-xl z-50 flex flex-col">
+      <div className="fixed right-0 top-0 h-full w-96 bg-[var(--color-bg-elevated)] shadow-xl z-50 flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b">
           <h2 className="text-lg font-semibold">Notifications</h2>

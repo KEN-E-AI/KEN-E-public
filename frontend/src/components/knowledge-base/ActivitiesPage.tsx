@@ -1019,7 +1019,7 @@ const ActivitiesPage = () => {
 
         {/* Activities Accordion */}
         {!loading && (
-          <div className="bg-white border border-dashboard-gray-200 rounded-lg">
+          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-lg">
             {filteredActivities.length === 0 ? (
               <div className="p-8 text-center">
                 <p className="text-[var(--color-text-tertiary)] text-sm">
@@ -1047,7 +1047,7 @@ const ActivitiesPage = () => {
                   <AccordionItem
                     key={activity.id}
                     value={activity.id}
-                    className="border-b border-dashboard-gray-200 last:border-b-0"
+                    className="border-b border-[var(--color-border-default)] last:border-b-0"
                   >
                     <div className="flex items-start justify-between px-4 sm:px-6 py-4 gap-3">
                       <AccordionTrigger className="flex items-start gap-3 hover:no-underline [&>svg]:hidden cursor-pointer flex-1 min-w-0">
@@ -1062,13 +1062,13 @@ const ActivitiesPage = () => {
                             strokeWidth={2}
                             strokeLinecap="round"
                             strokeLinejoin="round"
-                            className="h-4 w-4 shrink-0 transition-transform duration-200 accordion-chevron text-dashboard-gray-600"
+                            className="h-4 w-4 shrink-0 transition-transform duration-200 accordion-chevron text-[var(--color-text-tertiary)]"
                           >
                             <path d="m6 9 6 6 6-6" />
                           </svg>
                         </div>
                         <div className="text-left flex-1 min-w-0">
-                          <p className="text-sm text-dashboard-gray-900 break-words leading-relaxed">
+                          <p className="text-sm text-[var(--color-text-primary)] break-words leading-relaxed">
                             {activity.name}
                           </p>
                         </div>
@@ -1106,10 +1106,10 @@ const ActivitiesPage = () => {
                       <div className="space-y-6">
                         {/* Full Description */}
                         <div>
-                          <Label className="text-sm font-medium text-dashboard-gray-900 mb-2 block">
+                          <Label className="text-sm font-medium text-[var(--color-text-primary)] mb-2 block">
                             Description
                           </Label>
-                          <p className="text-sm text-dashboard-gray-600 break-words">
+                          <p className="text-sm text-[var(--color-text-tertiary)] break-words">
                             {activity.description}
                           </p>
                         </div>
@@ -1719,7 +1719,7 @@ const ActivitiesPage = () => {
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <Label className="text-sm font-medium text-dashboard-gray-900">
+                      <Label className="text-sm font-medium text-[var(--color-text-primary)]">
                         Intuition
                       </Label>
                       <Tooltip>
@@ -1826,7 +1826,7 @@ const ActivitiesPage = () => {
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <Label className="text-sm font-medium text-dashboard-gray-900">
+                      <Label className="text-sm font-medium text-[var(--color-text-primary)]">
                         Logs
                       </Label>
                       <Tooltip>

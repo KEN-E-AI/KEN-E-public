@@ -23,7 +23,7 @@ const Knowledge = () => {
         {/* Header */}
         <div className="mb-8">
           <div className="flex items-center gap-3 mb-4">
-            <div className="text-dashboard-gray-600">
+            <div className="text-[var(--color-text-tertiary)]">
               Configure the information that KEN-E can access, and ensure that
               he understands your business.
             </div>

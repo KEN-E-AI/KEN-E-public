@@ -167,7 +167,12 @@ export const ContextSwitcher = ({
   ];
 
   return (
-    <div className={cn("bg-white border rounded-lg p-4", className)}>
+    <div
+      className={cn(
+        "bg-[var(--color-bg-elevated)] border rounded-lg p-4",
+        className,
+      )}
+    >
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-medium text-[var(--color-text-primary)]">
           Context

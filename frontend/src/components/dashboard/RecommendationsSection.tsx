@@ -40,7 +40,7 @@ const RecommendationsSection = () => {
 
   return (
     <div>
-      <h2 className="text-2xl font-semibold text-dashboard-gray-900 mb-6 border-b border-dashboard-gray-900 pb-2">
+      <h2 className="text-2xl font-semibold text-[var(--color-text-primary)] mb-6 border-b border-[var(--color-border-strong)] pb-2">
         Recommendations
       </h2>
 
@@ -48,27 +48,27 @@ const RecommendationsSection = () => {
         {recommendationItems.map((item) => (
           <div
             key={item.id}
-            className="bg-white border border-dashboard-gray-200 rounded-lg overflow-hidden"
+            className="bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-lg overflow-hidden"
           >
             {/* Collapsed Header */}
             <button
-              className="w-full px-6 py-4 text-left hover:bg-dashboard-gray-50 transition-colors"
+              className="w-full px-6 py-4 text-left hover:bg-[var(--color-bg-secondary)] transition-colors"
               onClick={() => toggleItem(item.id)}
             >
               <div className="flex items-center justify-between">
                 <div className="flex-1">
-                  <h3 className="font-medium text-dashboard-gray-900 mb-1">
+                  <h3 className="font-medium text-[var(--color-text-primary)] mb-1">
                     {item.title}
                   </h3>
-                  <p className="text-sm text-dashboard-gray-600">
+                  <p className="text-sm text-[var(--color-text-tertiary)]">
                     {item.summary}
                   </p>
                 </div>
                 <div className="ml-4">
                   {expandedItem === item.id ? (
-                    <ChevronUp className="h-5 w-5 text-dashboard-gray-400" />
+                    <ChevronUp className="h-5 w-5 text-[var(--color-text-disabled)]" />
                   ) : (
-                    <ChevronDown className="h-5 w-5 text-dashboard-gray-400" />
+                    <ChevronDown className="h-5 w-5 text-[var(--color-text-disabled)]" />
                   )}
                 </div>
               </div>
@@ -76,11 +76,11 @@ const RecommendationsSection = () => {
 
             {/* Expanded Content */}
             {expandedItem === item.id && (
-              <div className="px-6 pb-6 border-t border-dashboard-gray-100">
+              <div className="px-6 pb-6 border-t border-[var(--color-border-subtle)]">
                 <div className="pt-4">
                   {/* Detailed Description */}
                   <div className="mb-6">
-                    <div className="prose prose-sm text-dashboard-gray-700 max-w-none">
+                    <div className="prose prose-sm text-[var(--color-text-secondary)] max-w-none">
                       {item.detailed.split("\n").map((line, index) => (
                         <p key={index} className="mb-2">
                           {line}

@@ -1293,7 +1293,7 @@ const AccountSettings = () => {
               <div className="space-y-4">
                 <div className="flex items-start justify-between p-5 rounded-lg border-2 bg-muted/20">
                   <div className="flex items-start gap-4">
-                    <div className="size-12 rounded-lg bg-white border flex items-center justify-center shrink-0">
+                    <div className="size-12 rounded-lg bg-[var(--color-bg-elevated)] border flex items-center justify-center shrink-0">
                       <span className="font-bold text-sm text-[#E01E5A]">
                         Slack
                       </span>

@@ -215,7 +215,7 @@ export const AccountIntegrationsSettings = ({
                       </div>
                       <div>
                         <h3 className="font-medium">{integration.name}</h3>
-                        <p className="text-sm text-dashboard-gray-600">
+                        <p className="text-sm text-[var(--color-text-tertiary)]">
                           {integration.description}
                         </p>
                       </div>
@@ -229,7 +229,7 @@ export const AccountIntegrationsSettings = ({
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <div className="text-sm text-dashboard-gray-600">
+                    <div className="text-sm text-[var(--color-text-tertiary)]">
                       {integration.lastSync && (
                         <span>
                           Last sync:{" "}
@@ -294,11 +294,11 @@ export const AccountIntegrationsSettings = ({
                   <div className="flex items-center justify-between mb-3">
                     <div>
                       <h3 className="font-medium">{apiKey.name}</h3>
-                      <p className="text-sm text-dashboard-gray-600">
+                      <p className="text-sm text-[var(--color-text-tertiary)]">
                         Created: {new Date(apiKey.created).toLocaleDateString()}
                       </p>
                       {apiKey.lastUsed && (
-                        <p className="text-sm text-dashboard-gray-600">
+                        <p className="text-sm text-[var(--color-text-tertiary)]">
                           Last used:{" "}
                           {new Date(apiKey.lastUsed).toLocaleDateString()}
                         </p>
@@ -328,7 +328,7 @@ export const AccountIntegrationsSettings = ({
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <span className="text-sm text-dashboard-gray-600">
+                    <span className="text-sm text-[var(--color-text-tertiary)]">
                       Permissions:
                     </span>
                     {apiKey.permissions.map((permission) => (
@@ -358,7 +358,7 @@ export const AccountIntegrationsSettings = ({
                   <div className="flex items-center justify-between mb-3">
                     <div>
                       <h3 className="font-medium">Webhook {index + 1}</h3>
-                      <p className="text-sm text-dashboard-gray-600 font-mono">
+                      <p className="text-sm text-[var(--color-text-tertiary)] font-mono">
                         {webhook.url}
                       </p>
                     </div>
@@ -374,7 +374,7 @@ export const AccountIntegrationsSettings = ({
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <span className="text-sm text-dashboard-gray-600">
+                    <span className="text-sm text-[var(--color-text-tertiary)]">
                       Events:
                     </span>
                     {webhook.events.map((event) => (
@@ -402,7 +402,7 @@ export const AccountIntegrationsSettings = ({
               <div className="flex items-center justify-between">
                 <div>
                   <Label className="text-sm font-medium">Auto-sync</Label>
-                  <p className="text-sm text-dashboard-gray-600">
+                  <p className="text-sm text-[var(--color-text-tertiary)]">
                     Automatically sync data from connected integrations
                   </p>
                 </div>
@@ -420,7 +420,7 @@ export const AccountIntegrationsSettings = ({
                   <Label className="text-sm font-medium">
                     Error notifications
                   </Label>
-                  <p className="text-sm text-dashboard-gray-600">
+                  <p className="text-sm text-[var(--color-text-tertiary)]">
                     Get notified when integration errors occur
                   </p>
                 </div>

@@ -151,7 +151,7 @@ const ObjectiveNode = ({ data }: { data: any }) => {
               e.stopPropagation();
               setModalOpen(true);
             }}
-            className="w-5 h-5 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-full flex items-center justify-center transition-colors"
+            className="w-5 h-5 bg-[var(--color-bg-elevated)] bg-opacity-20 hover:bg-opacity-30 rounded-full flex items-center justify-center transition-colors"
             title="View Objective"
           >
             <Eye className="w-3 h-3 text-white" />
@@ -160,7 +160,7 @@ const ObjectiveNode = ({ data }: { data: any }) => {
 
         {/* Expansion Indicator */}
         <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2">
-          <div className="w-6 h-6 bg-white border-2 border-[var(--color-border-default)] rounded-full flex items-center justify-center shadow-sm">
+          <div className="w-6 h-6 bg-[var(--color-bg-elevated)] border-2 border-[var(--color-border-default)] rounded-full flex items-center justify-center shadow-sm">
             {data.isSelected ? (
               <span className="text-xs font-bold text-[var(--color-text-tertiary)]">
                 -
@@ -575,7 +575,7 @@ const ChannelNode = ({ data }: { data: any }) => {
             <DialogTrigger asChild>
               <button
                 onClick={(e) => e.stopPropagation()}
-                className="w-5 h-5 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-full flex items-center justify-center transition-colors"
+                className="w-5 h-5 bg-[var(--color-bg-elevated)] bg-opacity-20 hover:bg-opacity-30 rounded-full flex items-center justify-center transition-colors"
                 title="View Channel"
               >
                 <Eye className="w-3 h-3 text-white" />
@@ -626,7 +626,7 @@ const ChannelNode = ({ data }: { data: any }) => {
           snapshotData[data.stepId]?.channels[data.channelKey]?.tactics || {},
         ).length > 0 && (
           <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1/2">
-            <div className="w-6 h-6 bg-white border-2 border-[var(--color-border-default)] rounded-full flex items-center justify-center shadow-sm">
+            <div className="w-6 h-6 bg-[var(--color-bg-elevated)] border-2 border-[var(--color-border-default)] rounded-full flex items-center justify-center shadow-sm">
               {data.isSelected ? (
                 <span className="text-xs font-bold text-[var(--color-text-tertiary)]">
                   -
@@ -684,7 +684,7 @@ const TacticNode = ({ data }: { data: any }) => {
           <Dialog open={modalOpen} onOpenChange={setModalOpen}>
             <DialogTrigger asChild>
               <button
-                className="w-5 h-5 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-full flex items-center justify-center transition-colors"
+                className="w-5 h-5 bg-[var(--color-bg-elevated)] bg-opacity-20 hover:bg-opacity-30 rounded-full flex items-center justify-center transition-colors"
                 title="View Tactic"
               >
                 <Eye className="w-3 h-3 text-white" />
@@ -917,12 +917,12 @@ const InteractiveReactFlowComponent = () => {
 // Main Component
 const ChannelControlsSnapshot = () => {
   return (
-    <div className="bg-white rounded-lg border border-dashboard-gray-200 p-6">
+    <div className="bg-[var(--color-bg-elevated)] rounded-lg border border-[var(--color-border-default)] p-6">
       <div className="mb-4">
-        <h3 className="text-lg font-semibold text-dashboard-gray-900 mb-2">
+        <h3 className="text-lg font-semibold text-[var(--color-text-primary)] mb-2">
           Marketing Strategies Snapshot
         </h3>
-        <p className="text-sm text-dashboard-gray-600">
+        <p className="text-sm text-[var(--color-text-tertiary)]">
           Frozen view of the marketing strategies at the time this report was
           generated.
         </p>

@@ -389,7 +389,7 @@ export const AccountProfileSettings = ({
                 </div>
                 <div>
                   <h3 className="font-semibold">{template.name}</h3>
-                  <p className="text-sm text-dashboard-gray-600">
+                  <p className="text-sm text-[var(--color-text-tertiary)]">
                     {template.description}
                   </p>
                 </div>
@@ -399,7 +399,7 @@ export const AccountProfileSettings = ({
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                 <div>
                   <h4 className="font-medium mb-2">Default Objectives</h4>
-                  <ul className="space-y-1 text-dashboard-gray-600">
+                  <ul className="space-y-1 text-[var(--color-text-tertiary)]">
                     {template.defaultObjectives
                       .slice(0, 3)
                       .map((objective, index) => (
@@ -409,7 +409,7 @@ export const AccountProfileSettings = ({
                 </div>
                 <div>
                   <h4 className="font-medium mb-2">Recommended Channels</h4>
-                  <ul className="space-y-1 text-dashboard-gray-600">
+                  <ul className="space-y-1 text-[var(--color-text-tertiary)]">
                     {template.defaultChannels
                       .slice(0, 3)
                       .map((channel, index) => (
@@ -419,7 +419,7 @@ export const AccountProfileSettings = ({
                 </div>
                 <div>
                   <h4 className="font-medium mb-2">Key KPIs</h4>
-                  <ul className="space-y-1 text-dashboard-gray-600">
+                  <ul className="space-y-1 text-[var(--color-text-tertiary)]">
                     {template.defaultKPIs.slice(0, 3).map((kpi, index) => (
                       <li key={index}>• {kpi}</li>
                     ))}
@@ -456,7 +456,7 @@ export const AccountProfileSettings = ({
                     <Label className="text-sm font-medium">
                       Auto-sync data
                     </Label>
-                    <p className="text-sm text-dashboard-gray-600">
+                    <p className="text-sm text-[var(--color-text-tertiary)]">
                       Automatically sync data from connected platforms
                     </p>
                   </div>
@@ -470,7 +470,7 @@ export const AccountProfileSettings = ({
                     <Label className="text-sm font-medium">
                       Performance alerts
                     </Label>
-                    <p className="text-sm text-dashboard-gray-600">
+                    <p className="text-sm text-[var(--color-text-tertiary)]">
                       Get notified when performance exceeds thresholds
                     </p>
                   </div>
@@ -482,7 +482,7 @@ export const AccountProfileSettings = ({
                 <div className="flex items-center gap-2">
                   <div>
                     <Label className="text-sm font-medium">Data archival</Label>
-                    <p className="text-sm text-dashboard-gray-600">
+                    <p className="text-sm text-[var(--color-text-tertiary)]">
                       Automatically archive old data after 12 months
                     </p>
                   </div>

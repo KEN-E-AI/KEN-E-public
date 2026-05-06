@@ -295,7 +295,7 @@ export const IndustryKeywordsSettings = () => {
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <h4 className="font-medium text-dashboard-gray-900 mb-2">
+                    <h4 className="font-medium text-[var(--color-text-primary)] mb-2">
                       {item.industry}
                     </h4>
                     <div className="flex flex-wrap gap-1.5">

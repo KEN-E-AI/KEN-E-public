@@ -191,17 +191,17 @@ export const FileUpload = React.forwardRef<HTMLDivElement, FileUploadProps>(
           onClick={openFileDialog}
         >
           <CardContent className="flex flex-col items-center justify-center py-8 text-center">
-            <Upload className="h-10 w-10 text-dashboard-gray-400 mb-4" />
+            <Upload className="h-10 w-10 text-[var(--color-text-disabled)] mb-4" />
             <div className="space-y-2">
-              <p className="text-sm font-medium text-dashboard-gray-700">
+              <p className="text-sm font-medium text-[var(--color-text-secondary)]">
                 {dragActive
                   ? "Drop files here"
                   : "Click to upload or drag and drop"}
               </p>
-              <p className="text-xs text-dashboard-gray-500">
+              <p className="text-xs text-[var(--color-text-tertiary)]">
                 Supported formats: {accept.join(", ")}
               </p>
-              <p className="text-xs text-dashboard-gray-500">
+              <p className="text-xs text-[var(--color-text-tertiary)]">
                 Max {formatFileSize(maxSize)} per file,{" "}
                 {formatFileSize(maxTotalSize)} total, up to {maxFiles} files
               </p>
@@ -223,8 +223,12 @@ export const FileUpload = React.forwardRef<HTMLDivElement, FileUploadProps>(
         {uploading && typeof uploadProgress === "number" && (
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-dashboard-gray-600">Uploading...</span>
-              <span className="text-dashboard-gray-600">{uploadProgress}%</span>
+              <span className="text-[var(--color-text-tertiary)]">
+                Uploading...
+              </span>
+              <span className="text-[var(--color-text-tertiary)]">
+                {uploadProgress}%
+              </span>
             </div>
             <Progress value={uploadProgress} className="h-2" />
           </div>
@@ -241,22 +245,22 @@ export const FileUpload = React.forwardRef<HTMLDivElement, FileUploadProps>(
         {/* File List */}
         {files.length > 0 && (
           <div className="space-y-2">
-            <h4 className="text-sm font-medium text-dashboard-gray-700">
+            <h4 className="text-sm font-medium text-[var(--color-text-secondary)]">
               Selected Files ({files.length}/{maxFiles})
             </h4>
             <div className="space-y-2">
               {files.map((file, index) => (
                 <div
                   key={`${file.name}-${index}`}
-                  className="flex items-center justify-between p-3 bg-dashboard-gray-50 rounded-lg"
+                  className="flex items-center justify-between p-3 bg-[var(--color-bg-secondary)] rounded-lg"
                 >
                   <div className="flex items-center space-x-3">
-                    <File className="h-4 w-4 text-dashboard-gray-400" />
+                    <File className="h-4 w-4 text-[var(--color-text-disabled)]" />
                     <div>
-                      <p className="text-sm font-medium text-dashboard-gray-700">
+                      <p className="text-sm font-medium text-[var(--color-text-secondary)]">
                         {file.name}
                       </p>
-                      <p className="text-xs text-dashboard-gray-500">
+                      <p className="text-xs text-[var(--color-text-tertiary)]">
                         {formatFileSize(file.size)}
                       </p>
                     </div>
@@ -280,7 +284,7 @@ export const FileUpload = React.forwardRef<HTMLDivElement, FileUploadProps>(
             </div>
 
             {/* Total Size */}
-            <div className="flex justify-between text-xs text-dashboard-gray-500">
+            <div className="flex justify-between text-xs text-[var(--color-text-tertiary)]">
               <span>Total size: {formatFileSize(totalSize)}</span>
               <span>{formatFileSize(maxTotalSize - totalSize)} remaining</span>
             </div>

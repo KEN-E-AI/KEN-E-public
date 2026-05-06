@@ -569,12 +569,12 @@ const MetricsPage = () => {
       </div>
 
       {/* Metrics Table */}
-      <div className="bg-white border border-dashboard-gray-200 rounded-lg overflow-hidden">
+      <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-lg overflow-hidden">
         {/* Desktop Table */}
         <div className="hidden md:block overflow-x-auto">
           <div className="min-w-[700px]">
             {/* Table Header */}
-            <div className="grid grid-cols-10 gap-4 p-4 border-b border-dashboard-gray-200 bg-[var(--color-bg-secondary)] text-sm font-medium text-[var(--color-text-secondary)]">
+            <div className="grid grid-cols-10 gap-4 p-4 border-b border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] text-sm font-medium text-[var(--color-text-secondary)]">
               <div className="col-span-1 text-center">Expand</div>
               <div className="col-span-4">
                 <button
@@ -629,7 +629,7 @@ const MetricsPage = () => {
                         </Button>
                       </div>
                       <div className="col-span-4 min-w-0">
-                        <span className="font-medium text-dashboard-gray-900 break-words">
+                        <span className="font-medium text-[var(--color-text-primary)] break-words">
                           {metric.name}
                         </span>
                       </div>
@@ -708,7 +708,7 @@ const MetricsPage = () => {
                             <Label className="text-xs font-medium text-[var(--color-text-secondary)]">
                               SQL Expression
                             </Label>
-                            <div className="text-sm text-[var(--color-text-primary)] mt-1 font-mono bg-white p-3 rounded border break-all whitespace-pre-wrap overflow-hidden">
+                            <div className="text-sm text-[var(--color-text-primary)] mt-1 font-mono bg-[var(--color-bg-elevated)] p-3 rounded border break-all whitespace-pre-wrap overflow-hidden">
                               {metric.sqlExpression}
                             </div>
                           </div>
@@ -725,7 +725,7 @@ const MetricsPage = () => {
         {/* Mobile Card Layout */}
         <div className="md:hidden">
           {/* Mobile Sort Options */}
-          <div className="p-3 border-b border-dashboard-gray-200 bg-[var(--color-bg-secondary)]">
+          <div className="p-3 border-b border-[var(--color-border-default)] bg-[var(--color-bg-secondary)]">
             <div className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-secondary)] overflow-x-auto">
               <span className="whitespace-nowrap">Sort:</span>
               <button
@@ -771,7 +771,7 @@ const MetricsPage = () => {
                   <div className="space-y-3">
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-medium text-dashboard-gray-900 break-words text-sm">
+                        <h3 className="font-medium text-[var(--color-text-primary)] break-words text-sm">
                           {metric.name}
                         </h3>
                         <div className="mt-1 space-y-1">
@@ -862,7 +862,7 @@ const MetricsPage = () => {
                           <Label className="text-xs font-medium text-[var(--color-text-secondary)]">
                             SQL Expression
                           </Label>
-                          <div className="text-xs text-[var(--color-text-primary)] mt-1 font-mono bg-white p-2 rounded border break-all whitespace-pre-wrap overflow-hidden">
+                          <div className="text-xs text-[var(--color-text-primary)] mt-1 font-mono bg-[var(--color-bg-elevated)] p-2 rounded border break-all whitespace-pre-wrap overflow-hidden">
                             {metric.sqlExpression}
                           </div>
                         </div>

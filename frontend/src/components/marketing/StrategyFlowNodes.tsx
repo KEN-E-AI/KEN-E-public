@@ -38,10 +38,10 @@ export const CustomerProfileNode = ({ data }: CustomerProfileNodeProps) => {
                 className="bg-brand-medium-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
                 style={{ width: "200px" }}
               >
-                <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
+                <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
                   Customer Profile
                 </p>
-                <p className="font-semibold text-dashboard-gray-900 leading-tight truncate">
+                <p className="font-semibold text-[var(--color-text-primary)] leading-tight truncate">
                   {data.label}
                 </p>
               </div>
@@ -113,10 +113,10 @@ export const StrategyBundleNode = ({
                 className="bg-brand-dark-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
                 style={{ width: "200px" }}
               >
-                <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
+                <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
                   Marketing Strategies
                 </p>
-                <p className="font-semibold text-dashboard-gray-900 leading-tight truncate">
+                <p className="font-semibold text-[var(--color-text-primary)] leading-tight truncate">
                   {data.label}
                 </p>
               </div>
@@ -255,8 +255,8 @@ export const IndividualStrategyNode = ({
             className={cn(
               "text-xs font-medium truncate",
               data.isSelected
-                ? "text-dashboard-gray-900"
-                : "text-dashboard-gray-700",
+                ? "text-[var(--color-text-primary)]"
+                : "text-[var(--color-text-secondary)]",
             )}
           >
             {config.label}

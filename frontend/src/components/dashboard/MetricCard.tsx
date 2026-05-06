@@ -51,7 +51,7 @@ const MetricCard = ({ title, color, metric, chartData }: MetricCardProps) => {
   };
 
   return (
-    <div className="bg-white border border-dashboard-gray-200 rounded-lg overflow-hidden">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-lg overflow-hidden">
       {/* Header */}
       <div className={cn("px-6 py-3", currentColor.header)}>
         <div className="flex items-center gap-2">
@@ -73,7 +73,7 @@ const MetricCard = ({ title, color, metric, chartData }: MetricCardProps) => {
                     size="sm"
                     className="p-0 h-auto ml-auto"
                   >
-                    <HelpCircle className="h-4 w-4 text-dashboard-gray-400" />
+                    <HelpCircle className="h-4 w-4 text-[var(--color-text-disabled)]" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
@@ -82,10 +82,10 @@ const MetricCard = ({ title, color, metric, chartData }: MetricCardProps) => {
               </Tooltip>
             </TooltipProvider>
             <div>
-              <h4 className="font-medium text-dashboard-gray-900">
+              <h4 className="font-medium text-[var(--color-text-primary)]">
                 {metric.name}
               </h4>
-              <p className="text-sm text-dashboard-gray-600 max-w-sm mt-1">
+              <p className="text-sm text-[var(--color-text-tertiary)] max-w-sm mt-1">
                 {metric.description}
               </p>
             </div>
@@ -93,7 +93,7 @@ const MetricCard = ({ title, color, metric, chartData }: MetricCardProps) => {
 
           {/* Value and Change */}
           <div className="mt-4">
-            <div className="text-3xl font-bold text-dashboard-gray-900 mb-2 text-center">
+            <div className="text-3xl font-bold text-[var(--color-text-primary)] mb-2 text-center">
               {metric.value}
             </div>
             <div

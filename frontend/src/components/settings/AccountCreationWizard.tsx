@@ -304,15 +304,15 @@ export const AccountCreationWizard = ({
   return (
     <ErrorBoundary>
       <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+        <div className="bg-[var(--color-bg-elevated)] rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto">
           <div className="p-6">
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h2 className="text-2xl font-bold text-dashboard-gray-900">
+                <h2 className="text-2xl font-bold text-[var(--color-text-primary)]">
                   Create New Account
                 </h2>
-                <p className="text-dashboard-gray-600 mt-1">
+                <p className="text-[var(--color-text-tertiary)] mt-1">
                   Step {displayStep} of {totalSteps}
                 </p>
               </div>
@@ -324,7 +324,7 @@ export const AccountCreationWizard = ({
             {/* Progress Bar */}
             <div className="mb-8">
               <Progress value={progress} className="w-full" />
-              <div className="flex justify-between mt-2 text-sm text-dashboard-gray-600">
+              <div className="flex justify-between mt-2 text-sm text-[var(--color-text-tertiary)]">
                 <span
                   className={displayStep >= 1 ? "text-brand-medium-blue" : ""}
                 >

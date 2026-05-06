@@ -202,9 +202,9 @@ export const GoogleAnalyticsPropertySelector = ({
   if (isLoading) {
     console.log("[GoogleAnalyticsPropertySelector] Rendering loading state");
     return (
-      <Card className="w-full max-w-4xl mx-auto bg-white relative z-[10000]">
+      <Card className="w-full max-w-4xl mx-auto bg-[var(--color-bg-elevated)] relative z-[10000]">
         <CardContent className="flex items-center justify-center py-12">
-          <Loader2 className="h-8 w-8 animate-spin text-dashboard-gray-500" />
+          <Loader2 className="h-8 w-8 animate-spin text-[var(--color-text-tertiary)]" />
           <span className="ml-2">Loading Google Analytics properties...</span>
         </CardContent>
       </Card>
@@ -263,7 +263,7 @@ export const GoogleAnalyticsPropertySelector = ({
     "properties",
   );
   return (
-    <Card className="w-full max-w-4xl mx-auto bg-white relative z-[10000]">
+    <Card className="w-full max-w-4xl mx-auto bg-[var(--color-bg-elevated)] relative z-[10000]">
       <CardHeader>
         <CardTitle>Select Google Analytics Properties</CardTitle>
         <CardDescription>
@@ -276,7 +276,7 @@ export const GoogleAnalyticsPropertySelector = ({
         {/* Search and Actions Bar */}
         <div className="flex gap-2">
           <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-dashboard-gray-400 h-4 w-4" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-[var(--color-text-disabled)] h-4 w-4" />
             <Input
               placeholder="Search properties..."
               value={searchQuery}
@@ -314,7 +314,7 @@ export const GoogleAnalyticsPropertySelector = ({
             ([accountName, accountProperties]) => (
               <div key={accountName} className="mb-6">
                 <div className="flex items-center gap-2 mb-3">
-                  <Building className="h-4 w-4 text-dashboard-gray-500" />
+                  <Building className="h-4 w-4 text-[var(--color-text-tertiary)]" />
                   <h4 className="font-medium text-sm">{accountName}</h4>
                   <Badge variant="secondary" className="text-xs">
                     {accountProperties.length}{" "}
@@ -325,7 +325,7 @@ export const GoogleAnalyticsPropertySelector = ({
                   {accountProperties.map((property) => (
                     <div
                       key={property.property_id}
-                      className="flex items-start space-x-3 p-3 rounded-lg hover:bg-dashboard-gray-50 transition-colors"
+                      className="flex items-start space-x-3 p-3 rounded-lg hover:bg-[var(--color-bg-secondary)] transition-colors"
                     >
                       <Checkbox
                         id={property.property_id}
@@ -340,16 +340,16 @@ export const GoogleAnalyticsPropertySelector = ({
                         className="flex-1 cursor-pointer"
                       >
                         <div className="flex items-center gap-2">
-                          <Globe className="h-3 w-3 text-dashboard-gray-400" />
+                          <Globe className="h-3 w-3 text-[var(--color-text-disabled)]" />
                           <span className="font-medium text-sm">
                             {property.display_name}
                           </span>
                         </div>
-                        <div className="text-xs text-dashboard-gray-500 mt-1">
+                        <div className="text-xs text-[var(--color-text-tertiary)] mt-1">
                           ID: {property.property_id}
                         </div>
                         {property.time_zone && (
-                          <div className="text-xs text-dashboard-gray-400 mt-1">
+                          <div className="text-xs text-[var(--color-text-disabled)] mt-1">
                             Timezone: {property.time_zone}
                           </div>
                         )}

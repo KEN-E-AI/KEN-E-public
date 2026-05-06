@@ -300,7 +300,7 @@ export const DeleteCompetitorDialog = ({
                   <p className="font-semibold text-brand-red text-sm">
                     Warning: This will also delete:
                   </p>
-                  <ul className="text-sm space-y-1 text-dashboard-gray-700">
+                  <ul className="text-sm space-y-1 text-[var(--color-text-secondary)]">
                     {dependentCounts.strengths > 0 && (
                       <li>• {dependentCounts.strengths} strength(s)</li>
                     )}
@@ -331,7 +331,7 @@ export const DeleteCompetitorDialog = ({
                       </li>
                     )}
                   </ul>
-                  <p className="text-xs text-dashboard-gray-600 mt-2">
+                  <p className="text-xs text-[var(--color-text-tertiary)] mt-2">
                     Total: {totalDependents} related entities will be
                     permanently removed.
                   </p>

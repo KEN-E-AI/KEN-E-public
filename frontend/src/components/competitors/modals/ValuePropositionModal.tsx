@@ -120,7 +120,7 @@ export const ValuePropositionModal = ({
               placeholder="e.g., Advanced HEPA Filtration"
               maxLength={60}
             />
-            <p className="text-xs text-dashboard-gray-500 mt-1">
+            <p className="text-xs text-[var(--color-text-tertiary)] mt-1">
               Short, descriptive name (max 60 characters)
             </p>
           </div>

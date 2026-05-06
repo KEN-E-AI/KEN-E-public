@@ -325,7 +325,7 @@ export function MessageContent({
                   "divide-y",
                   isAssistant
                     ? "divide-white/10 bg-white/5"
-                    : "divide-[var(--color-border-default)] bg-white",
+                    : "divide-[var(--color-border-default)] bg-[var(--color-bg-elevated)]",
                 )}
               >
                 {children}
@@ -454,7 +454,7 @@ export function MessageContent({
                     "divide-y",
                     isAssistant
                       ? "divide-white/10 bg-white/5"
-                      : "divide-[var(--color-border-default)] bg-white",
+                      : "divide-[var(--color-border-default)] bg-[var(--color-bg-elevated)]",
                   )}
                 >
                   {children}
@@ -500,7 +500,7 @@ export function MessageContent({
               "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all",
               isAssistant
                 ? "bg-white/20 text-white/90 hover:bg-white/30 border border-white/20"
-                : "bg-dashboard-gray-100 text-dashboard-gray-700 hover:bg-dashboard-gray-200 border border-dashboard-gray-200",
+                : "bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)]",
             )}
           >
             {isOpen ? (
@@ -519,13 +519,15 @@ export function MessageContent({
               "rounded-md p-3 overflow-x-auto",
               isAssistant
                 ? "bg-white/10 border border-white/20"
-                : "bg-dashboard-gray-50 border border-dashboard-gray-200",
+                : "bg-[var(--color-bg-secondary)] border border-[var(--color-border-default)]",
             )}
           >
             <pre
               className={cn(
                 "text-xs font-mono",
-                isAssistant ? "text-white/90" : "text-dashboard-gray-700",
+                isAssistant
+                  ? "text-white/90"
+                  : "text-[var(--color-text-secondary)]",
               )}
             >
               <code>{formatJSON(parsedContent.jsonData)}</code>

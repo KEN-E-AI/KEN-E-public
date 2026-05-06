@@ -1575,7 +1575,7 @@ const AccountsManagement = ({
                     <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                   </TooltipTrigger>
                   <TooltipContent
-                    className="max-w-sm text-sm z-50 bg-white border border-[var(--color-border-default)] shadow-lg"
+                    className="max-w-sm text-sm z-50 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] shadow-lg"
                     side="right"
                     align="center"
                     avoidCollisions={true}
@@ -1641,7 +1641,7 @@ const AccountsManagement = ({
                     <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                   </TooltipTrigger>
                   <TooltipContent
-                    className="max-w-sm text-sm z-50 bg-white border border-[var(--color-border-default)] shadow-lg"
+                    className="max-w-sm text-sm z-50 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] shadow-lg"
                     side="right"
                     align="center"
                     avoidCollisions={true}
@@ -1681,7 +1681,7 @@ const AccountsManagement = ({
                     <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                   </TooltipTrigger>
                   <TooltipContent
-                    className="max-w-sm text-sm z-50 bg-white border border-[var(--color-border-default)] shadow-lg"
+                    className="max-w-sm text-sm z-50 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] shadow-lg"
                     side="right"
                     align="center"
                     avoidCollisions={true}
@@ -1721,7 +1721,7 @@ const AccountsManagement = ({
                     <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                   </TooltipTrigger>
                   <TooltipContent
-                    className="max-w-sm text-sm z-50 bg-white border border-[var(--color-border-default)] shadow-lg"
+                    className="max-w-sm text-sm z-50 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] shadow-lg"
                     side="right"
                     align="center"
                     avoidCollisions={true}
@@ -1765,7 +1765,7 @@ const AccountsManagement = ({
                     <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                   </TooltipTrigger>
                   <TooltipContent
-                    className="max-w-sm text-sm z-50 bg-white border border-[var(--color-border-default)] shadow-lg"
+                    className="max-w-sm text-sm z-50 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] shadow-lg"
                     side="right"
                     align="center"
                     avoidCollisions={true}
@@ -1822,7 +1822,7 @@ const AccountsManagement = ({
                     <Plus className="h-4 w-4" />
                   </Button>
                   {isEditRegionPopoverOpen && (
-                    <div className="absolute top-full right-0 mt-1 w-80 bg-white border border-[var(--color-border-default)] rounded-md shadow-lg z-50 max-h-60 overflow-y-auto">
+                    <div className="absolute top-full right-0 mt-1 w-80 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-md shadow-lg z-50 max-h-60 overflow-y-auto">
                       {REGION_OPTIONS.map((option) => (
                         <div
                           key={option.value}
@@ -1933,7 +1933,7 @@ const AccountsManagement = ({
                       <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                     </TooltipTrigger>
                     <TooltipContent
-                      className="max-w-sm text-sm z-50 bg-white border border-[var(--color-border-default)] shadow-lg"
+                      className="max-w-sm text-sm z-50 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] shadow-lg"
                       side="right"
                       align="center"
                       avoidCollisions={true}
@@ -1966,8 +1966,8 @@ const AccountsManagement = ({
                     <Plus className="h-4 w-4" />
                   </Button>
                   {isEditMarketingChannelsPopoverOpen && (
-                    <div className="absolute top-full right-0 mt-1 w-96 bg-white border border-[var(--color-border-default)] rounded-md shadow-lg z-50">
-                      <div className="sticky top-0 bg-white border-b border-[var(--color-border-default)] p-2">
+                    <div className="absolute top-full right-0 mt-1 w-96 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-md shadow-lg z-50">
+                      <div className="sticky top-0 bg-[var(--color-bg-elevated)] border-b border-[var(--color-border-default)] p-2">
                         <div className="relative">
                           <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-[var(--color-text-disabled)]" />
                           <Input
@@ -2118,7 +2118,7 @@ const AccountsManagement = ({
                   </div>
                 ))}
                 {editFormData.marketing_channels.length === 0 && (
-                  <p className="text-xs text-dashboard-gray-500">
+                  <p className="text-xs text-[var(--color-text-tertiary)]">
                     No marketing channels selected. Add channels using the +
                     button above.
                   </p>
@@ -2133,7 +2133,7 @@ const AccountsManagement = ({
                     <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                   </TooltipTrigger>
                   <TooltipContent
-                    className="max-w-sm text-sm z-50 bg-white border border-[var(--color-border-default)] shadow-lg"
+                    className="max-w-sm text-sm z-50 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] shadow-lg"
                     side="right"
                     align="center"
                     avoidCollisions={true}

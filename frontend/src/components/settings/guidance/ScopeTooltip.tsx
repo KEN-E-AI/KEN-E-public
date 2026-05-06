@@ -181,6 +181,6 @@ export const ScopeHelpIcon = ({
   setting: string;
 }) => (
   <ScopeTooltip scope={scope} setting={setting}>
-    <HelpCircle className="h-4 w-4 text-dashboard-gray-400 cursor-help hover:text-dashboard-gray-600 transition-colors" />
+    <HelpCircle className="h-4 w-4 text-[var(--color-text-disabled)] cursor-help hover:text-[var(--color-text-tertiary)] transition-colors" />
   </ScopeTooltip>
 );

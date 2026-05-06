@@ -179,7 +179,7 @@ export const GoogleAnalyticsManage = ({
 
           {isLoading ? (
             <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin text-dashboard-gray-500" />
+              <Loader2 className="h-8 w-8 animate-spin text-[var(--color-text-tertiary)]" />
             </div>
           ) : (
             <div className="space-y-4">
@@ -201,7 +201,7 @@ export const GoogleAnalyticsManage = ({
                 {status?.configured && (
                   <>
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-dashboard-gray-600">
+                      <span className="text-sm text-[var(--color-text-tertiary)]">
                         Configured At
                       </span>
                       <span className="text-sm">
@@ -209,7 +209,7 @@ export const GoogleAnalyticsManage = ({
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-sm text-dashboard-gray-600">
+                      <span className="text-sm text-[var(--color-text-tertiary)]">
                         Last Tested
                       </span>
                       <span className="text-sm">

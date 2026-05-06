@@ -291,7 +291,7 @@ export const MarketingFunnelVisualization = ({
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-dashboard-gray-600 leading-relaxed">
+                <p className="text-sm text-[var(--color-text-tertiary)] leading-relaxed">
                   {currentStrategy?.description ||
                     "No description available for this strategy."}
                 </p>

@@ -296,7 +296,7 @@ export const WizardStep1BasicInfo = ({
               className="mt-1"
             />
             {loadingTemplate && (
-              <p className="text-xs text-dashboard-gray-500 mt-1">
+              <p className="text-xs text-[var(--color-text-tertiary)] mt-1">
                 Loading industry-specific recommendations...
               </p>
             )}
@@ -552,12 +552,14 @@ export const WizardStep1BasicInfo = ({
                 : "Required"}
             </Badge>
           </CardTitle>
-          <div className="text-sm text-dashboard-gray-600">
+          <div className="text-sm text-[var(--color-text-tertiary)]">
             <p className="mb-2">
               Upload documents to help KEN-E understand your business,
               competitors and customers.
             </p>
-            <p className="font-medium text-dashboard-gray-700">Examples:</p>
+            <p className="font-medium text-[var(--color-text-secondary)]">
+              Examples:
+            </p>
             <ul className="list-disc list-inside ml-2 mb-3 space-y-1">
               <li>Business plan</li>
               <li>Competitive analysis</li>

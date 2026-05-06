@@ -191,20 +191,6 @@ export default {
           DEFAULT: "var(--color-legacy-efficiency)",
           foreground: "var(--color-legacy-efficiency-fg)",
         },
-        dashboard: {
-          gray: {
-            50: "var(--color-legacy-gray-50)",
-            100: "var(--color-legacy-gray-100)",
-            200: "var(--color-legacy-gray-200)",
-            300: "var(--color-legacy-gray-300)",
-            400: "var(--color-legacy-gray-400)",
-            500: "var(--color-legacy-gray-500)",
-            600: "var(--color-legacy-gray-600)",
-            700: "var(--color-legacy-gray-700)",
-            800: "var(--color-legacy-gray-800)",
-            900: "var(--color-legacy-gray-900)",
-          },
-        },
       },
       fontFamily: {
         display: ["var(--font-display)"],

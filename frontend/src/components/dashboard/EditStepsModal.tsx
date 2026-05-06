@@ -245,7 +245,7 @@ const EditStepsModal = ({
               {sortedSteps.map((step, index) => (
                 <div
                   key={step.id}
-                  className="border border-dashboard-gray-200 rounded-lg p-4 bg-dashboard-gray-50"
+                  className="border border-[var(--color-border-default)] rounded-lg p-4 bg-[var(--color-bg-secondary)]"
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-start gap-3 flex-1">
@@ -269,18 +269,18 @@ const EditStepsModal = ({
                       </Button>
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
-                          <GripVertical className="h-4 w-4 text-dashboard-gray-400" />
+                          <GripVertical className="h-4 w-4 text-[var(--color-text-disabled)]" />
                           <Badge
                             variant="secondary"
-                            className="bg-dashboard-gray-200 text-dashboard-gray-800"
+                            className="bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)]"
                           >
                             #{step.order + 1}
                           </Badge>
-                          <div className="font-medium text-dashboard-gray-900">
+                          <div className="font-medium text-[var(--color-text-primary)]">
                             {step.name}
                           </div>
                         </div>
-                        <p className="text-sm text-dashboard-gray-600 mb-2">
+                        <p className="text-sm text-[var(--color-text-tertiary)] mb-2">
                           {step.objective}
                         </p>
                         <div className="flex gap-2 text-xs">
@@ -344,7 +344,7 @@ const EditStepsModal = ({
                       placeholder="Objective name"
                       maxLength={40}
                     />
-                    <div className="text-xs text-dashboard-gray-500 mt-1">
+                    <div className="text-xs text-[var(--color-text-tertiary)] mt-1">
                       {editingStep.name.length}/40 characters
                     </div>
                   </div>
@@ -365,7 +365,7 @@ const EditStepsModal = ({
                     rows={3}
                     maxLength={255}
                   />
-                  <div className="text-xs text-dashboard-gray-500 mt-1">
+                  <div className="text-xs text-[var(--color-text-tertiary)] mt-1">
                     {editingStep.objective.length}/255 characters
                   </div>
                 </div>

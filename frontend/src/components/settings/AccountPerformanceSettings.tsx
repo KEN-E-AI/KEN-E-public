@@ -235,7 +235,7 @@ export const AccountPerformanceSettings = ({
                       ) : (
                         <div>
                           <h3 className="font-medium">{kpi.name}</h3>
-                          <p className="text-sm text-dashboard-gray-600">
+                          <p className="text-sm text-[var(--color-text-tertiary)]">
                             {kpi.description}
                           </p>
                         </div>
@@ -274,7 +274,7 @@ export const AccountPerformanceSettings = ({
                           disabled={!isEditing}
                           className="mt-1"
                         />
-                        <span className="text-sm text-dashboard-gray-600">
+                        <span className="text-sm text-[var(--color-text-tertiary)]">
                           {kpi.unit}
                         </span>
                       </div>
@@ -293,7 +293,7 @@ export const AccountPerformanceSettings = ({
                           disabled={!isEditing}
                           className="mt-1"
                         />
-                        <span className="text-sm text-dashboard-gray-600">
+                        <span className="text-sm text-[var(--color-text-tertiary)]">
                           {kpi.unit}
                         </span>
                       </div>
@@ -605,7 +605,7 @@ export const AccountPerformanceSettings = ({
                   <Label className="text-sm font-medium">
                     Auto-update targets
                   </Label>
-                  <p className="text-sm text-dashboard-gray-600">
+                  <p className="text-sm text-[var(--color-text-tertiary)]">
                     Automatically adjust targets based on performance trends
                   </p>
                 </div>
@@ -623,7 +623,7 @@ export const AccountPerformanceSettings = ({
                   <Label className="text-sm font-medium">
                     Benchmark comparison
                   </Label>
-                  <p className="text-sm text-dashboard-gray-600">
+                  <p className="text-sm text-[var(--color-text-tertiary)]">
                     Compare performance against industry benchmarks
                   </p>
                 </div>
@@ -651,7 +651,7 @@ export const AccountPerformanceSettings = ({
                   className="mt-1"
                   placeholder="e.g., 80"
                 />
-                <p className="text-sm text-dashboard-gray-600 mt-1">
+                <p className="text-sm text-[var(--color-text-tertiary)] mt-1">
                   Get notified when performance is below this percentage of
                   target
                 </p>

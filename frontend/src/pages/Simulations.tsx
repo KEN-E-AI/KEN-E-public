@@ -19,11 +19,11 @@ const Simulations = () => {
         <h1 className="text-3xl font-bold">Simulations</h1>
       </header>
       <div className="space-y-6">
-        <div className="bg-white rounded-lg p-6 border border-dashboard-gray-200">
-          <h2 className="text-xl font-semibold text-dashboard-gray-900 mb-4">
+        <div className="bg-[var(--color-bg-elevated)] rounded-lg p-6 border border-[var(--color-border-default)]">
+          <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-4">
             Simulations Overview
           </h2>
-          <p className="text-dashboard-gray-600">
+          <p className="text-[var(--color-text-tertiary)]">
             Run marketing scenario simulations, forecast outcomes, and model
             different strategic approaches to optimize future campaigns.
           </p>

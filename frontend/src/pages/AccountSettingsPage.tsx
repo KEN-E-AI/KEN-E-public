@@ -286,10 +286,10 @@ const AccountSettingsPage = () => {
         {/* Account Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-dashboard-gray-900">
+            <h1 className="text-3xl font-bold text-[var(--color-text-primary)]">
               Account Settings
             </h1>
-            <p className="text-dashboard-gray-600 mt-2">
+            <p className="text-[var(--color-text-tertiary)] mt-2">
               Configure settings for "{currentAccount.account_name}"
             </p>
           </div>
@@ -319,34 +319,34 @@ const AccountSettingsPage = () => {
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
               <div>
-                <span className="font-medium text-dashboard-gray-700">
+                <span className="font-medium text-[var(--color-text-secondary)]">
                   Account Name:
                 </span>
-                <p className="text-dashboard-gray-900">
+                <p className="text-[var(--color-text-primary)]">
                   {currentAccount.account_name}
                 </p>
               </div>
               <div>
-                <span className="font-medium text-dashboard-gray-700">
+                <span className="font-medium text-[var(--color-text-secondary)]">
                   Industry:
                 </span>
-                <p className="text-dashboard-gray-900">
+                <p className="text-[var(--color-text-primary)]">
                   {currentAccount.industry}
                 </p>
               </div>
               <div>
-                <span className="font-medium text-dashboard-gray-700">
+                <span className="font-medium text-[var(--color-text-secondary)]">
                   Status:
                 </span>
-                <p className="text-dashboard-gray-900">
+                <p className="text-[var(--color-text-primary)]">
                   {currentAccount.status}
                 </p>
               </div>
               <div>
-                <span className="font-medium text-dashboard-gray-700">
+                <span className="font-medium text-[var(--color-text-secondary)]">
                   Timezone:
                 </span>
-                <p className="text-dashboard-gray-900">
+                <p className="text-[var(--color-text-primary)]">
                   {currentAccount.timezone || "Not set"}
                 </p>
               </div>

@@ -1039,7 +1039,7 @@ export const SwotManagement = ({ hasEditAccess }: SwotManagementProps) => {
               Are you sure you want to delete "{selectedParent?.display_name}"?
               This action cannot be undone.
               {selectedParent && (
-                <span className="block mt-2 text-dashboard-gray-600">
+                <span className="block mt-2 text-[var(--color-text-tertiary)]">
                   Note: {mode === "strengths" ? "Strengths" : "Weaknesses"} with
                   linked {mode === "strengths" ? "opportunities" : "risks"}{" "}
                   cannot be deleted.
@@ -1297,7 +1297,7 @@ export const SwotManagement = ({ hasEditAccess }: SwotManagementProps) => {
             </div>
             <div>
               <p className="font-semibold">Description:</p>
-              <p className="text-sm text-dashboard-gray-600">
+              <p className="text-sm text-[var(--color-text-tertiary)]">
                 {contextMenuType === "parent"
                   ? selectedParent?.description
                   : selectedChild?.description}

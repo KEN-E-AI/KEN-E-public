@@ -949,7 +949,7 @@ export const CustomerProfilesManagement = ({
                 </div>
                 <div>
                   <p className="font-semibold">Description:</p>
-                  <p className="text-sm text-dashboard-gray-600">
+                  <p className="text-sm text-[var(--color-text-tertiary)]">
                     {selectedProfile?.description}
                   </p>
                 </div>
@@ -973,14 +973,14 @@ export const CustomerProfilesManagement = ({
               </div>
               <div>
                 <p className="font-semibold">Description:</p>
-                <p className="text-sm text-dashboard-gray-600">
+                <p className="text-sm text-[var(--color-text-tertiary)]">
                   {selectedProductCategory?.description}
                 </p>
               </div>
               {selectedProductCategory?.strategy_count !== undefined && (
                 <div>
                   <p className="font-semibold">Strategies:</p>
-                  <p className="text-sm text-dashboard-gray-600">
+                  <p className="text-sm text-[var(--color-text-tertiary)]">
                     {selectedProductCategory.strategy_count} of 5 strategies
                     defined
                   </p>
@@ -990,23 +990,23 @@ export const CustomerProfilesManagement = ({
 
             {/* Value Propositions Section */}
             {selectedProductCategory && (
-              <div className="border-t border-dashboard-gray-200 pt-4 mt-4">
-                <h3 className="text-sm font-semibold text-dashboard-gray-900 mb-3">
+              <div className="border-t border-[var(--color-border-default)] pt-4 mt-4">
+                <h3 className="text-sm font-semibold text-[var(--color-text-primary)] mb-3">
                   Value Propositions
                 </h3>
                 {isLoadingVPs ? (
                   <div className="flex items-center justify-center py-4">
-                    <Loader2 className="h-5 w-5 animate-spin text-dashboard-gray-400" />
+                    <Loader2 className="h-5 w-5 animate-spin text-[var(--color-text-disabled)]" />
                   </div>
                 ) : valuePropositions.length > 0 ? (
                   <div className="space-y-2">
                     {valuePropositions.map((vp) => (
                       <div
                         key={vp.node_id}
-                        className="p-2 bg-dashboard-gray-50 rounded"
+                        className="p-2 bg-[var(--color-bg-secondary)] rounded"
                       >
                         <p className="font-medium text-sm">{vp.display_name}</p>
-                        <p className="text-xs text-dashboard-gray-600 mt-1">
+                        <p className="text-xs text-[var(--color-text-tertiary)] mt-1">
                           {vp.description}
                         </p>
                       </div>

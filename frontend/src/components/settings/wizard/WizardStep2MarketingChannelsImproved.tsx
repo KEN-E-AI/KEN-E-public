@@ -89,7 +89,7 @@ export const WizardStep2MarketingChannelsImproved = ({
           <BarChart3 className="h-5 w-5 text-brand-medium-blue" />
           Marketing Channels
         </CardTitle>
-        <p className="text-sm text-dashboard-gray-600">
+        <p className="text-sm text-[var(--color-text-tertiary)]">
           Select the marketing channels you currently use or plan to use.
         </p>
       </CardHeader>
@@ -101,7 +101,7 @@ export const WizardStep2MarketingChannelsImproved = ({
 
         {/* Search Bar */}
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-dashboard-gray-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--color-text-disabled)]" />
           <Input
             type="text"
             placeholder="Search marketing channels..."
@@ -114,7 +114,7 @@ export const WizardStep2MarketingChannelsImproved = ({
         {/* Channel List */}
         <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2">
           {filteredChannels.length === 0 ? (
-            <div className="text-center py-8 text-dashboard-gray-500">
+            <div className="text-center py-8 text-[var(--color-text-tertiary)]">
               No channels found matching your search.
             </div>
           ) : (
@@ -130,7 +130,7 @@ export const WizardStep2MarketingChannelsImproved = ({
                     className={`flex items-start space-x-3 p-3 rounded-lg border transition-all ${
                       isSelected
                         ? "border-brand-medium-blue bg-brand-light-blue/5"
-                        : "border-dashboard-gray-200 hover:border-dashboard-gray-300 hover:bg-dashboard-gray-50"
+                        : "border-[var(--color-border-default)] hover:border-[var(--color-border-default)] hover:bg-[var(--color-bg-secondary)]"
                     }`}
                   >
                     <Checkbox
@@ -146,11 +146,11 @@ export const WizardStep2MarketingChannelsImproved = ({
                         <div className="flex-1">
                           <Label
                             htmlFor={`channel-${channel.id}`}
-                            className="text-sm font-medium text-dashboard-gray-800 cursor-pointer"
+                            className="text-sm font-medium text-[var(--color-text-secondary)] cursor-pointer"
                           >
                             {channel.name}
                           </Label>
-                          <p className="text-xs text-dashboard-gray-600 mt-0.5">
+                          <p className="text-xs text-[var(--color-text-tertiary)] mt-0.5">
                             {channel.description}
                           </p>
                         </div>
@@ -168,7 +168,7 @@ export const WizardStep2MarketingChannelsImproved = ({
 
         {/* Selected count indicator */}
         {formData.marketing_channels.length > 0 && (
-          <div className="text-sm text-dashboard-gray-600 text-center">
+          <div className="text-sm text-[var(--color-text-tertiary)] text-center">
             {formData.marketing_channels.length} channel
             {formData.marketing_channels.length !== 1 ? "s" : ""} selected
           </div>

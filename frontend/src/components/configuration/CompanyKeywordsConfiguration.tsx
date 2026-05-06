@@ -148,7 +148,7 @@ export default function CompanyKeywordsConfiguration({
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Info className="h-4 w-4 text-dashboard-gray-400" />
+                <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
               </TooltipTrigger>
               <TooltipContent className="max-w-xs">
                 <p>

@@ -240,10 +240,10 @@ export const AccountPrivacySettings = ({
                       <Label className="text-sm font-medium mb-2 block">
                         Requirements:
                       </Label>
-                      <ul className="text-sm text-dashboard-gray-600 space-y-1">
+                      <ul className="text-sm text-[var(--color-text-tertiary)] space-y-1">
                         {framework.requirements.map((req, index) => (
                           <li key={index} className="flex items-start gap-2">
-                            <div className="w-1 h-1 bg-dashboard-gray-400 rounded-full mt-2 flex-shrink-0"></div>
+                            <div className="w-1 h-1 bg-[var(--color-text-tertiary)] rounded-full mt-2 flex-shrink-0"></div>
                             {req}
                           </li>
                         ))}
@@ -271,7 +271,7 @@ export const AccountPrivacySettings = ({
                   <Label className="text-sm font-medium">
                     Collect Analytics Data
                   </Label>
-                  <p className="text-sm text-dashboard-gray-600">
+                  <p className="text-sm text-[var(--color-text-tertiary)]">
                     Collect user behavior and performance analytics
                   </p>
                 </div>
@@ -291,7 +291,7 @@ export const AccountPrivacySettings = ({
                   <Label className="text-sm font-medium">
                     Collect Behavioral Data
                   </Label>
-                  <p className="text-sm text-dashboard-gray-600">
+                  <p className="text-sm text-[var(--color-text-tertiary)]">
                     Track user interactions and engagement patterns
                   </p>
                 </div>
@@ -311,7 +311,7 @@ export const AccountPrivacySettings = ({
                   <Label className="text-sm font-medium">
                     Collect Personal Data
                   </Label>
-                  <p className="text-sm text-dashboard-gray-600">
+                  <p className="text-sm text-[var(--color-text-tertiary)]">
                     Collect personally identifiable information
                   </p>
                 </div>
@@ -331,7 +331,7 @@ export const AccountPrivacySettings = ({
                   <Label className="text-sm font-medium">
                     Share Aggregated Data
                   </Label>
-                  <p className="text-sm text-dashboard-gray-600">
+                  <p className="text-sm text-[var(--color-text-tertiary)]">
                     Share anonymized, aggregated data with third parties
                   </p>
                 </div>
@@ -349,7 +349,7 @@ export const AccountPrivacySettings = ({
               <div className="flex items-center justify-between">
                 <div>
                   <Label className="text-sm font-medium">Anonymize Data</Label>
-                  <p className="text-sm text-dashboard-gray-600">
+                  <p className="text-sm text-[var(--color-text-tertiary)]">
                     Automatically anonymize personal data after collection
                   </p>
                 </div>
@@ -383,7 +383,7 @@ export const AccountPrivacySettings = ({
                   <Label className="text-sm font-medium">
                     Allow Data Export
                   </Label>
-                  <p className="text-sm text-dashboard-gray-600">
+                  <p className="text-sm text-[var(--color-text-tertiary)]">
                     Users can request and download their data
                   </p>
                 </div>
@@ -400,7 +400,7 @@ export const AccountPrivacySettings = ({
                   <Label className="text-sm font-medium">
                     Allow Data Deletion
                   </Label>
-                  <p className="text-sm text-dashboard-gray-600">
+                  <p className="text-sm text-[var(--color-text-tertiary)]">
                     Users can request deletion of their data
                   </p>
                 </div>
@@ -418,7 +418,7 @@ export const AccountPrivacySettings = ({
               <div className="flex items-center justify-between">
                 <div>
                   <Label className="text-sm font-medium">Allow Opt-Out</Label>
-                  <p className="text-sm text-dashboard-gray-600">
+                  <p className="text-sm text-[var(--color-text-tertiary)]">
                     Users can opt out of data collection
                   </p>
                 </div>
@@ -433,7 +433,7 @@ export const AccountPrivacySettings = ({
               <div className="flex items-center justify-between">
                 <div>
                   <Label className="text-sm font-medium">Require Consent</Label>
-                  <p className="text-sm text-dashboard-gray-600">
+                  <p className="text-sm text-[var(--color-text-tertiary)]">
                     Require explicit consent for data processing
                   </p>
                 </div>

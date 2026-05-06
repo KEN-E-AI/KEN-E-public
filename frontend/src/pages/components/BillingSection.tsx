@@ -47,7 +47,7 @@ const BillingSection = ({ orgData }: BillingSectionProps) => {
             <div className="flex items-center justify-between">
               <div className="flex flex-col">
                 <Label className="mr-auto">Payment Method</Label>
-                <p className="text-sm text-dashboard-gray-600">
+                <p className="text-sm text-[var(--color-text-tertiary)]">
                   •••• •••• •••• {orgData.billing.payment_method.last_four} (
                   {orgData.billing.payment_method.brand}) - Expires{" "}
                   {orgData.billing.payment_method.expires}
@@ -61,7 +61,7 @@ const BillingSection = ({ orgData }: BillingSectionProps) => {
             <div className="flex items-center justify-between">
               <div className="flex flex-col">
                 <Label className="mr-auto">Billing Address</Label>
-                <p className="text-sm text-dashboard-gray-600">
+                <p className="text-sm text-[var(--color-text-tertiary)]">
                   {orgData.billing.address}
                 </p>
               </div>
@@ -73,7 +73,7 @@ const BillingSection = ({ orgData }: BillingSectionProps) => {
             <div className="flex items-center justify-between">
               <div className="flex flex-col">
                 <Label className="mr-auto">Tax Information</Label>
-                <p className="text-sm text-dashboard-gray-600">
+                <p className="text-sm text-[var(--color-text-tertiary)]">
                   VAT ID: {orgData.billing.tax_id}
                 </p>
               </div>
@@ -101,10 +101,10 @@ const BillingSection = ({ orgData }: BillingSectionProps) => {
                 className="flex items-center justify-between p-3 border rounded-lg"
               >
                 <div className="flex items-center gap-3">
-                  <Calendar className="h-4 w-4 text-dashboard-gray-400" />
+                  <Calendar className="h-4 w-4 text-[var(--color-text-disabled)]" />
                   <div>
                     <p className="font-medium">{invoice.invoice}</p>
-                    <p className="text-sm text-dashboard-gray-600">
+                    <p className="text-sm text-[var(--color-text-tertiary)]">
                       {invoice.date}
                     </p>
                   </div>

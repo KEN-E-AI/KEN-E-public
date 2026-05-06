@@ -229,7 +229,7 @@ export const GoogleAnalyticsOAuth = ({
 
           {isLoading ? (
             <div className="flex items-center justify-center py-8">
-              <Loader2 className="h-8 w-8 animate-spin text-dashboard-gray-500" />
+              <Loader2 className="h-8 w-8 animate-spin text-[var(--color-text-tertiary)]" />
             </div>
           ) : (
             <div className="space-y-4">
@@ -321,7 +321,7 @@ export const GoogleAnalyticsOAuth = ({
                     <h4 className="text-sm font-medium">
                       What happens when you connect:
                     </h4>
-                    <ul className="text-sm text-dashboard-gray-600 space-y-1">
+                    <ul className="text-sm text-[var(--color-text-tertiary)] space-y-1">
                       <li className="flex items-start gap-2">
                         <span className="text-green-600 mt-0.5">✓</span>
                         You'll be redirected to Google to authorize access

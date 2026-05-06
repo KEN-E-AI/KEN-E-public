@@ -95,7 +95,7 @@ export const EnhancedFormField = ({
           </FormControl>
 
           {helpText && (
-            <FormDescription className="text-sm text-dashboard-gray-600">
+            <FormDescription className="text-sm text-[var(--color-text-tertiary)]">
               {helpText}
             </FormDescription>
           )}
@@ -184,7 +184,7 @@ export const SimpleEnhancedFormField = ({
             {React.cloneElement(children as React.ReactElement, { ...field })}
           </FormControl>
           {helpText && (
-            <FormDescription className="text-sm text-dashboard-gray-600">
+            <FormDescription className="text-sm text-[var(--color-text-tertiary)]">
               {helpText}
             </FormDescription>
           )}

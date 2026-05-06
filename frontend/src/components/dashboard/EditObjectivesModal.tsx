@@ -312,7 +312,7 @@ const EditObjectivesModal = ({
         <select
           value={value}
           onChange={handleSelectChange}
-          className="w-full px-3 py-2 border border-[var(--color-border-default)] rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-medium-blue focus:border-brand-medium-blue bg-white"
+          className="w-full px-3 py-2 border border-[var(--color-border-default)] rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-medium-blue focus:border-brand-medium-blue bg-[var(--color-bg-elevated)]"
         >
           <option value="">{placeholder}</option>
           {availableKPIs.map((kpi) => (
@@ -362,7 +362,7 @@ const EditObjectivesModal = ({
           <select
             value=""
             onChange={(e) => handleSupportingMetricAdd(e.target.value)}
-            className="w-full px-3 py-2 border border-[var(--color-border-default)] rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-medium-blue focus:border-brand-medium-blue bg-white"
+            className="w-full px-3 py-2 border border-[var(--color-border-default)] rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-medium-blue focus:border-brand-medium-blue bg-[var(--color-bg-elevated)]"
           >
             <option value="">Select a supporting metric...</option>
             {availableKPIs

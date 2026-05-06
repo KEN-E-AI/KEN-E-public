@@ -101,7 +101,7 @@ const MeasurementStrategyControls = ({
 
   return (
     <>
-      <div className="rounded-lg bg-white border border-dashboard-gray-200 my-6">
+      <div className="rounded-lg bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] my-6">
         <div className="flex flex-col rounded-xl overflow-hidden h-screen mb-6">
           {/* React Flow Channel Controls */}
           <div className="mt-6">

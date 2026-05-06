@@ -81,10 +81,10 @@ export const WizardStep2TemplateSelection = ({
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-sm text-dashboard-gray-600 mb-3">
+                  <p className="text-sm text-[var(--color-text-tertiary)] mb-3">
                     {template.description}
                   </p>
-                  <div className="text-xs text-dashboard-gray-500">
+                  <div className="text-xs text-[var(--color-text-tertiary)]">
                     {template.defaultObjectives.length} objectives •{" "}
                     {template.defaultChannels.length} channels
                   </div>

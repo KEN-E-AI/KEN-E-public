@@ -42,7 +42,7 @@ export const MarketingChannelsSelector = ({
         ([category, channels]) => (
           <div key={category}>
             <h4
-              className={`font-medium mb-2 text-dashboard-gray-800 flex items-center gap-2 ${
+              className={`font-medium mb-2 text-[var(--color-text-secondary)] flex items-center gap-2 ${
                 compact ? "text-sm" : ""
               }`}
             >
@@ -65,7 +65,7 @@ export const MarketingChannelsSelector = ({
                     className={`flex items-start space-x-2 p-2 rounded border transition-colors ${
                       isSelected
                         ? "border-brand-medium-blue bg-brand-light-blue/10"
-                        : "border-dashboard-gray-200 hover:border-dashboard-gray-300"
+                        : "border-[var(--color-border-default)] hover:border-[var(--color-border-default)]"
                     } ${compact ? "text-sm" : ""}`}
                   >
                     <Checkbox
@@ -79,7 +79,7 @@ export const MarketingChannelsSelector = ({
                     <div className="flex-1 min-w-0">
                       <Label
                         htmlFor={`channel-${channel}`}
-                        className={`font-medium text-dashboard-gray-800 cursor-pointer ${
+                        className={`font-medium text-[var(--color-text-secondary)] cursor-pointer ${
                           compact ? "text-sm" : ""
                         }`}
                       >
@@ -106,7 +106,7 @@ export const MarketingChannelsSelector = ({
         <Card className="bg-brand-light-blue/5 border-brand-light-blue/20">
           <CardContent className="pt-3">
             <h5
-              className={`font-medium text-dashboard-gray-800 mb-2 ${
+              className={`font-medium text-[var(--color-text-secondary)] mb-2 ${
                 compact ? "text-sm" : ""
               }`}
             >

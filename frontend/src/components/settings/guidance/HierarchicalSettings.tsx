@@ -245,7 +245,7 @@ export const ScopeNavigation = ({
           className={cn(
             "flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors",
             currentScope === id
-              ? "bg-white text-[var(--color-text-primary)] shadow-sm"
+              ? "bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)] shadow-sm"
               : "text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-secondary)]",
           )}
         >
