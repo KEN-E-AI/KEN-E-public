@@ -21,6 +21,10 @@ from app.adk.agents.agent_factory.config_loader import (
     list_account_agent_configs,
     load_agent_config,
 )
+from app.adk.agents.agent_factory.dispatch import (
+    assemble_available_specialists_block,
+    generate_dispatch_functions,
+)
 from app.adk.agents.agent_factory.mcp import (
     MCPFactoryError,
     MCPSchemaError,
@@ -46,10 +50,12 @@ __all__ = [
     "MCPSchemaError",
     "MergedAgentConfig",
     "RosterCapExceededError",
+    "assemble_available_specialists_block",
     "build_agent",
     "build_toolset_for_config",
     "build_toolset_for_doc",
     "count_specialist_tool_roster",
+    "generate_dispatch_functions",
     "list_account_agent_configs",
     "load_agent_config",
     "load_all_mcp_toolsets",
