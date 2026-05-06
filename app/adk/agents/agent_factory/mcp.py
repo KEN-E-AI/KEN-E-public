@@ -292,7 +292,6 @@ def build_toolset_for_config(config: Any) -> Any:
             ``make_header_provider`` (AH-12 fail-fast contract).
     """
     from app.adk.mcp_config.config import (
-        MCPServerConfig,
         SseConnectionConfig,
         StdioConnectionConfig,
     )
