@@ -187,7 +187,9 @@ class TestInstructionProvider:
         result = provider(_make_context({"organization_context": injected}))
 
         # Extract only the injected content between our structural delimiters.
-        start = result.index("[ORGANIZATION CONTEXT]\n") + len("[ORGANIZATION CONTEXT]\n")
+        start = result.index("[ORGANIZATION CONTEXT]\n") + len(
+            "[ORGANIZATION CONTEXT]\n"
+        )
         end = result.index("\n[END CONTEXT]")
         injected_content = result[start:end]
 
@@ -206,7 +208,9 @@ class TestInstructionProvider:
         long_context = "x" * (_MAX_ORG_CONTEXT_CHARS + 500)
         result = provider(_make_context({"organization_context": long_context}))
 
-        start = result.index("[ORGANIZATION CONTEXT]\n") + len("[ORGANIZATION CONTEXT]\n")
+        start = result.index("[ORGANIZATION CONTEXT]\n") + len(
+            "[ORGANIZATION CONTEXT]\n"
+        )
         end = result.index("\n[END CONTEXT]")
         injected_content = result[start:end]
         assert len(injected_content) <= _MAX_ORG_CONTEXT_CHARS
@@ -229,7 +233,9 @@ class TestInstructionProvider:
 
         assert callable(agent.instruction)
 
-    def test_built_agent_instruction_produces_correct_output_with_org_context(self) -> None:
+    def test_built_agent_instruction_produces_correct_output_with_org_context(
+        self,
+    ) -> None:
         config = _make_config(instruction="Custom instruction.")
         agent = _build(config, name="x")
         ctx = _make_context({"organization_context": "Org info here"})
@@ -239,7 +245,9 @@ class TestInstructionProvider:
         assert result.startswith("[ORGANIZATION CONTEXT]")
         assert "Custom instruction." in result
 
-    def test_built_agent_instruction_returns_bare_instruction_without_org_context(self) -> None:
+    def test_built_agent_instruction_returns_bare_instruction_without_org_context(
+        self,
+    ) -> None:
         config = _make_config(instruction="Bare instruction.")
         agent = _build(config, name="x")
         ctx = _make_context({})
@@ -373,7 +381,9 @@ class TestNoGenerateContentConfig:
         from google.genai.types import GenerateContentConfig
 
         schema = {"type": "object", "properties": {}}
-        config = _make_config(temperature=0.5, code_execution_enabled=True, response_schema=schema)
+        config = _make_config(
+            temperature=0.5, code_execution_enabled=True, response_schema=schema
+        )
         agent = _build(config, name="combined")
 
         assert agent.generate_content_config == GenerateContentConfig(temperature=0.5)
@@ -448,7 +458,9 @@ class TestModelCallbackPassthrough:
 
 
 class TestCallbackChaining:
-    def test_additional_after_agent_callback_appended_after_weave_sentinel(self) -> None:
+    def test_additional_after_agent_callback_appended_after_weave_sentinel(
+        self,
+    ) -> None:
         my_cb = MagicMock(name="my_after_agent")
         agent = _build(
             _make_config(),
@@ -458,7 +470,9 @@ class TestCallbackChaining:
 
         assert agent.after_agent_callback == [_WEAVE_AFTER, my_cb]
 
-    def test_additional_before_agent_callback_appended_after_weave_sentinel(self) -> None:
+    def test_additional_before_agent_callback_appended_after_weave_sentinel(
+        self,
+    ) -> None:
         my_cb = MagicMock(name="my_before_agent")
         agent = _build(
             _make_config(),
@@ -555,6 +569,87 @@ class TestNoToolRegistryCallback:
         ]
         assert registry_callbacks == []
 
+    def test_no_callback_writes_tool_filter_state_key(self) -> None:
+        """No callback wired by build_agent should write 'tool_filter_state' to session state."""
+        state: dict = {}
+        fake_ctx = MagicMock()
+        fake_ctx.state = state
+
+        agent = _build(_make_config(), name="no_filter_state")
+
+        all_callbacks = [
+            *(agent.before_agent_callback or []),
+            *(agent.after_agent_callback or []),
+            *(agent.before_tool_callback or []),
+            *(agent.after_tool_callback or []),
+        ]
+        for cb in all_callbacks:
+            try:
+                cb(fake_ctx)
+            except Exception:
+                pass  # callbacks may fail without full ADK context — we only care about side-effects
+
+        assert "tool_filter_state" not in state
+
+    def test_no_tool_filter_predicate_set_on_mcp_toolset_objects(self) -> None:
+        """McpToolset objects passed to build_agent must not receive a tool_filter predicate."""
+        fake_toolset = MagicMock(name="mcp_toolset")
+        fake_toolset.tool_filter = None
+
+        _build(_make_config(), name="no_filter_pred", tools=[fake_toolset])
+
+        # The factory must not write a predicate onto the McpToolset.
+        assert fake_toolset.tool_filter is None
+
+
+# ---------------------------------------------------------------------------
+# AC-5 (AH-13): Defensive literal cap — build_agent raises on >30 tools
+# ---------------------------------------------------------------------------
+
+
+class TestRosterCap:
+    def test_31_tools_raises_roster_cap_exceeded_error(self) -> None:
+        from app.adk.agents.agent_factory.roster import RosterCapExceededError
+
+        tools = [MagicMock(name=f"t{i}") for i in range(31)]
+        with pytest.raises(RosterCapExceededError) as exc_info:
+            _build(_make_config(), name="over_cap", tools=tools)
+
+        assert "over_cap" in str(exc_info.value)
+        assert "31" in str(exc_info.value)
+
+    def test_30_tools_at_boundary_succeeds(self) -> None:
+        tools = [MagicMock(name=f"t{i}") for i in range(30)]
+        agent = _build(_make_config(), name="at_cap", tools=tools)
+
+        assert len(agent.tools) == 30
+
+    def test_0_tools_empty_list_succeeds(self) -> None:
+        agent = _build(_make_config(), name="no_tools", tools=[])
+
+        assert agent.tools == []
+
+    def test_tools_none_succeeds(self) -> None:
+        agent = _build(_make_config(), name="tools_none", tools=None)
+
+        assert agent.tools == []
+
+    def test_1_tool_succeeds(self) -> None:
+        t = MagicMock(name="single_tool")
+        agent = _build(_make_config(), name="one_tool", tools=[t])
+
+        assert agent.tools == [t]
+
+    def test_error_is_caught_as_mcp_factory_error(self) -> None:
+        from app.adk.agents.agent_factory.mcp import MCPFactoryError
+        from app.adk.agents.agent_factory.roster import RosterCapExceededError
+
+        tools = [MagicMock() for _ in range(31)]
+        with pytest.raises(MCPFactoryError):
+            _build(_make_config(), name="mcp_base_catch", tools=tools)
+
+        assert issubclass(RosterCapExceededError, MCPFactoryError)
+
 
 # ---------------------------------------------------------------------------
 # AC-13: skill_ids / sandbox_code_executor_enabled pass-through
@@ -599,9 +694,7 @@ class TestEndToEndIntegration:
             "instruction": "You are the seeded assistant.",
             "model": "gemini-2.5-pro",
         }
-        fake_db = _FakeFirestoreDb(
-            {("agent_configs", "e2e_agent"): global_doc}
-        )
+        fake_db = _FakeFirestoreDb({("agent_configs", "e2e_agent"): global_doc})
         mock_auth.return_value = (MagicMock(), None)
         mock_client.return_value = fake_db
 

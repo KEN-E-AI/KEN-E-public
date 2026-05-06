@@ -5,6 +5,9 @@ Phase 1: config loader (load_agent_config, list_account_agent_configs, MergedAge
          and build_agent() (AH-15) — turns a MergedAgentConfig into a working LlmAgent.
 Phase 2: MCP toolset construction (build_toolset_for_doc, load_all_mcp_toolsets,
          load_toolsets_for_specialist, MCPFactoryError, MCPSchemaError).
+Phase 2: Curated tool-roster resolution (resolve_specialist_roster,
+         count_specialist_tool_roster, RosterCapExceededError,
+         MAX_TOOLS_PER_SPECIALIST) (AH-13).
 Phase 2 placeholder: build_hierarchy() — implemented in AH-17.
 """
 
@@ -25,8 +28,15 @@ from app.adk.agents.agent_factory.mcp import (
     load_all_mcp_toolsets,
     load_toolsets_for_specialist,
 )
+from app.adk.agents.agent_factory.roster import (
+    MAX_TOOLS_PER_SPECIALIST,
+    RosterCapExceededError,
+    count_specialist_tool_roster,
+    resolve_specialist_roster,
+)
 
 __all__ = [
+    "MAX_TOOLS_PER_SPECIALIST",
     "AgentFactoryConfigError",
     "ConfigNotFoundError",
     "ConfigValidationError",
@@ -34,12 +44,15 @@ __all__ = [
     "MCPFactoryError",
     "MCPSchemaError",
     "MergedAgentConfig",
+    "RosterCapExceededError",
     "build_agent",
     "build_toolset_for_doc",
+    "count_specialist_tool_roster",
     "list_account_agent_configs",
     "load_agent_config",
     "load_all_mcp_toolsets",
     "load_toolsets_for_specialist",
+    "resolve_specialist_roster",
     # Reserved for AH-17 — not yet implemented:
     # "build_hierarchy",
 ]
