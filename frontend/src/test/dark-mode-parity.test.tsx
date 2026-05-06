@@ -15,6 +15,13 @@ import AccountSettings from "@/pages/AccountSettings";
 import UserSettings from "@/pages/UserSettings";
 import { CreateOrganization } from "@/pages/CreateOrganization";
 import EmailActionHandler from "@/components/auth/EmailActionHandler";
+import { WorkflowsLayout } from "@/pages/workflows/WorkflowsLayout";
+import { AgentsPage } from "@/pages/workflows/AgentsPage";
+import { AutomationsPage } from "@/pages/workflows/AutomationsPage";
+import { SkillsPage } from "@/pages/workflows/SkillsPage";
+import { AgentCreatePage } from "@/pages/workflows/AgentCreatePage";
+import { AutomationDetailsPage } from "@/pages/workflows/AutomationDetailsPage";
+import { Toaster } from "sonner";
 
 vi.mock("@/contexts/AuthContext", () => ({
   useAuth: vi.fn(),
@@ -121,12 +128,19 @@ vi.mock("@/components/notifications/NotificationSidebar", () => ({
   NotificationSidebar: () => null,
 }));
 
-vi.mock("@/components/notifications/NotificationPreferences", () => ({
-  NotificationPreferences: ({ onSave }: { onSave: () => void }) => (
-    <div>
-      <button onClick={onSave}>Save preferences</button>
-    </div>
-  ),
+vi.mock("@/api/notifications", () => ({
+  notificationApi: {
+    getPreferences: vi.fn().mockResolvedValue({
+      categories: ["Data Quality Alert", "News & Press"],
+      channels: ["ui"],
+      updated_at: "2024-01-01T00:00:00.000Z",
+    }),
+    updatePreferences: vi.fn().mockResolvedValue({}),
+    getNotifications: vi.fn().mockResolvedValue([]),
+    createNotification: vi.fn().mockResolvedValue({}),
+    getUnreadCount: vi.fn().mockResolvedValue(0),
+    updateNotificationStatus: vi.fn().mockResolvedValue({}),
+  },
 }));
 
 // AccountSettings child component mocks — paths are relative to AccountSettings.tsx
@@ -139,10 +153,6 @@ vi.mock("@/components/integrations/GoogleAnalyticsPropertySelector", () => ({
   GoogleAnalyticsPropertySelector: () => (
     <div aria-label="Google Analytics property selector" />
   ),
-}));
-
-vi.mock("@/pages/components/OrganizationForm", () => ({
-  default: () => <div data-testid="org-form" />,
 }));
 
 vi.mock("@/pages/components/SubscriptionCard", () => ({
@@ -435,6 +445,130 @@ describe("dark-mode parity — CreateOrganization", () => {
         <ThemeProvider>
           <MemoryRouter initialEntries={["/create-organization"]}>
             <CreateOrganization />
+          </MemoryRouter>
+        </ThemeProvider>,
+      );
+      expect(await runAxe(container)).toHaveNoViolations();
+    },
+  );
+});
+
+describe("dark-mode parity — Workflows: Agents", () => {
+  beforeEach(() => {
+    vi.mocked(useAuth).mockReturnValue(
+      baseAuthValue as ReturnType<typeof useAuth>,
+    );
+  });
+
+  it.each(themes)(
+    "has no axe violations in $theme mode",
+    async ({ isDark }) => {
+      applyTheme(isDark);
+      const { container } = render(
+        <ThemeProvider>
+          <MemoryRouter initialEntries={["/workflows/agents"]}>
+            <WorkflowsLayout activeTab="agents">
+              <AgentsPage />
+            </WorkflowsLayout>
+          </MemoryRouter>
+        </ThemeProvider>,
+      );
+      expect(await runAxe(container)).toHaveNoViolations();
+    },
+  );
+});
+
+describe("dark-mode parity — Workflows: Automations", () => {
+  beforeEach(() => {
+    vi.mocked(useAuth).mockReturnValue(
+      baseAuthValue as ReturnType<typeof useAuth>,
+    );
+  });
+
+  it.each(themes)(
+    "has no axe violations in $theme mode",
+    async ({ isDark }) => {
+      applyTheme(isDark);
+      const { container } = render(
+        <ThemeProvider>
+          <MemoryRouter initialEntries={["/workflows/automations"]}>
+            <WorkflowsLayout activeTab="automations">
+              <AutomationsPage />
+            </WorkflowsLayout>
+          </MemoryRouter>
+        </ThemeProvider>,
+      );
+      expect(await runAxe(container)).toHaveNoViolations();
+    },
+  );
+});
+
+describe("dark-mode parity — Workflows: Skills", () => {
+  beforeEach(() => {
+    vi.mocked(useAuth).mockReturnValue(
+      baseAuthValue as ReturnType<typeof useAuth>,
+    );
+  });
+
+  it.each(themes)(
+    "has no axe violations in $theme mode",
+    async ({ isDark }) => {
+      applyTheme(isDark);
+      const { container } = render(
+        <ThemeProvider>
+          <MemoryRouter initialEntries={["/workflows/skills"]}>
+            <WorkflowsLayout activeTab="skills">
+              <SkillsPage />
+            </WorkflowsLayout>
+          </MemoryRouter>
+        </ThemeProvider>,
+      );
+      expect(await runAxe(container)).toHaveNoViolations();
+    },
+  );
+});
+
+describe("dark-mode parity — Workflows: Agent Create", () => {
+  beforeEach(() => {
+    vi.mocked(useAuth).mockReturnValue(
+      baseAuthValue as ReturnType<typeof useAuth>,
+    );
+  });
+
+  it.each(themes)(
+    "has no axe violations in $theme mode",
+    async ({ isDark }) => {
+      applyTheme(isDark);
+      const { container } = render(
+        <ThemeProvider>
+          <MemoryRouter initialEntries={["/workflows/agents/new"]}>
+            <Toaster />
+            <AgentCreatePage />
+          </MemoryRouter>
+        </ThemeProvider>,
+      );
+      expect(await runAxe(container)).toHaveNoViolations();
+    },
+  );
+});
+
+describe("dark-mode parity — Workflows: Automation Details", () => {
+  beforeEach(() => {
+    vi.mocked(useAuth).mockReturnValue(
+      baseAuthValue as ReturnType<typeof useAuth>,
+    );
+  });
+
+  it.each(themes)(
+    "has no axe violations in $theme mode",
+    async ({ isDark }) => {
+      applyTheme(isDark);
+      const { container } = render(
+        <ThemeProvider>
+          <MemoryRouter
+            initialEntries={["/workflows/automations/test-plan-id"]}
+          >
+            <AutomationDetailsPage />
           </MemoryRouter>
         </ThemeProvider>,
       );

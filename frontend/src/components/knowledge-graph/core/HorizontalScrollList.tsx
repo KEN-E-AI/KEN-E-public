@@ -33,13 +33,15 @@ export function HorizontalScrollList<T extends KnowledgeGraphItem>({
 
   if (isLoading) {
     return (
-      <div className="text-center py-8 text-dashboard-gray-500">Loading...</div>
+      <div className="text-center py-8 text-[var(--color-text-tertiary)]">
+        Loading...
+      </div>
     );
   }
 
   if (items.length === 0) {
     return (
-      <div className="text-center py-8 text-dashboard-gray-500">
+      <div className="text-center py-8 text-[var(--color-text-tertiary)]">
         {emptyMessage}
         {hasEditAccess &&
           emptyMessageWithAction &&

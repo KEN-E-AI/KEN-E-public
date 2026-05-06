@@ -8,15 +8,15 @@ describe("SkillsPage", () => {
   it("renders the PRD empty-state description verbatim", () => {
     render(<SkillsPage />);
     expect(
-      screen.getByText("Package your team's playbooks as reusable skills."),
+      screen.getByText(/Package your team's playbooks as reusable skills/),
     ).toBeInTheDocument();
   });
 
-  it("renders the CTA button with correct label", () => {
+  it("renders no CTA button until skill authoring lands (SK-PRD-03)", () => {
     render(<SkillsPage />);
     expect(
-      screen.getByRole("button", { name: /create a skill/i }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: /create a skill/i }),
+    ).not.toBeInTheDocument();
   });
 });
 

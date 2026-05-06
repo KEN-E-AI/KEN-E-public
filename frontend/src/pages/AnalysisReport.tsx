@@ -144,7 +144,7 @@ const AnalysisReport = () => {
             variant="ghost"
             size="sm"
             onClick={() => navigate("/performance")}
-            className="text-dashboard-gray-600 hover:text-dashboard-gray-900 p-0 h-auto font-normal mr-auto"
+            className="text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] p-0 h-auto font-normal mr-auto"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Performance
@@ -152,11 +152,11 @@ const AnalysisReport = () => {
         </div>
 
         {/* Report Header */}
-        <div className="bg-white rounded-lg px-6 pt-6 pb-5 border border-dashboard-gray-200">
+        <div className="bg-[var(--color-bg-elevated)] rounded-lg px-6 pt-6 pb-5 border border-[var(--color-border-default)]">
           {/* Report Details */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
             <div>
-              <span className="text-sm font-medium text-dashboard-gray-600">
+              <span className="text-sm font-medium text-[var(--color-text-tertiary)]">
                 Type
               </span>
               <div className="mt-1">
@@ -170,34 +170,34 @@ const AnalysisReport = () => {
               </div>
             </div>
             <div>
-              <span className="text-sm font-medium text-dashboard-gray-600">
+              <span className="text-sm font-medium text-[var(--color-text-tertiary)]">
                 Date Range
               </span>
-              <p className="mt-1 text-sm text-dashboard-gray-900">
+              <p className="mt-1 text-sm text-[var(--color-text-primary)]">
                 {currentReport.dateRange}
               </p>
             </div>
             <div>
-              <span className="text-sm font-medium text-dashboard-gray-600">
+              <span className="text-sm font-medium text-[var(--color-text-tertiary)]">
                 Objective
               </span>
-              <p className="mt-1 text-sm text-dashboard-gray-900">
+              <p className="mt-1 text-sm text-[var(--color-text-primary)]">
                 {currentReport.objective}
               </p>
             </div>
             <div>
-              <span className="text-sm font-medium text-dashboard-gray-600">
+              <span className="text-sm font-medium text-[var(--color-text-tertiary)]">
                 Channel
               </span>
-              <p className="mt-1 text-sm text-dashboard-gray-900">
+              <p className="mt-1 text-sm text-[var(--color-text-primary)]">
                 {currentReport.channel}
               </p>
             </div>
             <div>
-              <span className="text-sm font-medium text-dashboard-gray-600">
+              <span className="text-sm font-medium text-[var(--color-text-tertiary)]">
                 Creation Date
               </span>
-              <p className="mt-1 text-sm text-dashboard-gray-900">
+              <p className="mt-1 text-sm text-[var(--color-text-primary)]">
                 {currentReport.createdDate}
               </p>
             </div>
@@ -209,7 +209,7 @@ const AnalysisReport = () => {
 
         {/* Analysis Section */}
         <div className="mt-6">
-          <h2 className="text-2xl font-semibold text-dashboard-gray-900 border-b border-dashboard-gray-900 pb-2 mb-6 text-left">
+          <h2 className="text-2xl font-semibold text-[var(--color-text-primary)] border-b border-[var(--color-border-strong)] pb-2 mb-6 text-left">
             Analysis
           </h2>
 
@@ -218,10 +218,10 @@ const AnalysisReport = () => {
               {analysisItems.map((item) => (
                 <div
                   key={item.id}
-                  className="bg-white border border-dashboard-gray-200 rounded-lg overflow-hidden mb-4"
+                  className="bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-lg overflow-hidden mb-4"
                 >
                   <button
-                    className="w-full px-6 py-4 text-left transition-colors hover:bg-dashboard-gray-50"
+                    className="w-full px-6 py-4 text-left transition-colors hover:bg-[var(--color-bg-secondary)]"
                     onClick={() =>
                       setExpandedAnalysis(
                         expandedAnalysis === item.id ? null : item.id,
@@ -230,43 +230,43 @@ const AnalysisReport = () => {
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
-                        <h3 className="font-medium text-dashboard-gray-900 mb-1">
+                        <h3 className="font-medium text-[var(--color-text-primary)] mb-1">
                           {item.title}
                         </h3>
-                        <p className="text-sm text-dashboard-gray-600">
+                        <p className="text-sm text-[var(--color-text-tertiary)]">
                           {item.description}
                         </p>
                       </div>
                       <div className="ml-4">
                         {expandedAnalysis === item.id ? (
-                          <ChevronUp className="h-5 w-5 text-dashboard-gray-400" />
+                          <ChevronUp className="h-5 w-5 text-[var(--color-text-disabled)]" />
                         ) : (
-                          <ChevronDown className="h-5 w-5 text-dashboard-gray-400" />
+                          <ChevronDown className="h-5 w-5 text-[var(--color-text-disabled)]" />
                         )}
                       </div>
                     </div>
                   </button>
                   {expandedAnalysis === item.id && (
-                    <div className="border-t border-dashboard-gray-100 px-6 pb-6">
+                    <div className="border-t border-[var(--color-border-subtle)] px-6 pb-6">
                       <div className="pt-4">
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                           <div>
-                            <h4 className="font-medium text-dashboard-gray-900 mb-3">
+                            <h4 className="font-medium text-[var(--color-text-primary)] mb-3">
                               <span>Sessions with PDP View</span>
-                              <span className="text-dashboard-gray-600">
+                              <span className="text-[var(--color-text-tertiary)]">
                                 {" "}
                                 [google analytics]
                               </span>
                             </h4>
-                            <p className="text-dashboard-gray-700 mb-4">
+                            <p className="text-[var(--color-text-secondary)] mb-4">
                               {item.content}
                             </p>
                           </div>
-                          <div className="bg-dashboard-gray-50 rounded-lg p-4">
+                          <div className="bg-[var(--color-bg-secondary)] rounded-lg p-4">
                             <div className="h-40">
                               {/* Placeholder chart area */}
-                              <div className="w-full h-full bg-dashboard-gray-100 rounded flex items-center justify-center">
-                                <span className="text-dashboard-gray-500 text-sm">
+                              <div className="w-full h-full bg-[var(--color-bg-elevated)] rounded flex items-center justify-center">
+                                <span className="text-[var(--color-text-tertiary)] text-sm">
                                   Chart visualization
                                 </span>
                               </div>
@@ -284,7 +284,7 @@ const AnalysisReport = () => {
 
         {/* Recommendations Section */}
         <div className="mt-6">
-          <h2 className="text-2xl font-semibold text-dashboard-gray-900 border-b border-dashboard-gray-900 pb-2 mb-6 text-left">
+          <h2 className="text-2xl font-semibold text-[var(--color-text-primary)] border-b border-[var(--color-border-strong)] pb-2 mb-6 text-left">
             Recommendations
           </h2>
 
@@ -293,10 +293,10 @@ const AnalysisReport = () => {
               {recommendationItems.map((item) => (
                 <div
                   key={item.id}
-                  className="bg-white border border-dashboard-gray-200 rounded-lg overflow-hidden mb-4"
+                  className="bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-lg overflow-hidden mb-4"
                 >
                   <button
-                    className="w-full px-6 py-4 text-left transition-colors hover:bg-dashboard-gray-50"
+                    className="w-full px-6 py-4 text-left transition-colors hover:bg-[var(--color-bg-secondary)]"
                     onClick={() =>
                       setExpandedRecommendation(
                         expandedRecommendation === item.id ? null : item.id,
@@ -305,43 +305,43 @@ const AnalysisReport = () => {
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
-                        <h3 className="font-medium text-dashboard-gray-900 mb-1">
+                        <h3 className="font-medium text-[var(--color-text-primary)] mb-1">
                           {item.title}
                         </h3>
-                        <p className="text-sm text-dashboard-gray-600">
+                        <p className="text-sm text-[var(--color-text-tertiary)]">
                           {item.description}
                         </p>
                       </div>
                       <div className="ml-4">
                         {expandedRecommendation === item.id ? (
-                          <ChevronUp className="h-5 w-5 text-dashboard-gray-400" />
+                          <ChevronUp className="h-5 w-5 text-[var(--color-text-disabled)]" />
                         ) : (
-                          <ChevronDown className="h-5 w-5 text-dashboard-gray-400" />
+                          <ChevronDown className="h-5 w-5 text-[var(--color-text-disabled)]" />
                         )}
                       </div>
                     </div>
                   </button>
                   {expandedRecommendation === item.id && (
-                    <div className="border-t border-dashboard-gray-100 px-6 pb-6">
+                    <div className="border-t border-[var(--color-border-subtle)] px-6 pb-6">
                       <div className="pt-4">
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                           <div>
-                            <h4 className="font-medium text-dashboard-gray-900 mb-3">
+                            <h4 className="font-medium text-[var(--color-text-primary)] mb-3">
                               <span>Implementation Strategy</span>
-                              <span className="text-dashboard-gray-600">
+                              <span className="text-[var(--color-text-tertiary)]">
                                 {" "}
                                 [recommendation details]
                               </span>
                             </h4>
-                            <p className="text-dashboard-gray-700 mb-4">
+                            <p className="text-[var(--color-text-secondary)] mb-4">
                               {item.content}
                             </p>
                           </div>
-                          <div className="bg-dashboard-gray-50 rounded-lg p-4">
+                          <div className="bg-[var(--color-bg-secondary)] rounded-lg p-4">
                             <div className="h-40">
                               {/* Placeholder chart area */}
-                              <div className="w-full h-full bg-dashboard-gray-100 rounded flex items-center justify-center">
-                                <span className="text-dashboard-gray-500 text-sm">
+                              <div className="w-full h-full bg-[var(--color-bg-elevated)] rounded flex items-center justify-center">
+                                <span className="text-[var(--color-text-tertiary)] text-sm">
                                   Impact projection
                                 </span>
                               </div>

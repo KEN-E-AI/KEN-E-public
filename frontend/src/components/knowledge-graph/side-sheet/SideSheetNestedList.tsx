@@ -34,7 +34,7 @@ export function SideSheetNestedList<T extends NestedListItem>({
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Info className="h-4 w-4 text-dashboard-gray-400" />
+                  <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                 </TooltipTrigger>
                 <TooltipContent className="max-w-sm">
                   <p>{tooltip}</p>
@@ -56,7 +56,7 @@ export function SideSheetNestedList<T extends NestedListItem>({
           <Loader2 className="h-6 w-6 animate-spin" />
         </div>
       ) : items.length === 0 ? (
-        <p className="text-sm text-dashboard-gray-500 italic">
+        <p className="text-sm text-[var(--color-text-tertiary)] italic">
           No {title.toLowerCase()} yet
         </p>
       ) : (
@@ -64,14 +64,14 @@ export function SideSheetNestedList<T extends NestedListItem>({
           {items.map((item) => (
             <div
               key={item.node_id}
-              className="p-3 rounded-md border border-dashboard-gray-200
-                         bg-dashboard-gray-50 hover:bg-dashboard-gray-100
+              className="p-3 rounded-md border border-[var(--color-border-default)]
+                         bg-[var(--color-bg-secondary)] hover:bg-[var(--color-bg-elevated)]
                          transition-colors"
             >
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <p className="font-medium text-sm">{item.display_name}</p>
-                  <p className="text-xs text-dashboard-gray-600 mt-1">
+                  <p className="text-xs text-[var(--color-text-tertiary)] mt-1">
                     {item.description}
                   </p>
                 </div>

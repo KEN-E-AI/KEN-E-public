@@ -1371,7 +1371,7 @@ export const ProductCategoriesManagement = ({
               Are you sure you want to delete "{selectedCategory?.product_name}
               "? This action cannot be undone.
               {selectedCategory && (
-                <span className="block mt-2 text-dashboard-gray-600">
+                <span className="block mt-2 text-[var(--color-text-tertiary)]">
                   Note: Categories with linked products cannot be deleted.
                 </span>
               )}
@@ -1691,7 +1691,7 @@ export const ProductCategoriesManagement = ({
                 placeholder="e.g., Fast Processing Times"
                 maxLength={60}
               />
-              <p className="text-xs text-dashboard-gray-500 mt-1">
+              <p className="text-xs text-[var(--color-text-tertiary)] mt-1">
                 Short, descriptive name (max 60 characters)
               </p>
             </div>
@@ -1911,7 +1911,7 @@ export const ProductCategoriesManagement = ({
             </div>
             <div>
               <p className="font-semibold">Description:</p>
-              <p className="text-sm text-dashboard-gray-600">
+              <p className="text-sm text-[var(--color-text-tertiary)]">
                 {contextMenuType === "category"
                   ? selectedCategory?.description
                   : selectedProduct?.description}

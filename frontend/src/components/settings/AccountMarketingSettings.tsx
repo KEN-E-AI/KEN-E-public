@@ -120,7 +120,7 @@ export const AccountMarketingSettings = ({
       case "low":
         return "bg-brand-light-green/20 text-brand-dark-blue border-brand-light-green/40";
       default:
-        return "bg-gray-50 text-gray-700 border-gray-200";
+        return "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] border-[var(--color-border-default)]";
     }
   };
 
@@ -133,7 +133,7 @@ export const AccountMarketingSettings = ({
       case "completed":
         return "bg-brand-light-blue/20 text-brand-dark-blue border-brand-light-blue/40";
       default:
-        return "bg-gray-50 text-gray-700 border-gray-200";
+        return "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] border-[var(--color-border-default)]";
     }
   };
 
@@ -252,7 +252,7 @@ export const AccountMarketingSettings = ({
                       </div>
                     </div>
                   ) : (
-                    <p className="text-sm text-dashboard-gray-600">
+                    <p className="text-sm text-[var(--color-text-tertiary)]">
                       {objective.description}
                     </p>
                   )}
@@ -296,7 +296,7 @@ export const AccountMarketingSettings = ({
                           }}
                           className="w-24"
                         />
-                        <span className="text-sm text-dashboard-gray-600">
+                        <span className="text-sm text-[var(--color-text-tertiary)]">
                           $
                         </span>
                       </div>
@@ -382,7 +382,7 @@ export const AccountMarketingSettings = ({
                   <Label className="text-sm font-medium">
                     Auto-optimization
                   </Label>
-                  <p className="text-sm text-dashboard-gray-600">
+                  <p className="text-sm text-[var(--color-text-tertiary)]">
                     Automatically optimize campaigns based on performance
                   </p>
                 </div>
@@ -399,7 +399,7 @@ export const AccountMarketingSettings = ({
                   <Label className="text-sm font-medium">
                     Performance alerts
                   </Label>
-                  <p className="text-sm text-dashboard-gray-600">
+                  <p className="text-sm text-[var(--color-text-tertiary)]">
                     Get notified when campaigns exceed or fall below thresholds
                   </p>
                 </div>
@@ -414,7 +414,7 @@ export const AccountMarketingSettings = ({
               <div className="flex items-center justify-between">
                 <div>
                   <Label className="text-sm font-medium">Budget alerts</Label>
-                  <p className="text-sm text-dashboard-gray-600">
+                  <p className="text-sm text-[var(--color-text-tertiary)]">
                     Receive notifications when approaching budget limits
                   </p>
                 </div>

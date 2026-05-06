@@ -5,6 +5,7 @@
 // Timing constants
 export const ACCOUNT_CREATION_REDIRECT_DELAY = 1500; // ms
 export const WORKSPACE_SELECTION_DELAY = 1000; // ms
+export const SINGLE_ACCOUNT_AUTO_NAVIGATE_DELAY = 500; // ms
 
 // Default values for account creation
 export const DEFAULT_TIMEZONE = "America/New_York";

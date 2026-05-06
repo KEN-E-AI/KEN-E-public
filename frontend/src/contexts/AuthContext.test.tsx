@@ -3,6 +3,20 @@ import { render, act } from "@testing-library/react";
 import { AuthProvider, useAuth, type SelectedOrgAccount } from "./AuthContext";
 import type { OrganizationId, AccountId } from "@/lib/branded-types";
 
+// Mock firebase/auth (modular SDK functions)
+vi.mock("firebase/auth", () => ({
+  onAuthStateChanged: vi.fn(() => vi.fn()),
+  signOut: vi.fn(() => Promise.resolve()),
+}));
+
+// Mock sonner toast
+vi.mock("sonner", () => ({
+  toast: {
+    error: vi.fn(),
+    success: vi.fn(),
+  },
+}));
+
 // Mock Firebase
 vi.mock("@/lib/firebase", () => ({
   auth: {
@@ -235,5 +249,119 @@ describe("AuthContext - setSelectedOrgAccount", () => {
         authContext.setSelectedOrgAccount(incompleteAccount);
       });
     }).not.toThrow();
+  });
+});
+
+describe("AuthContext - logout", () => {
+  let authContext: any;
+
+  const renderWithAuth = (onContextUpdate?: (auth: any) => void) => {
+    return render(
+      <AuthProvider>
+        <TestComponent onContextUpdate={onContextUpdate} />
+      </AuthProvider>,
+    );
+  };
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    localStorageMock.getItem.mockReturnValue(null);
+    authContext = null;
+
+    // Restore default mocks for firebase/auth and firebase lib
+    const firebaseAuth = await import("firebase/auth");
+    (firebaseAuth.signOut as ReturnType<typeof vi.fn>).mockResolvedValue(
+      undefined,
+    );
+
+    const firebaseLib = await import("@/lib/firebase");
+    (firebaseLib as any).authInitialized = true;
+  });
+
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
+  test("logout calls signOut(auth) and clears user state when authInitialized=true", async () => {
+    const { signOut } = await import("firebase/auth");
+    const { auth } = await import("@/lib/firebase");
+
+    renderWithAuth((ctx) => {
+      authContext = ctx;
+    });
+
+    await act(async () => {
+      await authContext.logout();
+    });
+
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(signOut).toHaveBeenCalledWith(auth);
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith("user");
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith(
+      "hasSelectedWorkspace",
+    );
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith(
+      "currentOrganizationId",
+    );
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith(
+      "selectedOrgAccount",
+    );
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith("orgMetadata");
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith("accountMetadata");
+  });
+
+  test("logout skips signOut and still clears state when authInitialized=false (bypass path)", async () => {
+    const { signOut } = await import("firebase/auth");
+    const firebaseLib = await import("@/lib/firebase");
+    // Override authInitialized to simulate bypass / stub mode
+    (firebaseLib as any).authInitialized = false;
+
+    renderWithAuth((ctx) => {
+      authContext = ctx;
+    });
+
+    await expect(
+      act(async () => {
+        await authContext.logout();
+      }),
+    ).resolves.not.toThrow();
+
+    expect(signOut).not.toHaveBeenCalled();
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith("user");
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith(
+      "currentOrganizationId",
+    );
+  });
+
+  test("logout surfaces toast.error and clears state even when signOut rejects", async () => {
+    const { signOut } = await import("firebase/auth");
+    const { toast } = await import("sonner");
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    (signOut as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("network"),
+    );
+
+    renderWithAuth((ctx) => {
+      authContext = ctx;
+    });
+
+    await expect(
+      act(async () => {
+        await authContext.logout();
+      }),
+    ).resolves.not.toThrow();
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      "[AuthContext] Firebase signOut failed",
+      expect.any(Error),
+    );
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith("user");
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith(
+      "currentOrganizationId",
+    );
+
+    consoleSpy.mockRestore();
   });
 });

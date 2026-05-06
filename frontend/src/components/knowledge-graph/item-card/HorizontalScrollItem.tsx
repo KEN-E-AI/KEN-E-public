@@ -26,11 +26,11 @@ export function HorizontalScrollItem({
         {/* Text Box - Left */}
         <div className={`${bgColor} rounded-lg pl-4 pr-16 py-2`}>
           {sublabel && (
-            <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
+            <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
               {sublabel}
             </p>
           )}
-          <p className="font-semibold text-dashboard-gray-900 leading-tight">
+          <p className="font-semibold text-[var(--color-text-primary)] leading-tight">
             {label}
           </p>
         </div>

@@ -7,9 +7,7 @@ export function SkillsPage() {
       <EmptyState
         icon={<Lightbulb className="size-8 text-muted-foreground" />}
         title="No skills yet"
-        description="Package your team's playbooks as reusable skills."
-        actionLabel="Create a skill"
-        onAction={() => {}}
+        description="Package your team's playbooks as reusable skills. Skill authoring is coming soon — ask KEN-E in chat to walk you through it."
       />
     </div>
   );

@@ -44,9 +44,9 @@ const HomeChatArea = () => {
   }, [updateChatContext]);
 
   return (
-    <Card className="h-full flex flex-col bg-white border border-dashboard-gray-200">
+    <Card className="h-full flex flex-col bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)]">
       {/* Chat Controls */}
-      <div className="p-4 border-b border-dashboard-gray-200">
+      <div className="p-4 border-b border-[var(--color-border-default)]">
         <div className="flex flex-col sm:flex-row gap-3">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -73,7 +73,7 @@ const HomeChatArea = () => {
                   >
                     {conversation.conversation_name ||
                       `Chat ${conversation.session_id.slice(-8)}`}
-                    <span className="ml-auto text-xs text-gray-500">
+                    <span className="ml-auto text-xs text-[var(--color-text-tertiary)]">
                       {new Date(conversation.last_updated).toLocaleDateString()}
                     </span>
                   </DropdownMenuItem>
@@ -97,7 +97,7 @@ const HomeChatArea = () => {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-9 w-9 p-0 text-dashboard-gray-600 hover:text-dashboard-gray-900"
+                  className="h-9 w-9 p-0 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]"
                 >
                   <Share2 className="h-4 w-4" />
                 </Button>
@@ -123,7 +123,7 @@ const HomeChatArea = () => {
           <div key={message.id}>
             {/* Show timestamp for first message */}
             {index === 0 && message.timestamp && (
-              <div className="text-center text-sm text-dashboard-gray-500 mb-4">
+              <div className="text-center text-sm text-[var(--color-text-tertiary)] mb-4">
                 {message.timestamp}
               </div>
             )}
@@ -136,7 +136,7 @@ const HomeChatArea = () => {
               <div
                 className={`max-w-xs lg:max-w-md px-4 py-3 rounded-lg ${
                   message.role === "user"
-                    ? "bg-dashboard-gray-100 text-dashboard-gray-900"
+                    ? "bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)]"
                     : "bg-brand-medium-blue text-white"
                 }`}
               >
@@ -156,7 +156,7 @@ const HomeChatArea = () => {
       </div>
 
       {/* Message Input */}
-      <div className="p-4 border-t border-dashboard-gray-200 bg-white">
+      <div className="p-4 border-t border-[var(--color-border-default)] bg-[var(--color-bg-elevated)]">
         <div className="flex flex-col gap-3">
           {/* Input Row */}
           <div className="border border-[#CBD5E1] rounded-md p-2">
@@ -178,7 +178,7 @@ const HomeChatArea = () => {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-10 w-10 p-0 text-dashboard-gray-600 hover:text-dashboard-gray-900 flex flex-col"
+                  className="h-10 w-10 p-0 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] flex flex-col"
                 >
                   <Mic className="h-5 w-5 mx-auto" />
                 </Button>
@@ -186,7 +186,7 @@ const HomeChatArea = () => {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-10 w-10 p-0 text-dashboard-gray-600 hover:text-dashboard-gray-900 flex flex-col mr-2"
+                  className="h-10 w-10 p-0 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] flex flex-col mr-2"
                   title="Enable voice mode"
                 >
                   <AudioWaveform className="h-5 w-5" />
@@ -209,7 +209,7 @@ const HomeChatArea = () => {
             <Button
               variant="outline"
               size="sm"
-              className="h-10 w-10 p-0 text-dashboard-gray-600 hover:text-dashboard-gray-900"
+              className="h-10 w-10 p-0 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]"
               title="Upload a file"
             >
               <Plus className="h-5 w-5" />
@@ -220,7 +220,7 @@ const HomeChatArea = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-10 w-10 p-0 text-dashboard-gray-600 hover:text-dashboard-gray-900"
+                  className="h-10 w-10 p-0 text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]"
                   title="Select a tool"
                 >
                   <Wrench className="h-5 w-5" />

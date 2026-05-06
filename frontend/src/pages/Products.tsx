@@ -49,7 +49,7 @@ const Products = () => {
             variant="ghost"
             size="sm"
             onClick={() => navigate("/knowledge")}
-            className="text-dashboard-gray-600 hover:text-dashboard-gray-900 p-0 h-auto font-normal mr-auto"
+            className="text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] p-0 h-auto font-normal mr-auto"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Knowledge Base

@@ -200,7 +200,7 @@ export const GoogleAnalyticsSetup = ({
                     onChange={handleFileUpload}
                     className="flex-1"
                   />
-                  <Upload className="h-5 w-5 text-dashboard-gray-500" />
+                  <Upload className="h-5 w-5 text-[var(--color-text-tertiary)]" />
                 </div>
                 {credentials && (
                   <p className="text-sm text-green-600">

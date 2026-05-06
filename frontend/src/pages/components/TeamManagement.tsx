@@ -513,7 +513,7 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
         </CardHeader>
         <CardContent className="space-y-4">
           {isLoadingMembers ? (
-            <div className="text-center py-8 text-gray-500">
+            <div className="text-center py-8 text-[var(--color-text-tertiary)]">
               <p>Loading team members...</p>
             </div>
           ) : members.length > 0 ? (
@@ -521,19 +521,19 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
               {members.map((member) => (
                 <div
                   key={member.user_id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
+                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-[var(--color-bg-secondary)] transition-colors"
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-brand-light-blue/20 rounded-full flex items-center justify-center">
                       <Mail className="h-5 w-5 text-brand-medium-blue" />
                     </div>
                     <div>
-                      <h4 className="font-medium text-gray-900">
+                      <h4 className="font-medium text-[var(--color-text-primary)]">
                         {member.email}
                       </h4>
                       <div className="flex items-center gap-2 mt-1">
                         {member.first_name && member.last_name && (
-                          <span className="text-sm text-gray-600">
+                          <span className="text-sm text-[var(--color-text-tertiary)]">
                             {member.first_name} {member.last_name}
                           </span>
                         )}
@@ -645,14 +645,14 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
               ))}
             </div>
           ) : (
-            <div className="text-center py-8 text-gray-500">
-              <Users className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+            <div className="text-center py-8 text-[var(--color-text-tertiary)]">
+              <Users className="h-12 w-12 mx-auto mb-4 text-[var(--color-text-disabled)]" />
               <p>No team members found</p>
             </div>
           )}
 
           <div className="mt-6 pt-6 border-t">
-            <div className="text-sm text-gray-600">
+            <div className="text-sm text-[var(--color-text-tertiary)]">
               <p>
                 {members.length} of {orgData.team.members_limit} seats used in
                 your current plan
@@ -680,10 +680,10 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
                       <Mail className="h-5 w-5 text-orange-600" />
                     </div>
                     <div>
-                      <h4 className="font-medium text-gray-900">
+                      <h4 className="font-medium text-[var(--color-text-primary)]">
                         {invitation.email}
                       </h4>
-                      <div className="flex items-center gap-2 mt-1 text-sm text-gray-600">
+                      <div className="flex items-center gap-2 mt-1 text-sm text-[var(--color-text-tertiary)]">
                         <Badge
                           variant="outline"
                           className="border-orange-300 text-orange-700"
@@ -813,7 +813,7 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
                     </div>
                   ))}
                 </div>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-[var(--color-text-tertiary)]">
                   Select which accounts this user should have access to
                 </p>
               </div>
@@ -876,7 +876,7 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
             <DialogTitle>Change Access Level</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-4">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-[var(--color-text-tertiary)]">
               Change access level for {selectedMember?.email}
             </p>
             <div className="space-y-2">
@@ -910,7 +910,7 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
               <div className="space-y-2">
                 <Label>Account Permissions</Label>
                 {loadingAccountPermissions ? (
-                  <div className="border rounded-lg p-3 text-center text-gray-500">
+                  <div className="border rounded-lg p-3 text-center text-[var(--color-text-tertiary)]">
                     Loading account permissions...
                   </div>
                 ) : (
@@ -953,7 +953,7 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
                     ))}
                   </div>
                 )}
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-[var(--color-text-tertiary)]">
                   Select which accounts this user should have access to
                 </p>
               </div>
@@ -1001,11 +1001,11 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
             <DialogTitle>Remove Team Member</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-4">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-[var(--color-text-tertiary)]">
               Are you sure you want to remove{" "}
               <strong>{memberToRemove?.email}</strong> from the organization?
             </p>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-[var(--color-text-tertiary)]">
               This action cannot be undone. The user will lose access to all
               organization resources.
             </p>
@@ -1041,7 +1041,7 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
             <DialogTitle>Cancel Invitation</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-4">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-[var(--color-text-tertiary)]">
               Are you sure you want to cancel the invitation to{" "}
               <strong>{invitationToCancel?.email}</strong>?
             </p>

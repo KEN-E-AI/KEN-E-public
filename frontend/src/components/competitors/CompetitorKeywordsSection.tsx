@@ -174,18 +174,18 @@ export function CompetitorKeywordsSection({
 
   if (isLoadingTopics) {
     return (
-      <div className="border-t border-dashboard-gray-200 pt-4">
+      <div className="border-t border-[var(--color-border-default)] pt-4">
         <div className="flex items-center justify-center py-4">
-          <Loader2 className="h-5 w-5 animate-spin text-dashboard-gray-400" />
+          <Loader2 className="h-5 w-5 animate-spin text-[var(--color-text-disabled)]" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="border-t border-dashboard-gray-200 pt-4">
+    <div className="border-t border-[var(--color-border-default)] pt-4">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-dashboard-gray-900">
+        <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">
           News Monitoring Keywords
         </h3>
         {hasEditAccess && !isEditing && (

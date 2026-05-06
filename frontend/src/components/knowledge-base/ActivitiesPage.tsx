@@ -910,14 +910,16 @@ const ActivitiesPage = () => {
         {/* Loading State */}
         {loading && (
           <div className="text-center py-8">
-            <div className="text-sm text-gray-500">Loading activities...</div>
+            <div className="text-sm text-[var(--color-text-tertiary)]">
+              Loading activities...
+            </div>
           </div>
         )}
 
         {/* Search and Filter */}
         <div className="flex items-center gap-3">
           <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-[var(--color-text-disabled)]" />
             <Input
               placeholder="Search activities..."
               value={searchTerm}
@@ -1017,10 +1019,10 @@ const ActivitiesPage = () => {
 
         {/* Activities Accordion */}
         {!loading && (
-          <div className="bg-white border border-dashboard-gray-200 rounded-lg">
+          <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-lg">
             {filteredActivities.length === 0 ? (
               <div className="p-8 text-center">
-                <p className="text-gray-500 text-sm">
+                <p className="text-[var(--color-text-tertiary)] text-sm">
                   {searchTerm || filterStatus !== "all"
                     ? "No activities match your current filter criteria."
                     : "No activities have been added yet."}
@@ -1045,11 +1047,11 @@ const ActivitiesPage = () => {
                   <AccordionItem
                     key={activity.id}
                     value={activity.id}
-                    className="border-b border-dashboard-gray-200 last:border-b-0"
+                    className="border-b border-[var(--color-border-default)] last:border-b-0"
                   >
                     <div className="flex items-start justify-between px-4 sm:px-6 py-4 gap-3">
                       <AccordionTrigger className="flex items-start gap-3 hover:no-underline [&>svg]:hidden cursor-pointer flex-1 min-w-0">
-                        <div className="flex items-center justify-center w-6 h-6 rounded hover:bg-gray-100 transition-colors flex-shrink-0 mt-0.5">
+                        <div className="flex items-center justify-center w-6 h-6 rounded hover:bg-[var(--color-bg-elevated)] transition-colors flex-shrink-0 mt-0.5">
                           <svg
                             xmlns="http://www.w3.org/2000/svg"
                             width="16"
@@ -1060,13 +1062,13 @@ const ActivitiesPage = () => {
                             strokeWidth={2}
                             strokeLinecap="round"
                             strokeLinejoin="round"
-                            className="h-4 w-4 shrink-0 transition-transform duration-200 accordion-chevron text-dashboard-gray-600"
+                            className="h-4 w-4 shrink-0 transition-transform duration-200 accordion-chevron text-[var(--color-text-tertiary)]"
                           >
                             <path d="m6 9 6 6 6-6" />
                           </svg>
                         </div>
                         <div className="text-left flex-1 min-w-0">
-                          <p className="text-sm text-dashboard-gray-900 break-words leading-relaxed">
+                          <p className="text-sm text-[var(--color-text-primary)] break-words leading-relaxed">
                             {activity.name}
                           </p>
                         </div>
@@ -1077,7 +1079,7 @@ const ActivitiesPage = () => {
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-8 w-8 p-0 hover:bg-gray-100 border border-gray-200"
+                              className="h-8 w-8 p-0 hover:bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)]"
                             >
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
@@ -1104,10 +1106,10 @@ const ActivitiesPage = () => {
                       <div className="space-y-6">
                         {/* Full Description */}
                         <div>
-                          <Label className="text-sm font-medium text-dashboard-gray-900 mb-2 block">
+                          <Label className="text-sm font-medium text-[var(--color-text-primary)] mb-2 block">
                             Description
                           </Label>
-                          <p className="text-sm text-dashboard-gray-600 break-words">
+                          <p className="text-sm text-[var(--color-text-tertiary)] break-words">
                             {activity.description}
                           </p>
                         </div>
@@ -1123,13 +1125,13 @@ const ActivitiesPage = () => {
                             />
                             <Label
                               htmlFor={`internal-${activity.id}`}
-                              className="text-sm font-medium text-gray-600"
+                              className="text-sm font-medium text-[var(--color-text-tertiary)]"
                             >
                               Internal
                             </Label>
                             <Tooltip>
                               <TooltipTrigger>
-                                <Info className="h-4 w-4 text-gray-400" />
+                                <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                               </TooltipTrigger>
                               <TooltipContent className="max-w-xs">
                                 <p>
@@ -1151,13 +1153,13 @@ const ActivitiesPage = () => {
                             />
                             <Label
                               htmlFor={`known-${activity.id}`}
-                              className="text-sm font-medium text-gray-600"
+                              className="text-sm font-medium text-[var(--color-text-tertiary)]"
                             >
                               Known
                             </Label>
                             <Tooltip>
                               <TooltipTrigger>
-                                <Info className="h-4 w-4 text-gray-400" />
+                                <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                               </TooltipTrigger>
                               <TooltipContent className="max-w-xs">
                                 <p>
@@ -1172,12 +1174,12 @@ const ActivitiesPage = () => {
                         {/* Expected Impact */}
                         <div>
                           <div className="flex items-center gap-2 mb-2">
-                            <Label className="text-sm font-medium text-gray-600">
+                            <Label className="text-sm font-medium text-[var(--color-text-tertiary)]">
                               Expected Impact
                             </Label>
                             <Tooltip>
                               <TooltipTrigger>
-                                <Info className="h-4 w-4 text-gray-400" />
+                                <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                               </TooltipTrigger>
                               <TooltipContent className="max-w-xs">
                                 <p>
@@ -1187,8 +1189,8 @@ const ActivitiesPage = () => {
                               </TooltipContent>
                             </Tooltip>
                           </div>
-                          <div className="min-h-[80px] p-3 bg-gray-50 border border-gray-200 rounded-md">
-                            <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                          <div className="min-h-[80px] p-3 bg-[var(--color-bg-secondary)] border border-[var(--color-border-default)] rounded-md">
+                            <p className="text-sm text-[var(--color-text-secondary)] whitespace-pre-wrap">
                               {activity.expectedImpact ||
                                 "No expected impact description provided."}
                             </p>
@@ -1200,12 +1202,12 @@ const ActivitiesPage = () => {
                           {/* Intuition */}
                           <div>
                             <div className="flex items-center gap-2 mb-3">
-                              <Label className="text-sm font-medium text-gray-600">
+                              <Label className="text-sm font-medium text-[var(--color-text-tertiary)]">
                                 Intuition
                               </Label>
                               <Tooltip>
                                 <TooltipTrigger>
-                                  <Info className="h-4 w-4 text-gray-400" />
+                                  <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                                 </TooltipTrigger>
                                 <TooltipContent className="max-w-sm">
                                   <p>
@@ -1223,16 +1225,16 @@ const ActivitiesPage = () => {
                               {activity.intuitions.map((intuition) => (
                                 <div
                                   key={intuition.id}
-                                  className="p-2 bg-gray-50 rounded border"
+                                  className="p-2 bg-[var(--color-bg-secondary)] rounded border"
                                 >
-                                  <span className="text-sm text-gray-700">
+                                  <span className="text-sm text-[var(--color-text-secondary)]">
                                     {getMetricNameById(intuition.metricName)} [
                                     {intuition.direction}]
                                   </span>
                                 </div>
                               ))}
                               {activity.intuitions.length === 0 && (
-                                <p className="text-sm text-gray-500 italic">
+                                <p className="text-sm text-[var(--color-text-tertiary)] italic">
                                   No intuitions added yet
                                 </p>
                               )}
@@ -1242,12 +1244,12 @@ const ActivitiesPage = () => {
                           {/* Logs */}
                           <div>
                             <div className="flex items-center gap-2 mb-3">
-                              <Label className="text-sm font-medium text-gray-600">
+                              <Label className="text-sm font-medium text-[var(--color-text-tertiary)]">
                                 Logs
                               </Label>
                               <Tooltip>
                                 <TooltipTrigger>
-                                  <Info className="h-4 w-4 text-gray-400" />
+                                  <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                                 </TooltipTrigger>
                                 <TooltipContent className="max-w-xs">
                                   <p>Timeline and history of this activity</p>
@@ -1258,21 +1260,21 @@ const ActivitiesPage = () => {
                               {activity.logs.map((log) => (
                                 <div
                                   key={log.id}
-                                  className="p-2 bg-gray-50 rounded border"
+                                  className="p-2 bg-[var(--color-bg-secondary)] rounded border"
                                 >
                                   <div className="flex items-center gap-2 mb-1">
-                                    <Calendar className="w-3 h-3 text-gray-500" />
-                                    <span className="text-xs text-gray-600">
+                                    <Calendar className="w-3 h-3 text-[var(--color-text-tertiary)]" />
+                                    <span className="text-xs text-[var(--color-text-tertiary)]">
                                       {log.startDate} to {log.endDate}
                                     </span>
                                   </div>
-                                  <p className="text-sm text-gray-700">
+                                  <p className="text-sm text-[var(--color-text-secondary)]">
                                     {log.description}
                                   </p>
                                 </div>
                               ))}
                               {activity.logs.length === 0 && (
-                                <p className="text-sm text-gray-500 italic">
+                                <p className="text-sm text-[var(--color-text-tertiary)] italic">
                                   No logs added yet
                                 </p>
                               )}
@@ -1313,7 +1315,7 @@ const ActivitiesPage = () => {
                 <div className="space-y-3 mt-2">
                   <div className="flex gap-2">
                     <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-[var(--color-text-disabled)]" />
                       <Input
                         placeholder="Search metrics..."
                         value={metricSearchTerm}
@@ -1381,7 +1383,7 @@ const ActivitiesPage = () => {
                     </SelectTrigger>
                     <SelectContent className="max-h-60">
                       {filteredMetrics.length === 0 ? (
-                        <div className="p-2 text-center text-gray-500 text-sm">
+                        <div className="p-2 text-center text-[var(--color-text-tertiary)] text-sm">
                           No metrics match your search criteria
                         </div>
                       ) : (
@@ -1389,7 +1391,7 @@ const ActivitiesPage = () => {
                           <SelectItem key={metric.id} value={metric.id}>
                             <div className="flex flex-col">
                               <span className="font-medium">{metric.name}</span>
-                              <span className="text-xs text-gray-500">
+                              <span className="text-xs text-[var(--color-text-tertiary)]">
                                 {metric.product} •{" "}
                                 {datasetsData.find(
                                   (d) => d.dataset_name === metric.dataset,
@@ -1403,7 +1405,7 @@ const ActivitiesPage = () => {
                   </Select>
 
                   {filteredMetrics.length > 0 && (
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-[var(--color-text-tertiary)] mt-1">
                       Showing {filteredMetrics.length} of{" "}
                       {availableMetrics.length} metrics
                     </p>
@@ -1624,7 +1626,7 @@ const ActivitiesPage = () => {
                   </Label>
                   <Tooltip>
                     <TooltipTrigger>
-                      <Info className="h-4 w-4 text-gray-400" />
+                      <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                     </TooltipTrigger>
                     <TooltipContent className="max-w-xs">
                       <p>
@@ -1654,7 +1656,7 @@ const ActivitiesPage = () => {
                   </Label>
                   <Tooltip>
                     <TooltipTrigger>
-                      <Info className="h-4 w-4 text-gray-400" />
+                      <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                     </TooltipTrigger>
                     <TooltipContent className="max-w-xs">
                       <p>
@@ -1677,7 +1679,7 @@ const ActivitiesPage = () => {
                   </Label>
                   <Tooltip>
                     <TooltipTrigger>
-                      <Info className="h-4 w-4 text-gray-400" />
+                      <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                     </TooltipTrigger>
                     <TooltipContent className="max-w-xs">
                       <p>
@@ -1705,7 +1707,7 @@ const ActivitiesPage = () => {
                   rows={3}
                   className="resize-none"
                 />
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-[var(--color-text-tertiary)] mt-1">
                   {(editingActivity?.expectedImpact || "").length}/255
                   characters
                 </p>
@@ -1717,12 +1719,12 @@ const ActivitiesPage = () => {
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <Label className="text-sm font-medium text-dashboard-gray-900">
+                      <Label className="text-sm font-medium text-[var(--color-text-primary)]">
                         Intuition
                       </Label>
                       <Tooltip>
                         <TooltipTrigger>
-                          <Info className="h-4 w-4 text-gray-400" />
+                          <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                         </TooltipTrigger>
                         <TooltipContent className="max-w-sm">
                           <p>
@@ -1751,9 +1753,9 @@ const ActivitiesPage = () => {
                     {(editingActivity?.intuitions || []).map((intuition) => (
                       <div
                         key={intuition.id}
-                        className="flex items-center justify-between p-2 bg-gray-50 rounded"
+                        className="flex items-center justify-between p-2 bg-[var(--color-bg-secondary)] rounded"
                       >
-                        <span className="text-sm text-gray-700">
+                        <span className="text-sm text-[var(--color-text-secondary)]">
                           {getMetricNameById(intuition.metricName)} [
                           {intuition.direction}]
                         </span>
@@ -1813,7 +1815,7 @@ const ActivitiesPage = () => {
                       </div>
                     ))}
                     {(editingActivity?.intuitions || []).length === 0 && (
-                      <p className="text-sm text-gray-500 italic">
+                      <p className="text-sm text-[var(--color-text-tertiary)] italic">
                         No intuitions added yet
                       </p>
                     )}
@@ -1824,12 +1826,12 @@ const ActivitiesPage = () => {
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <Label className="text-sm font-medium text-dashboard-gray-900">
+                      <Label className="text-sm font-medium text-[var(--color-text-primary)]">
                         Logs
                       </Label>
                       <Tooltip>
                         <TooltipTrigger>
-                          <Info className="h-4 w-4 text-gray-400" />
+                          <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                         </TooltipTrigger>
                         <TooltipContent className="max-w-xs">
                           <p>Timeline and history of this activity</p>
@@ -1861,16 +1863,16 @@ const ActivitiesPage = () => {
                     {(editingActivity?.logs || []).map((log) => (
                       <div
                         key={log.id}
-                        className="flex items-center justify-between p-2 bg-gray-50 rounded"
+                        className="flex items-center justify-between p-2 bg-[var(--color-bg-secondary)] rounded"
                       >
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
-                            <Calendar className="w-3 h-3 text-gray-500" />
-                            <span className="text-xs text-gray-600">
+                            <Calendar className="w-3 h-3 text-[var(--color-text-tertiary)]" />
+                            <span className="text-xs text-[var(--color-text-tertiary)]">
                               {log.startDate} to {log.endDate}
                             </span>
                           </div>
-                          <p className="text-sm text-gray-700 truncate">
+                          <p className="text-sm text-[var(--color-text-secondary)] truncate">
                             {log.description}
                           </p>
                         </div>
@@ -1928,7 +1930,7 @@ const ActivitiesPage = () => {
                       </div>
                     ))}
                     {(editingActivity?.logs || []).length === 0 && (
-                      <p className="text-sm text-gray-500 italic">
+                      <p className="text-sm text-[var(--color-text-tertiary)] italic">
                         No logs added yet
                       </p>
                     )}

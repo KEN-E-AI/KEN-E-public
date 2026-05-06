@@ -279,7 +279,7 @@ export function MessageContent({
               <code
                 className={cn(
                   "px-1 py-0.5 rounded text-xs font-mono",
-                  isAssistant ? "bg-white/20" : "bg-gray-100",
+                  isAssistant ? "bg-white/20" : "bg-[var(--color-bg-elevated)]",
                 )}
               >
                 {children}
@@ -289,7 +289,7 @@ export function MessageContent({
               <pre
                 className={cn(
                   "p-2 rounded overflow-x-auto",
-                  isAssistant ? "bg-white/10" : "bg-gray-100",
+                  isAssistant ? "bg-white/10" : "bg-[var(--color-bg-elevated)]",
                 )}
               >
                 {children}
@@ -300,14 +300,22 @@ export function MessageContent({
               <table
                 className={cn(
                   "min-w-full divide-y mb-4",
-                  isAssistant ? "divide-white/20" : "divide-gray-200",
+                  isAssistant
+                    ? "divide-white/20"
+                    : "divide-[var(--color-border-default)]",
                 )}
               >
                 {children}
               </table>
             ),
             thead: ({ children }) => (
-              <thead className={cn(isAssistant ? "bg-white/10" : "bg-gray-50")}>
+              <thead
+                className={cn(
+                  isAssistant
+                    ? "bg-white/10"
+                    : "bg-[var(--color-bg-secondary)]",
+                )}
+              >
                 {children}
               </thead>
             ),
@@ -317,7 +325,7 @@ export function MessageContent({
                   "divide-y",
                   isAssistant
                     ? "divide-white/10 bg-white/5"
-                    : "divide-gray-200 bg-white",
+                    : "divide-[var(--color-border-default)] bg-[var(--color-bg-elevated)]",
                 )}
               >
                 {children}
@@ -328,7 +336,9 @@ export function MessageContent({
               <th
                 className={cn(
                   "px-3 py-2 text-left text-xs font-medium uppercase tracking-wider",
-                  isAssistant ? "text-white/90" : "text-gray-500",
+                  isAssistant
+                    ? "text-white/90"
+                    : "text-[var(--color-text-tertiary)]",
                 )}
               >
                 {children}
@@ -338,7 +348,9 @@ export function MessageContent({
               <td
                 className={cn(
                   "px-3 py-2 whitespace-nowrap text-sm",
-                  isAssistant ? "text-white/80" : "text-gray-900",
+                  isAssistant
+                    ? "text-white/80"
+                    : "text-[var(--color-text-primary)]",
                 )}
               >
                 {children}
@@ -392,7 +404,9 @@ export function MessageContent({
                 <code
                   className={cn(
                     "px-1 py-0.5 rounded text-xs font-mono",
-                    isAssistant ? "bg-white/20" : "bg-gray-100",
+                    isAssistant
+                      ? "bg-white/20"
+                      : "bg-[var(--color-bg-elevated)]",
                   )}
                 >
                   {children}
@@ -402,7 +416,9 @@ export function MessageContent({
                 <pre
                   className={cn(
                     "p-2 rounded overflow-x-auto",
-                    isAssistant ? "bg-white/10" : "bg-gray-100",
+                    isAssistant
+                      ? "bg-white/10"
+                      : "bg-[var(--color-bg-elevated)]",
                   )}
                 >
                   {children}
@@ -413,7 +429,9 @@ export function MessageContent({
                 <table
                   className={cn(
                     "min-w-full divide-y mb-4",
-                    isAssistant ? "divide-white/20" : "divide-gray-200",
+                    isAssistant
+                      ? "divide-white/20"
+                      : "divide-[var(--color-border-default)]",
                   )}
                 >
                   {children}
@@ -421,7 +439,11 @@ export function MessageContent({
               ),
               thead: ({ children }) => (
                 <thead
-                  className={cn(isAssistant ? "bg-white/10" : "bg-gray-50")}
+                  className={cn(
+                    isAssistant
+                      ? "bg-white/10"
+                      : "bg-[var(--color-bg-secondary)]",
+                  )}
                 >
                   {children}
                 </thead>
@@ -432,7 +454,7 @@ export function MessageContent({
                     "divide-y",
                     isAssistant
                       ? "divide-white/10 bg-white/5"
-                      : "divide-gray-200 bg-white",
+                      : "divide-[var(--color-border-default)] bg-[var(--color-bg-elevated)]",
                   )}
                 >
                   {children}
@@ -443,7 +465,9 @@ export function MessageContent({
                 <th
                   className={cn(
                     "px-3 py-2 text-left text-xs font-medium uppercase tracking-wider",
-                    isAssistant ? "text-white/90" : "text-gray-500",
+                    isAssistant
+                      ? "text-white/90"
+                      : "text-[var(--color-text-tertiary)]",
                   )}
                 >
                   {children}
@@ -453,7 +477,9 @@ export function MessageContent({
                 <td
                   className={cn(
                     "px-3 py-2 whitespace-nowrap text-sm",
-                    isAssistant ? "text-white/80" : "text-gray-900",
+                    isAssistant
+                      ? "text-white/80"
+                      : "text-[var(--color-text-primary)]",
                   )}
                 >
                   {children}
@@ -474,7 +500,7 @@ export function MessageContent({
               "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all",
               isAssistant
                 ? "bg-white/20 text-white/90 hover:bg-white/30 border border-white/20"
-                : "bg-dashboard-gray-100 text-dashboard-gray-700 hover:bg-dashboard-gray-200 border border-dashboard-gray-200",
+                : "bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)]",
             )}
           >
             {isOpen ? (
@@ -493,13 +519,15 @@ export function MessageContent({
               "rounded-md p-3 overflow-x-auto",
               isAssistant
                 ? "bg-white/10 border border-white/20"
-                : "bg-dashboard-gray-50 border border-dashboard-gray-200",
+                : "bg-[var(--color-bg-secondary)] border border-[var(--color-border-default)]",
             )}
           >
             <pre
               className={cn(
                 "text-xs font-mono",
-                isAssistant ? "text-white/90" : "text-dashboard-gray-700",
+                isAssistant
+                  ? "text-white/90"
+                  : "text-[var(--color-text-secondary)]",
               )}
             >
               <code>{formatJSON(parsedContent.jsonData)}</code>

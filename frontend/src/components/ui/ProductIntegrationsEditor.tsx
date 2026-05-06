@@ -131,7 +131,7 @@ export const ProductIntegrationsEditor = ({
           ([category, integrations]) => (
             <div key={category}>
               <h4
-                className={`font-medium mb-3 text-dashboard-gray-800 ${
+                className={`font-medium mb-3 text-[var(--color-text-secondary)] ${
                   compact ? "text-sm" : ""
                 }`}
               >
@@ -161,7 +161,7 @@ export const ProductIntegrationsEditor = ({
                           ? "opacity-60 cursor-not-allowed"
                           : isSelected
                             ? "border-green-500 bg-green-50"
-                            : "hover:border-dashboard-gray-300"
+                            : "hover:border-[var(--color-border-default)]"
                       } ${compact ? "text-sm" : ""}`}
                       onClick={() => {
                         if (isAvailable) {
@@ -191,14 +191,14 @@ export const ProductIntegrationsEditor = ({
                           <div className="flex items-start justify-between mb-1">
                             <div className="flex-1">
                               <h4
-                                className={`font-medium text-dashboard-gray-800 ${
+                                className={`font-medium text-[var(--color-text-secondary)] ${
                                   compact ? "text-sm" : ""
                                 }`}
                               >
                                 {integration.name}
                               </h4>
                               {!compact && (
-                                <p className="text-xs text-dashboard-gray-600 mt-1">
+                                <p className="text-xs text-[var(--color-text-tertiary)] mt-1">
                                   {integration.description}
                                 </p>
                               )}
@@ -275,7 +275,7 @@ export const ProductIntegrationsEditor = ({
             <div className="space-y-4 py-4">
               <div className="space-y-3">
                 <h4 className="font-medium text-sm">Integration Steps:</h4>
-                <ol className="list-decimal list-inside space-y-2 text-sm text-dashboard-gray-600">
+                <ol className="list-decimal list-inside space-y-2 text-sm text-[var(--color-text-tertiary)]">
                   <li>
                     Navigate to your{" "}
                     {

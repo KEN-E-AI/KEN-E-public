@@ -23,32 +23,18 @@ describe("AutomationsPage", () => {
         <AutomationsPage />
       </MemoryRouter>,
     );
-    expect(
-      screen.getByText("Let KEN-E take it from here."),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Let KEN-E take it from here/)).toBeInTheDocument();
   });
 
-  it("renders the CTA button with correct label", () => {
+  it("renders no CTA button until automation creation lands (A-PRD-05/06)", () => {
     render(
       <MemoryRouter>
         <AutomationsPage />
       </MemoryRouter>,
     );
     expect(
-      screen.getByRole("button", { name: /create an automation/i }),
-    ).toBeInTheDocument();
-  });
-
-  it("CTA button click does not throw", async () => {
-    const user = userEvent.setup();
-    render(
-      <MemoryRouter>
-        <AutomationsPage />
-      </MemoryRouter>,
-    );
-    await user.click(
-      screen.getByRole("button", { name: /create an automation/i }),
-    );
+      screen.queryByRole("button", { name: /create an automation/i }),
+    ).not.toBeInTheDocument();
   });
 });
 

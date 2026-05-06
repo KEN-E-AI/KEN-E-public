@@ -16,18 +16,22 @@ export const renderConfigurationSection = (
   const Icon = icon;
 
   return (
-    <div className="border rounded-lg bg-white">
+    <div className="border rounded-lg bg-[var(--color-bg-elevated)]">
       <div className="px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Icon className="h-5 w-5 text-dashboard-gray-600" />
+          <Icon className="h-5 w-5 text-[var(--color-text-tertiary)]" />
           <div className="text-left">
             <div className="font-medium">{title}</div>
-            <div className="text-sm text-dashboard-gray-500">{description}</div>
+            <div className="text-sm text-[var(--color-text-tertiary)]">
+              {description}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
           {isDisabled && (
-            <span className="text-sm text-dashboard-gray-400">Coming Soon</span>
+            <span className="text-sm text-[var(--color-text-disabled)]">
+              Coming Soon
+            </span>
           )}
           <Button
             onClick={onButtonClick}

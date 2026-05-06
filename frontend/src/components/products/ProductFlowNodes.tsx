@@ -25,10 +25,10 @@ export const CategoryNode = memo(({ data }: NodeProps<CategoryNodeData>) => {
           <Tooltip>
             <TooltipTrigger asChild>
               <div className="bg-brand-light-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2">
-                <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
+                <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
                   Product Category
                 </p>
-                <p className="font-semibold text-dashboard-gray-900 leading-tight truncate">
+                <p className="font-semibold text-[var(--color-text-primary)] leading-tight truncate">
                   {data.label}
                 </p>
               </div>
@@ -104,10 +104,10 @@ export const ProductNode = memo(({ data }: NodeProps<ProductNodeData>) => {
                 className="bg-brand-medium-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
                 style={{ width: "200px" }}
               >
-                <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
+                <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
                   Product
                 </p>
-                <p className="font-semibold text-dashboard-gray-900 leading-tight truncate">
+                <p className="font-semibold text-[var(--color-text-primary)] leading-tight truncate">
                   {data.label}
                 </p>
               </div>

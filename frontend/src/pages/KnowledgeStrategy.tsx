@@ -723,7 +723,7 @@ function KnowledgeStrategy() {
             variant="ghost"
             size="sm"
             onClick={() => navigate("/knowledge")}
-            className="text-dashboard-gray-600 hover:text-dashboard-gray-900 p-0 h-auto font-normal mr-auto"
+            className="text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] p-0 h-auto font-normal mr-auto"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Knowledge Base
@@ -918,7 +918,7 @@ function KnowledgeStrategy() {
               </div>
               <div>
                 <p className="font-semibold">Description:</p>
-                <p className="text-sm text-dashboard-gray-600">
+                <p className="text-sm text-[var(--color-text-tertiary)]">
                   {selectedNode.data.description}
                 </p>
               </div>
@@ -937,7 +937,7 @@ function KnowledgeStrategy() {
               </div>
               <div>
                 <p className="font-semibold">Description:</p>
-                <p className="text-sm text-dashboard-gray-600">
+                <p className="text-sm text-[var(--color-text-tertiary)]">
                   {selectedNode.data.description || "No description provided."}
                 </p>
               </div>
@@ -990,7 +990,7 @@ function KnowledgeStrategy() {
               <div className="space-y-3">
                 <div>
                   <p className="font-semibold">Description:</p>
-                  <p className="text-sm text-dashboard-gray-600">
+                  <p className="text-sm text-[var(--color-text-tertiary)]">
                     {selectedNode.data.description}
                   </p>
                 </div>

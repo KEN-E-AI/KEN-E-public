@@ -17,7 +17,7 @@ const KnowledgeBrand = () => {
             variant="ghost"
             size="sm"
             onClick={() => navigate("/knowledge")}
-            className="text-dashboard-gray-600 hover:text-dashboard-gray-900 p-0 h-auto font-normal mr-auto"
+            className="text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] p-0 h-auto font-normal mr-auto"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Knowledge Base
@@ -25,8 +25,8 @@ const KnowledgeBrand = () => {
         </div>
 
         {/* Brand Guidelines Page Content */}
-        <div className="bg-white rounded-lg border border-dashboard-gray-200 p-6">
-          <p className="text-dashboard-gray-600">
+        <div className="bg-[var(--color-bg-elevated)] rounded-lg border border-[var(--color-border-default)] p-6">
+          <p className="text-[var(--color-text-tertiary)]">
             Brand guidelines content will be displayed here.
           </p>
         </div>

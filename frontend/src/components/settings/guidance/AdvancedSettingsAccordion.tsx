@@ -62,9 +62,9 @@ export const AdvancedSettingsAccordion = ({
       case "warning":
         return <AlertCircle className="h-3 w-3 text-brand-dark-blue" />;
       case "incomplete":
-        return <Clock className="h-3 w-3 text-gray-600" />;
+        return <Clock className="h-3 w-3 text-[var(--color-text-tertiary)]" />;
       default:
-        return <Clock className="h-3 w-3 text-gray-600" />;
+        return <Clock className="h-3 w-3 text-[var(--color-text-tertiary)]" />;
     }
   };
 
@@ -96,7 +96,7 @@ export const AdvancedSettingsAccordion = ({
             {showCompletionStatus && (
               <div className="flex items-center gap-2 mr-4">
                 {getStatusIcon()}
-                <span className="text-xs text-gray-600">
+                <span className="text-xs text-[var(--color-text-tertiary)]">
                   {completedSteps}/{totalSteps}
                 </span>
               </div>
@@ -106,14 +106,18 @@ export const AdvancedSettingsAccordion = ({
         <AccordionContent className="px-4 pb-4">
           <div className="space-y-4">
             {description && (
-              <p className="text-sm text-gray-600 mb-3">{description}</p>
+              <p className="text-sm text-[var(--color-text-tertiary)] mb-3">
+                {description}
+              </p>
             )}
 
             {showCompletionStatus && (
               <div className="space-y-2">
                 <div className="flex justify-between items-center text-sm">
-                  <span className="text-gray-600">Configuration Progress</span>
-                  <span className="text-gray-900 font-medium">
+                  <span className="text-[var(--color-text-tertiary)]">
+                    Configuration Progress
+                  </span>
+                  <span className="text-[var(--color-text-primary)] font-medium">
                     {Math.round(progress)}%
                   </span>
                 </div>
@@ -169,8 +173,14 @@ export const SettingsGroup = ({
   return (
     <div className={className}>
       <div className="mb-4">
-        <h3 className="text-sm font-medium text-gray-900 mb-1">{title}</h3>
-        {description && <p className="text-sm text-gray-600">{description}</p>}
+        <h3 className="text-sm font-medium text-[var(--color-text-primary)] mb-1">
+          {title}
+        </h3>
+        {description && (
+          <p className="text-sm text-[var(--color-text-tertiary)]">
+            {description}
+          </p>
+        )}
       </div>
       <div className="space-y-4">{children}</div>
     </div>
@@ -216,12 +226,12 @@ export const ProgressiveDisclosure = ({
       {/* Basic Settings */}
       <div className="space-y-6 mb-6">
         {showCompletionStatus && (
-          <div className="bg-gray-50 rounded-lg p-4 mb-4">
+          <div className="bg-[var(--color-bg-secondary)] rounded-lg p-4 mb-4">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-sm font-medium text-gray-900">
+              <h3 className="text-sm font-medium text-[var(--color-text-primary)]">
                 Basic Configuration
               </h3>
-              <span className="text-xs text-gray-600">
+              <span className="text-xs text-[var(--color-text-tertiary)]">
                 {basicCompletedSteps}/{basicTotalSteps}
               </span>
             </div>

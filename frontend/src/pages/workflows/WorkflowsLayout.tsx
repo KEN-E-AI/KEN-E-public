@@ -97,7 +97,7 @@ export function WorkflowsLayout({ activeTab, children }: WorkflowsLayoutProps) {
                   ref={(el) => {
                     tabRefs.current[i] = el;
                   }}
-                  className="flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] text-sm font-medium border-0 bg-transparent shadow-none data-[state=active]:bg-[var(--color-bg-elevated)] data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=active]:border-0 data-[state=inactive]:text-[var(--color-text-secondary)] data-[state=inactive]:bg-transparent data-[state=inactive]:border-0 data-[state=inactive]:shadow-none"
+                  className="flex items-center gap-2 px-4 py-2 rounded-[var(--radius-sm)] text-sm font-medium border-0 bg-transparent shadow-none data-[state=active]:bg-[var(--color-surface-muted)] data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=active]:border-0 data-[state=inactive]:text-[var(--color-text-secondary)] data-[state=inactive]:bg-transparent data-[state=inactive]:border-0 data-[state=inactive]:shadow-none"
                   style={{
                     transitionTimingFunction: "var(--ease-default)",
                     transitionDuration: "var(--duration-fast)",

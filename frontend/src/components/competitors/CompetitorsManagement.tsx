@@ -2067,8 +2067,8 @@ export const CompetitorsManagement = ({
 
       {/* Card 2: Mode Selector + Children + React Flow */}
       {!selectedCompetitorId ? (
-        <div className="p-6 bg-dashboard-gray-50 rounded-lg border border-dashboard-gray-200 h-[600px] flex items-center justify-center">
-          <p className="text-dashboard-gray-500 text-center">
+        <div className="p-6 bg-[var(--color-bg-secondary)] rounded-lg border border-[var(--color-border-default)] h-[600px] flex items-center justify-center">
+          <p className="text-[var(--color-text-tertiary)] text-center">
             Select a competitor to view{" "}
             {mode === "strengths"
               ? "strengths"
@@ -2084,7 +2084,7 @@ export const CompetitorsManagement = ({
             {/* Selected Competitor Heading */}
             {selectedCompetitor && (
               <div className="flex items-start justify-between gap-4">
-                <h2 className="text-2xl font-semibold text-dashboard-gray-900">
+                <h2 className="text-2xl font-semibold text-[var(--color-text-primary)]">
                   {selectedCompetitor.display_name}
                 </h2>
                 {hasEditAccess && (
@@ -2754,7 +2754,7 @@ export const CompetitorsManagement = ({
               </div>
               <div>
                 <p className="font-semibold">Description:</p>
-                <p className="text-sm text-dashboard-gray-600">
+                <p className="text-sm text-[var(--color-text-tertiary)]">
                   {contextMenuType === "competitor"
                     ? selectedCompetitor?.description
                     : contextMenuType === "child"

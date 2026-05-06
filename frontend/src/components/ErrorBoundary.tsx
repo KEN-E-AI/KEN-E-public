@@ -96,7 +96,7 @@ class ErrorBoundary extends Component<Props, State> {
       const isProduction = import.meta.env.VITE_ENVIRONMENT === "production";
 
       return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="min-h-screen flex items-center justify-center bg-[var(--color-bg-secondary)] p-4">
           <Card className="max-w-2xl w-full">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-red-600">
@@ -105,21 +105,21 @@ class ErrorBoundary extends Component<Props, State> {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <p className="text-gray-600">
+              <p className="text-[var(--color-text-tertiary)]">
                 {isProduction
                   ? "We encountered an unexpected error. This might be related to your account or organization data."
                   : "An error occurred in the application. This could be due to corrupted local data or deleted entities."}
               </p>
 
               {!isProduction && this.state.error && (
-                <div className="bg-gray-100 p-4 rounded-md space-y-2">
+                <div className="bg-[var(--color-bg-elevated)] p-4 rounded-md space-y-2">
                   <p className="font-semibold text-sm">Error Details:</p>
-                  <p className="text-sm text-gray-700 font-mono">
+                  <p className="text-sm text-[var(--color-text-secondary)] font-mono">
                     {this.state.error.message}
                   </p>
                   {this.state.errorInfo && (
-                    <details className="text-xs text-gray-600">
-                      <summary className="cursor-pointer hover:text-gray-800">
+                    <details className="text-xs text-[var(--color-text-tertiary)]">
+                      <summary className="cursor-pointer hover:text-[var(--color-text-secondary)]">
                         Component Stack
                       </summary>
                       <pre className="mt-2 overflow-auto max-h-40">
@@ -157,7 +157,7 @@ class ErrorBoundary extends Component<Props, State> {
                 </Button>
               </div>
 
-              <div className="text-sm text-gray-500 mt-4">
+              <div className="text-sm text-[var(--color-text-tertiary)] mt-4">
                 <p>If the problem persists after trying these options:</p>
                 <ul className="list-disc list-inside mt-2 space-y-1">
                   <li>Clear your browser's cookies and cache</li>

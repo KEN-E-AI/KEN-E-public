@@ -171,7 +171,9 @@ export const AccountPerformanceSettings = ({
       case "down":
         return <TrendingUp className="h-4 w-4 text-red-500 rotate-180" />;
       default:
-        return <LineChart className="h-4 w-4 text-gray-500" />;
+        return (
+          <LineChart className="h-4 w-4 text-[var(--color-text-tertiary)]" />
+        );
     }
   };
 
@@ -182,7 +184,7 @@ export const AccountPerformanceSettings = ({
       case "down":
         return "bg-red-50 text-red-700 border-red-200";
       default:
-        return "bg-gray-50 text-gray-700 border-gray-200";
+        return "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] border-[var(--color-border-default)]";
     }
   };
 
@@ -233,7 +235,7 @@ export const AccountPerformanceSettings = ({
                       ) : (
                         <div>
                           <h3 className="font-medium">{kpi.name}</h3>
-                          <p className="text-sm text-dashboard-gray-600">
+                          <p className="text-sm text-[var(--color-text-tertiary)]">
                             {kpi.description}
                           </p>
                         </div>
@@ -272,7 +274,7 @@ export const AccountPerformanceSettings = ({
                           disabled={!isEditing}
                           className="mt-1"
                         />
-                        <span className="text-sm text-dashboard-gray-600">
+                        <span className="text-sm text-[var(--color-text-tertiary)]">
                           {kpi.unit}
                         </span>
                       </div>
@@ -291,7 +293,7 @@ export const AccountPerformanceSettings = ({
                           disabled={!isEditing}
                           className="mt-1"
                         />
-                        <span className="text-sm text-dashboard-gray-600">
+                        <span className="text-sm text-[var(--color-text-tertiary)]">
                           {kpi.unit}
                         </span>
                       </div>
@@ -330,7 +332,7 @@ export const AccountPerformanceSettings = ({
                   </div>
 
                   {/* KPI Alerts */}
-                  <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                  <div className="mt-4 p-3 bg-[var(--color-bg-secondary)] rounded-lg">
                     <div className="flex items-center justify-between mb-2">
                       <Label className="text-sm font-medium">
                         Performance Alerts
@@ -603,7 +605,7 @@ export const AccountPerformanceSettings = ({
                   <Label className="text-sm font-medium">
                     Auto-update targets
                   </Label>
-                  <p className="text-sm text-dashboard-gray-600">
+                  <p className="text-sm text-[var(--color-text-tertiary)]">
                     Automatically adjust targets based on performance trends
                   </p>
                 </div>
@@ -621,7 +623,7 @@ export const AccountPerformanceSettings = ({
                   <Label className="text-sm font-medium">
                     Benchmark comparison
                   </Label>
-                  <p className="text-sm text-dashboard-gray-600">
+                  <p className="text-sm text-[var(--color-text-tertiary)]">
                     Compare performance against industry benchmarks
                   </p>
                 </div>
@@ -649,7 +651,7 @@ export const AccountPerformanceSettings = ({
                   className="mt-1"
                   placeholder="e.g., 80"
                 />
-                <p className="text-sm text-dashboard-gray-600 mt-1">
+                <p className="text-sm text-[var(--color-text-tertiary)] mt-1">
                   Get notified when performance is below this percentage of
                   target
                 </p>

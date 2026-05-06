@@ -59,7 +59,7 @@ export const SettingsLayout: React.FC<SettingsLayoutProps> = ({
             <Button
               variant="ghost"
               onClick={handleBackToSettings}
-              className="text-dashboard-gray-600 hover:text-dashboard-gray-900 p-0 h-auto font-normal"
+              className="text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] p-0 h-auto font-normal"
             >
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back to Settings
@@ -104,13 +104,15 @@ export const SettingsLayout: React.FC<SettingsLayoutProps> = ({
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex items-center gap-2 text-dashboard-gray-600">
+                <div className="flex items-center gap-2 text-[var(--color-text-tertiary)]">
                   <Building2 className="h-4 w-4" />
                   <span className="font-medium">Active Context:</span>
                   <span>{currentOrgName}</span>
                   {selectedOrgAccount.metadata?.account_name && (
                     <>
-                      <span className="text-dashboard-gray-400">→</span>
+                      <span className="text-[var(--color-text-disabled)]">
+                        →
+                      </span>
                       <span>{currentAccountName}</span>
                     </>
                   )}

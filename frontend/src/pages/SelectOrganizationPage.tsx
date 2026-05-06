@@ -8,21 +8,30 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Logo } from "@/components/branding/Logo";
 import { cn } from "@/lib/utils";
-import type { OrganizationId } from "@/lib/branded-types";
+import type { OrganizationId, AccountId } from "@/lib/branded-types";
 import { useAuth } from "@/contexts/AuthContext";
-import { getOrganizationsBatch } from "@/data/organizationApi";
+import {
+  getOrganizations,
+  getOrganizationsBatch,
+} from "@/data/organizationApi";
 import {
   resolveOrganizationAndAccount,
   formatWorkspaceMetadata,
 } from "@/lib/organizationUtils";
-import { WORKSPACE_SELECTION_DELAY } from "@/constants/organizationSelection";
+import {
+  WORKSPACE_SELECTION_DELAY,
+  AGENCY_ORGANIZATION_MESSAGE,
+  SINGLE_ACCOUNT_AUTO_NAVIGATE_DELAY,
+} from "@/constants/organizationSelection";
 import { useChildOrganizations } from "@/hooks/useChildOrganizations";
 import { useAvailableAccounts } from "@/hooks/useAvailableAccounts";
+import { useToast } from "@/hooks/use-toast";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 export default function SelectOrganizationPage() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const {
     user,
     setSelectedOrgAccount,
@@ -51,6 +60,13 @@ export default function SelectOrganizationPage() {
     "loading" | "success" | "error"
   >("loading");
   const [userDataFetchAttempt, setUserDataFetchAttempt] = useState(0);
+  // Mirror userDataFetchStatus for the org-metadata batch fetch — the
+  // auto-select effect must wait for BOTH fetches to succeed, otherwise a
+  // partial batch could route a multi-org user to the wrong workspace.
+  const [metadataFetchStatus, setMetadataFetchStatus] = useState<
+    "idle" | "loading" | "success" | "error"
+  >("idle");
+  const [hasDeletedOrgs, setHasDeletedOrgs] = useState(false);
   const [localOrgMetadata, setLocalOrgMetadata] = useState<Record<string, any>>(
     {},
   );
@@ -60,11 +76,23 @@ export default function SelectOrganizationPage() {
   const isFetchingRef = useRef<boolean>(false);
   const lastOrgKeysRef = useRef<string>("");
   const continueTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const autoSelectTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
-  useEffect(() => () => clearTimeout(continueTimerRef.current), []);
+  useEffect(
+    () => () => {
+      clearTimeout(continueTimerRef.current);
+      clearTimeout(autoSelectTimerRef.current);
+    },
+    [],
+  );
 
-  const { childOrganizations, clearChildOrganizations } =
-    useChildOrganizations();
+  const {
+    childOrganizations,
+    loading: childOrgsLoading,
+    error: childOrgsError,
+    fetchChildOrganizations,
+    clearChildOrganizations,
+  } = useChildOrganizations();
 
   useEffect(() => {
     const FIRESTORE_USER_ID = user?.id;
@@ -76,7 +104,14 @@ export default function SelectOrganizationPage() {
     const fetchUserData = async () => {
       try {
         if (isSuperAdmin) {
-          if (!cancelled) setUserDataFetchStatus("success");
+          const allOrgs = await getOrganizations();
+          if (cancelled) return;
+          const superAdminOrgs: Record<string, string> = {};
+          allOrgs.forEach((org) => {
+            superAdminOrgs[org.organization_id] = "admin";
+          });
+          setOrgsFromFirestore(superAdminOrgs);
+          setUserDataFetchStatus("success");
           return;
         }
         const res = await api.get(
@@ -111,9 +146,12 @@ export default function SelectOrganizationPage() {
       setLocalOrgMetadata({});
       setOrgMetadata({});
       setAccountMetadata({});
+      setHasDeletedOrgs(false);
+      setMetadataFetchStatus("success");
       return;
     }
 
+    setMetadataFetchStatus("loading");
     try {
       const batchResult = await getOrganizationsBatch(orgIds, true);
       const result: Record<string, any> = {};
@@ -144,8 +182,11 @@ export default function SelectOrganizationPage() {
         });
       });
       setAccountMetadata(flattenedAccounts);
+      setHasDeletedOrgs(deletedOrgIds.length > 0);
+      setMetadataFetchStatus("success");
     } catch (error) {
       console.error("Failed to fetch organization metadata:", error);
+      setMetadataFetchStatus("error");
     }
   };
 
@@ -205,6 +246,75 @@ export default function SelectOrganizationPage() {
     navigate,
   ]);
 
+  useEffect(() => {
+    if (userDataFetchStatus !== "success") return;
+    // Wait for the org-metadata batch fetch to complete before auto-selecting.
+    // Without this gate, a partial batch (some orgs failed to load) could make
+    // totalAccounts.length === 1 spuriously and route a multi-org user to the
+    // wrong workspace. hasDeletedOrgs catches the same failure mode where the
+    // batch returned but some org documents were missing.
+    if (metadataFetchStatus !== "success") return;
+    if (hasDeletedOrgs) return;
+    if (Object.keys(localOrgMetadata).length === 0) return;
+    if (selectedOrganization || selectedAccount) return;
+
+    let totalAccounts: any[] = [];
+    let singleOrg: string | null = null;
+
+    Object.entries(localOrgMetadata).forEach(([orgId, org]: [string, any]) => {
+      if (org?.agency) return;
+      if (org && org.accounts && org.accounts.length > 0) {
+        totalAccounts = [...totalAccounts, ...org.accounts];
+        if (singleOrg === null) {
+          singleOrg = orgId;
+        } else if (singleOrg !== orgId) {
+          singleOrg = "multiple";
+        }
+      }
+    });
+
+    if (totalAccounts.length === 1 && singleOrg && singleOrg !== "multiple") {
+      const account = totalAccounts[0];
+      const org = localOrgMetadata[singleOrg];
+
+      setIsLoading(true);
+      setSelectedOrganization(singleOrg);
+      setSelectedAccount(account.account_id);
+
+      const metadata = formatWorkspaceMetadata(
+        org.organization_name || singleOrg,
+        account.account_name || account.account_id,
+        account.industry || "Unknown",
+        account.status || "Active",
+        account.timezone,
+        org.plan,
+      );
+
+      setSelectedOrgAccount({
+        orgId: singleOrg as OrganizationId,
+        accountId: account.account_id as AccountId,
+        metadata,
+      });
+      setCurrentOrganization(singleOrg as OrganizationId);
+
+      autoSelectTimerRef.current = setTimeout(() => {
+        completeWorkspaceSelection();
+        navigate("/");
+      }, SINGLE_ACCOUNT_AUTO_NAVIGATE_DELAY);
+    }
+  }, [
+    localOrgMetadata,
+    userDataFetchStatus,
+    metadataFetchStatus,
+    hasDeletedOrgs,
+    selectedOrganization,
+    selectedAccount,
+    setSelectedOrgAccount,
+    setCurrentOrganization,
+    completeWorkspaceSelection,
+    navigate,
+  ]);
+
   const organizationList = Object.entries(orgsFromFirestore)
     .filter(([orgId]) => localOrgMetadata[orgId] !== undefined)
     .map(([orgId, permission]) => {
@@ -219,7 +329,7 @@ export default function SelectOrganizationPage() {
       };
     });
 
-  const shouldShowSearch = organizationList.length > 5;
+  const shouldShowSearch = isSuperAdmin || organizationList.length > 5;
 
   const filteredOrganizationList =
     shouldShowSearch && searchQuery
@@ -260,10 +370,16 @@ export default function SelectOrganizationPage() {
   });
 
   const handleOrganizationSelect = (orgId: string) => {
+    setSelectedAccount("");
+    setSelectedChildOrg("");
+    // Only clear + refetch children when actually switching orgs. Re-clicking
+    // the same agency must not blank out the children list (which it would if
+    // we always cleared but only refetched on org change).
     if (orgId !== selectedOrganization) {
-      setSelectedAccount("");
-      setSelectedChildOrg("");
       clearChildOrganizations();
+      if (localOrgMetadata[orgId]?.agency) {
+        fetchChildOrganizations(orgId);
+      }
     }
     setSelectedOrganization(orgId);
   };
@@ -300,6 +416,12 @@ export default function SelectOrganizationPage() {
         // Without this catch, any throw inside the deferred callback would leave
         // isLoading=true forever, hanging the spinner with no recovery path.
         console.error("Failed to complete workspace selection", error);
+        toast({
+          title: "Couldn't open that workspace",
+          description:
+            "Something went wrong setting up your selection. Please try again.",
+          variant: "destructive",
+        });
         setIsLoading(false);
       }
     }, WORKSPACE_SELECTION_DELAY);
@@ -344,8 +466,45 @@ export default function SelectOrganizationPage() {
     return <Navigate to="/" replace />;
   }
 
-  const isDataLoading = userDataFetchStatus === "loading";
-  const hasFetchError = userDataFetchStatus === "error";
+  // Loading covers two windows: user-data still in flight, OR user-data
+  // succeeded with non-empty orgs and metadata hasn't yet resolved (avoids a
+  // one-render flicker where status was 'idle' between user-data success and
+  // the orgsFromFirestore effect firing fetchOrgMetadata).
+  const metadataPending =
+    Object.keys(orgsFromFirestore).length > 0 &&
+    metadataFetchStatus !== "success" &&
+    metadataFetchStatus !== "error";
+  const isDataLoading =
+    userDataFetchStatus === "loading" ||
+    (userDataFetchStatus === "success" && metadataPending);
+  const hasFetchError =
+    userDataFetchStatus === "error" || metadataFetchStatus === "error";
+
+  const handleRetry = () => {
+    // Drop a stale in-flight metadata fetch so it can't land after we reset
+    // status — without this, a click during an in-flight fetch would set
+    // status="idle" while isFetchingRef stays true, the early-return below
+    // (in refreshOrgMetadata) skips the new call, and the user is stuck.
+    isFetchingRef.current = false;
+    // Retry user-data first if it errored; the user-data success effect will
+    // re-trigger metadata via the [orgsFromFirestore] effect.
+    if (userDataFetchStatus === "error") {
+      setUserDataFetchAttempt((n) => n + 1);
+      // If metadata also errored, also reset its state so the cascading
+      // refetch can land — otherwise it's stuck in 'error' forever.
+      if (metadataFetchStatus === "error") {
+        setMetadataFetchStatus("idle");
+        lastRefreshTime.current = 0;
+        lastOrgKeysRef.current = "";
+      }
+      return;
+    }
+    // Metadata-only failure: bypass the 5s debounce and force a refetch.
+    lastRefreshTime.current = 0;
+    lastOrgKeysRef.current = "";
+    setMetadataFetchStatus("idle");
+    refreshOrgMetadata();
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
@@ -397,11 +556,7 @@ export default function SelectOrganizationPage() {
               <p className="text-sm text-[var(--color-text-primary)]">
                 We couldn't load your workspaces. Please try again.
               </p>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setUserDataFetchAttempt((n) => n + 1)}
-              >
+              <Button type="button" variant="outline" onClick={handleRetry}>
                 Retry
               </Button>
               <p className="text-xs text-[var(--color-text-secondary)]">
@@ -512,50 +667,185 @@ export default function SelectOrganizationPage() {
             {/* Accounts card */}
             <Card className="shadow-lg">
               <CardHeader>
-                <CardTitle>Accounts</CardTitle>
+                <CardTitle>
+                  {selectedOrgData?.agency
+                    ? "Client Organizations & Accounts"
+                    : "Accounts"}
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2 mb-4">
-                  {availableAccounts.length > 0 ? (
-                    availableAccounts.map((account) => (
-                      <div
-                        key={account.account_id}
-                        role="button"
-                        tabIndex={0}
-                        aria-pressed={selectedAccount === account.account_id}
-                        onClick={() => setSelectedAccount(account.account_id)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            setSelectedAccount(account.account_id);
-                          }
-                        }}
-                        className={cn(
-                          "flex items-center justify-between p-3 rounded-[var(--radius-md)] border-2 cursor-pointer transition-all duration-200 hover:-translate-y-0.5",
-                          selectedAccount === account.account_id
-                            ? "border-[var(--color-violet-500)] bg-[var(--color-violet-100)]/40"
-                            : "border-[var(--color-border-default)] hover:border-[var(--color-violet-300)]",
-                        )}
-                      >
-                        <p className="text-sm font-medium text-[var(--color-text-primary)]">
-                          {account.account_name}
-                        </p>
-                        {selectedAccount === account.account_id && (
-                          <Check
-                            className="size-4 text-[var(--color-violet-500)] shrink-0"
-                            aria-hidden="true"
-                          />
-                        )}
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-[var(--color-text-secondary)] py-6 text-center">
-                      {selectedOrganization
-                        ? "No accounts found for this organization."
-                        : "Select an organization to view its accounts."}
+                {selectedOrgData?.agency ? (
+                  <>
+                    {/* Agency hint banner */}
+                    <p className="text-sm text-[var(--color-text-secondary)] mb-4 leading-relaxed">
+                      {AGENCY_ORGANIZATION_MESSAGE}
                     </p>
-                  )}
-                </div>
+
+                    {/* Client Organizations section */}
+                    <p className="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide mb-2">
+                      Client Organizations
+                    </p>
+                    {childOrgsLoading ? (
+                      <p className="text-sm text-[var(--color-text-secondary)] py-4 text-center">
+                        Loading client organizations…
+                      </p>
+                    ) : childOrgsError ? (
+                      <div className="py-4 text-center space-y-2">
+                        <p className="text-sm text-[var(--color-text-secondary)]">
+                          Failed to load client organizations.
+                        </p>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            fetchChildOrganizations(selectedOrganization)
+                          }
+                        >
+                          Retry
+                        </Button>
+                      </div>
+                    ) : childOrganizations.length === 0 ? (
+                      <p className="text-sm text-[var(--color-text-secondary)] py-4 text-center">
+                        No client organizations available.
+                      </p>
+                    ) : (
+                      <div className="space-y-2 mb-4">
+                        {childOrganizations.map((childOrg) => (
+                          <div
+                            key={childOrg.organization_id}
+                            role="button"
+                            tabIndex={0}
+                            aria-pressed={
+                              selectedChildOrg === childOrg.organization_id
+                            }
+                            onClick={() => {
+                              setSelectedChildOrg(childOrg.organization_id);
+                              setSelectedAccount("");
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                setSelectedChildOrg(childOrg.organization_id);
+                                setSelectedAccount("");
+                              }
+                            }}
+                            className={cn(
+                              "flex items-center justify-between p-3 rounded-[var(--radius-md)] border-2 cursor-pointer transition-all duration-200 hover:-translate-y-0.5",
+                              selectedChildOrg === childOrg.organization_id
+                                ? "border-[var(--color-violet-500)] bg-[var(--color-violet-100)]/40"
+                                : "border-[var(--color-border-default)] hover:border-[var(--color-violet-300)]",
+                            )}
+                          >
+                            <p className="text-sm font-medium text-[var(--color-text-primary)]">
+                              {childOrg.organization_name}
+                            </p>
+                            {selectedChildOrg === childOrg.organization_id && (
+                              <Check
+                                className="size-4 text-[var(--color-violet-500)] shrink-0"
+                                aria-hidden="true"
+                              />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Accounts section — only visible when a child org is selected */}
+                    {selectedChildOrg && (
+                      <>
+                        <p className="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide mb-2 mt-4">
+                          Accounts
+                        </p>
+                        <div className="space-y-2 mb-4">
+                          {availableAccounts.length > 0 ? (
+                            availableAccounts.map((account) => (
+                              <div
+                                key={account.account_id}
+                                role="button"
+                                tabIndex={0}
+                                aria-pressed={
+                                  selectedAccount === account.account_id
+                                }
+                                onClick={() =>
+                                  setSelectedAccount(account.account_id)
+                                }
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" || e.key === " ") {
+                                    e.preventDefault();
+                                    setSelectedAccount(account.account_id);
+                                  }
+                                }}
+                                className={cn(
+                                  "flex items-center justify-between p-3 rounded-[var(--radius-md)] border-2 cursor-pointer transition-all duration-200 hover:-translate-y-0.5",
+                                  selectedAccount === account.account_id
+                                    ? "border-[var(--color-violet-500)] bg-[var(--color-violet-100)]/40"
+                                    : "border-[var(--color-border-default)] hover:border-[var(--color-violet-300)]",
+                                )}
+                              >
+                                <p className="text-sm font-medium text-[var(--color-text-primary)]">
+                                  {account.account_name}
+                                </p>
+                                {selectedAccount === account.account_id && (
+                                  <Check
+                                    className="size-4 text-[var(--color-violet-500)] shrink-0"
+                                    aria-hidden="true"
+                                  />
+                                )}
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-sm text-[var(--color-text-secondary)] py-4 text-center">
+                              No accounts found for this organization.
+                            </p>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <div className="space-y-2 mb-4">
+                    {availableAccounts.length > 0 ? (
+                      availableAccounts.map((account) => (
+                        <div
+                          key={account.account_id}
+                          role="button"
+                          tabIndex={0}
+                          aria-pressed={selectedAccount === account.account_id}
+                          onClick={() => setSelectedAccount(account.account_id)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setSelectedAccount(account.account_id);
+                            }
+                          }}
+                          className={cn(
+                            "flex items-center justify-between p-3 rounded-[var(--radius-md)] border-2 cursor-pointer transition-all duration-200 hover:-translate-y-0.5",
+                            selectedAccount === account.account_id
+                              ? "border-[var(--color-violet-500)] bg-[var(--color-violet-100)]/40"
+                              : "border-[var(--color-border-default)] hover:border-[var(--color-violet-300)]",
+                          )}
+                        >
+                          <p className="text-sm font-medium text-[var(--color-text-primary)]">
+                            {account.account_name}
+                          </p>
+                          {selectedAccount === account.account_id && (
+                            <Check
+                              className="size-4 text-[var(--color-violet-500)] shrink-0"
+                              aria-hidden="true"
+                            />
+                          )}
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-sm text-[var(--color-text-secondary)] py-6 text-center">
+                        {selectedOrganization
+                          ? "No accounts found for this organization."
+                          : "Select an organization to view its accounts."}
+                      </p>
+                    )}
+                  </div>
+                )}
                 <Button
                   type="button"
                   variant="outline"

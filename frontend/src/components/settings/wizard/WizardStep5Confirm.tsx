@@ -19,101 +19,115 @@ export const WizardStep5Confirm = ({
           <CheckCircle className="h-5 w-5" />
           Confirm Account Details
         </CardTitle>
-        <p className="text-sm text-dashboard-gray-600 mt-2">
+        <p className="text-sm text-[var(--color-text-tertiary)] mt-2">
           Please review your account configuration before creating your account.
         </p>
       </CardHeader>
       <CardContent>
         {/* Account Summary */}
         <div className="p-6 bg-brand-light-blue/10 rounded-lg border border-brand-light-blue/20">
-          <h4 className="text-lg font-semibold mb-4 text-dashboard-gray-900">
+          <h4 className="text-lg font-semibold mb-4 text-[var(--color-text-primary)]">
             Account Summary
           </h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
             <div className="space-y-3">
               <div>
-                <p className="font-medium text-dashboard-gray-700">
+                <p className="font-medium text-[var(--color-text-secondary)]">
                   Account Name
                 </p>
-                <p className="text-dashboard-gray-600">
+                <p className="text-[var(--color-text-tertiary)]">
                   {formData.account_name}
                 </p>
               </div>
               <div>
-                <p className="font-medium text-dashboard-gray-700">Industry</p>
-                <p className="text-dashboard-gray-600">{formData.industry}</p>
+                <p className="font-medium text-[var(--color-text-secondary)]">
+                  Industry
+                </p>
+                <p className="text-[var(--color-text-tertiary)]">
+                  {formData.industry}
+                </p>
               </div>
               <div>
-                <p className="font-medium text-dashboard-gray-700">Template</p>
-                <p className="text-dashboard-gray-600">
+                <p className="font-medium text-[var(--color-text-secondary)]">
+                  Template
+                </p>
+                <p className="text-[var(--color-text-tertiary)]">
                   {selectedTemplate?.name || "Not loaded"}
                 </p>
               </div>
               <div>
-                <p className="font-medium text-dashboard-gray-700">Websites</p>
-                <p className="text-dashboard-gray-600">
+                <p className="font-medium text-[var(--color-text-secondary)]">
+                  Websites
+                </p>
+                <p className="text-[var(--color-text-tertiary)]">
                   {formData.websites.filter((w) => w.trim() !== "").length}{" "}
                   configured
                 </p>
               </div>
               <div>
-                <p className="font-medium text-dashboard-gray-700">
+                <p className="font-medium text-[var(--color-text-secondary)]">
                   Data Region
                 </p>
-                <p className="text-dashboard-gray-600">
+                <p className="text-[var(--color-text-tertiary)]">
                   {formData.data_region}
                 </p>
               </div>
               <div>
-                <p className="font-medium text-dashboard-gray-700">Timezone</p>
-                <p className="text-dashboard-gray-600">{formData.timezone}</p>
+                <p className="font-medium text-[var(--color-text-secondary)]">
+                  Timezone
+                </p>
+                <p className="text-[var(--color-text-tertiary)]">
+                  {formData.timezone}
+                </p>
               </div>
             </div>
             <div className="space-y-3">
               <div>
-                <p className="font-medium text-dashboard-gray-700">
+                <p className="font-medium text-[var(--color-text-secondary)]">
                   Marketing Channels
                 </p>
-                <p className="text-dashboard-gray-600">
+                <p className="text-[var(--color-text-tertiary)]">
                   {formData.marketing_channels.length} selected
                 </p>
               </div>
               <div>
-                <p className="font-medium text-dashboard-gray-700">
+                <p className="font-medium text-[var(--color-text-secondary)]">
                   Product Integrations
                 </p>
-                <p className="text-dashboard-gray-600">
+                <p className="text-[var(--color-text-tertiary)]">
                   {formData.product_integrations.length} selected
                 </p>
               </div>
               <div>
-                <p className="font-medium text-dashboard-gray-700">
+                <p className="font-medium text-[var(--color-text-secondary)]">
                   Objectives
                 </p>
-                <p className="text-dashboard-gray-600">
+                <p className="text-[var(--color-text-tertiary)]">
                   {formData.objectives.length} selected
                 </p>
               </div>
               <div>
-                <p className="font-medium text-dashboard-gray-700">KPIs</p>
-                <p className="text-dashboard-gray-600">
+                <p className="font-medium text-[var(--color-text-secondary)]">
+                  KPIs
+                </p>
+                <p className="text-[var(--color-text-tertiary)]">
                   {formData.kpis.length} selected
                 </p>
               </div>
               <div>
-                <p className="font-medium text-dashboard-gray-700">
+                <p className="font-medium text-[var(--color-text-secondary)]">
                   Customer Regions
                 </p>
-                <p className="text-dashboard-gray-600">
+                <p className="text-[var(--color-text-tertiary)]">
                   {formData.region.length} selected
                 </p>
               </div>
               {formData.estimated_annual_ad_budget && (
                 <div>
-                  <p className="font-medium text-dashboard-gray-700">
+                  <p className="font-medium text-[var(--color-text-secondary)]">
                     Annual Ad Budget
                   </p>
-                  <p className="text-dashboard-gray-600">
+                  <p className="text-[var(--color-text-tertiary)]">
                     ${formData.estimated_annual_ad_budget.toLocaleString()} USD
                   </p>
                 </div>

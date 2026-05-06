@@ -6,15 +6,20 @@ import SelectOrganizationPage from "./SelectOrganizationPage";
 
 // Mock factories must be declared before vi.mock() hoisting runs.
 const mockNavigate = vi.fn();
+const mockGetOrganizations = vi.fn();
 const mockGetOrganizationsBatch = vi.fn();
+const mockGetChildOrganizationsWithAccounts = vi.fn();
 const mockAxiosGet = vi.fn();
 const mockUseAuth = vi.fn();
 
 vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => mockUseAuth() }));
 
 vi.mock("@/data/organizationApi", () => ({
+  getOrganizations: (...args: unknown[]) => mockGetOrganizations(...args),
   getOrganizationsBatch: (...args: unknown[]) =>
     mockGetOrganizationsBatch(...args),
+  getChildOrganizationsWithAccounts: (...args: unknown[]) =>
+    mockGetChildOrganizationsWithAccounts(...args),
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -25,16 +30,6 @@ vi.mock("@/lib/firebase", () => ({
   auth: { currentUser: null },
   authInitialized: true,
   authBypassEnabled: false,
-}));
-
-vi.mock("@/hooks/useChildOrganizations", () => ({
-  useChildOrganizations: () => ({
-    childOrganizations: [],
-    loading: false,
-    error: null,
-    fetchChildOrganizations: vi.fn(),
-    clearChildOrganizations: vi.fn(),
-  }),
 }));
 
 vi.mock("react-router-dom", async () => {
@@ -73,6 +68,32 @@ const mockOrg2 = {
       account_id: "acc-2",
       account_name: "Dev Account",
       industry: "Finance",
+      status: "Active",
+      timezone: "UTC",
+    },
+  ],
+};
+
+const mockAgencyOrg = {
+  organization_id: "org-agency",
+  organization_name: "Big Agency",
+  plan: "Agency",
+  agency: true,
+  error: false,
+  accounts: [],
+};
+
+const mockChildOrg = {
+  organization_id: "child-1",
+  organization_name: "Client Alpha",
+  plan: "Standard",
+  agency: false,
+  error: false,
+  accounts: [
+    {
+      account_id: "child-acc-1",
+      account_name: "Alpha Account",
+      industry: "Retail",
       status: "Active",
       timezone: "UTC",
     },
@@ -133,6 +154,8 @@ function renderPage() {
 describe("SelectOrganizationPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: no child orgs (safe baseline for non-agency tests)
+    mockGetChildOrganizationsWithAccounts.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -248,9 +271,12 @@ describe("SelectOrganizationPage", () => {
       setOrgMetadata: vi.fn(),
       setAccountMetadata: vi.fn(),
     });
-    mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse(["org-1"]));
+    // Two orgs so auto-select does not fire (singleOrg === "multiple")
+    mockAxiosGet.mockResolvedValue(
+      makeUserPermissionsResponse(["org-1", "org-2"]),
+    );
     mockGetOrganizationsBatch.mockResolvedValue(
-      makeOrgBatchResponse([mockOrg1]),
+      makeOrgBatchResponse([mockOrg1, mockOrg2]),
     );
 
     renderPage();
@@ -286,9 +312,12 @@ describe("SelectOrganizationPage", () => {
       setOrgMetadata: vi.fn(),
       setAccountMetadata: vi.fn(),
     });
-    mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse(["org-1"]));
+    // Two orgs so auto-select does not fire (singleOrg === "multiple")
+    mockAxiosGet.mockResolvedValue(
+      makeUserPermissionsResponse(["org-1", "org-2"]),
+    );
     mockGetOrganizationsBatch.mockResolvedValue(
-      makeOrgBatchResponse([mockOrg1]),
+      makeOrgBatchResponse([mockOrg1, mockOrg2]),
     );
 
     renderPage();
@@ -314,9 +343,12 @@ describe("SelectOrganizationPage", () => {
       setOrgMetadata: vi.fn(),
       setAccountMetadata: vi.fn(),
     });
-    mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse(["org-1"]));
+    // Two orgs so auto-select does not fire (singleOrg === "multiple")
+    mockAxiosGet.mockResolvedValue(
+      makeUserPermissionsResponse(["org-1", "org-2"]),
+    );
     mockGetOrganizationsBatch.mockResolvedValue(
-      makeOrgBatchResponse([mockOrg1]),
+      makeOrgBatchResponse([mockOrg1, mockOrg2]),
     );
 
     renderPage();
@@ -500,9 +532,12 @@ describe("SelectOrganizationPage", () => {
       setOrgMetadata: vi.fn(),
       setAccountMetadata: vi.fn(),
     });
-    mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse(["org-1"]));
+    // Two orgs so auto-select does not fire (singleOrg === "multiple")
+    mockAxiosGet.mockResolvedValue(
+      makeUserPermissionsResponse(["org-1", "org-2"]),
+    );
     mockGetOrganizationsBatch.mockResolvedValue(
-      makeOrgBatchResponse([mockOrg1]),
+      makeOrgBatchResponse([mockOrg1, mockOrg2]),
     );
 
     renderPage();
@@ -577,24 +612,178 @@ describe("SelectOrganizationPage", () => {
     );
   });
 
-  it("does not redirect to /create-organization for super-admin with empty Firestore permissions", async () => {
+  it("does not redirect to /create-organization for super-admin with empty system org list", async () => {
     mockUseAuth.mockReturnValue({
       ...defaultAuthMock,
       isSuperAdmin: true,
       setOrgMetadata: vi.fn(),
       setAccountMetadata: vi.fn(),
     });
-    mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse([]));
+    mockGetOrganizations.mockResolvedValue([]);
 
     renderPage();
 
-    // After loading resolves, super-admin should NOT be redirected
-    await waitFor(() => {
-      expect(mockNavigate).not.toHaveBeenCalledWith(
-        "/create-organization",
-        expect.anything(),
-      );
+    // Search input only renders in success state, so its presence confirms the
+    // async fetch has resolved before we check the negative.
+    await waitFor(() =>
+      expect(
+        screen.getByPlaceholderText(/search organizations/i),
+      ).toBeInTheDocument(),
+    );
+    expect(mockNavigate).not.toHaveBeenCalledWith(
+      "/create-organization",
+      expect.anything(),
+    );
+  });
+
+  it("super-admin: calls getOrganizations() (not Firestore endpoint) and renders all orgs with 'admin' permission", async () => {
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      isSuperAdmin: true,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
     });
+    mockGetOrganizations.mockResolvedValue([
+      { organization_id: "org-1", organization_name: "Acme Corp" },
+      { organization_id: "org-2", organization_name: "Globex Ventures" },
+    ]);
+    // Batch response has no `plan` field so the UI falls back to the
+    // permission value ("admin") in the `{org.plan || org.permission}` expression.
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([
+        { ...mockOrg1, plan: undefined },
+        { ...mockOrg2, plan: undefined },
+      ]),
+    );
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Acme Corp")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("Globex Ventures")).toBeInTheDocument();
+
+    expect(mockGetOrganizations).toHaveBeenCalled();
+    expect(mockAxiosGet).not.toHaveBeenCalled();
+
+    const adminBadges = screen.getAllByText("admin");
+    expect(adminBadges).toHaveLength(2);
+  });
+
+  it("super-admin: search input is unconditionally visible even with only 1 org", async () => {
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      isSuperAdmin: true,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    mockGetOrganizations.mockResolvedValue([
+      { organization_id: "org-1", organization_name: "Acme Corp" },
+    ]);
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([mockOrg1]),
+    );
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Acme Corp")).toBeInTheDocument(),
+    );
+
+    // Search input visible even though count (1) is ≤ 5
+    expect(
+      screen.getByPlaceholderText(/search organizations/i),
+    ).toBeInTheDocument();
+  });
+
+  it("super-admin: getOrganizations() rejection shows Retry UI without redirecting", async () => {
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      isSuperAdmin: true,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    mockGetOrganizations.mockRejectedValue(new Error("network error"));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("We couldn't load your workspaces. Please try again."),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalledWith(
+      "/create-organization",
+      expect.anything(),
+    );
+  });
+
+  it("super-admin: orgs with metadata.error=true render Error Loading badge and remain clickable", async () => {
+    const user = userEvent.setup();
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      isSuperAdmin: true,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+      setSelectedOrgAccount: vi.fn(),
+    });
+    mockGetOrganizations.mockResolvedValue([
+      { organization_id: "org-err", organization_name: "Broken Org" },
+    ]);
+    const errorOrg = {
+      ...mockOrg1,
+      organization_id: "org-err",
+      organization_name: "Broken Org",
+      error: true,
+    };
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([errorOrg]),
+    );
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Broken Org")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("Error Loading")).toBeInTheDocument();
+
+    const orgRow = screen.getByRole("button", { name: /broken org/i });
+    await user.click(orgRow);
+    expect(orgRow).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("super-admin: clicking Retry re-fires getOrganizations() and recovers on success", async () => {
+    const user = userEvent.setup();
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      isSuperAdmin: true,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    mockGetOrganizations
+      .mockRejectedValueOnce(new Error("first attempt fails"))
+      .mockResolvedValueOnce([
+        { organization_id: "org-1", organization_name: "Acme Corp" },
+      ]);
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([{ ...mockOrg1, plan: undefined }]),
+    );
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /retry/i }),
+      ).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: /retry/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Acme Corp")).toBeInTheDocument();
+    });
+    expect(mockGetOrganizations).toHaveBeenCalledTimes(2);
   });
 
   // Regression guard for the original Critical #1: a transient API failure
@@ -673,5 +862,430 @@ describe("SelectOrganizationPage", () => {
       expect(screen.getByText("Acme Corp")).toBeInTheDocument();
     });
     expect(mockAxiosGet).toHaveBeenCalledTimes(2);
+  });
+
+  // Regression guard: a partial batch (some orgs returned, others missing
+  // from the response) used to make totalAccounts.length === 1 spuriously
+  // and auto-route a multi-org user to the surviving org.
+  it("does NOT auto-select when batch returns partial result (deleted org)", async () => {
+    const setSelectedOrgAccount = vi.fn();
+    const completeWorkspaceSelection = vi.fn();
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      setSelectedOrgAccount,
+      completeWorkspaceSelection,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    // User has 2 orgs in Firestore but the batch only returns 1.
+    mockAxiosGet.mockResolvedValue(
+      makeUserPermissionsResponse(["org-1", "org-2"]),
+    );
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([mockOrg1]), // org-2 is missing → "deleted"
+    );
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Acme Corp")).toBeInTheDocument();
+    });
+
+    // Auto-select must NOT fire; user has to pick manually.
+    expect(setSelectedOrgAccount).not.toHaveBeenCalled();
+    expect(completeWorkspaceSelection).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalledWith("/");
+  });
+
+  it("renders Retry UI when org-metadata batch fetch rejects", async () => {
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse(["org-1"]));
+    mockGetOrganizationsBatch.mockRejectedValue(new Error("batch failure"));
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/we couldn't load your workspaces/i),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
+    // Org list must NOT render (otherwise user could click into a half-loaded state)
+    expect(screen.queryByText("Acme Corp")).not.toBeInTheDocument();
+  });
+
+  // AC-7: single-account auto-select + auto-navigate
+  it("auto-navigates to / after ~500 ms when exactly one account exists across all orgs", async () => {
+    const setSelectedOrgAccount = vi.fn();
+    const completeWorkspaceSelection = vi.fn();
+    const setCurrentOrganization = vi.fn();
+
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      setSelectedOrgAccount,
+      completeWorkspaceSelection,
+      setCurrentOrganization,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    // One org, one account — triggers auto-select
+    mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse(["org-1"]));
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([mockOrg1]),
+    );
+
+    renderPage();
+
+    // Wait for org metadata to settle; auto-select effect fires at this point,
+    // sets state synchronously, and schedules setTimeout(..., 500) with real timers.
+    await waitFor(() =>
+      expect(screen.getByText("Acme Corp")).toBeInTheDocument(),
+    );
+
+    // Sync setters should have already run
+    expect(setSelectedOrgAccount).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: "org-1", accountId: "acc-1" }),
+    );
+    expect(setCurrentOrganization).toHaveBeenCalledWith("org-1");
+
+    // completeWorkspaceSelection and navigate fire together after 500 ms
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/"), {
+      timeout: 2000,
+    });
+    expect(completeWorkspaceSelection).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT auto-navigate when total account count is more than one", async () => {
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    // Two orgs, each with one account → totalAccounts === 2, singleOrg === "multiple"
+    mockAxiosGet.mockResolvedValue(
+      makeUserPermissionsResponse(["org-1", "org-2"]),
+    );
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([mockOrg1, mockOrg2]),
+    );
+
+    renderPage();
+
+    // Wait for orgs to render
+    await waitFor(() =>
+      expect(screen.getByText("Acme Corp")).toBeInTheDocument(),
+    );
+
+    vi.useFakeTimers();
+    act(() => vi.advanceTimersByTime(1000));
+    vi.useRealTimers();
+
+    // navigate should not have been called with "/"
+    expect(mockNavigate).not.toHaveBeenCalledWith("/");
+    // Org list should still be present
+    expect(screen.getByText("Acme Corp")).toBeInTheDocument();
+    // Continue button should still be disabled (no selection)
+    expect(screen.getByRole("button", { name: /^continue/i })).toBeDisabled();
+  });
+
+  it("does NOT auto-navigate when one org has two accounts", async () => {
+    const orgWithTwoAccounts = {
+      ...mockOrg1,
+      accounts: [
+        mockOrg1.accounts[0],
+        {
+          account_id: "acc-2",
+          account_name: "Second Account",
+          industry: "Tech",
+          status: "Active",
+          timezone: "UTC",
+        },
+      ],
+    };
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    // One org, two accounts → totalAccounts.length === 2, no auto-select
+    mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse(["org-1"]));
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([orgWithTwoAccounts]),
+    );
+
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Acme Corp")).toBeInTheDocument(),
+    );
+
+    vi.useFakeTimers();
+    act(() => vi.advanceTimersByTime(1000));
+    vi.useRealTimers();
+
+    expect(mockNavigate).not.toHaveBeenCalledWith("/");
+    expect(screen.getByText("Acme Corp")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^continue/i })).toBeDisabled();
+  });
+
+  it("race-condition guard: auto-select fires → isLoading=true disables Continue → completeWorkspaceSelection fires exactly once", async () => {
+    const setSelectedOrgAccount = vi.fn();
+    const completeWorkspaceSelection = vi.fn();
+    const setCurrentOrganization = vi.fn();
+
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      setSelectedOrgAccount,
+      completeWorkspaceSelection,
+      setCurrentOrganization,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    // One org, one account — triggers auto-select
+    mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse(["org-1"]));
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([mockOrg1]),
+    );
+
+    renderPage();
+
+    // Wait for org metadata to settle; auto-select sync setters (setIsLoading,
+    // setSelectedOrganization, setSelectedAccount, workspace setters) run here.
+    await waitFor(() =>
+      expect(screen.getByText("Acme Corp")).toBeInTheDocument(),
+    );
+
+    // After auto-select fires, isLoading=true — the Continue button is disabled
+    // and its label changes to "Setting up workspace…".
+    // A direct DOM click on the disabled button has no effect.
+    const continueBtn = screen.getByRole("button", {
+      name: /setting up workspace/i,
+    });
+    expect(continueBtn).toBeDisabled();
+    act(() => {
+      continueBtn.click();
+    });
+
+    // Wait for the 500 ms real-timer navigate to fire
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith("/"), {
+      timeout: 2000,
+    });
+
+    // completeWorkspaceSelection fires exactly once (from auto-select only)
+    expect(completeWorkspaceSelection).toHaveBeenCalledTimes(1);
+    expect(setSelectedOrgAccount).toHaveBeenCalledTimes(1);
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+  });
+
+  it("non-agency happy path: org → account → Continue still works unchanged", async () => {
+    const setSelectedOrgAccount = vi.fn();
+    const completeWorkspaceSelection = vi.fn();
+    const setCurrentOrganization = vi.fn();
+
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      setSelectedOrgAccount,
+      completeWorkspaceSelection,
+      setCurrentOrganization,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    // Two non-agency orgs (≥2 accounts total) so UI-50 auto-select doesn't
+    // fire and pre-empt the manual click below.
+    mockAxiosGet.mockResolvedValue(
+      makeUserPermissionsResponse(["org-1", "org-2"]),
+    );
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([mockOrg1, mockOrg2]),
+    );
+
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Acme Corp")).toBeInTheDocument(),
+    );
+
+    // Select org (non-agency) — accounts should appear directly
+    await user.click(screen.getByRole("button", { name: /acme corp/i }));
+    await waitFor(() =>
+      expect(screen.getByText("Main Account")).toBeInTheDocument(),
+    );
+
+    // Select account → Continue enabled
+    await user.click(screen.getByRole("button", { name: /main account/i }));
+    const continueBtn = screen.getByRole("button", { name: /^continue/i });
+    expect(continueBtn).toBeEnabled();
+
+    // getChildOrganizationsWithAccounts must NOT have been called for non-agency org
+    expect(mockGetChildOrganizationsWithAccounts).not.toHaveBeenCalled();
+  });
+
+  it("agency happy path: drill-down through child org → account → Continue", async () => {
+    const setSelectedOrgAccount = vi.fn();
+    const completeWorkspaceSelection = vi.fn();
+    const setCurrentOrganization = vi.fn();
+
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      setSelectedOrgAccount,
+      completeWorkspaceSelection,
+      setCurrentOrganization,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse(["org-agency"]));
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([mockAgencyOrg]),
+    );
+    mockGetChildOrganizationsWithAccounts.mockResolvedValue([mockChildOrg]);
+
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Big Agency")).toBeInTheDocument(),
+    );
+
+    // Select agency org → child orgs should load
+    await user.click(screen.getByRole("button", { name: /big agency/i }));
+
+    // Agency hint banner and Client Organizations section should appear
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          /agency organizations cannot create their own accounts/i,
+        ),
+      ).toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(screen.getByText("Client Alpha")).toBeInTheDocument(),
+    );
+
+    // Continue is still disabled (no child org or account selected)
+    expect(screen.getByRole("button", { name: /^continue/i })).toBeDisabled();
+
+    // Select child org → accounts should appear
+    await user.click(screen.getByRole("button", { name: /client alpha/i }));
+    await waitFor(() =>
+      expect(screen.getByText("Alpha Account")).toBeInTheDocument(),
+    );
+
+    // Continue is still disabled (account not selected yet)
+    expect(screen.getByRole("button", { name: /^continue/i })).toBeDisabled();
+
+    // Select account → Continue enabled
+    await user.click(screen.getByRole("button", { name: /alpha account/i }));
+    expect(screen.getByRole("button", { name: /^continue/i })).toBeEnabled();
+
+    // Click Continue and verify it resolves with the child org ID
+    vi.useFakeTimers();
+    act(() => {
+      screen.getByRole("button", { name: /^continue/i }).click();
+    });
+    act(() => vi.advanceTimersByTime(1001));
+    vi.useRealTimers();
+
+    expect(setSelectedOrgAccount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orgId: "child-1",
+        accountId: "child-acc-1",
+      }),
+    );
+    expect(completeWorkspaceSelection).toHaveBeenCalled();
+    expect(mockNavigate).toHaveBeenCalledWith("/");
+  });
+
+  it("agency Continue gating: disabled without child-org, disabled without account, enabled with full triple", async () => {
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse(["org-agency"]));
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([mockAgencyOrg]),
+    );
+    mockGetChildOrganizationsWithAccounts.mockResolvedValue([mockChildOrg]);
+
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Big Agency")).toBeInTheDocument(),
+    );
+
+    const continueBtn = screen.getByRole("button", { name: /^continue/i });
+
+    // No org selected yet → disabled
+    expect(continueBtn).toBeDisabled();
+
+    // Agency org selected, no child org → still disabled
+    await user.click(screen.getByRole("button", { name: /big agency/i }));
+    await waitFor(() =>
+      expect(screen.getByText("Client Alpha")).toBeInTheDocument(),
+    );
+    expect(continueBtn).toBeDisabled();
+
+    // Child org selected, no account → still disabled
+    await user.click(screen.getByRole("button", { name: /client alpha/i }));
+    await waitFor(() =>
+      expect(screen.getByText("Alpha Account")).toBeInTheDocument(),
+    );
+    expect(continueBtn).toBeDisabled();
+
+    // Account selected → enabled
+    await user.click(screen.getByRole("button", { name: /alpha account/i }));
+    expect(continueBtn).toBeEnabled();
+  });
+
+  it("agency org re-select clears child state; switching to non-agency org also clears", async () => {
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    // Two non-agency orgs (in addition to the agency) so the non-agency
+    // account count is ≥2 and UI-50 auto-select doesn't pre-empt manual clicks.
+    mockAxiosGet.mockResolvedValue(
+      makeUserPermissionsResponse(["org-agency", "org-1", "org-2"]),
+    );
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([mockAgencyOrg, mockOrg1, mockOrg2]),
+    );
+    mockGetChildOrganizationsWithAccounts.mockResolvedValue([mockChildOrg]);
+
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Big Agency")).toBeInTheDocument(),
+    );
+
+    // Select agency org → drill down to child + account
+    await user.click(screen.getByRole("button", { name: /big agency/i }));
+    await waitFor(() =>
+      expect(screen.getByText("Client Alpha")).toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole("button", { name: /client alpha/i }));
+    await waitFor(() =>
+      expect(screen.getByText("Alpha Account")).toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole("button", { name: /alpha account/i }));
+    expect(screen.getByRole("button", { name: /^continue/i })).toBeEnabled();
+
+    // Switch to non-agency org → child state must be cleared, Continue must be disabled
+    await user.click(screen.getByRole("button", { name: /acme corp/i }));
+
+    // Child org rows and account sub-section no longer visible
+    expect(screen.queryByText("Client Alpha")).not.toBeInTheDocument();
+    expect(screen.queryByText("Alpha Account")).not.toBeInTheDocument();
+
+    // Continue disabled (account not yet selected in new org)
+    expect(screen.getByRole("button", { name: /^continue/i })).toBeDisabled();
   });
 });

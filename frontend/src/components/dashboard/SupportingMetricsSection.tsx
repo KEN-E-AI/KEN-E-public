@@ -228,25 +228,25 @@ const SupportingMetricsSection = ({
   };
 
   return (
-    <div className="bg-white border border-dashboard-gray-200 rounded-lg p-6">
+    <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-lg p-6">
       <div className="mb-6">
-        <h2 className="text-xl font-semibold text-dashboard-gray-900 mb-2">
+        <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-2">
           Supporting Metrics
         </h2>
-        <p className="text-sm text-dashboard-gray-600">
+        <p className="text-sm text-[var(--color-text-tertiary)]">
           {getContextDescription()}
         </p>
       </div>
 
       {supportingMetrics.length === 0 ? (
         <div className="text-center py-8">
-          <p className="text-dashboard-gray-500 mb-4">
+          <p className="text-[var(--color-text-tertiary)] mb-4">
             No supporting metrics configured for this selection.
           </p>
           <Button
             variant="outline"
             size="sm"
-            className="bg-dashboard-gray-800 text-white hover:bg-dashboard-gray-700 border-dashboard-gray-800"
+            className="bg-[var(--color-text-primary)] text-white hover:bg-[var(--color-text-secondary)] border-[var(--color-border-strong)]"
           >
             Add Metric
           </Button>
@@ -259,23 +259,23 @@ const SupportingMetricsSection = ({
               return (
                 <Card
                   key={metric.id}
-                  className="border-dashboard-gray-200 hover:shadow-md transition-shadow cursor-pointer"
+                  className="border-[var(--color-border-default)] hover:shadow-md transition-shadow cursor-pointer"
                   onClick={() => toggleMetric(metric.id)}
                 >
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between mb-2">
-                      <h4 className="text-sm font-medium text-dashboard-gray-900">
+                      <h4 className="text-sm font-medium text-[var(--color-text-primary)]">
                         {metric.title}
                       </h4>
                       {isExpanded ? (
-                        <ChevronUp className="h-4 w-4 text-dashboard-gray-500" />
+                        <ChevronUp className="h-4 w-4 text-[var(--color-text-tertiary)]" />
                       ) : (
-                        <ChevronDown className="h-4 w-4 text-dashboard-gray-500" />
+                        <ChevronDown className="h-4 w-4 text-[var(--color-text-tertiary)]" />
                       )}
                     </div>
 
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-2xl font-bold text-dashboard-gray-900">
+                      <span className="text-2xl font-bold text-[var(--color-text-primary)]">
                         {metric.value}
                       </span>
                       <div
@@ -295,15 +295,15 @@ const SupportingMetricsSection = ({
                     </div>
 
                     {isExpanded && (
-                      <div className="pt-2 border-t border-dashboard-gray-100">
-                        <p className="text-xs text-dashboard-gray-600">
+                      <div className="pt-2 border-t border-[var(--color-border-subtle)]">
+                        <p className="text-xs text-[var(--color-text-tertiary)]">
                           {metric.description}
                         </p>
                         <div className="mt-3 flex gap-2">
                           <Button
                             variant="outline"
                             size="sm"
-                            className="text-xs px-3 py-1 h-auto bg-dashboard-gray-800 text-white hover:bg-dashboard-gray-700 border-dashboard-gray-800"
+                            className="text-xs px-3 py-1 h-auto bg-[var(--color-text-primary)] text-white hover:bg-[var(--color-text-secondary)] border-[var(--color-border-strong)]"
                           >
                             Create Alert
                           </Button>

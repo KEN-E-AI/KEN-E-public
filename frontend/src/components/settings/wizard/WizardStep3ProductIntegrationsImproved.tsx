@@ -144,7 +144,7 @@ export const WizardStep3ProductIntegrationsImproved = ({
           <Link className="h-5 w-5 text-brand-medium-blue" />
           Product Integrations
         </CardTitle>
-        <p className="text-sm text-dashboard-gray-600">
+        <p className="text-sm text-[var(--color-text-tertiary)]">
           Choose which marketing tools you'd like to connect with KEN-E.
         </p>
       </CardHeader>
@@ -158,7 +158,7 @@ export const WizardStep3ProductIntegrationsImproved = ({
         {Object.entries(integrationsByCategory).map(
           ([category, integrations]) => (
             <div key={category}>
-              <h3 className="font-medium mb-3 text-dashboard-gray-800">
+              <h3 className="font-medium mb-3 text-[var(--color-text-secondary)]">
                 {
                   INTEGRATION_CATEGORIES[
                     category as keyof typeof INTEGRATION_CATEGORIES
@@ -180,7 +180,7 @@ export const WizardStep3ProductIntegrationsImproved = ({
                           ? "opacity-60 cursor-not-allowed"
                           : isEnabled
                             ? "border-green-500 bg-green-50"
-                            : "hover:border-dashboard-gray-300"
+                            : "hover:border-[var(--color-border-default)]"
                       }`}
                     >
                       <div className="flex items-start gap-3">
@@ -204,7 +204,7 @@ export const WizardStep3ProductIntegrationsImproved = ({
                         <div className="flex-1 min-w-0">
                           <div className="flex items-start justify-between mb-1">
                             <div className="flex-1">
-                              <h4 className="font-medium text-sm text-dashboard-gray-800">
+                              <h4 className="font-medium text-sm text-[var(--color-text-secondary)]">
                                 {integration.name}
                               </h4>
                             </div>

@@ -194,7 +194,7 @@ const Insights = () => {
       case "negative":
         return <TrendingDown className="h-4 w-4 text-red-600" />;
       default:
-        return <Minus className="h-4 w-4 text-gray-600" />;
+        return <Minus className="h-4 w-4 text-[var(--color-text-tertiary)]" />;
     }
   };
 
@@ -205,7 +205,7 @@ const Insights = () => {
       case "negative":
         return "bg-red-50 text-red-700 border-red-200";
       default:
-        return "bg-gray-50 text-gray-700 border-gray-200";
+        return "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] border-[var(--color-border-default)]";
     }
   };
 
@@ -216,9 +216,9 @@ const Insights = () => {
       case "medium":
         return "bg-brand-yellow/20 text-brand-dark-blue border-brand-yellow/40";
       case "low":
-        return "bg-gray-50 text-gray-700 border-gray-200";
+        return "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] border-[var(--color-border-default)]";
       default:
-        return "bg-gray-50 text-gray-700 border-gray-200";
+        return "bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] border-[var(--color-border-default)]";
     }
   };
 
@@ -240,7 +240,7 @@ const Insights = () => {
             variant="ghost"
             size="sm"
             onClick={() => navigate("/knowledge")}
-            className="text-dashboard-gray-600 hover:text-dashboard-gray-900 p-0 h-auto font-normal mr-auto"
+            className="text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)] p-0 h-auto font-normal mr-auto"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Knowledge Base
@@ -250,7 +250,7 @@ const Insights = () => {
         {/* Search and Filter Bar */}
         <div className="flex flex-col sm:flex-row gap-4 mb-6">
           <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-[var(--color-text-disabled)]" />
             <Input
               placeholder="Search insights..."
               value={searchTerm}
@@ -314,7 +314,7 @@ const Insights = () => {
 
         {/* Results Count */}
         {!loading && !error && selectedOrgAccount && (
-          <div className="text-sm text-gray-600 mt-6 mr-auto">
+          <div className="text-sm text-[var(--color-text-tertiary)] mt-6 mr-auto">
             {filteredInsights.length} insight
             {filteredInsights.length !== 1 ? "s" : ""} found
           </div>
@@ -325,7 +325,9 @@ const Insights = () => {
           <Card>
             <CardContent className="text-center py-12">
               <div className="animate-spin h-8 w-8 border-2 border-brand-medium-blue border-t-transparent rounded-full mx-auto mb-4"></div>
-              <p className="text-gray-500">Loading insights...</p>
+              <p className="text-[var(--color-text-tertiary)]">
+                Loading insights...
+              </p>
             </CardContent>
           </Card>
         ) : error ? (
@@ -347,10 +349,10 @@ const Insights = () => {
                   />
                 </svg>
               </div>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
+              <h3 className="text-lg font-medium text-[var(--color-text-primary)] mb-2">
                 Error Loading Insights
               </h3>
-              <p className="text-gray-500 mb-4">{error}</p>
+              <p className="text-[var(--color-text-tertiary)] mb-4">{error}</p>
               <Button
                 onClick={() => window.location.reload()}
                 variant="outline"
@@ -363,11 +365,11 @@ const Insights = () => {
           /* No Account Selected */
           <Card>
             <CardContent className="text-center py-12">
-              <Lightbulb className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
+              <Lightbulb className="h-12 w-12 text-[var(--color-text-disabled)] mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-[var(--color-text-primary)] mb-2">
                 No Account Selected
               </h3>
-              <p className="text-gray-500">
+              <p className="text-[var(--color-text-tertiary)]">
                 Please select an organization and account to view insights.
               </p>
             </CardContent>
@@ -383,10 +385,10 @@ const Insights = () => {
                 <AccordionTrigger className="px-6 py-4 hover:no-underline">
                   <div className="flex items-start justify-between w-full text-left">
                     <div className="flex-1 mr-4">
-                      <div className="font-medium text-gray-900 mb-2">
+                      <div className="font-medium text-[var(--color-text-primary)] mb-2">
                         {insight.description}
                       </div>
-                      <div className="flex items-center gap-3 text-sm text-gray-500">
+                      <div className="flex items-center gap-3 text-sm text-[var(--color-text-tertiary)]">
                         <div className="flex items-center gap-1">
                           <Calendar className="h-4 w-4" />
                           {formatDateRange(insight)}
@@ -415,7 +417,7 @@ const Insights = () => {
                     <CardContent className="pt-6">
                       <div className="space-y-4">
                         <div className="flex items-center justify-between">
-                          <h4 className="font-medium text-gray-900">
+                          <h4 className="font-medium text-[var(--color-text-primary)]">
                             Evidence
                           </h4>
                           <AlertDialog>
@@ -453,8 +455,8 @@ const Insights = () => {
                             </AlertDialogContent>
                           </AlertDialog>
                         </div>
-                        <div className="bg-gray-50 p-4 rounded-md">
-                          <p className="text-sm text-gray-700 whitespace-pre-wrap">
+                        <div className="bg-[var(--color-bg-secondary)] p-4 rounded-md">
+                          <p className="text-sm text-[var(--color-text-secondary)] whitespace-pre-wrap">
                             {insight.evidence}
                           </p>
                         </div>
@@ -468,11 +470,11 @@ const Insights = () => {
         ) : (
           <Card>
             <CardContent className="text-center py-12">
-              <Lightbulb className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
+              <Lightbulb className="h-12 w-12 text-[var(--color-text-disabled)] mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-[var(--color-text-primary)] mb-2">
                 No insights found
               </h3>
-              <p className="text-gray-500">
+              <p className="text-[var(--color-text-tertiary)]">
                 {searchTerm ||
                 selectedCategory !== "all" ||
                 selectedImpact !== "all" ||

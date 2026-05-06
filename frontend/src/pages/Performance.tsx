@@ -552,13 +552,13 @@ const Performance = () => {
       </header>
       <TooltipProvider>
         <div className="space-y-6">
-          <div className="bg-white rounded-lg p-6 border border-dashboard-gray-200">
+          <div className="bg-[var(--color-bg-elevated)] rounded-lg p-6 border border-[var(--color-border-default)]">
             {/* Date Range Selector */}
             <div className="mb-6">
               <div className="flex flex-wrap items-center gap-4">
                 <div className="flex flex-wrap items-center gap-4">
                   <div className="flex items-center gap-2">
-                    <Calendar className="h-4 w-4 text-dashboard-gray-600" />
+                    <Calendar className="h-4 w-4 text-[var(--color-text-tertiary)]" />
                     <Select defaultValue="jan-2025">
                       <SelectTrigger className="w-48 min-w-[200px]">
                         <SelectValue />
@@ -576,7 +576,7 @@ const Performance = () => {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-dashboard-gray-600">
+                  <div className="flex items-center gap-2 text-sm text-[var(--color-text-tertiary)]">
                     <span>vs</span>
                     <Select defaultValue="previous-period">
                       <SelectTrigger className="w-40 min-w-[160px]">
@@ -606,29 +606,29 @@ const Performance = () => {
                       Edit Metrics
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="max-w-2xl">
+                  <DialogContent className="max-w-3xl">
                     <DialogHeader>
                       <DialogTitle>Edit Metrics Configuration</DialogTitle>
                     </DialogHeader>
 
-                    {/* Search and Filters */}
-                    <div className="space-y-4 mb-6">
-                      <div className="flex items-center gap-4">
-                        <div className="flex-1 relative">
-                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-dashboard-gray-400" />
-                          <Input
-                            placeholder="Search metrics..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="pl-10"
-                          />
-                        </div>
+                    {/* Search and Filters — search on its own row, filters below */}
+                    <div className="space-y-3 mb-6">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-[var(--color-text-disabled)]" />
+                        <Input
+                          placeholder="Search metrics..."
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          className="pl-10"
+                        />
+                      </div>
+                      <div className="flex items-center gap-3">
                         <Select
                           value={selectedDataset}
                           onValueChange={setSelectedDataset}
                         >
-                          <SelectTrigger className="w-48">
-                            <Filter className="h-4 w-4 mr-2" />
+                          <SelectTrigger className="flex-1">
+                            <Filter className="h-4 w-4 mr-2 shrink-0" />
                             <SelectValue placeholder="Dataset" />
                           </SelectTrigger>
                           <SelectContent>
@@ -644,8 +644,8 @@ const Performance = () => {
                           value={selectedProduct}
                           onValueChange={setSelectedProduct}
                         >
-                          <SelectTrigger className="w-48">
-                            <BarChart3 className="h-4 w-4 mr-2" />
+                          <SelectTrigger className="flex-1">
+                            <BarChart3 className="h-4 w-4 mr-2 shrink-0" />
                             <SelectValue placeholder="Product" />
                           </SelectTrigger>
                           <SelectContent>
@@ -679,25 +679,22 @@ const Performance = () => {
                           }
                         >
                           <SelectTrigger>
-                            <SelectValue />
+                            <SelectValue placeholder="Select a metric…" />
                           </SelectTrigger>
-                          <SelectContent className="max-h-60">
+                          <SelectContent className="max-h-72">
                             {filteredMetrics.map((metric) => (
                               <SelectItem key={metric.name} value={metric.name}>
-                                <div className="flex flex-col">
-                                  <div className="flex items-center gap-2">
-                                    <span>{metric.name}</span>
-                                    <Badge
-                                      variant="secondary"
-                                      className="text-xs"
-                                    >
-                                      {metric.dataset}
-                                    </Badge>
-                                  </div>
-                                  <span className="text-xs text-dashboard-gray-500">
-                                    {metric.description}
+                                <span className="inline-flex items-center gap-2 truncate">
+                                  <span className="font-medium truncate">
+                                    {metric.name}
                                   </span>
-                                </div>
+                                  <Badge
+                                    variant="secondary"
+                                    className="text-xs shrink-0"
+                                  >
+                                    {metric.dataset}
+                                  </Badge>
+                                </span>
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -722,25 +719,22 @@ const Performance = () => {
                           }
                         >
                           <SelectTrigger>
-                            <SelectValue />
+                            <SelectValue placeholder="Select a metric…" />
                           </SelectTrigger>
-                          <SelectContent className="max-h-60">
+                          <SelectContent className="max-h-72">
                             {filteredMetrics.map((metric) => (
                               <SelectItem key={metric.name} value={metric.name}>
-                                <div className="flex flex-col">
-                                  <div className="flex items-center gap-2">
-                                    <span>{metric.name}</span>
-                                    <Badge
-                                      variant="secondary"
-                                      className="text-xs"
-                                    >
-                                      {metric.dataset}
-                                    </Badge>
-                                  </div>
-                                  <span className="text-xs text-dashboard-gray-500">
-                                    {metric.description}
+                                <span className="inline-flex items-center gap-2 truncate">
+                                  <span className="font-medium truncate">
+                                    {metric.name}
                                   </span>
-                                </div>
+                                  <Badge
+                                    variant="secondary"
+                                    className="text-xs shrink-0"
+                                  >
+                                    {metric.dataset}
+                                  </Badge>
+                                </span>
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -765,25 +759,22 @@ const Performance = () => {
                           }
                         >
                           <SelectTrigger>
-                            <SelectValue />
+                            <SelectValue placeholder="Select a metric…" />
                           </SelectTrigger>
-                          <SelectContent className="max-h-60">
+                          <SelectContent className="max-h-72">
                             {filteredMetrics.map((metric) => (
                               <SelectItem key={metric.name} value={metric.name}>
-                                <div className="flex flex-col">
-                                  <div className="flex items-center gap-2">
-                                    <span>{metric.name}</span>
-                                    <Badge
-                                      variant="secondary"
-                                      className="text-xs"
-                                    >
-                                      {metric.dataset}
-                                    </Badge>
-                                  </div>
-                                  <span className="text-xs text-dashboard-gray-500">
-                                    {metric.description}
+                                <span className="inline-flex items-center gap-2 truncate">
+                                  <span className="font-medium truncate">
+                                    {metric.name}
                                   </span>
-                                </div>
+                                  <Badge
+                                    variant="secondary"
+                                    className="text-xs shrink-0"
+                                  >
+                                    {metric.dataset}
+                                  </Badge>
+                                </span>
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -812,14 +803,14 @@ const Performance = () => {
               {metrics.map((metric) => (
                 <Card
                   key={metric.name}
-                  className="border border-dashboard-gray-200"
+                  className="border border-[var(--color-border-default)]"
                 >
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <Tooltip>
                           <TooltipTrigger>
-                            <Info className="h-4 w-4 text-dashboard-gray-400 hover:text-dashboard-gray-600" />
+                            <Info className="h-4 w-4 text-[var(--color-text-disabled)] hover:text-[var(--color-text-tertiary)]" />
                           </TooltipTrigger>
                           <TooltipContent>
                             <p className="max-w-xs">
@@ -831,15 +822,15 @@ const Performance = () => {
                             </p>
                           </TooltipContent>
                         </Tooltip>
-                        <span className="text-sm font-medium text-dashboard-gray-900">
+                        <span className="text-sm font-medium text-[var(--color-text-primary)]">
                           {metric.name}
                         </span>
                       </div>
                     </div>
-                    <div className="text-xs text-dashboard-gray-500 mb-1">
+                    <div className="text-xs text-[var(--color-text-tertiary)] mb-1">
                       {metric.subtitle}
                     </div>
-                    <div className="text-2xl font-bold text-dashboard-gray-900 mb-1">
+                    <div className="text-2xl font-bold text-[var(--color-text-primary)] mb-1">
                       {metric.value}
                     </div>
                     <div
@@ -858,7 +849,7 @@ const Performance = () => {
             </div>
 
             {/* Chart Section */}
-            <div className="border border-dashboard-gray-200 rounded-lg p-4">
+            <div className="border border-[var(--color-border-default)] rounded-lg p-4">
               {/* Chart Toggle Buttons */}
               <div className="flex flex-wrap gap-2 mb-4">
                 {chartButtons.map((button) => (
@@ -872,8 +863,8 @@ const Performance = () => {
                     className={cn(
                       "text-xs",
                       selectedMetric === button.id
-                        ? "bg-dashboard-gray-800 text-white"
-                        : "bg-white text-dashboard-gray-600 border-dashboard-gray-300",
+                        ? "bg-[var(--color-text-primary)] text-white"
+                        : "bg-[var(--color-bg-elevated)] text-[var(--color-text-tertiary)] border-[var(--color-border-default)]",
                     )}
                   >
                     {button.label}
@@ -882,11 +873,11 @@ const Performance = () => {
               </div>
 
               {/* Chart Area */}
-              <div className="h-80 bg-dashboard-gray-50 rounded-lg flex flex-col justify-between p-4">
+              <div className="h-80 bg-[var(--color-bg-secondary)] rounded-lg flex flex-col justify-between p-4">
                 {/* Chart Title */}
-                <div className="text-sm text-dashboard-gray-600 mb-4">
+                <div className="text-sm text-[var(--color-text-tertiary)] mb-4">
                   <span className="font-medium">&lt;Metric Name&gt;</span>
-                  <span className="text-dashboard-gray-500 ml-2">
+                  <span className="text-[var(--color-text-tertiary)] ml-2">
                     [Dataset name]
                   </span>
                 </div>
@@ -900,8 +891,8 @@ const Performance = () => {
           </div>
 
           {/* Current Recommendations Card */}
-          <div className="bg-white rounded-lg p-6 border border-dashboard-gray-200">
-            <h2 className="text-xl font-semibold text-dashboard-gray-900 mb-6 text-left">
+          <div className="bg-[var(--color-bg-elevated)] rounded-lg p-6 border border-[var(--color-border-default)]">
+            <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-6 text-left">
               Objectives
             </h2>
 
@@ -932,9 +923,9 @@ const Performance = () => {
 
               {/* Metrics Chart */}
               {selectedObjective && (
-                <div className="border border-dashboard-gray-200 rounded-lg p-4">
+                <div className="border border-[var(--color-border-default)] rounded-lg p-4">
                   <div className="mb-4">
-                    <h4 className="text-md font-medium text-dashboard-gray-900 mb-2">
+                    <h4 className="text-md font-medium text-[var(--color-text-primary)] mb-2">
                       {objectiveData[selectedObjective].step_name
                         .charAt(0)
                         .toUpperCase() +
@@ -943,12 +934,12 @@ const Performance = () => {
                         )}{" "}
                       KPIs
                     </h4>
-                    <p className="text-sm text-dashboard-gray-600 mb-4">
+                    <p className="text-sm text-[var(--color-text-tertiary)] mb-4">
                       {objectiveData[selectedObjective].objective}
                     </p>
                   </div>
 
-                  <div className="h-80 bg-dashboard-gray-50 rounded-lg p-4">
+                  <div className="h-80 bg-[var(--color-bg-secondary)] rounded-lg p-4">
                     <div className="flex justify-between items-start mb-4">
                       <div>
                         <div className="flex items-center gap-4 text-sm">
@@ -1036,7 +1027,7 @@ const Performance = () => {
                       </svg>
 
                       {/* X-axis labels */}
-                      <div className="absolute bottom-0 left-0 right-0 flex justify-between text-xs text-dashboard-gray-500 px-4">
+                      <div className="absolute bottom-0 left-0 right-0 flex justify-between text-xs text-[var(--color-text-tertiary)] px-4">
                         <span>Jan 1</span>
                         <span>Jan 8</span>
                         <span>Jan 15</span>
@@ -1054,15 +1045,15 @@ const Performance = () => {
           </div>
 
           {/* Analysis Reports Card */}
-          <div className="bg-white rounded-lg p-6 border border-dashboard-gray-200">
-            <h2 className="text-xl font-semibold text-dashboard-gray-900 mb-6 text-left">
+          <div className="bg-[var(--color-bg-elevated)] rounded-lg p-6 border border-[var(--color-border-default)]">
+            <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-6 text-left">
               Analysis Reports
             </h2>
 
             {/* Filter Controls */}
             <div className="flex flex-wrap items-center gap-4 mb-6">
               <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4 text-dashboard-gray-600" />
+                <Clock className="h-4 w-4 text-[var(--color-text-tertiary)]" />
                 <Select
                   value={reportTypeFilter}
                   onValueChange={setReportTypeFilter}
@@ -1079,7 +1070,7 @@ const Performance = () => {
               </div>
 
               <div className="flex items-center gap-2">
-                <Target className="h-4 w-4 text-dashboard-gray-600" />
+                <Target className="h-4 w-4 text-[var(--color-text-tertiary)]" />
                 <Select
                   value={reportObjectiveFilter}
                   onValueChange={setReportObjectiveFilter}
@@ -1099,7 +1090,7 @@ const Performance = () => {
               </div>
 
               <div className="flex items-center gap-2">
-                <BarChart3 className="h-4 w-4 text-dashboard-gray-600" />
+                <BarChart3 className="h-4 w-4 text-[var(--color-text-tertiary)]" />
                 <Select
                   value={reportChannelFilter}
                   onValueChange={setReportChannelFilter}
@@ -1134,7 +1125,7 @@ const Performance = () => {
                   <div
                     key={report.id}
                     onClick={() => handleReportClick(report.id)}
-                    className="border border-dashboard-gray-200 rounded-lg p-4 hover:bg-dashboard-gray-50 transition-colors cursor-pointer"
+                    className="border border-[var(--color-border-default)] rounded-lg p-4 hover:bg-[var(--color-bg-secondary)] transition-colors cursor-pointer"
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
@@ -1151,7 +1142,7 @@ const Performance = () => {
                           </Badge>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs text-dashboard-gray-600">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs text-[var(--color-text-tertiary)]">
                           <div className="flex items-center gap-2">
                             <Calendar className="h-3 w-3" />
                             <span>{report.dateRange}</span>
@@ -1170,12 +1161,12 @@ const Performance = () => {
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <div className="text-xs text-dashboard-gray-500">
+                        <div className="text-xs text-[var(--color-text-tertiary)]">
                           {report.createdDate}
                         </div>
                         <button
                           onClick={(e) => handleDeleteReport(e, report.id)}
-                          className="p-1 text-dashboard-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                          className="p-1 text-[var(--color-text-disabled)] hover:text-red-500 hover:bg-red-50 rounded transition-colors"
                           title="Delete Report"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -1187,8 +1178,8 @@ const Performance = () => {
               })}
 
               {filteredReports.length === 0 && (
-                <div className="text-center py-8 text-dashboard-gray-500">
-                  <FileText className="h-8 w-8 mx-auto mb-2 text-dashboard-gray-400" />
+                <div className="text-center py-8 text-[var(--color-text-tertiary)]">
+                  <FileText className="h-8 w-8 mx-auto mb-2 text-[var(--color-text-disabled)]" />
                   <p>No reports match the selected filters</p>
                 </div>
               )}

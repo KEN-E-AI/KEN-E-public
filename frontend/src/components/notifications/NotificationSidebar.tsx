@@ -130,13 +130,13 @@ export const NotificationSidebar: React.FC<NotificationSidebarProps> = ({
       />
 
       {/* Sidebar */}
-      <div className="fixed right-0 top-0 h-full w-96 bg-white shadow-xl z-50 flex flex-col">
+      <div className="fixed right-0 top-0 h-full w-96 bg-[var(--color-bg-elevated)] shadow-xl z-50 flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b">
           <h2 className="text-lg font-semibold">Notifications</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition-colors"
+            className="text-[var(--color-text-disabled)] hover:text-[var(--color-text-tertiary)] transition-colors"
           >
             <X className="h-5 w-5" />
           </button>
@@ -145,13 +145,13 @@ export const NotificationSidebar: React.FC<NotificationSidebarProps> = ({
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
           {loading ? (
-            <div className="p-4 text-center text-gray-500">
+            <div className="p-4 text-center text-[var(--color-text-tertiary)]">
               Loading notifications...
             </div>
           ) : error ? (
             <div className="p-4 text-center text-red-500">{error}</div>
           ) : notifications.length === 0 ? (
-            <div className="p-4 text-center text-gray-500">
+            <div className="p-4 text-center text-[var(--color-text-tertiary)]">
               No notifications
             </div>
           ) : (
@@ -190,7 +190,7 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
 
   return (
     <div
-      className={`p-4 hover:bg-gray-50 cursor-pointer transition-colors ${
+      className={`p-4 hover:bg-[var(--color-bg-secondary)] cursor-pointer transition-colors ${
         isUnread ? "bg-blue-50/30" : ""
       }`}
       onClick={onClick}
@@ -207,13 +207,13 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div className="flex-1">
-              <p className="text-sm font-medium text-gray-900 flex items-center gap-2">
+              <p className="text-sm font-medium text-[var(--color-text-primary)] flex items-center gap-2">
                 {notification.description}
                 {isUnread && (
                   <Circle className="h-2 w-2 fill-blue-600 text-blue-600" />
                 )}
               </p>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-[var(--color-text-tertiary)] mt-1">
                 {notification.category} •{" "}
                 {formatDistanceToNow(new Date(notification.created_at), {
                   addSuffix: true,
@@ -228,7 +228,7 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
               )}
               <button
                 onClick={onArchive}
-                className="text-gray-400 hover:text-gray-600 transition-colors p-1"
+                className="text-[var(--color-text-disabled)] hover:text-[var(--color-text-tertiary)] transition-colors p-1"
                 title="Archive"
               >
                 <Archive className="h-4 w-4" />
@@ -238,7 +238,7 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
 
           {/* Additional data preview if available */}
           {notification.data && Object.keys(notification.data).length > 0 && (
-            <div className="mt-2 text-xs text-gray-600 bg-gray-100 rounded p-2">
+            <div className="mt-2 text-xs text-[var(--color-text-tertiary)] bg-[var(--color-bg-elevated)] rounded p-2">
               {Object.entries(notification.data)
                 .slice(0, 2)
                 .map(([key, value]) => (
@@ -247,7 +247,7 @@ const NotificationItem: React.FC<NotificationItemProps> = ({
                   </div>
                 ))}
               {Object.keys(notification.data).length > 2 && (
-                <div className="text-gray-400">...</div>
+                <div className="text-[var(--color-text-disabled)]">...</div>
               )}
             </div>
           )}

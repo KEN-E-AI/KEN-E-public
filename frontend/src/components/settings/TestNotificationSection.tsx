@@ -141,7 +141,7 @@ export const TestNotificationSection = () => {
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Enter notification description"
           />
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-[var(--color-text-tertiary)]">
             If left empty, a default test message will be used
           </p>
         </div>

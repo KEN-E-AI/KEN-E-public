@@ -127,7 +127,7 @@ export const ValidationSummary: React.FC<ValidationSummaryProps> = ({
                 className={cn(
                   "flex items-center justify-between p-3 rounded-md transition-colors",
                   collapsible && hasIssues
-                    ? "cursor-pointer hover:bg-gray-50"
+                    ? "cursor-pointer hover:bg-[var(--color-bg-secondary)]"
                     : "",
                   !validation.result.isValid && validation.isRequired !== false
                     ? "bg-red-50 border border-red-200"
@@ -152,7 +152,7 @@ export const ValidationSummary: React.FC<ValidationSummaryProps> = ({
                     <div className="font-medium text-sm">
                       Step {validation.stepNumber}: {validation.step}
                     </div>
-                    <div className="flex items-center gap-2 text-xs text-gray-600">
+                    <div className="flex items-center gap-2 text-xs text-[var(--color-text-tertiary)]">
                       {validation.result.errors.length > 0 && (
                         <span className="text-red-600">
                           {validation.result.errors.length} error
@@ -192,9 +192,9 @@ export const ValidationSummary: React.FC<ValidationSummaryProps> = ({
                   {collapsible && hasIssues && (
                     <div className="p-1">
                       {isExpanded ? (
-                        <ChevronDown className="h-4 w-4 text-gray-500" />
+                        <ChevronDown className="h-4 w-4 text-[var(--color-text-tertiary)]" />
                       ) : (
-                        <ChevronRight className="h-4 w-4 text-gray-500" />
+                        <ChevronRight className="h-4 w-4 text-[var(--color-text-tertiary)]" />
                       )}
                     </div>
                   )}
@@ -253,7 +253,7 @@ export const ValidationSummary: React.FC<ValidationSummaryProps> = ({
           <>
             <Separator />
             <div className="flex items-center justify-between text-sm">
-              <div className="text-gray-600">
+              <div className="text-[var(--color-text-tertiary)]">
                 {hasBlockingErrors
                   ? "Fix all errors to proceed"
                   : "You can proceed, but consider addressing warnings"}

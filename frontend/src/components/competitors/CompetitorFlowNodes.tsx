@@ -30,10 +30,10 @@ export const CompetitorNode = memo(
       <div className="relative">
         <div className="flex items-center">
           <div className="bg-brand-light-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2">
-            <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
+            <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
               Competitor
             </p>
-            <p className="font-semibold text-dashboard-gray-900 leading-tight">
+            <p className="font-semibold text-[var(--color-text-primary)] leading-tight">
               {data.label}
             </p>
           </div>
@@ -97,10 +97,10 @@ export const CompetitorStrengthNode = memo(
       <div className="relative">
         <div className="flex items-center">
           <div className="bg-brand-light-red bg-opacity-30 rounded-lg pl-4 pr-16 py-2">
-            <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
+            <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
               Strength
             </p>
-            <p className="font-semibold text-dashboard-gray-900 leading-tight">
+            <p className="font-semibold text-[var(--color-text-primary)] leading-tight">
               {data.label}
             </p>
           </div>
@@ -170,10 +170,10 @@ export const CompetitorWeaknessNode = memo(
       <div className="relative">
         <div className="flex items-center">
           <div className="bg-brand-light-green bg-opacity-30 rounded-lg pl-4 pr-16 py-2">
-            <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
+            <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
               Weakness
             </p>
-            <p className="font-semibold text-dashboard-gray-900 leading-tight">
+            <p className="font-semibold text-[var(--color-text-primary)] leading-tight">
               {data.label}
             </p>
           </div>
@@ -247,10 +247,10 @@ export const SubstituteProductNode = memo(
             className="bg-brand-yellow bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
             style={{ width: "200px" }}
           >
-            <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
+            <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
               Substitute Product
             </p>
-            <p className="font-semibold text-dashboard-gray-900 leading-tight truncate">
+            <p className="font-semibold text-[var(--color-text-primary)] leading-tight truncate">
               {data.label}
             </p>
           </div>
@@ -326,10 +326,10 @@ export const OurProductNode = memo(
             className="bg-brand-light-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
             style={{ width: "200px" }}
           >
-            <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
+            <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
               Our Product
             </p>
-            <p className="font-semibold text-dashboard-gray-900 leading-tight truncate">
+            <p className="font-semibold text-[var(--color-text-primary)] leading-tight truncate">
               {data.label}
             </p>
           </div>
@@ -384,10 +384,10 @@ export const RiskNode = memo(({ data }: NodeProps<RiskNodeData>) => {
           className="bg-brand-red bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
           style={{ width: "200px" }}
         >
-          <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
+          <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
             Risk
           </p>
-          <p className="font-semibold text-dashboard-gray-900 leading-tight truncate">
+          <p className="font-semibold text-[var(--color-text-primary)] leading-tight truncate">
             {data.label}
           </p>
         </div>
@@ -442,10 +442,10 @@ export const OpportunityNode = memo(
             className="bg-brand-dark-green bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
             style={{ width: "200px" }}
           >
-            <p className="text-sm text-dashboard-gray-600 leading-tight mb-0">
+            <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
               Opportunity
             </p>
-            <p className="font-semibold text-dashboard-gray-900 leading-tight truncate">
+            <p className="font-semibold text-[var(--color-text-primary)] leading-tight truncate">
               {data.label}
             </p>
           </div>

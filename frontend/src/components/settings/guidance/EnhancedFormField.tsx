@@ -95,7 +95,7 @@ export const EnhancedFormField = ({
           </FormControl>
 
           {helpText && (
-            <FormDescription className="text-sm text-dashboard-gray-600">
+            <FormDescription className="text-sm text-[var(--color-text-tertiary)]">
               {helpText}
             </FormDescription>
           )}
@@ -117,7 +117,7 @@ export const EnhancedFormField = ({
 
               {/* Inheritance Chain */}
               {showInheritance && inheritanceChain.length > 1 && (
-                <div className="border rounded-md p-3 bg-gray-50">
+                <div className="border rounded-md p-3 bg-[var(--color-bg-secondary)]">
                   <div className="text-sm font-medium mb-2">
                     Setting Inheritance:
                   </div>
@@ -126,7 +126,7 @@ export const EnhancedFormField = ({
                     currentScope={scope}
                     className="mb-2"
                   />
-                  <div className="text-xs text-gray-600">
+                  <div className="text-xs text-[var(--color-text-tertiary)]">
                     This setting inherits from {defaultResult.source}.
                     {defaultResult.canOverride &&
                       " You can override this value."}
@@ -135,7 +135,7 @@ export const EnhancedFormField = ({
               )}
 
               {/* Current Value Info */}
-              <div className="text-xs text-gray-500 p-2 bg-gray-50 rounded">
+              <div className="text-xs text-[var(--color-text-tertiary)] p-2 bg-[var(--color-bg-secondary)] rounded">
                 <div className="flex items-center justify-between">
                   <span>Current value source:</span>
                   <ScopeIndicator
@@ -184,7 +184,7 @@ export const SimpleEnhancedFormField = ({
             {React.cloneElement(children as React.ReactElement, { ...field })}
           </FormControl>
           {helpText && (
-            <FormDescription className="text-sm text-dashboard-gray-600">
+            <FormDescription className="text-sm text-[var(--color-text-tertiary)]">
               {helpText}
             </FormDescription>
           )}

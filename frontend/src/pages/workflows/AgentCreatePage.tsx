@@ -424,7 +424,7 @@ function StepIdentity({
         />
         <div className="flex items-start gap-2 p-3 rounded-[var(--radius-sm)] bg-[var(--color-violet-100)] border border-[var(--color-violet-300)]">
           <Info className="size-4 text-[var(--color-violet-500)] mt-0.5 shrink-0" />
-          <p className="text-xs text-[var(--color-violet-500)]">
+          <p className="text-xs text-[var(--color-violet-600)]">
             The description is used by KEN-E (the orchestrator agent) to
             understand this agent&apos;s purpose and decide when tasks should be
             delegated to it. A clear, specific description improves task routing
@@ -798,7 +798,7 @@ function StepReview({
               )}
               {skillToolsList.length > 0 && (
                 <div>
-                  <div className="flex items-center gap-1.5 text-xs text-[var(--color-violet-500)] mb-1.5">
+                  <div className="flex items-center gap-1.5 text-xs text-[var(--color-violet-600)] mb-1.5">
                     <Sparkles className="size-3" />
                     Skills ({skillToolsList.length})
                   </div>
@@ -818,10 +818,10 @@ function StepReview({
 
       {/* Disconnected integrations warning */}
       {integrationTools.some((t) => t.connected === false) && (
-        <div className="flex items-start gap-3 p-4 rounded-[var(--radius-md)] bg-[var(--color-amber-100)] border border-[var(--color-amber-300)]">
-          <Link2Off className="size-4 text-[var(--color-amber-500)] mt-0.5 shrink-0" />
+        <div className="flex items-start gap-3 p-4 rounded-[var(--radius-md)] bg-[var(--color-warning-bg)] border border-[var(--color-warning)]">
+          <Link2Off className="size-4 text-[var(--color-warning)] mt-0.5 shrink-0" />
           <div>
-            <p className="text-sm text-[var(--color-amber-500)]">
+            <p className="text-sm text-[var(--color-warning-text)]">
               Some integration tools are not connected yet. The agent will be
               created, but those tools won&apos;t function until you connect
               them in Settings.

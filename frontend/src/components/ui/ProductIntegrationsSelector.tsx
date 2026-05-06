@@ -53,7 +53,7 @@ export const ProductIntegrationsSelector = ({
         ([category, integrations]) => (
           <div key={category}>
             <h4
-              className={`font-medium mb-3 text-dashboard-gray-800 ${
+              className={`font-medium mb-3 text-[var(--color-text-secondary)] ${
                 compact ? "text-sm" : ""
               }`}
             >
@@ -83,7 +83,7 @@ export const ProductIntegrationsSelector = ({
                         ? "opacity-60 cursor-not-allowed"
                         : isSelected
                           ? "border-brand-medium-blue bg-brand-light-blue/10"
-                          : "hover:border-dashboard-gray-300"
+                          : "hover:border-[var(--color-border-default)]"
                     } ${compact ? "text-sm" : ""}`}
                     onClick={() =>
                       isAvailable &&
@@ -106,7 +106,7 @@ export const ProductIntegrationsSelector = ({
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <h5
-                              className={`font-medium text-dashboard-gray-800 ${
+                              className={`font-medium text-[var(--color-text-secondary)] ${
                                 compact ? "text-sm" : ""
                               }`}
                             >
@@ -119,14 +119,14 @@ export const ProductIntegrationsSelector = ({
                             )}
                           </div>
                           <p
-                            className={`text-dashboard-gray-600 mb-1 ${
+                            className={`text-[var(--color-text-tertiary)] mb-1 ${
                               compact ? "text-xs" : "text-sm"
                             }`}
                           >
                             {integration.description}
                           </p>
                           {integration.features && !compact && (
-                            <div className="text-xs text-dashboard-gray-500">
+                            <div className="text-xs text-[var(--color-text-tertiary)]">
                               <span className="font-medium">Features:</span>{" "}
                               {integration.features.slice(0, 2).join(", ")}
                               {integration.features.length > 2 && "..."}
@@ -179,7 +179,7 @@ export const ProductIntegrationsSelector = ({
         <Card className="bg-brand-light-blue/5 border-brand-light-blue/20">
           <CardContent className="pt-3">
             <h5
-              className={`font-medium text-dashboard-gray-800 mb-2 ${
+              className={`font-medium text-[var(--color-text-secondary)] mb-2 ${
                 compact ? "text-sm" : ""
               }`}
             >

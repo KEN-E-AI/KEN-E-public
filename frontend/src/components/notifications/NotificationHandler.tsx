@@ -3,6 +3,7 @@
  */
 
 import React from "react";
+import { Button } from "@/components/ui/button";
 import type { NotificationWithStatus } from "@/types/notification.types";
 
 interface NotificationHandlerProps {
@@ -18,35 +19,41 @@ export const NotificationHandler: React.FC<NotificationHandlerProps> = ({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden">
+      <div className="bg-[var(--color-bg-elevated)] rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden">
         {/* Header */}
         <div className="p-6 border-b">
           <h2 className="text-xl font-semibold">Notification Details</h2>
-          <p className="text-sm text-gray-500 mt-1">{notification.category}</p>
+          <p className="text-sm text-[var(--color-text-tertiary)] mt-1">
+            {notification.category}
+          </p>
         </div>
 
         {/* Content */}
         <div className="p-6">
           <div className="space-y-4">
             <div>
-              <h3 className="font-medium text-gray-900 mb-1">Description</h3>
-              <p className="text-gray-700">{notification.description}</p>
+              <h3 className="font-medium text-[var(--color-text-primary)] mb-1">
+                Description
+              </h3>
+              <p className="text-[var(--color-text-secondary)]">
+                {notification.description}
+              </p>
             </div>
 
             {notification.data && Object.keys(notification.data).length > 0 && (
               <div>
-                <h3 className="font-medium text-gray-900 mb-1">
+                <h3 className="font-medium text-[var(--color-text-primary)] mb-1">
                   Additional Information
                 </h3>
-                <div className="bg-gray-50 rounded-md p-4">
-                  <pre className="text-sm text-gray-700 whitespace-pre-wrap">
+                <div className="bg-[var(--color-bg-secondary)] rounded-md p-4">
+                  <pre className="text-sm text-[var(--color-text-secondary)] whitespace-pre-wrap">
                     {JSON.stringify(notification.data, null, 2)}
                   </pre>
                 </div>
               </div>
             )}
 
-            <div className="text-sm text-gray-500">
+            <div className="text-sm text-[var(--color-text-tertiary)]">
               <p>
                 Created: {new Date(notification.created_at).toLocaleString()}
               </p>
@@ -68,12 +75,9 @@ export const NotificationHandler: React.FC<NotificationHandlerProps> = ({
 
         {/* Footer */}
         <div className="p-6 border-t flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
-          >
+          <Button variant="outline" onClick={onClose}>
             Close
-          </button>
+          </Button>
         </div>
       </div>
     </div>

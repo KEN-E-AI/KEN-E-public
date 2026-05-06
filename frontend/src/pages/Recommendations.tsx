@@ -19,11 +19,11 @@ const Recommendations = () => {
         <h1 className="text-3xl font-bold">Recommendations</h1>
       </header>
       <div className="space-y-6">
-        <div className="bg-white rounded-lg p-6 border border-dashboard-gray-200">
-          <h2 className="text-xl font-semibold text-dashboard-gray-900 mb-4">
+        <div className="bg-[var(--color-bg-elevated)] rounded-lg p-6 border border-[var(--color-border-default)]">
+          <h2 className="text-xl font-semibold text-[var(--color-text-primary)] mb-4">
             Recommendations Overview
           </h2>
-          <p className="text-dashboard-gray-600">
+          <p className="text-[var(--color-text-tertiary)]">
             View AI-powered recommendations to optimize your marketing
             performance, improve campaign effectiveness, and maximize ROI across
             all channels.

@@ -249,7 +249,7 @@ export const WizardStep1BasicInfo = ({
               <Label htmlFor="account_name">Account Name *</Label>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Info className="h-4 w-4 text-gray-400" />
+                  <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                 </TooltipTrigger>
                 <TooltipContent className="max-w-md">
                   <p>
@@ -280,7 +280,7 @@ export const WizardStep1BasicInfo = ({
               <Label htmlFor="industry">Industry *</Label>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Info className="h-4 w-4 text-gray-400" />
+                  <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                 </TooltipTrigger>
                 <TooltipContent className="max-w-md">
                   <p>
@@ -296,7 +296,7 @@ export const WizardStep1BasicInfo = ({
               className="mt-1"
             />
             {loadingTemplate && (
-              <p className="text-xs text-dashboard-gray-500 mt-1">
+              <p className="text-xs text-[var(--color-text-tertiary)] mt-1">
                 Loading industry-specific recommendations...
               </p>
             )}
@@ -326,7 +326,7 @@ export const WizardStep1BasicInfo = ({
                 </Badge>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Info className="h-4 w-4 text-gray-400" />
+                    <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                   </TooltipTrigger>
                   <TooltipContent className="max-w-md">
                     <p>
@@ -382,7 +382,7 @@ export const WizardStep1BasicInfo = ({
               </Label>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Info className="h-4 w-4 text-gray-400" />
+                  <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                 </TooltipTrigger>
                 <TooltipContent className="max-w-md">
                   <p>
@@ -417,7 +417,7 @@ export const WizardStep1BasicInfo = ({
               <Label>Customer Region *</Label>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Info className="h-4 w-4 text-gray-400" />
+                  <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                 </TooltipTrigger>
                 <TooltipContent className="max-w-md">
                   <p>
@@ -457,7 +457,7 @@ export const WizardStep1BasicInfo = ({
                     return (
                       <div
                         key={option.value}
-                        className={`flex items-center space-x-2 p-2 hover:bg-gray-50 rounded ${
+                        className={`flex items-center space-x-2 p-2 hover:bg-[var(--color-bg-secondary)] rounded ${
                           isSelected ? "bg-blue-50 border border-blue-200" : ""
                         }`}
                       >
@@ -478,7 +478,7 @@ export const WizardStep1BasicInfo = ({
                     );
                   })}
                   {getOrganizedRegions().length === 0 && (
-                    <div className="p-2 text-center text-sm text-gray-500">
+                    <div className="p-2 text-center text-sm text-[var(--color-text-tertiary)]">
                       No regions found matching "{regionSearchTerm}"
                     </div>
                   )}
@@ -492,7 +492,7 @@ export const WizardStep1BasicInfo = ({
               <Label htmlFor="data-region">Data Region *</Label>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Info className="h-4 w-4 text-gray-400" />
+                  <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                 </TooltipTrigger>
                 <TooltipContent className="max-w-md">
                   <p>
@@ -552,12 +552,14 @@ export const WizardStep1BasicInfo = ({
                 : "Required"}
             </Badge>
           </CardTitle>
-          <div className="text-sm text-dashboard-gray-600">
+          <div className="text-sm text-[var(--color-text-tertiary)]">
             <p className="mb-2">
               Upload documents to help KEN-E understand your business,
               competitors and customers.
             </p>
-            <p className="font-medium text-dashboard-gray-700">Examples:</p>
+            <p className="font-medium text-[var(--color-text-secondary)]">
+              Examples:
+            </p>
             <ul className="list-disc list-inside ml-2 mb-3 space-y-1">
               <li>Business plan</li>
               <li>Competitive analysis</li>

@@ -394,7 +394,7 @@ const UserSettings = () => {
                   </SelectContent>
                 </Select>
                 <div className="flex items-center gap-2 mt-1.5">
-                  <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
+                  <span className="text-xs bg-[var(--color-bg-elevated)] text-[var(--color-text-tertiary)] px-2 py-0.5 rounded-full">
                     Coming Soon
                   </span>
                 </div>
@@ -416,7 +416,7 @@ const UserSettings = () => {
                   </SelectContent>
                 </Select>
                 <div className="flex items-center gap-2 mt-1.5">
-                  <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
+                  <span className="text-xs bg-[var(--color-bg-elevated)] text-[var(--color-text-tertiary)] px-2 py-0.5 rounded-full">
                     Coming Soon
                   </span>
                 </div>
@@ -436,7 +436,7 @@ const UserSettings = () => {
                   </SelectContent>
                 </Select>
                 <div className="flex items-center gap-2 mt-1.5">
-                  <span className="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full">
+                  <span className="text-xs bg-[var(--color-bg-elevated)] text-[var(--color-text-tertiary)] px-2 py-0.5 rounded-full">
                     Coming Soon
                   </span>
                 </div>

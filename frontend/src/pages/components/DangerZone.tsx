@@ -134,7 +134,7 @@ const DangerZone = ({ orgData }: DangerZoneProps) => {
               <Label className="text-red-600 mr-auto">
                 Cancel Subscription
               </Label>
-              <p className="text-sm text-dashboard-gray-600">
+              <p className="text-sm text-[var(--color-text-tertiary)]">
                 Cancel your subscription and downgrade to free plan
               </p>
             </div>
@@ -152,7 +152,7 @@ const DangerZone = ({ orgData }: DangerZoneProps) => {
               <Label className="text-red-600 mr-auto">
                 Delete Organization
               </Label>
-              <p className="text-sm text-dashboard-gray-600">
+              <p className="text-sm text-[var(--color-text-tertiary)]">
                 Permanently delete your organization (requires all accounts to
                 be deleted first)
               </p>

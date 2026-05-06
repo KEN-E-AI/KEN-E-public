@@ -88,7 +88,7 @@ export function TopNav() {
 
           <nav
             aria-label="Primary navigation"
-            className="flex items-center gap-1 lg:gap-2 flex-1"
+            className="flex items-center gap-1 lg:gap-2 flex-1 min-w-0 overflow-hidden"
           >
             <TooltipProvider>
               {NAVIGATION.map((item) => {
@@ -137,7 +137,7 @@ export function TopNav() {
             </TooltipProvider>
           </nav>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0 ml-2">
             <NotificationBell />
             <ProfileMenu />
           </div>

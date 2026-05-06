@@ -76,7 +76,7 @@ export const WizardStep2MarketingChannels = ({
           <BarChart3 className="h-5 w-5 text-brand-medium-blue" />
           Marketing Channels
         </CardTitle>
-        <p className="text-sm text-dashboard-gray-600">
+        <p className="text-sm text-[var(--color-text-tertiary)]">
           Select the marketing channels you currently use or plan to use.
           {selectedTemplate && (
             <span className="text-brand-medium-blue font-medium">
@@ -97,7 +97,7 @@ export const WizardStep2MarketingChannels = ({
         {Object.entries(MARKETING_CHANNEL_CATEGORIES).map(
           ([category, channels]) => (
             <div key={category}>
-              <h3 className="font-medium mb-3 text-dashboard-gray-800 flex items-center gap-2">
+              <h3 className="font-medium mb-3 text-[var(--color-text-secondary)] flex items-center gap-2">
                 <TrendingUp className="h-4 w-4" />
                 {category}
               </h3>
@@ -113,7 +113,7 @@ export const WizardStep2MarketingChannels = ({
                       className={`flex items-start space-x-3 p-3 rounded-lg border transition-colors ${
                         isSelected
                           ? "border-brand-medium-blue bg-brand-light-blue/10"
-                          : "border-dashboard-gray-200 hover:border-dashboard-gray-300"
+                          : "border-[var(--color-border-default)] hover:border-[var(--color-border-default)]"
                       }`}
                     >
                       <Checkbox
@@ -127,7 +127,7 @@ export const WizardStep2MarketingChannels = ({
                       <div className="flex-1 min-w-0">
                         <Label
                           htmlFor={`channel-${channel}`}
-                          className="text-sm font-medium text-dashboard-gray-800 cursor-pointer"
+                          className="text-sm font-medium text-[var(--color-text-secondary)] cursor-pointer"
                         >
                           {channel}
                         </Label>
@@ -151,7 +151,7 @@ export const WizardStep2MarketingChannels = ({
         {formData.marketing_channels.length > 0 && (
           <Card className="bg-brand-light-blue/5 border-brand-light-blue/20">
             <CardContent className="pt-4">
-              <h4 className="font-medium text-sm text-dashboard-gray-800 mb-2">
+              <h4 className="font-medium text-sm text-[var(--color-text-secondary)] mb-2">
                 Selected Channels ({formData.marketing_channels.length})
               </h4>
               <div className="flex flex-wrap gap-2">

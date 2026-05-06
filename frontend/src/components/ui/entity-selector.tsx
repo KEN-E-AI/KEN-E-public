@@ -221,21 +221,21 @@ export const EntitySelector = ({
       <SelectTrigger className={`h-auto p-3 ${className}`}>
         <SelectValue>
           <div className="flex items-center gap-2">
-            <Building2 className="h-4 w-4 text-dashboard-gray-600" />
+            <Building2 className="h-4 w-4 text-[var(--color-text-tertiary)]" />
             <div className="flex flex-col items-start">
               {organizationOnly ? (
-                <div className="text-sm font-medium text-dashboard-gray-900">
+                <div className="text-sm font-medium text-[var(--color-text-primary)]">
                   <span className="truncate">{currentOrgName}</span>
                 </div>
               ) : (
-                <div className="flex items-center gap-2 text-sm font-medium text-dashboard-gray-900">
+                <div className="flex items-center gap-2 text-sm font-medium text-[var(--color-text-primary)]">
                   <span className="truncate">{currentOrgName}</span>
-                  <ChevronRight className="h-3 w-3 text-dashboard-gray-400" />
+                  <ChevronRight className="h-3 w-3 text-[var(--color-text-disabled)]" />
                   <span className="truncate">{currentAccountName}</span>
                 </div>
               )}
               {showUserContext && (
-                <div className="flex items-center gap-1 text-xs text-dashboard-gray-600 mt-1">
+                <div className="flex items-center gap-1 text-xs text-[var(--color-text-tertiary)] mt-1">
                   <User className="h-3 w-3" />
                   <span className="truncate">{currentUserName}</span>
                 </div>
@@ -251,13 +251,13 @@ export const EntitySelector = ({
             value={option.value}
           >
             <div className="flex items-center gap-2 py-1">
-              <Building2 className="h-3 w-3 text-dashboard-gray-600" />
+              <Building2 className="h-3 w-3 text-[var(--color-text-tertiary)]" />
               <div className="flex flex-col">
                 <div className="font-medium text-sm">
                   {option.metadata.organization_name}
                 </div>
                 {!organizationOnly && (
-                  <div className="text-xs text-dashboard-gray-600">
+                  <div className="text-xs text-[var(--color-text-tertiary)]">
                     {option.metadata.account_name}
                   </div>
                 )}
@@ -269,10 +269,10 @@ export const EntitySelector = ({
           <SelectItem
             key="all-orgs-accounts"
             value="all-orgs-accounts"
-            className="border-t border-gray-200 mt-1 pt-2"
+            className="border-t border-[var(--color-border-default)] mt-1 pt-2"
           >
             <div className="flex items-center gap-2">
-              <Building2 className="h-3 w-3 text-dashboard-gray-600" />
+              <Building2 className="h-3 w-3 text-[var(--color-text-tertiary)]" />
               <div className="truncate">All Organizations & Accounts</div>
             </div>
           </SelectItem>

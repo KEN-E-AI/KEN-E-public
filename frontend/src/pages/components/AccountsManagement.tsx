@@ -1464,7 +1464,7 @@ const AccountsManagement = ({
             </div>
           )}
           {isLoadingAccounts ? (
-            <div className="text-center py-8 text-gray-500">
+            <div className="text-center py-8 text-[var(--color-text-tertiary)]">
               <p>Loading accounts...</p>
             </div>
           ) : organizationAccounts.length > 0 ? (
@@ -1473,7 +1473,7 @@ const AccountsManagement = ({
               return (
                 <div
                   key={account.account_id}
-                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors relative"
+                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-[var(--color-bg-secondary)] transition-colors relative"
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 bg-brand-light-blue/20 rounded-full flex items-center justify-center">
@@ -1481,7 +1481,7 @@ const AccountsManagement = ({
                     </div>
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
-                        <h4 className="font-medium text-gray-900">
+                        <h4 className="font-medium text-[var(--color-text-primary)]">
                           {account.account_name}
                         </h4>
                         {isInSetup && (
@@ -1544,7 +1544,7 @@ const AccountsManagement = ({
                         className="h-8 w-8 p-0"
                         disabled={isOperationInProgress}
                       >
-                        <Settings className="h-4 w-4 text-gray-500" />
+                        <Settings className="h-4 w-4 text-[var(--color-text-tertiary)]" />
                       </Button>
                     )}
                   </div>
@@ -1552,8 +1552,8 @@ const AccountsManagement = ({
               );
             })
           ) : (
-            <div className="text-center py-8 text-gray-500">
-              <User className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+            <div className="text-center py-8 text-[var(--color-text-tertiary)]">
+              <User className="h-12 w-12 mx-auto mb-4 text-[var(--color-text-disabled)]" />
               <p>No accounts found for this organization</p>
             </div>
           )}
@@ -1572,10 +1572,10 @@ const AccountsManagement = ({
                 <Label htmlFor="account-name">Account Name</Label>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Info className="h-4 w-4 text-gray-400" />
+                    <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                   </TooltipTrigger>
                   <TooltipContent
-                    className="max-w-sm text-sm z-50 bg-white border border-gray-200 shadow-lg"
+                    className="max-w-sm text-sm z-50 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] shadow-lg"
                     side="right"
                     align="center"
                     avoidCollisions={true}
@@ -1638,10 +1638,10 @@ const AccountsManagement = ({
                 </Label>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Info className="h-4 w-4 text-gray-400" />
+                    <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                   </TooltipTrigger>
                   <TooltipContent
-                    className="max-w-sm text-sm z-50 bg-white border border-gray-200 shadow-lg"
+                    className="max-w-sm text-sm z-50 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] shadow-lg"
                     side="right"
                     align="center"
                     avoidCollisions={true}
@@ -1678,10 +1678,10 @@ const AccountsManagement = ({
                 <Label htmlFor="account-status">Status</Label>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Info className="h-4 w-4 text-gray-400" />
+                    <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                   </TooltipTrigger>
                   <TooltipContent
-                    className="max-w-sm text-sm z-50 bg-white border border-gray-200 shadow-lg"
+                    className="max-w-sm text-sm z-50 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] shadow-lg"
                     side="right"
                     align="center"
                     avoidCollisions={true}
@@ -1718,10 +1718,10 @@ const AccountsManagement = ({
                 <Label htmlFor="account-timezone">Timezone</Label>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Info className="h-4 w-4 text-gray-400" />
+                    <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                   </TooltipTrigger>
                   <TooltipContent
-                    className="max-w-sm text-sm z-50 bg-white border border-gray-200 shadow-lg"
+                    className="max-w-sm text-sm z-50 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] shadow-lg"
                     side="right"
                     align="center"
                     avoidCollisions={true}
@@ -1762,10 +1762,10 @@ const AccountsManagement = ({
                 <Label htmlFor="account-data-region">Data Region</Label>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Info className="h-4 w-4 text-gray-400" />
+                    <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                   </TooltipTrigger>
                   <TooltipContent
-                    className="max-w-sm text-sm z-50 bg-white border border-gray-200 shadow-lg"
+                    className="max-w-sm text-sm z-50 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] shadow-lg"
                     side="right"
                     align="center"
                     avoidCollisions={true}
@@ -1782,7 +1782,7 @@ const AccountsManagement = ({
               <Input
                 value={getDataRegionDisplayName(editFormData.data_region)}
                 readOnly
-                className="bg-gray-50 cursor-not-allowed"
+                className="bg-[var(--color-bg-secondary)] cursor-not-allowed"
               />
             </div>
             <div className="space-y-2">
@@ -1791,7 +1791,7 @@ const AccountsManagement = ({
                   <Label>Customer Region</Label>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Info className="h-4 w-4 text-gray-400" />
+                      <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                     </TooltipTrigger>
                     <TooltipContent
                       className="max-w-sm text-sm"
@@ -1822,11 +1822,11 @@ const AccountsManagement = ({
                     <Plus className="h-4 w-4" />
                   </Button>
                   {isEditRegionPopoverOpen && (
-                    <div className="absolute top-full right-0 mt-1 w-80 bg-white border border-gray-200 rounded-md shadow-lg z-50 max-h-60 overflow-y-auto">
+                    <div className="absolute top-full right-0 mt-1 w-80 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-md shadow-lg z-50 max-h-60 overflow-y-auto">
                       {REGION_OPTIONS.map((option) => (
                         <div
                           key={option.value}
-                          className="flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 cursor-pointer text-sm"
+                          className="flex items-center space-x-2 px-3 py-2 hover:bg-[var(--color-bg-secondary)] cursor-pointer text-sm"
                           onClick={() => {
                             if (!editFormData.region.includes(option.value)) {
                               toggleRegion(option.value);
@@ -1850,7 +1850,7 @@ const AccountsManagement = ({
                           ?.label || regionValue
                       }
                       readOnly
-                      className="flex-1 bg-gray-50"
+                      className="flex-1 bg-[var(--color-bg-secondary)]"
                     />
                     <Button
                       type="button"
@@ -1871,7 +1871,7 @@ const AccountsManagement = ({
                   <Label>Websites</Label>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Info className="h-4 w-4 text-gray-400" />
+                      <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                     </TooltipTrigger>
                     <TooltipContent
                       className="max-w-sm text-sm"
@@ -1930,10 +1930,10 @@ const AccountsManagement = ({
                   <Label>Marketing Channels</Label>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Info className="h-4 w-4 text-gray-400" />
+                      <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                     </TooltipTrigger>
                     <TooltipContent
-                      className="max-w-sm text-sm z-50 bg-white border border-gray-200 shadow-lg"
+                      className="max-w-sm text-sm z-50 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] shadow-lg"
                       side="right"
                       align="center"
                       avoidCollisions={true}
@@ -1966,10 +1966,10 @@ const AccountsManagement = ({
                     <Plus className="h-4 w-4" />
                   </Button>
                   {isEditMarketingChannelsPopoverOpen && (
-                    <div className="absolute top-full right-0 mt-1 w-96 bg-white border border-gray-200 rounded-md shadow-lg z-50">
-                      <div className="sticky top-0 bg-white border-b border-gray-200 p-2">
+                    <div className="absolute top-full right-0 mt-1 w-96 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-md shadow-lg z-50">
+                      <div className="sticky top-0 bg-[var(--color-bg-elevated)] border-b border-[var(--color-border-default)] p-2">
                         <div className="relative">
-                          <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                          <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-[var(--color-text-disabled)]" />
                           <Input
                             type="text"
                             placeholder="Search marketing channels..."
@@ -2005,9 +2005,9 @@ const AccountsManagement = ({
                               return (
                                 <div
                                   key={channelInfo.id}
-                                  className={`px-3 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 ${
+                                  className={`px-3 py-3 hover:bg-[var(--color-bg-secondary)] cursor-pointer border-b border-[var(--color-border-subtle)] last:border-b-0 ${
                                     isSelected
-                                      ? "opacity-50 cursor-not-allowed bg-gray-50"
+                                      ? "opacity-50 cursor-not-allowed bg-[var(--color-bg-secondary)]"
                                       : ""
                                   }`}
                                   onClick={() => {
@@ -2022,15 +2022,15 @@ const AccountsManagement = ({
                                 >
                                   <div className="flex items-start justify-between gap-2">
                                     <div className="flex-1">
-                                      <div className="font-medium text-sm text-gray-900">
+                                      <div className="font-medium text-sm text-[var(--color-text-primary)]">
                                         {channelInfo.name}
                                       </div>
-                                      <div className="text-xs text-gray-500 mt-1">
+                                      <div className="text-xs text-[var(--color-text-tertiary)] mt-1">
                                         {channelInfo.description}
                                       </div>
                                     </div>
                                     {isSelected && (
-                                      <span className="text-xs text-gray-400 mt-1">
+                                      <span className="text-xs text-[var(--color-text-tertiary)] mt-1">
                                         Added
                                       </span>
                                     )}
@@ -2043,8 +2043,8 @@ const AccountsManagement = ({
                               MARKETING_CHANNEL_CATEGORIES_WITH_DESCRIPTIONS,
                             ).map(([category, channels]) => (
                               <div key={category}>
-                                <div className="px-3 py-2 bg-gray-50 border-b border-gray-200">
-                                  <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                                <div className="px-3 py-2 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border-default)]">
+                                  <h4 className="text-xs font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider">
                                     {category}
                                   </h4>
                                 </div>
@@ -2056,9 +2056,9 @@ const AccountsManagement = ({
                                   return (
                                     <div
                                       key={channelInfo.id}
-                                      className={`px-3 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0 ${
+                                      className={`px-3 py-3 hover:bg-[var(--color-bg-secondary)] cursor-pointer border-b border-[var(--color-border-subtle)] last:border-b-0 ${
                                         isSelected
-                                          ? "opacity-50 cursor-not-allowed bg-gray-50"
+                                          ? "opacity-50 cursor-not-allowed bg-[var(--color-bg-secondary)]"
                                           : ""
                                       }`}
                                       onClick={() => {
@@ -2075,15 +2075,15 @@ const AccountsManagement = ({
                                     >
                                       <div className="flex items-start justify-between gap-2">
                                         <div className="flex-1">
-                                          <div className="font-medium text-sm text-gray-900">
+                                          <div className="font-medium text-sm text-[var(--color-text-primary)]">
                                             {channelInfo.name}
                                           </div>
-                                          <div className="text-xs text-gray-500 mt-1">
+                                          <div className="text-xs text-[var(--color-text-tertiary)] mt-1">
                                             {channelInfo.description}
                                           </div>
                                         </div>
                                         {isSelected && (
-                                          <span className="text-xs text-gray-400 mt-1">
+                                          <span className="text-xs text-[var(--color-text-tertiary)] mt-1">
                                             Added
                                           </span>
                                         )}
@@ -2104,7 +2104,7 @@ const AccountsManagement = ({
                     <Input
                       value={channel}
                       readOnly
-                      className="flex-1 bg-gray-50"
+                      className="flex-1 bg-[var(--color-bg-secondary)]"
                     />
                     <Button
                       type="button"
@@ -2118,7 +2118,7 @@ const AccountsManagement = ({
                   </div>
                 ))}
                 {editFormData.marketing_channels.length === 0 && (
-                  <p className="text-xs text-dashboard-gray-500">
+                  <p className="text-xs text-[var(--color-text-tertiary)]">
                     No marketing channels selected. Add channels using the +
                     button above.
                   </p>
@@ -2130,10 +2130,10 @@ const AccountsManagement = ({
                 <Label>Product Integrations</Label>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <Info className="h-4 w-4 text-gray-400" />
+                    <Info className="h-4 w-4 text-[var(--color-text-disabled)]" />
                   </TooltipTrigger>
                   <TooltipContent
-                    className="max-w-sm text-sm z-50 bg-white border border-gray-200 shadow-lg"
+                    className="max-w-sm text-sm z-50 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] shadow-lg"
                     side="right"
                     align="center"
                     avoidCollisions={true}
@@ -2191,7 +2191,7 @@ const AccountsManagement = ({
                       <Label className="text-blue-600 text-sm font-medium">
                         Move Account
                       </Label>
-                      <p className="text-xs text-gray-600 mt-1">
+                      <p className="text-xs text-[var(--color-text-tertiary)] mt-1">
                         Move this account to a different organization
                       </p>
                     </div>
@@ -2214,7 +2214,7 @@ const AccountsManagement = ({
                       <Label className="text-red-600 text-sm font-medium">
                         Delete Account
                       </Label>
-                      <p className="text-xs text-gray-600 mt-1">
+                      <p className="text-xs text-[var(--color-text-tertiary)] mt-1">
                         Permanently delete this account and all associated data
                       </p>
                     </div>
@@ -2288,7 +2288,7 @@ const AccountsManagement = ({
             <DialogTitle>Move Account to Another Organization</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-4">
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-[var(--color-text-tertiary)]">
               Select the organization you want to move "
               {selectedAccount?.account_name}" to:
             </p>
@@ -2314,7 +2314,7 @@ const AccountsManagement = ({
                 <SelectContent>
                   {availableOrganizations.length === 0 &&
                   !isLoadingOrganizations ? (
-                    <div className="p-2 text-sm text-gray-500 text-center">
+                    <div className="p-2 text-sm text-[var(--color-text-tertiary)] text-center">
                       No organizations available
                     </div>
                   ) : (
@@ -2325,7 +2325,7 @@ const AccountsManagement = ({
                       >
                         <div className="flex flex-col">
                           <span>{org.organization_name}</span>
-                          <span className="text-xs text-gray-500">
+                          <span className="text-xs text-[var(--color-text-tertiary)]">
                             {org.plan}
                             {org.company_size ? ` • ${org.company_size}` : ""}
                           </span>

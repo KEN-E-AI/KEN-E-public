@@ -71,7 +71,7 @@ const SubscriptionCard = ({
             <div className="flex items-center justify-between">
               <div className="flex flex-col">
                 <Label className="mr-auto">Plan Features</Label>
-                <p className="text-sm text-dashboard-gray-600">
+                <p className="text-sm text-[var(--color-text-tertiary)]">
                   Your current plan includes
                 </p>
               </div>
@@ -87,7 +87,7 @@ const SubscriptionCard = ({
             <div className="flex items-center justify-between">
               <div className="flex flex-col">
                 <Label className="mr-auto">Next Billing Date</Label>
-                <p className="text-sm text-dashboard-gray-600">
+                <p className="text-sm text-[var(--color-text-tertiary)]">
                   {orgData.subscription.next_billing_date}
                 </p>
               </div>
@@ -110,7 +110,7 @@ const SubscriptionCard = ({
             <div className="flex items-center justify-between">
               <div className="flex flex-col">
                 <Label className="mr-auto">Usage This Month</Label>
-                <p className="text-sm text-dashboard-gray-600">
+                <p className="text-sm text-[var(--color-text-tertiary)]">
                   Reports generated:{" "}
                   {orgData.subscription.usage.reports_generated} /{" "}
                   {orgData.subscription.usage.reports_limit}
