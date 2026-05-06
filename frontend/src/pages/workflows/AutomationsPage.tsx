@@ -7,9 +7,7 @@ export function AutomationsPage() {
       <EmptyState
         icon={<PlayCircle className="size-8 text-muted-foreground" />}
         title="Schedule recurring work."
-        description="Let KEN-E take it from here."
-        actionLabel="Create an automation"
-        onAction={() => {}}
+        description="Let KEN-E take it from here. Automations are coming soon — ask KEN-E in chat to set one up."
       />
     </div>
   );

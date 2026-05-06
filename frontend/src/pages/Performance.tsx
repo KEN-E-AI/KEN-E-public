@@ -606,29 +606,29 @@ const Performance = () => {
                       Edit Metrics
                     </Button>
                   </DialogTrigger>
-                  <DialogContent className="max-w-2xl">
+                  <DialogContent className="max-w-3xl">
                     <DialogHeader>
                       <DialogTitle>Edit Metrics Configuration</DialogTitle>
                     </DialogHeader>
 
-                    {/* Search and Filters */}
-                    <div className="space-y-4 mb-6">
-                      <div className="flex items-center gap-4">
-                        <div className="flex-1 relative">
-                          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-[var(--color-text-disabled)]" />
-                          <Input
-                            placeholder="Search metrics..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="pl-10"
-                          />
-                        </div>
+                    {/* Search and Filters — search on its own row, filters below */}
+                    <div className="space-y-3 mb-6">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-[var(--color-text-disabled)]" />
+                        <Input
+                          placeholder="Search metrics..."
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          className="pl-10"
+                        />
+                      </div>
+                      <div className="flex items-center gap-3">
                         <Select
                           value={selectedDataset}
                           onValueChange={setSelectedDataset}
                         >
-                          <SelectTrigger className="w-48">
-                            <Filter className="h-4 w-4 mr-2" />
+                          <SelectTrigger className="flex-1">
+                            <Filter className="h-4 w-4 mr-2 shrink-0" />
                             <SelectValue placeholder="Dataset" />
                           </SelectTrigger>
                           <SelectContent>
@@ -644,8 +644,8 @@ const Performance = () => {
                           value={selectedProduct}
                           onValueChange={setSelectedProduct}
                         >
-                          <SelectTrigger className="w-48">
-                            <BarChart3 className="h-4 w-4 mr-2" />
+                          <SelectTrigger className="flex-1">
+                            <BarChart3 className="h-4 w-4 mr-2 shrink-0" />
                             <SelectValue placeholder="Product" />
                           </SelectTrigger>
                           <SelectContent>
@@ -679,25 +679,22 @@ const Performance = () => {
                           }
                         >
                           <SelectTrigger>
-                            <SelectValue />
+                            <SelectValue placeholder="Select a metric…" />
                           </SelectTrigger>
-                          <SelectContent className="max-h-60">
+                          <SelectContent className="max-h-72">
                             {filteredMetrics.map((metric) => (
                               <SelectItem key={metric.name} value={metric.name}>
-                                <div className="flex flex-col">
-                                  <div className="flex items-center gap-2">
-                                    <span>{metric.name}</span>
-                                    <Badge
-                                      variant="secondary"
-                                      className="text-xs"
-                                    >
-                                      {metric.dataset}
-                                    </Badge>
-                                  </div>
-                                  <span className="text-xs text-[var(--color-text-tertiary)]">
-                                    {metric.description}
+                                <span className="inline-flex items-center gap-2 truncate">
+                                  <span className="font-medium truncate">
+                                    {metric.name}
                                   </span>
-                                </div>
+                                  <Badge
+                                    variant="secondary"
+                                    className="text-xs shrink-0"
+                                  >
+                                    {metric.dataset}
+                                  </Badge>
+                                </span>
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -722,25 +719,22 @@ const Performance = () => {
                           }
                         >
                           <SelectTrigger>
-                            <SelectValue />
+                            <SelectValue placeholder="Select a metric…" />
                           </SelectTrigger>
-                          <SelectContent className="max-h-60">
+                          <SelectContent className="max-h-72">
                             {filteredMetrics.map((metric) => (
                               <SelectItem key={metric.name} value={metric.name}>
-                                <div className="flex flex-col">
-                                  <div className="flex items-center gap-2">
-                                    <span>{metric.name}</span>
-                                    <Badge
-                                      variant="secondary"
-                                      className="text-xs"
-                                    >
-                                      {metric.dataset}
-                                    </Badge>
-                                  </div>
-                                  <span className="text-xs text-[var(--color-text-tertiary)]">
-                                    {metric.description}
+                                <span className="inline-flex items-center gap-2 truncate">
+                                  <span className="font-medium truncate">
+                                    {metric.name}
                                   </span>
-                                </div>
+                                  <Badge
+                                    variant="secondary"
+                                    className="text-xs shrink-0"
+                                  >
+                                    {metric.dataset}
+                                  </Badge>
+                                </span>
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -765,25 +759,22 @@ const Performance = () => {
                           }
                         >
                           <SelectTrigger>
-                            <SelectValue />
+                            <SelectValue placeholder="Select a metric…" />
                           </SelectTrigger>
-                          <SelectContent className="max-h-60">
+                          <SelectContent className="max-h-72">
                             {filteredMetrics.map((metric) => (
                               <SelectItem key={metric.name} value={metric.name}>
-                                <div className="flex flex-col">
-                                  <div className="flex items-center gap-2">
-                                    <span>{metric.name}</span>
-                                    <Badge
-                                      variant="secondary"
-                                      className="text-xs"
-                                    >
-                                      {metric.dataset}
-                                    </Badge>
-                                  </div>
-                                  <span className="text-xs text-[var(--color-text-tertiary)]">
-                                    {metric.description}
+                                <span className="inline-flex items-center gap-2 truncate">
+                                  <span className="font-medium truncate">
+                                    {metric.name}
                                   </span>
-                                </div>
+                                  <Badge
+                                    variant="secondary"
+                                    className="text-xs shrink-0"
+                                  >
+                                    {metric.dataset}
+                                  </Badge>
+                                </span>
                               </SelectItem>
                             ))}
                           </SelectContent>
