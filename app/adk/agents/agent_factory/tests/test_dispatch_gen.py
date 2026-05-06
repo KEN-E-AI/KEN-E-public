@@ -1,0 +1,584 @@
+"""
+Unit tests for app.adk.agents.agent_factory.dispatch.
+
+All live ADK / Weave / GCP calls are patched at the dispatch module boundary.
+No I/O takes place.
+"""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock, call, patch
+
+import pytest
+
+from app.adk.agents.agent_factory.dispatch import (
+    assemble_available_specialists_block,
+    generate_dispatch_functions,
+)
+from app.adk.agents.utils.agent_retry import DEFAULT_RETRY_CONFIG
+
+# ---------------------------------------------------------------------------
+# Patch-path constants — patch at the dispatch module's import namespace
+# ---------------------------------------------------------------------------
+
+_PATCH_BUILD_PIPELINE = "app.adk.agents.agent_factory.dispatch.build_review_pipeline"
+_PATCH_INVOKE_PIPELINE = "app.adk.agents.agent_factory.dispatch.invoke_pipeline"
+_PATCH_CHECK_HALLUCINATION = (
+    "app.adk.agents.agent_factory.dispatch._check_hallucinated_approval"
+)
+_PATCH_EXTRACT_RESULT = (
+    "app.adk.agents.agent_factory.dispatch.extract_pipeline_result"
+)
+_PATCH_EXTRACT_ITERATIONS = (
+    "app.adk.agents.agent_factory.dispatch.extract_iterations"
+)
+_PATCH_EMIT_ITERATION_SPAN = (
+    "app.adk.agents.agent_factory.dispatch.emit_iteration_span"
+)
+_PATCH_SET_PIPELINE_ATTRS = (
+    "app.adk.agents.agent_factory.dispatch.set_pipeline_attrs"
+)
+_PATCH_GET_WORKER_NAME = "app.adk.agents.agent_factory.dispatch.get_worker_name"
+_PATCH_GET_REVIEWER_NAME = "app.adk.agents.agent_factory.dispatch.get_reviewer_name"
+_PATCH_INVOKE_WITH_RETRY = (
+    "app.adk.agents.agent_factory.dispatch.invoke_agent_with_retry"
+)
+
+# ---------------------------------------------------------------------------
+# Helper
+# ---------------------------------------------------------------------------
+
+
+def _make_specialist(
+    name: str, description: str | None = "A test specialist"
+) -> MagicMock:
+    """Return a MagicMock that quacks like a minimal LlmAgent."""
+    agent = MagicMock()
+    agent.name = name
+    agent.description = description
+    return agent
+
+
+# ---------------------------------------------------------------------------
+# TestGenerateDispatchFunctions
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateDispatchFunctions:
+    def test_n_specialists_produce_n_dispatchers(self) -> None:
+        specialists = {
+            "a_specialist": _make_specialist("a_specialist"),
+            "b_specialist": _make_specialist("b_specialist"),
+        }
+        result = generate_dispatch_functions(specialists)
+
+        assert len(result) == 2
+        assert set(result.keys()) == {"a_specialist", "b_specialist"}
+
+    def test_dispatchers_have_correct_name(self) -> None:
+        specialists = {"analytics": _make_specialist("analytics", "Analyzes data")}
+        dispatchers = generate_dispatch_functions(specialists)
+
+        fn = dispatchers["analytics"]
+        assert fn.__name__ == "dispatch_to_analytics"
+
+    def test_invalid_specialist_name_raises_value_error(self) -> None:
+        # Names starting with uppercase are invalid per the regex.
+        specialists = {"InvalidName": _make_specialist("InvalidName")}
+
+        with pytest.raises(ValueError, match="invalid"):
+            generate_dispatch_functions(specialists)
+
+    def test_name_starting_with_digit_raises_value_error(self) -> None:
+        specialists = {"1bad_name": _make_specialist("1bad_name")}
+
+        with pytest.raises(ValueError, match="invalid"):
+            generate_dispatch_functions(specialists)
+
+    def test_empty_registry_returns_empty_dict(self) -> None:
+        result = generate_dispatch_functions({})
+        assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# TestDispatchSinglePassBranch
+# ---------------------------------------------------------------------------
+
+
+class TestDispatchSinglePassBranch:
+    def test_single_pass_when_no_criteria(self) -> None:
+        specialist = _make_specialist("my_agent")
+        dispatchers = generate_dispatch_functions({"my_agent": specialist})
+        fn = dispatchers["my_agent"]
+
+        with (
+            patch(_PATCH_INVOKE_WITH_RETRY, return_value="retried result") as mock_retry,
+            patch(_PATCH_BUILD_PIPELINE) as mock_build,
+        ):
+            result = fn("test query")
+
+        assert result == "retried result"
+        mock_retry.assert_called_once_with(
+            specialist,
+            "test query",
+            state=None,
+            retry_config=DEFAULT_RETRY_CONFIG,
+        )
+        mock_build.assert_not_called()
+
+    def test_single_pass_state_is_none_when_no_tool_context(self) -> None:
+        specialist = _make_specialist("my_agent")
+        dispatchers = generate_dispatch_functions({"my_agent": specialist})
+        fn = dispatchers["my_agent"]
+
+        with patch(_PATCH_INVOKE_WITH_RETRY, return_value="ok") as mock_retry:
+            fn("query")
+
+        _, kwargs = mock_retry.call_args
+        assert kwargs["state"] is None
+
+    def test_single_pass_with_empty_criteria_string(self) -> None:
+        specialist = _make_specialist("my_agent")
+        dispatchers = generate_dispatch_functions({"my_agent": specialist})
+        fn = dispatchers["my_agent"]
+
+        with (
+            patch(_PATCH_INVOKE_WITH_RETRY, return_value="ok") as mock_retry,
+            patch(_PATCH_BUILD_PIPELINE) as mock_build,
+        ):
+            result = fn("query", acceptance_criteria="")
+
+        assert result == "ok"
+        mock_build.assert_not_called()
+        mock_retry.assert_called_once()
+
+    def test_single_pass_with_whitespace_only_criteria(self) -> None:
+        specialist = _make_specialist("my_agent")
+        dispatchers = generate_dispatch_functions({"my_agent": specialist})
+        fn = dispatchers["my_agent"]
+
+        with (
+            patch(_PATCH_INVOKE_WITH_RETRY, return_value="ok") as mock_retry,
+            patch(_PATCH_BUILD_PIPELINE) as mock_build,
+        ):
+            fn("query", acceptance_criteria="   ")
+
+        mock_build.assert_not_called()
+        mock_retry.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# TestDispatchReviewLoopBranch
+# ---------------------------------------------------------------------------
+
+
+class TestDispatchReviewLoopBranch:
+    def _make_review_loop_patches(self) -> tuple:
+        """Return a tuple of all patches needed for the review-loop branch."""
+        mock_pipeline = MagicMock(name="pipeline")
+        mock_iter = MagicMock()
+        mock_iter.iteration = 1
+        mock_iter.specialist_output = "draft text"
+        mock_iter.reviewer_output = "reviewer text"
+
+        return mock_pipeline, mock_iter
+
+    def test_review_loop_when_criteria_provided(self) -> None:
+        specialist = _make_specialist("analytics")
+        dispatchers = generate_dispatch_functions({"analytics": specialist})
+        fn = dispatchers["analytics"]
+
+        mock_pipeline, mock_iter = self._make_review_loop_patches()
+
+        with (
+            patch(_PATCH_BUILD_PIPELINE, return_value=mock_pipeline) as mock_build,
+            patch(
+                _PATCH_INVOKE_PIPELINE,
+                return_value=("text", {"analytics_review_result": "x"}, []),
+            ) as mock_invoke,
+            patch(_PATCH_CHECK_HALLUCINATION),
+            patch(
+                _PATCH_EXTRACT_RESULT, return_value={"result": "final answer"}
+            ) as mock_extract,
+            patch(_PATCH_EXTRACT_ITERATIONS, return_value=[mock_iter]),
+            patch(_PATCH_EMIT_ITERATION_SPAN),
+            patch(_PATCH_SET_PIPELINE_ATTRS),
+            patch(_PATCH_GET_WORKER_NAME, return_value="analytics_worker"),
+            patch(_PATCH_GET_REVIEWER_NAME, return_value="analytics_review_reviewer"),
+        ):
+            result = fn("query", acceptance_criteria="must include X")
+
+        assert result == "final answer"
+        mock_build.assert_called_once()
+        mock_invoke.assert_called_once()
+        mock_extract.assert_called_once()
+
+    def test_review_loop_output_key_prefix_passed_to_build(self) -> None:
+        specialist = _make_specialist("analytics")
+        dispatchers = generate_dispatch_functions({"analytics": specialist})
+        fn = dispatchers["analytics"]
+
+        mock_pipeline, mock_iter = self._make_review_loop_patches()
+
+        with (
+            patch(_PATCH_BUILD_PIPELINE, return_value=mock_pipeline) as mock_build,
+            patch(
+                _PATCH_INVOKE_PIPELINE,
+                return_value=("text", {}, []),
+            ),
+            patch(_PATCH_CHECK_HALLUCINATION),
+            patch(_PATCH_EXTRACT_RESULT, return_value={"result": "answer"}),
+            patch(_PATCH_EXTRACT_ITERATIONS, return_value=[mock_iter]),
+            patch(_PATCH_EMIT_ITERATION_SPAN),
+            patch(_PATCH_SET_PIPELINE_ATTRS),
+            patch(_PATCH_GET_WORKER_NAME, return_value="analytics_worker"),
+            patch(_PATCH_GET_REVIEWER_NAME, return_value="analytics_review_reviewer"),
+        ):
+            fn("query", acceptance_criteria="criteria text")
+
+        call_kwargs = mock_build.call_args.kwargs
+        assert call_kwargs.get("output_key_prefix") == "analytics_review"
+
+    def test_review_loop_calls_full_observability_chain(self) -> None:
+        specialist = _make_specialist("analytics")
+        dispatchers = generate_dispatch_functions({"analytics": specialist})
+        fn = dispatchers["analytics"]
+
+        mock_pipeline, mock_iter = self._make_review_loop_patches()
+
+        with (
+            patch(_PATCH_BUILD_PIPELINE, return_value=mock_pipeline),
+            patch(
+                _PATCH_INVOKE_PIPELINE,
+                return_value=("text", {}, [MagicMock()]),
+            ),
+            patch(_PATCH_CHECK_HALLUCINATION) as mock_check,
+            patch(_PATCH_EXTRACT_RESULT, return_value={"result": "answer"}),
+            patch(_PATCH_EXTRACT_ITERATIONS, return_value=[mock_iter]) as mock_iters,
+            patch(_PATCH_EMIT_ITERATION_SPAN) as mock_emit,
+            patch(_PATCH_SET_PIPELINE_ATTRS) as mock_set_attrs,
+            patch(_PATCH_GET_WORKER_NAME, return_value="analytics_worker"),
+            patch(_PATCH_GET_REVIEWER_NAME, return_value="analytics_review_reviewer"),
+        ):
+            fn("query", acceptance_criteria="must include X")
+
+        mock_check.assert_called_once()
+        mock_iters.assert_called_once()
+        # emit_iteration_span called once per iteration
+        assert mock_emit.call_count == 1
+        mock_emit.assert_called_once_with(
+            mock_iter.iteration,
+            mock_iter.specialist_output,
+            mock_iter.reviewer_output,
+        )
+        mock_set_attrs.assert_called_once()
+
+    def test_review_loop_multiple_iterations_each_emit_span(self) -> None:
+        specialist = _make_specialist("analytics")
+        dispatchers = generate_dispatch_functions({"analytics": specialist})
+        fn = dispatchers["analytics"]
+
+        iter1 = MagicMock()
+        iter1.iteration, iter1.specialist_output, iter1.reviewer_output = 1, "d1", "r1"
+        iter2 = MagicMock()
+        iter2.iteration, iter2.specialist_output, iter2.reviewer_output = 2, "d2", "r2"
+
+        with (
+            patch(_PATCH_BUILD_PIPELINE, return_value=MagicMock()),
+            patch(_PATCH_INVOKE_PIPELINE, return_value=("text", {}, [])),
+            patch(_PATCH_CHECK_HALLUCINATION),
+            patch(_PATCH_EXTRACT_RESULT, return_value={"result": "done"}),
+            patch(_PATCH_EXTRACT_ITERATIONS, return_value=[iter1, iter2]),
+            patch(_PATCH_EMIT_ITERATION_SPAN) as mock_emit,
+            patch(_PATCH_SET_PIPELINE_ATTRS),
+            patch(_PATCH_GET_WORKER_NAME, return_value="analytics_worker"),
+            patch(_PATCH_GET_REVIEWER_NAME, return_value="analytics_review_reviewer"),
+        ):
+            fn("query", acceptance_criteria="criteria")
+
+        assert mock_emit.call_count == 2
+        mock_emit.assert_has_calls(
+            [
+                call(iter1.iteration, iter1.specialist_output, iter1.reviewer_output),
+                call(iter2.iteration, iter2.specialist_output, iter2.reviewer_output),
+            ]
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestDispatchSanitisation
+# ---------------------------------------------------------------------------
+
+
+class TestDispatchSanitisation:
+    def test_unsafe_chars_stripped_before_pipeline(self) -> None:
+        specialist = _make_specialist("analytics")
+        dispatchers = generate_dispatch_functions({"analytics": specialist})
+        fn = dispatchers["analytics"]
+
+        with (
+            patch(_PATCH_BUILD_PIPELINE, return_value=MagicMock()) as mock_build,
+            patch(_PATCH_INVOKE_PIPELINE, return_value=("text", {}, [])),
+            patch(_PATCH_CHECK_HALLUCINATION),
+            patch(_PATCH_EXTRACT_RESULT, return_value={"result": "ok"}),
+            patch(_PATCH_EXTRACT_ITERATIONS, return_value=[]),
+            patch(_PATCH_EMIT_ITERATION_SPAN),
+            patch(_PATCH_SET_PIPELINE_ATTRS),
+            patch(_PATCH_GET_WORKER_NAME, return_value="analytics_worker"),
+            patch(_PATCH_GET_REVIEWER_NAME, return_value="analytics_review_reviewer"),
+        ):
+            fn("query", acceptance_criteria="must <not> inject {template} `vars`")
+
+        # Extract the acceptance_criteria kwarg passed to build_review_pipeline
+        criteria_passed = mock_build.call_args.kwargs.get("acceptance_criteria")
+        assert "<" not in criteria_passed
+        assert ">" not in criteria_passed
+        assert "`" not in criteria_passed
+        assert "{" not in criteria_passed
+
+    def test_criteria_truncated_to_2000_chars(self) -> None:
+        specialist = _make_specialist("analytics")
+        dispatchers = generate_dispatch_functions({"analytics": specialist})
+        fn = dispatchers["analytics"]
+
+        long_criteria = "A" * 3000
+
+        with (
+            patch(_PATCH_BUILD_PIPELINE, return_value=MagicMock()) as mock_build,
+            patch(_PATCH_INVOKE_PIPELINE, return_value=("text", {}, [])),
+            patch(_PATCH_CHECK_HALLUCINATION),
+            patch(_PATCH_EXTRACT_RESULT, return_value={"result": "ok"}),
+            patch(_PATCH_EXTRACT_ITERATIONS, return_value=[]),
+            patch(_PATCH_EMIT_ITERATION_SPAN),
+            patch(_PATCH_SET_PIPELINE_ATTRS),
+            patch(_PATCH_GET_WORKER_NAME, return_value="analytics_worker"),
+            patch(_PATCH_GET_REVIEWER_NAME, return_value="analytics_review_reviewer"),
+        ):
+            fn("query", acceptance_criteria=long_criteria)
+
+        criteria_passed = mock_build.call_args.kwargs.get("acceptance_criteria")
+        assert len(criteria_passed) <= 2000
+
+
+# ---------------------------------------------------------------------------
+# TestDispatchStateForwarding
+# ---------------------------------------------------------------------------
+
+
+class TestDispatchStateForwarding:
+    def test_state_forwarded_from_tool_context(self) -> None:
+        specialist = _make_specialist("analytics")
+        dispatchers = generate_dispatch_functions({"analytics": specialist})
+        fn = dispatchers["analytics"]
+
+        original_state = {"ga_credentials": {"token": "xyz"}, "account_id": "acct_1"}
+        tool_context = MagicMock()
+        tool_context.state = original_state
+
+        with patch(_PATCH_INVOKE_WITH_RETRY, return_value="ok") as mock_retry:
+            fn("query", tool_context=tool_context)
+
+        _, kwargs = mock_retry.call_args
+        assert kwargs["state"] == original_state
+
+    def test_initial_state_is_shallow_copy_of_tool_context_state(self) -> None:
+        specialist = _make_specialist("analytics")
+        dispatchers = generate_dispatch_functions({"analytics": specialist})
+        fn = dispatchers["analytics"]
+
+        original_state = {"ga_credentials": {"token": "xyz"}, "account_id": "acct_1"}
+        tool_context = MagicMock()
+        tool_context.state = original_state
+
+        with patch(_PATCH_INVOKE_WITH_RETRY, return_value="ok") as mock_retry:
+            fn("query", tool_context=tool_context)
+
+        _, kwargs = mock_retry.call_args
+        forwarded_state = kwargs["state"]
+        # Values must match
+        assert forwarded_state == original_state
+        # But it must be a copy — not the same object
+        assert forwarded_state is not original_state
+
+    def test_state_none_when_no_tool_context_in_review_loop(self) -> None:
+        specialist = _make_specialist("analytics")
+        dispatchers = generate_dispatch_functions({"analytics": specialist})
+        fn = dispatchers["analytics"]
+
+        with (
+            patch(_PATCH_BUILD_PIPELINE, return_value=MagicMock()),
+            patch(
+                _PATCH_INVOKE_PIPELINE, return_value=("text", {}, [])
+            ) as mock_invoke,
+            patch(_PATCH_CHECK_HALLUCINATION),
+            patch(_PATCH_EXTRACT_RESULT, return_value={"result": "ok"}),
+            patch(_PATCH_EXTRACT_ITERATIONS, return_value=[]),
+            patch(_PATCH_EMIT_ITERATION_SPAN),
+            patch(_PATCH_SET_PIPELINE_ATTRS),
+            patch(_PATCH_GET_WORKER_NAME, return_value="analytics_worker"),
+            patch(_PATCH_GET_REVIEWER_NAME, return_value="analytics_review_reviewer"),
+        ):
+            fn("query", acceptance_criteria="some criteria")
+
+        # invoke_pipeline should be called with state=None
+        call_kwargs = mock_invoke.call_args.kwargs
+        assert call_kwargs.get("state") is None
+
+
+# ---------------------------------------------------------------------------
+# TestDispatchErrorHandling
+# ---------------------------------------------------------------------------
+
+
+class TestDispatchErrorHandling:
+    def test_exception_returns_error_string_not_reraise(self) -> None:
+        specialist = _make_specialist("my_agent")
+        dispatchers = generate_dispatch_functions({"my_agent": specialist})
+        fn = dispatchers["my_agent"]
+
+        with patch(_PATCH_INVOKE_WITH_RETRY, side_effect=RuntimeError("boom")):
+            result = fn("query")
+
+        assert isinstance(result, str)
+        assert result.startswith("Error dispatching to my_agent")
+        assert "boom" in result
+
+    def test_review_loop_exception_returns_error_string(self) -> None:
+        specialist = _make_specialist("analytics")
+        dispatchers = generate_dispatch_functions({"analytics": specialist})
+        fn = dispatchers["analytics"]
+
+        with patch(_PATCH_BUILD_PIPELINE, side_effect=ValueError("pipeline failed")):
+            result = fn("query", acceptance_criteria="must include X")
+
+        assert isinstance(result, str)
+        assert result.startswith("Error dispatching to analytics")
+        assert "pipeline failed" in result
+
+    def test_no_exception_propagates_to_caller(self) -> None:
+        specialist = _make_specialist("my_agent")
+        dispatchers = generate_dispatch_functions({"my_agent": specialist})
+        fn = dispatchers["my_agent"]
+
+        with patch(_PATCH_INVOKE_WITH_RETRY, side_effect=Exception("unexpected")):
+            # Should not raise
+            result = fn("query")
+
+        assert "Error dispatching to" in result
+
+
+# ---------------------------------------------------------------------------
+# TestAssembleAvailableSpecialistsBlock
+# ---------------------------------------------------------------------------
+
+
+class TestAssembleAvailableSpecialistsBlock:
+    def test_empty_specialists_returns_heading_plus_none_registered(self) -> None:
+        result = assemble_available_specialists_block({})
+
+        assert result.startswith("## Available Specialists")
+        assert "None registered" in result
+
+    def test_specialists_sorted_alphabetically_with_descriptions(self) -> None:
+        specialists = {
+            "c_spec": _make_specialist("c_spec", "C desc"),
+            "a_spec": _make_specialist("a_spec", "A desc"),
+            "b_spec": _make_specialist("b_spec", "B desc"),
+        }
+        result = assemble_available_specialists_block(specialists)
+
+        assert result.startswith("## Available Specialists\n\n")
+        lines = result.splitlines()
+        bullets = [line for line in lines if line.startswith("- **")]
+        assert len(bullets) == 3
+        assert "a_spec" in bullets[0]
+        assert "b_spec" in bullets[1]
+        assert "c_spec" in bullets[2]
+        assert "A desc" in bullets[0]
+        assert "B desc" in bullets[1]
+        assert "C desc" in bullets[2]
+
+    def test_missing_description_uses_fallback(self) -> None:
+        specialists = {"my_agent": _make_specialist("my_agent", description=None)}
+        result = assemble_available_specialists_block(specialists)
+
+        assert "(no description provided)" in result
+
+    def test_empty_description_uses_fallback(self) -> None:
+        specialists = {"my_agent": _make_specialist("my_agent", description="")}
+        result = assemble_available_specialists_block(specialists)
+
+        assert "(no description provided)" in result
+
+    def test_single_specialist_formats_correctly(self) -> None:
+        specialists = {"solo_agent": _make_specialist("solo_agent", "Does solo things")}
+        result = assemble_available_specialists_block(specialists)
+
+        assert "## Available Specialists\n\n" in result
+        assert "- **solo_agent**: Does solo things" in result
+
+    def test_heading_always_present(self) -> None:
+        for specialists in [{}, {"x_agent": _make_specialist("x_agent")}]:
+            result = assemble_available_specialists_block(specialists)
+            assert result.startswith("## Available Specialists")
+
+
+# ---------------------------------------------------------------------------
+# TestIntegrationSmoke — two specialists, both dispatch branches
+# ---------------------------------------------------------------------------
+
+
+class TestIntegrationSmoke:
+    def test_integration_smoke_two_specialists(self) -> None:
+        alpha = _make_specialist("alpha_agent", "Alpha description")
+        beta = _make_specialist("beta_agent", "Beta description")
+
+        dispatchers = generate_dispatch_functions(
+            {"alpha_agent": alpha, "beta_agent": beta}
+        )
+
+        assert set(dispatchers.keys()) == {"alpha_agent", "beta_agent"}
+        assert dispatchers["alpha_agent"].__name__ == "dispatch_to_alpha_agent"
+        assert dispatchers["beta_agent"].__name__ == "dispatch_to_beta_agent"
+
+        # --- alpha: review-loop branch ---
+        mock_iter = MagicMock()
+        mock_iter.iteration, mock_iter.specialist_output, mock_iter.reviewer_output = (
+            1,
+            "alpha draft",
+            "alpha review",
+        )
+
+        with (
+            patch(_PATCH_BUILD_PIPELINE, return_value=MagicMock()),
+            patch(_PATCH_INVOKE_PIPELINE, return_value=("text", {}, [])),
+            patch(_PATCH_CHECK_HALLUCINATION),
+            patch(_PATCH_EXTRACT_RESULT, return_value={"result": "alpha answer"}) as mock_extract,
+            patch(_PATCH_EXTRACT_ITERATIONS, return_value=[mock_iter]),
+            patch(_PATCH_EMIT_ITERATION_SPAN),
+            patch(_PATCH_SET_PIPELINE_ATTRS),
+            patch(_PATCH_GET_WORKER_NAME, return_value="alpha_agent_worker"),
+            patch(_PATCH_GET_REVIEWER_NAME, return_value="alpha_agent_review_reviewer"),
+        ):
+            alpha_result = dispatchers["alpha_agent"](
+                "alpha query", acceptance_criteria="must be thorough"
+            )
+
+        assert alpha_result == "alpha answer"
+        mock_extract.assert_called_once()
+
+        # --- beta: single-pass branch ---
+        with patch(_PATCH_INVOKE_WITH_RETRY, return_value="beta answer") as mock_retry:
+            beta_result = dispatchers["beta_agent"]("beta query")
+
+        assert beta_result == "beta answer"
+        mock_retry.assert_called_once_with(
+            beta,
+            "beta query",
+            state=None,
+            retry_config=DEFAULT_RETRY_CONFIG,
+        )
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
