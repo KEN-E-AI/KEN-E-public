@@ -89,3 +89,7 @@ def _make_header_provider(
         return headers
 
     return header_provider
+
+
+# Public alias — use this for cross-module imports (M7 review finding).
+make_header_provider = _make_header_provider
