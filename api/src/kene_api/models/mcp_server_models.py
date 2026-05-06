@@ -33,7 +33,7 @@ from .agent_config_models import SUPPORTED_MODELS as _SUPPORTED_MODELS  # noqa: 
 
 # Map from ``auth_type`` (on the MCP server config) to the ADK session-state
 # key that holds the per-user credential payload. Consumed by
-# ``MCPServerManager._build_header_provider`` in ``app/adk/mcp_config/manager.py``.
+# ``make_header_provider`` in ``app/adk/agents/agent_factory/header_provider.py``.
 #
 # Only ``ga_oauth`` is wired today; the other entries are reserved for
 # integrations enabled by Sprint 6+ migrations (HubSpot, Google Ads).
@@ -99,10 +99,7 @@ class MCPServerFirestoreConfig(BaseModel):
     estimated_tokens: int = Field(
         default=1000,
         ge=0,
-        description=(
-            "Estimated context tokens for tool definitions. Drives LRU "
-            "eviction budget in MCPServerManager (max_total_tokens=15000)."
-        ),
+        description="Estimated context tokens for tool definitions.",
     )
     keywords: list[str] = Field(
         default_factory=list,
@@ -119,7 +116,7 @@ class MCPServerFirestoreConfig(BaseModel):
         default=None,
         description=(
             "Auth scheme identifier. Must be a key in CREDENTIAL_KEYS or None. "
-            "Drives MCPServerManager._build_header_provider dispatch."
+            "Drives ``make_header_provider`` dispatch in the agent factory."
         ),
     )
 

@@ -384,6 +384,139 @@ class TestBuildToolsetForDoc:
 
 
 # ---------------------------------------------------------------------------
+# Tests: build_toolset_for_config
+# ---------------------------------------------------------------------------
+
+
+class TestBuildToolsetForConfig:
+    """Tests for the build_toolset_for_config public helper (AC-16)."""
+
+    def _make_sse_config(self, auth_type: str | None = "ga_oauth") -> Any:
+        from app.adk.mcp_config.config import MCPServerConfig
+
+        return MCPServerConfig(
+            name="test_sse_server",
+            description="Test SSE server",
+            category="analytics",
+            connection={
+                "connection_type": "sse",
+                "url": "https://mcp.example.com/sse",
+                "headers": {"X-Custom": "value"},
+                "timeout_seconds": 45,
+            },
+            auth_type=auth_type,
+        )
+
+    def _make_stdio_config(self, auth_type: str | None = None) -> Any:
+        from app.adk.mcp_config.config import MCPServerConfig
+
+        return MCPServerConfig(
+            name="test_stdio_server",
+            description="Test stdio server",
+            category="analytics",
+            connection={
+                "connection_type": "stdio",
+                "command": "npx",
+                "args": ["-y", "@test/mcp-server"],
+                "env": {"SOME_VAR": "value"},
+            },
+            auth_type=auth_type,
+        )
+
+    def test_sse_config_round_trips_to_toolset(self) -> None:
+        """SSE MCPServerConfig → build_toolset_for_doc called with correct doc-shape dict."""
+        from app.adk.agents.agent_factory.mcp import build_toolset_for_config
+
+        config = self._make_sse_config(auth_type="ga_oauth")
+        mock_toolset = MagicMock(name="MockToolset")
+
+        with patch(
+            "app.adk.agents.agent_factory.mcp.build_toolset_for_doc",
+            return_value=mock_toolset,
+        ) as mock_build:
+            result = build_toolset_for_config(config)
+
+        assert result is mock_toolset
+        expected_doc = {
+            "connection": {
+                "connection_type": "sse",
+                "url": "https://mcp.example.com/sse",
+                "headers": {"X-Custom": "value"},
+                "timeout_seconds": 45,
+            },
+            "auth_type": "ga_oauth",
+        }
+        mock_build.assert_called_once_with("test_sse_server", expected_doc)
+
+    def test_stdio_config_round_trips_to_toolset(self) -> None:
+        """Stdio MCPServerConfig → build_toolset_for_doc called with correct doc-shape dict."""
+        from app.adk.agents.agent_factory.mcp import build_toolset_for_config
+
+        config = self._make_stdio_config(auth_type=None)
+        mock_toolset = MagicMock(name="MockToolset")
+
+        with patch(
+            "app.adk.agents.agent_factory.mcp.build_toolset_for_doc",
+            return_value=mock_toolset,
+        ) as mock_build:
+            result = build_toolset_for_config(config)
+
+        assert result is mock_toolset
+        expected_doc = {
+            "connection": {
+                "connection_type": "stdio",
+                "command": "npx",
+                "args": ["-y", "@test/mcp-server"],
+                "env": {"SOME_VAR": "value"},
+            },
+            "auth_type": None,
+        }
+        mock_build.assert_called_once_with("test_stdio_server", expected_doc)
+
+    def test_auth_type_none_passes_none(self) -> None:
+        """config.auth_type=None → doc has auth_type=None → build_toolset_for_doc called with auth_type: None."""
+        from app.adk.agents.agent_factory.mcp import build_toolset_for_config
+
+        config = self._make_sse_config(auth_type=None)
+        mock_toolset = MagicMock(name="MockToolset")
+
+        with patch(
+            "app.adk.agents.agent_factory.mcp.build_toolset_for_doc",
+            return_value=mock_toolset,
+        ) as mock_build:
+            build_toolset_for_config(config)
+
+        call_args = mock_build.call_args
+        doc_passed = call_args[0][1]
+        assert doc_passed["auth_type"] is None
+
+    def test_unknown_auth_type_raises_value_error(self) -> None:
+        """config.auth_type='unknown_oauth' → ValueError propagated from build_toolset_for_doc."""
+        from app.adk.agents.agent_factory.mcp import build_toolset_for_config
+
+        config = self._make_sse_config(auth_type="unknown_oauth")
+
+        with pytest.raises(ValueError, match="Unknown auth_type"):
+            build_toolset_for_config(config)
+
+    def test_unknown_connection_type_raises_mcp_schema_error(self) -> None:
+        """connection that is neither SseConnectionConfig nor StdioConnectionConfig → MCPSchemaError."""
+        from app.adk.agents.agent_factory.mcp import (
+            MCPSchemaError,
+            build_toolset_for_config,
+        )
+
+        # Build a config then replace its connection with an unknown mock type
+        config = self._make_sse_config()
+        unknown_conn = MagicMock()
+        unknown_conn.connection_type = "grpc"
+        config = config.model_copy(update={"connection": unknown_conn})
+
+        with pytest.raises(MCPSchemaError, match="SseConnectionConfig or StdioConnectionConfig"):
+            build_toolset_for_config(config)
+
+
+# ---------------------------------------------------------------------------
 # Tests: _build_connection_params
 # ---------------------------------------------------------------------------
 
@@ -756,6 +889,7 @@ class TestPublicExports:
         from app.adk.agents.agent_factory import (
             MCPFactoryError,
             MCPSchemaError,
+            build_toolset_for_config,
             build_toolset_for_doc,
             load_all_mcp_toolsets,
             load_toolsets_for_specialist,
@@ -763,6 +897,7 @@ class TestPublicExports:
 
         assert MCPFactoryError is not None
         assert MCPSchemaError is not None
+        assert callable(build_toolset_for_config)
         assert callable(build_toolset_for_doc)
         assert callable(load_all_mcp_toolsets)
         assert callable(load_toolsets_for_specialist)

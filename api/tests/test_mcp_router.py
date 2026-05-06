@@ -37,8 +37,6 @@ def mock_mcp_manager():
     manager.get_status.return_value = {
         "loaded_count": 2,
         "max_servers": 10,
-        "total_tokens": 1500,
-        "max_tokens": 15000,
         "servers": [
             {
                 "name": "test_server_1",
@@ -156,7 +154,8 @@ class TestMCPStatusEndpoints:
         data = response.json()
         assert data["loaded_count"] == 2
         assert data["max_servers"] == 10
-        assert data["total_tokens"] == 1500
+        assert "total_tokens" not in data
+        assert "max_tokens" not in data
         assert len(data["servers"]) == 2
 
     def test_get_mcp_health(
@@ -269,13 +268,35 @@ class TestMCPLoadEndpoints:
         assert "Failed to connect" in response.json()["detail"]
         assert "broken_server" in response.json()["detail"]
 
+    def test_load_server_capacity_error(
+        self,
+        test_client,
+        mock_mcp_manager,
+    ):
+        """Test POST /api/v1/mcp/load returns 503 when capacity is reached."""
+        mock_mcp_manager.load_server.side_effect = RuntimeError(
+            "MCP server capacity reached (10); unload a server before loading another"
+        )
+
+        with patch(
+            "src.kene_api.routers.mcp._get_mcp_manager",
+            return_value=mock_mcp_manager,
+        ):
+            response = test_client.post(
+                "/api/v1/mcp/load",
+                json={"server_name": "extra_server"},
+            )
+
+        assert response.status_code == 503
+        assert "capacity reached" in response.json()["detail"]
+
     def test_load_server_unexpected_error(
         self,
         test_client,
         mock_mcp_manager,
     ):
         """Test POST /api/v1/mcp/load returns 500 with clear message on unexpected error."""
-        mock_mcp_manager.load_server.side_effect = RuntimeError("something unexpected")
+        mock_mcp_manager.load_server.side_effect = OSError("something unexpected")
 
         with patch(
             "src.kene_api.routers.mcp._get_mcp_manager",

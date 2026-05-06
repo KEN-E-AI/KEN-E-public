@@ -47,8 +47,6 @@ class MCPStatusResponse(BaseModel):
 
     loaded_count: int = Field(..., description="Number of currently loaded servers")
     max_servers: int = Field(..., description="Maximum allowed concurrent servers")
-    total_tokens: int = Field(..., description="Total estimated tokens across all servers")
-    max_tokens: int = Field(..., description="Maximum allowed total tokens")
     servers: list[MCPServerInfo] = Field(..., description="Details of loaded servers")
 
 
@@ -147,8 +145,6 @@ async def get_mcp_status(
     return MCPStatusResponse(
         loaded_count=mcp_status["loaded_count"],
         max_servers=mcp_status["max_servers"],
-        total_tokens=mcp_status["total_tokens"],
-        max_tokens=mcp_status["max_tokens"],
         servers=[
             MCPServerInfo(
                 name=s["name"],
@@ -285,6 +281,11 @@ async def load_mcp_server(
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(e),
+        ) from e
     except TimeoutError as e:
         raise HTTPException(status_code=504, detail=str(e)) from e
     except ConnectionError as e:
@@ -553,8 +554,6 @@ async def get_admin_dashboard(
     mcp_status = MCPStatusResponse(
         loaded_count=raw_status["loaded_count"],
         max_servers=raw_status["max_servers"],
-        total_tokens=raw_status["total_tokens"],
-        max_tokens=raw_status["max_tokens"],
         servers=[
             MCPServerInfo(
                 name=s["name"],
@@ -626,7 +625,7 @@ async def get_admin_dashboard(
     # Check which features are enabled
     features_enabled = {
         "mcp_lazy_loading": True,  # Always enabled in Sprint 3
-        "mcp_lru_eviction": True,
+        "mcp_lru_eviction": False,
         "mcp_health_monitoring": True,
         "oauth_header_auth": True,
         "tool_usage_tracking": True,

@@ -2,31 +2,26 @@
 
 This module provides the core MCP server management functionality:
 - Lazy initialization: Servers start only when first tool is requested
-- Connection pooling: Maximum concurrent connections with LRU eviction
-- Token budget management: Tracks estimated context tokens
+- Hard connection cap: RuntimeError when max_loaded_servers is exceeded
 - Health monitoring: Periodic health checks with auto-reconnection
 
-Design Reference: §5.4 MCP Server Manager (Sprint 3 Design Doc)
+Toolset construction is delegated to ``app.adk.agents.agent_factory.mcp``
+(imported lazily inside ``_connect_server`` to avoid circular imports).
 """
 
 from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any
+from datetime import datetime, timezone
+from typing import Any
 
 from shared.structured_logging import get_structured_logger, log_context
 
 from .config import (
     MCPServerConfig,
-    SseConnectionConfig,
-    StdioConnectionConfig,
     get_mcp_config_loader,
 )
-
-if TYPE_CHECKING:
-    from google.adk.agents.readonly_context import ReadonlyContext
 
 logger = get_structured_logger(__name__)
 
@@ -49,25 +44,20 @@ class LoadedServer:
     name: str
     config: MCPServerConfig
     tools: list[dict[str, Any]] = field(default_factory=list)
-    loaded_at: datetime = field(default_factory=datetime.utcnow)
-    last_used: datetime = field(default_factory=datetime.utcnow)
+    loaded_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    last_used: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     token_estimate: int = 0
     health_status: str = "healthy"
     consecutive_failures: int = 0
-    _connection: Any = None  # Store the actual MCP connection
     _toolset: Any = None  # McpToolset instance for agent use
 
 
 class MCPServerManager:
     """Manages MCP server connections with lazy-loading.
 
-    Integrates with Sprint 2's ToolRegistry for tool metadata while
-    handling the actual MCP connections and tool loading.
-
     Features:
     - On-demand initialization (servers start when first tool is requested)
-    - LRU eviction when connection limit reached
-    - Token budget tracking to manage context window
+    - Hard cap on concurrent connections (RuntimeError when exceeded)
     - Health monitoring with automatic reconnection
     - Graceful shutdown
 
@@ -85,26 +75,21 @@ class MCPServerManager:
     def __init__(
         self,
         max_loaded_servers: int = 10,
-        max_total_tokens: int = 15000,
         init_timeout_seconds: float = 30.0,
-        idle_timeout_minutes: int = 10,
         health_check_interval_seconds: int = 30,
         max_consecutive_failures: int = 3,
     ):
         """Initialize the MCP server manager.
 
         Args:
-            max_loaded_servers: Maximum number of concurrent server connections
-            max_total_tokens: Maximum total estimated tokens across all servers
+            max_loaded_servers: Hard cap on concurrent server connections;
+                raises RuntimeError when exceeded (no LRU eviction).
             init_timeout_seconds: Timeout for server initialization
-            idle_timeout_minutes: Idle time before automatic eviction
             health_check_interval_seconds: Interval between health checks
             max_consecutive_failures: Failures before marking unhealthy
         """
         self.max_loaded_servers = max_loaded_servers
-        self.max_total_tokens = max_total_tokens
         self.init_timeout = init_timeout_seconds
-        self.idle_timeout = timedelta(minutes=idle_timeout_minutes)
         self.health_check_interval = health_check_interval_seconds
         self.max_consecutive_failures = max_consecutive_failures
 
@@ -112,8 +97,7 @@ class MCPServerManager:
         self._loaded_servers: dict[str, LoadedServer] = {}
         self._lock = asyncio.Lock()
 
-        # Background task handles
-        self._idle_check_task: asyncio.Task[None] | None = None
+        # Background task handle for health monitoring
         self._health_check_task: asyncio.Task[None] | None = None
 
     async def load_server(self, server_name: str) -> list[dict[str, Any]]:
@@ -158,8 +142,12 @@ class MCPServerManager:
             if not config.enabled:
                 raise ValueError(f"MCP server '{server_name}' is disabled")
 
-            # Ensure we have capacity (may evict LRU servers)
-            await self._ensure_capacity(config.estimated_tokens)
+            # Hard cap — no LRU eviction; callers must unload before loading more.
+            if len(self._loaded_servers) >= self.max_loaded_servers:
+                raise RuntimeError(
+                    f"MCP server capacity reached ({self.max_loaded_servers}); "
+                    "unload a server before loading another"
+                )
 
             # Initialize the server
             logger.info(
@@ -205,7 +193,6 @@ class MCPServerManager:
                 loaded_at=now,
                 last_used=now,
                 token_estimate=config.estimated_tokens,
-                _connection=toolset,
                 _toolset=toolset,
             )
 
@@ -227,7 +214,10 @@ class MCPServerManager:
     async def _connect_server(
         self, config: MCPServerConfig
     ) -> tuple[list[dict[str, Any]], Any]:
-        """Create connection to MCP server using ADK McpToolset.
+        """Create connection to MCP server via the agent factory.
+
+        Delegates toolset construction (connection params + header provider) to
+        ``build_toolset_for_config`` so that logic is not duplicated here.
 
         Args:
             config: Server configuration
@@ -235,16 +225,9 @@ class MCPServerManager:
         Returns:
             Tuple of (tools metadata list, McpToolset instance)
         """
-        from google.adk.tools.mcp_tool.mcp_toolset import McpToolset as _McpToolset
+        from app.adk.agents.agent_factory.mcp import build_toolset_for_config
 
-        connection_params = self._build_connection_params(config)
-        header_provider = self._build_header_provider(config)
-
-        toolset = _McpToolset(
-            connection_params=connection_params,
-            header_provider=header_provider,
-        )
-
+        toolset = build_toolset_for_config(config)
         adk_tools = await toolset.get_tools()
         tools_metadata = [
             {
@@ -254,117 +237,7 @@ class MCPServerManager:
             }
             for t in adk_tools
         ]
-
         return tools_metadata, toolset
-
-    def _build_connection_params(self, config: MCPServerConfig) -> Any:
-        """Build ADK connection params from server config.
-
-        Args:
-            config: Server configuration
-
-        Returns:
-            SseConnectionParams or StdioConnectionParams
-        """
-        from google.adk.tools.mcp_tool.mcp_session_manager import (
-            SseConnectionParams as _SseParams,
-        )
-        from google.adk.tools.mcp_tool.mcp_session_manager import (
-            StdioConnectionParams as _StdioParams,
-        )
-
-        if isinstance(config.connection, SseConnectionConfig):
-            return _SseParams(
-                url=config.connection.url,
-                headers=config.connection.headers or None,
-                timeout=float(config.connection.timeout_seconds),
-            )
-        elif isinstance(config.connection, StdioConnectionConfig):
-            from mcp.client.stdio import StdioServerParameters as _StdioServerParams
-
-            return _StdioParams(
-                server_params=_StdioServerParams(
-                    command=config.connection.command,
-                    args=config.connection.args,
-                    env=config.connection.env or None,
-                ),
-                timeout=5.0,
-            )
-        raise ValueError(f"Unsupported connection type: {type(config.connection)}")
-
-    def _build_header_provider(self, config: MCPServerConfig) -> Any:
-        """Build a header_provider callback for per-user auth.
-
-        For GA OAuth, returns a function that reads ga_credentials from
-        ADK ReadonlyContext.state and returns Authorization + tenant headers.
-
-        Args:
-            config: Server configuration
-
-        Returns:
-            Callable or None
-        """
-        if config.auth_type == "ga_oauth":
-
-            def ga_oauth_header_provider(
-                context: ReadonlyContext,
-            ) -> dict[str, str]:
-                ga_creds = context.state.get("ga_credentials", {})
-                headers: dict[str, str] = {}
-                if token := ga_creds.get("access_token", ""):
-                    headers["Authorization"] = f"Bearer {token}"
-                if tenant_id := ga_creds.get("tenant_id", ""):
-                    headers["X-Tenant-ID"] = tenant_id
-                return headers
-
-            return ga_oauth_header_provider
-
-        return None
-
-    async def _ensure_capacity(self, needed_tokens: int) -> None:
-        """Ensure capacity for new server by evicting LRU if needed.
-
-        Args:
-            needed_tokens: Token estimate for the new server
-        """
-        current_tokens = sum(s.token_estimate for s in self._loaded_servers.values())
-
-        # Evict until we have room (count and tokens)
-        while (
-            len(self._loaded_servers) >= self.max_loaded_servers
-            or (current_tokens + needed_tokens) > self.max_total_tokens
-        ):
-            if not self._loaded_servers:
-                break
-
-            lru_name = self._get_lru_server()
-            logger.info(
-                f"Evicting LRU server '{lru_name}' to make room",
-                extra=log_context(
-                    component="mcp_manager",
-                    action="lru_eviction",
-                    extra={
-                        "evicted_server": lru_name,
-                        "current_servers": len(self._loaded_servers),
-                        "current_tokens": current_tokens,
-                    },
-                ),
-            )
-            await self._unload_server_unlocked(lru_name)
-            current_tokens = sum(
-                s.token_estimate for s in self._loaded_servers.values()
-            )
-
-    def _get_lru_server(self) -> str:
-        """Get the least recently used server name.
-
-        Returns:
-            Name of the LRU server
-        """
-        return min(
-            self._loaded_servers.keys(),
-            key=lambda name: self._loaded_servers[name].last_used,
-        )
 
     async def reload(self) -> dict[str, Any]:
         """Re-read configs from the underlying loader and evict stale servers.
@@ -430,8 +303,6 @@ class MCPServerManager:
         try:
             if loaded._toolset is not None:
                 await loaded._toolset.close()
-            elif loaded._connection and hasattr(loaded._connection, "close"):
-                await loaded._connection.close()
         except Exception as e:
             logger.warning(
                 f"Error closing MCP server: {e}",
@@ -502,10 +373,6 @@ class MCPServerManager:
         return {
             "loaded_count": len(self._loaded_servers),
             "max_servers": self.max_loaded_servers,
-            "total_tokens": sum(
-                s.token_estimate for s in self._loaded_servers.values()
-            ),
-            "max_tokens": self.max_total_tokens,
             "servers": [
                 {
                     "name": name,
@@ -530,64 +397,7 @@ class MCPServerManager:
         """
         return server_name in self._loaded_servers
 
-    # === Idle Monitoring (Story 1.3.3) ===
-
-    async def start_idle_monitor(self) -> None:
-        """Start background task to evict idle connections."""
-        if self._idle_check_task is not None:
-            return
-
-        self._idle_check_task = asyncio.create_task(self._idle_monitor_loop())
-        logger.info("MCP idle monitor started")
-
-    async def stop_idle_monitor(self) -> None:
-        """Stop the idle monitor background task."""
-        if self._idle_check_task is not None:
-            self._idle_check_task.cancel()
-            try:
-                await self._idle_check_task
-            except asyncio.CancelledError:
-                pass
-            self._idle_check_task = None
-            logger.info("MCP idle monitor stopped")
-
-    async def _idle_monitor_loop(self) -> None:
-        """Background loop to check and evict idle servers."""
-        while True:
-            try:
-                await asyncio.sleep(60)  # Check every minute
-                await self._evict_idle_servers()
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Idle monitor error: {e}")
-
-    async def _evict_idle_servers(self) -> None:
-        """Evict servers that have been idle beyond timeout."""
-        now = datetime.now(timezone.utc)
-        servers_to_evict = []
-
-        async with self._lock:
-            for name, loaded in self._loaded_servers.items():
-                idle_duration = now - loaded.last_used
-                if idle_duration > self.idle_timeout:
-                    servers_to_evict.append(name)
-                    logger.info(
-                        f"Server '{name}' idle for {idle_duration}, marking for eviction",
-                        extra=log_context(
-                            component="mcp_manager",
-                            action="idle_eviction",
-                            extra={
-                                "server_name": name,
-                                "idle_minutes": idle_duration.total_seconds() / 60,
-                            },
-                        ),
-                    )
-
-            for name in servers_to_evict:
-                await self._unload_server_unlocked(name)
-
-    # === Health Monitoring (Story 1.3.2) ===
+    # === Health Monitoring ===
 
     async def start_health_monitor(self) -> None:
         """Start background health monitoring."""
@@ -693,6 +503,10 @@ class MCPServerManager:
                 await self.load_server(server_name)
                 logger.info(f"Reconnection successful for '{server_name}'")
                 return
+            except RuntimeError as exc:
+                # Hard cap hit — retrying won't help; surface immediately.
+                logger.error(f"Reconnection aborted for '{server_name}': {exc}")
+                return
             except Exception as e:
                 logger.warning(f"Reconnection attempt {attempt + 1} failed: {e}")
 
@@ -704,8 +518,7 @@ class MCPServerManager:
         """Gracefully shutdown all servers and background tasks."""
         logger.info("Shutting down MCP server manager")
 
-        # Stop background monitors
-        await self.stop_idle_monitor()
+        # Stop background monitor
         await self.stop_health_monitor()
 
         # Unload all servers
