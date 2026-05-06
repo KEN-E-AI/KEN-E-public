@@ -3,7 +3,6 @@ Dispatch handlers for routing to specialized agents.
 """
 
 import logging
-import re
 import time
 import uuid
 from typing import Any
@@ -19,6 +18,7 @@ from .agent_retry import (
     FAST_RETRY_CONFIG,
     invoke_agent_with_retry,
 )
+from .criteria_utils import sanitise_criteria
 from .review_pipeline import (
     _check_hallucinated_approval,
     build_review_pipeline,
@@ -31,21 +31,6 @@ from .review_pipeline_tracing import emit_iteration_span, set_pipeline_attrs
 from .supervisor_utils import invoke_pipeline
 
 logger = logging.getLogger(__name__)
-
-# Allow only printable ASCII minus control characters (no angle brackets, backtick,
-# or curly braces that could be misread as template variables or HTML by the LLM).
-_UNSAFE_CRITERIA_RE = re.compile(r"[^\w\s.,;:()\-'\"!?%@&=+/#*]")
-
-
-def _sanitise_criteria(raw: str) -> str:
-    """Remove characters that could break prompt structure or inject template variables.
-
-    Applied to acceptance_criteria before it is interpolated into LLM system
-    prompts by build_review_pipeline(), so that a manipulated root-agent
-    response cannot redirect sub-agent behaviour via structural injection.
-    The 2000-char hard cap upstream bounds the total length.
-    """
-    return _UNSAFE_CRITERIA_RE.sub("", raw)
 
 
 @safe_weave_op(name="dispatch_to_company_news")
@@ -106,7 +91,7 @@ def dispatch_to_company_news(
                 f"[NEWS-DISPATCH] acceptance_criteria truncated from {len(criteria)} to 2000 chars"
             )
             criteria = criteria[:2000]
-        criteria = _sanitise_criteria(criteria)
+        criteria = sanitise_criteria(criteria)
         if criteria:
             logger.info("🔄 Building review pipeline for company news query...")
             pipeline = build_review_pipeline(
@@ -234,7 +219,7 @@ def dispatch_to_google_analytics(
                 f"[GA-DISPATCH] acceptance_criteria truncated from {len(criteria)} to 2000 chars"
             )
             criteria = criteria[:2000]
-        criteria = _sanitise_criteria(criteria)
+        criteria = sanitise_criteria(criteria)
         if criteria:
             logger.info("🔄 Building review pipeline for Google Analytics query...")
             pipeline = build_review_pipeline(
