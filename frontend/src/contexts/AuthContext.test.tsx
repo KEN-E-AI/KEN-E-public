@@ -282,8 +282,7 @@ describe("AuthContext - logout", () => {
     vi.resetAllMocks();
   });
 
-  // TC-A: happy path — signOut is called with the auth object and local state is cleared
-  test("TC-A: logout calls signOut(auth) and clears user state when authInitialized=true", async () => {
+  test("logout calls signOut(auth) and clears user state when authInitialized=true", async () => {
     const { signOut } = await import("firebase/auth");
     const { auth } = await import("@/lib/firebase");
 
@@ -311,8 +310,7 @@ describe("AuthContext - logout", () => {
     expect(localStorageMock.removeItem).toHaveBeenCalledWith("accountMetadata");
   });
 
-  // TC-B: bypass path — signOut is NOT called, local state is still cleared
-  test("TC-B: logout does not throw and skips signOut when authInitialized=false (bypass path)", async () => {
+  test("logout skips signOut and still clears state when authInitialized=false (bypass path)", async () => {
     const { signOut } = await import("firebase/auth");
     const firebaseLib = await import("@/lib/firebase");
     // Override authInitialized to simulate bypass / stub mode
@@ -335,8 +333,7 @@ describe("AuthContext - logout", () => {
     );
   });
 
-  // TC-C: failure path — signOut rejects; toast.error is shown; local state is still cleared
-  test("TC-C: logout surfaces toast.error and clears state even when signOut rejects", async () => {
+  test("logout surfaces toast.error and clears state even when signOut rejects", async () => {
     const { signOut } = await import("firebase/auth");
     const { toast } = await import("sonner");
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});

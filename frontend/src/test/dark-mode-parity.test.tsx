@@ -565,7 +565,9 @@ describe("dark-mode parity — Workflows: Automation Details", () => {
       applyTheme(isDark);
       const { container } = render(
         <ThemeProvider>
-          <MemoryRouter initialEntries={["/workflows/automations/test-plan-id"]}>
+          <MemoryRouter
+            initialEntries={["/workflows/automations/test-plan-id"]}
+          >
             <AutomationDetailsPage />
           </MemoryRouter>
         </ThemeProvider>,

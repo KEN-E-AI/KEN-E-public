@@ -1040,9 +1040,13 @@ describe("SelectOrganizationPage", () => {
       setOrgMetadata: vi.fn(),
       setAccountMetadata: vi.fn(),
     });
-    mockAxiosGet.mockResolvedValue(makeUserPermissionsResponse(["org-1"]));
+    // Two non-agency orgs (≥2 accounts total) so UI-50 auto-select doesn't
+    // fire and pre-empt the manual click below.
+    mockAxiosGet.mockResolvedValue(
+      makeUserPermissionsResponse(["org-1", "org-2"]),
+    );
     mockGetOrganizationsBatch.mockResolvedValue(
-      makeOrgBatchResponse([mockOrg1]),
+      makeOrgBatchResponse([mockOrg1, mockOrg2]),
     );
 
     const user = userEvent.setup();
@@ -1191,11 +1195,13 @@ describe("SelectOrganizationPage", () => {
       setOrgMetadata: vi.fn(),
       setAccountMetadata: vi.fn(),
     });
+    // Two non-agency orgs (in addition to the agency) so the non-agency
+    // account count is ≥2 and UI-50 auto-select doesn't pre-empt manual clicks.
     mockAxiosGet.mockResolvedValue(
-      makeUserPermissionsResponse(["org-agency", "org-1"]),
+      makeUserPermissionsResponse(["org-agency", "org-1", "org-2"]),
     );
     mockGetOrganizationsBatch.mockResolvedValue(
-      makeOrgBatchResponse([mockAgencyOrg, mockOrg1]),
+      makeOrgBatchResponse([mockAgencyOrg, mockOrg1, mockOrg2]),
     );
     mockGetChildOrganizationsWithAccounts.mockResolvedValue([mockChildOrg]);
 

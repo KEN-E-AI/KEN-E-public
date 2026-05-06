@@ -3,6 +3,7 @@
  */
 
 import React from "react";
+import { Button } from "@/components/ui/button";
 import type { NotificationWithStatus } from "@/types/notification.types";
 
 interface NotificationHandlerProps {
@@ -74,12 +75,9 @@ export const NotificationHandler: React.FC<NotificationHandlerProps> = ({
 
         {/* Footer */}
         <div className="p-6 border-t flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)] rounded-md hover:bg-[var(--color-bg-elevated)]"
-          >
+          <Button variant="outline" onClick={onClose}>
             Close
-          </button>
+          </Button>
         </div>
       </div>
     </div>

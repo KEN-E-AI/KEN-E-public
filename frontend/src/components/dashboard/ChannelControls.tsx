@@ -128,26 +128,26 @@ const ContextMenu = ({
     >
       <button
         onClick={handleView}
-        className="w-full px-3 py-2 text-xs text-left bg-black text-white rounded hover:bg-slate-800 transition-colors mb-1"
+        className="w-full px-3 py-2 text-xs text-left bg-black text-white rounded hover:bg-[var(--color-bg-elevated)] transition-colors mb-1"
       >
         View
       </button>
       <button
         onClick={handleEdit}
-        className="w-full px-3 py-2 text-xs text-left bg-black text-white rounded hover:bg-slate-800 transition-colors mb-1"
+        className="w-full px-3 py-2 text-xs text-left bg-black text-white rounded hover:bg-[var(--color-bg-elevated)] transition-colors mb-1"
       >
         Edit
       </button>
       <button
         onClick={handleRemove}
-        className={`w-full px-3 py-2 text-xs text-left bg-black text-white rounded hover:bg-slate-800 transition-colors ${showAddChild ? "mb-1" : ""}`}
+        className={`w-full px-3 py-2 text-xs text-left bg-black text-white rounded hover:bg-[var(--color-bg-elevated)] transition-colors ${showAddChild ? "mb-1" : ""}`}
       >
         Remove
       </button>
       {showAddChild && (
         <button
           onClick={handleAddChild}
-          className="w-full px-3 py-2 text-xs text-left bg-black text-white rounded hover:bg-slate-800 transition-colors"
+          className="w-full px-3 py-2 text-xs text-left bg-black text-white rounded hover:bg-[var(--color-bg-elevated)] transition-colors"
         >
           {getAddChildText()}
         </button>
@@ -1064,7 +1064,7 @@ const ReactFlowComponent = () => {
               setOpenDirectlyToForm(true);
               setEditObjectivesModalOpen(true);
             }}
-            className="bg-black text-white hover:bg-slate-800"
+            className="bg-black text-white hover:bg-[var(--color-bg-elevated)]"
           >
             Add Objective
           </Button>
@@ -1167,7 +1167,7 @@ const ReactFlowComponent = () => {
                   setOpenDirectlyToForm(true);
                   setEditObjectivesModalOpen(true);
                 }}
-                className="bg-black text-white hover:bg-slate-800"
+                className="bg-black text-white hover:bg-[var(--color-bg-elevated)]"
               >
                 Add Objective
               </Button>
@@ -1278,21 +1278,21 @@ const ReactFlowComponent = () => {
                           <text
                             x="10"
                             y="15"
-                            className="text-xs fill-[var(--color-text-disabled)]"
+                            className="text-xs fill-[var(--color-text-tertiary)]"
                           >
                             $50,000
                           </text>
                           <text
                             x="10"
                             y="65"
-                            className="text-xs fill-[var(--color-text-disabled)]"
+                            className="text-xs fill-[var(--color-text-tertiary)]"
                           >
                             $25,000
                           </text>
                           <text
                             x="10"
                             y="115"
-                            className="text-xs fill-[var(--color-text-disabled)]"
+                            className="text-xs fill-[var(--color-text-tertiary)]"
                           >
                             $0
                           </text>
@@ -1310,42 +1310,42 @@ const ReactFlowComponent = () => {
                           <text
                             x="50"
                             y="135"
-                            className="text-xs fill-[var(--color-text-disabled)]"
+                            className="text-xs fill-[var(--color-text-tertiary)]"
                           >
                             Jan
                           </text>
                           <text
                             x="80"
                             y="135"
-                            className="text-xs fill-[var(--color-text-disabled)]"
+                            className="text-xs fill-[var(--color-text-tertiary)]"
                           >
                             Feb
                           </text>
                           <text
                             x="110"
                             y="135"
-                            className="text-xs fill-[var(--color-text-disabled)]"
+                            className="text-xs fill-[var(--color-text-tertiary)]"
                           >
                             Mar
                           </text>
                           <text
                             x="140"
                             y="135"
-                            className="text-xs fill-[var(--color-text-disabled)]"
+                            className="text-xs fill-[var(--color-text-tertiary)]"
                           >
                             Apr
                           </text>
                           <text
                             x="170"
                             y="135"
-                            className="text-xs fill-[var(--color-text-disabled)]"
+                            className="text-xs fill-[var(--color-text-tertiary)]"
                           >
                             May
                           </text>
                           <text
                             x="200"
                             y="135"
-                            className="text-xs fill-[var(--color-text-disabled)]"
+                            className="text-xs fill-[var(--color-text-tertiary)]"
                           >
                             Jun
                           </text>
@@ -1405,21 +1405,21 @@ const ReactFlowComponent = () => {
                           <text
                             x="10"
                             y="15"
-                            className="text-xs fill-[var(--color-text-disabled)]"
+                            className="text-xs fill-[var(--color-text-tertiary)]"
                           >
                             $4.00
                           </text>
                           <text
                             x="10"
                             y="65"
-                            className="text-xs fill-[var(--color-text-disabled)]"
+                            className="text-xs fill-[var(--color-text-tertiary)]"
                           >
                             $2.00
                           </text>
                           <text
                             x="10"
                             y="115"
-                            className="text-xs fill-[var(--color-text-disabled)]"
+                            className="text-xs fill-[var(--color-text-tertiary)]"
                           >
                             $0
                           </text>
@@ -1437,42 +1437,42 @@ const ReactFlowComponent = () => {
                           <text
                             x="50"
                             y="135"
-                            className="text-xs fill-[var(--color-text-disabled)]"
+                            className="text-xs fill-[var(--color-text-tertiary)]"
                           >
                             Jan
                           </text>
                           <text
                             x="80"
                             y="135"
-                            className="text-xs fill-[var(--color-text-disabled)]"
+                            className="text-xs fill-[var(--color-text-tertiary)]"
                           >
                             Feb
                           </text>
                           <text
                             x="110"
                             y="135"
-                            className="text-xs fill-[var(--color-text-disabled)]"
+                            className="text-xs fill-[var(--color-text-tertiary)]"
                           >
                             Mar
                           </text>
                           <text
                             x="140"
                             y="135"
-                            className="text-xs fill-[var(--color-text-disabled)]"
+                            className="text-xs fill-[var(--color-text-tertiary)]"
                           >
                             Apr
                           </text>
                           <text
                             x="170"
                             y="135"
-                            className="text-xs fill-[var(--color-text-disabled)]"
+                            className="text-xs fill-[var(--color-text-tertiary)]"
                           >
                             May
                           </text>
                           <text
                             x="200"
                             y="135"
-                            className="text-xs fill-[var(--color-text-disabled)]"
+                            className="text-xs fill-[var(--color-text-tertiary)]"
                           >
                             Jun
                           </text>
@@ -1634,7 +1634,7 @@ const ReactFlowComponent = () => {
             </Button>
             <Button
               onClick={handleBeginAnalysis}
-              className="bg-black text-white hover:bg-slate-800"
+              className="bg-black text-white hover:bg-[var(--color-bg-elevated)]"
             >
               Analyze {modalContent.nodeType || "Tree"}
             </Button>

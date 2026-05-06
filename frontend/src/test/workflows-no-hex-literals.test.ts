@@ -2,22 +2,9 @@ import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { resolve, join, relative } from "node:path";
 
-// Enforces UI-PRD-03 §7 / CLAUDE.md §7 Styling: "Never hard-code a hex in a
-// component — every color, spacing, and typography value comes from theme.css /
-// Tailwind tokens."
-//
-// Scoped to `pages/workflows/` only — the issue's Definition of Done says "no
-// hard-coded hexes in any new Workflows file." Broadening to all of
-// `frontend/src/` would conflict with shadcn primitives' inline color refs and
-// is out of UI-46's stated scope.
-//
-// To grant a legitimate per-line exemption (e.g. a known external-library
-// color reference inside an SVG path), add the annotation comment on the same
-// line or the line immediately above:
-//   color="#6366f1" // allow-hex-literal: <reason>
-//
-// To allow an entire file (rare; requires explicit rationale), add its path
-// (relative to frontend/src, POSIX separators) to ALLOWED_FILES below.
+// Guards pages/workflows/ against raw hex literals — every color must come
+// from theme.css / Tailwind tokens. Per-line opt-out: append or precede with
+// `// allow-hex-literal: <reason>`. File-level allowlist: ALLOWED_FILES below.
 
 const FRONTEND_SRC = resolve(__dirname, "..");
 const WORKFLOWS_PAGES_DIR = resolve(FRONTEND_SRC, "pages", "workflows");

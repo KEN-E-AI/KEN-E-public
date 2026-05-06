@@ -25,11 +25,13 @@ import {
 } from "@/constants/organizationSelection";
 import { useChildOrganizations } from "@/hooks/useChildOrganizations";
 import { useAvailableAccounts } from "@/hooks/useAvailableAccounts";
+import { useToast } from "@/hooks/use-toast";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 export default function SelectOrganizationPage() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const {
     user,
     setSelectedOrgAccount,
@@ -58,6 +60,13 @@ export default function SelectOrganizationPage() {
     "loading" | "success" | "error"
   >("loading");
   const [userDataFetchAttempt, setUserDataFetchAttempt] = useState(0);
+  // Mirror userDataFetchStatus for the org-metadata batch fetch — the
+  // auto-select effect must wait for BOTH fetches to succeed, otherwise a
+  // partial batch could route a multi-org user to the wrong workspace.
+  const [metadataFetchStatus, setMetadataFetchStatus] = useState<
+    "idle" | "loading" | "success" | "error"
+  >("idle");
+  const [hasDeletedOrgs, setHasDeletedOrgs] = useState(false);
   const [localOrgMetadata, setLocalOrgMetadata] = useState<Record<string, any>>(
     {},
   );
@@ -137,9 +146,12 @@ export default function SelectOrganizationPage() {
       setLocalOrgMetadata({});
       setOrgMetadata({});
       setAccountMetadata({});
+      setHasDeletedOrgs(false);
+      setMetadataFetchStatus("success");
       return;
     }
 
+    setMetadataFetchStatus("loading");
     try {
       const batchResult = await getOrganizationsBatch(orgIds, true);
       const result: Record<string, any> = {};
@@ -170,8 +182,11 @@ export default function SelectOrganizationPage() {
         });
       });
       setAccountMetadata(flattenedAccounts);
+      setHasDeletedOrgs(deletedOrgIds.length > 0);
+      setMetadataFetchStatus("success");
     } catch (error) {
       console.error("Failed to fetch organization metadata:", error);
+      setMetadataFetchStatus("error");
     }
   };
 
@@ -233,6 +248,13 @@ export default function SelectOrganizationPage() {
 
   useEffect(() => {
     if (userDataFetchStatus !== "success") return;
+    // Wait for the org-metadata batch fetch to complete before auto-selecting.
+    // Without this gate, a partial batch (some orgs failed to load) could make
+    // totalAccounts.length === 1 spuriously and route a multi-org user to the
+    // wrong workspace. hasDeletedOrgs catches the same failure mode where the
+    // batch returned but some org documents were missing.
+    if (metadataFetchStatus !== "success") return;
+    if (hasDeletedOrgs) return;
     if (Object.keys(localOrgMetadata).length === 0) return;
     if (selectedOrganization || selectedAccount) return;
 
@@ -283,6 +305,8 @@ export default function SelectOrganizationPage() {
   }, [
     localOrgMetadata,
     userDataFetchStatus,
+    metadataFetchStatus,
+    hasDeletedOrgs,
     selectedOrganization,
     selectedAccount,
     setSelectedOrgAccount,
@@ -348,9 +372,14 @@ export default function SelectOrganizationPage() {
   const handleOrganizationSelect = (orgId: string) => {
     setSelectedAccount("");
     setSelectedChildOrg("");
-    clearChildOrganizations();
-    if (orgId !== selectedOrganization && localOrgMetadata[orgId]?.agency) {
-      fetchChildOrganizations(orgId);
+    // Only clear + refetch children when actually switching orgs. Re-clicking
+    // the same agency must not blank out the children list (which it would if
+    // we always cleared but only refetched on org change).
+    if (orgId !== selectedOrganization) {
+      clearChildOrganizations();
+      if (localOrgMetadata[orgId]?.agency) {
+        fetchChildOrganizations(orgId);
+      }
     }
     setSelectedOrganization(orgId);
   };
@@ -387,6 +416,12 @@ export default function SelectOrganizationPage() {
         // Without this catch, any throw inside the deferred callback would leave
         // isLoading=true forever, hanging the spinner with no recovery path.
         console.error("Failed to complete workspace selection", error);
+        toast({
+          title: "Couldn't open that workspace",
+          description:
+            "Something went wrong setting up your selection. Please try again.",
+          variant: "destructive",
+        });
         setIsLoading(false);
       }
     }, WORKSPACE_SELECTION_DELAY);
@@ -431,8 +466,22 @@ export default function SelectOrganizationPage() {
     return <Navigate to="/" replace />;
   }
 
-  const isDataLoading = userDataFetchStatus === "loading";
-  const hasFetchError = userDataFetchStatus === "error";
+  const isDataLoading =
+    userDataFetchStatus === "loading" || metadataFetchStatus === "loading";
+  const hasFetchError =
+    userDataFetchStatus === "error" || metadataFetchStatus === "error";
+
+  const handleRetry = () => {
+    if (userDataFetchStatus === "error") {
+      setUserDataFetchAttempt((n) => n + 1);
+      return;
+    }
+    // Metadata-only failure: bypass the 5s debounce and force a refetch.
+    lastRefreshTime.current = 0;
+    lastOrgKeysRef.current = "";
+    setMetadataFetchStatus("idle");
+    refreshOrgMetadata();
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
@@ -484,11 +533,7 @@ export default function SelectOrganizationPage() {
               <p className="text-sm text-[var(--color-text-primary)]">
                 We couldn't load your workspaces. Please try again.
               </p>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setUserDataFetchAttempt((n) => n + 1)}
-              >
+              <Button type="button" variant="outline" onClick={handleRetry}>
                 Retry
               </Button>
               <p className="text-xs text-[var(--color-text-secondary)]">
