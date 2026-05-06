@@ -266,12 +266,19 @@ def deploy_ken_e() -> str | None:
             staging_bucket=staging_bucket,
         )
 
-        # Import the KEN-E agent
+        # Assemble the KEN-E agent hierarchy from Firestore config
         sys.path.insert(0, str(Path.cwd()))
-        from agents.ken_e_agent import ken_e_agent
+        from agents.agent_factory import build_hierarchy
 
-        if ken_e_agent is None:
-            logger.error("❌ Failed to import ken_e_agent")
+        from app.adk.agents.agent_factory.config_loader import (
+            ConfigNotFoundError,
+            FirestoreConnectionError,
+        )
+
+        try:
+            ken_e_agent = build_hierarchy()
+        except (ConfigNotFoundError, FirestoreConnectionError, ValueError) as exc:
+            logger.error("❌ Failed to build ken_e_agent: %s", exc)
             return None
 
         logger.info(f"✅ Loaded agent: {type(ken_e_agent)}")
