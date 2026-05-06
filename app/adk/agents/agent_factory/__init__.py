@@ -21,6 +21,7 @@ from app.adk.agents.agent_factory.config_loader import (
 from app.adk.agents.agent_factory.mcp import (
     MCPFactoryError,
     MCPSchemaError,
+    build_toolset_for_config,
     build_toolset_for_doc,
     load_all_mcp_toolsets,
     load_toolsets_for_specialist,
@@ -35,6 +36,7 @@ __all__ = [
     "MCPSchemaError",
     "MergedAgentConfig",
     "build_agent",
+    "build_toolset_for_config",
     "build_toolset_for_doc",
     "list_account_agent_configs",
     "load_agent_config",

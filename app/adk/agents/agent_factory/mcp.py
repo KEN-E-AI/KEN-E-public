@@ -6,6 +6,9 @@ public entry points are:
 
 * ``build_toolset_for_doc(server_id, doc)`` — pure function; creates one
   ``McpToolset`` from a raw Firestore document dict.  No Firestore dependency.
+* ``build_toolset_for_config(config)`` — thin wrapper for callers that already
+  hold a validated ``MCPServerConfig`` Pydantic model; delegates to
+  ``build_toolset_for_doc`` after converting to doc-shape dict.
 * ``load_all_mcp_toolsets(db, ...)`` — loads every *enabled* doc from the
   ``mcp_server_configs`` collection and returns a ``{server_id: McpToolset}``
   dict.  Callers that want to group toolsets by specialist can iterate over
@@ -261,6 +264,67 @@ def build_toolset_for_doc(server_id: str, doc: dict[str, Any]) -> Any:
         "Built McpToolset for server %r (auth_type=%r)", server_id, auth_type
     )
     return toolset
+
+
+def build_toolset_for_config(config: Any) -> Any:
+    """Build an ADK ``McpToolset`` from a validated runtime ``MCPServerConfig``.
+
+    For callers that already have a validated runtime ``MCPServerConfig``; raw-doc
+    callers should use ``build_toolset_for_doc``.
+
+    Converts the Pydantic model to the equivalent Firestore doc-shape dict and
+    delegates to ``build_toolset_for_doc``.  This keeps the two code paths in
+    lock-step: any schema-validation or connection-params logic added to
+    ``build_toolset_for_doc`` automatically applies here too.
+
+    Args:
+        config: A ``MCPServerConfig`` instance (from ``app.adk.mcp_config.config``).
+
+    Returns:
+        An ``McpToolset`` instance with ``connection_params`` and
+        ``header_provider`` wired according to ``config.connection`` and
+        ``config.auth_type``.
+
+    Raises:
+        MCPSchemaError: ``config.connection`` is not an ``SseConnectionConfig``
+            or ``StdioConnectionConfig`` instance.
+        ValueError: ``config.auth_type`` is a non-None value not recognised by
+            ``make_header_provider`` (AH-12 fail-fast contract).
+    """
+    from app.adk.mcp_config.config import (
+        MCPServerConfig,
+        SseConnectionConfig,
+        StdioConnectionConfig,
+    )
+
+    conn = config.connection
+
+    if isinstance(conn, SseConnectionConfig):
+        connection_dict: dict[str, Any] = {
+            "connection_type": "sse",
+            "url": conn.url,
+            "headers": conn.headers or None,
+            "timeout_seconds": conn.timeout_seconds,
+        }
+    elif isinstance(conn, StdioConnectionConfig):
+        connection_dict = {
+            "connection_type": "stdio",
+            "command": conn.command,
+            "args": conn.args,
+            "env": conn.env or None,
+        }
+    else:
+        raise MCPSchemaError(
+            f"MCP server {config.name!r}: connection type {type(conn).__name__!r} "
+            f"is not SseConnectionConfig or StdioConnectionConfig"
+        )
+
+    doc: dict[str, Any] = {
+        "connection": connection_dict,
+        "auth_type": config.auth_type,
+    }
+
+    return build_toolset_for_doc(config.name, doc)
 
 
 def load_all_mcp_toolsets(

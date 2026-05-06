@@ -37,8 +37,6 @@ def mock_mcp_manager():
     manager.get_status.return_value = {
         "loaded_count": 2,
         "max_servers": 10,
-        "total_tokens": 1500,
-        "max_tokens": 15000,
         "servers": [
             {
                 "name": "test_server_1",
@@ -156,7 +154,8 @@ class TestMCPStatusEndpoints:
         data = response.json()
         assert data["loaded_count"] == 2
         assert data["max_servers"] == 10
-        assert data["total_tokens"] == 1500
+        assert "total_tokens" not in data
+        assert "max_tokens" not in data
         assert len(data["servers"]) == 2
 
     def test_get_mcp_health(

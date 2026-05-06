@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -121,9 +120,7 @@ def manager_with_config(sample_config_file):
 
     manager = MCPServerManager(
         max_loaded_servers=3,
-        max_total_tokens=2000,
         init_timeout_seconds=5.0,
-        idle_timeout_minutes=1,
     )
     manager._config_loader = loader
 
@@ -226,7 +223,8 @@ class TestMCPServerManager:
 
         assert status["loaded_count"] == 1
         assert status["max_servers"] == 3
-        assert status["total_tokens"] == 500
+        assert "total_tokens" not in status
+        assert "max_tokens" not in status
         assert len(status["servers"]) == 1
         assert status["servers"][0]["name"] == "test_server_1"
         assert status["servers"][0]["health_status"] == "healthy"
@@ -271,109 +269,21 @@ class TestMCPServerManager:
         assert manager.get_toolset("not_loaded") is None
 
 
-class TestHeaderProvider:
-    """Tests for _build_header_provider."""
-
-    def test_ga_oauth_header_provider(self, manager_with_config):
-        """Test GA OAuth header provider reads from ReadonlyContext.state."""
-        manager = manager_with_config
-        config = manager._config_loader.get_server("test_server_ga")
-        provider = manager._build_header_provider(config)
-
-        assert provider is not None
-
-        mock_context = MagicMock()
-        mock_context.state = {
-            "ga_credentials": {
-                "access_token": "test_access",
-                "tenant_id": "org-123",
-                "refresh_token": "test_refresh",
-            }
-        }
-
-        headers = provider(mock_context)
-
-        assert headers == {
-            "Authorization": "Bearer test_access",
-            "X-Tenant-ID": "org-123",
-        }
-
-    def test_no_auth_type_returns_none(self, manager_with_config):
-        """Test that servers without auth_type get no header provider."""
-        manager = manager_with_config
-        config = manager._config_loader.get_server("test_server_1")
-        provider = manager._build_header_provider(config)
-        assert provider is None
-
-    def test_ga_oauth_empty_credentials(self, manager_with_config):
-        """Test GA OAuth header provider with no credentials in state."""
-        manager = manager_with_config
-        config = manager._config_loader.get_server("test_server_ga")
-        provider = manager._build_header_provider(config)
-
-        mock_context = MagicMock()
-        mock_context.state = {}
-
-        headers = provider(mock_context)
-        assert headers == {}
-
-
-class TestLRUEviction:
-    """Tests for LRU eviction behavior."""
+class TestCapacityCap:
+    """Tests for hard connection cap behavior (replaces LRU eviction)."""
 
     @pytest.mark.asyncio
-    async def test_lru_eviction_on_count_limit(self, sample_config_file):
-        """Test that LRU server is evicted when count limit reached."""
+    async def test_capacity_cap_raises_runtime_error(self, sample_config_file):
+        """Test that loading beyond max_loaded_servers raises RuntimeError."""
         from app.adk.mcp_config.config import MCPConfigLoader
 
         loader = MCPConfigLoader(config_path=sample_config_file)
         loader.load()
-
-        manager = MCPServerManager(
-            max_loaded_servers=2,
-            max_total_tokens=10000,
-        )
-        manager._config_loader = loader
-
-        toolsets = [
-            _make_mock_toolset(["t1"]),
-            _make_mock_toolset(["t2"]),
-            _make_mock_toolset(["t3"]),
-        ]
-        toolset_iter = iter(toolsets)
-
-        async def connect(config):
-            return await _fake_connect(config, [], toolset=next(toolset_iter))
-
-        # Create a third server config
         loader._configs["test_server_3"] = loader._configs["test_server_1"].model_copy(
             update={"name": "test_server_3"}
         )
 
-        with patch.object(manager, "_connect_server", side_effect=connect):
-            await manager.load_server("test_server_1")
-            await asyncio.sleep(0.01)
-            await manager.load_server("test_server_2")
-            await manager.load_server("test_server_3")
-
-        assert not manager.is_loaded("test_server_1")  # Evicted
-        assert manager.is_loaded("test_server_2")
-        assert manager.is_loaded("test_server_3")
-        # Evicted server's toolset should have been closed
-        toolsets[0].close.assert_awaited_once()
-
-    @pytest.mark.asyncio
-    async def test_lru_eviction_on_token_limit(self, sample_config_file):
-        """Test that LRU server is evicted when token limit reached."""
-        from app.adk.mcp_config.config import MCPConfigLoader
-
-        loader = MCPConfigLoader(config_path=sample_config_file)
-        loader.load()
-
-        manager = MCPServerManager(
-            max_loaded_servers=10,
-            max_total_tokens=1000,
-        )
+        manager = MCPServerManager(max_loaded_servers=2)
         manager._config_loader = loader
 
         toolsets = [_make_mock_toolset(["t1"]), _make_mock_toolset(["t2"])]
@@ -383,11 +293,10 @@ class TestLRUEviction:
             return await _fake_connect(config, [], toolset=next(toolset_iter))
 
         with patch.object(manager, "_connect_server", side_effect=connect):
-            await manager.load_server("test_server_1")  # 500 tokens
-            await manager.load_server("test_server_2")  # 800 tokens, total 1300
-
-        assert not manager.is_loaded("test_server_1")  # Evicted
-        assert manager.is_loaded("test_server_2")
+            await manager.load_server("test_server_1")
+            await manager.load_server("test_server_2")
+            with pytest.raises(RuntimeError, match="capacity reached"):
+                await manager.load_server("test_server_3")
 
     @pytest.mark.asyncio
     async def test_access_updates_last_used(self, manager_with_config):
@@ -407,50 +316,6 @@ class TestLRUEviction:
 
         updated_time = manager._loaded_servers["test_server_1"].last_used
         assert updated_time > initial_time
-
-
-class TestIdleMonitoring:
-    """Tests for idle server monitoring."""
-
-    @pytest.mark.asyncio
-    async def test_evict_idle_servers(self, manager_with_config):
-        """Test that idle servers are evicted."""
-        manager = manager_with_config
-        manager.idle_timeout = timedelta(seconds=0.1)
-
-        mock_toolset = _make_mock_toolset(["tool_a"])
-
-        async def connect(config):
-            return await _fake_connect(config, [], toolset=mock_toolset)
-
-        with patch.object(manager, "_connect_server", side_effect=connect):
-            await manager.load_server("test_server_1")
-
-        await asyncio.sleep(0.2)
-        await manager._evict_idle_servers()
-
-        assert not manager.is_loaded("test_server_1")
-
-    @pytest.mark.asyncio
-    async def test_active_server_not_evicted(self, manager_with_config):
-        """Test that recently used server is not evicted."""
-        manager = manager_with_config
-        manager.idle_timeout = timedelta(seconds=0.5)
-
-        mock_toolset = _make_mock_toolset(["tool_a"])
-
-        async def connect(config):
-            return await _fake_connect(config, [], toolset=mock_toolset)
-
-        with patch.object(manager, "_connect_server", side_effect=connect):
-            await manager.load_server("test_server_1")
-            await asyncio.sleep(0.2)
-            await manager.load_server("test_server_1")
-
-        await asyncio.sleep(0.2)
-        await manager._evict_idle_servers()
-
-        assert manager.is_loaded("test_server_1")
 
 
 class TestHealthMonitoring:
@@ -573,50 +438,17 @@ class TestShutdown:
             ts.close.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_shutdown_stops_monitors(self, manager_with_config):
-        """Test that shutdown stops background monitors."""
+    async def test_shutdown_stops_health_monitor(self, manager_with_config):
+        """Test that shutdown stops the health monitor background task."""
         manager = manager_with_config
 
-        await manager.start_idle_monitor()
         await manager.start_health_monitor()
 
-        assert manager._idle_check_task is not None
         assert manager._health_check_task is not None
 
         await manager.shutdown()
 
-        assert manager._idle_check_task is None
         assert manager._health_check_task is None
-
-
-class TestConnectionParams:
-    """Tests for _build_connection_params.
-
-    These tests rely on conftest.py pre-mocking the ADK modules
-    so that lazy imports in _build_connection_params succeed.
-    """
-
-    def test_sse_connection_params(self, manager_with_config):
-        """Test SSE connection params are built correctly."""
-        manager = manager_with_config
-        config = manager._config_loader.get_server("test_server_2")
-
-        params = manager._build_connection_params(config)
-
-        # conftest provides MockSseConnectionParams as the stand-in
-        assert params.url == "https://test.example.com/mcp/sse"
-        assert params.timeout == 30.0
-
-    def test_stdio_connection_params(self, manager_with_config):
-        """Test stdio connection params are built correctly."""
-        manager = manager_with_config
-        config = manager._config_loader.get_server("test_server_1")
-
-        params = manager._build_connection_params(config)
-
-        # conftest provides MockStdioConnectionParams / MockStdioServerParameters
-        assert params.server_params.command == "npx"
-        assert params.server_params.args == ["-y", "test-server"]
 
 
 class TestSingleton:
