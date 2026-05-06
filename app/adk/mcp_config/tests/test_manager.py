@@ -299,6 +299,43 @@ class TestCapacityCap:
                 await manager.load_server("test_server_3")
 
     @pytest.mark.asyncio
+    async def test_reconnection_aborts_on_capacity_error(self, sample_config_file):
+        """Test that _attempt_reconnection does not retry when RuntimeError (capacity cap) is hit."""
+        from app.adk.mcp_config.config import MCPConfigLoader
+
+        loader = MCPConfigLoader(config_path=sample_config_file)
+        loader.load()
+
+        manager = MCPServerManager(max_loaded_servers=1)
+        manager._config_loader = loader
+
+        mock_toolset = _make_mock_toolset(["t1"])
+
+        async def connect(config):
+            return await _fake_connect(config, [], toolset=mock_toolset)
+
+        with patch.object(manager, "_connect_server", side_effect=connect):
+            await manager.load_server("test_server_1")
+
+        # At capacity (1 server). Attempt reconnection of test_server_1:
+        # it will unload the server first, then try to reload — but if
+        # another reconnection ran concurrently the slot could be taken.
+        # Simulate that by patching load_server to raise RuntimeError
+        # after the initial unload.
+        call_count = 0
+
+        async def load_raises_on_second_call(server_name):
+            nonlocal call_count
+            call_count += 1
+            raise RuntimeError(f"MCP server capacity reached (1); unload first")
+
+        with patch.object(manager, "load_server", side_effect=load_raises_on_second_call):
+            # Should NOT raise — RuntimeError must be caught and logged, not propagated.
+            await manager._attempt_reconnection("test_server_1")
+
+        assert call_count == 1  # Aborted after first attempt, no retry loop
+
+    @pytest.mark.asyncio
     async def test_access_updates_last_used(self, manager_with_config):
         """Test that accessing a server updates its last_used time."""
         manager = manager_with_config

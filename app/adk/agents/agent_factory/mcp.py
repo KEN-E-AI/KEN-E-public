@@ -21,9 +21,8 @@ Design notes
 * ADK's ``McpToolset`` is imported lazily (inside function bodies) to keep the
   module importable in test environments that do not have a live ADK install.
 * Connection params are built from the raw ``connection`` sub-dict using the
-  same two-branch (sse / stdio) logic as ``MCPServerManager._build_connection_params``
-  (`app/adk/mcp_config/manager.py:260-293`), now extracted as a stateless
-  function with no manager dependency.
+  stateless ``_build_connection_params`` function (sse / stdio two-branch logic)
+  with no manager dependency.
 * Header providers are delegated entirely to ``make_header_provider`` from
   AH-12.  When ``auth_type`` is ``None`` the toolset is built with
   ``header_provider=None`` (unauthenticated server).
@@ -45,11 +44,14 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from app.adk.agents.agent_factory.header_provider import make_header_provider
 from shared.structured_logging import get_structured_logger
+
+if TYPE_CHECKING:
+    from app.adk.mcp_config.config import MCPServerConfig
 
 logger = get_structured_logger(__name__)
 
@@ -266,7 +268,7 @@ def build_toolset_for_doc(server_id: str, doc: dict[str, Any]) -> Any:
     return toolset
 
 
-def build_toolset_for_config(config: Any) -> Any:
+def build_toolset_for_config(config: MCPServerConfig) -> Any:
     """Build an ADK ``McpToolset`` from a validated runtime ``MCPServerConfig``.
 
     For callers that already have a validated runtime ``MCPServerConfig``; raw-doc

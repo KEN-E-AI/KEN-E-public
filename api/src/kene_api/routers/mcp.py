@@ -281,6 +281,11 @@ async def load_mcp_server(
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(e),
+        ) from e
     except TimeoutError as e:
         raise HTTPException(status_code=504, detail=str(e)) from e
     except ConnectionError as e:

@@ -889,6 +889,7 @@ class TestPublicExports:
         from app.adk.agents.agent_factory import (
             MCPFactoryError,
             MCPSchemaError,
+            build_toolset_for_config,
             build_toolset_for_doc,
             load_all_mcp_toolsets,
             load_toolsets_for_specialist,
@@ -896,6 +897,7 @@ class TestPublicExports:
 
         assert MCPFactoryError is not None
         assert MCPSchemaError is not None
+        assert callable(build_toolset_for_config)
         assert callable(build_toolset_for_doc)
         assert callable(load_all_mcp_toolsets)
         assert callable(load_toolsets_for_specialist)

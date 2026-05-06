@@ -44,12 +44,11 @@ class LoadedServer:
     name: str
     config: MCPServerConfig
     tools: list[dict[str, Any]] = field(default_factory=list)
-    loaded_at: datetime = field(default_factory=datetime.utcnow)
-    last_used: datetime = field(default_factory=datetime.utcnow)
+    loaded_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    last_used: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     token_estimate: int = 0
     health_status: str = "healthy"
     consecutive_failures: int = 0
-    _connection: Any = None  # Store the actual MCP connection
     _toolset: Any = None  # McpToolset instance for agent use
 
 
@@ -194,7 +193,6 @@ class MCPServerManager:
                 loaded_at=now,
                 last_used=now,
                 token_estimate=config.estimated_tokens,
-                _connection=toolset,
                 _toolset=toolset,
             )
 
@@ -305,8 +303,6 @@ class MCPServerManager:
         try:
             if loaded._toolset is not None:
                 await loaded._toolset.close()
-            elif loaded._connection and hasattr(loaded._connection, "close"):
-                await loaded._connection.close()
         except Exception as e:
             logger.warning(
                 f"Error closing MCP server: {e}",
@@ -506,6 +502,10 @@ class MCPServerManager:
                 await asyncio.sleep(2**attempt)  # 1s, 2s, 4s backoff
                 await self.load_server(server_name)
                 logger.info(f"Reconnection successful for '{server_name}'")
+                return
+            except RuntimeError as exc:
+                # Hard cap hit — retrying won't help; surface immediately.
+                logger.error(f"Reconnection aborted for '{server_name}': {exc}")
                 return
             except Exception as e:
                 logger.warning(f"Reconnection attempt {attempt + 1} failed: {e}")
