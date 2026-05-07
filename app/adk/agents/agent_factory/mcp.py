@@ -42,6 +42,7 @@ state.  The public surface of this module is unaffected by that migration.
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import re
 from collections.abc import Callable, Iterator
@@ -137,6 +138,22 @@ def _validate_sse_url(server_id: str, url: str) -> None:
         raise MCPSchemaError(
             f"MCP server {server_id!r}: SSE url targets a reserved/internal host {host!r}"
         )
+    # Block RFC 1918, loopback, link-local, reserved, and unspecified IP ranges
+    # to prevent SSRF when env vars resolve to private network addresses.
+    try:
+        addr = ipaddress.ip_address(host)
+        if (
+            addr.is_private
+            or addr.is_loopback
+            or addr.is_link_local
+            or addr.is_reserved
+            or addr.is_unspecified
+        ):
+            raise MCPSchemaError(
+                f"MCP server {server_id!r}: SSE url targets a private/reserved address {host!r}"
+            )
+    except ValueError:
+        pass  # host is a domain name, not an IP literal
 
 
 _ENV_PLACEHOLDER_RE = re.compile(r"\$\{([^}]+)\}")
@@ -204,9 +221,12 @@ def _build_connection_params(server_id: str, connection: dict[str, Any]) -> Any:
             SseConnectionParams,
         )
 
-        url: str = _expand_env_placeholders(
-            connection["url"], server_id, "connection.url"
-        )
+        raw_url = connection.get("url")
+        if not raw_url:
+            raise MCPSchemaError(
+                f"MCP server {server_id!r}: SSE 'url' is missing or empty"
+            )
+        url: str = _expand_env_placeholders(raw_url, server_id, "connection.url")
         _validate_sse_url(server_id, url)
 
         raw_headers: dict[str, str] | None = connection.get("headers") or None
@@ -339,6 +359,11 @@ def build_toolset_for_config(config: MCPServerConfig) -> Any:
     delegates to ``build_toolset_for_doc``.  This keeps the two code paths in
     lock-step: any schema-validation or connection-params logic added to
     ``build_toolset_for_doc`` automatically applies here too.
+
+    **Env-var expansion:** ``${VAR}`` placeholders in ``config.connection`` fields
+    (url, headers, command, args, env) are expanded at call time via
+    ``_expand_env_placeholders``.  Passing already-expanded literal strings is
+    idempotent — strings with no ``${...}`` tokens are returned unchanged.
 
     Args:
         config: A ``MCPServerConfig`` instance (from ``app.adk.mcp_config.config``).

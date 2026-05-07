@@ -515,6 +515,23 @@ class TestBuildToolsetForConfig:
         with pytest.raises(MCPSchemaError, match="SseConnectionConfig or StdioConnectionConfig"):
             build_toolset_for_config(config)
 
+    def test_already_expanded_url_is_idempotent(self) -> None:
+        """Literal (already-expanded) URL values pass through expansion unchanged."""
+        from app.adk.agents.agent_factory.mcp import build_toolset_for_config
+
+        config = self._make_sse_config(auth_type=None)
+        mock_toolset = MagicMock(name="MockToolset")
+
+        with patch(
+            "app.adk.agents.agent_factory.mcp.build_toolset_for_doc",
+            return_value=mock_toolset,
+        ) as mock_build:
+            build_toolset_for_config(config)
+
+        doc_passed = mock_build.call_args[0][1]
+        # No ${VAR} tokens → url is returned unchanged
+        assert doc_passed["connection"]["url"] == "https://mcp.example.com/sse"
+
 
 # ---------------------------------------------------------------------------
 # Tests: _build_connection_params
@@ -642,6 +659,163 @@ class TestBuildConnectionParams:
             pytest.raises(MCPSchemaError, match="reserved/internal host"),
         ):
             _build_connection_params("srv", metadata_conn)
+
+    def test_sse_missing_url_raises_mcp_schema_error(self) -> None:
+        """SSE connection dict with no 'url' key → MCPSchemaError (not KeyError)."""
+        from app.adk.agents.agent_factory.mcp import (
+            MCPSchemaError,
+            _build_connection_params,
+        )
+
+        no_url_conn = {"connection_type": "sse", "timeout_seconds": 30}
+
+        with (
+            patch.dict(
+                "sys.modules",
+                {"google.adk.tools.mcp_tool.mcp_session_manager": MagicMock()},
+            ),
+            pytest.raises(MCPSchemaError, match="SSE 'url' is missing or empty"),
+        ):
+            _build_connection_params("srv", no_url_conn)
+
+    @pytest.mark.parametrize(
+        "private_url",
+        [
+            "https://10.0.0.1/sse",
+            "https://10.255.255.255/sse",
+            "https://172.16.0.1/sse",
+            "https://172.31.255.255/sse",
+            "https://192.168.1.1/sse",
+            "https://0.0.0.0/sse",
+            "https://[fc00::1]/sse",
+            "https://[fe80::1]/sse",
+        ],
+    )
+    def test_sse_private_ip_raises_mcp_schema_error(self, private_url: str) -> None:
+        """SSE doc with RFC 1918 / private IP url → MCPSchemaError."""
+        from app.adk.agents.agent_factory.mcp import (
+            MCPSchemaError,
+            _build_connection_params,
+        )
+
+        conn = {**_SSE_CONNECTION, "url": private_url}
+
+        with (
+            patch.dict(
+                "sys.modules",
+                {"google.adk.tools.mcp_tool.mcp_session_manager": MagicMock()},
+            ),
+            pytest.raises(MCPSchemaError, match="private/reserved address"),
+        ):
+            _build_connection_params("srv", conn)
+
+    def test_sse_post_expansion_url_validated_against_https(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """URL that is valid after expansion but uses http scheme → MCPSchemaError."""
+        from app.adk.agents.agent_factory.mcp import (
+            MCPSchemaError,
+            _build_connection_params,
+        )
+
+        monkeypatch.setenv("BAD_SCHEME_URL", "http://mcp.example.com/sse")
+        conn = {
+            "connection_type": "sse",
+            "url": "${BAD_SCHEME_URL}",
+            "timeout_seconds": 30,
+        }
+
+        with (
+            patch.dict(
+                "sys.modules",
+                {"google.adk.tools.mcp_tool.mcp_session_manager": MagicMock()},
+            ),
+            pytest.raises(MCPSchemaError, match="must use https"),
+        ):
+            _build_connection_params("srv", conn)
+
+    def test_stdio_command_placeholder_expanded(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """${VAR} in stdio command is expanded before passing to StdioServerParameters."""
+        from app.adk.agents.agent_factory.mcp import _build_connection_params
+
+        monkeypatch.setenv("MCP_BINARY", "/usr/local/bin/mcp-server")
+
+        MockStdio = MagicMock(name="StdioConnectionParams")
+        MockStdio.return_value = MagicMock()
+        MockStdioParams = MagicMock(name="StdioServerParameters")
+
+        conn = {
+            "connection_type": "stdio",
+            "command": "${MCP_BINARY}",
+            "args": [],
+        }
+        with patch.dict(
+            "sys.modules",
+            {
+                "google.adk.tools.mcp_tool.mcp_session_manager": MagicMock(
+                    SseConnectionParams=MagicMock(),
+                    StdioConnectionParams=MockStdio,
+                ),
+                "mcp.client.stdio": MagicMock(StdioServerParameters=MockStdioParams),
+            },
+        ):
+            _build_connection_params("srv", conn)
+
+        params_kwargs = MockStdioParams.call_args[1]
+        assert params_kwargs["command"] == "/usr/local/bin/mcp-server"
+
+    def test_stdio_args_placeholder_expanded(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """${VAR} in stdio args are expanded with correct indexed field names in errors."""
+        from app.adk.agents.agent_factory.mcp import _build_connection_params
+
+        monkeypatch.setenv("MCP_PACKAGE", "@acme/mcp-server@1.2.3")
+
+        MockStdio = MagicMock(name="StdioConnectionParams")
+        MockStdio.return_value = MagicMock()
+        MockStdioParams = MagicMock(name="StdioServerParameters")
+
+        conn = {
+            "connection_type": "stdio",
+            "command": "npx",
+            "args": ["-y", "${MCP_PACKAGE}"],
+        }
+        with patch.dict(
+            "sys.modules",
+            {
+                "google.adk.tools.mcp_tool.mcp_session_manager": MagicMock(
+                    SseConnectionParams=MagicMock(),
+                    StdioConnectionParams=MockStdio,
+                ),
+                "mcp.client.stdio": MagicMock(StdioServerParameters=MockStdioParams),
+            },
+        ):
+            _build_connection_params("srv", conn)
+
+        params_kwargs = MockStdioParams.call_args[1]
+        assert params_kwargs["args"] == ["-y", "@acme/mcp-server@1.2.3"]
+
+    def test_multi_placeholder_partial_failure_raises_on_first_unset(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """If the first of two ${VAR} tokens is unset, MCPSchemaError names that var."""
+        from app.adk.agents.agent_factory.mcp import (
+            MCPSchemaError,
+            _expand_env_placeholders,
+        )
+
+        monkeypatch.delenv("FIRST_VAR", raising=False)
+        monkeypatch.setenv("SECOND_VAR", "present")
+
+        with pytest.raises(MCPSchemaError, match="FIRST_VAR"):
+            _expand_env_placeholders(
+                "https://${FIRST_VAR}.example.com:${SECOND_VAR}/sse",
+                "srv",
+                "connection.url",
+            )
 
 
 # ---------------------------------------------------------------------------
