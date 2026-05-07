@@ -31,14 +31,23 @@ def hash_bucket(flag_key: str, entity_id: str) -> int:
 def evaluate(flag: FeatureFlag, ctx: EvaluationContext) -> FlagEvaluation:
     """Evaluate a feature flag against an evaluation context.
 
-    Applies the precedence ladder defined in FF-PRD-01 §5.3:
+    Applies the precedence ladder defined in component README §7.2 and FF-PRD-01 §4
+    (highest precedence first):
       1. Kill switch — flag.is_active is False → return default_enabled.
-      2. Email allowlist — exact match on lowercased user_email.
-      3. Email domain — domain extracted from user_email.
-      4. Organisation ID — exact match on ctx.organization_id.
-      5. Account ID — exact match on ctx.account_id.
+      2. Email allowlist — exact match on lowercased user_email. (grant only)
+      3. Email domain — domain extracted from user_email. (grant only)
+      4. Organisation ID — exact match on ctx.organization_id. (grant only)
+      5. Account ID — exact match on ctx.account_id. (grant only)
       6. Percentage rollout — hash_bucket(flag.key, entity_id) < rollout_percentage.
       7. Default — flag.default_enabled.
+
+    Note: all allowlist rules (steps 2-5) unconditionally grant enabled=True. They
+    cannot be used to deny access. If both an allowlist rule and the rollout percentage
+    would fire, the allowlist rule wins (higher precedence).
+
+    Note: kill switch (step 1) returns default_enabled, which may be True if the flag
+    was already at GA. To guarantee the feature is off, set both is_active=False and
+    default_enabled=False.
 
     This function is pure: no I/O, no logging, no side effects.
     Logging is FF-8's concern (AC-13/§5.3).
@@ -48,7 +57,7 @@ def evaluate(flag: FeatureFlag, ctx: EvaluationContext) -> FlagEvaluation:
         return FlagEvaluation(key=flag.key, enabled=flag.default_enabled, reason="kill_switch")
 
     rules = flag.targeting_rules
-    email = ctx.user_email.lower()
+    email = ctx.user_email.strip().lower()
 
     if email in rules.user_emails:
         return FlagEvaluation(key=flag.key, enabled=True, reason="email_match")

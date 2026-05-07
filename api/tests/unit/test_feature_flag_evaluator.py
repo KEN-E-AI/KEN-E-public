@@ -87,6 +87,10 @@ class TestGoldenHashPreconditions:
     def test_billing_enabled_org_42_is_98(self) -> None:
         assert hash_bucket("billing_enabled", "org_42") == 98
 
+    def test_test_flag_acc_001_is_16(self) -> None:
+        # python3 -c "import hashlib; print(int(hashlib.sha256(b'test_flag:acc_001').hexdigest()[:8],16)%100)"
+        assert hash_bucket("test_flag", "acc_001") == 16
+
 
 # ---------------------------------------------------------------------------
 # AC-4 branch 1 — Kill switch
@@ -265,6 +269,28 @@ class TestRollout:
 
         assert result == FlagEvaluation(key="billing_enabled", enabled=False, reason="default")
 
+    def test_rollout_hit_account_bucketing(self) -> None:
+        # hash_bucket("test_flag", "acc_001") == 16; 16 < 50 = True
+        flag = _flag(
+            key="test_flag",
+            targeting_rules=TargetingRules(rollout_percentage=50),
+            bucketing_entity="account",
+        )
+        result = evaluate(flag, _ctx(account_id="acc_001"))
+
+        assert result == FlagEvaluation(key="test_flag", enabled=True, reason="rollout")
+
+    def test_rollout_miss_account_bucketing(self) -> None:
+        # hash_bucket("test_flag", "acc_001") == 16; 16 < 10 = False
+        flag = _flag(
+            key="test_flag",
+            targeting_rules=TargetingRules(rollout_percentage=10),
+            bucketing_entity="account",
+        )
+        result = evaluate(flag, _ctx(account_id="acc_001"))
+
+        assert result == FlagEvaluation(key="test_flag", enabled=False, reason="default")
+
     def test_rollout_zero_percent_never_fires(self) -> None:
         flag = _flag(
             key="demo_flag",
@@ -362,10 +388,27 @@ class TestMissingEntityId:
 
 
 class TestDegenerateEmail:
-    """Email address without '@' produces an empty domain → no domain match."""
+    """Degenerate email address edge cases in domain extraction."""
 
     def test_no_at_sign_email_skips_domain_match(self) -> None:
         flag = _flag(targeting_rules=TargetingRules(email_domains=["no-at-sign"]))
         result = evaluate(flag, _ctx(user_email="no-at-sign"))
 
         assert result == FlagEvaluation(key="test_flag", enabled=False, reason="default")
+
+    def test_empty_local_part_still_matches_domain(self) -> None:
+        # "@ken-e.ai" has an empty local part; split("@", 1)[-1] = "ken-e.ai".
+        # Current implementation does not validate the local part — the domain
+        # portion still matches. Document this known behaviour so future email
+        # validation hardening can provide a test to update.
+        flag = _flag(targeting_rules=TargetingRules(email_domains=["ken-e.ai"]))
+        result = evaluate(flag, _ctx(user_email="@ken-e.ai"))
+
+        assert result == FlagEvaluation(key="test_flag", enabled=True, reason="domain_match")
+
+    def test_whitespace_padded_email_matches_after_strip(self) -> None:
+        # Leading/trailing whitespace is stripped before comparison.
+        flag = _flag(targeting_rules=TargetingRules(user_emails=["alice@ken-e.ai"]))
+        result = evaluate(flag, _ctx(user_email=" alice@ken-e.ai "))
+
+        assert result == FlagEvaluation(key="test_flag", enabled=True, reason="email_match")
