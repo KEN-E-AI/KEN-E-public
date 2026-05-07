@@ -709,6 +709,70 @@ class TestBuildConnectionParams:
         ):
             _build_connection_params("srv", conn)
 
+    def test_sse_post_expansion_private_ip_raises_mcp_schema_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """${VAR} that expands to a private IP URL → MCPSchemaError (SSRF via env var)."""
+        from app.adk.agents.agent_factory.mcp import (
+            MCPSchemaError,
+            _build_connection_params,
+        )
+
+        monkeypatch.setenv("INTERNAL_URL", "https://192.168.1.1/sse")
+        conn = {
+            "connection_type": "sse",
+            "url": "${INTERNAL_URL}",
+            "timeout_seconds": 30,
+        }
+        with (
+            patch.dict(
+                "sys.modules",
+                {"google.adk.tools.mcp_tool.mcp_session_manager": MagicMock()},
+            ),
+            pytest.raises(MCPSchemaError, match="private/reserved address"),
+        ):
+            _build_connection_params("srv", conn)
+
+    def test_sse_ipv6_zone_id_bypasses_blocked(self) -> None:
+        """Scoped IPv6 URL (zone ID suffix) is correctly blocked, not silently passed."""
+        from app.adk.agents.agent_factory.mcp import (
+            MCPSchemaError,
+            _build_connection_params,
+        )
+
+        # fe80::1%25eth0 — percent-encoded zone ID as it appears in a URL literal
+        zone_conn = {**_SSE_CONNECTION, "url": "https://[fe80::1%25eth0]/sse"}
+
+        with (
+            patch.dict(
+                "sys.modules",
+                {"google.adk.tools.mcp_tool.mcp_session_manager": MagicMock()},
+            ),
+            pytest.raises(MCPSchemaError, match="private/reserved address"),
+        ):
+            _build_connection_params("srv", zone_conn)
+
+    def test_stdio_missing_command_raises_mcp_schema_error(self) -> None:
+        """stdio connection dict with no 'command' key → MCPSchemaError (not KeyError)."""
+        from app.adk.agents.agent_factory.mcp import (
+            MCPSchemaError,
+            _build_connection_params,
+        )
+
+        no_cmd_conn = {"connection_type": "stdio", "args": ["-y"]}
+
+        with (
+            patch.dict(
+                "sys.modules",
+                {
+                    "google.adk.tools.mcp_tool.mcp_session_manager": MagicMock(),
+                    "mcp.client.stdio": MagicMock(),
+                },
+            ),
+            pytest.raises(MCPSchemaError, match="stdio 'command' must be a non-empty string"),
+        ):
+            _build_connection_params("srv", no_cmd_conn)
+
     def test_sse_post_expansion_url_validated_against_https(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

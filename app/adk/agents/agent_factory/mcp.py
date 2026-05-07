@@ -74,6 +74,11 @@ _BLOCKED_SSE_HOSTS = frozenset(
     }
 )
 
+# RFC 6598 Shared Address Space (CGNAT) — ipaddress.is_private excludes this range
+# intentionally; block it explicitly so cloud-internal services on 100.64-127.x cannot
+# be targeted as MCP servers.
+_BLOCKED_CGNAT = ipaddress.ip_network("100.64.0.0/10")
+
 
 # ---------------------------------------------------------------------------
 # Exceptions
@@ -140,14 +145,18 @@ def _validate_sse_url(server_id: str, url: str) -> None:
         )
     # Block RFC 1918, loopback, link-local, reserved, and unspecified IP ranges
     # to prevent SSRF when env vars resolve to private network addresses.
+    # Zone IDs (e.g. "fe80::1%eth0") must be stripped first — ipaddress rejects
+    # them with ValueError, which would otherwise silently pass the check.
     try:
-        addr = ipaddress.ip_address(host)
+        clean_host = host.split("%")[0]
+        addr = ipaddress.ip_address(clean_host)
         if (
             addr.is_private
             or addr.is_loopback
             or addr.is_link_local
             or addr.is_reserved
             or addr.is_unspecified
+            or addr in _BLOCKED_CGNAT
         ):
             raise MCPSchemaError(
                 f"MCP server {server_id!r}: SSE url targets a private/reserved address {host!r}"
@@ -251,7 +260,7 @@ def _build_connection_params(server_id: str, connection: dict[str, Any]) -> Any:
         )
         from mcp.client.stdio import StdioServerParameters
 
-        command: str = connection["command"]
+        command: str = connection.get("command", "")
         if not isinstance(command, str) or not command:
             raise MCPSchemaError(
                 f"MCP server {server_id!r}: stdio 'command' must be a non-empty string"
