@@ -20,6 +20,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from google.adk.agents import LlmAgent
 
 from app.adk.agents.agent_factory.config_loader import (
     ConfigNotFoundError,
@@ -172,7 +173,7 @@ class _FakeRegistry:
         return []
 
 
-def _build_hierarchy_with_patches(fake_db: _FakeFirestoreDb) -> object:
+def _build_hierarchy_with_patches(fake_db: _FakeFirestoreDb) -> LlmAgent:
     """Call build_hierarchy with the standard set of patches applied."""
     import app.adk.agents.agent_factory.hierarchy as h
 
@@ -961,7 +962,7 @@ class TestErrorCases:
 
 def _build_hierarchy_with_patches_for_account(
     fake_db: _FakeFirestoreDb, account_id: str
-) -> object:
+) -> LlmAgent:
     """Call build_hierarchy with the standard patches and an account_id."""
     import app.adk.agents.agent_factory.hierarchy as h
 
