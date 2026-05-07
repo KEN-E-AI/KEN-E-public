@@ -47,20 +47,6 @@
       ]
     },
     {
-      "collectionGroup": "feature_flag_audit",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "flag_key",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "created_at",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
       "collectionGroup": "strategy_audit",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
