@@ -13,7 +13,16 @@ Provides two public symbols consumed by the agent factory's build phase:
   prompt.
 """
 
-from __future__ import annotations
+# NOTE: do NOT add `from __future__ import annotations` here. Generated
+# dispatch closures are cloudpickled into the Agent Engine deployment
+# artifact; deferred (string) annotations don't survive the round-trip
+# (cloudpickle drops `__wrapped__`/`__globals__` for closures), so ADK's
+# `typing.get_type_hints()` on the deserialized dispatch fails with
+# `NameError: name 'ToolContext' is not defined` when it tries to build
+# the function declaration sent to Gemini. Resolving annotations at
+# function-definition time (no future import) makes the type objects
+# travel with the closure and matches the legacy `dispatch_handlers.py`
+# pattern. Verified end-to-end during AH-17 smoke testing.
 
 import copy
 import logging

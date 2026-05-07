@@ -208,7 +208,13 @@ def deploy_ken_e() -> str | None:
         # Prior to Sprint 6 Story 1.1.4-2, this directory was not copied into
         # the Agent Engine artifact — a latent bug that broke YAML fallback
         # on deployed agents.
-        for subpkg in ("security", "tracking", "tools", "mcp_config"):
+        # `agents` is also mirrored to `temp/app/adk/agents/` (in addition to
+        # `temp/agents/` above) so that `agent_factory` submodules' absolute
+        # imports of the form `from app.adk.agents.agent_factory.builder import …`
+        # resolve at deploy time. Without this, build_hierarchy() raises
+        # `ModuleNotFoundError: No module named 'app.adk.agents'` before reaching
+        # Agent Engine. Discovered during AH-17 verification.
+        for subpkg in ("agents", "security", "tracking", "tools", "mcp_config"):
             src = adk_root / subpkg
             if src.exists():
                 shutil.copytree(
@@ -266,12 +272,32 @@ def deploy_ken_e() -> str | None:
             staging_bucket=staging_bucket,
         )
 
-        # Import the KEN-E agent
+        # Assemble the KEN-E agent hierarchy from Firestore config.
+        # The import is inside the try block so deploy-tree packaging regressions
+        # (ImportError) are caught alongside documented build_hierarchy() failure
+        # modes, instead of crashing the process before the typed handler runs.
         sys.path.insert(0, str(Path.cwd()))
-        from agents.ken_e_agent import ken_e_agent
 
-        if ken_e_agent is None:
-            logger.error("❌ Failed to import ken_e_agent")
+        try:
+            from agents.agent_factory import build_hierarchy
+
+            from app.adk.agents.agent_factory.config_loader import (
+                ConfigNotFoundError,
+                FirestoreConnectionError,
+            )
+            from app.adk.agents.agent_factory.mcp import MCPSchemaError
+            from app.adk.agents.agent_factory.roster import RosterCapExceededError
+
+            ken_e_agent = build_hierarchy()
+        except (
+            ImportError,
+            ConfigNotFoundError,
+            FirestoreConnectionError,
+            MCPSchemaError,
+            RosterCapExceededError,
+            ValueError,
+        ) as exc:
+            logger.error("❌ Failed to build ken_e_agent: %s", exc, exc_info=True)
             return None
 
         logger.info(f"✅ Loaded agent: {type(ken_e_agent)}")

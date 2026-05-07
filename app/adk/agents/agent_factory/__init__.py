@@ -8,7 +8,8 @@ Phase 2: MCP toolset construction (build_toolset_for_doc, load_all_mcp_toolsets,
 Phase 2: Curated tool-roster resolution (resolve_specialist_roster,
          count_specialist_tool_roster, RosterCapExceededError,
          MAX_TOOLS_PER_SPECIALIST) (AH-13).
-Phase 2 placeholder: build_hierarchy() — implemented in AH-17.
+Phase 2: Dispatch generation + Available Specialists block (AH-14).
+Phase 2: build_hierarchy() — deploy-time entry point (AH-17).
 """
 
 from app.adk.agents.agent_factory.builder import build_agent
@@ -25,6 +26,7 @@ from app.adk.agents.agent_factory.dispatch import (
     assemble_available_specialists_block,
     generate_dispatch_functions,
 )
+from app.adk.agents.agent_factory.hierarchy import ROOT_CONFIG_ID, build_hierarchy
 from app.adk.agents.agent_factory.mcp import (
     MCPFactoryError,
     MCPSchemaError,
@@ -42,6 +44,7 @@ from app.adk.agents.agent_factory.roster import (
 
 __all__ = [
     "MAX_TOOLS_PER_SPECIALIST",
+    "ROOT_CONFIG_ID",
     "AgentFactoryConfigError",
     "ConfigNotFoundError",
     "ConfigValidationError",
@@ -52,6 +55,7 @@ __all__ = [
     "RosterCapExceededError",
     "assemble_available_specialists_block",
     "build_agent",
+    "build_hierarchy",
     "build_toolset_for_config",
     "build_toolset_for_doc",
     "count_specialist_tool_roster",
@@ -61,6 +65,4 @@ __all__ = [
     "load_all_mcp_toolsets",
     "load_toolsets_for_specialist",
     "resolve_specialist_roster",
-    # Reserved for AH-17 — not yet implemented:
-    # "build_hierarchy",
 ]
