@@ -226,6 +226,10 @@ def build_hierarchy(
     # A default-status config with automatically_available=False is excluded from
     # the hierarchy. Customized and custom_agent configs always pass — the account
     # opted in explicitly. The root config was already popped above.
+    assert ROOT_CONFIG_ID not in configs, (
+        f"Root config {ROOT_CONFIG_ID!r} must be popped before the filter step; "
+        "ordering invariant violated."
+    )
     excluded = [
         cid
         for cid, cfg in configs.items()

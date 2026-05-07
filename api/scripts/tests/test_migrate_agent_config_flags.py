@@ -39,22 +39,29 @@ class _FakeSnapshot:
 
 
 class _FakeDoc:
-    def __init__(self, doc_id: str) -> None:
-        self.id = doc_id
-        self.update = MagicMock()
+    def __init__(self, snapshot: _FakeSnapshot) -> None:
+        self.id = snapshot.id
+        # Side-effect writes patch back into the snapshot so a second stream()
+        # call sees the updated state — required for the idempotency test.
+        def _write_back(patch: dict[str, Any]) -> None:
+            snapshot._data.update(patch)
+
+        self.update = MagicMock(side_effect=_write_back)
 
 
 class _FakeCollection:
     def __init__(self, snapshots: list[_FakeSnapshot]) -> None:
         self._snapshots = snapshots
-        self._docs: dict[str, _FakeDoc] = {s.id: _FakeDoc(s.id) for s in snapshots}
+        self._docs: dict[str, _FakeDoc] = {s.id: _FakeDoc(s) for s in snapshots}
 
     def stream(self) -> list[_FakeSnapshot]:
         return list(self._snapshots)
 
     def document(self, doc_id: str) -> _FakeDoc:
         if doc_id not in self._docs:
-            self._docs[doc_id] = _FakeDoc(doc_id)
+            snap = _FakeSnapshot(doc_id, {})
+            self._snapshots.append(snap)
+            self._docs[doc_id] = _FakeDoc(snap)
         return self._docs[doc_id]
 
 
@@ -189,25 +196,18 @@ class TestMigrate:
         db.collection("agent_configs").document("agent1").update.assert_not_called()
 
     def test_idempotent_on_second_run(self) -> None:
-        """Re-run on already-migrated collection produces zero writes."""
-        # First run: patches the doc
-        db_first = FakeMigrateDb({"agent1": {}})
-        counts_first = migrate("proj", dry_run=False, db=db_first)
+        """Re-run on the same db after first migration produces zero writes."""
+        db = FakeMigrateDb({"agent1": {}})
+
+        counts_first = migrate("proj", dry_run=False, db=db)
         assert counts_first["patched"] == 1
 
-        # Second run: use a fresh db where all flags are already set
-        db_second = FakeMigrateDb(
-            {
-                "agent1": {
-                    "available_to_copy": True,
-                    "automatically_available": True,
-                    "visible_in_frontend": True,
-                }
-            }
-        )
-        counts_second = migrate("proj", dry_run=False, db=db_second)
+        # _FakeDoc.update side-effect wrote the patch back into the snapshot,
+        # so the second stream() call returns a doc with all three flags set.
+        counts_second = migrate("proj", dry_run=False, db=db)
         assert counts_second == {"patched": 0, "would_patch": 0, "unchanged": 1, "errors": 0}
-        db_second.collection("agent_configs").document("agent1").update.assert_not_called()
+        # update was called exactly once total (first run only).
+        assert db.collection("agent_configs").document("agent1").update.call_count == 1
 
     def test_partial_migration_patches_only_missing_keys(self) -> None:
         """Doc has available_to_copy=False (a valid bool) but missing the other two."""

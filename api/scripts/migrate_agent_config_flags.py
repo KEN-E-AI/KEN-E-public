@@ -105,6 +105,7 @@ def migrate(
 
     collection = db.collection(COLLECTION)
     counts: dict[str, int] = {"patched": 0, "would_patch": 0, "unchanged": 0, "errors": 0}
+    failed_ids: list[str] = []
 
     for snapshot in collection.stream():
         doc_id: str = snapshot.id
@@ -121,7 +122,7 @@ def migrate(
 
         if dry_run:
             logger.info(
-                "[DRY RUN] Would patch %s/%s: %s",
+                "[DRY RUN] Would patch %s/%r: %s",
                 COLLECTION,
                 doc_id,
                 missing,
@@ -132,7 +133,7 @@ def migrate(
         try:
             collection.document(doc_id).update(patch)
             logger.info(
-                "Patched %s/%s: %s",
+                "Patched %s/%r: %s",
                 COLLECTION,
                 doc_id,
                 missing,
@@ -140,12 +141,20 @@ def migrate(
             counts["patched"] += 1
         except Exception as exc:
             logger.error(
-                "Failed to patch %s/%s: %s",
+                "Failed to patch %s/%r: %s",
                 COLLECTION,
                 doc_id,
                 exc,
             )
             counts["errors"] += 1
+            failed_ids.append(doc_id)
+
+    if failed_ids:
+        logger.error(
+            "Migration incomplete — %d document(s) failed to patch: %s",
+            len(failed_ids),
+            failed_ids,
+        )
 
     return counts
 
@@ -180,8 +189,15 @@ def main() -> int:
     )
 
     args = parser.parse_args()
+    _VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+    raw_level = args.log_level.upper()
+    if raw_level not in _VALID_LOG_LEVELS:
+        parser.error(
+            f"Invalid --log-level {args.log_level!r}. "
+            f"Choose from: {', '.join(sorted(_VALID_LOG_LEVELS))}"
+        )
     logging.basicConfig(
-        level=getattr(logging, args.log_level.upper(), logging.INFO),
+        level=getattr(logging, raw_level),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
