@@ -733,15 +733,21 @@ class TestBuildConnectionParams:
         ):
             _build_connection_params("srv", conn)
 
-    def test_sse_ipv6_zone_id_bypasses_blocked(self) -> None:
-        """Scoped IPv6 URL (zone ID suffix) is correctly blocked, not silently passed."""
+    @pytest.mark.parametrize(
+        "zone_url",
+        [
+            "https://[fe80::1%25eth0]/sse",  # RFC 6874 percent-encoded zone ID
+            "https://[fe80::1%eth0]/sse",    # non-encoded form (also passed through by urlparse)
+        ],
+    )
+    def test_sse_ipv6_zone_id_bypasses_blocked(self, zone_url: str) -> None:
+        """Scoped IPv6 URL (zone ID suffix, both encoded forms) is blocked, not silently passed."""
         from app.adk.agents.agent_factory.mcp import (
             MCPSchemaError,
             _build_connection_params,
         )
 
-        # fe80::1%25eth0 — percent-encoded zone ID as it appears in a URL literal
-        zone_conn = {**_SSE_CONNECTION, "url": "https://[fe80::1%25eth0]/sse"}
+        conn = {**_SSE_CONNECTION, "url": zone_url}
 
         with (
             patch.dict(
@@ -750,7 +756,33 @@ class TestBuildConnectionParams:
             ),
             pytest.raises(MCPSchemaError, match="private/reserved address"),
         ):
-            _build_connection_params("srv", zone_conn)
+            _build_connection_params("srv", conn)
+
+    def test_sse_public_ipv6_address_allowed(self) -> None:
+        """Legitimate public IPv6 SSE address is accepted (not blocked by SSRF guards)."""
+        from app.adk.agents.agent_factory.mcp import _build_connection_params
+
+        MockSse = MagicMock(name="SseConnectionParams")
+        MockSse.return_value = MagicMock(name="SseInstance")
+
+        # 2001:4860:4860::8888 = Google public DNS IPv6 — fully routable, not private
+        conn = {
+            "connection_type": "sse",
+            "url": "https://[2001:4860:4860::8888]/sse",
+            "timeout_seconds": 30,
+        }
+        with patch.dict(
+            "sys.modules",
+            {
+                "google.adk.tools.mcp_tool.mcp_session_manager": MagicMock(
+                    SseConnectionParams=MockSse,
+                    StdioConnectionParams=MagicMock(),
+                ),
+            },
+        ):
+            result = _build_connection_params("srv", conn)
+
+        assert result is MockSse.return_value
 
     def test_stdio_missing_command_raises_mcp_schema_error(self) -> None:
         """stdio connection dict with no 'command' key → MCPSchemaError (not KeyError)."""

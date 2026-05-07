@@ -76,7 +76,9 @@ _BLOCKED_SSE_HOSTS = frozenset(
 
 # RFC 6598 Shared Address Space (CGNAT) — ipaddress.is_private excludes this range
 # intentionally; block it explicitly so cloud-internal services on 100.64-127.x cannot
-# be targeted as MCP servers.
+# be targeted as MCP servers.  IPv4-mapped IPv6 addresses in this range (e.g.
+# ::ffff:100.64.0.1) are already caught by addr.is_private on Python 3.11+ because
+# IPv4-mapped addresses inherit the private classification of the embedded IPv4 address.
 _BLOCKED_CGNAT = ipaddress.ip_network("100.64.0.0/10")
 
 
