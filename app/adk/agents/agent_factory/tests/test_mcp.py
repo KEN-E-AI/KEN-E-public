@@ -689,6 +689,7 @@ class TestBuildConnectionParams:
             "https://0.0.0.0/sse",
             "https://[fc00::1]/sse",
             "https://[fe80::1]/sse",
+            "https://100.64.0.1/sse",  # RFC 6598 CGNAT shared address space
         ],
     )
     def test_sse_private_ip_raises_mcp_schema_error(self, private_url: str) -> None:
