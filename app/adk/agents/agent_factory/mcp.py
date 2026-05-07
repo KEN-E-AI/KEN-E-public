@@ -43,6 +43,7 @@ state.  The public surface of this module is unaffected by that migration.
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
@@ -138,6 +139,43 @@ def _validate_sse_url(server_id: str, url: str) -> None:
         )
 
 
+_ENV_PLACEHOLDER_RE = re.compile(r"\$\{([^}]+)\}")
+
+
+def _expand_env_placeholders(value: str, server_id: str, field: str) -> str:
+    """Expand ``${VAR}`` placeholders in *value* using ``os.environ``.
+
+    Each ``${VAR}`` token is replaced with the corresponding environment
+    variable.  Raises ``MCPSchemaError`` when any referenced variable is unset
+    or empty, naming both the *server_id* and *field* so operators can act
+    immediately.
+
+    Args:
+        value: String that may contain one or more ``${VAR}`` tokens.
+        server_id: Firestore document ID — used in error messages only.
+        field: Human-readable field path (e.g. ``connection.url``,
+            ``connection.headers.Authorization``) — used in error messages.
+
+    Returns:
+        The string with all ``${VAR}`` tokens replaced by their env values.
+
+    Raises:
+        MCPSchemaError: Any referenced env var is unset or empty.
+    """
+
+    def _replace(match: re.Match[str]) -> str:
+        var = match.group(1)
+        resolved = os.environ.get(var, "")
+        if not resolved:
+            raise MCPSchemaError(
+                f"MCP server {server_id!r}: env var {var!r} is unset "
+                f"(referenced from {field})"
+            )
+        return resolved
+
+    return _ENV_PLACEHOLDER_RE.sub(_replace, value)
+
+
 def _build_connection_params(server_id: str, connection: dict[str, Any]) -> Any:
     """Convert the ``connection`` sub-dict from a Firestore doc into an ADK
     ``SseConnectionParams`` or ``StdioConnectionParams`` instance.
@@ -166,12 +204,24 @@ def _build_connection_params(server_id: str, connection: dict[str, Any]) -> Any:
             SseConnectionParams,
         )
 
-        url: str = connection["url"]
+        url: str = _expand_env_placeholders(
+            connection["url"], server_id, "connection.url"
+        )
         _validate_sse_url(server_id, url)
+
+        raw_headers: dict[str, str] | None = connection.get("headers") or None
+        expanded_headers: dict[str, str] | None = None
+        if raw_headers:
+            expanded_headers = {
+                k: _expand_env_placeholders(
+                    v, server_id, f"connection.headers.{k}"
+                )
+                for k, v in raw_headers.items()
+            }
 
         return SseConnectionParams(
             url=url,
-            headers=connection.get("headers") or None,
+            headers=expanded_headers,
             timeout=float(connection.get("timeout_seconds", 30)),
         )
 
@@ -186,12 +236,17 @@ def _build_connection_params(server_id: str, connection: dict[str, Any]) -> Any:
             raise MCPSchemaError(
                 f"MCP server {server_id!r}: stdio 'command' must be a non-empty string"
             )
+        command = _expand_env_placeholders(command, server_id, "connection.command")
 
         args: list[str] = connection.get("args", [])
         if not isinstance(args, list) or not all(isinstance(a, str) for a in args):
             raise MCPSchemaError(
                 f"MCP server {server_id!r}: stdio 'args' must be a list of strings"
             )
+        args = [
+            _expand_env_placeholders(a, server_id, f"connection.args[{i}]")
+            for i, a in enumerate(args)
+        ]
 
         raw_env = connection.get("env") or None
         if raw_env is not None and not all(
@@ -200,12 +255,18 @@ def _build_connection_params(server_id: str, connection: dict[str, Any]) -> Any:
             raise MCPSchemaError(
                 f"MCP server {server_id!r}: stdio 'env' values must all be strings"
             )
+        expanded_env: dict[str, str] | None = None
+        if raw_env:
+            expanded_env = {
+                k: _expand_env_placeholders(v, server_id, f"connection.env.{k}")
+                for k, v in raw_env.items()
+            }
 
         return StdioConnectionParams(
             server_params=StdioServerParameters(
                 command=command,
                 args=args,
-                env=raw_env,
+                env=expanded_env,
             ),
             timeout=5.0,
         )

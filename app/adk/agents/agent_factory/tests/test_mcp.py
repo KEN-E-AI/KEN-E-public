@@ -83,7 +83,7 @@ _STDIO_CONNECTION = {
     "connection_type": "stdio",
     "command": "npx",
     "args": ["-y", "@test/mcp-server"],
-    "env": {"GA_PROPERTY_ID": "${GA_PROPERTY_ID}"},
+    "env": {"GA_PROPERTY_ID": "test-property-id"},
 }
 
 _GA_DOC: dict[str, Any] = {
@@ -877,6 +877,211 @@ class TestLoadToolsetsForSpecialist:
             )
 
         assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# Tests: _expand_env_placeholders + _build_connection_params integration
+# ---------------------------------------------------------------------------
+
+
+class TestExpandEnvPlaceholders:
+    """Unit tests for _expand_env_placeholders and its integration into
+    _build_connection_params (AH-22 acceptance criteria)."""
+
+    def test_known_var_resolves(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A single ${VAR} placeholder expands to the env value."""
+        from app.adk.agents.agent_factory.mcp import _expand_env_placeholders
+
+        monkeypatch.setenv("MY_URL", "https://example.com")
+        result = _expand_env_placeholders(
+            "${MY_URL}/path", "srv", "connection.url"
+        )
+        assert result == "https://example.com/path"
+
+    def test_unset_var_raises_mcp_schema_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An unset ${VAR} raises MCPSchemaError with server_id and field."""
+        from app.adk.agents.agent_factory.mcp import (
+            MCPSchemaError,
+            _expand_env_placeholders,
+        )
+
+        monkeypatch.delenv("MISSING_VAR", raising=False)
+        with pytest.raises(MCPSchemaError) as exc_info:
+            _expand_env_placeholders(
+                "${MISSING_VAR}/sse", "ga_mcp", "connection.url"
+            )
+        msg = str(exc_info.value)
+        assert "ga_mcp" in msg
+        assert "MISSING_VAR" in msg
+
+    def test_empty_string_var_raises_mcp_schema_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An env var set to empty string is treated as unset → MCPSchemaError."""
+        from app.adk.agents.agent_factory.mcp import (
+            MCPSchemaError,
+            _expand_env_placeholders,
+        )
+
+        monkeypatch.setenv("EMPTY_VAR", "")
+        with pytest.raises(MCPSchemaError, match="EMPTY_VAR"):
+            _expand_env_placeholders(
+                "${EMPTY_VAR}", "my_server", "connection.url"
+            )
+
+    def test_multi_placeholder_resolves_all(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A string with multiple ${VAR} tokens all expand correctly."""
+        from app.adk.agents.agent_factory.mcp import _expand_env_placeholders
+
+        monkeypatch.setenv("HOST", "mcp.example.com")
+        monkeypatch.setenv("PORT", "443")
+        result = _expand_env_placeholders(
+            "https://${HOST}:${PORT}/sse", "srv", "connection.url"
+        )
+        assert result == "https://mcp.example.com:443/sse"
+
+    def test_non_placeholder_string_passes_through(self) -> None:
+        """Strings with no ${...} patterns are returned unchanged."""
+        from app.adk.agents.agent_factory.mcp import _expand_env_placeholders
+
+        literal = "https://mcp.example.com/ga"
+        result = _expand_env_placeholders(literal, "srv", "connection.url")
+        assert result == literal
+
+    # --- Integration: _build_connection_params applies expansion ---
+
+    def test_sse_url_placeholder_expanded_in_build_connection_params(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """_build_connection_params resolves ${VAR} in SSE url before calling SseConnectionParams."""
+        from app.adk.agents.agent_factory.mcp import _build_connection_params
+
+        monkeypatch.setenv("GA_MCP_SERVER_URL", "https://ga.mcp.example.com")
+
+        MockSse = MagicMock(name="SseConnectionParams")
+        MockSse.return_value = MagicMock(name="SseInstance")
+
+        conn = {
+            "connection_type": "sse",
+            "url": "${GA_MCP_SERVER_URL}/mcp/sse",
+            "timeout_seconds": 30,
+        }
+        with patch.dict(
+            "sys.modules",
+            {
+                "google.adk.tools.mcp_tool.mcp_session_manager": MagicMock(
+                    SseConnectionParams=MockSse,
+                    StdioConnectionParams=MagicMock(),
+                ),
+            },
+        ):
+            _build_connection_params("ga_mcp", conn)
+
+        call_kwargs = MockSse.call_args[1]
+        assert call_kwargs["url"] == "https://ga.mcp.example.com/mcp/sse"
+
+    def test_sse_url_unresolved_placeholder_raises_before_sse_params(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Unresolved ${VAR} in SSE url → MCPSchemaError before SseConnectionParams is called."""
+        from app.adk.agents.agent_factory.mcp import (
+            MCPSchemaError,
+            _build_connection_params,
+        )
+
+        monkeypatch.delenv("GA_MCP_SERVER_URL", raising=False)
+
+        conn = {
+            "connection_type": "sse",
+            "url": "${GA_MCP_SERVER_URL}/sse",
+            "timeout_seconds": 30,
+        }
+        MockSse = MagicMock(name="SseConnectionParams")
+        with (
+            patch.dict(
+                "sys.modules",
+                {
+                    "google.adk.tools.mcp_tool.mcp_session_manager": MagicMock(
+                        SseConnectionParams=MockSse,
+                        StdioConnectionParams=MagicMock(),
+                    ),
+                },
+            ),
+            pytest.raises(MCPSchemaError, match="GA_MCP_SERVER_URL"),
+        ):
+            _build_connection_params("ga_mcp", conn)
+
+        MockSse.assert_not_called()
+
+    def test_sse_header_placeholder_expanded(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """${VAR} in SSE header value is expanded before being passed to SseConnectionParams."""
+        from app.adk.agents.agent_factory.mcp import _build_connection_params
+
+        monkeypatch.setenv("HUBSPOT_API_KEY", "secret-key-123")
+
+        MockSse = MagicMock(name="SseConnectionParams")
+        MockSse.return_value = MagicMock(name="SseInstance")
+
+        conn = {
+            "connection_type": "sse",
+            "url": "https://hubspot.mcp.example.com/sse",
+            "headers": {"Authorization": "Bearer ${HUBSPOT_API_KEY}"},
+            "timeout_seconds": 30,
+        }
+        with patch.dict(
+            "sys.modules",
+            {
+                "google.adk.tools.mcp_tool.mcp_session_manager": MagicMock(
+                    SseConnectionParams=MockSse,
+                    StdioConnectionParams=MagicMock(),
+                ),
+            },
+        ):
+            _build_connection_params("hubspot_mcp", conn)
+
+        call_kwargs = MockSse.call_args[1]
+        assert call_kwargs["headers"] == {"Authorization": "Bearer secret-key-123"}
+
+    def test_stdio_env_placeholder_expanded(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """${VAR} in stdio env value is expanded before being passed to StdioServerParameters."""
+        from app.adk.agents.agent_factory.mcp import _build_connection_params
+
+        monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test-token")
+
+        MockStdio = MagicMock(name="StdioConnectionParams")
+        MockStdio.return_value = MagicMock(name="StdioInstance")
+        MockStdioParams = MagicMock(name="StdioServerParameters")
+
+        conn = {
+            "connection_type": "stdio",
+            "command": "npx",
+            "args": ["-y", "@slack/mcp-server"],
+            "env": {"SLACK_BOT_TOKEN": "${SLACK_BOT_TOKEN}"},
+        }
+        with patch.dict(
+            "sys.modules",
+            {
+                "google.adk.tools.mcp_tool.mcp_session_manager": MagicMock(
+                    SseConnectionParams=MagicMock(),
+                    StdioConnectionParams=MockStdio,
+                ),
+                "mcp.client.stdio": MagicMock(
+                    StdioServerParameters=MockStdioParams
+                ),
+            },
+        ):
+            _build_connection_params("slack_mcp", conn)
+
+        params_call_kwargs = MockStdioParams.call_args[1]
+        assert params_call_kwargs["env"] == {"SLACK_BOT_TOKEN": "xoxb-test-token"}
 
 
 # ---------------------------------------------------------------------------
