@@ -349,12 +349,31 @@ class TestListCommand:
     """--list subcommand behaviour."""
 
     def test_list_exits_zero_and_shows_registered_resources(self) -> None:
-        """AC-1 (updated DM-12): --list exits 0 and lists the registered strategy resources."""
+        """AC-1 (updated DM-12 + DM-30): --list exits 0 and lists the registered resources."""
         result = run_cli("--list", env={"GOOGLE_CLOUD_PROJECT_ID": "test-project-id"})
         assert result.returncode == 0
+        # Strategy suite (DM-12)
         assert "strategy_processing_state" in result.stdout
         assert "strategy_docs" in result.stdout
         assert "strategy_audit" in result.stdout
+        # Analytics suite (DM-30)
+        assert "agent_analytics" in result.stdout
+        assert "cost_aggregations" in result.stdout
+        assert "performance_profiles" in result.stdout
+
+    def test_list_empty_registry_exits_zero(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """AC-1: --list with empty RESOURCES (in-process monkeypatched) exits 0 and prints the empty-state message."""
+        monkeypatch.setattr(cli_module, "RESOURCES", {})
+        monkeypatch.setenv("GOOGLE_CLOUD_PROJECT_ID", "test-project-id")
+
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            exit_code = cli_module.cmd_list()
+
+        assert exit_code == 0
+        assert "(no resources registered)" in buf.getvalue()
 
     def test_list_non_empty_registry_sorted(
         self, monkeypatch: pytest.MonkeyPatch
@@ -1552,3 +1571,44 @@ class TestStrategyResourcesRegistry:
         assert cfg.old_prefix == "strategy_audit_"
         assert cfg.new_subcollection == "strategy_audit"
         assert cfg.has_versions is False
+
+
+# ---------------------------------------------------------------------------
+# TestAnalyticsResourcesRegistry — DM-PRD-02 (DM-30)
+# ---------------------------------------------------------------------------
+
+
+class TestAnalyticsResourcesRegistry:
+    """Assert the three analytics-suite resources are correctly registered.
+
+    PO verification (2026-05-07) determined the PRD's "two source-collection
+    naming variants" claim was unsupported by code or live data — account_ids
+    are uniformly `acc_<uuid>` per `routers/accounts.py:72,87`, the only write
+    site is `f"performance_profiles_{self.account_id}"`, and no `_acc_acc_`
+    double-prefix collections exist in dev/staging/prod. The custom
+    `_performance_profiles_extractor` was therefore removed; the default
+    `removeprefix("performance_profiles_")` correctly returns `acc_<hex>`.
+    """
+
+    def test_agent_analytics_registered(self) -> None:
+        assert RESOURCES["agent_analytics"] == MigrateConfig(
+            old_prefix="agent_analytics_",
+            new_subcollection="agent_analytics",
+            has_versions=False,
+        )
+
+    def test_cost_aggregations_registered(self) -> None:
+        assert RESOURCES["cost_aggregations"] == MigrateConfig(
+            old_prefix="cost_aggregations_",
+            new_subcollection="cost_aggregations",
+            has_versions=False,
+        )
+
+    def test_performance_profiles_registered(self) -> None:
+        cfg = RESOURCES["performance_profiles"]
+        assert cfg == MigrateConfig(
+            old_prefix="performance_profiles_",
+            new_subcollection="performance_profiles",
+            has_versions=False,
+        )
+        assert cfg.account_id_extractor is None

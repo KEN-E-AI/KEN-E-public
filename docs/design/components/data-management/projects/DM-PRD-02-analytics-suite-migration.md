@@ -15,9 +15,9 @@ Migrate three Shape A analytics collections (all living in `app/adk/agents/strat
 
 - `agent_analytics_{account_id}` → `accounts/{account_id}/agent_analytics/{metric_id}` (unbounded)
 - `cost_aggregations_{account_id}` → `accounts/{account_id}/cost_aggregations/{agg_id}` (unbounded)
-- `performance_profiles_{account_id}` (and the inconsistent `performance_profiles_acc_{account_id}` variant per `RUNTIME_WARNINGS_ERRORS.md:230`) → `accounts/{account_id}/performance_profiles/{profile_id}` (unbounded)
+- `performance_profiles_{account_id}` → `accounts/{account_id}/performance_profiles/{profile_id}` (unbounded)
 
-**Side-effect fix:** the naming inconsistency (`performance_profiles_{account_id}` vs `performance_profiles_acc_{account_id}`) collapses into one path. Both source collection variants map to the same destination subcollection.
+> **Resolved 2026-05-07 (DM-30 PO verification):** Earlier drafts of this PRD called out a "naming inconsistency" between `performance_profiles_{account_id}` and a `performance_profiles_acc_{account_id}` variant, citing `RUNTIME_WARNINGS_ERRORS.md:230`. PO verification found this claim unsupported: account_ids in the codebase are uniformly `acc_<uuid>` (per `api/src/kene_api/routers/accounts.py:72,87`), the only production write site is `f"performance_profiles_{self.account_id}"` (`performance_profiler.py:240,320`), and no double-prefix `performance_profiles_acc_acc_*` collections exist in dev/staging/prod. The runtime-warnings doc was filling a literal collection name into a `{account_id}` template — there is one source-collection naming pattern, not two. The default `removeprefix("performance_profiles_")` correctly returns `acc_<hex>` (the canonical account_id); no custom `account_id_extractor` is needed.
 
 This project is independent of DM-PRD-01 — no shared files — so it can run fully in parallel.
 
@@ -25,7 +25,6 @@ This project is independent of DM-PRD-01 — no shared files — so it can run f
 
 ### In scope
 - Register three entries in `api/scripts/_migrate_shape_b/resources.py`: `agent_analytics`, `cost_aggregations`, `performance_profiles`
-- For `performance_profiles`, provide a custom `account_id_extractor` that handles both `performance_profiles_{id}` and `performance_profiles_acc_{id}` naming
 - Run migration in dev; verify counts; delete legacy collections
 - Swap all read + write call sites to Shape B paths
 - Update unit and integration tests
@@ -38,13 +37,12 @@ This project is independent of DM-PRD-01 — no shared files — so it can run f
 
 ## 3. Dependencies
 
-- **DM-PRD-00:** `migrate_to_shape_b.py` merged with custom-extractor support for the `_acc_` variant
+- **DM-PRD-00:** `migrate_to_shape_b.py` merged
 - Existing files to study:
   - `app/adk/agents/strategy_agent/analytics_service.py`
   - `app/adk/agents/strategy_agent/async_analytics_queue.py`
   - `app/adk/agents/strategy_agent/optimization_analyzer.py`
   - `app/adk/agents/strategy_agent/performance_profiler.py`
-  - `app/adk/agents/strategy_agent/RUNTIME_WARNINGS_ERRORS.md` (contains the naming inconsistency callout)
 
 ## 4. Call-site inventory
 
@@ -57,7 +55,7 @@ From [`../multi-tenant-migration-plan.md`](../multi-tenant-migration-plan.md) §
 | `app/adk/agents/strategy_agent/async_analytics_queue.py` | 170 | `agent_analytics_{account_id}` path update |
 | `app/adk/agents/strategy_agent/optimization_analyzer.py` | 200 | `agent_analytics_{self.account_id}` path update |
 | `app/adk/agents/strategy_agent/performance_profiler.py` | 240, 320 | `performance_profiles_{self.account_id}` path update |
-| `app/adk/agents/strategy_agent/RUNTIME_WARNINGS_ERRORS.md` | 230 | Doc update — reflect the new consistent path |
+| `app/adk/agents/strategy_agent/RUNTIME_WARNINGS_ERRORS.md` | 230 | Doc update — replace the imprecise `performance_profiles_acc_{account_id}` template with the new Shape B path |
 
 ## 5. Implementation outline
 
@@ -76,18 +74,10 @@ RESOURCES["cost_aggregations"] = MigrateConfig(
     new_subcollection="cost_aggregations",
     has_versions=False,
 )
-
-def _performance_profiles_extractor(collection_name: str) -> str:
-    # Handles both `performance_profiles_{id}` and `performance_profiles_acc_{id}`
-    if collection_name.startswith("performance_profiles_acc_"):
-        return collection_name.removeprefix("performance_profiles_acc_")
-    return collection_name.removeprefix("performance_profiles_")
-
 RESOURCES["performance_profiles"] = MigrateConfig(
     old_prefix="performance_profiles_",
     new_subcollection="performance_profiles",
     has_versions=False,
-    account_id_extractor=_performance_profiles_extractor,
 )
 ```
 
@@ -104,9 +94,7 @@ python api/scripts/migrate_to_shape_b.py --resource=cost_aggregations --confirm-
 python api/scripts/migrate_to_shape_b.py --resource=agent_analytics
 python api/scripts/migrate_to_shape_b.py --resource=agent_analytics --confirm-delete
 
-# Performance profiles: verify both variants get picked up
 python api/scripts/migrate_to_shape_b.py --resource=performance_profiles --dry-run
-# ↑ dry-run output should list both performance_profiles_* AND performance_profiles_acc_* source collections
 python api/scripts/migrate_to_shape_b.py --resource=performance_profiles
 python api/scripts/migrate_to_shape_b.py --resource=performance_profiles --confirm-delete
 ```
@@ -116,12 +104,11 @@ python api/scripts/migrate_to_shape_b.py --resource=performance_profiles --confi
 - Agents write metrics → data lands at `accounts/{id}/agent_analytics/*` (verify via Firestore console after an agent run)
 - Cost aggregation run → data lands at `accounts/{id}/cost_aggregations/*`
 - Performance profiler output → `accounts/{id}/performance_profiles/*`
-- No `performance_profiles_acc_*` collections remain (the naming inconsistency is resolved)
 
 ## 6. Acceptance criteria
 
 1. All call sites in §4 use `accounts/{account_id}/{agent_analytics,cost_aggregations,performance_profiles}/` paths. `rg -n "(agent_analytics|cost_aggregations|performance_profiles)_" app/` returns zero hits in source files (fixtures/tests excluded per repo convention).
-2. In dev Firestore, no top-level collections matching `agent_analytics_*`, `cost_aggregations_*`, `performance_profiles_*`, or `performance_profiles_acc_*` exist.
+2. In dev Firestore, no top-level collections matching `agent_analytics_*`, `cost_aggregations_*`, or `performance_profiles_*` exist.
 3. A live agent run writes analytics metrics to `accounts/{id}/agent_analytics/{metric_id}` (verified via Firestore console).
 4. Running `async_analytics_queue` flushes events to `accounts/{id}/agent_analytics/` with no lost events vs. pre-migration baseline.
 5. `optimization_analyzer.py` reads analytics correctly and returns a non-empty recommendation set for a seeded account with ≥ 7 days of analytics.
@@ -137,7 +124,6 @@ python api/scripts/migrate_to_shape_b.py --resource=performance_profiles --confi
 
 ### Integration tests
 - Spin up analytics write → read → aggregate flow against emulator; confirm all writes hit new paths
-- Test the `_acc_` variant handling: seed one `performance_profiles_acc_abc` source collection, run migration, confirm data lands at `accounts/abc/performance_profiles/*`
 
 ### Manual verification (in dev)
 - Kick off an agent run; watch Firestore console for new docs at `accounts/{id}/agent_analytics/`

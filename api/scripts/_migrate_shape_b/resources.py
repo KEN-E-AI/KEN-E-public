@@ -1,8 +1,9 @@
 """RESOURCES registry — populated by DM-PRD-01 through DM-PRD-04 and DM-PRD-07.
 
 Each downstream project appends one or more entries here via a pull request.
-DM-PRD-01 registered the strategy-suite resources; further entries are added
-by DM-PRD-02 through DM-PRD-07 as each project ships.
+DM-PRD-01 registered the strategy-suite resources; DM-PRD-02 added the
+analytics-suite resources. Further entries are added by DM-PRD-03 through
+DM-PRD-07 as each project ships.
 """
 
 from .config import MigrateConfig
@@ -26,7 +27,23 @@ RESOURCES["strategy_audit"] = MigrateConfig(
     has_versions=False,
 )
 
-# DM-PRD-02 will add: agent_analytics, cost_aggregations, performance_profiles
+# DM-PRD-02 (Analytics Suite Migration — DM-30)
+RESOURCES["agent_analytics"] = MigrateConfig(
+    old_prefix="agent_analytics_",
+    new_subcollection="agent_analytics",
+    has_versions=False,
+)
+RESOURCES["cost_aggregations"] = MigrateConfig(
+    old_prefix="cost_aggregations_",
+    new_subcollection="cost_aggregations",
+    has_versions=False,
+)
+RESOURCES["performance_profiles"] = MigrateConfig(
+    old_prefix="performance_profiles_",
+    new_subcollection="performance_profiles",
+    has_versions=False,
+)
+
 # DM-PRD-03: (field migration — no entry here; uses migrate_shape_d_split.py)
 # DM-PRD-04 will add: monitoring_topics, alert_configurations
 # DM-PRD-07 will add: members_migration (is_field_migration=True)
