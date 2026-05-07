@@ -35,6 +35,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 import migrate_to_shape_b as cli_module  # noqa: E402
 from _migrate_shape_b.config import MigrateConfig  # noqa: E402
+from _migrate_shape_b.resources import RESOURCES  # noqa: E402
 from _migrate_shape_b.runner import (  # noqa: E402
     CopyResult,
     DeleteResult,
@@ -347,11 +348,13 @@ class TestMigrateConfig:
 class TestListCommand:
     """--list subcommand behaviour."""
 
-    def test_list_empty_registry_exits_zero(self) -> None:
-        """AC-1: --list with empty RESOURCES exits 0 and prints the empty-state message."""
+    def test_list_exits_zero_and_shows_registered_resources(self) -> None:
+        """AC-1 (updated DM-12): --list exits 0 and lists the registered strategy resources."""
         result = run_cli("--list", env={"GOOGLE_CLOUD_PROJECT_ID": "test-project-id"})
         assert result.returncode == 0
-        assert "(no resources registered)" in result.stdout
+        assert "strategy_processing_state" in result.stdout
+        assert "strategy_docs" in result.stdout
+        assert "strategy_audit" in result.stdout
 
     def test_list_non_empty_registry_sorted(
         self, monkeypatch: pytest.MonkeyPatch
@@ -1511,3 +1514,41 @@ class TestDryRun:
 
         assert exit_code == 0
         assert called == ["aaa", "bbb"]  # alphabetical order
+
+
+# ---------------------------------------------------------------------------
+# TestStrategyResourcesRegistry — DM-12 (DM-PRD-01 Phase 1)
+# ---------------------------------------------------------------------------
+
+
+class TestStrategyResourcesRegistry:
+    """Assert that the three strategy-suite resources are correctly registered.
+
+    These tests use the module-level RESOURCES import (the live registry, not a
+    monkeypatched copy) so that any accidental change to resources.py is caught
+    immediately. Intentional coupling: if a resource is renamed or removed, these
+    tests should fail to signal the breakage.
+    """
+
+    def test_strategy_processing_state_registered(self) -> None:
+        assert "strategy_processing_state" in RESOURCES, (
+            "strategy_processing_state not found in RESOURCES"
+        )
+        cfg = RESOURCES["strategy_processing_state"]
+        assert cfg.old_prefix == "strategy_processing_state_"
+        assert cfg.new_subcollection == "strategy_processing_state"
+        assert cfg.has_versions is False
+
+    def test_strategy_docs_registered_with_versions(self) -> None:
+        assert "strategy_docs" in RESOURCES, "strategy_docs not found in RESOURCES"
+        cfg = RESOURCES["strategy_docs"]
+        assert cfg.old_prefix == "strategy_docs_"
+        assert cfg.new_subcollection == "strategy_docs"
+        assert cfg.has_versions is True
+
+    def test_strategy_audit_registered(self) -> None:
+        assert "strategy_audit" in RESOURCES, "strategy_audit not found in RESOURCES"
+        cfg = RESOURCES["strategy_audit"]
+        assert cfg.old_prefix == "strategy_audit_"
+        assert cfg.new_subcollection == "strategy_audit"
+        assert cfg.has_versions is False
