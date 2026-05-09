@@ -22,15 +22,29 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from src.kene_api.models.feature_flag_models import FeatureFlag
 
-_SNAPSHOT_PATH = (
-    Path(__file__).parent.parent / "fixtures" / "feature_flag_schema.snapshot.json"
-)
+_FIXTURES_DIR = (Path(__file__).parent.parent / "fixtures").resolve()
+_SNAPSHOT_PATH = (_FIXTURES_DIR / "feature_flag_schema.snapshot.json").resolve()
 
 
 def _canonical(schema: dict[str, object]) -> str:
+    # Trailing "\n" matches POSIX text-file convention and the print() newline
+    # in the regeneration recipe above — both sides of the comparison must agree.
     return json.dumps(schema, sort_keys=True, indent=2) + "\n"
+
+
+def _read_snapshot() -> str:
+    assert _SNAPSHOT_PATH.is_relative_to(_FIXTURES_DIR), (
+        f"Snapshot path escaped fixtures dir: {_SNAPSHOT_PATH}"
+    )
+    if not _SNAPSHOT_PATH.exists():
+        pytest.fail(
+            f"Snapshot fixture missing at {_SNAPSHOT_PATH}. "
+            "Regenerate using the recipe in this module's docstring."
+        )
+    return _SNAPSHOT_PATH.read_text(encoding="utf-8")
 
 
 class TestFeatureFlagSchemaContract:
@@ -44,7 +58,7 @@ class TestFeatureFlagSchemaContract:
         module's docstring, and update frontend/src/lib/featureFlags/types.ts
         in the same PR.
         """
-        snapshot_text = _SNAPSHOT_PATH.read_text(encoding="utf-8")
+        snapshot_text = _read_snapshot()
         current = _canonical(FeatureFlag.model_json_schema())
 
         assert current == snapshot_text, (
@@ -63,7 +77,7 @@ class TestFeatureFlagSchemaContract:
         class _DriftFeatureFlag(FeatureFlag):
             extra_drift_field: str
 
-        snapshot_text = _SNAPSHOT_PATH.read_text(encoding="utf-8")
+        snapshot_text = _read_snapshot()
         drift_schema = _canonical(_DriftFeatureFlag.model_json_schema())
 
         assert drift_schema != snapshot_text, (
