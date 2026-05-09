@@ -54,7 +54,9 @@ def evaluate(flag: FeatureFlag, ctx: EvaluationContext) -> FlagEvaluation:
     """
     # AC-13/§5.3: logging is FF-8's concern; do NOT log from this function.
     if not flag.is_active:
-        return FlagEvaluation(key=flag.key, enabled=flag.default_enabled, reason="kill_switch")
+        return FlagEvaluation(
+            key=flag.key, enabled=flag.default_enabled, reason="kill_switch"
+        )
 
     rules = flag.targeting_rules
     email = ctx.user_email.strip().lower()

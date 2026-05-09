@@ -104,13 +104,17 @@ class TestKillSwitch:
         flag = _flag(is_active=False, default_enabled=False)
         result = evaluate(flag, _ctx())
 
-        assert result == FlagEvaluation(key="test_flag", enabled=False, reason="kill_switch")
+        assert result == FlagEvaluation(
+            key="test_flag", enabled=False, reason="kill_switch"
+        )
 
     def test_kill_switch_default_enabled_true(self) -> None:
         flag = _flag(is_active=False, default_enabled=True)
         result = evaluate(flag, _ctx())
 
-        assert result == FlagEvaluation(key="test_flag", enabled=True, reason="kill_switch")
+        assert result == FlagEvaluation(
+            key="test_flag", enabled=True, reason="kill_switch"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +129,9 @@ class TestEmailMatch:
         flag = _flag(targeting_rules=TargetingRules(user_emails=["alice@ken-e.ai"]))
         result = evaluate(flag, _ctx(user_email="alice@ken-e.ai"))
 
-        assert result == FlagEvaluation(key="test_flag", enabled=True, reason="email_match")
+        assert result == FlagEvaluation(
+            key="test_flag", enabled=True, reason="email_match"
+        )
 
     def test_mixed_case_email_matches(self) -> None:
         # TargetingRules._lowercase stores "foo@ken-e.ai"; ctx.user_email is
@@ -133,13 +139,17 @@ class TestEmailMatch:
         flag = _flag(targeting_rules=TargetingRules(user_emails=["Foo@KEN-E.AI"]))
         result = evaluate(flag, _ctx(user_email="Foo@KEN-E.AI"))
 
-        assert result == FlagEvaluation(key="test_flag", enabled=True, reason="email_match")
+        assert result == FlagEvaluation(
+            key="test_flag", enabled=True, reason="email_match"
+        )
 
     def test_nonmatching_email_does_not_fire(self) -> None:
         flag = _flag(targeting_rules=TargetingRules(user_emails=["other@ken-e.ai"]))
         result = evaluate(flag, _ctx(user_email="alice@ken-e.ai"))
 
-        assert result == FlagEvaluation(key="test_flag", enabled=False, reason="default")
+        assert result == FlagEvaluation(
+            key="test_flag", enabled=False, reason="default"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -154,19 +164,25 @@ class TestDomainMatch:
         flag = _flag(targeting_rules=TargetingRules(email_domains=["ken-e.ai"]))
         result = evaluate(flag, _ctx(user_email="bob@ken-e.ai"))
 
-        assert result == FlagEvaluation(key="test_flag", enabled=True, reason="domain_match")
+        assert result == FlagEvaluation(
+            key="test_flag", enabled=True, reason="domain_match"
+        )
 
     def test_mixed_case_domain_in_email_matches(self) -> None:
         flag = _flag(targeting_rules=TargetingRules(email_domains=["KEN-E.AI"]))
         result = evaluate(flag, _ctx(user_email="bob@KEN-E.AI"))
 
-        assert result == FlagEvaluation(key="test_flag", enabled=True, reason="domain_match")
+        assert result == FlagEvaluation(
+            key="test_flag", enabled=True, reason="domain_match"
+        )
 
     def test_nonmatching_domain_does_not_fire(self) -> None:
         flag = _flag(targeting_rules=TargetingRules(email_domains=["other.ai"]))
         result = evaluate(flag, _ctx(user_email="bob@ken-e.ai"))
 
-        assert result == FlagEvaluation(key="test_flag", enabled=False, reason="default")
+        assert result == FlagEvaluation(
+            key="test_flag", enabled=False, reason="default"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -181,13 +197,17 @@ class TestOrgMatch:
         flag = _flag(targeting_rules=TargetingRules(organization_ids=["org_abc"]))
         result = evaluate(flag, _ctx(organization_id="org_abc"))
 
-        assert result == FlagEvaluation(key="test_flag", enabled=True, reason="org_match")
+        assert result == FlagEvaluation(
+            key="test_flag", enabled=True, reason="org_match"
+        )
 
     def test_nonmatching_org_does_not_fire(self) -> None:
         flag = _flag(targeting_rules=TargetingRules(organization_ids=["org_xyz"]))
         result = evaluate(flag, _ctx(organization_id="org_abc"))
 
-        assert result == FlagEvaluation(key="test_flag", enabled=False, reason="default")
+        assert result == FlagEvaluation(
+            key="test_flag", enabled=False, reason="default"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -202,13 +222,17 @@ class TestAccountMatch:
         flag = _flag(targeting_rules=TargetingRules(account_ids=["acc_001"]))
         result = evaluate(flag, _ctx(account_id="acc_001"))
 
-        assert result == FlagEvaluation(key="test_flag", enabled=True, reason="account_match")
+        assert result == FlagEvaluation(
+            key="test_flag", enabled=True, reason="account_match"
+        )
 
     def test_nonmatching_account_does_not_fire(self) -> None:
         flag = _flag(targeting_rules=TargetingRules(account_ids=["acc_999"]))
         result = evaluate(flag, _ctx(account_id="acc_001"))
 
-        assert result == FlagEvaluation(key="test_flag", enabled=False, reason="default")
+        assert result == FlagEvaluation(
+            key="test_flag", enabled=False, reason="default"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -245,7 +269,9 @@ class TestRollout:
         )
         result = evaluate(flag, _ctx(user_id="user_001"))
 
-        assert result == FlagEvaluation(key="demo_flag", enabled=False, reason="default")
+        assert result == FlagEvaluation(
+            key="demo_flag", enabled=False, reason="default"
+        )
 
     def test_rollout_hit_org_bucketing(self) -> None:
         # hash_bucket("billing_enabled", "org_42") == 98; 98 < 99 = True
@@ -256,7 +282,9 @@ class TestRollout:
         )
         result = evaluate(flag, _ctx(organization_id="org_42"))
 
-        assert result == FlagEvaluation(key="billing_enabled", enabled=True, reason="rollout")
+        assert result == FlagEvaluation(
+            key="billing_enabled", enabled=True, reason="rollout"
+        )
 
     def test_rollout_miss_org_bucketing(self) -> None:
         # hash_bucket("billing_enabled", "org_42") == 98; 98 < 97 = False
@@ -267,7 +295,9 @@ class TestRollout:
         )
         result = evaluate(flag, _ctx(organization_id="org_42"))
 
-        assert result == FlagEvaluation(key="billing_enabled", enabled=False, reason="default")
+        assert result == FlagEvaluation(
+            key="billing_enabled", enabled=False, reason="default"
+        )
 
     def test_rollout_hit_account_bucketing(self) -> None:
         # hash_bucket("test_flag", "acc_001") == 16; 16 < 50 = True
@@ -289,7 +319,9 @@ class TestRollout:
         )
         result = evaluate(flag, _ctx(account_id="acc_001"))
 
-        assert result == FlagEvaluation(key="test_flag", enabled=False, reason="default")
+        assert result == FlagEvaluation(
+            key="test_flag", enabled=False, reason="default"
+        )
 
     def test_rollout_zero_percent_never_fires(self) -> None:
         flag = _flag(
@@ -299,7 +331,9 @@ class TestRollout:
         )
         result = evaluate(flag, _ctx(user_id="user_001"))
 
-        assert result == FlagEvaluation(key="demo_flag", enabled=False, reason="default")
+        assert result == FlagEvaluation(
+            key="demo_flag", enabled=False, reason="default"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +348,9 @@ class TestDefaultFallback:
         flag = _flag(default_enabled=False)
         result = evaluate(flag, _ctx())
 
-        assert result == FlagEvaluation(key="test_flag", enabled=False, reason="default")
+        assert result == FlagEvaluation(
+            key="test_flag", enabled=False, reason="default"
+        )
 
     def test_default_true_when_no_rules_match(self) -> None:
         flag = _flag(default_enabled=True)
@@ -342,7 +378,9 @@ class TestPrecedenceEmailOverRollout:
         )
         result = evaluate(flag, _ctx(user_id="user_001", user_email="alice@ken-e.ai"))
 
-        assert result == FlagEvaluation(key="demo_flag", enabled=True, reason="email_match")
+        assert result == FlagEvaluation(
+            key="demo_flag", enabled=True, reason="email_match"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -360,7 +398,9 @@ class TestMissingEntityId:
         )
         result = evaluate(flag, _ctx(account_id=None))
 
-        assert result == FlagEvaluation(key="test_flag", enabled=False, reason="default")
+        assert result == FlagEvaluation(
+            key="test_flag", enabled=False, reason="default"
+        )
 
     def test_organization_none_with_100pct_rollout_returns_default(self) -> None:
         flag = _flag(
@@ -369,7 +409,9 @@ class TestMissingEntityId:
         )
         result = evaluate(flag, _ctx(organization_id=None))
 
-        assert result == FlagEvaluation(key="test_flag", enabled=False, reason="default")
+        assert result == FlagEvaluation(
+            key="test_flag", enabled=False, reason="default"
+        )
 
     def test_user_empty_string_with_100pct_rollout_returns_default(self) -> None:
         # user_id="" is a non-None but falsy value — evaluate() guards with `if entity_id`.
@@ -379,7 +421,9 @@ class TestMissingEntityId:
         )
         result = evaluate(flag, _ctx(user_id=""))
 
-        assert result == FlagEvaluation(key="test_flag", enabled=False, reason="default")
+        assert result == FlagEvaluation(
+            key="test_flag", enabled=False, reason="default"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -394,7 +438,9 @@ class TestDegenerateEmail:
         flag = _flag(targeting_rules=TargetingRules(email_domains=["no-at-sign"]))
         result = evaluate(flag, _ctx(user_email="no-at-sign"))
 
-        assert result == FlagEvaluation(key="test_flag", enabled=False, reason="default")
+        assert result == FlagEvaluation(
+            key="test_flag", enabled=False, reason="default"
+        )
 
     def test_empty_local_part_still_matches_domain(self) -> None:
         # "@ken-e.ai" has an empty local part; split("@", 1)[-1] = "ken-e.ai".
@@ -404,11 +450,15 @@ class TestDegenerateEmail:
         flag = _flag(targeting_rules=TargetingRules(email_domains=["ken-e.ai"]))
         result = evaluate(flag, _ctx(user_email="@ken-e.ai"))
 
-        assert result == FlagEvaluation(key="test_flag", enabled=True, reason="domain_match")
+        assert result == FlagEvaluation(
+            key="test_flag", enabled=True, reason="domain_match"
+        )
 
     def test_whitespace_padded_email_matches_after_strip(self) -> None:
         # Leading/trailing whitespace is stripped before comparison.
         flag = _flag(targeting_rules=TargetingRules(user_emails=["alice@ken-e.ai"]))
         result = evaluate(flag, _ctx(user_email=" alice@ken-e.ai "))
 
-        assert result == FlagEvaluation(key="test_flag", enabled=True, reason="email_match")
+        assert result == FlagEvaluation(
+            key="test_flag", enabled=True, reason="email_match"
+        )
