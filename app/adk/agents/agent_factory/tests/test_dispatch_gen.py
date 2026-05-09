@@ -22,7 +22,7 @@ from app.adk.agents.utils.agent_retry import DEFAULT_RETRY_CONFIG
 # ---------------------------------------------------------------------------
 
 _PATCH_BUILD_PIPELINE = "app.adk.agents.agent_factory.dispatch.build_review_pipeline"
-_PATCH_INVOKE_PIPELINE = "app.adk.agents.agent_factory.dispatch.invoke_pipeline"
+_PATCH_INVOKE_PIPELINE = "app.adk.agents.utils.supervisor_utils.invoke_pipeline"
 _PATCH_CHECK_HALLUCINATION = (
     "app.adk.agents.agent_factory.dispatch._check_hallucinated_approval"
 )
@@ -691,6 +691,104 @@ class TestDispatchUnapprovedWarning:
             result = fn("query", acceptance_criteria="must pass review")
 
         assert result == "approved answer"
+
+
+# ---------------------------------------------------------------------------
+# TestDispatchCloudpickleRoundTrip
+# ---------------------------------------------------------------------------
+# REGRESSION: AH-17 verification surfaced a deploy-blocking bug where
+# `from __future__ import annotations` in `dispatch.py` caused generated
+# dispatch closures to fail after cloudpickle round-trip.  ADK's
+# `typing.get_type_hints()` on the rehydrated closure raised
+# `NameError: name 'ToolContext' is not defined` because deferred (string)
+# annotations don't survive the round-trip — cloudpickle drops the closure's
+# `__wrapped__`/`__globals__` mapping.  The fix (removing the future import
+# from `dispatch.py`) was verified during AH-17 smoke testing; this test
+# ensures it never regresses.
+#
+# Note: `safe_weave_op` runs in noop mode when WEAVE_API_KEY is not set
+# (verified in `app/utils/weave_observability.py`), so the pickle round-trip
+# does not require Weave to be configured.
+
+
+class TestDispatchCloudpickleRoundTrip:
+    """Verify that generated dispatch closures survive cloudpickle round-trip.
+
+    This is the exact failure path that Agent Engine exercises: each dispatch
+    closure is cloudpickled into the deployment artifact, then rehydrated and
+    handed to ADK's function-declaration builder which calls
+    ``typing.get_type_hints()``.  The test mirrors that sequence.
+    """
+
+    def test_get_type_hints_succeeds_after_cloudpickle_roundtrip(self) -> None:
+        """``typing.get_type_hints(restored)`` must not raise ``NameError``."""
+        import typing
+
+        import cloudpickle
+
+        specialist = _make_specialist("sample_specialist")
+        dispatchers = generate_dispatch_functions({"sample_specialist": specialist})
+        dispatch_fn = dispatchers["sample_specialist"]
+
+        blob = cloudpickle.dumps(dispatch_fn)
+        restored = cloudpickle.loads(blob)
+
+        # Must not raise NameError (the regression symptom)
+        hints = typing.get_type_hints(restored)
+        assert "tool_context" in hints
+
+    def test_function_declaration_populated_after_roundtrip(self) -> None:
+        """``FunctionTool(restored)._get_declaration()`` must return a non-None
+        declaration with non-empty parameters — the ADK call that fails in prod
+        when annotations are deferred strings.
+        """
+        import cloudpickle
+        from google.adk.tools.function_tool import FunctionTool
+
+        specialist = _make_specialist("sample_specialist")
+        dispatchers = generate_dispatch_functions({"sample_specialist": specialist})
+        dispatch_fn = dispatchers["sample_specialist"]
+
+        blob = cloudpickle.dumps(dispatch_fn)
+        restored = cloudpickle.loads(blob)
+
+        tool = FunctionTool(restored)
+        declaration = tool._get_declaration()
+
+        assert declaration is not None, "FunctionTool must produce a FunctionDeclaration"
+        # ADK sends parameters to Gemini; an empty schema indicates the closure's
+        # type annotations were not resolved (the regression symptom).
+        assert declaration.parameters is not None
+
+    def test_future_annotations_causes_failure_not_masked(self) -> None:
+        """Confirm that dispatch.py does NOT use ``from __future__ import annotations``.
+
+        This test documents the regression guard: if the future import were
+        re-added, the two cloudpickle round-trip tests above would fail with
+        ``NameError: name 'ToolContext' is not defined``.  We also assert the
+        absence of the import via the AST so that the guard fires for the actual
+        statement, not just the prohibition comment in the module docstring.
+        """
+        import ast
+        import inspect
+
+        import app.adk.agents.agent_factory.dispatch as dispatch_mod
+
+        src = inspect.getsource(dispatch_mod)
+        tree = ast.parse(src)
+
+        has_future_annotations = any(
+            isinstance(node, ast.ImportFrom)
+            and node.module == "__future__"
+            and any(alias.name == "annotations" for alias in node.names)
+            for node in ast.walk(tree)
+        )
+        assert not has_future_annotations, (
+            "dispatch.py must NOT use `from __future__ import annotations`. "
+            "That import causes generated dispatch closures to fail after "
+            "cloudpickle round-trip (AH-17 regression). See the module docstring "
+            "for the full explanation."
+        )
 
 
 if __name__ == "__main__":

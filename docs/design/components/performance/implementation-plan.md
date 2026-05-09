@@ -291,7 +291,7 @@ Plus: terminology-rename audit (grep for `useGoals` / `GoalsContext` / `setForec
                  ▼        ▼         ▼       ▼      ▼
           ┌─────────┐┌────────┐┌──────┐┌──────┐┌──────┐
           │PE-PRD-02││PE-PRD-03│PE-04 ││PE-06 ││PE-07 │
-          │Analysis ││Simulat. ││Config││Targt.││Diag. │
+          │Analysis ││Simulat. ││Config││Target.││Diag. │
           └────┬────┘└───┬─────┘└──┬───┘└──┬───┘└──┬───┘
                │         │         │      │       │
                │         │         ▼      │       │

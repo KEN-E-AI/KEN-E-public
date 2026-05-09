@@ -13,7 +13,7 @@ The user decides that a blog post should be deployed. Create a user story that e
 
 Once the blog post is live, the user might want to view the performance of the blog post in Google Analytics to see if it is performing well or if it needs to be modified. In this case, the LLM should create a report automation that is scheduled to run weekly. This automation will define a specific report that should be pulled from Google Analytics. The results of this report will be evaluated by an LLM to determine if the blog post is performing as expected or if improvements could be made. The LLM will generate recommended next steps, and the raw data as well as the LLM's findings will be saved to a database. The user will receive a notification each time the analysis is complete. The user may review the results of the analysis. If the user chooses to accept any of the LLM's recommendations, they will be added to the content calendar. The blog post will be modified in draft mode and await the user's approval. If the user approves the edits before the deployment date, the LLM will programmatically deploy the edits using the exact same mechanism as it did when it deployed the original blog post.
 
-## User Stories for Scenarion 1
+## User Stories for Scenario 1
 
 ## 1. Data Integration & Competitor Research
 
@@ -233,13 +233,13 @@ When the user approves, the LLM generates a brief, which includes summary of the
 The user requests to continue during the current session with drafting the content across all channels. The LLM creates a "Campaign" in the database to document all of the pieces of content that will be generated and deployed. The LLM recommends that the company deploy the following, and waits for the CMO to approve the plan:
 - A single long-form blog post deployed January 1.
 - Three short-form emails that can be used to promote the blog post, deployed January 2, 4, and 6.
-- A long-form video that could be recorded and deployed on Janaury 1, then embedded withing the blog post.
+- A long-form video that could be recorded and deployed on Janaury 1, then embedded within the blog post.
 - A short-form video that could be recorded for TikTok and Instagram, and deployed January 3.
 The LLM also provides a draft or outline of each piece of content.
 
 When the user agrees, the LLM drafts all content and adds it to the content calendar with a status of "not approved". The LLM should generate the full text for all pieces simultaneously. The drafts will be saved to the database with the campaign. The CMO will be given an opportunity to review the entire campaign at once. During review, the CMO might choose to approve, modify or delete each individual piece of content one at a time. When all content is ready for approval, the user receives a notification to review and approve. Each day, the LLM will review the content that has been approved and is scheduled to be deployed that day, and it will programmatically deploy across marketing channels. The system will be expected to post directly to the CMO's social accounts via APIs. 
 
-## User Stories for Scenarion 2
+## User Stories for Scenario 2
 
 ## User Story 1: Concept Input & Validation
 
@@ -385,7 +385,7 @@ When the user agrees, the LLM drafts all content and adds it to the content cale
 
 ---
 
-## Scenario 3: The user hosts a team meeting to brainstorm optimiztion strategies
+## Scenario 3: The user hosts a team meeting to brainstorm optimization strategies
 
 
 The user is a Chief Marketing Officer for a retail clothing company. The CMO oversees the work of a 5-person marketing team, and a digital marketing agency. The people in the marketing team specialize in channels: Social media, Email, Paid search & display, Video, Website writing and design. The agency specifically supports paid media campaigns for paid search, display and social media.
@@ -399,7 +399,7 @@ On the day of the meeting, all team members come prepared to discuss the areas o
 When the call is over, each meeting participant receives an email with a list of next steps and who each has been assigned to. If the CMO has integrated a project management tool with KEN-E (such as Notion or Jira) those tasks should be pushed into the external project management tool at the end of the meeting.
 
 
-## User Stories for Scenarion 3
+## User Stories for Scenario 3
 
 That’s a great piece of information. The ability to push tasks directly into the team's existing workflow (like Jira or Asana) via the integration dashboard ensures that KEN-E's insights translate immediately into action.
 

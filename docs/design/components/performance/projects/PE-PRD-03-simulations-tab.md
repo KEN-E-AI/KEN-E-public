@@ -24,7 +24,7 @@ The tab is hidden from the Performance tab nav until the setup wizard (PE-PRD-05
 
 ### In scope
 - `SimulationsTab` page at `/performance/simulations` with three sub-tabs (Current Plan / Simulated Results / Recommendations), sub-tab state preserved in URL query (`?view=current|simulated|recommendations`)
-- **12-week baseline-vs-target `ComposedChart`** — Recharts wrapper (`BaselineVsTargetChart`) with a weekly x-axis, a primary y-axis for the mapped KPI value, a baseline line (from SAR-E), a target line (from saved Targets), and an overlayed scenario line (post-run); honors the Soft Maximalism color scale and a secondary y-axis toggle when two KPIs share the view
+- **12-week baseline-vs-target `ComposedChart`** — Recharts wrapper (`BaselineVsTargetChart`) with a weekly x-axis, a primary y-axis for the mapped KPI value, a baseline line (from SAR-E), a target line (from saved Targets), and an overlaid scenario line (post-run); honors the Soft Maximalism color scale and a secondary y-axis toggle when two KPIs share the view
 - Per-stage expansion panel: clicking a funnel Objective expands an accordion that reveals the LLM specialist's `reasoning` + `methodology_note` fields for that KPI, plus the per-week derivation context hash (for audit / re-run inspection)
 - "Run Simulation" button that POSTs `/api/v1/performance/{account_id}/simulations/run` and surfaces loading / success / error / partial states; the button disables while a run is in flight
 - "Save Forecast as Targets" action that POSTs each per-(KPI, week) target to `POST /sar-e/{account_id}/targets`; handles SAR-E's supersede-on-edit semantics by surfacing a single "this will replace N existing targets" confirmation before firing

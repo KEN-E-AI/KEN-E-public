@@ -84,9 +84,17 @@ disable_error_code = ["misc", "no-untyped-call", "no-any-return"]
 exclude = [".venv"]
 
 [tool.codespell]
-ignore-words-list = "rouge"
+# Legitimate identifiers and intentional spellings that codespell flags as
+# false positives.  Each entry is either a code identifier, a timezone
+# abbreviation, a library API name, or an intentional spelling variant.
+# See AH-23 for the full categorisation rationale.
+ignore-words-list = "rouge,nd,vew,bu,trough,ist,afterall,pre-empt,datea,preferr,ment,mis,overrideable,noone,coo,devlop"
 
-skip = "./locust_env/*,uv.lock,.venv,**/*.ipynb"
+# Skip generated lockfiles, virtual environments, Jupyter checkpoints, the
+# locust performance-test environment (third-party artifacts with identifiers
+# that look like typos), and pyproject.toml itself (the ignore-words-list
+# value is scanned before the ignore list is applied to this file).
+skip = "./locust_env/*,uv.lock,.venv,**/*.ipynb,./docs/figma-export/package-lock.json,./frontend/package-lock.json,./pyproject.toml"
 
 [build-system]
 requires = ["hatchling"]
