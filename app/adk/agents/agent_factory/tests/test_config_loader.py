@@ -513,5 +513,46 @@ class TestConfigLoader:
         assert result.based_on_version == 7
 
 
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_phase3_flags_default_to_true_when_absent(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        from app.adk.agents.agent_factory.config_loader import load_agent_config
+
+        minimal_doc = {"instruction": "Hello.", "model": "gemini-2.5-pro"}
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=minimal_doc)
+
+        result = load_agent_config("test_agent")
+
+        assert result.available_to_copy is True
+        assert result.automatically_available is True
+        assert result.visible_in_frontend is True
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_phase3_flags_round_trip_false_values(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        from app.adk.agents.agent_factory.config_loader import load_agent_config
+
+        doc_with_flags = {
+            "instruction": "Hello.",
+            "model": "gemini-2.5-pro",
+            "available_to_copy": False,
+            "automatically_available": False,
+            "visible_in_frontend": False,
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=doc_with_flags)
+
+        result = load_agent_config("test_agent")
+
+        assert result.available_to_copy is False
+        assert result.automatically_available is False
+        assert result.visible_in_frontend is False
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -49,6 +49,11 @@ class MergedAgentConfig(BaseModel):
     sandbox_code_executor_enabled: bool = False
     response_schema: dict | None = None
 
+    # Phase 3 (AH-18 / PRD §4) — Global config flags
+    available_to_copy: bool = True
+    automatically_available: bool = True
+    visible_in_frontend: bool = True
+
     based_on_version: int | None = None
     customization_status: Literal["default", "customized", "custom_agent"] = "default"
 

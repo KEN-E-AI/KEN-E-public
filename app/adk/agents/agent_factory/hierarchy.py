@@ -222,6 +222,28 @@ def build_hierarchy(
             "Deploy cannot proceed without the root agent definition."
         )
 
+    # Step 4½ — filter out global specialists that are not automatically available.
+    # A default-status config with automatically_available=False is excluded from
+    # the hierarchy. Customized and custom_agent configs always pass — the account
+    # opted in explicitly. The root config was already popped above.
+    assert ROOT_CONFIG_ID not in configs, (
+        f"Root config {ROOT_CONFIG_ID!r} must be popped before the filter step; "
+        "ordering invariant violated."
+    )
+    excluded = [
+        cid
+        for cid, cfg in configs.items()
+        if cfg.customization_status == "default" and not cfg.automatically_available
+    ]
+    for cid in excluded:
+        del configs[cid]
+    if excluded:
+        logger.info(
+            "Filtered %d specialist(s) with automatically_available=False: %s",
+            len(excluded),
+            excluded,
+        )
+
     # Step 5 — build specialists in deterministic alphabetical order.
     specialists: dict[str, LlmAgent] = {}
 
