@@ -17,7 +17,7 @@ See Sprint 6 Design Decisions in Notion for rationale:
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -287,7 +287,7 @@ class AgentConfigCreate(BaseModel):
 
     description: str | None = Field(None, min_length=10, max_length=1000)
     temperature: float | None = Field(None, ge=0.0, le=1.0)
-    skill_ids: list[str] = Field(default_factory=list)
+    skill_ids: list[Annotated[str, Field(max_length=50)]] = Field(default_factory=list, max_length=20)
     sandbox_code_executor_enabled: bool = False
 
     @field_validator("model")
@@ -313,10 +313,10 @@ class AgentConfigOverlayUpdate(BaseModel):
     """
 
     instruction: str | None = Field(None, min_length=10, max_length=50000)
-    model: str | None = Field(None)
+    model: str | None = Field(None, max_length=100)
     description: str | None = Field(None, min_length=10, max_length=1000)
     temperature: float | None = Field(None, ge=0.0, le=1.0)
-    skill_ids: list[str] | None = None
+    skill_ids: list[Annotated[str, Field(max_length=50)]] | None = Field(None, max_length=20)
     sandbox_code_executor_enabled: bool | None = None
 
     @field_validator("model")

@@ -332,7 +332,7 @@ class TestAccountAgentConfigsAuth:
         self._install_user(_account_admin())
 
         # Wire Firestore for PUT → upsert overlay → _load_merged
-        config_id = "test_researcher"
+        config_id = "company_news_agent"
 
         global_doc = MagicMock()
         global_doc.exists = True
@@ -381,7 +381,7 @@ class TestAccountAgentConfigsAuth:
         """Org admin can delete a non-custom overlay (reverts to global, returns 204)."""
         self._install_user(_account_admin())
 
-        config_id = "test_researcher"
+        config_id = "company_news_agent"
 
         overlay_doc = MagicMock()
         overlay_doc.exists = True

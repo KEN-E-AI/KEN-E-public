@@ -616,29 +616,16 @@ def _parse_based_on_version(version_str: str | None) -> int:
     return 1
 
 
-def _load_merged(
-    db: firestore.Client,
-    account_id: str,
+def _merge_from_data(
     config_id: str,
+    global_data: dict | None,
+    overlay_data: dict | None,
 ) -> MergedAgentConfig | None:
-    """Read global + per-account overlay, shallow-merge, return MergedAgentConfig.
+    """Shallow-merge pre-fetched global + overlay dicts into a MergedAgentConfig.
 
-    Returns None when neither document exists (caller raises 404).
-    Mirrors the merge semantics of ``app/adk/agents/agent_factory/config_loader.py``
-    without taking a runtime dependency on the ``app/`` package.
+    Returns None when neither document exists.  Called by both ``_load_merged``
+    (single-config fetch) and the list endpoint (bulk fetch, avoids N+1 reads).
     """
-    global_doc = db.collection("agent_configs").document(config_id).get()
-    overlay_doc = (
-        db.collection("accounts")
-        .document(account_id)
-        .collection("agent_configs")
-        .document(config_id)
-        .get()
-    )
-
-    global_data: dict | None = global_doc.to_dict() if global_doc.exists else None
-    overlay_data: dict | None = overlay_doc.to_dict() if overlay_doc.exists else None
-
     if global_data is None and overlay_data is None:
         return None
 
@@ -663,6 +650,33 @@ def _load_merged(
     merged["based_on_version"] = bov
 
     return MergedAgentConfig.model_validate(merged)
+
+
+def _load_merged(
+    db: firestore.Client,
+    account_id: str,
+    config_id: str,
+) -> MergedAgentConfig | None:
+    """Read global + per-account overlay docs from Firestore, then merge.
+
+    Returns None when neither document exists (caller raises 404).
+    Mirrors the merge semantics of ``app/adk/agents/agent_factory/config_loader.py``
+    without taking a runtime dependency on the ``app/`` package.
+    """
+    global_doc = db.collection("agent_configs").document(config_id).get()
+    overlay_doc = (
+        db.collection("accounts")
+        .document(account_id)
+        .collection("agent_configs")
+        .document(config_id)
+        .get()
+    )
+
+    return _merge_from_data(
+        config_id,
+        global_doc.to_dict() if global_doc.exists else None,
+        overlay_doc.to_dict() if overlay_doc.exists else None,
+    )
 
 
 @account_router.get("/", response_model=list[MergedAgentConfig])
@@ -698,9 +712,10 @@ async def list_account_agent_configs(
             if data and data.get("automatically_available", True):
                 config_ids.add(cid)
 
+        # Build merges inline from already-fetched dicts — no per-config Firestore reads.
         results: list[MergedAgentConfig] = []
         for cid in sorted(config_ids):
-            merged = _load_merged(db, account_id, cid)
+            merged = _merge_from_data(cid, global_docs.get(cid), account_docs.get(cid))
             if merged is None:
                 continue
             if visible_in_frontend and not merged.visible_in_frontend:
@@ -724,6 +739,12 @@ async def get_account_agent_config(
     """Fetch the merged config for a specific agent in the context of an account."""
     if not user.has_account_access(account_id):
         raise HTTPException(status_code=403, detail="Access denied to this account")
+
+    if not config_id.startswith("custom_") and config_id not in ALLOWED_CONFIG_IDS:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Agent configuration not found: {config_id!r}",
+        )
 
     try:
         merged = _load_merged(db, account_id, config_id)
@@ -812,6 +833,12 @@ async def upsert_account_agent_config_overlay(
             detail="Admin role required to modify agent configurations",
         )
 
+    if not config_id.startswith("custom_") and config_id not in ALLOWED_CONFIG_IDS:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Agent configuration not found: {config_id!r}",
+        )
+
     try:
         global_doc = db.collection("agent_configs").document(config_id).get()
         global_data = global_doc.to_dict() if global_doc.exists else None
@@ -871,6 +898,12 @@ async def delete_account_agent_config(
         raise HTTPException(
             status_code=403,
             detail="Admin role required to delete agent configurations",
+        )
+
+    if not config_id.startswith("custom_") and config_id not in ALLOWED_CONFIG_IDS:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Agent configuration not found: {config_id!r}",
         )
 
     try:
