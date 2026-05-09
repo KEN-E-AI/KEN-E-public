@@ -2,7 +2,6 @@
 
 Pure-logic tests for the helpers that carry the idempotency guarantee:
   - _missing_flags  — decides which flags need to be patched
-  - _default_for_flag — always returns True
   - migrate (integration-style, no real Firestore) — end-to-end count semantics
 """
 
@@ -17,8 +16,6 @@ import pytest
 # Import helpers from the script (importable as a module)
 # ---------------------------------------------------------------------------
 from api.scripts.migrate_agent_config_flags import (
-    FLAGS,
-    _default_for_flag,
     _missing_flags,
     migrate,
 )
@@ -127,29 +124,6 @@ class TestMissingFlags:
     )
     def test_parametrized(self, doc: dict[str, Any], expected: list[str]) -> None:
         assert _missing_flags(doc) == expected
-
-
-# ---------------------------------------------------------------------------
-# Tests: _default_for_flag
-# ---------------------------------------------------------------------------
-
-
-class TestDefaultForFlag:
-    def test_all_flag_names_return_true(self) -> None:
-        for flag in FLAGS:
-            assert _default_for_flag(flag) is True
-
-    def test_available_to_copy_returns_true(self) -> None:
-        assert _default_for_flag("available_to_copy") is True
-
-    def test_automatically_available_returns_true(self) -> None:
-        assert _default_for_flag("automatically_available") is True
-
-    def test_visible_in_frontend_returns_true(self) -> None:
-        assert _default_for_flag("visible_in_frontend") is True
-
-    def test_arbitrary_string_returns_true(self) -> None:
-        assert _default_for_flag("some_other_flag") is True
 
 
 # ---------------------------------------------------------------------------

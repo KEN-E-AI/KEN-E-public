@@ -69,11 +69,6 @@ def _missing_flags(doc: dict[str, Any]) -> list[str]:
     return missing
 
 
-def _default_for_flag(name: str) -> bool:
-    """Return the default value (True) for any of the three flags."""
-    return True
-
-
 # ---------------------------------------------------------------------------
 # Core migration function
 # ---------------------------------------------------------------------------
@@ -118,7 +113,7 @@ def migrate(
             counts["unchanged"] += 1
             continue
 
-        patch: dict[str, bool] = {flag: _default_for_flag(flag) for flag in missing}
+        patch: dict[str, bool] = dict.fromkeys(missing, True)
 
         if dry_run:
             logger.info(
