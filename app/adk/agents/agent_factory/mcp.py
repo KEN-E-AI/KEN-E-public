@@ -42,7 +42,9 @@ state.  The public surface of this module is unaffected by that migration.
 
 from __future__ import annotations
 
+import ipaddress
 import os
+import re
 from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
@@ -71,6 +73,14 @@ _BLOCKED_SSE_HOSTS = frozenset(
         "::1",
     }
 )
+
+# RFC 6598 Shared Address Space (CGNAT) — ipaddress.is_private excludes this range
+# intentionally; block it explicitly so cloud-internal services on 100.64-127.x
+# cannot be targeted as MCP servers.  _validate_sse_url unwraps IPv4-mapped IPv6
+# addresses (e.g. ``::ffff:100.64.0.1``) to their embedded IPv4 before the blocklist
+# checks so the v6-mapped form does not bypass this block; IPv4Network containment
+# returns False for IPv6 addresses, which would otherwise silently pass.
+_BLOCKED_CGNAT = ipaddress.ip_network("100.64.0.0/10")
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +146,73 @@ def _validate_sse_url(server_id: str, url: str) -> None:
         raise MCPSchemaError(
             f"MCP server {server_id!r}: SSE url targets a reserved/internal host {host!r}"
         )
+    # Block RFC 1918, loopback, link-local, reserved, and unspecified IP ranges
+    # to prevent SSRF when env vars resolve to private network addresses.
+    # Zone IDs (e.g. "fe80::1%eth0") must be stripped first — ipaddress rejects
+    # them with ValueError, which would otherwise silently pass the check.
+    # IPv4-mapped IPv6 addresses (``::ffff:a.b.c.d``) are unwrapped to their
+    # embedded IPv4 so the v6-mapped form cannot bypass blocks that only apply
+    # to IPv4Network membership (notably CGNAT 100.64.0.0/10).
+    try:
+        clean_host = host.split("%")[0]
+        addr = ipaddress.ip_address(clean_host)
+        check_addr: ipaddress.IPv4Address | ipaddress.IPv6Address = addr
+        if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
+            check_addr = addr.ipv4_mapped
+        cgnat_blocked = (
+            isinstance(check_addr, ipaddress.IPv4Address)
+            and check_addr in _BLOCKED_CGNAT
+        )
+        if (
+            check_addr.is_private
+            or check_addr.is_loopback
+            or check_addr.is_link_local
+            or check_addr.is_reserved
+            or check_addr.is_unspecified
+            or cgnat_blocked
+        ):
+            raise MCPSchemaError(
+                f"MCP server {server_id!r}: SSE url targets a private/reserved address {host!r}"
+            )
+    except ValueError:
+        pass  # host is a domain name, not an IP literal
+
+
+_ENV_PLACEHOLDER_RE = re.compile(r"\$\{([^}]+)\}")
+
+
+def _expand_env_placeholders(value: str, server_id: str, field: str) -> str:
+    """Expand ``${VAR}`` placeholders in *value* using ``os.environ``.
+
+    Each ``${VAR}`` token is replaced with the corresponding environment
+    variable.  Raises ``MCPSchemaError`` when any referenced variable is unset
+    or empty, naming both the *server_id* and *field* so operators can act
+    immediately.
+
+    Args:
+        value: String that may contain one or more ``${VAR}`` tokens.
+        server_id: Firestore document ID — used in error messages only.
+        field: Human-readable field path (e.g. ``connection.url``,
+            ``connection.headers.Authorization``) — used in error messages.
+
+    Returns:
+        The string with all ``${VAR}`` tokens replaced by their env values.
+
+    Raises:
+        MCPSchemaError: Any referenced env var is unset or empty.
+    """
+
+    def _replace(match: re.Match[str]) -> str:
+        var = match.group(1)
+        resolved = os.environ.get(var, "")
+        if not resolved:
+            raise MCPSchemaError(
+                f"MCP server {server_id!r}: env var {var!r} is unset "
+                f"(referenced from {field})"
+            )
+        return resolved
+
+    return _ENV_PLACEHOLDER_RE.sub(_replace, value)
 
 
 def _build_connection_params(server_id: str, connection: dict[str, Any]) -> Any:
@@ -166,12 +243,27 @@ def _build_connection_params(server_id: str, connection: dict[str, Any]) -> Any:
             SseConnectionParams,
         )
 
-        url: str = connection["url"]
+        raw_url = connection.get("url")
+        if not raw_url:
+            raise MCPSchemaError(
+                f"MCP server {server_id!r}: SSE 'url' is missing or empty"
+            )
+        url: str = _expand_env_placeholders(raw_url, server_id, "connection.url")
         _validate_sse_url(server_id, url)
+
+        raw_headers: dict[str, str] | None = connection.get("headers") or None
+        expanded_headers: dict[str, str] | None = None
+        if raw_headers:
+            expanded_headers = {
+                k: _expand_env_placeholders(
+                    v, server_id, f"connection.headers.{k}"
+                )
+                for k, v in raw_headers.items()
+            }
 
         return SseConnectionParams(
             url=url,
-            headers=connection.get("headers") or None,
+            headers=expanded_headers,
             timeout=float(connection.get("timeout_seconds", 30)),
         )
 
@@ -181,17 +273,22 @@ def _build_connection_params(server_id: str, connection: dict[str, Any]) -> Any:
         )
         from mcp.client.stdio import StdioServerParameters
 
-        command: str = connection["command"]
+        command: str = connection.get("command", "")
         if not isinstance(command, str) or not command:
             raise MCPSchemaError(
                 f"MCP server {server_id!r}: stdio 'command' must be a non-empty string"
             )
+        command = _expand_env_placeholders(command, server_id, "connection.command")
 
         args: list[str] = connection.get("args", [])
         if not isinstance(args, list) or not all(isinstance(a, str) for a in args):
             raise MCPSchemaError(
                 f"MCP server {server_id!r}: stdio 'args' must be a list of strings"
             )
+        args = [
+            _expand_env_placeholders(a, server_id, f"connection.args[{i}]")
+            for i, a in enumerate(args)
+        ]
 
         raw_env = connection.get("env") or None
         if raw_env is not None and not all(
@@ -200,12 +297,18 @@ def _build_connection_params(server_id: str, connection: dict[str, Any]) -> Any:
             raise MCPSchemaError(
                 f"MCP server {server_id!r}: stdio 'env' values must all be strings"
             )
+        expanded_env: dict[str, str] | None = None
+        if raw_env:
+            expanded_env = {
+                k: _expand_env_placeholders(v, server_id, f"connection.env.{k}")
+                for k, v in raw_env.items()
+            }
 
         return StdioConnectionParams(
             server_params=StdioServerParameters(
                 command=command,
                 args=args,
-                env=raw_env,
+                env=expanded_env,
             ),
             timeout=5.0,
         )
@@ -278,6 +381,11 @@ def build_toolset_for_config(config: MCPServerConfig) -> Any:
     delegates to ``build_toolset_for_doc``.  This keeps the two code paths in
     lock-step: any schema-validation or connection-params logic added to
     ``build_toolset_for_doc`` automatically applies here too.
+
+    **Env-var expansion:** ``${VAR}`` placeholders in ``config.connection`` fields
+    (url, headers, command, args, env) are expanded at call time via
+    ``_expand_env_placeholders``.  Passing already-expanded literal strings is
+    idempotent — strings with no ``${...}`` tokens are returned unchanged.
 
     Args:
         config: A ``MCPServerConfig`` instance (from ``app.adk.mcp_config.config``).
