@@ -690,6 +690,11 @@ class TestBuildConnectionParams:
             "https://[fc00::1]/sse",
             "https://[fe80::1]/sse",
             "https://100.64.0.1/sse",  # RFC 6598 CGNAT shared address space
+            # IPv4-mapped IPv6 forms — must be unwrapped to embedded IPv4 so the
+            # v6-mapped form cannot bypass blocks that rely on IPv4Network membership.
+            "https://[::ffff:10.0.0.1]/sse",      # RFC 1918 via mapped form
+            "https://[::ffff:127.0.0.1]/sse",     # loopback via mapped form
+            "https://[::ffff:100.64.0.1]/sse",    # CGNAT via mapped form (regression: IPv4Network rejects v6 addrs)
         ],
     )
     def test_sse_private_ip_raises_mcp_schema_error(self, private_url: str) -> None:

@@ -75,10 +75,11 @@ _BLOCKED_SSE_HOSTS = frozenset(
 )
 
 # RFC 6598 Shared Address Space (CGNAT) — ipaddress.is_private excludes this range
-# intentionally; block it explicitly so cloud-internal services on 100.64-127.x cannot
-# be targeted as MCP servers.  IPv4-mapped IPv6 addresses in this range (e.g.
-# ::ffff:100.64.0.1) are already caught by addr.is_private on Python 3.11+ because
-# IPv4-mapped addresses inherit the private classification of the embedded IPv4 address.
+# intentionally; block it explicitly so cloud-internal services on 100.64-127.x
+# cannot be targeted as MCP servers.  _validate_sse_url unwraps IPv4-mapped IPv6
+# addresses (e.g. ``::ffff:100.64.0.1``) to their embedded IPv4 before the blocklist
+# checks so the v6-mapped form does not bypass this block; IPv4Network containment
+# returns False for IPv6 addresses, which would otherwise silently pass.
 _BLOCKED_CGNAT = ipaddress.ip_network("100.64.0.0/10")
 
 
@@ -149,16 +150,26 @@ def _validate_sse_url(server_id: str, url: str) -> None:
     # to prevent SSRF when env vars resolve to private network addresses.
     # Zone IDs (e.g. "fe80::1%eth0") must be stripped first — ipaddress rejects
     # them with ValueError, which would otherwise silently pass the check.
+    # IPv4-mapped IPv6 addresses (``::ffff:a.b.c.d``) are unwrapped to their
+    # embedded IPv4 so the v6-mapped form cannot bypass blocks that only apply
+    # to IPv4Network membership (notably CGNAT 100.64.0.0/10).
     try:
         clean_host = host.split("%")[0]
         addr = ipaddress.ip_address(clean_host)
+        check_addr: ipaddress.IPv4Address | ipaddress.IPv6Address = addr
+        if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
+            check_addr = addr.ipv4_mapped
+        cgnat_blocked = (
+            isinstance(check_addr, ipaddress.IPv4Address)
+            and check_addr in _BLOCKED_CGNAT
+        )
         if (
-            addr.is_private
-            or addr.is_loopback
-            or addr.is_link_local
-            or addr.is_reserved
-            or addr.is_unspecified
-            or addr in _BLOCKED_CGNAT
+            check_addr.is_private
+            or check_addr.is_loopback
+            or check_addr.is_link_local
+            or check_addr.is_reserved
+            or check_addr.is_unspecified
+            or cgnat_blocked
         ):
             raise MCPSchemaError(
                 f"MCP server {server_id!r}: SSE url targets a private/reserved address {host!r}"
