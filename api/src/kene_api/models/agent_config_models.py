@@ -232,11 +232,117 @@ class ConfigAuditEntry(BaseModel):
     )
 
 
+class MergedAgentConfig(BaseModel):
+    """Per-account merged agent config response.
+
+    Returned by GET /api/v1/accounts/{account_id}/agent-configs/[{config_id}].
+    Merges global ``agent_configs/{id}`` with any per-account overlay at
+    ``accounts/{account_id}/agent_configs/{id}``.
+
+    Uses ``extra="ignore"`` to prevent leakage of internal Firestore fields
+    (e.g., ``metadata.updated_by``) into the API response.
+    """
+
+    model_config = {"extra": "ignore"}
+
+    config_id: str = Field(..., description="Document ID of this agent config")
+    instruction: str = Field(..., description="Agent instruction/prompt")
+    model: str = Field(..., description="Model identifier")
+
+    description: str | None = Field(None, description="Agent description")
+    temperature: float | None = Field(None, ge=0.0, le=1.0)
+    code_execution_enabled: bool = False
+    mcp_servers: list[str] = Field(default_factory=list)
+
+    skill_ids: list[str] = Field(default_factory=list)
+    sandbox_code_executor_enabled: bool = False
+    response_schema: dict | None = None
+
+    # Phase 3 flags (AH-18)
+    available_to_copy: bool = True
+    automatically_available: bool = True
+    visible_in_frontend: bool = True
+
+    # Discriminator populated by the merge logic
+    customization_status: str = Field(
+        default="default",
+        description='One of "default", "customized", "custom_agent"',
+    )
+    based_on_version: int | None = Field(
+        None,
+        description="Major version of the global config this overlay was forked from",
+    )
+
+
+class AgentConfigCreate(BaseModel):
+    """POST /api/v1/accounts/{account_id}/agent-configs/ request body.
+
+    Creates a custom agent scoped to this account.  The server generates a
+    ``custom_{uuid8}`` config_id; callers never set it.
+    """
+
+    name: str = Field(..., min_length=1, max_length=100, description="Agent display name")
+    instruction: str = Field(..., min_length=10, max_length=50000, description="Agent instruction/prompt")
+    model: str = Field(..., description="Model identifier")
+
+    description: str | None = Field(None, min_length=10, max_length=1000)
+    temperature: float | None = Field(None, ge=0.0, le=1.0)
+    skill_ids: list[str] = Field(default_factory=list)
+    sandbox_code_executor_enabled: bool = False
+
+    @field_validator("model")
+    @classmethod
+    def validate_model_exists(cls, v: str) -> str:
+        if v not in SUPPORTED_MODELS:
+            gemini_models = sorted(m for m in SUPPORTED_MODELS if m.startswith("gemini"))
+            openai_models = sorted(m for m in SUPPORTED_MODELS if not m.startswith("gemini"))
+            raise ValueError(
+                f"Model '{v}' is not supported.\n"
+                f"Supported Gemini models: {', '.join(gemini_models)}\n"
+                f"Supported OpenAI models: {', '.join(openai_models)}"
+            )
+        return v
+
+
+class AgentConfigOverlayUpdate(BaseModel):
+    """PUT /api/v1/accounts/{account_id}/agent-configs/{config_id} request body.
+
+    All fields are optional — only fields present in the request body are
+    written to the overlay document.  A body with zero fields writes an empty
+    overlay doc (``customization_status="customized"``).
+    """
+
+    instruction: str | None = Field(None, min_length=10, max_length=50000)
+    model: str | None = Field(None)
+    description: str | None = Field(None, min_length=10, max_length=1000)
+    temperature: float | None = Field(None, ge=0.0, le=1.0)
+    skill_ids: list[str] | None = None
+    sandbox_code_executor_enabled: bool | None = None
+
+    @field_validator("model")
+    @classmethod
+    def validate_model_exists(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if v not in SUPPORTED_MODELS:
+            gemini_models = sorted(m for m in SUPPORTED_MODELS if m.startswith("gemini"))
+            openai_models = sorted(m for m in SUPPORTED_MODELS if not m.startswith("gemini"))
+            raise ValueError(
+                f"Model '{v}' is not supported.\n"
+                f"Supported Gemini models: {', '.join(gemini_models)}\n"
+                f"Supported OpenAI models: {', '.join(openai_models)}"
+            )
+        return v
+
+
 __all__ = [
     "SUPPORTED_MODELS",
     "AgentConfig",
+    "AgentConfigCreate",
     "AgentConfigMetadata",
+    "AgentConfigOverlayUpdate",
     "AgentConfigUpdate",
     "ConfigAuditEntry",
     "GenerateContentConfig",
+    "MergedAgentConfig",
 ]
