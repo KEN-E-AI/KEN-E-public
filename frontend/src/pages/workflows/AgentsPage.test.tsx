@@ -1,50 +1,97 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { AgentsPage } from "./AgentsPage";
 
-const mockNavigate = vi.fn();
-vi.mock("react-router-dom", async () => {
-  const actual =
-    await vi.importActual<typeof import("react-router-dom")>(
-      "react-router-dom",
-    );
-  return { ...actual, useNavigate: () => mockNavigate };
-});
+// ─── Mock sub-components ──────────────────────────────────────────────────────
 
-beforeEach(() => {
-  mockNavigate.mockReset();
-});
+vi.mock("./agents/AgentsListView", () => ({
+  AgentsListView: vi.fn(({ onEdit }: { onEdit: (id: string) => void }) => (
+    <div data-testid="agents-list-view">
+      <button onClick={() => onEdit("google_analytics_specialist")}>
+        Open edit sheet
+      </button>
+    </div>
+  )),
+}));
 
-function renderAgentsPage() {
-  return render(
-    <MemoryRouter>
-      <AgentsPage />
-    </MemoryRouter>,
+vi.mock("./agents/AgentEditView", () => ({
+  AgentEditView: vi.fn(
+    ({ configId, onClose }: { configId: string; onClose: () => void }) => (
+      <div data-testid="agent-edit-view">
+        <p>Editing: {configId}</p>
+        <button onClick={onClose}>Close</button>
+      </div>
+    ),
+  ),
+}));
+
+// ─── Wrapper ──────────────────────────────────────────────────────────────────
+
+function makeWrapper() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>
+      <MemoryRouter>{children}</MemoryRouter>
+    </QueryClientProvider>
   );
 }
 
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
 describe("AgentsPage", () => {
-  it("renders the Figma empty-state copy", () => {
-    renderAgentsPage();
+  it("renders the AgentsListView", () => {
+    render(<AgentsPage />, { wrapper: makeWrapper() });
+    expect(screen.getByTestId("agents-list-view")).toBeInTheDocument();
+  });
+
+  it("sheet is closed by default", () => {
+    render(<AgentsPage />, { wrapper: makeWrapper() });
+    expect(screen.queryByTestId("agent-edit-view")).toBeNull();
+  });
+
+  it("opens the edit sheet when a card is clicked", async () => {
+    const user = userEvent.setup();
+    render(<AgentsPage />, { wrapper: makeWrapper() });
+
+    await user.click(screen.getByRole("button", { name: /open edit sheet/i }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("agent-edit-view")).toBeInTheDocument();
+    });
     expect(
-      screen.getByText("Assemble specialist agents tailored to your workflow."),
+      screen.getByText("Editing: google_analytics_specialist"),
     ).toBeInTheDocument();
   });
 
-  it("renders the 'Create an agent' CTA", () => {
-    renderAgentsPage();
-    expect(
-      screen.getByRole("button", { name: "Create an agent" }),
-    ).toBeInTheDocument();
-  });
+  it("closes the edit sheet when onClose is called", async () => {
+    const user = userEvent.setup();
+    render(<AgentsPage />, { wrapper: makeWrapper() });
 
-  it("navigates to /workflows/agents/new when CTA is clicked", async () => {
-    renderAgentsPage();
-    await userEvent.click(
-      screen.getByRole("button", { name: "Create an agent" }),
+    // Open the sheet
+    await user.click(screen.getByRole("button", { name: /open edit sheet/i }));
+    await waitFor(() =>
+      expect(screen.getByTestId("agent-edit-view")).toBeInTheDocument(),
     );
-    expect(mockNavigate).toHaveBeenCalledWith("/workflows/agents/new");
+
+    // Close via the mocked edit view's Close button (inside the panel)
+    const closeButtons = screen.getAllByRole("button", { name: /close/i });
+    // The mock renders a single "Close" button inside the edit view
+    const editViewCloseBtn = closeButtons.find(
+      (btn) => btn.closest("[data-testid='agent-edit-view']") !== null,
+    );
+    await user.click(editViewCloseBtn!);
+    await waitFor(() =>
+      expect(screen.queryByTestId("agent-edit-view")).toBeNull(),
+    );
   });
 });
