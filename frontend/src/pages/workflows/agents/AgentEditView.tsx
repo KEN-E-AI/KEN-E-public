@@ -71,6 +71,7 @@ function DisabledPlaceholderRow({ label }: { label: string }) {
             aria-disabled="true"
             data-testid={`disabled-row-${label.toLowerCase().replace(/\s+/g, "-")}`}
           >
+            {/* allow-text-tertiary: dim icon on disabled placeholder row */}
             <Lock className="size-4 text-[var(--color-text-tertiary)] shrink-0" />
             <span className="text-sm text-[var(--color-text-secondary)]">
               {label}
@@ -225,6 +226,7 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
           </span>
           {config.based_on_version != null && (
             <span
+              // allow-text-tertiary: secondary-metadata version pill
               className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] bg-[var(--color-bg-secondary)] text-[var(--color-text-tertiary)]"
               style={{ fontWeight: 600 }}
               data-testid="based-on-version-chip"
@@ -258,6 +260,7 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
           <Label htmlFor="agent-temperature" className="flex items-center">
             Temperature
             <DirtyDot dirty={isDirtyTemperature} />
+            {/* allow-text-tertiary: secondary-metadata slider value readout */}
             <span className="ml-2 text-[11px] text-[var(--color-text-tertiary)]">
               {temperature.toFixed(2)}
             </span>

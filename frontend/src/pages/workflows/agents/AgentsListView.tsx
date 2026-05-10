@@ -110,6 +110,7 @@ function AgentCard({ config, index, onEdit }: AgentCardProps) {
       </div>
 
       {/* Model */}
+      {/* allow-text-tertiary: secondary-metadata model identifier under agent name */}
       <div className="flex items-center gap-1 text-[11px] text-[var(--color-text-tertiary)] mb-2.5">
         {config.model}
       </div>

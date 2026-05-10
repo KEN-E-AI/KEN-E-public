@@ -128,6 +128,42 @@ vi.mock("@/components/notifications/NotificationSidebar", () => ({
   NotificationSidebar: () => null,
 }));
 
+// Workflows: Agents renders <AgentsListView/>, which calls useAgentConfigsList()
+// (TanStack Query). We mock the queries module so the tree resolves to a stable
+// loaded state for axe — no QueryClientProvider needed at the render site.
+vi.mock("@/queries/agentConfigs", () => ({
+  useAgentConfigsList: () => ({
+    data: [
+      {
+        config_id: "google_analytics_specialist",
+        name: "GA Specialist",
+        model: "gemini-2.5-flash",
+        description: "Reports from Google Analytics.",
+        customization_status: "default",
+        visible_in_frontend: true,
+      },
+    ],
+    isLoading: false,
+    isError: false,
+  }),
+  useAgentConfig: () => ({ data: null, isLoading: false, isError: false }),
+  useUpsertAgentConfigOverlay: () => ({
+    mutate: vi.fn(),
+    mutateAsync: vi.fn(),
+    isPending: false,
+  }),
+  useDeleteAgentConfig: () => ({
+    mutate: vi.fn(),
+    mutateAsync: vi.fn(),
+    isPending: false,
+  }),
+  agentConfigKeys: {
+    all: ["agentConfigs"] as const,
+    list: () => ["agentConfigs", "list"] as const,
+    detail: () => ["agentConfigs", "detail"] as const,
+  },
+}));
+
 vi.mock("@/api/notifications", () => ({
   notificationApi: {
     getPreferences: vi.fn().mockResolvedValue({
