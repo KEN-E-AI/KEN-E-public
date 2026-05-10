@@ -89,7 +89,7 @@ export async function listAgentConfigs(
     params["visible_in_frontend"] = "true";
   }
   const { data } = await api.get<MergedAgentConfig[]>(
-    `/api/v1/accounts/${accountId}/agent-configs/`,
+    `/api/v1/accounts/${encodeURIComponent(accountId)}/agent-configs/`,
     { params },
   );
   return data;
@@ -100,7 +100,7 @@ export async function getAgentConfig(
   configId: string,
 ): Promise<MergedAgentConfig> {
   const { data } = await api.get<MergedAgentConfig>(
-    `/api/v1/accounts/${accountId}/agent-configs/${configId}`,
+    `/api/v1/accounts/${encodeURIComponent(accountId)}/agent-configs/${encodeURIComponent(configId)}`,
   );
   return data;
 }
@@ -110,7 +110,7 @@ export async function createAgentConfig(
   body: AgentConfigCreate,
 ): Promise<MergedAgentConfig> {
   const { data } = await api.post<MergedAgentConfig>(
-    `/api/v1/accounts/${accountId}/agent-configs/`,
+    `/api/v1/accounts/${encodeURIComponent(accountId)}/agent-configs/`,
     body,
   );
   return data;
@@ -122,7 +122,7 @@ export async function upsertAgentConfigOverlay(
   body: AgentConfigOverlayUpdate,
 ): Promise<MergedAgentConfig> {
   const { data } = await api.put<MergedAgentConfig>(
-    `/api/v1/accounts/${accountId}/agent-configs/${configId}`,
+    `/api/v1/accounts/${encodeURIComponent(accountId)}/agent-configs/${encodeURIComponent(configId)}`,
     body,
   );
   return data;
@@ -132,5 +132,7 @@ export async function deleteAgentConfig(
   accountId: string,
   configId: string,
 ): Promise<void> {
-  await api.delete(`/api/v1/accounts/${accountId}/agent-configs/${configId}`);
+  await api.delete(
+    `/api/v1/accounts/${encodeURIComponent(accountId)}/agent-configs/${encodeURIComponent(configId)}`,
+  );
 }

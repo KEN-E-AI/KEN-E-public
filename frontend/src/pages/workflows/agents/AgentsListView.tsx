@@ -3,6 +3,7 @@ import { Bot } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAgentConfigsList } from "@/queries/agentConfigs";
 import type { AgentConfigId } from "@/lib/api/agentConfigs";
+import { toAgentConfigId } from "@/lib/api/agentConfigs";
 import type {
   MergedAgentConfig,
   CustomizationStatus,
@@ -78,7 +79,7 @@ function AgentCard({ config, index, onEdit }: AgentCardProps) {
         transitionTimingFunction: "var(--ease-bounce)",
         transitionDuration: "var(--duration-fast)",
       }}
-      onClick={() => onEdit(config.config_id as AgentConfigId)}
+      onClick={() => onEdit(toAgentConfigId(config.config_id))}
       data-testid={`agent-card-${config.config_id}`}
     >
       {/* Icon */}
@@ -126,7 +127,7 @@ function AgentCard({ config, index, onEdit }: AgentCardProps) {
         style={{ fontWeight: 600, fontFamily: "inherit" }}
         onClick={(e) => {
           e.stopPropagation();
-          onEdit(config.config_id as AgentConfigId);
+          onEdit(toAgentConfigId(config.config_id));
         }}
         aria-label={`Configure ${displayName}`}
       >

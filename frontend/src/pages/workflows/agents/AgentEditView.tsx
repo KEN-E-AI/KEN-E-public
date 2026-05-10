@@ -332,7 +332,7 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
             size="sm"
             className="text-[var(--color-error-text)] border-[var(--color-error-text)] hover:bg-[var(--color-error-bg)]"
             onClick={handleRevert}
-            disabled={deleteMutation.isPending}
+            disabled={!accountId || deleteMutation.isPending}
             data-testid="revert-button"
           >
             {revertLabel}
@@ -351,7 +351,7 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
           <Button
             size="sm"
             onClick={handleSave}
-            disabled={!hasAnyDirty || upsertMutation.isPending}
+            disabled={!accountId || !hasAnyDirty || upsertMutation.isPending}
             data-testid="save-button"
           >
             Save Changes

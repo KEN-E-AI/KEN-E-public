@@ -52,12 +52,16 @@ beforeEach(() => {
 // ─── Query key factory ────────────────────────────────────────────────────────
 
 describe("agentConfigKeys", () => {
-  it("list key contains accountId", () => {
+  it("list key contains accountId and opts", () => {
     expect(agentConfigKeys.list("acc_test")).toEqual([
       "agentConfigs",
       "list",
       "acc_test",
+      undefined,
     ]);
+    expect(agentConfigKeys.list("acc_test", { visibleInFrontend: true })).toEqual(
+      ["agentConfigs", "list", "acc_test", { visibleInFrontend: true }],
+    );
   });
 
   it("detail key contains accountId and configId", () => {
@@ -167,7 +171,7 @@ describe("useUpsertAgentConfigOverlay", () => {
 // ─── useDeleteAgentConfig ─────────────────────────────────────────────────────
 
 describe("useDeleteAgentConfig", () => {
-  it("calls deleteAgentConfig and invalidates the list key", async () => {
+  it("calls deleteAgentConfig and invalidates the list and detail keys", async () => {
     mockDeleteAgentConfig.mockResolvedValueOnce(undefined);
 
     const client = freshClient();
@@ -183,6 +187,11 @@ describe("useDeleteAgentConfig", () => {
     expect(mockDeleteAgentConfig).toHaveBeenCalledWith("acc_test", "ga");
     expect(invalidateSpy).toHaveBeenCalledWith(
       expect.objectContaining({ queryKey: agentConfigKeys.list("acc_test") }),
+    );
+    expect(invalidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queryKey: agentConfigKeys.detail("acc_test", "ga"),
+      }),
     );
   });
 });

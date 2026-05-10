@@ -12,7 +12,8 @@ import type { AgentConfigOverlayUpdate } from "@/lib/api/agentConfigs";
 export const agentConfigKeys = {
   all: ["agentConfigs"] as const,
   lists: () => [...agentConfigKeys.all, "list"] as const,
-  list: (accountId: string) => [...agentConfigKeys.lists(), accountId] as const,
+  list: (accountId: string, opts?: { visibleInFrontend?: boolean }) =>
+    [...agentConfigKeys.lists(), accountId, opts] as const,
   details: () => [...agentConfigKeys.all, "detail"] as const,
   detail: (accountId: string, configId: string) =>
     [...agentConfigKeys.details(), accountId, configId] as const,
@@ -25,7 +26,7 @@ export function useAgentConfigsList(
   opts: { visibleInFrontend?: boolean } = {},
 ) {
   return useQuery({
-    queryKey: agentConfigKeys.list(accountId ?? ""),
+    queryKey: agentConfigKeys.list(accountId ?? "", opts),
     queryFn: () =>
       listAgentConfigs(accountId!, {
         visibleInFrontend: opts.visibleInFrontend,
@@ -61,7 +62,10 @@ export function useUpsertAgentConfigOverlay(
     }: {
       configId: string;
       body: AgentConfigOverlayUpdate;
-    }) => upsertAgentConfigOverlay(accountId!, configId, body),
+    }) => {
+      if (!accountId) return Promise.reject(new Error("No account selected"));
+      return upsertAgentConfigOverlay(accountId, configId, body);
+    },
     onSuccess: (_, { configId }) => {
       if (!accountId) return;
       queryClient.invalidateQueries({
@@ -78,12 +82,17 @@ export function useDeleteAgentConfig(accountId: string | null | undefined) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ configId }: { configId: string }) =>
-      deleteAgentConfig(accountId!, configId),
-    onSuccess: () => {
+    mutationFn: ({ configId }: { configId: string }) => {
+      if (!accountId) return Promise.reject(new Error("No account selected"));
+      return deleteAgentConfig(accountId, configId);
+    },
+    onSuccess: (_, { configId }) => {
       if (!accountId) return;
       queryClient.invalidateQueries({
         queryKey: agentConfigKeys.list(accountId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: agentConfigKeys.detail(accountId, configId),
       });
     },
   });
