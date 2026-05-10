@@ -355,7 +355,10 @@ def get_mcp_config_loader() -> MCPConfigLoader:
                     extra={"source": "yaml"},
                 ),
             )
-        assert _config_loader is not None
+        if _config_loader is None:
+            raise RuntimeError(
+                "MCP config loader was not assigned; this is a programming error."
+            )
         _config_loader.load()
     return _config_loader
 
