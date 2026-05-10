@@ -89,16 +89,10 @@ steps:
   # subdirectories.  Legacy code under strategy_agent/ and agent_standalone_*
   # is excluded (follow-up AH-24+).  See AH-23 for scope rationale.
   #
-  # mypy scope is intentionally narrower than ruff:
-  #   * tests/ are excluded — pytest fixtures use mocks (MockCallbackContext,
-  #     _FakeRegistry, dict[str, MagicMock]) that legitimately don't satisfy
-  #     strict typing; annotating them produces no behavioural value.
-  #   * agent_factory/ and mcp_config/ are excluded pending follow-up work
-  #     to fix pre-existing typing issues (yaml stubs in mcp_config/config.py,
-  #     None-narrowing in get_mcp_config_loader, State -> dict overload in
-  #     dispatch.py, LoopAgent vs LlmAgent in invoke_pipeline).  Tracked as
-  #     a follow-up to AH-23; tracking/ is the only fully-clean subpackage
-  #     today and seeds the gate so coverage can expand incrementally.
+  # mypy scope: tests/ are excluded — pytest fixtures use mocks
+  # (MockCallbackContext, _FakeRegistry, dict[str, MagicMock]) that
+  # legitimately don't satisfy strict typing; annotating them produces no
+  # behavioural value.
   - name: "python:3.11-slim"
     id: lint
     entrypoint: /bin/bash
@@ -117,6 +111,8 @@ steps:
           app/adk/deploy_ken_e.py
         uv run codespell --toml pyproject.toml .
         uv run mypy \
+          app/adk/agents/agent_factory/ \
+          app/adk/mcp_config/ \
           app/adk/tracking/ \
           --exclude '/tests/' \
           --ignore-missing-imports

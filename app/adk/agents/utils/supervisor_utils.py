@@ -20,7 +20,7 @@ except ImportError:
     weave = None  # type: ignore[assignment]
     HAS_WEAVE = False
 from google.adk import Runner
-from google.adk.agents import Agent
+from google.adk.agents import BaseAgent
 from google.adk.artifacts import InMemoryArtifactService
 from google.adk.events import Event
 from google.adk.sessions import InMemorySessionService
@@ -90,7 +90,7 @@ def extract_tenant_context(
 
 
 def invoke_pipeline(
-    agent: Agent,
+    agent: BaseAgent,
     query: str,
     user_id: str | None = None,
     session_id: str | None = None,
@@ -120,7 +120,7 @@ def invoke_pipeline(
 
 
 async def _run_pipeline_collecting_events(
-    agent: Agent,
+    agent: BaseAgent,
     query: str,
     user_id: str,
     session_id: str,
@@ -162,7 +162,7 @@ async def _run_pipeline_collecting_events(
 
 
 def _invoke_pipeline_collecting_events(
-    agent: Agent,
+    agent: BaseAgent,
     query: str,
     user_id: str | None,
     session_id: str | None,
@@ -218,7 +218,7 @@ def _invoke_pipeline_collecting_events(
 
 
 def invoke_agent_sync(
-    agent: Agent,
+    agent: BaseAgent,
     query: str,
     user_id: str | None = None,
     session_id: str | None = None,
