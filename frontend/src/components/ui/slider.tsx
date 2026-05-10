@@ -6,22 +6,36 @@ import { cn } from "@/lib/utils";
 const Slider = React.forwardRef<
   React.ElementRef<typeof SliderPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof SliderPrimitive.Root>
->(({ className, ...props }, ref) => (
-  <SliderPrimitive.Root
-    ref={ref}
-    data-slot="slider"
-    className={cn(
-      "relative flex w-full touch-none select-none items-center",
+>(
+  (
+    {
       className,
-    )}
-    {...props}
-  >
-    <SliderPrimitive.Track className="relative h-2 w-full grow overflow-hidden rounded-full bg-[var(--color-bg-secondary)]">
-      <SliderPrimitive.Range className="absolute h-full bg-[var(--color-violet-500)]" />
-    </SliderPrimitive.Track>
-    <SliderPrimitive.Thumb className="block h-5 w-5 rounded-full border-2 border-[var(--color-violet-500)] bg-[var(--color-bg-primary)] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-violet-300)] disabled:pointer-events-none disabled:opacity-50" />
-  </SliderPrimitive.Root>
-));
+      "aria-label": ariaLabel,
+      "aria-labelledby": ariaLabelledBy,
+      ...props
+    },
+    ref,
+  ) => (
+    <SliderPrimitive.Root
+      ref={ref}
+      data-slot="slider"
+      className={cn(
+        "relative flex w-full touch-none select-none items-center",
+        className,
+      )}
+      {...props}
+    >
+      <SliderPrimitive.Track className="relative h-2 w-full grow overflow-hidden rounded-full bg-[var(--color-bg-secondary)]">
+        <SliderPrimitive.Range className="absolute h-full bg-[var(--color-violet-500)]" />
+      </SliderPrimitive.Track>
+      <SliderPrimitive.Thumb
+        aria-label={ariaLabel}
+        aria-labelledby={ariaLabelledBy}
+        className="block h-5 w-5 rounded-full border-2 border-[var(--color-violet-500)] bg-[var(--color-bg-primary)] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-violet-300)] disabled:pointer-events-none disabled:opacity-50"
+      />
+    </SliderPrimitive.Root>
+  ),
+);
 Slider.displayName = SliderPrimitive.Root.displayName;
 
 export { Slider };

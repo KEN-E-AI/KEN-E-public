@@ -327,6 +327,56 @@ class TestAccountAgentConfigsAuth:
         resp = client.get(BASE_URL + "/")
         assert resp.status_code == 200
 
+    def test_list_skips_malformed_global_doc(self, client: TestClient) -> None:
+        """A malformed global doc (no instruction/model) is skipped, not 500.
+
+        Mirrors the production "_schema" placeholder doc that lacked the
+        required MergedAgentConfig fields and took the whole list endpoint
+        down with a Pydantic ValidationError.
+        """
+        self._install_user(_account_admin())
+
+        # Global stream yields one valid doc and one malformed doc.
+        valid_doc = MagicMock()
+        valid_doc.id = "company_news_agent"
+        valid_doc.to_dict.return_value = dict(_VALID_GLOBAL_DOC)
+
+        malformed_doc = MagicMock()
+        malformed_doc.id = "_schema"
+        malformed_doc.to_dict.return_value = {
+            "_version": "1.0.0",
+            "_description": "Schema placeholder — no instruction or model",
+            "schema_fields": ["name", "model", "instruction"],
+        }
+
+        global_col = MagicMock()
+        global_col.stream.return_value = iter([valid_doc, malformed_doc])
+
+        # Account overlay stream is empty.
+        agent_cfg_sub = MagicMock()
+        agent_cfg_sub.stream.return_value = iter([])
+        account_doc = MagicMock()
+        account_doc.collection.return_value = agent_cfg_sub
+        accounts_col = MagicMock()
+        accounts_col.document.return_value = account_doc
+
+        def _col(name: str):
+            if name == "agent_configs":
+                return global_col
+            if name == "accounts":
+                return accounts_col
+            return MagicMock()
+
+        db = MagicMock()
+        db.collection.side_effect = _col
+        self._install_db(db)
+
+        resp = client.get(BASE_URL + "/")
+        assert resp.status_code == 200
+        listed_ids = [c["config_id"] for c in resp.json()]
+        assert "company_news_agent" in listed_ids
+        assert "_schema" not in listed_ids
+
     def test_account_admin_put_is_200(self, client: TestClient) -> None:
         """Org admin can upsert an overlay (200 with merged config returned)."""
         self._install_user(_account_admin())
@@ -817,3 +867,37 @@ class TestAccountAgentConfigsEmulator:
             assert custom_id in listed_ids
         finally:
             self._cleanup(emulator_db, account_id, [global_config_id, custom_id])
+
+    # ------------------------------------------------------------------
+    # AC: LIST skips malformed global docs (e.g. schema-placeholder rows)
+    #     instead of 500ing the whole endpoint.
+    # ------------------------------------------------------------------
+
+    def test_list_skips_malformed_global_doc(
+        self, client: TestClient, emulator_db, account_id: str, global_config_id: str
+    ) -> None:
+        """A stray doc in agent_configs/ missing instruction+model must not break the list.
+
+        Mirrors the production "_schema" placeholder doc that lacks required
+        MergedAgentConfig fields. The endpoint should log + skip it and still
+        return the well-formed configs.
+        """
+        malformed_id = f"_malformed_{uuid.uuid4().hex[:8]}"
+        emulator_db.collection("agent_configs").document(malformed_id).set(
+            {
+                "_version": "1.0.0",
+                "_description": "Schema placeholder — no instruction or model",
+                "schema_fields": ["name", "model", "instruction"],
+            }
+        )
+        self._seed_global(emulator_db, global_config_id)
+        base_url = f"/api/v1/accounts/{account_id}/agent-configs"
+
+        try:
+            resp = client.get(base_url + "/")
+            assert resp.status_code == 200
+            listed_ids = [c["config_id"] for c in resp.json()]
+            assert global_config_id in listed_ids
+            assert malformed_id not in listed_ids
+        finally:
+            self._cleanup(emulator_db, account_id, [global_config_id, malformed_id])

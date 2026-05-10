@@ -152,6 +152,11 @@ vi.mock("@/queries/agentConfigs", () => ({
     mutateAsync: vi.fn(),
     isPending: false,
   }),
+  useCreateAgentConfig: () => ({
+    mutate: vi.fn(),
+    mutateAsync: vi.fn(),
+    isPending: false,
+  }),
   useDeleteAgentConfig: () => ({
     mutate: vi.fn(),
     mutateAsync: vi.fn(),

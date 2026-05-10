@@ -1,115 +1,146 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { AgentCreatePage } from "./AgentCreatePage";
 
-vi.mock("sonner", () => ({
-  toast: {
-    success: vi.fn(),
-    error: vi.fn(),
-  },
+// ─── Mocks ───
+
+const mockNavigate = vi.fn();
+vi.mock("react-router-dom", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router-dom")>();
+  return { ...actual, useNavigate: () => mockNavigate };
+});
+
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: () => ({
+    selectedOrgAccount: { accountId: "acc_test" },
+  }),
 }));
+
+const { mockCreateAgentConfig } = vi.hoisted(() => ({
+  mockCreateAgentConfig: vi.fn(),
+}));
+
+vi.mock("@/lib/api/agentConfigs", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/api/agentConfigs")>();
+  return { ...actual, createAgentConfig: mockCreateAgentConfig };
+});
+
+// ─── Wrapper ───
+
+function makeWrapper() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={client}>
+      <MemoryRouter>{children}</MemoryRouter>
+    </QueryClientProvider>
+  );
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
-function renderPage() {
-  return render(
-    <MemoryRouter>
-      <AgentCreatePage />
-    </MemoryRouter>,
-  );
-}
+// ─── Tests ───
 
 describe("AgentCreatePage", () => {
-  it("renders Step 1 fields all disabled", () => {
-    renderPage();
+  it("submit button disabled when required fields are empty", async () => {
+    render(<AgentCreatePage />, { wrapper: makeWrapper() });
 
-    expect(screen.getByRole("textbox", { name: /agent name/i })).toBeDisabled();
-    expect(
-      screen.getByRole("textbox", { name: /description/i }),
-    ).toBeDisabled();
-    expect(
-      screen.getByRole("textbox", { name: /instructions/i }),
-    ).toBeDisabled();
-
-    // Model tier buttons are disabled
-    const modelButtons = screen
-      .getAllByRole("button")
-      .filter(
-        (b) =>
-          b.textContent?.includes("Fastest") ||
-          b.textContent?.includes("Goldilocks") ||
-          b.textContent?.includes("Smartest"),
-      );
-    expect(modelButtons.length).toBe(3);
-    modelButtons.forEach((btn) => expect(btn).toBeDisabled());
+    const submitBtn = screen.getByRole("button", { name: /create agent/i });
+    expect(submitBtn).toBeDisabled();
   });
 
-  it("navigates to Step 2 when Next is clicked and renders disabled tool buttons", async () => {
-    const user = userEvent.setup();
-    renderPage();
+  it("successful submission navigates to the new agent's edit view", async () => {
+    mockCreateAgentConfig.mockResolvedValueOnce({
+      config_id: "custom_abc12345",
+      customization_status: "custom_agent",
+    });
 
-    await user.click(screen.getByRole("button", { name: /next/i }));
-
-    // Step 2 content visible
-    expect(screen.getByText(/available tools & skills/i)).toBeInTheDocument();
-
-    // Filter pills are disabled
-    const filterButtons = screen
-      .getAllByRole("button")
-      .filter(
-        (b) =>
-          b.textContent === "All" ||
-          b.textContent === "Native" ||
-          b.textContent === "Integrations" ||
-          b.textContent === "Skills",
-      );
-    expect(filterButtons.length).toBeGreaterThan(0);
-    filterButtons.forEach((btn) => expect(btn).toBeDisabled());
-
-    // Tool rows are disabled
-    const toolButtons = screen.getAllByTestId("tool-row");
-    expect(toolButtons.length).toBeGreaterThan(0);
-    toolButtons.forEach((btn) => expect(btn).toBeDisabled());
-  });
-
-  it("navigates to Step 3 and clicking Create Agent fires toast.success", async () => {
     const { toast } = await import("sonner");
     const user = userEvent.setup();
-    renderPage();
+    render(<AgentCreatePage />, { wrapper: makeWrapper() });
 
-    // Step 1 → 2
-    await user.click(screen.getByRole("button", { name: /next/i }));
-    // Step 2 → 3
-    await user.click(screen.getByRole("button", { name: /next/i }));
+    // Fill required fields
+    await user.type(screen.getByTestId("name-input"), "My Agent");
+    await user.type(
+      screen.getByTestId("instruction-field"),
+      "You are a helpful assistant.",
+    );
 
-    // Step 3 content visible
-    expect(
-      screen.getByRole("heading", { name: /untitled agent/i }),
-    ).toBeInTheDocument();
+    // Select model via Select component
+    await user.click(screen.getByTestId("model-select"));
+    const modelOptions = await screen.findAllByRole("option");
+    await user.click(modelOptions[0]);
 
-    // Click Create Agent
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /create agent/i }),
+      ).not.toBeDisabled(),
+    );
+
     await user.click(screen.getByRole("button", { name: /create agent/i }));
 
-    expect(toast.success).toHaveBeenCalledOnce();
-    expect(toast.success).toHaveBeenCalledWith("Agent created (mock)");
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith(
+        "/workflows/agents?edit=custom_abc12345",
+      );
+      expect(toast.success).toHaveBeenCalledWith("Agent created.");
+    });
   });
 
-  it("Previous button navigates back to Step 1 from Step 2", async () => {
+  it("shows toast.error when submission fails", async () => {
+    mockCreateAgentConfig.mockRejectedValueOnce(new Error("Network error"));
+    const { toast } = await import("sonner");
     const user = userEvent.setup();
-    renderPage();
+    render(<AgentCreatePage />, { wrapper: makeWrapper() });
 
-    // Go to Step 2
-    await user.click(screen.getByRole("button", { name: /next/i }));
-    expect(screen.getByText(/available tools & skills/i)).toBeInTheDocument();
+    await user.type(screen.getByTestId("name-input"), "My Agent");
+    await user.type(
+      screen.getByTestId("instruction-field"),
+      "You are a helpful assistant.",
+    );
 
-    // Go back to Step 1
-    await user.click(screen.getByRole("button", { name: /previous/i }));
+    await user.click(screen.getByTestId("model-select"));
+    const modelOptions = await screen.findAllByRole("option");
+    await user.click(modelOptions[0]);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /create agent/i }),
+      ).not.toBeDisabled(),
+    );
+
+    await user.click(screen.getByRole("button", { name: /create agent/i }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith("Failed to create agent.");
+    });
+  });
+
+  it("renders two disabled placeholder rows with correct tooltip text", () => {
+    render(<AgentCreatePage />, { wrapper: makeWrapper() });
+
+    expect(screen.getByTestId("disabled-row-skills")).toBeInTheDocument();
     expect(
-      screen.getByRole("textbox", { name: /agent name/i }),
+      screen.getByTestId("disabled-row-sandbox-code-execution"),
     ).toBeInTheDocument();
+  });
+
+  it("Cancel button navigates to /workflows/agents", async () => {
+    const user = userEvent.setup();
+    render(<AgentCreatePage />, { wrapper: makeWrapper() });
+
+    await user.click(screen.getByRole("button", { name: /cancel/i }));
+
+    expect(mockNavigate).toHaveBeenCalledWith("/workflows/agents");
   });
 });

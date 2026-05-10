@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Bot, Lock } from "lucide-react";
+import { Bot } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   useAgentConfig,
@@ -25,12 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { DisabledPlaceholderRow } from "./DisabledPlaceholderRow";
 
 // ─── Customization badge (reused from list) ───────────────────────────────────
 
@@ -56,31 +51,6 @@ function DirtyDot({ dirty }: { dirty: boolean }) {
       aria-label="field modified"
       data-testid="dirty-indicator"
     />
-  );
-}
-
-// ─── Disabled placeholder row ─────────────────────────────────────────────────
-
-function DisabledPlaceholderRow({ label }: { label: string }) {
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div
-            className="flex items-center gap-2 p-3 rounded-[var(--radius-md)] bg-[var(--color-bg-secondary)] opacity-50 cursor-not-allowed select-none"
-            aria-disabled="true"
-            data-testid={`disabled-row-${label.toLowerCase().replace(/\s+/g, "-")}`}
-          >
-            {/* allow-text-tertiary: dim icon on disabled placeholder row */}
-            <Lock className="size-4 text-[var(--color-text-tertiary)] shrink-0" />
-            <span className="text-sm text-[var(--color-text-secondary)]">
-              {label}
-            </span>
-          </div>
-        </TooltipTrigger>
-        <TooltipContent>Available in Feature 2.6</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
   );
 }
 
@@ -267,6 +237,7 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
           </Label>
           <Slider
             id="agent-temperature"
+            aria-label="Temperature"
             min={0}
             max={1}
             step={0.01}
