@@ -234,6 +234,7 @@ app.include_router(
 )
 app.include_router(accounts.router, prefix="/api/v1/accounts", tags=["accounts"])
 app.include_router(agent_configs.router)  # Agent configs router already has its prefix
+app.include_router(agent_configs.account_router)  # Per-account agent-config CRUD (AH-PRD-02 Phase 3)
 app.include_router(integrations.router)  # Integrations router already has its prefix
 app.include_router(oauth_integrations.router)  # OAuth router already has its prefix
 app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])

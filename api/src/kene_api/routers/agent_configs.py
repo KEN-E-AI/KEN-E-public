@@ -9,8 +9,10 @@ backwards compatibility with pre-Sprint-6 callers.
 """
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from google.cloud import firestore
@@ -23,22 +25,31 @@ from ..auth.user_context import get_current_user_context
 from ..dependencies import get_firestore
 from ..models.agent_config_models import (
     AgentConfig,
+    AgentConfigCreate,
     AgentConfigMetadata,
+    AgentConfigOverlayUpdate,
     AgentConfigUpdate,
     ConfigAuditEntry,
     GenerateContentConfig,
+    MergedAgentConfig,
 )
 from ..services.audit_service import log_config_action
 from ..services.config_versioning import increment_version, sanitize_updated_by
 
+_SEMVER_MAJOR_RE = re.compile(r"^v?(\d+)")
+
 __all__ = [
     "ALLOWED_CONFIG_IDS",
     "AgentConfig",
+    "AgentConfigCreate",
     "AgentConfigMetadata",
+    "AgentConfigOverlayUpdate",
     "AgentConfigUpdate",
     "AgentConfigUpdateResponse",
     "ConfigAuditEntry",
     "GenerateContentConfig",
+    "MergedAgentConfig",
+    "account_router",
     "router",
 ]
 
@@ -580,3 +591,330 @@ async def get_agent_config_history(
         raise HTTPException(
             status_code=500, detail="Failed to retrieve config history"
         ) from e
+
+
+# ---------------------------------------------------------------------------
+# Per-account agent-config CRUD (Phase 3 — AH-PRD-02 §6 / AC-11)
+# ---------------------------------------------------------------------------
+
+account_router = APIRouter(
+    prefix="/api/v1/accounts/{account_id}/agent-configs",
+    tags=["agent-configs"],
+)
+
+
+def _parse_based_on_version(version_str: str | None) -> int:
+    """Parse major version component from a semver string, default 1 on failure."""
+    if not version_str:
+        return 1
+    m = _SEMVER_MAJOR_RE.match(str(version_str))
+    if m:
+        try:
+            return int(m.group(1))
+        except ValueError:
+            pass
+    return 1
+
+
+def _merge_from_data(
+    config_id: str,
+    global_data: dict | None,
+    overlay_data: dict | None,
+) -> MergedAgentConfig | None:
+    """Shallow-merge pre-fetched global + overlay dicts into a MergedAgentConfig.
+
+    Returns None when neither document exists.  Called by both ``_load_merged``
+    (single-config fetch) and the list endpoint (bulk fetch, avoids N+1 reads).
+    """
+    if global_data is None and overlay_data is None:
+        return None
+
+    if global_data is not None and overlay_data is not None:
+        merged = {**global_data, **overlay_data}
+        status = "customized"
+        bov = _parse_based_on_version(overlay_data.get("based_on_version"))
+    elif global_data is not None:
+        merged = dict(global_data)
+        status = "default"
+        bov = None
+    else:
+        # overlay_data is not None, global_data is None → custom_agent
+        merged = dict(overlay_data)  # type: ignore[arg-type]
+        status = "custom_agent"
+        bov = _parse_based_on_version(overlay_data.get("based_on_version"))  # type: ignore[union-attr]
+
+    merged.pop("based_on_version", None)
+    merged.pop("customization_status", None)
+    merged["config_id"] = config_id
+    merged["customization_status"] = status
+    merged["based_on_version"] = bov
+
+    return MergedAgentConfig.model_validate(merged)
+
+
+def _load_merged(
+    db: firestore.Client,
+    account_id: str,
+    config_id: str,
+) -> MergedAgentConfig | None:
+    """Read global + per-account overlay docs from Firestore, then merge.
+
+    Returns None when neither document exists (caller raises 404).
+    Mirrors the merge semantics of ``app/adk/agents/agent_factory/config_loader.py``
+    without taking a runtime dependency on the ``app/`` package.
+    """
+    global_doc = db.collection("agent_configs").document(config_id).get()
+    overlay_doc = (
+        db.collection("accounts")
+        .document(account_id)
+        .collection("agent_configs")
+        .document(config_id)
+        .get()
+    )
+
+    return _merge_from_data(
+        config_id,
+        global_doc.to_dict() if global_doc.exists else None,
+        overlay_doc.to_dict() if overlay_doc.exists else None,
+    )
+
+
+@account_router.get("/", response_model=list[MergedAgentConfig])
+async def list_account_agent_configs(
+    account_id: str,
+    visible_in_frontend: bool = Query(False, description="Filter to visible_in_frontend=true"),
+    user: UserContext = Depends(get_current_user_context),
+    db: firestore.Client = Depends(get_firestore),
+) -> list[MergedAgentConfig]:
+    """List merged agent configs visible to an account.
+
+    Returns globals where ``automatically_available=true`` UNION any
+    per-account custom/overlay docs.  Optionally further restricted to
+    ``visible_in_frontend=true`` via query param.
+
+    Reads are allowed for any account member; writes require admin role.
+    """
+    if not user.has_account_access(account_id):
+        raise HTTPException(status_code=403, detail="Access denied to this account")
+
+    try:
+        global_docs = {doc.id: doc.to_dict() for doc in db.collection("agent_configs").stream()}
+        account_docs = {
+            doc.id: doc.to_dict()
+            for doc in db.collection("accounts")
+            .document(account_id)
+            .collection("agent_configs")
+            .stream()
+        }
+
+        config_ids = set(account_docs.keys())
+        for cid, data in global_docs.items():
+            if data and data.get("automatically_available", True):
+                config_ids.add(cid)
+
+        # Build merges inline from already-fetched dicts — no per-config Firestore reads.
+        results: list[MergedAgentConfig] = []
+        for cid in sorted(config_ids):
+            merged = _merge_from_data(cid, global_docs.get(cid), account_docs.get(cid))
+            if merged is None:
+                continue
+            if visible_in_frontend and not merged.visible_in_frontend:
+                continue
+            results.append(merged)
+
+        return results
+
+    except Exception as e:
+        logger.error(f"Failed to list agent configs for account {account_id}: {e!s}")
+        raise HTTPException(status_code=500, detail="Failed to list agent configurations") from e
+
+
+@account_router.get("/{config_id}", response_model=MergedAgentConfig)
+async def get_account_agent_config(
+    account_id: str,
+    config_id: str,
+    user: UserContext = Depends(get_current_user_context),
+    db: firestore.Client = Depends(get_firestore),
+) -> MergedAgentConfig:
+    """Fetch the merged config for a specific agent in the context of an account."""
+    if not user.has_account_access(account_id):
+        raise HTTPException(status_code=403, detail="Access denied to this account")
+
+    try:
+        merged = _load_merged(db, account_id, config_id)
+    except Exception as e:
+        logger.error(f"Failed to load agent config {config_id} for account {account_id}: {e!s}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve agent configuration") from e
+
+    if merged is None:
+        raise HTTPException(status_code=404, detail="Agent configuration not found")
+    return merged
+
+
+@account_router.post("/", response_model=MergedAgentConfig, status_code=201)
+async def create_account_agent_config(
+    account_id: str,
+    body: AgentConfigCreate,
+    user: UserContext = Depends(get_current_user_context),
+    db: firestore.Client = Depends(get_firestore),
+) -> MergedAgentConfig:
+    """Create a custom agent scoped to this account.
+
+    The server generates a ``custom_{uuid8}`` config_id.  Requires admin role.
+    """
+    if not user.has_account_access(account_id, required_roles=["admin"]):
+        raise HTTPException(
+            status_code=403,
+            detail="Admin role required to create agent configurations",
+        )
+
+    custom_id = f"custom_{uuid4().hex[:8]}"
+    now = datetime.now(timezone.utc).isoformat()
+    doc_data: dict[str, Any] = {
+        "name": body.name,
+        "instruction": body.instruction,
+        "model": body.model,
+        "customization_status": "custom_agent",
+        "created_at": now,
+        "updated_at": now,
+        "created_by": user.email,
+    }
+    if body.description is not None:
+        doc_data["description"] = body.description
+    if body.temperature is not None:
+        doc_data["temperature"] = body.temperature
+    if body.skill_ids:
+        doc_data["skill_ids"] = body.skill_ids
+    if body.sandbox_code_executor_enabled:
+        doc_data["sandbox_code_executor_enabled"] = body.sandbox_code_executor_enabled
+
+    try:
+        (
+            db.collection("accounts")
+            .document(account_id)
+            .collection("agent_configs")
+            .document(custom_id)
+            .set(doc_data)
+        )
+        logger.info(f"User {user.email} created custom agent {custom_id} for account {account_id}")
+    except Exception as e:
+        logger.error(f"Failed to create custom agent for account {account_id}: {e!s}")
+        raise HTTPException(status_code=500, detail="Failed to create agent configuration") from e
+
+    merged = _load_merged(db, account_id, custom_id)
+    if merged is None:
+        raise HTTPException(status_code=500, detail="Created document not readable")
+    return merged
+
+
+@account_router.put("/{config_id}", response_model=MergedAgentConfig)
+async def upsert_account_agent_config_overlay(
+    account_id: str,
+    config_id: str,
+    body: AgentConfigOverlayUpdate,
+    user: UserContext = Depends(get_current_user_context),
+    db: firestore.Client = Depends(get_firestore),
+) -> MergedAgentConfig:
+    """Upsert a per-account overlay for an existing global agent config.
+
+    Stores only the fields present in the body (sparse overlay).
+    Records ``based_on_version`` from the global doc's ``metadata.version``.
+    Requires admin role.
+    """
+    if not user.has_account_access(account_id, required_roles=["admin"]):
+        raise HTTPException(
+            status_code=403,
+            detail="Admin role required to modify agent configurations",
+        )
+
+    try:
+        global_doc = db.collection("agent_configs").document(config_id).get()
+        global_data = global_doc.to_dict() if global_doc.exists else None
+
+        # Resolve based_on_version from global doc metadata
+        bov: int = 1
+        if global_data:
+            metadata = global_data.get("metadata") or {}
+            bov = _parse_based_on_version(metadata.get("version"))
+
+        overlay_data: dict[str, Any] = {
+            "based_on_version": bov,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_by": user.email,
+        }
+        body_dict = body.model_dump(exclude_unset=True)
+        overlay_data.update(body_dict)
+
+        (
+            db.collection("accounts")
+            .document(account_id)
+            .collection("agent_configs")
+            .document(config_id)
+            .set(overlay_data, merge=True)
+        )
+        logger.info(
+            f"User {user.email} upserted overlay for {config_id} on account {account_id}"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Failed to upsert overlay for {config_id} / account {account_id}: {e!s}"
+        )
+        raise HTTPException(status_code=500, detail="Failed to update agent configuration") from e
+
+    merged = _load_merged(db, account_id, config_id)
+    if merged is None:
+        raise HTTPException(status_code=404, detail="Agent configuration not found")
+    return merged
+
+
+@account_router.delete("/{config_id}", status_code=204)
+async def delete_account_agent_config(
+    account_id: str,
+    config_id: str,
+    user: UserContext = Depends(get_current_user_context),
+    db: firestore.Client = Depends(get_firestore),
+) -> None:
+    """Delete a per-account agent config.
+
+    For ``custom_*`` config IDs the custom document is deleted entirely.
+    For non-custom config IDs the overlay is deleted (revert to global default).
+    Requires admin role.
+    """
+    if not user.has_account_access(account_id, required_roles=["admin"]):
+        raise HTTPException(
+            status_code=403,
+            detail="Admin role required to delete agent configurations",
+        )
+
+    try:
+        overlay_ref = (
+            db.collection("accounts")
+            .document(account_id)
+            .collection("agent_configs")
+            .document(config_id)
+        )
+        overlay_doc = overlay_ref.get()
+
+        if config_id.startswith("custom_"):
+            if not overlay_doc.exists:
+                raise HTTPException(status_code=404, detail="Custom agent configuration not found")
+            overlay_ref.delete()
+            logger.info(
+                f"User {user.email} deleted custom agent {config_id} from account {account_id}"
+            )
+        else:
+            # Revert to global: delete the overlay doc only
+            if overlay_doc.exists:
+                overlay_ref.delete()
+            logger.info(
+                f"User {user.email} reverted overlay for {config_id} on account {account_id}"
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Failed to delete overlay for {config_id} / account {account_id}: {e!s}"
+        )
+        raise HTTPException(status_code=500, detail="Failed to delete agent configuration") from e
