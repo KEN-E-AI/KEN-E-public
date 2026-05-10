@@ -46,7 +46,12 @@ function makeWrapper(client: QueryClient) {
 }
 
 function freshClient() {
-  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
 }
 
 beforeEach(() => {

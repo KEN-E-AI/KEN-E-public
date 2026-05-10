@@ -7,7 +7,6 @@ import { ArrowLeft, Bot } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCreateAgentConfig } from "@/queries/agentConfigs";
 import { SUPPORTED_MODELS } from "@/lib/api/agentConfigs";
-import type { AgentConfigCreate } from "@/lib/api/agentConfigs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -35,6 +34,8 @@ const schema = z.object({
   description: z.string().optional(),
 });
 
+type FormValues = z.infer<typeof schema>;
+
 // ─── AgentCreatePage ──────────────────────────────────────────────────────────
 
 export function AgentCreatePage() {
@@ -49,17 +50,19 @@ export function AgentCreatePage() {
     control,
     watch,
     formState: { errors, isValid },
-  } = useForm<AgentConfigCreate>({
+  } = useForm<FormValues>({
     resolver: zodResolver(schema),
     mode: "onChange",
     defaultValues: { temperature: 0.3 },
   });
 
-  function onSubmit(data: AgentConfigCreate) {
+  function onSubmit(data: FormValues) {
     mutation.mutate(data, {
       onSuccess: (created) => {
         toast.success("Agent created.");
-        navigate(`/workflows/agents?edit=${created.config_id}`);
+        navigate(
+          `/workflows/agents?edit=${encodeURIComponent(created.config_id)}`,
+        );
       },
       onError: () => {
         toast.error("Failed to create agent.");

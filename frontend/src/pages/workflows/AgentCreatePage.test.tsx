@@ -97,6 +97,35 @@ describe("AgentCreatePage", () => {
     });
   });
 
+  it("shows toast.error when submission fails", async () => {
+    mockCreateAgentConfig.mockRejectedValueOnce(new Error("Network error"));
+    const { toast } = await import("sonner");
+    const user = userEvent.setup();
+    render(<AgentCreatePage />, { wrapper: makeWrapper() });
+
+    await user.type(screen.getByTestId("name-input"), "My Agent");
+    await user.type(
+      screen.getByTestId("instruction-field"),
+      "You are a helpful assistant.",
+    );
+
+    await user.click(screen.getByTestId("model-select"));
+    const modelOptions = await screen.findAllByRole("option");
+    await user.click(modelOptions[0]);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /create agent/i }),
+      ).not.toBeDisabled(),
+    );
+
+    await user.click(screen.getByRole("button", { name: /create agent/i }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith("Failed to create agent.");
+    });
+  });
+
   it("renders two disabled placeholder rows with correct tooltip text", () => {
     render(<AgentCreatePage />, { wrapper: makeWrapper() });
 
