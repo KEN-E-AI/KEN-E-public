@@ -100,7 +100,7 @@ def _build_dispatch(name: str, specialist: LlmAgent) -> Callable:
         tool_context: ToolContext | None = None,
     ) -> str:
         initial_state: dict[str, Any] | None = (
-            copy.deepcopy(dict(tool_context.state)) if tool_context is not None else None
+            copy.deepcopy(tool_context.state.to_dict()) if tool_context is not None else None
         )
 
         criteria = acceptance_criteria.strip()

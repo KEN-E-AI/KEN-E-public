@@ -373,7 +373,7 @@ class TestDispatchStateForwarding:
 
         original_state = {"ga_credentials": {"token": "xyz"}, "account_id": "acct_1"}
         tool_context = MagicMock()
-        tool_context.state = original_state
+        tool_context.state.to_dict.return_value = original_state
 
         with patch(_PATCH_INVOKE_WITH_RETRY, return_value="ok") as mock_retry:
             fn("query", tool_context=tool_context)
@@ -389,7 +389,7 @@ class TestDispatchStateForwarding:
         nested = {"token": "xyz"}
         original_state = {"ga_credentials": nested, "account_id": "acct_1"}
         tool_context = MagicMock()
-        tool_context.state = original_state
+        tool_context.state.to_dict.return_value = original_state
 
         with patch(_PATCH_INVOKE_WITH_RETRY, return_value="ok") as mock_retry:
             fn("query", tool_context=tool_context)

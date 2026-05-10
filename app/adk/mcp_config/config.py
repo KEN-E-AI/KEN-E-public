@@ -233,7 +233,7 @@ class MCPConfigLoader:
         return self.load()
 
 
-def _resolve_env_pattern(value: str) -> str:
+def _resolve_env_pattern(value: Any) -> Any:
     """Resolve ${VAR_NAME} patterns in a string.
 
     Uses shared.secrets.get_env_or_secret for resolution, which supports:
@@ -242,10 +242,12 @@ def _resolve_env_pattern(value: str) -> str:
     - Full GCP Secret Manager paths
 
     Args:
-        value: String potentially containing ${VAR_NAME} patterns
+        value: String potentially containing ${VAR_NAME} patterns; non-string
+            values are returned unchanged.
 
     Returns:
-        String with all patterns resolved
+        String with all patterns resolved, or the original value if it is not
+        a string.
 
     Examples:
         >>> _resolve_env_pattern("Bearer ${API_KEY}")
@@ -353,6 +355,7 @@ def get_mcp_config_loader() -> MCPConfigLoader:
                     extra={"source": "yaml"},
                 ),
             )
+        assert _config_loader is not None
         _config_loader.load()
     return _config_loader
 
