@@ -181,6 +181,7 @@ export function AgentCreatePage() {
             render={({ field }) => (
               <Slider
                 id="agent-temperature"
+                aria-label="Temperature"
                 min={0}
                 max={1}
                 step={0.01}
