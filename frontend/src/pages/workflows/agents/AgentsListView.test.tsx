@@ -9,6 +9,12 @@ import type { MergedAgentConfig } from "@/lib/api/agentConfigs";
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
+const mockNavigate = vi.fn();
+vi.mock("react-router-dom", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-router-dom")>();
+  return { ...actual, useNavigate: () => mockNavigate };
+});
+
 vi.mock("@/contexts/AuthContext", () => ({
   useAuth: vi.fn(),
 }));
@@ -226,6 +232,43 @@ describe("AgentsListView — renders cards", () => {
     expect(
       screen.getByText("Analyzes Google Analytics data."),
     ).toBeInTheDocument();
+  });
+});
+
+describe("AgentsListView — top action button", () => {
+  it("renders the New Agent button when configs are present", () => {
+    mockUseAgentConfigsList.mockReturnValue({
+      data: [defaultConfig],
+      isLoading: false,
+      isError: false,
+    });
+
+    render(<AgentsListView onEdit={vi.fn()} />, { wrapper: makeWrapper() });
+    expect(screen.getByTestId("new-agent-button")).toBeInTheDocument();
+  });
+
+  it("renders the New Agent button in the empty state", () => {
+    mockUseAgentConfigsList.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+    });
+
+    render(<AgentsListView onEdit={vi.fn()} />, { wrapper: makeWrapper() });
+    expect(screen.getByTestId("new-agent-button")).toBeInTheDocument();
+  });
+
+  it("New Agent button navigates to /workflows/agents/new", async () => {
+    const user = userEvent.setup();
+    mockUseAgentConfigsList.mockReturnValue({
+      data: [defaultConfig],
+      isLoading: false,
+      isError: false,
+    });
+
+    render(<AgentsListView onEdit={vi.fn()} />, { wrapper: makeWrapper() });
+    await user.click(screen.getByTestId("new-agent-button"));
+    expect(mockNavigate).toHaveBeenCalledWith("/workflows/agents/new");
   });
 });
 

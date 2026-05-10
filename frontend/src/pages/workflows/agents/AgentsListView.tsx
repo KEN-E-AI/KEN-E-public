@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Bot } from "lucide-react";
+import { Bot, Plus } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAgentConfigsList } from "@/queries/agentConfigs";
 import type { AgentConfigId } from "@/lib/api/agentConfigs";
@@ -8,6 +8,7 @@ import type {
   MergedAgentConfig,
   CustomizationStatus,
 } from "@/lib/api/agentConfigs";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
 // ─── Accent palette (matches Figma FALLBACK_ACCENTS) ─────────────────────────
@@ -210,9 +211,23 @@ export function AgentsListView({ onEdit }: AgentsListViewProps) {
     );
   }
 
-  if (!configs || configs.length === 0) {
-    return (
-      <div className="px-6 pb-6">
+  const isEmpty = !configs || configs.length === 0;
+
+  return (
+    <div className="px-6 pb-6">
+      {/* Action row — always visible above the grid / empty state. */}
+      <div className="flex justify-end mb-4">
+        <Button
+          onClick={() => navigate("/workflows/agents/new")}
+          className="gap-2"
+          data-testid="new-agent-button"
+        >
+          <Plus className="size-4" />
+          New Agent
+        </Button>
+      </div>
+
+      {isEmpty ? (
         <div className="flex flex-col items-center justify-center min-h-[300px] text-center">
           <Bot className="size-8 text-muted-foreground mx-auto mb-2" />
           <p className="text-sm text-muted-foreground mb-1">
@@ -229,22 +244,18 @@ export function AgentsListView({ onEdit }: AgentsListViewProps) {
             Create an agent
           </button>
         </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="px-6 pb-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {configs.map((config, idx) => (
-          <AgentCard
-            key={config.config_id}
-            config={config}
-            index={idx}
-            onEdit={onEdit}
-          />
-        ))}
-      </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {configs.map((config, idx) => (
+            <AgentCard
+              key={config.config_id}
+              config={config}
+              index={idx}
+              onEdit={onEdit}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
