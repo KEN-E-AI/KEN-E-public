@@ -16,7 +16,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from google.cloud import firestore
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 from shared.trace_metadata import parse_semver, validate_semver
 
@@ -713,9 +713,18 @@ async def list_account_agent_configs(
                 config_ids.add(cid)
 
         # Build merges inline from already-fetched dicts — no per-config Firestore reads.
+        # Skip docs that fail validation (e.g. a stray schema-placeholder doc lacking
+        # required fields) so one malformed row doesn't take the whole list down.
         results: list[MergedAgentConfig] = []
         for cid in sorted(config_ids):
-            merged = _merge_from_data(cid, global_docs.get(cid), account_docs.get(cid))
+            try:
+                merged = _merge_from_data(cid, global_docs.get(cid), account_docs.get(cid))
+            except ValidationError as exc:
+                logger.warning(
+                    f"Skipping malformed agent config '{cid}' for account "
+                    f"{account_id}: {exc}"
+                )
+                continue
             if merged is None:
                 continue
             if visible_in_frontend and not merged.visible_in_frontend:
