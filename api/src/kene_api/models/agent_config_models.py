@@ -246,6 +246,10 @@ class MergedAgentConfig(BaseModel):
     model_config = {"extra": "ignore"}
 
     config_id: str = Field(..., description="Document ID of this agent config")
+    name: str | None = Field(
+        None,
+        description="Display name (custom agents only; globals identified by config_id)",
+    )
     instruction: str = Field(..., description="Agent instruction/prompt")
     model: str = Field(..., description="Model identifier")
 

@@ -740,12 +740,6 @@ async def get_account_agent_config(
     if not user.has_account_access(account_id):
         raise HTTPException(status_code=403, detail="Access denied to this account")
 
-    if not config_id.startswith("custom_") and config_id not in ALLOWED_CONFIG_IDS:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Agent configuration not found: {config_id!r}",
-        )
-
     try:
         merged = _load_merged(db, account_id, config_id)
     except Exception as e:
@@ -833,12 +827,6 @@ async def upsert_account_agent_config_overlay(
             detail="Admin role required to modify agent configurations",
         )
 
-    if not config_id.startswith("custom_") and config_id not in ALLOWED_CONFIG_IDS:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Agent configuration not found: {config_id!r}",
-        )
-
     try:
         global_doc = db.collection("agent_configs").document(config_id).get()
         global_data = global_doc.to_dict() if global_doc.exists else None
@@ -898,12 +886,6 @@ async def delete_account_agent_config(
         raise HTTPException(
             status_code=403,
             detail="Admin role required to delete agent configurations",
-        )
-
-    if not config_id.startswith("custom_") and config_id not in ALLOWED_CONFIG_IDS:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Agent configuration not found: {config_id!r}",
         )
 
     try:

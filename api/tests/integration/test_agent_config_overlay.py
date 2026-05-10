@@ -97,6 +97,7 @@ def test_merged_agent_config_api_model_field_parity() -> None:
     required_fields = {
         "instruction",
         "model",
+        "name",
         "description",
         "temperature",
         "code_execution_enabled",
