@@ -31,13 +31,13 @@ vi.mock("./agents/AgentEditView", () => ({
 
 // ─── Wrapper ──────────────────────────────────────────────────────────────────
 
-function makeWrapper() {
+function makeWrapper(initialEntries?: string[]) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>
-      <MemoryRouter>{children}</MemoryRouter>
+      <MemoryRouter initialEntries={initialEntries}>{children}</MemoryRouter>
     </QueryClientProvider>
   );
 }
@@ -90,6 +90,42 @@ describe("AgentsPage", () => {
       (btn) => btn.closest("[data-testid='agent-edit-view']") !== null,
     );
     await user.click(editViewCloseBtn!);
+    await waitFor(() =>
+      expect(screen.queryByTestId("agent-edit-view")).toBeNull(),
+    );
+  });
+
+  it("URL param ?edit= opens the sheet on mount", () => {
+    render(<AgentsPage />, {
+      wrapper: makeWrapper([
+        "/workflows/agents?edit=google_analytics_specialist",
+      ]),
+    });
+
+    expect(screen.getByTestId("agent-edit-view")).toBeInTheDocument();
+    expect(
+      screen.getByText("Editing: google_analytics_specialist"),
+    ).toBeInTheDocument();
+  });
+
+  it("closing the sheet clears the URL param", async () => {
+    const user = userEvent.setup();
+    render(<AgentsPage />, {
+      wrapper: makeWrapper([
+        "/workflows/agents?edit=google_analytics_specialist",
+      ]),
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("agent-edit-view")).toBeInTheDocument(),
+    );
+
+    const closeButtons = screen.getAllByRole("button", { name: /close/i });
+    const editViewCloseBtn = closeButtons.find(
+      (btn) => btn.closest("[data-testid='agent-edit-view']") !== null,
+    );
+    await user.click(editViewCloseBtn!);
+
     await waitFor(() =>
       expect(screen.queryByTestId("agent-edit-view")).toBeNull(),
     );

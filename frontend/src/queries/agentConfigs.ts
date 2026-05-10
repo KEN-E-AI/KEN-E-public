@@ -4,8 +4,12 @@ import {
   getAgentConfig,
   upsertAgentConfigOverlay,
   deleteAgentConfig,
+  createAgentConfig,
 } from "@/lib/api/agentConfigs";
-import type { AgentConfigOverlayUpdate } from "@/lib/api/agentConfigs";
+import type {
+  AgentConfigOverlayUpdate,
+  AgentConfigCreate,
+} from "@/lib/api/agentConfigs";
 
 // ─── Query key factory ────────────────────────────────────────────────────────
 
@@ -73,6 +77,23 @@ export function useUpsertAgentConfigOverlay(
       });
       queryClient.invalidateQueries({
         queryKey: agentConfigKeys.detail(accountId, configId),
+      });
+    },
+  });
+}
+
+export function useCreateAgentConfig(accountId: string | null | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (body: AgentConfigCreate) => {
+      if (!accountId) return Promise.reject(new Error("No account selected"));
+      return createAgentConfig(accountId, body);
+    },
+    onSuccess: () => {
+      if (!accountId) return;
+      queryClient.invalidateQueries({
+        queryKey: agentConfigKeys.list(accountId),
       });
     },
   });

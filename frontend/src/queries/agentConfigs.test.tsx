@@ -7,6 +7,7 @@ import {
   useAgentConfigsList,
   useAgentConfig,
   useUpsertAgentConfigOverlay,
+  useCreateAgentConfig,
   useDeleteAgentConfig,
 } from "./agentConfigs";
 
@@ -16,6 +17,7 @@ vi.mock("@/lib/api/agentConfigs", () => ({
   listAgentConfigs: vi.fn(),
   getAgentConfig: vi.fn(),
   upsertAgentConfigOverlay: vi.fn(),
+  createAgentConfig: vi.fn(),
   deleteAgentConfig: vi.fn(),
 }));
 
@@ -23,6 +25,7 @@ import {
   listAgentConfigs,
   getAgentConfig,
   upsertAgentConfigOverlay,
+  createAgentConfig,
   deleteAgentConfig,
 } from "@/lib/api/agentConfigs";
 
@@ -31,6 +34,7 @@ const mockGetAgentConfig = getAgentConfig as ReturnType<typeof vi.fn>;
 const mockUpsertAgentConfigOverlay = upsertAgentConfigOverlay as ReturnType<
   typeof vi.fn
 >;
+const mockCreateAgentConfig = createAgentConfig as ReturnType<typeof vi.fn>;
 const mockDeleteAgentConfig = deleteAgentConfig as ReturnType<typeof vi.fn>;
 
 // ─── Test helpers ─────────────────────────────────────────────────────────────
@@ -59,9 +63,14 @@ describe("agentConfigKeys", () => {
       "acc_test",
       undefined,
     ]);
-    expect(agentConfigKeys.list("acc_test", { visibleInFrontend: true })).toEqual(
-      ["agentConfigs", "list", "acc_test", { visibleInFrontend: true }],
-    );
+    expect(
+      agentConfigKeys.list("acc_test", { visibleInFrontend: true }),
+    ).toEqual([
+      "agentConfigs",
+      "list",
+      "acc_test",
+      { visibleInFrontend: true },
+    ]);
   });
 
   it("detail key contains accountId and configId", () => {
@@ -165,6 +174,46 @@ describe("useUpsertAgentConfigOverlay", () => {
     expect(invalidateSpy).toHaveBeenCalledWith(
       expect.objectContaining({ queryKey: agentConfigKeys.list("acc_test") }),
     );
+  });
+});
+
+// ─── useCreateAgentConfig ─────────────────────────────────────────────────────
+
+describe("useCreateAgentConfig", () => {
+  it("calls createAgentConfig and invalidates the list key on success", async () => {
+    const created = { config_id: "ga-new", customization_status: "default" };
+    mockCreateAgentConfig.mockResolvedValueOnce(created);
+
+    const client = freshClient();
+    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
+
+    const { result } = renderHook(() => useCreateAgentConfig("acc_test"), {
+      wrapper: makeWrapper(client),
+    });
+
+    result.current.mutate({ name: "New Config" });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(mockCreateAgentConfig).toHaveBeenCalledWith("acc_test", {
+      name: "New Config",
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: agentConfigKeys.list("acc_test") }),
+    );
+  });
+
+  it("rejects with 'No account selected' when accountId is null", async () => {
+    const client = freshClient();
+
+    const { result } = renderHook(() => useCreateAgentConfig(null), {
+      wrapper: makeWrapper(client),
+    });
+
+    result.current.mutate({ name: "New Config" });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toEqual(new Error("No account selected"));
+    expect(mockCreateAgentConfig).not.toHaveBeenCalled();
   });
 });
 

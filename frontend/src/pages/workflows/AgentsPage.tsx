@@ -1,12 +1,18 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { AgentsListView } from "./agents/AgentsListView";
 import { AgentEditView } from "./agents/AgentEditView";
 import type { AgentConfigId } from "@/lib/api/agentConfigs";
+import { toAgentConfigId } from "@/lib/api/agentConfigs";
 
 export function AgentsPage() {
-  const [editingId, setEditingId] = useState<AgentConfigId | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const editParam = searchParams.get("edit");
+  const [editingId, setEditingId] = useState<AgentConfigId | null>(
+    editParam ? toAgentConfigId(editParam) : null,
+  );
 
   return (
     <>
@@ -15,7 +21,10 @@ export function AgentsPage() {
       <Sheet
         open={editingId !== null}
         onOpenChange={(open) => {
-          if (!open) setEditingId(null);
+          if (!open) {
+            setEditingId(null);
+            setSearchParams({});
+          }
         }}
       >
         <SheetContent className="sm:max-w-md p-0 gap-0">
