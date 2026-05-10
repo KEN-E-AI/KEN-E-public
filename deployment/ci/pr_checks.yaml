@@ -64,6 +64,84 @@ steps:
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
 
+  # Run agent-side unit tests for the clean subdirectories of app/adk/.
+  # Scope: agent_factory, mcp_config, and tracking test directories.
+  # strategy_agent and other legacy subdirectories are excluded (pre-existing
+  # failures / missing neo4j; tracked in follow-up issues AH-24+).
+  # See AH-23 for the full gate rationale.
+  - name: "python:3.11-slim"
+    id: app-adk-tests
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        pip install uv --user
+        uv sync --frozen
+        uv run pytest \
+          app/adk/agents/agent_factory/tests/ \
+          app/adk/mcp_config/tests/ \
+          app/adk/tracking/tests/ \
+          -q
+    env:
+      - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
+
+  # Lint gate: ruff + codespell + mypy scoped to clean agent-factory
+  # subdirectories.  Legacy code under strategy_agent/ and agent_standalone_*
+  # is excluded (follow-up AH-24+).  See AH-23 for scope rationale.
+  #
+  # mypy scope is intentionally narrower than ruff:
+  #   * tests/ are excluded — pytest fixtures use mocks (MockCallbackContext,
+  #     _FakeRegistry, dict[str, MagicMock]) that legitimately don't satisfy
+  #     strict typing; annotating them produces no behavioural value.
+  #   * agent_factory/ and mcp_config/ are excluded pending follow-up work
+  #     to fix pre-existing typing issues (yaml stubs in mcp_config/config.py,
+  #     None-narrowing in get_mcp_config_loader, State -> dict overload in
+  #     dispatch.py, LoopAgent vs LlmAgent in invoke_pipeline).  Tracked as
+  #     a follow-up to AH-23; tracking/ is the only fully-clean subpackage
+  #     today and seeds the gate so coverage can expand incrementally.
+  - name: "python:3.11-slim"
+    id: lint
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        pip install uv --user
+        uv sync --frozen
+        uv run ruff check \
+          app/adk/agents/agent_factory/ \
+          app/adk/mcp_config/ \
+          app/adk/tracking/ \
+          app/adk/security/ \
+          app/adk/tools/ \
+          app/adk/deploy_packaging.py \
+          app/adk/deploy_ken_e.py
+        uv run codespell --toml pyproject.toml .
+        uv run mypy \
+          app/adk/tracking/ \
+          --exclude '/tests/' \
+          --ignore-missing-imports
+    env:
+      - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
+
+  # Deploy-tree smoke test: assembles the Agent Engine artefacts into a temp
+  # directory, imports build_hierarchy from the packaged tree (not the source
+  # tree), and cloudpickle-round-trips every dispatch function to catch the
+  # class of regression shipped in PR #382 (ModuleNotFoundError at Agent Engine
+  # runtime) and the AH-17 regression (from __future__ import annotations +
+  # cloudpickle breaking ADK FunctionTool declaration generation).
+  # See AH-23 and deployment/ci/scripts/verify_deploy_tree.py for details.
+  - name: "python:3.11-slim"
+    id: deploy-tree-smoke
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        pip install uv --user
+        uv sync --frozen
+        uv run python deployment/ci/scripts/verify_deploy_tree.py
+    env:
+      - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
+
   # Validate trace compliance — runs the validator unit tests AND checks that
   # canonical per-agent-type fixtures in app/adk/tracking/tests/fixtures/ all
   # pass validate_trace_compliance(). Non-compliant fixtures fail the build.

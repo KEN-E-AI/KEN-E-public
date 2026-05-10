@@ -3,18 +3,11 @@ Utilities for supervisor agents.
 """
 
 from .review_pipeline import build_review_pipeline, extract_pipeline_result
-from .supervisor_utils import (
-    dispatch_with_context,
-    extract_tenant_context,
-    invoke_agent_sync,
-    invoke_pipeline,
-)
 
+# supervisor_utils is NOT re-exported here — it transitively imports neo4j
+# (via context_loader → neo4j_tools), which is not a dependency of the ADK
+# agent-factory package.  Callers import directly from supervisor_utils.
 __all__ = [
     "build_review_pipeline",
-    "dispatch_with_context",
     "extract_pipeline_result",
-    "extract_tenant_context",
-    "invoke_agent_sync",
-    "invoke_pipeline",
 ]

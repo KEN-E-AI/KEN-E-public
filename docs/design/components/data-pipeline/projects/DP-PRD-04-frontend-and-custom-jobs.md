@@ -251,7 +251,7 @@ Editing happens via the same panel. From the picker, a row's "Edit" affordance (
 | Flag | Scope | Behavior when off |
 |---|---|---|
 | `data_pipeline_task_assignee` | "Data Pipeline" assignee option in both the Calendar `ProjectEditDrawer` and the shared DAG editor's task side-panel | Option hidden everywhere; existing pipeline tasks still render in `ActivityDetailPanel` (read-only) so we don't brick already-authored tasks. |
-| `data_pipeline_custom_jobs` | "Or author a new job →" footer in `<PipelineJobPicker>` + the entire `<CustomJobAuthoringPanel>` | Footer link hidden; "Edit" affordance on per-account job rows hidden. The global + per-account job catalog is still browseable via `<PipelineJobPicker>` (when `data_pipeline_task_assignee=true`). |
+| `data_pipeline_custom_jobs` | "Or author a new job →" footer in `<PipelineJobPicker>` + the entire `<CustomJobAuthoringPanel>` | Footer link hidden; "Edit" affordance on per-account job rows hidden. The global + per-account job catalog is still browsable via `<PipelineJobPicker>` (when `data_pipeline_task_assignee=true`). |
 
 Role gating from DM-PRD-07:
 

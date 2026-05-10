@@ -327,7 +327,7 @@ class TestCapacityCap:
         async def load_raises_on_second_call(server_name):
             nonlocal call_count
             call_count += 1
-            raise RuntimeError(f"MCP server capacity reached (1); unload first")
+            raise RuntimeError("MCP server capacity reached (1); unload first")
 
         with patch.object(manager, "load_server", side_effect=load_raises_on_second_call):
             # Should NOT raise — RuntimeError must be caught and logged, not propagated.

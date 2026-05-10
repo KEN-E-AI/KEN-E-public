@@ -71,7 +71,7 @@ def _resolve_project_id(project_id: str | None) -> str:
     Returns:
         Non-empty project ID string.
     """
-    return project_id or os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
+    return project_id or os.getenv("GOOGLE_CLOUD_PROJECT_ID") or "ken-e-dev"
 
 
 def _build_firestore_client(project_id: str) -> Any:

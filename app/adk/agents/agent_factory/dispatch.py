@@ -53,7 +53,6 @@ from app.adk.agents.utils.review_pipeline_tracing import (
     emit_iteration_span,
     set_pipeline_attrs,
 )
-from app.adk.agents.utils.supervisor_utils import invoke_pipeline
 from app.utils.weave_observability import safe_weave_op
 
 logger = logging.getLogger(__name__)
@@ -126,6 +125,9 @@ def _build_dispatch(name: str, specialist: LlmAgent) -> Callable:
                     specialist=specialist,
                     acceptance_criteria=criteria,
                     output_key_prefix=output_key_prefix,
+                )
+                from app.adk.agents.utils.supervisor_utils import (
+                    invoke_pipeline,
                 )
                 _text, final_state, events = invoke_pipeline(
                     pipeline, query, state=initial_state

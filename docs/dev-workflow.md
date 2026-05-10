@@ -2,7 +2,9 @@
 
 This document describes the full lifecycle of an issue from sprint intake to production merge. It is the **human-facing** reference for Product Owners, Product Managers, and developers reading the repo to understand how work moves through the pipeline.
 
-> **Canonical source convention.** The autonomous-agent operational behavior — exact API calls, status transitions, decision rules — lives in the workflow SKILL files baked into the agent VM image (in the Fun-E repo: `.claude/skills/workflows/{dev-team,scrum-master,sprint-manager,test-team}-workflow/SKILL.md`). This doc is the human summary. **If the two disagree, the SKILL files are canonical for agent behavior and this doc is canonical for humans.** When changing the workflow, update the SKILL files first, then mirror the human-facing change here.
+> **Canonical source convention.** The autonomous-agent operational behavior — exact API calls, status transitions, decision rules — lives in the workflow SKILL files baked into the agent VM image: nine workflow SKILLs under `.claude/skills/workflows/{project-kickoff,project-update,issue-triage,step-1-planning,step-1b-updating-plan,step-2-implementing,step-3-testing,step-3b-resolving-test-issues,step-3c-addressing-po-concerns}/SKILL.md`, plus the shared `.claude/skills/tools/agentic-shared/SKILL.md`. This doc is the human summary. **If the two disagree, the SKILL files are canonical for agent behavior and this doc is canonical for humans.** When changing the workflow, update the SKILL files first, then mirror the human-facing change here.
+
+> **Refactor note (2026-05-08):** This doc reflects the skill-and-status refactor (12-status workflow, identity-based receiver routing, status-driven Step 1: Planning). Pre-refactor terminology (Flow 1/2/3/4, Awaiting Review, In Review, Ready for Testing, Resolving Test Issues, Sprint Planning) has been replaced throughout. The integration-branch naming convention still includes `cycle-{N}` because Linear Cycles continue to exist for velocity / calendar reporting — agents don't react to Cycle webhooks. For canonical workflow steps, read the relevant workflow SKILL under `.claude/skills/workflows/`.
 
 ---
 
@@ -11,12 +13,12 @@ This document describes the full lifecycle of an issue from sprint intake to pro
 1. [Roles](#1-roles)
 2. [Issue Lifecycle Overview](#2-issue-lifecycle-overview)
 3. [Wave-Based Execution Model](#3-wave-based-execution-model)
-4. [Phase 1: Sprint Planning](#4-phase-1-sprint-planning)
+4. [Phase 1: Project Kickoff](#4-phase-1-project-kickoff)
 5. [Phase 2: Development](#5-phase-2-development)
 6. [Phase 3: Testing](#6-phase-3-testing)
 7. [Phase 4: Wave Integration and PO Review](#7-phase-4-wave-integration-and-po-review)
 8. [Phase 5: Project Completion Review](#8-phase-5-project-completion-review)
-9. [Phase 6: Cycle Completion](#9-phase-6-cycle-completion)
+9. [Cross-Component Dependency Resolution](#9-cross-component-dependency-resolution)
 10. [Post-Launch Review Model](#10-post-launch-review-model)
 11. [Error Scenarios and Recovery](#11-error-scenarios-and-recovery)
 12. [SLA Enforcement](#12-sla-enforcement)
@@ -28,13 +30,9 @@ This document describes the full lifecycle of an issue from sprint intake to pro
 
 ## 1. Roles
 
-### Sprint Manager (agent)
-
-Cross-component orchestrator. Monitors Cycle start and completion events across all Teams and computes cross-team dependency graphs. When a Cycle is started, the Sprint Manager evaluates all active Cycles and delegates any unblocked ones to the appropriate SCRUM Master (Flow 2: Initial Kickoff). When a Cycle completes, the Sprint Manager evaluates which downstream Cycles are now unblocked and delegates them (Flow 1: Cycle Completion Cascade). One Sprint Manager operates across the entire KEN-E platform.
-
 ### SCRUM Master (agent)
 
-Sprint-level coordinator for a single component (e.g., Fun-E). Validates issue completeness, computes the intra-Cycle dependency graph, delegates issues to the Dev Team in wave order, monitors status transitions, enforces SLAs, and triggers wave/cycle completion flows. When a wave completes testing, the SCRUM Master creates the integration branch, merges all wave PRs, verifies the build, and creates the integration PR for PO review.
+Project-scoped coordinator for a single component (e.g., Fun-E). Validates issue completeness, computes the intra-Project dependency graph, delegates issues to the Dev Team in wave order, monitors status transitions, enforces SLAs, and triggers wave / Project completion flows. When a wave completes testing, the SCRUM Master creates the integration branch, merges all wave PRs, verifies the build, and creates the integration PR for PO review. Cross-component dependency resolution is handled by the webhook receiver itself — when a Project transitions to `completed`, the receiver queries Linear for downstream Projects newly unblocked and dispatches one SCRUM Master VM per affected component.
 
 ### Dev Team (agent)
 
@@ -83,7 +81,6 @@ The two maps are validated at module-import time (`_validate_team_maps()`); if t
 
 | Agent | Needs a repo? | Source |
 |-------|---------------|--------|
-| Sprint Manager | No — Linear-only orchestrator | passes `repo=""` |
 | SCRUM Master | Yes — clones for wave-integration merges, build/test, PR creation | `TEAM_REPO_MAP[team_id]` |
 | Dev Team | Yes — clones to read PRD, write code, push branches | `TEAM_REPO_MAP[team_id]` |
 | Test Team | Yes — clones to check out the Dev Team's branch and run Playwright | `TEAM_REPO_MAP[team_id]` |
@@ -134,113 +131,103 @@ To ship new skills or default agents: tag a release in Fun-E and rebuild the ima
 
 ## 2. Issue Lifecycle Overview
 
-Every issue follows this status progression. Some statuses loop (test failures, PO rejections). The complete flow from intake to production:
+Every issue follows this status progression under the 12-status workflow (see `.claude/skills/tools/agentic-shared/SKILL.md` §1 for the canonical table). Some statuses loop (test failures, PO rejections). The complete flow from intake to production:
 
 ```
-                         Sprint Manager delegates Cycle
-                                    |
-                                    v
-                        +---------------------+
-                        |   SCRUM Master       |
-                        |   Sprint Planning    |
-                        +---------------------+
-                            |             |
-                    [valid]               [gaps found]
-                            |             |
-                            v             v
-                    Awaiting          Triage
-                    Assignment          |
-                            |       [PO fixes gaps]
-                            |             |
-                            v             v
-                    +---------------------+        Scheduled
-                    |   Dev Team          |<----------+
-                    |   Flow 1: Planning  |
-                    +---------------------+
+            PO advances Linear Project to "Planned"
+                              |
+                              v
+              +-------------------------------+
+              |  SCRUM Master                 |
+              |  Workflow 1: Project Kickoff  |
+              +-------------------------------+
+                    |             |
+              [validated]    [gaps found]
+                    |             |
+                    |             v
+                    |       Triage
+                    |             |
+                    |  [SCRUM Master Workflow 3
+                    |   re-validates after PO
+                    |   resolves gaps]
+                    |             |
+                    +<------------+
+                    |
+                    v
+            [SCRUM Master sets status → Step 1: Planning
+             AND assigns to Dev Team in one mutation;
+             status change triggers Workflow 4]
+                    |
+                    v
+              Step 1: Planning
+              [Dev Team posts Implementation Plan]
+                  |          |
+            [no blocking  [blocking
+             questions]   questions]
+                  |          |
+                  |          v
+                  |   [PO action — moves to either]
+                  |          |
+                  |   +------+------+
+                  |   |             |
+                  |   v             v
+                  | Step 1b:    Step 2:
+                  | Updating    Implementing  <----+
+                  | Plan          ^                |
+                  |   |           |                |
+                  |  [Dev Team    |                |
+                  |   Workflow 5  |                |
+                  |   revises]    |                |
+                  |   |           |                |
+                  +---+-----------+                |
+                                  |                |
+                                  v                |
+                          [Dev Team Workflow 6     |
+                           implements, opens       |
+                           draft PR, posts         |
+                           Test Instructions]      |
+                                  |                |
+                                  v                |
+                          Step 3: Testing  <-------+
+                                  |                |
+                          [Test Team Workflow 7    |
+                           runs Playwright]        |
+                              |        |          ^
+                       [all pass]  [failures]     |
+                              |        |          |
+                              v        v          |
+                      Testing        Step 3b:     |
+                      Complete       Resolving    |
+                              |       Test Issues |
+                              |        |          |
+                              |  [Dev Team Workflow 8
+                              |   fixes, up to 6 times]
+                              |        |          |
+                              |        +-->-------+
+                              |
+                       [PO action]
+                            |          |
+                       [approves]  [rejects]
+                            |          |
+                            v          v
+                         Done    Step 3c:
+                            |    Addressing
+                            |    PO Concerns
+                  [receiver auto-     |
+                   completes project [Dev Team Workflow 9
+                   when every issue   reworks, hands back
+                   is terminal]       to Step 3: Testing]
                             |
                             v
-                    Planning
+                   Linear Project "Completed"
                             |
-                    [plan posted]
-                            |
-                            v
-                    Awaiting Review  <-------+
-                            |                |
-                    [PO approves]    [PO gives feedback]
-                            |                |
-                            v                |
-                    In Progress        Planning
-                            |
-                    +---------------------+
-                    |   Dev Team          |
-                    |   Flow 2: Implement |
-                    +---------------------+
-                            |
-                            v
-                    In Review
-                    [self-review, security, lint, test]
-                            |
-                    [all checks pass]
-                            |
-                            v
-                    Ready for Testing
-                            |
-                    +---------------------+
-                    |   Test Team         |
-                    |   Playwright tests  |
-                    +---------------------+
-                        |             |
-                [all pass]      [failures]
-                        |             |
-                        v             v
-                Testing          Resolving Test
-                Complete         Issues
-                        |             |
-                        |     [Dev fixes, up to 6x]
-                        |             |
-                        |             v
-                        |        In Progress ---> In Review
-                        |             |               |
-                        |             +-------<-------+
-                        |                             |
-                        |                             v
-                        |                    Ready for Testing
-                        |                             |
-                        |             +-------<-------+
-                        |
-                [all wave issues complete]
-                        |
-                        v
-                Wave Completion
-                and Integration
-                        |
-                [SCRUM Master creates integration branch + PR]
-                [PO tests locally]
-                [PO merges integration PR]
-                        |
-                        v
-                    Done
-                        |
-                [SCRUM Master delegates next wave]
-                        |
-                [all project issues Done]
-                        |
-                        v
-                Project Completion
-                Review (PM)
-                        |
-                [PM verifies project-level ACs]
-                        |
-                        v
-                Linear Project "Completed"
-                        |
-                [all cycle issues Done]
-                        |
-                        v
-                Cycle Complete
-                        |
-                [Sprint Manager delegates next Cycles]
+                  [receiver cascade fan-out
+                   dispatches Workflow 1 for
+                   newly-unblocked downstream
+                   Projects]
 ```
+
+> **One status name = one workflow.** The Linear board is the source of truth for "what's happening, what fires next." See `.claude/skills/tools/agentic-shared/SKILL.md` §1 for the canonical 10-status table (plus Cancelled as the 11th, no-trigger status).
 
 ---
 
@@ -248,52 +235,63 @@ Every issue follows this status progression. Some statuses loop (test failures, 
 
 ### What is a Wave?
 
-The SCRUM Master computes a dependency graph for all issues in a Cycle using topological sort. Issues are grouped into **execution levels** called waves:
+The SCRUM Master is dispatched per Linear Project on `Project.update`→`planned` and computes a dependency graph across all issues in that Project using topological sort. Each Project gets its own sequential wave stream — `{slug}-wave-1`, `{slug}-wave-2`, etc. Sibling Projects ship independently; a wave never mixes issues from two Projects, and an integration PR contains only one Project's work.
 
-- **Wave 0 (Level 0):** Issues with no blocking dependencies. These start immediately.
-- **Wave 1 (Level 1):** Issues whose blockers are all in Wave 0. These start after Wave 0 is approved by the PO.
-- **Wave N (Level N):** Issues whose blockers are all in Waves 0 through N-1.
+Within a single Project:
+- **Wave 1:** That Project's issues with no unresolved blockers (intra- or cross-Project). These start immediately.
+- **Wave 2:** That Project's next batch — issues that become unblocked once Wave 1's issues reach "Done."
+- **Wave N:** That Project's Nth sequential batch.
 
-Issues within the same wave execute in parallel (no dependencies between them).
+Wave numbering is per-Project and starts at 1 for each Project — it is NOT the issue's global execution-level depth. Project X with issues at global levels {0, 0, 2, 5} produces three waves (X-wave-1, X-wave-2, X-wave-3), regardless of the gaps in the global numbering.
+
+Issues within the same wave execute in parallel (no dependencies between them within that Project). Cross-Project blockers are still respected: if Project Y's wave-1 includes an issue blocked by a Project X issue, `delegate-issue` skips it until the upstream resolves, even if Y's other wave-1 issues are delegated.
 
 ### Wave Completion Gate
 
-A wave is **complete** when all issues at that execution level reach "Testing Complete," "Done," or "Cancelled."
+A wave is **complete** when all issues in that Project's wave reach "Testing Complete," "Done," or "Cancelled." Sibling Projects' waves are evaluated independently — completing Project X's wave-1 does not affect Project Y's wave evaluation.
 
 When a wave completes, the SCRUM Master handles it differently based on wave size:
 
 **Single-issue wave:**
 1. The SCRUM Master marks the existing draft PR as ready for review (no integration branch needed)
 2. The SCRUM Master runs build and test verification on the branch
-3. The SCRUM Master posts a Wave Completion notification with the PR link and a wave status summary
+3. The SCRUM Master posts a Wave Completion notification on the **Project** with the PR link and that Project's wave status summary
 4. The PO tests the PR locally, merges it, and sets the issue to "Done"
 
 **Multi-issue wave:**
-1. The SCRUM Master creates an integration branch from `main`, merges all wave PRs, resolves conflicts, and verifies the build
-2. The SCRUM Master creates an integration PR and posts a Wave Completion notification with the PR link and a wave status summary
+1. The SCRUM Master creates a Project-scoped integration branch from `main` (`integration/cycle-{C}-{project-slug}-wave-{N}`), merges all wave PRs, resolves conflicts, and verifies the build
+2. The SCRUM Master creates an integration PR and posts a Wave Completion notification on the Project with the PR link and that Project's wave status summary
 3. The PO tests the integration branch locally, merges the PR, and sets all wave issues to "Done"
 
-Every Wave Completion notification includes a **wave status summary** showing the state of all waves in the Cycle, so the PO always knows: which waves are done, which wave is ready for review, and which waves still have issues in progress.
+Every Wave Completion notification includes a **wave status summary** showing the state of that Project's waves, so the PO always knows where this specific PRD stands. The Cycle-wide picture (all Projects across all components) lives in the PO Dashboard Document, which the SCRUM Master rewrites at the end of every handler.
 
 **Only "Done" unblocks the next wave.** "Testing Complete" does not resolve dependencies for delegation purposes. This ensures the PO has verified the integrated result before downstream work begins.
 
 ### Why Waves Matter
 
-Without wave gating, the SCRUM Master would delegate Wave 1 issues as soon as Wave 0 issues pass testing — before the PO has verified the combined result and before the code is merged to `main`. Wave 1 Dev Teams would be working against a branch that hasn't been validated. The wave gate ensures:
+Without wave gating, the SCRUM Master would delegate Wave 2 issues as soon as Wave 1 issues pass testing — before the PO has verified the combined result and before the code is merged to `main`. Wave 2 Dev Teams would be working against a branch that hasn't been validated. The wave gate ensures:
 
 - The PO verifies each batch of changes works together
 - Code is merged to `main` before dependent work starts
 - Dependent issues branch from a known-good state
 
+### Why Per-Project Waves
+
+Earlier versions of this workflow computed a single Cycle-wide wave per execution level, which mixed issues from different Projects into the same integration PR. That meant the PO had to test multiple Projects' acceptance criteria in a single review pass, and rejecting one Project's work blocked the other Project's progress. Per-Project waves keep PO review focused on one PRD at a time and let independent Projects ship in parallel.
+
 ---
 
-## 4. Phase 1: Sprint Planning
+## 4. Phase 1: Project Kickoff
 
-**Trigger:** Sprint Manager assigns a Cycle's issues to the SCRUM Master.
+**Trigger:** PO advances a Linear Project's status to "Planned." Linear emits a `Project.update` webhook; the receiver's `project-kickoff` rule (in `PROJECT_ROUTES`) fans out one SCRUM Master VM per mapped team in the Project's `teamIds`. The SCRUM Master runs Workflow 1 (`workflows/project-kickoff/SKILL.md`).
+
+### Upstream Validation
+
+The SCRUM Master first checks the Project's `blockedBy` relations. If any upstream Project is not in `completed` or `canceled` state, the SCRUM Master posts a "waiting on N upstream Projects" project update and exits without changing state. The Project remains in `planned` and will be re-evaluated when an upstream completes (the receiver's cascade fan-out, `_compute_project_cascade_dispatches`, dispatches another Project Kickoff for this Project at that point).
 
 ### Issue Validation
 
-For each issue in the Cycle, the SCRUM Master runs `validate-issue-completeness`:
+If unblocked, the SCRUM Master loads the Project's child issues and runs `validate-issue-completeness` on each:
 
 | Issue Type | Required Fields |
 |------------|----------------|
@@ -301,22 +299,26 @@ For each issue in the Cycle, the SCRUM Master runs `validate-issue-completeness`
 | Feature | 2+ paragraph description, 3+ acceptance criteria, design references, child issues |
 | Bug | Description, expected behavior, steps to reproduce, actual result, impact assessment |
 
-**Pass:** Issue status set to "Awaiting Assignment."
+**Pass:** Issue is eligible for delegation in this kickoff or a later wave; it stays in its current status (typically `Backlog`) until the SCRUM Master delegates it.
 
-**Fail:** Issue status set to "Triage." The SCRUM Master posts a comment listing the missing fields and @mentions the PO. One incomplete issue does not block the rest of the sprint.
+**Fail:** Issue status set to `Triage`. The SCRUM Master posts a comment listing the missing fields and @mentions the PO. One incomplete issue does not block the rest of the Project — Triaged issues are excluded from the wave plan and re-enter via Workflow 3 (Issue Triage) when the PO resolves the gaps.
 
 ### Dependency Graph Computation
 
-The SCRUM Master computes the dependency graph:
+The SCRUM Master computes the dependency graph for this Project's issues:
 1. Build a directed acyclic graph from blocking relations
 2. Apply topological sort to determine execution levels (waves)
 3. Check for circular dependencies (see [Error Scenarios](#circular-dependencies))
 
 ### Initial Delegation
 
-All Wave 0 issues (no unresolved blockers) are delegated to the Dev Team simultaneously. The SCRUM Master posts a Sprint Kickoff summary as a project update listing:
-- Wave 0 issues delegated
-- Wave 1+ issues waiting on blockers
+All Wave 1 issues (no unresolved blockers) are delegated to the Dev Team simultaneously. For each Wave 1 issue the SCRUM Master sets BOTH the issue's `stateId` (= `Step 1: Planning`) AND the issue's `assigneeId` (= Dev Team user) in a single `issueUpdate` mutation. The status change fires Workflow 4 (Step 1: Planning) on a Dev Team VM; the assignment is purely Linear-board sugar so a human glance shows who's on the issue.
+
+The SCRUM Master then **explicitly sets the Project's status to "In Progress"** — Linear does not auto-advance Project status, so this step is required for the receiver's cascade to fire downstream when the Project later completes.
+
+The SCRUM Master posts a Project Kickoff summary as a project update listing:
+- Wave 1 issues delegated
+- Wave 2+ issues waiting on blockers
 - Issues sent to Triage
 - Total issue and point counts
 
@@ -324,84 +326,94 @@ All Wave 0 issues (no unresolved blockers) are delegated to the Dev Team simulta
 
 ## 5. Phase 2: Development
 
-**Trigger:** SCRUM Master assigns an issue to the Dev Team agent.
+The development phase consists of five Dev Team workflows, each triggered by a status change. Workflows 4 and 5 run on Opus 4.7 [1m]; Workflows 6, 8, and 9 run on Sonnet 4.6.
 
-### Flow 1: Planning and Approval
+### Workflow 4: Step 1: Planning
 
-1. Dev Team loads component context, issue details, and architecture documentation
-2. Status set to **"Planning"**
-3. Dev Team creates a structured **Implementation Plan** containing:
+**Trigger:** Issue status set to `Step 1: Planning`. The SCRUM Master sets this together with the Dev Team assignee when delegating; a human PO can also set it manually to (re-)trigger planning on a single issue.
+
+1. Dev Team loads context Levels 1–4 (system architecture, component README, project PRD, issue + sibling summaries) per `agentic-shared/SKILL.md` §4
+2. Dev Team creates a structured **Implementation Plan** containing:
    - Problem statement
    - Proposed approach
+   - Project Context (audit trail showing all four levels were consulted)
    - Architecture decisions
-   - Sub-tasks with estimates
-   - Files to be modified
-   - Risk assessment
-4. Implementation Plan posted as a Linear comment
-5. Status set to **"Awaiting Review"**
+   - Tasks grouped into waves, each with acceptance criteria and verification commands
+   - Risks, files affected, decisions & assumptions, blocking questions
+3. Implementation Plan posted as a Linear comment
+4. **Path A (no blocking questions): auto-approve.** Dev Team posts an audit comment ("No blocking questions identified. Auto-proceeding to implementation") and sets the status to `Step 2: Implementing`. A fresh Dev Team session picks up Workflow 6.
+5. **Path B (blocking questions exist):** Dev Team @mentions the PO with the questions and **leaves the issue in `Step 1: Planning`**. No status change.
 
-**Human Checkpoint: PO reviews the Implementation Plan.**
-- **Approve:** PO sets status to "In Progress" (triggers Flow 2)
-- **Request changes:** PO sets status to "Planning" with feedback comment (Dev Team revises and resubmits)
+**Human Checkpoint (Path B only): PO reviews the Implementation Plan.**
+- **Approve:** PO sets status to `Step 2: Implementing` (triggers Workflow 6)
+- **Request changes:** PO sets status to `Step 1b: Updating Plan` with a feedback comment (triggers Workflow 5)
 
-This is the only human checkpoint within the development workflow itself.
+### Workflow 5: Step 1b: Updating Plan
 
-### Flow 2: Implementation
+**Trigger:** Issue status set to `Step 1b: Updating Plan`. The PO sets this when they want changes to an existing plan.
 
-1. Dev Team creates a working branch using Conventional Commits naming: `feat/`, `fix/`, `refactor/`, `test/`, `chore/`, `docs/`
-2. Status set to **"In Progress"**
+1. Dev Team reads the PO's feedback comment and the existing Implementation Plan
+2. Re-loads context Levels 1–4 (project state may have drifted since the original plan was posted)
+3. Posts a revised Implementation Plan with a "Revision Notes" section summarizing what changed
+4. Re-evaluates the auto-approve gate:
+   - **No blocking questions remaining:** post the auto-approval audit note and set status to `Step 2: Implementing` (triggers Workflow 6)
+   - **Blocking questions still present:** @mention the PO and set status back to `Step 1: Planning`. Step 1b is a transient state used only for the revision dispatch.
+
+### Workflow 6: Step 2: Implementing
+
+**Trigger:** Issue status set to `Step 2: Implementing`. Either the Dev Team auto-approved its own plan (Workflow 4 Path A or Workflow 5) or the PO approved manually.
+
+1. Dev Team re-loads context Levels 1–4 on a fresh VM
+2. Dev Team creates a working branch using Conventional Commits naming: `feat/`, `fix/`, `refactor/`, `test/`, `chore/`, `docs/`
 3. Code is implemented (may delegate to specialist sub-agents for frontend, API, database, or testing work)
 4. **Review and Verify Loop** (iterates until clean):
    - Build, lint, and format checks
    - Unit test execution
-   - Security review (hardcoded secrets, SQL injection, XSS, dangerouslySetInnerHTML, CORS wildcards, auth bypass paths, dependency safety)
-   - Self-review against CLAUDE.md guidelines
-5. Draft PR created on GitHub with structured body (summary, assumptions, business logic, test results, security review)
-6. Status set to **"In Review"**
-7. **Test Instructions** posted as a Linear comment with exact schema:
-   - Branch and build setup (exact git + npm/uv commands)
-   - What the Dev Team verified (automated checks)
-   - Test cases (TC-1, TC-2, ...) with preconditions, steps, expected results, and AC mapping
-   - Edge cases to test
-   - Acceptance criteria mapping
-   - Test Instructions focus on **visual/browser verification only** — not code internals
-8. Status set to **"Ready for Testing"**
+   - Parallel review delegation to `code-reviewer` and `security-auditor` sub-agents
+   - Findings are addressed by severity (Critical/High → fix; Medium → fix or document deferral; Low → noted in PR body)
+5. Draft PR pushed to GitHub with structured body (summary, assumptions, business logic, test results, code review, security review)
+6. **Test Instructions** posted as a Linear comment with the schema in `step-2-implementing/SKILL.md` §5 (branch + build setup, test cases, edge cases, AC mapping)
+7. Status set to **`Step 3: Testing`** (triggers Workflow 7 on a Test Team VM)
 
-**Terminal-state rule.** Flow 2 always ends with the issue in `Ready for Testing`. The `In Review` status (set in step 6) is transient — it exists only during the self-review/lint/test loop and must be replaced by `Ready for Testing` once Test Instructions are posted. If the Dev Team session ever exits with the issue still in `In Review`, the Test Team webhook never fires and the issue stalls silently — Linear returns `success: true` for any valid state mutation, so the wrong terminal state is invisible to the agent's own exit handler. The Dev Team SKILL has a mandatory pre-exit verification step (re-query the issue, retry the mutation once, escalate to the PO with the `escalation` and `po-action` labels if still wrong), and the SCRUM Master runs a stalled-`In Review` watchdog every 15 minutes as defense in depth (see §11 *Stalled In Review*).
+**Terminal-state rule.** Workflow 6 always ends with the issue in `Step 3: Testing`. The Dev Team SKILL has a mandatory pre-exit verification step (re-query the issue, retry the mutation once, escalate to the PO with the `escalation` and `po-action` labels if still wrong) — see `agentic-shared/SKILL.md` §3 for the canonical terminal-state contract.
 
-### Flow 3: Resolving Test Issues
+### Workflow 8: Step 3b: Resolving Bugs
 
-**Trigger:** Test Team reports failures. Status set to "Resolving Test Issues."
+**Trigger:** Issue status set to `Step 3b: Resolving Bugs`. The Test Team sets this when Playwright tests fail or the build breaks.
 
 1. Dev Team reads the Test Failure Report from the issue's comments
-2. Creates a targeted fix plan
-3. Implements fixes, runs the full Review and Verify Loop
-4. Pushes changes to the existing branch
-5. Evaluates whether Test Instructions need updating
-6. Posts a comment noting what changed
-7. Status set to **"Ready for Testing"** (returns to Test Team)
+2. Re-loads context Levels 1–4 and counts the iteration (number of prior `## Test Failure Report` comments + 1)
+3. Posts a wave-revocation comment if the issue's wave had previously reached `Testing Complete` (the integration PR is now stale)
+4. Creates a targeted fix plan (NOT a full Implementation Plan)
+5. Implements fixes, runs the Review and Verify Loop
+6. Pushes changes to the existing branch
+7. Evaluates whether Test Instructions need updating; posts a comment noting what changed (or noting "Test Instructions unchanged — internal fix only")
+8. Status set to **`Step 3: Testing`** (returns to Test Team)
 
-**Iteration limit: 6 rounds.** If the issue reaches a 7th test failure cycle, the Dev Team escalates to the SCRUM Master with a summary of all attempts. The SCRUM Master notifies the PO for a human decision.
+**Iteration limit: 6 rounds.** If the Dev Team would be entering a 7th iteration, it escalates instead: posts a summary of all prior attempts and sets the issue to `Triage` for SCRUM Master / human intervention.
 
-### Flow 4: PO Rejection
+### Workflow 9: Step 3c: PO Feedback
 
-**Trigger:** PO rejects the work during integration branch review. Status changes from "Testing Complete" to "In Progress" with feedback.
+**Trigger:** Issue status set to `Step 3c: PO Feedback`. The PO sets this when reviewing a `Testing Complete` issue and rejecting it (with a feedback comment).
 
-1. Dev Team reads the PO's feedback comment
-2. Full rework cycle: implement fixes, run Review and Verify Loop, update Test Instructions
-3. Status set to **"Ready for Testing"** (returns to Test Team for re-verification)
+1. Dev Team re-loads context Levels 1–4 (PO rejection often surfaces because project-level intent drifted from the original plan)
+2. Dev Team reads the PO's feedback comment and the current Implementation Plan / Test Instructions / Test Results
+3. Full rework cycle: implement fixes, run Review and Verify Loop, push changes, update Test Instructions if behavior changed
+4. Status set to **`Step 3: Testing`** (returns to Test Team for re-verification)
+
+After the Test Team passes the re-test and sets `Testing Complete` again, the SCRUM Master's Workflow 2 (Project Update) re-engages the PO for review.
 
 ---
 
 ## 6. Phase 3: Testing
 
-**Trigger:** Issue status set to "Ready for Testing." Webhook routes to Test Team agent on a GCE VM.
+**Trigger:** Issue status set to `Step 3: Testing`. The receiver dispatches Workflow 7 on a Test Team GCE VM.
 
 ### Test Execution
 
 1. Test Team reads **Test Instructions** from the most recent comment on the issue
 2. Checks out the Dev Team's branch
-3. Builds the frontend (`npm install && npm run dev`) and backend if applicable
+3. Builds the frontend (`npm install && npm run dev`) and backend if applicable, with bounded health-check timeouts (90s backend / 60s frontend)
 4. **Mandatory:** All testing is done via Playwright browser automation — no CSS inspection, no code analysis
 5. Writes `test()` blocks for each test case (TC-1, TC-2, ...)
 6. Uses accessible selectors: `getByRole`, `getByText`, `getByLabel`, `getByTestId`
@@ -418,7 +430,7 @@ The Test Team posts a structured **Test Results** comment:
 - Acceptance criteria verification (checkbox mapping each AC to test case)
 - Observations: UX notes, performance, visual polish, accessibility
 
-Status set to **"Testing Complete"** and the issue is reassigned to the PO (the Project Lead, falling back to Ken if no Lead is set). This complements the existing `po-action` label flow — POs see incoming work via both their Linear "assigned to me" filter and the PO Action Queue saved view.
+Status set to **`Testing Complete`** and the issue is reassigned to the PO (the Project Lead, falling back to Ken if no Lead is set). The status change fires the SCRUM Master's Workflow 2 (Project Update), which checks whether the wave is complete and creates the integration PR if so. The receiver also adds the `po-action` label automatically — POs see incoming work via both their Linear "assigned to me" filter and the PO Action Queue saved view.
 
 ### Any Test Fails
 
@@ -429,7 +441,7 @@ The Test Team posts a structured **Test Failure Report**:
 - Blocked test cases with explanation
 - Acceptance criteria impact
 
-Status set to **"Resolving Test Issues"** (routes to both SCRUM Master and Dev Team).
+Status set to **`Step 3b: Resolving Bugs`**, which fires Workflow 8 on a single Dev Team VM. (Pre-refactor this status was a dual dispatch — both SCRUM Master and Dev Team. The wave-revocation responsibility moved into Workflow 8 so the receiver dispatches only one VM.)
 
 ### Authentication Handling
 
@@ -440,11 +452,11 @@ Firebase OAuth cannot be automated by Playwright. The Test Team:
 
 ### Error Conditions
 
-All of the following result in status "Resolving Test Issues" with a descriptive comment:
+All of the following result in status `Step 3b: Resolving Bugs` with a descriptive comment:
 - Test Instructions missing or incomplete
 - Branch not found
-- Build failure (npm install or npm run dev fails)
-- Dev server unreachable
+- Build failure (`npm install` or `npm run dev` fails)
+- Dev server unreachable within the bounded health-check window
 - Playwright runtime error
 
 ---
@@ -455,15 +467,15 @@ This phase begins when all issues in a wave reach "Testing Complete."
 
 ### Step 1: Wave Completion Detection
 
-On each "Testing Complete" event, the SCRUM Master:
-1. Re-queries all issues in the Cycle
+On each `Testing Complete` event, the receiver fires Workflow 2 (Project Update). The SCRUM Master:
+1. Re-queries the issue's Project
 2. Re-computes the dependency graph
-3. Identifies the completed issue's execution level (wave)
-4. Checks if ALL issues at that level are "Testing Complete," "Done," or "Cancelled"
+3. Identifies the completed issue's wave (`projectId`, `waveNumber`)
+4. Checks if EVERY issue in that wave is in `Testing Complete`, `Done`, or `Cancelled` (i.e. no issue is still in any active workflow status)
 
-If the wave is not yet complete, the SCRUM Master posts a comment listing remaining issues in the wave still in progress.
+If the wave is not yet complete, the SCRUM Master posts a comment listing the wave's still-active issues and exits without creating an integration branch.
 
-If the wave IS complete, the SCRUM Master runs the **Wave Completion and Integration** sub-flow.
+If the wave IS complete, the SCRUM Master proceeds to PR Preparation (Step 2).
 
 ### Step 2: PR Preparation (SCRUM Master)
 
@@ -480,20 +492,22 @@ The SCRUM Master prepares the wave's PR automatically. The approach depends on w
 
 **Multi-issue wave (2+ "Testing Complete" issues):**
 
+Waves are scoped to a single Linear Project — sibling Projects in the same Cycle never share an integration PR. The branch and PR naming reflect this scoping (see [Integration Branch Naming](#integration-branch-naming) below for the full convention).
+
 1. Ensures local repo is on `main` and up to date
-2. Creates a branch: `integration/cycle-{C}-wave-{N}`
+2. Creates a branch: `integration/cycle-{C}-{project-slug}-wave-{N}` (e.g. `integration/cycle-7-ah-prd-02-wave-1`)
 3. Merges each wave PR branch in dependency order:
    - If merge is clean: continue to next branch
    - If conflict is in a package-manager lockfile (`package-lock.json`, `poetry.lock`, `uv.lock`, etc.): accept either side, run the repo's install command to regenerate the lockfile, commit
    - If conflict is in other files: attempt resolution (keep both sides where independent). If successful, commit.
-   - **If conflict cannot be resolved:** abort, post a comment on the Cycle @mentioning the PO, and stop. See [Integration Branch Failure](#integration-branch-failure).
+   - **If conflict cannot be resolved:** abort, post a comment on the Project @mentioning the PO, and stop. See [Integration Branch Failure](#integration-branch-failure).
 4. Runs full verification using the build/test commands named in the component PRD:
    - Frontend: `cd <frontend-path> && <install> && <test> && <build>`
    - Backend (if changes exist): `cd <backend-path> && <install> && <test>`
    - **If verification fails:** post a comment with error output @mentioning the PO, and stop. See [Integration Branch Failure](#integration-branch-failure).
 5. Pushes the integration branch
 6. Creates an integration PR via `gh pr create` with:
-   - Title: `integration: Cycle {C} Wave {N} ({issue identifiers})`
+   - Title: `integration: {project-slug} Cycle {C} Wave {N} ({issue identifiers})` — e.g. `integration: ah-prd-02 Cycle 7 Wave 1 (AH-4, AH-5)`
    - Summary listing all wave issues, PR numbers, and test results
    - Conflict resolution notes (if any)
    - Verification results (test count, build output)
@@ -522,7 +536,7 @@ Before testing locally, the PO audits the agent work for each issue in the wave.
    - Are architecture decisions reasonable and consistent with the existing codebase?
    - Are risks identified and mitigated?
 
-2. **Test Instructions** (posted when issue moved to Ready for Testing)
+2. **Test Instructions** (posted by the Dev Team at the end of Workflow 6, just before the issue moves to `Step 3: Testing`)
    - Every acceptance criterion has at least one test case (TC-1, TC-2, ...) mapped to it
    - Steps are concrete and visual ("click the Submit button, verify the success toast appears") not vague ("check that it works")
    - Edge cases are covered: empty states, error states, boundary values, accessibility
@@ -567,7 +581,7 @@ The PO checks out the wave's branch and runs the application locally using the d
 # For single-issue waves:
 git checkout {branch}
 # For multi-issue waves:
-git checkout integration/cycle-{C}-wave-{N}
+git checkout integration/cycle-{C}-{project-slug}-wave-{N}
 
 # Run the frontend (and backend, if applicable) dev servers per the PRD's instructions.
 # Typical pattern: cd <frontend-path> && <install> && <dev-server>
@@ -592,102 +606,92 @@ The PO can refer to the Test Results posted on each issue in Linear for specific
    ```
 
 **If any issue fails PO review:**
-1. PO sets the failing issue(s) to **"In Progress"** with a comment describing the problem
+1. PO sets the failing issue(s) to **`Step 3c: PO Feedback`** with a comment describing the problem
 2. The integration PR is NOT merged — it is now stale
-3. The passing issues remain in "Testing Complete" and wait
-4. The failing issue re-enters the Dev Team pipeline (Flow 4: PO Rejection)
-5. After rework and re-testing, the issue returns to "Testing Complete"
-6. The SCRUM Master detects wave completion again and automatically creates a NEW integration branch
+3. The passing issues remain in `Testing Complete` and wait
+4. The failing issue re-enters the Dev Team pipeline via Workflow 9 (Step 3c: PO Feedback)
+5. After rework and re-testing, the issue returns to `Testing Complete`
+6. The SCRUM Master's Workflow 2 fires again and automatically creates a NEW integration branch (or marks the existing draft PR ready for single-issue waves)
 7. The PO re-tests the new integration branch
 
 ### What Happens After "Done"
 
-When the PO sets wave issues to "Done", the SCRUM Master's Done handler fires for each:
+When the PO sets a wave issue to `Done`, the receiver runs two checks in sequence:
 
-1. Closes the issue's individual draft PR if still open (with a comment noting the integration PR)
-2. Re-computes the dependency graph
-3. Identifies any Wave N+1 issues now fully unblocked (all blockers are "Done" or "Cancelled")
-4. Delegates newly unblocked issues to the Dev Team
-5. Checks if all Cycle issues are now "Done" or "Cancelled" — if yes, triggers Cycle Completion
+1. **`_check_and_complete_project`** — queries the project's other issues. If every one is now `Done` / `Cancelled`, the receiver calls `projectUpdate` to mark the Project `Completed`. Linear emits a `Project.update`→`completed` webhook that re-enters the receiver's cascade fan-out (`_compute_project_cascade_dispatches`), which dispatches Workflow 1 (Project Kickoff) for any newly-unblocked downstream Projects.
+
+2. **`_dispatch_wave_advance`** — only runs when the project did NOT just complete. Dispatches a SCRUM Master VM running Workflow 1 (Project Kickoff) in **wave-advance mode**, with `event_id = "wave-advance-{project_id}"` so multiple Done events on the same project (e.g. PO bulk-marking a wave's issues Done) collapse to one VM within the receiver's 15-minute dedup window. The agent's project-kickoff SKILL detects `status.type == "started"` in Step 1 and takes the wave-advance branch: re-computes the dependency graph, identifies any issue whose blockers are now all terminal but which has not been moved out of `Backlog` / `Triage`, and delegates each (sets `stateId = "Step 1: Planning"` + `assigneeId = Dev Team user`). If no issue is newly eligible, the agent posts a brief "no issues newly unblocked" comment and exits.
+
+This restores the pre-refactor wave-to-wave delegation behavior. **Cross-Project unblocking (cascade) and intra-Project Wave-N → Wave-N+1 delegation (wave-advance) are both fully automatic** — no human intervention required for either.
+
+If you want to manually re-evaluate a project's wave state (e.g., after editing a `blockedBy` relation outside the normal flow), see §15 — the receiver's `POST /kickoff` re-evaluates every Planned Project, and saving any `Done` issue's status re-triggers the wave-advance check for that project.
 
 ---
 
 ## 8. Phase 5: Project Completion Review
 
-**Trigger:** All issues in a Linear Project reach "Done" or "Cancelled." The SCRUM Master detects this on each "Done" event by querying the issue's `project` field and checking whether any sibling issues remain in an active status.
+**Trigger:** All issues in a Linear Project reach `Done` or `Cancelled`. The receiver detects this on each `Done` event via `_check_and_complete_project` and marks the Project `Completed` automatically — no agent involved. The PM is notified separately (see Step 2 below).
 
-This phase exists because the PO has merge authority per wave, so no single gate validates that the collection of issues in a Linear Project delivers the project-level acceptance criteria. The PM fills that gap by reviewing the completed Project as a whole before it is marked shipped.
+This phase exists because the PO has merge authority per wave, so no single gate validates that the collection of issues in a Linear Project delivers the project-level acceptance criteria. The PM fills that gap by reviewing the completed Project as a whole before it is accepted as shipped.
 
 ### Step 1: Project Completion Detection
 
-On each "Done" event, after the wave-completion check, the SCRUM Master:
-1. Reads the issue's Linear Project
-2. Queries all issues belonging to that Project (across any Cycles)
-3. Checks whether every issue is "Done" or "Cancelled"
-4. Skips if the Project is already marked "Completed"
+On each Issue.update with `state.name == "Done"`, the receiver's `_check_and_complete_project` helper:
+1. Queries Linear for every issue in the issue's Project
+2. Checks whether every issue is in a terminal `state.type` (`completed` or `canceled`)
+3. Short-circuits if the Project is already marked terminal
+4. If every issue is terminal and the Project is not, calls `projectUpdate` to set the Project `Completed`
 
-If all issues are terminal and the Project is not yet Completed, the SCRUM Master runs the **Project Completion Review** sub-flow.
+The cascade fan-out then runs against any downstream Projects (see §9). The PM hand-off is a separate concern, currently handled manually:
 
 ### Step 2: Hand-off to PM
 
-The SCRUM Master:
-1. Applies the `pm-action` label to the Linear Project
-2. Posts a project update on the Linear Project summarizing:
-   - All completed issues grouped by wave, with issue identifiers and titles
-   - The Linear Project's acceptance criteria, each annotated with the issue(s) that delivered it
-   - The `main` branch commit hash reflecting the final merged state
-   - An explicit ask: "PM, please verify project-level ACs and mark this Project Completed or open rework issues."
-3. @mentions the PM (resolved via `resolve-pm` — see §12 PM Assignment)
+The PM monitors the **PM Action Queue Linear View** (filter on `pm-action` label) for Projects awaiting review. As of the skill-and-status refactor, no agent automatically applies `pm-action` on Project completion — the SCRUM Master's pre-refactor "Done" handler that did this is retired. Until a replacement workflow is added, the PM either:
+
+- Watches the platform-level Linear Project for the cascade webhook's "Project X completed" event
+- Manually applies `pm-action` to a Project they want to review (or the PO does so on their behalf)
+
+The PM hand-off comment template (AC-to-issue mapping, `main` commit hash, explicit ask) lives in `linear-sprint-ops/SKILL.md` if a future agent needs to post it.
 
 ### Step 3: PM Review
 
 The PM:
 1. Reads the Linear Project description and acceptance criteria in full
-2. Walks the SCRUM Master's AC-to-issue mapping, spot-checking that delivered work actually satisfies each AC
+2. Walks the AC-to-issue mapping (build it manually from the Linear Project's issue list if no agent posted it), spot-checking that delivered work actually satisfies each AC
 3. Optionally runs a holistic smoke test of the completed feature on `main`
 4. Confirms the Project was appropriately scoped (8-12 issues; flag artificially narrow Projects)
 
 ### Step 4: Outcome
 
 **If all project-level ACs are satisfied:**
-1. PM marks the Linear Project as "Completed" (Linear sets `completedAt` automatically)
-2. The SCRUM Master detects the Project state change, removes the `pm-action` label, and posts a closing comment
-3. Proceeds to the Cycle Completion check (see §9)
+1. The Project is **already marked `Completed`** — the receiver advanced the state when the last issue went `Done`. The PM only needs to acknowledge the coverage; no manual status flip required.
+2. The PM removes the `pm-action` label (if applied) and posts a closing comment.
 
 **If gaps are found:**
-1. PM opens one or more new rework issues describing the missing behavior, assigns them to the next Cycle, and references the original Project
-2. PM does NOT mark the Linear Project as "Completed" — it remains in progress until the rework issues are Done
-3. New rework issues enter the pipeline from Scheduled (the standard entry point) and are picked up by the SCRUM Master on the next Sprint Planning pass
-4. When the rework issues are Done, Project Completion Detection re-fires and the PM re-reviews
+1. PM opens one or more new rework issues describing the missing behavior, assigns them to the relevant Project (or a new Project), and references the original Project.
+2. The original Project remains `Completed` — rework happens *against* a Completed Project rather than holding the Project open. "Completed with pending rework" is a valid intermediate state.
+3. New rework issues enter the pipeline via the normal flow (set to `Triage` for SCRUM Master validation, or directly to `Step 1: Planning` to delegate).
 
-**Rationale for new issues (not reopening merged ones):** Issues that have been merged to `main` remain "Done" as delivered — they did what was specified. New issues track the delta the PM identified. This keeps the Linear audit trail clean and avoids unwinding completed merges.
+**Rationale for new issues (not reopening merged ones):** Issues that have been merged to `main` remain `Done` as delivered — they did what was specified. New issues track the delta the PM identified. This keeps the Linear audit trail clean and avoids unwinding completed merges.
 
 ---
 
-## 9. Phase 6: Cycle Completion
+## 9. Cross-Component Dependency Resolution
 
-**Trigger:** All issues in the Cycle are "Done" or "Cancelled," and every Linear Project represented in the Cycle has been marked "Completed" by the PM.
+**Trigger:** The webhook receiver observes a `Project.update` webhook with `data.status.type` newly = `completed`. After the skill-and-status refactor, this most commonly comes from the receiver's own `_check_and_complete_project` mutation (every issue in the Project is now terminal); the PO can also flip a Project to `Completed` manually.
 
-### Pre-conditions
+The receiver itself fans out — there is no agent involved in cross-component coordination. When a Project completes:
 
-The SCRUM Master verifies:
-- No issues remain in "Testing Complete" (all must be "Done" via integration PR merge)
-- No issues remain in any active status ("In Progress," "In Review," "Testing," etc.)
-- Every Linear Project touched by the Cycle has been marked "Completed" by the PM (Project Completion Review has run and passed for each)
+1. The receiver queries Linear for downstream Projects (those whose `inverseRelations` reference the completed Project as a `dependency`).
+2. For each downstream candidate, the receiver checks whether **every** upstream blocker is now in `completed` or `canceled` state. Downstream Projects with at least one non-terminal upstream are skipped.
+3. The receiver also requires the downstream's own `status.type` to be `planned` — only Projects the PO has marked ready will be auto-kicked off.
+4. For each (downstream Project × mapped team), the receiver dispatches one SCRUM Master VM running Workflow 1 (Project Kickoff). The SCRUM Master re-validates the unblock state in its own flow as defense in depth.
 
-### Completion Steps
+The dispatch graph is therefore: `last issue in Project X goes Done` → receiver auto-completes Project X → Linear webhook → receiver queries Linear → receiver dispatches SCRUM Master(s) for downstream Projects → each downstream Project goes through its own Project Kickoff flow.
 
-1. Post a Cycle summary listing all completed issues, total estimate points delivered, and any cancellations with reasons
-2. Set the Cycle status to **"Complete"**
-3. This triggers the **Sprint Manager** to re-evaluate cross-component dependencies
-4. The Sprint Manager checks if any downstream Cycles are now unblocked and delegates them to their SCRUM Masters
+Linear Cycles continue to exist as a passive grouping artifact for velocity / calendar reporting, but agents do not react to Cycle webhooks. Readiness is determined entirely by `Project.status` and `ProjectRelation` data.
 
-### Cross-Component Dependencies
-
-The Sprint Manager maintains a cross-team dependency graph:
-- **Cycle A blocks Cycle B** if any issue in Cycle A blocks any issue in Cycle B (same team or different team)
-- A blocking Cycle must be "Complete" (or the specific blocking issues must be "Done") before the blocked Cycle can start
-- Cycle dates are informational, not gates — readiness is determined by actual blocker resolution
+For manual override (e.g., after the PO edits a Project's `blockedBy` relations and wants the receiver to re-evaluate without waiting for a webhook), `POST /kickoff` re-runs the unblock check across every Planned Project — see §15.
 
 ---
 
@@ -703,7 +707,7 @@ When live users arrive, the review model tightens. Concretely, at launch:
    - After PO local verification passes, the PO posts a "Ready for Release" comment on the integration PR and applies a new `release-ready` label
    - The PM performs a final check (reads the PO's approval, scans the PR diff, reviews Test Results) and either merges or rejects
 2. A new row is added to §12: **Final Release Approval — 4 business hours (PM)**.
-3. The Status Transitions table in §14 is updated so "Testing Complete → Done" is actioned by the PM, not the PO.
+3. The Status Transitions table in §14 is updated so `Testing Complete` → `Done` is actioned by the PM, not the PO.
 4. **Project Completion Review** (§8) remains in place as a secondary gate — it catches cross-wave integration gaps that per-wave reviews can miss.
 
 This section should be converted into the active workflow (above) at launch. Until then, treat it as a forward-looking note so the switchover is predictable.
@@ -715,128 +719,89 @@ This section should be converted into the active workflow (above) at launch. Unt
 ### Test Failure Loop (up to 6 iterations)
 
 When the Test Team reports failures:
-1. Status set to "Resolving Test Issues"
-2. Webhook triggers both SCRUM Master (handler) and Dev Team (Flow 3)
+1. Status set to `Step 3b: Resolving Bugs`
+2. Receiver dispatches Workflow 8 (Dev Team only — single VM, no SCRUM Master dual-dispatch)
 3. Dev Team reads the Failure Report, fixes the code, pushes changes
-4. Status returns to "Ready for Testing" — Test Team re-tests
+4. Status set back to `Step 3: Testing` — Test Team re-tests
 5. This loop can repeat up to **6 times**
-6. On the 7th failure: Dev Team escalates to SCRUM Master with a summary of all attempts. SCRUM Master notifies the PO with the `escalation` label for a human decision.
+6. On the 7th failure: the Dev Team posts a summary of all attempts and sets the issue to `Triage`. Workflow 3 (Issue Triage) fires the SCRUM Master, which @mentions the PO with the `escalation` label for a human decision.
 
 ### Integration Branch Failure
 
-The SCRUM Master may fail to create or verify the integration branch. Failure modes:
+The SCRUM Master may fail to create or verify the integration branch in Workflow 2. Failure modes:
 
 **Unresolvable merge conflict:**
 1. The SCRUM Master aborts the merge and posts a comment on each conflicting issue describing the conflict (file names, conflicting branches) and @mentions that issue's PO
 2. The PO decides how to resolve: request the Dev Team to rebase one of the branches, or manually resolve the conflict
-3. After resolution, the affected issue's branch is updated and the SCRUM Master retries integration on the next "Testing Complete" event (or the PO triggers a re-evaluation)
+3. After resolution, save `Testing Complete` on a wave issue (or move out and back) to re-fire Workflow 2
 
 **Test or build failure on the integration branch:**
 1. The SCRUM Master posts a comment on each wave issue with the error output and @mentions that issue's PO
 2. The integration branch is NOT pushed and no PR is created
-3. The PO investigates: the failure likely stems from an interaction between PRs that passed individually. The PO sets the responsible issue to "In Progress" with a description of the integration failure.
-4. The Dev Team fixes the issue, Test Team re-verifies, and the SCRUM Master retries integration.
+3. The PO investigates: the failure likely stems from an interaction between PRs that passed individually. The PO sets the responsible issue to `Step 3c: PO Feedback` with a description of the integration failure.
+4. The Dev Team fixes the issue (Workflow 9), Test Team re-verifies (Workflow 7), and Workflow 2 re-fires when the issue returns to `Testing Complete`.
 
-In both cases, the SCRUM Master adds the `escalation` label to the Cycle for visibility.
+In both cases, the SCRUM Master adds the `escalation` label to the Project for visibility.
 
 ### PO Rejection During Integration Review
 
 1. PO identifies problem(s) during local testing of the integration branch
-2. PO sets the failing issue(s) to "In Progress" with feedback
-3. SCRUM Master marks the issue as unresolved and notes the integration branch is stale
-4. Dev Team reads PO feedback and begins rework (Flow 4)
-5. After rework: Dev Team submits → Test Team re-tests → returns to "Testing Complete"
-6. The SCRUM Master detects wave completion again and automatically creates a new integration branch
-7. PO re-tests the new integration branch
-8. Other passing issues in the wave remain in "Testing Complete" and wait
+2. PO sets the failing issue(s) to `Step 3c: PO Feedback` with a feedback comment
+3. The receiver fires Workflow 9 (Dev Team)
+4. After rework: Dev Team sets `Step 3: Testing` → Test Team re-tests → returns to `Testing Complete`
+5. Workflow 2 re-fires and creates a new integration branch (or marks the existing draft PR ready for single-issue waves)
+6. PO re-tests the new integration branch
+7. Other passing issues in the wave remain in `Testing Complete` and wait
 
 ### PM Rejection at Project Completion
 
 1. PM reviews the Linear Project's completed issues against project-level acceptance criteria and finds one or more gaps
-2. PM opens one or more new rework issues in the next Cycle describing the missing behavior, and links them to the original Project
-3. PM does NOT mark the Linear Project as "Completed" — it remains in its current state (typically Started) until rework is delivered
-4. The SCRUM Master does not remove the `pm-action` label yet
-5. Rework issues enter the pipeline from Scheduled and follow the standard Flow 1 → Flow 2 → Testing → Wave Integration
-6. When all rework issues are Done, Project Completion Detection re-fires and the PM re-reviews
-7. Merged-to-`main` work is NOT rolled back; the PM's rework issues add the missing behavior instead
+2. PM opens one or more new rework issues describing the missing behavior, attaching them to the relevant Project
+3. The original Linear Project is already marked `Completed` (the receiver advanced the state via `_check_and_complete_project` when the last issue went `Done`). PM does NOT roll the state back; rework issues add the missing behavior to an already-Completed Project.
+4. Rework issues enter the pipeline via the standard flow: PM (or PO) sets each rework issue to `Triage` (fires Workflow 3 — SCRUM Master validates, attaches to a project, delegates) or directly to `Step 1: Planning` (fires Workflow 4 — Dev Team begins planning immediately).
+5. When the rework issues are `Done`, the receiver re-runs `_check_and_complete_project`. Because the Project is already `Completed`, the helper short-circuits at the "already terminal" check and exits without re-flipping state.
+6. PM re-reviews when the rework is shipped.
+7. Merged-to-`main` work is NOT rolled back; the rework issues add the missing behavior instead.
 
 ### Circular Dependencies
 
-If the SCRUM Master detects a circular dependency during graph computation:
-1. Posts a comment on ALL affected issues listing the circular chain (e.g., "FUN-4 -> FUN-6 -> FUN-8 -> FUN-4")
+If the SCRUM Master detects a circular dependency during graph computation (Workflow 1 or Workflow 3):
+1. Posts a comment on ALL affected issues listing the circular chain (e.g., "FUN-4 → FUN-6 → FUN-8 → FUN-4")
 2. @mentions each issue's PO on its respective comment (affected issues may belong to different Projects with different Leads)
 3. Adds the `escalation` label to all affected issues
 4. Does NOT delegate any issues in the circular group
 5. Issues outside the circle proceed normally
 6. When the PO breaks the cycle (by removing or reversing a blocking relation), the next status change event triggers a re-computation of the graph
 
-The Sprint Manager performs the same check at the Cycle level for cross-component circular dependencies.
+Cross-component circular dependencies (Project A blocks Project B blocks Project A) are detected during Project Kickoff via Linear's `inverseRelations` graph; the receiver-side cascade also no-ops on a Project whose blockers are still active, so a circular chain naturally stalls until the PO breaks it.
 
 ### Stale Agent Sessions
 
-If a Dev Team agent appears unresponsive (issue stuck in "Planning" for more than 2 hours):
-1. SCRUM Master posts a comment on the issue noting the stale session
-2. Adds the `escalation` label
-3. Attempts re-delegation to the Dev Team agent (creates a new GCE VM session)
-4. If re-delegation also stalls: posts an escalation comment @mentioning the issue's PO and backup PO (deduped to one @mention if they resolve to the same user)
+If a Dev Team agent appears unresponsive (issue stuck in `Step 1: Planning` for more than 2 hours, with no Implementation Plan comment posted):
+1. The PO sets the issue back to `Triage` (fires Workflow 3) — the SCRUM Master will re-validate and re-delegate, which spawns a fresh Dev Team session
+2. Or the PO sets the issue to `Step 1: Planning` again (saves the same status); Linear emits a fresh webhook IF the status was changed via a status-change mutation (in practice, save the status by selecting it again from the dropdown)
+3. If re-delegation also stalls, the PO @mentions the issue's PO and backup PO (deduped to one @mention if they resolve to the same user) with the `escalation` label
 
-### Stalled In Review (Dev Team Flow 2 silent failure)
-
-If an issue sits in `In Review` status for more than 30 minutes with no recent activity, a Cloud Scheduler-driven watchdog (every 15 minutes) detects it and dispatches the SCRUM Master in **Stalled-Issue Triage** mode. The watchdog exists because the most common Flow 2 failure mode is the Dev Team agent setting `In Review` instead of `Ready for Testing` as its terminal state — Linear returns `success: true` for the mutation, so the failure is invisible to the agent's own exit handler and the issue stalls silently (`In Review` is not in the webhook routing table).
-
-The webhook receiver pre-filters cheaply (status + `updatedAt`) and only dispatches a SCRUM Master VM (per affected team) when at least one issue is genuinely stalled. Most ticks find nothing.
-
-The SCRUM Master classifies each candidate into one of three buckets:
-
-- **Bucket A — Likely Dev Team Flow 2 terminal-state failure.** Test Instructions are present on the issue and a PR is attached. The SCRUM Master applies `escalation` + `po-action`, @mentions the PO with a diagnostic comment, and recommends the PO verify the PR and promote the issue to `Ready for Testing` themselves. **No auto-promotion** — the PO confirms PR health before flipping state.
-- **Bucket B — Mid-Flow-2 stall.** The issue is in `In Review` but no Test Instructions exist. The Dev Team session likely died during the review-and-verify loop. The SCRUM Master applies `escalation` + `po-action` and asks the PO to inspect Cloud Logging for the most recent Dev Team VM and either re-trigger the Dev Team or move the issue back to `In Progress`.
-- **Bucket C — Active rework (false positive).** The most recent unresolved comment is from the PO (rejection feedback) or the Test Team (Test Failure Report) and the issue is iterating normally. **The SCRUM Master skips silently** — no labels, no comment. Repeated benign comments on an actively-iterating issue add noise.
-
-After processing every candidate, the SCRUM Master posts a single Flow 3 summary on the team's most recent active Cycle showing per-issue bucket assignments and actions taken.
-
-### Manual In Progress transition does not fire Flow 2
-
-The webhook receiver only dispatches the Dev Team's Flow 2 (Implementation) when an issue moves to **In Progress** *from* one of three specific states: `Awaiting Review` (PO approved the plan), `Planning` (Dev Team auto-approved its own plan), or `Testing Complete` (PO rejected during integration review — fires Flow 4, not Flow 2). All other transitions to In Progress are logged as "self-triggered by Dev Team mid-flow" and **silently ignored**.
-
-This protects the pipeline from spawning a second Dev Team VM every time the Dev Team sets its own status to In Progress mid-flow (e.g. while resolving test failures). But it also means **manually moving an issue to In Progress from any other state will produce no agent action** — the issue will simply sit there.
-
-Common ways to trip this:
-
-- Moving an issue from `Backlog` or `Awaiting Assignment` directly to `In Progress` to "kick the Dev Team into gear." The receiver ignores it.
-- The issue is already In Progress when the Dev Team posts its plan (e.g. because the SCRUM Master moved it through In Progress earlier as part of validation). When the Dev Team's auto-proceed handoff *should* trigger a `Planning → In Progress` transition, there is no transition to fire — the status doesn't change, no webhook fires, no Flow 2 VM is created.
-
-**Recovery.** Move the issue to `Planning` first, then to `In Progress`. That gives the receiver a valid `planning → In Progress` transition and dispatches a fresh Dev Team Flow 2 session.
-
-### Incomplete Issues at Sprint Start
-
-If an issue fails `validate-issue-completeness` during Sprint Planning:
-1. Issue set to "Triage" with a comment listing missing fields
-2. PO fills in the gaps and sets the issue back to "Scheduled"
-3. Webhook routes the "Scheduled" (from Triage) event to the SCRUM Master
-4. SCRUM Master re-validates the issue:
-   - If it passes: set to "Awaiting Assignment," check blockers, delegate if ready
-   - If it still fails: send back to Triage (loop continues)
-5. One incomplete issue does NOT block the rest of the sprint — other issues proceed
+There is no scheduled watchdog for stale Dev Team sessions post-refactor. The pre-refactor `In Review` watchdog covered a different failure mode (wrong-terminal-state on Workflow 2 exit) that no longer exists — the terminal-state verification contract in `agentic-shared/SKILL.md` §3 catches wrong-state writes inside the agent before exit.
 
 ### Wave Revocation (Issue Returns from Testing Complete)
 
-If an issue that was "Testing Complete" returns to "Resolving Test Issues" (or is rejected by PO back to "In Progress"):
+If an issue that was `Testing Complete` is moved back to an active status (typically `Step 3c: PO Feedback` from a PO rejection, or `Step 3b: Resolving Bugs` from a re-test failure):
 1. The wave completion is revoked — it is no longer complete even if it was previously
 2. Any integration branch that was created for that wave is now stale
-3. The SCRUM Master posts a comment noting the revocation
-4. After the issue is fixed and re-tested, the wave completion check re-triggers when it returns to "Testing Complete"
+3. Workflow 8 (the Dev Team agent handling Step 3b) explicitly checks for this and posts a wave-revocation comment if the rest of the wave was already at `Testing Complete`. Workflow 9 follows the same pattern via the Dev Team's standard rework flow.
+4. After the issue is fixed and re-tested, Workflow 2 re-fires when the issue returns to `Testing Complete`
 
 ### Mid-Sprint Issue Addition
 
-When a new issue is added to the Cycle mid-sprint:
-1. SCRUM Master validates the issue using `validate-issue-completeness`
-2. Re-computes the dependency graph with the new issue
-3. If the issue has no unresolved blockers and passes validation: delegate immediately
-4. Posts a comment noting the mid-sprint addition and any impact on the dependency graph
+When a new issue is added mid-sprint that needs SCRUM Master attention:
+1. The PO (or whoever creates the issue) sets it to `Triage`
+2. Workflow 3 fires — the SCRUM Master validates, attaches it to the right Project (if not already), re-computes the dependency graph, and either delegates to the Dev Team (if all blockers terminal) or leaves it in `Triage` until upstream blockers resolve
+3. Posts a comment summarizing the validation result
 
 ### Duplicate Webhook Events
 
-Before performing any action, agents verify the issue is not already in the target state. If the issue has already been processed (e.g., already delegated, already in the expected status), the agent skips gracefully and logs. Duplicate events are not treated as errors.
+Before performing any action, agents verify the issue is not already in the target state. If the issue has already been processed (e.g., already delegated, already in the expected status), the agent skips gracefully and logs. The receiver also has a 15-minute dedup window keyed on `agent_type | event_id | prompt-hash` that suppresses duplicate VM dispatches. Duplicate events are not treated as errors.
 
 ---
 
@@ -857,7 +822,7 @@ The PO for each issue is the **Linear Project Lead** on the issue's Project — 
 
 - If an issue has no Project, or the Project has no Lead set, the PO defaults to Ken (same as the backup).
 - When the PO and backup PO resolve to the same user (Ken is the Lead), escalation comments @mention Ken once — not twice.
-- For **cycle-level notifications** (Sprint Kickoff, Cycle Review, cross-component escalations), the SCRUM Master/Sprint Manager @mentions the deduplicated set of Project Leads across issues in the cycle. The workspace fallback is NOT appended to cycle-level notifications — only the distinct Leads are addressed.
+- For **Project-level notifications** (Project Kickoff summary, Project Completion review, cross-component escalations), the SCRUM Master @mentions the Project Lead. The workspace fallback is NOT appended to Project-level notifications — only the Lead is addressed.
 
 Resolution is implemented via `resolve-po-for-issue` and `resolve-pos-for-cycle` in the `linear-sprint-ops` skill (operations 13 and 14).
 
@@ -886,9 +851,9 @@ Four mechanisms give Product Owners and the Product Manager real-time visibility
 A saved Linear View filtered on the `po-action` label provides an always-current list of issues requiring PO action. This is the PO's primary "inbox."
 
 **How it works:**
-- Agents apply the `po-action` label when issues need PO input (wave completion, escalations, integration failures, circular dependencies)
-- The webhook receiver automatically applies `po-action` when issues enter "Awaiting Review" or "Triage" status
-- The webhook receiver automatically removes `po-action` when issues leave "Awaiting Review," "Triage," or "Testing Complete" status
+- Agents apply the `po-action` label when issues need PO input (escalations, integration failures, circular dependencies)
+- The webhook receiver automatically applies `po-action` when issues enter `Triage` or `Testing Complete` status
+- The webhook receiver automatically removes `po-action` (best-effort, idempotent) on every other status transition
 - The saved View sorts by priority and groups by status
 
 **PO workflow:** Check this view to see everything waiting on you. Click into any issue for the full context (Implementation Plan, Test Results, etc.).
@@ -911,25 +876,22 @@ Two Linear Documents are automatically maintained by agents and give the PO a na
 
 **Component Dashboard** — maintained by the SCRUM Master, attached to the component's Project. Shows:
 - Action queue with dependency impact ("merging this PR unblocks Wave 1")
-- Wave-by-wave progress table for the active Cycle
+- Wave-by-wave progress table for the active Project
 - Dependency chain showing what PO actions advance the pipeline
 
-**Platform Dashboard** — maintained by the Sprint Manager, attached to the platform-level Project. Shows:
-- Consolidated action queue across all components
-- Per-component health and progress summaries
-- Cross-component dependencies and blocked Cycles
-
-Both documents are rewritten on every agent trigger (status changes, wave completions, cycle events), so they are at most one event stale. POs should bookmark these documents for quick access.
+The component dashboard is rewritten on every SCRUM Master trigger (status changes, wave completions, Project lifecycle events), so it is at most one event stale. POs should bookmark this document for quick access. The platform-level rollup is delivered by the Daily Briefing (next section); there is no continuously-rewritten platform dashboard document.
 
 ### Daily Briefing (Morning Push Notification)
 
-Every weekday at 9:00 AM ET, Cloud Scheduler triggers the Sprint Manager to post a project status update on the platform Project with a health indicator:
+Every weekday at 9:00 AM ET, Cloud Scheduler invokes the webhook receiver's `/daily-summary` endpoint. The receiver itself (no agent VM, no LLM) queries Linear, computes a deterministic health indicator, and posts a project update directly on the platform-level Project (`PLATFORM_PROJECT_ID` env var):
 
-- **On Track** (green): No PO items pending > 2 business hours, no escalations
-- **At Risk** (yellow): PO items pending > 2 business hours, or issues in Triage
-- **Off Track** (red): Active escalation, integration failure, or circular dependency
+- **On Track** (green): No PO items pending > 48h on `Step 1: Planning`, no `Step 2: Implementing` > 5 days, no escalations
+- **At Risk** (yellow): PO items aging past those thresholds, or any issue in `Triage`
+- **Off Track** (red): Active escalation label on any issue
 
-The briefing includes the PO action queue, a component summary table, cross-component dependencies, and SLA status. It surfaces automatically in Slack via Linear Asks.
+The briefing includes the PO action queue (sorted escalations-first, then oldest-first) and a per-Project summary table. The implementation is `agents/webhook-receiver/daily_briefing.py`. Behavior is fail-soft: a missing `PLATFORM_PROJECT_ID` or a transient Linear failure logs and returns 200 to Cloud Scheduler so it does not retry-storm.
+
+> **Note:** the daily-briefing health classifier still references some pre-refactor status names internally and is being updated incrementally. Its output is a useful general signal but the specific aging thresholds may not yet match the new status names exactly.
 
 ### Configuration
 
@@ -942,18 +904,18 @@ The briefing includes the PO action queue, a component summary table, cross-comp
 **Infrastructure (Terraform variables / locals):**
 - `po_action_label_id` — the Linear ID of the `po-action` label (from Linear workspace settings)
 - `pm_action_label_id` — the Linear ID of the `pm-action` label
-- `state_ids_by_team` (Terraform `local` in `infra/terraform/agents.tf`) — JSON-encoded map from `team_id` → `{awaiting_review, testing_complete, planning, triage, backlog}` state IDs. Drives all state-ID-dependent webhook routing (PO-approval routing, `po-action` labeling, Scheduled-from-Triage / Backlog detection). Validated at Cloud Function import time against `TEAM_REPO_MAP` — every mapped team must have an entry with all five state IDs, or the function fails to boot. To onboard a new team, add the team to `TEAM_REPO_MAP` + `TEAM_COMPONENT_MAP` AND its state IDs to `local.state_ids_by_team`, in the same change.
+- Onboarding a new team: add the team to `TEAM_REPO_MAP` + `TEAM_COMPONENT_MAP` in `agents/webhook-receiver/main.py`, in the same commit. (After the skill-and-status refactor, no per-team state IDs are required — routing matches on Linear status names verbatim.)
 
 **Infrastructure (GCP secrets in `fun-e-business`):**
-- `linear-token-webhook-receiver` — Linear API token for the webhook receiver (po-action label management)
-- `linear-token-{agent-type}` — per-agent Linear API tokens (sprint-manager, scrum-master, dev-team, test-team)
+- `linear-token-webhook-receiver` — Linear API token for the webhook receiver (po-action label management, project auto-completion)
+- `linear-token-{agent-type}` — per-agent Linear API tokens (scrum-master, dev-team, test-team)
 - `claude-code-api-key` — Anthropic API key for the Claude Code CLI on agent VMs
 - `github-pat-ken-e-ai` — fine-grained PAT for cloning + pushing to `KEN-E-AI/*` repos
 - `github-pat-dive-team` — fine-grained PAT for cloning + pushing to `Dive-Team/*` repos
 
 The agent VM service account (`fun-e-agent-vm@fun-e-business`) has a project-level `roles/secretmanager.secretAccessor` grant — adding a new secret to the project automatically gives the VMs read access; no per-secret IAM grant is needed.
 
-The webhook receiver uses the state IDs to automatically add/remove the `po-action` label on issue status transitions. The SCRUM Master applies `pm-action` to Linear Projects on Project Completion Detection (see §8). No Linear Automation rules are needed.
+The webhook receiver matches on status names alone to add/remove the `po-action` label and to dispatch workflows. No Linear Automation rules are needed.
 
 ---
 
@@ -961,78 +923,66 @@ The webhook receiver uses the state IDs to automatically add/remove the `po-acti
 
 ### Status Transitions
 
+The 10-status workflow plus Cancelled. Canonical reference: `.claude/skills/tools/agentic-shared/SKILL.md` §1.
+
 | From | To | Triggered By | Notes |
 |------|----|-------------|-------|
-| (new) | Scheduled | PO assigns to Cycle | Entry point |
-| Scheduled | Awaiting Assignment | SCRUM Master | After validation passes |
-| Scheduled | Triage | SCRUM Master | Validation fails (missing fields) |
-| Triage | Scheduled | PO | After filling gaps |
-| Awaiting Assignment | Planning | Dev Team | Begins work |
-| Planning | Awaiting Review | Dev Team | Implementation Plan posted |
-| Awaiting Review | In Progress | PO | Approves plan |
-| Awaiting Review | Planning | PO | Requests changes |
-| In Progress | In Review | Dev Team | Code complete, review starting |
-| In Review | Ready for Testing | Dev Team | Review passes, Test Instructions posted |
-| Ready for Testing | Testing | Test Team | Begins test execution |
-| Testing | Testing Complete | Test Team | All tests pass; issue reassigned to PO (Project Lead, fallback to Ken) |
-| Testing | Resolving Test Issues | Test Team | Any test fails |
-| Resolving Test Issues | In Progress | Dev Team | Begins fixing |
+| (new) | Backlog | Linear default | Entry point |
+| Backlog | Triage | PO or SCRUM Master | When SCRUM Master needs to validate or PO flags gaps |
+| Triage | Step 1: Planning | SCRUM Master Workflow 3 | Validation passed, blockers terminal — SCRUM Master sets both `stateId` (Step 1: Planning) and `assigneeId` (Dev Team user) in one `issueUpdate` mutation; the status-change webhook fires Workflow 4 |
+| Triage | (no change) | SCRUM Master Workflow 3 | Validation failed, no project, or blockers still active — issue waits in Triage |
+| Step 1: Planning | (no change) | Dev Team Workflow 4 (Step 1) | Agent posts Implementation Plan as a Linear comment; issue stays in Step 1: Planning awaiting PO action (Path B) |
+| Step 1: Planning | Step 2: Implementing | Dev Team Workflow 4 Path A | Auto-approve — no blocking questions |
+| Step 1: Planning | Step 1b: Updating Plan | PO | Requests plan revisions |
+| Step 1: Planning | Step 2: Implementing | PO | Approves the plan |
+| Step 1b: Updating Plan | Step 1: Planning | Dev Team Workflow 5 | Revised plan still has blocking questions — back to PO |
+| Step 1b: Updating Plan | Step 2: Implementing | Dev Team Workflow 5 | Revised plan auto-approves |
+| Step 2: Implementing | Step 3: Testing | Dev Team Workflow 6 | Implementation done, draft PR opened, Test Instructions posted |
+| Step 3: Testing | Testing Complete | Test Team Workflow 7 | All Playwright tests pass; issue reassigned to PO |
+| Step 3: Testing | Step 3b: Resolving Bugs | Test Team Workflow 7 | Any test fails, build fails, or Test Instructions missing |
+| Step 3b: Resolving Bugs | Step 3: Testing | Dev Team Workflow 8 | Fix complete, ready for re-test |
+| Step 3b: Resolving Bugs | Triage | Dev Team Workflow 8 | 6-iteration cap exceeded — escalate for human intervention |
+| Step 3c: PO Feedback | Step 3: Testing | Dev Team Workflow 9 | Rework complete, ready for re-test |
 | Testing Complete | Done | PO | Merges integration PR, approves in Linear |
-| Testing Complete | In Progress | PO | Rejects during integration review |
-| Done | (terminal) | - | SCRUM Master checks for wave, project, and cycle completion |
+| Testing Complete | Step 3c: PO Feedback | PO | Rejects during integration review (with feedback comment) |
+| Done | (terminal) | - | Receiver auto-completes Project when every issue is terminal |
 | Cancelled | (terminal) | PO | Issue removed from scope |
 
 ### Linear Project State Transitions
 
 | From | To | Triggered By | Notes |
 |------|----|-------------|-------|
-| Started | (awaiting PM review) | SCRUM Master | All issues "Done" or "Cancelled" — applies `pm-action` label, posts hand-off comment |
-| Started | Completed | PM | Project-level ACs verified, Linear sets `completedAt` automatically |
-| Started | Started (with rework) | PM | Gaps found — PM opens new rework issues in next Cycle, Project stays Started until re-review |
+| Planned | Started | SCRUM Master Workflow 1 | First wave delegated; SCRUM Master calls `update-project-state` because Linear does not auto-advance |
+| Started | Completed | Receiver (`_check_and_complete_project`) | Every child issue is `Done` / `Cancelled`; the receiver calls `projectUpdate` automatically. PM review of project-level ACs is a separate manual check (see §8) — finding gaps results in new rework issues, not a state rollback. |
 
 ### Webhook Routing
 
-The dispatch logic lives entirely in `route_event()` and `handle_webhook()` in `agents/webhook-receiver/main.py`. Every row below maps to a code branch in one of those two functions.
+The dispatch logic lives in `ISSUE_STATUS_ROUTES` (one rule per status, identity-matched on `new_status`) and `PROJECT_ROUTES` (project-kickoff) in `agents/webhook-receiver/main.py`, plus three dynamic handlers: `_compute_project_cascade_dispatches` (cross-project completion cascade), `_check_and_complete_project` (project auto-completion when all issues are terminal), and `_dispatch_wave_advance` (intra-project Wave-N → Wave-N+1 delegation when the project is still active). Routing is **identity-based on `new_status`** — there are no `from_state_key`, `require_assignee`, or `extra_check` predicates, and assignment changes don't route to anything (every workflow trigger is a status change).
 
-| Event | Condition | Routes To |
-|-------|-----------|-----------|
-| `Cycle.create` | Cycle is currently active (now is between `startsAt` and `endsAt`, no `completedAt`) | Sprint Manager (Flow 2: Initial Kickoff) |
-| `Cycle.update` | `startsAt` newly changed **AND** cycle is currently active | Sprint Manager (Flow 2: Initial Kickoff) |
-| `Cycle.update` | `completedAt` newly set (was previously null) | Sprint Manager (Flow 1: Cycle Completion Cascade) |
-| Issue assignee changed | New assignee = SCRUM Master user | SCRUM Master (Flow 1: Sprint Planning) |
-| Issue assignee changed | New assignee = Dev Team user | Dev Team (Flow 1: Planning) |
-| Status → "Planning" | Previous = Awaiting Review **AND** assignee = Dev Team | Dev Team (plan revision after PO feedback) |
-| Status → "In Progress" | Previous = Awaiting Review **AND** assignee = Dev Team | Dev Team (Flow 2: Implementation, after PO approval) |
-| Status → "In Progress" | Previous = Planning **AND** assignee = Dev Team | Dev Team (Flow 2: Implementation, auto-approved) |
-| Status → "In Progress" | Previous = Testing Complete **AND** assignee = Dev Team | Dev Team (Flow 4: PO Rejection) |
-| Status → "In Progress" | **Any other previous state** | **No dispatch — logged and ignored.** See §11 *Manual In Progress transition does not fire Flow 2*. |
-| Status → "Ready for Testing" | Any | Test Team |
-| Status → "Resolving Test Issues" | Any | SCRUM Master + Dev Team (dual dispatch) |
-| Status → "Testing Complete" | Any | SCRUM Master (Flow 2: Ongoing — Testing Complete handler) |
-| Status → "Done" | Any | SCRUM Master (Wave / Project / Cycle Completion Detection) |
-| Status → "Scheduled" | Previous = Triage | SCRUM Master (Returned from Triage handler) |
-| Status → "Scheduled" | Previous = Backlog **AND** the issue's Cycle is currently started | SCRUM Master (Mid-Sprint Addition handler) |
-| Status → "Scheduled" | Previous = Backlog **AND** the issue's Cycle is **not** started | **No dispatch — logged and ignored.** Sprint Manager will pick the issue up at Initial Kickoff when the cycle starts. |
-| `POST /kickoff` (no signature check) | Any | Sprint Manager (manual kickoff — see §15) |
-| Cloud Scheduler (9 AM ET weekdays) | `POST /daily-summary` | Sprint Manager (Daily Briefing) |
-| Cloud Scheduler (every 15 min) | `POST /check-stalled-in-review` | SCRUM Master (per affected team) — Stalled-Issue Triage (see §11) |
+Every row below maps to a named rule. Grep `name="<rule-name>"` in `main.py` to jump to source. All routes dispatch on Sonnet 4.6 unless **[Opus 1M]** or **[DeepSeek]** is noted. (DeepSeek V4-Pro is served via DeepInfra → per-VM LiteLLM proxy at `127.0.0.1:8889`; see `agents/litellm-proxy/README.md` and `docs/ops/deepseek-v4-pro-swap.md` for the Sonnet→DeepSeek migration plan.)
 
-The SCRUM Master's "Done" handler runs **Wave Completion Detection** (§7), **Project Completion Detection** (§8), and **Cycle Completion Detection** (§9) in order. No separate webhook is registered for Project or Cycle completion detection — they are sub-flows of the Done handler. Linear `Project` events are **not** processed by the receiver at all; the PM marking a Project Completed has no agent-side effect today, and the `pm-action` label on a completed Project must be removed by hand.
+| Event | Condition | Routes To | Rule |
+|-------|-----------|-----------|------|
+| `Project.update` | `data.status.type` newly = `planned` (i.e. `statusId` changed) | SCRUM Master Workflow 1: Project Kickoff (`workflows/project-kickoff/SKILL.md`) — one dispatch per mapped `data.teamIds[*]` | `project-kickoff` |
+| `Project.update` | `data.status.type` newly = `completed` (i.e. `statusId` changed) | **Receiver-side cascade fan-out** (`_compute_project_cascade_dispatches`): queries Linear for downstream Projects newly unblocked, dispatches Workflow 1 for each. The completing Project itself triggers no agent dispatch. | (no static rule — receiver-internal) |
+| Status → `Testing Complete` | Any | SCRUM Master Workflow 2: Project Update (wave PR creation / single-issue PR ready) | `project-update` |
+| Status → `Triage` | Any | SCRUM Master Workflow 3: Issue Triage | `issue-triage` |
+| Status → `Step 1: Planning` | Any | Dev Team Workflow 4: Step 1: Planning **[Opus 1M]** | `step-1-planning` |
+| Status → `Step 1b: Updating Plan` | Any | Dev Team Workflow 5 (revise plan after PO feedback) **[Opus 1M]** | `step-1b-updating-plan` |
+| Status → `Step 2: Implementing` | Any | Dev Team Workflow 6: Step 2: Implementing | `step-2-implementing` |
+| Status → `Step 3: Testing` | Any | Test Team Workflow 7: Step 3: Testing **[DeepSeek]** | `step-3-testing` |
+| Status → `Step 3b: Resolving Bugs` | Any | Dev Team Workflow 8: Step 3b: Resolving Bugs | `step-3b-resolving-test-issues` |
+| Status → `Step 3c: PO Feedback` | Any | Dev Team Workflow 9: Step 3c: PO Feedback | `step-3c-addressing-po-concerns` |
+| Status → `Done` | Any | **Receiver-side, two-pass:** (1) `_check_and_complete_project` — if every issue in the Project is now terminal, mark the Project Completed (the resulting `Project.update`→`completed` webhook re-enters the cascade above; no agent VM). (2) If the project is still active, `_dispatch_wave_advance` dispatches one SCRUM Master VM running Workflow 1 (Project Kickoff) in wave-advance mode, deduped per project — re-computes the dependency graph and delegates any Wave-N+1 issues whose blockers just cleared. | (no static rule — receiver-internal) |
+| Status → `Backlog` / `Cancelled` / `Scheduled` | Any | **No dispatch.** None of these is a workflow entry point. Scheduled is a Linear platform-imposed status that can't be deleted. | (no match — INFO log) |
+| `POST /kickoff` (no signature check) | Any | Receiver-internal: re-evaluates every `planned` Project and dispatches Workflow 1 for each whose blockedBy upstreams are all terminal — see §15 | `handle_webhook` |
+| Cloud Scheduler (9 AM ET weekdays) | `POST /daily-summary` | **Receiver-generated Daily Briefing** (templated, no agent VM — see `agents/webhook-receiver/daily_briefing.py`). | `handle_webhook` |
 
-Linear webhook events outside this table (`Issue.create`, `Comment.*`, `IssueLabel.*`, `Project.*`, etc.) are accepted, logged as "Event ignored," and produce no dispatch.
-
-#### Why some transitions are silently ignored
-
-The two "no dispatch — logged and ignored" rows above are deliberate, not bugs. They protect against feedback loops:
-
-- **In Progress from any state other than Awaiting Review / Planning / Testing Complete.** When the Dev Team sets an issue to In Progress as part of its own flow (e.g. transitioning from `Resolving Test Issues` to begin a fix), we don't want that to spawn another Dev Team VM. The receiver only fires Flow 2 / Flow 4 from the three "external" transitions where a fresh agent session is the right response.
-- **Backlog → Scheduled when the cycle is not yet started.** The Sprint Manager's Initial Kickoff will sweep the cycle when the PO starts it; dispatching now would race the Sprint Manager and produce duplicate work.
-
-Both behaviors have implications for manual triggering — see §15.
+Linear webhook events outside this table (`Issue.create`, `Comment.*`, `IssueLabel.*`, `Project.create`, `Project.delete`, `Project.update` for non-status edits, `Cycle.*`, etc.) are accepted, logged at INFO with their `type` and `action`, and produce no dispatch. The diagnostic log includes `data_keys` so unrouted-but-observed event classes can be diagnosed.
 
 #### Dispatch deduplication
 
-Every dispatch is hashed by `(agent_type, event_id, prompt)` into a 16-char `dedup-key` (`create_agent_vm` in `main.py:846-896`). Before creating a VM, the receiver lists existing GCE instances filtered by that label and skips if a non-terminated VM was created within the last 15 minutes (`DEDUP_WINDOW_SECONDS = 900`).
+Every dispatch is hashed by `(agent_type, event_id, prompt)` into a 16-char `dedup-key` (`create_agent_vm` in `agents/webhook-receiver/main.py`). Before creating a VM, the receiver lists existing GCE instances filtered by that label and skips if a non-terminated VM was created within the last 15 minutes (`DEDUP_WINDOW_SECONDS = 900`).
 
 Two important consequences:
 
@@ -1043,7 +993,6 @@ Two important consequences:
 
 | Agent | Runs On | Lifecycle | Linear Account |
 |-------|---------|-----------|----------------|
-| Sprint Manager | GCE VM (ephemeral) | Runs to completion, self-deletes | `sprint-manager` |
 | SCRUM Master | GCE VM (ephemeral) | Runs to completion, self-deletes | `scrum-master` |
 | Dev Team | GCE VM (ephemeral) | Runs to completion, self-deletes | `dev-team` |
 | Test Team | GCE VM (ephemeral) | Runs to completion, self-deletes | `test-team` |
@@ -1053,13 +1002,18 @@ All agents are stateless. They query Linear for fresh data on every trigger. No 
 ### Integration Branch Naming
 
 ```
-integration/cycle-{cycle_number}-wave-{wave_number}
+integration/cycle-{cycle_number}-{project_slug}-wave-{wave_number}
 ```
 
+Waves are scoped per Linear Project — sibling Projects in the same Cycle never share an integration PR. The `{project_slug}` is derived from the Project name's `<PRD-ID>` prefix (per CLAUDE.md §Linear Issue Structure: project names follow the convention `<PRD-ID>: <PRD title>`), lowercased and slugified. For projects whose names don't follow that convention, the SCRUM Master falls back to Linear's `slugId` field.
+
 Examples:
-- `integration/cycle-1-wave-1` (Cycle 1, Wave 0 issues)
-- `integration/cycle-1-wave-2` (Cycle 1, Wave 1 issues)
-- `integration/cycle-2-wave-1` (Cycle 2, Wave 0 issues)
+- `integration/cycle-1-ah-prd-02-wave-1` (Cycle 1, AH-PRD-02 first wave)
+- `integration/cycle-1-ah-prd-02-wave-2` (Cycle 1, AH-PRD-02 second wave — ships after wave-1 PR is merged)
+- `integration/cycle-1-ah-prd-03-wave-1` (Cycle 1, AH-PRD-03 first wave — runs in parallel with AH-PRD-02 if no cross-Project blockers)
+- `integration/cycle-2-ah-prd-04-wave-1` (Cycle 2, AH-PRD-04 first wave)
+
+Wave numbering is per-Project and sequential starting at 1 — the `wave_number` is NOT the issue's global execution-level depth. Project X with issues at global levels {0, 0, 2, 5} ships three sequential waves (X-wave-1, X-wave-2, X-wave-3), regardless of the gaps in global level numbers.
 
 ---
 
@@ -1071,38 +1025,29 @@ Sometimes you need to fire an agent outside the normal flow — to retry a stuck
 
 | You want to... | Do this | What fires |
 |---|---|---|
-| Re-run the Sprint Manager (cross-component evaluation) | `curl -X POST https://<receiver-url>/kickoff` | One Sprint Manager VM. `/kickoff` has no signature check today — anyone with the URL can hit it. |
-| Re-run the Sprint Manager Daily Briefing | `curl -X POST https://<receiver-url>/daily-summary` | One Sprint Manager VM (Daily Briefing prompt) |
-| Re-run the Stalled-In-Review check now | `curl -X POST https://<receiver-url>/check-stalled-in-review` | Zero or one SCRUM Master VM per affected team |
-| Run a SCRUM Master against a specific issue (Mid-Sprint Addition) | Move that one issue from `Backlog` → `Scheduled` (cycle must be started) | One SCRUM Master VM |
-| Run a SCRUM Master against a triaged issue (Returned from Triage) | Move the issue from `Triage` → `Scheduled` | One SCRUM Master VM |
-| Run a SCRUM Master Sprint Planning over a whole cycle | Reassign the cycle's marker issue to the SCRUM Master user using the **two-step assign pattern** (clear assignee, wait 2s, set to SCRUM Master) | One SCRUM Master VM that walks the entire cycle |
-| Have the Dev Team begin Flow 1 on a specific issue | Reassign the issue to the Dev Team user (two-step pattern) | One Dev Team VM |
-| Have the Dev Team begin Flow 2 on a plan-approved issue | Move the issue from `Awaiting Review` → `In Progress` | One Dev Team VM (Flow 2: Implementation) |
-| Have the Dev Team rework after PO rejection | Move the issue from `Testing Complete` → `In Progress` with a feedback comment | One Dev Team VM (Flow 4: PO Rejection) |
-| Have the Test Team test an issue | Move the issue to `Ready for Testing` | One Test Team VM |
-| Have the Dev Team fix a test failure | Move the issue to `Resolving Test Issues` | One Dev Team VM **and** one SCRUM Master VM (dual dispatch) |
+| Re-evaluate every Planned Project (after editing `blockedBy` relations) | `curl -X POST https://<receiver-url>/kickoff` | The receiver queries Linear for all `planned` Projects, drops any with non-terminal blockers, and dispatches one SCRUM Master VM per (newly-unblocked Project × mapped team). No agent VM if every Planned Project still has open blockers. `/kickoff` has no signature check today — anyone with the URL can hit it. |
+| Re-run the Daily Briefing | `curl -X POST https://<receiver-url>/daily-summary` | The receiver queries Linear and posts a project update on `PLATFORM_PROJECT_ID` — no agent VM. |
+| Run Project Kickoff for a single Project | Advance the Linear Project's status to "Planned" (or move from Planned → some other state and back) | One SCRUM Master VM per mapped team on the Project |
+| Run a SCRUM Master against a triaged issue | Move the issue to `Triage` (or save the status if already there) | One SCRUM Master VM |
+| Have the Dev Team begin planning a specific issue | Move the issue to `Step 1: Planning` (and assign to the Dev Team user for Linear-board visibility) | One Dev Team VM (Workflow 4) |
+| Have the Dev Team revise an existing plan | Move the issue from `Step 1: Planning` → `Step 1b: Updating Plan` with a feedback comment | One Dev Team VM (Workflow 5) |
+| Have the Dev Team begin implementation on an approved plan | Move the issue from `Step 1: Planning` → `Step 2: Implementing` | One Dev Team VM (Workflow 6) |
+| Have the Test Team test an issue | Move the issue to `Step 3: Testing` | One Test Team VM (Workflow 7) |
+| Have the Dev Team fix a test failure | Move the issue to `Step 3b: Resolving Bugs` | One Dev Team VM (Workflow 8) |
+| Have the Dev Team rework after PO rejection | Move the issue from `Testing Complete` → `Step 3c: PO Feedback` with a feedback comment | One Dev Team VM (Workflow 9) |
+| Re-run wave-completion / integration-PR creation | Save `Testing Complete` on a wave issue (or move out and back) | One SCRUM Master VM (Workflow 2) |
 
-The **two-step assign pattern** exists because Linear only fires an `assigneeId` webhook when the value actually changes. If the SCRUM Master is already assigned and you re-assign them, no webhook fires and no VM is created. The Sprint Manager's SKILL uses this pattern (clear → wait 2s → set) for exactly this reason.
+**One mental model:** every workflow trigger is a status change. There are no special-case assignment-based triggers. If you want a workflow to run, set the issue to the corresponding status — the Linear board always tells you what will fire next.
 
 ### Do NOT bulk-status-change
 
 Every issue's status transition is a separate webhook → separate VM. There is no batching at the receiver.
 
-If you bulk-move 30 issues from `Backlog` → `Scheduled` (cycle started), the receiver dispatches **30 SCRUM Master VMs in seconds**, one per issue. The dedup mechanism does not protect against this because each VM has a different `event_id`. Each VM then runs Flow 2's Mid-Sprint Addition handler against the same cycle, posting redundant validate-and-delegate noise on every issue in the cycle.
+If you bulk-move 30 issues to a triggering status, the receiver dispatches **30 VMs in seconds**, one per issue. The dedup mechanism does not protect against this because each VM has a different `event_id`. Use `POST /kickoff` (which fans out one VM per Planned Project) when you want to start fresh work across many issues.
 
-If you genuinely need to "reset" or "kick off" a cycle:
+### Triggers that don't fire
 
-- The right primitive is **`POST /kickoff`** — one Sprint Manager VM that evaluates every team's cycles cleanly.
-- For a single issue that needs to enter the cycle mid-sprint, the right primitive is moving **just that issue** from `Backlog` → `Scheduled`.
-
-### Triggers that look like they should work, but don't
-
-These are listed in §14 as "no dispatch — logged and ignored":
-
-1. **`In Progress` from any state other than Awaiting Review / Planning / Testing Complete.** Manually setting an issue to In Progress to "wake up the Dev Team" produces nothing. See §11 *Manual In Progress transition does not fire Flow 2* for the recovery path.
-2. **`Backlog` → `Scheduled` when the issue's Cycle has not yet started.** The receiver drops the dispatch on the assumption the Sprint Manager's Initial Kickoff will pick the issue up when the cycle starts. If you need agent action immediately, start the cycle first (or use `/kickoff`).
-3. **Linear Project state changes.** The receiver does not subscribe to Project events. Marking a Project Completed has no agent-side effect today; the `pm-action` label must be removed by hand.
+Statuses with no rule: `Backlog`, `Cancelled`, `Scheduled`. Setting an issue to any of these is a no-op at the receiver — INFO log only, no agent dispatched.
 
 ### Watching what fires
 
