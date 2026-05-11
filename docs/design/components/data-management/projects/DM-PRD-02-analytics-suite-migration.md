@@ -83,7 +83,7 @@ RESOURCES["performance_profiles"] = MigrateConfig(
 
 ### Phase 2 — Code migration
 
-Order: `cost_aggregations` (2 sites) → `agent_analytics` (4 sites) → `performance_profiles` (2 sites, plus naming-inconsistency resolution). Commit per resource.
+Order: `cost_aggregations` (2 sites) → `agent_analytics` (4 sites) → `performance_profiles` (2 sites, plus the `RUNTIME_WARNINGS_ERRORS.md` doc update). Commit per resource. (The earlier "naming-inconsistency resolution" framing was retracted — see §1 Context — there is one source-collection pattern; the default `removeprefix` extractor is correct.)
 
 ### Phase 3 — Data migration (dev)
 
@@ -133,7 +133,7 @@ python api/scripts/migrate_to_shape_b.py --resource=performance_profiles --confi
 
 | Risk | Mitigation |
 |---|---|
-| `_acc_` variant collections missed by default extractor | Custom `_performance_profiles_extractor` in §5.1; integration test in §7 covers it |
+| `performance_profiles` source-collection naming | **Resolved 2026-05-07 (DM-30 PO verification):** there is exactly one source pattern, `performance_profiles_acc_<hex>`; the default `removeprefix("performance_profiles_")` correctly returns the canonical `acc_<hex>` account_id; no custom `account_id_extractor` is needed. (Earlier drafts proposed a `_performance_profiles_extractor` for a hypothetical second variant — that premise was unsupported.) See §1 Context. DM-34's emulator integration test pins the production `RESOURCES["performance_profiles"]` config as a regression guard. |
 | Analytics write volume saturates migration script | These collections can be large per account. Script batches at 500 writes/sec. Plan for a longer-running migration on this resource; can split by account batch if needed (see open question) |
 | Stale analytics cached in Redis (if any) | Check `api/src/kene_api/redis_client.py` for analytics cache keys; invalidate as part of cutover |
 
@@ -147,5 +147,5 @@ python api/scripts/migrate_to_shape_b.py --resource=performance_profiles --confi
 - Upstream: [DM-PRD-00](./DM-PRD-00-migration-foundation.md)
 - Downstream: [DM-PRD-05](./DM-PRD-05-deletion-sweep-rewrite.md)
 - Decision: [Review 15 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1) — Multi-Tenant Data Model Shape
-- Naming-inconsistency callout: `app/adk/agents/strategy_agent/RUNTIME_WARNINGS_ERRORS.md:230`
+- `RUNTIME_WARNINGS_ERRORS.md` callout updated by DM-33: `app/adk/agents/strategy_agent/RUNTIME_WARNINGS_ERRORS.md` §7 (bottlenecks-query path moved to Shape B; the composite index is still pending DM-40)
 - CLAUDE.md rules in scope: PY-1, PY-2, PY-7; T-1, T-3, T-4, T-6
