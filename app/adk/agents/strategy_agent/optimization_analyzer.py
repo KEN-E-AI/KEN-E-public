@@ -197,7 +197,7 @@ class OptimizationAnalyzer:
             Firestore document stream
         """
         cutoff_time = datetime.now(timezone.utc) - timedelta(days=days_to_analyze)
-        collection = self.analytics_db.collection(f"agent_analytics_{self.account_id}")
+        collection = self.analytics_db.collection(f"accounts/{self.account_id}/agent_analytics")
 
         return collection.where(
             filter=FieldFilter("timestamp", ">=", cutoff_time)

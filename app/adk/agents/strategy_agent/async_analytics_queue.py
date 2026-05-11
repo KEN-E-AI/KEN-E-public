@@ -17,6 +17,8 @@ from uuid import uuid4
 
 from google.cloud import firestore
 
+from .account_id_utils import validate_account_id
+
 logger = logging.getLogger(__name__)
 
 
@@ -52,7 +54,7 @@ class AsyncAnalyticsQueue:
             flush_interval: Time interval for forced flush (seconds)
             enable_background_worker: Whether to start background worker
         """
-        self.account_id = account_id
+        self.account_id = validate_account_id(account_id)
         self.project_id = project_id
         self.queue_size = queue_size
         self.batch_size = batch_size
@@ -167,7 +169,7 @@ class AsyncAnalyticsQueue:
                 # Create Firestore batch
                 fs_batch = self.analytics_db.batch()
                 collection = self.analytics_db.collection(
-                    f"agent_analytics_{self.account_id}"
+                    f"accounts/{self.account_id}/agent_analytics"
                 )
 
                 # Add all events to batch
@@ -427,6 +429,22 @@ class AsyncAnalyticsAdapter:
         self.execution_metrics["total_tokens"] += prompt_tokens + response_tokens
         self.execution_metrics["total_cost"] += total_cost
 
+        if agent_name not in self.execution_metrics["agent_metrics"]:
+            self.execution_metrics["agent_metrics"][agent_name] = {
+                "executions": 0,
+                "total_tokens": 0,
+                "total_cost": 0.0,
+                "total_time": 0.0,
+                "errors": 0,
+            }
+        agent_m = self.execution_metrics["agent_metrics"][agent_name]
+        agent_m["executions"] += 1
+        agent_m["total_tokens"] += prompt_tokens + response_tokens
+        agent_m["total_cost"] += total_cost
+        agent_m["total_time"] += execution_time
+        if not success:
+            agent_m["errors"] += 1
+
         # Return metrics for compatibility
         return {
             "execution_id": self.execution_id,
@@ -444,6 +462,7 @@ class AsyncAnalyticsAdapter:
             "account_id": self.account_id,
             "total_tokens": self.execution_metrics["total_tokens"],
             "total_cost": self.execution_metrics["total_cost"],
+            "agent_metrics": self.execution_metrics["agent_metrics"],
             "queue_status": self.queue.get_queue_status(),
         }
 

@@ -216,23 +216,23 @@ WARNING: ProductCategory 'NFL (National Football League)' not found (4x in lates
 
 ---
 
-### 7. ⚠️ Firestore Index Missing for Bottlenecks Query
+### 7. 🔶 Firestore Index Missing for Bottlenecks Query (path migrated; index pending)
 
-**Count**: 1 occurrence
+**Count**: 1 occurrence (historical — log from 2025-10-08)
 **Log**:
 ```
 ERROR: Failed to get bottlenecks: 400 The query requires an index
 ```
 
-**Root Cause**: Firestore composite index not created for performance_profiles collection
+**Root Cause**: Firestore composite index not created for the performance_profiles collection, and the collection was written to the legacy top-level path.
 
-**Required Index**:
-- Collection: `performance_profiles_acc_{account_id}`
-- Fields: `is_bottleneck`, `duration_seconds`, `timestamp`, `__name__`
+**Status**: 🔶 PARTIALLY RESOLVED — the collection *path* moved to Shape B in DM-33 (`accounts/{account_id}/performance_profiles`, collection-group `performance_profiles`), but the composite index is still absent, so `PerformanceProfiler.get_bottlenecks` continues to fail with `400 The query requires an index` until the index is provisioned. Treat this as still-open until DM-40 lands.
 
-**Fix**: Create Firestore index via console link or firestore.indexes.json
+**Index (still required)**: A composite index for `is_bottleneck`, `duration_seconds`, `timestamp`, `__name__` under the `performance_profiles` collection-group scope must be added to `deployment/firestore.indexes.json` — tracked in DM-40 (the `performance_profiles` dev data migration). It is **not** present in that file yet.
 
-**Priority**: P1 - Performance profiling not working
+**Naming-inconsistency note**: An earlier version of this entry contained a note about a second source-collection naming variant. DM-30 PO verification determined this was a doc-level error — there was always exactly one source-collection naming pattern. See DM-PRD-02 §1 Context for the full resolution note.
+
+**Priority**: P1 — path fixed in DM-33; index provisioning still pending (DM-40)
 
 ---
 
@@ -434,9 +434,7 @@ WARNING: Operation timeout warning: brand_guidelines_split:strategy_generation t
 5. **Remove deleted property checks**
    - OR implement soft delete feature properly
 
-6. **Create Firestore index for bottlenecks**
-   - Run provided console link
-   - OR add to firestore.indexes.json
+6. **Create Firestore index for bottlenecks** — path migrated to Shape B in DM-33; the `performance_profiles` collection-group composite index still needs to be added to `deployment/firestore.indexes.json` (tracked in DM-40). `get_bottlenecks` stays broken until then.
 
 ### Later (P2):
 

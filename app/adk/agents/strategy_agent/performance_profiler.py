@@ -60,6 +60,7 @@ from uuid import uuid4
 from google.cloud import firestore
 from google.cloud.firestore_v1 import FieldFilter
 
+from .account_id_utils import validate_account_id
 from .retry_utils import with_write_retry, with_read_retry, with_batch_retry
 
 logger = logging.getLogger(__name__)
@@ -111,7 +112,7 @@ class PerformanceProfiler:
             account_id: Account identifier for scoped collections
             project_id: Optional GCP project ID
         """
-        self.account_id = account_id
+        self.account_id = validate_account_id(account_id)
         self.project_id = project_id
         self.execution_id = str(uuid4())
 
@@ -237,7 +238,7 @@ class PerformanceProfiler:
 
         try:
             collection = self.analytics_db.collection(
-                f"performance_profiles_{self.account_id}"
+                f"accounts/{self.account_id}/performance_profiles"
             )
 
             doc = {
@@ -317,7 +318,7 @@ class PerformanceProfiler:
                 hours=time_window_hours
             )
             collection = self.analytics_db.collection(
-                f"performance_profiles_{self.account_id}"
+                f"accounts/{self.account_id}/performance_profiles"
             )
 
             # Query for slow operations

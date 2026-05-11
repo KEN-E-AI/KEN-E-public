@@ -6,12 +6,13 @@ This module provides comprehensive analytics capabilities using a dedicated
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, ClassVar
 from uuid import uuid4
 
 from google.cloud import firestore
 from google.cloud.firestore_v1 import FieldFilter
 
+from .account_id_utils import validate_account_id
 from .retry_utils import with_batch_retry, with_read_retry, with_write_retry
 
 logger = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ class AnalyticsService:
     """Service for tracking and analyzing agent execution metrics."""
 
     # Model pricing (per 1M tokens) - updated from weave_observability.py
-    MODEL_PRICING = {
+    MODEL_PRICING: ClassVar[dict[str, dict[str, float]]] = {
         "gemini-2.0-flash": {"prompt": 0.075, "response": 0.30},
         "gemini-2.5-flash": {"prompt": 0.075, "response": 0.30},
         "gemini-1.5-flash": {"prompt": 0.075, "response": 0.30},
@@ -38,7 +39,7 @@ class AnalyticsService:
             account_id: Account identifier for scoped collections
             project_id: Optional GCP project ID
         """
-        self.account_id = account_id
+        self.account_id = validate_account_id(account_id)
         self.project_id = project_id
         self.execution_id = str(uuid4())
 
@@ -140,7 +141,7 @@ class AnalyticsService:
         if self.analytics_db:
             try:
                 collection = self.analytics_db.collection(
-                    f"agent_analytics_{self.account_id}"
+                    f"accounts/{self.account_id}/agent_analytics"
                 )
                 collection.add(metrics)
                 logger.info(
@@ -208,7 +209,7 @@ class AnalyticsService:
         if self.analytics_db:
             try:
                 collection = self.analytics_db.collection(
-                    f"agent_analytics_{self.account_id}"
+                    f"accounts/{self.account_id}/agent_analytics"
                 )
                 collection.add({**metrics, "metric_type": "token_estimation"})
             except Exception as e:
@@ -236,7 +237,7 @@ class AnalyticsService:
         try:
             # Query analytics for the day
             collection = self.analytics_db.collection(
-                f"agent_analytics_{self.account_id}"
+                f"accounts/{self.account_id}/agent_analytics"
             )
             docs = (
                 collection.where(filter=FieldFilter("timestamp", ">=", start_time))
@@ -277,8 +278,10 @@ class AnalyticsService:
                 aggregation["tokens_by_model"][model] += data.get("total_tokens", 0)
 
             # Store aggregation
-            agg_collection = self.analytics_db.collection(
-                f"cost_aggregations_{self.account_id}"
+            agg_collection = (
+                self.analytics_db.collection("accounts")
+                .document(self.account_id)
+                .collection("cost_aggregations")
             )
             agg_collection.document(start_time.date().isoformat()).set(aggregation)
 
@@ -338,8 +341,10 @@ class AnalyticsService:
         end_date = datetime.now(timezone.utc)
 
         try:
-            collection = self.analytics_db.collection(
-                f"cost_aggregations_{self.account_id}"
+            collection = (
+                self.analytics_db.collection("accounts")
+                .document(self.account_id)
+                .collection("cost_aggregations")
             )
 
             for i in range(days):
@@ -380,7 +385,7 @@ class AnalyticsService:
 
         try:
             collection = self.analytics_db.collection(
-                f"agent_analytics_{self.account_id}"
+                f"accounts/{self.account_id}/agent_analytics"
             )
 
             # Query for old documents

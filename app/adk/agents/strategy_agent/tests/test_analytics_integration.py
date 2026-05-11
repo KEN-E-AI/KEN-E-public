@@ -4,20 +4,21 @@ These tests verify the interaction between all analytics components
 working together in realistic scenarios.
 """
 
-import pytest
 import time
 from datetime import datetime, timezone
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from ..analytics_service import AnalyticsService
-from ..performance_profiler import PerformanceProfiler
+import pytest
+
 from ..alert_manager import AlertManager
-from ..optimization_analyzer import OptimizationAnalyzer
 from ..analytics_helpers import (
-    initialize_analytics_services,
     check_token_limits_before_execution,
+    initialize_analytics_services,
     report_execution_summary,
 )
+from ..analytics_service import AnalyticsService
+from ..optimization_analyzer import OptimizationAnalyzer
+from ..performance_profiler import PerformanceProfiler
 
 
 @pytest.fixture
@@ -71,7 +72,7 @@ class TestFullExecutionFlow:
         main_op = profiler.start_operation("orchestrator", "strategy_generation")
 
         # Track some agent executions
-        metrics1 = analytics.track_agent_execution(
+        analytics.track_agent_execution(
             agent_name="strategist",
             prompt_tokens=10000,
             response_tokens=5000,
@@ -86,7 +87,7 @@ class TestFullExecutionFlow:
         profiler.end_operation(sub_op, success=True)
 
         # Track another agent
-        metrics2 = analytics.track_agent_execution(
+        analytics.track_agent_execution(
             agent_name="reviewer",
             prompt_tokens=5000,
             response_tokens=2500,
@@ -131,7 +132,7 @@ class TestAlertEscalation:
 
     def test_progressive_alert_escalation(self, mock_firestore):
         """Test alerts escalate as token usage increases."""
-        mock_analytics_db, mock_default_db = mock_firestore
+        _mock_analytics_db, _mock_default_db = mock_firestore
 
         alert_mgr = AlertManager("test_account", "test_project")
 
@@ -163,7 +164,7 @@ class TestAlertEscalation:
 
     def test_alert_cooldown_prevents_spam(self, mock_firestore):
         """Test that cooldown prevents alert spam."""
-        mock_analytics_db, mock_default_db = mock_firestore
+        _mock_analytics_db, _mock_default_db = mock_firestore
 
         alert_mgr = AlertManager("test_account", "test_project")
 
@@ -192,9 +193,10 @@ class TestCostAggregation:
 
     def test_daily_cost_aggregation(self, mock_firestore):
         """Test aggregation of daily costs."""
-        mock_analytics_db, mock_default_db = mock_firestore
+        mock_analytics_db, _mock_default_db = mock_firestore
 
-        # Setup mock documents for aggregation
+        # Source collection mock (Shape A agent_analytics_ read path)
+        mock_source_collection = MagicMock()
         mock_doc1 = MagicMock()
         mock_doc1.to_dict.return_value = {
             "total_cost": 1.5,
@@ -202,7 +204,6 @@ class TestCostAggregation:
             "agent_name": "strategist",
             "model": "gemini-2.5-pro",
         }
-
         mock_doc2 = MagicMock()
         mock_doc2.to_dict.return_value = {
             "total_cost": 0.5,
@@ -210,13 +211,27 @@ class TestCostAggregation:
             "agent_name": "reviewer",
             "model": "gemini-2.5-flash",
         }
-
         mock_query = MagicMock()
         mock_query.where.return_value = mock_query
         mock_query.stream.return_value = [mock_doc1, mock_doc2]
-        mock_analytics_db.collection.return_value.where.return_value = mock_query
+        mock_source_collection.where.return_value = mock_query
+
+        # Destination collection mock (Shape B accounts/ write path) — isolated from source
+        mock_accounts_collection = MagicMock()
+        agg_doc_mock = mock_accounts_collection.document.return_value.collection.return_value.document.return_value
+
+        def collection_side_effect(name: str) -> MagicMock:
+            return (
+                mock_accounts_collection
+                if name == "accounts"
+                else mock_source_collection
+            )
+
+        mock_analytics_db.collection.side_effect = collection_side_effect
 
         analytics = AnalyticsService("test_account", "test_project")
+        # analytics_db is temporarily None (IAM guard); inject mock directly
+        analytics.analytics_db = mock_analytics_db
         aggregation = analytics.aggregate_daily_costs()
 
         assert aggregation["total_cost"] == 2.0
@@ -225,13 +240,21 @@ class TestCostAggregation:
         assert "strategist" in aggregation["cost_by_agent"]
         assert "reviewer" in aggregation["cost_by_agent"]
 
+        # Verify Shape B path: accounts/{account_id}/cost_aggregations
+        mock_analytics_db.collection.assert_any_call("accounts")
+        mock_accounts_collection.document.assert_called_once_with("test_account")
+        mock_accounts_collection.document.return_value.collection.assert_called_once_with(
+            "cost_aggregations"
+        )
+        agg_doc_mock.set.assert_called_once()
+
 
 class TestOptimizationRecommendations:
     """Test optimization recommendation generation."""
 
     def test_model_downgrade_recommendation(self, mock_firestore):
         """Test recommendation to downgrade from Pro to Flash."""
-        mock_analytics_db, mock_default_db = mock_firestore
+        mock_analytics_db, _mock_default_db = mock_firestore
 
         # Setup mock usage data showing Pro model used for small tasks
         mock_doc = MagicMock()
@@ -254,6 +277,11 @@ class TestOptimizationRecommendations:
         optimizer = OptimizationAnalyzer("test_account", "test_project")
         recommendations = optimizer.generate_recommendations()
 
+        # Shape B: OptimizationAnalyzer reads from accounts/{account_id}/agent_analytics (DM-32)
+        mock_analytics_db.collection.assert_any_call(
+            "accounts/test_account/agent_analytics"
+        )
+
         # Should recommend model downgrade
         model_recs = [
             r for r in recommendations if r.recommendation_type == "model_downgrade"
@@ -263,7 +291,7 @@ class TestOptimizationRecommendations:
 
     def test_context_optimization_recommendation(self, mock_firestore):
         """Test recommendation for context optimization."""
-        mock_analytics_db, mock_default_db = mock_firestore
+        mock_analytics_db, _mock_default_db = mock_firestore
 
         # Setup mock data with low context utilization
         mock_doc = MagicMock()
@@ -287,6 +315,11 @@ class TestOptimizationRecommendations:
         patterns = optimizer.analyze_usage_patterns()
         recommendations = optimizer.generate_recommendations(patterns)
 
+        # Shape B: OptimizationAnalyzer reads from accounts/{account_id}/agent_analytics (DM-32)
+        mock_analytics_db.collection.assert_any_call(
+            "accounts/test_account/agent_analytics"
+        )
+
         # Should recommend context reduction
         context_recs = [
             r for r in recommendations if r.recommendation_type == "context_reduction"
@@ -299,7 +332,7 @@ class TestCircuitBreaker:
 
     def test_circuit_breaker_halts_execution(self, mock_firestore):
         """Test that circuit breaker prevents execution when triggered."""
-        mock_analytics_db, mock_default_db = mock_firestore
+        _mock_analytics_db, _mock_default_db = mock_firestore
 
         alert_mgr = AlertManager("test_account", "test_project")
         profiler = PerformanceProfiler("test_account", "test_project")
@@ -321,7 +354,7 @@ class TestCircuitBreaker:
 
     def test_circuit_breaker_reset(self, mock_firestore):
         """Test circuit breaker can be reset."""
-        mock_analytics_db, mock_default_db = mock_firestore
+        _mock_analytics_db, _mock_default_db = mock_firestore
 
         alert_mgr = AlertManager("test_account", "test_project")
 
@@ -339,7 +372,7 @@ class TestPerformanceBottlenecks:
 
     def test_bottleneck_identification(self, mock_firestore):
         """Test identification of performance bottlenecks."""
-        mock_analytics_db, mock_default_db = mock_firestore
+        mock_analytics_db, _mock_default_db = mock_firestore
 
         # Mock the Firestore query to return our test data
         mock_doc = MagicMock()
@@ -364,6 +397,11 @@ class TestPerformanceBottlenecks:
 
         # Check for bottlenecks
         bottlenecks = profiler.get_bottlenecks(time_window_hours=1)
+
+        # Shape B: get_bottlenecks reads from accounts/{account_id}/performance_profiles (DM-33)
+        mock_analytics_db.collection.assert_any_call(
+            "accounts/test_account/performance_profiles"
+        )
 
         # The slow operation should be identified as a bottleneck
         assert len(bottlenecks) > 0
