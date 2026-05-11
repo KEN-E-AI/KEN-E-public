@@ -177,6 +177,9 @@ async def test_update_accounts_with_industry():
     await update_accounts_with_industry(industry, keywords, firestore_mock)
 
     # Verify collection_group was called (not query_documents)
+    # DM-PRD-04: Shape B subcollection name (post-migration), not the legacy
+    # `monitoring_topics/{account_id}` root — asserts the collection-group call
+    # name is correct per the Shape B cross-account read pattern (README §7.7).
     mock_db.collection_group.assert_called_once_with("monitoring_topics")
     assert not firestore_mock.query_documents.called
 

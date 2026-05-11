@@ -186,6 +186,8 @@ async def update_accounts_with_industry(
         # (deriving from the payload would redirect writes to the wrong tenant on
         # corrupt or mismatched data — DM-PRD-04 §8 risk).
         db = firestore.get_client()
+        # DM-PRD-04: Shape B subcollection name (post-migration), not the legacy
+        # `monitoring_topics/{account_id}` root — collection-group query per README §7.7.
         for doc_snap in db.collection_group("monitoring_topics").stream():
             parent = doc_snap.reference.parent
             if parent is None or parent.parent is None:
