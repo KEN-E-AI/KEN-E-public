@@ -88,8 +88,11 @@ async def test_account_access(
 logger = logging.getLogger(__name__)
 
 # Constants
-MONITORING_TOPICS_COLLECTION = "monitoring_topics"
 INDUSTRY_KEYWORDS_COLLECTION = "industry_keywords"
+
+
+def _monitoring_topics_subcollection(account_id: str) -> str:
+    return f"accounts/{account_id}/monitoring_topics"
 
 
 async def get_or_create_monitoring_topics(
@@ -102,8 +105,8 @@ async def get_or_create_monitoring_topics(
     try:
         # Try to get existing document
         doc = firestore.get_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
         )
 
         if doc:
@@ -130,8 +133,8 @@ async def get_or_create_monitoring_topics(
 
         # Save to Firestore
         firestore.create_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
             data=monitoring_topics.model_dump(),
         )
 
@@ -140,7 +143,7 @@ async def get_or_create_monitoring_topics(
         logger.error(f"Error getting/creating monitoring topics: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to retrieve monitoring topics"
-        )
+        ) from e
 
 
 async def get_industry_keywords_for_industry(
@@ -178,22 +181,35 @@ async def update_accounts_with_industry(
 ) -> None:
     """Update all accounts that have the specified industry."""
     try:
-        # Query all monitoring topics documents
-        # Note: This is a simplified approach. In production, you might want to
-        # batch process this or use a background job for large datasets
-        all_docs = firestore.query_documents(
-            collection=MONITORING_TOPICS_COLLECTION,
-            limit=1000,  # Adjust based on expected scale
-        )
-
-        # Filter and update accounts with matching industry
-        for doc in all_docs:
-            # We need to cross-reference with account data to check industry
-            # For now, we'll update based on a simple check
-            # In production, you'd want to join with accounts data
+        # Use collection-group query per Shape B cross-account pattern (README §7.7).
+        # Derive account_id from the document path — never from the payload field
+        # (deriving from the payload would redirect writes to the wrong tenant on
+        # corrupt or mismatched data — DM-PRD-04 §8 risk).
+        db = firestore.get_client()
+        for doc_snap in db.collection_group("monitoring_topics").stream():
+            parent = doc_snap.reference.parent
+            if parent is None or parent.parent is None:
+                # Legacy root-level doc (before DM-28 runs); skip to avoid writing
+                # to the wrong path.
+                logger.debug(
+                    f"Skipping legacy root-level monitoring_topics doc: {doc_snap.id}"
+                )
+                continue
+            account_id = parent.parent.id
+            # Verify path shape: must be accounts/{account_id}/monitoring_topics/{doc}
+            # to guard against future subcollections at unexpected depths.
+            expected_prefix = f"accounts/{account_id}/monitoring_topics"
+            if not doc_snap.reference.path.startswith(expected_prefix):
+                logger.warning(
+                    f"Unexpected monitoring_topics path, skipping: {doc_snap.reference.path}"
+                )
+                continue
+            # NOTE: This updates all accounts, not just those with the matching industry.
+            # Filtering by account industry requires a join with account data and is
+            # tracked as a follow-up (DM-PRD-04 §8 — industry-filter enhancement).
             firestore.update_document(
-                collection=MONITORING_TOPICS_COLLECTION,
-                document_id=doc["account_id"],
+                collection=_monitoring_topics_subcollection(account_id),
+                document_id="default",
                 data={
                     "industry_keywords": keywords,
                     "updated_at": datetime.utcnow().isoformat(),
@@ -218,8 +234,8 @@ async def get_monitoring_topics(
 
     try:
         doc = firestore.get_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
         )
 
         if doc:
@@ -267,7 +283,7 @@ async def get_monitoring_topics(
         )
         raise HTTPException(
             status_code=500, detail=f"Failed to retrieve monitoring topics: {e!s}"
-        )
+        ) from e
 
 
 @router.put("/{account_id}/company", response_model=SuccessResponse)
@@ -293,8 +309,8 @@ async def update_company_keywords(
     try:
         # First check if document exists
         doc = firestore.get_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
         )
 
         if not doc:
@@ -318,14 +334,14 @@ async def update_company_keywords(
                 organization_id = record["organization_id"]
 
             # Create the document
-            monitoring_topics = await get_or_create_monitoring_topics(
+            await get_or_create_monitoring_topics(
                 account_id, organization_id, industry, firestore
             )
 
         # Now update the document
         firestore.update_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
             data={
                 "company_keywords": request.company_keywords,
                 "updated_at": datetime.utcnow().isoformat(),
@@ -338,7 +354,7 @@ async def update_company_keywords(
         )
     except Exception as e:
         logger.error(f"Error updating company keywords: {e!s}")
-        raise HTTPException(status_code=500, detail="Failed to update company keywords")
+        raise HTTPException(status_code=500, detail="Failed to update company keywords") from e
 
 
 @router.put("/{account_id}/customers", response_model=SuccessResponse)
@@ -364,8 +380,8 @@ async def update_customer_keywords(
     try:
         # First check if document exists
         doc = firestore.get_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
         )
 
         if not doc:
@@ -389,7 +405,7 @@ async def update_customer_keywords(
                 organization_id = record["organization_id"]
 
             # Create the document
-            monitoring_topics = await get_or_create_monitoring_topics(
+            await get_or_create_monitoring_topics(
                 account_id, organization_id, industry, firestore
             )
 
@@ -403,8 +419,8 @@ async def update_customer_keywords(
 
         # Now update the document
         firestore.update_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
             data={
                 "customer_keywords": all_keywords,
                 "updated_at": datetime.utcnow().isoformat(),
@@ -419,7 +435,7 @@ async def update_customer_keywords(
         logger.error(f"Error updating customer keywords: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to update customer keywords"
-        )
+        ) from e
 
 
 @router.get("/{account_id}/customers/search-concepts", response_model=list[ConceptOption])
@@ -512,8 +528,8 @@ async def add_customer_concept(
     try:
         # Get current document
         doc = firestore.get_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
         )
 
         if not doc:
@@ -551,8 +567,8 @@ async def add_customer_concept(
 
         # Update document
         firestore.update_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
             data={
                 "customer_concepts": concepts,
                 "customer_keywords": keywords,
@@ -566,7 +582,7 @@ async def add_customer_concept(
         raise
     except Exception as e:
         logger.error(f"Error adding customer concept: {e!s}")
-        raise HTTPException(status_code=500, detail="Failed to add customer concept")
+        raise HTTPException(status_code=500, detail="Failed to add customer concept") from e
 
 
 @router.delete("/{account_id}/customers/concepts/{concept_id}", response_model=SuccessResponse)
@@ -586,8 +602,8 @@ async def remove_customer_concept(
     try:
         # Get current document
         doc = firestore.get_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
         )
 
         if not doc:
@@ -624,8 +640,8 @@ async def remove_customer_concept(
 
         # Update document
         firestore.update_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
             data={
                 "customer_concepts": updated_concepts,
                 "customer_keywords": keywords,
@@ -642,7 +658,7 @@ async def remove_customer_concept(
         raise
     except Exception as e:
         logger.error(f"Error removing customer concept: {e!s}")
-        raise HTTPException(status_code=500, detail="Failed to remove customer concept")
+        raise HTTPException(status_code=500, detail="Failed to remove customer concept") from e
 
 
 @router.post("/{account_id}/competitors", response_model=SuccessResponse)
@@ -668,8 +684,8 @@ async def add_competitor(
     try:
         # Get current document
         doc = firestore.get_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
         )
 
         if not doc:
@@ -705,8 +721,8 @@ async def add_competitor(
 
         # Update document
         firestore.update_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
             data={
                 "competitor_entries": competitors,
                 "updated_at": datetime.utcnow().isoformat(),
@@ -721,7 +737,7 @@ async def add_competitor(
         raise
     except Exception as e:
         logger.error(f"Error adding competitor: {e!s}")
-        raise HTTPException(status_code=500, detail="Failed to add competitor")
+        raise HTTPException(status_code=500, detail="Failed to add competitor") from e
 
 
 @router.put(
@@ -757,8 +773,8 @@ async def update_competitor(
     try:
         # Get current document
         doc = firestore.get_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
         )
 
         if not doc:
@@ -786,8 +802,8 @@ async def update_competitor(
 
         # Update document
         firestore.update_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
             data={
                 "competitor_entries": competitors,
                 "updated_at": datetime.utcnow().isoformat(),
@@ -802,7 +818,7 @@ async def update_competitor(
         raise
     except Exception as e:
         logger.error(f"Error updating competitor: {e!s}")
-        raise HTTPException(status_code=500, detail="Failed to update competitor")
+        raise HTTPException(status_code=500, detail="Failed to update competitor") from e
 
 
 @router.delete(
@@ -824,8 +840,8 @@ async def delete_competitor(
     try:
         # Get current document
         doc = firestore.get_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
         )
 
         if not doc:
@@ -846,8 +862,8 @@ async def delete_competitor(
 
         # Update document
         firestore.update_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
             data={
                 "competitor_entries": competitors,
                 "updated_at": datetime.utcnow().isoformat(),
@@ -862,7 +878,7 @@ async def delete_competitor(
         raise
     except Exception as e:
         logger.error(f"Error deleting competitor: {e!s}")
-        raise HTTPException(status_code=500, detail="Failed to delete competitor")
+        raise HTTPException(status_code=500, detail="Failed to delete competitor") from e
 
 
 # ==================== CUSTOMER PROFILE MONITORING ENDPOINTS ====================
@@ -891,8 +907,8 @@ async def add_customer_profile_keywords(
     try:
         # Get current document
         doc = firestore.get_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
         )
 
         if not doc:
@@ -927,8 +943,8 @@ async def add_customer_profile_keywords(
 
         # Update document
         firestore.update_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
             data={
                 "customer_profile_entries": customer_profiles,
                 "updated_at": datetime.utcnow().isoformat(),
@@ -945,7 +961,7 @@ async def add_customer_profile_keywords(
         logger.error(f"Error adding customer profile keywords: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to add customer profile keywords"
-        )
+        ) from e
 
 
 @router.put(
@@ -984,8 +1000,8 @@ async def update_customer_profile_keywords(
     try:
         # Get current document
         doc = firestore.get_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
         )
 
         if not doc:
@@ -1013,8 +1029,8 @@ async def update_customer_profile_keywords(
 
         # Update document
         firestore.update_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
             data={
                 "customer_profile_entries": customer_profiles,
                 "updated_at": datetime.utcnow().isoformat(),
@@ -1031,7 +1047,7 @@ async def update_customer_profile_keywords(
         logger.error(f"Error updating customer profile keywords: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to update customer profile keywords"
-        )
+        ) from e
 
 
 @router.delete(
@@ -1056,8 +1072,8 @@ async def delete_customer_profile_keywords(
     try:
         # Get current document
         doc = firestore.get_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
         )
 
         if not doc:
@@ -1082,8 +1098,8 @@ async def delete_customer_profile_keywords(
 
         # Update document
         firestore.update_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
             data={
                 "customer_profile_entries": customer_profiles,
                 "updated_at": datetime.utcnow().isoformat(),
@@ -1100,7 +1116,7 @@ async def delete_customer_profile_keywords(
         logger.error(f"Error deleting customer profile keywords: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to delete customer profile keywords"
-        )
+        ) from e
 
 
 @router.get("/{account_id}/company/paginated", response_model=PaginatedKeywordsResponse)
@@ -1121,8 +1137,8 @@ async def get_company_keywords_paginated(
 
     try:
         doc = firestore.get_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
         )
 
         if not doc:
@@ -1156,7 +1172,7 @@ async def get_company_keywords_paginated(
         )
     except Exception as e:
         logger.error(f"Error retrieving paginated company keywords: {e!s}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve keywords")
+        raise HTTPException(status_code=500, detail="Failed to retrieve keywords") from e
 
 
 @router.get("/industries/all", response_model=IndustryKeywordsListResponse)
@@ -1201,7 +1217,7 @@ async def get_all_industry_keywords(
         logger.error(f"Error retrieving industry keywords: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to retrieve industry keywords"
-        )
+        ) from e
 
 
 @router.put("/industries/{industry}", response_model=SuccessResponse)
@@ -1255,7 +1271,7 @@ async def update_industry_keywords(
         logger.error(f"Error updating industry keywords: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to update industry keywords"
-        )
+        ) from e
 
 
 @router.post("/{account_id}/cleanup-orphaned-entries", response_model=SuccessResponse)
@@ -1290,8 +1306,8 @@ async def cleanup_orphaned_monitoring_entries(
     try:
         # Get monitoring topics
         doc = firestore.get_document(
-            collection=MONITORING_TOPICS_COLLECTION,
-            document_id=account_id,
+            collection=_monitoring_topics_subcollection(account_id),
+            document_id="default",
         )
 
         if not doc:
@@ -1360,8 +1376,8 @@ async def cleanup_orphaned_monitoring_entries(
         # Update document if changes were made
         if removed_count > 0:
             firestore.update_document(
-                collection=MONITORING_TOPICS_COLLECTION,
-                document_id=account_id,
+                collection=_monitoring_topics_subcollection(account_id),
+                document_id="default",
                 data={
                     "competitor_entries": doc.get("competitor_entries", []),
                     "customer_profile_entries": doc.get(
@@ -1378,4 +1394,4 @@ async def cleanup_orphaned_monitoring_entries(
 
     except Exception as e:
         logger.error(f"Error cleaning up orphaned entries: {e!s}")
-        raise HTTPException(status_code=500, detail="Failed to cleanup orphaned entries")
+        raise HTTPException(status_code=500, detail="Failed to cleanup orphaned entries") from e

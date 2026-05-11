@@ -7,6 +7,7 @@ with configurable thresholds and multiple notification channels.
 import json
 import logging
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
@@ -107,6 +108,12 @@ class AlertManager:
             account_id: Account identifier
             project_id: Optional GCP project ID
         """
+        _ACCOUNT_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,128}$")
+        if not _ACCOUNT_ID_RE.match(account_id):
+            raise ValueError(
+                f"account_id must match ^[a-zA-Z0-9_\\-]{{1,128}}$, got: {account_id!r}"
+            )
+
         self.account_id = account_id
         self.project_id = project_id
 
@@ -142,10 +149,10 @@ class AlertManager:
             return self._get_default_config()
 
         try:
-            # Load from alert_configurations collection
+            # Load from accounts/{account_id}/alert_configurations/default (Shape B)
             doc = (
-                self.db.collection("alert_configurations")
-                .document(self.account_id)
+                self.db.collection(f"accounts/{self.account_id}/alert_configurations")
+                .document("default")
                 .get()
             )
 
@@ -199,9 +206,9 @@ class AlertManager:
             return
 
         try:
-            self.db.collection("alert_configurations").document(self.account_id).set(
-                config
-            )
+            self.db.collection(
+                f"accounts/{self.account_id}/alert_configurations"
+            ).document("default").set(config)
             logger.info(f"Saved alert configuration for account {self.account_id}")
         except Exception as e:
             logger.error(f"Failed to save alert configuration: {e}")
@@ -482,10 +489,10 @@ class AlertManager:
             return
 
         try:
-            # Store in alerts subcollection
-            self.db.collection("alert_configurations").document(
-                self.account_id
-            ).collection("alerts").add(alert)
+            # Store in alerts subcollection under Shape B parent doc
+            self.db.collection(
+                f"accounts/{self.account_id}/alert_configurations"
+            ).document("default").collection("alerts").add(alert)
         except Exception as e:
             logger.error(f"Failed to store alert in Firestore: {e}")
 
@@ -618,6 +625,23 @@ class AlertManager:
         self._save_configuration(self.config)
         logger.info(f"Updated alert configuration for account {self.account_id}")
 
+    def load(self) -> Dict[str, Any]:
+        """Load alert configuration from Firestore.
+
+        Returns:
+            Alert configuration dictionary
+        """
+        self.config = self._load_configuration()
+        return self.config
+
+    def save(self, config: Dict[str, Any]) -> None:
+        """Save alert configuration to Firestore.
+
+        Args:
+            config: Configuration dictionary to persist
+        """
+        self._save_configuration(config)
+
     @with_read_retry(operation_name="get_recent_alerts")
     def get_recent_alerts(
         self, hours: int = 24, severity_filter: Optional[AlertSeverity] = None
@@ -638,8 +662,8 @@ class AlertManager:
             cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours)
 
             query = (
-                self.db.collection("alert_configurations")
-                .document(self.account_id)
+                self.db.collection(f"accounts/{self.account_id}/alert_configurations")
+                .document("default")
                 .collection("alerts")
                 .where(filter=FieldFilter("timestamp", ">=", cutoff_time.isoformat()))
             )

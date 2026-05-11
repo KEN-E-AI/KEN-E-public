@@ -195,8 +195,8 @@ class TestMonitoringTopicsConcepts:
         # Verify Firestore update was called
         mock_firestore.update_document.assert_called_once()
         update_call = mock_firestore.update_document.call_args
-        assert update_call.kwargs["collection"] == "monitoring_topics"
-        assert update_call.kwargs["document_id"] == "account123"
+        assert update_call.kwargs["collection"] == "accounts/account123/monitoring_topics"
+        assert update_call.kwargs["document_id"] == "default"
         assert len(update_call.kwargs["data"]["customer_concepts"]) == 1
         assert "Apple" in update_call.kwargs["data"]["customer_keywords"]
 

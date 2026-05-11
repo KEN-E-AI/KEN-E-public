@@ -9,7 +9,9 @@ from ..models.monitoring_models import CompetitorEntry, MonitoringTopics
 
 logger = logging.getLogger(__name__)
 
-MONITORING_TOPICS_COLLECTION = "monitoring_topics"
+
+def _monitoring_topics_subcollection(account_id: str) -> str:
+    return f"accounts/{account_id}/monitoring_topics"
 
 
 class MonitoringSyncService:
@@ -46,8 +48,8 @@ class MonitoringSyncService:
         try:
             # Get existing monitoring topics document
             doc = firestore.get_document(
-                collection=MONITORING_TOPICS_COLLECTION,
-                document_id=account_id,
+                collection=_monitoring_topics_subcollection(account_id),
+                document_id="default",
             )
 
             if not doc:
@@ -83,8 +85,8 @@ class MonitoringSyncService:
                     monitoring_topics.updated_at = datetime.utcnow().isoformat()
 
                     firestore.update_document(
-                        collection=MONITORING_TOPICS_COLLECTION,
-                        document_id=account_id,
+                        collection=_monitoring_topics_subcollection(account_id),
+                        document_id="default",
                         data=monitoring_topics.model_dump(),
                     )
 
@@ -108,8 +110,8 @@ class MonitoringSyncService:
                 if len(monitoring_topics.competitor_entries) < original_count:
                     monitoring_topics.updated_at = datetime.utcnow().isoformat()
                     firestore.update_document(
-                        collection=MONITORING_TOPICS_COLLECTION,
-                        document_id=account_id,
+                        collection=_monitoring_topics_subcollection(account_id),
+                        document_id="default",
                         data=monitoring_topics.model_dump(),
                     )
                     logger.info(

@@ -1612,3 +1612,69 @@ class TestAnalyticsResourcesRegistry:
             has_versions=False,
         )
         assert cfg.account_id_extractor is None
+
+
+# ---------------------------------------------------------------------------
+# TestShapeBLikeResourcesRegistry — DM-PRD-04 (DM-22)
+# ---------------------------------------------------------------------------
+
+
+class TestShapeBLikeResourcesRegistry:
+    """Assert the two Shape B-like resources are correctly registered.
+
+    DM-21 (PO-verified audit) confirmed:
+    - Both collections hold exactly one document per account, whose doc-id IS the
+      account_id.  The canonical destination doc-id is ``"default"`` for both.
+    - MonitoringTopics (monitoring_models.py:146) carries ``account_id`` as a
+      payload field only — no ``topic_id`` or ``doc_id`` field — so no Pydantic
+      model edit is required.
+    - AlertManager writes/reads via ``.document(self.account_id)``; the payload
+      also holds ``account_id`` as a content field, fully decoupled from the
+      Firestore doc-id.
+    See DM-PRD-04 §8 open-questions (resolved) for the full audit trail.
+
+    The live RESOURCES import is used (no monkeypatching) so that any accidental
+    removal or renaming of an entry fails these tests immediately.
+    """
+
+    def test_monitoring_topics_registered(self) -> None:
+        assert "monitoring_topics" in RESOURCES, "monitoring_topics not found in RESOURCES"
+
+    def test_monitoring_topics_source_is_single_collection(self) -> None:
+        assert RESOURCES["monitoring_topics"].source_is_single_collection is True
+
+    def test_monitoring_topics_destination_doc_id(self) -> None:
+        assert RESOURCES["monitoring_topics"].destination_doc_id == "default"
+
+    def test_monitoring_topics_has_no_versions(self) -> None:
+        assert RESOURCES["monitoring_topics"].has_versions is False
+
+    def test_monitoring_topics_full_config(self) -> None:
+        assert RESOURCES["monitoring_topics"] == MigrateConfig(
+            old_prefix="",
+            new_subcollection="monitoring_topics",
+            has_versions=False,
+            source_is_single_collection=True,
+            destination_doc_id="default",
+        )
+
+    def test_alert_configurations_registered(self) -> None:
+        assert "alert_configurations" in RESOURCES, "alert_configurations not found in RESOURCES"
+
+    def test_alert_configurations_source_is_single_collection(self) -> None:
+        assert RESOURCES["alert_configurations"].source_is_single_collection is True
+
+    def test_alert_configurations_destination_doc_id(self) -> None:
+        assert RESOURCES["alert_configurations"].destination_doc_id == "default"
+
+    def test_alert_configurations_has_no_versions(self) -> None:
+        assert RESOURCES["alert_configurations"].has_versions is False
+
+    def test_alert_configurations_full_config(self) -> None:
+        assert RESOURCES["alert_configurations"] == MigrateConfig(
+            old_prefix="",
+            new_subcollection="alert_configurations",
+            has_versions=False,
+            source_is_single_collection=True,
+            destination_doc_id="default",
+        )
