@@ -128,7 +128,7 @@ python api/scripts/migrate_to_shape_b.py --resource=alert_configurations --confi
 # Expected: exit code 0; runner deletes all root-level alert_configurations/{account_id} docs.
 #
 # Known carve-out (PRD §8 Risks): nested alert_configurations/{account_id}/alerts/*
-# subcollection docs (24 h alert history written by alert_manager.py:493-495) are NOT
+# subcollection docs (24 h alert history written by alert_manager.py:492-495) are NOT
 # cascade-deleted by batch.delete(doc.reference). These remain as orphans under the
 # now-empty parent ref. Record the count below; DM-PRD-05's recursive_delete will reap
 # them when account deletion fires.
@@ -147,12 +147,17 @@ import os, json
 os.environ["GOOGLE_CLOUD_PROJECT_ID"] = "ken-e-dev"
 from app.adk.agents.strategy_agent.alert_manager import AlertManager
 
-account_id = "<ACCOUNT_ID>"
+account_id = "<ACCOUNT_ID>"   # ← replace with a real account ID, e.g. "acc_abc123ef"
+if account_id.startswith("<"):
+    raise SystemExit("ERROR: replace <ACCOUNT_ID> with a real account ID before running")
 mgr = AlertManager(account_id=account_id, project_id="ken-e-dev")
 config = mgr.load()
 print(f"AlertManager.load() returned: {json.dumps(config, indent=2, default=str)}")
 assert config, "load() returned falsy — check Firestore path"
-assert config.get("account_id") == account_id or True, "account_id field check"
+if config.get("account_id") is not None:
+    assert config.get("account_id") == account_id, (
+        f"account_id mismatch: expected {account_id!r}, got {config.get('account_id')!r}"
+    )
 print("SMOKE CHECK PASSED")
 PYEOF
 # Expected: non-empty dict; no exception; "SMOKE CHECK PASSED"
@@ -219,7 +224,7 @@ Including the `alert_configurations` registry assertions:
 
 Per DM-PRD-04 §8 Risks, the runner's `--confirm-delete` step uses `batch.delete(doc.reference)`
 which does **not** cascade-delete Firestore subcollections. Any docs at
-`alert_configurations/{account_id}/alerts/` (≤24 h alert history, per `alert_manager.py:493-495`)
+`alert_configurations/{account_id}/alerts/` (≤24 h alert history, per `alert_manager.py:492-495`)
 survive as orphans under the now-empty parent ref.
 
 These are acceptable per PRD §8 ("alert history is at most 24 h old by design"). DM-PRD-05's
@@ -237,10 +242,11 @@ Orphan alerts/ docs: ___  (fill in after --confirm-delete)
 
 | AC | Description | Status |
 |----|-------------|--------|
-| AC-2 | Root-level `alert_configurations` collection empty/deleted in dev | PENDING OPERATOR RUN |
-| AC-4 | `AlertManager(account_id=…).load()` succeeds against migrated data | Code-path verified (mocked). Live check pending operator run. |
-| Idempotency | Re-running `--resource=alert_configurations` is a no-op | PENDING OPERATOR RUN |
-| (DM-25 unit test) | Mocked round-trip passes | VERIFIED (20/20 tests pass) |
+| AC-1 | Root-level `alert_configurations` collection empty/deleted in dev | PENDING OPERATOR RUN |
+| AC-2 | `accounts/{id}/alert_configurations/default` populated for every pre-migration account | PENDING OPERATOR RUN |
+| AC-3 | `AlertManager(account_id=…).load()` succeeds against migrated data | Code-path verified (mocked). Live check pending operator run. |
+| AC-4 | Re-running `--resource=alert_configurations` is a no-op | PENDING OPERATOR RUN |
+| DM-25 mocked test | Mocked round-trip (`test_load_save_round_trip`) passes | VERIFIED (20/20 tests pass) |
 
 ---
 
