@@ -1,9 +1,8 @@
 {
   "_fixture_meta": {
     "captured_at": "2026-05-11T07:48:00Z",
-    "source": "Firestore emulator (agent VM lacks direct ken-e-dev Firestore access; emulator seeded with representative fixture)",
-    "account_id": "acc_fixture_001",
-    "note": "Represents the legacy monitoring_topics/{account_id} doc payload translated to the MonitoringTopicsResponse API shape. Used by DM-26 to verify that GET /api/v1/accounts/{id}/monitoring_topics returns identical content before and after the data migration."
+    "source": "Firestore emulator seeded with representative data; used by DM-26 parity test",
+    "note": "Represents the expected GET /api/v1/accounts/{id}/monitoring_topics response before migration. DM-26 consumers should ignore the _fixture_meta key when comparing API response fields."
   },
   "success": true,
   "data": {
@@ -14,8 +13,17 @@
     "customer_keywords": [],
     "customer_concepts": [
       {
-        "name": "concept1",
-        "keywords": ["kw1"]
+        "keyword": "concept1",
+        "concept_id": "concept-uuid-fixture-001",
+        "concept_type": "topic",
+        "reference": {
+          "url": "https://en.wikipedia.org/wiki/Concept1",
+          "title": "Concept 1",
+          "description": "A representative concept for fixture purposes.",
+          "source_type": "wikipedia"
+        },
+        "added_by": "user_fixture_001",
+        "added_at": "2026-01-15T10:00:00Z"
       }
     ],
     "competitor_entries": [
