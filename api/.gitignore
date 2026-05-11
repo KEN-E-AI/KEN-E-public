@@ -51,6 +51,7 @@ htmlcov/
 !package-lock.json
 !tsconfig.json
 !google-cloud-service-account-key.json.template
+!tests/integration/fixtures/*.json
 
 # Specific service account files (in case they exist)
 ken-e-*.json
