@@ -369,6 +369,22 @@ class FirestoreService:
         """
         return self.list_documents(collection, limit, [(field, operator, value)])
 
+    # ---------------------------------------------------------------------------
+    # Funnel storage style decision (DM-38 / DM-PRD-03 §5 Phase 2.1)
+    # ---------------------------------------------------------------------------
+    # Chosen style: Style A — funnels and account_settings stored as direct map
+    # fields on `accounts/{account_id}` (NOT as a subcollection).
+    #
+    # Rubric: p99 per-account funnel-tree byte footprint < 500 KiB → Style A.
+    # DM-35 profiler output satisfied this threshold; measurement was thin
+    # (dev env had 0 accounts with populated funnel data). Style B (subcollection
+    # at accounts/{id}/funnels/*) remains a follow-up option if post-launch
+    # production measurement shows per_account_size_p99 >= 400 KiB.
+    #
+    # Full measurement data and escalation path:
+    #   docs/design/components/data-management/multi-tenant-migration-plan.md §3.3
+    # ---------------------------------------------------------------------------
+
     # KPI Operations
 
     def get_kpi_setting(
