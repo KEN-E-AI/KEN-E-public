@@ -62,7 +62,7 @@ def _delete_collection(client: Any, col_ref: Any) -> None:
                 _delete_collection(client, sub_col)
             doc_ref.delete()
     except Exception:
-        pass
+        pass  # Best-effort cleanup; don't fail the test suite
 
 
 # ---------------------------------------------------------------------------
