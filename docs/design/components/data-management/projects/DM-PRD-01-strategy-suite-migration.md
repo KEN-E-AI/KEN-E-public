@@ -43,6 +43,7 @@ These three resources cluster together because `routers/strategy.py` and `servic
 ## 3. Dependencies
 
 - **DM-PRD-00:** `migrate_to_shape_b.py` merged; `strategy_audit` collection-group index deployed and `READY`
+- **DM-69 (fast-follow):** Five COLLECTION-scoped composite indexes on `strategy_audit` required by `get_strategy_audit_log`, `get_recent_actions`, and `get_document_history` — shipped as a separate issue after wave-1. Operator must run `terraform apply` and confirm `READY` before these query paths are unblocked in dev.
 - Existing files to study:
   - `api/src/kene_api/routers/strategy.py`
   - `api/src/kene_api/services/audit_service.py`

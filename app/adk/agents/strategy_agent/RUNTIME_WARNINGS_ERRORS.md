@@ -236,6 +236,27 @@ ERROR: Failed to get bottlenecks: 400 The query requires an index
 
 ---
 
+### 7c. ✅ Firestore Indexes Missing for `strategy_audit` Collection-Scoped Queries (provisioned in DM-69)
+
+**Affected queries**: `get_strategy_audit_log` (`routers/strategy.py`), `get_recent_actions` and `get_document_history` (`services/audit_service.py`).
+
+**Root Cause**: DM-15 migrated `strategy_audit` writes to `accounts/{account_id}/strategy_audit` (Shape B). The three collection-scoped query paths were never index-backed under Shape A (per-account collection ids made composite indexes impossible) and remained unbacked after the migration — runtime they raised `FAILED_PRECONDITION: The query requires an index`.
+
+**Status**: ✅ RESOLVED — DM-69 added five COLLECTION-scoped composite indexes on `strategy_audit` to `deployment/firestore.indexes.json`:
+- `(doc_type ASC, timestamp DESC)` — `get_strategy_audit_log` (no action filter) and `get_recent_actions` (doc_type-only)
+- `(doc_type ASC, action ASC, timestamp DESC)` — `get_strategy_audit_log` with action filter
+- `(user_id ASC, timestamp DESC)` — `get_recent_actions` with user_id-only filter
+- `(user_id ASC, doc_type ASC, timestamp DESC)` — `get_recent_actions` with user_id + doc_type
+- `(doc_type ASC, doc_id ASC, timestamp DESC)` — `get_document_history`
+
+The existing COLLECTION_GROUP `(user_id, timestamp)` index for `get_user_activity` is unaffected.
+
+**Operator action required**: run `terraform apply` against the dev project after merging DM-69; confirm `READY` via `gcloud firestore indexes composite list --project=ken-e-dev --database='(default)'`.
+
+**Priority**: Resolved — P1 → ✅
+
+---
+
 ## P2 - Medium Priority (Deprecations)
 
 ### 8. ⚠️ Deprecated Sync Method Usage
