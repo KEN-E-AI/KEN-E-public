@@ -299,6 +299,50 @@ class TestBuildFirestoreUpdates:
         assert updates["model"] == "gemini-2.5-pro"
 
 
+class TestMergeFromDataStripsStorageInternals:
+    """AH-40: ``_merge_from_data`` strips storage-internal fields that aren't
+    part of the ``MergedAgentConfig`` API contract before validation, so that
+    ``extra="forbid"`` doesn't reject docs touched by sibling repos or
+    carrying audit metadata."""
+
+    def test_strips_metadata_and_audit_fields(self):
+        from src.kene_api.routers.agent_configs import _merge_from_data
+
+        global_data = {
+            "name": "ken_e_chatbot",
+            "instruction": "Hello.",
+            "model": "gemini-2.5-pro",
+            "temperature": 0.7,
+            "metadata": {"version": "v1.0.0", "variant_name": "x"},
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-02T00:00:00Z",
+            "created_by": "seed@ken-e.ai",
+        }
+
+        merged = _merge_from_data("ken_e_chatbot", global_data, None)
+
+        assert merged is not None
+        assert merged.temperature == 0.7
+
+    def test_strips_mer_e_deployment_status(self):
+        """MER-E (sister repo) writes ``deployment_status`` onto shared
+        agent_configs docs. The API doesn't surface it; the strip list
+        keeps the doc validating cleanly."""
+        from src.kene_api.routers.agent_configs import _merge_from_data
+
+        global_data = {
+            "instruction": "Hello.",
+            "model": "gemini-2.5-pro",
+            "temperature": 0.4,
+            "deployment_status": None,
+        }
+
+        merged = _merge_from_data("ken_e_chatbot", global_data, None)
+
+        assert merged is not None
+        assert merged.temperature == 0.4
+
+
 class TestErrorHandling:
     """Test error handling paths."""
 

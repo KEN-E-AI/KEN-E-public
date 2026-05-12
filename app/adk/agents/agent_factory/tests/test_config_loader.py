@@ -359,6 +359,29 @@ class TestConfigLoader:
 
     @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
     @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_mer_e_deployment_status_field_stripped(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """MER-E (sister repo) writes ``deployment_status`` onto shared
+        agent_configs docs. The factory doesn't consume it but must not
+        reject docs that carry it."""
+        from app.adk.agents.agent_factory.config_loader import load_agent_config
+
+        global_data = {
+            "instruction": "Hello.",
+            "model": "gemini-2.5-pro",
+            "temperature": 0.5,
+            "deployment_status": None,
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=global_data)
+
+        result = load_agent_config("test_agent")
+
+        assert result.temperature == 0.5
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
     def test_based_on_version_passes_through(
         self, mock_client: MagicMock, mock_auth: MagicMock
     ) -> None:

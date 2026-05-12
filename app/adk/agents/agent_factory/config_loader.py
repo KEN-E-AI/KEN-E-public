@@ -66,8 +66,12 @@ class MergedAgentConfig(BaseModel):
 # Storage-internal fields that live on Firestore docs but are not part of
 # the ``MergedAgentConfig`` schema. ``_build_config`` strips these before
 # validation since ``extra="forbid"`` would otherwise reject them.
+#
+# ``deployment_status`` is written by MER-E (sister repo) onto the shared
+# ``agent_configs/{id}`` docs. The factory doesn't consume it; strip it
+# so an MER-E-touched doc still validates here.
 _STORAGE_INTERNAL_FIELDS: frozenset[str] = frozenset(
-    {"name", "created_at", "updated_at", "created_by"}
+    {"name", "created_at", "updated_at", "created_by", "deployment_status"}
 )
 
 

@@ -85,8 +85,12 @@ _REDEPLOY_REQUIRED_FIELDS: frozenset[str] = frozenset(
 # Storage-internal fields that live on Firestore docs but are not part of
 # the ``MergedAgentConfig`` API contract. They must be stripped before
 # Pydantic validation now that ``MergedAgentConfig`` uses ``extra="forbid"``.
+#
+# ``deployment_status`` is written by MER-E (sister repo) onto the shared
+# ``agent_configs/{id}`` docs. KEN-E doesn't surface it in this API shape;
+# strip it so an MER-E-touched doc still validates.
 _STORAGE_INTERNAL_FIELDS: frozenset[str] = frozenset(
-    {"metadata", "created_at", "updated_at", "created_by"}
+    {"metadata", "created_at", "updated_at", "created_by", "deployment_status"}
 )
 
 logger = logging.getLogger(__name__)
