@@ -38,8 +38,8 @@ class TestFirestoreServiceShapeDPaths:
 
         result = service.get_kpi_setting("acc_123", "income_kpi")
 
-        mock_db.collection.assert_called_with("accounts")
-        mock_db.collection.return_value.document.assert_called_with("acc_123")
+        mock_db.collection.assert_called_once_with("accounts")
+        mock_db.collection.return_value.document.assert_called_once_with("acc_123")
         assert result == "m_abc"
 
     def test_update_kpi_setting_happy_path(self):
@@ -54,7 +54,7 @@ class TestFirestoreServiceShapeDPaths:
         )
         all_calls_str = str(mock_doc_ref.update.call_args_list)
         assert "accounts.acc_123" not in all_calls_str
-        mock_db.collection.assert_called_with("accounts")
+        mock_db.collection.assert_called_once_with("accounts")
 
     def test_update_kpi_setting_not_found_creates_with_correct_shape(self):
         service, mock_db = _make_service()
@@ -83,8 +83,9 @@ class TestFirestoreServiceShapeDPaths:
         )
 
         assert result is True
-        mock_db.collection.assert_called_with("accounts")
-        mock_db.collection.return_value.document.assert_called_with("acc_123")
+        mock_db.collection.assert_called_once_with("accounts")
+        mock_db.collection.return_value.document.assert_called_once_with("acc_123")
+        mock_doc_ref.get.assert_called_once()
         mock_doc_ref.set.assert_called_once()
         set_args, set_kwargs = mock_doc_ref.set.call_args
         assert set_kwargs.get("merge") is True
@@ -103,6 +104,7 @@ class TestFirestoreServiceShapeDPaths:
         )
 
         assert result is True
+        mock_doc_ref.get.assert_called_once()
         set_args, set_kwargs = mock_doc_ref.set.call_args
         assert set_kwargs.get("merge") is True
         payload = set_args[0]
