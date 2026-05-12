@@ -768,5 +768,180 @@ class TestSpecialistGenerationConfigE2E:
         assert ads.generate_content_config.max_output_tokens == 2048
 
 
+# ---------------------------------------------------------------------------
+# TC-AH41: Audit-field wiring — mcp_servers attaches the right toolset, the
+# automatically_available filter excludes hidden defaults, and a regression
+# contrast documents the pre-AH-41 bug where the GA agent had no MCP
+# toolset because mcp_servers was not seeded.
+# ---------------------------------------------------------------------------
+
+
+# Realistic AH-41 fixture: ken_e_chatbot root + GA specialist (with MCP) +
+# news specialist (no MCP, uses Vertex AI Search elsewhere). Matches the
+# decision matrix exactly.
+_AH41_DOCS: dict = {
+    ("agent_configs", "ken_e_chatbot"): {
+        "instruction": "You are KEN-E root.",
+        "model": "gemini-2.5-pro",
+        "description": "Root orchestration agent",
+        "code_execution_enabled": False,
+        "mcp_servers": [],
+        "skill_ids": [],
+        "sandbox_code_executor_enabled": False,
+        "response_schema": None,
+        "available_to_copy": False,
+        "automatically_available": True,
+        "visible_in_frontend": True,
+    },
+    ("agent_configs", "google_analytics_agent"): {
+        "instruction": "You are a Google Analytics assistant.",
+        "model": "gemini-2.5-pro",
+        "description": "GA assistant",
+        "code_execution_enabled": True,
+        "mcp_servers": ["google_analytics_mcp"],
+        "skill_ids": [],
+        "sandbox_code_executor_enabled": False,
+        "response_schema": None,
+        "available_to_copy": True,
+        "automatically_available": True,
+        "visible_in_frontend": True,
+    },
+    ("agent_configs", "company_news_agent"): {
+        "instruction": "You are a company news assistant.",
+        "model": "gemini-2.5-pro",
+        "description": "Company news",
+        "code_execution_enabled": False,
+        "mcp_servers": [],
+        "skill_ids": [],
+        "sandbox_code_executor_enabled": False,
+        "response_schema": None,
+        "available_to_copy": True,
+        "automatically_available": True,
+        "visible_in_frontend": True,
+    },
+    ("mcp_server_configs", "google_analytics_mcp"): {
+        "enabled": True,
+        "connection": {
+            "connection_type": "sse",
+            "url": "https://ga.mcp.example.com",
+        },
+        "auth_type": "ga_oauth",
+    },
+}
+
+
+def _capture_specialists_with_docs(docs: dict) -> tuple[object, dict]:
+    """Run build_hierarchy and capture each specialist LlmAgent by name."""
+    import app.adk.agents.agent_factory.builder as b
+    import app.adk.agents.agent_factory.hierarchy as h
+
+    fake_db = _FakeFirestoreDb(docs)
+    fake_registry = _FakeRegistry()
+    captured: dict[str, object] = {}
+    original_build_agent = b.build_agent
+
+    def _capture(config, *, name: str, tools=None, **kwargs):
+        agent = original_build_agent(config, name=name, tools=tools, **kwargs)
+        if name != "ken_e":
+            captured[name] = agent
+        return agent
+
+    with (
+        _PATCH_BEFORE_AGENT,
+        _PATCH_AFTER_AGENT,
+        _PATCH_BEFORE_TOOL,
+        _PATCH_AFTER_TOOL,
+        _PATCH_BUILD_TOOLSET as mock_build_toolset,
+        _PATCH_GET_DEFAULT_REGISTRY as mock_get_registry,
+        patch(
+            "app.adk.agents.agent_factory.hierarchy.build_agent",
+            side_effect=_capture,
+        ),
+    ):
+        mock_build_toolset.side_effect = lambda sid, doc: MagicMock(
+            name=f"toolset_{sid}"
+        )
+        mock_get_registry.return_value = fake_registry
+        root = h.build_hierarchy(db=fake_db)
+
+    return root, captured
+
+
+class TestAH41AuditFieldsWired:
+    """AC-3 / AC-4: hierarchy build attaches the right tools and flags
+    when the AH-41 matrix is seeded on every doc."""
+
+    def test_ga_specialist_has_mcp_toolset_attached(self) -> None:
+        _, specialists = _capture_specialists_with_docs(_AH41_DOCS)
+        ga = specialists["google_analytics_agent"]
+        assert len(ga.tools) == 1, (
+            "AH-41 AC-4: the GA specialist's mcp_servers list must produce "
+            "exactly one MCP toolset attached at runtime"
+        )
+
+    def test_news_specialist_has_empty_tools_list(self) -> None:
+        _, specialists = _capture_specialists_with_docs(_AH41_DOCS)
+        news = specialists["company_news_agent"]
+        assert news.tools == []
+
+    def test_ga_specialist_has_code_executor(self) -> None:
+        _, specialists = _capture_specialists_with_docs(_AH41_DOCS)
+        ga = specialists["google_analytics_agent"]
+        assert ga.code_executor is not None
+
+    def test_news_specialist_has_no_code_executor(self) -> None:
+        _, specialists = _capture_specialists_with_docs(_AH41_DOCS)
+        news = specialists["company_news_agent"]
+        assert news.code_executor is None
+
+    def test_root_has_dispatch_tools_for_both_specialists(self) -> None:
+        root, _ = _capture_specialists_with_docs(_AH41_DOCS)
+        tool_names = {getattr(t, "__name__", None) for t in root.tools}
+        assert "dispatch_to_google_analytics_agent" in tool_names
+        assert "dispatch_to_company_news_agent" in tool_names
+
+
+class TestAH41AutomaticallyAvailableFilter:
+    """AH-41: a default-status specialist with automatically_available=False
+    is excluded from the hierarchy at Step 4½ of build_hierarchy."""
+
+    def test_specialist_with_automatically_available_false_is_excluded(self) -> None:
+        docs = {k: dict(v) for k, v in _AH41_DOCS.items()}
+        docs[("agent_configs", "company_news_agent")]["automatically_available"] = False
+
+        root, specialists = _capture_specialists_with_docs(docs)
+        assert "company_news_agent" not in specialists
+        tool_names = {getattr(t, "__name__", None) for t in root.tools}
+        assert "dispatch_to_company_news_agent" not in tool_names
+        # GA still present.
+        assert "google_analytics_agent" in specialists
+
+
+class TestAH41RegressionContrastGaMissingMcpServers:
+    """Regression-contrast documenting the pre-AH-41 bug.
+
+    Before AH-41 the GA agent doc had no ``mcp_servers`` field, so it
+    landed on the schema default of ``[]`` and ``hierarchy.py:247``
+    iterated zero items — no MCP toolset attached at runtime.
+
+    This test verifies that an empty ``mcp_servers`` list reproduces the
+    pre-fix state: the specialist is built but has zero tools. AH-41
+    fixes this by seeding ``mcp_servers=["google_analytics_mcp"]``
+    explicitly on the GA doc.
+    """
+
+    def test_ga_specialist_with_empty_mcp_servers_has_no_tools(self) -> None:
+        docs = {k: dict(v) for k, v in _AH41_DOCS.items()}
+        # Reproduce the pre-AH-41 state: mcp_servers absent → defaults to [].
+        docs[("agent_configs", "google_analytics_agent")]["mcp_servers"] = []
+
+        _, specialists = _capture_specialists_with_docs(docs)
+        ga = specialists["google_analytics_agent"]
+        assert ga.tools == [], (
+            "Pre-AH-41 regression case: with mcp_servers=[] the GA "
+            "specialist gets zero toolsets — this is the bug the audit fixes"
+        )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

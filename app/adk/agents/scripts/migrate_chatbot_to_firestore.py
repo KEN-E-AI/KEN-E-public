@@ -5,6 +5,17 @@ Migrate KEN-E chatbot configuration to Firestore.
 This script creates the `ken_e_chatbot` configuration document in Firestore,
 enabling model selection and runtime configuration updates for the chatbot agent.
 
+.. warning::
+
+   **Re-running this script overwrites** `instruction`, `model`,
+   `temperature`, `max_output_tokens`, and `metadata` on the existing
+   `ken_e_chatbot` doc with the values in this file. Fields NOT in the
+   seed dict (e.g. anything added later via the Admin UI) are preserved
+   by ``set(..., merge=True)``. **Treat this file as the source of truth
+   for the fields it carries**: if you change those fields via Admin UI,
+   reconcile back to this file before re-running, or you'll lose the
+   admin edit on the next seed.
+
 Usage:
     python migrate_chatbot_to_firestore.py [--project-id PROJECT_ID] [--dry-run]
 
@@ -24,9 +35,23 @@ Examples:
 
 import argparse
 import logging
+import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
-from google.cloud import firestore
+# Make ``app`` importable when this file is executed as a script (``uv run
+# python /path/to/this.py``). Walks up to the repo root, identified by
+# the presence of a ``.git`` entry, and prepends it to ``sys.path``.
+_repo_root = Path(__file__).resolve().parent
+while _repo_root != _repo_root.parent and not (_repo_root / ".git").exists():
+    _repo_root = _repo_root.parent
+if str(_repo_root) not in sys.path:
+    sys.path.insert(0, str(_repo_root))
+
+from app.adk.agents.scripts._seed_helpers import (  # noqa: E402
+    AUDIT_FIELDS_RESEARCHER,
+    upsert_agent_config,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -117,14 +142,23 @@ Remember: You are a router, not a data source. ALWAYS delegate to the appropriat
     # merge in a clean environment.
     "temperature": 0.7,
     "max_output_tokens": 4096,
+    # AH-41: the 8 audited fields are written explicitly so behavior is
+    # not silently driven by Pydantic schema defaults. The orchestrator
+    # is visible in the Workflows > Agents UI (it IS the chat agent) but
+    # NOT copyable — users create custom agents via the new-agent flow
+    # rather than forking the orchestrator. Hence the
+    # ``available_to_copy=False`` override on top of the researcher
+    # profile.
+    **AUDIT_FIELDS_RESEARCHER,
+    "available_to_copy": False,
     "metadata": {
-        "version": "v1.1",
+        "version": "v1.2",
         "variant_name": "baseline",
         "experiment_id": "baseline",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "updated_by": "migration_script",
-        "notes": "Initial chatbot configuration migrated from hardcoded ken_e_agent.py. Enables model selection and runtime updates via Admin UI. v1.1: Added Task Delegation section with 2-4 acceptance-criteria generation guidance per AH-6 (AH-PRD-01 §7 AC#8).",
+        "notes": "Initial chatbot configuration migrated from hardcoded ken_e_agent.py. Enables model selection and runtime updates via Admin UI. v1.1: Added Task Delegation section with 2-4 acceptance-criteria generation guidance per AH-6 (AH-PRD-01 §7 AC#8). v1.2 (AH-41): added 8 audited fields explicitly (code_execution_enabled, mcp_servers, skill_ids, sandbox_code_executor_enabled, response_schema, available_to_copy=False, automatically_available, visible_in_frontend).",
     },
 }
 
@@ -132,51 +166,13 @@ Remember: You are a router, not a data source. ALWAYS delegate to the appropriat
 def upload_config_to_firestore(
     config: dict, doc_id: str, project_id: str, dry_run: bool = False
 ) -> bool:
+    """Thin wrapper around the shared ``upsert_agent_config`` helper.
+
+    Retained as a module-level function so existing callers / tests that
+    import this symbol keep working. The implementation lives in
+    ``app.adk.agents.scripts._seed_helpers``.
     """
-    Upload a configuration document to Firestore.
-
-    Args:
-        config: Configuration dictionary
-        doc_id: Document ID in agent_configs collection
-        project_id: GCP project ID
-        dry_run: If True, only log what would be done without making changes
-
-    Returns:
-        True if successful, False otherwise
-    """
-    try:
-        if dry_run:
-            logger.info(f"[DRY RUN] Would upload config '{doc_id}' to Firestore:")
-            logger.info(f"  Model: {config['model']}")
-            logger.info(f"  Description: {config['description']}")
-            logger.info(f"  Project: {project_id}")
-            return True
-
-        # Initialize Firestore client
-        db = firestore.Client(project=project_id)
-
-        # Check if config already exists
-        doc_ref = db.collection("agent_configs").document(doc_id)
-        doc = doc_ref.get()
-
-        if doc.exists:
-            logger.warning(
-                f"Config '{doc_id}' already exists in Firestore. "
-                f"Use --force to overwrite (not implemented for safety)."
-            )
-            return False
-
-        # Upload config
-        doc_ref.set(config)
-        logger.info(
-            f"✅ Successfully uploaded config '{doc_id}' to Firestore "
-            f"(model: {config['model']})"
-        )
-        return True
-
-    except Exception as e:
-        logger.error(f"❌ Failed to upload config '{doc_id}': {e}")
-        return False
+    return upsert_agent_config(config, doc_id, project_id, dry_run=dry_run)
 
 
 def main():

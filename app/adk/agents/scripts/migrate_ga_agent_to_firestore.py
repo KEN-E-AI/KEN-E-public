@@ -5,6 +5,16 @@ Migrate Google Analytics agent configuration to Firestore.
 This script creates the `google_analytics_agent` configuration document in Firestore,
 enabling model selection and runtime configuration updates for the GA agent.
 
+.. warning::
+
+   **Re-running this script overwrites** `instruction`, `model`,
+   `temperature`, `max_output_tokens`, and `metadata` on the existing
+   `google_analytics_agent` doc with the values in this file. Fields
+   NOT in the seed dict are preserved by ``set(..., merge=True)``.
+   **Treat this file as the source of truth for the fields it carries**:
+   if you change those fields via Admin UI, reconcile back to this file
+   before re-running, or you'll lose the admin edit on the next seed.
+
 Usage:
     python migrate_ga_agent_to_firestore.py [--project-id PROJECT_ID] [--dry-run]
 
@@ -24,9 +34,21 @@ Examples:
 
 import argparse
 import logging
+import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
-from google.cloud import firestore
+# Make ``app`` importable when this file is executed as a script.
+_repo_root = Path(__file__).resolve().parent
+while _repo_root != _repo_root.parent and not (_repo_root / ".git").exists():
+    _repo_root = _repo_root.parent
+if str(_repo_root) not in sys.path:
+    sys.path.insert(0, str(_repo_root))
+
+from app.adk.agents.scripts._seed_helpers import (  # noqa: E402
+    AUDIT_FIELDS_RESEARCHER,
+    upsert_agent_config,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -91,14 +113,22 @@ OAuth credentials are handled automatically via headers. You do NOT need to pass
     # merge in a clean environment.
     "temperature": 0.7,
     "max_output_tokens": 4096,
+    # AH-41: explicit audit fields per the decision matrix. GA agent
+    # gets code execution enabled and the GA MCP toolset (per AH-PRD-03).
+    # Note: the toolset only attaches at runtime when
+    # mcp_server_configs/google_analytics_mcp also exists with
+    # enabled=True (verified in dev; staging+prod were seeded in AH-42).
+    **AUDIT_FIELDS_RESEARCHER,
+    "code_execution_enabled": True,
+    "mcp_servers": ["google_analytics_mcp"],
     "metadata": {
-        "version": "v1.0",
+        "version": "v1.1",
         "variant_name": "baseline",
         "experiment_id": "baseline",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "updated_by": "migration_script",
-        "notes": "Initial GA agent configuration migrated from hardcoded google_analytics_agent_v4.py.",
+        "notes": "Initial GA agent configuration migrated from hardcoded google_analytics_agent_v4.py. v1.1 (AH-41): added 8 audited fields explicitly with code_execution_enabled=True and mcp_servers=['google_analytics_mcp'] per AH-PRD-03.",
     },
 }
 
@@ -106,47 +136,8 @@ OAuth credentials are handled automatically via headers. You do NOT need to pass
 def upload_config_to_firestore(
     config: dict, doc_id: str, project_id: str, dry_run: bool = False
 ) -> bool:
-    """Upload a configuration document to Firestore.
-
-    Args:
-        config: Configuration dictionary
-        doc_id: Document ID in agent_configs collection
-        project_id: GCP project ID
-        dry_run: If True, only log what would be done without making changes
-
-    Returns:
-        True if successful, False otherwise
-    """
-    try:
-        if dry_run:
-            logger.info(f"[DRY RUN] Would upload config '{doc_id}' to Firestore:")
-            logger.info(f"  Model: {config['model']}")
-            logger.info(f"  Description: {config['description']}")
-            logger.info(f"  Project: {project_id}")
-            return True
-
-        db = firestore.Client(project=project_id)
-
-        doc_ref = db.collection("agent_configs").document(doc_id)
-        doc = doc_ref.get()
-
-        if doc.exists:
-            logger.warning(
-                f"Config '{doc_id}' already exists in Firestore. "
-                f"Use --force to overwrite (not implemented for safety)."
-            )
-            return False
-
-        doc_ref.set(config)
-        logger.info(
-            f"Successfully uploaded config '{doc_id}' to Firestore "
-            f"(model: {config['model']})"
-        )
-        return True
-
-    except Exception as e:
-        logger.error(f"Failed to upload config '{doc_id}': {e}")
-        return False
+    """Thin wrapper around the shared ``upsert_agent_config`` helper."""
+    return upsert_agent_config(config, doc_id, project_id, dry_run=dry_run)
 
 
 def main():
