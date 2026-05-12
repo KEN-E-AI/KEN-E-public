@@ -128,7 +128,7 @@ function AgentCard({ agent, index, onConfigure }: { agent: Agent; index: number;
       {/* Configure gear (top-right) */}
       <button
         type="button"
-        className="absolute top-3 right-3 size-7 rounded-[var(--radius-sm)] flex items-center justify-center text-[var(--color-text-tertiary)] cursor-pointer transition-colors hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-violet-500)]"
+        className="absolute top-3 right-3 size-7 rounded-[var(--radius-sm)] flex items-center justify-center text-[var(--color-text-secondary)] cursor-pointer transition-colors hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-violet-500)]"
         onClick={(e) => { e.stopPropagation(); onConfigure(agent); }}
         aria-label={`Configure ${agent.name}`}
       >
