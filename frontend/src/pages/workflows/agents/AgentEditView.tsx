@@ -225,27 +225,32 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
           />
         </div>
 
-        {/* Temperature */}
+        {/* Response style (stored as `temperature`) */}
         <div>
-          <Label htmlFor="agent-temperature" className="flex items-center">
-            Temperature
+          {/* allow-text-tertiary: secondary-metadata slider value readout */}
+          <div className="flex justify-end items-center text-[11px] text-[var(--color-text-tertiary)]">
             <DirtyDot dirty={isDirtyTemperature} />
-            {/* allow-text-tertiary: secondary-metadata slider value readout */}
-            <span className="ml-2 text-[11px] text-[var(--color-text-tertiary)]">
-              {temperature.toFixed(2)}
+            <span>{temperature.toFixed(2)}</span>
+          </div>
+          <div className="flex items-center gap-3 mt-1">
+            <span className="text-[12px] text-[var(--color-text-secondary)]">
+              Precise
             </span>
-          </Label>
-          <Slider
-            id="agent-temperature"
-            aria-label="Temperature"
-            min={0}
-            max={1}
-            step={0.01}
-            value={[temperature]}
-            onValueChange={([val]) => setTemperature(val)}
-            className="mt-2"
-            data-testid="temperature-slider"
-          />
+            <Slider
+              id="agent-temperature"
+              aria-label="Response style: precise to creative"
+              min={0}
+              max={1}
+              step={0.01}
+              value={[temperature]}
+              onValueChange={([val]) => setTemperature(val)}
+              className="flex-1"
+              data-testid="temperature-slider"
+            />
+            <span className="text-[12px] text-[var(--color-text-secondary)]">
+              Creative
+            </span>
+          </div>
         </div>
 
         {/* Model */}

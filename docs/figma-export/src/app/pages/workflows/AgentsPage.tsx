@@ -10,6 +10,7 @@ import {
   BarChart3,
   Megaphone,
   FileText,
+  Settings,
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
@@ -124,6 +125,16 @@ function AgentCard({ agent, index, onConfigure }: { agent: Agent; index: number;
       }}
       onClick={() => onConfigure(agent)}
     >
+      {/* Configure gear (top-right) */}
+      <button
+        type="button"
+        className="absolute top-3 right-3 size-7 rounded-[var(--radius-sm)] flex items-center justify-center text-[var(--color-text-tertiary)] cursor-pointer transition-colors hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-violet-500)]"
+        onClick={(e) => { e.stopPropagation(); onConfigure(agent); }}
+        aria-label={`Configure ${agent.name}`}
+      >
+        <Settings className="size-4" />
+      </button>
+
       {/* Icon */}
       <div className="mb-3">
         <div
@@ -135,7 +146,7 @@ function AgentCard({ agent, index, onConfigure }: { agent: Agent; index: number;
       </div>
 
       {/* Name + Status */}
-      <div className="flex items-center gap-1.5 flex-wrap mb-1.5" style={{ minHeight: 22 }}>
+      <div className="flex items-center gap-1.5 flex-wrap mb-1.5 pr-8" style={{ minHeight: 22 }}>
         <span className="text-[13px]" style={{ fontWeight: 700, lineHeight: 1.25 }}>{agent.name}</span>
         {agent.status === 'inactive' && (
           <span
@@ -178,14 +189,6 @@ function AgentCard({ agent, index, onConfigure }: { agent: Agent; index: number;
         )}
       </div>
 
-      {/* Configure Button */}
-      <button
-        className="w-full mt-auto py-1.5 px-4 rounded-[9px] border-[1.5px] border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] text-[12px] text-[var(--color-text-primary)] cursor-pointer transition-all hover:border-[var(--color-violet-500)] hover:text-[var(--color-violet-500)]"
-        style={{ fontWeight: 600, fontFamily: 'inherit' }}
-        onClick={(e) => { e.stopPropagation(); onConfigure(agent); }}
-      >
-        Configure
-      </button>
     </div>
   );
 }

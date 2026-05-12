@@ -166,30 +166,35 @@ export function AgentCreatePage() {
           )}
         </div>
 
-        {/* Temperature (optional) */}
+        {/* Response style (stored as `temperature`) */}
         <div>
-          <Label htmlFor="agent-temperature">
-            Temperature
-            {/* allow-text-tertiary: secondary-metadata slider value readout */}
-            <span className="ml-2 text-[11px] text-[var(--color-text-tertiary)]">
-              {temperatureValue.toFixed(2)}
-            </span>
-          </Label>
+          {/* allow-text-tertiary: secondary-metadata slider value readout */}
+          <div className="flex justify-end text-[11px] text-[var(--color-text-tertiary)]">
+            {temperatureValue.toFixed(2)}
+          </div>
           <Controller
             name="temperature"
             control={control}
             render={({ field }) => (
-              <Slider
-                id="agent-temperature"
-                aria-label="Temperature"
-                min={0}
-                max={1}
-                step={0.01}
-                value={[field.value ?? 0.3]}
-                onValueChange={([val]) => field.onChange(val)}
-                className="mt-2"
-                data-testid="temperature-slider"
-              />
+              <div className="flex items-center gap-3 mt-1">
+                <span className="text-[12px] text-[var(--color-text-secondary)]">
+                  Precise
+                </span>
+                <Slider
+                  id="agent-temperature"
+                  aria-label="Response style: precise to creative"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={[field.value ?? 0.3]}
+                  onValueChange={([val]) => field.onChange(val)}
+                  className="flex-1"
+                  data-testid="temperature-slider"
+                />
+                <span className="text-[12px] text-[var(--color-text-secondary)]">
+                  Creative
+                </span>
+              </div>
             )}
           />
         </div>
