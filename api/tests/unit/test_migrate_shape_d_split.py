@@ -15,6 +15,7 @@ Covers:
 from __future__ import annotations
 
 import copy
+import json
 import sys
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
@@ -513,6 +514,427 @@ class TestOrgLevelFieldsUntouched:
         assert "accounts/valid_acc" in client._store
         assert "accounts/invalid/acc" not in client._store
 
+
+# Module-level fake-client helper for error-injection tests
+# ===========================================================================
+
+
+def _make_error_client(
+    org_data: dict[str, Any],
+    *,
+    get_raises: Exception | None = None,
+    set_raises: Exception | None = None,
+    existing_accounts: dict[str, dict[str, Any]] | None = None,
+) -> Any:
+    """Fake Firestore client where accounts dest_ref.get() or .set() can raise.
+
+    Only the *accounts* collection document refs are made fault-injectable.
+    The *organizations* collection returns normal snapshots so the migration
+    loop can always iterate over orgs.
+    """
+
+    class _Snap:
+        def __init__(self, doc_id: str, data: dict[str, Any]) -> None:
+            self.id = doc_id
+            self._data = data
+            self.exists = True
+
+        def to_dict(self) -> dict[str, Any]:
+            return dict(self._data)
+
+    # Normal doc-ref used for the organizations collection (no error injection).
+    class _OrgDocRef:
+        def __init__(self, path: str, store: dict[str, Any]) -> None:
+            self._path = path
+            self._store = store
+
+        @property
+        def id(self) -> str:
+            return self._path.rsplit("/", 1)[-1]
+
+        def get(self) -> _Snap:
+            data = self._store.get(self._path)
+            if data is None:
+                s = _Snap(self.id, {})
+                s.exists = False
+                return s
+            return _Snap(self.id, data)
+
+        def set(self, data: dict[str, Any], merge: bool = False) -> None:
+            assert merge is True
+            self._store[self._path] = data
+
+    # Fault-injectable doc-ref used for the accounts collection.
+    class _AccountDocRef:
+        def __init__(self, path: str, store: dict[str, Any]) -> None:
+            self._path = path
+            self._store = store
+
+        @property
+        def id(self) -> str:
+            return self._path.rsplit("/", 1)[-1]
+
+        def get(self) -> _Snap:
+            if get_raises is not None:
+                raise get_raises
+            data = self._store.get(self._path)
+            if data is None:
+                s = _Snap(self.id, {})
+                s.exists = False
+                return s
+            return _Snap(self.id, data)
+
+        def set(self, data: dict[str, Any], merge: bool = False) -> None:
+            assert merge is True, "set() must be called with merge=True"
+            if set_raises is not None:
+                raise set_raises
+            self._store[self._path] = data
+
+    class _OrgColRef:
+        def __init__(self, store: dict[str, Any], rows: list[Any]) -> None:
+            self._store = store
+            self._rows = rows
+
+        def stream(self) -> list[Any]:
+            return self._rows
+
+        def document(self, doc_id: str) -> _OrgDocRef:
+            return _OrgDocRef(f"organizations/{doc_id}", self._store)
+
+    class _AccountColRef:
+        def __init__(self, store: dict[str, Any]) -> None:
+            self._store = store
+
+        def stream(self) -> list[Any]:
+            return []
+
+        def document(self, doc_id: str) -> _AccountDocRef:
+            return _AccountDocRef(f"accounts/{doc_id}", self._store)
+
+    store: dict[str, Any] = {}
+    if existing_accounts:
+        for acc_id, data in existing_accounts.items():
+            store[f"accounts/{acc_id}"] = data
+
+    org_snap = _Snap("org_test", org_data)
+
+    class _Client:
+        def __init__(self) -> None:
+            self._store = store
+
+        def collection(self, name: str) -> Any:
+            if name == "organizations":
+                return _OrgColRef(store, [org_snap])
+            return _AccountColRef(store)
+
+    return _Client()
+
+
+# ===========================================================================
+# Per-account error paths
+# ===========================================================================
+
+
+class TestPerAccountErrorPath:
+    """Covers the two try/except branches in run_migration for per-account errors."""
+
+    # ------------------------------------------------------------------
+    # dest_ref.set() raises
+    # ------------------------------------------------------------------
+
+    def test_set_failure_records_error_and_counts(self) -> None:
+        """set() raising must yield summary.errors==1 and no copied/empty/skipped."""
+        org_data = {
+            "accounts": {
+                "acc_alpha": {
+                    "account_settings": {"kpi": "m_1"},
+                    "funnels": {"org": {"1": {}}},
+                }
+            }
+        }
+        client = _make_error_client(org_data, set_raises=RuntimeError("boom"))
+        summary = m.run_migration(client, dry_run=False)
+
+        assert summary.errors == 1
+        assert summary.copied == 0
+        assert summary.empty == 0
+        assert summary.skipped == 0
+
+    def test_set_failure_record_fields(self) -> None:
+        """AccountRecord emitted on set() failure must have correct fields."""
+        org_data = {
+            "accounts": {
+                "acc_alpha": {
+                    "account_settings": {"kpi": "m_1"},
+                    "funnels": {"org": {"1": {}}},
+                }
+            }
+        }
+        client = _make_error_client(org_data, set_raises=RuntimeError("boom"))
+
+        captured = StringIO()
+        with redirect_stdout(captured):
+            m.run_migration(client, dry_run=False)
+
+        json_lines = [ln for ln in captured.getvalue().splitlines() if ln.strip()]
+        assert len(json_lines) >= 1, "Expected at least one JSON line on stdout"
+
+        # Find the error record (first JSON-parseable line)
+        record: dict[str, Any] | None = None
+        for line in json_lines:
+            try:
+                candidate = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if candidate.get("action") == "error":
+                record = candidate
+                break
+
+        assert record is not None, "No error-action JSON record found in stdout"
+        assert record["action"] == "error"
+        assert record["error"] == "boom"
+        # No pre-existing dest doc → before_dest_present must be False
+        assert record["before_dest_present"] is False
+        assert record["after_dest_present"] is False
+        assert record["source_byte_size"] > 0
+
+    def test_set_failure_before_dest_present_reflects_existing_doc(self) -> None:
+        """When dest doc exists before a failed write, before_dest_present is True."""
+        settings = {"kpi": "m_1"}
+        funnels = {"org": {"1": {}}}
+        org_data = {
+            "accounts": {
+                "acc_alpha": {
+                    "account_settings": settings,
+                    # Deliberately different funnels so the account is NOT skipped
+                    "funnels": {"org": {"1": {"name": "Updated"}}},
+                }
+            }
+        }
+        existing = {
+            "acc_alpha": {
+                "organization_id": "org_test",
+                "account_settings": settings,
+                "funnels": funnels,
+                "shape_d_migrated_at": "2026-01-01T00:00:00+00:00",
+            }
+        }
+        client = _make_error_client(
+            org_data,
+            set_raises=RuntimeError("write failed"),
+            existing_accounts=existing,
+        )
+
+        captured = StringIO()
+        with redirect_stdout(captured):
+            m.run_migration(client, dry_run=False)
+
+        json_lines = [ln for ln in captured.getvalue().splitlines() if ln.strip()]
+        record: dict[str, Any] | None = None
+        for line in json_lines:
+            try:
+                candidate = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if candidate.get("action") == "error":
+                record = candidate
+                break
+
+        assert record is not None
+        # Dest doc existed before the failed write
+        assert record["before_dest_present"] is True
+        # after_dest_present mirrors before_dest_present for set failures
+        assert record["after_dest_present"] is True
+
+    # ------------------------------------------------------------------
+    # dest_ref.get() raises
+    # ------------------------------------------------------------------
+
+    def test_get_failure_records_error(self) -> None:
+        """get() raising must yield summary.errors==1 with correct record fields."""
+        org_data = {
+            "accounts": {
+                "acc_alpha": {
+                    "account_settings": {"kpi": "m_1"},
+                    "funnels": {},
+                }
+            }
+        }
+        client = _make_error_client(org_data, get_raises=RuntimeError("read failed"))
+
+        captured = StringIO()
+        with redirect_stdout(captured):
+            summary = m.run_migration(client, dry_run=False)
+
+        assert summary.errors == 1
+        assert summary.copied == 0
+
+        json_lines = [ln for ln in captured.getvalue().splitlines() if ln.strip()]
+        record: dict[str, Any] | None = None
+        for line in json_lines:
+            try:
+                candidate = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if candidate.get("action") == "error":
+                record = candidate
+                break
+
+        assert record is not None
+        assert record["action"] == "error"
+        assert record["error"] == "read failed"
+        # get() failure: both before and after must be False (unknown state)
+        assert record["before_dest_present"] is False
+        assert record["after_dest_present"] is False
+
+    # ------------------------------------------------------------------
+    # Mixed success + failure
+    # ------------------------------------------------------------------
+
+    def test_mixed_success_and_failure_partitions_counts(self) -> None:
+        """One successful write and one failing write must partition counts correctly."""
+        # acc_good will succeed; acc_bad will fail on set()
+        # Use a custom client that only raises for a specific account_id.
+
+        class _Snap:
+            def __init__(self, doc_id: str, data: dict[str, Any]) -> None:
+                self.id = doc_id
+                self._data = data
+                self.exists = True
+
+            def to_dict(self) -> dict[str, Any]:
+                return dict(self._data)
+
+        class _SelectiveDocRef:
+            """Raises set() only for account IDs in _fail_ids."""
+
+            def __init__(
+                self,
+                path: str,
+                store: dict[str, Any],
+                fail_ids: set[str],
+            ) -> None:
+                self._path = path
+                self._store = store
+                self._fail_ids = fail_ids
+
+            @property
+            def id(self) -> str:
+                return self._path.rsplit("/", 1)[-1]
+
+            def get(self) -> _Snap:
+                data = self._store.get(self._path)
+                if data is None:
+                    s = _Snap(self.id, {})
+                    s.exists = False
+                    return s
+                return _Snap(self.id, data)
+
+            def set(self, data: dict[str, Any], merge: bool = False) -> None:
+                assert merge is True
+                if self.id in self._fail_ids:
+                    raise RuntimeError(f"selective failure for {self.id}")
+                self._store[self._path] = data
+
+        class _SelectiveColRef:
+            def __init__(self, name: str, store: dict[str, Any], fail_ids: set[str]) -> None:
+                self._name = name
+                self._store = store
+                self._fail_ids = fail_ids
+
+            def stream(self) -> list[Any]:
+                return []
+
+            def document(self, doc_id: str) -> _SelectiveDocRef:
+                return _SelectiveDocRef(f"{self._name}/{doc_id}", self._store, self._fail_ids)
+
+        store: dict[str, Any] = {}
+        org_snap = _Snap(
+            "org_test",
+            {
+                "accounts": {
+                    "acc_good": {"account_settings": {"kpi": "m_1"}, "funnels": {}},
+                    "acc_bad": {"account_settings": {"kpi": "m_2"}, "funnels": {}},
+                }
+            },
+        )
+
+        class _MixedClient:
+            def __init__(self) -> None:
+                self._store = store
+
+            def collection(self, name: str) -> Any:
+                if name == "organizations":
+                    # Use a simple org col that streams the org snap
+                    class _OrgCol:
+                        def stream(self_inner) -> list[Any]:
+                            return [org_snap]
+
+                        def document(self_inner, doc_id: str) -> Any:
+                            return _SelectiveDocRef(
+                                f"organizations/{doc_id}", store, set()
+                            )
+
+                    return _OrgCol()
+                return _SelectiveColRef(name, store, {"acc_bad"})
+
+        client = _MixedClient()
+        summary = m.run_migration(client, dry_run=False)
+
+        assert summary.errors == 1
+        assert summary.copied == 1
+        assert summary.total_accounts == 2
+
+
+# ===========================================================================
+# main() exit code when summary.errors > 0
+# ===========================================================================
+
+
+class TestMainExitOnErrors:
+    """Verifies that main() maps summary.errors to the correct exit code."""
+
+    def _run_main_with_mock_migration(
+        self,
+        summary: m.MigrationSummary,
+    ) -> int:
+        env_vars = {"GOOGLE_CLOUD_PROJECT_ID": "ken-e-dev"}
+        with (
+            patch.object(sys, "argv", ["migrate_shape_d_split", "--env=dev"]),
+            patch.dict("os.environ", env_vars, clear=False),
+            patch("migrate_shape_d_split.run_migration", return_value=summary),
+            patch("google.cloud.firestore.Client"),
+            redirect_stdout(StringIO()),
+            redirect_stderr(StringIO()),
+        ):
+            try:
+                return m.main()
+            except SystemExit as exc:
+                return int(exc.code) if exc.code is not None else 0
+
+    def test_main_returns_exit_verification_failed_when_errors_nonzero(self) -> None:
+        summary = m.MigrationSummary(
+            total_orgs=1,
+            total_accounts=2,
+            copied=1,
+            skipped=0,
+            empty=0,
+            errors=1,
+        )
+        code = self._run_main_with_mock_migration(summary)
+        assert code == m.EXIT_VERIFICATION_FAILED
+
+    def test_main_returns_exit_success_when_no_errors(self) -> None:
+        summary = m.MigrationSummary(
+            total_orgs=1,
+            total_accounts=1,
+            copied=1,
+            skipped=0,
+            empty=0,
+            errors=0,
+        )
+        code = self._run_main_with_mock_migration(summary)
+        assert code == m.EXIT_SUCCESS
 
 # ===========================================================================
 # TestDeleteFieldPass
