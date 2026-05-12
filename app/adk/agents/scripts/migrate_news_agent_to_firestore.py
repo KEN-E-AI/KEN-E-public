@@ -86,14 +86,29 @@ VALID - Actual news ABOUT the company itself:
     # merge in a clean environment.
     "temperature": 0.7,
     "max_output_tokens": 4096,
+    # AH-41: the 8 audited fields are now written explicitly so behavior is
+    # not silently driven by Pydantic schema defaults. See the decision
+    # matrix in the AH-41 PR description.
+    #
+    # company_news_agent uses the Vertex AI Search tool (declared in agent
+    # code, not Firestore) rather than an MCP toolset, so mcp_servers is
+    # an empty list. All other fields take defaults.
+    "code_execution_enabled": False,
+    "mcp_servers": [],
+    "skill_ids": [],
+    "sandbox_code_executor_enabled": False,
+    "response_schema": None,
+    "available_to_copy": True,
+    "automatically_available": True,
+    "visible_in_frontend": True,
     "metadata": {
-        "version": "v1.0",
+        "version": "v1.1",
         "variant_name": "baseline",
         "experiment_id": "baseline",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "updated_by": "migration_script",
-        "notes": "Initial News agent configuration migrated from hardcoded company_news_chatbot/agent.py.",
+        "notes": "Initial News agent configuration migrated from hardcoded company_news_chatbot/agent.py. v1.1 (AH-41): added 8 audited fields explicitly.",
     },
 }
 
@@ -101,7 +116,11 @@ VALID - Actual news ABOUT the company itself:
 def upload_config_to_firestore(
     config: dict, doc_id: str, project_id: str, dry_run: bool = False
 ) -> bool:
-    """Upload a configuration document to Firestore.
+    """Idempotently upload a configuration document to Firestore (AH-41).
+
+    Uses ``set(config, merge=True)`` so re-running the script writes only
+    the keys present in ``config`` and preserves anything else on the
+    existing doc.
 
     Args:
         config: Configuration dictionary
@@ -114,33 +133,26 @@ def upload_config_to_firestore(
     """
     try:
         if dry_run:
-            logger.info(f"[DRY RUN] Would upload config '{doc_id}' to Firestore:")
+            logger.info(f"[DRY RUN] Would upsert config '{doc_id}' to Firestore:")
             logger.info(f"  Model: {config['model']}")
             logger.info(f"  Description: {config['description']}")
             logger.info(f"  Project: {project_id}")
             return True
 
         db = firestore.Client(project=project_id)
-
         doc_ref = db.collection("agent_configs").document(doc_id)
-        doc = doc_ref.get()
+        existed = doc_ref.get().exists
 
-        if doc.exists:
-            logger.warning(
-                f"Config '{doc_id}' already exists in Firestore. "
-                f"Use --force to overwrite (not implemented for safety)."
-            )
-            return False
-
-        doc_ref.set(config)
+        doc_ref.set(config, merge=True)
+        action = "Updated" if existed else "Created"
         logger.info(
-            f"Successfully uploaded config '{doc_id}' to Firestore "
+            f"{action} config '{doc_id}' in Firestore "
             f"(model: {config['model']})"
         )
         return True
 
     except Exception as e:
-        logger.error(f"Failed to upload config '{doc_id}': {e}")
+        logger.error(f"Failed to upsert config '{doc_id}': {e}")
         return False
 
 

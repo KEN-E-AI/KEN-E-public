@@ -117,14 +117,30 @@ Remember: You are a router, not a data source. ALWAYS delegate to the appropriat
     # merge in a clean environment.
     "temperature": 0.7,
     "max_output_tokens": 4096,
+    # AH-41: the 8 audited fields are now written explicitly so behavior is
+    # not silently driven by Pydantic schema defaults. See the decision
+    # matrix in the AH-41 PR description.
+    #
+    # ken_e_chatbot is the root orchestrator: visible in the Workflows
+    # > Agents UI (it's what users chat with) but NOT copyable — users
+    # create custom agents via the new-agent flow rather than forking
+    # the orchestrator.
+    "code_execution_enabled": False,
+    "mcp_servers": [],
+    "skill_ids": [],
+    "sandbox_code_executor_enabled": False,
+    "response_schema": None,
+    "available_to_copy": False,
+    "automatically_available": True,
+    "visible_in_frontend": True,
     "metadata": {
-        "version": "v1.1",
+        "version": "v1.2",
         "variant_name": "baseline",
         "experiment_id": "baseline",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "updated_by": "migration_script",
-        "notes": "Initial chatbot configuration migrated from hardcoded ken_e_agent.py. Enables model selection and runtime updates via Admin UI. v1.1: Added Task Delegation section with 2-4 acceptance-criteria generation guidance per AH-6 (AH-PRD-01 §7 AC#8).",
+        "notes": "Initial chatbot configuration migrated from hardcoded ken_e_agent.py. Enables model selection and runtime updates via Admin UI. v1.1: Added Task Delegation section with 2-4 acceptance-criteria generation guidance per AH-6 (AH-PRD-01 §7 AC#8). v1.2 (AH-41): added 8 audited fields explicitly (code_execution_enabled, mcp_servers, skill_ids, sandbox_code_executor_enabled, response_schema, available_to_copy=False, automatically_available, visible_in_frontend).",
     },
 }
 
@@ -132,8 +148,12 @@ Remember: You are a router, not a data source. ALWAYS delegate to the appropriat
 def upload_config_to_firestore(
     config: dict, doc_id: str, project_id: str, dry_run: bool = False
 ) -> bool:
-    """
-    Upload a configuration document to Firestore.
+    """Idempotently upload a configuration document to Firestore (AH-41).
+
+    Uses ``set(config, merge=True)`` so re-running the script writes only
+    the keys present in ``config`` and preserves anything else on the
+    existing doc (e.g. fields added later via the admin UI). Logs whether
+    the doc was created vs. updated.
 
     Args:
         config: Configuration dictionary
@@ -146,36 +166,26 @@ def upload_config_to_firestore(
     """
     try:
         if dry_run:
-            logger.info(f"[DRY RUN] Would upload config '{doc_id}' to Firestore:")
+            logger.info(f"[DRY RUN] Would upsert config '{doc_id}' to Firestore:")
             logger.info(f"  Model: {config['model']}")
             logger.info(f"  Description: {config['description']}")
             logger.info(f"  Project: {project_id}")
             return True
 
-        # Initialize Firestore client
         db = firestore.Client(project=project_id)
-
-        # Check if config already exists
         doc_ref = db.collection("agent_configs").document(doc_id)
-        doc = doc_ref.get()
+        existed = doc_ref.get().exists
 
-        if doc.exists:
-            logger.warning(
-                f"Config '{doc_id}' already exists in Firestore. "
-                f"Use --force to overwrite (not implemented for safety)."
-            )
-            return False
-
-        # Upload config
-        doc_ref.set(config)
+        doc_ref.set(config, merge=True)
+        action = "Updated" if existed else "Created"
         logger.info(
-            f"✅ Successfully uploaded config '{doc_id}' to Firestore "
+            f"✅ {action} config '{doc_id}' in Firestore "
             f"(model: {config['model']})"
         )
         return True
 
     except Exception as e:
-        logger.error(f"❌ Failed to upload config '{doc_id}': {e}")
+        logger.error(f"❌ Failed to upsert config '{doc_id}': {e}")
         return False
 
 

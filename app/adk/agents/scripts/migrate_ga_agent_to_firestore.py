@@ -91,14 +91,31 @@ OAuth credentials are handled automatically via headers. You do NOT need to pass
     # merge in a clean environment.
     "temperature": 0.7,
     "max_output_tokens": 4096,
+    # AH-41: the 8 audited fields are now written explicitly so behavior is
+    # not silently driven by Pydantic schema defaults. See the decision
+    # matrix in the AH-41 PR description.
+    #
+    # google_analytics_agent gets code execution enabled and the GA MCP
+    # toolset (per AH-PRD-03). Note: the toolset only attaches at runtime
+    # when mcp_server_configs/google_analytics_mcp also exists with
+    # enabled=True (verified in dev; staging+prod require the MCP server
+    # registry to be seeded separately via migrate_mcp_to_firestore.py).
+    "code_execution_enabled": True,
+    "mcp_servers": ["google_analytics_mcp"],
+    "skill_ids": [],
+    "sandbox_code_executor_enabled": False,
+    "response_schema": None,
+    "available_to_copy": True,
+    "automatically_available": True,
+    "visible_in_frontend": True,
     "metadata": {
-        "version": "v1.0",
+        "version": "v1.1",
         "variant_name": "baseline",
         "experiment_id": "baseline",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "updated_by": "migration_script",
-        "notes": "Initial GA agent configuration migrated from hardcoded google_analytics_agent_v4.py.",
+        "notes": "Initial GA agent configuration migrated from hardcoded google_analytics_agent_v4.py. v1.1 (AH-41): added 8 audited fields explicitly with code_execution_enabled=True and mcp_servers=['google_analytics_mcp'] per AH-PRD-03.",
     },
 }
 
@@ -106,7 +123,11 @@ OAuth credentials are handled automatically via headers. You do NOT need to pass
 def upload_config_to_firestore(
     config: dict, doc_id: str, project_id: str, dry_run: bool = False
 ) -> bool:
-    """Upload a configuration document to Firestore.
+    """Idempotently upload a configuration document to Firestore (AH-41).
+
+    Uses ``set(config, merge=True)`` so re-running the script writes only
+    the keys present in ``config`` and preserves anything else on the
+    existing doc.
 
     Args:
         config: Configuration dictionary
@@ -119,33 +140,26 @@ def upload_config_to_firestore(
     """
     try:
         if dry_run:
-            logger.info(f"[DRY RUN] Would upload config '{doc_id}' to Firestore:")
+            logger.info(f"[DRY RUN] Would upsert config '{doc_id}' to Firestore:")
             logger.info(f"  Model: {config['model']}")
             logger.info(f"  Description: {config['description']}")
             logger.info(f"  Project: {project_id}")
             return True
 
         db = firestore.Client(project=project_id)
-
         doc_ref = db.collection("agent_configs").document(doc_id)
-        doc = doc_ref.get()
+        existed = doc_ref.get().exists
 
-        if doc.exists:
-            logger.warning(
-                f"Config '{doc_id}' already exists in Firestore. "
-                f"Use --force to overwrite (not implemented for safety)."
-            )
-            return False
-
-        doc_ref.set(config)
+        doc_ref.set(config, merge=True)
+        action = "Updated" if existed else "Created"
         logger.info(
-            f"Successfully uploaded config '{doc_id}' to Firestore "
+            f"{action} config '{doc_id}' in Firestore "
             f"(model: {config['model']})"
         )
         return True
 
     except Exception as e:
-        logger.error(f"Failed to upload config '{doc_id}': {e}")
+        logger.error(f"Failed to upsert config '{doc_id}': {e}")
         return False
 
 
