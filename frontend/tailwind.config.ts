@@ -246,6 +246,7 @@ export default {
         "color-violet": "var(--shadow-color-violet)",
         "color-teal": "var(--shadow-color-teal)",
         "color-blue": "var(--shadow-color-blue)",
+        "color-coral": "var(--shadow-color-coral)",
         glow: "var(--shadow-glow)",
       },
       backgroundImage: {
