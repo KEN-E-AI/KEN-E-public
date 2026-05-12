@@ -17,7 +17,7 @@ Pre-conditions confirmed at execution time:
 
 **Key operational finding — analytics named database:**
 
-The `async_analytics_queue` writes to the `analytics` named Firestore database (`database="analytics"` — `async_analytics_queue.py:96`), not the `(default)` database. The `(default)` database had zero `agent_analytics_*` collections (same empty-dev baseline as DM-37). The actual data — 287 accounts, 2,144 docs — resided in the `analytics` named database.
+The `async_analytics_queue` writes to the `analytics` named Firestore database (`database="analytics"` — `async_analytics_queue.py:95-96`), not the `(default)` database. The `(default)` database had zero `agent_analytics_*` collections (same empty-dev baseline as DM-37). The actual data — 287 accounts, 2,144 docs — resided in the `analytics` named database.
 
 The migration required setting `FIRESTORE_DATABASE_ID=analytics` on all CLI invocations targeting the real data. The `(default)` database runs were a structural no-op (confirmed by the dry-run before the `analytics`-targeted run).
 
@@ -42,6 +42,7 @@ Two runs were performed:
 | Copy + verify | `--resource=agent_analytics` | 0 collections, 0 docs | `VERIFIED` | 0 |
 | Confirm-delete | `--resource=agent_analytics --confirm-delete --yes` | 0 collections deleted | `VERIFIED` | 0 |
 | Idempotency re-run | `--resource=agent_analytics` | 0 collections, 0 docs | `VERIFIED` | 0 |
+| Spot-check | `collection_group("agent_analytics")` | — | 0 docs (empty-dev baseline) | 0 |
 
 ### `analytics` named database (real data)
 
@@ -53,18 +54,18 @@ Two runs were performed:
 | Idempotency re-run | `FIRESTORE_DATABASE_ID=analytics --resource=agent_analytics` | 0 collections, 0 docs | 0 | `VERIFIED` | 0 | < 5 s |
 | Collection-group spot-check | `collection_group("agent_analytics")` | — | 2,144 docs at `accounts/*/agent_analytics/...` | CONFIRMED | — | — |
 
-**Write throughput:** ~35 docs/sec during copy phase. Well within the 500 writes/sec batch budget. No throttling observed.
+**Write throughput:** ~35 docs/sec during copy phase. Well within Firestore's WriteBatch limit of 500 operations per commit. No throttling observed.
 
 **Per-account doc-count summary (dry-run inspection):**
 - Total collections: 287
 - Total docs: 2,144
-- Max per account: 79 (`agent_analytics_test_new_engine_123`)
+- Max per account: 79 (`<max-account-redacted>` — synthetic test account confirmed)
 - Average per account: 7.5
 - Accounts > 100k docs: **0** — no halt needed (PRD §8 threshold check passed)
 
 ## Smoke Test (Task 6 — AC-4)
 
-Exercised `AsyncAnalyticsQueue._flush_batch` against `ken-e-dev` (`analytics` database) with a 3-event synthetic batch using `account_id="dm39_smoke"`:
+Exercised `AsyncAnalyticsQueue.track_event()` + `flush()` (which calls `_flush_batch` synchronously with `enable_background_worker=False`) against `ken-e-dev` (`analytics` database) with a 3-event synthetic batch using `account_id="dm39_smoke"`:
 
 | Check | Expected | Actual | Status |
 |---|---|---|---|
@@ -72,20 +73,21 @@ Exercised `AsyncAnalyticsQueue._flush_batch` against `ken-e-dev` (`analytics` da
 | Shape A docs at `agent_analytics_dm39_smoke` | 0 | 0 | ✅ |
 | Cleanup: docs remaining after `recursive_delete`-equivalent | 0 | 0 | ✅ |
 
-Events were queued via `AsyncAnalyticsQueue.track_event()` and flushed synchronously via `AsyncAnalyticsQueue.flush()` (with `enable_background_worker=False` for deterministic execution). All 3 docs landed at `accounts/dm39_smoke/agent_analytics/{auto_id}` with `event_type=smoke_test`. No write to any top-level `agent_analytics_*` path. Smoke fixtures cleaned up.
+All 3 docs landed at `accounts/dm39_smoke/agent_analytics/{auto_id}` with `event_type=smoke_test`. No write to any top-level `agent_analytics_*` path. Smoke fixtures cleaned up.
 
 ## Acceptance Criteria
 
 | AC | Criterion | Status |
 |---|---|---|
 | AC-2 (agent_analytics portion) | No top-level `agent_analytics_*` collections remain in dev (`(default)` + `analytics` databases) | ✅ Confirmed — 0 in `(default)`; 0 in `analytics` post-cutover |
+| AC-2 spot-check | `accounts/*/agent_analytics/...` contains 2,144 docs matching dry-run counts | ✅ Confirmed — collection-group query returned 2,144 docs |
 | AC-4 (agent_analytics portion) | `async_analytics_queue` flushes events to `accounts/{id}/agent_analytics/...` | ✅ Confirmed — 3 docs at Shape B path in smoke test |
 | AC-8 | Migration script is idempotent | ✅ Re-run on both databases: VERIFIED, exit 0 |
-| PRD §8 100k-threshold | No account exceeds 100k docs in dry-run | ✅ Max was 79 — no halt/flag required |
+| PRD §8 open question | No account exceeds 100k docs in dry-run; if exceeded, flag for DM-PRD-00 follow-up | ✅ Max was 79 — no halt/flag required |
 
 ## Notes
 
-- **Analytics named database discovery:** All production `agent_analytics` data lived in the `analytics` named Firestore database, not `(default)`. This is consistent with `async_analytics_queue.py:96` which always initialises with `database="analytics"`. The DM-37 `cost_aggregations` run targeted only `(default)` — `cost_aggregations` is written by `analytics_service.py` which uses the default database client, so that run was correct. Future data-migration runbooks for analytics-related resources should profile **both** databases at the pre-flight step.
+- **Analytics named database discovery:** All production `agent_analytics` data lived in the `analytics` named Firestore database, not `(default)`. This is consistent with `async_analytics_queue.py:95-96` which always initialises with `database="analytics"`. The DM-37 `cost_aggregations` run targeted only `(default)` — `cost_aggregations` is written by `analytics_service.py` which uses the default database client, so that run was correct. Future data-migration runbooks for analytics-related resources should profile **both** databases at the pre-flight step.
 - **No queue coordination needed:** As expected, the dev `async_analytics_queue` was idle during the migration. DM-32 having already migrated all write paths to Shape B means the source `agent_analytics_*` collections in the `analytics` database were fully pre-DM-32 residue and no new writes were racing the delete.
 - **Live-agent end-to-end verification** (confirming a real specialist run writes analytics to Shape B and `optimization_analyzer.py` reads back correctly) is scoped to DM-43, not this issue.
-- Full CLI stdout captured in the DM-39 Linear comment audit trail (2026-05-12).
+- Full CLI stdout captured in the DM-39 Linear comment audit trail (2026-05-12T09:43:19Z).
