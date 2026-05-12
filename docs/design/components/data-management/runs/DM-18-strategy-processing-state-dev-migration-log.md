@@ -9,7 +9,7 @@
 
 ## Pre-flight checks (agent-verified, 2026-05-12)
 
-- **Registry entry:** `RESOURCES["strategy_processing_state"]` present with `old_prefix="strategy_processing_state_"`, `new_subcollection="strategy_processing_state"`, `has_versions=False`. Confirmed by `pytest tests/unit/test_migrate_to_shape_b.py -k strategy_processing_state` (1 passed).
+- **Registry entry:** `RESOURCES["strategy_processing_state"]` present with `old_prefix="strategy_processing_state_"`, `new_subcollection="strategy_processing_state"`, `has_versions=False`. Confirmed by `cd api && pytest tests/unit/test_migrate_to_shape_b.py -k strategy_processing_state` (1 passed).
 - **Shape A residue:** `rg -n 'strategy_processing_state_' api/src/ app/` — **zero hits** in source files.
 - **`--list` output:** `strategy_processing_state -> accounts/{account_id}/strategy_processing_state` present.
 
@@ -61,7 +61,7 @@ _paste output here_
 **Checked in Firestore console for `ken-e-dev`:**
 
 - Top-level `strategy_processing_state_*` collections present: _yes / no_
-- Sample account checked: _account_id (or "N/A — no source data")_
+- Sample account checked: _redacted-account-id (or "N/A — no source data")_ ⚠️ **Redact real account IDs before committing; use a placeholder or log evidence in the Linear issue instead.**
 - `accounts/{account_id}/strategy_processing_state/` present: _yes / no (or "N/A")_
 - Observation: _paste notes here_
 
@@ -74,7 +74,7 @@ GOOGLE_CLOUD_PROJECT_ID=ken-e-dev python api/scripts/migrate_to_shape_b.py \
   --resource=strategy_processing_state --confirm-delete
 ```
 
-_(Requires typing `YES` at the interactive prompt if source data is present. If source collections were 0 in Step 2, the runner skips the delete phase and exits 0 immediately.)_
+_(The interactive `YES` prompt fires regardless of source collection count. When source collections are 0, typing `YES` exits 0 with `Source collections deleted: 0` and `Total docs deleted: 0`. The runner only deletes if verification passed in the same invocation.)_
 
 **Stdout/stderr (paste verbatim):**
 
@@ -113,6 +113,6 @@ _paste output here_
 - [ ] All five steps completed and output captured above.
 - [ ] No top-level `strategy_processing_state_*` collections in `ken-e-dev`.
 - [ ] AC-2 (no legacy collections) satisfied for `strategy_processing_state`.
-- [ ] AC-8 (idempotency) confirmed by Step 5.
+- [ ] AC-8 (idempotency) confirmed by Step 5. _(DM-PRD-01 §6 AC-8 is written with `strategy_docs` as the example resource; the same idempotency mechanism applies to `strategy_processing_state`.)_
 
-**DM-PRD-01 §7.3 verification gate for `strategy_processing_state`:** complete once all boxes above are checked.
+**DM-PRD-01 §6 (AC-2, AC-8) satisfied for `strategy_processing_state`:** complete once all boxes above are checked.
