@@ -267,7 +267,9 @@ def is_already_migrated(
     return src_funnels == dst_funnels
 
 
-def _is_vacuously_clean_account(account_id: str, nested_payload: dict[str, Any]) -> bool:
+def _is_vacuously_clean_account(
+    account_id: str, nested_payload: dict[str, Any]
+) -> bool:
     """Return True if this accounts-map entry needs no dest doc to be considered migrated.
 
     Mirrors the write-pass exclusion rules in ``_iter_org_accounts`` and ``run_migration``
@@ -420,14 +422,22 @@ def run_migration(
             dest_ref = client.collection("accounts").document(account_id)
             try:
                 dest_snap = dest_ref.get()
-                before_present = dest_snap.exists if hasattr(dest_snap, "exists") else bool(dest_snap)
+                before_present = (
+                    dest_snap.exists
+                    if hasattr(dest_snap, "exists")
+                    else bool(dest_snap)
+                )
                 dest_data: dict[str, Any] | None = (
-                    dest_snap.to_dict() if (hasattr(dest_snap, "exists") and dest_snap.exists) else None
+                    dest_snap.to_dict()
+                    if (hasattr(dest_snap, "exists") and dest_snap.exists)
+                    else None
                 )
             except Exception as exc:
                 logger.error(
                     "org %s account %s: failed to read destination doc: %s",
-                    org_id, account_id, exc,
+                    org_id,
+                    account_id,
+                    exc,
                 )
                 err_record = AccountRecord(
                     org_id=org_id,
@@ -443,7 +453,11 @@ def run_migration(
                 continue
 
             # Warn if a prior migration attributed this account to a different org
-            if dest_data and dest_data.get("organization_id") and dest_data.get("organization_id") != org_id:
+            if (
+                dest_data
+                and dest_data.get("organization_id")
+                and dest_data.get("organization_id") != org_id
+            ):
                 logger.warning(
                     "org %s account %s: destination doc has organization_id=%r — will overwrite (cross-org collision)",
                     org_id,
@@ -454,11 +468,19 @@ def run_migration(
             if is_empty:
                 action = "empty"
                 migrated_at = None
-                logger.info("org %s account %s: EMPTY — no payload to migrate", org_id, account_id)
+                logger.info(
+                    "org %s account %s: EMPTY — no payload to migrate",
+                    org_id,
+                    account_id,
+                )
             elif is_already_migrated(dest_data, nested, org_id):
                 action = "skipped"
-                migrated_at = dest_data.get("shape_d_migrated_at")  # dest_data is non-None here
-                logger.info("org %s account %s: already migrated (skip)", org_id, account_id)
+                migrated_at = dest_data.get(
+                    "shape_d_migrated_at"
+                )  # dest_data is non-None here
+                logger.info(
+                    "org %s account %s: already migrated (skip)", org_id, account_id
+                )
             else:
                 action = "copied" if not dry_run else "WOULD COPY"
                 payload = extract_account_payload(nested, org_id, now)
@@ -473,12 +495,16 @@ def run_migration(
                         dest_ref.set(payload, merge=True)
                         logger.info(
                             "org %s account %s: copied (%d source bytes)",
-                            org_id, account_id, src_byte_size,
+                            org_id,
+                            account_id,
+                            src_byte_size,
                         )
                     except Exception as exc:
                         logger.error(
                             "org %s account %s: write failed: %s",
-                            org_id, account_id, exc,
+                            org_id,
+                            account_id,
+                            exc,
                         )
                         err_record = AccountRecord(
                             org_id=org_id,
@@ -494,7 +520,9 @@ def run_migration(
                         continue
 
             # after a successful set(), the doc is guaranteed to exist; no re-read needed
-            after_present = before_present if (dry_run or action in ("skipped", "empty")) else True
+            after_present = (
+                before_present if (dry_run or action in ("skipped", "empty")) else True
+            )
 
             record = AccountRecord(
                 org_id=org_id,
@@ -712,7 +740,11 @@ def run_delete_field_pass(
                     else {}
                 ) or {}
                 fresh_accounts = fresh_dict.get("accounts")
-                fresh_keys = set(fresh_accounts.keys()) if isinstance(fresh_accounts, dict) else set()
+                fresh_keys = (
+                    set(fresh_accounts.keys())
+                    if isinstance(fresh_accounts, dict)
+                    else set()
+                )
                 new_keys = fresh_keys - verified_account_ids
                 if new_keys:
                     logger.warning(
@@ -827,7 +859,10 @@ def main() -> int:
 
     logger.info(
         "migrate_shape_d_split: env=%s project_id=%s database_id=%s dry_run=%s confirm_delete_field=%s",
-        args.env, project_id, database_id, args.dry_run,
+        args.env,
+        project_id,
+        database_id,
+        args.dry_run,
         args.confirm_delete_field,
     )
     if args.dry_run:
@@ -855,7 +890,9 @@ def main() -> int:
     print(summary.model_dump_json(indent=2))
 
     if args.confirm_delete_field:
-        incomplete = summary.orgs_skipped_unmigrated + summary.orgs_skipped_concurrent_write
+        incomplete = (
+            summary.orgs_skipped_unmigrated + summary.orgs_skipped_concurrent_write
+        )
         if incomplete:
             if summary.orgs_skipped_unmigrated:
                 logger.error(
@@ -878,7 +915,9 @@ def main() -> int:
             "MIGRATION COMPLETED WITH %d ERROR(S) — %d/%d accounts failed; "
             "DO NOT run the destructive DELETE_FIELD step (--confirm-delete-field) until "
             "every account is copied. Re-run this script to retry the failed accounts.",
-            summary.errors, summary.errors, summary.total_accounts,
+            summary.errors,
+            summary.errors,
+            summary.total_accounts,
         )
         return EXIT_VERIFICATION_FAILED
 

@@ -233,11 +233,20 @@ def test_live_run_creates_destination_docs_with_org_backref(
     assert gamma_doc["organization_id"] == minimal_id
 
     # Payload fields match source
-    assert alpha_doc["account_settings"] == realistic_data["accounts"][f"acc_alpha_{run_id}"]["account_settings"]
-    assert alpha_doc["funnels"] == realistic_data["accounts"][f"acc_alpha_{run_id}"]["funnels"]
+    assert (
+        alpha_doc["account_settings"]
+        == realistic_data["accounts"][f"acc_alpha_{run_id}"]["account_settings"]
+    )
+    assert (
+        alpha_doc["funnels"]
+        == realistic_data["accounts"][f"acc_alpha_{run_id}"]["funnels"]
+    )
 
     assert beta_doc["account_settings"] == {}
-    assert beta_doc["funnels"] == realistic_data["accounts"][f"acc_beta_{run_id}"]["funnels"]
+    assert (
+        beta_doc["funnels"]
+        == realistic_data["accounts"][f"acc_beta_{run_id}"]["funnels"]
+    )
 
     # shape_d_migrated_at is present and parseable
     for doc, label in [(alpha_doc, "alpha"), (beta_doc, "beta"), (gamma_doc, "gamma")]:
@@ -323,9 +332,9 @@ def test_org_level_fields_untouched(emulator_client: Any, run_id: str) -> None:
             return {}
         return {k: json.dumps(v, default=str) for k, v in d.items() if k != "accounts"}
 
-    assert _org_top_level(org_before_realistic) == _org_top_level(org_after_realistic), (
-        "org-level fields changed on realistic org after migration"
-    )
+    assert _org_top_level(org_before_realistic) == _org_top_level(
+        org_after_realistic
+    ), "org-level fields changed on realistic org after migration"
     assert _org_top_level(org_before_minimal) == _org_top_level(org_after_minimal), (
         "org-level fields changed on minimal org after migration"
     )
@@ -352,7 +361,9 @@ def test_dry_run_writes_nothing(emulator_client: Any, run_id: str) -> None:
 
 
 @pytest.mark.integration
-def test_merge_semantics_preserve_existing_fields(emulator_client: Any, run_id: str) -> None:
+def test_merge_semantics_preserve_existing_fields(
+    emulator_client: Any, run_id: str
+) -> None:
     """merge=True: existing unrelated fields on accounts/{account_id} are preserved.
 
     Seeds acc_alpha with a display_name field, then runs the migration.
@@ -513,9 +524,7 @@ def test_confirm_delete_field_removes_accounts_field(
 
 
 @pytest.mark.integration
-def test_confirm_delete_field_is_idempotent(
-    emulator_client: Any, run_id: str
-) -> None:
+def test_confirm_delete_field_is_idempotent(emulator_client: Any, run_id: str) -> None:
     """Running --confirm-delete-field twice on an already-cleaned org is a no-op.
 
     First pass removes the accounts field; second pass records already_clean=1
@@ -559,7 +568,9 @@ def test_confirm_delete_field_is_idempotent(
 
     org_after_first = _get_doc(emulator_client, "organizations", full_id)
     assert org_after_first is not None
-    assert "accounts" not in org_after_first, "accounts field should be gone after first pass"
+    assert "accounts" not in org_after_first, (
+        "accounts field should be gone after first pass"
+    )
 
     # Second pass — org already has no accounts field → already_clean
     summary2 = run_delete_field_pass(emulator_client, dry_run=False)

@@ -191,10 +191,20 @@ class TestIsAlreadyMigrated:
 
 class TestIsVacuouslyCleanAccount:
     def test_empty_account_id_is_vacuously_clean(self) -> None:
-        assert m._is_vacuously_clean_account("", {"account_settings": {"kpi": "m_1"}, "funnels": {}}) is True
+        assert (
+            m._is_vacuously_clean_account(
+                "", {"account_settings": {"kpi": "m_1"}, "funnels": {}}
+            )
+            is True
+        )
 
     def test_slash_in_account_id_is_vacuously_clean(self) -> None:
-        assert m._is_vacuously_clean_account("org/acc", {"account_settings": {}, "funnels": {}}) is True
+        assert (
+            m._is_vacuously_clean_account(
+                "org/acc", {"account_settings": {}, "funnels": {}}
+            )
+            is True
+        )
 
     def test_dot_account_id_is_vacuously_clean(self) -> None:
         assert m._is_vacuously_clean_account(".", {}) is True
@@ -206,10 +216,20 @@ class TestIsVacuouslyCleanAccount:
         assert m._is_vacuously_clean_account("acc_abc", {}) is True
 
     def test_valid_id_with_nonempty_payload_is_not_vacuously_clean(self) -> None:
-        assert m._is_vacuously_clean_account("acc_abc", {"account_settings": {"kpi": "m_1"}}) is False
+        assert (
+            m._is_vacuously_clean_account(
+                "acc_abc", {"account_settings": {"kpi": "m_1"}}
+            )
+            is False
+        )
 
-    def test_valid_id_with_empty_account_settings_but_nonempty_funnels_is_not_vacuously_clean(self) -> None:
-        assert m._is_vacuously_clean_account("acc_abc", {"funnels": {"org": {"1": {}}}}) is False
+    def test_valid_id_with_empty_account_settings_but_nonempty_funnels_is_not_vacuously_clean(
+        self,
+    ) -> None:
+        assert (
+            m._is_vacuously_clean_account("acc_abc", {"funnels": {"org": {"1": {}}}})
+            is False
+        )
 
 
 # ===========================================================================
@@ -279,7 +299,9 @@ class TestCLIValidation:
         try:
             m._validate_env_flag("dev", "ken-e-dev")
         except SystemExit as exc:
-            pytest.fail(f"_validate_env_flag raised SystemExit({exc.code}) for valid dev env")
+            pytest.fail(
+                f"_validate_env_flag raised SystemExit({exc.code}) for valid dev env"
+            )
 
 
 # ===========================================================================
@@ -352,12 +374,16 @@ class TestOrgLevelFieldsUntouched:
                 return _Snap(self.id, data)
 
             def set(self, data: dict[str, Any], merge: bool = False) -> None:
-                assert merge is True, "set() called with merge=False — merge=True required for safe idempotent writes"
+                assert merge is True, (
+                    "set() called with merge=False — merge=True required for safe idempotent writes"
+                )
                 self._written.append((data, merge))
                 self._store[self._path] = data
 
         class _ColRef:
-            def __init__(self, name: str, store: dict[str, Any], rows: list[Any]) -> None:
+            def __init__(
+                self, name: str, store: dict[str, Any], rows: list[Any]
+            ) -> None:
                 self._name = name
                 self._store = store
                 self._rows = rows
@@ -535,7 +561,9 @@ class TestDeleteFieldPass:
                 return copy.deepcopy(self._data)
 
         class _DocRef:
-            def __init__(self, path: str, store: dict[str, Any], updates: list[Any]) -> None:
+            def __init__(
+                self, path: str, store: dict[str, Any], updates: list[Any]
+            ) -> None:
                 self._path = path
                 self._store = store
                 self._updates = updates  # shared list of (path, field_mask) tuples
@@ -591,7 +619,9 @@ class TestDeleteFieldPass:
         for org_id, org_data in orgs.items():
             store[f"organizations/{org_id}"] = copy.deepcopy(org_data)
 
-        org_snaps = [_Snap(org_id, copy.deepcopy(data)) for org_id, data in orgs.items()]
+        org_snaps = [
+            _Snap(org_id, copy.deepcopy(data)) for org_id, data in orgs.items()
+        ]
 
         class _Client:
             def __init__(self) -> None:
@@ -625,12 +655,22 @@ class TestDeleteFieldPass:
             },
         }
         existing = {
-            "acc_a": {"organization_id": "org_1", "account_settings": settings, "funnels": funnels},
-            "acc_b": {"organization_id": "org_1", "account_settings": {}, "funnels": {"org": {}}},
+            "acc_a": {
+                "organization_id": "org_1",
+                "account_settings": settings,
+                "funnels": funnels,
+            },
+            "acc_b": {
+                "organization_id": "org_1",
+                "account_settings": {},
+                "funnels": {"org": {}},
+            },
         }
         client = self._make_fake_client({"org_1": org_data}, existing_accounts=existing)
 
-        with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
+        with patch(
+            "google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL
+        ):
             summary = m.run_delete_field_pass(client, dry_run=False)
 
         assert summary.orgs_field_deleted == 1
@@ -664,7 +704,9 @@ class TestDeleteFieldPass:
         }
         client = self._make_fake_client({"org_1": org_data}, existing_accounts=existing)
 
-        with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
+        with patch(
+            "google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL
+        ):
             summary = m.run_delete_field_pass(client, dry_run=False)
 
         assert summary.orgs_skipped_unmigrated == 1
@@ -678,7 +720,10 @@ class TestDeleteFieldPass:
         funnels_dest = {"organization": {"1": {"name": "DIFFERENT"}}}
         org_data = {
             "accounts": {
-                "acc_mismatch": {"account_settings": settings, "funnels": funnels_source},
+                "acc_mismatch": {
+                    "account_settings": settings,
+                    "funnels": funnels_source,
+                },
             },
         }
         existing = {
@@ -690,7 +735,9 @@ class TestDeleteFieldPass:
         }
         client = self._make_fake_client({"org_1": org_data}, existing_accounts=existing)
 
-        with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
+        with patch(
+            "google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL
+        ):
             summary = m.run_delete_field_pass(client, dry_run=False)
 
         assert summary.orgs_skipped_unmigrated == 1
@@ -702,7 +749,9 @@ class TestDeleteFieldPass:
         settings = {"kpi": "m_1"}
         funnels = {}
         org_data = {
-            "accounts": {"acc_error": {"account_settings": settings, "funnels": funnels}},
+            "accounts": {
+                "acc_error": {"account_settings": settings, "funnels": funnels}
+            },
         }
 
         # Build a client whose accounts/ DocRef.get() raises a transient error
@@ -759,7 +808,9 @@ class TestDeleteFieldPass:
 
         client = _Client()
 
-        with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
+        with patch(
+            "google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL
+        ):
             summary = m.run_delete_field_pass(client, dry_run=False)
 
         assert summary.orgs_skipped_unmigrated == 1
@@ -771,7 +822,9 @@ class TestDeleteFieldPass:
         org_data = {"name": "Clean Org"}  # no "accounts" key
         client = self._make_fake_client({"org_clean": org_data})
 
-        with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
+        with patch(
+            "google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL
+        ):
             summary = m.run_delete_field_pass(client, dry_run=False)
 
         assert summary.orgs_already_clean == 1
@@ -792,9 +845,13 @@ class TestDeleteFieldPass:
                 "funnels": funnels,
             },
         }
-        client = self._make_fake_client({"org_dry": org_data}, existing_accounts=existing)
+        client = self._make_fake_client(
+            {"org_dry": org_data}, existing_accounts=existing
+        )
 
-        with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
+        with patch(
+            "google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL
+        ):
             summary = m.run_delete_field_pass(client, dry_run=True)
 
         assert summary.orgs_would_delete == 1
@@ -807,7 +864,9 @@ class TestDeleteFieldPass:
         funnels = {}
 
         org_full = {
-            "accounts": {"acc_full": {"account_settings": settings, "funnels": funnels}},
+            "accounts": {
+                "acc_full": {"account_settings": settings, "funnels": funnels}
+            },
         }
         org_partial = {
             "accounts": {
@@ -818,8 +877,16 @@ class TestDeleteFieldPass:
         org_empty = {"name": "Empty Org"}  # no accounts field
 
         existing = {
-            "acc_full": {"organization_id": "org_full", "account_settings": settings, "funnels": funnels},
-            "acc_present": {"organization_id": "org_partial", "account_settings": settings, "funnels": funnels},
+            "acc_full": {
+                "organization_id": "org_full",
+                "account_settings": settings,
+                "funnels": funnels,
+            },
+            "acc_present": {
+                "organization_id": "org_partial",
+                "account_settings": settings,
+                "funnels": funnels,
+            },
             # acc_absent intentionally missing
         }
         client = self._make_fake_client(
@@ -827,7 +894,9 @@ class TestDeleteFieldPass:
             existing_accounts=existing,
         )
 
-        with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
+        with patch(
+            "google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL
+        ):
             summary = m.run_delete_field_pass(client, dry_run=False)
 
         assert summary.orgs_field_deleted == 1
@@ -850,7 +919,9 @@ class TestDeleteFieldPass:
         org_data = {"accounts": {"acc_empty": {}}}  # empty payload
         # No acc_empty in existing_accounts — write-pass never wrote it
         client = self._make_fake_client({"org_1": org_data})
-        with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
+        with patch(
+            "google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL
+        ):
             summary = m.run_delete_field_pass(client, dry_run=False)
         assert summary.orgs_field_deleted == 1
         assert summary.orgs_skipped_unmigrated == 0
@@ -864,10 +935,14 @@ class TestDeleteFieldPass:
         block the DELETE_FIELD gate.
         """
         org_data = {
-            "accounts": {"invalid/acc": {"account_settings": {"kpi": "m_1"}, "funnels": {}}}
+            "accounts": {
+                "invalid/acc": {"account_settings": {"kpi": "m_1"}, "funnels": {}}
+            }
         }
         client = self._make_fake_client({"org_1": org_data})
-        with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
+        with patch(
+            "google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL
+        ):
             summary = m.run_delete_field_pass(client, dry_run=False)
         assert summary.orgs_field_deleted == 1
         assert summary.orgs_skipped_unmigrated == 0
@@ -901,7 +976,9 @@ class TestDeleteFieldPass:
             "account_settings": {"kpi": "m_2"},
             "funnels": {},
         }
-        with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
+        with patch(
+            "google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL
+        ):
             summary = m.run_delete_field_pass(client, dry_run=False)
         assert summary.orgs_skipped_concurrent_write == 1
         assert summary.orgs_field_deleted == 0
