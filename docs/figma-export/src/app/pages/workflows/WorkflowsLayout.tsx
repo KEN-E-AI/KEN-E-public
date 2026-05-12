@@ -12,9 +12,9 @@ export function useWorkflowFilter() {
 }
 
 const tabs = [
+  { name: 'Automations', href: '/workflows/automations', icon: RefreshCw },
   { name: 'Agents', href: '/workflows', icon: Bot },
   { name: 'Skills', href: '/workflows/skills', icon: Sparkles },
-  { name: 'Automations', href: '/workflows/automations', icon: RefreshCw },
 ];
 
 const filterOptions: { value: WorkflowSourceFilter; label: string; icon?: typeof Puzzle }[] = [
@@ -60,7 +60,7 @@ export function WorkflowsLayout() {
                   <div>
                     <h1 className="mb-0">Workflows</h1>
                     <p className="text-sm text-muted-foreground">
-                      Build agents, teach them skills, and deploy automations
+                      Build specialized agents and have them complete tasks on a schedule.
                     </p>
                   </div>
                 </div>

@@ -89,7 +89,7 @@ function renderRoutes(initialPath: string) {
               not a stub. (LayoutC itself is asserted in dedicated layout tests.) */}
           <Route
             path="/workflows"
-            element={<Navigate to="/workflows/agents" replace />}
+            element={<Navigate to="/workflows/automations" replace />}
           />
           <Route
             path="/workflows/agents"
@@ -226,11 +226,13 @@ describe("App routing — settings inside LayoutSettings", () => {
 });
 
 describe("App routing — workflows inside WorkflowsLayout", () => {
-  test("/workflows redirects to /workflows/agents", () => {
+  test("/workflows redirects to /workflows/automations", () => {
     renderRoutes("/workflows");
-    expect(screen.getByTestId("workflows-agents-page")).toBeInTheDocument();
+    expect(screen.getByTestId("workflows-automations-page")).toBeInTheDocument();
     // Real WorkflowsLayout renders a tab strip with all three tabs
-    expect(screen.getByRole("tab", { name: /agents/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: /automations/i }),
+    ).toBeInTheDocument();
   });
 
   test("/workflows/agents activates the Agents tab", () => {

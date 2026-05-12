@@ -30,9 +30,9 @@ describe("WorkflowsLayout", () => {
 
     const tabs = screen.getAllByRole("tab");
     expect(tabs).toHaveLength(3);
-    expect(tabs[0]).toHaveTextContent("Agents");
-    expect(tabs[1]).toHaveTextContent("Skills");
-    expect(tabs[2]).toHaveTextContent("Automations");
+    expect(tabs[0]).toHaveTextContent("Automations");
+    expect(tabs[1]).toHaveTextContent("Agents");
+    expect(tabs[2]).toHaveTextContent("Skills");
   });
 
   it("marks the active tab as aria-selected=true", () => {

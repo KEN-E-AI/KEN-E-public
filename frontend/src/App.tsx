@@ -279,7 +279,7 @@ const App = () => (
                       {/* Workflows shell — UI-PRD-03 page shells wired to production components. */}
                       <Route
                         path="/workflows"
-                        element={<Navigate to="/workflows/agents" replace />}
+                        element={<Navigate to="/workflows/automations" replace />}
                       />
                       <Route
                         path="/workflows/agents"

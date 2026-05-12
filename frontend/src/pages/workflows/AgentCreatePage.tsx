@@ -24,13 +24,13 @@ import { DisabledPlaceholderRow } from "./agents/DisabledPlaceholderRow";
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
-const schema = z.object({
+export const schema = z.object({
   name: z.string().min(1, "Name is required"),
   instruction: z.string().min(1, "Instruction is required"),
   model: z.enum(SUPPORTED_MODELS as [string, ...string[]], {
     errorMap: () => ({ message: "Model is required" }),
   }),
-  temperature: z.number().min(0).max(1).optional(),
+  temperature: z.number().min(0.1).max(0.9).optional(),
   description: z.string().optional(),
 });
 
@@ -48,7 +48,6 @@ export function AgentCreatePage() {
     register,
     handleSubmit,
     control,
-    watch,
     formState: { errors, isValid },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -70,7 +69,6 @@ export function AgentCreatePage() {
     });
   }
 
-  const temperatureValue = watch("temperature") ?? 0.3;
   const isSubmitDisabled = !accountId || mutation.isPending || !isValid;
 
   return (
@@ -166,30 +164,31 @@ export function AgentCreatePage() {
           )}
         </div>
 
-        {/* Temperature (optional) */}
+        {/* Response style (stored as `temperature`) */}
         <div>
-          <Label htmlFor="agent-temperature">
-            Temperature
-            {/* allow-text-tertiary: secondary-metadata slider value readout */}
-            <span className="ml-2 text-[11px] text-[var(--color-text-tertiary)]">
-              {temperatureValue.toFixed(2)}
-            </span>
-          </Label>
           <Controller
             name="temperature"
             control={control}
             render={({ field }) => (
-              <Slider
-                id="agent-temperature"
-                aria-label="Temperature"
-                min={0}
-                max={1}
-                step={0.01}
-                value={[field.value ?? 0.3]}
-                onValueChange={([val]) => field.onChange(val)}
-                className="mt-2"
-                data-testid="temperature-slider"
-              />
+              <div className="flex items-center gap-3">
+                <span className="text-[12px] text-[var(--color-text-secondary)]">
+                  Precise
+                </span>
+                <Slider
+                  aria-label="Response style: precise to creative"
+                  min={0.1}
+                  max={0.9}
+                  step={0.1}
+                  value={[field.value ?? 0.3]}
+                  onValueChange={([val]) => field.onChange(val)}
+                  thumbContent={(field.value ?? 0.3).toFixed(1)}
+                  className="flex-1"
+                  data-testid="temperature-slider"
+                />
+                <span className="text-[12px] text-[var(--color-text-secondary)]">
+                  Creative
+                </span>
+              </div>
             )}
           />
         </div>

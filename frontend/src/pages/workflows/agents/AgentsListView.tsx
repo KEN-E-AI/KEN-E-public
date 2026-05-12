@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { Bot, Plus } from "lucide-react";
+import { Bot, Plus, Settings } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAgentConfigsList } from "@/queries/agentConfigs";
 import type { AgentConfigId } from "@/lib/api/agentConfigs";
@@ -83,6 +83,19 @@ function AgentCard({ config, index, onEdit }: AgentCardProps) {
       onClick={() => onEdit(toAgentConfigId(config.config_id))}
       data-testid={`agent-card-${config.config_id}`}
     >
+      {/* Configure gear (top-right) */}
+      <button
+        type="button"
+        className="absolute top-3 right-3 size-7 rounded-[var(--radius-sm)] flex items-center justify-center text-[var(--color-text-secondary)] cursor-pointer transition-colors hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-violet-500)]"
+        onClick={(e) => {
+          e.stopPropagation();
+          onEdit(toAgentConfigId(config.config_id));
+        }}
+        aria-label={`Configure ${displayName}`}
+      >
+        <Settings className="size-4" />
+      </button>
+
       {/* Icon */}
       <div className="mb-3">
         <div
@@ -98,7 +111,7 @@ function AgentCard({ config, index, onEdit }: AgentCardProps) {
 
       {/* Name + customization badge */}
       <div
-        className="flex items-center gap-1.5 flex-wrap mb-1.5"
+        className="flex items-center gap-1.5 flex-wrap mb-1.5 pr-8"
         style={{ minHeight: 22 }}
       >
         <span
@@ -118,23 +131,10 @@ function AgentCard({ config, index, onEdit }: AgentCardProps) {
 
       {/* Description */}
       {config.description && (
-        <p className="text-[12px] text-[var(--color-text-secondary)] line-clamp-2 mb-3">
+        <p className="text-[12px] text-[var(--color-text-secondary)] line-clamp-2">
           {config.description}
         </p>
       )}
-
-      {/* Configure button */}
-      <button
-        className="w-full mt-auto py-1.5 px-4 rounded-[9px] border-[1.5px] border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] text-[12px] text-[var(--color-text-primary)] cursor-pointer transition-all hover:border-[var(--color-violet-500)] hover:text-[var(--color-violet-500)]"
-        style={{ fontWeight: 600, fontFamily: "inherit" }}
-        onClick={(e) => {
-          e.stopPropagation();
-          onEdit(toAgentConfigId(config.config_id));
-        }}
-        aria-label={`Configure ${displayName}`}
-      >
-        Configure
-      </button>
     </div>
   );
 }
@@ -147,7 +147,6 @@ function CardSkeleton() {
       <Skeleton className="size-11 rounded-xl" />
       <Skeleton className="h-4 w-3/4" />
       <Skeleton className="h-3 w-1/2" />
-      <Skeleton className="h-8 w-full mt-auto" />
     </div>
   );
 }
