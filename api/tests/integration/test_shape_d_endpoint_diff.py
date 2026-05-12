@@ -54,8 +54,8 @@ pytestmark = pytest.mark.skipif(
 # Path bootstrap — lets us import migrate_shape_d_split from api/scripts/
 # ---------------------------------------------------------------------------
 SCRIPTS_DIR = Path(__file__).parent.parent.parent / "scripts"
-if str(SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS_DIR))
+if SCRIPTS_DIR.is_dir() and str(SCRIPTS_DIR) not in sys.path:
+    sys.path.append(str(SCRIPTS_DIR))
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -110,7 +110,7 @@ def _build_funnel_step(
         for tac in TACTIC_NAMES:
             tactics[tac] = {
                 "effectiveness_kpi": f"m_eff_{label}_{ch}_{tac}",
-                "efficiency_kpi": f"m_eff__{label}_{ch}_{tac}",
+                "efficiency_kpi": f"m_eff_{label}_{ch}_{tac}",
                 "evaluation_metrics": [f"m_eval_{label}_{ch}_{tac}"],
             }
         channels[ch] = {
@@ -259,7 +259,9 @@ def _capture_snapshot(
         for kpi in KPI_NAMES:
             resp = test_client.get(f"{prefix}/kpi-settings/{aid}/{kpi}")
             snapshot[f"GET kpi-settings/{aid}/{kpi}"] = (
-                resp.json() if resp.status_code == 200 else {"_status": resp.status_code}
+                resp.json()
+                if resp.status_code == 200
+                else {"_status": resp.status_code}
             )
 
         # --- Organization funnel step list ---
@@ -272,7 +274,9 @@ def _capture_snapshot(
         for step in org_funnel_steps:
             resp = test_client.get(f"{prefix}/funnel-steps/{aid}/organization/{step}")
             snapshot[f"GET funnel-steps/{aid}/organization/{step}"] = (
-                resp.json() if resp.status_code == 200 else {"_status": resp.status_code}
+                resp.json()
+                if resp.status_code == 200
+                else {"_status": resp.status_code}
             )
 
         # --- Big-bet funnel step lists (one per big bet) ---
@@ -282,8 +286,23 @@ def _capture_snapshot(
                 params={"big_bet_name": bb},
             )
             snapshot[f"GET funnel-steps/{aid}/big_bet?big_bet_name={bb}"] = (
-                resp.json() if resp.status_code == 200 else {"_status": resp.status_code}
+                resp.json()
+                if resp.status_code == 200
+                else {"_status": resp.status_code}
             )
+
+        # --- Big-bet funnel individual steps ---
+        for bb in big_bet_names:
+            for step in big_bet_steps:
+                resp = test_client.get(
+                    f"{prefix}/funnel-steps/{aid}/big_bet/{step}",
+                    params={"big_bet_name": bb},
+                )
+                snapshot[f"GET funnel-steps/{aid}/big_bet/{step}?big_bet_name={bb}"] = (
+                    resp.json()
+                    if resp.status_code == 200
+                    else {"_status": resp.status_code}
+                )
 
         # --- Channel lists: org funnel steps ---
         for step in org_funnel_steps:
@@ -296,7 +315,9 @@ def _capture_snapshot(
                 },
             )
             snapshot[f"GET channels/{aid}/organization/{step}"] = (
-                resp.json() if resp.status_code == 200 else {"_status": resp.status_code}
+                resp.json()
+                if resp.status_code == 200
+                else {"_status": resp.status_code}
             )
 
         # --- Tactic lists: org funnel steps x channels ---
@@ -312,7 +333,9 @@ def _capture_snapshot(
                     },
                 )
                 snapshot[f"GET tactics/{aid}/organization/{step}/{ch}"] = (
-                    resp.json() if resp.status_code == 200 else {"_status": resp.status_code}
+                    resp.json()
+                    if resp.status_code == 200
+                    else {"_status": resp.status_code}
                 )
 
     return snapshot
@@ -358,8 +381,9 @@ def test_endpoint_responses_unchanged_by_migration(
     emulator_service._db = emulator_client
     emulator_service._initialized = True
 
-    test_client = TestClient(app)
+    _prior_override = app.dependency_overrides.get(get_firestore_service)
     app.dependency_overrides[get_firestore_service] = lambda: emulator_service
+    test_client = TestClient(app)
     try:
         # 2. Pre-migration snapshot
         pre = _capture_snapshot(
@@ -375,10 +399,10 @@ def test_endpoint_responses_unchanged_by_migration(
         assert len(pre) >= 30, (
             f"Expected ≥ 30 endpoint entries in snapshot, got {len(pre)}"
         )
-        non_200 = {k: v for k, v in pre.items() if isinstance(v, dict) and "_status" in v}
-        assert not non_200, (
-            f"Non-200 responses in pre-migration snapshot: {non_200}"
-        )
+        non_200 = {
+            k: v for k, v in pre.items() if isinstance(v, dict) and "_status" in v
+        }
+        assert not non_200, f"Non-200 responses in pre-migration snapshot: {non_200}"
 
         # 3. Run migration — both accounts should be SKIPPED (Shape B already populated)
         summary = run_migration(emulator_client, dry_run=False)
@@ -387,9 +411,7 @@ def test_endpoint_responses_unchanged_by_migration(
             f"Expected 2 skipped (Shape B already present); got copied={summary.copied} "
             f"skipped={summary.skipped}"
         )
-        assert summary.copied == 0, (
-            f"Expected 0 copied; got {summary.copied}"
-        )
+        assert summary.copied == 0, f"Expected 0 copied; got {summary.copied}"
 
         # 4. Inline destructive step: remove the org doc's 'accounts' field
         # (simulates DM-44's --confirm-delete-field; swap for the flag once DM-44 ships)
@@ -418,7 +440,9 @@ def test_endpoint_responses_unchanged_by_migration(
 
         # 7. PRD §7 structural assertions
         org_doc_after = _get_doc(emulator_client, "organizations", org_id)
-        assert org_doc_after is not None, "organizations/{org_id} doc missing after migration"
+        assert org_doc_after is not None, (
+            "organizations/{org_id} doc missing after migration"
+        )
         assert "accounts" not in org_doc_after, (
             f"organizations/{org_id} still has 'accounts' field after destructive step: "
             f"{list(org_doc_after.keys())}"
@@ -439,23 +463,26 @@ def test_endpoint_responses_unchanged_by_migration(
             assert acc_doc.get("funnels") == expected_payload["funnels"], (
                 f"accounts/{aid}.funnels mismatch"
             )
-            assert acc_doc.get("account_settings") == expected_payload["account_settings"], (
-                f"accounts/{aid}.account_settings mismatch"
-            )
+            assert (
+                acc_doc.get("account_settings") == expected_payload["account_settings"]
+            ), f"accounts/{aid}.account_settings mismatch"
 
             # shape_d_migrated_at is present and parses as ISO-8601
             migrated_at = acc_doc.get("shape_d_migrated_at")
-            assert migrated_at is not None, f"accounts/{aid} missing shape_d_migrated_at"
+            assert migrated_at is not None, (
+                f"accounts/{aid} missing shape_d_migrated_at"
+            )
             datetime.fromisoformat(migrated_at)  # raises if not valid ISO-8601
 
     finally:
-        app.dependency_overrides.clear()
+        if _prior_override is None:
+            app.dependency_overrides.pop(get_firestore_service, None)
+        else:
+            app.dependency_overrides[get_firestore_service] = _prior_override
 
 
 @pytest.mark.integration
-def test_dry_run_destructive_step_is_a_noop(
-    emulator_client: Any, run_id: str
-) -> None:
+def test_dry_run_destructive_step_is_a_noop(emulator_client: Any, run_id: str) -> None:
     """dry_run=True leaves both shapes intact: org doc keeps 'accounts' field,
     accounts/{aid} docs are unchanged.
     """
@@ -474,11 +501,14 @@ def test_dry_run_destructive_step_is_a_noop(
 
     summary = run_migration(emulator_client, dry_run=True)
 
-    # Dry-run: no writes to accounts/{aid}
-    # The migration runner records "WOULD COPY" actions for dry-run; however,
-    # since both accounts are already fully migrated (shape_d_migrated_at is set),
-    # the idempotency check should cause them to be SKIPPED even in dry-run mode.
+    # Dry-run: no writes occur. The idempotency gate checks equality of
+    # organization_id + account_settings + funnels against the destination doc —
+    # since both are already present and identical, both accounts are SKIPPED.
     assert summary.errors == 0, f"Unexpected errors in dry-run: {summary.errors}"
+    assert summary.skipped == 2, (
+        f"Expected 2 skipped; got copied={summary.copied} skipped={summary.skipped}"
+    )
+    assert summary.copied == 0, f"Expected 0 copied; got {summary.copied}"
 
     # Org doc still has 'accounts' field (no destructive step ran)
     org_doc_after = _get_doc(emulator_client, "organizations", org_id)
@@ -492,8 +522,6 @@ def test_dry_run_destructive_step_is_a_noop(
     beta_after = _get_doc(emulator_client, "accounts", aid_beta)
 
     assert alpha_after == alpha_before, (
-        "accounts/acc_alpha was modified during dry-run"
+        f"accounts/{aid_alpha} was modified during dry-run"
     )
-    assert beta_after == beta_before, (
-        "accounts/acc_beta was modified during dry-run"
-    )
+    assert beta_after == beta_before, f"accounts/{aid_beta} was modified during dry-run"
