@@ -662,6 +662,75 @@ class TestDeleteFieldPass:
         assert summary.orgs_field_deleted == 0
         assert len(client._updates) == 0
 
+    def test_gate_block_firestore_read_error(self) -> None:
+        """Transient Firestore read error during verification → skipped_unmigrated, no update()."""
+        settings = {"kpi": "m_1"}
+        funnels = {}
+        org_data = {
+            "accounts": {"acc_error": {"account_settings": settings, "funnels": funnels}},
+        }
+
+        # Build a client whose accounts/ DocRef.get() raises a transient error
+        class _RaisingSnap:
+            def __init__(self, doc_id: str) -> None:
+                self.id = doc_id
+                self.exists = False
+
+            def to_dict(self) -> dict[str, Any]:
+                return {}
+
+        class _RaisingDocRef:
+            def __init__(self, path: str, updates: list[Any]) -> None:
+                self._path = path
+                self._updates = updates
+
+            @property
+            def id(self) -> str:
+                return self._path.rsplit("/", 1)[-1]
+
+            def get(self) -> _RaisingSnap:
+                raise OSError("simulated transient Firestore error")
+
+            def update(self, field_mask: dict[str, Any]) -> None:
+                self._updates.append((self._path, field_mask))
+
+        class _Snap:
+            def __init__(self, doc_id: str, data: dict[str, Any]) -> None:
+                self.id = doc_id
+                self._data = data
+                self.exists = True
+
+            def to_dict(self) -> dict[str, Any]:
+                return dict(self._data)
+
+        updates: list[Any] = []
+
+        class _ColRef:
+            def __init__(self, name: str) -> None:
+                self._name = name
+
+            def stream(self) -> list[Any]:
+                return [_Snap("org_1", org_data)]
+
+            def document(self, doc_id: str) -> Any:
+                return _RaisingDocRef(f"{self._name}/{doc_id}", updates)
+
+        class _Client:
+            def __init__(self) -> None:
+                self._updates = updates
+
+            def collection(self, name: str) -> _ColRef:
+                return _ColRef(name)
+
+        client = _Client()
+
+        with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
+            summary = m.run_delete_field_pass(client, dry_run=False)
+
+        assert summary.orgs_skipped_unmigrated == 1
+        assert summary.orgs_field_deleted == 0
+        assert len(client._updates) == 0
+
     def test_idempotency_already_clean(self) -> None:
         """Org doc with no accounts field → already_clean, update() NOT called."""
         org_data = {"name": "Clean Org"}  # no "accounts" key
@@ -693,8 +762,8 @@ class TestDeleteFieldPass:
         with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
             summary = m.run_delete_field_pass(client, dry_run=True)
 
-        # would_delete counted as orgs_field_deleted in the summary for simplicity
-        assert summary.orgs_field_deleted == 1
+        assert summary.orgs_would_delete == 1
+        assert summary.orgs_field_deleted == 0
         assert len(client._updates) == 0  # no real writes
 
     def test_mixed_batch_three_orgs(self) -> None:

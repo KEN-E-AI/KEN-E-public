@@ -155,6 +155,7 @@ class MigrationSummary(BaseModel):
     errors: int
     # Delete-pass counters (zero during write-pass — strict superset)
     orgs_field_deleted: int = 0
+    orgs_would_delete: int = 0
     orgs_already_clean: int = 0
     orgs_skipped_unmigrated: int = 0
 
@@ -524,6 +525,7 @@ def run_delete_field_pass(
     from google.cloud.firestore_v1 import DELETE_FIELD  # type: ignore[import]
 
     orgs_field_deleted = 0
+    orgs_would_delete = 0
     orgs_already_clean = 0
     orgs_skipped_unmigrated = 0
 
@@ -552,13 +554,24 @@ def run_delete_field_pass(
             for account_id, nested_payload in accounts_map.items():
                 if not isinstance(nested_payload, dict):
                     nested_payload = {}
-                dest_ref = client.collection("accounts").document(account_id)
-                dest_snap = dest_ref.get()
-                dest_data: dict[str, Any] | None = (
-                    dest_snap.to_dict()
-                    if (hasattr(dest_snap, "exists") and dest_snap.exists)
-                    else None
-                )
+                try:
+                    dest_ref = client.collection("accounts").document(account_id)
+                    dest_snap = dest_ref.get()
+                    dest_data: dict[str, Any] | None = (
+                        dest_snap.to_dict()
+                        if (hasattr(dest_snap, "exists") and dest_snap.exists)
+                        else None
+                    )
+                except Exception as read_exc:
+                    logger.warning(
+                        "org %s account %s: Firestore read error during verification — "
+                        "treating as unverified: %s",
+                        org_id,
+                        account_id,
+                        read_exc,
+                    )
+                    missing_account_ids.append(account_id)
+                    continue
                 if not is_already_migrated(dest_data, nested_payload, org_id):
                     missing_account_ids.append(account_id)
 
@@ -592,7 +605,7 @@ def run_delete_field_pass(
                     account_count_in_map=account_count,
                 )
                 print(rec.model_dump_json())
-                orgs_field_deleted += 1
+                orgs_would_delete += 1
             else:
                 logger.info(
                     "org %s: verified (%d accounts); deleting accounts field",
@@ -614,13 +627,14 @@ def run_delete_field_pass(
         raise
 
     summary = MigrationSummary(
-        total_orgs=orgs_field_deleted + orgs_already_clean + orgs_skipped_unmigrated,
+        total_orgs=orgs_field_deleted + orgs_would_delete + orgs_already_clean + orgs_skipped_unmigrated,
         total_accounts=0,
         copied=0,
         skipped=0,
         empty=0,
         errors=0,
         orgs_field_deleted=orgs_field_deleted,
+        orgs_would_delete=orgs_would_delete,
         orgs_already_clean=orgs_already_clean,
         orgs_skipped_unmigrated=orgs_skipped_unmigrated,
     )
@@ -685,7 +699,7 @@ def main() -> int:
     logger.info(
         "migrate_shape_d_split: env=%s project_id=%s database_id=%s dry_run=%s confirm_delete_field=%s",
         args.env, project_id, database_id, args.dry_run,
-        getattr(args, "confirm_delete_field", False),
+        args.confirm_delete_field,
     )
     if args.dry_run:
         logger.info("DRY RUN — no writes will be made")
