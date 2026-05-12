@@ -90,7 +90,7 @@ _REDEPLOY_REQUIRED_FIELDS: frozenset[str] = frozenset(
 # ``agent_configs/{id}`` docs. KEN-E doesn't surface it in this API shape;
 # strip it so an MER-E-touched doc still validates.
 _STORAGE_INTERNAL_FIELDS: frozenset[str] = frozenset(
-    {"metadata", "created_at", "updated_at", "created_by", "deployment_status"}
+    {"metadata", "created_at", "updated_at", "created_by", "updated_by", "deployment_status"}
 )
 
 logger = logging.getLogger(__name__)

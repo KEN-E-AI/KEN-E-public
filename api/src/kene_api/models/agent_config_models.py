@@ -243,8 +243,8 @@ class MergedAgentConfig(BaseModel):
     Uses ``extra="forbid"`` (AH-40) so any storage divergence — including the
     legacy nested ``generate_content_config`` wrapper — fails loud at validation
     time rather than silently dropping data. ``_merge_from_data`` is responsible
-    for stripping storage-internal fields (``metadata``, ``created_at``,
-    ``updated_at``, ``created_by``) before validation.
+    for stripping storage-internal fields (see ``_STORAGE_INTERNAL_FIELDS`` in
+    ``routers/agent_configs.py``) before validation.
     """
 
     model_config = {"extra": "forbid"}
