@@ -5,13 +5,16 @@ No Firestore dependency.  All helpers are exercised with plain dicts.
 Covers:
 - extract_account_payload: empty account_settings/funnels, None values, no mutation of input
 - is_already_migrated: various hit/miss combinations
+- _is_vacuously_clean_account: invalid IDs, empty payloads
 - approx_bytes: non-zero for non-empty dicts, zero-ish for empty
 - CLI: --env mismatch exits 2, missing --env exits 2, missing GOOGLE_CLOUD_PROJECT_ID exits 2
 - org-level fields are never touched (only accounts.* is consumed)
+- TestDeleteFieldPass: verification gate, idempotency, TOCTOU guard, vacuous-clean accounts
 """
 
 from __future__ import annotations
 
+import copy
 import sys
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
@@ -179,6 +182,34 @@ class TestIsAlreadyMigrated:
         src: dict[str, Any] = {"account_settings": {}, "funnels": {}}
         dest = {"organization_id": "org_abc", "account_settings": None, "funnels": None}
         assert m.is_already_migrated(dest, src, "org_abc") is True
+
+
+# ===========================================================================
+# _is_vacuously_clean_account
+# ===========================================================================
+
+
+class TestIsVacuouslyCleanAccount:
+    def test_empty_account_id_is_vacuously_clean(self) -> None:
+        assert m._is_vacuously_clean_account("", {"account_settings": {"kpi": "m_1"}, "funnels": {}}) is True
+
+    def test_slash_in_account_id_is_vacuously_clean(self) -> None:
+        assert m._is_vacuously_clean_account("org/acc", {"account_settings": {}, "funnels": {}}) is True
+
+    def test_dot_account_id_is_vacuously_clean(self) -> None:
+        assert m._is_vacuously_clean_account(".", {}) is True
+
+    def test_double_dot_account_id_is_vacuously_clean(self) -> None:
+        assert m._is_vacuously_clean_account("..", {"funnels": {"org": {}}}) is True
+
+    def test_empty_payload_is_vacuously_clean(self) -> None:
+        assert m._is_vacuously_clean_account("acc_abc", {}) is True
+
+    def test_valid_id_with_nonempty_payload_is_not_vacuously_clean(self) -> None:
+        assert m._is_vacuously_clean_account("acc_abc", {"account_settings": {"kpi": "m_1"}}) is False
+
+    def test_valid_id_with_empty_account_settings_but_nonempty_funnels_is_not_vacuously_clean(self) -> None:
+        assert m._is_vacuously_clean_account("acc_abc", {"funnels": {"org": {"1": {}}}}) is False
 
 
 # ===========================================================================
@@ -497,7 +528,11 @@ class TestDeleteFieldPass:
                 self.exists = bool(data) or data == {}
 
             def to_dict(self) -> dict[str, Any]:
-                return dict(self._data)
+                # Deep-copy so that mutations to the store after construction do not
+                # retroactively change what the stream snapshot returns.  This is
+                # important for TOCTOU tests that modify store after the stream snaps
+                # are built to simulate a concurrent writer.
+                return copy.deepcopy(self._data)
 
         class _DocRef:
             def __init__(self, path: str, store: dict[str, Any], updates: list[Any]) -> None:
@@ -552,11 +587,11 @@ class TestDeleteFieldPass:
             for acc_id, data in existing_accounts.items():
                 store[f"accounts/{acc_id}"] = data
 
-        # Seed org docs
+        # Seed org docs (stream snaps use deep-copies; store has the live doc)
         for org_id, org_data in orgs.items():
-            store[f"organizations/{org_id}"] = org_data
+            store[f"organizations/{org_id}"] = copy.deepcopy(org_data)
 
-        org_snaps = [_Snap(org_id, data) for org_id, data in orgs.items()]
+        org_snaps = [_Snap(org_id, copy.deepcopy(data)) for org_id, data in orgs.items()]
 
         class _Client:
             def __init__(self) -> None:
@@ -804,3 +839,70 @@ class TestDeleteFieldPass:
         assert len(client._updates) == 1
         path, _ = client._updates[0]
         assert path == "organizations/org_full"
+
+    def test_empty_payload_account_is_vacuously_verified(self) -> None:
+        """Org with one empty-payload account → deleted, not skipped_unmigrated.
+
+        The write-pass records action='empty' and writes no dest doc; the
+        delete-pass must treat this as vacuously verified via
+        _is_vacuously_clean_account so it does not block on a missing dest doc.
+        """
+        org_data = {"accounts": {"acc_empty": {}}}  # empty payload
+        # No acc_empty in existing_accounts — write-pass never wrote it
+        client = self._make_fake_client({"org_1": org_data})
+        with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
+            summary = m.run_delete_field_pass(client, dry_run=False)
+        assert summary.orgs_field_deleted == 1
+        assert summary.orgs_skipped_unmigrated == 0
+        assert len(client._updates) == 1
+
+    def test_invalid_account_id_is_vacuously_verified(self) -> None:
+        """Org whose only account has an invalid ID (contains '/') → deleted.
+
+        _iter_org_accounts rejects IDs containing '/' before reaching Firestore;
+        delete-pass must treat such accounts as vacuously clean so they do not
+        block the DELETE_FIELD gate.
+        """
+        org_data = {
+            "accounts": {"invalid/acc": {"account_settings": {"kpi": "m_1"}, "funnels": {}}}
+        }
+        client = self._make_fake_client({"org_1": org_data})
+        with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
+            summary = m.run_delete_field_pass(client, dry_run=False)
+        assert summary.orgs_field_deleted == 1
+        assert summary.orgs_skipped_unmigrated == 0
+
+    def test_toctou_guard_skips_org_on_new_accounts(self) -> None:
+        """TOCTOU guard: new account added after stream but before re-fetch → skipped_concurrent_write.
+
+        The stream snapshot is frozen at construction time (deep-copy).  After
+        the stream is consumed we mutate the live store to simulate a concurrent
+        writer adding a new account.  When run_delete_field_pass re-fetches the
+        org doc it sees the new key, detects the set-difference, and skips with
+        action=skipped_concurrent_write instead of issuing DELETE_FIELD.
+        """
+        settings = {"kpi": "m_1"}
+        funnels: dict[str, Any] = {}
+        org_data = {
+            "accounts": {"acc_a": {"account_settings": settings, "funnels": funnels}}
+        }
+        existing = {
+            "acc_a": {
+                "organization_id": "org_1",
+                "account_settings": settings,
+                "funnels": funnels,
+            }
+        }
+        client = self._make_fake_client({"org_1": org_data}, existing_accounts=existing)
+        # Simulate concurrent write: add new account to live store AFTER stream
+        # snaps were built.  Stream returns deep-copy of original; re-fetch reads
+        # from the (now-mutated) live store.
+        client._store["organizations/org_1"]["accounts"]["acc_new"] = {
+            "account_settings": {"kpi": "m_2"},
+            "funnels": {},
+        }
+        with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
+            summary = m.run_delete_field_pass(client, dry_run=False)
+        assert summary.orgs_skipped_concurrent_write == 1
+        assert summary.orgs_field_deleted == 0
+        assert len(client._updates) == 0
