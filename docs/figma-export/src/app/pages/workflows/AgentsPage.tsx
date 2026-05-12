@@ -166,7 +166,7 @@ function AgentCard({ agent, index, onConfigure }: { agent: Agent; index: number;
       </div>
 
       {/* Chips */}
-      <div className="flex flex-wrap gap-1 mb-3">
+      <div className="flex flex-wrap gap-1">
         {totalTools > 0 && (
           <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)]" style={{ fontWeight: 700 }}>
             {totalTools} tool{totalTools !== 1 ? 's' : ''}

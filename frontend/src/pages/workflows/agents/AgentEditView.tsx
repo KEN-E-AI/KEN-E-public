@@ -228,16 +228,15 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
         {/* Response style (stored as `temperature`) */}
         <div>
           {/* allow-text-tertiary: secondary-metadata slider value readout */}
-          <div className="flex justify-end items-center text-[11px] text-[var(--color-text-tertiary)]">
-            <DirtyDot dirty={isDirtyTemperature} />
+          <div className="flex justify-end text-[11px] text-[var(--color-text-tertiary)]">
             <span>{temperature.toFixed(2)}</span>
           </div>
           <div className="flex items-center gap-3 mt-1">
-            <span className="text-[12px] text-[var(--color-text-secondary)]">
-              Precise
+            <span className="flex items-center gap-1.5 text-[12px] text-[var(--color-text-secondary)]">
+              <DirtyDot dirty={isDirtyTemperature} />
+              <span>Precise</span>
             </span>
             <Slider
-              id="agent-temperature"
               aria-label="Response style: precise to creative"
               min={0}
               max={1}

@@ -181,7 +181,6 @@ export function AgentCreatePage() {
                   Precise
                 </span>
                 <Slider
-                  id="agent-temperature"
                   aria-label="Response style: precise to creative"
                   min={0}
                   max={1}
