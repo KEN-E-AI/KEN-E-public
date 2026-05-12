@@ -5,13 +5,16 @@ No Firestore dependency.  All helpers are exercised with plain dicts.
 Covers:
 - extract_account_payload: empty account_settings/funnels, None values, no mutation of input
 - is_already_migrated: various hit/miss combinations
+- _is_vacuously_clean_account: invalid IDs, empty payloads
 - approx_bytes: non-zero for non-empty dicts, zero-ish for empty
 - CLI: --env mismatch exits 2, missing --env exits 2, missing GOOGLE_CLOUD_PROJECT_ID exits 2
 - org-level fields are never touched (only accounts.* is consumed)
+- TestDeleteFieldPass: verification gate, idempotency, TOCTOU guard, vacuous-clean accounts
 """
 
 from __future__ import annotations
 
+import copy
 import sys
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timezone
@@ -179,6 +182,34 @@ class TestIsAlreadyMigrated:
         src: dict[str, Any] = {"account_settings": {}, "funnels": {}}
         dest = {"organization_id": "org_abc", "account_settings": None, "funnels": None}
         assert m.is_already_migrated(dest, src, "org_abc") is True
+
+
+# ===========================================================================
+# _is_vacuously_clean_account
+# ===========================================================================
+
+
+class TestIsVacuouslyCleanAccount:
+    def test_empty_account_id_is_vacuously_clean(self) -> None:
+        assert m._is_vacuously_clean_account("", {"account_settings": {"kpi": "m_1"}, "funnels": {}}) is True
+
+    def test_slash_in_account_id_is_vacuously_clean(self) -> None:
+        assert m._is_vacuously_clean_account("org/acc", {"account_settings": {}, "funnels": {}}) is True
+
+    def test_dot_account_id_is_vacuously_clean(self) -> None:
+        assert m._is_vacuously_clean_account(".", {}) is True
+
+    def test_double_dot_account_id_is_vacuously_clean(self) -> None:
+        assert m._is_vacuously_clean_account("..", {"funnels": {"org": {}}}) is True
+
+    def test_empty_payload_is_vacuously_clean(self) -> None:
+        assert m._is_vacuously_clean_account("acc_abc", {}) is True
+
+    def test_valid_id_with_nonempty_payload_is_not_vacuously_clean(self) -> None:
+        assert m._is_vacuously_clean_account("acc_abc", {"account_settings": {"kpi": "m_1"}}) is False
+
+    def test_valid_id_with_empty_account_settings_but_nonempty_funnels_is_not_vacuously_clean(self) -> None:
+        assert m._is_vacuously_clean_account("acc_abc", {"funnels": {"org": {"1": {}}}}) is False
 
 
 # ===========================================================================
@@ -455,3 +486,423 @@ class TestOrgLevelFieldsUntouched:
         assert summary.copied == 1
         assert "accounts/valid_acc" in client._store
         assert "accounts/invalid/acc" not in client._store
+
+
+# ===========================================================================
+# TestDeleteFieldPass
+# ===========================================================================
+
+
+class TestDeleteFieldPass:
+    """Unit tests for run_delete_field_pass() — the --confirm-delete-field step.
+
+    Uses a fake Firestore client that records update() calls so we can assert
+    DELETE_FIELD is (or is not) issued without touching a real database.
+    """
+
+    # Sentinel to stand in for google.cloud.firestore_v1.DELETE_FIELD in tests.
+    # run_delete_field_pass imports DELETE_FIELD inside the function body, so we
+    # patch it in the google.cloud.firestore_v1 module namespace.
+    _DELETE_FIELD_SENTINEL = object()
+
+    def _make_fake_client(
+        self,
+        orgs: dict[str, dict[str, Any]],
+        existing_accounts: dict[str, dict[str, Any]] | None = None,
+    ) -> Any:
+        """Build a fake Firestore client for delete-pass tests.
+
+        Parameters
+        ----------
+        orgs:
+            ``{org_id: org_doc_data}`` — each entry becomes an organizations/ snapshot.
+            The org_doc_data should include an ``accounts`` map if the org has accounts.
+        existing_accounts:
+            ``{account_id: account_doc_data}`` — pre-populated accounts/ docs.
+        """
+
+        class _Snap:
+            def __init__(self, doc_id: str, data: dict[str, Any]) -> None:
+                self.id = doc_id
+                self._data = data
+                self.exists = bool(data) or data == {}
+
+            def to_dict(self) -> dict[str, Any]:
+                # Deep-copy so that mutations to the store after construction do not
+                # retroactively change what the stream snapshot returns.  This is
+                # important for TOCTOU tests that modify store after the stream snaps
+                # are built to simulate a concurrent writer.
+                return copy.deepcopy(self._data)
+
+        class _DocRef:
+            def __init__(self, path: str, store: dict[str, Any], updates: list[Any]) -> None:
+                self._path = path
+                self._store = store
+                self._updates = updates  # shared list of (path, field_mask) tuples
+
+            @property
+            def id(self) -> str:
+                return self._path.rsplit("/", 1)[-1]
+
+            def get(self) -> _Snap:
+                data = self._store.get(self._path)
+                if data is None:
+                    s = _Snap(self.id, {})
+                    s.exists = False
+                    return s
+                return _Snap(self.id, data)
+
+            def update(self, field_mask: dict[str, Any]) -> None:
+                self._updates.append((self._path, field_mask))
+                # Simulate the DELETE_FIELD by removing the key from the store
+                for key in list(field_mask.keys()):
+                    doc = self._store.get(self._path, {})
+                    doc.pop(key, None)
+                    self._store[self._path] = doc
+
+        class _ColRef:
+            def __init__(
+                self,
+                name: str,
+                store: dict[str, Any],
+                rows: list[Any],
+                updates: list[Any],
+            ) -> None:
+                self._name = name
+                self._store = store
+                self._rows = rows
+                self._updates = updates
+
+            def stream(self) -> list[Any]:
+                return self._rows
+
+            def document(self, doc_id: str) -> _DocRef:
+                return _DocRef(f"{self._name}/{doc_id}", self._store, self._updates)
+
+        store: dict[str, Any] = {}
+        updates: list[Any] = []  # records (path, field_mask) for each update() call
+
+        # Seed account docs
+        if existing_accounts:
+            for acc_id, data in existing_accounts.items():
+                store[f"accounts/{acc_id}"] = data
+
+        # Seed org docs (stream snaps use deep-copies; store has the live doc)
+        for org_id, org_data in orgs.items():
+            store[f"organizations/{org_id}"] = copy.deepcopy(org_data)
+
+        org_snaps = [_Snap(org_id, copy.deepcopy(data)) for org_id, data in orgs.items()]
+
+        class _Client:
+            def __init__(self) -> None:
+                self._store = store
+                self._updates = updates
+
+            def collection(self, name: str) -> Any:
+                if name == "organizations":
+                    return _ColRef(name, store, org_snaps, updates)
+                return _ColRef(name, store, [], updates)
+
+        return _Client()
+
+    def _fully_migrated_account(self, org_id: str) -> dict[str, Any]:
+        return {
+            "organization_id": org_id,
+            "account_settings": {"kpi": "m_1"},
+            "funnels": {"organization": {"1": {"name": "Awareness"}}},
+            "shape_d_migrated_at": "2026-05-11T12:00:00+00:00",
+        }
+
+    def test_gate_pass_records_deleted_and_issues_update(self) -> None:
+        """Fully-migrated org → action=deleted, update() called with DELETE_FIELD."""
+        settings = {"kpi": "m_1"}
+        funnels = {"organization": {"1": {"name": "Awareness"}}}
+        org_data = {
+            "name": "Acme",
+            "accounts": {
+                "acc_a": {"account_settings": settings, "funnels": funnels},
+                "acc_b": {"account_settings": {}, "funnels": {"org": {}}},
+            },
+        }
+        existing = {
+            "acc_a": {"organization_id": "org_1", "account_settings": settings, "funnels": funnels},
+            "acc_b": {"organization_id": "org_1", "account_settings": {}, "funnels": {"org": {}}},
+        }
+        client = self._make_fake_client({"org_1": org_data}, existing_accounts=existing)
+
+        with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
+            summary = m.run_delete_field_pass(client, dry_run=False)
+
+        assert summary.orgs_field_deleted == 1
+        assert summary.orgs_already_clean == 0
+        assert summary.orgs_skipped_unmigrated == 0
+
+        # Exactly one update() call on the org doc with "accounts" key
+        assert len(client._updates) == 1
+        path, field_mask = client._updates[0]
+        assert path == "organizations/org_1"
+        assert "accounts" in field_mask
+        assert field_mask["accounts"] is self._DELETE_FIELD_SENTINEL
+
+    def test_gate_block_missing_account_doc(self) -> None:
+        """Org with a missing accounts/ doc → skipped_unmigrated, update() NOT called."""
+        settings = {"kpi": "m_1"}
+        funnels = {}
+        org_data = {
+            "accounts": {
+                "acc_present": {"account_settings": settings, "funnels": funnels},
+                "acc_missing": {"account_settings": {"kpi": "m_2"}, "funnels": {}},
+            },
+        }
+        # Only acc_present is migrated; acc_missing has no destination doc
+        existing = {
+            "acc_present": {
+                "organization_id": "org_1",
+                "account_settings": settings,
+                "funnels": funnels,
+            },
+        }
+        client = self._make_fake_client({"org_1": org_data}, existing_accounts=existing)
+
+        with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
+            summary = m.run_delete_field_pass(client, dry_run=False)
+
+        assert summary.orgs_skipped_unmigrated == 1
+        assert summary.orgs_field_deleted == 0
+        assert len(client._updates) == 0
+
+    def test_gate_block_content_mismatch(self) -> None:
+        """Dest doc exists but funnels differ from source → skipped_unmigrated."""
+        settings = {"kpi": "m_1"}
+        funnels_source = {"organization": {"1": {"name": "Awareness"}}}
+        funnels_dest = {"organization": {"1": {"name": "DIFFERENT"}}}
+        org_data = {
+            "accounts": {
+                "acc_mismatch": {"account_settings": settings, "funnels": funnels_source},
+            },
+        }
+        existing = {
+            "acc_mismatch": {
+                "organization_id": "org_1",
+                "account_settings": settings,
+                "funnels": funnels_dest,  # different!
+            },
+        }
+        client = self._make_fake_client({"org_1": org_data}, existing_accounts=existing)
+
+        with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
+            summary = m.run_delete_field_pass(client, dry_run=False)
+
+        assert summary.orgs_skipped_unmigrated == 1
+        assert summary.orgs_field_deleted == 0
+        assert len(client._updates) == 0
+
+    def test_gate_block_firestore_read_error(self) -> None:
+        """Transient Firestore read error during verification → skipped_unmigrated, no update()."""
+        settings = {"kpi": "m_1"}
+        funnels = {}
+        org_data = {
+            "accounts": {"acc_error": {"account_settings": settings, "funnels": funnels}},
+        }
+
+        # Build a client whose accounts/ DocRef.get() raises a transient error
+        class _RaisingSnap:
+            def __init__(self, doc_id: str) -> None:
+                self.id = doc_id
+                self.exists = False
+
+            def to_dict(self) -> dict[str, Any]:
+                return {}
+
+        class _RaisingDocRef:
+            def __init__(self, path: str, updates: list[Any]) -> None:
+                self._path = path
+                self._updates = updates
+
+            @property
+            def id(self) -> str:
+                return self._path.rsplit("/", 1)[-1]
+
+            def get(self) -> _RaisingSnap:
+                raise OSError("simulated transient Firestore error")
+
+            def update(self, field_mask: dict[str, Any]) -> None:
+                self._updates.append((self._path, field_mask))
+
+        class _Snap:
+            def __init__(self, doc_id: str, data: dict[str, Any]) -> None:
+                self.id = doc_id
+                self._data = data
+                self.exists = True
+
+            def to_dict(self) -> dict[str, Any]:
+                return dict(self._data)
+
+        updates: list[Any] = []
+
+        class _ColRef:
+            def __init__(self, name: str) -> None:
+                self._name = name
+
+            def stream(self) -> list[Any]:
+                return [_Snap("org_1", org_data)]
+
+            def document(self, doc_id: str) -> Any:
+                return _RaisingDocRef(f"{self._name}/{doc_id}", updates)
+
+        class _Client:
+            def __init__(self) -> None:
+                self._updates = updates
+
+            def collection(self, name: str) -> _ColRef:
+                return _ColRef(name)
+
+        client = _Client()
+
+        with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
+            summary = m.run_delete_field_pass(client, dry_run=False)
+
+        assert summary.orgs_skipped_unmigrated == 1
+        assert summary.orgs_field_deleted == 0
+        assert len(client._updates) == 0
+
+    def test_idempotency_already_clean(self) -> None:
+        """Org doc with no accounts field → already_clean, update() NOT called."""
+        org_data = {"name": "Clean Org"}  # no "accounts" key
+        client = self._make_fake_client({"org_clean": org_data})
+
+        with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
+            summary = m.run_delete_field_pass(client, dry_run=False)
+
+        assert summary.orgs_already_clean == 1
+        assert summary.orgs_field_deleted == 0
+        assert len(client._updates) == 0
+
+    def test_dry_run_does_not_issue_update(self) -> None:
+        """--dry-run: verified org records would_delete but update() is NOT called."""
+        settings = {"kpi": "m_1"}
+        funnels = {}
+        org_data = {
+            "accounts": {"acc_a": {"account_settings": settings, "funnels": funnels}},
+        }
+        existing = {
+            "acc_a": {
+                "organization_id": "org_dry",
+                "account_settings": settings,
+                "funnels": funnels,
+            },
+        }
+        client = self._make_fake_client({"org_dry": org_data}, existing_accounts=existing)
+
+        with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
+            summary = m.run_delete_field_pass(client, dry_run=True)
+
+        assert summary.orgs_would_delete == 1
+        assert summary.orgs_field_deleted == 0
+        assert len(client._updates) == 0  # no real writes
+
+    def test_mixed_batch_three_orgs(self) -> None:
+        """Three orgs: one deleted, one skipped_unmigrated, one already_clean."""
+        settings = {"kpi": "m_1"}
+        funnels = {}
+
+        org_full = {
+            "accounts": {"acc_full": {"account_settings": settings, "funnels": funnels}},
+        }
+        org_partial = {
+            "accounts": {
+                "acc_present": {"account_settings": settings, "funnels": funnels},
+                "acc_absent": {"account_settings": {"kpi": "m_2"}, "funnels": {}},
+            },
+        }
+        org_empty = {"name": "Empty Org"}  # no accounts field
+
+        existing = {
+            "acc_full": {"organization_id": "org_full", "account_settings": settings, "funnels": funnels},
+            "acc_present": {"organization_id": "org_partial", "account_settings": settings, "funnels": funnels},
+            # acc_absent intentionally missing
+        }
+        client = self._make_fake_client(
+            {"org_full": org_full, "org_partial": org_partial, "org_empty": org_empty},
+            existing_accounts=existing,
+        )
+
+        with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
+            summary = m.run_delete_field_pass(client, dry_run=False)
+
+        assert summary.orgs_field_deleted == 1
+        assert summary.orgs_skipped_unmigrated == 1
+        assert summary.orgs_already_clean == 1
+        assert summary.total_orgs == 3
+
+        # Only the full org should have had update() called
+        assert len(client._updates) == 1
+        path, _ = client._updates[0]
+        assert path == "organizations/org_full"
+
+    def test_empty_payload_account_is_vacuously_verified(self) -> None:
+        """Org with one empty-payload account → deleted, not skipped_unmigrated.
+
+        The write-pass records action='empty' and writes no dest doc; the
+        delete-pass must treat this as vacuously verified via
+        _is_vacuously_clean_account so it does not block on a missing dest doc.
+        """
+        org_data = {"accounts": {"acc_empty": {}}}  # empty payload
+        # No acc_empty in existing_accounts — write-pass never wrote it
+        client = self._make_fake_client({"org_1": org_data})
+        with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
+            summary = m.run_delete_field_pass(client, dry_run=False)
+        assert summary.orgs_field_deleted == 1
+        assert summary.orgs_skipped_unmigrated == 0
+        assert len(client._updates) == 1
+
+    def test_invalid_account_id_is_vacuously_verified(self) -> None:
+        """Org whose only account has an invalid ID (contains '/') → deleted.
+
+        _iter_org_accounts rejects IDs containing '/' before reaching Firestore;
+        delete-pass must treat such accounts as vacuously clean so they do not
+        block the DELETE_FIELD gate.
+        """
+        org_data = {
+            "accounts": {"invalid/acc": {"account_settings": {"kpi": "m_1"}, "funnels": {}}}
+        }
+        client = self._make_fake_client({"org_1": org_data})
+        with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
+            summary = m.run_delete_field_pass(client, dry_run=False)
+        assert summary.orgs_field_deleted == 1
+        assert summary.orgs_skipped_unmigrated == 0
+
+    def test_toctou_guard_skips_org_on_new_accounts(self) -> None:
+        """TOCTOU guard: new account added after stream but before re-fetch → skipped_concurrent_write.
+
+        The stream snapshot is frozen at construction time (deep-copy).  After
+        the stream is consumed we mutate the live store to simulate a concurrent
+        writer adding a new account.  When run_delete_field_pass re-fetches the
+        org doc it sees the new key, detects the set-difference, and skips with
+        action=skipped_concurrent_write instead of issuing DELETE_FIELD.
+        """
+        settings = {"kpi": "m_1"}
+        funnels: dict[str, Any] = {}
+        org_data = {
+            "accounts": {"acc_a": {"account_settings": settings, "funnels": funnels}}
+        }
+        existing = {
+            "acc_a": {
+                "organization_id": "org_1",
+                "account_settings": settings,
+                "funnels": funnels,
+            }
+        }
+        client = self._make_fake_client({"org_1": org_data}, existing_accounts=existing)
+        # Simulate concurrent write: add new account to live store AFTER stream
+        # snaps were built.  Stream returns deep-copy of original; re-fetch reads
+        # from the (now-mutated) live store.
+        client._store["organizations/org_1"]["accounts"]["acc_new"] = {
+            "account_settings": {"kpi": "m_2"},
+            "funnels": {},
+        }
+        with patch("google.cloud.firestore_v1.DELETE_FIELD", self._DELETE_FIELD_SENTINEL):
+            summary = m.run_delete_field_pass(client, dry_run=False)
+        assert summary.orgs_skipped_concurrent_write == 1
+        assert summary.orgs_field_deleted == 0
+        assert len(client._updates) == 0
