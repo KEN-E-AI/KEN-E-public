@@ -397,18 +397,24 @@ def test_strategy_audit_doc_type_doc_id_timestamp_terraform_key(
 
 def test_strategy_audit_collection_group_index_preserved(indexes_doc: dict) -> None:
     """The pre-existing strategy_audit COLLECTION_GROUP (user_id, timestamp) index
-    for get_user_activity must not have been removed or modified."""
+    for get_user_activity must not have been removed or modified.
+
+    Uses field-level matching rather than a count assertion so that a legitimate
+    future addition of a second COLLECTION_GROUP index does not break this guard.
+    """
+    expected_fields = [
+        {"fieldPath": "user_id", "order": "ASCENDING"},
+        {"fieldPath": "timestamp", "order": "DESCENDING"},
+    ]
     cg_idxs = [
         idx
         for idx in indexes_doc["indexes"]
         if idx.get("collectionGroup") == "strategy_audit"
         and idx.get("queryScope") == "COLLECTION_GROUP"
     ]
-    assert len(cg_idxs) == 1, (
-        f"Expected exactly 1 strategy_audit COLLECTION_GROUP index, found {len(cg_idxs)}"
+    matching = [idx for idx in cg_idxs if idx.get("fields") == expected_fields]
+    assert matching, (
+        "strategy_audit COLLECTION_GROUP (user_id ASC, timestamp DESC) index was "
+        "removed or modified — this backs get_user_activity's collection_group query. "
+        f"Remaining COLLECTION_GROUP strategy_audit indexes: {cg_idxs}"
     )
-    fields = cg_idxs[0].get("fields", [])
-    assert fields == [
-        {"fieldPath": "user_id", "order": "ASCENDING"},
-        {"fieldPath": "timestamp", "order": "DESCENDING"},
-    ], f"strategy_audit COLLECTION_GROUP index fields changed unexpectedly: {fields}"

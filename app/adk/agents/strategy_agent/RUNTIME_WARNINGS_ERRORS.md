@@ -236,7 +236,7 @@ ERROR: Failed to get bottlenecks: 400 The query requires an index
 
 ---
 
-### 7b. ✅ Firestore Indexes Missing for `strategy_audit` Collection-Scoped Queries (provisioned in DM-69)
+### 7c. ✅ Firestore Indexes Missing for `strategy_audit` Collection-Scoped Queries (provisioned in DM-69)
 
 **Affected queries**: `get_strategy_audit_log` (`routers/strategy.py`), `get_recent_actions` and `get_document_history` (`services/audit_service.py`).
 
