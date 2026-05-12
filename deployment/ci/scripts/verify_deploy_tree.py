@@ -6,7 +6,7 @@ of regression that shipped in PR #382: a ModuleNotFoundError that only
 manifested at Agent Engine runtime because CI never exercised the packaged
 import path.
 
-Three checks:
+Four checks:
   1. assemble_deploy_tree() runs without error (packaging integrity).
   2. from agents.agent_factory import build_hierarchy resolves inside the
      temp tree with the source tree stripped from sys.path (import resolution).
@@ -15,8 +15,13 @@ Three checks:
      ._get_declaration() succeed on the restored object (AH-17 regression
      guard: `from __future__ import annotations` + cloudpickle breaks ADK
      FunctionTool declaration generation).
+  4. deploy_ken_e.py imports cleanly when run from app/adk/ — replicates the
+     CD step's `cd app/adk && python deploy_ken_e.py` invocation in a
+     subprocess so import-order regressions (e.g. an `app.adk.*` import that
+     fires before the script's `sys.path.insert` for repo root) fail PR
+     checks instead of staging deploys.
 
-Exit 0 = all three checks pass.  Non-zero = at least one check failed.
+Exit 0 = all four checks pass.  Non-zero = at least one check failed.
 """
 
 # This script IS safe to use `from __future__ import annotations` — it is never
@@ -25,6 +30,7 @@ Exit 0 = all three checks pass.  Non-zero = at least one check failed.
 from __future__ import annotations
 
 import logging
+import subprocess
 import sys
 import tempfile
 import typing
@@ -199,9 +205,35 @@ def main() -> int:
                     return 1
 
             logger.info("PASS Check 3: all dispatch functions survive cloudpickle round-trip")
-            return 0
         finally:
             sys.path = original_path
+
+    # ------------------------------------------------------------------
+    # Check 4: deploy_ken_e.py imports cleanly from app/adk/ cwd
+    # ------------------------------------------------------------------
+    # Replicates the CD step `cd app/adk && python deploy_ken_e.py`. Running
+    # in a subprocess gives a fresh interpreter whose sys.path[0] is the cwd
+    # (app/adk), matching the deploy environment — so any `from app.adk.*`
+    # import that runs before the script's own sys.path bootstrap will fail
+    # here instead of slipping through to a staging deploy.
+    adk_dir = repo_root / "app" / "adk"
+    logger.info("Check 4: importing deploy_ken_e from %s", adk_dir)
+    result = subprocess.run(
+        [sys.executable, "-c", "import deploy_ken_e"],
+        cwd=str(adk_dir),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        logger.error(
+            "FAIL Check 4: `python -c 'import deploy_ken_e'` from app/adk/ "
+            "exited %s\nstderr:\n%s",
+            result.returncode,
+            result.stderr,
+        )
+        return 1
+    logger.info("PASS Check 4: deploy_ken_e imports cleanly from app/adk/ cwd")
+    return 0
 
 
 if __name__ == "__main__":

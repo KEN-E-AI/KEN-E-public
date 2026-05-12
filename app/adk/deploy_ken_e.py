@@ -18,6 +18,10 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+# Repo root must be on sys.path before any `app.adk.*` import so this script
+# resolves correctly when run from inside `app/adk/` (as the CD step does).
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
 import vertexai
 from google.adk.agents.context_cache_config import ContextCacheConfig
 
@@ -33,9 +37,6 @@ from app.adk.deploy_packaging import assemble_deploy_tree
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Add shared package to path for secret resolution
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 try:
     from shared.secrets import get_env_or_secret
