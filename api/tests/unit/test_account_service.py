@@ -1,6 +1,6 @@
 """Unit tests for account service."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import BackgroundTasks, HTTPException
@@ -88,8 +88,12 @@ class TestCreateAccountInternal:
             assert result.industry == "Technology"
             assert result.status == "Active"
 
-            # Verify firestore was called
-            mock_dependencies["firestore"].create_document.assert_called_once()
+            # Verify firestore was called with the Shape B path (DM-70).
+            mock_dependencies["firestore"].create_document.assert_called_once_with(
+                f"accounts/{result.account_id}/strategy_docs",
+                "_placeholder",
+                ANY,
+            )
 
     @pytest.mark.asyncio
     async def test_organization_not_found(self, mock_dependencies, sample_request):
