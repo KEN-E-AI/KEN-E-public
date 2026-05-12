@@ -6,10 +6,32 @@ Phase 2.2 of DM-PRD-03: writes the safe side of the field-tree split.  Reads eac
 ``account_settings`` and ``funnels`` payloads into per-account ``accounts/{account_id}``
 docs with an ``organization_id`` back-reference.
 
-**This script writes only to the ``accounts`` collection.  It never modifies
-``organizations/{org_id}`` documents.**  The destructive ``DELETE_FIELD`` step on the
-org doc is owned by the companion script (DM-44) and runs only after this write-side
-has been verified.
+**Write-pass** (default): writes only to the ``accounts`` collection.  It never
+modifies ``organizations/{org_id}`` documents.
+
+**Delete-pass** (``--confirm-delete-field``): destructive follow-up step.  After the
+write-pass has been run and verified in the target environment, this flag removes the
+now-dead ``accounts`` map field from each ``organizations/{org_id}`` doc via
+``firestore.DELETE_FIELD``.
+
+    PREREQUISITES for ``--confirm-delete-field``:
+    1. The write-pass (no flag) must have completed with zero errors.
+    2. Every ``accounts/{account_id}`` doc must contain the migrated payload
+       (``organization_id``, ``account_settings``, ``funnels`` matching the source).
+    The delete-pass verifies this gate per-org before issuing any deletion.  If any
+    account in an org's map is unverified, that org is skipped and logged — no partial
+    deletion, no data loss.  Re-running after fixing the gap is safe (idempotent).
+
+    TOCTOU guard: immediately before issuing the ``DELETE_FIELD`` the runner re-fetches
+    the org doc and compares its ``accounts`` map keys against the set that was verified.
+    If any new keys appeared since the stream snapshot (i.e. a concurrent writer added an
+    unmigrated account after the verification round-trips completed), the org is skipped
+    with action ``skipped_concurrent_write``.  No write-freeze is required, but operators
+    should be aware that concurrent writes to ``organizations/{org_id}.accounts.*`` during
+    the delete-pass can cause an org to be skipped; re-running the delete-pass after the
+    concurrent writer completes will resolve it.  Since DM-42 removed every live writer of
+    this field from ``firestore.py``, concurrent writes are not expected in normal
+    operation.
 
 Storage style
 -------------
@@ -29,16 +51,27 @@ doc (from other migrations or feature code) are preserved.
 
 Idempotency
 -----------
-Before writing each account, the runner reads the destination doc.  If the doc already
-has ``organization_id == <org_id>`` **and** ``account_settings`` + ``funnels`` compare
-equal to the source payload, the account is logged as ``skipped`` and no write is issued.
+Write-pass: before writing each account the runner reads the destination doc.  If the
+doc already has ``organization_id == <org_id>`` **and** ``account_settings`` +
+``funnels`` compare equal to the source payload, the account is logged as ``skipped``
+and no write is issued.
+
+Delete-pass: an org doc whose ``accounts`` field is already absent is recorded as
+``already_clean`` and skipped.
 
 Usage
 -----
+  # Step 1 — write (safe, non-destructive)
   python api/scripts/migrate_shape_d_split.py --env=dev --dry-run
   python api/scripts/migrate_shape_d_split.py --env=dev
-  python api/scripts/migrate_shape_d_split.py --env=staging
-  python api/scripts/migrate_shape_d_split.py --env=production
+
+  # Step 2 — verify in dev (e.g. check summary, Firestore console, DM-45 API diff)
+
+  # Step 3 — cut over (destructive: removes accounts.* from org docs)
+  python api/scripts/migrate_shape_d_split.py --env=dev --confirm-delete-field --dry-run
+  python api/scripts/migrate_shape_d_split.py --env=dev --confirm-delete-field
+
+  # Repeat steps 1-3 for staging and production
 
 Environment variables
 ---------------------
@@ -47,16 +80,20 @@ Environment variables
 
 Output
 ------
-  Per-account records are printed to stdout as individual JSON lines.
+  Per-account/org records are printed to stdout as individual JSON lines.
   A ``=== JSON SUMMARY ===`` delimiter is printed, followed by an aggregate JSON block.
   All log messages go to stderr.
 
 Exit codes
 ----------
-  0  success
-  1  verification failed (reserved for future use)
+  0  success (all orgs either deleted or already_clean; or write-pass completed with 0 errors)
+  1  verification failed (write-pass: one or more accounts had errors;
+                          delete-pass: one or more orgs were skipped due to unverified accounts
+                          or a concurrent-write race)
   2  usage error (missing/mismatched env var or flag)
-  3  runtime error (unexpected exception)
+  3  runtime error (unexpected exception — a partial ``=== JSON SUMMARY (partial) ===`` block
+                    is printed to stdout before exit so operators can see which orgs completed;
+                    the delete-pass is idempotent, so re-running is safe)
 """
 
 from __future__ import annotations
@@ -68,7 +105,7 @@ import os
 import sys
 from collections.abc import Generator
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -114,13 +151,34 @@ class AccountRecord(BaseModel):
     error: str | None = None
 
 
+class OrgDeleteRecord(BaseModel):
+    org_id: str
+    action: Literal[
+        "deleted",
+        "already_clean",
+        "skipped_unmigrated",
+        "would_delete",
+        "skipped_concurrent_write",
+    ]
+    account_count_in_map: int
+    missing_account_ids: list[str] = []
+    error: str | None = None
+
+
 class MigrationSummary(BaseModel):
+    # Write-pass counters
     total_orgs: int
     total_accounts: int
     copied: int
     skipped: int
     empty: int
     errors: int
+    # Delete-pass counters (zero during write-pass — strict superset)
+    orgs_field_deleted: int = 0
+    orgs_would_delete: int = 0
+    orgs_already_clean: int = 0
+    orgs_skipped_unmigrated: int = 0
+    orgs_skipped_concurrent_write: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +265,29 @@ def is_already_migrated(
     if not isinstance(dst_funnels, dict):
         dst_funnels = {}
     return src_funnels == dst_funnels
+
+
+def _is_vacuously_clean_account(
+    account_id: str, nested_payload: dict[str, Any]
+) -> bool:
+    """Return True if this accounts-map entry needs no dest doc to be considered migrated.
+
+    Mirrors the write-pass exclusion rules in ``_iter_org_accounts`` and ``run_migration``
+    so the delete-pass verification gate does not block on accounts the write-pass
+    intentionally never wrote.
+
+    Two cases are vacuously clean:
+    - Invalid account IDs (``_iter_org_accounts`` logs an error and skips these).
+    - Empty payloads (``run_migration`` records ``action="empty"`` and writes nothing).
+
+    An org that only has vacuously-clean accounts is treated as fully verified and its
+    ``accounts`` field will be deleted.
+    """
+    if not account_id or "/" in account_id or account_id in (".", ".."):
+        return True
+    if not nested_payload:
+        return True
+    return False
 
 
 def approx_bytes(d: dict[str, Any]) -> int:
@@ -341,14 +422,22 @@ def run_migration(
             dest_ref = client.collection("accounts").document(account_id)
             try:
                 dest_snap = dest_ref.get()
-                before_present = dest_snap.exists if hasattr(dest_snap, "exists") else bool(dest_snap)
+                before_present = (
+                    dest_snap.exists
+                    if hasattr(dest_snap, "exists")
+                    else bool(dest_snap)
+                )
                 dest_data: dict[str, Any] | None = (
-                    dest_snap.to_dict() if (hasattr(dest_snap, "exists") and dest_snap.exists) else None
+                    dest_snap.to_dict()
+                    if (hasattr(dest_snap, "exists") and dest_snap.exists)
+                    else None
                 )
             except Exception as exc:
                 logger.error(
                     "org %s account %s: failed to read destination doc: %s",
-                    org_id, account_id, exc,
+                    org_id,
+                    account_id,
+                    exc,
                 )
                 err_record = AccountRecord(
                     org_id=org_id,
@@ -364,7 +453,11 @@ def run_migration(
                 continue
 
             # Warn if a prior migration attributed this account to a different org
-            if dest_data and dest_data.get("organization_id") and dest_data.get("organization_id") != org_id:
+            if (
+                dest_data
+                and dest_data.get("organization_id")
+                and dest_data.get("organization_id") != org_id
+            ):
                 logger.warning(
                     "org %s account %s: destination doc has organization_id=%r — will overwrite (cross-org collision)",
                     org_id,
@@ -375,11 +468,19 @@ def run_migration(
             if is_empty:
                 action = "empty"
                 migrated_at = None
-                logger.info("org %s account %s: EMPTY — no payload to migrate", org_id, account_id)
+                logger.info(
+                    "org %s account %s: EMPTY — no payload to migrate",
+                    org_id,
+                    account_id,
+                )
             elif is_already_migrated(dest_data, nested, org_id):
                 action = "skipped"
-                migrated_at = dest_data.get("shape_d_migrated_at") if dest_data else None  # type: ignore[union-attr]
-                logger.info("org %s account %s: already migrated (skip)", org_id, account_id)
+                migrated_at = dest_data.get(
+                    "shape_d_migrated_at"
+                )  # dest_data is non-None here
+                logger.info(
+                    "org %s account %s: already migrated (skip)", org_id, account_id
+                )
             else:
                 action = "copied" if not dry_run else "WOULD COPY"
                 payload = extract_account_payload(nested, org_id, now)
@@ -394,12 +495,16 @@ def run_migration(
                         dest_ref.set(payload, merge=True)
                         logger.info(
                             "org %s account %s: copied (%d source bytes)",
-                            org_id, account_id, src_byte_size,
+                            org_id,
+                            account_id,
+                            src_byte_size,
                         )
                     except Exception as exc:
                         logger.error(
                             "org %s account %s: write failed: %s",
-                            org_id, account_id, exc,
+                            org_id,
+                            account_id,
+                            exc,
                         )
                         err_record = AccountRecord(
                             org_id=org_id,
@@ -415,7 +520,9 @@ def run_migration(
                         continue
 
             # after a successful set(), the doc is guaranteed to exist; no re-read needed
-            after_present = before_present if (dry_run or action in ("skipped", "empty")) else True
+            after_present = (
+                before_present if (dry_run or action in ("skipped", "empty")) else True
+            )
 
             record = AccountRecord(
                 org_id=org_id,
@@ -445,6 +552,257 @@ def run_migration(
 
 
 # ---------------------------------------------------------------------------
+# Delete-pass runner
+# ---------------------------------------------------------------------------
+
+
+def run_delete_field_pass(
+    client: Any,
+    *,
+    dry_run: bool,
+) -> MigrationSummary:
+    """Remove the ``accounts`` map field from every ``organizations/{org_id}`` doc.
+
+    This is the destructive Phase 4 step (DM-PRD-03 §5 Phase 4).  It runs as a
+    separate pass, distinct from the write-pass (``run_migration``), so operators
+    can verify the write-pass output before committing to deletion.
+
+    Per-org verification gate (fail-closed)
+    ----------------------------------------
+    Before issuing any ``DELETE_FIELD`` on an org doc, the runner reads every
+    ``accounts/{account_id}`` doc referenced in the org's ``accounts`` map and calls
+    ``is_already_migrated()`` on each.  If **any** account fails this check the entire
+    org is skipped with a ``skipped_unmigrated`` record — no partial deletion.
+
+    Accounts that are vacuously clean (invalid doc IDs or empty payloads) are treated
+    as verified without requiring a destination doc — these mirror accounts that the
+    write-pass intentionally skipped (see ``_is_vacuously_clean_account``).
+
+    TOCTOU guard
+    ------------
+    Immediately before issuing ``DELETE_FIELD``, the runner re-fetches the org doc and
+    compares its current ``accounts`` map keys against the set that was verified.  If
+    any new keys appeared after the verification round-trips (i.e. a concurrent writer
+    added an unmigrated account), the org is skipped with ``skipped_concurrent_write``.
+    This is intentional fail-safe behaviour: the delete-pass is idempotent, so a second
+    run after the concurrent writer completes will succeed.
+
+    Idempotency
+    -----------
+    An org doc that already has no ``accounts`` field is recorded as ``already_clean``
+    and skipped silently.
+
+    Exception handling (fail-fast on destructive write)
+    ---------------------------------------------------
+    The ``org_ref.update({\"accounts\": DELETE_FIELD})`` call is wrapped in a per-org
+    try/except.  On failure the error is logged and the exception is re-raised — the
+    delete-pass is intentionally fail-fast on a destructive operation so that a broken
+    write is not silently counted as success.  Before re-raising, a partial
+    ``=== JSON SUMMARY (partial) ===`` block is printed to stdout so operators can see
+    which orgs were processed before the abort.  Re-running is safe (idempotent).
+
+    Parameters
+    ----------
+    client:
+        An initialised ``google.cloud.firestore.Client`` instance.
+    dry_run:
+        When True, the runner prints what would happen but issues no ``DELETE_FIELD``
+        writes.  Verified orgs are recorded as ``would_delete``.
+
+    Returns
+    -------
+    MigrationSummary
+        Write-pass counters are all zero; delete-pass counters reflect the run.
+    """
+    from google.cloud.firestore_v1 import DELETE_FIELD  # type: ignore[import]
+
+    orgs_field_deleted = 0
+    orgs_would_delete = 0
+    orgs_already_clean = 0
+    orgs_skipped_unmigrated = 0
+    orgs_skipped_concurrent_write = 0
+
+    def _build_partial_summary() -> MigrationSummary:
+        return MigrationSummary(
+            total_orgs=(
+                orgs_field_deleted
+                + orgs_would_delete
+                + orgs_already_clean
+                + orgs_skipped_unmigrated
+                + orgs_skipped_concurrent_write
+            ),
+            total_accounts=0,
+            copied=0,
+            skipped=0,
+            empty=0,
+            errors=0,
+            orgs_field_deleted=orgs_field_deleted,
+            orgs_would_delete=orgs_would_delete,
+            orgs_already_clean=orgs_already_clean,
+            orgs_skipped_unmigrated=orgs_skipped_unmigrated,
+            orgs_skipped_concurrent_write=orgs_skipped_concurrent_write,
+        )
+
+    try:
+        for snapshot in client.collection("organizations").stream():
+            org_id: str = snapshot.id
+            doc_dict: dict[str, Any] = snapshot.to_dict() or {}
+            accounts_map = doc_dict.get("accounts")
+
+            # Idempotency: org already clean
+            if not isinstance(accounts_map, dict) or not accounts_map:
+                logger.debug("org %s: accounts field absent — already_clean", org_id)
+                rec = OrgDeleteRecord(
+                    org_id=org_id,
+                    action="already_clean",
+                    account_count_in_map=0,
+                )
+                print(rec.model_dump_json())
+                orgs_already_clean += 1
+                continue
+
+            account_count = len(accounts_map)
+            verified_account_ids: set[str] = set()
+
+            # Per-org verification gate
+            missing_account_ids: list[str] = []
+            for account_id, nested_payload in accounts_map.items():
+                if not isinstance(nested_payload, dict):
+                    nested_payload = {}
+
+                # Vacuously clean: mirrors write-pass exclusion rules — no dest doc needed
+                if _is_vacuously_clean_account(account_id, nested_payload):
+                    verified_account_ids.add(account_id)
+                    continue
+
+                try:
+                    dest_ref = client.collection("accounts").document(account_id)
+                    dest_snap = dest_ref.get()
+                    dest_data: dict[str, Any] | None = (
+                        dest_snap.to_dict()
+                        if (hasattr(dest_snap, "exists") and dest_snap.exists)
+                        else None
+                    )
+                except Exception as read_exc:
+                    logger.warning(
+                        "org %s account %s: Firestore read error during verification — "
+                        "treating as unverified: %s",
+                        org_id,
+                        account_id,
+                        read_exc,
+                    )
+                    missing_account_ids.append(account_id)
+                    continue
+                if is_already_migrated(dest_data, nested_payload, org_id):
+                    verified_account_ids.add(account_id)
+                else:
+                    missing_account_ids.append(account_id)
+
+            if missing_account_ids:
+                logger.warning(
+                    "org %s: %d unverified account(s): %s — skipping field-deletion",
+                    org_id,
+                    len(missing_account_ids),
+                    missing_account_ids,
+                )
+                rec = OrgDeleteRecord(
+                    org_id=org_id,
+                    action="skipped_unmigrated",
+                    account_count_in_map=account_count,
+                    missing_account_ids=missing_account_ids,
+                )
+                print(rec.model_dump_json())
+                orgs_skipped_unmigrated += 1
+                continue
+
+            # All accounts verified — delete (or simulate)
+            if dry_run:
+                logger.info(
+                    "org %s: verified (%d accounts); [DRY RUN] would delete accounts field",
+                    org_id,
+                    account_count,
+                )
+                rec = OrgDeleteRecord(
+                    org_id=org_id,
+                    action="would_delete",
+                    account_count_in_map=account_count,
+                )
+                print(rec.model_dump_json())
+                orgs_would_delete += 1
+            else:
+                # TOCTOU guard: re-fetch org doc to detect concurrent writes since the
+                # stream snapshot was taken.  If new account keys appeared, skip this org.
+                org_ref = client.collection("organizations").document(org_id)
+                fresh_snap = org_ref.get()
+                fresh_dict = (
+                    fresh_snap.to_dict()
+                    if (hasattr(fresh_snap, "exists") and fresh_snap.exists)
+                    else {}
+                ) or {}
+                fresh_accounts = fresh_dict.get("accounts")
+                fresh_keys = (
+                    set(fresh_accounts.keys())
+                    if isinstance(fresh_accounts, dict)
+                    else set()
+                )
+                new_keys = fresh_keys - verified_account_ids
+                if new_keys:
+                    logger.warning(
+                        "org %s: concurrent write detected — %d new account(s) appeared "
+                        "after verification: %s — skipping field-deletion",
+                        org_id,
+                        len(new_keys),
+                        sorted(new_keys),
+                    )
+                    rec = OrgDeleteRecord(
+                        org_id=org_id,
+                        action="skipped_concurrent_write",
+                        account_count_in_map=len(fresh_keys),
+                        missing_account_ids=sorted(new_keys),
+                    )
+                    print(rec.model_dump_json())
+                    orgs_skipped_concurrent_write += 1
+                    continue
+
+                logger.info(
+                    "org %s: verified (%d accounts); deleting accounts field",
+                    org_id,
+                    account_count,
+                )
+                try:
+                    org_ref.update({"accounts": DELETE_FIELD})
+                except Exception as write_exc:
+                    # Fail-fast on a destructive write: log and re-raise.
+                    # The outer except will print the partial summary before propagating.
+                    # The delete-pass is idempotent — re-running is safe after the error.
+                    logger.exception(
+                        "org %s: DELETE_FIELD write failed: %s — aborting delete-pass",
+                        org_id,
+                        write_exc,
+                    )
+                    raise
+                rec = OrgDeleteRecord(
+                    org_id=org_id,
+                    action="deleted",
+                    account_count_in_map=account_count,
+                )
+                print(rec.model_dump_json())
+                orgs_field_deleted += 1
+
+    except Exception as exc:
+        # Any unexpected error from the stream or from a re-raised write failure.
+        # Print a partial summary before propagating so operators can see which orgs
+        # were processed before the abort.  The delete-pass is idempotent; re-running
+        # is safe (already-deleted orgs are recorded as already_clean on the next run).
+        logger.exception("Unexpected error during delete-field pass: %s", exc)
+        print("\n=== JSON SUMMARY (partial — interrupted at error) ===\n")
+        print(_build_partial_summary().model_dump_json(indent=2))
+        raise
+
+    return _build_partial_summary()
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -455,7 +813,11 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Shape D split: copy organizations/{org_id}.accounts.* fields into "
             "per-account accounts/{account_id} docs (Style A, map fields).\n\n"
-            "WRITES ONLY to accounts/{account_id}. Never modifies organizations docs."
+            "Default (no flag): WRITES ONLY to accounts/{account_id}. "
+            "Never modifies organizations docs.\n\n"
+            "--confirm-delete-field: DESTRUCTIVE. Removes the accounts.* map field "
+            "from organizations/{org_id} docs after verifying every account has been "
+            "migrated. Run the write-pass first and verify before using this flag."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -471,7 +833,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Print what would be written without making any Firestore writes.",
+        help="Print what would be written/deleted without making any Firestore writes.",
+    )
+    parser.add_argument(
+        "--confirm-delete-field",
+        action="store_true",
+        help=(
+            "DESTRUCTIVE: remove the 'accounts' map field from every "
+            "organizations/{org_id} doc via DELETE_FIELD. Runs the delete-pass "
+            "only (not the write-pass). Each org is verified before deletion; "
+            "any org with unverified accounts is skipped. Combine with --dry-run "
+            "to preview which orgs would be cleaned."
+        ),
     )
     return parser
 
@@ -485,8 +858,12 @@ def main() -> int:
     _validate_env_flag(args.env, project_id)
 
     logger.info(
-        "migrate_shape_d_split: env=%s project_id=%s database_id=%s dry_run=%s",
-        args.env, project_id, database_id, args.dry_run,
+        "migrate_shape_d_split: env=%s project_id=%s database_id=%s dry_run=%s confirm_delete_field=%s",
+        args.env,
+        project_id,
+        database_id,
+        args.dry_run,
+        args.confirm_delete_field,
     )
     if args.dry_run:
         logger.info("DRY RUN — no writes will be made")
@@ -500,7 +877,11 @@ def main() -> int:
         return EXIT_RUNTIME_ERROR
 
     try:
-        summary = run_migration(client, dry_run=args.dry_run)
+        if args.confirm_delete_field:
+            logger.info("Running delete-field pass (--confirm-delete-field)")
+            summary = run_delete_field_pass(client, dry_run=args.dry_run)
+        else:
+            summary = run_migration(client, dry_run=args.dry_run)
     except Exception:
         logger.exception("Migration failed with an unexpected error")
         return EXIT_RUNTIME_ERROR
@@ -508,12 +889,35 @@ def main() -> int:
     print("\n=== JSON SUMMARY ===\n")
     print(summary.model_dump_json(indent=2))
 
+    if args.confirm_delete_field:
+        incomplete = (
+            summary.orgs_skipped_unmigrated + summary.orgs_skipped_concurrent_write
+        )
+        if incomplete:
+            if summary.orgs_skipped_unmigrated:
+                logger.error(
+                    "DELETE-FIELD PASS INCOMPLETE: %d org(s) skipped because not all accounts "
+                    "are migrated. Re-run the write-pass (no flag) and retry.",
+                    summary.orgs_skipped_unmigrated,
+                )
+            if summary.orgs_skipped_concurrent_write:
+                logger.error(
+                    "DELETE-FIELD PASS INCOMPLETE: %d org(s) skipped due to concurrent writes "
+                    "detected after verification. Re-run the delete-pass to retry.",
+                    summary.orgs_skipped_concurrent_write,
+                )
+            return EXIT_VERIFICATION_FAILED
+        return EXIT_SUCCESS
+
+    # Write-pass exit logic
     if summary.errors:
         logger.error(
             "MIGRATION COMPLETED WITH %d ERROR(S) — %d/%d accounts failed; "
-            "DO NOT run the destructive DELETE_FIELD step (DM-44) until every account is copied. "
-            "Re-run this script to retry the failed accounts.",
-            summary.errors, summary.errors, summary.total_accounts,
+            "DO NOT run the destructive DELETE_FIELD step (--confirm-delete-field) until "
+            "every account is copied. Re-run this script to retry the failed accounts.",
+            summary.errors,
+            summary.errors,
+            summary.total_accounts,
         )
         return EXIT_VERIFICATION_FAILED
 

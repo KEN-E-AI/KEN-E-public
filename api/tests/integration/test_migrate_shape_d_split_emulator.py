@@ -104,6 +104,8 @@ def cleanup(emulator_client: Any, run_id: str) -> Generator[None, None, None]:
         "organizations",
         f"org_realistic_{run_id}",
         f"org_minimal_{run_id}",
+        f"org_full_{run_id}",
+        f"org_partial_{run_id}",
     )
     # Account docs that the migration would have written
     _delete_docs(
@@ -113,6 +115,9 @@ def cleanup(emulator_client: Any, run_id: str) -> Generator[None, None, None]:
         f"acc_beta_{run_id}",
         f"acc_gamma_{run_id}",
         f"acc_preexisting_{run_id}",
+        f"acc_full_{run_id}",
+        f"acc_partial_a_{run_id}",
+        f"acc_partial_b_{run_id}",
     )
 
 
@@ -228,11 +233,20 @@ def test_live_run_creates_destination_docs_with_org_backref(
     assert gamma_doc["organization_id"] == minimal_id
 
     # Payload fields match source
-    assert alpha_doc["account_settings"] == realistic_data["accounts"][f"acc_alpha_{run_id}"]["account_settings"]
-    assert alpha_doc["funnels"] == realistic_data["accounts"][f"acc_alpha_{run_id}"]["funnels"]
+    assert (
+        alpha_doc["account_settings"]
+        == realistic_data["accounts"][f"acc_alpha_{run_id}"]["account_settings"]
+    )
+    assert (
+        alpha_doc["funnels"]
+        == realistic_data["accounts"][f"acc_alpha_{run_id}"]["funnels"]
+    )
 
     assert beta_doc["account_settings"] == {}
-    assert beta_doc["funnels"] == realistic_data["accounts"][f"acc_beta_{run_id}"]["funnels"]
+    assert (
+        beta_doc["funnels"]
+        == realistic_data["accounts"][f"acc_beta_{run_id}"]["funnels"]
+    )
 
     # shape_d_migrated_at is present and parseable
     for doc, label in [(alpha_doc, "alpha"), (beta_doc, "beta"), (gamma_doc, "gamma")]:
@@ -318,9 +332,9 @@ def test_org_level_fields_untouched(emulator_client: Any, run_id: str) -> None:
             return {}
         return {k: json.dumps(v, default=str) for k, v in d.items() if k != "accounts"}
 
-    assert _org_top_level(org_before_realistic) == _org_top_level(org_after_realistic), (
-        "org-level fields changed on realistic org after migration"
-    )
+    assert _org_top_level(org_before_realistic) == _org_top_level(
+        org_after_realistic
+    ), "org-level fields changed on realistic org after migration"
     assert _org_top_level(org_before_minimal) == _org_top_level(org_after_minimal), (
         "org-level fields changed on minimal org after migration"
     )
@@ -347,7 +361,9 @@ def test_dry_run_writes_nothing(emulator_client: Any, run_id: str) -> None:
 
 
 @pytest.mark.integration
-def test_merge_semantics_preserve_existing_fields(emulator_client: Any, run_id: str) -> None:
+def test_merge_semantics_preserve_existing_fields(
+    emulator_client: Any, run_id: str
+) -> None:
     """merge=True: existing unrelated fields on accounts/{account_id} are preserved.
 
     Seeds acc_alpha with a display_name field, then runs the migration.
@@ -379,3 +395,185 @@ def test_merge_semantics_preserve_existing_fields(emulator_client: Any, run_id: 
     # New fields present
     assert alpha.get("organization_id") == realistic_id
     assert "shape_d_migrated_at" in alpha
+
+
+# ---------------------------------------------------------------------------
+# Delete-pass integration tests (--confirm-delete-field)
+# ---------------------------------------------------------------------------
+
+
+def _org_top_level(d: dict[str, Any] | None) -> dict[str, Any]:
+    """Return all org-level fields except 'accounts', serialised for comparison."""
+    if d is None:
+        return {}
+    return {k: json.dumps(v, default=str) for k, v in d.items() if k != "accounts"}
+
+
+@pytest.mark.integration
+def test_confirm_delete_field_removes_accounts_field(
+    emulator_client: Any, run_id: str
+) -> None:
+    """AC-4: after --confirm-delete-field, fully-migrated org has no accounts field.
+
+    Seeds two orgs:
+    - org_full: all accounts fully migrated → accounts field removed.
+    - org_partial: one account doc missing → accounts field retained.
+
+    Asserts that other org-level fields (name, agency, created_at) are unchanged.
+    """
+    from migrate_shape_d_split import run_delete_field_pass
+
+    full_id = f"org_full_{run_id}"
+    partial_id = f"org_partial_{run_id}"
+
+    acc_full = f"acc_full_{run_id}"
+    acc_partial_a = f"acc_partial_a_{run_id}"
+    acc_partial_b = f"acc_partial_b_{run_id}"
+
+    settings_full = {"overview_kpis": {"income_kpi": "m_100"}}
+    funnels_full = {"organization": {"1": {"name": "Awareness"}}}
+
+    settings_pa = {"kpi": "m_2"}
+    funnels_pa = {}
+
+    # Seed org_full with 1 account — fully migrated
+    _seed_doc(
+        emulator_client,
+        "organizations",
+        full_id,
+        {
+            "name": "Full Org",
+            "agency": "Full Agency",
+            "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+            "accounts": {
+                acc_full: {"account_settings": settings_full, "funnels": funnels_full},
+            },
+        },
+    )
+    _seed_doc(
+        emulator_client,
+        "accounts",
+        acc_full,
+        {
+            "organization_id": full_id,
+            "account_settings": settings_full,
+            "funnels": funnels_full,
+            "shape_d_migrated_at": "2026-05-11T00:00:00+00:00",
+        },
+    )
+
+    # Seed org_partial with 2 accounts, but only acc_partial_a is migrated
+    _seed_doc(
+        emulator_client,
+        "organizations",
+        partial_id,
+        {
+            "name": "Partial Org",
+            "created_at": datetime(2026, 1, 2, tzinfo=timezone.utc),
+            "accounts": {
+                acc_partial_a: {"account_settings": settings_pa, "funnels": funnels_pa},
+                acc_partial_b: {"account_settings": {"kpi": "m_99"}, "funnels": {}},
+            },
+        },
+    )
+    _seed_doc(
+        emulator_client,
+        "accounts",
+        acc_partial_a,
+        {
+            "organization_id": partial_id,
+            "account_settings": settings_pa,
+            "funnels": funnels_pa,
+            "shape_d_migrated_at": "2026-05-11T00:00:00+00:00",
+        },
+    )
+    # acc_partial_b intentionally NOT seeded in accounts/ — verification gate must catch this
+
+    # Capture org-level fields before the delete-pass
+    org_full_before = _get_doc(emulator_client, "organizations", full_id)
+    org_partial_before = _get_doc(emulator_client, "organizations", partial_id)
+
+    summary = run_delete_field_pass(emulator_client, dry_run=False)
+
+    # org_full: accounts field should be gone
+    org_full_after = _get_doc(emulator_client, "organizations", full_id)
+    assert org_full_after is not None
+    assert "accounts" not in org_full_after, (
+        f"org_full still has accounts field after delete-pass: {org_full_after}"
+    )
+
+    # org_partial: accounts field should still be there (gate blocked deletion)
+    org_partial_after = _get_doc(emulator_client, "organizations", partial_id)
+    assert org_partial_after is not None
+    assert "accounts" in org_partial_after, (
+        "org_partial's accounts field was wrongly deleted despite missing migration"
+    )
+
+    # org-level fields (name, agency, created_at) must be unchanged for both orgs
+    assert _org_top_level(org_full_before) == _org_top_level(org_full_after), (
+        "org_full non-accounts fields changed after delete-pass"
+    )
+    assert _org_top_level(org_partial_before) == _org_top_level(org_partial_after), (
+        "org_partial non-accounts fields changed after delete-pass"
+    )
+
+    # Summary counters
+    assert summary.orgs_field_deleted == 1
+    assert summary.orgs_skipped_unmigrated == 1
+    assert summary.orgs_already_clean == 0
+
+
+@pytest.mark.integration
+def test_confirm_delete_field_is_idempotent(emulator_client: Any, run_id: str) -> None:
+    """Running --confirm-delete-field twice on an already-cleaned org is a no-op.
+
+    First pass removes the accounts field; second pass records already_clean=1
+    and makes no further writes.
+    """
+    from migrate_shape_d_split import run_delete_field_pass
+
+    full_id = f"org_full_{run_id}"
+    acc_full = f"acc_full_{run_id}"
+
+    settings = {"kpi": "m_1"}
+    funnels: dict[str, Any] = {}
+
+    _seed_doc(
+        emulator_client,
+        "organizations",
+        full_id,
+        {
+            "name": "Idempotent Org",
+            "accounts": {
+                acc_full: {"account_settings": settings, "funnels": funnels},
+            },
+        },
+    )
+    _seed_doc(
+        emulator_client,
+        "accounts",
+        acc_full,
+        {
+            "organization_id": full_id,
+            "account_settings": settings,
+            "funnels": funnels,
+            "shape_d_migrated_at": "2026-05-11T00:00:00+00:00",
+        },
+    )
+
+    # First pass — should delete the accounts field
+    summary1 = run_delete_field_pass(emulator_client, dry_run=False)
+    assert summary1.orgs_field_deleted == 1
+    assert summary1.orgs_already_clean == 0
+
+    org_after_first = _get_doc(emulator_client, "organizations", full_id)
+    assert org_after_first is not None
+    assert "accounts" not in org_after_first, (
+        "accounts field should be gone after first pass"
+    )
+
+    # Second pass — org already has no accounts field → already_clean
+    summary2 = run_delete_field_pass(emulator_client, dry_run=False)
+    assert summary2.orgs_field_deleted == 0
+    assert summary2.orgs_already_clean == 1
+    assert summary2.orgs_skipped_unmigrated == 0
