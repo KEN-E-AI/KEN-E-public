@@ -125,12 +125,17 @@ _E2E_DOCS: dict = {
         "model": "gemini-2.0-flash",
         "description": "Handles Google Analytics queries",
         "mcp_servers": ["ga_mcp", "shared_viz_mcp"],
+        # AH-40: flat generation fields — exercised by TC-7.
+        "temperature": 0.7,
+        "max_output_tokens": 4096,
     },
     ("agent_configs", "ads_specialist"): {
         "instruction": "You are an ads specialist.",
         "model": "gemini-2.0-flash",
         "description": "Handles Google Ads queries",
         "mcp_servers": ["ads_mcp", "shared_viz_mcp"],
+        "temperature": 0.2,
+        "max_output_tokens": 2048,
     },
     ("mcp_server_configs", "ga_mcp"): {
         "enabled": True,
@@ -690,6 +695,77 @@ class TestStructuralEquivalenceSmoke:
 
         assert isinstance(root, LlmAgent)
         assert root.name == "ken_e"
+
+
+# ---------------------------------------------------------------------------
+# TC-7: AH-40 AC-4 — generation config flows from Firestore through
+# build_hierarchy() into the constructed specialist LlmAgents at the
+# hierarchy level (not just the lower-level build_agent factory tests).
+# ---------------------------------------------------------------------------
+
+
+class TestSpecialistGenerationConfigE2E:
+    """TC-7 / AH-40 AC-4: build_hierarchy() applies the seeded ``temperature``
+    and ``max_output_tokens`` to each specialist's SDK ``GenerateContentConfig``.
+
+    The lower-level builder tests in ``test_factory.py`` cover the
+    construction-boundary wiring. This test asserts the same property at
+    the hierarchy level — i.e. against the docs as they would actually be
+    read from Firestore — to close AC-4's literal "end-to-end build of
+    ``agent_factory.build_hierarchy()`` against a fixture Firestore" gap.
+    """
+
+    def _capture_specialists(self, docs: dict) -> dict:
+        """Run build_hierarchy and return a map from specialist name to its
+        constructed LlmAgent."""
+        import app.adk.agents.agent_factory.builder as b
+        import app.adk.agents.agent_factory.hierarchy as h
+
+        fake_db = _FakeFirestoreDb(docs)
+        fake_registry = _FakeRegistry()
+        captured: dict[str, object] = {}
+        original_build_agent = b.build_agent
+
+        def _capture(config, *, name: str, tools=None, **kwargs):
+            agent = original_build_agent(config, name=name, tools=tools, **kwargs)
+            captured[name] = agent
+            return agent
+
+        with (
+            _PATCH_BEFORE_AGENT,
+            _PATCH_AFTER_AGENT,
+            _PATCH_BEFORE_TOOL,
+            _PATCH_AFTER_TOOL,
+            _PATCH_BUILD_TOOLSET as mock_build_toolset,
+            _PATCH_GET_DEFAULT_REGISTRY as mock_get_registry,
+            patch(
+                "app.adk.agents.agent_factory.hierarchy.build_agent",
+                side_effect=_capture,
+            ),
+        ):
+            mock_build_toolset.side_effect = lambda sid, doc: MagicMock(
+                name=f"toolset_{sid}"
+            )
+            mock_get_registry.return_value = fake_registry
+            h.build_hierarchy(db=fake_db)
+
+        return captured
+
+    def test_analytics_specialist_generation_config_matches_doc(self) -> None:
+        captured = self._capture_specialists(_E2E_DOCS)
+        analytics = captured["analytics_specialist"]
+
+        assert analytics.generate_content_config is not None
+        assert analytics.generate_content_config.temperature == 0.7
+        assert analytics.generate_content_config.max_output_tokens == 4096
+
+    def test_ads_specialist_generation_config_matches_doc(self) -> None:
+        captured = self._capture_specialists(_E2E_DOCS)
+        ads = captured["ads_specialist"]
+
+        assert ads.generate_content_config is not None
+        assert ads.generate_content_config.temperature == 0.2
+        assert ads.generate_content_config.max_output_tokens == 2048
 
 
 if __name__ == "__main__":
