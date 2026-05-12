@@ -3,7 +3,6 @@
 
 import os
 from google.cloud import firestore
-from google.oauth2 import service_account
 
 # Set up credentials
 os.environ["GOOGLE_CLOUD_PROJECT_ID"] = "ken-e-dev"
@@ -12,7 +11,7 @@ os.environ["GOOGLE_CLOUD_PROJECT_ID"] = "ken-e-dev"
 db = firestore.Client(project="ken-e-dev")
 
 account_id = "acc_dc291ae14bb74219b7882c1b13c2161d"
-collection_name = f"strategy_docs_{account_id}"
+collection_name = f"accounts/{account_id}/strategy_docs"
 
 print(f"Checking Firestore collection: {collection_name}")
 print("=" * 50)

@@ -286,7 +286,7 @@ def save_strategy_to_firestore(
         from google.cloud import firestore
         
         db = firestore.Client(project=context.project_id)
-        collection_name = f"strategy_docs_{context.account_id}"
+        collection_name = f"accounts/{context.account_id}/strategy_docs"
         
         doc_data = {
             "content": content,

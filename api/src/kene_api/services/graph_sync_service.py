@@ -4101,7 +4101,7 @@ class GraphSyncService:
             operation: "create", "update", or "delete"
         """
         # Store directly in account-specific collection
-        doc_path = f"strategy_docs_{account_id}"
+        doc_path = f"accounts/{account_id}/strategy_docs"
         collection_name = firestore_doc_type
 
         # Get current document

@@ -799,8 +799,8 @@ async def verify_strategy_documents_created(
     """
     Verify that strategy documents were created by the agent.
 
-    The strategy agent saves documents directly to Firestore collections
-    named strategy_docs_{account_id} with documents for each strategy type.
+    The strategy agent saves documents directly to the Firestore subcollection
+    accounts/{account_id}/strategy_docs with documents for each strategy type.
 
     Args:
         account_id: Account ID to check
@@ -811,7 +811,7 @@ async def verify_strategy_documents_created(
     """
     try:
         db = firestore.Client()
-        collection_name = f"strategy_docs_{account_id}"
+        collection_name = f"accounts/{account_id}/strategy_docs"
 
         logger.info(f"Verifying strategy documents in collection: {collection_name}")
 

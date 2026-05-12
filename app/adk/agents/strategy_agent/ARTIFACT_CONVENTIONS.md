@@ -31,7 +31,7 @@ for doc in strategy_docs:
 
 ### Generated Strategy Documents
 Generated strategy documents are stored in Firestore collections with the naming pattern:
-- Collection: `strategy_docs_{account_id}`
+- Collection: `accounts/{account_id}/strategy_docs`
 - Document IDs:
   - `business_strategy`
   - `competitive_strategy`

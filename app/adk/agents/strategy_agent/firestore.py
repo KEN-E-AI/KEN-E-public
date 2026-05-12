@@ -277,7 +277,7 @@ class FirestoreClient:
             }
 
             # Save to account-specific collection
-            collection_name = f"strategy_docs_{account_id}"
+            collection_name = f"accounts/{account_id}/strategy_docs"
             logger.info(
                 f"[FIRESTORE_SAVE] Saving to collection: {collection_name}, document: {doc_type}"
             )
@@ -332,7 +332,7 @@ class FirestoreClient:
             }
 
             # Save to account-specific collection
-            collection_name = f"strategy_docs_{account_id}"
+            collection_name = f"accounts/{account_id}/strategy_docs"
             doc_ref = self.db.collection(collection_name).document(doc_type)
             doc_ref.set(doc_data)
 
@@ -360,7 +360,7 @@ class FirestoreClient:
             return None
 
         try:
-            collection_name = f"strategy_docs_{account_id}"
+            collection_name = f"accounts/{account_id}/strategy_docs"
             doc_ref = self.db.collection(collection_name).document(doc_type)
             doc = doc_ref.get()
 
@@ -403,7 +403,7 @@ class FirestoreClient:
             return False
 
         try:
-            collection_name = f"strategy_docs_{account_id}"
+            collection_name = f"accounts/{account_id}/strategy_docs"
             doc_ref = self.db.collection(collection_name).document(doc_type)
             existing_doc = doc_ref.get()
 
@@ -619,7 +619,7 @@ class ContextManager:
 
             # Save to Firestore
             doc_ref = self.client.db.collection(
-                f"strategy_processing_state_{context.account_id}"
+                f"accounts/{context.account_id}/strategy_processing_state"
             ).document("current_state")
             doc_ref.set(context_data)
 
@@ -639,7 +639,7 @@ class ContextManager:
 
         try:
             doc_ref = self.client.db.collection(
-                f"strategy_processing_state_{account_id}"
+                f"accounts/{account_id}/strategy_processing_state"
             ).document("current_state")
             doc = doc_ref.get()
 

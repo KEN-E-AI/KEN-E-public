@@ -83,7 +83,7 @@ async def list_strategy_documents(
     
     try:
         # Query Firestore using account-specific collection
-        docs_ref = db.collection(f"strategy_docs_{account_id}")
+        docs_ref = db.collection(f"accounts/{account_id}/strategy_docs")
         query = docs_ref.where("is_active", "==", is_active)
         
         if doc_type:
@@ -146,12 +146,12 @@ async def get_strategy_document(
         if version:
             # Get specific version from history
             doc_ref = db.document(
-                f"strategy_docs_{account_id}/{doc_type}/versions/{version}"
+                f"accounts/{account_id}/strategy_docs/{doc_type}/versions/{version}"
             )
         else:
             # Get current version
             doc_ref = db.document(
-                f"strategy_docs_{account_id}/{doc_type}"
+                f"accounts/{account_id}/strategy_docs/{doc_type}"
             )
         
         doc = doc_ref.get()
@@ -216,7 +216,7 @@ async def create_or_update_strategy_document(
     try:
         # Check if document exists in account-specific collection
         doc_ref = db.document(
-            f"strategy_docs_{account_id}/{doc_type}"
+            f"accounts/{account_id}/strategy_docs/{doc_type}"
         )
         existing_doc = doc_ref.get()
         
@@ -230,7 +230,7 @@ async def create_or_update_strategy_document(
             
             # Archive current version
             version_ref = db.document(
-                f"strategy_docs_{account_id}/{doc_type}/versions/{old_version}"
+                f"accounts/{account_id}/strategy_docs/{doc_type}/versions/{old_version}"
             )
             version_ref.set(existing_data)
             
@@ -333,7 +333,7 @@ async def delete_strategy_document(
     try:
         # Get document from account-specific collection
         doc_ref = db.document(
-            f"strategy_docs_{account_id}/{doc_type}"
+            f"accounts/{account_id}/strategy_docs/{doc_type}"
         )
         doc = doc_ref.get()
         
@@ -441,8 +441,9 @@ async def get_strategy_audit_log(
         if not date_to:
             date_to = datetime.utcnow()
         
-        # Query audit log from account-specific collection
-        audit_ref = db.collection(f"strategy_audit_{account_id}")
+        # Query audit log from the account's Shape B subcollection (audit_service.log_strategy_action
+        # writes to accounts/{account_id}/strategy_audit/{audit_id}).
+        audit_ref = db.collection(f"accounts/{account_id}/strategy_audit")
         query = audit_ref.where("doc_type", "==", doc_type)
         query = query.where("timestamp", ">=", date_from)
         query = query.where("timestamp", "<=", date_to)

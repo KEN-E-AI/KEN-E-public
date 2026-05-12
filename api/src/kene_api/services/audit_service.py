@@ -148,8 +148,8 @@ async def log_strategy_action(
 
         # Save to Firestore in account-specific audit collection
         audit_id = f"{doc_type}_{datetime.utcnow().isoformat()}_{uuid4().hex[:8]}"
-        audit_ref = db.document(f"strategy_audit_{account_id}/{audit_id}")
-        audit_ref.set(audit_entry.dict())
+        audit_ref = db.document(f"accounts/{account_id}/strategy_audit/{audit_id}")
+        audit_ref.set(audit_entry.model_dump())
 
         logger.info(
             f"Audit log created: {action} on {doc_type} by {user.email} "
@@ -184,7 +184,7 @@ async def get_recent_actions(
     """
     try:
         # Build query on account-specific audit collection
-        audit_ref = db.collection(f"strategy_audit_{account_id}")
+        audit_ref = db.collection(f"accounts/{account_id}/strategy_audit")
         query = audit_ref.order_by("timestamp", direction=firestore.Query.DESCENDING)
 
         if user_id:
@@ -224,7 +224,7 @@ async def get_document_history(
     """
     try:
         # Query for specific document in account-specific audit collection
-        audit_ref = db.collection(f"strategy_audit_{account_id}")
+        audit_ref = db.collection(f"accounts/{account_id}/strategy_audit")
         query = audit_ref.where("doc_type", "==", doc_type)
         query = query.where("doc_id", "==", doc_id)
         query = query.order_by("timestamp", direction=firestore.Query.DESCENDING)
@@ -255,7 +255,10 @@ async def get_user_activity(user_id: str, limit: int = 100) -> list[StrategyAudi
         List of audit entries for the user
     """
     try:
-        # This requires a collection group query
+        # Shape B: this query is correct as-is — collection_group("strategy_audit")
+        # matches the accounts/{id}/strategy_audit subcollections (DM-PRD-01 migrates the
+        # writers; see audit_service.log_strategy_action above). Do NOT add a path prefix
+        # here. See DM-PRD-01 §1 (Side-effect fix).
         audit_ref = db.collection_group("strategy_audit")
         query = audit_ref.where("user_id", "==", user_id)
         query = query.order_by("timestamp", direction=firestore.Query.DESCENDING)
@@ -290,7 +293,7 @@ async def cleanup_old_audit_logs(account_id: str, days_to_keep: int = 90) -> int
         cutoff_date = datetime.utcnow() - timedelta(days=days_to_keep)
 
         # Query for old entries in account-specific audit collection
-        audit_ref = db.collection(f"strategy_audit_{account_id}")
+        audit_ref = db.collection(f"accounts/{account_id}/strategy_audit")
         query = audit_ref.where("timestamp", "<", cutoff_date)
 
         # Delete in batches
@@ -321,5 +324,3 @@ async def cleanup_old_audit_logs(account_id: str, days_to_keep: int = 90) -> int
     except Exception as e:
         logger.error(f"Failed to cleanup audit logs: {e}")
         return 0
-
-

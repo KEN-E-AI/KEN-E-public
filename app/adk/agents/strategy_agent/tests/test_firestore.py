@@ -148,6 +148,8 @@ class TestContextManager:
         mock_client = Mock(spec=FirestoreClient)
         mock_client.is_initialized.return_value = True
         mock_db = Mock()
+        mock_doc_ref = Mock()
+        mock_db.collection.return_value.document.return_value = mock_doc_ref
         mock_client.db = mock_db
 
         manager = ContextManager(firestore_client=mock_client)
@@ -163,7 +165,9 @@ class TestContextManager:
         result = await manager.save_context(context)
 
         assert result is True
-        mock_db.collection().document().set.assert_called_once()
+        mock_db.collection.assert_called_once_with("accounts/test_account/strategy_processing_state")
+        mock_db.collection.return_value.document.assert_called_once_with("current_state")
+        mock_doc_ref.set.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_get_context(self):
@@ -179,9 +183,8 @@ class TestContextManager:
             "websites": ["https://test.com"],
             "industry": "Technology",
             "customer_regions": ["USA"],
-            "last_updated": datetime.utcnow(),
         }
-        mock_db.collection().document().get.return_value = mock_doc
+        mock_db.collection.return_value.document.return_value.get.return_value = mock_doc
         mock_client.db = mock_db
 
         manager = ContextManager(firestore_client=mock_client)
@@ -190,6 +193,8 @@ class TestContextManager:
         assert result is not None
         assert result.account_id == "test_account"
         assert result.company_name == "Test Corp"
+        mock_db.collection.assert_called_once_with("accounts/test_account/strategy_processing_state")
+        mock_db.collection.return_value.document.assert_called_once_with("current_state")
 
 
 class TestUtilityFunctions:
