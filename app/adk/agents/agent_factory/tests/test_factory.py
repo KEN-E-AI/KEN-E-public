@@ -283,6 +283,36 @@ class TestTemperature:
 
 
 # ---------------------------------------------------------------------------
+# AH-40 AC-5: max_output_tokens wired into SDK GenerateContentConfig
+# ---------------------------------------------------------------------------
+
+
+class TestMaxOutputTokens:
+    def test_max_output_tokens_set_in_generate_content_config(self) -> None:
+        config = _make_config(max_output_tokens=4096)
+        agent = _build(config, name="mot")
+
+        assert agent.generate_content_config is not None
+        assert agent.generate_content_config.max_output_tokens == 4096
+
+    def test_temperature_and_max_output_tokens_combined(self) -> None:
+        config = _make_config(temperature=0.5, max_output_tokens=2048)
+        agent = _build(config, name="combined")
+
+        assert agent.generate_content_config.temperature == 0.5
+        assert agent.generate_content_config.max_output_tokens == 2048
+
+    def test_max_output_tokens_none_leaves_field_unpopulated(self) -> None:
+        from google.genai.types import GenerateContentConfig
+
+        config = _make_config(max_output_tokens=None)
+        agent = _build(config, name="no_mot")
+
+        assert agent.generate_content_config == GenerateContentConfig()
+        assert agent.generate_content_config.max_output_tokens is None
+
+
+# ---------------------------------------------------------------------------
 # AC-5: Code execution
 # ADK 1.27+ requires code_executor on LlmAgent directly (not via
 # GenerateContentConfig.tools).  The builder sets code_executor=BuiltInCodeExecutor()

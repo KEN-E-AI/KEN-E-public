@@ -85,10 +85,12 @@ OAuth credentials are handled automatically via headers. You do NOT need to pass
 **Important:**
 - NEVER ask for credentials or tokens - they are handled automatically
 - If a property_id is provided in the context, use it without asking again""",
-    "generate_content_config": {
-        "temperature": 0.7,
-        "max_output_tokens": 4096,
-    },
+    # AH-40: flat shape — temperature and max_output_tokens live at the top
+    # level. Must be run AFTER the flatten_agent_config_storage backfill in
+    # any environment that has pre-AH-40 nested docs, or right after PR
+    # merge in a clean environment.
+    "temperature": 0.7,
+    "max_output_tokens": 4096,
     "metadata": {
         "version": "v1.0",
         "variant_name": "baseline",

@@ -30,7 +30,6 @@ from ..models.agent_config_models import (
     AgentConfigOverlayUpdate,
     AgentConfigUpdate,
     ConfigAuditEntry,
-    GenerateContentConfig,
     MergedAgentConfig,
 )
 from ..services.audit_service import log_config_action
@@ -47,7 +46,6 @@ __all__ = [
     "AgentConfigUpdate",
     "AgentConfigUpdateResponse",
     "ConfigAuditEntry",
-    "GenerateContentConfig",
     "MergedAgentConfig",
     "account_router",
     "router",
@@ -61,10 +59,10 @@ class AgentConfigUpdateResponse(AgentConfig):
     read top-level fields like ``response.model`` or ``response.metadata``
     keep working. Adding a new optional ``warnings`` list is additive.
 
-    Per Sprint 6 AC-6.25, changes to ``model`` or ``max_output_tokens`` /
-    ``generate_content_config`` cannot be picked up by the 60 s hot-reload
-    cache (ADK bakes them in at agent construction) — those changes surface
-    as a redeploy-required warning here so admins don't silently think the
+    Per Sprint 6 AC-6.25, changes to ``model``, ``temperature`` or
+    ``max_output_tokens`` cannot be picked up by the 60 s hot-reload cache
+    (ADK bakes them in at agent construction) — those changes surface as a
+    redeploy-required warning here so admins don't silently think the
     change is live.
     """
 
@@ -77,11 +75,22 @@ class AgentConfigUpdateResponse(AgentConfig):
 # Fields whose runtime effect requires a pod/agent redeploy. Per Sprint 6
 # Decision B, ONLY ``instruction`` propagates via the 60 s in-process cache
 # because the ADK ``Agent`` constructor only accepts a callable for the
-# ``instruction`` field. ``model``, ``generate_content_config`` (including
-# ``temperature`` and ``max_output_tokens``) and tools are baked at
-# construction time, so updates to any of them require a pod restart.
+# ``instruction`` field. ``model``, ``temperature`` and ``max_output_tokens``
+# are baked into the SDK ``GenerateContentConfig`` at construction time, so
+# updates to any of them require a pod restart.
 _REDEPLOY_REQUIRED_FIELDS: frozenset[str] = frozenset(
     {"model", "temperature", "max_output_tokens"}
+)
+
+# Storage-internal fields that live on Firestore docs but are not part of
+# the ``MergedAgentConfig`` API contract. They must be stripped before
+# Pydantic validation now that ``MergedAgentConfig`` uses ``extra="forbid"``.
+#
+# ``deployment_status`` is written by MER-E (sister repo) onto the shared
+# ``agent_configs/{id}`` docs. KEN-E doesn't surface it in this API shape;
+# strip it so an MER-E-touched doc still validates.
+_STORAGE_INTERNAL_FIELDS: frozenset[str] = frozenset(
+    {"metadata", "created_at", "updated_at", "created_by", "updated_by", "deployment_status"}
 )
 
 logger = logging.getLogger(__name__)
@@ -127,10 +136,13 @@ def _build_firestore_updates(
     variant_name: str | None = None,
     experiment_id: str | None = None,
     notes: str | None = None,
-    current_gen_config: dict[str, int | float] | None = None,
-) -> dict[str, str | int | float | dict[str, int | float]]:
+) -> dict[str, str | int | float]:
     """
     Build type-safe Firestore update dictionary.
+
+    ``temperature`` and ``max_output_tokens`` are written flat at the top
+    level (AH-40). The legacy nested ``generate_content_config`` wrapper
+    is no longer produced.
 
     Args:
         instruction: New instruction text
@@ -144,12 +156,11 @@ def _build_firestore_updates(
         variant_name: New variant name
         experiment_id: New experiment ID
         notes: Change notes
-        current_gen_config: Current generation config for merging
 
     Returns:
-        Dictionary with Firestore update format (dot notation for nested fields)
+        Dictionary with Firestore update format (dot notation for metadata fields)
     """
-    updates: dict[str, str | int | float | dict[str, int | float]] = {}
+    updates: dict[str, str | int | float] = {}
 
     if instruction is not None:
         updates["instruction"] = instruction
@@ -160,15 +171,11 @@ def _build_firestore_updates(
     if description is not None:
         updates["description"] = description
 
-    if temperature is not None or max_output_tokens is not None:
-        gen_config: dict[str, int | float] = (
-            current_gen_config.copy() if current_gen_config else {}
-        )
-        if temperature is not None:
-            gen_config["temperature"] = temperature
-        if max_output_tokens is not None:
-            gen_config["max_output_tokens"] = max_output_tokens
-        updates["generate_content_config"] = gen_config
+    if temperature is not None:
+        updates["temperature"] = temperature
+
+    if max_output_tokens is not None:
+        updates["max_output_tokens"] = max_output_tokens
 
     if version is not None:
         updates["metadata.version"] = version
@@ -194,8 +201,10 @@ def _build_firestore_updates(
 def _snapshot_pre_image(
     current_config: dict[str, Any], update: AgentConfigUpdate
 ) -> dict[str, Any]:
-    """Capture current values for every field the update touches."""
-    gen_cfg = current_config.get("generate_content_config", {}) or {}
+    """Capture current values for every field the update touches.
+
+    Reads ``temperature`` and ``max_output_tokens`` flat (AH-40).
+    """
     snap: dict[str, Any] = {}
 
     if update.instruction is not None:
@@ -205,9 +214,9 @@ def _snapshot_pre_image(
     if update.description is not None:
         snap["description"] = current_config.get("description")
     if update.temperature is not None:
-        snap["temperature"] = gen_cfg.get("temperature")
+        snap["temperature"] = current_config.get("temperature")
     if update.max_output_tokens is not None:
-        snap["max_output_tokens"] = gen_cfg.get("max_output_tokens")
+        snap["max_output_tokens"] = current_config.get("max_output_tokens")
 
     return snap
 
@@ -215,7 +224,6 @@ def _snapshot_pre_image(
 def _snapshot_post_image(
     updated_data: dict[str, Any], update: AgentConfigUpdate
 ) -> dict[str, Any]:
-    gen_cfg = updated_data.get("generate_content_config", {}) or {}
     snap: dict[str, Any] = {}
 
     if update.instruction is not None:
@@ -225,9 +233,9 @@ def _snapshot_post_image(
     if update.description is not None:
         snap["description"] = updated_data.get("description")
     if update.temperature is not None:
-        snap["temperature"] = gen_cfg.get("temperature")
+        snap["temperature"] = updated_data.get("temperature")
     if update.max_output_tokens is not None:
-        snap["max_output_tokens"] = gen_cfg.get("max_output_tokens")
+        snap["max_output_tokens"] = updated_data.get("max_output_tokens")
 
     return snap
 
@@ -502,7 +510,6 @@ async def update_agent_config(
             variant_name=update.variant_name,
             experiment_id=update.experiment_id,
             notes=update.notes,
-            current_gen_config=current_config.get("generate_content_config", {}),
         )
 
         # Snapshot pre-image for audit diff (Sprint 6 AC-6.9)
@@ -643,6 +650,12 @@ def _merge_from_data(
         status = "custom_agent"
         bov = _parse_based_on_version(overlay_data.get("based_on_version"))  # type: ignore[union-attr]
 
+    # Strip storage-internal fields that aren't part of the API contract.
+    # MergedAgentConfig uses extra="forbid" (AH-40), so a leftover nested
+    # generate_content_config would fail validation here — that's the
+    # intent, signalling a backfill miss.
+    for storage_field in _STORAGE_INTERNAL_FIELDS:
+        merged.pop(storage_field, None)
     merged.pop("based_on_version", None)
     merged.pop("customization_status", None)
     merged["config_id"] = config_id

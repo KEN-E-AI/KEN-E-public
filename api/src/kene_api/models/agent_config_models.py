@@ -62,21 +62,22 @@ class AgentConfigMetadata(BaseModel):
     notes: str = Field(default="", description="Change notes or description")
 
 
-class GenerateContentConfig(BaseModel):
-    """Generation configuration for the agent."""
-
-    temperature: float = Field(default=0.3, ge=0.0, le=1.0)
-    max_output_tokens: int = Field(default=2500, ge=100, le=65535)
-
-
 class AgentConfig(BaseModel):
-    """Complete agent configuration as stored in Firestore."""
+    """Complete agent configuration as stored in Firestore.
+
+    `temperature` and `max_output_tokens` are flat top-level fields. The
+    legacy nested `generate_content_config` wrapper was removed in AH-40.
+    The nested ADK SDK shape is reconstructed only at the construction
+    boundary (`agent_factory/builder.py` and `strategy_agent/config_loader.py`)
+    when a `google.genai.types.GenerateContentConfig` is required.
+    """
 
     name: str = Field(..., description="Agent name")
     model: str = Field(..., description="Model identifier")
     description: str = Field(..., description="Agent description")
     instruction: str = Field(..., description="Agent instruction/prompt")
-    generate_content_config: GenerateContentConfig
+    temperature: float = Field(default=0.3, ge=0.0, le=1.0)
+    max_output_tokens: int = Field(default=2500, ge=100, le=65535)
     metadata: AgentConfigMetadata
 
 
@@ -239,11 +240,14 @@ class MergedAgentConfig(BaseModel):
     Merges global ``agent_configs/{id}`` with any per-account overlay at
     ``accounts/{account_id}/agent_configs/{id}``.
 
-    Uses ``extra="ignore"`` to prevent leakage of internal Firestore fields
-    (e.g., ``metadata.updated_by``) into the API response.
+    Uses ``extra="forbid"`` (AH-40) so any storage divergence — including the
+    legacy nested ``generate_content_config`` wrapper — fails loud at validation
+    time rather than silently dropping data. ``_merge_from_data`` is responsible
+    for stripping storage-internal fields (see ``_STORAGE_INTERNAL_FIELDS`` in
+    ``routers/agent_configs.py``) before validation.
     """
 
-    model_config = {"extra": "ignore"}
+    model_config = {"extra": "forbid"}
 
     config_id: str = Field(..., description="Document ID of this agent config")
     name: str | None = Field(
@@ -255,6 +259,7 @@ class MergedAgentConfig(BaseModel):
 
     description: str | None = Field(None, description="Agent description")
     temperature: float | None = Field(None, ge=0.0, le=1.0)
+    max_output_tokens: int | None = Field(None, ge=100, le=65535)
     code_execution_enabled: bool = False
     mcp_servers: list[str] = Field(default_factory=list)
 
@@ -320,6 +325,7 @@ class AgentConfigOverlayUpdate(BaseModel):
     model: str | None = Field(None, max_length=100)
     description: str | None = Field(None, min_length=10, max_length=1000)
     temperature: float | None = Field(None, ge=0.0, le=1.0)
+    max_output_tokens: int | None = Field(None, ge=100, le=65535)
     skill_ids: list[Annotated[str, Field(max_length=50)]] | None = Field(None, max_length=20)
     sandbox_code_executor_enabled: bool | None = None
 
@@ -347,6 +353,5 @@ __all__ = [
     "AgentConfigOverlayUpdate",
     "AgentConfigUpdate",
     "ConfigAuditEntry",
-    "GenerateContentConfig",
     "MergedAgentConfig",
 ]

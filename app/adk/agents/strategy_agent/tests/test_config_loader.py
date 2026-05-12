@@ -175,6 +175,124 @@ class TestConfigLoader:
         assert metadata["model"] == "gemini-2.5-pro"
 
     @patch("app.adk.agents.strategy_agent.config_loader.firestore.Client")
+    def test_load_config_flat_shape_temperature_flows_into_sdk(
+        self, mock_firestore_client
+    ):
+        """AH-40 AC-10: flat-stored temperature must reach the SDK boundary.
+
+        Storage is flat post-AH-40. The loader reconstructs the nested
+        ``generate_content_config`` block before ``LlmAgentConfig.model_validate``
+        so downstream readers (Weave summary, agent construction) see the
+        SDK shape they expect.
+        """
+        from app.adk.agents.strategy_agent.config_loader import (
+            load_config_from_firestore,
+        )
+
+        mock_doc = Mock()
+        mock_doc.exists = True
+        mock_doc.to_dict.return_value = {
+            "name": "ken_e_chatbot",
+            "model": "gemini-2.5-pro",
+            "description": "Frontend-facing chat agent",
+            "instruction": "You are KEN-E...",
+            "temperature": 0.7,
+            "max_output_tokens": 4096,
+            "metadata": {"version": "v1.0.0", "variant_name": "baseline"},
+        }
+
+        mock_collection = Mock()
+        mock_collection.document.return_value.get.return_value = mock_doc
+
+        mock_db = Mock()
+        mock_db.collection.return_value = mock_collection
+
+        mock_firestore_client.return_value = mock_db
+
+        config, _metadata, _extensions = load_config_from_firestore(
+            "ken_e_chatbot", "test-project"
+        )
+
+        assert config.generate_content_config is not None
+        assert config.generate_content_config.temperature == 0.7
+        assert config.generate_content_config.max_output_tokens == 4096
+
+    @patch("app.adk.agents.strategy_agent.config_loader.firestore.Client")
+    def test_load_config_flat_wins_over_legacy_nested(
+        self, mock_firestore_client
+    ):
+        """Mid-backfill safety: if a doc carries both flat and nested fields,
+        flat values win (new contract) and we keep loading without crashing."""
+        from app.adk.agents.strategy_agent.config_loader import (
+            load_config_from_firestore,
+        )
+
+        mock_doc = Mock()
+        mock_doc.exists = True
+        mock_doc.to_dict.return_value = {
+            "name": "ken_e_chatbot",
+            "model": "gemini-2.5-pro",
+            "description": "Hybrid-shape transitional doc",
+            "instruction": "You are KEN-E...",
+            "temperature": 0.7,
+            "max_output_tokens": 4096,
+            # Legacy nested block still present (backfill-in-progress).
+            "generate_content_config": {"temperature": 0.1, "max_output_tokens": 500},
+            "metadata": {"version": "v1.0.0", "variant_name": "baseline"},
+        }
+
+        mock_collection = Mock()
+        mock_collection.document.return_value.get.return_value = mock_doc
+
+        mock_db = Mock()
+        mock_db.collection.return_value = mock_collection
+
+        mock_firestore_client.return_value = mock_db
+
+        config, _metadata, _extensions = load_config_from_firestore(
+            "ken_e_chatbot", "test-project"
+        )
+
+        assert config.generate_content_config.temperature == 0.7
+        assert config.generate_content_config.max_output_tokens == 4096
+
+    @patch("app.adk.agents.strategy_agent.config_loader.firestore.Client")
+    def test_get_current_config_metadata_reads_flat(self, mock_firestore_client):
+        """AH-40: ``get_current_config_metadata`` surfaces flat-stored
+        temperature and max_output_tokens."""
+        from app.adk.agents.strategy_agent.config_loader import (
+            get_current_config_metadata,
+        )
+
+        mock_doc = Mock()
+        mock_doc.exists = True
+        mock_doc.to_dict.return_value = {
+            "name": "ken_e_chatbot",
+            "model": "gemini-2.5-pro",
+            "temperature": 0.7,
+            "max_output_tokens": 4096,
+            "metadata": {
+                "version": "v1.0.0",
+                "variant_name": "baseline",
+                "experiment_id": "baseline",
+                "updated_at": "2026-04-20T12:00:00Z",
+            },
+        }
+
+        mock_collection = Mock()
+        mock_collection.document.return_value.get.return_value = mock_doc
+
+        mock_db = Mock()
+        mock_db.collection.return_value = mock_collection
+
+        mock_firestore_client.return_value = mock_db
+
+        metadata = get_current_config_metadata("ken_e_chatbot", "test-project")
+
+        assert metadata["temperature"] == 0.7
+        assert metadata["max_output_tokens"] == 4096
+
+    @patch("app.adk.agents.strategy_agent.config_loader.firestore.Client")
     def test_get_config_metadata_not_found(self, mock_firestore_client):
         """Test metadata retrieval when config doesn't exist."""
         from app.adk.agents.strategy_agent.config_loader import (
