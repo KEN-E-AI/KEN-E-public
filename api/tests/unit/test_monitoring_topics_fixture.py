@@ -3,10 +3,7 @@
 import json
 from pathlib import Path
 
-import pytest
-
 from src.kene_api.models.monitoring_models import MonitoringTopicsResponse
-
 
 FIXTURE_PATH = (
     Path(__file__).parent.parent
@@ -23,7 +20,9 @@ def test_fixture_validates_against_model() -> None:
     response = MonitoringTopicsResponse.model_validate(raw)
     assert response.success is True
     assert response.data is not None
-    assert response.data.account_id == "acc_fixture_001"
-    assert len(response.data.customer_concepts) == 1
-    assert response.data.customer_concepts[0].keyword == "concept1"
-    assert len(response.data.competitor_entries) == 2
+    # Real dev account captured from ken-e-dev on 2026-05-12
+    assert response.data.account_id == "acc_06c63ab1486a4443a7fc381a484f3b4b"
+    assert response.data.organization_id == "org_05430a297f154c1e951d8ee203fe10d5"
+    assert len(response.data.industry_keywords) == 15
+    assert len(response.data.competitor_entries) == 1
+    assert response.data.competitor_entries[0].name == "test corp"
