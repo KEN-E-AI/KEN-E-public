@@ -39,15 +39,16 @@ class TestFirestoreServiceShapeDPaths:
         result = service.get_kpi_setting("acc_123", "income_kpi")
 
         mock_db.collection.assert_called_with("accounts")
-        mock_db.collection().document.assert_called_with("acc_123")
+        mock_db.collection.return_value.document.assert_called_with("acc_123")
         assert result == "m_abc"
 
     def test_update_kpi_setting_happy_path(self):
         service, mock_db = _make_service()
         mock_doc_ref = mock_db.collection.return_value.document.return_value
 
-        service.update_kpi_setting("acc_123", "income_kpi", "m_abc")
+        result = service.update_kpi_setting("acc_123", "income_kpi", "m_abc")
 
+        assert result is True
         mock_doc_ref.update.assert_called_once_with(
             {"account_settings.overview_kpis.income_kpi": "m_abc"}
         )
@@ -83,7 +84,7 @@ class TestFirestoreServiceShapeDPaths:
 
         assert result is True
         mock_db.collection.assert_called_with("accounts")
-        mock_db.collection().document.assert_called_with("acc_123")
+        mock_db.collection.return_value.document.assert_called_with("acc_123")
         mock_doc_ref.set.assert_called_once()
         set_args, set_kwargs = mock_doc_ref.set.call_args
         assert set_kwargs.get("merge") is True
