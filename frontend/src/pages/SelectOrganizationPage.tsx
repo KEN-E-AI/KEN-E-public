@@ -879,7 +879,7 @@ export default function SelectOrganizationPage() {
               !!(selectedOrgData?.agency && !selectedChildOrg)
             }
             onClick={handleContinue}
-            className="gap-2 bg-[var(--color-cta-coral)] hover:bg-[var(--color-cta-coral-hover)] shadow-[var(--shadow-color-coral)] text-[var(--color-text-inverse)] border-0 transition-all duration-200 hover:-translate-y-0.5"
+            className="gap-2 bg-[var(--color-cta-coral)] hover:bg-[var(--color-cta-coral-hover)] shadow-color-coral text-[var(--color-text-inverse)] border-0 transition-all duration-200 hover:-translate-y-0.5"
           >
             {isLoading ? (
               <>
