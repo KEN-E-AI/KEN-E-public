@@ -100,6 +100,7 @@ def test_merged_agent_config_api_model_field_parity() -> None:
         "name",
         "description",
         "temperature",
+        "max_output_tokens",
         "code_execution_enabled",
         "mcp_servers",
         "skill_ids",

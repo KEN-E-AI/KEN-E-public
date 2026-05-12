@@ -47,13 +47,14 @@ def mock_firestore_db():
 
 @pytest.fixture
 def sample_config_data():
-    """Sample agent configuration data."""
+    """Sample agent configuration data (flat shape per AH-40)."""
     return {
         "name": "business_researcher",
         "model": "gemini-2.5-pro",
         "description": "Test description",
         "instruction": "Test instruction for the agent",
-        "generate_content_config": {"temperature": 0.3, "max_output_tokens": 2500},
+        "temperature": 0.3,
+        "max_output_tokens": 2500,
         "metadata": {
             "version": "v1.0",
             "created_at": "2025-01-01T00:00:00Z",
@@ -251,17 +252,23 @@ class TestBuildFirestoreUpdates:
         updates = _build_firestore_updates(model="gemini-2.5-pro")
         assert updates == {"model": "gemini-2.5-pro"}
 
-    def test_builds_gen_config_update(self):
-        """Should build update dict with generation config."""
-        current_gen_config = {"temperature": 0.3, "max_output_tokens": 2500}
-        updates = _build_firestore_updates(
-            temperature=0.5, current_gen_config=current_gen_config
-        )
+    def test_builds_temperature_update_flat(self):
+        """temperature and max_output_tokens are written flat (AH-40)."""
+        updates = _build_firestore_updates(temperature=0.5)
 
-        assert updates["generate_content_config"] == {
-            "temperature": 0.5,
-            "max_output_tokens": 2500,
-        }
+        assert updates == {"temperature": 0.5}
+        assert "generate_content_config" not in updates
+
+    def test_builds_max_output_tokens_update_flat(self):
+        updates = _build_firestore_updates(max_output_tokens=4096)
+
+        assert updates == {"max_output_tokens": 4096}
+
+    def test_builds_combined_temperature_and_tokens_update(self):
+        updates = _build_firestore_updates(temperature=0.5, max_output_tokens=4096)
+
+        assert updates == {"temperature": 0.5, "max_output_tokens": 4096}
+        assert "generate_content_config" not in updates
 
     def test_builds_metadata_updates(self):
         """Should build update dict with metadata fields."""
@@ -408,9 +415,9 @@ class TestAuditWriteOnUpdate:
 
 
 class TestWarningsOnRedeployRequiredFields:
-    """Changes to model / max_output_tokens / generate_content_config surface a
+    """Changes to model / temperature / max_output_tokens surface a
     redeploy-required warning (AC-6.25) because ADK Agent constructor bakes
-    these fields in at module-import time."""
+    these into the SDK GenerateContentConfig at module-import time."""
 
     @pytest.mark.asyncio
     async def test_model_change_surfaces_redeploy_warning(
@@ -453,10 +460,10 @@ class TestWarningsOnRedeployRequiredFields:
     async def test_temperature_change_surfaces_redeploy_warning(
         self, admin_user, sample_config_data
     ):
-        """Temperature is baked into generate_content_config at ADK Agent
-        construction time; ADK doesn't accept a callable for this field, so
-        changes cannot propagate via the InstructionProvider cache. Must
-        surface a redeploy-required warning (corrects a 1.1.4-3 design gap)."""
+        """Temperature is baked into the SDK GenerateContentConfig at ADK
+        Agent construction time; ADK doesn't accept a callable for this
+        field, so changes cannot propagate via the InstructionProvider
+        cache. Must surface a redeploy-required warning."""
         from unittest.mock import AsyncMock
 
         from src.kene_api.routers import agent_configs as router_mod
@@ -464,10 +471,7 @@ class TestWarningsOnRedeployRequiredFields:
         pre = dict(sample_config_data)
         pre["metadata"] = {**pre["metadata"], "version": "v1.0.0"}
         post = dict(pre)
-        post["generate_content_config"] = {
-            "temperature": 0.5,
-            "max_output_tokens": 2500,
-        }
+        post["temperature"] = 0.5
         post["metadata"] = {**pre["metadata"], "version": "v1.0.1"}
 
         mock_db = MagicMock()
@@ -542,10 +546,7 @@ class TestWarningsOnRedeployRequiredFields:
         pre = dict(sample_config_data)
         pre["metadata"] = {**pre["metadata"], "version": "v1.0.0"}
         post = dict(pre)
-        post["generate_content_config"] = {
-            "temperature": 0.3,
-            "max_output_tokens": 5000,
-        }
+        post["max_output_tokens"] = 5000
         post["metadata"] = {**pre["metadata"], "version": "v1.0.1"}
 
         mock_db = MagicMock()
