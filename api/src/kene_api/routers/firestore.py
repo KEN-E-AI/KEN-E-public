@@ -66,9 +66,6 @@ class FirestoreQueryRequest(BaseRequest):
 class KPISettingRequest(BaseRequest):
     """Request model for KPI setting operations."""
 
-    organization_id: str = Field(
-        ..., description="The unique identifier for the organization"
-    )
     account_id: str = Field(..., description="The unique identifier for the account")
     kpi_name: str = Field(
         ..., description="KPI name: income_kpi, marketing_cost_kpi, or net_income_kpi"
@@ -98,9 +95,6 @@ class KPISettingsResponse(BaseModel):
 class FunnelStepRequest(BaseRequest):
     """Request model for funnel step operations."""
 
-    organization_id: str = Field(
-        ..., description="Unique identifier for the organization"
-    )
     account_id: str = Field(..., description="Unique identifier for the account")
     funnel_type: str = Field(
         ..., description="Type of funnel: 'organization' or 'big_bet'"
@@ -1149,11 +1143,10 @@ async def firestore_health_check(
 
 
 @router.get(
-    "/kpi-settings/{organization_id}/{account_id}/{kpi_name}",
+    "/kpi-settings/{account_id}/{kpi_name}",
     response_model=KPISettingResponse,
 )
 async def get_kpi_setting(
-    organization_id: str,
     account_id: str,
     kpi_name: str,
     firestore: FirestoreService = Depends(get_firestore_service),
@@ -1164,17 +1157,14 @@ async def get_kpi_setting(
     Retrieves the metric ID associated with the specified KPI for the given account.
     """
     try:
-        # Validate KPI name
         validate_kpi_name(kpi_name)
 
-        # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
             raise HTTPException(status_code=503, detail=FIRESTORE_UNAVAILABLE_MESSAGE)
 
-        # Get KPI setting
         metric_id = firestore.get_kpi_setting(
-            organization_id=organization_id, account_id=account_id, kpi_name=kpi_name
+            account_id=account_id, kpi_name=kpi_name
         )
 
         if metric_id is None:
@@ -1214,9 +1204,7 @@ async def update_kpi_setting(
         if not is_healthy:
             raise HTTPException(status_code=503, detail=FIRESTORE_UNAVAILABLE_MESSAGE)
 
-        # Update KPI setting
         success = firestore.update_kpi_setting(
-            organization_id=request.organization_id,
             account_id=request.account_id,
             kpi_name=request.kpi_name,
             metric_id=request.metric_id,
@@ -1239,10 +1227,9 @@ async def update_kpi_setting(
 
 
 @router.get(
-    "/kpi-settings/{organization_id}/{account_id}", response_model=KPISettingsResponse
+    "/kpi-settings/{account_id}", response_model=KPISettingsResponse
 )
 async def get_all_kpi_settings(
-    organization_id: str,
     account_id: str,
     firestore: FirestoreService = Depends(get_firestore_service),
 ) -> KPISettingsResponse:
@@ -1252,18 +1239,13 @@ async def get_all_kpi_settings(
     Retrieves all KPI settings and their associated metric IDs for the given account.
     """
     try:
-        # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
             raise HTTPException(status_code=503, detail=FIRESTORE_UNAVAILABLE_MESSAGE)
 
-        # Get all KPI settings
-        kpi_settings = firestore.get_all_kpi_settings(
-            organization_id=organization_id, account_id=account_id
-        )
+        kpi_settings = firestore.get_all_kpi_settings(account_id=account_id)
 
         if kpi_settings is None:
-            # Return empty settings if account doesn't exist
             kpi_settings = {}
 
         return KPISettingsResponse(
@@ -1311,9 +1293,7 @@ async def create_funnel_step(
             "objective": request.objective,
         }
 
-        # Create funnel step
         success = firestore.create_funnel_step(
-            organization_id=request.organization_id,
             account_id=request.account_id,
             funnel_type=request.funnel_type,
             big_bet_name=request.big_bet_name,
@@ -1338,11 +1318,10 @@ async def create_funnel_step(
 
 
 @router.get(
-    "/funnel-steps/{organization_id}/{account_id}/{funnel_type}",
+    "/funnel-steps/{account_id}/{funnel_type}",
     response_model=FunnelStepsListResponse,
 )
 async def list_funnel_steps(
-    organization_id: str,
     account_id: str,
     funnel_type: str,
     big_bet_name: str | None = Query(
@@ -1356,18 +1335,14 @@ async def list_funnel_steps(
     Retrieves all funnel steps for the specified account and funnel type.
     """
     try:
-        # Validate inputs
         validate_funnel_type(funnel_type)
         validate_big_bet_requirement(funnel_type, big_bet_name)
 
-        # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
             raise HTTPException(status_code=503, detail=FIRESTORE_UNAVAILABLE_MESSAGE)
 
-        # Get funnel steps
         funnel_steps = firestore.list_funnel_steps(
-            organization_id=organization_id,
             account_id=account_id,
             funnel_type=funnel_type,
             big_bet_name=big_bet_name,
@@ -1391,11 +1366,10 @@ async def list_funnel_steps(
 
 
 @router.get(
-    "/funnel-steps/{organization_id}/{account_id}/{funnel_type}/{funnel_step_num}",
+    "/funnel-steps/{account_id}/{funnel_type}/{funnel_step_num}",
     response_model=FunnelStepResponse,
 )
 async def get_funnel_step(
-    organization_id: str,
     account_id: str,
     funnel_type: str,
     funnel_step_num: int,
@@ -1410,18 +1384,14 @@ async def get_funnel_step(
     Retrieves the details of a specific funnel step by its number.
     """
     try:
-        # Validate inputs
         validate_funnel_type(funnel_type)
         validate_big_bet_requirement(funnel_type, big_bet_name)
 
-        # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
             raise HTTPException(status_code=503, detail=FIRESTORE_UNAVAILABLE_MESSAGE)
 
-        # Get funnel step
         funnel_step = firestore.get_funnel_step(
-            organization_id=organization_id,
             account_id=account_id,
             funnel_type=funnel_type,
             big_bet_name=big_bet_name,
@@ -1449,11 +1419,10 @@ async def get_funnel_step(
 
 
 @router.put(
-    "/funnel-steps/{organization_id}/{account_id}/{funnel_type}/{funnel_step_num}",
+    "/funnel-steps/{account_id}/{funnel_type}/{funnel_step_num}",
     response_model=SuccessResponse,
 )
 async def update_funnel_step(
-    organization_id: str,
     account_id: str,
     funnel_type: str,
     funnel_step_num: int,
@@ -1469,17 +1438,14 @@ async def update_funnel_step(
     Updates the details of an existing funnel step.
     """
     try:
-        # Validate inputs
         validate_funnel_type(funnel_type)
         validate_funnel_step_name(request.funnel_step_name)
         validate_big_bet_requirement(funnel_type, big_bet_name)
 
-        # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
             raise HTTPException(status_code=503, detail=FIRESTORE_UNAVAILABLE_MESSAGE)
 
-        # Prepare funnel step data
         funnel_step_data = {
             "funnel_step_name": request.funnel_step_name,
             "effectiveness_kpi": request.effectiveness_kpi,
@@ -1487,9 +1453,7 @@ async def update_funnel_step(
             "objective": request.objective,
         }
 
-        # Update funnel step
         success = firestore.update_funnel_step(
-            organization_id=organization_id,
             account_id=account_id,
             funnel_type=funnel_type,
             big_bet_name=big_bet_name,
@@ -1513,16 +1477,15 @@ async def update_funnel_step(
 
 
 @router.delete(
-    "/funnel-steps/{organization_id}/{account_id}/{funnel_type}/{funnel_step_num}",
+    "/funnel-steps/{account_id}/{funnel_type}/{funnel_step_num}",
     response_model=SuccessResponse,
 )
 async def delete_funnel_step(
-    organization_id: str,
     account_id: str,
     funnel_type: str,
     funnel_step_num: int,
     big_bet_name: str | None = Query(
-        None, description="Big bet name (required if funnel_type is 'big_bet'"
+        None, description="Big bet name (required if funnel_type is 'big_bet')"
     ),
     firestore: FirestoreService = Depends(get_firestore_service),
 ) -> SuccessResponse:
@@ -1532,18 +1495,14 @@ async def delete_funnel_step(
     Deletes a funnel step and shifts all subsequent steps down by 1.
     """
     try:
-        # Validate inputs
         validate_funnel_type(funnel_type)
         validate_big_bet_requirement(funnel_type, big_bet_name)
 
-        # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
             raise HTTPException(status_code=503, detail=FIRESTORE_UNAVAILABLE_MESSAGE)
 
-        # Delete funnel step
         success = firestore.delete_funnel_step(
-            organization_id=organization_id,
             account_id=account_id,
             funnel_type=funnel_type,
             big_bet_name=big_bet_name,
@@ -1568,9 +1527,8 @@ async def delete_funnel_step(
 # Channel Endpoints
 
 
-@router.post("/channels/{organization_id}", response_model=ChannelResponse)
+@router.post("/channels", response_model=ChannelResponse)
 async def create_channel(
-    organization_id: str,
     channel_data: ChannelRequest,
     account_id: str = Query(..., description=ACCOUNT_ID_VALIDATION_DESCRIPTION),
     funnel_type: str = Query(
@@ -1586,22 +1544,18 @@ async def create_channel(
     Create a new channel within a funnel step.
 
     Creates a channel in the specified funnel step. The channel is stored at:
-    - Organization funnel: accounts[account_id].funnels.organization[step_num].channels[channel_name]
-    - Big bet funnel: accounts[account_id].funnels.big_bets[big_bet_name][step_num].channels[channel_name]
+    - Organization funnel: accounts/{account_id}.funnels.organization[step_num].channels[channel_name]
+    - Big bet funnel: accounts/{account_id}.funnels.big_bets[big_bet_name][step_num].channels[channel_name]
     """
     try:
-        # Validate inputs
         validate_funnel_type(funnel_type)
         validate_big_bet_requirement(funnel_type, big_bet_name)
 
-        # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
             raise HTTPException(status_code=503, detail=FIRESTORE_UNAVAILABLE_MESSAGE)
 
-        # Create channel
         channel = firestore.create_channel(
-            organization_id=organization_id,
             account_id=account_id,
             funnel_type=funnel_type,
             big_bet_name=big_bet_name,
@@ -1631,11 +1585,8 @@ async def create_channel(
         ) from e
 
 
-@router.get(
-    "/channels/{organization_id}/{channel_name}", response_model=ChannelResponse
-)
+@router.get("/channels/{channel_name}", response_model=ChannelResponse)
 async def get_channel(
-    organization_id: str,
     channel_name: str,
     account_id: str = Query(..., description=ACCOUNT_ID_VALIDATION_DESCRIPTION),
     funnel_type: str = Query(
@@ -1653,18 +1604,14 @@ async def get_channel(
     Retrieves the channel from the specified funnel step.
     """
     try:
-        # Validate inputs
         validate_funnel_type(funnel_type)
         validate_big_bet_requirement(funnel_type, big_bet_name)
 
-        # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
             raise HTTPException(status_code=503, detail=FIRESTORE_UNAVAILABLE_MESSAGE)
 
-        # Get channel
         channel = firestore.get_channel(
-            organization_id=organization_id,
             account_id=account_id,
             funnel_type=funnel_type,
             big_bet_name=big_bet_name,
@@ -1693,9 +1640,8 @@ async def get_channel(
         ) from e
 
 
-@router.get("/channels/{organization_id}", response_model=ChannelListResponse)
+@router.get("/channels", response_model=ChannelListResponse)
 async def list_channels(
-    organization_id: str,
     account_id: str = Query(..., description=ACCOUNT_ID_VALIDATION_DESCRIPTION),
     funnel_type: str = Query(
         ..., description="Funnel type ('organization' or 'big_bet')"
@@ -1712,18 +1658,14 @@ async def list_channels(
     Retrieves all channels from the specified funnel step.
     """
     try:
-        # Validate inputs
         validate_funnel_type(funnel_type)
         validate_big_bet_requirement(funnel_type, big_bet_name)
 
-        # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
             raise HTTPException(status_code=503, detail=FIRESTORE_UNAVAILABLE_MESSAGE)
 
-        # List channels
         channels = firestore.list_channels(
-            organization_id=organization_id,
             account_id=account_id,
             funnel_type=funnel_type,
             big_bet_name=big_bet_name,
@@ -1740,11 +1682,8 @@ async def list_channels(
         ) from e
 
 
-@router.put(
-    "/channels/{organization_id}/{channel_name}", response_model=ChannelResponse
-)
+@router.put("/channels/{channel_name}", response_model=ChannelResponse)
 async def update_channel(
-    organization_id: str,
     channel_name: str,
     channel_data: ChannelUpdateRequest,
     account_id: str = Query(..., description=ACCOUNT_ID_VALIDATION_DESCRIPTION),
@@ -1763,18 +1702,14 @@ async def update_channel(
     Updates the specified channel with the provided data.
     """
     try:
-        # Validate inputs
         validate_funnel_type(funnel_type)
         validate_big_bet_requirement(funnel_type, big_bet_name)
 
-        # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
             raise HTTPException(status_code=503, detail=FIRESTORE_UNAVAILABLE_MESSAGE)
 
-        # Update channel
         channel = firestore.update_channel(
-            organization_id=organization_id,
             account_id=account_id,
             funnel_type=funnel_type,
             big_bet_name=big_bet_name,
@@ -1804,11 +1739,8 @@ async def update_channel(
         ) from e
 
 
-@router.delete(
-    "/channels/{organization_id}/{channel_name}", response_model=SuccessResponse
-)
+@router.delete("/channels/{channel_name}", response_model=SuccessResponse)
 async def delete_channel(
-    organization_id: str,
     channel_name: str,
     account_id: str = Query(..., description=ACCOUNT_ID_VALIDATION_DESCRIPTION),
     funnel_type: str = Query(
@@ -1826,18 +1758,14 @@ async def delete_channel(
     Deletes the specified channel from the funnel step.
     """
     try:
-        # Validate inputs
         validate_funnel_type(funnel_type)
         validate_big_bet_requirement(funnel_type, big_bet_name)
 
-        # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
             raise HTTPException(status_code=503, detail=FIRESTORE_UNAVAILABLE_MESSAGE)
 
-        # Delete channel
         success = firestore.delete_channel(
-            organization_id=organization_id,
             account_id=account_id,
             funnel_type=funnel_type,
             big_bet_name=big_bet_name,
@@ -1863,9 +1791,8 @@ async def delete_channel(
 # Tactic Endpoints
 
 
-@router.post("/tactics/{organization_id}", response_model=TacticResponse)
+@router.post("/tactics", response_model=TacticResponse)
 async def create_tactic(
-    organization_id: str,
     tactic_data: TacticRequest,
     account_id: str = Query(..., description=ACCOUNT_ID_VALIDATION_DESCRIPTION),
     funnel_type: str = Query(
@@ -1882,22 +1809,18 @@ async def create_tactic(
     Create a new tactic within a channel.
 
     Creates a tactic in the specified channel within a funnel step. The tactic is stored at:
-    - Organization funnel: accounts[account_id].funnels.organization[step_num].channels[channel_name].tactics[tactic_name]
-    - Big bet funnel: accounts[account_id].funnels.big_bets[big_bet_name][step_num].channels[channel_name].tactics[tactic_name]
+    - Organization funnel: accounts/{account_id}.funnels.organization[step_num].channels[channel_name].tactics[tactic_name]
+    - Big bet funnel: accounts/{account_id}.funnels.big_bets[big_bet_name][step_num].channels[channel_name].tactics[tactic_name]
     """
     try:
-        # Validate inputs
         validate_funnel_type(funnel_type)
         validate_big_bet_requirement(funnel_type, big_bet_name)
 
-        # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
             raise HTTPException(status_code=503, detail=FIRESTORE_UNAVAILABLE_MESSAGE)
 
-        # Create tactic
         tactic = firestore.create_tactic(
-            organization_id=organization_id,
             account_id=account_id,
             funnel_type=funnel_type,
             big_bet_name=big_bet_name,
@@ -1931,9 +1854,8 @@ async def create_tactic(
         ) from e
 
 
-@router.get("/tactics/{organization_id}/{tactic_name}", response_model=TacticResponse)
+@router.get("/tactics/{tactic_name}", response_model=TacticResponse)
 async def get_tactic(
-    organization_id: str,
     tactic_name: str,
     account_id: str = Query(..., description=ACCOUNT_ID_VALIDATION_DESCRIPTION),
     funnel_type: str = Query(
@@ -1952,18 +1874,14 @@ async def get_tactic(
     Retrieves the tactic from the specified channel within a funnel step.
     """
     try:
-        # Validate inputs
         validate_funnel_type(funnel_type)
         validate_big_bet_requirement(funnel_type, big_bet_name)
 
-        # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
             raise HTTPException(status_code=503, detail=FIRESTORE_UNAVAILABLE_MESSAGE)
 
-        # Get tactic
         tactic = firestore.get_tactic(
-            organization_id=organization_id,
             account_id=account_id,
             funnel_type=funnel_type,
             big_bet_name=big_bet_name,
@@ -1994,9 +1912,8 @@ async def get_tactic(
         ) from e
 
 
-@router.get("/tactics/{organization_id}", response_model=TacticListResponse)
+@router.get("/tactics", response_model=TacticListResponse)
 async def list_tactics(
-    organization_id: str,
     account_id: str = Query(..., description=ACCOUNT_ID_VALIDATION_DESCRIPTION),
     funnel_type: str = Query(
         ..., description="Funnel type ('organization' or 'big_bet')"
@@ -2014,18 +1931,14 @@ async def list_tactics(
     Retrieves all tactics from the specified channel within a funnel step.
     """
     try:
-        # Validate inputs
         validate_funnel_type(funnel_type)
         validate_big_bet_requirement(funnel_type, big_bet_name)
 
-        # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
             raise HTTPException(status_code=503, detail=FIRESTORE_UNAVAILABLE_MESSAGE)
 
-        # List tactics
         tactics = firestore.list_tactics(
-            organization_id=organization_id,
             account_id=account_id,
             funnel_type=funnel_type,
             big_bet_name=big_bet_name,
@@ -2043,9 +1956,8 @@ async def list_tactics(
         ) from e
 
 
-@router.put("/tactics/{organization_id}/{tactic_name}", response_model=TacticResponse)
+@router.put("/tactics/{tactic_name}", response_model=TacticResponse)
 async def update_tactic(
-    organization_id: str,
     tactic_name: str,
     tactic_data: TacticUpdateRequest,
     account_id: str = Query(..., description=ACCOUNT_ID_VALIDATION_DESCRIPTION),
@@ -2065,18 +1977,14 @@ async def update_tactic(
     Updates the specified tactic with the provided data.
     """
     try:
-        # Validate inputs
         validate_funnel_type(funnel_type)
         validate_big_bet_requirement(funnel_type, big_bet_name)
 
-        # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
             raise HTTPException(status_code=503, detail=FIRESTORE_UNAVAILABLE_MESSAGE)
 
-        # Update tactic
         tactic = firestore.update_tactic(
-            organization_id=organization_id,
             account_id=account_id,
             funnel_type=funnel_type,
             big_bet_name=big_bet_name,
@@ -2108,11 +2016,8 @@ async def update_tactic(
         ) from e
 
 
-@router.delete(
-    "/tactics/{organization_id}/{tactic_name}", response_model=SuccessResponse
-)
+@router.delete("/tactics/{tactic_name}", response_model=SuccessResponse)
 async def delete_tactic(
-    organization_id: str,
     tactic_name: str,
     account_id: str = Query(..., description=ACCOUNT_ID_VALIDATION_DESCRIPTION),
     funnel_type: str = Query(
@@ -2131,18 +2036,14 @@ async def delete_tactic(
     Deletes the specified tactic from the channel.
     """
     try:
-        # Validate inputs
         validate_funnel_type(funnel_type)
         validate_big_bet_requirement(funnel_type, big_bet_name)
 
-        # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
             raise HTTPException(status_code=503, detail=FIRESTORE_UNAVAILABLE_MESSAGE)
 
-        # Delete tactic
         success = firestore.delete_tactic(
-            organization_id=organization_id,
             account_id=account_id,
             funnel_type=funnel_type,
             big_bet_name=big_bet_name,

@@ -132,28 +132,22 @@ class KeneAPIClient:
 
     # KPI Settings methods
     def get_kpi_setting(
-        self, organization_id: str, account_id: str, kpi_name: str
+        self, account_id: str, kpi_name: str
     ) -> dict[str, Any]:
         """Get a specific KPI setting."""
         return self._make_request(
             "GET",
-            f"{self.FIRESTORE_KPI_ENDPOINT}/{organization_id}/{account_id}/{kpi_name}",
+            f"{self.FIRESTORE_KPI_ENDPOINT}/{account_id}/{kpi_name}",
         )
 
-    def update_kpi_setting(
-        self, organization_id: str, data: dict[str, Any]
-    ) -> dict[str, Any]:
+    def update_kpi_setting(self, data: dict[str, Any]) -> dict[str, Any]:
         """Update a KPI setting."""
-        # Ensure organization_id is in the data
-        data["organization_id"] = organization_id
         return self._make_request("PUT", self.FIRESTORE_KPI_ENDPOINT, json=data)
 
-    def get_all_kpi_settings(
-        self, organization_id: str, account_id: str
-    ) -> dict[str, Any]:
+    def get_all_kpi_settings(self, account_id: str) -> dict[str, Any]:
         """Get all KPI settings for an account."""
         return self._make_request(
-            "GET", f"{self.FIRESTORE_KPI_ENDPOINT}/{organization_id}/{account_id}"
+            "GET", f"{self.FIRESTORE_KPI_ENDPOINT}/{account_id}"
         )
 
     # Funnel Steps methods
@@ -165,7 +159,6 @@ class KeneAPIClient:
 
     def get_funnel_steps(
         self,
-        organization_id: str,
         account_id: str,
         funnel_type: str,
         big_bet_name: str | None = None,
@@ -176,12 +169,11 @@ class KeneAPIClient:
             params = f"?big_bet_name={big_bet_name}"
         return self._make_request(
             "GET",
-            f"{self.FIRESTORE_FUNNEL_STEPS_ENDPOINT}/{organization_id}/{account_id}/{funnel_type}{params}",
+            f"{self.FIRESTORE_FUNNEL_STEPS_ENDPOINT}/{account_id}/{funnel_type}{params}",
         )
 
     def get_funnel_step(
         self,
-        organization_id: str,
         account_id: str,
         funnel_type: str,
         funnel_step_num: int,
@@ -193,12 +185,11 @@ class KeneAPIClient:
             params = f"?big_bet_name={big_bet_name}"
         return self._make_request(
             "GET",
-            f"{self.FIRESTORE_FUNNEL_STEPS_ENDPOINT}/{organization_id}/{account_id}/{funnel_type}/{funnel_step_num}{params}",
+            f"{self.FIRESTORE_FUNNEL_STEPS_ENDPOINT}/{account_id}/{funnel_type}/{funnel_step_num}{params}",
         )
 
     def update_funnel_step(
         self,
-        organization_id: str,
         account_id: str,
         funnel_type: str,
         funnel_step_num: int,
@@ -211,13 +202,12 @@ class KeneAPIClient:
             params = f"?big_bet_name={big_bet_name}"
         return self._make_request(
             "PUT",
-            f"{self.FIRESTORE_FUNNEL_STEPS_ENDPOINT}/{organization_id}/{account_id}/{funnel_type}/{funnel_step_num}{params}",
+            f"{self.FIRESTORE_FUNNEL_STEPS_ENDPOINT}/{account_id}/{funnel_type}/{funnel_step_num}{params}",
             json=data,
         )
 
     def delete_funnel_step(
         self,
-        organization_id: str,
         account_id: str,
         funnel_type: str,
         funnel_step_num: int,
@@ -229,13 +219,12 @@ class KeneAPIClient:
             params = f"?big_bet_name={big_bet_name}"
         return self._make_request(
             "DELETE",
-            f"{self.FIRESTORE_FUNNEL_STEPS_ENDPOINT}/{organization_id}/{account_id}/{funnel_type}/{funnel_step_num}{params}",
+            f"{self.FIRESTORE_FUNNEL_STEPS_ENDPOINT}/{account_id}/{funnel_type}/{funnel_step_num}{params}",
         )
 
     # Channels methods
     def create_channel(
         self,
-        organization_id: str,
         data: dict[str, Any],
         account_id: str,
         funnel_type: str,
@@ -248,13 +237,12 @@ class KeneAPIClient:
             params += f"&big_bet_name={big_bet_name}"
         return self._make_request(
             "POST",
-            f"{self.FIRESTORE_CHANNELS_ENDPOINT}/{organization_id}{params}",
+            f"{self.FIRESTORE_CHANNELS_ENDPOINT}{params}",
             json=data,
         )
 
     def get_channels(
         self,
-        organization_id: str,
         account_id: str,
         funnel_type: str,
         funnel_step_num: int,
@@ -265,12 +253,11 @@ class KeneAPIClient:
         if big_bet_name:
             params += f"&big_bet_name={big_bet_name}"
         return self._make_request(
-            "GET", f"{self.FIRESTORE_CHANNELS_ENDPOINT}/{organization_id}{params}"
+            "GET", f"{self.FIRESTORE_CHANNELS_ENDPOINT}{params}"
         )
 
     def get_channel(
         self,
-        organization_id: str,
         channel_name: str,
         account_id: str,
         funnel_type: str,
@@ -283,12 +270,11 @@ class KeneAPIClient:
             params += f"&big_bet_name={big_bet_name}"
         return self._make_request(
             "GET",
-            f"{self.FIRESTORE_CHANNELS_ENDPOINT}/{organization_id}/{channel_name}{params}",
+            f"{self.FIRESTORE_CHANNELS_ENDPOINT}/{channel_name}{params}",
         )
 
     def update_channel(
         self,
-        organization_id: str,
         channel_name: str,
         data: dict[str, Any],
         account_id: str,
@@ -302,13 +288,12 @@ class KeneAPIClient:
             params += f"&big_bet_name={big_bet_name}"
         return self._make_request(
             "PUT",
-            f"{self.FIRESTORE_CHANNELS_ENDPOINT}/{organization_id}/{channel_name}{params}",
+            f"{self.FIRESTORE_CHANNELS_ENDPOINT}/{channel_name}{params}",
             json=data,
         )
 
     def delete_channel(
         self,
-        organization_id: str,
         channel_name: str,
         account_id: str,
         funnel_type: str,
@@ -321,13 +306,12 @@ class KeneAPIClient:
             params += f"&big_bet_name={big_bet_name}"
         return self._make_request(
             "DELETE",
-            f"{self.FIRESTORE_CHANNELS_ENDPOINT}/{organization_id}/{channel_name}{params}",
+            f"{self.FIRESTORE_CHANNELS_ENDPOINT}/{channel_name}{params}",
         )
 
     # Tactics methods
     def create_tactic(
         self,
-        organization_id: str,
         data: dict[str, Any],
         account_id: str,
         funnel_type: str,
@@ -341,13 +325,12 @@ class KeneAPIClient:
             params += f"&big_bet_name={big_bet_name}"
         return self._make_request(
             "POST",
-            f"{self.FIRESTORE_TACTICS_ENDPOINT}/{organization_id}{params}",
+            f"{self.FIRESTORE_TACTICS_ENDPOINT}{params}",
             json=data,
         )
 
     def get_tactics(
         self,
-        organization_id: str,
         account_id: str,
         funnel_type: str,
         funnel_step_num: int,
@@ -359,12 +342,11 @@ class KeneAPIClient:
         if big_bet_name:
             params += f"&big_bet_name={big_bet_name}"
         return self._make_request(
-            "GET", f"{self.FIRESTORE_TACTICS_ENDPOINT}/{organization_id}{params}"
+            "GET", f"{self.FIRESTORE_TACTICS_ENDPOINT}{params}"
         )
 
     def get_tactic(
         self,
-        organization_id: str,
         tactic_name: str,
         account_id: str,
         funnel_type: str,
@@ -378,12 +360,11 @@ class KeneAPIClient:
             params += f"&big_bet_name={big_bet_name}"
         return self._make_request(
             "GET",
-            f"{self.FIRESTORE_TACTICS_ENDPOINT}/{organization_id}/{tactic_name}{params}",
+            f"{self.FIRESTORE_TACTICS_ENDPOINT}/{tactic_name}{params}",
         )
 
     def update_tactic(
         self,
-        organization_id: str,
         tactic_name: str,
         data: dict[str, Any],
         account_id: str,
@@ -398,13 +379,12 @@ class KeneAPIClient:
             params += f"&big_bet_name={big_bet_name}"
         return self._make_request(
             "PUT",
-            f"{self.FIRESTORE_TACTICS_ENDPOINT}/{organization_id}/{tactic_name}{params}",
+            f"{self.FIRESTORE_TACTICS_ENDPOINT}/{tactic_name}{params}",
             json=data,
         )
 
     def delete_tactic(
         self,
-        organization_id: str,
         tactic_name: str,
         account_id: str,
         funnel_type: str,
@@ -418,7 +398,7 @@ class KeneAPIClient:
             params += f"&big_bet_name={big_bet_name}"
         return self._make_request(
             "DELETE",
-            f"{self.FIRESTORE_TACTICS_ENDPOINT}/{organization_id}/{tactic_name}{params}",
+            f"{self.FIRESTORE_TACTICS_ENDPOINT}/{tactic_name}{params}",
         )
 
 
@@ -440,7 +420,6 @@ class KeneCLI:
 
     def __init__(self):
         self.client = KeneAPIClient()
-        self.organization_id = "org001"
         self.account_id = "a000001"
 
     def run(self):
@@ -453,8 +432,6 @@ class KeneCLI:
             )
         )
 
-        # Get organization ID and account ID
-        self.organization_id = Prompt.ask("Enter organization ID", default="org001")
         self.account_id = Prompt.ask("Enter account ID", default="a000001")
 
         while True:
@@ -1905,7 +1882,7 @@ class KeneCLI:
         """View all KPI settings."""
         try:
             result = self.client.get_all_kpi_settings(
-                self.organization_id, self.account_id
+                self.account_id
             )
             if result.get("success"):
                 kpi_settings = result.get("kpi_settings", {})
@@ -1938,7 +1915,6 @@ class KeneCLI:
         metric_id = Prompt.ask("Metric ID")
 
         data = {
-            "organization_id": self.organization_id,
             "account_id": self.account_id,
             "kpi_name": kpi_name,
             "metric_id": metric_id,
@@ -1948,7 +1924,7 @@ class KeneCLI:
 
         if Confirm.ask(self.SAVE_CHANGES_PROMPT):
             try:
-                result = self.client.update_kpi_setting(self.organization_id, data)
+                result = self.client.update_kpi_setting(data)
                 if result.get("success"):
                     console.print("[green]KPI setting updated successfully![/green]")
                 else:
@@ -1982,7 +1958,7 @@ class KeneCLI:
 
         try:
             result = self.client.get_funnel_steps(
-                self.organization_id, self.account_id, funnel_type, big_bet_name
+                self.account_id, funnel_type, big_bet_name
             )
             if result.get("success"):
                 funnel_steps = result.get("funnel_steps", [])
@@ -2032,7 +2008,6 @@ class KeneCLI:
         objective = Prompt.ask("Objective")
 
         data = {
-            "organization_id": self.organization_id,
             "account_id": self.account_id,
             "funnel_type": funnel_type,
             "funnel_step_num": funnel_step_num,
@@ -2073,7 +2048,6 @@ class KeneCLI:
         # Get current data
         try:
             current_result = self.client.get_funnel_step(
-                self.organization_id,
                 self.account_id,
                 funnel_type,
                 funnel_step_num,
@@ -2121,7 +2095,6 @@ class KeneCLI:
         if Confirm.ask(self.SAVE_CHANGES_PROMPT):
             try:
                 result = self.client.update_funnel_step(
-                    self.organization_id,
                     self.account_id,
                     funnel_type,
                     funnel_step_num,
@@ -2152,7 +2125,6 @@ class KeneCLI:
         if Confirm.ask("Are you sure you want to delete this funnel step?"):
             try:
                 result = self.client.delete_funnel_step(
-                    self.organization_id,
                     self.account_id,
                     funnel_type,
                     funnel_step_num,
@@ -2193,7 +2165,6 @@ class KeneCLI:
 
         try:
             result = self.client.get_channels(
-                self.organization_id,
                 self.account_id,
                 funnel_type,
                 funnel_step_num,
@@ -2260,7 +2231,6 @@ class KeneCLI:
         if Confirm.ask(self.SAVE_CHANGES_PROMPT):
             try:
                 result = self.client.create_channel(
-                    self.organization_id,
                     data,
                     self.account_id,
                     funnel_type,
@@ -2291,7 +2261,6 @@ class KeneCLI:
         # Get current data
         try:
             current_result = self.client.get_channel(
-                self.organization_id,
                 channel_name,
                 self.account_id,
                 funnel_type,
@@ -2333,7 +2302,6 @@ class KeneCLI:
         if Confirm.ask(self.SAVE_CHANGES_PROMPT):
             try:
                 result = self.client.update_channel(
-                    self.organization_id,
                     channel_name,
                     data,
                     self.account_id,
@@ -2366,7 +2334,6 @@ class KeneCLI:
         if Confirm.ask("Are you sure you want to delete this channel?"):
             try:
                 result = self.client.delete_channel(
-                    self.organization_id,
                     channel_name,
                     self.account_id,
                     funnel_type,
@@ -2409,7 +2376,6 @@ class KeneCLI:
 
         try:
             result = self.client.get_tactics(
-                self.organization_id,
                 self.account_id,
                 funnel_type,
                 funnel_step_num,
@@ -2478,7 +2444,6 @@ class KeneCLI:
         if Confirm.ask(self.SAVE_CHANGES_PROMPT):
             try:
                 result = self.client.create_tactic(
-                    self.organization_id,
                     data,
                     self.account_id,
                     funnel_type,
@@ -2511,7 +2476,6 @@ class KeneCLI:
         # Get current data
         try:
             current_result = self.client.get_tactic(
-                self.organization_id,
                 tactic_name,
                 self.account_id,
                 funnel_type,
@@ -2554,7 +2518,6 @@ class KeneCLI:
         if Confirm.ask(self.SAVE_CHANGES_PROMPT):
             try:
                 result = self.client.update_tactic(
-                    self.organization_id,
                     tactic_name,
                     data,
                     self.account_id,
@@ -2589,7 +2552,6 @@ class KeneCLI:
         if Confirm.ask("Are you sure you want to delete this tactic?"):
             try:
                 result = self.client.delete_tactic(
-                    self.organization_id,
                     tactic_name,
                     self.account_id,
                     funnel_type,
