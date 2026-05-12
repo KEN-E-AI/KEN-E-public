@@ -7,7 +7,6 @@ with configurable thresholds and multiple notification channels.
 import json
 import logging
 import os
-import re
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
@@ -16,6 +15,7 @@ from uuid import uuid4
 from google.cloud import firestore
 from google.cloud.firestore_v1 import FieldFilter
 
+from shared.account_id_utils import validate_account_id
 from shared.token_utils import TokenEstimator
 
 from .retry_utils import with_read_retry, with_write_retry
@@ -108,13 +108,7 @@ class AlertManager:
             account_id: Account identifier
             project_id: Optional GCP project ID
         """
-        _ACCOUNT_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,128}$")
-        if not _ACCOUNT_ID_RE.match(account_id):
-            raise ValueError(
-                f"account_id must match ^[a-zA-Z0-9_\\-]{{1,128}}$, got: {account_id!r}"
-            )
-
-        self.account_id = account_id
+        self.account_id = validate_account_id(account_id)
         self.project_id = project_id
 
         # Initialize Firestore client for default database

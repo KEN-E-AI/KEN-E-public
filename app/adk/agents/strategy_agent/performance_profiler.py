@@ -60,7 +60,7 @@ from uuid import uuid4
 from google.cloud import firestore
 from google.cloud.firestore_v1 import FieldFilter
 
-from .account_id_utils import validate_account_id
+from shared.account_id_utils import validate_account_id
 from .retry_utils import with_write_retry, with_read_retry, with_batch_retry
 
 logger = logging.getLogger(__name__)

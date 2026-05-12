@@ -17,7 +17,6 @@ per-request use — the function performs N+1 Firestore reads.
 from __future__ import annotations
 
 import os
-import re
 from typing import Any
 
 from google.adk.agents import LlmAgent
@@ -40,16 +39,12 @@ from app.adk.agents.agent_factory.dispatch import (
 )
 from app.adk.agents.agent_factory.mcp import MCP_COLLECTION, build_toolset_for_doc
 from app.adk.agents.agent_factory.roster import resolve_specialist_roster
+from shared.account_id_utils import validate_account_id
 from shared.structured_logging import get_structured_logger
 
 logger = get_structured_logger(__name__)
 
 ROOT_CONFIG_ID: str = "ken_e_chatbot"
-
-# Firestore document IDs must not contain "/" and must be well-formed strings.
-# This allowlist prevents path-manipulation bugs if account_id is ever
-# sourced from caller input in a multi-tenant deployment.
-_VALID_ACCOUNT_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,128}$")
 
 
 # ---------------------------------------------------------------------------
@@ -177,11 +172,8 @@ def build_hierarchy(
             from both the global and account collections.
     """
     # Step 0 — validate account_id format before touching Firestore.
-    if account_id is not None and not _VALID_ACCOUNT_ID_RE.match(account_id):
-        raise ValueError(
-            f"account_id {account_id!r} contains invalid characters. "
-            "Must match [a-zA-Z0-9_-]{1,128}."
-        )
+    if account_id is not None:
+        account_id = validate_account_id(account_id)
 
     # Step 1 — resolve Firestore client.
     if db is None:

@@ -947,12 +947,46 @@ class TestErrorCases:
             with pytest.raises(MCPSchemaError):
                 h.build_hierarchy(db=fake_db)
 
-    def test_invalid_account_id_raises_value_error(self) -> None:
-        """account_id containing path-separator characters raises ValueError."""
+    @pytest.mark.parametrize(
+        "bad_id",
+        [
+            "../../admin",
+            "acc/with/slash",
+            "..",
+            "",
+            "a" * 129,
+        ],
+    )
+    def test_invalid_account_id_raises_value_error(self, bad_id: str) -> None:
+        """account_id outside [a-zA-Z0-9_-]{1,128} raises ValueError."""
         import app.adk.agents.agent_factory.hierarchy as h
 
-        with pytest.raises(ValueError, match="invalid characters"):
-            h.build_hierarchy(account_id="../../admin", db=_FakeFirestoreDb({}))
+        with pytest.raises(ValueError, match="is invalid"):
+            h.build_hierarchy(account_id=bad_id, db=_FakeFirestoreDb({}))
+
+    def test_none_account_id_skips_validation(self) -> None:
+        """account_id=None skips validation and does not raise."""
+        import app.adk.agents.agent_factory.hierarchy as h
+
+        # build_hierarchy(account_id=None) must not raise ValueError.
+        # It may raise other errors (e.g. ConfigNotFoundError) — that is fine.
+        try:
+            h.build_hierarchy(account_id=None, db=_FakeFirestoreDb({}))
+        except ValueError as exc:
+            pytest.fail(f"Unexpected ValueError with account_id=None: {exc}")
+        except Exception:
+            pass  # Other errors (ConfigNotFoundError, etc.) are acceptable
+
+    def test_valid_account_id_accepted(self) -> None:
+        """account_id matching [a-zA-Z0-9_-]{1,128} does not raise ValueError."""
+        import app.adk.agents.agent_factory.hierarchy as h
+
+        try:
+            h.build_hierarchy(account_id="acc_abcdef0123", db=_FakeFirestoreDb({}))
+        except ValueError as exc:
+            pytest.fail(f"Unexpected ValueError for valid account_id: {exc}")
+        except Exception:
+            pass  # Other errors are acceptable
 
 
 # ---------------------------------------------------------------------------

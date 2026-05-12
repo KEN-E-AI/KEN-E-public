@@ -1,10 +1,10 @@
-"""Shared ``account_id`` validation for the analytics-agent Firestore paths.
+"""``account_id`` validation for Firestore path segments.
 
-The analytics services interpolate ``account_id`` directly into Firestore
-*collection* path segments (``accounts/{account_id}/{resource}``). A value
-containing ``/`` (or other unexpected characters) would silently change the
-path depth — e.g. ``accounts/../../x/agent_analytics`` — instead of raising.
-Validate at construction time and fail loudly.
+``account_id`` is interpolated into Firestore *collection* path segments
+(``accounts/{account_id}/{resource}``). A value containing ``/`` (or other
+unexpected characters) would silently change the path depth — e.g.
+``accounts/../../x/agent_analytics`` — instead of raising.  Validate at
+construction time and fail loudly.
 """
 
 import re

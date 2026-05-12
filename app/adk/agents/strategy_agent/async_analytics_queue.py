@@ -17,7 +17,7 @@ from uuid import uuid4
 
 from google.cloud import firestore
 
-from .account_id_utils import validate_account_id
+from shared.account_id_utils import validate_account_id
 
 logger = logging.getLogger(__name__)
 
