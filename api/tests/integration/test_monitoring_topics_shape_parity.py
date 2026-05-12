@@ -1,9 +1,13 @@
 """Integration tests for monitoring endpoint Shape B path parity (DM-26 / DM-PRD-04 §6 AC-3).
 
-These tests lock the `GET /api/v1/monitoring-topics/{account_id}` contract to the Shape B
+These tests lock the `/api/v1/monitoring-topics/{account_id}` contract to the Shape B
 Firestore path `accounts/{account_id}/monitoring_topics/default`. Any regression that reverts
 the router to the legacy Shape A pattern (`monitoring_topics/{account_id}`) is caught here on
 every CI run — without requiring an emulator or a live Firestore project.
+
+Classes:
+- TestMonitoringTopicsShapeParity — GET endpoint path contract (added by DM-26)
+- TestMonitoringTopicsWriteShapeParity — PUT/POST/DELETE write-endpoint path contract (DM-68)
 
 Pre-migration fixture capture step (referenced in DM-28 PR description):
     The fixture below represents the canonical MonitoringTopics document shape. The actual
@@ -14,7 +18,7 @@ Pre-migration fixture capture step (referenced in DM-28 PR description):
 """
 
 from typing import Any
-from unittest.mock import MagicMock, call
+from unittest.mock import ANY, MagicMock, call
 
 import pytest
 from fastapi.testclient import TestClient
@@ -201,6 +205,168 @@ class TestMonitoringTopicsShapeParity:
                     "The router must always use the Shape B path "
                     f"'accounts/{_ACCOUNT_ID}/monitoring_topics'."
                 )
+        finally:
+            app.dependency_overrides.pop(get_current_user_context, None)
+            app.dependency_overrides.pop(get_firestore_service, None)
+
+
+class TestMonitoringTopicsWriteShapeParity:
+    """Verify PUT/POST/DELETE write endpoints use Shape B Firestore paths (DM-68).
+
+    Guards against partial reverts of the DM-23 migration that would flip only
+    write call-site string literals back to the legacy Shape A pattern while
+    leaving `_monitoring_topics_subcollection()` intact — a scenario not caught
+    by the TestMonitoringTopicsShapeParity GET test above.
+
+    Each test:
+    1. Drives the endpoint through the full FastAPI request path via TestClient.
+    2. Mocks `get_document` to return the pre-migration fixture so the Neo4j
+       doc-creation branch is skipped.
+    3. Asserts the endpoint responds HTTP 200.
+    4. Asserts `update_document` was called with the Shape B collection path
+       and document_id "default".
+    """
+
+    @pytest.fixture
+    def mock_user(self) -> UserContext:
+        return UserContext(
+            user_id="user_test_001",
+            email="tester@client-example.com",
+            organization_permissions={},
+            account_permissions={_ACCOUNT_ID: "edit"},
+        )
+
+    @pytest.fixture
+    def client(self) -> TestClient:
+        return TestClient(app)
+
+    def test_update_company_keywords_uses_shape_b_path(
+        self, client: TestClient, mock_user: UserContext
+    ) -> None:
+        """PUT /{account_id}/company writes to the Shape B collection path."""
+        mock_firestore = MagicMock()
+        mock_firestore.get_document.return_value = _PRE_MIGRATION_FIXTURE
+
+        app.dependency_overrides[get_current_user_context] = lambda: mock_user
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore
+
+        try:
+            response = client.put(
+                f"/api/v1/monitoring-topics/{_ACCOUNT_ID}/company",
+                headers={"Authorization": "Bearer test_token"},
+                json={"account_id": _ACCOUNT_ID, "company_keywords": ["acme brand"]},
+            )
+
+            assert response.status_code == 200, (
+                f"Expected 200, got {response.status_code}: {response.text}"
+            )
+
+            mock_firestore.update_document.assert_called_once_with(
+                collection=f"accounts/{_ACCOUNT_ID}/monitoring_topics",
+                document_id="default",
+                data=ANY,
+            )
+        finally:
+            app.dependency_overrides.pop(get_current_user_context, None)
+            app.dependency_overrides.pop(get_firestore_service, None)
+
+    def test_update_customer_keywords_uses_shape_b_path(
+        self, client: TestClient, mock_user: UserContext
+    ) -> None:
+        """PUT /{account_id}/customers writes to the Shape B collection path."""
+        mock_firestore = MagicMock()
+        mock_firestore.get_document.return_value = _PRE_MIGRATION_FIXTURE
+
+        app.dependency_overrides[get_current_user_context] = lambda: mock_user
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore
+
+        try:
+            response = client.put(
+                f"/api/v1/monitoring-topics/{_ACCOUNT_ID}/customers",
+                headers={"Authorization": "Bearer test_token"},
+                json={
+                    "account_id": _ACCOUNT_ID,
+                    "customer_keywords": ["cmo", "vp marketing"],
+                },
+            )
+
+            assert response.status_code == 200, (
+                f"Expected 200, got {response.status_code}: {response.text}"
+            )
+
+            mock_firestore.update_document.assert_called_once_with(
+                collection=f"accounts/{_ACCOUNT_ID}/monitoring_topics",
+                document_id="default",
+                data=ANY,
+            )
+        finally:
+            app.dependency_overrides.pop(get_current_user_context, None)
+            app.dependency_overrides.pop(get_firestore_service, None)
+
+    def test_add_competitor_uses_shape_b_path(
+        self, client: TestClient, mock_user: UserContext
+    ) -> None:
+        """POST /{account_id}/competitors writes to the Shape B collection path."""
+        mock_firestore = MagicMock()
+        mock_firestore.get_document.return_value = _PRE_MIGRATION_FIXTURE
+
+        app.dependency_overrides[get_current_user_context] = lambda: mock_user
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore
+
+        try:
+            response = client.post(
+                f"/api/v1/monitoring-topics/{_ACCOUNT_ID}/competitors",
+                headers={"Authorization": "Bearer test_token"},
+                json={
+                    "account_id": _ACCOUNT_ID,
+                    "competitor_entry": {
+                        "node_id": "comp_test_001",
+                        "keywords": ["rival product"],
+                    },
+                },
+            )
+
+            assert response.status_code == 200, (
+                f"Expected 200, got {response.status_code}: {response.text}"
+            )
+
+            mock_firestore.update_document.assert_called_once_with(
+                collection=f"accounts/{_ACCOUNT_ID}/monitoring_topics",
+                document_id="default",
+                data=ANY,
+            )
+        finally:
+            app.dependency_overrides.pop(get_current_user_context, None)
+            app.dependency_overrides.pop(get_firestore_service, None)
+
+    def test_delete_competitor_uses_shape_b_path(
+        self, client: TestClient, mock_user: UserContext
+    ) -> None:
+        """DELETE /{account_id}/competitors/{index} writes to the Shape B collection path.
+
+        Uses competitor_index=0 — the fixture has exactly one competitor at index 0.
+        """
+        mock_firestore = MagicMock()
+        mock_firestore.get_document.return_value = _PRE_MIGRATION_FIXTURE
+
+        app.dependency_overrides[get_current_user_context] = lambda: mock_user
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore
+
+        try:
+            response = client.delete(
+                f"/api/v1/monitoring-topics/{_ACCOUNT_ID}/competitors/0",
+                headers={"Authorization": "Bearer test_token"},
+            )
+
+            assert response.status_code == 200, (
+                f"Expected 200, got {response.status_code}: {response.text}"
+            )
+
+            mock_firestore.update_document.assert_called_once_with(
+                collection=f"accounts/{_ACCOUNT_ID}/monitoring_topics",
+                document_id="default",
+                data=ANY,
+            )
         finally:
             app.dependency_overrides.pop(get_current_user_context, None)
             app.dependency_overrides.pop(get_firestore_service, None)
