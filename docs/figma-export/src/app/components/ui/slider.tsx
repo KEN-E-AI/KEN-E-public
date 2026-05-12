@@ -11,8 +11,11 @@ function Slider({
   value,
   min = 0,
   max = 100,
+  thumbContent,
   ...props
-}: React.ComponentProps<typeof SliderPrimitive.Root>) {
+}: React.ComponentProps<typeof SliderPrimitive.Root> & {
+  thumbContent?: React.ReactNode;
+}) {
   const _values = React.useMemo(
     () =>
       Array.isArray(value)
@@ -53,8 +56,15 @@ function Slider({
         <SliderPrimitive.Thumb
           data-slot="slider-thumb"
           key={index}
-          className="border-primary bg-background ring-ring/50 block size-4 shrink-0 rounded-full border shadow-sm transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50"
-        />
+          className={cn(
+            "border-primary bg-background ring-ring/50 shrink-0 rounded-full border shadow-sm transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50",
+            thumbContent !== undefined
+              ? "flex items-center justify-center size-7 text-[10px] font-bold text-primary tabular-nums"
+              : "block size-4",
+          )}
+        >
+          {thumbContent}
+        </SliderPrimitive.Thumb>
       ))}
     </SliderPrimitive.Root>
   );

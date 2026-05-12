@@ -227,22 +227,19 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
 
         {/* Response style (stored as `temperature`) */}
         <div>
-          {/* allow-text-tertiary: secondary-metadata slider value readout */}
-          <div className="flex justify-end text-[11px] text-[var(--color-text-tertiary)]">
-            <span>{temperature.toFixed(2)}</span>
-          </div>
-          <div className="flex items-center gap-3 mt-1">
+          <div className="flex items-center gap-3">
             <span className="flex items-center gap-1.5 text-[12px] text-[var(--color-text-secondary)]">
               <DirtyDot dirty={isDirtyTemperature} />
               <span>Precise</span>
             </span>
             <Slider
               aria-label="Response style: precise to creative"
-              min={0}
-              max={1}
-              step={0.01}
+              min={0.1}
+              max={0.9}
+              step={0.1}
               value={[temperature]}
               onValueChange={([val]) => setTemperature(val)}
+              thumbContent={temperature.toFixed(1)}
               className="flex-1"
               data-testid="temperature-slider"
             />
