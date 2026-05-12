@@ -169,3 +169,252 @@ def test_no_other_indexes_modified(indexes_doc: dict) -> None:
     assert "feature_flag_audit" in collection_groups, (
         "feature_flag_audit index is missing — it should have been added by FF-7"
     )
+
+
+# ---------------------------------------------------------------------------
+# DM-69 — strategy_audit COLLECTION-scoped composite indexes
+# ---------------------------------------------------------------------------
+# These five indexes cover the three query paths in routers/strategy.py
+# (get_strategy_audit_log) and services/audit_service.py (get_recent_actions,
+# get_document_history) that became index-eligible once DM-15 migrated
+# strategy_audit writes to accounts/{account_id}/strategy_audit (Shape B).
+# The COLLECTION_GROUP entry already present (user_id, timestamp DESC) is for
+# get_user_activity's collection_group query — distinct index space.
+
+def _strategy_audit_collection_indexes(indexes_doc: dict) -> list[dict]:
+    """Return all strategy_audit COLLECTION-scoped indexes."""
+    return [
+        idx
+        for idx in indexes_doc["indexes"]
+        if idx.get("collectionGroup") == "strategy_audit"
+        and idx.get("queryScope") == "COLLECTION"
+    ]
+
+
+def test_strategy_audit_collection_indexes_count(indexes_doc: dict) -> None:
+    """Exactly five COLLECTION-scoped strategy_audit indexes must be present."""
+    collection_idxs = _strategy_audit_collection_indexes(indexes_doc)
+    assert len(collection_idxs) == 5, (
+        f"Expected 5 COLLECTION-scoped strategy_audit indexes, found "
+        f"{len(collection_idxs)}: {collection_idxs}"
+    )
+
+
+def _find_strategy_audit_collection_index(
+    indexes_doc: dict, fields: list[tuple[str, str]]
+) -> dict | None:
+    """Look up a strategy_audit COLLECTION index by its exact field list."""
+    target_fields = [{"fieldPath": fp, "order": order} for fp, order in fields]
+    for idx in _strategy_audit_collection_indexes(indexes_doc):
+        if idx.get("fields") == target_fields:
+            return idx
+    return None
+
+
+def test_strategy_audit_doc_type_timestamp_index_exists(indexes_doc: dict) -> None:
+    """(doc_type ASC, timestamp DESC) — get_strategy_audit_log (no action filter)
+    and get_recent_actions (doc_type-only filter)."""
+    idx = _find_strategy_audit_collection_index(
+        indexes_doc, [("doc_type", "ASCENDING"), ("timestamp", "DESCENDING")]
+    )
+    assert idx is not None, (
+        "strategy_audit COLLECTION index (doc_type ASC, timestamp DESC) not found"
+    )
+
+
+def test_strategy_audit_doc_type_timestamp_terraform_key(indexes_doc: dict) -> None:
+    """Terraform for_each key for (doc_type ASC, timestamp DESC)."""
+    idx = _find_strategy_audit_collection_index(
+        indexes_doc, [("doc_type", "ASCENDING"), ("timestamp", "DESCENDING")]
+    )
+    assert idx is not None
+
+    field_signature = "__".join(
+        f"{f['fieldPath']}-{f.get('order', f.get('arrayConfig', ''))}"
+        for f in idx["fields"]
+    )
+    derived_key = (
+        f"{_TEST_PROJECT}_{idx['collectionGroup']}_{idx['queryScope']}_{field_signature}"
+    )
+    expected_key = (
+        f"{_TEST_PROJECT}_strategy_audit_COLLECTION_"
+        "doc_type-ASCENDING__timestamp-DESCENDING"
+    )
+    assert derived_key == expected_key, (
+        f"Terraform key mismatch.\n  Expected: {expected_key!r}\n  Derived: {derived_key!r}"
+    )
+
+
+def test_strategy_audit_doc_type_action_timestamp_index_exists(
+    indexes_doc: dict,
+) -> None:
+    """(doc_type ASC, action ASC, timestamp DESC) — get_strategy_audit_log with action filter."""
+    idx = _find_strategy_audit_collection_index(
+        indexes_doc,
+        [("doc_type", "ASCENDING"), ("action", "ASCENDING"), ("timestamp", "DESCENDING")],
+    )
+    assert idx is not None, (
+        "strategy_audit COLLECTION index (doc_type ASC, action ASC, timestamp DESC) not found"
+    )
+
+
+def test_strategy_audit_doc_type_action_timestamp_terraform_key(
+    indexes_doc: dict,
+) -> None:
+    """Terraform for_each key for (doc_type ASC, action ASC, timestamp DESC)."""
+    idx = _find_strategy_audit_collection_index(
+        indexes_doc,
+        [("doc_type", "ASCENDING"), ("action", "ASCENDING"), ("timestamp", "DESCENDING")],
+    )
+    assert idx is not None
+
+    field_signature = "__".join(
+        f"{f['fieldPath']}-{f.get('order', f.get('arrayConfig', ''))}"
+        for f in idx["fields"]
+    )
+    derived_key = (
+        f"{_TEST_PROJECT}_{idx['collectionGroup']}_{idx['queryScope']}_{field_signature}"
+    )
+    expected_key = (
+        f"{_TEST_PROJECT}_strategy_audit_COLLECTION_"
+        "doc_type-ASCENDING__action-ASCENDING__timestamp-DESCENDING"
+    )
+    assert derived_key == expected_key, (
+        f"Terraform key mismatch.\n  Expected: {expected_key!r}\n  Derived: {derived_key!r}"
+    )
+
+
+def test_strategy_audit_user_id_timestamp_index_exists(indexes_doc: dict) -> None:
+    """(user_id ASC, timestamp DESC) — get_recent_actions with user_id-only filter."""
+    idx = _find_strategy_audit_collection_index(
+        indexes_doc, [("user_id", "ASCENDING"), ("timestamp", "DESCENDING")]
+    )
+    assert idx is not None, (
+        "strategy_audit COLLECTION index (user_id ASC, timestamp DESC) not found"
+    )
+
+
+def test_strategy_audit_user_id_timestamp_terraform_key(indexes_doc: dict) -> None:
+    """Terraform for_each key for (user_id ASC, timestamp DESC)."""
+    idx = _find_strategy_audit_collection_index(
+        indexes_doc, [("user_id", "ASCENDING"), ("timestamp", "DESCENDING")]
+    )
+    assert idx is not None
+
+    field_signature = "__".join(
+        f"{f['fieldPath']}-{f.get('order', f.get('arrayConfig', ''))}"
+        for f in idx["fields"]
+    )
+    derived_key = (
+        f"{_TEST_PROJECT}_{idx['collectionGroup']}_{idx['queryScope']}_{field_signature}"
+    )
+    expected_key = (
+        f"{_TEST_PROJECT}_strategy_audit_COLLECTION_"
+        "user_id-ASCENDING__timestamp-DESCENDING"
+    )
+    assert derived_key == expected_key, (
+        f"Terraform key mismatch.\n  Expected: {expected_key!r}\n  Derived: {derived_key!r}"
+    )
+
+
+def test_strategy_audit_user_id_doc_type_timestamp_index_exists(
+    indexes_doc: dict,
+) -> None:
+    """(user_id ASC, doc_type ASC, timestamp DESC) — get_recent_actions with user_id + doc_type."""
+    idx = _find_strategy_audit_collection_index(
+        indexes_doc,
+        [("user_id", "ASCENDING"), ("doc_type", "ASCENDING"), ("timestamp", "DESCENDING")],
+    )
+    assert idx is not None, (
+        "strategy_audit COLLECTION index (user_id ASC, doc_type ASC, timestamp DESC) not found"
+    )
+
+
+def test_strategy_audit_user_id_doc_type_timestamp_terraform_key(
+    indexes_doc: dict,
+) -> None:
+    """Terraform for_each key for (user_id ASC, doc_type ASC, timestamp DESC)."""
+    idx = _find_strategy_audit_collection_index(
+        indexes_doc,
+        [("user_id", "ASCENDING"), ("doc_type", "ASCENDING"), ("timestamp", "DESCENDING")],
+    )
+    assert idx is not None
+
+    field_signature = "__".join(
+        f"{f['fieldPath']}-{f.get('order', f.get('arrayConfig', ''))}"
+        for f in idx["fields"]
+    )
+    derived_key = (
+        f"{_TEST_PROJECT}_{idx['collectionGroup']}_{idx['queryScope']}_{field_signature}"
+    )
+    expected_key = (
+        f"{_TEST_PROJECT}_strategy_audit_COLLECTION_"
+        "user_id-ASCENDING__doc_type-ASCENDING__timestamp-DESCENDING"
+    )
+    assert derived_key == expected_key, (
+        f"Terraform key mismatch.\n  Expected: {expected_key!r}\n  Derived: {derived_key!r}"
+    )
+
+
+def test_strategy_audit_doc_type_doc_id_timestamp_index_exists(
+    indexes_doc: dict,
+) -> None:
+    """(doc_type ASC, doc_id ASC, timestamp DESC) — get_document_history."""
+    idx = _find_strategy_audit_collection_index(
+        indexes_doc,
+        [("doc_type", "ASCENDING"), ("doc_id", "ASCENDING"), ("timestamp", "DESCENDING")],
+    )
+    assert idx is not None, (
+        "strategy_audit COLLECTION index (doc_type ASC, doc_id ASC, timestamp DESC) not found"
+    )
+
+
+def test_strategy_audit_doc_type_doc_id_timestamp_terraform_key(
+    indexes_doc: dict,
+) -> None:
+    """Terraform for_each key for (doc_type ASC, doc_id ASC, timestamp DESC)."""
+    idx = _find_strategy_audit_collection_index(
+        indexes_doc,
+        [("doc_type", "ASCENDING"), ("doc_id", "ASCENDING"), ("timestamp", "DESCENDING")],
+    )
+    assert idx is not None
+
+    field_signature = "__".join(
+        f"{f['fieldPath']}-{f.get('order', f.get('arrayConfig', ''))}"
+        for f in idx["fields"]
+    )
+    derived_key = (
+        f"{_TEST_PROJECT}_{idx['collectionGroup']}_{idx['queryScope']}_{field_signature}"
+    )
+    expected_key = (
+        f"{_TEST_PROJECT}_strategy_audit_COLLECTION_"
+        "doc_type-ASCENDING__doc_id-ASCENDING__timestamp-DESCENDING"
+    )
+    assert derived_key == expected_key, (
+        f"Terraform key mismatch.\n  Expected: {expected_key!r}\n  Derived: {derived_key!r}"
+    )
+
+
+def test_strategy_audit_collection_group_index_preserved(indexes_doc: dict) -> None:
+    """The pre-existing strategy_audit COLLECTION_GROUP (user_id, timestamp) index
+    for get_user_activity must not have been removed or modified.
+
+    Uses field-level matching rather than a count assertion so that a legitimate
+    future addition of a second COLLECTION_GROUP index does not break this guard.
+    """
+    expected_fields = [
+        {"fieldPath": "user_id", "order": "ASCENDING"},
+        {"fieldPath": "timestamp", "order": "DESCENDING"},
+    ]
+    cg_idxs = [
+        idx
+        for idx in indexes_doc["indexes"]
+        if idx.get("collectionGroup") == "strategy_audit"
+        and idx.get("queryScope") == "COLLECTION_GROUP"
+    ]
+    matching = [idx for idx in cg_idxs if idx.get("fields") == expected_fields]
+    assert matching, (
+        "strategy_audit COLLECTION_GROUP (user_id ASC, timestamp DESC) index was "
+        "removed or modified — this backs get_user_activity's collection_group query. "
+        f"Remaining COLLECTION_GROUP strategy_audit indexes: {cg_idxs}"
+    )
