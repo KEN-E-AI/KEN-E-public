@@ -41,6 +41,22 @@ const STATUS_CLASSES = {
   custom_agent: "bg-[var(--color-teal-100)] text-[var(--color-teal-500)]",
 } as const;
 
+// ─── Temperature normalization ───────────────────────────────────────────────
+//
+// The response-style slider exposes a coarse grid (step 0.1) within [0.1, 0.9],
+// but stored values may predate that constraint (any float in [0.0, 1.0]).
+// Snap loaded values into the new grid so the on-thumb readout always matches
+// what would be persisted on save. Using the snapped value as BOTH state and
+// dirty-comparison baseline avoids a misleading DirtyDot on first render.
+
+export function snapTemperatureToGrid(t: number | null | undefined): number {
+  const v = t ?? 0.3;
+  const clamped = Math.max(0.1, Math.min(0.9, v));
+  // toFixed avoids the (0.35 * 10) → 3.4999... float-precision trap that
+  // Math.round(clamped * 10) / 10 hits for values like 0.35, 0.55, 0.75.
+  return parseFloat(clamped.toFixed(1));
+}
+
 // ─── Dot indicator for dirty fields ──────────────────────────────────────────
 
 function DirtyDot({ dirty }: { dirty: boolean }) {
@@ -83,7 +99,7 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
   useEffect(() => {
     if (!config) return;
     setInstruction(config.instruction);
-    setTemperature(config.temperature ?? 0.3);
+    setTemperature(snapTemperatureToGrid(config.temperature));
     setModel(config.model);
     setDescription(config.description ?? "");
   }, [config]);
@@ -115,7 +131,8 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
 
   // Per-field dirty detection (compared to loaded config values)
   const isDirtyInstruction = instruction !== config.instruction;
-  const isDirtyTemperature = temperature !== (config.temperature ?? 0.3);
+  const isDirtyTemperature =
+    temperature !== snapTemperatureToGrid(config.temperature);
   const isDirtyModel = model !== config.model;
   const isDirtyDescription = description !== (config.description ?? "");
   const hasAnyDirty =

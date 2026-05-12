@@ -24,7 +24,7 @@ import { DisabledPlaceholderRow } from "./agents/DisabledPlaceholderRow";
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
-const schema = z.object({
+export const schema = z.object({
   name: z.string().min(1, "Name is required"),
   instruction: z.string().min(1, "Instruction is required"),
   model: z.enum(SUPPORTED_MODELS as [string, ...string[]], {

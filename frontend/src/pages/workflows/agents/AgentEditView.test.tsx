@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { AgentEditView } from "./AgentEditView";
+import { AgentEditView, snapTemperatureToGrid } from "./AgentEditView";
 import type { MergedAgentConfig } from "@/lib/api/agentConfigs";
 import { toAgentConfigId } from "@/lib/api/agentConfigs";
 
@@ -376,5 +376,59 @@ describe("AgentEditView — disabled placeholder rows", () => {
       screen.getByTestId("disabled-row-sandbox-code-execution"),
     ).toBeInTheDocument();
     expect(screen.getByText("Sandbox code execution")).toBeInTheDocument();
+  });
+});
+
+describe("snapTemperatureToGrid", () => {
+  it("rounds within-range values to the nearest 0.1", () => {
+    // 0.34/0.36 chosen rather than 0.35 to avoid the IEEE 754 representation
+    // of 0.35 (≈0.34999...) which is technically below the midpoint.
+    expect(snapTemperatureToGrid(0.34)).toBe(0.3);
+    expect(snapTemperatureToGrid(0.36)).toBe(0.4);
+    expect(snapTemperatureToGrid(0.56)).toBe(0.6);
+    expect(snapTemperatureToGrid(0.7)).toBe(0.7);
+  });
+
+  it("clamps below 0.1 up to 0.1", () => {
+    expect(snapTemperatureToGrid(0)).toBe(0.1);
+    expect(snapTemperatureToGrid(0.05)).toBe(0.1);
+  });
+
+  it("clamps above 0.9 down to 0.9", () => {
+    expect(snapTemperatureToGrid(1)).toBe(0.9);
+    expect(snapTemperatureToGrid(0.97)).toBe(0.9);
+  });
+
+  it("falls back to 0.3 when null/undefined", () => {
+    expect(snapTemperatureToGrid(null)).toBe(0.3);
+    expect(snapTemperatureToGrid(undefined)).toBe(0.3);
+  });
+});
+
+describe("AgentEditView — response-style slider", () => {
+  it("renders the snapped value on the slider thumb", () => {
+    mockUseAgentConfig.mockReturnValue({
+      data: { ...baseConfig, temperature: 0.2 },
+      isLoading: false,
+      isError: false,
+    });
+    render(<AgentEditView configId={configId} onClose={vi.fn()} />, {
+      wrapper: makeWrapper(),
+    });
+    expect(screen.getByTestId("temperature-slider")).toHaveTextContent("0.2");
+  });
+
+  it("snaps an off-grid stored value quietly (no dirty dot on first render)", () => {
+    mockUseAgentConfig.mockReturnValue({
+      data: { ...baseConfig, temperature: 0.36 },
+      isLoading: false,
+      isError: false,
+    });
+    render(<AgentEditView configId={configId} onClose={vi.fn()} />, {
+      wrapper: makeWrapper(),
+    });
+    expect(screen.getByTestId("temperature-slider")).toHaveTextContent("0.4");
+    // Temperature row is not marked dirty after the silent snap.
+    expect(screen.queryAllByTestId("dirty-indicator")).toHaveLength(0);
   });
 });

@@ -39,7 +39,7 @@ const Slider = React.forwardRef<
         className={cn(
           "block rounded-full border-2 border-[var(--color-violet-500)] bg-[var(--color-bg-primary)] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-violet-300)] disabled:pointer-events-none disabled:opacity-50",
           thumbContent !== undefined
-            ? "flex items-center justify-center size-7 text-[10px] font-bold text-[var(--color-violet-500)] tabular-nums"
+            ? "flex items-center justify-center size-7 text-[10px] font-bold text-primary tabular-nums"
             : "size-5",
         )}
       >

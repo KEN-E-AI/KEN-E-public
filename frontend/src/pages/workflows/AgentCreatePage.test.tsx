@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { AgentCreatePage } from "./AgentCreatePage";
+import { AgentCreatePage, schema } from "./AgentCreatePage";
 
 // ─── Mocks ───
 
@@ -126,6 +126,11 @@ describe("AgentCreatePage", () => {
     });
   });
 
+  it("renders the default temperature value on the slider thumb", () => {
+    render(<AgentCreatePage />, { wrapper: makeWrapper() });
+    expect(screen.getByTestId("temperature-slider")).toHaveTextContent("0.3");
+  });
+
   it("renders two disabled placeholder rows with correct tooltip text", () => {
     render(<AgentCreatePage />, { wrapper: makeWrapper() });
 
@@ -142,5 +147,32 @@ describe("AgentCreatePage", () => {
     await user.click(screen.getByRole("button", { name: /cancel/i }));
 
     expect(mockNavigate).toHaveBeenCalledWith("/workflows/agents");
+  });
+});
+
+describe("AgentCreatePage — schema", () => {
+  const baseInput = {
+    name: "x",
+    instruction: "y",
+    model: "gemini-2.5-flash",
+  };
+
+  it("rejects temperature below 0.1", () => {
+    const result = schema.safeParse({ ...baseInput, temperature: 0 });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects temperature above 0.9", () => {
+    const result = schema.safeParse({ ...baseInput, temperature: 1 });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts temperature within [0.1, 0.9]", () => {
+    expect(schema.safeParse({ ...baseInput, temperature: 0.1 }).success).toBe(
+      true,
+    );
+    expect(schema.safeParse({ ...baseInput, temperature: 0.9 }).success).toBe(
+      true,
+    );
   });
 });
