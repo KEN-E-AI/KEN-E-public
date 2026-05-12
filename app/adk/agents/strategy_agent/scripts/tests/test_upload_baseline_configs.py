@@ -1,4 +1,17 @@
-"""Unit tests for upload_baseline_configs.py (AH-41)."""
+"""Tests for upload_baseline_configs.py (AH-41).
+
+Upsert / merge / idempotency / sparse-doc-warning behavior is tested
+centrally on the shared helper (``test_seed_helpers.py``). This file
+focuses on the script-specific concerns:
+
+* The ``SEEDS`` registry covers all 8 strategy agents and obeys the
+  decision matrix per agent class (researcher / formatter / business
+  full baseline).
+* End-to-end behavior wiring SEEDS → the shared helper → fake Firestore
+  for one integration smoke (all 8 agents in one pass).
+* The ``--agents`` CLI subset filter and unknown-agent rejection in
+  ``main()``.
+"""
 
 from __future__ import annotations
 
@@ -6,19 +19,12 @@ from unittest.mock import patch
 
 import pytest
 
+from app.adk.agents.scripts._seed_helpers import (
+    AUDIT_FIELDS,
+    upsert_agent_config,
+)
 from app.adk.agents.scripts.tests._fake_firestore import FakeFirestoreClient
 from app.adk.agents.strategy_agent.scripts import upload_baseline_configs as script
-
-AUDIT_FIELDS = (
-    "code_execution_enabled",
-    "mcp_servers",
-    "skill_ids",
-    "sandbox_code_executor_enabled",
-    "response_schema",
-    "available_to_copy",
-    "automatically_available",
-    "visible_in_frontend",
-)
 
 ALL_EIGHT_STRATEGY_AGENTS = (
     "business_researcher",
@@ -44,6 +50,11 @@ FORMATTERS = (
     "marketing_formatter",
     "brand_formatter",
 )
+
+
+# ---------------------------------------------------------------------------
+# Matrix snapshot tests — SEEDS registry
+# ---------------------------------------------------------------------------
 
 
 def test_seeds_cover_all_eight_strategy_agents() -> None:
@@ -72,9 +83,9 @@ def test_formatter_audit_fields_match_matrix(agent_id: str) -> None:
     assert seed["skill_ids"] == []
     assert seed["sandbox_code_executor_enabled"] is False
     assert seed["response_schema"] is None
-    assert seed["available_to_copy"] is False  # not forkable
+    assert seed["available_to_copy"] is False
     assert seed["automatically_available"] is True
-    assert seed["visible_in_frontend"] is False  # hidden from UI
+    assert seed["visible_in_frontend"] is False
 
 
 @pytest.mark.parametrize(
@@ -96,11 +107,10 @@ def test_strategy_agents_seed_only_audit_fields(agent_id: str) -> None:
 
 
 def test_business_agents_carry_full_baseline_plus_audit_fields() -> None:
-    """business_researcher and business_formatter retain the v1.0 baseline
-    so a clean environment can bootstrap from this script."""
+    """business_researcher and business_formatter retain the v1.0
+    baseline so a clean env can bootstrap from this script."""
     for agent_id in ("business_researcher", "business_formatter"):
         seed = script.SEEDS[agent_id]
-        # Baseline fields (pre-AH-41).
         assert "name" in seed
         assert "model" in seed
         assert "instruction" in seed
@@ -108,9 +118,8 @@ def test_business_agents_carry_full_baseline_plus_audit_fields() -> None:
         assert "temperature" in seed
         assert "max_output_tokens" in seed
         assert "metadata" in seed
-        # AH-40: flat shape, not nested under generate_content_config.
+        # AH-40: flat shape; legacy nested wrapper gone.
         assert "generate_content_config" not in seed
-        # AH-41 audit fields layered on.
         for field in AUDIT_FIELDS:
             assert field in seed
 
@@ -123,77 +132,39 @@ def test_business_researcher_uses_researcher_profile() -> None:
 
 def test_business_formatter_uses_formatter_profile() -> None:
     seed = script.SEEDS["business_formatter"]
-    assert seed["available_to_copy"] is False  # hidden + non-copyable
+    assert seed["available_to_copy"] is False
     assert seed["visible_in_frontend"] is False
 
 
-def test_upload_creates_strategy_agent_doc_with_only_audit_fields() -> None:
-    """A clean env writes a sparse doc — only audit fields."""
+# ---------------------------------------------------------------------------
+# Integration smoke — SEEDS → shared helper → fake Firestore
+# ---------------------------------------------------------------------------
+
+
+def test_all_eight_seeds_apply_idempotently_via_shared_helper() -> None:
+    """Drive every SEEDS entry through the shared upsert helper twice
+    and assert the resulting per-doc state is byte-identical between
+    runs. Covers the SEEDS dict end-to-end without going through
+    ``main()`` / arg parsing."""
     fake = FakeFirestoreClient()
-    with patch.object(script.firestore, "Client", return_value=fake):
-        ok = script.upload_config_to_firestore(
-            script.SEEDS["competitive_researcher"],
-            "competitive_researcher",
-            "test-project",
+    for agent_id in ALL_EIGHT_STRATEGY_AGENTS:
+        upsert_agent_config(
+            script.SEEDS[agent_id], agent_id, "test-project", db=fake
         )
-    assert ok is True
-    doc = fake.get_doc("agent_configs", "competitive_researcher")
-    assert doc is not None
-    assert set(doc.keys()) == set(AUDIT_FIELDS)
+    first = {a: fake.get_doc("agent_configs", a) for a in ALL_EIGHT_STRATEGY_AGENTS}
 
-
-def test_upload_merges_audit_fields_onto_existing_strategy_agent() -> None:
-    """The realistic case: live env has the full doc but lacks audit
-    fields. After seed, audit fields are present and instruction/model/
-    temperature/etc. are preserved by merge=True."""
-    fake = FakeFirestoreClient(
-        stores={
-            "agent_configs": {
-                "competitive_researcher": {
-                    "name": "competitive_researcher",
-                    "model": "gemini-2.0-flash",
-                    "instruction": "live hand-tuned instruction",
-                    "description": "Researches competitors",
-                    "temperature": 0.3,
-                    "max_output_tokens": 2500,
-                    "metadata": {"version": "v1.0.0"},
-                }
-            }
-        }
-    )
-    with patch.object(script.firestore, "Client", return_value=fake):
-        ok = script.upload_config_to_firestore(
-            script.SEEDS["competitive_researcher"],
-            "competitive_researcher",
-            "test-project",
+    for agent_id in ALL_EIGHT_STRATEGY_AGENTS:
+        upsert_agent_config(
+            script.SEEDS[agent_id], agent_id, "test-project", db=fake
         )
-    assert ok is True
-    doc = fake.get_doc("agent_configs", "competitive_researcher")
-    assert doc is not None
-    # Audit fields added.
-    for field in AUDIT_FIELDS:
-        assert field in doc
-    # Live content preserved.
-    assert doc["instruction"] == "live hand-tuned instruction"
-    assert doc["model"] == "gemini-2.0-flash"
-    assert doc["temperature"] == 0.3
-    assert doc["metadata"] == {"version": "v1.0.0"}
+    second = {a: fake.get_doc("agent_configs", a) for a in ALL_EIGHT_STRATEGY_AGENTS}
 
-
-def test_idempotent_across_two_runs() -> None:
-    fake = FakeFirestoreClient()
-    with patch.object(script.firestore, "Client", return_value=fake):
-        for agent_id in ALL_EIGHT_STRATEGY_AGENTS:
-            script.upload_config_to_firestore(
-                script.SEEDS[agent_id], agent_id, "test-project"
-            )
-        first = {a: fake.get_doc("agent_configs", a) for a in ALL_EIGHT_STRATEGY_AGENTS}
-        for agent_id in ALL_EIGHT_STRATEGY_AGENTS:
-            script.upload_config_to_firestore(
-                script.SEEDS[agent_id], agent_id, "test-project"
-            )
-        second = {a: fake.get_doc("agent_configs", a) for a in ALL_EIGHT_STRATEGY_AGENTS}
     assert first == second
+
+
+# ---------------------------------------------------------------------------
+# main() — --agents subset + unknown-agent rejection
+# ---------------------------------------------------------------------------
 
 
 def test_main_subset_via_agents_flag(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -209,12 +180,16 @@ def test_main_subset_via_agents_flag(monkeypatch: pytest.MonkeyPatch) -> None:
             "brand_researcher,brand_formatter",
         ],
     )
-    with patch.object(script.firestore, "Client", return_value=fake):
+    # main() goes through upload_config_to_firestore → upsert_agent_config,
+    # which instantiates a live firestore.Client. Patch at the lazy import
+    # site inside the helper.
+    from google.cloud import firestore
+
+    with patch.object(firestore, "Client", return_value=fake):
         rc = script.main()
     assert rc == 0
     assert fake.get_doc("agent_configs", "brand_researcher") is not None
     assert fake.get_doc("agent_configs", "brand_formatter") is not None
-    # Other agents NOT seeded.
     for agent_id in ALL_EIGHT_STRATEGY_AGENTS:
         if agent_id in ("brand_researcher", "brand_formatter"):
             continue

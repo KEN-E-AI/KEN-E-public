@@ -1,28 +1,15 @@
-"""Unit tests for migrate_ga_agent_to_firestore.py (AH-41)."""
+"""Matrix snapshot tests for migrate_ga_agent_to_firestore.py (AH-41)."""
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 from app.adk.agents.scripts import migrate_ga_agent_to_firestore as script
-from app.adk.agents.scripts.tests._fake_firestore import FakeFirestoreClient
-
-AUDIT_FIELDS = (
-    "code_execution_enabled",
-    "mcp_servers",
-    "skill_ids",
-    "sandbox_code_executor_enabled",
-    "response_schema",
-    "available_to_copy",
-    "automatically_available",
-    "visible_in_frontend",
-)
+from app.adk.agents.scripts._seed_helpers import AUDIT_FIELDS
 
 
-def test_config_dict_has_all_audited_fields_per_matrix() -> None:
+def test_config_dict_matches_audit_matrix_row() -> None:
+    """AH-41 decision matrix row for google_analytics_agent — GA gets
+    code execution + the GA MCP toolset per AH-PRD-03."""
     config = script.GA_AGENT_CONFIG
-    # AH-41 decision matrix row for google_analytics_agent — gets the MCP
-    # toolset + code execution per AH-PRD-03.
     assert config["code_execution_enabled"] is True
     assert config["mcp_servers"] == ["google_analytics_mcp"]
     assert config["skill_ids"] == []
@@ -33,6 +20,12 @@ def test_config_dict_has_all_audited_fields_per_matrix() -> None:
     assert config["visible_in_frontend"] is True
 
 
+def test_config_dict_carries_all_eight_audit_fields() -> None:
+    config = script.GA_AGENT_CONFIG
+    for field in AUDIT_FIELDS:
+        assert field in config
+
+
 def test_config_dict_retains_pre_ah41_fields() -> None:
     config = script.GA_AGENT_CONFIG
     assert config["name"] == "google_analytics_agent"
@@ -40,46 +33,5 @@ def test_config_dict_retains_pre_ah41_fields() -> None:
     assert isinstance(config["instruction"], str) and config["instruction"]
     assert config["temperature"] == 0.7
     assert config["max_output_tokens"] == 4096
+    assert "generate_content_config" not in config
     assert config["metadata"]["version"] == "v1.1"  # bumped by AH-41
-
-
-def test_upload_creates_doc_when_missing() -> None:
-    fake = FakeFirestoreClient()
-    with patch.object(script.firestore, "Client", return_value=fake):
-        ok = script.upload_config_to_firestore(
-            script.GA_AGENT_CONFIG, "google_analytics_agent", "test-project"
-        )
-    assert ok is True
-    doc = fake.get_doc("agent_configs", "google_analytics_agent")
-    assert doc is not None
-    for field in AUDIT_FIELDS:
-        assert field in doc
-    assert doc["mcp_servers"] == ["google_analytics_mcp"]
-    assert doc["code_execution_enabled"] is True
-
-
-def test_upload_is_idempotent_across_two_runs() -> None:
-    fake = FakeFirestoreClient()
-    with patch.object(script.firestore, "Client", return_value=fake):
-        script.upload_config_to_firestore(
-            script.GA_AGENT_CONFIG, "google_analytics_agent", "test-project"
-        )
-        first_state = fake.get_doc("agent_configs", "google_analytics_agent")
-        script.upload_config_to_firestore(
-            script.GA_AGENT_CONFIG, "google_analytics_agent", "test-project"
-        )
-        second_state = fake.get_doc("agent_configs", "google_analytics_agent")
-    assert first_state == second_state
-
-
-def test_dry_run_does_not_write() -> None:
-    fake = FakeFirestoreClient()
-    with patch.object(script.firestore, "Client", return_value=fake):
-        ok = script.upload_config_to_firestore(
-            script.GA_AGENT_CONFIG,
-            "google_analytics_agent",
-            "test-project",
-            dry_run=True,
-        )
-    assert ok is True
-    assert fake.get_doc("agent_configs", "google_analytics_agent") is None

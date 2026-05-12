@@ -12,19 +12,25 @@ Covers the eight strategy-agent globals under ``agent_configs/``:
   out-of-band and live in Firestore with bespoke, hand-tuned instructions.
   This script seeds only the **8 audited fields** (AH-41) for those agents
   and relies on ``set(..., merge=True)`` to leave existing content intact.
-  Restoring those agents from scratch needs a separate seed flow (not
-  blocking AH-41 — see AC-2).
+  Restoring those agents from scratch needs a separate seed flow.
 
-AH-41 audit fields:
+The 8 audited fields and their researcher / formatter profiles live in
+``app.adk.agents.scripts._seed_helpers``; this script imports them so the
+matrix has a single source of truth.
 
-* ``code_execution_enabled``
-* ``mcp_servers``
-* ``skill_ids``
-* ``sandbox_code_executor_enabled``
-* ``response_schema``
-* ``available_to_copy``  (formatters: False — internal pipeline stage)
-* ``automatically_available``
-* ``visible_in_frontend`` (formatters: False — internal pipeline stage)
+.. warning::
+
+   **Re-running this script overwrites the business-pair full baselines
+   (`model`, `instruction`, `temperature`, `max_output_tokens`,
+   `metadata`)** with the values in this file. Fields NOT in the seed
+   dict are preserved by ``set(..., merge=True)``. The 6
+   audit-fields-only entries (competitive / marketing / brand
+   researchers and formatters) only write the 8 audit fields and leave
+   existing live instruction / model / temperature alone.
+
+   The shared helper logs a warning when a clean-env run would create a
+   sparse audit-fields-only doc, since such a doc will not boot a real
+   agent without further seeding.
 
 Idempotency: ``set(..., merge=True)`` — re-running produces zero field
 changes once the audited fields are present.
@@ -48,45 +54,26 @@ Usage::
 
 import argparse
 import logging
+import sys
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
-from google.cloud import firestore
+# Make ``app`` importable when this file is executed as a script.
+_repo_root = Path(__file__).resolve().parent
+while _repo_root != _repo_root.parent and not (_repo_root / ".git").exists():
+    _repo_root = _repo_root.parent
+if str(_repo_root) not in sys.path:
+    sys.path.insert(0, str(_repo_root))
+
+from app.adk.agents.scripts._seed_helpers import (  # noqa: E402
+    AUDIT_FIELDS_FORMATTER,
+    AUDIT_FIELDS_RESEARCHER,
+    upsert_agent_config,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# AH-41 audit-field profiles
-# ---------------------------------------------------------------------------
-#
-# Researcher and formatter profiles are identical EXCEPT for the two
-# user-facing flags: formatters are internal review-loop stages, so they
-# are hidden from the Workflows > Agents UI (``visible_in_frontend=False``)
-# and not forkable (``available_to_copy=False``).
-
-AUDIT_FIELDS_RESEARCHER: dict[str, Any] = {
-    "code_execution_enabled": False,
-    "mcp_servers": [],
-    "skill_ids": [],
-    "sandbox_code_executor_enabled": False,
-    "response_schema": None,
-    "available_to_copy": True,
-    "automatically_available": True,
-    "visible_in_frontend": True,
-}
-
-AUDIT_FIELDS_FORMATTER: dict[str, Any] = {
-    "code_execution_enabled": False,
-    "mcp_servers": [],
-    "skill_ids": [],
-    "sandbox_code_executor_enabled": False,
-    "response_schema": None,
-    "available_to_copy": False,
-    "automatically_available": True,
-    "visible_in_frontend": False,
-}
 
 
 # ---------------------------------------------------------------------------
@@ -202,31 +189,8 @@ def upload_config_to_firestore(
     project_id: str,
     dry_run: bool = False,
 ) -> bool:
-    """Idempotently upsert a configuration document.
-
-    Uses ``set(config, merge=True)`` so re-running the script writes only
-    the keys present in ``config`` and preserves anything else on the
-    existing doc (e.g. live instructions on the six audit-field-only
-    entries above).
-    """
-    if dry_run:
-        logger.info(f"[DRY RUN] Would upsert '{doc_id}':")
-        logger.info(f"  fields: {sorted(config.keys())}")
-        return True
-
-    try:
-        db = firestore.Client(project=project_id)
-        doc_ref = db.collection("agent_configs").document(doc_id)
-        existed = doc_ref.get().exists
-
-        doc_ref.set(config, merge=True)
-        action = "Updated" if existed else "Created"
-        logger.info(f"✅ {action} config '{doc_id}'")
-        return True
-
-    except Exception as exc:
-        logger.error(f"❌ Failed to upsert config '{doc_id}': {exc}")
-        return False
+    """Thin wrapper around the shared ``upsert_agent_config`` helper."""
+    return upsert_agent_config(config, doc_id, project_id, dry_run=dry_run)
 
 
 def main() -> int:
