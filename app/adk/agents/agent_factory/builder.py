@@ -57,9 +57,17 @@ def build_agent(
 ) -> LlmAgent:
     instruction = _make_factory_instruction_provider(config.instruction)
 
-    generate_content_config: GenerateContentConfig | None = None
+    # AH-40: reconstruct the SDK GenerateContentConfig from flat fields at
+    # the ADK construction boundary. Storage is flat; the nested grouping
+    # exists only as an SDK API concern.
+    gcc_kwargs: dict[str, Any] = {}
     if config.temperature is not None:
-        generate_content_config = GenerateContentConfig(temperature=config.temperature)
+        gcc_kwargs["temperature"] = config.temperature
+    if config.max_output_tokens is not None:
+        gcc_kwargs["max_output_tokens"] = config.max_output_tokens
+    generate_content_config: GenerateContentConfig | None = (
+        GenerateContentConfig(**gcc_kwargs) if gcc_kwargs else None
+    )
 
     # ADK 1.27+ requires code_executor on LlmAgent directly (not via GenerateContentConfig.tools)
     code_executor = BuiltInCodeExecutor() if config.code_execution_enabled else None

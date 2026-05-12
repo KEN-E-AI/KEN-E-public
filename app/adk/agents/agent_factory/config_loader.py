@@ -35,13 +35,16 @@ class FirestoreConnectionError(AgentFactoryConfigError):
 
 
 class MergedAgentConfig(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    # AH-40: strict — flatten storage shape, reject the legacy nested
+    # ``generate_content_config`` wrapper so backfill misses fail loud.
+    model_config = ConfigDict(extra="forbid")
 
     instruction: str
     model: str
 
     description: str | None = None
     temperature: float | None = None
+    max_output_tokens: int | None = None
     code_execution_enabled: bool = False
     mcp_servers: list[str] = Field(default_factory=list)
 
@@ -58,6 +61,14 @@ class MergedAgentConfig(BaseModel):
     customization_status: Literal["default", "customized", "custom_agent"] = "default"
 
     metadata: dict | None = None
+
+
+# Storage-internal fields that live on Firestore docs but are not part of
+# the ``MergedAgentConfig`` schema. ``_build_config`` strips these before
+# validation since ``extra="forbid"`` would otherwise reject them.
+_STORAGE_INTERNAL_FIELDS: frozenset[str] = frozenset(
+    {"name", "created_at", "updated_at", "created_by"}
+)
 
 
 def _resolve_project_id(project_id: str | None) -> str:
@@ -173,6 +184,10 @@ def _build_config(
     doc_dict = dict(raw)
     doc_dict.pop("based_on_version", None)
     doc_dict.pop("customization_status", None)
+    # Strip storage-internal fields not in the model. ``extra="forbid"`` (AH-40)
+    # would otherwise reject them.
+    for storage_field in _STORAGE_INTERNAL_FIELDS:
+        doc_dict.pop(storage_field, None)
 
     try:
         config = MergedAgentConfig.model_validate(doc_dict)
