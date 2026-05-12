@@ -176,6 +176,8 @@ GOOGLE_CLOUD_PROJECT_ID=ken-e-dev python api/scripts/migrate_shape_d_split.py \
 **`orgs_skipped_concurrent_write`:** 0  
 **Notes:** `org_test_neo4j` reports `already_clean` — the `accounts` field was never set. The delete-pass correctly identifies this as a no-op. The TOCTOU guard counter checks out: `orgs_skipped_unmigrated + orgs_skipped_concurrent_write == 0`.
 
+> **Why `total_orgs=1` here vs. `total_orgs=0` in Steps 1–2:** The write-pass iterator (`_iter_org_accounts`) yields only orgs with a non-empty `accounts` map — since `org_test_neo4j` had no such map, it yielded nothing and `total_orgs=0`. The delete-pass iterator walks **all** org docs unconditionally to determine their clean/migrated state, so `total_orgs=1` reflects the single org in the `organizations` collection. Both behaviors are correct.
+
 ---
 
 ## Step 5: Delete-field pass (destructive cut-over)
@@ -320,6 +322,8 @@ make lint
 
 **AC-7 verdict (lint):** NOT MET. Pre-existing violations — same count on `main`.
 
+**Escalation record:** Pre-existing failures posted as a comment on DM-46 (see Step 6 handoff comment — Linear issue `DM-46`). Suspected owners documented above. PO decision on DM-PRD-05 unblock is pending PO acknowledgment.
+
 ---
 
 ## Final state
@@ -329,11 +333,11 @@ make lint
 | Pre-flight residue scan | Zero hits in source files | — |
 | Write-pass dry-run | Exit 0, errors=0 | — |
 | Write-pass (actual) | Exit 0, errors=0 | — |
-| Sample-org spot-check | Clean (vacuous — no source data) | AC-5 (vacuous) |
+| Sample-org spot-check | Clean (vacuous — no source data) | AC-5 ✓ (vacuous — no accounts map existed) |
 | Delete-field dry-run | Exit 0, skipped_unmigrated=0 | — |
-| Delete-field pass | Exit 0, already_clean=1 | AC-4 (vacuous) |
-| Post-cut-over spot-check | No `accounts.*` field on any org | AC-4 ✓ |
+| Delete-field pass + post-cut-over spot-check | Exit 0, already_clean=1; no `accounts.*` on any org | AC-4 ✓ (vacuous — no accounts map existed) |
 | Idempotency re-run | Exit 0, already_clean=1, 0 writes | AC-8 ✓ |
+| KPI/funnel endpoint before/after diff | Not exercisable — no seeded account in `ken-e-dev` | AC-6 ✓ (vacuous — no source data; covered by DM-45) |
 | `pytest api/tests/` | **Exit 1** — 217 pre-existing failures | AC-7 ✗ (pre-existing) |
 | `make lint` | **Exit 2** — 2916 pre-existing violations | AC-7 ✗ (pre-existing) |
 
@@ -341,4 +345,4 @@ make lint
 
 **AC-7 status:** Blocked by pre-existing `pytest` and `make lint` failures on `main`. The failures are identical before and after this branch — DM-46 introduced no regressions. Escalated to PO via DM-46 comment.
 
-**DM-PRD-05 unblock:** The PRD §7.3 verification gate for DM-PRD-03 is satisfied operationally (migration script exits 0, no orphaned Shape D data in dev). AC-7's tooling gate is blocked by pre-existing failures that belong to other issue owners. Recommend the PO accept the migration as complete and track the pre-existing test/lint failures separately.
+**DM-PRD-05 unblock status:** PENDING PO decision. AC-7 is NOT MET due to pre-existing failures unrelated to DM-PRD-03. Migration script exits 0 with no orphaned Shape D data in dev; failures belong to other issue owners. Awaiting PO acknowledgment on DM-46 before DM-PRD-05 starts.
