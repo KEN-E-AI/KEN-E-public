@@ -12,7 +12,7 @@
 
 ## Context
 
-DM-20 is the final data migration issue in DM-PRD-01 (Strategy Suite Migration). The side-effect fix motivating this issue is structural: once `strategy_audit_*` collections move from top-level Shape A paths to `accounts/{account_id}/strategy_audit/…`, the `collection_group("strategy_audit")` query at `api/src/kene_api/services/audit_service.py:262` (the PRD was drafted with the pre-DM-15 line `:189`; DM-15 added comment lines above it, shifting the call to `:262`) — which was written for Shape B from the start and intentionally never edited during DM-15 — begins returning non-empty results for any account with audit entries.
+DM-20 is the final data migration issue in DM-PRD-01 (Strategy Suite Migration). The side-effect fix motivating this issue is structural: once `strategy_audit_*` collections move from top-level Shape A paths to `accounts/{account_id}/strategy_audit/…`, the `collection_group("strategy_audit")` query at `api/src/kene_api/services/audit_service.py:262` (the PRD was drafted against an earlier `:189` location; subsequent unrelated work in `audit_service.py` — notably a config-registry / audit-trail expansion — plus DM-15's added comment block have shifted the call to `:262`; the call itself was written for Shape B from the start and intentionally never edited during DM-15) — begins returning non-empty results for any account with audit entries.
 
 DM-15 migrated all code call sites (writers + readers) to the new Shape B paths. DM-16 pinned the `collection_group("strategy_audit")` query semantics in the emulator integration test (`api/tests/integration/test_strategy_audit_cross_account.py`). This issue runs the dev-environment data migration and confirms the structural picture is complete.
 
@@ -26,7 +26,7 @@ No orphan cleanup was needed (compare: DM-19 Step 0 which required pre-deleting 
 
 ### (a) Registry entry
 
-`RESOURCES["strategy_audit"]` confirmed at `api/scripts/_migrate_shape_b/resources.py:22-26`:
+`RESOURCES["strategy_audit"]` confirmed at `api/scripts/_migrate_shape_b/resources.py:24-28`:
 
 ```python
 RESOURCES["strategy_audit"] = MigrateConfig(
