@@ -159,9 +159,11 @@ cd /home/agent/workspace && make lint
 
 - **codespell:** passes after fixing 2 pre-existing typos:
   - `docs/design/components/data-management/runs/DM-19-strategy-docs-dev-migration-log.md:284`
-    — quoted codespell finding `CACL` rephrased to avoid the raw misspelled token.
+    — a quoted codespell finding contained the raw calc-misspelling; rephrased to avoid the
+    raw misspelled token.
   - `app/adk/agents/agent_factory/tests/test_factory.py:293`
-    — test variable `name="mot"` renamed to `name="max_out"` (false positive, not a real typo).
+    — test variable `name` set to a short identifier that codespell flagged as a misspelling
+    of "not"; renamed to `name="max_out"` (false positive, not a real typo).
 - **ruff / mypy:** pre-existing baseline (2,451+ ruff errors; ~4,385 mypy errors) identical
   to `main`. DM-43 branch introduces **0 new ruff or mypy errors** — only the run-log (markdown),
   README §5.1 status flip, and PRD status flip are changed.
