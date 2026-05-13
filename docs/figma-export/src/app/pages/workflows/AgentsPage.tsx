@@ -118,7 +118,7 @@ function AgentCard({ agent, index, onConfigure }: { agent: Agent; index: number;
 
   return (
     <div
-      className="relative p-4 rounded-[14px] border-2 border-[var(--color-border-default)] hover:border-[var(--color-border-strong)] hover:-translate-y-0.5 transition-all cursor-pointer bg-card overflow-hidden flex flex-col"
+      className="relative p-4 rounded-[0.875rem] border-2 border-[var(--color-border-default)] hover:border-[var(--color-border-strong)] hover:-translate-y-0.5 transition-all cursor-pointer bg-card overflow-hidden flex flex-col"
       style={{
         transitionTimingFunction: 'var(--ease-bounce)',
         transitionDuration: 'var(--duration-fast)',

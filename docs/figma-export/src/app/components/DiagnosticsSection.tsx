@@ -220,19 +220,19 @@ function IssueCard({ issue }: { issue: HealthIssue }) {
         <p className="text-xs">{issue.summary}</p>
       </div>
       {/* Action */}
-      <p className="text-xs text-muted-foreground ml-5.5 pl-[22px]">
+      <p className="text-xs text-muted-foreground ml-5.5 pl-[1.375rem]">
         <span className="text-foreground">Recommended action:</span> {issue.action}
       </p>
       {/* Technical details toggle */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1 ml-[22px] text-[0.6875rem] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+        className="flex items-center gap-1 ml-[1.375rem] text-[0.6875rem] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
       >
         {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
         Technical details
       </button>
       {expanded && (
-        <div className="ml-[22px] px-3 py-2 bg-[var(--color-bg-secondary)] rounded-[var(--radius-xs)] border border-[var(--color-border-default)]">
+        <div className="ml-[1.375rem] px-3 py-2 bg-[var(--color-bg-secondary)] rounded-[var(--radius-xs)] border border-[var(--color-border-default)]">
           <p className="text-[0.6875rem] text-muted-foreground font-mono leading-relaxed">{issue.technicalDetail}</p>
         </div>
       )}

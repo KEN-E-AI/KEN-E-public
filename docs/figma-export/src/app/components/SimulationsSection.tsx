@@ -576,7 +576,7 @@ function FunnelStepRow({
               className="relative flex items-center justify-center"
               style={{
                 width: `${topWidthPercent}%`,
-                minHeight: '40px',
+                minHeight: '2.5rem',
                 clipPath: `polygon(${((100 - topWidthPercent) / 2)}% 0%, ${100 - ((100 - topWidthPercent) / 2)}% 0%, ${100 - ((100 - bottomWidthPercent) / 2)}% 100%, ${((100 - bottomWidthPercent) / 2)}% 100%)`,
                 backgroundColor: step.color,
                 opacity: 0.85,
@@ -1672,7 +1672,7 @@ function ForecastFunnelStepRow({
               className="relative flex items-center justify-center"
               style={{
                 width: `${topWidthPercent}%`,
-                minHeight: '40px',
+                minHeight: '2.5rem',
                 clipPath: `polygon(${((100 - topWidthPercent) / 2)}% 0%, ${100 - ((100 - topWidthPercent) / 2)}% 0%, ${100 - ((100 - bottomWidthPercent) / 2)}% 100%, ${((100 - bottomWidthPercent) / 2)}% 100%)`,
                 backgroundColor: step.color,
                 opacity: 0.85,

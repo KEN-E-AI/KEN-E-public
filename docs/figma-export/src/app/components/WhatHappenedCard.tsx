@@ -410,7 +410,7 @@ function FunnelRow({
               className="relative flex items-center justify-center"
               style={{
                 width: `${topWidthPercent}%`,
-                minHeight: '40px',
+                minHeight: '2.5rem',
                 clipPath: `polygon(${((100 - topWidthPercent) / 2)}% 0%, ${100 - ((100 - topWidthPercent) / 2)}% 0%, ${100 - ((100 - bottomWidthPercent) / 2)}% 100%, ${((100 - bottomWidthPercent) / 2)}% 100%)`,
                 backgroundColor: step.color,
                 opacity: 0.85,
@@ -852,7 +852,7 @@ function RelatedMetricCard({ metric, month, year, compareMode }: { metric: Relat
 
       {/* Chart */}
       <div className="h-[8.125rem] mt-auto">
-        <ResponsiveContainer width="100%" height={130}>
+        <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data.history} margin={{ top: 16, right: 4, bottom: 0, left: -24 }}>
             <CartesianGrid key="grid" strokeDasharray="3 3" stroke="var(--color-border-default)" vertical={false} />
             <XAxis

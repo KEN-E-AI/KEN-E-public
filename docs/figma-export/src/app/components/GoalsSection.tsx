@@ -134,14 +134,14 @@ export function GoalsSection() {
           {canScrollLeft && (
             <>
               <div
-                className="absolute left-[200px] top-0 bottom-0 w-8 z-20 pointer-events-none"
+                className="absolute left-[12.5rem] top-0 bottom-0 w-8 z-20 pointer-events-none"
                 style={{
                   background: 'linear-gradient(to right, rgba(0,0,0,0.06), transparent)',
                 }}
               />
               <button
                 onClick={() => scrollBy('left')}
-                className="absolute left-[204px] top-1/2 -translate-y-1/2 z-30 size-8 rounded-full bg-white/90 border border-[var(--color-border-default)] shadow-sm flex items-center justify-center hover:bg-white hover:shadow-md transition-all cursor-pointer"
+                className="absolute left-[12.75rem] top-1/2 -translate-y-1/2 z-30 size-8 rounded-full bg-white/90 border border-[var(--color-border-default)] shadow-sm flex items-center justify-center hover:bg-white hover:shadow-md transition-all cursor-pointer"
                 aria-label="Scroll left"
               >
                 <ChevronLeft className="size-4 text-[var(--color-text-secondary)]" />
@@ -159,7 +159,7 @@ export function GoalsSection() {
               />
               <button
                 onClick={() => scrollBy('right')}
-                className="absolute right-[4px] top-1/2 -translate-y-1/2 z-30 size-8 rounded-full bg-white/90 border border-[var(--color-border-default)] shadow-sm flex items-center justify-center hover:bg-white hover:shadow-md transition-all cursor-pointer"
+                className="absolute right-[0.25rem] top-1/2 -translate-y-1/2 z-30 size-8 rounded-full bg-white/90 border border-[var(--color-border-default)] shadow-sm flex items-center justify-center hover:bg-white hover:shadow-md transition-all cursor-pointer"
                 aria-label="Scroll right"
               >
                 <ChevronRight className="size-4 text-[var(--color-text-secondary)]" />
