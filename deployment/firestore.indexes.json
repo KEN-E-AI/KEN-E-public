@@ -265,6 +265,25 @@
           "order": "DESCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "performance_profiles",
+      "queryScope": "COLLECTION",
+      "database": "analytics",
+      "fields": [
+        {
+          "fieldPath": "is_bottleneck",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "timestamp",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "duration_seconds",
+          "order": "DESCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": [
