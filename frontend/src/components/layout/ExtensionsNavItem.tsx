@@ -81,7 +81,7 @@ export function ExtensionsNavItem({ item, isActive }: ExtensionsNavItemProps) {
         <div
           role="menu"
           aria-label="Active extensions"
-          className="absolute top-full left-0 mt-1 min-w-[200px] bg-[var(--color-bg-elevated)] border-2 border-[var(--color-border-default)] rounded-[var(--radius-md)] shadow-lg py-1 z-50"
+          className="absolute top-full left-0 mt-1 min-w-[12.5rem] bg-[var(--color-bg-elevated)] border-2 border-[var(--color-border-default)] rounded-[var(--radius-md)] shadow-lg py-1 z-50"
         >
           {activeExtensions.map((p) => (
             <Link

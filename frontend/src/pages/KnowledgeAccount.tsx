@@ -328,7 +328,7 @@ export default function KnowledgeAccount() {
             setIsEditing(open);
           }}
         >
-          <SheetContent side="right" className="w-[400px] flex flex-col">
+          <SheetContent side="right" className="w-[25rem] flex flex-col">
             <SheetHeader>
               <SheetTitle className="flex items-center gap-2">
                 <Building className="h-5 w-5" />
@@ -345,7 +345,7 @@ export default function KnowledgeAccount() {
                     value={companySummary}
                     onChange={(e) => setCompanySummary(e.target.value)}
                     placeholder="Enter a comprehensive description of the company, including: founding story, mission, featured products or services, brand identity and target customers"
-                    className="min-h-[200px]"
+                    className="min-h-[12.5rem]"
                   />
                 </div>
               </div>

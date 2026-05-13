@@ -242,12 +242,12 @@ export function SessionsSidebar({
                       {session.name}
                     </p>
                     {session.category && (
-                      <p className="text-[11px] text-[var(--color-text-tertiary)] truncate">
+                      <p className="text-[0.6875rem] text-[var(--color-text-tertiary)] truncate">
                         {session.category}
                       </p>
                     )}
                     {session.lastMessage && (
-                      <p className="text-[10px] text-[var(--color-text-tertiary)] truncate mt-0.5">
+                      <p className="text-[0.625rem] text-[var(--color-text-tertiary)] truncate mt-0.5">
                         {session.lastMessage}
                       </p>
                     )}

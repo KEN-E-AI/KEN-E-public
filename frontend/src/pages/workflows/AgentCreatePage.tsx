@@ -120,7 +120,7 @@ export function AgentCreatePage() {
             placeholder="You are a marketing expert who specializes in..."
             {...register("instruction")}
             rows={8}
-            className="mt-1.5 min-h-[160px] resize-y"
+            className="mt-1.5 min-h-[10rem] resize-y"
             data-testid="instruction-field"
           />
           {errors.instruction && (
@@ -171,7 +171,7 @@ export function AgentCreatePage() {
             control={control}
             render={({ field }) => (
               <div className="flex items-center gap-3">
-                <span className="text-[12px] text-[var(--color-text-secondary)]">
+                <span className="text-[0.75rem] text-[var(--color-text-secondary)]">
                   Precise
                 </span>
                 <Slider
@@ -185,7 +185,7 @@ export function AgentCreatePage() {
                   className="flex-1"
                   data-testid="temperature-slider"
                 />
-                <span className="text-[12px] text-[var(--color-text-secondary)]">
+                <span className="text-[0.75rem] text-[var(--color-text-secondary)]">
                   Creative
                 </span>
               </div>

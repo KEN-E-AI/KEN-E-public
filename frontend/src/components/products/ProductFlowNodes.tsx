@@ -53,7 +53,7 @@ export const CategoryNode = memo(({ data }: NodeProps<CategoryNodeData>) => {
           >
             <Blocks
               className="text-white"
-              style={{ width: "48px", height: "48px" }}
+              style={{ width: "3rem", height: "3rem" }}
             />
           </div>
         </div>
@@ -65,7 +65,7 @@ export const CategoryNode = memo(({ data }: NodeProps<CategoryNodeData>) => {
         position={Position.Bottom}
         id="bottom"
         className="opacity-0"
-        style={{ right: "30px", left: "auto" }}
+        style={{ right: "1.875rem", left: "auto" }}
       />
 
       {/* Custom "+" Button - centered under circle */}
@@ -102,7 +102,7 @@ export const ProductNode = memo(({ data }: NodeProps<ProductNodeData>) => {
             <TooltipTrigger asChild>
               <div
                 className="bg-brand-medium-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
-                style={{ width: "200px" }}
+                style={{ width: "12.5rem" }}
               >
                 <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
                   Product
@@ -132,7 +132,7 @@ export const ProductNode = memo(({ data }: NodeProps<ProductNodeData>) => {
           >
             <Package
               className="text-white"
-              style={{ width: "48px", height: "48px" }}
+              style={{ width: "3rem", height: "3rem" }}
             />
           </div>
         </div>
@@ -144,7 +144,7 @@ export const ProductNode = memo(({ data }: NodeProps<ProductNodeData>) => {
         position={Position.Top}
         id="top"
         className="opacity-0"
-        style={{ right: "30px", left: "auto" }}
+        style={{ right: "1.875rem", left: "auto" }}
       />
 
       {/* Bottom Handle for outgoing connections (when selected) */}
@@ -155,7 +155,7 @@ export const ProductNode = memo(({ data }: NodeProps<ProductNodeData>) => {
             position={Position.Bottom}
             id="bottom"
             className="opacity-0"
-            style={{ right: "30px", left: "auto" }}
+            style={{ right: "1.875rem", left: "auto" }}
           />
 
           {/* Custom "+" Button - centered under circle (only when showHandle is true) */}

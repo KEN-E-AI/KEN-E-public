@@ -39,7 +39,7 @@ export const CustomerProfileNode = memo(
             >
               <Users
                 className="text-white"
-                style={{ width: "48px", height: "48px" }}
+                style={{ width: "3rem", height: "3rem" }}
               />
             </div>
           </div>
@@ -51,7 +51,7 @@ export const CustomerProfileNode = memo(
           position={Position.Bottom}
           id="bottom"
           className="opacity-0"
-          style={{ right: "30px", left: "auto" }}
+          style={{ right: "1.875rem", left: "auto" }}
         />
 
         {/* Custom "+" Button - centered under circle */}
@@ -86,7 +86,7 @@ export const ProductCategoryNode = memo(
           {/* Text Box - Left - Fixed width for consistent spacing */}
           <div
             className="bg-brand-medium-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
-            style={{ width: "200px" }}
+            style={{ width: "12.5rem" }}
           >
             <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
               Product Category
@@ -110,7 +110,7 @@ export const ProductCategoryNode = memo(
             >
               <Blocks
                 className="text-white"
-                style={{ width: "48px", height: "48px" }}
+                style={{ width: "3rem", height: "3rem" }}
               />
             </div>
 
@@ -118,7 +118,7 @@ export const ProductCategoryNode = memo(
             {data.strategyCount !== undefined && data.strategyCount > 0 && (
               <div
                 className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-brand-green flex items-center justify-center"
-                style={{ fontSize: "11px", fontWeight: "600" }}
+                style={{ fontSize: "0.6875rem", fontWeight: "600" }}
               >
                 <span className="text-white">{data.strategyCount}</span>
               </div>
@@ -132,7 +132,7 @@ export const ProductCategoryNode = memo(
           position={Position.Top}
           id="top"
           className="opacity-0"
-          style={{ right: "30px", left: "auto" }}
+          style={{ right: "1.875rem", left: "auto" }}
         />
       </div>
     );

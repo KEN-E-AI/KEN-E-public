@@ -74,7 +74,7 @@ export function ProfileMenu({ compact = false }: ProfileMenuProps) {
       <DropdownMenuContent
         align="end"
         sideOffset={8}
-        className="w-[260px] rounded-[var(--radius-lg)] border border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] p-0 shadow-lg"
+        className="w-[16.25rem] rounded-[var(--radius-lg)] border border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] p-0 shadow-lg"
       >
         <div className="px-4 py-3 bg-[var(--color-surface-muted)]">
           <div className="flex items-center gap-3">
@@ -135,7 +135,7 @@ export function ProfileMenu({ compact = false }: ProfileMenuProps) {
           {showAdminSection && (
             <>
               <DropdownMenuSeparator />
-              <DropdownMenuLabel className="px-4 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
+              <DropdownMenuLabel className="px-4 pt-2 pb-1 text-[0.625rem] font-semibold uppercase tracking-wider text-[var(--color-text-tertiary)]">
                 Admin
               </DropdownMenuLabel>
               <DropdownMenuGroup>

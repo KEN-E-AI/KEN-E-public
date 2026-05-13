@@ -28,8 +28,8 @@ export function NotificationBell() {
         </Button>
         {unreadCount > 0 && (
           <span
-            className="absolute -top-1 -right-1 flex size-5 items-center justify-center rounded-full bg-[#F97066] text-[10px] font-bold text-white"
-            style={{ boxShadow: "0 0 6px rgba(249, 112, 102, 0.5)" }}
+            className="absolute -top-1 -right-1 flex size-5 items-center justify-center rounded-full bg-[#F97066] text-[0.625rem] font-bold text-white"
+            style={{ boxShadow: "0 0 0.375rem rgba(249, 112, 102, 0.5)" }}
           >
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>

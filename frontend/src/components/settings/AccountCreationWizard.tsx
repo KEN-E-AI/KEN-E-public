@@ -349,7 +349,7 @@ export const AccountCreationWizard = ({
             </div>
 
             {/* Step Content */}
-            <div className="min-h-[400px]">
+            <div className="min-h-[25rem]">
               {currentStep === 1 && (
                 <WizardStep1BasicInfo
                   formData={formData}

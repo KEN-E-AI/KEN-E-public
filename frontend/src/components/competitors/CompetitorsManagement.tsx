@@ -2067,7 +2067,7 @@ export const CompetitorsManagement = ({
 
       {/* Card 2: Mode Selector + Children + React Flow */}
       {!selectedCompetitorId ? (
-        <div className="p-6 bg-[var(--color-bg-secondary)] rounded-lg border border-[var(--color-border-default)] h-[600px] flex items-center justify-center">
+        <div className="p-6 bg-[var(--color-bg-secondary)] rounded-lg border border-[var(--color-border-default)] h-[37.5rem] flex items-center justify-center">
           <p className="text-[var(--color-text-tertiary)] text-center">
             Select a competitor to view{" "}
             {mode === "strengths"

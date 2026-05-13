@@ -60,13 +60,13 @@ export function ChatInterface({
             placeholder="Ask me anything about your marketing campaigns..."
             disabled
             aria-label="Chat input (disabled in stub)"
-            className="min-h-[60px] resize-none rounded-[var(--radius-md)]"
+            className="min-h-[3.75rem] resize-none rounded-[var(--radius-md)]"
           />
           <Button
             disabled
             size="icon"
             aria-label="Send message"
-            className="shrink-0 size-[60px]"
+            className="shrink-0 size-[3.75rem]"
           >
             <Send className="size-5" />
           </Button>

@@ -303,7 +303,7 @@ function LayoutCInner() {
                 }}
               >
                 <item.icon className="size-5" />
-                <span className="text-[10px] font-bold">{item.name}</span>
+                <span className="text-[0.625rem] font-bold">{item.name}</span>
               </Link>
             );
           })}

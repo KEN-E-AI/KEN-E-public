@@ -112,7 +112,7 @@ export const WizardStep2MarketingChannelsImproved = ({
         </div>
 
         {/* Channel List */}
-        <div className="space-y-2 max-h-[500px] overflow-y-auto pr-2">
+        <div className="space-y-2 max-h-[31.25rem] overflow-y-auto pr-2">
           {filteredChannels.length === 0 ? (
             <div className="text-center py-8 text-[var(--color-text-tertiary)]">
               No channels found matching your search.

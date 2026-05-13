@@ -124,7 +124,7 @@ const ContextMenu = ({
     <div
       id={id}
       style={{ top, left }}
-      className="absolute z-50 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-lg shadow-lg p-1 min-w-[120px]"
+      className="absolute z-50 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-lg shadow-lg p-1 min-w-[7.5rem]"
     >
       <button
         onClick={handleView}
@@ -191,7 +191,7 @@ const ObjectiveNode = ({ data }: { data: any }) => {
 
   return (
     <div
-      className={`rounded-lg shadow-lg border-2 min-w-[180px] text-center cursor-pointer transition-colors text-white relative ${
+      className={`rounded-lg shadow-lg border-2 min-w-[11.25rem] text-center cursor-pointer transition-colors text-white relative ${
         isSelected
           ? `${color.bg} ${color.border} opacity-80`
           : `${color.bg} ${color.border} ${color.hover}`
@@ -277,12 +277,12 @@ const ChannelNode = ({ data }: { data: any }) => {
 
   return (
     <div
-      className={`px-6 py-4 rounded-lg shadow-lg border-2 min-w-[140px] text-center cursor-pointer transition-colors text-white relative ${
+      className={`px-6 py-4 rounded-lg shadow-lg border-2 min-w-[8.75rem] text-center cursor-pointer transition-colors text-white relative ${
         isSelected
           ? `${color.bg} ${color.border} opacity-80`
           : `${color.bg} ${color.border} ${color.hover}`
       }`}
-      style={{ minWidth: "140px", minHeight: "82px" }}
+      style={{ minWidth: "8.75rem", minHeight: "5.125rem" }}
     >
       <div className="font-semibold text-sm">{data.label}</div>
       <div className="text-xs my-1 mb-5 pb-2 opacity-90">Channel</div>
@@ -371,8 +371,8 @@ const TacticNode = ({ data }: { data: any }) => {
 
   return (
     <div
-      className={`px-4 py-3 rounded-lg shadow-md border-2 min-w-[120px] text-center cursor-pointer transition-colors text-white relative ${color.bg} ${color.border} ${color.hover}`}
-      style={{ minWidth: "120px", minHeight: "72px" }}
+      className={`px-4 py-3 rounded-lg shadow-md border-2 min-w-[7.5rem] text-center cursor-pointer transition-colors text-white relative ${color.bg} ${color.border} ${color.hover}`}
+      style={{ minWidth: "7.5rem", minHeight: "4.5rem" }}
     >
       <div className="font-medium text-sm">{data.label}</div>
       <div className="text-xs my-1 mb-5 opacity-90">Tactic</div>
@@ -1830,7 +1830,7 @@ const ChannelControls = ({ data: propData }: ChannelControlsProps) => {
   console.log("ChannelControls component rendering with React Flow...");
 
   return (
-    <div className="w-full h-[641px] bg-[var(--color-bg-elevated)] overflow-hidden">
+    <div className="w-full h-[40.0625rem] bg-[var(--color-bg-elevated)] overflow-hidden">
       <div className="text-sm text-[var(--color-text-tertiary)] border-b border-[var(--color-border-default)] px-4 pb-4 flex justify-between items-center">
         <span>
           Use the diagram below to define what you business wants to accomplish

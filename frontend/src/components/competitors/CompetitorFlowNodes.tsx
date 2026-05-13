@@ -51,7 +51,7 @@ export const CompetitorNode = memo(
             >
               <Swords
                 className="text-white"
-                style={{ width: "48px", height: "48px" }}
+                style={{ width: "3rem", height: "3rem" }}
               />
             </div>
           </div>
@@ -62,7 +62,7 @@ export const CompetitorNode = memo(
           position={Position.Bottom}
           id="bottom"
           className="opacity-0"
-          style={{ right: "30px", left: "auto" }}
+          style={{ right: "1.875rem", left: "auto" }}
         />
 
         {showButton && (
@@ -118,7 +118,7 @@ export const CompetitorStrengthNode = memo(
             >
               <Dumbbell
                 className="text-white"
-                style={{ width: "48px", height: "48px" }}
+                style={{ width: "3rem", height: "3rem" }}
               />
             </div>
           </div>
@@ -129,7 +129,7 @@ export const CompetitorStrengthNode = memo(
           position={Position.Top}
           id="top"
           className="opacity-0"
-          style={{ right: "30px", left: "auto" }}
+          style={{ right: "1.875rem", left: "auto" }}
         />
 
         <Handle
@@ -137,7 +137,7 @@ export const CompetitorStrengthNode = memo(
           position={Position.Bottom}
           id="bottom"
           className="opacity-0"
-          style={{ right: "30px", left: "auto" }}
+          style={{ right: "1.875rem", left: "auto" }}
         />
 
         <button
@@ -191,7 +191,7 @@ export const CompetitorWeaknessNode = memo(
             >
               <Unlink
                 className="text-white"
-                style={{ width: "48px", height: "48px" }}
+                style={{ width: "3rem", height: "3rem" }}
               />
             </div>
           </div>
@@ -202,7 +202,7 @@ export const CompetitorWeaknessNode = memo(
           position={Position.Top}
           id="top"
           className="opacity-0"
-          style={{ right: "30px", left: "auto" }}
+          style={{ right: "1.875rem", left: "auto" }}
         />
 
         <Handle
@@ -210,7 +210,7 @@ export const CompetitorWeaknessNode = memo(
           position={Position.Bottom}
           id="bottom"
           className="opacity-0"
-          style={{ right: "30px", left: "auto" }}
+          style={{ right: "1.875rem", left: "auto" }}
         />
 
         <button
@@ -245,7 +245,7 @@ export const SubstituteProductNode = memo(
         <div className="flex items-center">
           <div
             className="bg-brand-yellow bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
-            style={{ width: "200px" }}
+            style={{ width: "12.5rem" }}
           >
             <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
               Substitute Product
@@ -268,7 +268,7 @@ export const SubstituteProductNode = memo(
             >
               <Package
                 className="text-white"
-                style={{ width: "48px", height: "48px" }}
+                style={{ width: "3rem", height: "3rem" }}
               />
             </div>
           </div>
@@ -279,7 +279,7 @@ export const SubstituteProductNode = memo(
           position={Position.Top}
           id="top"
           className="opacity-0"
-          style={{ right: "30px", left: "auto" }}
+          style={{ right: "1.875rem", left: "auto" }}
         />
 
         {data.showHandle && (
@@ -289,7 +289,7 @@ export const SubstituteProductNode = memo(
               position={Position.Bottom}
               id="bottom"
               className="opacity-0"
-              style={{ right: "30px", left: "auto" }}
+              style={{ right: "1.875rem", left: "auto" }}
             />
 
             <button
@@ -324,7 +324,7 @@ export const OurProductNode = memo(
         <div className="flex items-center">
           <div
             className="bg-brand-light-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
-            style={{ width: "200px" }}
+            style={{ width: "12.5rem" }}
           >
             <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
               Our Product
@@ -347,7 +347,7 @@ export const OurProductNode = memo(
             >
               <Box
                 className="text-white"
-                style={{ width: "48px", height: "48px" }}
+                style={{ width: "3rem", height: "3rem" }}
               />
             </div>
           </div>
@@ -358,7 +358,7 @@ export const OurProductNode = memo(
           position={Position.Top}
           id="top"
           className="opacity-0"
-          style={{ right: "30px", left: "auto" }}
+          style={{ right: "1.875rem", left: "auto" }}
         />
       </div>
     );
@@ -382,7 +382,7 @@ export const RiskNode = memo(({ data }: NodeProps<RiskNodeData>) => {
       <div className="flex items-center">
         <div
           className="bg-brand-red bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
-          style={{ width: "200px" }}
+          style={{ width: "12.5rem" }}
         >
           <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
             Risk
@@ -405,7 +405,7 @@ export const RiskNode = memo(({ data }: NodeProps<RiskNodeData>) => {
           >
             <ShieldAlert
               className="text-white"
-              style={{ width: "48px", height: "48px" }}
+              style={{ width: "3rem", height: "3rem" }}
             />
           </div>
         </div>
@@ -416,7 +416,7 @@ export const RiskNode = memo(({ data }: NodeProps<RiskNodeData>) => {
         position={Position.Top}
         id="top"
         className="opacity-0"
-        style={{ right: "30px", left: "auto" }}
+        style={{ right: "1.875rem", left: "auto" }}
       />
     </div>
   );
@@ -440,7 +440,7 @@ export const OpportunityNode = memo(
         <div className="flex items-center">
           <div
             className="bg-brand-dark-green bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
-            style={{ width: "200px" }}
+            style={{ width: "12.5rem" }}
           >
             <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
               Opportunity
@@ -463,7 +463,7 @@ export const OpportunityNode = memo(
             >
               <Star
                 className="text-white"
-                style={{ width: "48px", height: "48px" }}
+                style={{ width: "3rem", height: "3rem" }}
               />
             </div>
           </div>
@@ -474,7 +474,7 @@ export const OpportunityNode = memo(
           position={Position.Top}
           id="top"
           className="opacity-0"
-          style={{ right: "30px", left: "auto" }}
+          style={{ right: "1.875rem", left: "auto" }}
         />
       </div>
     );

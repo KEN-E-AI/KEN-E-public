@@ -130,7 +130,7 @@ const ObjectiveNode = ({ data }: { data: any }) => {
   return (
     <>
       <div
-        className={`rounded-lg shadow-lg border-2 min-w-[180px] text-center cursor-pointer transition-colors text-white relative ${color.bg} ${color.border} ${color.hover}`}
+        className={`rounded-lg shadow-lg border-2 min-w-[11.25rem] text-center cursor-pointer transition-colors text-white relative ${color.bg} ${color.border} ${color.hover}`}
         style={{
           width: "212px",
           minHeight: "140px",
@@ -563,8 +563,8 @@ const ChannelNode = ({ data }: { data: any }) => {
         }}
       />
       <div
-        className={`px-6 py-4 rounded-lg shadow-lg border-2 min-w-[140px] text-center cursor-pointer transition-colors text-white relative ${color.bg} ${color.border} ${color.hover}`}
-        style={{ minWidth: "140px", minHeight: "82px" }}
+        className={`px-6 py-4 rounded-lg shadow-lg border-2 min-w-[8.75rem] text-center cursor-pointer transition-colors text-white relative ${color.bg} ${color.border} ${color.hover}`}
+        style={{ minWidth: "8.75rem", minHeight: "5.125rem" }}
       >
         <div className="font-semibold text-sm">{data.label}</div>
         <div className="text-xs my-1 mb-5 pb-2 opacity-90">Channel</div>
@@ -673,8 +673,8 @@ const TacticNode = ({ data }: { data: any }) => {
         }}
       />
       <div
-        className={`px-4 py-3 rounded-lg shadow-md border-2 min-w-[120px] text-center cursor-pointer transition-colors text-white relative ${color.bg} ${color.border} ${color.hover}`}
-        style={{ minWidth: "120px", minHeight: "72px" }}
+        className={`px-4 py-3 rounded-lg shadow-md border-2 min-w-[7.5rem] text-center cursor-pointer transition-colors text-white relative ${color.bg} ${color.border} ${color.hover}`}
+        style={{ minWidth: "7.5rem", minHeight: "4.5rem" }}
       >
         <div className="font-medium text-sm">{data.label}</div>
         <div className="text-xs my-1 mb-5 opacity-90">Tactic</div>

@@ -36,7 +36,7 @@ export const CustomerProfileNode = ({ data }: CustomerProfileNodeProps) => {
             <TooltipTrigger asChild>
               <div
                 className="bg-brand-medium-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
-                style={{ width: "200px" }}
+                style={{ width: "12.5rem" }}
               >
                 <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
                   Customer Profile
@@ -66,7 +66,7 @@ export const CustomerProfileNode = ({ data }: CustomerProfileNodeProps) => {
           >
             <Users
               className="text-white"
-              style={{ width: "48px", height: "48px" }}
+              style={{ width: "3rem", height: "3rem" }}
             />
           </div>
         </div>
@@ -78,7 +78,7 @@ export const CustomerProfileNode = ({ data }: CustomerProfileNodeProps) => {
         position={Position.Top}
         id="top"
         className="opacity-0"
-        style={{ right: "30px", left: "auto" }}
+        style={{ right: "1.875rem", left: "auto" }}
       />
 
       {/* Bottom Handle for outgoing connections (show if has strategies) */}
@@ -88,7 +88,7 @@ export const CustomerProfileNode = ({ data }: CustomerProfileNodeProps) => {
           position={Position.Bottom}
           id="bottom"
           className="opacity-0"
-          style={{ right: "30px", left: "auto" }}
+          style={{ right: "1.875rem", left: "auto" }}
         />
       )}
     </div>
@@ -111,7 +111,7 @@ export const StrategyBundleNode = ({
             <TooltipTrigger asChild>
               <div
                 className="bg-brand-dark-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
-                style={{ width: "200px" }}
+                style={{ width: "12.5rem" }}
               >
                 <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
                   Marketing Strategies
@@ -140,7 +140,7 @@ export const StrategyBundleNode = ({
           >
             <Filter
               className="text-white"
-              style={{ width: "48px", height: "48px" }}
+              style={{ width: "3rem", height: "3rem" }}
             />
           </div>
         </div>
@@ -151,7 +151,7 @@ export const StrategyBundleNode = ({
         position={Position.Top}
         id="top"
         className="opacity-0"
-        style={{ right: "30px", left: "auto" }}
+        style={{ right: "1.875rem", left: "auto" }}
       />
     </div>
   );
@@ -227,7 +227,7 @@ export const IndividualStrategyNode = ({
     <div
       className={cn(
         "px-3 py-2 rounded-lg border-2 shadow-sm transition-all",
-        "min-w-[140px] max-w-[180px]",
+        "min-w-[8.75rem] max-w-[11.25rem]",
         config.bgColor,
         data.isSelected
           ? cn(
