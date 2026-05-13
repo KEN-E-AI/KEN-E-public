@@ -216,7 +216,7 @@ WARNING: ProductCategory 'NFL (National Football League)' not found (4x in lates
 
 ---
 
-### 7. 🔶 Firestore Index Missing for Bottlenecks Query (JSON entry added; awaiting `terraform apply` per env)
+### 7. 🔶 Firestore Index Missing for Bottlenecks Query (JSON entry added; awaiting `terraform apply` on all 3 envs — DM-73)
 
 **Count**: 1 occurrence (historical — log from 2025-10-08)
 **Log**:
@@ -226,23 +226,39 @@ ERROR: Failed to get bottlenecks: 400 The query requires an index
 
 **Root Cause**: Firestore composite index not created for the performance_profiles collection, and the collection was written to the legacy top-level path.
 
-**Status**: 🔶 PARTIALLY RESOLVED — three stages:
+**Status**: 🔶 PARTIALLY RESOLVED — four stages:
 1. ✅ Path moved to Shape B in DM-33 (`accounts/{account_id}/performance_profiles`).
-2. ✅ Data migrated to Shape B in DM-40 (313 source collections / 1,652 docs against the `analytics` named DB).
-3. ✅ Index entry added to `deployment/firestore.indexes.json` as the follow-up to DM-40 (this PR — see commit history). **However**, the JSON file is desired state; the index does not physically exist in any Firestore database until an operator runs `terraform apply`. Until that runs against `ken-e-dev`'s `analytics` database, `PerformanceProfiler.get_bottlenecks` continues to fail with `400 The query requires an index`. Operator action tracked separately (see §Operator action below).
+2. ✅ Data migrated to Shape B in DM-40 (313 source collections / 1,652 docs against the `analytics` named DB on `ken-e-dev`).
+3. ✅ Index entry added to `deployment/firestore.indexes.json` as the follow-up to DM-40 (`"database": "analytics"`, COLLECTION-scope). Multi-database support added to `deployment/terraform/firestore_indexes.tf` (merged PR #457, 2026-05-13).
+4. ✅ `deployment/terraform/vars/env.tfvars` updated in DM-73 to set `firestore_index_project_ids = ["ken-e-dev", "ken-e-staging", "ken-e-production"]` so a single `terraform apply` provisions the index on all three environments. **However**, the JSON file is desired state; the index does not physically exist in any Firestore database until an operator runs `terraform apply`. Until that runs, `PerformanceProfiler.get_bottlenecks` continues to fail with `400 The query requires an index` on `ken-e-dev` (the env with migrated data). Operator action tracked in DM-73.
 
-**Index (added in DM-40 follow-up)**: COLLECTION-scope composite index on the `performance_profiles` collection group:
+**Index (added in DM-40 follow-up)**: COLLECTION-scope composite index on the `performance_profiles` collection group in the `analytics` named database:
 - `is_bottleneck` ASCENDING (equality filter — first per Firestore composite-index rules)
 - `timestamp` ASCENDING (range filter — must precede order_by on a different field)
 - `duration_seconds` DESCENDING (matches the query's `order_by`)
 
 Note: COLLECTION (not COLLECTION_GROUP), because the only filtered query is per-account (`collection("accounts/{id}/performance_profiles")` at `performance_profiler.py:321-323`). An earlier version of this entry listed the field order as `is_bottleneck, duration_seconds, timestamp, __name__` and the scope as collection-group; both were wrong (Firestore implicitly orders by range field before order_by-on-different-field, and `__name__` is auto-added). The shipped index above is correct.
 
-**Operator action (terraform apply — dev)**: Run `cd deployment/terraform && terraform plan -var-file=vars/env.tfvars -out=pp-bottleneck.tfplan && terraform apply pp-bottleneck.tfplan` and confirm READY via `gcloud firestore indexes composite list --project=ken-e-dev --database=analytics`. **Note:** the index targets the `analytics` named DB (where `performance_profiler` writes — `performance_profiler.py:139-141`), not `(default)`. If the current `firestore_indexes.tf` only targets `(default)`, an additional pass is required to mirror the index into `analytics` — analogous to DM-72 for the `strategy_audit` indexes on `(default)`. Staging/prod cutover is owned by DM-PRD-06.
+**Operator action (terraform apply — all 3 envs, DM-73)**:
+```bash
+cd deployment/terraform
+terraform init
+terraform plan -var-file=vars/env.tfvars -out=pp40-bottleneck.tfplan
+# Verify: exactly 3 new google_firestore_index resources on performance_profiles / COLLECTION / analytics
+terraform apply pp40-bottleneck.tfplan
+# Then confirm READY on each env:
+for project in ken-e-dev ken-e-staging ken-e-production; do
+  echo "=== $project ==="
+  gcloud firestore indexes composite list --project=$project --database=analytics \
+    | grep -A2 performance_profiles
+done
+```
+
+Staging/prod have 0 docs at the Shape B path today (data migration is owned by DM-PRD-06); the index will sit dormant until DM-PRD-06 moves the data — but provisioning it now means queries will Just Work immediately after that migration.
 
 **Naming-inconsistency note**: An earlier version of this entry contained a note about a second source-collection naming variant. DM-30 PO verification determined this was a doc-level error — there was always exactly one source-collection naming pattern. See DM-PRD-02 §1 Context for the full resolution note.
 
-**Priority**: P1 — path fixed in DM-33; data migrated in DM-40; index JSON added; **awaiting `terraform apply` for physical provisioning per environment**.
+**Priority**: P1 — path fixed in DM-33; data migrated in DM-40; index JSON added; tfvars updated for 3-env scope in DM-73; **awaiting `terraform apply` for physical provisioning across all environments**.
 
 ---
 
@@ -465,7 +481,7 @@ WARNING: Operation timeout warning: brand_guidelines_split:strategy_generation t
 5. **Remove deleted property checks**
    - OR implement soft delete feature properly
 
-6. **Create Firestore index for bottlenecks** — path migrated in DM-33; data migrated in DM-40; index JSON entry added as the DM-40 follow-up (COLLECTION-scope, fields `is_bottleneck`, `timestamp`, `duration_seconds`). Operator must run `terraform apply` against the `analytics` named DB to physically provision; `get_bottlenecks` stays broken until then. See §7 for the full status detail.
+6. **Provision Firestore index for bottlenecks** — path migrated in DM-33; data migrated in DM-40; index JSON entry added; `env.tfvars` expanded to 3-env scope in DM-73. Operator must run `terraform apply` (using the updated `vars/env.tfvars`) to physically provision the COLLECTION-scope index on the `analytics` named DB across all 3 envs. `get_bottlenecks` stays broken on `ken-e-dev` until the index reaches READY. See §7 for the full status detail.
 
 ### Later (P2):
 

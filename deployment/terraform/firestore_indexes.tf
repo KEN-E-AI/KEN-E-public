@@ -17,9 +17,11 @@
 # truth — adding a new index in any PRD is a one-line JSON change; no
 # Terraform edits are required.
 #
-# Target projects are controlled by var.firestore_index_project_ids
-# (default: ["ken-e-dev"]). DM-PRD-06 staging cutover overrides the
-# variable to add ken-e-staging (and later prod) without touching this file.
+# Target projects are controlled by var.firestore_index_project_ids.
+# As of DM-73, vars/env.tfvars sets this to all 3 environments
+# (ken-e-dev, ken-e-staging, ken-e-production) — DM-PRD-06's data migration
+# is the remaining prerequisite for staging/prod live traffic, but indexes
+# are pre-provisioned so they are ready the moment migration completes.
 #
 # Multi-database support: each index entry may specify an optional
 # top-level `"database"` field (defaults to `"(default)"`). The

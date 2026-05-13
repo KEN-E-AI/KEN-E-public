@@ -142,32 +142,25 @@ def test_feature_flag_audit_terraform_key(indexes_doc: dict) -> None:
 
 
 def test_no_other_indexes_modified(indexes_doc: dict) -> None:
-    """Presence check: feature_flag_audit is the only index added by FF-7.
-
-    This test enumerates collectionGroups to confirm no unexpected entries
-    were added or removed by this PR. Existing entries are preserved by
-    checking against a known-good minimum set.
+    """Presence check: enumerates collectionGroups to confirm no unexpected
+    entries were removed. Adding new entries is fine; removing existing ones
+    causes a failure signalling unintended deletion.
     """
     collection_groups = {idx["collectionGroup"] for idx in indexes_doc["indexes"]}
 
-    # Entries present before FF-7 (non-exhaustive — just a sample from the
-    # original file's indexes array). Adding new entries here is fine; removing
-    # existing ones would cause a test failure signalling unintended deletion.
-    # Note: project_plan_audit is a fieldOverride, not an index — omitted here.
-    pre_existing = {
+    # Entries that must always be present (non-exhaustive minimum set).
+    # Note: project_plan_audit is a fieldOverride, not a composite index — omitted.
+    required = {
         "notifications",
         "strategy_audit",
         "skills",
         "plan_runs",
+        "feature_flag_audit",
+        "performance_profiles",
     }
-    missing = pre_existing - collection_groups
+    missing = required - collection_groups
     assert not missing, (
-        f"Pre-existing index entries were removed from firestore.indexes.json: {missing}"
-    )
-
-    # The feature_flag_audit entry must be present (added by FF-7)
-    assert "feature_flag_audit" in collection_groups, (
-        "feature_flag_audit index is missing — it should have been added by FF-7"
+        f"Required index entries were removed from firestore.indexes.json: {missing}"
     )
 
 
@@ -417,4 +410,119 @@ def test_strategy_audit_collection_group_index_preserved(indexes_doc: dict) -> N
         "strategy_audit COLLECTION_GROUP (user_id ASC, timestamp DESC) index was "
         "removed or modified — this backs get_user_activity's collection_group query. "
         f"Remaining COLLECTION_GROUP strategy_audit indexes: {cg_idxs}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# DM-73 — performance_profiles COLLECTION-scoped composite index (analytics DB)
+# ---------------------------------------------------------------------------
+# Backs PerformanceProfiler.get_bottlenecks() — the query that previously
+# raised FAILED_PRECONDITION on both the (default) and analytics databases.
+# Index lives on the `analytics` named database (not the default DB) because
+# performance_profiler.py writes to database="analytics" (lines 139-141).
+# Named-DB Terraform key formula:
+#   "{project}_{database}_{collectionGroup}_{queryScope}_{field_signature}"
+
+
+def test_performance_profiles_bottleneck_index_exists(indexes_doc: dict) -> None:
+    """A COLLECTION-scope composite index for performance_profiles must be present
+    on the `analytics` named database (not the default database)."""
+    pp_indexes = [
+        idx
+        for idx in indexes_doc["indexes"]
+        if idx.get("collectionGroup") == "performance_profiles"
+        and idx.get("queryScope") == "COLLECTION"
+        and idx.get("database") == "analytics"
+    ]
+    assert pp_indexes, (
+        "No performance_profiles COLLECTION index with database='analytics' found in "
+        "deployment/firestore.indexes.json. Required by PerformanceProfiler.get_bottlenecks()."
+    )
+
+
+def test_performance_profiles_bottleneck_index_structure(indexes_doc: dict) -> None:
+    """The performance_profiles bottleneck index must match DM-73 exactly.
+
+    Required:
+      collectionGroup = "performance_profiles"
+      queryScope      = "COLLECTION"  (per-account query, not cross-account)
+      database        = "analytics"   (named DB — performance_profiler writes here)
+      fields          = [
+          {is_bottleneck, ASCENDING},     -- equality filter first
+          {timestamp,     ASCENDING},     -- range filter before order_by on different field
+          {duration_seconds, DESCENDING}, -- matches the query's order_by
+      ]
+    """
+    pp_indexes = [
+        idx
+        for idx in indexes_doc["indexes"]
+        if idx.get("collectionGroup") == "performance_profiles"
+        and idx.get("queryScope") == "COLLECTION"
+        and idx.get("database") == "analytics"
+    ]
+    assert len(pp_indexes) == 1, (
+        f"Expected exactly 1 performance_profiles analytics COLLECTION index, "
+        f"found {len(pp_indexes)}"
+    )
+
+    idx = pp_indexes[0]
+
+    fields = idx.get("fields", [])
+    assert len(fields) == 3, (
+        f"Expected 3 fields in performance_profiles bottleneck index, got {len(fields)}: {fields}"
+    )
+
+    assert fields[0] == {"fieldPath": "is_bottleneck", "order": "ASCENDING"}, (
+        f"First field must be is_bottleneck ASCENDING (equality filter), got {fields[0]!r}"
+    )
+    assert fields[1] == {"fieldPath": "timestamp", "order": "ASCENDING"}, (
+        f"Second field must be timestamp ASCENDING (range filter), got {fields[1]!r}"
+    )
+    assert fields[2] == {"fieldPath": "duration_seconds", "order": "DESCENDING"}, (
+        f"Third field must be duration_seconds DESCENDING (order_by field), got {fields[2]!r}"
+    )
+
+
+def test_performance_profiles_bottleneck_terraform_key(indexes_doc: dict) -> None:
+    """Verify the named-database Terraform for_each key for the performance_profiles index.
+
+    Named-DB key formula from firestore_indexes.tf line 46:
+        "{project}_{database}_{collectionGroup}_{queryScope}_{field_signature}"
+
+    For project "ken-e-dev", database "analytics", and the spec index:
+        "ken-e-dev_analytics_performance_profiles_COLLECTION_
+         is_bottleneck-ASCENDING__timestamp-ASCENDING__duration_seconds-DESCENDING"
+
+    This test validates that the named-database key formula is exercised correctly,
+    ensuring the index is distinct from any (default)-database entries and will be
+    picked up as a new resource (not confused with a pre-existing one) by Terraform.
+    """
+    pp_idx = next(
+        idx
+        for idx in indexes_doc["indexes"]
+        if idx.get("collectionGroup") == "performance_profiles"
+        and idx.get("queryScope") == "COLLECTION"
+        and idx.get("database") == "analytics"
+    )
+
+    project = _TEST_PROJECT
+    database = pp_idx["database"]
+    collection_group = pp_idx["collectionGroup"]
+    query_scope = pp_idx["queryScope"]
+    field_signature = "__".join(
+        f"{f['fieldPath']}-{f.get('order', f.get('arrayConfig', ''))}"
+        for f in pp_idx["fields"]
+    )
+    # Named-database key: interpolates database between project and collectionGroup
+    derived_key = f"{project}_{database}_{collection_group}_{query_scope}_{field_signature}"
+
+    expected_key = (
+        f"{_TEST_PROJECT}_analytics_performance_profiles_COLLECTION_"
+        "is_bottleneck-ASCENDING__timestamp-ASCENDING__duration_seconds-DESCENDING"
+    )
+    assert derived_key == expected_key, (
+        f"Terraform resource key mismatch.\n"
+        f"  Expected: {expected_key!r}\n"
+        f"  Derived:  {derived_key!r}\n"
+        "Update this test if the key formula in firestore_indexes.tf changes."
     )
