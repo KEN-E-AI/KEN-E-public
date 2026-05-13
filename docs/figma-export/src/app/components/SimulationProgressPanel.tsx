@@ -360,14 +360,14 @@ export function SimulationProgressPanel({
                     {isComplete ? (
                       <Check className="size-3.5 text-white" strokeWidth={3} />
                     ) : isActive ? (
-                      <span className="text-[10px] text-white">{mi + 1}</span>
+                      <span className="text-[0.625rem] text-white">{mi + 1}</span>
                     ) : (
-                      <span className="text-[10px] text-muted-foreground">{mi + 1}</span>
+                      <span className="text-[0.625rem] text-muted-foreground">{mi + 1}</span>
                     )}
                   </div>
                   <span
                     className={cn(
-                      "text-[11px] transition-colors",
+                      "text-[0.6875rem] transition-colors",
                       isActive ? "text-foreground" : "text-muted-foreground"
                     )}
                   >
@@ -408,7 +408,7 @@ export function SimulationProgressPanel({
                         />
                       ))}
                     </div>
-                    <p className="text-[10px] text-muted-foreground text-center mt-3">
+                    <p className="text-[0.625rem] text-muted-foreground text-center mt-3">
                       {stats.count} activities &middot; {formatCurrency(stats.spend)}
                     </p>
                   </div>
@@ -421,7 +421,7 @@ export function SimulationProgressPanel({
         {/* Activity Insight Line */}
         <p
           className={cn(
-            "text-[11px] text-muted-foreground/70 italic text-center mt-4 h-4 transition-opacity",
+            "text-[0.6875rem] text-muted-foreground/70 italic text-center mt-4 h-4 transition-opacity",
             insightVisible ? "opacity-100" : "opacity-0"
           )}
           style={{ transitionDuration: 'var(--duration-default)' }}
@@ -441,7 +441,7 @@ export function SimulationProgressPanel({
             >
               {summaryData.map(item => (
                 <div key={item.label} className="text-center">
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{item.label}</p>
+                  <p className="text-[0.625rem] text-muted-foreground uppercase tracking-wide">{item.label}</p>
                   <p className="text-xl font-mono tabular-nums mt-1">{item.value}</p>
                 </div>
               ))}
@@ -505,7 +505,7 @@ function FunnelStepCell({
         <Check className="size-2 text-white" strokeWidth={3} aria-label="Complete" />
       </div>
       <span className="text-xs">{stepLabel}</span>
-      <span className="text-[11px] font-mono text-emerald-600 ml-auto tabular-nums">
+      <span className="text-[0.6875rem] font-mono text-emerald-600 ml-auto tabular-nums">
         +{estimatedLift.toFixed(1)}%
       </span>
     </div>

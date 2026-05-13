@@ -169,9 +169,9 @@ export function GoalsSection() {
 
           <div className="flex">
             {/* Frozen column */}
-            <div className="shrink-0 w-[200px] z-10 bg-[var(--color-bg-elevated)]" style={{ boxShadow: '2px 0 4px -2px rgba(0,0,0,0.06)' }}>
+            <div className="shrink-0 w-[12.5rem] z-10 bg-[var(--color-bg-elevated)]" style={{ boxShadow: '0.125rem 0 0.25rem -0.125rem rgba(0,0,0,0.06)' }}>
               {/* Header cell */}
-              <div className="h-[72px] flex items-end px-4 pb-3 border-b border-[var(--color-border-default)] bg-[var(--color-bg-secondary)]">
+              <div className="h-[4.5rem] flex items-end px-4 pb-3 border-b border-[var(--color-border-default)] bg-[var(--color-bg-secondary)]">
                 <span className="text-xs text-muted-foreground tracking-wide uppercase">Funnel Stage</span>
               </div>
               {/* Stage rows */}
@@ -180,14 +180,14 @@ export function GoalsSection() {
                 return (
                   <div
                     key={stage.id}
-                    className="h-[72px] flex items-center px-4 border-b border-[var(--color-border-default)] group/row hover:bg-[var(--color-bg-secondary)] transition-colors"
+                    className="h-[4.5rem] flex items-center px-4 border-b border-[var(--color-border-default)] group/row hover:bg-[var(--color-bg-secondary)] transition-colors"
                   >
                     <div>
                       <div className="flex items-center gap-2">
                         <div className="size-2 rounded-full shrink-0" style={{ backgroundColor: stage.color }} />
                         <span className="text-sm">{stage.label}</span>
                       </div>
-                      <p className="text-[11px] text-muted-foreground ml-4 mt-0.5">
+                      <p className="text-[0.6875rem] text-muted-foreground ml-4 mt-0.5">
                         {mapping?.display_name || '—'}
                       </p>
                     </div>
@@ -226,7 +226,7 @@ export function GoalsSection() {
       </Card>
 
       {/* Disclaimer footer */}
-      <p className="text-[10px] text-muted-foreground text-center px-4">
+      <p className="text-[0.625rem] text-muted-foreground text-center px-4">
         Goals are based on forecasted KPI values and historical trends. Actual results may vary. This tool is not intended for financial reporting or compliance purposes.
       </p>
     </div>
@@ -237,14 +237,14 @@ export function GoalsSection() {
 
 function HistoricColumn({ month, year }: { month: number; year: number }) {
   return (
-    <div className="w-[260px] shrink-0">
+    <div className="w-[16.25rem] shrink-0">
       {/* Header */}
-      <div className="h-[72px] flex flex-col justify-end px-3 pb-2 border-b border-[var(--color-border-default)] bg-[var(--color-bg-secondary)]">
+      <div className="h-[4.5rem] flex flex-col justify-end px-3 pb-2 border-b border-[var(--color-border-default)] bg-[var(--color-bg-secondary)]">
         <span className="text-xs mb-1.5">{MONTHS_FULL[month]} {year}</span>
         <div className="grid grid-cols-3 gap-1">
-          <span className="text-[10px] text-muted-foreground">Goal</span>
-          <span className="text-[10px] text-muted-foreground">Actual</span>
-          <span className="text-[10px] text-muted-foreground">% Diff</span>
+          <span className="text-[0.625rem] text-muted-foreground">Goal</span>
+          <span className="text-[0.625rem] text-muted-foreground">Actual</span>
+          <span className="text-[0.625rem] text-muted-foreground">% Diff</span>
         </div>
       </div>
 
@@ -258,9 +258,9 @@ function HistoricColumn({ month, year }: { month: number; year: number }) {
         return (
           <div
             key={stage.id}
-            className="h-[72px] flex flex-col justify-center px-3 border-b border-[var(--color-border-default)] bg-[var(--color-bg-secondary)]/30 hover:bg-[var(--color-bg-secondary)] transition-colors"
+            className="h-[4.5rem] flex flex-col justify-center px-3 border-b border-[var(--color-border-default)] bg-[var(--color-bg-secondary)]/30 hover:bg-[var(--color-bg-secondary)] transition-colors"
           >
-            <span className="text-[10px] text-muted-foreground mb-1 truncate">{kpiInfo.display_name}</span>
+            <span className="text-[0.625rem] text-muted-foreground mb-1 truncate">{kpiInfo.display_name}</span>
             <div className="grid grid-cols-3 gap-1">
               <span className="text-xs tabular-nums">
                 {goal !== null ? formatNumber(goal) : <span className="text-muted-foreground">—</span>}
@@ -300,19 +300,19 @@ function FutureColumn({
   onSetGoal: (stageId: string, month: number, year: number, value: number | null) => void;
 }) {
   return (
-    <div className="w-[140px] shrink-0">
+    <div className="w-[8.75rem] shrink-0">
       {/* Header */}
-      <div className="h-[72px] flex flex-col justify-end px-3 pb-2 border-b border-[var(--color-border-default)]">
+      <div className="h-[4.5rem] flex flex-col justify-end px-3 pb-2 border-b border-[var(--color-border-default)]">
         <div className="flex items-center gap-1.5 mb-1">
           <span className="text-xs">{MONTHS_FULL[month]} {year}</span>
         </div>
         {isCurrent && (
           <div className="flex items-center gap-1 mb-1">
             <Star className="size-2.5 text-[var(--color-violet-500)] fill-[var(--color-violet-500)]" />
-            <span className="text-[10px] text-[var(--color-violet-600)]">Current</span>
+            <span className="text-[0.625rem] text-[var(--color-violet-600)]">Current</span>
           </div>
         )}
-        <span className="text-[10px] text-muted-foreground">Target</span>
+        <span className="text-[0.625rem] text-muted-foreground">Target</span>
       </div>
 
       {/* Editable cells */}
@@ -376,7 +376,7 @@ function GoalInputCell({
   return (
     <div
       className={cn(
-        "h-[72px] flex items-center px-2 border-b border-[var(--color-border-default)] hover:bg-[var(--color-bg-secondary)] transition-colors",
+        "h-[4.5rem] flex items-center px-2 border-b border-[var(--color-border-default)] hover:bg-[var(--color-bg-secondary)] transition-colors",
         isDirty && "border-l-2 border-l-[var(--color-violet-400)] bg-[var(--color-violet-50)]/40"
       )}
     >

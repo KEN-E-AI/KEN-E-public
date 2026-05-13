@@ -72,7 +72,7 @@ export function ExtensionsIndex() {
               {fb.value === 'community' && <Users className="size-3" />}
               {fb.label}
               <span
-                className={`ml-0.5 text-[10px] ${
+                className={`ml-0.5 text-[0.625rem] ${
                   sourceFilter === fb.value ? 'opacity-80' : 'opacity-60'
                 }`}
               >
@@ -153,12 +153,12 @@ function ExtensionCard({
       {/* Top-right badges */}
       <div className="absolute top-3 right-3 flex items-center gap-1.5">
         {extension.source === 'official' ? (
-          <Badge variant="outline" className="gap-1 text-[10px] px-1.5 py-0.5 border-violet-300 text-violet-600">
+          <Badge variant="outline" className="gap-1 text-[0.625rem] px-1.5 py-0.5 border-violet-300 text-violet-600">
             <ShieldCheck className="size-2.5" />
             KEN-E
           </Badge>
         ) : (
-          <Badge variant="outline" className="gap-1 text-[10px] px-1.5 py-0.5 border-sky-300 text-sky-600">
+          <Badge variant="outline" className="gap-1 text-[0.625rem] px-1.5 py-0.5 border-sky-300 text-sky-600">
             <Users className="size-2.5" />
             Community
           </Badge>
@@ -186,7 +186,7 @@ function ExtensionCard({
         </div>
         <p className="text-xs text-muted-foreground leading-relaxed">{extension.description}</p>
         {extension.author && (
-          <p className="text-[10px] text-muted-foreground mt-1.5">
+          <p className="text-[0.625rem] text-muted-foreground mt-1.5">
             by <span className="text-foreground">{extension.author}</span>
           </p>
         )}

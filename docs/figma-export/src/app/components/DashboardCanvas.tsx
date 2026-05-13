@@ -182,7 +182,7 @@ export function DashboardCanvas({ tasks, placements, onPlacementsChange, lastRun
     <div className="flex flex-col h-full min-h-0 border-t border-[var(--color-border-default)] bg-[var(--color-bg-secondary)]">
       <div className="shrink-0 flex items-center gap-3 px-4 py-2 border-b border-[var(--color-border-default)] bg-card">
         <span className="text-xs text-[var(--color-text-secondary)]">Dashboard canvas</span>
-        <span className="text-[10px] text-[var(--color-text-tertiary)]">
+        <span className="text-[0.625rem] text-[var(--color-text-tertiary)]">
           {placements.length} placed · {available.length} unplaced
         </span>
       </div>
@@ -322,17 +322,17 @@ function ArtifactTile({ placement, artifact, onChange, onRemove, onDuplicate }: 
         <TileIcon fileType={placement.fileType} disconnected={disconnected} />
         <span className="flex-1 min-w-0 truncate text-xs">
           {artifact?.label ?? 'Unknown'}
-          <span className="ml-1.5 text-[10px] text-[var(--color-text-tertiary)]">
+          <span className="ml-1.5 text-[0.625rem] text-[var(--color-text-tertiary)]">
             {FILE_TYPE_LABELS[placement.fileType]}
           </span>
         </span>
         {disconnected && (
-          <span className="flex items-center gap-1 text-[10px] text-[var(--color-error-text)]">
+          <span className="flex items-center gap-1 text-[0.625rem] text-[var(--color-error-text)]">
             <Unplug className="size-2.5" /> disconnected
           </span>
         )}
         {stale && (
-          <span className="flex items-center gap-1 text-[10px] text-[var(--color-warning)]">
+          <span className="flex items-center gap-1 text-[0.625rem] text-[var(--color-warning)]">
             <Clock className="size-2.5" /> stale
           </span>
         )}
@@ -385,7 +385,7 @@ function ArtifactTile({ placement, artifact, onChange, onRemove, onDuplicate }: 
           <div className="h-full flex flex-col items-center justify-center gap-1 text-center text-[var(--color-text-tertiary)]">
             <Unplug className="size-4" />
             <span>No longer produced by workflow</span>
-            <span className="text-[10px]">Showing last known output</span>
+            <span className="text-[0.625rem]">Showing last known output</span>
           </div>
         ) : (
           <ArtifactPreview
@@ -430,9 +430,9 @@ function GhostPlaceholder({
       <Plus className="size-4" />
       <div className="flex items-center gap-1.5">
         <TileIcon fileType={artifact.fileType} disconnected={false} />
-        <span className="text-xs truncate max-w-[180px]">{artifact.label}</span>
+        <span className="text-xs truncate max-w-[11.25rem]">{artifact.label}</span>
       </div>
-      <span className="text-[10px]">
+      <span className="text-[0.625rem]">
         {FILE_TYPE_LABELS[artifact.fileType]} · click to add
       </span>
     </button>

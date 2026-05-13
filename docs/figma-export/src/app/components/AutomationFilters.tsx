@@ -189,7 +189,7 @@ function SingleSelectFilter({
       </button>
 
       {open && (
-        <div className="absolute z-50 top-full left-0 mt-1 min-w-[180px] max-h-[240px] overflow-auto rounded-[var(--radius-md)] border border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] shadow-lg py-1">
+        <div className="absolute z-50 top-full left-0 mt-1 min-w-[11.25rem] max-h-[15rem] overflow-auto rounded-[var(--radius-md)] border border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] shadow-lg py-1">
           {allowEmpty && (
             <DropdownItem
               label={`All ${label}s`}
@@ -250,7 +250,7 @@ function MultiSelectFilter({
       >
         {label}
         {isFiltered && (
-          <Badge variant="secondary" className="ml-0.5 px-1.5 py-0 text-[10px]">
+          <Badge variant="secondary" className="ml-0.5 px-1.5 py-0 text-[0.625rem]">
             {values.length}
           </Badge>
         )}
@@ -258,7 +258,7 @@ function MultiSelectFilter({
       </button>
 
       {open && (
-        <div className="absolute z-50 top-full left-0 mt-1 min-w-[200px] max-h-[260px] overflow-auto rounded-[var(--radius-md)] border border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] shadow-lg py-1">
+        <div className="absolute z-50 top-full left-0 mt-1 min-w-[12.5rem] max-h-[16.25rem] overflow-auto rounded-[var(--radius-md)] border border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] shadow-lg py-1">
           {values.length > 0 && (
             <button
               onClick={() => onChange([])}

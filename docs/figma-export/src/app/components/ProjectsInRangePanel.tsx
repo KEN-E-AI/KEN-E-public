@@ -38,7 +38,7 @@ export function ProjectsInRangePanel({ rangeStart, rangeEnd }: Props) {
         <div className="flex items-center gap-2">
           <CalendarIcon className="size-4 text-[var(--color-violet-500)]" />
           <h3 className="text-sm">Projects in view</h3>
-          <span className="text-[10px] text-muted-foreground">
+          <span className="text-[0.625rem] text-muted-foreground">
             {formatDate(rangeStart)} – {formatDate(rangeEnd)}
           </span>
         </div>
@@ -59,7 +59,7 @@ export function ProjectsInRangePanel({ rangeStart, rangeEnd }: Props) {
               <PlayCircle className="size-4 text-[var(--color-violet-500)] shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm truncate">{wf.name}</p>
-                <div className="flex items-center gap-3 mt-0.5 text-[11px] text-muted-foreground">
+                <div className="flex items-center gap-3 mt-0.5 text-[0.6875rem] text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Clock className="size-3" />
                     {wf.schedule}
@@ -70,7 +70,7 @@ export function ProjectsInRangePanel({ rangeStart, rangeEnd }: Props) {
                   {occurrences.map((occ, i) => (
                     <span
                       key={`${occ.getTime()}-${i}`}
-                      className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--color-violet-100)] text-[var(--color-violet-600)] border border-[var(--color-violet-200)]"
+                      className="text-[0.625rem] px-1.5 py-0.5 rounded-full bg-[var(--color-violet-100)] text-[var(--color-violet-600)] border border-[var(--color-violet-200)]"
                     >
                       {formatDate(occ)}
                     </span>

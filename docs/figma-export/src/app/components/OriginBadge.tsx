@@ -21,7 +21,7 @@ export function OriginBadge({ extensionId }: OriginBadgeProps) {
     >
       <Badge
         variant="outline"
-        className="gap-1 text-[10px] px-1.5 py-0.5 cursor-pointer hover:bg-[var(--color-bg-secondary)] transition-colors"
+        className="gap-1 text-[0.625rem] px-1.5 py-0.5 cursor-pointer hover:bg-[var(--color-bg-secondary)] transition-colors"
         style={{
           borderColor: extension.color,
           color: extension.color,

@@ -295,7 +295,7 @@ function LayoutCInner() {
                 }}
               >
                 <item.icon className="size-5" />
-                <span className="text-[10px] font-bold">{item.name}</span>
+                <span className="text-[0.625rem] font-bold">{item.name}</span>
               </Link>
             );
           })}
@@ -351,7 +351,7 @@ function ExtensionsNavItem({ item, isActive }: { item: { name: string, href: str
 
       {/* Hover sub-menu */}
       {hovered && (
-        <div className="absolute top-full left-0 mt-1 min-w-[200px] bg-[var(--color-bg-elevated)] border-2 border-[var(--color-border-default)] rounded-[var(--radius-md)] shadow-lg py-1 z-50">
+        <div className="absolute top-full left-0 mt-1 min-w-[12.5rem] bg-[var(--color-bg-elevated)] border-2 border-[var(--color-border-default)] rounded-[var(--radius-md)] shadow-lg py-1 z-50">
           {activeExtensions.map((p) => (
             <Link
               key={p.id}

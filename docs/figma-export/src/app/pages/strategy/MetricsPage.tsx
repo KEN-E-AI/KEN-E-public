@@ -36,7 +36,7 @@ const metricCategories = [
 const TrendIcon = ({ trend }: { trend: 'up' | 'down' | 'flat' }) => {
   if (trend === 'up') return <TrendingUp className="size-3" />;
   if (trend === 'down') return <TrendingDown className="size-3" />;
-  return <span className="text-[10px]">—</span>;
+  return <span className="text-[0.625rem]">—</span>;
 };
 
 export function MetricsPage() {
@@ -64,7 +64,7 @@ export function MetricsPage() {
                   <p className="text-xs text-muted-foreground">{metric.name}</p>
                   <Badge
                     variant={metric.status === 'on-track' ? 'secondary' : 'destructive'}
-                    className="text-[10px] capitalize"
+                    className="text-[0.625rem] capitalize"
                   >
                     {metric.status}
                   </Badge>

@@ -231,7 +231,7 @@ function FunnelMappingSection() {
                           setRows(next);
                           setError('');
                         }}
-                        className="text-sm px-2 py-1 rounded-[var(--radius-sm)] border border-[var(--color-border-default)] bg-[var(--color-bg-primary)] focus:outline-none focus:ring-1 focus:ring-violet-500 w-full max-w-[260px]"
+                        className="text-sm px-2 py-1 rounded-[var(--radius-sm)] border border-[var(--color-border-default)] bg-[var(--color-bg-primary)] focus:outline-none focus:ring-1 focus:ring-violet-500 w-full max-w-[16.25rem]"
                       >
                         <option value="">Select KPI…</option>
                         {AVAILABLE_KPIS.map((k) => {
@@ -382,7 +382,7 @@ function ExogenousEventsSection() {
                     <TooltipTrigger asChild>
                       <Info className="size-3 text-muted-foreground/60 cursor-help inline-block ml-1" />
                     </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-[260px]">
+                    <TooltipContent side="top" className="max-w-[16.25rem]">
                       Select 'positive' if this event type is expected to increase funnel metrics, 'negative' if expected to decrease, or leave blank if unknown. This is for documentation only and does not constrain the model.
                     </TooltipContent>
                   </Tooltip>
@@ -436,24 +436,24 @@ function CategoryStatusPanel({ categories }: { categories: CategoryStatus[] }) {
             <div className="flex items-center gap-2">
               <span className="text-xs capitalize">{cat.category}</span>
               {cat.isActive ? (
-                <Badge variant="success" className="text-[10px] px-2 py-0 gap-1">
+                <Badge variant="success" className="text-[0.625rem] px-2 py-0 gap-1">
                   <CheckCircle2 className="size-2.5" />
                   Active in model ({cat.eventCount} events)
                 </Badge>
               ) : (
-                <Badge variant="warning" className="text-[10px] px-2 py-0 gap-1">
+                <Badge variant="warning" className="text-[0.625rem] px-2 py-0 gap-1">
                   <AlertTriangle className="size-2.5" />
                   Not yet active — needs {needed} more event{needed !== 1 ? 's' : ''} ({cat.eventCount}/5)
                 </Badge>
               )}
             </div>
             {cat.isCampaign && (
-              <p className="text-[10px] text-muted-foreground ml-0.5">
+              <p className="text-[0.625rem] text-muted-foreground ml-0.5">
                 Automatically included from Calendar. Events from the Calendar page are merged into this category.
               </p>
             )}
             {cat.coversFullTrainingPeriod && cat.isActive && (
-              <div className="flex items-start gap-1.5 text-[10px] text-amber-700 ml-0.5">
+              <div className="flex items-start gap-1.5 text-[0.625rem] text-amber-700 ml-0.5">
                 <AlertTriangle className="size-3 shrink-0 mt-0.5" />
                 This category covers the entire training period. The model needs some periods without events in this category to estimate its effect. Consider scheduling holdout periods.
               </div>
@@ -517,7 +517,7 @@ function EventRow({
           {editing ? (
             <input
               type="text"
-              className="text-xs px-2 py-1 rounded-[var(--radius-sm)] border border-[var(--color-border-default)] bg-[var(--color-bg-primary)] focus:outline-none focus:ring-1 focus:ring-violet-500 w-full max-w-[180px]"
+              className="text-xs px-2 py-1 rounded-[var(--radius-sm)] border border-[var(--color-border-default)] bg-[var(--color-bg-primary)] focus:outline-none focus:ring-1 focus:ring-violet-500 w-full max-w-[11.25rem]"
               placeholder="e.g. Black Friday"
               value={ev.label}
               onChange={(e) => onUpdate({ label: e.target.value })}
@@ -531,7 +531,7 @@ function EventRow({
             <input
               type="text"
               list={`cat-list-${ev.id}`}
-              className="text-xs px-2 py-1 rounded-[var(--radius-sm)] border border-[var(--color-border-default)] bg-[var(--color-bg-primary)] focus:outline-none focus:ring-1 focus:ring-violet-500 w-full max-w-[140px]"
+              className="text-xs px-2 py-1 rounded-[var(--radius-sm)] border border-[var(--color-border-default)] bg-[var(--color-bg-primary)] focus:outline-none focus:ring-1 focus:ring-violet-500 w-full max-w-[8.75rem]"
               placeholder="e.g. seasonal"
               value={ev.category}
               onChange={(e) => onUpdate({ category: e.target.value })}
@@ -573,7 +573,7 @@ function EventRow({
           <td colSpan={editing ? 6 : 5} className="px-4 py-1.5">
             <div className="flex flex-wrap gap-2">
               {errors.map((err) => (
-                <span key={err} className="text-[10px] text-red-600">{err}</span>
+                <span key={err} className="text-[0.625rem] text-red-600">{err}</span>
               ))}
             </div>
           </td>
@@ -646,7 +646,7 @@ function ThresholdsSection() {
     let variant: 'success' | 'warning' | 'error' = 'success';
     if (coverage < 20 || coverage > 50) variant = 'error';
     else if (coverage < 30 || coverage > 40) variant = 'warning';
-    return <Badge variant={variant} className="text-[10px] px-2 py-0">{coverage.toFixed(1)}%</Badge>;
+    return <Badge variant={variant} className="text-[0.625rem] px-2 py-0">{coverage.toFixed(1)}%</Badge>;
   };
 
   return (
@@ -749,7 +749,7 @@ function ThresholdRowView({
         </td>
         <td className="px-4 py-2.5">
           <span className="text-sm">{row.channelName}</span>{' '}
-          <code className="text-[10px] text-muted-foreground bg-[var(--color-bg-secondary)] px-1 py-0.5 rounded">{row.channelSlug}</code>
+          <code className="text-[0.625rem] text-muted-foreground bg-[var(--color-bg-secondary)] px-1 py-0.5 rounded">{row.channelSlug}</code>
         </td>
         <td className="px-4 py-2.5 text-sm">{row.method}</td>
         <td className="px-4 py-2.5 text-sm tabular-nums">{row.thresholdPct.toFixed(1)}%</td>
@@ -765,7 +765,7 @@ function ThresholdRowView({
               className="accent-[var(--color-violet-500)] cursor-pointer"
             />
             {row.overrideEnabled && (
-              <Badge variant="info" className="text-[10px] px-2 py-0">Manual</Badge>
+              <Badge variant="info" className="text-[0.625rem] px-2 py-0">Manual</Badge>
             )}
           </div>
         </td>
@@ -783,7 +783,7 @@ function ThresholdRowView({
 
               <div className="grid grid-cols-4 gap-3">
                 <div>
-                  <label className="text-[10px] text-muted-foreground block mb-1">Method</label>
+                  <label className="text-[0.625rem] text-muted-foreground block mb-1">Method</label>
                   <select
                     value={row.override.method}
                     onChange={(e) => onUpdateOverride({ method: e.target.value as MethodLabel })}
@@ -796,7 +796,7 @@ function ThresholdRowView({
                   </select>
                 </div>
                 <div>
-                  <label className="text-[10px] text-muted-foreground block mb-1">Threshold %</label>
+                  <label className="text-[0.625rem] text-muted-foreground block mb-1">Threshold %</label>
                   <input
                     type="number"
                     min={1}
@@ -809,7 +809,7 @@ function ThresholdRowView({
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] text-muted-foreground block mb-1">Rolling Median</label>
+                  <label className="text-[0.625rem] text-muted-foreground block mb-1">Rolling Median</label>
                   <select
                     value={row.override.rollingMedian}
                     onChange={(e) => onUpdateOverride({ rollingMedian: e.target.value as 'Static' | 'Rolling' })}
@@ -821,7 +821,7 @@ function ThresholdRowView({
                   </select>
                 </div>
                 <div>
-                  <label className="text-[10px] text-muted-foreground block mb-1">Window (months)</label>
+                  <label className="text-[0.625rem] text-muted-foreground block mb-1">Window (months)</label>
                   <input
                     type="number"
                     min={3}
@@ -839,7 +839,7 @@ function ThresholdRowView({
                 </div>
               </div>
 
-              <div className="text-[10px] text-muted-foreground bg-[var(--color-bg-primary)] px-3 py-2 rounded-[var(--radius-sm)] border border-[var(--color-border-default)]">
+              <div className="text-[0.625rem] text-muted-foreground bg-[var(--color-bg-primary)] px-3 py-2 rounded-[var(--radius-sm)] border border-[var(--color-border-default)]">
                 Auto-detected values: Method: {row.autoDetected.method}, Threshold: {row.autoDetected.thresholdPct.toFixed(1)}%,
                 Rolling: {row.autoDetected.rolling === 'Static' ? 'No' : 'Yes'}, Coverage: {row.autoDetected.coverage.toFixed(1)}%
               </div>
@@ -895,7 +895,7 @@ function ChannelCoverageSection() {
               >
                 <td className="px-4 py-2.5">
                   <span className="text-sm">{ch.channelName}</span>{' '}
-                  <code className="text-[10px] text-muted-foreground bg-[var(--color-bg-secondary)] px-1 py-0.5 rounded">{ch.channelSlug}</code>
+                  <code className="text-[0.625rem] text-muted-foreground bg-[var(--color-bg-secondary)] px-1 py-0.5 rounded">{ch.channelSlug}</code>
                 </td>
                 {FUNNEL_STAGES.map((stage) => {
                   const cov = ch.coverage[stage];
@@ -903,14 +903,14 @@ function ChannelCoverageSection() {
                   const pass = cov.observed >= cov.required;
                   return (
                     <td key={stage} className="px-3 py-2.5">
-                      <Badge variant={pass ? 'success' : 'warning'} className="text-[10px] px-2 py-0">
+                      <Badge variant={pass ? 'success' : 'warning'} className="text-[0.625rem] px-2 py-0">
                         {cov.observed}/{cov.required}
                       </Badge>
                     </td>
                   );
                 })}
                 <td className="px-3 py-2.5">
-                  <Badge variant={ch.overall === 'Pass' ? 'success' : 'warning'} className="text-[10px] px-2 py-0">
+                  <Badge variant={ch.overall === 'Pass' ? 'success' : 'warning'} className="text-[0.625rem] px-2 py-0">
                     {ch.overall}
                   </Badge>
                 </td>

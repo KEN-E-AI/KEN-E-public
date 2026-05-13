@@ -37,17 +37,17 @@ export function TileSettingsPopover({ config, onChange, onClose, align = 'right'
   const currentColor = config.color;
   return (
     <div
-      className={`absolute top-full mt-1 z-30 bg-card border border-[var(--color-border-default)] rounded-[var(--radius-md)] shadow-md w-[200px] p-2 space-y-2.5 ${
+      className={`absolute top-full mt-1 z-30 bg-card border border-[var(--color-border-default)] rounded-[var(--radius-md)] shadow-md w-[12.5rem] p-2 space-y-2.5 ${
         align === 'right' ? 'right-0' : 'left-0'
       }`}
       onClick={(e) => e.stopPropagation()}
     >
       <div>
-        <p className="text-[10px] text-[var(--color-text-tertiary)] mb-1">View as</p>
+        <p className="text-[0.625rem] text-[var(--color-text-tertiary)] mb-1">View as</p>
         <div className="flex flex-wrap gap-1">
           <button
             onClick={() => onChange({ viewOverride: undefined })}
-            className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+            className={`text-[0.625rem] px-1.5 py-0.5 rounded border transition-colors ${
               config.viewOverride === undefined
                 ? 'bg-[var(--color-violet-100)] border-[var(--color-violet-400)] text-[var(--color-violet-500)]'
                 : 'border-[var(--color-border-default)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-strong)]'
@@ -59,7 +59,7 @@ export function TileSettingsPopover({ config, onChange, onClose, align = 'right'
             <button
               key={opt.value}
               onClick={() => onChange({ viewOverride: opt.value })}
-              className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+              className={`text-[0.625rem] px-1.5 py-0.5 rounded border transition-colors ${
                 config.viewOverride === opt.value
                   ? 'bg-[var(--color-violet-100)] border-[var(--color-violet-400)] text-[var(--color-violet-500)]'
                   : 'border-[var(--color-border-default)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-strong)]'
@@ -73,11 +73,11 @@ export function TileSettingsPopover({ config, onChange, onClose, align = 'right'
 
       {!isTable && (
         <div>
-          <p className="text-[10px] text-[var(--color-text-tertiary)] mb-1">Color</p>
+          <p className="text-[0.625rem] text-[var(--color-text-tertiary)] mb-1">Color</p>
           <div className="flex items-center gap-1.5">
             <button
               onClick={() => onChange({ color: undefined })}
-              className={`size-5 rounded-full border text-[8px] flex items-center justify-center ${
+              className={`size-5 rounded-full border text-[0.5rem] flex items-center justify-center ${
                 !currentColor
                   ? 'border-[var(--color-violet-500)] text-[var(--color-violet-500)]'
                   : 'border-[var(--color-border-default)] text-[var(--color-text-tertiary)]'
@@ -108,7 +108,7 @@ export function TileSettingsPopover({ config, onChange, onClose, align = 'right'
 
       {!isTable && (
         <div className="flex items-center justify-between">
-          <span className="text-[10px] text-[var(--color-text-tertiary)]">Data labels</span>
+          <span className="text-[0.625rem] text-[var(--color-text-tertiary)]">Data labels</span>
           <button
             onClick={() => onChange({ showDataLabels: !config.showDataLabels })}
             className={`w-7 h-4 rounded-full relative transition-colors ${
@@ -127,7 +127,7 @@ export function TileSettingsPopover({ config, onChange, onClose, align = 'right'
       )}
 
       <div className="flex justify-end pt-1 border-t border-[var(--color-border-subtle)]">
-        <button onClick={onClose} className="text-[10px] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">
+        <button onClick={onClose} className="text-[0.625rem] text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)]">
           Close
         </button>
       </div>

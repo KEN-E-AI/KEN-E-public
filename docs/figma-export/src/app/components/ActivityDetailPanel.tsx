@@ -223,7 +223,7 @@ export function ActivityDetailPanel({
               <div className="flex items-center gap-1 flex-wrap mt-1">
                 <Tag className="size-3.5 text-muted-foreground" />
                 {displayActivity.tags.map((tag) => (
-                  <Badge key={tag} variant="secondary" className="text-[10px]">
+                  <Badge key={tag} variant="secondary" className="text-[0.625rem]">
                     {tag}
                   </Badge>
                 ))}
@@ -234,7 +234,7 @@ export function ActivityDetailPanel({
           {/* Status */}
           <div>
             <FieldLabel label="Status" />
-            <Badge variant="outline" className="text-[10px]">
+            <Badge variant="outline" className="text-[0.625rem]">
               {displayActivity.status}
             </Badge>
           </div>
@@ -249,9 +249,9 @@ export function ActivityDetailPanel({
 function FieldLabel({ label, changed }: { label: string; changed?: boolean }) {
   return (
     <div className="flex items-center gap-1.5 mb-1">
-      <span className="text-[10px] text-muted-foreground tracking-wide uppercase">{label}</span>
+      <span className="text-[0.625rem] text-muted-foreground tracking-wide uppercase">{label}</span>
       {changed && (
-        <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 tracking-wide uppercase">
+        <span className="text-[0.5625rem] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 tracking-wide uppercase">
           Changed
         </span>
       )}

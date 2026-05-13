@@ -134,7 +134,7 @@ export function OutputFileViewer({ file, onClose }: OutputFileViewerProps) {
               <p className="text-sm truncate">{file.filename}</p>
               <div className="flex items-center gap-3 mt-0.5">
                 <span
-                  className="text-[10px] px-1.5 py-0.5 rounded"
+                  className="text-[0.625rem] px-1.5 py-0.5 rounded"
                   style={{
                     backgroundColor: `color-mix(in srgb, ${color} 15%, transparent)`,
                     color,
@@ -142,10 +142,10 @@ export function OutputFileViewer({ file, onClose }: OutputFileViewerProps) {
                 >
                   {FILE_TYPE_LABELS[file.file_type]}
                 </span>
-                <span className="text-[10px] text-[var(--color-text-tertiary)]">
+                <span className="text-[0.625rem] text-[var(--color-text-tertiary)]">
                   {formatBytes(file.size_bytes)}
                 </span>
-                <span className="text-[10px] text-[var(--color-text-tertiary)]">
+                <span className="text-[0.625rem] text-[var(--color-text-tertiary)]">
                   {formatDate(file.created_at)}
                 </span>
               </div>
@@ -204,7 +204,7 @@ export function OutputFileViewer({ file, onClose }: OutputFileViewerProps) {
                 </tbody>
               </table>
               {csvData.rows.length >= 20 && (
-                <p className="text-[10px] text-[var(--color-text-tertiary)] mt-2 text-center">
+                <p className="text-[0.625rem] text-[var(--color-text-tertiary)] mt-2 text-center">
                   Showing first 20 rows
                 </p>
               )}
@@ -286,14 +286,14 @@ export function OutputFileItem({ file, onClick }: OutputFileItemProps) {
         <Icon className="size-3.5" style={{ color }} />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-[11px] truncate text-[var(--color-text-primary)] group-hover:text-[var(--color-violet-500)]">
+        <p className="text-[0.6875rem] truncate text-[var(--color-text-primary)] group-hover:text-[var(--color-violet-500)]">
           {file.filename}
         </p>
         <div className="flex items-center gap-2 mt-0.5">
-          <span className="text-[9px] text-[var(--color-text-tertiary)]">
+          <span className="text-[0.5625rem] text-[var(--color-text-tertiary)]">
             {FILE_TYPE_LABELS[file.file_type]}
           </span>
-          <span className="text-[9px] text-[var(--color-text-tertiary)]">
+          <span className="text-[0.5625rem] text-[var(--color-text-tertiary)]">
             {formatBytes(file.size_bytes)}
           </span>
         </div>

@@ -284,7 +284,7 @@ export function SessionSettings() {
           <Textarea
             value={sessionSummary}
             onChange={(e) => setSessionSummary(e.target.value)}
-            className="min-h-[120px]"
+            className="min-h-[7.5rem]"
           />
         </Card>
 
@@ -505,7 +505,7 @@ export function SessionSettings() {
               >
                 <div
                   className="size-2.5 rounded-full bg-[var(--color-success)] shrink-0"
-                  style={{ boxShadow: '0 0 4px rgba(16, 185, 129, 0.5)' }}
+                  style={{ boxShadow: '0 0 0.25rem rgba(16, 185, 129, 0.5)' }}
                 />
                 <div className="flex-1 min-w-0">
                   <p className="text-[var(--text-body-sm)] font-medium">

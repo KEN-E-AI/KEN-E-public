@@ -70,7 +70,7 @@ export function DiagnosticsSection() {
                   <TooltipTrigger asChild>
                     <span
                       className={cn(
-                        'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] border cursor-default',
+                        'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[0.6875rem] border cursor-default',
                         healthCfg.bg, healthCfg.text, healthCfg.border,
                       )}
                     >
@@ -81,7 +81,7 @@ export function DiagnosticsSection() {
                   <TooltipContent side="bottom" className="max-w-xs text-left">
                     <ul className="list-disc pl-3.5 space-y-1">
                       {data.issues.map((issue) => (
-                        <li key={issue.id} className="text-[11px]">{issue.summary}</li>
+                        <li key={issue.id} className="text-[0.6875rem]">{issue.summary}</li>
                       ))}
                     </ul>
                   </TooltipContent>
@@ -89,7 +89,7 @@ export function DiagnosticsSection() {
               ) : (
                 <span
                   className={cn(
-                    'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] border',
+                    'inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[0.6875rem] border',
                     healthCfg.bg, healthCfg.text, healthCfg.border,
                   )}
                 >
@@ -125,19 +125,19 @@ export function DiagnosticsSection() {
             )}
           </Button>
           {reEstState === 'success' && (
-            <span className="flex items-center gap-1.5 text-[11px] text-emerald-600">
+            <span className="flex items-center gap-1.5 text-[0.6875rem] text-emerald-600">
               <Check className="size-3" />
               Model re-estimated successfully.
             </span>
           )}
           {reEstState === 'error' && (
-            <span className="flex items-center gap-1.5 text-[11px] text-red-500">
+            <span className="flex items-center gap-1.5 text-[0.6875rem] text-red-500">
               <XCircle className="size-3" />
               Model re-estimation failed. Please try again.
             </span>
           )}
           {reEstState === 'timeout' && (
-            <span className="flex items-center gap-1.5 text-[11px] text-amber-600">
+            <span className="flex items-center gap-1.5 text-[0.6875rem] text-amber-600">
               <Clock className="size-3" />
               The request timed out. The model may still be running — check back shortly.
             </span>
@@ -226,14 +226,14 @@ function IssueCard({ issue }: { issue: HealthIssue }) {
       {/* Technical details toggle */}
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1 ml-[22px] text-[11px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+        className="flex items-center gap-1 ml-[22px] text-[0.6875rem] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
       >
         {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
         Technical details
       </button>
       {expanded && (
         <div className="ml-[22px] px-3 py-2 bg-[var(--color-bg-secondary)] rounded-[var(--radius-xs)] border border-[var(--color-border-default)]">
-          <p className="text-[11px] text-muted-foreground font-mono leading-relaxed">{issue.technicalDetail}</p>
+          <p className="text-[0.6875rem] text-muted-foreground font-mono leading-relaxed">{issue.technicalDetail}</p>
         </div>
       )}
     </div>
@@ -249,19 +249,19 @@ function OverviewStatCard({ card }: { card: StatCard }) {
       style={{ borderLeft: `3px solid ${card.accentColor}` }}
     >
       <div className="flex items-center gap-1 mb-1.5">
-        <span className="text-[11px] text-muted-foreground">{card.label}</span>
+        <span className="text-[0.6875rem] text-muted-foreground">{card.label}</span>
         {card.tooltip && (
           <Tooltip>
             <TooltipTrigger asChild>
               <Info className="size-3 text-muted-foreground/60 cursor-help" />
             </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-[220px]">
+            <TooltipContent side="top" className="max-w-[13.75rem]">
               {card.tooltip}
             </TooltipContent>
           </Tooltip>
         )}
         {card.annotation && (
-          <span className="text-[10px] text-[var(--color-violet-500)]">{card.annotation}</span>
+          <span className="text-[0.625rem] text-[var(--color-violet-500)]">{card.annotation}</span>
         )}
       </div>
       <p className="text-lg tabular-nums" style={{ fontFamily: 'var(--font-display)' }}>
@@ -281,7 +281,7 @@ function InfoHeaderIcon({ tooltip }: { tooltip: string }) {
       <TooltipTrigger asChild>
         <Info className="size-3 text-muted-foreground/60 cursor-help inline-block ml-1" />
       </TooltipTrigger>
-      <TooltipContent side="top" className="max-w-[220px]">
+      <TooltipContent side="top" className="max-w-[13.75rem]">
         {tooltip}
       </TooltipContent>
     </Tooltip>
@@ -293,7 +293,7 @@ function InfoHeaderIcon({ tooltip }: { tooltip: string }) {
 function StatusBadge({ value, goodValue }: { value: string; goodValue: string }) {
   const isGood = value === goodValue;
   return (
-    <Badge variant={isGood ? 'success' : 'error'} className="text-[10px] px-2 py-0">
+    <Badge variant={isGood ? 'success' : 'error'} className="text-[0.625rem] px-2 py-0">
       {value}
     </Badge>
   );

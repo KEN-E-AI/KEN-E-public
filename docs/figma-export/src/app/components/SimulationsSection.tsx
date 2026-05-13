@@ -364,7 +364,7 @@ export function SimulationsSection({ onNavigateToGoals }: { onNavigateToGoals?: 
             })}
           </div>
           <div className="rounded-[var(--radius-md)] border border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] px-4 py-2.5 flex flex-col items-center shrink-0">
-            <span className="text-[10px] text-muted-foreground uppercase tracking-wide">3-Mo Total</span>
+            <span className="text-[0.625rem] text-muted-foreground uppercase tracking-wide">3-Mo Total</span>
             <span className="text-lg">{formatCurrency(grandTotalSpend)}</span>
           </div>
         </div>
@@ -400,7 +400,7 @@ export function SimulationsSection({ onNavigateToGoals }: { onNavigateToGoals?: 
                   <span className="text-sm">{tab.label}</span>
                   {tab.badge > 0 && (
                     <span
-                      className="flex items-center justify-center size-5 rounded-full text-[10px]"
+                      className="flex items-center justify-center size-5 rounded-full text-[0.625rem]"
                       style={{ backgroundColor: 'var(--color-violet-500)', color: 'white' }}
                     >
                       {tab.badge}
@@ -440,7 +440,7 @@ export function SimulationsSection({ onNavigateToGoals }: { onNavigateToGoals?: 
                         key={value}
                         onClick={() => setGroupBy(value)}
                         className={cn(
-                          "px-3 py-1 text-[11px] rounded-[var(--radius-sm)] transition-all cursor-pointer",
+                          "px-3 py-1 text-[0.6875rem] rounded-[var(--radius-sm)] transition-all cursor-pointer",
                           groupBy === value
                             ? "bg-[var(--color-bg-elevated)] shadow-sm"
                             : "text-muted-foreground hover:text-foreground"
@@ -657,7 +657,7 @@ function CampaignActivityGroup({
         <div className="flex items-center gap-2 min-w-0">
           <div className="size-2 rounded-full shrink-0" style={{ backgroundColor: stepColor }} />
           <span className="text-xs truncate">{group.groupName}</span>
-          <Badge variant="secondary" className="text-[10px] shrink-0">
+          <Badge variant="secondary" className="text-[0.625rem] shrink-0">
             {group.activities.length} {group.activities.length === 1 ? 'activity' : 'activities'}
           </Badge>
         </div>
@@ -666,7 +666,7 @@ function CampaignActivityGroup({
 
       {/* Activities table */}
       <div className="overflow-hidden rounded-[var(--radius-sm)] border border-[var(--color-border-default)]">
-        <table className="w-full text-[11px]">
+        <table className="w-full text-[0.6875rem]">
           <thead>
             <tr className="bg-[var(--color-bg-primary)]">
               <th className="text-left p-2 text-muted-foreground">Activity</th>
@@ -680,7 +680,7 @@ function CampaignActivityGroup({
           <tbody>
             {group.activities.map((activity) => (
               <tr key={activity.activity_id} className="border-t border-[var(--color-border-default)] group">
-                <td className="p-2 max-w-[200px] truncate">{activity.name}</td>
+                <td className="p-2 max-w-[12.5rem] truncate">{activity.name}</td>
                 <td className="p-2 text-muted-foreground">{groupBy === 'channel' ? getCampaignName(activity.campaign_id) : (activity.channel || '—')}</td>
                 <td className="p-2 text-muted-foreground">{activity.platform || '—'}</td>
                 <td className="p-2 text-muted-foreground whitespace-nowrap">
@@ -794,7 +794,7 @@ function SimulationResults({
           <div className="mb-2">
             <span className="text-xs text-muted-foreground tracking-wide uppercase">Conversions</span>
             {' '}
-            <span className="text-[11px] text-muted-foreground/70">· Account Opens</span>
+            <span className="text-[0.6875rem] text-muted-foreground/70">· Account Opens</span>
           </div>
           <p className="text-3xl mb-1" style={{ fontFamily: 'var(--font-display)' }}>
             {totalPlannedConversions.toLocaleString()}
@@ -805,7 +805,7 @@ function SimulationResults({
             </span>
             <span className="text-muted-foreground">vs. baseline</span>
           </div>
-          <p className="text-[10px] text-muted-foreground mt-2">
+          <p className="text-[0.625rem] text-muted-foreground mt-2">
             Baseline: {totalBaselineConversions.toLocaleString()}
           </p>
         </div>
@@ -822,7 +822,7 @@ function SimulationResults({
             </span>
             <span className="text-muted-foreground">vs. baseline</span>
           </div>
-          <p className="text-[10px] text-muted-foreground mt-2">
+          <p className="text-[0.625rem] text-muted-foreground mt-2">
             Baseline: {formatCurrency(totalBaselineRevenue)}
           </p>
         </div>
@@ -924,7 +924,7 @@ function SimulationResults({
             />
           </ComposedChart>
         </ResponsiveContainer>
-        <div className="flex items-center justify-center gap-4 mt-2 text-[10px]">
+        <div className="flex items-center justify-center gap-4 mt-2 text-[0.625rem]">
           <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 bg-[var(--color-teal-500,#14b8a6)]" /> Actual</span>
           <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 border-t-2 border-dashed" style={{ borderColor: 'var(--color-teal-500, #14b8a6)' }} /> Simulated</span>
           <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 border-t-2 border-dashed border-gray-400" /> Baseline</span>
@@ -1012,11 +1012,11 @@ function ForecastChart({
       <div className="flex items-center justify-between mb-3">
         <div>
           <h4 className="text-xs">{stepLabel} — Trend & Forecast</h4>
-          <p className="text-[10px] text-muted-foreground mt-0.5">
+          <p className="text-[0.625rem] text-muted-foreground mt-0.5">
             Solid = historical | Dashed gray = baseline {hasBudget && '| Dashed colored = planned'}
           </p>
         </div>
-        <div className="flex items-center gap-3 text-[10px]">
+        <div className="flex items-center gap-3 text-[0.625rem]">
           <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5" style={{ backgroundColor: stepColor }} /> Actual</span>
           <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 border-t-2 border-dashed border-gray-400" /> Baseline</span>
           {hasBudget && <span className="flex items-center gap-1"><span className="inline-block w-4 h-0.5 border-t-2 border-dashed" style={{ borderColor: stepColor }} /> Planned</span>}
@@ -1259,7 +1259,7 @@ function RecommendationsTab({
             </div>
             <button
               onClick={() => onRunSimulation()}
-              className="flex items-center gap-1 text-[10px] text-[var(--color-violet-500)] hover:text-[var(--color-violet-700)] cursor-pointer transition-colors"
+              className="flex items-center gap-1 text-[0.625rem] text-[var(--color-violet-500)] hover:text-[var(--color-violet-700)] cursor-pointer transition-colors"
               title="Re-run simulation"
             >
               <RefreshCw className="size-3" />
@@ -1267,7 +1267,7 @@ function RecommendationsTab({
             </button>
           </div>
 
-          <p className="text-[10px] text-muted-foreground mb-3">
+          <p className="text-[0.625rem] text-muted-foreground mb-3">
             {acceptedCount > 0 && <span className="text-emerald-600">{acceptedCount} applied</span>}
             {acceptedCount > 0 && (rejectedCount > 0 || pendingRecs.length > 0) && ' \u00b7 '}
             {rejectedCount > 0 && <span className="text-red-500">{rejectedCount} dismissed</span>}
@@ -1279,14 +1279,14 @@ function RecommendationsTab({
             <div className="flex items-center gap-2 mb-3 pb-3 border-b border-[var(--color-border-default)]">
               <button
                 onClick={toggleSelectAll}
-                className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground cursor-pointer"
+                className="flex items-center gap-1.5 text-[0.6875rem] text-muted-foreground hover:text-foreground cursor-pointer"
               >
                 {allSelected ? <CheckSquare className="size-3.5" /> : <Square className="size-3.5" />}
                 {allSelected ? 'Deselect All' : 'Select All'}
               </button>
 
               {someSelected && (
-                <span className="text-[10px] text-muted-foreground ml-1">
+                <span className="text-[0.625rem] text-muted-foreground ml-1">
                   {selectedIds.size} selected
                 </span>
               )}
@@ -1298,7 +1298,7 @@ function RecommendationsTab({
                 variant="outline"
                 disabled={!someSelected}
                 onClick={() => setShowConfirmDialog(true)}
-                className="text-[11px] h-7 px-2.5"
+                className="text-[0.6875rem] h-7 px-2.5"
               >
                 <Check className="size-3 mr-1" />
                 Accept
@@ -1309,7 +1309,7 @@ function RecommendationsTab({
                 variant="outline"
                 disabled={!someSelected}
                 onClick={handleReject}
-                className="text-[11px] h-7 px-2.5"
+                className="text-[0.6875rem] h-7 px-2.5"
               >
                 <Trash2 className="size-3 mr-1" />
                 Reject
@@ -1320,7 +1320,7 @@ function RecommendationsTab({
                 variant="outline"
                 disabled={!someSelected}
                 onClick={handleAddToSimulation}
-                className="text-[11px] h-7 px-2.5"
+                className="text-[0.6875rem] h-7 px-2.5"
               >
                 <FlaskConical className="size-3 mr-1" />
                 Include Selected & Re-Run Simulation
@@ -1375,30 +1375,30 @@ function RecommendationsTab({
                       onClick={() => setViewingRecId(isViewing ? null : rec.id)}
                     >
                       <div className="flex items-center gap-2 mb-1">
-                        <span className={cn('inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] border', cfg.bg, cfg.text, cfg.border)}>
+                        <span className={cn('inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.5625rem] border', cfg.bg, cfg.text, cfg.border)}>
                           <ActionIcon className="size-2.5" />
                           {cfg.label}
                         </span>
                         <span className="text-xs truncate">{actName}</span>
                         {isIncludedInSim && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] bg-blue-100 text-blue-700 border border-blue-200 shrink-0">
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.5625rem] bg-blue-100 text-blue-700 border border-blue-200 shrink-0">
                             <FlaskConical className="size-2.5" />
                             Included
                           </span>
                         )}
                       </div>
 
-                      <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2 mb-1.5">
+                      <p className="text-[0.6875rem] text-muted-foreground leading-relaxed line-clamp-2 mb-1.5">
                         {rec.rationale}
                       </p>
 
                       <div className="flex items-center gap-3">
                         <div className="flex items-center gap-1.5">
                           <div className="size-1.5 rounded-full" style={{ backgroundColor: funnelColor }} />
-                          <span className="text-[9px] text-muted-foreground">{rec.funnelStage}</span>
+                          <span className="text-[0.5625rem] text-muted-foreground">{rec.funnelStage}</span>
                         </div>
                         <span className={cn(
-                          'text-[9px]',
+                          'text-[0.5625rem]',
                           rec.estimatedImpact.changePercent >= 0 ? 'text-emerald-600' : 'text-red-500',
                         )}>
                           {rec.estimatedImpact.changePercent >= 0 ? '+' : ''}
@@ -1530,7 +1530,7 @@ function SimulationSidebar({
 
               {/* Phase label */}
               <p className="text-xs text-center">{simProgressState?.shortPhaseLabel || 'Preparing...'}</p>
-              <p className="text-[11px] text-muted-foreground text-center">{simProgressState?.phaseSubLabel || 'Loading historical patterns and forecast data'}</p>
+              <p className="text-[0.6875rem] text-muted-foreground text-center">{simProgressState?.phaseSubLabel || 'Loading historical patterns and forecast data'}</p>
 
               {/* Mini progress */}
               <div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-bg-secondary)]">
@@ -1581,7 +1581,7 @@ function SimulationSidebar({
 
                 <button
                   onClick={() => onRunSimulation()}
-                  className="flex items-center justify-center gap-1 w-full text-[10px] text-[var(--color-violet-500)] hover:text-[var(--color-violet-700)] cursor-pointer transition-colors py-1.5"
+                  className="flex items-center justify-center gap-1 w-full text-[0.625rem] text-[var(--color-violet-500)] hover:text-[var(--color-violet-700)] cursor-pointer transition-colors py-1.5"
                   title="Re-run simulation"
                 >
                   <RefreshCw className="size-3" />
@@ -1599,7 +1599,7 @@ function SimulationSidebar({
               <Target className="size-4 text-muted-foreground" />
               <h3 className="text-xs text-muted-foreground tracking-wide uppercase">Set Forecast As Goals</h3>
             </div>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[0.6875rem] text-muted-foreground">
               Run a simulation first to unlock goal setting. Goals save predicted KPI values for each funnel stage across the forecast period.
             </p>
           </Card>
@@ -1687,10 +1687,10 @@ function ForecastFunnelStepRow({
             <div className="flex items-center gap-2">
               <span className="text-sm">{step.label}</span>
               {aggregateUplift > 0 && (
-                <span className="text-[10px] text-green-600">+{aggregateUplift.toFixed(1)}% avg</span>
+                <span className="text-[0.625rem] text-green-600">+{aggregateUplift.toFixed(1)}% avg</span>
               )}
             </div>
-            <div className="flex items-center gap-1 mt-0.5 text-[11px]">
+            <div className="flex items-center gap-1 mt-0.5 text-[0.6875rem]">
               {monthlyUplifts.map((m, i) => (
                 <span key={m.abbr} className="flex items-center gap-1">
                   {i > 0 && <ArrowRight className="size-2.5 text-muted-foreground/50" />}
@@ -1721,7 +1721,7 @@ function ForecastFunnelStepRow({
           <div className="rounded-[var(--radius-md)] border border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] p-3">
             <div className="flex items-center gap-1.5 mb-1.5">
               <Sparkles className="size-3 text-[var(--color-violet-500)]" />
-              <span className="text-[10px] text-muted-foreground tracking-wide uppercase">Analyst Notes</span>
+              <span className="text-[0.625rem] text-muted-foreground tracking-wide uppercase">Analyst Notes</span>
             </div>
             <p className="text-xs leading-relaxed text-muted-foreground">
               {FORECAST_ANALYST_NOTES[step.id]}

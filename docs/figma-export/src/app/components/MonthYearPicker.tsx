@@ -51,7 +51,7 @@ export function MonthYearPicker({ month, year, onSelect, minYear = 2024, maxYear
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1.5 z-50 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-[var(--radius-md)] shadow-lg p-3 w-[260px]">
+        <div className="absolute top-full left-0 mt-1.5 z-50 bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-[var(--radius-md)] shadow-lg p-3 w-[16.25rem]">
           {/* Year navigation */}
           <div className="flex items-center justify-between mb-3">
             <button

@@ -44,7 +44,7 @@ export function PerformanceOptimizerExtension() {
           <div className="flex items-center gap-3 mb-1">
             <div
               className="size-9 rounded-[var(--radius-md)] bg-[var(--color-slate-500,#64748b)] flex items-center justify-center"
-              style={{ boxShadow: '0 4px 14px rgba(100, 116, 139, 0.25)' }}
+              style={{ boxShadow: '0 0.25rem 0.875rem rgba(100, 116, 139, 0.25)' }}
             >
               <History className="size-4 text-[var(--color-text-inverse)]" />
             </div>

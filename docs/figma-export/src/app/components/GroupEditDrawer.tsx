@@ -188,7 +188,7 @@ export function GroupEditDrawer({
   };
 
   const fieldClass = "w-full px-3 py-2 text-sm border border-[var(--color-border-default)] rounded-[var(--radius-md)] bg-[var(--color-bg-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-violet-400)]";
-  const labelClass = "text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block";
+  const labelClass = "text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-1 block";
 
   return (
     <>
@@ -224,33 +224,33 @@ export function GroupEditDrawer({
           {/* Group Summary */}
           <div className="p-4 border-b border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] space-y-3">
             <div>
-              <label className="text-[10px] text-muted-foreground uppercase tracking-wider">Campaign</label>
+              <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">Campaign</label>
               <p className="text-sm mt-0.5">{campaignName}</p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="text-[10px] text-muted-foreground uppercase tracking-wider">Platform · Channel</label>
+                <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">Platform · Channel</label>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <span className="size-2.5 rounded-full" style={{ backgroundColor: pc.color }} />
                   <span className="text-sm">{first.platform || '—'}{first.channel ? ` · ${first.channel}` : ''}</span>
                 </div>
               </div>
               <div>
-                <label className="text-[10px] text-muted-foreground uppercase tracking-wider">Date Range</label>
+                <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">Date Range</label>
                 <p className="text-sm mt-0.5">{formatDate(first.launch_date)} – {formatDate(last.launch_date)}</p>
               </div>
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <label className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Cost</label>
+                <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">Total Cost</label>
                 <p className="text-sm mt-0.5">${totalCost.toLocaleString()}</p>
               </div>
               <div>
-                <label className="text-[10px] text-muted-foreground uppercase tracking-wider">Avg/Day</label>
+                <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">Avg/Day</label>
                 <p className="text-sm mt-0.5">${sorted.length > 0 ? Math.round(totalCost / sorted.length).toLocaleString() : 0}</p>
               </div>
               <div>
-                <label className="text-[10px] text-muted-foreground uppercase tracking-wider">Owner{owners.length > 1 ? 's' : ''}</label>
+                <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">Owner{owners.length > 1 ? 's' : ''}</label>
                 <p className="text-sm mt-0.5">{owners.map(o => getUserName(o)).join(', ') || '—'}</p>
               </div>
             </div>
@@ -265,7 +265,7 @@ export function GroupEditDrawer({
               <span className="flex items-center gap-1.5">
                 <Edit3 className="size-3.5 text-[var(--color-violet-500)]" />
                 Shared Fields
-                <span className="text-[10px] text-muted-foreground">(apply to all activities)</span>
+                <span className="text-[0.625rem] text-muted-foreground">(apply to all activities)</span>
               </span>
               {sharedFieldsOpen ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
             </button>
@@ -356,7 +356,7 @@ export function GroupEditDrawer({
                     onChange={e => setSharedEdits(prev => ({ ...prev, launch_time_utc: e.target.value || null }))}
                   />
                   {!timeInfo.uniform && sharedEdits.launch_time_utc === undefined && (
-                    <p className="text-[10px] text-orange-500 mt-1">Activities have different launch times</p>
+                    <p className="text-[0.625rem] text-orange-500 mt-1">Activities have different launch times</p>
                   )}
                 </div>
 
@@ -438,7 +438,7 @@ export function GroupEditDrawer({
                 <DollarSign className="size-3.5 text-[var(--color-violet-500)]" />
                 Cost Redistribution
                 {redistMode !== 'none' && (
-                  <span className="bg-[var(--color-violet-100)] text-[var(--color-violet-600)] rounded-full px-1.5 py-0.5 text-[10px]">
+                  <span className="bg-[var(--color-violet-100)] text-[var(--color-violet-600)] rounded-full px-1.5 py-0.5 text-[0.625rem]">
                     {redistMode === 'even' ? 'Even' : 'Weekday/Weekend'}
                   </span>
                 )}
@@ -484,7 +484,7 @@ export function GroupEditDrawer({
                         onChange={e => { setRedistTotal(Number(e.target.value) || 0); setCostOverrides(new Map()); }}
                       />
                     </div>
-                    <p className="text-[10px] text-muted-foreground mt-1">
+                    <p className="text-[0.625rem] text-muted-foreground mt-1">
                       ${Math.round(redistTotal / sorted.length).toLocaleString()}/day across {sorted.length} activities
                     </p>
                   </div>
@@ -525,8 +525,8 @@ export function GroupEditDrawer({
           {/* ─── Cost Breakdown Chart ─── */}
           {totalCost > 0 && (
             <div className="p-4 border-b border-[var(--color-border-default)]">
-              <label className="text-[10px] text-muted-foreground uppercase tracking-wider">Daily Cost Breakdown</label>
-              <div className="mt-2 h-[130px]">
+              <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">Daily Cost Breakdown</label>
+              <div className="mt-2 h-[8.125rem]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={workingActivities.map(a => ({
@@ -572,7 +572,7 @@ export function GroupEditDrawer({
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-              <div className="flex items-center justify-between mt-1 text-[10px] text-muted-foreground">
+              <div className="flex items-center justify-between mt-1 text-[0.625rem] text-muted-foreground">
                 <span>Total: ${totalCost.toLocaleString()}</span>
                 <span>Avg: ${sorted.length > 0 ? Math.round(totalCost / sorted.length).toLocaleString() : 0}/day</span>
               </div>
@@ -582,8 +582,8 @@ export function GroupEditDrawer({
           {/* ─── Individual Activities ─── */}
           <div className="p-4 space-y-1">
             <div className="flex items-center justify-between mb-2">
-              <label className="text-[10px] text-muted-foreground uppercase tracking-wider">Individual Activities</label>
-              <span className="text-[10px] text-muted-foreground">Click cost to override individually</span>
+              <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">Individual Activities</label>
+              <span className="text-[0.625rem] text-muted-foreground">Click cost to override individually</span>
             </div>
 
             {workingActivities.map(activity => {
@@ -628,7 +628,7 @@ export function GroupEditDrawer({
                         />
                       </div>
                     </div>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                    <p className="text-[0.625rem] text-muted-foreground mt-0.5">
                       {formatDate(activity.launch_date)}{activity.launch_time_utc ? ` at ${activity.launch_time_utc} UTC` : ''}
                     </p>
                   </div>

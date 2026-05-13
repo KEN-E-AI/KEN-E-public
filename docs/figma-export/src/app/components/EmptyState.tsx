@@ -17,7 +17,7 @@ export function EmptyState({
   onAction
 }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center">
+    <div className="flex flex-col items-center justify-center min-h-[25rem] p-8 text-center">
       <div className="rounded-full bg-muted p-6 mb-4">
         {icon || <MessageSquare className="size-8 text-muted-foreground" />}
       </div>

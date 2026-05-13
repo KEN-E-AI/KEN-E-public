@@ -108,7 +108,7 @@ export function InsightsPage() {
                     </Badge>
                     <Badge variant="outline">{config.label}</Badge>
                     <Badge variant="outline">{insight.category}</Badge>
-                    <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <span className="flex items-center gap-1 text-[0.625rem] text-muted-foreground">
                       <Clock className="size-2.5" />
                       {insight.generatedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                     </span>
