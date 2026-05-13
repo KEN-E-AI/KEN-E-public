@@ -362,6 +362,37 @@ class TestConfigLoader:
 
     @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
     @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_overlay_updated_by_field_stripped(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """Every overlay write via the API persists ``updated_by: user.email``
+        (routers/agent_configs.py upsert path). The factory must strip it
+        before validation or any overlay-merged config blows up with
+        ``extra="forbid"``."""
+        from app.adk.agents.agent_factory.config_loader import load_agent_config
+
+        global_data = {
+            "instruction": "Global instruction.",
+            "model": "gemini-2.5-pro",
+        }
+        overlay_data = {
+            "instruction": "Overlay instruction with a tweak.",
+            "based_on_version": 1,
+            "updated_at": "2026-05-13T18:00:00+00:00",
+            "updated_by": "admin@ken-e.ai",
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(
+            global_data=global_data, overlay_data=overlay_data
+        )
+
+        result = load_agent_config("test_agent", account_id="acc_123")
+
+        assert result.instruction == "Overlay instruction with a tweak."
+        assert result.customization_status == "customized"
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
     def test_pre_ah_prd_02_legacy_fields_stripped(
         self, mock_client: MagicMock, mock_auth: MagicMock
     ) -> None:

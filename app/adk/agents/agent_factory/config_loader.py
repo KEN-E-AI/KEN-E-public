@@ -85,6 +85,7 @@ _STORAGE_INTERNAL_FIELDS: frozenset[str] = frozenset(
         "created_at",
         "updated_at",
         "created_by",
+        "updated_by",
         "deployment_status",
         "canonical_id",
         "legacy_agent_name",

@@ -139,8 +139,6 @@ _sanitize_updated_by = sanitize_updated_by
 
 
 def _build_firestore_updates(
-    name: str | None = None,
-    title: str | None = None,
     instruction: str | None = None,
     model: str | None = None,
     description: str | None = None,
@@ -160,9 +158,12 @@ def _build_firestore_updates(
     level (AH-40). The legacy nested ``generate_content_config`` wrapper
     is no longer produced.
 
+    Note: nullable identity fields (``name``, ``title``) are NOT handled
+    here. The caller must use ``update.model_fields_set`` to distinguish
+    "client omitted" from "client sent null" and write those fields into
+    the returned dict directly. See ``update_agent_config`` for the pattern.
+
     Args:
-        name: Human name (e.g. "Dave")
-        title: Role description (e.g. "Business Researcher")
         instruction: New instruction text
         model: New model identifier
         description: New description
@@ -179,12 +180,6 @@ def _build_firestore_updates(
         Dictionary with Firestore update format (dot notation for metadata fields)
     """
     updates: dict[str, str | int | float] = {}
-
-    if name is not None:
-        updates["name"] = name
-
-    if title is not None:
-        updates["title"] = title
 
     if instruction is not None:
         updates["instruction"] = instruction
@@ -228,12 +223,17 @@ def _snapshot_pre_image(
     """Capture current values for every field the update touches.
 
     Reads ``temperature`` and ``max_output_tokens`` flat (AH-40).
+
+    Nullable identity fields (``name``, ``title``) use ``model_fields_set``
+    to distinguish "client omitted" from "client sent null" so a
+    null-clearing update is audited as a real change.
     """
     snap: dict[str, Any] = {}
+    fields_set = update.model_fields_set
 
-    if update.name is not None:
+    if "name" in fields_set:
         snap["name"] = current_config.get("name")
-    if update.title is not None:
+    if "title" in fields_set:
         snap["title"] = current_config.get("title")
     if update.instruction is not None:
         snap["instruction"] = current_config.get("instruction")
@@ -253,10 +253,11 @@ def _snapshot_post_image(
     updated_data: dict[str, Any], update: AgentConfigUpdate
 ) -> dict[str, Any]:
     snap: dict[str, Any] = {}
+    fields_set = update.model_fields_set
 
-    if update.name is not None:
+    if "name" in fields_set:
         snap["name"] = updated_data.get("name")
-    if update.title is not None:
+    if "title" in fields_set:
         snap["title"] = updated_data.get("title")
     if update.instruction is not None:
         snap["instruction"] = updated_data.get("instruction")
@@ -531,8 +532,6 @@ async def update_agent_config(
 
         # Build type-safe updates using helper function
         updates = _build_firestore_updates(
-            name=update.name,
-            title=update.title,
             instruction=update.instruction,
             model=update.model,
             description=update.description,
@@ -545,6 +544,16 @@ async def update_agent_config(
             experiment_id=update.experiment_id,
             notes=update.notes,
         )
+
+        # Nullable identity fields use model_fields_set so a caller can
+        # explicitly clear them with ``{"name": null}`` — distinguishing
+        # "client omitted" from "client sent null". Mirrors the overlay
+        # endpoint's ``model_dump(exclude_unset=True)`` convention.
+        fields_set = update.model_fields_set
+        if "name" in fields_set:
+            updates["name"] = update.name
+        if "title" in fields_set:
+            updates["title"] = update.title
 
         # Snapshot pre-image for audit diff (Sprint 6 AC-6.9)
         pre_image = _snapshot_pre_image(current_config, update)
