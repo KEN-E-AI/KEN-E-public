@@ -64,7 +64,7 @@ export function ProfileMenu({ compact = false }: ProfileMenuProps) {
       <DropdownMenuContent
         align="end"
         sideOffset={8}
-        className="w-[260px] rounded-[var(--radius-lg)] border-2 border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] p-0 shadow-lg"
+        className="w-[16.25rem] rounded-[var(--radius-lg)] border-2 border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] p-0 shadow-lg"
       >
         {/* User info header */}
         <div className="px-4 py-3 bg-[var(--color-surface-muted)]">

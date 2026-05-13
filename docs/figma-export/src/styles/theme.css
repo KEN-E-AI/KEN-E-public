@@ -97,18 +97,18 @@
   --font-bold: 700;
   --font-extrabold: 800;
 
-  /* --- Type Scale --- */
-  --text-display-xl: 48px;
-  --text-display-lg: 40px;
-  --text-display-md: 32px;
-  --text-heading-lg: 24px;
-  --text-heading-md: 20px;
-  --text-heading-sm: 18px;
-  --text-body-lg: 16px;
-  --text-body-md: 14px;
-  --text-body-sm: 13px;
-  --text-caption: 12px;
-  --text-overline: 11px;
+  /* --- Type Scale (rem-based so global root font-size acts as a single scaling knob) --- */
+  --text-display-xl: 3rem;      /* 48px */
+  --text-display-lg: 2.5rem;    /* 40px */
+  --text-display-md: 2rem;      /* 32px */
+  --text-heading-lg: 1.5rem;    /* 24px */
+  --text-heading-md: 1.25rem;   /* 20px */
+  --text-heading-sm: 1.125rem;  /* 18px */
+  --text-body-lg: 1rem;         /* 16px */
+  --text-body-md: 0.875rem;     /* 14px */
+  --text-body-sm: 0.8125rem;    /* 13px */
+  --text-caption: 0.75rem;      /* 12px */
+  --text-overline: 0.6875rem;   /* 11px */
 
   /* --- Line Heights --- */
   --lh-display-xl: 1.1;
@@ -122,28 +122,28 @@
   --lh-body-sm: 1.5;
   --lh-caption: 1.5;
 
-  /* --- Spacing (8px base unit) --- */
-  --space-0: 0px;
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 20px;
-  --space-6: 24px;
-  --space-7: 32px;
-  --space-8: 40px;
-  --space-9: 48px;
-  --space-10: 56px;
-  --space-11: 64px;
-  --space-12: 80px;
+  /* --- Spacing (8px base unit, expressed in rem so it scales with root font-size) --- */
+  --space-0: 0;
+  --space-1: 0.25rem;   /* 4px */
+  --space-2: 0.5rem;    /* 8px */
+  --space-3: 0.75rem;   /* 12px */
+  --space-4: 1rem;      /* 16px */
+  --space-5: 1.25rem;   /* 20px */
+  --space-6: 1.5rem;    /* 24px */
+  --space-7: 2rem;      /* 32px */
+  --space-8: 2.5rem;    /* 40px */
+  --space-9: 3rem;      /* 48px */
+  --space-10: 3.5rem;   /* 56px */
+  --space-11: 4rem;     /* 64px */
+  --space-12: 5rem;     /* 80px */
 
-  /* --- Border Radii (Moderated) --- */
-  --radius-none: 0px;
-  --radius-sm: 4px;
-  --radius-md: 10px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-pill: 24px;
+  /* --- Border Radii (Moderated, rem-based) --- */
+  --radius-none: 0;
+  --radius-sm: 0.25rem;   /* 4px */
+  --radius-md: 0.625rem;  /* 10px */
+  --radius-lg: 0.75rem;   /* 12px */
+  --radius-xl: 1rem;      /* 16px */
+  --radius-pill: 1.5rem;  /* 24px */
   --radius-circle: 50%;
 
   /* --- Border Widths --- */
@@ -152,16 +152,16 @@
   --border-thick: 3px;
   --border-accent: 4px;
 
-  /* --- Shadows --- */
+  /* --- Shadows (offsets/blurs in rem so they scale with the rest of the UI) --- */
   --shadow-none: none;
-  --shadow-sm: 0 2px 8px rgba(30, 41, 59, 0.04);
-  --shadow-md: 0 4px 16px rgba(30, 41, 59, 0.06);
-  --shadow-lg: 0 12px 32px rgba(30, 41, 59, 0.08);
-  --shadow-xl: 0 20px 48px rgba(30, 41, 59, 0.12);
-  --shadow-color-violet: 0 4px 16px rgba(99, 102, 241, 0.25);
-  --shadow-color-teal: 0 4px 16px rgba(46, 196, 182, 0.3);
-  --shadow-color-blue: 0 4px 16px rgba(59, 130, 246, 0.25);
-  --shadow-glow: 0 0 8px currentColor;
+  --shadow-sm: 0 0.125rem 0.5rem rgba(30, 41, 59, 0.04);
+  --shadow-md: 0 0.25rem 1rem rgba(30, 41, 59, 0.06);
+  --shadow-lg: 0 0.75rem 2rem rgba(30, 41, 59, 0.08);
+  --shadow-xl: 0 1.25rem 3rem rgba(30, 41, 59, 0.12);
+  --shadow-color-violet: 0 0.25rem 1rem rgba(99, 102, 241, 0.25);
+  --shadow-color-teal: 0 0.25rem 1rem rgba(46, 196, 182, 0.3);
+  --shadow-color-blue: 0 0.25rem 1rem rgba(59, 130, 246, 0.25);
+  --shadow-glow: 0 0 0.5rem currentColor;
 
   /* --- Easing Curves (Reduced Bounce) --- */
   --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
@@ -299,15 +299,15 @@
   --color-accent-slot-5: #818CF8;
   --color-accent-slot-6: #60A5FA;
 
-  /* --- Shadows (Dark Mode) --- */
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
-  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.4);
-  --shadow-xl: 0 20px 48px rgba(0, 0, 0, 0.5);
-  --shadow-color-violet: 0 4px 16px rgba(129, 140, 248, 0.25);
-  --shadow-color-teal: 0 4px 16px rgba(94, 234, 212, 0.2);
-  --shadow-color-blue: 0 4px 16px rgba(96, 165, 250, 0.25);
-  --shadow-glow: 0 0 12px currentColor;
+  /* --- Shadows (Dark Mode, rem-based) --- */
+  --shadow-sm: 0 0.125rem 0.5rem rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 0.25rem 1rem rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 0.75rem 2rem rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 1.25rem 3rem rgba(0, 0, 0, 0.5);
+  --shadow-color-violet: 0 0.25rem 1rem rgba(129, 140, 248, 0.25);
+  --shadow-color-teal: 0 0.25rem 1rem rgba(94, 234, 212, 0.2);
+  --shadow-color-blue: 0 0.25rem 1rem rgba(96, 165, 250, 0.25);
+  --shadow-glow: 0 0 0.75rem currentColor;
 
   /* --- Legacy Tailwind Compatibility (Dark Mode) --- */
   --background: var(--color-bg-primary);

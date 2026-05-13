@@ -19,7 +19,7 @@ import {
 
 function OrgAvatar({ org, size = 'sm' }: { org: Organization; size?: 'sm' | 'md' }) {
   const dims = size === 'sm' ? 'size-6' : 'size-8';
-  const text = size === 'sm' ? 'text-[10px]' : 'text-xs';
+  const text = size === 'sm' ? 'text-[0.625rem]' : 'text-xs';
   return (
     <div
       className={cn(
@@ -73,18 +73,18 @@ export function AccountSwitcher({ compact = false }: AccountSwitcherProps) {
           }}
         >
           <span
-            className="text-[var(--color-text-tertiary)] truncate max-w-[100px]"
-            style={{ fontSize: compact ? '12px' : '13px' }}
+            className="text-[var(--color-text-tertiary)] truncate max-w-[6.25rem]"
+            style={{ fontSize: compact ? '0.75rem' : '0.8125rem' }}
           >
             {activeOrg.name}
           </span>
           <span className="text-[var(--color-text-disabled)]">/</span>
           <span
-            className="text-[var(--color-text-primary)] truncate max-w-[120px]"
+            className="text-[var(--color-text-primary)] truncate max-w-[7.5rem]"
             style={{
               fontFamily: 'var(--font-display)',
               fontWeight: 700,
-              fontSize: compact ? '12px' : '13px',
+              fontSize: compact ? '0.75rem' : '0.8125rem',
             }}
           >
             {activeAccount.name}
@@ -96,7 +96,7 @@ export function AccountSwitcher({ compact = false }: AccountSwitcherProps) {
       <DropdownMenuContent
         align="start"
         sideOffset={8}
-        className="w-[280px] rounded-[var(--radius-lg)] border-2 border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] p-0 shadow-lg"
+        className="w-[17.5rem] rounded-[var(--radius-lg)] border-2 border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] p-0 shadow-lg"
       >
         {/* Current account header */}
         <div className="px-4 py-3 bg-[var(--color-surface-muted)]">
@@ -123,7 +123,7 @@ export function AccountSwitcher({ compact = false }: AccountSwitcherProps) {
         <DropdownMenuSeparator className="m-0" />
 
         {/* Account list grouped by org */}
-        <div className="py-1.5 max-h-[300px] overflow-y-auto">
+        <div className="py-1.5 max-h-[18.75rem] overflow-y-auto">
           {accountsByOrg.map(({ org, accounts }, orgIndex) => (
             <div key={org.id}>
               {orgIndex > 0 && <DropdownMenuSeparator />}

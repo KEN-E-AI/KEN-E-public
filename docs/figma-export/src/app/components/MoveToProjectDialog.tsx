@@ -52,7 +52,7 @@ export function MoveToProjectDialog({ taskName, onClose, onAttach, onCreateNewPr
 
         {creating ? (
           <div className="flex-1 p-4 space-y-3">
-            <label className="text-[10px] text-muted-foreground uppercase tracking-wider">New project name</label>
+            <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">New project name</label>
             <input
               type="text"
               autoFocus
@@ -62,7 +62,7 @@ export function MoveToProjectDialog({ taskName, onClose, onAttach, onCreateNewPr
               placeholder="e.g. Q2 Launch Readiness"
               className="w-full px-3 py-2 text-sm border border-[var(--color-border-default)] rounded-[var(--radius-md)] bg-[var(--color-bg-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-violet-400)]"
             />
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[0.6875rem] text-muted-foreground">
               Creates a new project and moves this task into it. You can add more tasks and dependencies from the project page.
             </p>
           </div>
@@ -102,7 +102,7 @@ export function MoveToProjectDialog({ taskName, onClose, onAttach, onCreateNewPr
                       >
                         <FolderOpen className="size-3.5 shrink-0" />
                         <span className="truncate flex-1">{p.name}</span>
-                        <span className="text-[10px] text-muted-foreground shrink-0">{p.schedule}</span>
+                        <span className="text-[0.625rem] text-muted-foreground shrink-0">{p.schedule}</span>
                       </button>
                     </li>
                   ))}

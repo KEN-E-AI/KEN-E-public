@@ -292,7 +292,7 @@ export function SubscriptionTab({ organizationId = 'org-1' }: SubscriptionTabPro
               onSelect={(m, y) => setChartMonth({ month: m, year: y })}
             />
             <Select value={breakdown} onValueChange={(v) => setBreakdown(v as Breakdown)}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-[11.25rem]">
                 <SelectValue placeholder="Break down by" />
               </SelectTrigger>
               <SelectContent>

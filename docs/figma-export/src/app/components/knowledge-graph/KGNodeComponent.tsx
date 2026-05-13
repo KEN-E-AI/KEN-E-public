@@ -49,7 +49,7 @@ function KGNodeComponentInner({ data, selected }: NodeProps & { data: KGNodeData
         <Icon className="size-5 text-white" />
       </div>
       <span
-        className="text-[11px] text-center max-w-[100px] truncate px-1.5 py-0.5 rounded-[var(--radius-sm)]"
+        className="text-[0.6875rem] text-center max-w-[6.25rem] truncate px-1.5 py-0.5 rounded-[var(--radius-sm)]"
         style={{
           fontWeight: selected ? 600 : 500,
           backgroundColor: selected || isHighlighted ? data.bgColor : 'transparent',

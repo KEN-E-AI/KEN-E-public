@@ -2,6 +2,17 @@
 @import './tailwind.css';
 @import './theme.css';
 
+/* ============================================
+   GLOBAL UI SCALE
+   Single-knob control for overall UI density.
+   100% = native (16px base). 90% = matches a
+   90% browser zoom — every rem-based token and
+   Tailwind utility shrinks proportionally.
+   ============================================ */
+html {
+  font-size: 90%;
+}
+
 @keyframes shimmer {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(200%); }

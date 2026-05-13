@@ -124,7 +124,7 @@ export function MarketingPage() {
                 <p className="text-xs text-muted-foreground mb-2">Channels</p>
                 <div className="flex flex-wrap gap-1.5">
                   {strategy.channels.map(ch => (
-                    <Badge key={ch} variant="outline" className="text-[10px]">{ch}</Badge>
+                    <Badge key={ch} variant="outline" className="text-[0.625rem]">{ch}</Badge>
                   ))}
                 </div>
               </div>

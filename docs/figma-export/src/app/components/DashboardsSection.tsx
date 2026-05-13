@@ -85,11 +85,11 @@ function DashboardCard({ dashboard }: { dashboard: Workflow }) {
           <p className="text-sm truncate">{dashboard.name}</p>
           <OriginBadge extensionId={dashboard.extensionId} />
           {dashboard.isActive === false ? (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-error-bg)] text-[var(--color-error-text)]">
+            <span className="text-[0.625rem] px-1.5 py-0.5 rounded bg-[var(--color-error-bg)] text-[var(--color-error-text)]">
               Inactive
             </span>
           ) : (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-success-bg)] text-[var(--color-success-text)]">
+            <span className="text-[0.625rem] px-1.5 py-0.5 rounded bg-[var(--color-success-bg)] text-[var(--color-success-text)]">
               Active
             </span>
           )}

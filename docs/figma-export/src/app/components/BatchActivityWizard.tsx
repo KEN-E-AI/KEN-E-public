@@ -238,7 +238,7 @@ export function BatchActivityWizard({
   };
 
   const fieldClass = "w-full px-3 py-2 text-sm border border-[var(--color-border-default)] rounded-[var(--radius-md)] bg-[var(--color-bg-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-violet-400)]";
-  const labelClass = "text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block";
+  const labelClass = "text-[0.625rem] text-muted-foreground uppercase tracking-wider mb-1 block";
 
   const stepValid = step === 1
     ? !!(template.campaign_id)
@@ -306,7 +306,7 @@ export function BatchActivityWizard({
                   value={template.namePrefix}
                   onChange={e => setTemplate(t => ({ ...t, namePrefix: e.target.value }))}
                 />
-                <p className="text-[10px] text-muted-foreground mt-1">Each activity: &quot;{template.namePrefix || '[Platform Channel]'} - [Date]&quot;</p>
+                <p className="text-[0.625rem] text-muted-foreground mt-1">Each activity: &quot;{template.namePrefix || '[Platform Channel]'} - [Date]&quot;</p>
               </div>
 
               <div>
@@ -326,7 +326,7 @@ export function BatchActivityWizard({
                       ))}
                       <option value="__create_new__">+ Create new campaign...</option>
                     </select>
-                    <p className="text-[10px] text-muted-foreground mt-1">Optional — campaign determines the objective.</p>
+                    <p className="text-[0.625rem] text-muted-foreground mt-1">Optional — campaign determines the objective.</p>
                   </>
                 ) : (
                   <div className="space-y-2">
@@ -501,7 +501,7 @@ export function BatchActivityWizard({
                   value={schedule.launchTime || ''}
                   onChange={e => setSchedule(s => ({ ...s, launchTime: e.target.value || null }))}
                 />
-                <p className="text-[10px] text-muted-foreground mt-1">Applied to all activities. Leave blank if not time-scheduled.</p>
+                <p className="text-[0.625rem] text-muted-foreground mt-1">Applied to all activities. Leave blank if not time-scheduled.</p>
               </div>
 
               <div className="border-t border-[var(--color-border-default)] pt-4">
@@ -523,7 +523,7 @@ export function BatchActivityWizard({
                       )}
                     >
                       <p className={cn("text-xs", schedule.budgetStrategy === key ? "text-[var(--color-violet-500)]" : "")}>{label}</p>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">{desc}</p>
+                      <p className="text-[0.625rem] text-muted-foreground mt-0.5">{desc}</p>
                     </button>
                   ))}
                 </div>
@@ -542,7 +542,7 @@ export function BatchActivityWizard({
                     />
                   </div>
                   {previewActivities.length > 0 && (
-                    <p className="text-[10px] text-muted-foreground mt-1">
+                    <p className="text-[0.625rem] text-muted-foreground mt-1">
                       ${Math.round(schedule.totalBudget / previewActivities.length).toLocaleString()}/day across {previewActivities.length} activities
                     </p>
                   )}
@@ -585,11 +585,11 @@ export function BatchActivityWizard({
               <div className="rounded-[var(--radius-md)] bg-[var(--color-bg-secondary)] border border-[var(--color-border-default)] p-3 space-y-2">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-[10px] text-muted-foreground uppercase tracking-wider">Campaign</label>
+                    <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">Campaign</label>
                     <p className="text-xs mt-0.5">{getCampaignName(template.campaign_id)}</p>
                   </div>
                   <div>
-                    <label className="text-[10px] text-muted-foreground uppercase tracking-wider">Platform / Channel</label>
+                    <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">Platform / Channel</label>
                     <div className="flex items-center gap-1.5 mt-0.5">
                       <span className="size-2.5 rounded-full" style={{ backgroundColor: pc.color }} />
                       <span className="text-xs">{template.platform || 'None'}{template.channel ? ` / ${template.channel}` : ''}</span>
@@ -598,15 +598,15 @@ export function BatchActivityWizard({
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
-                    <label className="text-[10px] text-muted-foreground uppercase tracking-wider">Activities</label>
+                    <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">Activities</label>
                     <p className="text-xs mt-0.5">{includedPreview.length} of {mergedPreview.length}</p>
                   </div>
                   <div>
-                    <label className="text-[10px] text-muted-foreground uppercase tracking-wider">Total Cost</label>
+                    <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">Total Cost</label>
                     <p className="text-xs mt-0.5">${totalCost.toLocaleString()}</p>
                   </div>
                   <div>
-                    <label className="text-[10px] text-muted-foreground uppercase tracking-wider">Avg/Day</label>
+                    <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">Avg/Day</label>
                     <p className="text-xs mt-0.5">${includedPreview.length > 0 ? Math.round(totalCost / includedPreview.length).toLocaleString() : 0}</p>
                   </div>
                 </div>
@@ -615,8 +615,8 @@ export function BatchActivityWizard({
               {/* Cost Chart */}
               {totalCost > 0 && (
                 <div>
-                  <label className="text-[10px] text-muted-foreground uppercase tracking-wider">Cost Distribution</label>
-                  <div className="mt-2 h-[120px]">
+                  <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">Cost Distribution</label>
+                  <div className="mt-2 h-[7.5rem]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart
                         data={mergedPreview.map(a => ({
@@ -668,13 +668,13 @@ export function BatchActivityWizard({
               {/* Activity List */}
               <div className="space-y-1">
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-[10px] text-muted-foreground uppercase tracking-wider">Individual Activities</label>
+                  <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">Individual Activities</label>
                   <button
                     onClick={() => {
                       const allIncluded = mergedPreview.every(a => a.included);
                       mergedPreview.forEach(a => updateOverride(a.id, { included: !allIncluded }));
                     }}
-                    className="text-[10px] text-[var(--color-violet-500)] hover:text-[var(--color-violet-700)] cursor-pointer"
+                    className="text-[0.625rem] text-[var(--color-violet-500)] hover:text-[var(--color-violet-700)] cursor-pointer"
                   >
                     {mergedPreview.every(a => a.included) ? 'Deselect All' : 'Select All'}
                   </button>
@@ -729,7 +729,7 @@ export function BatchActivityWizard({
                           <span className="text-xs text-muted-foreground shrink-0">${activity.cost.toLocaleString()}</span>
                         )}
                       </div>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                      <p className="text-[0.625rem] text-muted-foreground mt-0.5">
                         {formatDate(activity.date)}{schedule.launchTime ? ` at ${schedule.launchTime} UTC` : ''}
                       </p>
                     </div>

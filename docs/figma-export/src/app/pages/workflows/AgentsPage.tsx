@@ -118,7 +118,7 @@ function AgentCard({ agent, index, onConfigure }: { agent: Agent; index: number;
 
   return (
     <div
-      className="relative p-4 rounded-[14px] border-2 border-[var(--color-border-default)] hover:border-[var(--color-border-strong)] hover:-translate-y-0.5 transition-all cursor-pointer bg-card overflow-hidden flex flex-col"
+      className="relative p-4 rounded-[0.875rem] border-2 border-[var(--color-border-default)] hover:border-[var(--color-border-strong)] hover:-translate-y-0.5 transition-all cursor-pointer bg-card overflow-hidden flex flex-col"
       style={{
         transitionTimingFunction: 'var(--ease-bounce)',
         transitionDuration: 'var(--duration-fast)',
@@ -147,10 +147,10 @@ function AgentCard({ agent, index, onConfigure }: { agent: Agent; index: number;
 
       {/* Name + Status */}
       <div className="flex items-center gap-1.5 flex-wrap mb-1.5 pr-8" style={{ minHeight: 22 }}>
-        <span className="text-[13px]" style={{ fontWeight: 700, lineHeight: 1.25 }}>{agent.name}</span>
+        <span className="text-[0.8125rem]" style={{ fontWeight: 700, lineHeight: 1.25 }}>{agent.name}</span>
         {agent.status === 'inactive' && (
           <span
-            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wide bg-[var(--color-bg-secondary)] text-[var(--color-text-tertiary)]"
+            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[0.625rem] uppercase tracking-wide bg-[var(--color-bg-secondary)] text-[var(--color-text-tertiary)]"
             style={{ fontWeight: 700, lineHeight: 1.4 }}
           >
             <span className="size-1.5 rounded-full bg-[var(--color-text-disabled)]" />
@@ -160,7 +160,7 @@ function AgentCard({ agent, index, onConfigure }: { agent: Agent; index: number;
       </div>
 
       {/* Model */}
-      <div className="flex items-center gap-1 text-[11px] text-[var(--color-text-tertiary)] mb-2.5">
+      <div className="flex items-center gap-1 text-[0.6875rem] text-[var(--color-text-tertiary)] mb-2.5">
         <span>{model?.icon}</span>
         {model?.name ?? agent.model}
       </div>
@@ -168,22 +168,22 @@ function AgentCard({ agent, index, onConfigure }: { agent: Agent; index: number;
       {/* Chips */}
       <div className="flex flex-wrap gap-1">
         {totalTools > 0 && (
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)]" style={{ fontWeight: 700 }}>
+          <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)]" style={{ fontWeight: 700 }}>
             {totalTools} tool{totalTools !== 1 ? 's' : ''}
           </span>
         )}
         {skillTools > 0 && (
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--color-violet-100)] text-[var(--color-violet-500)]" style={{ fontWeight: 700 }}>
+          <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-[var(--color-violet-100)] text-[var(--color-violet-500)]" style={{ fontWeight: 700 }}>
             {skillTools} skill{skillTools !== 1 ? 's' : ''}
           </span>
         )}
         {agent.automationsGenerated > 0 && (
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--color-teal-100)] text-[var(--color-teal-500)]" style={{ fontWeight: 700 }}>
+          <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-[var(--color-teal-100)] text-[var(--color-teal-500)]" style={{ fontWeight: 700 }}>
             {agent.automationsGenerated} auto{agent.automationsGenerated !== 1 ? 's' : ''}
           </span>
         )}
         {agent.extensionId && (
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--color-amber-100)] text-[var(--color-amber-500)]" style={{ fontWeight: 700 }}>
+          <span className="text-[0.625rem] px-2 py-0.5 rounded-full bg-[var(--color-amber-100)] text-[var(--color-amber-500)]" style={{ fontWeight: 700 }}>
             Extension
           </span>
         )}

@@ -49,7 +49,7 @@ function KGEdgeComponentInner({
       {(selected || isHighlighted) && !isDimmed && (
         <EdgeLabelRenderer>
           <div
-            className="absolute pointer-events-auto px-2 py-0.5 rounded-[var(--radius-pill)] text-[9px] border nodrag nopan"
+            className="absolute pointer-events-auto px-2 py-0.5 rounded-[var(--radius-pill)] text-[0.5625rem] border nodrag nopan"
             style={{
               transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
               backgroundColor: 'var(--color-bg-elevated)',

@@ -49,7 +49,7 @@ export function UnscheduledTasksPanel({ onEdit, onMoveToProject, collapsed, onTo
         <div className="flex items-center gap-2">
           <Inbox className={`size-4 ${hasWork ? 'text-[var(--color-warning)]' : 'text-[var(--color-violet-500)]'}`} />
           <h3 className="text-sm">Unscheduled tasks</h3>
-          <span className="text-[10px] text-muted-foreground">needs a due date</span>
+          <span className="text-[0.625rem] text-muted-foreground">needs a due date</span>
         </div>
         <div className="flex items-center gap-2">
           <span className={`text-xs ${hasWork ? 'text-[var(--color-warning)]' : 'text-muted-foreground'}`}>
@@ -74,7 +74,7 @@ export function UnscheduledTasksPanel({ onEdit, onMoveToProject, collapsed, onTo
                 >
                   {t.name}
                 </button>
-                <div className="flex items-center gap-3 mt-0.5 text-[11px] text-muted-foreground">
+                <div className="flex items-center gap-3 mt-0.5 text-[0.6875rem] text-muted-foreground">
                   <span>{t.status}</span>
                   <span className="text-[var(--color-warning)]">No due date</span>
                 </div>

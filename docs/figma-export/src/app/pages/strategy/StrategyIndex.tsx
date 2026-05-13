@@ -138,7 +138,7 @@ export function StrategyIndex() {
                   <div className="flex items-center gap-2 mb-1.5">
                     <p className="text-sm">{section.name}</p>
                     {section.badge && (
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                      <Badge variant="secondary" className="text-[0.625rem] px-1.5 py-0">
                         {section.badge}
                       </Badge>
                     )}

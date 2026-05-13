@@ -104,7 +104,7 @@ export function InvitationAcceptancePage() {
         <div className="w-full max-w-md text-center">
           <div className="relative inline-block mb-6">
             <div className="size-24 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center"
-              style={{ boxShadow: '0 8px 24px rgba(34, 197, 94, 0.3)' }}
+              style={{ boxShadow: '0 0.5rem 1.5rem rgba(34, 197, 94, 0.3)' }}
             >
               <CheckCircle2 className="size-12 text-white" />
             </div>
@@ -120,7 +120,7 @@ export function InvitationAcceptancePage() {
           <Button 
             asChild
             className="bg-[#F97066] hover:bg-[#e85f55] text-white gap-2"
-            style={{ boxShadow: '0 4px 12px rgba(249, 112, 102, 0.3)' }}
+            style={{ boxShadow: '0 0.25rem 0.75rem rgba(249, 112, 102, 0.3)' }}
           >
             <Link to="/">
               Get Started
@@ -205,7 +205,7 @@ export function InvitationAcceptancePage() {
                 onClick={handleAcceptInvitation}
                 disabled={status === 'accepting'}
                 className="w-full gap-2 bg-[#F97066] hover:bg-[#e85f55] text-white"
-                style={{ boxShadow: '0 4px 12px rgba(249, 112, 102, 0.3)' }}
+                style={{ boxShadow: '0 0.25rem 0.75rem rgba(249, 112, 102, 0.3)' }}
               >
                 {status === 'accepting' ? (
                   <>

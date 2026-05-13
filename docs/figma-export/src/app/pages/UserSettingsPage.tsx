@@ -368,7 +368,7 @@ export function UserSettingsPage() {
                   {/* Header Row */}
                   <div 
                     className="grid gap-4 mb-3 pb-3 border-b-2"
-                    style={{ gridTemplateColumns: '1fr 100px 100px 100px 100px' }}
+                    style={{ gridTemplateColumns: '1fr 6.25rem 6.25rem 6.25rem 6.25rem' }}
                   >
                     <div className="text-sm font-medium text-muted-foreground">Notification Type</div>
                     <div className="text-sm font-medium text-muted-foreground text-center">KEN-E</div>
@@ -381,7 +381,7 @@ export function UserSettingsPage() {
                   <div className="space-y-3">
                     <div 
                       className="grid gap-4 items-start"
-                      style={{ gridTemplateColumns: '1fr 100px 100px 100px 100px' }}
+                      style={{ gridTemplateColumns: '1fr 6.25rem 6.25rem 6.25rem 6.25rem' }}
                     >
                       <div>
                         <p className="font-medium">Inactive Session</p>
@@ -410,7 +410,7 @@ export function UserSettingsPage() {
                   {/* Header Row */}
                   <div 
                     className="grid gap-4 mb-3 pb-3 border-b-2"
-                    style={{ gridTemplateColumns: '1fr 100px 100px 100px 100px' }}
+                    style={{ gridTemplateColumns: '1fr 6.25rem 6.25rem 6.25rem 6.25rem' }}
                   >
                     <div className="text-sm font-medium text-muted-foreground">Notification Type</div>
                     <div className="text-sm font-medium text-muted-foreground text-center">KEN-E</div>
@@ -423,7 +423,7 @@ export function UserSettingsPage() {
                   <div className="space-y-3">
                     <div 
                       className="grid gap-4 items-start"
-                      style={{ gridTemplateColumns: '1fr 100px 100px 100px 100px' }}
+                      style={{ gridTemplateColumns: '1fr 6.25rem 6.25rem 6.25rem 6.25rem' }}
                     >
                       <div>
                         <p className="font-medium">Analysis</p>
@@ -445,7 +445,7 @@ export function UserSettingsPage() {
 
                     <div 
                       className="grid gap-4 items-start"
-                      style={{ gridTemplateColumns: '1fr 100px 100px 100px 100px' }}
+                      style={{ gridTemplateColumns: '1fr 6.25rem 6.25rem 6.25rem 6.25rem' }}
                     >
                       <div>
                         <p className="font-medium">Dashboard Refresh</p>
@@ -467,7 +467,7 @@ export function UserSettingsPage() {
 
                     <div 
                       className="grid gap-4 items-start"
-                      style={{ gridTemplateColumns: '1fr 100px 100px 100px 100px' }}
+                      style={{ gridTemplateColumns: '1fr 6.25rem 6.25rem 6.25rem 6.25rem' }}
                     >
                       <div>
                         <p className="font-medium">Workflow</p>
@@ -496,7 +496,7 @@ export function UserSettingsPage() {
                   {/* Header Row */}
                   <div 
                     className="grid gap-4 mb-3 pb-3 border-b-2"
-                    style={{ gridTemplateColumns: '1fr 100px 100px 100px 100px' }}
+                    style={{ gridTemplateColumns: '1fr 6.25rem 6.25rem 6.25rem 6.25rem' }}
                   >
                     <div className="text-sm font-medium text-muted-foreground">Notification Type</div>
                     <div className="text-sm font-medium text-muted-foreground text-center">KEN-E</div>
@@ -509,7 +509,7 @@ export function UserSettingsPage() {
                   <div className="space-y-3">
                     <div 
                       className="grid gap-4 items-start"
-                      style={{ gridTemplateColumns: '1fr 100px 100px 100px 100px' }}
+                      style={{ gridTemplateColumns: '1fr 6.25rem 6.25rem 6.25rem 6.25rem' }}
                     >
                       <div>
                         <p className="font-medium">Organic Search</p>
@@ -531,7 +531,7 @@ export function UserSettingsPage() {
 
                     <div 
                       className="grid gap-4 items-start"
-                      style={{ gridTemplateColumns: '1fr 100px 100px 100px 100px' }}
+                      style={{ gridTemplateColumns: '1fr 6.25rem 6.25rem 6.25rem 6.25rem' }}
                     >
                       <div>
                         <p className="font-medium">Paid Media</p>
@@ -553,7 +553,7 @@ export function UserSettingsPage() {
 
                     <div 
                       className="grid gap-4 items-start"
-                      style={{ gridTemplateColumns: '1fr 100px 100px 100px 100px' }}
+                      style={{ gridTemplateColumns: '1fr 6.25rem 6.25rem 6.25rem 6.25rem' }}
                     >
                       <div>
                         <p className="font-medium">Email</p>
@@ -575,7 +575,7 @@ export function UserSettingsPage() {
 
                     <div 
                       className="grid gap-4 items-start"
-                      style={{ gridTemplateColumns: '1fr 100px 100px 100px 100px' }}
+                      style={{ gridTemplateColumns: '1fr 6.25rem 6.25rem 6.25rem 6.25rem' }}
                     >
                       <div>
                         <p className="font-medium">Social</p>
@@ -597,7 +597,7 @@ export function UserSettingsPage() {
 
                     <div 
                       className="grid gap-4 items-start"
-                      style={{ gridTemplateColumns: '1fr 100px 100px 100px 100px' }}
+                      style={{ gridTemplateColumns: '1fr 6.25rem 6.25rem 6.25rem 6.25rem' }}
                     >
                       <div>
                         <p className="font-medium">Analytics</p>
@@ -633,7 +633,7 @@ export function UserSettingsPage() {
                   {/* Header Row */}
                   <div 
                     className="grid gap-4 mb-3 pb-3 border-b-2"
-                    style={{ gridTemplateColumns: '1fr 100px 100px 100px 100px' }}
+                    style={{ gridTemplateColumns: '1fr 6.25rem 6.25rem 6.25rem 6.25rem' }}
                   >
                     <div className="text-sm font-medium text-muted-foreground">Notification Type</div>
                     <div className="text-sm font-medium text-muted-foreground text-center">KEN-E</div>
@@ -646,7 +646,7 @@ export function UserSettingsPage() {
                   <div className="space-y-3">
                     <div 
                       className="grid gap-4 items-start"
-                      style={{ gridTemplateColumns: '1fr 100px 100px 100px 100px' }}
+                      style={{ gridTemplateColumns: '1fr 6.25rem 6.25rem 6.25rem 6.25rem' }}
                     >
                       <div>
                         <p className="font-medium">Monthly Usage is Above 75%</p>
@@ -668,7 +668,7 @@ export function UserSettingsPage() {
 
                     <div 
                       className="grid gap-4 items-start"
-                      style={{ gridTemplateColumns: '1fr 100px 100px 100px 100px' }}
+                      style={{ gridTemplateColumns: '1fr 6.25rem 6.25rem 6.25rem 6.25rem' }}
                     >
                       <div>
                         <p className="font-medium">Monthly Usage is Maxed Out</p>
@@ -690,7 +690,7 @@ export function UserSettingsPage() {
 
                     <div 
                       className="grid gap-4 items-start"
-                      style={{ gridTemplateColumns: '1fr 100px 100px 100px 100px' }}
+                      style={{ gridTemplateColumns: '1fr 6.25rem 6.25rem 6.25rem 6.25rem' }}
                     >
                       <div>
                         <p className="font-medium">Billing Problem</p>
@@ -712,7 +712,7 @@ export function UserSettingsPage() {
 
                     <div 
                       className="grid gap-4 items-start"
-                      style={{ gridTemplateColumns: '1fr 100px 100px 100px 100px' }}
+                      style={{ gridTemplateColumns: '1fr 6.25rem 6.25rem 6.25rem 6.25rem' }}
                     >
                       <div>
                         <p className="font-medium">Integration Request</p>

@@ -241,7 +241,7 @@ function VisualizationRenderer({
 function SpecFallback({ spec, error }: { spec: Record<string, unknown>; error: string }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="text-[11px] text-[var(--color-text-secondary)]">
+    <div className="text-[0.6875rem] text-[var(--color-text-secondary)]">
       <div className="flex items-center gap-1 text-[var(--color-warning)] mb-1">
         <AlertTriangle className="size-3" />
         <span>Could not render chart</span>
@@ -253,9 +253,9 @@ function SpecFallback({ spec, error }: { spec: Record<string, unknown>; error: s
         {open ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
         Show spec
       </button>
-      <p className="text-[10px] text-[var(--color-error-text)] mt-1">{error}</p>
+      <p className="text-[0.625rem] text-[var(--color-error-text)] mt-1">{error}</p>
       {open && (
-        <pre className="mt-1 p-1.5 bg-[var(--color-bg-secondary)] rounded overflow-auto max-h-32 text-[10px]">
+        <pre className="mt-1 p-1.5 bg-[var(--color-bg-secondary)] rounded overflow-auto max-h-32 text-[0.625rem]">
           {JSON.stringify(spec, null, 2)}
         </pre>
       )}
@@ -267,7 +267,7 @@ function SpecFallback({ spec, error }: { spec: Record<string, unknown>; error: s
 
 function TextRenderer({ content }: { content: string }) {
   return (
-    <pre className="whitespace-pre-wrap break-words text-[11px] leading-snug text-[var(--color-text-secondary)]">
+    <pre className="whitespace-pre-wrap break-words text-[0.6875rem] leading-snug text-[var(--color-text-secondary)]">
       {content}
     </pre>
   );
@@ -284,7 +284,7 @@ function TableRenderer({
 }) {
   return (
     <div className="w-full h-full overflow-auto">
-      <table className="w-full border-collapse text-[11px]">
+      <table className="w-full border-collapse text-[0.6875rem]">
         <thead className="sticky top-0 bg-[var(--color-bg-secondary)]">
           <tr>
             {columns.map((c) => (
@@ -301,7 +301,7 @@ function TableRenderer({
           {rows.slice(0, 200).map((r, i) => (
             <tr key={i} className="border-b border-[var(--color-border-subtle)]">
               {columns.map((c) => (
-                <td key={c} className="px-2 py-1 text-[var(--color-text-secondary)] truncate max-w-[140px]">
+                <td key={c} className="px-2 py-1 text-[var(--color-text-secondary)] truncate max-w-[8.75rem]">
                   {String(r[c] ?? '')}
                 </td>
               ))}
@@ -323,7 +323,7 @@ function FileRenderer({ artifact }: { artifact: Extract<DashboardArtifactPayload
   return (
     <div className="flex flex-col gap-1 text-[var(--color-text-secondary)]">
       <span className="truncate">{file.filename}</span>
-      <span className="text-[10px] text-[var(--color-text-tertiary)]">
+      <span className="text-[0.625rem] text-[var(--color-text-tertiary)]">
         {file.mime_type} · {(file.size_bytes / 1024).toFixed(1)} KB
       </span>
     </div>

@@ -93,7 +93,7 @@ export function AutomationSchedulePanel({
   };
 
   return (
-    <div className="w-[380px] h-full border-l border-[var(--color-border-default)] bg-card flex flex-col shrink-0 overflow-hidden">
+    <div className="w-[23.75rem] h-full border-l border-[var(--color-border-default)] bg-card flex flex-col shrink-0 overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-[var(--color-border-default)]">
         <div className="flex items-center gap-2">
@@ -114,7 +114,7 @@ export function AutomationSchedulePanel({
         <div className="flex items-center justify-between">
           <div>
             <p className="text-xs text-[var(--color-text-primary)]">Schedule Enabled</p>
-            <p className="text-[10px] text-[var(--color-text-tertiary)] mt-0.5">
+            <p className="text-[0.625rem] text-[var(--color-text-tertiary)] mt-0.5">
               When enabled, this automation will run on its configured schedule
             </p>
           </div>
@@ -136,7 +136,7 @@ export function AutomationSchedulePanel({
         {!hasRootTasks && draft.enabled && (
           <div className="flex items-start gap-2 p-2.5 rounded-[var(--radius-md)] bg-[var(--color-warning-bg)] border border-[var(--color-warning)]">
             <AlertTriangle className="size-3.5 text-[var(--color-warning)] mt-0.5 shrink-0" />
-            <p className="text-[10px] text-[var(--color-warning-text)]">
+            <p className="text-[0.625rem] text-[var(--color-warning-text)]">
               No start tasks found. The schedule needs at least one task with no dependencies to begin execution.
             </p>
           </div>
@@ -146,7 +146,7 @@ export function AutomationSchedulePanel({
         {hasRootTasks && draft.enabled && (
           <div className="flex items-start gap-2 p-2.5 rounded-[var(--radius-md)] bg-[var(--color-bg-secondary)] border border-[var(--color-border-subtle)]">
             <Timer className="size-3.5 text-[var(--color-violet-500)] mt-0.5 shrink-0" />
-            <p className="text-[10px] text-[var(--color-text-secondary)]">
+            <p className="text-[0.625rem] text-[var(--color-text-secondary)]">
               When triggered, <strong>{rootTaskCount} root task{rootTaskCount !== 1 ? 's' : ''}</strong> with no dependencies will start running simultaneously.
             </p>
           </div>
@@ -154,14 +154,14 @@ export function AutomationSchedulePanel({
 
         {/* Frequency */}
         <div>
-          <label className="text-[10px] text-[var(--color-text-tertiary)] mb-1.5 block">Frequency</label>
+          <label className="text-[0.625rem] text-[var(--color-text-tertiary)] mb-1.5 block">Frequency</label>
           <div className="flex flex-wrap gap-1.5">
             {FREQUENCIES.map((f) => (
               <button
                 key={f.value}
                 onClick={() => update('frequency', f.value)}
                 disabled={!draft.enabled || isRunning}
-                className={`text-[11px] px-2.5 py-1.5 rounded-[var(--radius-sm)] border transition-colors disabled:opacity-50 ${
+                className={`text-[0.6875rem] px-2.5 py-1.5 rounded-[var(--radius-sm)] border transition-colors disabled:opacity-50 ${
                   draft.frequency === f.value
                     ? 'bg-[var(--color-violet-100)] border-[var(--color-violet-400)] text-[var(--color-violet-500)]'
                     : 'border-[var(--color-border-default)] text-[var(--color-text-secondary)] hover:border-[var(--color-border-strong)]'
@@ -176,7 +176,7 @@ export function AutomationSchedulePanel({
         {/* Once: date picker */}
         {draft.frequency === 'once' && (
           <div>
-            <label className="text-[10px] text-[var(--color-text-tertiary)] mb-1.5 block">
+            <label className="text-[0.625rem] text-[var(--color-text-tertiary)] mb-1.5 block">
               Run date
             </label>
             <input
@@ -192,7 +192,7 @@ export function AutomationSchedulePanel({
               className="w-full text-xs px-3 py-2 rounded-[var(--radius-sm)] border border-[var(--color-border-default)] bg-[var(--color-bg-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-violet-400)] disabled:opacity-50"
             />
             {!draft.run_date && draft.enabled && (
-              <p className="text-[10px] text-[var(--color-error-text)] mt-1">Pick a date</p>
+              <p className="text-[0.625rem] text-[var(--color-error-text)] mt-1">Pick a date</p>
             )}
           </div>
         )}
@@ -200,7 +200,7 @@ export function AutomationSchedulePanel({
         {/* Weekly: day picker */}
         {draft.frequency === 'weekly' && (
           <div>
-            <label className="text-[10px] text-[var(--color-text-tertiary)] mb-1.5 block">
+            <label className="text-[0.625rem] text-[var(--color-text-tertiary)] mb-1.5 block">
               Days of Week
             </label>
             <div className="flex gap-1">
@@ -209,7 +209,7 @@ export function AutomationSchedulePanel({
                   key={idx}
                   onClick={() => toggleDay(idx)}
                   disabled={!draft.enabled || isRunning}
-                  className={`flex-1 text-[10px] py-2 rounded-[var(--radius-sm)] border transition-colors disabled:opacity-50 ${
+                  className={`flex-1 text-[0.625rem] py-2 rounded-[var(--radius-sm)] border transition-colors disabled:opacity-50 ${
                     draft.days_of_week.includes(idx)
                       ? 'bg-[var(--color-violet-100)] border-[var(--color-violet-400)] text-[var(--color-violet-500)]'
                       : 'border-[var(--color-border-default)] text-[var(--color-text-tertiary)] hover:border-[var(--color-border-strong)]'
@@ -220,7 +220,7 @@ export function AutomationSchedulePanel({
               ))}
             </div>
             {draft.days_of_week.length === 0 && draft.enabled && (
-              <p className="text-[10px] text-[var(--color-error-text)] mt-1">
+              <p className="text-[0.625rem] text-[var(--color-error-text)] mt-1">
                 Select at least one day
               </p>
             )}
@@ -230,7 +230,7 @@ export function AutomationSchedulePanel({
         {/* Monthly: day of month */}
         {draft.frequency === 'monthly' && (
           <div>
-            <label className="text-[10px] text-[var(--color-text-tertiary)] mb-1.5 block">
+            <label className="text-[0.625rem] text-[var(--color-text-tertiary)] mb-1.5 block">
               Day of Month
             </label>
             <input
@@ -249,7 +249,7 @@ export function AutomationSchedulePanel({
         {/* Custom cron */}
         {draft.frequency === 'custom_cron' && (
           <div>
-            <label className="text-[10px] text-[var(--color-text-tertiary)] mb-1.5 block">
+            <label className="text-[0.625rem] text-[var(--color-text-tertiary)] mb-1.5 block">
               Cron Expression
             </label>
             <input
@@ -260,7 +260,7 @@ export function AutomationSchedulePanel({
               onChange={(e) => update('cron_expression', e.target.value || null)}
               placeholder="0 14 * * 1  (min hour day month weekday)"
             />
-            <p className="text-[10px] text-[var(--color-text-tertiary)] mt-1">
+            <p className="text-[0.625rem] text-[var(--color-text-tertiary)] mt-1">
               Standard 5-field cron syntax. Time is interpreted as UTC.
             </p>
           </div>
@@ -268,7 +268,7 @@ export function AutomationSchedulePanel({
 
         {/* Time */}
         <div>
-          <label className="text-[10px] text-[var(--color-text-tertiary)] mb-1.5 block">
+          <label className="text-[0.625rem] text-[var(--color-text-tertiary)] mb-1.5 block">
             Trigger Time (UTC)
           </label>
           <input
@@ -282,13 +282,13 @@ export function AutomationSchedulePanel({
 
         {/* Preview section */}
         <div className="rounded-[var(--radius-md)] border border-[var(--color-border-subtle)] bg-[var(--color-bg-secondary)] p-3 space-y-2">
-          <p className="text-[10px] text-[var(--color-text-tertiary)]">Schedule Preview</p>
+          <p className="text-[0.625rem] text-[var(--color-text-tertiary)]">Schedule Preview</p>
           <p className="text-xs text-[var(--color-text-primary)]">
             {previewDescription}
           </p>
           {draft.enabled && previewNextRun && (
             <div className="pt-1.5 border-t border-[var(--color-border-subtle)]">
-              <p className="text-[10px] text-[var(--color-text-tertiary)]">Next Run</p>
+              <p className="text-[0.625rem] text-[var(--color-text-tertiary)]">Next Run</p>
               <p className="text-xs text-[var(--color-violet-500)]">
                 {formatNextRun(previewNextRun)}
               </p>
@@ -296,7 +296,7 @@ export function AutomationSchedulePanel({
           )}
           {schedule.last_run && (
             <div className="pt-1.5 border-t border-[var(--color-border-subtle)]">
-              <p className="text-[10px] text-[var(--color-text-tertiary)]">Last Run</p>
+              <p className="text-[0.625rem] text-[var(--color-text-tertiary)]">Last Run</p>
               <p className="text-xs text-[var(--color-text-secondary)]">
                 {formatNextRun(schedule.last_run)}
               </p>

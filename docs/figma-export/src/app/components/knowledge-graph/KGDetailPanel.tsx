@@ -35,7 +35,7 @@ export function KGDetailPanel({
 
   return (
     <div
-      className="absolute top-0 right-0 h-full w-[380px] bg-[var(--color-bg-elevated)] border-l border-[var(--color-border-default)] shadow-lg z-20 flex flex-col animate-in slide-in-from-right duration-300"
+      className="absolute top-0 right-0 h-full w-[23.75rem] bg-[var(--color-bg-elevated)] border-l border-[var(--color-border-default)] shadow-lg z-20 flex flex-col animate-in slide-in-from-right duration-300"
     >
       {/* Close button */}
       <button
@@ -123,7 +123,7 @@ function NodeDetail({
             <h3 className="truncate">{node.label}</h3>
             <Badge
               variant="secondary"
-              className="text-[10px] px-1.5 py-0 mt-0.5"
+              className="text-[0.625rem] px-1.5 py-0 mt-0.5"
               style={{ backgroundColor: nt?.bgColor, color: nt?.color }}
             >
               {nt?.label ?? node.type}
@@ -166,10 +166,10 @@ function NodeDetail({
                     <div key={relType}>
                       <div className="flex items-center gap-1.5 mb-1.5">
                         <div className="size-2 rounded-full" style={{ backgroundColor: rt?.color ?? '#94A3B8' }} />
-                        <span className="text-[11px] text-muted-foreground" style={{ fontWeight: 600 }}>
+                        <span className="text-[0.6875rem] text-muted-foreground" style={{ fontWeight: 600 }}>
                           {rt?.label ?? relType}
                         </span>
-                        <Badge variant="secondary" className="text-[9px] px-1 py-0 ml-auto">
+                        <Badge variant="secondary" className="text-[0.5625rem] px-1 py-0 ml-auto">
                           {items.length}
                         </Badge>
                       </div>
@@ -196,7 +196,7 @@ function NodeDetail({
                                 })()}
                               </div>
                               <span className="text-xs truncate flex-1">{connectedNode.label}</span>
-                              <span className="text-[10px] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
+                              <span className="text-[0.625rem] text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity">
                                 View
                               </span>
                             </button>
@@ -244,7 +244,7 @@ function RelationshipDetail({
       {/* Header */}
       <div className="p-5 pr-12">
         <Badge
-          className="text-[10px] px-2 py-0.5 mb-3"
+          className="text-[0.625rem] px-2 py-0.5 mb-3"
           style={{
             backgroundColor: `${rt?.color ?? '#94A3B8'}15`,
             color: rt?.color ?? '#94A3B8',
@@ -280,7 +280,7 @@ function RelationshipDetail({
               </div>
               <div className="min-w-0">
                 <p className="text-xs truncate">{source?.label ?? 'Unknown'}</p>
-                <p className="text-[10px] text-muted-foreground">{sourceType?.label}</p>
+                <p className="text-[0.625rem] text-muted-foreground">{sourceType?.label}</p>
               </div>
             </button>
 
@@ -298,7 +298,7 @@ function RelationshipDetail({
               </div>
               <div className="min-w-0">
                 <p className="text-xs truncate">{target?.label ?? 'Unknown'}</p>
-                <p className="text-[10px] text-muted-foreground">{targetType?.label}</p>
+                <p className="text-[0.625rem] text-muted-foreground">{targetType?.label}</p>
               </div>
             </button>
           </div>
@@ -336,7 +336,7 @@ function PropertyRow({ propKey, value }: { propKey: string; value: unknown }) {
     }
     if (typeof value === 'boolean') {
       return (
-        <Badge variant={value ? 'default' : 'secondary'} className="text-[10px] px-1.5 py-0">
+        <Badge variant={value ? 'default' : 'secondary'} className="text-[0.625rem] px-1.5 py-0">
           {value ? 'Yes' : 'No'}
         </Badge>
       );
@@ -364,7 +364,7 @@ function PropertyRow({ propKey, value }: { propKey: string; value: unknown }) {
       return (
         <div className="flex flex-wrap gap-1">
           {value.map((item, i) => (
-            <Badge key={i} variant="outline" className="text-[10px] px-1.5 py-0">
+            <Badge key={i} variant="outline" className="text-[0.625rem] px-1.5 py-0">
               {String(item)}
             </Badge>
           ))}
@@ -376,8 +376,8 @@ function PropertyRow({ propKey, value }: { propKey: string; value: unknown }) {
         <div className="space-y-1 mt-1">
           {Object.entries(value as Record<string, unknown>).map(([k, v]) => (
             <div key={k} className="flex items-start gap-2 pl-2 border-l-2 border-[var(--color-border-subtle)]">
-              <span className="text-[10px] text-muted-foreground shrink-0" style={{ fontWeight: 500 }}>{k}:</span>
-              <span className="text-[11px]">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
+              <span className="text-[0.625rem] text-muted-foreground shrink-0" style={{ fontWeight: 500 }}>{k}:</span>
+              <span className="text-[0.6875rem]">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
             </div>
           ))}
         </div>
@@ -388,7 +388,7 @@ function PropertyRow({ propKey, value }: { propKey: string; value: unknown }) {
 
   return (
     <div className="p-2.5 rounded-[var(--radius-sm)] bg-[var(--color-surface-muted)]">
-      <div className="text-[10px] text-muted-foreground mb-1" style={{ fontWeight: 600 }}>
+      <div className="text-[0.625rem] text-muted-foreground mb-1" style={{ fontWeight: 600 }}>
         {label}
       </div>
       {renderValue()}

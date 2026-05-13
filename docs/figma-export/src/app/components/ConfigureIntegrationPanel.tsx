@@ -137,7 +137,7 @@ export function ConfigureIntegrationPanel({ integration, onClose }: ConfigureInt
                   value={permissions[user.id]}
                   onValueChange={(val: string) => handlePermissionChange(user.id, val as AccessLevel)}
                 >
-                  <SelectTrigger className="w-[100px] h-8 text-xs">
+                  <SelectTrigger className="w-[6.25rem] h-8 text-xs">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

@@ -69,7 +69,7 @@ export function JourneyPage() {
                 <stage.icon className="size-3.5 text-[var(--color-text-inverse)]" />
               </div>
               <span className="text-xs">{stage.name}</span>
-              <Badge variant="outline" className="text-[10px]">{stage.conversionRate}</Badge>
+              <Badge variant="outline" className="text-[0.625rem]">{stage.conversionRate}</Badge>
             </div>
             {i < stages.length - 1 && (
               <ArrowRight className="size-4 text-muted-foreground shrink-0" />
@@ -102,7 +102,7 @@ export function JourneyPage() {
                 <p className="text-xs text-muted-foreground mb-2">Channels</p>
                 <div className="flex flex-wrap gap-1.5">
                   {stage.channels.map(ch => (
-                    <Badge key={ch} variant="outline" className="text-[10px]">{ch}</Badge>
+                    <Badge key={ch} variant="outline" className="text-[0.625rem]">{ch}</Badge>
                   ))}
                 </div>
               </div>
@@ -118,7 +118,7 @@ export function JourneyPage() {
                 <p className="text-xs text-muted-foreground mb-2">KPIs</p>
                 <div className="flex flex-wrap gap-1.5">
                   {stage.kpis.map(kpi => (
-                    <Badge key={kpi} variant="secondary" className="text-[10px]">{kpi}</Badge>
+                    <Badge key={kpi} variant="secondary" className="text-[0.625rem]">{kpi}</Badge>
                   ))}
                 </div>
               </div>
