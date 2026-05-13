@@ -53,6 +53,11 @@ class CopyResult:
 
     resource_name: str
     accounts: list[AccountCopyResult] = field(default_factory=list)
+    # Top-level source collections matching ``old_prefix`` whose derived
+    # account_id failed :func:`_is_valid_account_id` and were therefore
+    # skipped. Surfaced in the migrate/dry-run summary so the operator can
+    # clean them up manually — see DM-19 (``strategy_docs_`` orphan).
+    malformed_sources: list[str] = field(default_factory=list)
 
     @property
     def total_docs(self) -> int:
@@ -82,6 +87,10 @@ class VerifyResult:
 
     resource_name: str
     accounts: list[AccountVerifyResult] = field(default_factory=list)
+    # Matching ``CopyResult.malformed_sources`` — see DM-19. Recorded even
+    # though they were not verified, so the CLI summary can surface the same
+    # operator-cleanup list at every phase.
+    malformed_sources: list[str] = field(default_factory=list)
 
     @property
     def verified(self) -> bool:
@@ -115,6 +124,9 @@ class DeleteResult:
 
     resource_name: str
     accounts: list[AccountDeleteResult] = field(default_factory=list)
+    # Matching ``CopyResult.malformed_sources`` — see DM-19. These were
+    # neither copied nor deleted; the operator must remove them manually.
+    malformed_sources: list[str] = field(default_factory=list)
 
     @property
     def total_docs(self) -> int:
@@ -135,10 +147,30 @@ def _extract_account_id(config: MigrateConfig, collection_name: str) -> str:
 
     Uses ``config.account_id_extractor`` when provided, otherwise strips
     ``config.old_prefix`` from the start of the collection name.
+
+    May return an empty or otherwise invalid value when the source collection
+    name is malformed (e.g. the bare prefix `strategy_docs_` found in
+    ``ken-e-dev``). Callers must pair this with :func:`_is_valid_account_id`
+    and skip on ``False`` — see the four ``client.collections()`` walks
+    below.
     """
     if config.account_id_extractor is not None:
         return config.account_id_extractor(collection_name)
     return collection_name.removeprefix(config.old_prefix)
+
+
+def _is_valid_account_id(account_id: str) -> bool:
+    """Return True if *account_id* is a safe Firestore path segment.
+
+    Rejects empty strings, ``/``-bearing values, and the special parent
+    references ``.`` / ``..``. Anything that survives this check can be
+    plugged into ``accounts/{account_id}/...`` without producing a malformed
+    Firestore path. Introduced in DM-19 after a top-level collection named
+    literally ``strategy_docs_`` (the resource prefix with no account
+    suffix) caused the runner to construct ``accounts//strategy_docs`` and
+    crash with ``InvalidArgument`` against ``ken-e-dev``.
+    """
+    return bool(account_id) and "/" not in account_id and account_id not in (".", "..")
 
 
 def _count_collection(client: Client, path: str) -> int:
@@ -310,6 +342,17 @@ def copy_resource(client: Client, name: str, config: MigrateConfig) -> CopyResul
                 continue
 
             account_id = _extract_account_id(config, col_name)
+            if not _is_valid_account_id(account_id):
+                logger.warning(
+                    "[%s] Skipping malformed source collection %r — "
+                    "extracted account_id %r is not a valid Firestore path "
+                    "segment; operator must clean up this collection manually.",
+                    name,
+                    col_name,
+                    account_id,
+                )
+                result.malformed_sources.append(col_name)
+                continue
             dest_col_path = f"accounts/{account_id}/{config.new_subcollection}"
 
             acc_result = AccountCopyResult(
@@ -392,6 +435,17 @@ def verify_resource(client: Client, name: str, config: MigrateConfig) -> VerifyR
                 continue
 
             account_id = _extract_account_id(config, col_name)
+            if not _is_valid_account_id(account_id):
+                logger.warning(
+                    "[%s] Skipping malformed source collection %r during "
+                    "verify — extracted account_id %r is not a valid "
+                    "Firestore path segment.",
+                    name,
+                    col_name,
+                    account_id,
+                )
+                result.malformed_sources.append(col_name)
+                continue
             dest_col_path = f"accounts/{account_id}/{config.new_subcollection}"
 
             src_count = _count_collection(client, col_name)
@@ -522,6 +576,18 @@ def delete_source_collections(
                 continue
 
             account_id = _extract_account_id(config, col_name)
+            if not _is_valid_account_id(account_id):
+                logger.warning(
+                    "[%s] Skipping malformed source collection %r during "
+                    "delete — extracted account_id %r is not a valid "
+                    "Firestore path segment; operator must remove this "
+                    "collection manually.",
+                    name,
+                    col_name,
+                    account_id,
+                )
+                result.malformed_sources.append(col_name)
+                continue
             acc_result = AccountDeleteResult(
                 account_id=account_id,
                 source_collection=col_name,
@@ -587,12 +653,18 @@ def dry_run_resource(client: Client, name: str, config: MigrateConfig) -> int:
     try:
         source_collections_found = 0
         total_source_docs = 0
+        # Populated only in the prefix-walk branch below — empty for the
+        # ``source_is_single_collection=True`` path, which doesn't strip a
+        # prefix and therefore can't produce an empty account_id.
+        malformed_sources: list[str] = []
 
         if config.source_is_single_collection:
             # DM-PRD-04 case: single global collection whose doc-IDs are account_ids.
             source_col_name = config.new_subcollection
             logger.info(
-                "[%s] dry-run: walking single source collection: %s", name, source_col_name
+                "[%s] dry-run: walking single source collection: %s",
+                name,
+                source_col_name,
             )
             source_col = client.collection(source_col_name)
             # Collect account_ids in one pass to avoid a second stream() call for dest count.
@@ -614,10 +686,22 @@ def dry_run_resource(client: Client, name: str, config: MigrateConfig) -> int:
                 col_name = col_ref.id
                 if not col_name.startswith(config.old_prefix):
                     continue
+                account_id = _extract_account_id(config, col_name)
+                if not _is_valid_account_id(account_id):
+                    logger.warning(
+                        "[%s] dry-run: skipping malformed source collection %r"
+                        " — extracted account_id %r is not a valid Firestore"
+                        " path segment.",
+                        name,
+                        col_name,
+                        account_id,
+                    )
+                    malformed_sources.append(col_name)
+                    continue
                 source_collections_found += 1
                 src_count = _count_collection(client, col_name)
                 total_source_docs += src_count
-                account_ids.append(_extract_account_id(config, col_name))
+                account_ids.append(account_id)
                 logger.debug(
                     "[%s] dry-run: found %s with %d docs", name, col_name, src_count
                 )
@@ -635,6 +719,14 @@ def dry_run_resource(client: Client, name: str, config: MigrateConfig) -> int:
         print(f"  Destination path:            {dest_path_sample}")
         print(f"  Destination doc count:       {dest_count:,}")
         print("  Status:                      DRY RUN")
+        if malformed_sources:
+            print(
+                f"  Malformed source collections (skipped): {len(malformed_sources)}"
+                f" — {', '.join(malformed_sources)}"
+            )
+            print(
+                "  Operator action:             remove the malformed collection(s) manually before --confirm-delete"
+            )
         print("  Next step:                   re-run without --dry-run to copy")
 
         return 0
@@ -673,6 +765,16 @@ def migrate_resource(client: Client, name: str, config: MigrateConfig) -> int:
         print(f"  Destination path:            {dest_path_sample}")
         print(f"  Destination doc count:       {verify_result.total_destination:,}")
         print(f"  Status:                      {status}")
+        # `copy_result.malformed_sources` is the authoritative list — verify
+        # walks the same collections and produces an identical set.
+        if copy_result.malformed_sources:
+            print(
+                f"  Malformed source collections (skipped): {len(copy_result.malformed_sources)}"
+                f" — {', '.join(copy_result.malformed_sources)}"
+            )
+            print(
+                "  Operator action:             remove the malformed collection(s) manually before --confirm-delete"
+            )
         print(f"  Next step:                   {next_step}")
 
         if not verify_result.verified:
