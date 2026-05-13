@@ -28,8 +28,9 @@ cicd_runner_sa_name = "cicd-runner"
 
 suffix_bucket_name_load_test_results = "cicd-load-test-results"
 
-# Per Ken's directive: "any changes to databases are applied to all 3 environments."
-# Previously defaulted to ["ken-e-dev"] only; expanded here to include staging and
-# production as part of DM-73 (performance_profiles bottleneck index provisioning).
-# All subsequent Firestore index deployments now target all three environments.
+# Architectural decision (DM-73): all Firestore index changes apply to all 3
+# environments simultaneously. Previously defaulted to ken-e-dev only; expanded
+# here as part of the performance_profiles bottleneck index provisioning.
+# DM-PRD-06 data migration is the remaining prerequisite for staging/prod to
+# serve live queries, but indexes are pre-provisioned.
 firestore_index_project_ids = ["ken-e-dev", "ken-e-staging", "ken-e-production"]

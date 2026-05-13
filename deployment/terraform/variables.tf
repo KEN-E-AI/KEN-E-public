@@ -128,7 +128,7 @@ variable "cicd_sa_deployment_required_roles" {
 }
 
 variable "firestore_index_project_ids" {
-  description = "GCP project IDs into which Firestore indexes (deployment/firestore.indexes.json) are provisioned by firestore_indexes.tf. Default scopes the first apply to dev only; DM-PRD-06 staging cutover overrides to add ken-e-staging (and later prod) without touching this file."
+  description = "GCP project IDs into which Firestore indexes (deployment/firestore.indexes.json) are provisioned by firestore_indexes.tf. Expanded to all three environments in DM-73 (see vars/env.tfvars); DM-PRD-06 data migration is the remaining prerequisite for staging/prod to serve live traffic, but indexes are pre-provisioned. Default kept as [\"ken-e-dev\"] here so out-of-band applies without -var-file still only touch dev."
   type        = list(string)
   default     = ["ken-e-dev"]
 
