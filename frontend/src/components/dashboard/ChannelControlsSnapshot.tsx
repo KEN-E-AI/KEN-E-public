@@ -132,9 +132,9 @@ const ObjectiveNode = ({ data }: { data: any }) => {
       <div
         className={`rounded-lg shadow-lg border-2 min-w-[11.25rem] text-center cursor-pointer transition-colors text-white relative ${color.bg} ${color.border} ${color.hover}`}
         style={{
-          width: "212px",
-          minHeight: "140px",
-          padding: "8px 8px 16px 9px",
+          width: "13.25rem",
+          minHeight: "8.75rem",
+          padding: "0.5rem 0.5rem 1rem 0.5625rem",
         }}
       >
         <div className="flex items-start justify-center mb-2">
@@ -181,8 +181,8 @@ const ObjectiveNode = ({ data }: { data: any }) => {
           style={{
             background: "#6b7280",
             border: "2px solid #ffffff",
-            width: "12px",
-            height: "12px",
+            width: "0.75rem",
+            height: "0.75rem",
           }}
         />
       </div>
@@ -558,8 +558,8 @@ const ChannelNode = ({ data }: { data: any }) => {
         style={{
           background: "#6b7280",
           border: "2px solid #ffffff",
-          width: "12px",
-          height: "12px",
+          width: "0.75rem",
+          height: "0.75rem",
         }}
       />
       <div
@@ -647,8 +647,8 @@ const ChannelNode = ({ data }: { data: any }) => {
         style={{
           background: "#6b7280",
           border: "2px solid #ffffff",
-          width: "12px",
-          height: "12px",
+          width: "0.75rem",
+          height: "0.75rem",
         }}
       />
     </>
@@ -668,8 +668,8 @@ const TacticNode = ({ data }: { data: any }) => {
         style={{
           background: "#6b7280",
           border: "2px solid #ffffff",
-          width: "12px",
-          height: "12px",
+          width: "0.75rem",
+          height: "0.75rem",
         }}
       />
       <div

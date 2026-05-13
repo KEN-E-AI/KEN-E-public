@@ -28,8 +28,8 @@ export const StrengthNode = memo(({ data }: NodeProps<StrengthNodeData>) => {
           <div
             className="rounded-full bg-brand-light-green flex items-center justify-center"
             style={{
-              width: "72px",
-              height: "72px",
+              width: "4.5rem",
+              height: "4.5rem",
               boxShadow: data.isSelected
                 ? "0 0 0 3px rgba(184, 226, 175, 0.4)"
                 : "none",
@@ -96,8 +96,8 @@ export const OpportunityNode = memo(
             <div
               className="rounded-full bg-brand-dark-green flex items-center justify-center"
               style={{
-                width: "72px",
-                height: "72px",
+                width: "4.5rem",
+                height: "4.5rem",
                 boxShadow: data.isSelected
                   ? "0 0 0 3px rgba(58, 116, 57, 0.4)"
                   : "none",
@@ -172,8 +172,8 @@ export const WeaknessNode = memo(({ data }: NodeProps<WeaknessNodeData>) => {
           <div
             className="rounded-full bg-brand-light-red flex items-center justify-center"
             style={{
-              width: "72px",
-              height: "72px",
+              width: "4.5rem",
+              height: "4.5rem",
               boxShadow: data.isSelected
                 ? "0 0 0 3px rgba(255, 153, 153, 0.4)"
                 : "none",
@@ -239,8 +239,8 @@ export const RiskNode = memo(({ data }: NodeProps<RiskNodeData>) => {
           <div
             className="rounded-full bg-brand-red flex items-center justify-center"
             style={{
-              width: "72px",
-              height: "72px",
+              width: "4.5rem",
+              height: "4.5rem",
               boxShadow: data.isSelected
                 ? "0 0 0 3px rgba(255, 107, 107, 0.4)"
                 : "none",

@@ -42,8 +42,8 @@ export const CompetitorNode = memo(
             <div
               className="rounded-full bg-brand-light-blue flex items-center justify-center"
               style={{
-                width: "72px",
-                height: "72px",
+                width: "4.5rem",
+                height: "4.5rem",
                 boxShadow: data.isSelected
                   ? "0 0 0 3px rgba(159, 206, 237, 0.4)"
                   : "none",
@@ -109,8 +109,8 @@ export const CompetitorStrengthNode = memo(
             <div
               className="rounded-full bg-brand-light-red flex items-center justify-center"
               style={{
-                width: "72px",
-                height: "72px",
+                width: "4.5rem",
+                height: "4.5rem",
                 boxShadow: data.isSelected
                   ? "0 0 0 3px rgba(255, 153, 153, 0.4)"
                   : "none",
@@ -182,8 +182,8 @@ export const CompetitorWeaknessNode = memo(
             <div
               className="rounded-full bg-brand-light-green flex items-center justify-center"
               style={{
-                width: "72px",
-                height: "72px",
+                width: "4.5rem",
+                height: "4.5rem",
                 boxShadow: data.isSelected
                   ? "0 0 0 3px rgba(184, 226, 175, 0.4)"
                   : "none",
@@ -259,8 +259,8 @@ export const SubstituteProductNode = memo(
             <div
               className="rounded-full bg-brand-yellow flex items-center justify-center"
               style={{
-                width: "72px",
-                height: "72px",
+                width: "4.5rem",
+                height: "4.5rem",
                 boxShadow: data.isSelected
                   ? "0 0 0 3px rgba(234, 185, 70, 0.4)"
                   : "none",
@@ -338,8 +338,8 @@ export const OurProductNode = memo(
             <div
               className="rounded-full bg-brand-medium-blue flex items-center justify-center"
               style={{
-                width: "72px",
-                height: "72px",
+                width: "4.5rem",
+                height: "4.5rem",
                 boxShadow: data.isSelected
                   ? "0 0 0 3px rgba(99, 179, 237, 0.4)"
                   : "none",
@@ -396,8 +396,8 @@ export const RiskNode = memo(({ data }: NodeProps<RiskNodeData>) => {
           <div
             className="rounded-full bg-brand-red flex items-center justify-center"
             style={{
-              width: "72px",
-              height: "72px",
+              width: "4.5rem",
+              height: "4.5rem",
               boxShadow: data.isSelected
                 ? "0 0 0 3px rgba(255, 107, 107, 0.4)"
                 : "none",
@@ -454,8 +454,8 @@ export const OpportunityNode = memo(
             <div
               className="rounded-full bg-brand-dark-green flex items-center justify-center"
               style={{
-                width: "72px",
-                height: "72px",
+                width: "4.5rem",
+                height: "4.5rem",
                 boxShadow: data.isSelected
                   ? "0 0 0 3px rgba(58, 116, 57, 0.4)"
                   : "none",

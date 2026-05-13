@@ -37,10 +37,10 @@ export function BackgroundEffects() {
         <div
           className="absolute rounded-full blur-[5rem] animate-blob-drift"
           style={{
-            top: "-60px",
+            top: "-3.75rem",
             left: "10%",
-            width: "400px",
-            height: "400px",
+            width: "25rem",
+            height: "25rem",
             backgroundColor: "var(--color-blob-blue)",
           }}
         />
@@ -48,9 +48,9 @@ export function BackgroundEffects() {
           className="absolute rounded-full blur-[5rem] animate-blob-drift-delayed"
           style={{
             top: "30%",
-            right: "-80px",
-            width: "350px",
-            height: "350px",
+            right: "-5rem",
+            width: "21.875rem",
+            height: "21.875rem",
             backgroundColor: "var(--color-blob-violet)",
             animationDelay: "5s",
           }}
@@ -58,10 +58,10 @@ export function BackgroundEffects() {
         <div
           className="absolute rounded-full blur-[5rem] animate-blob-drift"
           style={{
-            bottom: "-40px",
+            bottom: "-2.5rem",
             left: "30%",
-            width: "450px",
-            height: "450px",
+            width: "28.125rem",
+            height: "28.125rem",
             backgroundColor: "var(--color-blob-teal)",
             animationDelay: "10s",
           }}
@@ -70,9 +70,9 @@ export function BackgroundEffects() {
           className="absolute rounded-full blur-[5rem] animate-blob-drift-delayed"
           style={{
             top: "50%",
-            left: "-100px",
-            width: "300px",
-            height: "300px",
+            left: "-6.25rem",
+            width: "18.75rem",
+            height: "18.75rem",
             backgroundColor: "var(--color-blob-slate)",
             animationDelay: "15s",
           }}

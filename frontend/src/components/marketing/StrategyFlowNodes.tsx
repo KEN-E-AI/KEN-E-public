@@ -57,8 +57,8 @@ export const CustomerProfileNode = ({ data }: CustomerProfileNodeProps) => {
           <div
             className="rounded-full bg-brand-medium-blue flex items-center justify-center"
             style={{
-              width: "72px",
-              height: "72px",
+              width: "4.5rem",
+              height: "4.5rem",
               boxShadow: data.isSelected
                 ? "0 0 0 3px rgba(70, 143, 208, 0.4)"
                 : "none",
@@ -131,8 +131,8 @@ export const StrategyBundleNode = ({
           <div
             className="rounded-full bg-brand-dark-blue flex items-center justify-center"
             style={{
-              width: "72px",
-              height: "72px",
+              width: "4.5rem",
+              height: "4.5rem",
               boxShadow: data.isSelected
                 ? "0 0 0 3px rgba(27, 66, 111, 0.4)"
                 : "none",

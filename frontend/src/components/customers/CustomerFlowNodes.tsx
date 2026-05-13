@@ -30,8 +30,8 @@ export const CustomerProfileNode = memo(
             <div
               className="rounded-full bg-brand-light-blue flex items-center justify-center"
               style={{
-                width: "72px",
-                height: "72px",
+                width: "4.5rem",
+                height: "4.5rem",
                 boxShadow: data.isSelected
                   ? "0 0 0 3px rgba(108, 198, 242, 0.4)"
                   : "none",
@@ -101,8 +101,8 @@ export const ProductCategoryNode = memo(
             <div
               className="rounded-full bg-brand-medium-blue flex items-center justify-center"
               style={{
-                width: "72px",
-                height: "72px",
+                width: "4.5rem",
+                height: "4.5rem",
                 boxShadow: data.isSelected
                   ? "0 0 0 3px rgba(70, 143, 208, 0.4)"
                   : "none",

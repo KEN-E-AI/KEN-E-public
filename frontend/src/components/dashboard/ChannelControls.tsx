@@ -197,9 +197,9 @@ const ObjectiveNode = ({ data }: { data: any }) => {
           : `${color.bg} ${color.border} ${color.hover}`
       }`}
       style={{
-        width: "212px",
-        minHeight: "140px",
-        padding: "8px 8px 16px 9px",
+        width: "13.25rem",
+        minHeight: "8.75rem",
+        padding: "0.5rem 0.5rem 1rem 0.5625rem",
       }}
     >
       <div className="font-semibold text-sm">{data.label}</div>
@@ -234,8 +234,8 @@ const ObjectiveNode = ({ data }: { data: any }) => {
         style={{
           background: "#6b7280",
           border: "2px solid #ffffff",
-          width: "12px",
-          height: "12px",
+          width: "0.75rem",
+          height: "0.75rem",
         }}
       />
     </div>
@@ -314,8 +314,8 @@ const ChannelNode = ({ data }: { data: any }) => {
         style={{
           background: "#6b7280",
           border: "2px solid #ffffff",
-          width: "12px",
-          height: "12px",
+          width: "0.75rem",
+          height: "0.75rem",
         }}
       />
 
@@ -327,8 +327,8 @@ const ChannelNode = ({ data }: { data: any }) => {
         style={{
           background: "#6b7280",
           border: "2px solid #ffffff",
-          width: "12px",
-          height: "12px",
+          width: "0.75rem",
+          height: "0.75rem",
         }}
       />
     </div>
@@ -396,8 +396,8 @@ const TacticNode = ({ data }: { data: any }) => {
         style={{
           background: "#6b7280",
           border: "2px solid #ffffff",
-          width: "12px",
-          height: "12px",
+          width: "0.75rem",
+          height: "0.75rem",
         }}
       />
     </div>

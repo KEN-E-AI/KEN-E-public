@@ -16,19 +16,19 @@ import { Skeleton } from "@/components/ui/skeleton";
 const FALLBACK_ACCENTS = [
   {
     accent: "var(--color-blue-500)",
-    shadow: "0 4px 12px rgba(59,130,246,0.25)",
+    shadow: "0 0.25rem 0.75rem rgba(59,130,246,0.25)",
   },
   {
     accent: "var(--color-amber-500)",
-    shadow: "0 4px 12px rgba(245,158,11,0.25)",
+    shadow: "0 0.25rem 0.75rem rgba(245,158,11,0.25)",
   },
   {
     accent: "var(--color-violet-500)",
-    shadow: "0 4px 12px rgba(139,92,246,0.25)",
+    shadow: "0 0.25rem 0.75rem rgba(139,92,246,0.25)",
   },
   {
     accent: "var(--color-teal-500)",
-    shadow: "0 4px 12px rgba(20,184,166,0.25)",
+    shadow: "0 0.25rem 0.75rem rgba(20,184,166,0.25)",
   },
 ];
 
