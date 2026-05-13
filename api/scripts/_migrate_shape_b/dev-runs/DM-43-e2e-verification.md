@@ -69,7 +69,7 @@ a normal package import for testing purposes.
 All tests used the `ken-e-dev` project, `analytics` named Firestore database, and synthetic
 `dm43_smoke_*` account IDs. All smoke fixtures were cleaned up after each test.
 
-### Smoke 2 — `AsyncAnalyticsQueue`
+### Smoke 1 — `AsyncAnalyticsQueue`
 
 | Check | Expected | Actual | Status |
 |---|---|---|---|
@@ -78,7 +78,7 @@ All tests used the `ken-e-dev` project, `analytics` named Firestore database, an
 | `account_id` field in each doc | `dm43_smoke_aa` | `dm43_smoke_aa` | ✅ |
 | Cleanup: docs remaining after delete | 0 | 0 | ✅ |
 
-### Smoke 3 — `AnalyticsService.aggregate_daily_costs`
+### Smoke 2 — `AnalyticsService.aggregate_daily_costs`
 
 `AnalyticsService._init_firestore_clients()` sets `self.analytics_db = None` (IAM hold,
 existing TODO comment at `analytics_service.py:67-68`). The smoke test monkey-patched
@@ -93,7 +93,7 @@ hold is lifted.
 | `total_cost` field in doc | > 0 | 0.0150 | ✅ |
 | Cleanup: docs remaining after delete | 0 | 0 | ✅ |
 
-### Smoke 4 — `PerformanceProfiler`
+### Smoke 3 — `PerformanceProfiler`
 
 | Check | Expected | Actual | Status |
 |---|---|---|---|
@@ -103,7 +103,7 @@ hold is lifted.
 | `duration_seconds` field in each doc | > 0 | 0.05–0.06 s | ✅ |
 | Cleanup: docs remaining after delete | 0 | 0 | ✅ |
 
-### Smoke 5 — `OptimizationAnalyzer` (read + recommend)
+### Smoke 4 — `OptimizationAnalyzer` (read + recommend)
 
 Seeded 3 `agent_analytics` docs with `success=False` and `total_tokens=7000`
 (`model="gemini-2.5-pro"`, below `pro_model_simple_task_threshold=50000`) to trigger
@@ -177,16 +177,17 @@ cd /home/agent/workspace && make lint
 
 ## Acceptance Criteria
 
-| AC | Criterion | Status |
+| AC | Criterion (per DM-PRD-02 §6) | Status |
 |---|---|---|
 | AC-1 | `rg` scan: 0 legacy Shape A patterns in production code | ✅ 0 hits (2 intentional test carve-outs excluded) |
-| AC-2 | `pytest app/adk/agents/strategy_agent/tests/`: passes | ✅ 26 analytics tests pass, 0 new failures |
-| AC-3 (PRD) | Live agent run → fresh docs at `accounts/{id}/agent_analytics/` | ✅ Smoke 2: 3 docs at Shape B path |
-| AC-5 (PRD) | `optimization_analyzer` returns non-empty recommendation set | ✅ Smoke 5: 3 recommendations returned |
-| AC-6 (PRD) | `performance_profiler` writes land at `accounts/{id}/performance_profiles/` | ✅ Smoke 4: 3 docs at Shape B path |
-| AC-6 (issue) | `cost_aggregations` write lands at `accounts/{id}/cost_aggregations/` | ✅ Smoke 3: 1 doc at Shape B path |
-| AC-8 | `make lint` clean; DM-PRD-02 docs marked Complete | ✅ lint passes; README + PRD flipped |
-| Pre-flight gap | No surviving legacy Shape A collections in any database | ✅ 14 `cost_aggregations_acc_*` in `analytics` DB resolved |
+| AC-2 | In dev Firestore, no top-level `agent_analytics_*`, `cost_aggregations_*`, or `performance_profiles_*` collections exist | ✅ `cost_aggregations_acc_*` in `analytics` DB resolved (pre-flight); `agent_analytics_*` confirmed 0 by DM-39; `performance_profiles_*` confirmed 0 by DM-40 |
+| AC-3 | Live agent run → fresh docs at `accounts/{id}/agent_analytics/{metric_id}` | ✅ Smoke 1: 3 docs at Shape B path |
+| AC-4 | `async_analytics_queue` flushes to `accounts/{id}/agent_analytics/` with no lost events | ✅ Smoke 1: 3 docs written, 3 read back — count matches |
+| AC-5 | `optimization_analyzer` returns non-empty recommendation set for seeded account | ✅ Smoke 4: 3 recommendations returned |
+| AC-6 | `performance_profiler` writes land at `accounts/{id}/performance_profiles/` | ✅ Smoke 3: 3 docs at Shape B path |
+| AC-6 (ext) | `cost_aggregations` write lands at `accounts/{id}/cost_aggregations/` (issue-level extension of AC-2) | ✅ Smoke 2: 1 doc at Shape B path |
+| AC-8 | `pytest app/adk/agents/strategy_agent/tests/` passes; `make lint` clean | ✅ 26 analytics tests pass; codespell passes; 0 new ruff/mypy errors |
+| DM-PRD-02 docs | Status flipped to Complete in README §5.1 + PRD frontmatter | ✅ Both files updated |
 | DM-PRD-05 notify | DM-PRD-05 owner pinged on Linear that one more blocker is cleared | ✅ Posted in DM-43 comment + DM-PRD-05 issue |
 
 ## Notes
