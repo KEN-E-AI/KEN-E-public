@@ -56,7 +56,7 @@ export const StrengthNode = memo(({ data }: NodeProps<StrengthNodeData>) => {
           e.stopPropagation();
           data.onAddOpportunity();
         }}
-        className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-light-green flex items-center justify-center z-20"
+        className="absolute -bottom-[0.75rem] right-[1.5625rem] w-6 h-6 rounded-full bg-brand-light-green flex items-center justify-center z-20"
       >
         <Plus className="h-4 w-4 text-white" />
       </button>
@@ -134,7 +134,7 @@ export const OpportunityNode = memo(
                 e.stopPropagation();
                 data.onAddSubstitute();
               }}
-              className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-dark-green flex items-center justify-center z-20"
+              className="absolute -bottom-[0.75rem] right-[1.5625rem] w-6 h-6 rounded-full bg-brand-dark-green flex items-center justify-center z-20"
             >
               <Plus className="h-4 w-4 text-white" />
             </button>
@@ -200,7 +200,7 @@ export const WeaknessNode = memo(({ data }: NodeProps<WeaknessNodeData>) => {
           e.stopPropagation();
           data.onAddRisk();
         }}
-        className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-light-red flex items-center justify-center z-20"
+        className="absolute -bottom-[0.75rem] right-[1.5625rem] w-6 h-6 rounded-full bg-brand-light-red flex items-center justify-center z-20"
       >
         <Plus className="h-4 w-4 text-white" />
       </button>
@@ -277,7 +277,7 @@ export const RiskNode = memo(({ data }: NodeProps<RiskNodeData>) => {
               e.stopPropagation();
               data.onAddSubstitute();
             }}
-            className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-red flex items-center justify-center z-20"
+            className="absolute -bottom-[0.75rem] right-[1.5625rem] w-6 h-6 rounded-full bg-brand-red flex items-center justify-center z-20"
           >
             <Plus className="h-4 w-4 text-white" />
           </button>

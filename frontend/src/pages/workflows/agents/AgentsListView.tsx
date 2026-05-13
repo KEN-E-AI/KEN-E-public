@@ -75,7 +75,7 @@ function AgentCard({ config, index, onEdit }: AgentCardProps) {
 
   return (
     <div
-      className="relative p-4 rounded-[14px] border-2 border-[var(--color-border-default)] hover:border-[var(--color-border-strong)] hover:-translate-y-0.5 transition-all cursor-pointer bg-card overflow-hidden flex flex-col"
+      className="relative p-4 rounded-[0.875rem] border-2 border-[var(--color-border-default)] hover:border-[var(--color-border-strong)] hover:-translate-y-0.5 transition-all cursor-pointer bg-card overflow-hidden flex flex-col"
       style={{
         transitionTimingFunction: "var(--ease-bounce)",
         transitionDuration: "var(--duration-fast)",
@@ -143,7 +143,7 @@ function AgentCard({ config, index, onEdit }: AgentCardProps) {
 
 function CardSkeleton() {
   return (
-    <div className="p-4 rounded-[14px] border-2 border-[var(--color-border-default)] bg-card flex flex-col gap-3">
+    <div className="p-4 rounded-[0.875rem] border-2 border-[var(--color-border-default)] bg-card flex flex-col gap-3">
       <Skeleton className="size-11 rounded-xl" />
       <Skeleton className="h-4 w-3/4" />
       <Skeleton className="h-3 w-1/2" />

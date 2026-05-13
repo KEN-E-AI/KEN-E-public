@@ -43,7 +43,7 @@ const DrawerContent = React.forwardRef<
       ref={ref}
       data-slot="drawer-content"
       className={cn(
-        "fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col rounded-t-[10px] border border-[var(--color-border-default)] bg-[var(--color-bg-elevated)]",
+        "fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col rounded-t-[0.625rem] border border-[var(--color-border-default)] bg-[var(--color-bg-elevated)]",
         className,
       )}
       {...props}

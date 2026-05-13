@@ -74,7 +74,7 @@ export const CategoryNode = memo(({ data }: NodeProps<CategoryNodeData>) => {
           e.stopPropagation();
           data.onAddProduct();
         }}
-        className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-light-blue flex items-center justify-center z-20"
+        className="absolute -bottom-[0.75rem] right-[1.5625rem] w-6 h-6 rounded-full bg-brand-light-blue flex items-center justify-center z-20"
       >
         <Plus className="h-4 w-4 text-white" />
       </button>
@@ -164,7 +164,7 @@ export const ProductNode = memo(({ data }: NodeProps<ProductNodeData>) => {
               e.stopPropagation();
               data.onAddSubstitute();
             }}
-            className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-medium-blue flex items-center justify-center z-20"
+            className="absolute -bottom-[0.75rem] right-[1.5625rem] w-6 h-6 rounded-full bg-brand-medium-blue flex items-center justify-center z-20"
           >
             <Plus className="h-4 w-4 text-white" />
           </button>

@@ -71,7 +71,7 @@ export const CompetitorNode = memo(
               e.stopPropagation();
               data.onAddChild();
             }}
-            className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-light-blue flex items-center justify-center z-20"
+            className="absolute -bottom-[0.75rem] right-[1.5625rem] w-6 h-6 rounded-full bg-brand-light-blue flex items-center justify-center z-20"
           >
             <Plus className="h-4 w-4 text-white" />
           </button>
@@ -145,7 +145,7 @@ export const CompetitorStrengthNode = memo(
             e.stopPropagation();
             data.onAddRisk();
           }}
-          className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-light-red flex items-center justify-center z-20"
+          className="absolute -bottom-[0.75rem] right-[1.5625rem] w-6 h-6 rounded-full bg-brand-light-red flex items-center justify-center z-20"
         >
           <Plus className="h-4 w-4 text-white" />
         </button>
@@ -218,7 +218,7 @@ export const CompetitorWeaknessNode = memo(
             e.stopPropagation();
             data.onAddOpportunity();
           }}
-          className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-light-green flex items-center justify-center z-20"
+          className="absolute -bottom-[0.75rem] right-[1.5625rem] w-6 h-6 rounded-full bg-brand-light-green flex items-center justify-center z-20"
         >
           <Plus className="h-4 w-4 text-white" />
         </button>
@@ -297,7 +297,7 @@ export const SubstituteProductNode = memo(
                 e.stopPropagation();
                 data.onAddProduct();
               }}
-              className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-yellow flex items-center justify-center z-20"
+              className="absolute -bottom-[0.75rem] right-[1.5625rem] w-6 h-6 rounded-full bg-brand-yellow flex items-center justify-center z-20"
             >
               <Plus className="h-4 w-4 text-white" />
             </button>

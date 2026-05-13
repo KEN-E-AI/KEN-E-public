@@ -35,7 +35,7 @@ export function BackgroundEffects() {
         className="fixed inset-0 pointer-events-none overflow-hidden z-background"
       >
         <div
-          className="absolute rounded-full blur-[80px] animate-blob-drift"
+          className="absolute rounded-full blur-[5rem] animate-blob-drift"
           style={{
             top: "-60px",
             left: "10%",
@@ -45,7 +45,7 @@ export function BackgroundEffects() {
           }}
         />
         <div
-          className="absolute rounded-full blur-[80px] animate-blob-drift-delayed"
+          className="absolute rounded-full blur-[5rem] animate-blob-drift-delayed"
           style={{
             top: "30%",
             right: "-80px",
@@ -56,7 +56,7 @@ export function BackgroundEffects() {
           }}
         />
         <div
-          className="absolute rounded-full blur-[80px] animate-blob-drift"
+          className="absolute rounded-full blur-[5rem] animate-blob-drift"
           style={{
             bottom: "-40px",
             left: "30%",
@@ -67,7 +67,7 @@ export function BackgroundEffects() {
           }}
         />
         <div
-          className="absolute rounded-full blur-[80px] animate-blob-drift-delayed"
+          className="absolute rounded-full blur-[5rem] animate-blob-drift-delayed"
           style={{
             top: "50%",
             left: "-100px",

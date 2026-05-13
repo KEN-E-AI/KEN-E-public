@@ -111,7 +111,7 @@ const MetricCard = ({ title, color, metric, chartData }: MetricCardProps) => {
         <div className="h-32">
           <ChartContainer
             config={chartConfig}
-            className="h-full w-full pr-[9px]"
+            className="h-full w-full pr-[0.5625rem]"
           >
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
