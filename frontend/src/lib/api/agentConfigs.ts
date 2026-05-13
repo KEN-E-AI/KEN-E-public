@@ -42,7 +42,10 @@ export type CustomizationStatus = "default" | "customized" | "custom_agent";
 
 export type MergedAgentConfig = {
   config_id: string;
+  // Human name (e.g. "Dave"). Optional, user-editable.
   name: string | null;
+  // Role description (e.g. "Business Researcher"). User-editable.
+  title: string | null;
   instruction: string;
   model: string;
   description: string | null;
@@ -60,7 +63,8 @@ export type MergedAgentConfig = {
 };
 
 export type AgentConfigCreate = {
-  name: string;
+  title: string;
+  name?: string | null;
   instruction: string;
   model: string;
   description?: string | null;
@@ -70,6 +74,8 @@ export type AgentConfigCreate = {
 };
 
 export type AgentConfigOverlayUpdate = {
+  name?: string | null;
+  title?: string | null;
   instruction?: string | null;
   model?: string | null;
   description?: string | null;
@@ -77,6 +83,43 @@ export type AgentConfigOverlayUpdate = {
   skill_ids?: string[] | null;
   sandbox_code_executor_enabled?: boolean | null;
 };
+
+// ─── Display helpers ──────────────────────────────────────────────────────────
+
+export type AgentDisplay = {
+  /** Primary line (bold, top). Falls back to title, then Title-Cased config_id. */
+  primary: string;
+  /** Secondary line (bold, beneath). Only set when name + title are both present
+   *  and the secondary value adds information beyond the primary line. */
+  subtitle: string | null;
+};
+
+/**
+ * Resolve how an agent should be rendered in any UI surface (list cards,
+ * edit-sheet headers, chat references, etc.).
+ *
+ * Display chain:
+ *   1. `config.name` (human name like "Dave") → primary; if title is also
+ *      set, title appears as the subtitle.
+ *   2. `config.title` (role like "Business Researcher") → primary; no subtitle.
+ *   3. Title-cased `config.config_id` → primary; no subtitle. Fallback for
+ *      legacy unmigrated docs.
+ *
+ * Centralising this in one place prevents drift between surfaces — every
+ * agent renders the same way regardless of where the component lives.
+ */
+export function displayNameFor(config: {
+  name: string | null;
+  title: string | null;
+  config_id: string;
+}): AgentDisplay {
+  const titleFallback = config.config_id
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+  const primary = config.name || config.title || titleFallback;
+  const subtitle = config.name && config.title ? config.title : null;
+  return { primary, subtitle };
+}
 
 // ─── API client functions ─────────────────────────────────────────────────────
 

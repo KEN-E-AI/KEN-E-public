@@ -49,7 +49,8 @@ def mock_firestore_db():
 def sample_config_data():
     """Sample agent configuration data (flat shape per AH-40)."""
     return {
-        "name": "business_researcher",
+        "name": None,
+        "title": "Business Researcher",
         "model": "gemini-2.5-pro",
         "description": "Test description",
         "instruction": "Test instruction for the agent",
@@ -298,6 +299,17 @@ class TestBuildFirestoreUpdates:
         assert "description" not in updates
         assert updates["model"] == "gemini-2.5-pro"
 
+    def test_name_and_title_not_in_helper_signature(self):
+        """Nullable identity fields are intentionally not handled by the
+        helper — see the helper's docstring. The handler writes them
+        inline using ``model_fields_set`` so callers can distinguish
+        ``{"name": null}`` from an omitted name."""
+        import inspect
+
+        params = inspect.signature(_build_firestore_updates).parameters
+        assert "name" not in params
+        assert "title" not in params
+
 
 class TestMergeFromDataStripsStorageInternals:
     """AH-40: ``_merge_from_data`` strips storage-internal fields that aren't
@@ -341,6 +353,44 @@ class TestMergeFromDataStripsStorageInternals:
 
         assert merged is not None
         assert merged.temperature == 0.4
+
+    def test_exposes_name_and_title_on_merged_response(self):
+        """Identity fields flow through to the MergedAgentConfig response so
+        the frontend can render name primary / title secondary."""
+        from src.kene_api.routers.agent_configs import _merge_from_data
+
+        global_data = {
+            "name": "Dave",
+            "title": "Business Researcher",
+            "instruction": "Hello.",
+            "model": "gemini-2.5-pro",
+        }
+
+        merged = _merge_from_data("business_researcher", global_data, None)
+
+        assert merged is not None
+        assert merged.name == "Dave"
+        assert merged.title == "Business Researcher"
+
+    def test_strips_pre_ah_prd_02_legacy_fields(self):
+        """``canonical_id`` and ``legacy_agent_name`` are pre-AH-PRD-02 seed
+        metadata that lives on a handful of docs (business_researcher,
+        business_formatter, competitive_analyst, marketing_strategist). They
+        must be stripped before validation or the list endpoint silently
+        drops those docs."""
+        from src.kene_api.routers.agent_configs import _merge_from_data
+
+        global_data = {
+            "instruction": "Researches business strategy.",
+            "model": "gemini-2.5-pro",
+            "canonical_id": "business_strategy",
+            "legacy_agent_name": "Business Researcher",
+        }
+
+        merged = _merge_from_data("business_researcher", global_data, None)
+
+        assert merged is not None
+        assert merged.config_id == "business_researcher"
 
 
 class TestErrorHandling:
@@ -387,6 +437,139 @@ class TestFirestoreDependency:
 
         # Should return exact same instance
         assert client1 is client2
+
+
+class TestAdminUpdateNullClearing:
+    """Admin PUT must let callers clear nullable identity fields via {"name": null}.
+
+    Without this, ``_build_firestore_updates(name=None, ...)`` would silently
+    skip the field — indistinguishable from an omitted name. The handler uses
+    ``model_fields_set`` to tell the two cases apart.
+    """
+
+    @pytest.mark.asyncio
+    async def test_name_explicitly_set_to_null_writes_null(
+        self, admin_user, sample_config_data
+    ):
+        from unittest.mock import AsyncMock
+
+        from src.kene_api.routers import agent_configs as router_mod
+
+        pre = dict(sample_config_data)
+        pre["name"] = "Dave"
+        pre["metadata"] = {**pre["metadata"], "version": "v1.0.0"}
+        post = dict(pre)
+        post["name"] = None
+        post["metadata"] = {**pre["metadata"], "version": "v1.0.1"}
+
+        mock_db = MagicMock()
+        doc_ref = MagicMock()
+        captured_updates: dict = {}
+
+        def _capture(updates):
+            captured_updates.update(updates)
+
+        doc_ref.update.side_effect = _capture
+        doc_ref.get.side_effect = [
+            MagicMock(exists=True, to_dict=lambda: pre),
+            MagicMock(exists=True, to_dict=lambda: post),
+        ]
+        mock_db.collection.return_value.document.return_value = doc_ref
+
+        with patch.object(router_mod, "log_config_action", AsyncMock(return_value="a")):
+            await router_mod.update_agent_config(
+                "business_researcher",
+                AgentConfigUpdate(name=None, updated_by="admin@ken-e.ai"),
+                user=admin_user,
+                db=mock_db,
+            )
+
+        assert "name" in captured_updates, (
+            "Explicit {'name': null} must produce a Firestore write, not a no-op"
+        )
+        assert captured_updates["name"] is None
+
+    @pytest.mark.asyncio
+    async def test_name_omitted_is_not_written(
+        self, admin_user, sample_config_data
+    ):
+        """An update body without ``name`` must NOT include name in the write."""
+        from unittest.mock import AsyncMock
+
+        from src.kene_api.routers import agent_configs as router_mod
+
+        pre = dict(sample_config_data)
+        pre["metadata"] = {**pre["metadata"], "version": "v1.0.0"}
+        post = {**pre, "instruction": "New instruction text after update"}
+        post["metadata"] = {**pre["metadata"], "version": "v1.0.1"}
+
+        mock_db = MagicMock()
+        doc_ref = MagicMock()
+        captured_updates: dict = {}
+
+        def _capture(updates):
+            captured_updates.update(updates)
+
+        doc_ref.update.side_effect = _capture
+        doc_ref.get.side_effect = [
+            MagicMock(exists=True, to_dict=lambda: pre),
+            MagicMock(exists=True, to_dict=lambda: post),
+        ]
+        mock_db.collection.return_value.document.return_value = doc_ref
+
+        with patch.object(router_mod, "log_config_action", AsyncMock(return_value="a")):
+            await router_mod.update_agent_config(
+                "business_researcher",
+                AgentConfigUpdate(
+                    instruction="New instruction text after update",
+                    updated_by="admin@ken-e.ai",
+                ),
+                user=admin_user,
+                db=mock_db,
+            )
+
+        assert "name" not in captured_updates
+        assert "title" not in captured_updates
+
+    @pytest.mark.asyncio
+    async def test_title_clear_audited_as_change(
+        self, admin_user, sample_config_data
+    ):
+        """The audit log must capture a null-clearing change to title."""
+        from unittest.mock import AsyncMock
+
+        from src.kene_api.routers import agent_configs as router_mod
+
+        pre = dict(sample_config_data)
+        pre["title"] = "Business Researcher"
+        pre["metadata"] = {**pre["metadata"], "version": "v1.0.0"}
+        post = dict(pre)
+        post["title"] = None
+        post["metadata"] = {**pre["metadata"], "version": "v1.0.1"}
+
+        mock_db = MagicMock()
+        doc_ref = MagicMock()
+        doc_ref.get.side_effect = [
+            MagicMock(exists=True, to_dict=lambda: pre),
+            MagicMock(exists=True, to_dict=lambda: post),
+        ]
+        mock_db.collection.return_value.document.return_value = doc_ref
+
+        spy_audit = AsyncMock(return_value="audit-1")
+        with patch.object(router_mod, "log_config_action", spy_audit):
+            await router_mod.update_agent_config(
+                "business_researcher",
+                AgentConfigUpdate(title=None, updated_by="admin@ken-e.ai"),
+                user=admin_user,
+                db=mock_db,
+            )
+
+        kw = spy_audit.await_args.kwargs
+        assert "title" in kw["fields_changed"]
+        assert kw["changes"]["title"] == {
+            "before": "Business Researcher",
+            "after": None,
+        }
 
 
 class TestAllowlistDerivedFromRegistry:

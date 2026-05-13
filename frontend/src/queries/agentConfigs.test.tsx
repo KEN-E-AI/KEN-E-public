@@ -185,6 +185,12 @@ describe("useUpsertAgentConfigOverlay", () => {
 // ─── useCreateAgentConfig ─────────────────────────────────────────────────────
 
 describe("useCreateAgentConfig", () => {
+  const validCreateBody = {
+    title: "New Config",
+    instruction: "You are a helpful test assistant.",
+    model: "gemini-2.5-flash",
+  };
+
   it("calls createAgentConfig and invalidates the list key on success", async () => {
     const created = { config_id: "ga-new", customization_status: "default" };
     mockCreateAgentConfig.mockResolvedValueOnce(created);
@@ -196,12 +202,13 @@ describe("useCreateAgentConfig", () => {
       wrapper: makeWrapper(client),
     });
 
-    result.current.mutate({ name: "New Config" });
+    result.current.mutate(validCreateBody);
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockCreateAgentConfig).toHaveBeenCalledWith("acc_test", {
-      name: "New Config",
-    });
+    expect(mockCreateAgentConfig).toHaveBeenCalledWith(
+      "acc_test",
+      validCreateBody,
+    );
     expect(invalidateSpy).toHaveBeenCalledWith(
       expect.objectContaining({ queryKey: agentConfigKeys.list("acc_test") }),
     );
@@ -214,7 +221,7 @@ describe("useCreateAgentConfig", () => {
       wrapper: makeWrapper(client),
     });
 
-    result.current.mutate({ name: "New Config" });
+    result.current.mutate(validCreateBody);
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error).toEqual(new Error("No account selected"));

@@ -70,9 +70,22 @@ class AgentConfig(BaseModel):
     The nested ADK SDK shape is reconstructed only at the construction
     boundary (`agent_factory/builder.py` and `strategy_agent/config_loader.py`)
     when a `google.genai.types.GenerateContentConfig` is required.
+
+    Identity is split into three fields:
+      * ``config_id`` — the Firestore document ID. Immutable; the routing
+        key used by the agent factory (passed to ``LlmAgent.name``).
+      * ``title`` — user-editable role description (e.g. "Business Researcher").
+      * ``name`` — user-editable human name (e.g. "Dave"). Optional.
     """
 
-    name: str = Field(..., description="Agent name")
+    name: str | None = Field(
+        None, max_length=100, description="Human name (e.g. 'Dave'). Optional."
+    )
+    title: str | None = Field(
+        None,
+        max_length=100,
+        description="Role description (e.g. 'Business Researcher').",
+    )
     model: str = Field(..., description="Model identifier")
     description: str = Field(..., description="Agent description")
     instruction: str = Field(..., description="Agent instruction/prompt")
@@ -86,6 +99,18 @@ class AgentConfigUpdate(BaseModel):
 
     All fields except ``updated_by`` are optional to allow partial updates.
     """
+
+    name: str | None = Field(
+        None,
+        max_length=100,
+        description="Human name (e.g. 'Dave'). Optional.",
+    )
+
+    title: str | None = Field(
+        None,
+        max_length=100,
+        description="Role description (e.g. 'Business Researcher').",
+    )
 
     instruction: str | None = Field(
         None,
@@ -252,7 +277,13 @@ class MergedAgentConfig(BaseModel):
     config_id: str = Field(..., description="Document ID of this agent config")
     name: str | None = Field(
         None,
-        description="Display name (custom agents only; globals identified by config_id)",
+        max_length=100,
+        description="Human name (e.g. 'Dave'). Optional, user-editable.",
+    )
+    title: str | None = Field(
+        None,
+        max_length=100,
+        description="Role description (e.g. 'Business Researcher'). User-editable.",
     )
     instruction: str = Field(..., description="Agent instruction/prompt")
     model: str = Field(..., description="Model identifier")
@@ -290,7 +321,17 @@ class AgentConfigCreate(BaseModel):
     ``custom_{uuid8}`` config_id; callers never set it.
     """
 
-    name: str = Field(..., min_length=1, max_length=100, description="Agent display name")
+    title: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="Role description (e.g. 'Business Researcher'). Required.",
+    )
+    name: str | None = Field(
+        None,
+        max_length=100,
+        description="Human name (e.g. 'Dave'). Optional.",
+    )
     instruction: str = Field(..., min_length=10, max_length=50000, description="Agent instruction/prompt")
     model: str = Field(..., description="Model identifier")
 
@@ -321,6 +362,8 @@ class AgentConfigOverlayUpdate(BaseModel):
     overlay doc (``customization_status="customized"``).
     """
 
+    name: str | None = Field(None, max_length=100)
+    title: str | None = Field(None, max_length=100)
     instruction: str | None = Field(None, min_length=10, max_length=50000)
     model: str | None = Field(None, max_length=100)
     description: str | None = Field(None, min_length=10, max_length=1000)

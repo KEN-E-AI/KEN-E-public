@@ -25,7 +25,8 @@ import { DisabledPlaceholderRow } from "./agents/DisabledPlaceholderRow";
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
 export const schema = z.object({
-  name: z.string().min(1, "Name is required"),
+  title: z.string().min(1, "Title is required"),
+  name: z.string().optional(),
   instruction: z.string().min(1, "Instruction is required"),
   model: z.enum(SUPPORTED_MODELS as [string, ...string[]], {
     errorMap: () => ({ message: "Model is required" }),
@@ -56,7 +57,12 @@ export function AgentCreatePage() {
   });
 
   function onSubmit(data: FormValues) {
-    mutation.mutate(data, {
+    const trimmedName = data.name?.trim();
+    const payload = {
+      ...data,
+      name: trimmedName ? trimmedName : null,
+    };
+    mutation.mutate(payload, {
       onSuccess: (created) => {
         toast.success("Agent created.");
         navigate(
@@ -91,14 +97,31 @@ export function AgentCreatePage() {
         onSubmit={handleSubmit(onSubmit)}
         className="space-y-5 max-w-2xl mt-6"
       >
-        {/* Name */}
+        {/* Title (role) */}
         <div>
-          <Label htmlFor="agent-name">
-            Name <span aria-hidden="true">*</span>
+          <Label htmlFor="agent-title">
+            Title <span aria-hidden="true">*</span>
           </Label>
           <Input
+            id="agent-title"
+            placeholder="e.g. Business Researcher"
+            {...register("title")}
+            className="mt-1.5"
+            data-testid="title-input"
+          />
+          {errors.title && (
+            <p className="text-xs text-destructive mt-1">
+              {errors.title.message}
+            </p>
+          )}
+        </div>
+
+        {/* Name (human, optional) */}
+        <div>
+          <Label htmlFor="agent-name">Name</Label>
+          <Input
             id="agent-name"
-            placeholder="e.g. SEO Analyst..."
+            placeholder="e.g. Dave (optional)"
             {...register("name")}
             className="mt-1.5"
             data-testid="name-input"

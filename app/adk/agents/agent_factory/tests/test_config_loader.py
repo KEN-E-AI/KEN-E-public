@@ -334,13 +334,14 @@ class TestConfigLoader:
     def test_storage_internal_fields_stripped_before_validate(
         self, mock_client: MagicMock, mock_auth: MagicMock
     ) -> None:
-        """``name`` / ``created_at`` / ``updated_at`` / ``created_by`` live
-        on storage docs but not on the factory's ``MergedAgentConfig``
+        """``name`` / ``title`` / ``created_at`` / ``updated_at`` / ``created_by``
+        live on storage docs but not on the factory's ``MergedAgentConfig``
         (extra="forbid"). They must be stripped before validation."""
         from app.adk.agents.agent_factory.config_loader import load_agent_config
 
         global_data = {
-            "name": "ken_e_chatbot",
+            "name": "Dave",
+            "title": "Business Researcher",
             "instruction": "Hello.",
             "model": "gemini-2.5-pro",
             "temperature": 0.5,
@@ -356,6 +357,66 @@ class TestConfigLoader:
 
         assert result.temperature == 0.5
         assert result.max_output_tokens == 4096
+        assert not hasattr(result, "name")
+        assert not hasattr(result, "title")
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_overlay_updated_by_field_stripped(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """Every overlay write via the API persists ``updated_by: user.email``
+        (routers/agent_configs.py upsert path). The factory must strip it
+        before validation or any overlay-merged config blows up with
+        ``extra="forbid"``."""
+        from app.adk.agents.agent_factory.config_loader import load_agent_config
+
+        global_data = {
+            "instruction": "Global instruction.",
+            "model": "gemini-2.5-pro",
+        }
+        overlay_data = {
+            "instruction": "Overlay instruction with a tweak.",
+            "based_on_version": 1,
+            "updated_at": "2026-05-13T18:00:00+00:00",
+            "updated_by": "admin@ken-e.ai",
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(
+            global_data=global_data, overlay_data=overlay_data
+        )
+
+        result = load_agent_config("test_agent", account_id="acc_123")
+
+        assert result.instruction == "Overlay instruction with a tweak."
+        assert result.customization_status == "customized"
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_pre_ah_prd_02_legacy_fields_stripped(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """``canonical_id`` and ``legacy_agent_name`` are pre-AH-PRD-02 seed
+        metadata on a handful of agent_configs docs (business_researcher,
+        business_formatter, competitive_analyst, marketing_strategist). The
+        factory must strip them; otherwise loading any of those agents fails
+        with ``extra="forbid"``."""
+        from app.adk.agents.agent_factory.config_loader import load_agent_config
+
+        global_data = {
+            "instruction": "Researches business strategy.",
+            "model": "gemini-2.5-pro",
+            "canonical_id": "business_strategy",
+            "legacy_agent_name": "Business Researcher",
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=global_data)
+
+        result = load_agent_config("business_researcher")
+
+        assert result.model == "gemini-2.5-pro"
+        assert not hasattr(result, "canonical_id")
+        assert not hasattr(result, "legacy_agent_name")
 
     @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
     @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")

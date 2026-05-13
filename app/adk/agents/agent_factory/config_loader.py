@@ -67,11 +67,36 @@ class MergedAgentConfig(BaseModel):
 # the ``MergedAgentConfig`` schema. ``_build_config`` strips these before
 # validation since ``extra="forbid"`` would otherwise reject them.
 #
+# ``name`` and ``title`` are user-facing identity metadata exposed by the
+# API but never consumed by the factory; the routing key is the Firestore
+# document ID (passed separately to ``LlmAgent(name=...)`` by the builder).
+#
 # ``deployment_status`` is written by MER-E (sister repo) onto the shared
 # ``agent_configs/{id}`` docs. The factory doesn't consume it; strip it
 # so an MER-E-touched doc still validates here.
+#
+# ``canonical_id`` and ``legacy_agent_name`` are pre-AH-PRD-02 storage
+# metadata that survives on a handful of seeded docs. Strip both so the
+# factory can load those agents without tripping ``extra="forbid"``.
+#
+# Note: the router's ``_STORAGE_INTERNAL_FIELDS`` additionally strips
+# ``metadata``. The factory does NOT strip it because this module's
+# ``MergedAgentConfig`` declares ``metadata: dict | None = None`` as a
+# real field — the factory wants the metadata to flow through (e.g. for
+# version pinning), whereas the router's response model omits it. Don't
+# "fix" this asymmetry by syncing the two sets.
 _STORAGE_INTERNAL_FIELDS: frozenset[str] = frozenset(
-    {"name", "created_at", "updated_at", "created_by", "deployment_status"}
+    {
+        "name",
+        "title",
+        "created_at",
+        "updated_at",
+        "created_by",
+        "updated_by",
+        "deployment_status",
+        "canonical_id",
+        "legacy_agent_name",
+    }
 )
 
 

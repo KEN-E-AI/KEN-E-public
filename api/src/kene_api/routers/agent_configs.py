@@ -89,8 +89,22 @@ _REDEPLOY_REQUIRED_FIELDS: frozenset[str] = frozenset(
 # ``deployment_status`` is written by MER-E (sister repo) onto the shared
 # ``agent_configs/{id}`` docs. KEN-E doesn't surface it in this API shape;
 # strip it so an MER-E-touched doc still validates.
+#
+# ``canonical_id`` and ``legacy_agent_name`` are pre-AH-PRD-02 storage
+# metadata that survives on a handful of seeded docs (e.g. business_researcher,
+# competitive_analyst). Neither is part of the API contract; strip both so
+# those docs don't fail validation and silently disappear from the list view.
 _STORAGE_INTERNAL_FIELDS: frozenset[str] = frozenset(
-    {"metadata", "created_at", "updated_at", "created_by", "updated_by", "deployment_status"}
+    {
+        "metadata",
+        "created_at",
+        "updated_at",
+        "created_by",
+        "updated_by",
+        "deployment_status",
+        "canonical_id",
+        "legacy_agent_name",
+    }
 )
 
 logger = logging.getLogger(__name__)
@@ -143,6 +157,11 @@ def _build_firestore_updates(
     ``temperature`` and ``max_output_tokens`` are written flat at the top
     level (AH-40). The legacy nested ``generate_content_config`` wrapper
     is no longer produced.
+
+    Note: nullable identity fields (``name``, ``title``) are NOT handled
+    here. The caller must use ``update.model_fields_set`` to distinguish
+    "client omitted" from "client sent null" and write those fields into
+    the returned dict directly. See ``update_agent_config`` for the pattern.
 
     Args:
         instruction: New instruction text
@@ -204,9 +223,18 @@ def _snapshot_pre_image(
     """Capture current values for every field the update touches.
 
     Reads ``temperature`` and ``max_output_tokens`` flat (AH-40).
+
+    Nullable identity fields (``name``, ``title``) use ``model_fields_set``
+    to distinguish "client omitted" from "client sent null" so a
+    null-clearing update is audited as a real change.
     """
     snap: dict[str, Any] = {}
+    fields_set = update.model_fields_set
 
+    if "name" in fields_set:
+        snap["name"] = current_config.get("name")
+    if "title" in fields_set:
+        snap["title"] = current_config.get("title")
     if update.instruction is not None:
         snap["instruction"] = current_config.get("instruction")
     if update.model is not None:
@@ -225,7 +253,12 @@ def _snapshot_post_image(
     updated_data: dict[str, Any], update: AgentConfigUpdate
 ) -> dict[str, Any]:
     snap: dict[str, Any] = {}
+    fields_set = update.model_fields_set
 
+    if "name" in fields_set:
+        snap["name"] = updated_data.get("name")
+    if "title" in fields_set:
+        snap["title"] = updated_data.get("title")
     if update.instruction is not None:
         snap["instruction"] = updated_data.get("instruction")
     if update.model is not None:
@@ -512,6 +545,16 @@ async def update_agent_config(
             notes=update.notes,
         )
 
+        # Nullable identity fields use model_fields_set so a caller can
+        # explicitly clear them with ``{"name": null}`` — distinguishing
+        # "client omitted" from "client sent null". Mirrors the overlay
+        # endpoint's ``model_dump(exclude_unset=True)`` convention.
+        fields_set = update.model_fields_set
+        if "name" in fields_set:
+            updates["name"] = update.name
+        if "title" in fields_set:
+            updates["title"] = update.title
+
         # Snapshot pre-image for audit diff (Sprint 6 AC-6.9)
         pre_image = _snapshot_pre_image(current_config, update)
 
@@ -793,7 +836,7 @@ async def create_account_agent_config(
     custom_id = f"custom_{uuid4().hex[:8]}"
     now = datetime.now(timezone.utc).isoformat()
     doc_data: dict[str, Any] = {
-        "name": body.name,
+        "title": body.title,
         "instruction": body.instruction,
         "model": body.model,
         "customization_status": "custom_agent",
@@ -801,6 +844,8 @@ async def create_account_agent_config(
         "updated_at": now,
         "created_by": user.email,
     }
+    if body.name is not None:
+        doc_data["name"] = body.name
     if body.description is not None:
         doc_data["description"] = body.description
     if body.temperature is not None:

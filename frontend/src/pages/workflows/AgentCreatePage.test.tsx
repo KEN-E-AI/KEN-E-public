@@ -69,8 +69,8 @@ describe("AgentCreatePage", () => {
     const user = userEvent.setup();
     render(<AgentCreatePage />, { wrapper: makeWrapper() });
 
-    // Fill required fields
-    await user.type(screen.getByTestId("name-input"), "My Agent");
+    // Fill required fields (title is required; name is optional)
+    await user.type(screen.getByTestId("title-input"), "Business Researcher");
     await user.type(
       screen.getByTestId("instruction-field"),
       "You are a helpful assistant.",
@@ -103,7 +103,7 @@ describe("AgentCreatePage", () => {
     const user = userEvent.setup();
     render(<AgentCreatePage />, { wrapper: makeWrapper() });
 
-    await user.type(screen.getByTestId("name-input"), "My Agent");
+    await user.type(screen.getByTestId("title-input"), "Business Researcher");
     await user.type(
       screen.getByTestId("instruction-field"),
       "You are a helpful assistant.",
@@ -152,7 +152,7 @@ describe("AgentCreatePage", () => {
 
 describe("AgentCreatePage — schema", () => {
   const baseInput = {
-    name: "x",
+    title: "Business Researcher",
     instruction: "y",
     model: "gemini-2.5-flash",
   };
