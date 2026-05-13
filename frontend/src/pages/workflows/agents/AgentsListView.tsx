@@ -67,11 +67,13 @@ type AgentCardProps = {
 
 function AgentCard({ config, index, onEdit }: AgentCardProps) {
   const accentStyle = FALLBACK_ACCENTS[index % FALLBACK_ACCENTS.length];
-  const displayName =
-    config.name ??
-    config.config_id
-      .replace(/_/g, " ")
-      .replace(/\b\w/g, (c) => c.toUpperCase());
+  // Display chain: human name > role title > Title-Cased config_id (fallback
+  // for legacy docs that haven't been migrated yet).
+  const titleFallback = config.config_id
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+  const primaryDisplay = config.name || config.title || titleFallback;
+  const subtitleDisplay = config.name && config.title ? config.title : null;
 
   return (
     <div
@@ -91,7 +93,7 @@ function AgentCard({ config, index, onEdit }: AgentCardProps) {
           e.stopPropagation();
           onEdit(toAgentConfigId(config.config_id));
         }}
-        aria-label={`Configure ${displayName}`}
+        aria-label={`Configure ${primaryDisplay}`}
       >
         <Settings className="size-4" />
       </button>
@@ -109,19 +111,29 @@ function AgentCard({ config, index, onEdit }: AgentCardProps) {
         </div>
       </div>
 
-      {/* Name + customization badge */}
+      {/* Name (primary) + customization badge */}
       <div
-        className="flex items-center gap-1.5 flex-wrap mb-1.5 pr-8"
+        className="flex items-center gap-1.5 flex-wrap mb-1 pr-8"
         style={{ minHeight: 22 }}
       >
         <span
           className="text-[0.8125rem]"
           style={{ fontWeight: 700, lineHeight: 1.25 }}
         >
-          {displayName}
+          {primaryDisplay}
         </span>
         <CustomizationBadge status={config.customization_status} />
       </div>
+
+      {/* Title (bold, beneath the name; only when distinct from primary) */}
+      {subtitleDisplay && (
+        <div
+          className="text-[0.75rem] text-[var(--color-text-secondary)] mb-1.5"
+          style={{ fontWeight: 700, lineHeight: 1.25 }}
+        >
+          {subtitleDisplay}
+        </div>
+      )}
 
       {/* Model */}
       {/* allow-text-tertiary: secondary-metadata model identifier under agent name */}

@@ -89,8 +89,22 @@ _REDEPLOY_REQUIRED_FIELDS: frozenset[str] = frozenset(
 # ``deployment_status`` is written by MER-E (sister repo) onto the shared
 # ``agent_configs/{id}`` docs. KEN-E doesn't surface it in this API shape;
 # strip it so an MER-E-touched doc still validates.
+#
+# ``canonical_id`` and ``legacy_agent_name`` are pre-AH-PRD-02 storage
+# metadata that survives on a handful of seeded docs (e.g. business_researcher,
+# competitive_analyst). Neither is part of the API contract; strip both so
+# those docs don't fail validation and silently disappear from the list view.
 _STORAGE_INTERNAL_FIELDS: frozenset[str] = frozenset(
-    {"metadata", "created_at", "updated_at", "created_by", "updated_by", "deployment_status"}
+    {
+        "metadata",
+        "created_at",
+        "updated_at",
+        "created_by",
+        "updated_by",
+        "deployment_status",
+        "canonical_id",
+        "legacy_agent_name",
+    }
 )
 
 logger = logging.getLogger(__name__)
@@ -125,6 +139,8 @@ _sanitize_updated_by = sanitize_updated_by
 
 
 def _build_firestore_updates(
+    name: str | None = None,
+    title: str | None = None,
     instruction: str | None = None,
     model: str | None = None,
     description: str | None = None,
@@ -145,6 +161,8 @@ def _build_firestore_updates(
     is no longer produced.
 
     Args:
+        name: Human name (e.g. "Dave")
+        title: Role description (e.g. "Business Researcher")
         instruction: New instruction text
         model: New model identifier
         description: New description
@@ -161,6 +179,12 @@ def _build_firestore_updates(
         Dictionary with Firestore update format (dot notation for metadata fields)
     """
     updates: dict[str, str | int | float] = {}
+
+    if name is not None:
+        updates["name"] = name
+
+    if title is not None:
+        updates["title"] = title
 
     if instruction is not None:
         updates["instruction"] = instruction
@@ -207,6 +231,10 @@ def _snapshot_pre_image(
     """
     snap: dict[str, Any] = {}
 
+    if update.name is not None:
+        snap["name"] = current_config.get("name")
+    if update.title is not None:
+        snap["title"] = current_config.get("title")
     if update.instruction is not None:
         snap["instruction"] = current_config.get("instruction")
     if update.model is not None:
@@ -226,6 +254,10 @@ def _snapshot_post_image(
 ) -> dict[str, Any]:
     snap: dict[str, Any] = {}
 
+    if update.name is not None:
+        snap["name"] = updated_data.get("name")
+    if update.title is not None:
+        snap["title"] = updated_data.get("title")
     if update.instruction is not None:
         snap["instruction"] = updated_data.get("instruction")
     if update.model is not None:
@@ -499,6 +531,8 @@ async def update_agent_config(
 
         # Build type-safe updates using helper function
         updates = _build_firestore_updates(
+            name=update.name,
+            title=update.title,
             instruction=update.instruction,
             model=update.model,
             description=update.description,
@@ -793,7 +827,7 @@ async def create_account_agent_config(
     custom_id = f"custom_{uuid4().hex[:8]}"
     now = datetime.now(timezone.utc).isoformat()
     doc_data: dict[str, Any] = {
-        "name": body.name,
+        "title": body.title,
         "instruction": body.instruction,
         "model": body.model,
         "customization_status": "custom_agent",
@@ -801,6 +835,8 @@ async def create_account_agent_config(
         "updated_at": now,
         "created_by": user.email,
     }
+    if body.name is not None:
+        doc_data["name"] = body.name
     if body.description is not None:
         doc_data["description"] = body.description
     if body.temperature is not None:

@@ -39,7 +39,8 @@ def _valid_metadata(**overrides: object) -> dict[str, object]:
 
 def _valid_agent_config(**overrides: object) -> dict[str, object]:
     base: dict[str, object] = {
-        "name": "ken_e_chatbot",
+        "name": "Dave",
+        "title": "KEN-E Chatbot",
         "model": "gemini-2.5-pro",
         "description": "Frontend-facing chat agent",
         "instruction": "You are KEN-E...",
@@ -61,7 +62,8 @@ class TestAgentConfig:
         config = AgentConfig(**payload)
 
         dumped = config.model_dump()
-        assert dumped["name"] == "ken_e_chatbot"
+        assert dumped["name"] == "Dave"
+        assert dumped["title"] == "KEN-E Chatbot"
         assert dumped["model"] == "gemini-2.5-pro"
         assert dumped["instruction"] == "You are KEN-E..."
         assert dumped["description"] == "Frontend-facing chat agent"
@@ -69,6 +71,20 @@ class TestAgentConfig:
         assert dumped["max_output_tokens"] == 2500
         assert "generate_content_config" not in dumped
         assert dumped["metadata"]["version"] == "v1.0.0"
+
+    def test_name_and_title_both_optional(self) -> None:
+        """Identity fields are both optional on stored docs to keep legacy
+        and in-migration docs loadable. ``config_id`` is the immutable
+        identifier and lives on the Firestore document path, not on the
+        validated model."""
+        payload = _valid_agent_config()
+        del payload["name"]
+        del payload["title"]
+
+        config = AgentConfig(**payload)
+
+        assert config.name is None
+        assert config.title is None
 
     def test_defaults_when_temperature_and_tokens_omitted(self) -> None:
         payload = _valid_agent_config()
@@ -163,6 +179,16 @@ class TestAgentConfigOverlayUpdate:
     def test_max_output_tokens_out_of_range(self, tokens: int) -> None:
         with pytest.raises(ValidationError):
             AgentConfigOverlayUpdate(max_output_tokens=tokens)
+
+    def test_name_and_title_independently_editable(self) -> None:
+        """Overlay PUT must support editing each identity field on its own."""
+        only_name = AgentConfigOverlayUpdate(name="Dave")
+        only_title = AgentConfigOverlayUpdate(title="Business Researcher")
+
+        assert only_name.name == "Dave"
+        assert only_name.title is None
+        assert only_title.title == "Business Researcher"
+        assert only_title.name is None
 
 
 class TestAgentConfigMetadata:

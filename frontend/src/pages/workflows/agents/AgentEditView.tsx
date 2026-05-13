@@ -13,6 +13,7 @@ import type {
 } from "@/lib/api/agentConfigs";
 import { SUPPORTED_MODELS } from "@/lib/api/agentConfigs";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Slider } from "@/components/ui/slider";
@@ -90,6 +91,8 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
   const deleteMutation = useDeleteAgentConfig(accountId);
 
   // Form state (initialised from loaded config)
+  const [name, setName] = useState("");
+  const [title, setTitle] = useState("");
   const [instruction, setInstruction] = useState("");
   const [temperature, setTemperature] = useState<number>(0.3);
   const [model, setModel] = useState("");
@@ -98,6 +101,8 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
   // Seed local state once config is loaded
   useEffect(() => {
     if (!config) return;
+    setName(config.name ?? "");
+    setTitle(config.title ?? "");
     setInstruction(config.instruction);
     setTemperature(snapTemperatureToGrid(config.temperature));
     setModel(config.model);
@@ -130,12 +135,16 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
   }
 
   // Per-field dirty detection (compared to loaded config values)
+  const isDirtyName = name !== (config.name ?? "");
+  const isDirtyTitle = title !== (config.title ?? "");
   const isDirtyInstruction = instruction !== config.instruction;
   const isDirtyTemperature =
     temperature !== snapTemperatureToGrid(config.temperature);
   const isDirtyModel = model !== config.model;
   const isDirtyDescription = description !== (config.description ?? "");
   const hasAnyDirty =
+    isDirtyName ||
+    isDirtyTitle ||
     isDirtyInstruction ||
     isDirtyTemperature ||
     isDirtyModel ||
@@ -148,6 +157,8 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
 
   function handleSave() {
     const dirty: AgentConfigOverlayUpdate = {};
+    if (isDirtyName) dirty.name = name.trim() ? name.trim() : null;
+    if (isDirtyTitle) dirty.title = title.trim() ? title.trim() : null;
     if (isDirtyInstruction) dirty.instruction = instruction;
     if (isDirtyTemperature) dirty.temperature = temperature;
     if (isDirtyModel) dirty.model = model;
@@ -184,11 +195,13 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
     );
   }
 
-  const displayName =
-    config.name ??
-    config.config_id
-      .replace(/_/g, " ")
-      .replace(/\b\w/g, (c) => c.toUpperCase());
+  // Display chain: human name > role title > Title-Cased config_id (fallback
+  // for legacy docs that haven't been migrated yet).
+  const titleFallback = config.config_id
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+  const primaryDisplay = config.name || config.title || titleFallback;
+  const subtitleDisplay = config.name && config.title ? config.title : null;
 
   return (
     <div className="flex flex-col h-full">
@@ -201,7 +214,17 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
           >
             <Bot className="size-4 text-[var(--color-text-inverse)]" />
           </div>
-          <h3 className="truncate">{displayName}</h3>
+          <div className="min-w-0">
+            <h3 className="truncate">{primaryDisplay}</h3>
+            {subtitleDisplay && (
+              <p
+                className="text-[0.875rem] text-[var(--color-text-secondary)] truncate"
+                style={{ fontWeight: 700 }}
+              >
+                {subtitleDisplay}
+              </p>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2 mt-2">
           <span
@@ -226,6 +249,38 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto px-6 pb-4 space-y-5">
+        {/* Title (role) */}
+        <div>
+          <Label htmlFor="agent-title" className="flex items-center">
+            Title
+            <DirtyDot dirty={isDirtyTitle} />
+          </Label>
+          <Input
+            id="agent-title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="e.g. Business Researcher"
+            className="mt-1.5"
+            data-testid="title-input"
+          />
+        </div>
+
+        {/* Name (human, optional) */}
+        <div>
+          <Label htmlFor="agent-name" className="flex items-center">
+            Name
+            <DirtyDot dirty={isDirtyName} />
+          </Label>
+          <Input
+            id="agent-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Dave (optional)"
+            className="mt-1.5"
+            data-testid="name-input"
+          />
+        </div>
+
         {/* Instruction */}
         <div>
           <Label htmlFor="agent-instruction" className="flex items-center">

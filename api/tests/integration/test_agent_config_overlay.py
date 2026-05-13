@@ -50,7 +50,8 @@ _EMULATOR_REASON = (
 )
 
 _VALID_GLOBAL_DOC: dict[str, Any] = {
-    "name": "Test Researcher",
+    "name": None,
+    "title": "Test Researcher",
     "instruction": "You are a test researcher assistant.",
     "model": "gemini-2.5-flash",
     "description": "A test agent for overlay integration tests.",
@@ -98,6 +99,7 @@ def test_merged_agent_config_api_model_field_parity() -> None:
         "instruction",
         "model",
         "name",
+        "title",
         "description",
         "temperature",
         "max_output_tokens",
@@ -198,7 +200,7 @@ class TestOverlayMerge:
             account_id,
             config_id,
             {
-                "name": "Custom Only",
+                "title": "Custom Only",
                 "instruction": "You are a custom-only overlay agent for testing.",
                 "model": "gemini-2.5-flash",
                 "based_on_version": "v4.1.0",

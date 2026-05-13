@@ -78,6 +78,11 @@ The Google Analytics Specialist in [AH-PRD-03](./AH-PRD-03-google-analytics-spec
 ### Agent config document fields (superset)
 
 ```python
+# Identity (the document ID itself, ``config_id``, is the immutable routing key
+# passed to ``LlmAgent(name=...)`` — see §5.2 below).
+name: str | None = None                    # Human name, e.g. "Dave". Optional, user-editable.
+title: str | None = None                   # Role description, e.g. "Business Researcher". User-editable.
+
 # Existing in the codebase today — preserved as-is:
 instruction: str
 model: str                                 # e.g. "gemini-2.0-flash"
@@ -275,9 +280,9 @@ Response shape: `MergedAgentConfig` — Pydantic model union of global fields + 
 9. **Multi-tenant overlay:** Given an `account_id`, the config loader checks `accounts/{account_id}/agent_configs/{config_id}` first, shallow-merges overrides onto the global config, and falls back to global when no override exists. User-created custom agents (account-only, no global counterpart) are discovered and included in the hierarchy.
 10. **Global config flags:** Global `agent_configs/*` documents include `available_to_copy`, `automatically_available`, and `visible_in_frontend` boolean fields. The migration script backfills sensible defaults on all existing docs.
 11. **CRUD API:** All five endpoints in §6 respond correctly; account-admin authorization is enforced; unauthorized callers receive `403`.
-12. **Frontend list:** Workflows > Agents page renders available agents for the current account; each card shows name, description, model, and customization status (Default / Customized / Custom Agent). Filter to `visible_in_frontend=true` on the server.
+12. **Frontend list:** Workflows > Agents page renders available agents for the current account; each card shows the human ``name`` (primary, falls back to ``title``, then Title-Cased ``config_id``), the role ``title`` (secondary line), description, model, and customization status (Default / Customized / Custom Agent). Filter to `visible_in_frontend=true` on the server.
 13. **Frontend edit:** Admins can edit instruction, temperature, model, description from the detail view; a diff indicator shows changes vs. global default; Revert deletes the overlay; version tracking shows which global version was forked.
-14. **AgentCreatePage:** Form-based creation of a custom agent (required: name, instruction, model; optional: temperature, description). Submission creates a `custom_` prefixed config_id via the API. Two disabled rows ("Skills" and "Sandbox code execution") appear beneath with tooltip "Available in Feature 2.6".
+14. **AgentCreatePage:** Form-based creation of a custom agent (required: ``title``, instruction, model; optional: ``name`` (human), temperature, description). Submission creates a `custom_` prefixed config_id via the API. Two disabled rows ("Skills" and "Sandbox code execution") appear beneath with tooltip "Available in Feature 2.6".
 15. **Account-deletion cleanup (interim):** Until DM-PRD-05 ships, the enumerated sweep in `routers/accounts.py` includes `accounts/{account_id}/agent_configs/*`. Once DM-PRD-05 lands, `recursive_delete(accounts/{account_id})` covers this automatically and the interim code is removed. Integration test confirms no orphaned overlays after `DELETE /api/v1/accounts/{account_id}`.
 16. **MCPServerManager retirement:** The connection-pooling + LRU-eviction code paths in `app/adk/mcp_config/manager.py` are removed; YAML-loading + auth helpers are moved into `app/adk/agents/agent_factory/mcp.py`; the health-monitoring + admin-status endpoint surface is retained and still operational. `grep -rn "MCPServerManager(" app/ api/` returns matches only at the health/admin-endpoint call sites (not at agent or factory construction sites). Disposition matches the table in [`mcp-architecture.md`](../mcp-architecture.md) §7.
 

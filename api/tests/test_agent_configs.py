@@ -49,7 +49,8 @@ def mock_firestore_db():
 def sample_config_data():
     """Sample agent configuration data (flat shape per AH-40)."""
     return {
-        "name": "business_researcher",
+        "name": None,
+        "title": "Business Researcher",
         "model": "gemini-2.5-pro",
         "description": "Test description",
         "instruction": "Test instruction for the agent",
@@ -298,6 +299,12 @@ class TestBuildFirestoreUpdates:
         assert "description" not in updates
         assert updates["model"] == "gemini-2.5-pro"
 
+    def test_builds_name_and_title_updates(self):
+        """Identity fields (name + title) round-trip through the updater."""
+        updates = _build_firestore_updates(name="Dave", title="Business Researcher")
+
+        assert updates == {"name": "Dave", "title": "Business Researcher"}
+
 
 class TestMergeFromDataStripsStorageInternals:
     """AH-40: ``_merge_from_data`` strips storage-internal fields that aren't
@@ -341,6 +348,44 @@ class TestMergeFromDataStripsStorageInternals:
 
         assert merged is not None
         assert merged.temperature == 0.4
+
+    def test_exposes_name_and_title_on_merged_response(self):
+        """Identity fields flow through to the MergedAgentConfig response so
+        the frontend can render name primary / title secondary."""
+        from src.kene_api.routers.agent_configs import _merge_from_data
+
+        global_data = {
+            "name": "Dave",
+            "title": "Business Researcher",
+            "instruction": "Hello.",
+            "model": "gemini-2.5-pro",
+        }
+
+        merged = _merge_from_data("business_researcher", global_data, None)
+
+        assert merged is not None
+        assert merged.name == "Dave"
+        assert merged.title == "Business Researcher"
+
+    def test_strips_pre_ah_prd_02_legacy_fields(self):
+        """``canonical_id`` and ``legacy_agent_name`` are pre-AH-PRD-02 seed
+        metadata that lives on a handful of docs (business_researcher,
+        business_formatter, competitive_analyst, marketing_strategist). They
+        must be stripped before validation or the list endpoint silently
+        drops those docs."""
+        from src.kene_api.routers.agent_configs import _merge_from_data
+
+        global_data = {
+            "instruction": "Researches business strategy.",
+            "model": "gemini-2.5-pro",
+            "canonical_id": "business_strategy",
+            "legacy_agent_name": "Business Researcher",
+        }
+
+        merged = _merge_from_data("business_researcher", global_data, None)
+
+        assert merged is not None
+        assert merged.config_id == "business_researcher"
 
 
 class TestErrorHandling:

@@ -53,7 +53,8 @@ ACCOUNT_ID = "acc_test_001"
 BASE_URL = f"/api/v1/accounts/{ACCOUNT_ID}/agent-configs"
 
 _VALID_GLOBAL_DOC: dict[str, Any] = {
-    "name": "Test Researcher",
+    "name": None,
+    "title": "Test Researcher",
     "instruction": "You are a test researcher assistant.",
     "model": "gemini-2.5-flash",
     "description": "A test agent for integration tests.",
@@ -183,7 +184,7 @@ class TestAccountAgentConfigsAuth:
         self._install_user(_no_access_user())
         self._install_db()
         body = {
-            "name": "My Agent",
+            "title": "My Agent",
             "instruction": "You are a helpful assistant for testing.",
             "model": "gemini-2.5-flash",
         }
@@ -221,7 +222,7 @@ class TestAccountAgentConfigsAuth:
         self._install_user(_view_only_user())
         self._install_db()
         body = {
-            "name": "My Agent",
+            "title": "My Agent",
             "instruction": "You are a helpful assistant for testing.",
             "model": "gemini-2.5-flash",
         }
@@ -274,7 +275,7 @@ class TestAccountAgentConfigsAuth:
         created_doc = MagicMock()
         created_doc.exists = True
         created_doc.to_dict.return_value = {
-            "name": "My Agent",
+            "title": "My Agent",
             "instruction": "You are a helpful assistant for testing.",
             "model": "gemini-2.5-flash",
             "customization_status": "custom_agent",
@@ -313,7 +314,7 @@ class TestAccountAgentConfigsAuth:
         self._install_db(db)
 
         body = {
-            "name": "My Agent",
+            "title": "My Agent",
             "instruction": "You are a helpful assistant for testing.",
             "model": "gemini-2.5-flash",
         }
@@ -643,7 +644,7 @@ class TestAccountAgentConfigsEmulator:
             resp = client.post(
                 base_url + "/",
                 json={
-                    "name": "My Custom Agent",
+                    "title": "My Custom Agent",
                     "instruction": "You are a custom agent for emulator testing.",
                     "model": "gemini-2.5-flash",
                 },
@@ -788,7 +789,7 @@ class TestAccountAgentConfigsEmulator:
         resp = client.post(
             base_url + "/",
             json={
-                "name": "Ephemeral Agent",
+                "title": "Ephemeral Agent",
                 "instruction": "You are a temporary custom agent for deletion testing.",
                 "model": "gemini-2.5-flash",
             },
@@ -848,7 +849,7 @@ class TestAccountAgentConfigsEmulator:
             account_id,
             custom_id,
             {
-                "name": "Custom Only",
+                "title": "Custom Only",
                 "instruction": "Custom instruction for listing test.",
                 "model": "gemini-2.5-flash",
                 "customization_status": "custom_agent",

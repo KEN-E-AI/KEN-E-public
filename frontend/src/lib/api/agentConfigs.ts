@@ -42,7 +42,10 @@ export type CustomizationStatus = "default" | "customized" | "custom_agent";
 
 export type MergedAgentConfig = {
   config_id: string;
+  // Human name (e.g. "Dave"). Optional, user-editable.
   name: string | null;
+  // Role description (e.g. "Business Researcher"). User-editable.
+  title: string | null;
   instruction: string;
   model: string;
   description: string | null;
@@ -60,7 +63,8 @@ export type MergedAgentConfig = {
 };
 
 export type AgentConfigCreate = {
-  name: string;
+  title: string;
+  name?: string | null;
   instruction: string;
   model: string;
   description?: string | null;
@@ -70,6 +74,8 @@ export type AgentConfigCreate = {
 };
 
 export type AgentConfigOverlayUpdate = {
+  name?: string | null;
+  title?: string | null;
   instruction?: string | null;
   model?: string | null;
   description?: string | null;
