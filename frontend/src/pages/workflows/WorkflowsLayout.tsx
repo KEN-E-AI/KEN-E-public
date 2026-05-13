@@ -67,7 +67,8 @@ export function WorkflowsLayout({ activeTab, children }: WorkflowsLayoutProps) {
               <div>
                 <h1 className="mb-0">Workflows</h1>
                 <p className="text-sm text-muted-foreground">
-                  Build specialized agents and have them complete tasks on a schedule.
+                  Build specialized agents and have them complete tasks on a
+                  schedule.
                 </p>
               </div>
             </div>

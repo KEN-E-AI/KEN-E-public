@@ -12,7 +12,7 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
         data-slot="textarea"
         className={cn(
           "placeholder:text-[var(--color-text-tertiary)]",
-          "flex min-h-[80px] w-full rounded-[var(--radius-md)] border-2 border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] px-3 py-2 text-[var(--text-body-md)] text-[var(--color-text-primary)]",
+          "flex min-h-[5rem] w-full rounded-[var(--radius-md)] border-2 border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] px-3 py-2 text-[var(--text-body-md)] text-[var(--color-text-primary)]",
           "transition-all outline-none resize-y",
           "focus-visible:border-[var(--color-violet-500)] focus-visible:shadow-[0_0_0_3px_var(--color-violet-100)]",
           "aria-invalid:border-[var(--color-error)] aria-invalid:shadow-[0_0_0_3px_var(--color-error-bg)]",

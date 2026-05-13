@@ -228,7 +228,9 @@ describe("App routing — settings inside LayoutSettings", () => {
 describe("App routing — workflows inside WorkflowsLayout", () => {
   test("/workflows redirects to /workflows/automations", () => {
     renderRoutes("/workflows");
-    expect(screen.getByTestId("workflows-automations-page")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("workflows-automations-page"),
+    ).toBeInTheDocument();
     // Real WorkflowsLayout renders a tab strip with all three tabs
     expect(
       screen.getByRole("tab", { name: /automations/i }),

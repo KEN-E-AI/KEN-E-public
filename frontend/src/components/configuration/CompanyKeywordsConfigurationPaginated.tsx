@@ -240,7 +240,7 @@ export default function CompanyKeywordsConfigurationPaginated() {
                 setPage(1);
               }}
             >
-              <SelectTrigger className="w-[100px]">
+              <SelectTrigger className="w-[6.25rem]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -275,14 +275,14 @@ export default function CompanyKeywordsConfigurationPaginated() {
         )}
 
         {/* Keywords display */}
-        <div className="flex flex-wrap gap-2 min-h-[100px]">
+        <div className="flex flex-wrap gap-2 min-h-[6.25rem]">
           {paginatedData?.keywords.map((keyword) => (
             <Badge
               key={keyword}
               variant="secondary"
               className="pl-3 pr-1 py-1 text-sm"
             >
-              <span className="max-w-[200px] truncate">{keyword}</span>
+              <span className="max-w-[12.5rem] truncate">{keyword}</span>
               <Button
                 variant="ghost"
                 size="sm"

@@ -16,19 +16,19 @@ import { Skeleton } from "@/components/ui/skeleton";
 const FALLBACK_ACCENTS = [
   {
     accent: "var(--color-blue-500)",
-    shadow: "0 4px 12px rgba(59,130,246,0.25)",
+    shadow: "0 0.25rem 0.75rem rgba(59,130,246,0.25)",
   },
   {
     accent: "var(--color-amber-500)",
-    shadow: "0 4px 12px rgba(245,158,11,0.25)",
+    shadow: "0 0.25rem 0.75rem rgba(245,158,11,0.25)",
   },
   {
     accent: "var(--color-violet-500)",
-    shadow: "0 4px 12px rgba(139,92,246,0.25)",
+    shadow: "0 0.25rem 0.75rem rgba(139,92,246,0.25)",
   },
   {
     accent: "var(--color-teal-500)",
-    shadow: "0 4px 12px rgba(20,184,166,0.25)",
+    shadow: "0 0.25rem 0.75rem rgba(20,184,166,0.25)",
   },
 ];
 
@@ -49,7 +49,7 @@ const STATUS_CLASSES: Record<CustomizationStatus, string> = {
 function CustomizationBadge({ status }: { status: CustomizationStatus }) {
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] ${STATUS_CLASSES[status]}`}
+      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[0.625rem] ${STATUS_CLASSES[status]}`}
       style={{ fontWeight: 700 }}
     >
       {STATUS_LABELS[status]}
@@ -75,7 +75,7 @@ function AgentCard({ config, index, onEdit }: AgentCardProps) {
 
   return (
     <div
-      className="relative p-4 rounded-[14px] border-2 border-[var(--color-border-default)] hover:border-[var(--color-border-strong)] hover:-translate-y-0.5 transition-all cursor-pointer bg-card overflow-hidden flex flex-col"
+      className="relative p-4 rounded-[0.875rem] border-2 border-[var(--color-border-default)] hover:border-[var(--color-border-strong)] hover:-translate-y-0.5 transition-all cursor-pointer bg-card overflow-hidden flex flex-col"
       style={{
         transitionTimingFunction: "var(--ease-bounce)",
         transitionDuration: "var(--duration-fast)",
@@ -115,7 +115,7 @@ function AgentCard({ config, index, onEdit }: AgentCardProps) {
         style={{ minHeight: 22 }}
       >
         <span
-          className="text-[13px]"
+          className="text-[0.8125rem]"
           style={{ fontWeight: 700, lineHeight: 1.25 }}
         >
           {displayName}
@@ -125,13 +125,13 @@ function AgentCard({ config, index, onEdit }: AgentCardProps) {
 
       {/* Model */}
       {/* allow-text-tertiary: secondary-metadata model identifier under agent name */}
-      <div className="flex items-center gap-1 text-[11px] text-[var(--color-text-tertiary)] mb-2.5">
+      <div className="flex items-center gap-1 text-[0.6875rem] text-[var(--color-text-tertiary)] mb-2.5">
         {config.model}
       </div>
 
       {/* Description */}
       {config.description && (
-        <p className="text-[12px] text-[var(--color-text-secondary)] line-clamp-2">
+        <p className="text-[0.75rem] text-[var(--color-text-secondary)] line-clamp-2">
           {config.description}
         </p>
       )}
@@ -143,7 +143,7 @@ function AgentCard({ config, index, onEdit }: AgentCardProps) {
 
 function CardSkeleton() {
   return (
-    <div className="p-4 rounded-[14px] border-2 border-[var(--color-border-default)] bg-card flex flex-col gap-3">
+    <div className="p-4 rounded-[0.875rem] border-2 border-[var(--color-border-default)] bg-card flex flex-col gap-3">
       <Skeleton className="size-11 rounded-xl" />
       <Skeleton className="h-4 w-3/4" />
       <Skeleton className="h-3 w-1/2" />
@@ -172,7 +172,7 @@ export function AgentsListView({ onEdit }: AgentsListViewProps) {
 
   if (!accountId) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[300px] p-8 text-center">
+      <div className="flex flex-col items-center justify-center min-h-[18.75rem] p-8 text-center">
         <Bot className="size-8 text-muted-foreground mx-auto mb-2" />
         <p className="text-sm text-muted-foreground">
           Select an account to view agents.
@@ -201,7 +201,7 @@ export function AgentsListView({ onEdit }: AgentsListViewProps) {
 
   if (isError) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[300px] p-8 text-center">
+      <div className="flex flex-col items-center justify-center min-h-[18.75rem] p-8 text-center">
         <Bot className="size-8 text-muted-foreground mx-auto mb-2" />
         <p className="text-sm text-muted-foreground">
           Failed to load agents. Please try again.
@@ -227,7 +227,7 @@ export function AgentsListView({ onEdit }: AgentsListViewProps) {
       </div>
 
       {isEmpty ? (
-        <div className="flex flex-col items-center justify-center min-h-[300px] text-center">
+        <div className="flex flex-col items-center justify-center min-h-[18.75rem] text-center">
           <Bot className="size-8 text-muted-foreground mx-auto mb-2" />
           <p className="text-sm text-muted-foreground mb-1">
             Assemble specialist agents tailored to your workflow.

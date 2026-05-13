@@ -205,7 +205,7 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
         </div>
         <div className="flex items-center gap-2 mt-2">
           <span
-            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] ${STATUS_CLASSES[config.customization_status]}`}
+            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[0.625rem] ${STATUS_CLASSES[config.customization_status]}`}
             style={{ fontWeight: 700 }}
             data-testid="customization-status-badge"
           >
@@ -214,7 +214,7 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
           {config.based_on_version != null && (
             <span
               // allow-text-tertiary: secondary-metadata version pill
-              className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] bg-[var(--color-bg-secondary)] text-[var(--color-text-tertiary)]"
+              className="inline-flex items-center px-2 py-0.5 rounded-full text-[0.625rem] bg-[var(--color-bg-secondary)] text-[var(--color-text-tertiary)]"
               style={{ fontWeight: 600 }}
               data-testid="based-on-version-chip"
             >
@@ -237,7 +237,7 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
             rows={8}
-            className="mt-1.5 min-h-[160px] resize-y"
+            className="mt-1.5 min-h-[10rem] resize-y"
             data-testid="instruction-field"
           />
         </div>
@@ -245,7 +245,7 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
         {/* Response style (stored as `temperature`) */}
         <div>
           <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1.5 text-[12px] text-[var(--color-text-secondary)]">
+            <span className="flex items-center gap-1.5 text-[0.75rem] text-[var(--color-text-secondary)]">
               <DirtyDot dirty={isDirtyTemperature} />
               <span>Precise</span>
             </span>
@@ -260,7 +260,7 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
               className="flex-1"
               data-testid="temperature-slider"
             />
-            <span className="text-[12px] text-[var(--color-text-secondary)]">
+            <span className="text-[0.75rem] text-[var(--color-text-secondary)]">
               Creative
             </span>
           </div>

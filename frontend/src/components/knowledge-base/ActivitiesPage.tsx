@@ -1189,7 +1189,7 @@ const ActivitiesPage = () => {
                               </TooltipContent>
                             </Tooltip>
                           </div>
-                          <div className="min-h-[80px] p-3 bg-[var(--color-bg-secondary)] border border-[var(--color-border-default)] rounded-md">
+                          <div className="min-h-[5rem] p-3 bg-[var(--color-bg-secondary)] border border-[var(--color-border-default)] rounded-md">
                             <p className="text-sm text-[var(--color-text-secondary)] whitespace-pre-wrap">
                               {activity.expectedImpact ||
                                 "No expected impact description provided."}

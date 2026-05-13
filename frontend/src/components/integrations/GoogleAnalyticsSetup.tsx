@@ -184,7 +184,7 @@ export const GoogleAnalyticsSetup = ({
                     setCredentials(e.target.value);
                     setTestResult(null);
                   }}
-                  className="min-h-[200px] font-mono text-xs"
+                  className="min-h-[12.5rem] font-mono text-xs"
                 />
               </div>
             </TabsContent>

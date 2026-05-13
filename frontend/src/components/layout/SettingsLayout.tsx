@@ -84,7 +84,7 @@ export const SettingsLayout: React.FC<SettingsLayoutProps> = ({
                 <CardTitle className="flex items-center justify-between">
                   <span className="text-lg">Organization Selection</span>
                   <EntitySelector
-                    className="min-w-[300px]"
+                    className="min-w-[18.75rem]"
                     organizationOnly={true}
                   />
                 </CardTitle>
@@ -100,7 +100,7 @@ export const SettingsLayout: React.FC<SettingsLayoutProps> = ({
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
                   <span className="text-lg">Current Context</span>
-                  <EntitySelector className="min-w-[300px]" />
+                  <EntitySelector className="min-w-[18.75rem]" />
                 </CardTitle>
               </CardHeader>
               <CardContent>

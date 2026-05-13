@@ -148,7 +148,7 @@ export const IndustrySelectSearchable = React.forwardRef<
             />
           </div>
           <div
-            className="max-h-[300px] overflow-y-auto overflow-x-hidden"
+            className="max-h-[18.75rem] overflow-y-auto overflow-x-hidden"
             ref={scrollAreaRef}
             style={{ overscrollBehavior: "contain" }}
           >

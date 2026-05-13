@@ -270,7 +270,7 @@ export function ConceptSearchDialog({
               <Button
                 onClick={handleConfirm}
                 disabled={isConfirming}
-                className="min-w-[120px]"
+                className="min-w-[7.5rem]"
               >
                 {isConfirming ? (
                   <>

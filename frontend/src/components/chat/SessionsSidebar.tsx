@@ -219,7 +219,7 @@ export function SessionsSidebar({
                       <div
                         className="size-2.5 rounded-full bg-[var(--color-teal-500)]"
                         style={{
-                          boxShadow: "0 0 4px rgba(16, 185, 129, 0.5)",
+                          boxShadow: "0 0 0.25rem rgba(16, 185, 129, 0.5)",
                         }}
                         title="Active session"
                       />
@@ -227,7 +227,7 @@ export function SessionsSidebar({
                       <div
                         className="size-2.5 rounded-full bg-[#F97066]"
                         style={{
-                          boxShadow: "0 0 4px rgba(249, 112, 102, 0.5)",
+                          boxShadow: "0 0 0.25rem rgba(249, 112, 102, 0.5)",
                         }}
                         title="Has unreviewed tasks"
                       />
@@ -242,12 +242,12 @@ export function SessionsSidebar({
                       {session.name}
                     </p>
                     {session.category && (
-                      <p className="text-[11px] text-[var(--color-text-tertiary)] truncate">
+                      <p className="text-[0.6875rem] text-[var(--color-text-tertiary)] truncate">
                         {session.category}
                       </p>
                     )}
                     {session.lastMessage && (
-                      <p className="text-[10px] text-[var(--color-text-tertiary)] truncate mt-0.5">
+                      <p className="text-[0.625rem] text-[var(--color-text-tertiary)] truncate mt-0.5">
                         {session.lastMessage}
                       </p>
                     )}

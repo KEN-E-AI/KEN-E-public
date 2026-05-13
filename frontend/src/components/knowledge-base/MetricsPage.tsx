@@ -572,7 +572,7 @@ const MetricsPage = () => {
       <div className="bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-lg overflow-hidden">
         {/* Desktop Table */}
         <div className="hidden md:block overflow-x-auto">
-          <div className="min-w-[700px]">
+          <div className="min-w-[43.75rem]">
             {/* Table Header */}
             <div className="grid grid-cols-10 gap-4 p-4 border-b border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] text-sm font-medium text-[var(--color-text-secondary)]">
               <div className="col-span-1 text-center">Expand</div>

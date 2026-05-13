@@ -34,6 +34,6 @@ export const DIAGRAM_LAYOUT = {
 export const SCROLL_AMOUNT = 300; // Pixels to scroll on chevron click
 
 export const CARD_HEIGHTS = {
-  FULL: "h-[600px]",
-  CONTENT: "h-[520px]",
+  FULL: "h-[37.5rem]",
+  CONTENT: "h-[32.5rem]",
 } as const;

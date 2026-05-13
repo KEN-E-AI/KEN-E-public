@@ -44,8 +44,8 @@ export const CategoryNode = memo(({ data }: NodeProps<CategoryNodeData>) => {
           <div
             className="rounded-full bg-brand-light-blue flex items-center justify-center"
             style={{
-              width: "72px",
-              height: "72px",
+              width: "4.5rem",
+              height: "4.5rem",
               boxShadow: data.isSelected
                 ? "0 0 0 3px rgba(108, 198, 242, 0.4)"
                 : "none",
@@ -53,7 +53,7 @@ export const CategoryNode = memo(({ data }: NodeProps<CategoryNodeData>) => {
           >
             <Blocks
               className="text-white"
-              style={{ width: "48px", height: "48px" }}
+              style={{ width: "3rem", height: "3rem" }}
             />
           </div>
         </div>
@@ -65,7 +65,7 @@ export const CategoryNode = memo(({ data }: NodeProps<CategoryNodeData>) => {
         position={Position.Bottom}
         id="bottom"
         className="opacity-0"
-        style={{ right: "30px", left: "auto" }}
+        style={{ right: "1.875rem", left: "auto" }}
       />
 
       {/* Custom "+" Button - centered under circle */}
@@ -74,7 +74,7 @@ export const CategoryNode = memo(({ data }: NodeProps<CategoryNodeData>) => {
           e.stopPropagation();
           data.onAddProduct();
         }}
-        className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-light-blue flex items-center justify-center z-20"
+        className="absolute -bottom-[0.75rem] right-[1.5625rem] w-6 h-6 rounded-full bg-brand-light-blue flex items-center justify-center z-20"
       >
         <Plus className="h-4 w-4 text-white" />
       </button>
@@ -102,7 +102,7 @@ export const ProductNode = memo(({ data }: NodeProps<ProductNodeData>) => {
             <TooltipTrigger asChild>
               <div
                 className="bg-brand-medium-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
-                style={{ width: "200px" }}
+                style={{ width: "12.5rem" }}
               >
                 <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
                   Product
@@ -123,8 +123,8 @@ export const ProductNode = memo(({ data }: NodeProps<ProductNodeData>) => {
           <div
             className="rounded-full bg-brand-medium-blue flex items-center justify-center"
             style={{
-              width: "72px",
-              height: "72px",
+              width: "4.5rem",
+              height: "4.5rem",
               boxShadow: data.isSelected
                 ? "0 0 0 3px rgba(70, 143, 208, 0.4)"
                 : "none",
@@ -132,7 +132,7 @@ export const ProductNode = memo(({ data }: NodeProps<ProductNodeData>) => {
           >
             <Package
               className="text-white"
-              style={{ width: "48px", height: "48px" }}
+              style={{ width: "3rem", height: "3rem" }}
             />
           </div>
         </div>
@@ -144,7 +144,7 @@ export const ProductNode = memo(({ data }: NodeProps<ProductNodeData>) => {
         position={Position.Top}
         id="top"
         className="opacity-0"
-        style={{ right: "30px", left: "auto" }}
+        style={{ right: "1.875rem", left: "auto" }}
       />
 
       {/* Bottom Handle for outgoing connections (when selected) */}
@@ -155,7 +155,7 @@ export const ProductNode = memo(({ data }: NodeProps<ProductNodeData>) => {
             position={Position.Bottom}
             id="bottom"
             className="opacity-0"
-            style={{ right: "30px", left: "auto" }}
+            style={{ right: "1.875rem", left: "auto" }}
           />
 
           {/* Custom "+" Button - centered under circle (only when showHandle is true) */}
@@ -164,7 +164,7 @@ export const ProductNode = memo(({ data }: NodeProps<ProductNodeData>) => {
               e.stopPropagation();
               data.onAddSubstitute();
             }}
-            className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-medium-blue flex items-center justify-center z-20"
+            className="absolute -bottom-[0.75rem] right-[1.5625rem] w-6 h-6 rounded-full bg-brand-medium-blue flex items-center justify-center z-20"
           >
             <Plus className="h-4 w-4 text-white" />
           </button>

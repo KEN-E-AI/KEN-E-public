@@ -217,7 +217,7 @@ export const IndustrySelectDropdownAPI = React.forwardRef<
               />
             </div>
             <div
-              className="max-h-[300px] overflow-y-auto"
+              className="max-h-[18.75rem] overflow-y-auto"
               style={{
                 overscrollBehavior: "contain",
                 WebkitOverflowScrolling: "touch",

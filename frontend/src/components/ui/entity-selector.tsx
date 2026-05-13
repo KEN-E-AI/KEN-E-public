@@ -244,7 +244,7 @@ export const EntitySelector = ({
           </div>
         </SelectValue>
       </SelectTrigger>
-      <SelectContent align="start" className="max-w-[400px]">
+      <SelectContent align="start" className="max-w-[25rem]">
         {combinedOptions.map((option, index) => (
           <SelectItem
             key={`${option.orgId}-${option.accountId}-${index}`}

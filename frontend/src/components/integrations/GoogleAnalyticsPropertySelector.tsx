@@ -309,7 +309,7 @@ export const GoogleAnalyticsPropertySelector = ({
         )}
 
         {/* Properties List */}
-        <ScrollArea className="h-[400px] border rounded-lg p-4">
+        <ScrollArea className="h-[25rem] border rounded-lg p-4">
           {Object.entries(propertiesByAccount).map(
             ([accountName, accountProperties]) => (
               <div key={accountName} className="mb-6">
