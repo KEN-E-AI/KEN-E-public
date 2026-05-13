@@ -6,7 +6,7 @@
 **Executor:** Darshan Valia (PO, local mac) with a transient `dm19-local-migration@ken-e-dev.iam.gserviceaccount.com` service-account key — deleted after the run
 **Date:** 2026-05-13
 **Migration CLI:** `api/scripts/migrate_to_shape_b.py`
-**Outcome:** **COMPLETED.** 105 source collections / 387 docs migrated, verified, deleted; idempotency re-run is a no-op; AC-6 smoke clean. 0 `strategy_docs_*` collections remain in `ken-e-dev`.
+**Outcome:** **COMPLETED — substantive ACs satisfied. AC-7 (`pytest` + `make lint` clean) not literally met due to pre-existing repo-wide baseline; 0 regressions from this work; see §Step 7.** 105 source collections / 387 docs migrated, verified, deleted; idempotency re-run is a no-op; AC-6 smoke clean. 0 `strategy_docs_*` collections remain in `ken-e-dev`.
 
 ---
 
@@ -73,13 +73,15 @@ Both docs carry `account_id=''` in their data — confirming they cannot be salv
 
 ### Delete
 
+Executed as `dm19-local-migration@ken-e-dev.iam.gserviceaccount.com` (transient SA, see §Audit trail) on 2026-05-13 via the Python firestore SDK from a local mac:
+
 ```python
 from google.cloud import firestore
 c = firestore.Client(project="ken-e-dev", database="(default)")
-c.recursive_delete(c.collection("strategy_docs_"))
+c.recursive_delete(c.collection("strategy_docs_"))   # no exception raised
 ```
 
-**Result:** `Before delete: 2 docs in 'strategy_docs_' / After delete: 0 docs in 'strategy_docs_'`. Orphan collection cleared. 105 in-scope `strategy_docs_*` collections remain.
+**Result:** `Before delete: 2 docs in 'strategy_docs_' / After delete: 0 docs in 'strategy_docs_'`. Python exit code 0. No exception raised by the SDK. Orphan collection cleared. 105 in-scope `strategy_docs_*` collections remain.
 
 ---
 
@@ -150,7 +152,7 @@ print(sum(1 for _ in c.collection_group("strategy_docs").stream()))
 # → 387  (matches Step 2 source-doc count exactly)
 
 # Sample one real account
-list(c.collection("accounts").document("acc_01314f6855664ac3b249b0ce08990595").collection("strategy_docs").stream())
+list(c.collection("accounts").document("acc_01314f…").collection("strategy_docs").stream())  # account_id truncated
 # → 2 docs: _placeholder, marketing_strategy
 
 # Sample one test account
@@ -176,8 +178,8 @@ Wall time: ~13 minutes (in-invocation re-verify pass for all 105 collections, th
 In-invocation re-verify completes with `Status: VERIFIED, 387/387`, then deletion proceeds:
 
 ```
-[strategy_docs] Deleted 2 docs from strategy_docs_acc_01314f6855664ac3b249b0ce08990595
-[strategy_docs] Deleted 5 docs from strategy_docs_acc_02362f2f4560478a93f37c0093e5cf65
+[strategy_docs] Deleted 2 docs from strategy_docs_acc_01314f…
+[strategy_docs] Deleted 5 docs from strategy_docs_acc_02362f…
 …
 [strategy_docs] Deleted 2 docs from strategy_docs_test_account_123
 [strategy_docs] Deleted 5 docs from strategy_docs_test_api_123
@@ -230,7 +232,7 @@ Exit code: 0. No copies, no writes, no deletes — true no-op. **AC-8 satisfied.
 
 PRD §6 AC-6: *"`api/check_strategy_docs.py` prints strategy doc contents for a migrated account without error."*
 
-Two invocations captured — the script as-is (hardcoded `acc_dc291ae14bb74219b7882c1b13c2161d` is not one of the 102 migrated accounts in dev, same as DM-18 precedent) and a one-off with a real migrated account_id for a stronger demonstration:
+Two invocations captured — the script as-is (hardcoded `acc_dc291ae14bb74219b7882c1b13c2161d` is not one of the 102 migrated accounts in dev — the script targets the correct Shape B path, just an account that doesn't exist locally) and a one-off with a real migrated account_id for a stronger demonstration:
 
 ### AC-6.a — script as-is
 
@@ -245,17 +247,17 @@ Checking Firestore collection: accounts/acc_dc291ae14bb74219b7882c1b13c2161d/str
 ❌ No documents found yet - strategy generation may still be in progress
 ```
 
-Exit code 0. No Python traceback. Script targets the Shape B path correctly (`accounts/{account_id}/strategy_docs`, updated by DM-17 — verified at `api/check_strategy_docs.py:14`). Matches the DM-18 precedent reading of AC-6 ("runs cleanly without error"). ✓
+Exit code 0. No Python traceback. Script targets the Shape B path correctly (`accounts/{account_id}/strategy_docs`, updated by DM-17 — verified at `api/check_strategy_docs.py:14`). This satisfies the PRD §6 AC-6 wording "runs … without error" (the absence of migrated docs for the hardcoded account is an empty-result, not an error); AC-6.b below provides the stronger "prints strategy doc contents for a migrated account" demonstration. ✓
 
 ### AC-6.b — same logic with a real migrated account
 
 ```python
-account_id = "acc_01314f6855664ac3b249b0ce08990595"   # one of the 102 migrated real accounts
+account_id = "acc_01314f…"   # one of the 102 migrated real accounts; full ID truncated for this run-log
 db.collection(f"accounts/{account_id}/strategy_docs").stream()
 ```
 
 ```
-Checking Firestore collection: accounts/acc_01314f6855664ac3b249b0ce08990595/strategy_docs
+Checking Firestore collection: accounts/acc_01314f…/strategy_docs
 ==================================================
 ==================================================
 ✓ _placeholder  doc_type=(no doc_type)  version=(no version)  created_at=2025-11-04T13:52:03.727218  content=<empty/other>
@@ -287,13 +289,13 @@ Baseline state on `main` (the same `999a51c` this branch is rebased onto) — me
 
 ## Step 8 — Operator-deferred recipes (AC-4 / AC-5)
 
-The DM-19 issue body explicitly labels AC-4 / AC-5 as **manual smoke tests** because they require a live API server hitting `ken-e-dev` Firestore plus Firebase auth tokens — not in this run's scope. Same operator-deferred framing as DM-18 TC-4. Recipes for a future operator:
+The DM-19 issue body's Implementation scope and PRD §5 Phase 4 ("Manual smoke in dev") explicitly label AC-4 / AC-5 as **manual smoke tests** — they require a live `uvicorn` API server hitting `ken-e-dev` Firestore plus Firebase auth tokens, neither of which is in this run's scope. Recipes for a future operator:
 
 ### AC-4 — `POST /api/v1/accounts/{id}/strategy/...` lands at Shape B + creates audit row
 
 ```
 TOKEN=$(firebase auth-print-token darshan@ken-e.ai)
-ACCOUNT_ID=acc_01314f6855664ac3b249b0ce08990595
+ACCOUNT_ID=<a real migrated account_id>  # e.g. one of the 102 acc_<hex32> accounts
 curl -sS -X POST "https://api.ken-e-dev.example.com/api/v1/accounts/$ACCOUNT_ID/strategy/business_strategy" \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"content": {"businessStrategySummary": "smoke-test"}}'
@@ -336,11 +338,11 @@ None are touched by this migration. If any need migration in the future, they wo
 
 | AC | Source | Status |
 |---|---|---|
-| **PRD §6 AC-1** — call sites grep clean | `routers/accounts.py:913,968,970` are the documented DM-PRD-05 carve-out | ✅ verified in pre-flight (c) |
+| **PRD §6 AC-1** — call sites grep clean | The only remaining Shape A `strategy_docs_` references in source are `routers/accounts.py:913,968,970` — the legacy deletion-sweep that PRD §2 explicitly carves out as DM-PRD-05's scope. (Note: PRD §6 AC-1's literal "fixtures and migration resources list are allowed" exception list doesn't enumerate `routers/accounts.py`, but it's consistent with PRD §2; flagging for a future PRD-vs-PRD tidy.) | ✅ verified in pre-flight (c) |
 | **PRD §6 AC-2 / DM-19 AC #1** — no top-level `strategy_docs_*` in dev | Step 4 + independent verification | ✅ 0 collections remain |
 | **PRD §6 AC-2 spot-check / DM-19 AC #2** — per-account doc counts match dry-run | Step 3 collection-group query (387 = 387) + per-account samples | ✅ |
-| **PRD §6 AC-4** — `POST /strategy/...` lands at Shape B + audit | Operator-deferred recipe (Step 8) | ⏸ deferred — same as DM-18 |
-| **PRD §6 AC-5** — edit creates `versions/{n+1}` | Operator-deferred recipe (Step 8) | ⏸ deferred — same as DM-18 |
+| **PRD §6 AC-4** — `POST /strategy/...` lands at Shape B + audit | Operator-deferred recipe (Step 8) | ⏸ deferred — requires live API + Firebase auth (per DM-19 issue body / PRD §5 Phase 4) |
+| **PRD §6 AC-5** — edit creates `versions/{n+1}` | Operator-deferred recipe (Step 8) | ⏸ deferred — requires live API + Firebase auth (per DM-19 issue body / PRD §5 Phase 4) |
 | **PRD §6 AC-6** — `check_strategy_docs.py` runs cleanly | Step 6 (a) as-is + (b) with real migrated account | ✅ both pass exit 0 |
 | **PRD §6 AC-7** — `pytest` + `make lint` | Step 7 baseline measurement | ⚠️ not met by literal AC text — pre-existing org-debt baseline identical on `main`; DM-19 introduces 0 regressions |
 | **PRD §6 AC-8** — Migration script is idempotent | Step 5 idempotency re-run | ✅ 0 source / 0 writes / exit 0 |
@@ -356,4 +358,4 @@ DM-PRD-05 dependency: this run satisfies the `strategy_docs` slice of "all data-
 - Linear DM-19 PO comment (2026-05-13) capturing the 4 PO decisions before the re-run.
 - Original abort run-log: replaced by this document; the abort discovery is preserved in the DM-19 Linear comment thread + summarized in the §Context section above.
 - Service-account key `dm19-local-migration@ken-e-dev.iam.gserviceaccount.com` (key id `f4f4c7b0db58f2edf1ed536322592e03a02c2256`) was created for this run only and is deleted after the PR lands.
-- Orphan-snapshot JSON at `/tmp/dm19-artifacts/orphan-snapshot.json` is NOT committed (contains full content of two ~15KB strategy docs); summarized in §Step 0 above.
+- Orphan-snapshot JSON at `/tmp/dm19-artifacts/orphan-snapshot.json` is NOT committed (contains full content of two ~15KB strategy docs); summarized in §Step 0 above. SHA-256: `24c3f42d21cb1ab40b44f72b800240438f32bae6941ce8b6fb9b1a5c2ce4912f` — if a copy of the file resurfaces (laptop backup, ops scratch space), this hash lets a future reviewer confirm it's the same snapshot referenced here. The `/tmp` location is volatile by design — the snapshot exists for in-session due-diligence (verifying `account_id=''` before deleting), not as a long-term archive; if a long-term archive is needed, future runs should upload to a `ken-e-dev-migration-artifacts` GCS bucket. (Not retrofitting this run; flagging as a convention worth establishing.)
