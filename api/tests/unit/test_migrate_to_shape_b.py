@@ -37,6 +37,7 @@ import migrate_to_shape_b as cli_module  # noqa: E402
 from _migrate_shape_b.config import MigrateConfig  # noqa: E402
 from _migrate_shape_b.resources import RESOURCES  # noqa: E402
 from _migrate_shape_b.runner import (  # noqa: E402
+    AccountDeleteResult,
     CopyResult,
     DeleteResult,
     VerifyResult,
@@ -1939,6 +1940,88 @@ class TestMalformedSourceCollection:
         assert "Malformed source collections (skipped): 1" in captured
         assert "strategy_docs_" in captured
         assert "Operator action:" in captured
+
+    # ------------------------------------------------------------------
+    # migrate_resource summary block — operator-facing stdout contract
+    # ------------------------------------------------------------------
+
+    def test_migrate_resource_surfaces_malformed_in_summary_block(self) -> None:
+        """migrate_resource stdout names the malformed source + operator-action line."""
+        client = FakeFirestoreClient()
+        client.seed("strategy_docs_/orphan_doc", {"title": "Orphan"})
+        client.seed("strategy_docs_acc_A/swot", {"title": "SWOT"})
+
+        config = MigrateConfig(
+            old_prefix="strategy_docs_", new_subcollection="strategy_docs"
+        )
+
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            exit_code = migrate_resource(client, "strategy_docs", config)
+
+        output = buf.getvalue()
+        # Verify is still VERIFIED — the malformed source must not poison the verify status.
+        assert exit_code == 0, output
+        assert "Status:" in output and "VERIFIED" in output
+        # Operator-facing summary lines present and name the offender.
+        assert "Malformed source collections (skipped): 1" in output, output
+        assert "strategy_docs_" in output, output
+        assert "Operator action:" in output, output
+        assert "before --confirm-delete" in output, output
+
+    # ------------------------------------------------------------------
+    # cmd_resource --confirm-delete summary — operator-facing stdout contract
+    # ------------------------------------------------------------------
+
+    def test_cmd_resource_confirm_delete_surfaces_malformed_left_in_place(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """cmd_resource's `deletion complete` block names malformed sources left in place."""
+        fake_resources = {
+            "strategy_docs": MigrateConfig(
+                old_prefix="strategy_docs_", new_subcollection="strategy_docs"
+            )
+        }
+        monkeypatch.setattr(cli_module, "RESOURCES", fake_resources)
+        # Stub migrate_resource — irrelevant to this assertion.
+        monkeypatch.setattr(cli_module, "migrate_resource", lambda c, n, cfg: 0)
+        # Real DeleteResult so the new `malformed_sources` field is populated correctly
+        # (MagicMock auto-truthy / auto-iterable would print garbage; this pins the contract).
+        delete_result = DeleteResult(
+            resource_name="strategy_docs",
+            accounts=[
+                AccountDeleteResult(
+                    account_id="acc_A",
+                    source_collection="strategy_docs_acc_A",
+                    docs_deleted=1,
+                )
+            ],
+            malformed_sources=["strategy_docs_"],
+        )
+        monkeypatch.setattr(
+            cli_module,
+            "delete_source_collections",
+            lambda c, n, cfg: delete_result,
+        )
+
+        mock_fs = MagicMock()
+        mock_fs.Client.return_value = MagicMock()
+        with patch.dict("sys.modules", {"google.cloud.firestore": mock_fs}):
+            code = cli_module.cmd_resource(
+                "strategy_docs",
+                "proj",
+                "(default)",
+                dry_run=False,
+                confirm_delete=True,
+                assume_yes=True,
+            )
+
+        assert code == 0
+        output = capsys.readouterr().out
+        assert "Resource: strategy_docs — deletion complete" in output, output
+        assert "Malformed source collections (left in place): 1" in output, output
+        assert "strategy_docs_" in output, output
+        assert "Operator action:" in output and "AC-2" in output, output
 
     # ------------------------------------------------------------------
     # _extract_account_id — direct validation helper coverage
