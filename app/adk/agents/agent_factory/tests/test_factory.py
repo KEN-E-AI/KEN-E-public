@@ -290,7 +290,7 @@ class TestTemperature:
 class TestMaxOutputTokens:
     def test_max_output_tokens_set_in_generate_content_config(self) -> None:
         config = _make_config(max_output_tokens=4096)
-        agent = _build(config, name="mot")
+        agent = _build(config, name="max_out")
 
         assert agent.generate_content_config is not None
         assert agent.generate_content_config.max_output_tokens == 4096

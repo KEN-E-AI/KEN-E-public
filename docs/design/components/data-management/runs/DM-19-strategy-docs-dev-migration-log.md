@@ -281,7 +281,7 @@ Baseline state on `main` (the same `999a51c` this branch is rebased onto) — me
 | `pytest api/tests/` | 220 failed, 1,394 passed, 137 skipped, 71 errors (108s) | identical (this branch has no code changes; only the run-log markdown) | **0 regressions** |
 | `ruff check .` (entire repo) | 2,451 errors | identical | **0 regressions** |
 | `mypy .` (entire repo) | 4,385 errors / 426 files | identical | **0 regressions** |
-| `make lint` (`codespell`) | fails on `node_modules` typos (`CACL ==> CALC`) | identical | **0 regressions** |
+| `make lint` (`codespell`) | fails on `node_modules` typos (calc-misspelling in node_modules) | identical | **0 regressions** |
 
 **AC-7 verdict:** the literal text of AC-7 is **not met** because of the pre-existing org-debt baseline on `main` — but DM-19 (and the runner-fix PR #455 that preceded it) introduces zero new failures. Same posture established by DM-37 / DM-39 / DM-46. The migration-specific test file passes 86/86: `cd api && uv run pytest tests/unit/test_migrate_to_shape_b.py -q` → exits 0.
 
