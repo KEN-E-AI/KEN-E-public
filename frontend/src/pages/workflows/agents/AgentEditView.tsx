@@ -11,7 +11,7 @@ import type {
   AgentConfigId,
   AgentConfigOverlayUpdate,
 } from "@/lib/api/agentConfigs";
-import { SUPPORTED_MODELS } from "@/lib/api/agentConfigs";
+import { displayNameFor, SUPPORTED_MODELS } from "@/lib/api/agentConfigs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -195,13 +195,8 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
     );
   }
 
-  // Display chain: human name > role title > Title-Cased config_id (fallback
-  // for legacy docs that haven't been migrated yet).
-  const titleFallback = config.config_id
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-  const primaryDisplay = config.name || config.title || titleFallback;
-  const subtitleDisplay = config.name && config.title ? config.title : null;
+  const { primary: primaryDisplay, subtitle: subtitleDisplay } =
+    displayNameFor(config);
 
   return (
     <div className="flex flex-col h-full">

@@ -277,10 +277,12 @@ class MergedAgentConfig(BaseModel):
     config_id: str = Field(..., description="Document ID of this agent config")
     name: str | None = Field(
         None,
+        max_length=100,
         description="Human name (e.g. 'Dave'). Optional, user-editable.",
     )
     title: str | None = Field(
         None,
+        max_length=100,
         description="Role description (e.g. 'Business Researcher'). User-editable.",
     )
     instruction: str = Field(..., description="Agent instruction/prompt")

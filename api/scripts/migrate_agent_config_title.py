@@ -43,6 +43,7 @@ Usage
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import re
 import sys
@@ -80,6 +81,32 @@ def _looks_like_snake_case_id(value: str) -> bool:
     the config_id) from human-set ``name`` values that should be preserved.
     """
     return bool(_SNAKE_CASE_RE.match(value))
+
+
+def needs_manual_review(doc: dict[str, Any]) -> bool:
+    """True if a doc's ``name`` looks human-set AND no ``title`` is recorded.
+
+    Such docs are *ambiguous*: the name might genuinely be a human name
+    (e.g., "Dave") that we want to keep in the name slot, OR it might be
+    a misclassified role description (e.g., "Competitor Analyst") that
+    really belongs in the title slot. ``compute_patch`` defaults to the
+    conservative "preserve as human name" interpretation, but that's
+    wrong for the role-description case — the operator should triage.
+
+    With ``--manual-review-out`` the migration emits these docs for
+    review and leaves them unmodified; without the flag the auto-classify
+    behavior applies (kept for backward-compat with the original PR).
+    """
+    current_title = doc.get("title")
+    current_name = doc.get("name")
+    if current_title:
+        # Title already set — name's interpretation is unambiguous.
+        return False
+    if not isinstance(current_name, str) or not current_name:
+        # No name to misclassify.
+        return False
+    # Non-snake-case name with no title = ambiguous.
+    return not _looks_like_snake_case_id(current_name)
 
 
 def compute_patch(
@@ -134,12 +161,17 @@ def _migrate_collection(
     dry_run: bool,
     counts: dict[str, int],
     failed_ids: list[str],
+    review_out: Any | None = None,
 ) -> None:
     """Apply the migration to a single Firestore collection path.
 
     ``docs_path`` is the sequence of segments (e.g., ``["agent_configs"]`` or
     ``["accounts", "acc_abc", "agent_configs"]``). The function streams every
     document in that collection and applies ``compute_patch``.
+
+    When ``review_out`` is provided (a writable file-like object), docs that
+    would be ambiguously classified — per ``needs_manual_review`` — are
+    skipped and emitted as JSONL records for the operator to triage.
     """
     collection: Any = db
     for i, segment in enumerate(docs_path):
@@ -153,6 +185,21 @@ def _migrate_collection(
         doc_id: str = snapshot.id
         doc: dict[str, Any] = snapshot.to_dict() or {}
         full_path = "/".join([*docs_path, doc_id])
+
+        if review_out is not None and needs_manual_review(doc):
+            record = {
+                "path": full_path,
+                "name": doc.get("name"),
+                "title": doc.get("title"),
+                "reason": (
+                    "name value is non-snake-case and title is unset — could be "
+                    "a legitimate human name or a misclassified role description"
+                ),
+            }
+            review_out.write(json.dumps(record) + "\n")
+            logger.info("Flagged for manual review: %s (name=%r)", full_path, doc.get("name"))
+            counts["flagged_for_review"] += 1
+            continue
 
         patch = compute_patch(doc_id, doc)
 
@@ -181,6 +228,7 @@ def migrate(
     dry_run: bool,
     *,
     db: Any | None = None,
+    review_out: Any | None = None,
 ) -> dict[str, int]:
     """Run the migration over global + per-account agent_configs collections.
 
@@ -188,10 +236,13 @@ def migrate(
         project_id: GCP project ID (e.g. ``"ken-e-dev"``).
         dry_run: When ``True``, log what would change but issue no writes.
         db: Optional pre-built Firestore client (for testing).
+        review_out: Optional writable file-like object. When provided, docs
+            whose ``name`` is ambiguous (per ``needs_manual_review``) are
+            skipped and emitted as JSONL for the operator to triage.
 
     Returns:
         A dict with integer counts for ``patched``, ``would_patch``,
-        ``unchanged``, and ``errors``.
+        ``unchanged``, ``errors``, and ``flagged_for_review``.
     """
     if db is None:
         from google.cloud import firestore
@@ -203,6 +254,7 @@ def migrate(
         "would_patch": 0,
         "unchanged": 0,
         "errors": 0,
+        "flagged_for_review": 0,
     }
     failed_paths: list[str] = []
 
@@ -214,6 +266,7 @@ def migrate(
         dry_run=dry_run,
         counts=counts,
         failed_ids=failed_paths,
+        review_out=review_out,
     )
 
     # Per-account overlays and custom agents
@@ -230,6 +283,7 @@ def migrate(
             dry_run=dry_run,
             counts=counts,
             failed_ids=failed_paths,
+            review_out=review_out,
         )
 
     if failed_paths:
@@ -267,6 +321,18 @@ def main() -> int:
         help="Show what would be patched without writing to Firestore",
     )
     parser.add_argument(
+        "--manual-review-out",
+        metavar="PATH",
+        help=(
+            "When set, docs whose `name` is non-snake-case AND `title` is "
+            "unset are skipped (not auto-classified) and emitted as JSONL "
+            "to this file for the operator to triage. The name could be a "
+            "legitimate human name (e.g., 'Dave') or a misclassified role "
+            "description (e.g., 'Competitor Analyst') — only the operator "
+            "can tell. Recommended for staging/prod runs."
+        ),
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         help="Logging level (default: INFO)",
@@ -286,25 +352,43 @@ def main() -> int:
     )
 
     logger.info("agent_configs title backfill migration")
-    logger.info("Project:  %s", args.project_id)
-    logger.info("Dry run:  %s", args.dry_run)
+    logger.info("Project:           %s", args.project_id)
+    logger.info("Dry run:           %s", args.dry_run)
+    logger.info("Manual review out: %s", args.manual_review_out or "<auto-classify>")
     logger.info("-" * 60)
 
-    counts = migrate(project_id=args.project_id, dry_run=args.dry_run)
+    review_handle = open(args.manual_review_out, "w") if args.manual_review_out else None
+    try:
+        counts = migrate(
+            project_id=args.project_id,
+            dry_run=args.dry_run,
+            review_out=review_handle,
+        )
+    finally:
+        if review_handle is not None:
+            review_handle.close()
 
     logger.info("-" * 60)
     if args.dry_run:
         logger.info(
-            "Done (dry-run). would_patch=%d, unchanged=%d",
+            "Done (dry-run). would_patch=%d, unchanged=%d, flagged_for_review=%d",
             counts["would_patch"],
             counts["unchanged"],
+            counts["flagged_for_review"],
         )
     else:
         logger.info(
-            "Done. patched=%d, unchanged=%d, errors=%d",
+            "Done. patched=%d, unchanged=%d, flagged_for_review=%d, errors=%d",
             counts["patched"],
             counts["unchanged"],
+            counts["flagged_for_review"],
             counts["errors"],
+        )
+    if counts["flagged_for_review"]:
+        logger.info(
+            "Review file %s lists ambiguous docs — triage each entry and "
+            "update Firestore manually before re-running.",
+            args.manual_review_out,
         )
 
     return 1 if counts["errors"] > 0 else 0

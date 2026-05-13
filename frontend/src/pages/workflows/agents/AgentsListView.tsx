@@ -3,7 +3,7 @@ import { Bot, Plus, Settings } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useAgentConfigsList } from "@/queries/agentConfigs";
 import type { AgentConfigId } from "@/lib/api/agentConfigs";
-import { toAgentConfigId } from "@/lib/api/agentConfigs";
+import { displayNameFor, toAgentConfigId } from "@/lib/api/agentConfigs";
 import type {
   MergedAgentConfig,
   CustomizationStatus,
@@ -67,13 +67,8 @@ type AgentCardProps = {
 
 function AgentCard({ config, index, onEdit }: AgentCardProps) {
   const accentStyle = FALLBACK_ACCENTS[index % FALLBACK_ACCENTS.length];
-  // Display chain: human name > role title > Title-Cased config_id (fallback
-  // for legacy docs that haven't been migrated yet).
-  const titleFallback = config.config_id
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-  const primaryDisplay = config.name || config.title || titleFallback;
-  const subtitleDisplay = config.name && config.title ? config.title : null;
+  const { primary: primaryDisplay, subtitle: subtitleDisplay } =
+    displayNameFor(config);
 
   return (
     <div

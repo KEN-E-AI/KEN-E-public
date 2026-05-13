@@ -10,11 +10,15 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock
 
+import io
+import json
+
 from api.scripts.migrate_agent_config_title import (
     _looks_like_snake_case_id,
     _title_case_from_identifier,
     compute_patch,
     migrate,
+    needs_manual_review,
 )
 
 # ---------------------------------------------------------------------------
@@ -214,7 +218,84 @@ def test_migrate_dry_run_writes_nothing_and_counts_correctly() -> None:
 
     counts = migrate(project_id="ken-e-dev", dry_run=True, db=db)
 
-    assert counts == {"patched": 0, "would_patch": 1, "unchanged": 1, "errors": 0}
+    assert counts == {
+        "patched": 0,
+        "would_patch": 1,
+        "unchanged": 1,
+        "errors": 0,
+        "flagged_for_review": 0,
+    }
+
+
+def test_needs_manual_review_flags_non_snake_case_name_without_title() -> None:
+    """A doc with name='Competitor Analyst' and no title is ambiguous —
+    could be a human name or a misclassified role. Flag for review."""
+    assert needs_manual_review({"name": "Competitor Analyst"}) is True
+
+
+def test_needs_manual_review_clears_when_title_already_set() -> None:
+    """If title is already set, name's interpretation is unambiguous —
+    no review needed."""
+    assert (
+        needs_manual_review({"name": "Dave", "title": "Brand Guardian"})
+        is False
+    )
+
+
+def test_needs_manual_review_clears_for_snake_case_name() -> None:
+    """Snake-case name is unambiguously legacy storage — no review needed."""
+    assert needs_manual_review({"name": "competitor_analyst"}) is False
+
+
+def test_needs_manual_review_clears_when_no_name() -> None:
+    assert needs_manual_review({}) is False
+    assert needs_manual_review({"name": None}) is False
+    assert needs_manual_review({"name": ""}) is False
+
+
+def test_migrate_manual_review_skips_ambiguous_and_emits_jsonl() -> None:
+    """``--manual-review-out`` skips ambiguous docs and writes them to the
+    review stream as JSONL — operator triages, then re-runs."""
+    db = FakeMigrateDb(
+        globals_={
+            "competitor_analyst": {"name": "Competitor Analyst"},  # ambiguous
+            "business_researcher": {"name": "business_researcher"},  # auto-classify
+        },
+    )
+    review_buf = io.StringIO()
+
+    counts = migrate(
+        project_id="ken-e-dev",
+        dry_run=False,
+        db=db,
+        review_out=review_buf,
+    )
+
+    assert counts["flagged_for_review"] == 1
+    assert counts["patched"] == 1  # business_researcher
+
+    review_lines = [line for line in review_buf.getvalue().splitlines() if line]
+    assert len(review_lines) == 1
+    record = json.loads(review_lines[0])
+    assert record["path"] == "agent_configs/competitor_analyst"
+    assert record["name"] == "Competitor Analyst"
+    assert record["title"] is None
+
+
+def test_migrate_without_review_flag_auto_classifies_as_before() -> None:
+    """Without ``--manual-review-out`` the legacy auto-classify path runs —
+    preserves existing PR behavior for callers who haven't audited."""
+    db = FakeMigrateDb(
+        globals_={
+            "competitor_analyst": {"name": "Competitor Analyst"},
+        },
+    )
+
+    counts = migrate(project_id="ken-e-dev", dry_run=False, db=db)
+
+    # Auto-classified: name preserved, title derived from config_id.
+    assert counts["patched"] == 1
+    assert counts["flagged_for_review"] == 0
 
 
 def test_migrate_live_patches_then_is_idempotent() -> None:

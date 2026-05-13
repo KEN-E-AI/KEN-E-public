@@ -78,6 +78,13 @@ class MergedAgentConfig(BaseModel):
 # ``canonical_id`` and ``legacy_agent_name`` are pre-AH-PRD-02 storage
 # metadata that survives on a handful of seeded docs. Strip both so the
 # factory can load those agents without tripping ``extra="forbid"``.
+#
+# Note: the router's ``_STORAGE_INTERNAL_FIELDS`` additionally strips
+# ``metadata``. The factory does NOT strip it because this module's
+# ``MergedAgentConfig`` declares ``metadata: dict | None = None`` as a
+# real field — the factory wants the metadata to flow through (e.g. for
+# version pinning), whereas the router's response model omits it. Don't
+# "fix" this asymmetry by syncing the two sets.
 _STORAGE_INTERNAL_FIELDS: frozenset[str] = frozenset(
     {
         "name",
