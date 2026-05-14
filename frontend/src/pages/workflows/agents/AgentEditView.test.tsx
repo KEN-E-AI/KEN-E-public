@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -252,6 +252,132 @@ describe("AgentEditView — Save Changes", () => {
       }),
       expect.anything(),
     );
+  });
+});
+
+describe("AgentEditView — client validation", () => {
+  beforeEach(() => {
+    mockUseAgentConfig.mockReturnValue({
+      data: baseConfig,
+      isLoading: false,
+      isError: false,
+    });
+  });
+
+  it("disables Save and shows an error when instruction is shortened below 10 chars", async () => {
+    const user = userEvent.setup();
+    render(<AgentEditView configId={configId} onClose={vi.fn()} />, {
+      wrapper: makeWrapper(),
+    });
+
+    const textarea = screen.getByTestId("instruction-field");
+    await user.clear(textarea);
+    await user.type(textarea, "too short");
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Instruction must be at least 10 characters"),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("save-button")).toBeDisabled();
+    expect(mockMutate).not.toHaveBeenCalled();
+  });
+
+  it("disables Save when description is non-empty but shorter than 10 chars", async () => {
+    const user = userEvent.setup();
+    render(<AgentEditView configId={configId} onClose={vi.fn()} />, {
+      wrapper: makeWrapper(),
+    });
+
+    const descField = screen.getByTestId("description-field");
+    await user.clear(descField);
+    await user.type(descField, "short");
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Description must be at least 10 characters"),
+      ).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("save-button")).toBeDisabled();
+  });
+
+  it("disables Save when description is cleared on an existing agent", async () => {
+    // Regression: clearing description used to slip past validation and
+    // ``handleSave`` would send ``{description: null}``, leaving the agent
+    // saved to Firestore with no description.
+    const user = userEvent.setup();
+    render(<AgentEditView configId={configId} onClose={vi.fn()} />, {
+      wrapper: makeWrapper(),
+    });
+
+    const descField = screen.getByTestId("description-field");
+    await user.clear(descField);
+
+    await waitFor(() => {
+      expect(screen.getByText("Description is required")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("save-button")).toBeDisabled();
+    expect(mockMutate).not.toHaveBeenCalled();
+  });
+});
+
+describe("AgentEditView — server validation", () => {
+  it("maps FastAPI 422 detail entries onto the matching fields", async () => {
+    // Capture the onError callback the component passes to ``mutate`` so we
+    // can drive the 422 path explicitly — the mock mutation doesn't actually
+    // call the API, so we need to invoke it ourselves.
+    const capture = vi.fn();
+    mockUseUpsertOverlay.mockReturnValue({
+      mutate: capture,
+      isPending: false,
+    });
+    mockUseAgentConfig.mockReturnValue({
+      data: baseConfig,
+      isLoading: false,
+      isError: false,
+    });
+
+    const { toast } = await import("sonner");
+    const user = userEvent.setup();
+    render(<AgentEditView configId={configId} onClose={vi.fn()} />, {
+      wrapper: makeWrapper(),
+    });
+
+    // Make a valid edit so save is enabled.
+    const textarea = screen.getByTestId("instruction-field");
+    await user.clear(textarea);
+    await user.type(textarea, "Updated instruction text.");
+
+    await user.click(screen.getByTestId("save-button"));
+
+    // Invoke the onError handler with a synthetic 422.
+    const [, opts] = capture.mock.calls[0];
+    act(() => {
+      opts.onError({
+        response: {
+          status: 422,
+          data: {
+            detail: [
+              {
+                type: "string_too_short",
+                loc: ["body", "description"],
+                msg: "String should have at least 10 characters",
+                ctx: { min_length: 10 },
+              },
+            ],
+          },
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("String should have at least 10 characters"),
+      ).toBeInTheDocument();
+      expect(toast.error).toHaveBeenCalledWith(
+        "Please fix the highlighted fields and try again.",
+      );
+    });
   });
 });
 

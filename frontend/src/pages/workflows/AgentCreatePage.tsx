@@ -23,19 +23,55 @@ import {
 import { DisabledPlaceholderRow } from "./agents/DisabledPlaceholderRow";
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
+//
+// Field constraints mirror ``AgentConfigCreate`` in
+// ``api/src/kene_api/models/agent_config_models.py``. Keeping them in sync
+// surfaces validation problems inline before the request is sent — the API
+// still re-validates, and any 422 fields it returns are mapped back onto the
+// form by ``onError`` below.
 
 export const schema = z.object({
-  title: z.string().min(1, "Title is required"),
-  name: z.string().optional(),
-  instruction: z.string().min(1, "Instruction is required"),
+  title: z
+    .string()
+    .trim()
+    .min(1, "Title is required")
+    .max(100, "Title must be 100 characters or fewer"),
+  name: z
+    .string()
+    .trim()
+    .max(100, "Name must be 100 characters or fewer")
+    .optional(),
+  instruction: z
+    .string()
+    .min(10, "Instruction must be at least 10 characters")
+    .max(50000, "Instruction must be 50,000 characters or fewer"),
   model: z.enum(SUPPORTED_MODELS as [string, ...string[]], {
     errorMap: () => ({ message: "Model is required" }),
   }),
   temperature: z.number().min(0.1).max(0.9).optional(),
-  description: z.string().optional(),
+  // Optional, but the API enforces min_length=10 when provided. Allow empty
+  // (treated as "not set" — onSubmit converts it to null) or at least 10
+  // characters when the user types something.
+  description: z
+    .string()
+    .max(1000, "Description must be 1,000 characters or fewer")
+    .refine((v) => v.length === 0 || v.trim().length >= 10, {
+      message: "Description must be at least 10 characters",
+    })
+    .optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
+
+// Fields we know how to surface inline from a FastAPI 422 ``detail`` entry.
+const FORM_FIELDS = [
+  "title",
+  "name",
+  "instruction",
+  "model",
+  "temperature",
+  "description",
+] as const satisfies readonly (keyof FormValues)[];
 
 // ─── AgentCreatePage ──────────────────────────────────────────────────────────
 
@@ -49,6 +85,7 @@ export function AgentCreatePage() {
     register,
     handleSubmit,
     control,
+    setError,
     formState: { errors, isValid },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -58,9 +95,11 @@ export function AgentCreatePage() {
 
   function onSubmit(data: FormValues) {
     const trimmedName = data.name?.trim();
+    const trimmedDescription = data.description?.trim();
     const payload = {
       ...data,
       name: trimmedName ? trimmedName : null,
+      description: trimmedDescription ? trimmedDescription : null,
     };
     mutation.mutate(payload, {
       onSuccess: (created) => {
@@ -69,7 +108,38 @@ export function AgentCreatePage() {
           `/workflows/agents?edit=${encodeURIComponent(created.config_id)}`,
         );
       },
-      onError: () => {
+      onError: (err) => {
+        // FastAPI returns ``{ detail: [{ loc: ["body", "<field>"], msg, ... }] }``
+        // for 422 validation failures. Surface each entry on its field so the
+        // user sees what to fix instead of a generic toast.
+        const detail = (err as { response?: { data?: { detail?: unknown } } })
+          ?.response?.data?.detail;
+        if (Array.isArray(detail)) {
+          let mapped = 0;
+          for (const item of detail) {
+            const loc = (item as { loc?: unknown[] })?.loc;
+            const msg = (item as { msg?: string })?.msg;
+            const field =
+              Array.isArray(loc) && typeof loc[loc.length - 1] === "string"
+                ? (loc[loc.length - 1] as string)
+                : undefined;
+            if (
+              field &&
+              (FORM_FIELDS as readonly string[]).includes(field) &&
+              typeof msg === "string"
+            ) {
+              setError(field as keyof FormValues, {
+                type: "server",
+                message: msg,
+              });
+              mapped++;
+            }
+          }
+          if (mapped > 0) {
+            toast.error("Please fix the highlighted fields and try again.");
+            return;
+          }
+        }
         toast.error("Failed to create agent.");
       },
     });
@@ -227,6 +297,11 @@ export function AgentCreatePage() {
             className="mt-1.5"
             data-testid="description-field"
           />
+          {errors.description && (
+            <p className="text-xs text-destructive mt-1">
+              {errors.description.message}
+            </p>
+          )}
         </div>
 
         <Separator />
