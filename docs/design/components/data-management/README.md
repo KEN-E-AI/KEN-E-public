@@ -270,6 +270,7 @@ DM-PRD-05 cannot start until **all** data-migration projects (DM-PRD-01 + DM-PRD
 - **Research docs** — `docs/design/multi-tenant-data-model-research-{brief,findings}.md` stay in `docs/design/` next to other architecture research. Only the migration plan lives inside this component.
 - **Role-assignment admin UI** — DM-PRD-07 ships the bare member-CRUD API. The frontend admin page is a separate UI project (not blocked by this component).
 - **Firebase user record deletion** — DM-PRD-05's user-deletion sweep purges KEN-E-side data. The Firebase Auth user record is deleted out-of-band by an operator after the API call completes.
+- **Dev environment IAM (intentional out-of-band)** — `deployment/terraform/locals.tf::deploy_project_ids` only enumerates `prod` and `staging`. Dev (`ken-e-dev`) is treated as a sandbox: IAM grants on the dev Agent Engine SA (including `roles/datastore.user` for `analytics_db` access) are added by engineers as needed and are not reconciled by terraform. Dev still gets terraform-managed Firestore indexes via the separate `firestore_index_project_ids` variable — indexes are required for query correctness, IAM is not. If dev is ever promoted to a production-like environment, adding it to `deploy_project_ids` is a scoped project (it pulls in CICD SA roles, Vertex SA roles, log sinks, and monitoring for dev), not a one-line cleanup.
 
 ### 7.5 Downstream PRD alignment
 
