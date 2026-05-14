@@ -4,8 +4,18 @@ Provides:
 
 * ``AUDIT_FIELDS`` — the canonical 8-field set the AH-41 audit added.
   Single source of truth referenced by every seed script and test.
-* ``AUDIT_FIELDS_RESEARCHER`` / ``AUDIT_FIELDS_FORMATTER`` — profile dicts
-  with the matrix-decided default values for each agent class.
+* ``AUDIT_FIELDS_USER_FACING_RESEARCHER`` /
+  ``AUDIT_FIELDS_STRATEGY_PIPELINE_RESEARCHER`` /
+  ``AUDIT_FIELDS_FORMATTER`` — profile dicts with the matrix-decided
+  default values for each agent class. The two researcher profiles
+  split per AH-PRD-08: user-facing researchers (chatbot, news, GA, and
+  any future runtime-callable researcher) are visible + forkable;
+  strategy-pipeline researchers (business / competitive / marketing /
+  brand) are hidden + non-copyable because they're account-creation-only
+  and constructed via a legacy loader that ignores picker selections.
+* ``AUDIT_FIELDS_RESEARCHER`` — deprecation alias for
+  ``AUDIT_FIELDS_USER_FACING_RESEARCHER``. New callers should pick the
+  explicit profile.
 * ``upsert_agent_config`` — the one idempotent Firestore upsert function
   used by all four seed scripts (was previously duplicated four times).
 
@@ -46,12 +56,13 @@ AUDIT_FIELDS: tuple[str, ...] = (
 )
 
 
-# Default profile for researchers and user-facing specialists (chatbot,
-# news, GA, business/competitive/marketing/brand researchers). Visible in
-# the Workflows > Agents UI and forkable. Individual seeds override
-# specific fields (e.g. GA flips code_execution_enabled + mcp_servers;
-# the root chatbot flips available_to_copy=False).
-AUDIT_FIELDS_RESEARCHER: dict[str, Any] = {
+# Default profile for user-facing researchers and runtime-callable
+# specialists (chatbot, news, GA, and any future researcher whose tool
+# selections should drive runtime behaviour). Visible in the Workflows
+# > Agents UI and forkable. Individual seeds override specific fields
+# (e.g. GA flips code_execution_enabled + mcp_servers; the root chatbot
+# flips available_to_copy=False).
+AUDIT_FIELDS_USER_FACING_RESEARCHER: dict[str, Any] = {
     "code_execution_enabled": False,
     "mcp_servers": [],
     "skill_ids": [],
@@ -60,6 +71,39 @@ AUDIT_FIELDS_RESEARCHER: dict[str, Any] = {
     "available_to_copy": True,
     "automatically_available": True,
     "visible_in_frontend": True,
+}
+
+
+# Deprecation alias for ``AUDIT_FIELDS_USER_FACING_RESEARCHER`` (AH-PRD-08).
+# Kept for one release so existing user-facing migration scripts
+# (chatbot / news / GA) keep importing cleanly. New callers should pick
+# the explicit profile name. Remove after all importers migrate.
+AUDIT_FIELDS_RESEARCHER: dict[str, Any] = AUDIT_FIELDS_USER_FACING_RESEARCHER
+
+
+# Profile for the 4 strategy-pipeline researchers (business / competitive
+# / marketing / brand). Hidden from the Workflows > Agents UI and not
+# forkable. AH-PRD-08 rationale:
+#   1. These agents are invoked exactly once during account creation
+#      via ``create_strategy_docs_supervisor.py``, never via the runtime
+#      chatbot. Picker-driven tool changes would never be observed.
+#   2. They are constructed through
+#      ``strategy_agent/config_loader.py:create_agent_from_firestore_config``,
+#      which filters out ``tool_ids`` and ``mcp_servers`` before
+#      validation — even if a user could see them in the picker, their
+#      selections would have no runtime effect.
+# Hiding at the seed layer means the AH-PRD-06 picker contract is not
+# made for these agents in the first place. Mirrors the existing
+# ``AUDIT_FIELDS_FORMATTER`` discipline for the 4 strategy formatters.
+AUDIT_FIELDS_STRATEGY_PIPELINE_RESEARCHER: dict[str, Any] = {
+    "code_execution_enabled": False,
+    "mcp_servers": [],
+    "skill_ids": [],
+    "sandbox_code_executor_enabled": False,
+    "response_schema": None,
+    "available_to_copy": False,
+    "automatically_available": True,
+    "visible_in_frontend": False,
 }
 
 

@@ -68,7 +68,7 @@ if str(_repo_root) not in sys.path:
 
 from app.adk.agents.scripts._seed_helpers import (  # noqa: E402
     AUDIT_FIELDS_FORMATTER,
-    AUDIT_FIELDS_RESEARCHER,
+    AUDIT_FIELDS_STRATEGY_PIPELINE_RESEARCHER,
     upsert_agent_config,
 )
 
@@ -100,8 +100,9 @@ Be specific and include examples of how strengths create opportunities and weakn
     # AH-40: flat shape — was previously nested under generate_content_config.
     "temperature": 0.3,
     "max_output_tokens": 2500,
-    # AH-41: explicit audit fields (researcher profile).
-    **AUDIT_FIELDS_RESEARCHER,
+    # AH-41 / AH-PRD-08: explicit audit fields (strategy-pipeline researcher
+    # profile — hidden + non-copyable; see _seed_helpers.py for rationale).
+    **AUDIT_FIELDS_STRATEGY_PIPELINE_RESEARCHER,
 }
 
 BUSINESS_FORMATTER_CONFIG: dict[str, Any] = {
@@ -161,7 +162,9 @@ BUSINESS_FORMATTER_CONFIG["metadata"] = _build_metadata(
     "agent with StructuredBusinessStrategy output_schema, no tools. Uses "
     "gemini-2.5-pro for better schema handling. v1.1 (AH-40 + AH-41): flat "
     "temperature/max_output_tokens; explicit audit fields (hidden + "
-    "non-copyable per formatter profile)."
+    "non-copyable per formatter profile). v1.2 (AH-PRD-08): the paired "
+    "business_researcher now uses the strategy-pipeline profile (also "
+    "hidden + non-copyable)."
 )
 
 
@@ -174,11 +177,13 @@ SEEDS: dict[str, dict[str, Any]] = {
     "business_formatter": BUSINESS_FORMATTER_CONFIG,
     # The six below are AH-41 audit-field-only seeds. Live content
     # (instruction/model/temperature/etc.) is preserved by set(merge=True).
-    "competitive_researcher": dict(AUDIT_FIELDS_RESEARCHER),
+    # AH-PRD-08: researchers use the strategy-pipeline profile (hidden +
+    # non-copyable) to match the already-hidden formatters.
+    "competitive_researcher": dict(AUDIT_FIELDS_STRATEGY_PIPELINE_RESEARCHER),
     "competitive_formatter": dict(AUDIT_FIELDS_FORMATTER),
-    "marketing_researcher": dict(AUDIT_FIELDS_RESEARCHER),
+    "marketing_researcher": dict(AUDIT_FIELDS_STRATEGY_PIPELINE_RESEARCHER),
     "marketing_formatter": dict(AUDIT_FIELDS_FORMATTER),
-    "brand_researcher": dict(AUDIT_FIELDS_RESEARCHER),
+    "brand_researcher": dict(AUDIT_FIELDS_STRATEGY_PIPELINE_RESEARCHER),
     "brand_formatter": dict(AUDIT_FIELDS_FORMATTER),
 }
 
@@ -196,8 +201,7 @@ def upload_config_to_firestore(
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Upload baseline / audit-field seeds for strategy agent_configs "
-            "(AH-41)."
+            "Upload baseline / audit-field seeds for strategy agent_configs (AH-41)."
         )
     )
     parser.add_argument(

@@ -85,6 +85,7 @@ def load_config_from_firestore(
         # Initialize Firestore client with explicit ADC
         # Agent Engine requires explicit credential configuration
         from google.auth import default
+
         credentials, _ = default()
         db = firestore.Client(project=project_id, credentials=credentials)
 
@@ -145,6 +146,19 @@ def load_config_from_firestore(
         # filtered out before validation. Allowlisting (rather than
         # denylisting just ``metadata``) keeps the loader resilient as
         # KEN-E adds further admin/orchestration fields to the doc.
+        #
+        # AH-PRD-08 note: ``tool_ids`` and ``mcp_servers`` are dropped
+        # here too — they are not part of the ADK schema. Specialists
+        # loaded via this path (the 8 strategy-pipeline agents) are
+        # therefore not user-configurable through the AH-PRD-06 picker.
+        # That gap is closed at the seed layer: those agents carry
+        # ``visible_in_frontend=False`` so the picker never shows them.
+        # See ``app/adk/agents/scripts/_seed_helpers.py`` for the
+        # ``AUDIT_FIELDS_STRATEGY_PIPELINE_RESEARCHER`` profile and the
+        # ``docs/design/components/agentic-harness/projects/AH-PRD-08``
+        # PRD for the full rationale. Do not add new agents through
+        # this path; route them via ``agent_factory.build_hierarchy``
+        # so their tool selections become user-configurable.
         allowed_keys = set(LlmAgentConfig.model_fields.keys())
         config_dict = {k: v for k, v in config_data.items() if k in allowed_keys}
         extensions = {
@@ -231,10 +245,16 @@ def create_agent_from_firestore_config(
     )
 
     # DEBUG: Log system instructions preview for marketing agents (only at DEBUG level)
-    if logger.isEnabledFor(logging.DEBUG) and doc_id in ["marketing_researcher", "marketing_formatter"]:
+    if logger.isEnabledFor(logging.DEBUG) and doc_id in [
+        "marketing_researcher",
+        "marketing_formatter",
+    ]:
         instructions = getattr(config, "system_instruction", "")
-        has_new_schema = 'customer_strategies' in instructions and 'ideal_customer_profiles: List' in instructions
-        has_old_schema = 'product_categories' in instructions
+        has_new_schema = (
+            "customer_strategies" in instructions
+            and "ideal_customer_profiles: List" in instructions
+        )
+        has_old_schema = "product_categories" in instructions
         logger.debug(
             f"[DEBUG] {doc_id} config loaded: v{metadata.get('version', 'MISSING')}, "
             f"{len(instructions)} chars, schema={'NEW' if has_new_schema else 'OLD' if has_old_schema else 'UNKNOWN'}"
@@ -301,6 +321,7 @@ def get_current_config_metadata(
     try:
         # Use explicit credentials for Agent Engine compatibility
         from google.auth import default
+
         credentials, _ = default()
         db = firestore.Client(project=project_id, credentials=credentials)
         doc_ref = db.collection("agent_configs").document(doc_id)
