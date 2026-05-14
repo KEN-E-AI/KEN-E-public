@@ -55,25 +55,39 @@ class AnalyticsService:
         }
 
     def _init_firestore_clients(self):
-        """Initialize Firestore clients for both databases."""
+        """Initialize the analytics Firestore client.
+
+        Silent-degradation contract: if client construction fails (typically
+        an IAM, region, or quota misconfiguration), `analytics_db` is set to
+        `None` and all read/write methods become no-ops. The agent run is
+        not aborted — analytics is observability infrastructure and must
+        not take down the system it observes. The exception is logged with
+        full context (project, account, database, traceback) so operators
+        can diagnose from Cloud Logging.
+        """
         try:
-            # Analytics database for high-volume metrics
             self.analytics_db = firestore.Client(
                 project=self.project_id, database="analytics"
             )
-
-            # Default database for configuration
-            self.default_db = firestore.Client(project=self.project_id)
-
             logger.info(
-                f"Initialized analytics service for account {self.account_id}"
+                "Initialized analytics service",
+                extra={
+                    "account_id": self.account_id,
+                    "project_id": self.project_id,
+                    "database": "analytics",
+                },
             )
-
-        except Exception as e:
-            logger.error(f"Failed to initialize Firestore clients: {e}")
-            # Fallback to in-memory tracking if Firestore unavailable
+        except Exception:
+            logger.exception(
+                "Failed to initialize analytics Firestore client; "
+                "analytics writes will be no-ops until reconnect",
+                extra={
+                    "account_id": self.account_id,
+                    "project_id": self.project_id,
+                    "database": "analytics",
+                },
+            )
             self.analytics_db = None
-            self.default_db = None
 
     @with_write_retry(operation_name="track_agent_execution")
     def track_agent_execution(
@@ -143,8 +157,15 @@ class AnalyticsService:
                     f"Tracked execution for {agent_name}: "
                     f"{prompt_tokens + response_tokens} tokens, ${total_cost:.4f}"
                 )
-            except Exception as e:
-                logger.error(f"Failed to store analytics: {e}")
+            except Exception:
+                logger.exception(
+                    "Failed to store agent execution metrics",
+                    extra={
+                        "account_id": self.account_id,
+                        "agent_name": agent_name,
+                        "operation": "track_agent_execution",
+                    },
+                )
 
         return metrics
 
@@ -207,8 +228,15 @@ class AnalyticsService:
                     f"accounts/{self.account_id}/agent_analytics"
                 )
                 collection.add({**metrics, "metric_type": "token_estimation"})
-            except Exception as e:
-                logger.error(f"Failed to track token estimation: {e}")
+            except Exception:
+                logger.exception(
+                    "Failed to store token estimation metric",
+                    extra={
+                        "account_id": self.account_id,
+                        "agent_name": agent_name,
+                        "operation": "track_token_estimation",
+                    },
+                )
 
     @with_read_retry(operation_name="aggregate_daily_costs")
     def aggregate_daily_costs(self, date: datetime | None = None) -> dict[str, Any]:
@@ -285,8 +313,15 @@ class AnalyticsService:
             )
             return aggregation
 
-        except Exception as e:
-            logger.error(f"Failed to aggregate daily costs: {e}")
+        except Exception:
+            logger.exception(
+                "Failed to aggregate daily costs",
+                extra={
+                    "account_id": self.account_id,
+                    "date": start_time.date().isoformat(),
+                    "operation": "aggregate_daily_costs",
+                },
+            )
             return {}
 
     def get_execution_summary(self) -> dict[str, Any]:
@@ -362,8 +397,15 @@ class AnalyticsService:
 
             return sorted(trends, key=lambda x: x["date"])
 
-        except Exception as e:
-            logger.error(f"Failed to get cost trends: {e}")
+        except Exception:
+            logger.exception(
+                "Failed to get cost trends",
+                extra={
+                    "account_id": self.account_id,
+                    "days": days,
+                    "operation": "get_cost_trends",
+                },
+            )
             return []
 
     @with_batch_retry(operation_name="cleanup_old_metrics")
@@ -407,5 +449,12 @@ class AnalyticsService:
 
             logger.info(f"Cleaned up {count} old metrics for account {self.account_id}")
 
-        except Exception as e:
-            logger.error(f"Failed to cleanup old metrics: {e}")
+        except Exception:
+            logger.exception(
+                "Failed to cleanup old metrics",
+                extra={
+                    "account_id": self.account_id,
+                    "retention_days": retention_days,
+                    "operation": "cleanup_old_metrics",
+                },
+            )
