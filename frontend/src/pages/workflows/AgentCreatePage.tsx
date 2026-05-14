@@ -7,6 +7,7 @@ import { ArrowLeft, Bot } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCreateAgentConfig } from "@/queries/agentConfigs";
 import { SUPPORTED_MODELS } from "@/lib/api/agentConfigs";
+import { mapServerErrors } from "@/lib/api/formErrors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,11 +25,11 @@ import { DisabledPlaceholderRow } from "./agents/DisabledPlaceholderRow";
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 //
-// Field constraints mirror ``AgentConfigCreate`` in
-// ``api/src/kene_api/models/agent_config_models.py``. Keeping them in sync
-// surfaces validation problems inline before the request is sent — the API
-// still re-validates, and any 422 fields it returns are mapped back onto the
-// form by ``onError`` below.
+// Field constraints mirror ``AgentConfigCreate``
+// (``api/src/kene_api/models/agent_config_models.py:317-341``). Keeping them
+// in sync surfaces validation problems inline before the request is sent —
+// the API still re-validates, and any 422 fields it returns are mapped back
+// onto the form by ``onError`` below.
 
 export const schema = z.object({
   title: z
@@ -109,36 +110,13 @@ export function AgentCreatePage() {
         );
       },
       onError: (err) => {
-        // FastAPI returns ``{ detail: [{ loc: ["body", "<field>"], msg, ... }] }``
-        // for 422 validation failures. Surface each entry on its field so the
-        // user sees what to fix instead of a generic toast.
-        const detail = (err as { response?: { data?: { detail?: unknown } } })
-          ?.response?.data?.detail;
-        if (Array.isArray(detail)) {
-          let mapped = 0;
-          for (const item of detail) {
-            const loc = (item as { loc?: unknown[] })?.loc;
-            const msg = (item as { msg?: string })?.msg;
-            const field =
-              Array.isArray(loc) && typeof loc[loc.length - 1] === "string"
-                ? (loc[loc.length - 1] as string)
-                : undefined;
-            if (
-              field &&
-              (FORM_FIELDS as readonly string[]).includes(field) &&
-              typeof msg === "string"
-            ) {
-              setError(field as keyof FormValues, {
-                type: "server",
-                message: msg,
-              });
-              mapped++;
-            }
+        const mapped = mapServerErrors(err, FORM_FIELDS);
+        if (mapped) {
+          for (const [field, message] of Object.entries(mapped)) {
+            setError(field as keyof FormValues, { type: "server", message });
           }
-          if (mapped > 0) {
-            toast.error("Please fix the highlighted fields and try again.");
-            return;
-          }
+          toast.error("Please fix the highlighted fields and try again.");
+          return;
         }
         toast.error("Failed to create agent.");
       },

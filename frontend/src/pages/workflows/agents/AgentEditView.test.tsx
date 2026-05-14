@@ -350,7 +350,11 @@ describe("AgentEditView — server validation", () => {
 
     await user.click(screen.getByTestId("save-button"));
 
-    // Invoke the onError handler with a synthetic 422.
+    // The component currently passes a callbacks object as ``mutate``'s
+    // second arg; we grab ``onError`` off the captured call and invoke it
+    // with a synthetic 422 to drive the server-validation path. If we ever
+    // migrate to ``mutateAsync().catch(...)`` or move ``onError`` into the
+    // hook itself, this test will need a corresponding update.
     const [, opts] = capture.mock.calls[0];
     act(() => {
       opts.onError({

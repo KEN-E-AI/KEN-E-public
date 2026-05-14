@@ -12,6 +12,7 @@ import type {
   AgentConfigOverlayUpdate,
 } from "@/lib/api/agentConfigs";
 import { displayNameFor, SUPPORTED_MODELS } from "@/lib/api/agentConfigs";
+import { mapServerErrors } from "@/lib/api/formErrors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -74,24 +75,21 @@ function DirtyDot({ dirty }: { dirty: boolean }) {
 // ─── AgentEditView ────────────────────────────────────────────────────────────
 
 // Fields we know how to surface inline from a FastAPI 422 ``detail`` entry.
-type EditableField =
-  | "name"
-  | "title"
-  | "instruction"
-  | "model"
-  | "temperature"
-  | "description";
-
-type FieldErrors = Partial<Record<EditableField, string>>;
-
-const SERVER_FIELDS: readonly EditableField[] = [
+// ``temperature`` is included defensively — the slider can't currently emit
+// out-of-range values, but listing it means a future server-side rejection
+// surfaces on the right input rather than a generic toast.
+const EDITABLE_FIELDS = [
   "name",
   "title",
   "instruction",
   "model",
   "temperature",
   "description",
-];
+] as const;
+
+type EditableField = (typeof EDITABLE_FIELDS)[number];
+
+type FieldErrors = Partial<Record<EditableField, string>>;
 
 export type AgentEditViewProps = {
   configId: AgentConfigId;
@@ -238,33 +236,11 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
           onClose();
         },
         onError: (err) => {
-          // FastAPI returns ``{ detail: [{ loc: ["body", "<field>"], msg, ... }] }``
-          // for 422 validation failures. Map each entry onto its field so the
-          // user sees what to fix instead of a generic toast.
-          const detail = (err as { response?: { data?: { detail?: unknown } } })
-            ?.response?.data?.detail;
-          if (Array.isArray(detail)) {
-            const next: FieldErrors = {};
-            for (const item of detail) {
-              const loc = (item as { loc?: unknown[] })?.loc;
-              const msg = (item as { msg?: string })?.msg;
-              const field =
-                Array.isArray(loc) && typeof loc[loc.length - 1] === "string"
-                  ? (loc[loc.length - 1] as string)
-                  : undefined;
-              if (
-                field &&
-                (SERVER_FIELDS as readonly string[]).includes(field) &&
-                typeof msg === "string"
-              ) {
-                next[field as EditableField] = msg;
-              }
-            }
-            if (Object.keys(next).length > 0) {
-              setServerErrors(next);
-              toast.error("Please fix the highlighted fields and try again.");
-              return;
-            }
+          const mapped = mapServerErrors(err, EDITABLE_FIELDS);
+          if (mapped) {
+            setServerErrors(mapped);
+            toast.error("Please fix the highlighted fields and try again.");
+            return;
           }
           toast.error("Failed to save changes.");
         },

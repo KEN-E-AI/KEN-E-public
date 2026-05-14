@@ -192,6 +192,16 @@ describe("AgentCreatePage — schema", () => {
     const result = schema.safeParse({ ...baseInput, description: "short" });
     expect(result.success).toBe(false);
   });
+
+  it("rejects a description that is only whitespace-padded short text", () => {
+    // The refine uses ``v.trim().length`` rather than ``v.length`` so an
+    // 8-char string surrounded by whitespace doesn't sneak past the floor.
+    const result = schema.safeParse({
+      ...baseInput,
+      description: "   hi   ",
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("AgentCreatePage — server validation", () => {
