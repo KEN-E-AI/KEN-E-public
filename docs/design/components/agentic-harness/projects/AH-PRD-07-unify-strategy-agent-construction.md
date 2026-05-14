@@ -1,11 +1,26 @@
 # AH-PRD-07 — Unify Strategy-Agent Construction with the Agent Factory
 
-**Status:** Proposed (skeleton — needs scoping pass before sprint planning)
+**Status:** Superseded by [AH-PRD-08](./AH-PRD-08-hide-strategy-pipeline-specialists.md)
 **Owner team:** Core AI / Agent Platform (backend)
 **Blocked by:** [AH-PRD-06](./AH-PRD-06-tool-mapping.md) PR-A (the `tool_ids` / `mcp_servers` contract this PRD's agents must honour)
 **Parallel with:** Any other backend work that touches `app/adk/agents/strategy_agent/`
 **Blocks:** Per-agent tool selection actually taking effect for `marketing_researcher`, `marketing_formatter`, and any future strategy-agent specialist; the natural completion of the AH-PRD-06 user-facing contract
 **Estimated effort:** TBD — depends on how much of the `strategy_agent` orchestrator can be migrated vs. how much needs to stay on the SDK-direct path
+
+---
+
+## Why this PRD is superseded
+
+A scoping pass against `app/adk/agents/strategy_agent/` confirmed two things that changed the optimal solution:
+
+1. The eight strategy-pipeline specialists (`business_researcher` / `business_formatter`, `competitive_researcher` / `competitive_formatter`, `marketing_researcher` / `marketing_formatter`, `brand_researcher` / `brand_formatter`) are **account-creation-only**. They are invoked exactly once via `create_strategy_docs_supervisor.py` (deployed as a separate Agent Engine app), never via the runtime chatbot. Even after a successful migration, picker-driven tool changes would never affect a *next* invocation, because there is no next invocation.
+2. The `visible_in_frontend` flag already exists end-to-end (`AgentConfig.visible_in_frontend: bool`, backend `?visible_in_frontend=true` filter, frontend picker fetch). The four formatters are already hidden via `AUDIT_FIELDS_FORMATTER`; only the four researchers are visible-but-broken today.
+
+The combination makes a much smaller play available: hide the four researchers (the formatters already are) so the AH-PRD-06 picker contract is not made for these agents in the first place. The user-visible outcome — picker changes for strategy-pipeline specialists do not silently lie — is identical to what this PRD's migration was going to deliver. The cost is roughly an order of magnitude lower: one seed-profile split + a one-off backfill, instead of a factory rework with backfill traps.
+
+**See [AH-PRD-08 — Hide Strategy-Pipeline Specialists from the Workflows Picker](./AH-PRD-08-hide-strategy-pipeline-specialists.md) for the replacement plan.**
+
+This skeleton is kept (rather than deleted) because the analysis below is still the right starting point if either of the two assumptions above changes — e.g. if a future "Refresh my marketing strategy" UX makes these agents runtime-callable. At that point AH-PRD-08's hiding decision needs revisiting, and the Option A / Option B analysis here is what an author should pick up.
 
 ---
 
