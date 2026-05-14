@@ -189,7 +189,7 @@ def main() -> int:
     parser.add_argument(
         "--project-id",
         required=True,
-        help="GCP project ID (e.g., ken-e-dev, ken-e-staging, ken-e-prod)",
+        help="GCP project ID (e.g., ken-e-dev, ken-e-staging, ken-e-production)",
     )
     parser.add_argument(
         "--dry-run",
