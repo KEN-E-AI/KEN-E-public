@@ -12,16 +12,22 @@ Lifecycle:
   1. A module that implements a function tool (e.g. AH-PRD-04's
      ``create_visualization``) calls :func:`register_function_tool` at
      import time.
-  2. ``app/adk/agents/agent_factory/hierarchy.py`` imports those modules at
-     startup so the registration side effects run before
-     ``build_hierarchy`` resolves rosters.
-  3. ``build_hierarchy`` calls :func:`resolve_default_global_tools` once per
-     specialist; the resolver returns the ``FunctionTool`` instances for
-     every catalogue entry tagged ``default_global: true``. Catalogue
-     entries without a registered callable are skipped with a logged
-     warning so the catalogue can lead the implementation by a release
-     (e.g. AH-PRD-06 lands the catalogue + wiring; AH-PRD-04 lands the
-     ``create_visualization`` callable).
+  2. ``app/adk/agents/agent_factory/hierarchy.py`` *will* import those
+     modules at startup so the registration side effects run before
+     ``build_hierarchy`` resolves rosters. As of AH-PRD-06 PR-C the
+     wiring is in place but no implementing modules exist yet — the
+     first import will land alongside ``create_visualization`` in
+     AH-PRD-04, which is also where the import convention (e.g. a
+     ``function_tools/`` namespace package whose ``__init__.py`` pulls
+     in every submodule) will be chosen.
+  3. ``build_hierarchy`` calls :func:`resolve_default_global_tools` once
+     per ``build_hierarchy`` invocation; the resolver returns the
+     ``FunctionTool`` instances for every catalogue entry tagged
+     ``default_global: true``. Catalogue entries without a registered
+     callable are skipped with a logged warning so the catalogue can
+     lead the implementation by a release (e.g. AH-PRD-06 lands the
+     catalogue + wiring; AH-PRD-04 lands the ``create_visualization``
+     callable).
 
 The registry is a process-global singleton — tests should call
 :func:`clear_function_tool_registry` in setup or teardown to avoid leaking
@@ -53,16 +59,26 @@ def register_function_tool(
 ) -> None:
     """Register a callable for a catalogued ``function_tools:`` entry.
 
-    Idempotent: re-registering the same ``name`` overwrites the previous
-    entry and logs at DEBUG. This is intentional so a module reload (test
-    harness, hot reload) doesn't fail loudly — but in production the same
-    name should only register once.
+    Re-registering the same ``name`` overwrites the previous entry and
+    logs at WARNING — in a production deploy this typically means two
+    modules are colliding on a single catalogue name, which is a real
+    bug worth surfacing loudly. Test harnesses that intentionally
+    re-register should clear the registry between cases via
+    :func:`clear_function_tool_registry`.
 
     Args:
         name: Bare tool name; must match the ``name`` field of the
             corresponding ``function_tools:`` entry in ``tools.yaml``.
         tool: Either a pre-constructed ``FunctionTool`` or a raw callable
             that will be wrapped via ``FunctionTool(callable)``.
+
+            **WARNING — mutates the input.** When a pre-constructed
+            ``FunctionTool`` is passed, this function sets ``tool.name = name``
+            on that instance (see rename rationale below). Registering the
+            same ``FunctionTool`` object under two different names will
+            silently leave it stamped with whichever name was registered
+            second — pass a fresh ``FunctionTool`` (or the bare callable)
+            per registration to avoid the surprise.
 
     The registered ``name`` is stamped onto ``tool.name`` so the roster
     filter (``_filter_function_tools_by_ids`` in roster.py) matches on the
@@ -76,7 +92,14 @@ def register_function_tool(
         tool = FunctionTool(tool)
     tool.name = name
     if name in _REGISTRY:
-        logger.debug("Overwriting existing FunctionTool registration for %r", name)
+        logger.warning(
+            "FunctionTool %r is being re-registered, overwriting the previous "
+            "entry. Two modules claiming the same catalogue name is almost "
+            "always a bug; if this is intentional (e.g. a test fixture), call "
+            "``clear_function_tool_registry()`` between registrations to "
+            "silence this warning.",
+            name,
+        )
     _REGISTRY[name] = tool
 
 

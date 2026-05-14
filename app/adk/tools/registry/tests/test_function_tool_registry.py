@@ -67,17 +67,20 @@ class TestRegisterFunctionTool:
         register_function_tool("create_visualization", ft)
         assert ft.name == "create_visualization"
 
-    def test_overwriting_is_idempotent_and_logs_at_debug(
+    def test_overwriting_logs_at_warning(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
+        """Duplicate registration is almost always a real bug in production
+        (two modules colliding on a catalogue name), so the overwrite logs
+        at WARNING — DEBUG would let it slip past most operators."""
         register_function_tool("stub", _stub_callable)
         first = get_function_tool("stub")
-        with caplog.at_level(logging.DEBUG):
+        with caplog.at_level(logging.WARNING):
             register_function_tool("stub", _stub_callable)
         second = get_function_tool("stub")
         assert first is not second
         assert any(
-            "Overwriting existing FunctionTool registration" in r.message
+            "is being re-registered" in r.message and r.levelname == "WARNING"
             for r in caplog.records
         )
 
