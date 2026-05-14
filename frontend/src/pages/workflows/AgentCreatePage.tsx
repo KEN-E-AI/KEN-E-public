@@ -66,6 +66,11 @@ export const schema = z.object({
   // ``MAX_TOOLS_PER_SPECIALIST`` cap on the API side (30). Defaults to ``[]``
   // — a new agent commits to its explicit selection, no legacy "all tools"
   // fall-through for post-PRD creates.
+  //
+  // The 30 below MUST stay in sync with
+  // ``shared/agent_tool_limits.py:MAX_TOOLS_PER_SPECIALIST`` — same constant
+  // enforced by the API model validator and the agent-factory roster check.
+  // If you bump it here, bump it there (and vice versa) in the same PR.
   tool_ids: z
     .array(z.string())
     .max(30, "You can attach up to 30 tools per agent")
@@ -304,7 +309,7 @@ export function AgentCreatePage() {
           control={control}
           render={({ field }) => (
             <AgentToolPicker
-              value={field.value ?? []}
+              value={field.value}
               onChange={field.onChange}
               tools={toolsQuery.data?.tools}
               isLoading={toolsQuery.isLoading}

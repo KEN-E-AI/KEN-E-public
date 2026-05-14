@@ -10,7 +10,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 
 // ─── AgentToolPicker (AH-PRD-06 §B2) ─────────────────────────────────────────
@@ -130,9 +129,13 @@ export function AgentToolPicker({
   return (
     <div className="space-y-2" aria-labelledby={`${id}-label`}>
       <div className="flex items-center justify-between">
-        <Label id={`${id}-label`} className="m-0">
+        {/* Rendered as h2 so the picker's Accordion triggers (which Radix
+            renders as <h3>) form a valid heading hierarchy under any page
+            with an <h1> (e.g. AgentCreatePage). Without this, axe flags
+            "Heading levels should only increase by one." */}
+        <h2 id={`${id}-label`} className="text-sm font-medium m-0">
           Tools
-        </Label>
+        </h2>
         <span
           className="text-xs text-[var(--color-text-secondary)]"
           data-testid="tool-picker-summary"
