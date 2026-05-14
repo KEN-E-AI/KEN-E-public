@@ -179,7 +179,7 @@ def is_dev_project(project_id: str) -> bool:
         is_dev_project("ken-e-dev")     → True
         is_dev_project("foo-dev")       → True
         is_dev_project("ken-e-staging") → False
-        is_dev_project("ken-e-prod")    → False
+        is_dev_project("ken-e-production") → False
         is_dev_project("dev-bucket")    → False  # 'dev' not a suffix after '-'
     """
     return project_id.endswith("-dev")

@@ -27,7 +27,7 @@ Examples:
     python migrate_chatbot_to_firestore.py --project-id ken-e-staging
 
     # Production environment
-    python migrate_chatbot_to_firestore.py --project-id ken-e-prod
+    python migrate_chatbot_to_firestore.py --project-id ken-e-production
 
     # Dry run (no actual changes)
     python migrate_chatbot_to_firestore.py --project-id ken-e-dev --dry-run

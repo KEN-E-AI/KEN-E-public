@@ -99,8 +99,8 @@ class TestIsDevProject:
     def test_ken_e_staging_is_not_dev(self):
         assert is_dev_project("ken-e-staging") is False
 
-    def test_ken_e_prod_is_not_dev(self):
-        assert is_dev_project("ken-e-prod") is False
+    def test_ken_e_production_is_not_dev(self):
+        assert is_dev_project("ken-e-production") is False
 
     def test_dev_bucket_is_not_dev(self):
         # 'dev' prefix, not '-dev' suffix
@@ -227,7 +227,7 @@ class TestMainGuard:
         assert result == 1
 
     def test_main_rejects_prod_project(self, monkeypatch):
-        monkeypatch.setenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-prod")
+        monkeypatch.setenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-production")
         result = main([])
         assert result == 1
 
