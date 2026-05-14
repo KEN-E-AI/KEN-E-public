@@ -30,8 +30,8 @@ export const CustomerProfileNode = memo(
             <div
               className="rounded-full bg-brand-light-blue flex items-center justify-center"
               style={{
-                width: "72px",
-                height: "72px",
+                width: "4.5rem",
+                height: "4.5rem",
                 boxShadow: data.isSelected
                   ? "0 0 0 3px rgba(108, 198, 242, 0.4)"
                   : "none",
@@ -39,7 +39,7 @@ export const CustomerProfileNode = memo(
             >
               <Users
                 className="text-white"
-                style={{ width: "48px", height: "48px" }}
+                style={{ width: "3rem", height: "3rem" }}
               />
             </div>
           </div>
@@ -51,7 +51,7 @@ export const CustomerProfileNode = memo(
           position={Position.Bottom}
           id="bottom"
           className="opacity-0"
-          style={{ right: "30px", left: "auto" }}
+          style={{ right: "1.875rem", left: "auto" }}
         />
 
         {/* Custom "+" Button - centered under circle */}
@@ -60,7 +60,7 @@ export const CustomerProfileNode = memo(
             e.stopPropagation();
             data.onAddCategory();
           }}
-          className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-light-blue flex items-center justify-center z-20"
+          className="absolute -bottom-[0.75rem] right-[1.5625rem] w-6 h-6 rounded-full bg-brand-light-blue flex items-center justify-center z-20"
         >
           <Plus className="h-4 w-4 text-white" />
         </button>
@@ -86,7 +86,7 @@ export const ProductCategoryNode = memo(
           {/* Text Box - Left - Fixed width for consistent spacing */}
           <div
             className="bg-brand-medium-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
-            style={{ width: "200px" }}
+            style={{ width: "12.5rem" }}
           >
             <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
               Product Category
@@ -101,8 +101,8 @@ export const ProductCategoryNode = memo(
             <div
               className="rounded-full bg-brand-medium-blue flex items-center justify-center"
               style={{
-                width: "72px",
-                height: "72px",
+                width: "4.5rem",
+                height: "4.5rem",
                 boxShadow: data.isSelected
                   ? "0 0 0 3px rgba(70, 143, 208, 0.4)"
                   : "none",
@@ -110,7 +110,7 @@ export const ProductCategoryNode = memo(
             >
               <Blocks
                 className="text-white"
-                style={{ width: "48px", height: "48px" }}
+                style={{ width: "3rem", height: "3rem" }}
               />
             </div>
 
@@ -118,7 +118,7 @@ export const ProductCategoryNode = memo(
             {data.strategyCount !== undefined && data.strategyCount > 0 && (
               <div
                 className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-brand-green flex items-center justify-center"
-                style={{ fontSize: "11px", fontWeight: "600" }}
+                style={{ fontSize: "0.6875rem", fontWeight: "600" }}
               >
                 <span className="text-white">{data.strategyCount}</span>
               </div>
@@ -132,7 +132,7 @@ export const ProductCategoryNode = memo(
           position={Position.Top}
           id="top"
           className="opacity-0"
-          style={{ right: "30px", left: "auto" }}
+          style={{ right: "1.875rem", left: "auto" }}
         />
       </div>
     );

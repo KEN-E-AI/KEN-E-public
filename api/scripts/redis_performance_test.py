@@ -75,6 +75,8 @@ class RedisPerformanceTester:
                     }
                     for i in range(50)
                 ],
+                # Synthetic Redis test-data field name — unrelated to the Firestore
+                # subcollection of the same name (DM-PRD-04 sweep allowlist entry).
                 "monitoring_topics": [
                     f"topic_{i}" for i in range(20)
                 ]

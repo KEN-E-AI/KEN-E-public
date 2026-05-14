@@ -96,7 +96,7 @@ export function KGSearchBar({
               setShowSearchResults(true);
             }}
             onFocus={() => setShowSearchResults(true)}
-            className="pl-9 w-[240px] h-9"
+            className="pl-9 w-[15rem] h-9"
           />
           {searchQuery && (
             <button
@@ -110,7 +110,7 @@ export function KGSearchBar({
 
         {/* Search results dropdown */}
         {showSearchResults && searchResults.length > 0 && (
-          <div className="absolute top-full mt-1 left-0 w-[300px] bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-[var(--radius-md)] shadow-lg z-30 max-h-[280px] overflow-y-auto">
+          <div className="absolute top-full mt-1 left-0 w-[18.75rem] bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-[var(--radius-md)] shadow-lg z-30 max-h-[17.5rem] overflow-y-auto">
             {searchResults.map(node => {
               const nt = nodeTypes.find(t => t.id === node.type);
               return (
@@ -126,13 +126,13 @@ export function KGSearchBar({
                     className="size-6 rounded-full flex items-center justify-center shrink-0"
                     style={{ backgroundColor: nt?.color }}
                   >
-                    <span className="text-white text-[9px]" style={{ fontWeight: 700 }}>
+                    <span className="text-white text-[0.5625rem]" style={{ fontWeight: 700 }}>
                       {nt?.label?.charAt(0) ?? '?'}
                     </span>
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm truncate">{node.label}</p>
-                    <p className="text-[10px] text-muted-foreground">{nt?.label ?? node.type}</p>
+                    <p className="text-[0.625rem] text-muted-foreground">{nt?.label ?? node.type}</p>
                   </div>
                 </button>
               );
@@ -149,13 +149,13 @@ export function KGSearchBar({
         <Button
           variant="outline"
           size="sm"
-          className="gap-1.5 h-8 text-[11px]"
+          className="gap-1.5 h-8 text-[0.6875rem]"
           onClick={() => setShowNodeTypeDropdown(!showNodeTypeDropdown)}
         >
           <Filter className="size-3" />
           Node Types
           {activeNodeCount > 0 && (
-            <Badge variant="default" className="text-[9px] px-1 py-0 ml-0.5">
+            <Badge variant="default" className="text-[0.5625rem] px-1 py-0 ml-0.5">
               {activeNodeCount}
             </Badge>
           )}
@@ -163,7 +163,7 @@ export function KGSearchBar({
         </Button>
 
         {showNodeTypeDropdown && (
-          <div className="absolute top-full mt-1 left-0 w-[220px] bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-[var(--radius-md)] shadow-lg z-30 p-2 space-y-0.5 max-h-[320px] overflow-y-auto">
+          <div className="absolute top-full mt-1 left-0 w-[13.75rem] bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-[var(--radius-md)] shadow-lg z-30 p-2 space-y-0.5 max-h-[20rem] overflow-y-auto">
             {nodeTypes.map(nt => (
               <label
                 key={nt.id}
@@ -189,13 +189,13 @@ export function KGSearchBar({
         <Button
           variant="outline"
           size="sm"
-          className="gap-1.5 h-8 text-[11px]"
+          className="gap-1.5 h-8 text-[0.6875rem]"
           onClick={() => setShowRelDropdown(!showRelDropdown)}
         >
           <Filter className="size-3" />
           Relationships
           {activeRelCount > 0 && (
-            <Badge variant="default" className="text-[9px] px-1 py-0 ml-0.5">
+            <Badge variant="default" className="text-[0.5625rem] px-1 py-0 ml-0.5">
               {activeRelCount}
             </Badge>
           )}
@@ -203,7 +203,7 @@ export function KGSearchBar({
         </Button>
 
         {showRelDropdown && (
-          <div className="absolute top-full mt-1 right-0 w-[220px] bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-[var(--radius-md)] shadow-lg z-30 p-2 space-y-0.5">
+          <div className="absolute top-full mt-1 right-0 w-[13.75rem] bg-[var(--color-bg-elevated)] border border-[var(--color-border-default)] rounded-[var(--radius-md)] shadow-lg z-30 p-2 space-y-0.5">
             {relationshipTypes.map(rt => (
               <label
                 key={rt.id}
@@ -226,7 +226,7 @@ export function KGSearchBar({
         <Button
           variant="ghost"
           size="sm"
-          className="h-7 text-[11px] text-muted-foreground shrink-0"
+          className="h-7 text-[0.6875rem] text-muted-foreground shrink-0"
           onClick={onClearFilters}
         >
           <X className="size-3 mr-1" />
@@ -235,7 +235,7 @@ export function KGSearchBar({
       )}
 
       {/* Counts */}
-      <span className="text-[11px] text-muted-foreground ml-auto shrink-0 whitespace-nowrap">
+      <span className="text-[0.6875rem] text-muted-foreground ml-auto shrink-0 whitespace-nowrap">
         {visibleNodeCount === totalNodeCount
           ? `${totalNodeCount} nodes`
           : `${visibleNodeCount} of ${totalNodeCount} nodes`

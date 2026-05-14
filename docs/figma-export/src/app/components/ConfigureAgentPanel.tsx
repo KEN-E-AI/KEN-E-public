@@ -84,7 +84,7 @@ export function ConfigureAgentPanel({ agent, onClose }: ConfigureAgentPanelProps
             value={instructions}
             onChange={e => setInstructions(e.target.value)}
             rows={8}
-            className="mt-1.5 min-h-[160px] resize-y"
+            className="mt-1.5 min-h-[10rem] resize-y"
           />
           <p className="text-xs text-muted-foreground mt-1.5">
             Tell the agent how to behave and what to focus on.
@@ -114,7 +114,7 @@ export function ConfigureAgentPanel({ agent, onClose }: ConfigureAgentPanelProps
                 <span className="text-base mb-1">{m.icon}</span>
                 <span className="text-xs" style={{ fontWeight: 600 }}>{m.name}</span>
                 {m.badge && (
-                  <Badge variant="secondary" className="text-[9px] px-1 py-0 mt-1">
+                  <Badge variant="secondary" className="text-[0.5625rem] px-1 py-0 mt-1">
                     {m.badge}
                   </Badge>
                 )}
@@ -131,7 +131,7 @@ export function ConfigureAgentPanel({ agent, onClose }: ConfigureAgentPanelProps
             <AccordionTrigger className="py-3">
               <div className="flex items-center gap-2">
                 <span className="text-sm" style={{ fontWeight: 500 }}>Skills</span>
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                <Badge variant="secondary" className="text-[0.625rem] px-1.5 py-0">
                   {selectedTools.filter(id => skillTools.some(s => s.id === id)).length}/{skillTools.length}
                 </Badge>
               </div>
@@ -166,7 +166,7 @@ export function ConfigureAgentPanel({ agent, onClose }: ConfigureAgentPanelProps
             <AccordionTrigger className="py-3">
               <div className="flex items-center gap-2">
                 <span className="text-sm" style={{ fontWeight: 500 }}>Tools</span>
-                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                <Badge variant="secondary" className="text-[0.625rem] px-1.5 py-0">
                   {selectedTools.filter(id => nativeTools.some(n => n.id === id)).length}/{nativeTools.length}
                 </Badge>
               </div>

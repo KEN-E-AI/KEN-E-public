@@ -251,7 +251,7 @@ function StepIdentity({
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-sm" style={{ fontWeight: 600 }}>{m.name}</span>
                 {m.badge && (
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                  <Badge variant="secondary" className="text-[0.625rem] px-1.5 py-0">
                     {m.badge}
                   </Badge>
                 )}
@@ -273,7 +273,7 @@ function StepIdentity({
           placeholder="You are a marketing expert who specializes in..."
           value={instructions}
           onChange={(e) => setInstructions(e.target.value)}
-          className="min-h-[140px]"
+          className="min-h-[8.75rem]"
         />
       </div>
     </div>
@@ -312,7 +312,7 @@ function StepTools({
   };
 
   return (
-    <div className="flex gap-6 min-h-[400px]">
+    <div className="flex gap-6 min-h-[25rem]">
       {/* Left: Available Tools */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between mb-3">
@@ -339,7 +339,7 @@ function StepTools({
         </div>
 
         {/* Tool List */}
-        <div className="space-y-2 max-h-[450px] overflow-y-auto pr-1">
+        <div className="space-y-2 max-h-[28.125rem] overflow-y-auto pr-1">
           {filteredTools.map(tool => {
             const isEquipped = equippedToolIds.has(tool.id);
             const isDisconnected = tool.category === 'integration' && tool.connected === false;
@@ -362,12 +362,12 @@ function StepTools({
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                     <span className="text-sm">{tool.name}</span>
-                    <Badge variant={categoryBadgeVariant(tool.category)} className="text-[10px] px-1.5 py-0 gap-1">
+                    <Badge variant={categoryBadgeVariant(tool.category)} className="text-[0.625rem] px-1.5 py-0 gap-1">
                       {categoryIcon(tool.category)}
                       {tool.category === 'native' ? 'Native' : tool.category === 'integration' ? 'Integration' : 'Skill'}
                     </Badge>
                     {isDisconnected && (
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 gap-1 text-amber-600 border-amber-300">
+                      <Badge variant="outline" className="text-[0.625rem] px-1.5 py-0 gap-1 text-amber-600 border-amber-300">
                         <Link2Off className="size-3" />
                         Not Connected
                       </Badge>
@@ -398,9 +398,9 @@ function StepTools({
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm">Equipped ({equipped.length})</h3>
           </div>
-          <div className="p-4 rounded-[var(--radius-md)] border-2 border-dashed border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] min-h-[200px]">
+          <div className="p-4 rounded-[var(--radius-md)] border-2 border-dashed border-[var(--color-border-default)] bg-[var(--color-bg-secondary)] min-h-[12.5rem]">
             {equipped.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-[180px] text-center">
+              <div className="flex flex-col items-center justify-center h-[11.25rem] text-center">
                 <Info className="size-6 text-muted-foreground mb-2" />
                 <p className="text-xs text-muted-foreground">
                   Click tools on the left to equip them to this agent.
@@ -415,7 +415,7 @@ function StepTools({
                   >
                     <div className="flex-1 min-w-0">
                       <p className="text-xs truncate">{tool.name}</p>
-                      <Badge variant={categoryBadgeVariant(tool.category)} className="text-[9px] px-1 py-0 mt-0.5 gap-0.5">
+                      <Badge variant={categoryBadgeVariant(tool.category)} className="text-[0.5625rem] px-1 py-0 mt-0.5 gap-0.5">
                         {categoryIcon(tool.category)}
                         {tool.category}
                       </Badge>

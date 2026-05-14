@@ -28,8 +28,8 @@ export const StrengthNode = memo(({ data }: NodeProps<StrengthNodeData>) => {
           <div
             className="rounded-full bg-brand-light-green flex items-center justify-center"
             style={{
-              width: "72px",
-              height: "72px",
+              width: "4.5rem",
+              height: "4.5rem",
               boxShadow: data.isSelected
                 ? "0 0 0 3px rgba(184, 226, 175, 0.4)"
                 : "none",
@@ -37,7 +37,7 @@ export const StrengthNode = memo(({ data }: NodeProps<StrengthNodeData>) => {
           >
             <Dumbbell
               className="text-white"
-              style={{ width: "48px", height: "48px" }}
+              style={{ width: "3rem", height: "3rem" }}
             />
           </div>
         </div>
@@ -48,7 +48,7 @@ export const StrengthNode = memo(({ data }: NodeProps<StrengthNodeData>) => {
         position={Position.Bottom}
         id="bottom"
         className="opacity-0"
-        style={{ right: "30px", left: "auto" }}
+        style={{ right: "1.875rem", left: "auto" }}
       />
 
       <button
@@ -56,7 +56,7 @@ export const StrengthNode = memo(({ data }: NodeProps<StrengthNodeData>) => {
           e.stopPropagation();
           data.onAddOpportunity();
         }}
-        className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-light-green flex items-center justify-center z-20"
+        className="absolute -bottom-[0.75rem] right-[1.5625rem] w-6 h-6 rounded-full bg-brand-light-green flex items-center justify-center z-20"
       >
         <Plus className="h-4 w-4 text-white" />
       </button>
@@ -82,7 +82,7 @@ export const OpportunityNode = memo(
         <div className="flex items-center">
           <div
             className="bg-brand-dark-green bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
-            style={{ width: "200px" }}
+            style={{ width: "12.5rem" }}
           >
             <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
               Opportunity
@@ -96,8 +96,8 @@ export const OpportunityNode = memo(
             <div
               className="rounded-full bg-brand-dark-green flex items-center justify-center"
               style={{
-                width: "72px",
-                height: "72px",
+                width: "4.5rem",
+                height: "4.5rem",
                 boxShadow: data.isSelected
                   ? "0 0 0 3px rgba(58, 116, 57, 0.4)"
                   : "none",
@@ -105,7 +105,7 @@ export const OpportunityNode = memo(
             >
               <Star
                 className="text-white"
-                style={{ width: "48px", height: "48px" }}
+                style={{ width: "3rem", height: "3rem" }}
               />
             </div>
           </div>
@@ -116,7 +116,7 @@ export const OpportunityNode = memo(
           position={Position.Top}
           id="top"
           className="opacity-0"
-          style={{ right: "30px", left: "auto" }}
+          style={{ right: "1.875rem", left: "auto" }}
         />
 
         {data.showHandle && (
@@ -126,7 +126,7 @@ export const OpportunityNode = memo(
               position={Position.Bottom}
               id="bottom"
               className="opacity-0"
-              style={{ right: "30px", left: "auto" }}
+              style={{ right: "1.875rem", left: "auto" }}
             />
 
             <button
@@ -134,7 +134,7 @@ export const OpportunityNode = memo(
                 e.stopPropagation();
                 data.onAddSubstitute();
               }}
-              className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-dark-green flex items-center justify-center z-20"
+              className="absolute -bottom-[0.75rem] right-[1.5625rem] w-6 h-6 rounded-full bg-brand-dark-green flex items-center justify-center z-20"
             >
               <Plus className="h-4 w-4 text-white" />
             </button>
@@ -172,8 +172,8 @@ export const WeaknessNode = memo(({ data }: NodeProps<WeaknessNodeData>) => {
           <div
             className="rounded-full bg-brand-light-red flex items-center justify-center"
             style={{
-              width: "72px",
-              height: "72px",
+              width: "4.5rem",
+              height: "4.5rem",
               boxShadow: data.isSelected
                 ? "0 0 0 3px rgba(255, 153, 153, 0.4)"
                 : "none",
@@ -181,7 +181,7 @@ export const WeaknessNode = memo(({ data }: NodeProps<WeaknessNodeData>) => {
           >
             <Unlink
               className="text-white"
-              style={{ width: "48px", height: "48px" }}
+              style={{ width: "3rem", height: "3rem" }}
             />
           </div>
         </div>
@@ -192,7 +192,7 @@ export const WeaknessNode = memo(({ data }: NodeProps<WeaknessNodeData>) => {
         position={Position.Bottom}
         id="bottom"
         className="opacity-0"
-        style={{ right: "30px", left: "auto" }}
+        style={{ right: "1.875rem", left: "auto" }}
       />
 
       <button
@@ -200,7 +200,7 @@ export const WeaknessNode = memo(({ data }: NodeProps<WeaknessNodeData>) => {
           e.stopPropagation();
           data.onAddRisk();
         }}
-        className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-light-red flex items-center justify-center z-20"
+        className="absolute -bottom-[0.75rem] right-[1.5625rem] w-6 h-6 rounded-full bg-brand-light-red flex items-center justify-center z-20"
       >
         <Plus className="h-4 w-4 text-white" />
       </button>
@@ -225,7 +225,7 @@ export const RiskNode = memo(({ data }: NodeProps<RiskNodeData>) => {
       <div className="flex items-center">
         <div
           className="bg-brand-red bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
-          style={{ width: "200px" }}
+          style={{ width: "12.5rem" }}
         >
           <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
             Risk
@@ -239,8 +239,8 @@ export const RiskNode = memo(({ data }: NodeProps<RiskNodeData>) => {
           <div
             className="rounded-full bg-brand-red flex items-center justify-center"
             style={{
-              width: "72px",
-              height: "72px",
+              width: "4.5rem",
+              height: "4.5rem",
               boxShadow: data.isSelected
                 ? "0 0 0 3px rgba(255, 107, 107, 0.4)"
                 : "none",
@@ -248,7 +248,7 @@ export const RiskNode = memo(({ data }: NodeProps<RiskNodeData>) => {
           >
             <ShieldAlert
               className="text-white"
-              style={{ width: "48px", height: "48px" }}
+              style={{ width: "3rem", height: "3rem" }}
             />
           </div>
         </div>
@@ -259,7 +259,7 @@ export const RiskNode = memo(({ data }: NodeProps<RiskNodeData>) => {
         position={Position.Top}
         id="top"
         className="opacity-0"
-        style={{ right: "30px", left: "auto" }}
+        style={{ right: "1.875rem", left: "auto" }}
       />
 
       {data.showHandle && (
@@ -269,7 +269,7 @@ export const RiskNode = memo(({ data }: NodeProps<RiskNodeData>) => {
             position={Position.Bottom}
             id="bottom"
             className="opacity-0"
-            style={{ right: "30px", left: "auto" }}
+            style={{ right: "1.875rem", left: "auto" }}
           />
 
           <button
@@ -277,7 +277,7 @@ export const RiskNode = memo(({ data }: NodeProps<RiskNodeData>) => {
               e.stopPropagation();
               data.onAddSubstitute();
             }}
-            className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-red flex items-center justify-center z-20"
+            className="absolute -bottom-[0.75rem] right-[1.5625rem] w-6 h-6 rounded-full bg-brand-red flex items-center justify-center z-20"
           >
             <Plus className="h-4 w-4 text-white" />
           </button>

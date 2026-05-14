@@ -263,7 +263,7 @@ export const MarketingFunnelVisualization = ({
                   <Textarea
                     value={editedDescription}
                     onChange={(e) => setEditedDescription(e.target.value)}
-                    className="min-h-[200px]"
+                    className="min-h-[12.5rem]"
                     placeholder="Enter strategy description..."
                   />
                   <div className="flex gap-2">

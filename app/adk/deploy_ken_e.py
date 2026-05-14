@@ -18,6 +18,10 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+# Repo root must be on sys.path before any `app.adk.*` import so this script
+# resolves correctly when run from inside `app/adk/` (as the CD step does).
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
 import vertexai
 from google.adk.agents.context_cache_config import ContextCacheConfig
 
@@ -28,12 +32,11 @@ from google.adk.models import Gemini
 from google.adk.plugins import ReflectAndRetryToolPlugin
 from vertexai import agent_engines
 
+from app.adk.deploy_packaging import assemble_deploy_tree
+
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Add shared package to path for secret resolution
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 try:
     from shared.secrets import get_env_or_secret
@@ -168,73 +171,14 @@ def deploy_ken_e() -> str | None:
         temp_path = Path(temp_dir)
         logger.info(f"Created temporary directory: {temp_path}")
 
-        # Copy the entire agents directory
-        agents_src = Path("agents")
-        if agents_src.exists():
-            shutil.copytree(agents_src, temp_path / "agents")
-            logger.info("Copied agents directory")
-        else:
-            logger.error("agents directory not found")
+        # Assemble the deploy tree (agents/, shared/, app/adk sub-packages,
+        # requirements.txt) via the extracted helper so CI can exercise the
+        # same packaging logic without triggering an actual deploy.
+        assemble_deploy_tree(temp_path, copy_env=True)
+
+        # Guard: agents/ must be present or the deployed artifact is broken.
+        if not (temp_path / "agents").exists():
             return None
-
-        # No need to create wrapper files anymore - using direct API
-
-        # Copy requirements.txt
-        if Path("requirements.txt").exists():
-            shutil.copy2("requirements.txt", temp_path / "requirements.txt")
-            logger.info("Copied requirements.txt")
-
-        # Copy shared package (contains secrets utility and other shared code)
-        shared_src = Path(__file__).parent.parent.parent / "shared"
-        if shared_src.exists():
-            shutil.copytree(shared_src, temp_path / "shared")
-            logger.info("Copied shared package")
-        else:
-            logger.warning("⚠️  shared package not found")
-
-        # Copy app.adk sub-packages needed by agent callbacks
-        # (security hooks, usage tracking, tool registry). These are
-        # imported as `from app.adk.security.hooks import ...` so we
-        # replicate the package structure.
-        adk_root = Path(__file__).parent  # app/adk/
-        app_adk_dest = temp_path / "app" / "adk"
-        app_adk_dest.mkdir(parents=True)
-        (temp_path / "app" / "__init__.py").touch()
-        (app_adk_dest / "__init__.py").touch()
-
-        # NOTE: mcp_config is required at runtime by MCPServerManager (via
-        # get_mcp_config_loader) both for YAML loading and as the fallback
-        # path when MCP_CONFIG_SOURCE=firestore and Firestore is unreachable.
-        # Prior to Sprint 6 Story 1.1.4-2, this directory was not copied into
-        # the Agent Engine artifact — a latent bug that broke YAML fallback
-        # on deployed agents.
-        # `agents` is also mirrored to `temp/app/adk/agents/` (in addition to
-        # `temp/agents/` above) so that `agent_factory` submodules' absolute
-        # imports of the form `from app.adk.agents.agent_factory.builder import …`
-        # resolve at deploy time. Without this, build_hierarchy() raises
-        # `ModuleNotFoundError: No module named 'app.adk.agents'` before reaching
-        # Agent Engine. Discovered during AH-17 verification.
-        for subpkg in ("agents", "security", "tracking", "tools", "mcp_config"):
-            src = adk_root / subpkg
-            if src.exists():
-                shutil.copytree(
-                    src,
-                    app_adk_dest / subpkg,
-                    ignore=shutil.ignore_patterns("tests", "__pycache__"),
-                )
-                logger.info(f"Copied app.adk.{subpkg} package")
-            else:
-                logger.warning(f"⚠️  app/adk/{subpkg} not found")
-
-        # Copy app.utils (weave_observability, etc.) needed by ken_e_agent
-        app_utils_src = adk_root.parent / "utils"  # app/utils/
-        if app_utils_src.exists():
-            shutil.copytree(
-                app_utils_src,
-                temp_path / "app" / "utils",
-                ignore=shutil.ignore_patterns("tests", "__pycache__"),
-            )
-            logger.info("Copied app.utils package")
 
         # Process environment-specific .env file (resolve sm:// references)
         env_mapping = {"dev": "development", "staging": "staging", "prod": "production"}

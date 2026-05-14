@@ -252,6 +252,98 @@ def test_alert_severity_filtering(alert_manager, mock_firestore_client):
 
     alert_manager.get_recent_alerts(hours=24, severity_filter=AlertSeverity.ERROR)
 
-    # Verify severity filter was applied
+    # Verify the severity FieldFilter was applied as a keyword argument to mock_query.where()
     calls = mock_query.where.call_args_list
-    assert any("severity" in str(call) for call in calls)
+    assert len(calls) >= 1, (
+        f"Expected at least one .where() call for severity, got: {calls}"
+    )
+    field_filter = calls[-1].kwargs.get("filter")
+    assert field_filter is not None, "Expected FieldFilter passed as 'filter=' kwarg"
+    assert field_filter.field_path == "severity"
+
+
+def test_load_save_round_trip():
+    """Verify load()/save() round-trip on the Shape B path.
+
+    Asserts:
+    - save() writes to accounts/{account_id}/alert_configurations/default
+    - load() reads from the same path
+    - Returned config equals the saved payload
+    - collection() was called with the Shape B path
+    - document() was called with "default" (not the account_id)
+    """
+    saved_payload = {
+        "account_id": "test_acct_xyz",
+        "enabled": True,
+        "thresholds": [],
+        "marker": "round_trip",
+    }
+
+    with patch("google.cloud.firestore.Client") as mock_client:
+        mock_db = MagicMock()
+        mock_client.return_value = mock_db
+
+        # Stage initial load (called in __init__) to return no doc so default config is used
+        mock_init_doc = MagicMock()
+        mock_init_doc.exists = False
+        mock_db.collection.return_value.document.return_value.get.return_value = (
+            mock_init_doc
+        )
+
+        manager = AlertManager(account_id="test_acct_xyz", project_id="test_project")
+
+        # Reset call history to inspect only the save/load calls
+        mock_db.reset_mock()
+
+        # Perform save
+        manager.save(saved_payload)
+
+        # Stage the mock so the next get() returns the saved payload
+        mock_loaded_doc = MagicMock()
+        mock_loaded_doc.exists = True
+        mock_loaded_doc.to_dict.return_value = saved_payload
+        mock_db.collection.return_value.document.return_value.get.return_value = (
+            mock_loaded_doc
+        )
+
+        # Perform load
+        result = manager.load()
+
+        # Assert round-trip payload equality
+        assert result == saved_payload
+
+        # Assert collection() was called with the Shape B path for both save and load
+        collection_calls = [str(c) for c in mock_db.collection.call_args_list]
+        assert any(
+            "accounts/test_acct_xyz/alert_configurations" in c for c in collection_calls
+        ), f"Expected Shape B path in collection calls, got: {collection_calls}"
+
+        # Assert document() was called with "default" (not the account_id)
+        document_calls = [
+            str(c) for c in mock_db.collection.return_value.document.call_args_list
+        ]
+        assert any("'default'" in c or '"default"' in c for c in document_calls), (
+            f"Expected 'default' doc-id in document calls, got: {document_calls}"
+        )
+        assert not any("test_acct_xyz" in c for c in document_calls), (
+            f"account_id must not appear as doc-id in document calls, got: {document_calls}"
+        )
+
+
+@pytest.mark.parametrize(
+    "bad_account_id,reason",
+    [
+        ("acc/with/slash", "a slash would change the Firestore path depth"),
+        ("..", "could be misread as a path segment"),
+        ("acc with spaces", "spaces are outside the allowed character set"),
+        ("", "empty string"),
+        ("a" * 129, "exceeds the 128-character bound"),
+    ],
+)
+def test_alert_manager_rejects_invalid_account_id(bad_account_id, reason):
+    """account_id is interpolated into f-string Firestore *collection* paths
+    (``accounts/{account_id}/alert_configurations``), so AlertManager must reject
+    anything outside ``^[a-zA-Z0-9_\\-]{1,128}$`` before constructing them."""
+    with patch("google.cloud.firestore.Client"):
+        with pytest.raises(ValueError):
+            AlertManager(account_id=bad_account_id, project_id="test_project")

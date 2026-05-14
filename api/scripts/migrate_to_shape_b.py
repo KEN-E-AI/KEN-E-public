@@ -116,8 +116,7 @@ def cmd_list() -> int:
 def cmd_resource_not_implemented(flag: str, sibling: str) -> int:
     """Stub for flags owned by sibling issues (used by --all)."""
     print(
-        f"ERROR: {flag} is not yet implemented.\n"
-        f"It will be added by {sibling}.",
+        f"ERROR: {flag} is not yet implemented.\nIt will be added by {sibling}.",
         file=sys.stderr,
     )
     return EXIT_USAGE_ERROR
@@ -204,8 +203,18 @@ def cmd_resource(
     try:
         delete_result = delete_source_collections(client, name, config)
         print(f"Resource: {name} — deletion complete")
-        print(f"  Source collections deleted: {delete_result.source_collections_deleted}")
+        print(
+            f"  Source collections deleted: {delete_result.source_collections_deleted}"
+        )
         print(f"  Total docs deleted:         {delete_result.total_docs:,}")
+        if delete_result.malformed_sources:
+            print(
+                f"  Malformed source collections (left in place): {len(delete_result.malformed_sources)}"
+                f" — {', '.join(delete_result.malformed_sources)}"
+            )
+            print(
+                "  Operator action:             remove the malformed collection(s) manually to satisfy AC-2"
+            )
         return EXIT_SUCCESS
     except NotImplementedError:
         raise
@@ -272,6 +281,14 @@ def cmd_all(
                     f"  Source collections deleted: {delete_result.source_collections_deleted}"
                 )
                 print(f"  Total docs deleted:         {delete_result.total_docs:,}")
+                if delete_result.malformed_sources:
+                    print(
+                        f"  Malformed source collections (left in place): {len(delete_result.malformed_sources)}"
+                        f" — {', '.join(delete_result.malformed_sources)}"
+                    )
+                    print(
+                        "  Operator action:             remove the malformed collection(s) manually to satisfy AC-2"
+                    )
                 code = EXIT_SUCCESS
             except NotImplementedError:
                 raise

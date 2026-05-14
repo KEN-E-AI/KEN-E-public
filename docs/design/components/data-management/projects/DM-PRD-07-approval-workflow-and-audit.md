@@ -81,7 +81,7 @@ It lives under Data Management because all four concerns are platform-level conv
 - **PR-PRD-08 (Campaign Management):** later consumer — does not block PR-PRD-08's initial ship. PR-PRD-08 lands its own raw audit writes (mirroring PR-PRD-01's interim approach) and retrofits them to call `write_audit` after this PRD ships.
 - **DM-PRD-00 (Migration Foundation):** registers the `members_migration` resource and adds the collection-group composite indexes for `project_plan_audit` (`at ASC`), `members` (`role ASC`), and a generic `audit_at_idx` for the nightly BQ export scan across audit subcollections.
 - **DM-PRD-05 (Deletion Sweep Rewrite):** ensures `recursive_delete(accounts/{account_id})` and `recursive_delete(organizations/{org_id})` cover all member + audit subcollections, and that the user-deletion sweep cleans cross-account/org `members/{user_id}` rows.
-- **External:** BigQuery (destination for the audit archive). Re-use the existing GCP project and a new dataset `audit_archive_{env}`.
+- **External:** BigQuery (destination for the audit archive). Reuse the existing GCP project and a new dataset `audit_archive_{env}`.
 - **Existing files to study:** `api/src/kene_api/routers/firestore.py` (L2300-2620 — existing org-member endpoints; retrofit target), `api/src/kene_api/auth/cached_user_context.py` (cache invalidation pattern), `api/src/kene_api/services/account_service.py` (account-creation hook — bootstrap insertion point), `api/src/kene_api/auth/user_context.py` (where `permissions` is read today).
 
 ## 4. Data contract

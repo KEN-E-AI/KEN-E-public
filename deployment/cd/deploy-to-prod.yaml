@@ -62,6 +62,11 @@ steps:
       - 'WANDB_ENTITY=ken-e'
       - 'WANDB_PROJECT=ken-e-strategy-agent-production'
       - 'WEAVE_PROJECT_NAME=ken-e-strategy-agent-production'
+      # AH-42: build_hierarchy() resolves ${GA_MCP_SERVER_URL} from the
+      # google_analytics_mcp server doc at deploy time. Pre-AH-42 the doc
+      # was missing so the lookup was skipped; once seeded, mcp.py:209
+      # requires the env var. Same value as app/adk/.env.production.
+      - 'GA_MCP_SERVER_URL=https://google-analytics-mcp-4quwenkusq-uc.a.run.app'
 
   - name: "gcr.io/cloud-builders/docker"
     id: build-react-image

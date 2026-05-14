@@ -16,9 +16,10 @@ from src.kene_api.models.agent_config_models import (
     SUPPORTED_MODELS,
     AgentConfig,
     AgentConfigMetadata,
+    AgentConfigOverlayUpdate,
     AgentConfigUpdate,
     ConfigAuditEntry,
-    GenerateContentConfig,
+    MergedAgentConfig,
 )
 
 
@@ -38,11 +39,13 @@ def _valid_metadata(**overrides: object) -> dict[str, object]:
 
 def _valid_agent_config(**overrides: object) -> dict[str, object]:
     base: dict[str, object] = {
-        "name": "ken_e_chatbot",
+        "name": "Dave",
+        "title": "KEN-E Chatbot",
         "model": "gemini-2.5-pro",
         "description": "Frontend-facing chat agent",
         "instruction": "You are KEN-E...",
-        "generate_content_config": {"temperature": 0.3, "max_output_tokens": 2500},
+        "temperature": 0.3,
+        "max_output_tokens": 2500,
         "metadata": _valid_metadata(),
     }
     base.update(overrides)
@@ -51,7 +54,7 @@ def _valid_agent_config(**overrides: object) -> dict[str, object]:
 
 class TestAgentConfig:
     """AC-1: ``agent_configs/{id}`` documents contain instruction, model,
-    temperature, description, version, generate_content_config."""
+    temperature, max_output_tokens, description, version (flat shape per AH-40)."""
 
     def test_round_trip_from_firestore_dict(self) -> None:
         payload = _valid_agent_config()
@@ -59,13 +62,53 @@ class TestAgentConfig:
         config = AgentConfig(**payload)
 
         dumped = config.model_dump()
-        assert dumped["name"] == "ken_e_chatbot"
+        assert dumped["name"] == "Dave"
+        assert dumped["title"] == "KEN-E Chatbot"
         assert dumped["model"] == "gemini-2.5-pro"
         assert dumped["instruction"] == "You are KEN-E..."
         assert dumped["description"] == "Frontend-facing chat agent"
-        assert dumped["generate_content_config"]["temperature"] == 0.3
-        assert dumped["generate_content_config"]["max_output_tokens"] == 2500
+        assert dumped["temperature"] == 0.3
+        assert dumped["max_output_tokens"] == 2500
+        assert "generate_content_config" not in dumped
         assert dumped["metadata"]["version"] == "v1.0.0"
+
+    def test_name_and_title_both_optional(self) -> None:
+        """Identity fields are both optional on stored docs to keep legacy
+        and in-migration docs loadable. ``config_id`` is the immutable
+        identifier and lives on the Firestore document path, not on the
+        validated model."""
+        payload = _valid_agent_config()
+        del payload["name"]
+        del payload["title"]
+
+        config = AgentConfig(**payload)
+
+        assert config.name is None
+        assert config.title is None
+
+    def test_defaults_when_temperature_and_tokens_omitted(self) -> None:
+        payload = _valid_agent_config()
+        del payload["temperature"]
+        del payload["max_output_tokens"]
+
+        config = AgentConfig(**payload)
+
+        assert config.temperature == 0.3
+        assert config.max_output_tokens == 2500
+
+    @pytest.mark.parametrize("temp", [-0.1, 1.1, 2.0])
+    def test_temperature_out_of_range(self, temp: float) -> None:
+        payload = _valid_agent_config(temperature=temp)
+
+        with pytest.raises(ValidationError):
+            AgentConfig(**payload)
+
+    @pytest.mark.parametrize("tokens", [99, 65536, -1])
+    def test_max_output_tokens_out_of_range(self, tokens: int) -> None:
+        payload = _valid_agent_config(max_output_tokens=tokens)
+
+        with pytest.raises(ValidationError):
+            AgentConfig(**payload)
 
     def test_missing_required_field_rejected(self) -> None:
         payload = _valid_agent_config()
@@ -84,24 +127,68 @@ class TestAgentConfig:
             AgentConfig(**payload)
 
 
-class TestGenerateContentConfig:
-    """Bounds checking for the temperature + max_output_tokens fields."""
+class TestMergedAgentConfigExtraForbid:
+    """AH-40 AC-6: ``MergedAgentConfig`` rejects stray ``generate_content_config``
+    (or any other unknown key) so backfill misses fail loud at validation time."""
 
-    def test_defaults(self) -> None:
-        config = GenerateContentConfig()
+    def _flat_merged_payload(self, **overrides: object) -> dict[str, object]:
+        base: dict[str, object] = {
+            "config_id": "ken_e_chatbot",
+            "instruction": "You are KEN-E...",
+            "model": "gemini-2.5-pro",
+            "temperature": 0.7,
+            "max_output_tokens": 2500,
+            "customization_status": "default",
+        }
+        base.update(overrides)
+        return base
 
-        assert config.temperature == 0.3
-        assert config.max_output_tokens == 2500
+    def test_flat_payload_validates(self) -> None:
+        merged = MergedAgentConfig(**self._flat_merged_payload())
 
-    @pytest.mark.parametrize("temp", [-0.1, 1.1, 2.0])
-    def test_temperature_out_of_range(self, temp: float) -> None:
+        assert merged.temperature == 0.7
+        assert merged.max_output_tokens == 2500
+
+    def test_nested_generate_content_config_is_rejected(self) -> None:
+        payload = self._flat_merged_payload()
+        payload["generate_content_config"] = {"temperature": 0.7}
+
+        with pytest.raises(ValidationError) as exc_info:
+            MergedAgentConfig(**payload)
+
+        assert "generate_content_config" in str(exc_info.value)
+
+    def test_arbitrary_extra_key_is_rejected(self) -> None:
+        payload = self._flat_merged_payload(some_unexpected_key="x")
+
         with pytest.raises(ValidationError):
-            GenerateContentConfig(temperature=temp)
+            MergedAgentConfig(**payload)
 
-    @pytest.mark.parametrize("tokens", [99, 65536, -1])
+
+class TestAgentConfigOverlayUpdate:
+    """AH-40 AC-5: overlay PUT body accepts ``max_output_tokens`` alongside
+    ``temperature``."""
+
+    def test_max_output_tokens_accepted(self) -> None:
+        body = AgentConfigOverlayUpdate(temperature=0.5, max_output_tokens=4000)
+
+        assert body.temperature == 0.5
+        assert body.max_output_tokens == 4000
+
+    @pytest.mark.parametrize("tokens", [99, 65536])
     def test_max_output_tokens_out_of_range(self, tokens: int) -> None:
         with pytest.raises(ValidationError):
-            GenerateContentConfig(max_output_tokens=tokens)
+            AgentConfigOverlayUpdate(max_output_tokens=tokens)
+
+    def test_name_and_title_independently_editable(self) -> None:
+        """Overlay PUT must support editing each identity field on its own."""
+        only_name = AgentConfigOverlayUpdate(name="Dave")
+        only_title = AgentConfigOverlayUpdate(title="Business Researcher")
+
+        assert only_name.name == "Dave"
+        assert only_name.title is None
+        assert only_title.title == "Business Researcher"
+        assert only_title.name is None
 
 
 class TestAgentConfigMetadata:

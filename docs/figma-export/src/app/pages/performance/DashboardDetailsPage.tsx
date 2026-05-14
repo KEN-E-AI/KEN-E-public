@@ -367,9 +367,9 @@ export function DashboardDetailsPage() {
             <div className="flex items-center gap-2">
               <h1 className="text-lg truncate">{workflow.name}</h1>
               {workflow.isActive === false ? (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-error-bg)] text-[var(--color-error-text)]">Inactive</span>
+                <span className="text-[0.625rem] px-1.5 py-0.5 rounded bg-[var(--color-error-bg)] text-[var(--color-error-text)]">Inactive</span>
               ) : (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-success-bg)] text-[var(--color-success-text)]">Active</span>
+                <span className="text-[0.625rem] px-1.5 py-0.5 rounded bg-[var(--color-success-bg)] text-[var(--color-success-text)]">Active</span>
               )}
             </div>
             <div className="flex items-center gap-4 mt-1">
@@ -395,7 +395,7 @@ export function DashboardDetailsPage() {
             <CalendarClock className="size-3.5" />
             <span className="hidden sm:inline">{schedule.enabled ? scheduleDescription : 'Schedule'}</span>
             {schedule.enabled && countdown && (
-              <span className="flex items-center gap-1 text-[10px] bg-[var(--color-bg-elevated)] px-1.5 py-0.5 rounded text-[var(--color-violet-500)]">
+              <span className="flex items-center gap-1 text-[0.625rem] bg-[var(--color-bg-elevated)] px-1.5 py-0.5 rounded text-[var(--color-violet-500)]">
                 <Timer className="size-2.5" />{countdown}
               </span>
             )}
@@ -422,14 +422,14 @@ export function DashboardDetailsPage() {
           <div className="flex items-center gap-1.5 text-xs text-[var(--color-text-secondary)]">
             <DollarSign className="size-3.5" /><span>${stats.totalCost.toLocaleString()}</span>
           </div>
-          <div className="flex items-center gap-2 flex-1 max-w-[200px]">
+          <div className="flex items-center gap-2 flex-1 max-w-[12.5rem]">
             <div className="flex-1 h-1.5 rounded-full bg-[var(--color-bg-secondary)] overflow-hidden">
               <div className="h-full rounded-full bg-[var(--color-success)] transition-all" style={{ width: `${progressPct}%` }} />
             </div>
-            <span className="text-[10px] text-[var(--color-text-tertiary)]">{progressPct}%</span>
+            <span className="text-[0.625rem] text-[var(--color-text-tertiary)]">{progressPct}%</span>
           </div>
           {schedule.enabled && !isRunning && (
-            <div className="flex items-center gap-1.5 text-[10px] text-[var(--color-text-tertiary)]">
+            <div className="flex items-center gap-1.5 text-[0.625rem] text-[var(--color-text-tertiary)]">
               <Timer className="size-3" />{rootTasks.length} root task{rootTasks.length !== 1 ? 's' : ''}
             </div>
           )}

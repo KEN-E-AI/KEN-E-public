@@ -62,7 +62,7 @@ export function ExtensionsNavItem({ item, isActive }: ExtensionsNavItemProps) {
             className={cn(
               "flex items-center gap-2 p-2 lg:px-4 lg:py-2 rounded-[var(--radius-pill)] transition-all text-[var(--text-body-sm)] font-bold",
               isActive
-                ? "bg-[var(--color-violet-500)] text-[var(--color-text-inverse)] shadow-[var(--shadow-color-violet)]"
+                ? "bg-[var(--color-violet-500)] text-[var(--color-text-inverse)] shadow-color-violet"
                 : "text-[var(--color-text-tertiary)] hover:bg-[var(--color-accent)] hover:text-[var(--color-violet-500)] hover:-translate-y-0.5",
             )}
             style={{
@@ -81,7 +81,7 @@ export function ExtensionsNavItem({ item, isActive }: ExtensionsNavItemProps) {
         <div
           role="menu"
           aria-label="Active extensions"
-          className="absolute top-full left-0 mt-1 min-w-[200px] bg-[var(--color-bg-elevated)] border-2 border-[var(--color-border-default)] rounded-[var(--radius-md)] shadow-lg py-1 z-50"
+          className="absolute top-full left-0 mt-1 min-w-[12.5rem] bg-[var(--color-bg-elevated)] border-2 border-[var(--color-border-default)] rounded-[var(--radius-md)] shadow-lg py-1 z-50"
         >
           {activeExtensions.map((p) => (
             <Link

@@ -478,10 +478,10 @@ export function ChatInterface({ sessionId, compact = false }: ChatInterfaceProps
                 handleSend();
               }
             }}
-            className="min-h-[60px] resize-none rounded-[var(--radius-md)]"
+            className="min-h-[3.75rem] resize-none rounded-[var(--radius-md)]"
             disabled={isThinking}
           />
-          <Button onClick={handleSend} size="icon" className="shrink-0 size-[60px]" disabled={isThinking}>
+          <Button onClick={handleSend} size="icon" className="shrink-0 size-[3.75rem]" disabled={isThinking}>
             {isThinking ? <Loader2 className="size-5 animate-spin" /> : <Send className="size-5" />}
           </Button>
         </div>

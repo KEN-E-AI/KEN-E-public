@@ -4,10 +4,11 @@ Script to delete Intellipure accounts following the same process as the DELETE /
 
 This script recreates the cascade deletion process:
 1. Delete Google Cloud Storage documents
-2. Delete Firestore collection strategy_docs_{account_id}
+2. Delete Firestore subcollection accounts/{account_id}/strategy_docs
 3. Delete all ActivityLog nodes
 4. Delete all entities with BELONGS_TO relationship
 5. Delete the account node itself
+
 """
 
 import asyncio
@@ -57,10 +58,11 @@ async def delete_account_cascade(account_id: str, account_name: str, data_region
             logger.error(f"  ❌ Failed to delete GCS documents: {e}")
             cleanup_results["cleanup_errors"].append(f"GCS cleanup failed: {e}")
         
-        # 2. Delete Firestore collection strategy_docs_{account_id}
-        logger.info(f"Deleting Firestore collection strategy_docs_{account_id}...")
+        # 2. Delete Firestore subcollection accounts/{account_id}/strategy_docs
+        # TODO(DM-PRD-05): replace list_documents() with recursive_delete to also sweep versions/ and other subcollections.
+        logger.info(f"Deleting Firestore subcollection accounts/{account_id}/strategy_docs...")
         try:
-            collection_name = f"strategy_docs_{account_id}"
+            collection_name = f"accounts/{account_id}/strategy_docs"
             firestore_db = firestore.get_client()
             collection_ref = firestore_db.collection(collection_name)
             

@@ -67,7 +67,7 @@ export const LoadingOverlay = React.forwardRef<
         <div
           className={cn(
             "flex flex-col items-center space-y-4 rounded-lg bg-card p-6 shadow-lg",
-            progress && "min-w-[400px]",
+            progress && "min-w-[25rem]",
           )}
         >
           <Loader2 className="h-8 w-8 animate-spin text-primary" />

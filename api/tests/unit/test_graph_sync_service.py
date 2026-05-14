@@ -863,6 +863,96 @@ class TestCompetitorOperations:
         assert "3" in str(exc_info.value)
         assert "dependent tactics" in str(exc_info.value)
 
+    @pytest.mark.asyncio
+    async def test_delete_competitor_cascade_removes_monitoring_topic_entry(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+        mock_validation_service,
+    ):
+        """Test that cascade-deleting a competitor removes its entry from monitoring_topics
+        Shape B path (accounts/{account_id}/monitoring_topics, document_id='default')."""
+        # Arrange
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        node_id = "competitor_test123_abc"
+        other_node_id = "competitor_test123_xyz"
+
+        competitor_node = {
+            "node_id": node_id,
+            "display_name": "Test Competitor",
+            "description": "Test",
+            "references": [],
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+            "embedding": None,
+        }
+
+        # delete_competitor_cascade makes 8 execute_query calls for cascade sub-queries
+        # (risks, strengths, opportunities, weaknesses, sub_vps, substitutes, tactics, vps)
+        # followed by 1 execute_query call from get_node inside delete_node for the Competitor itself
+        mock_neo4j_service.execute_query.side_effect = [
+            [],  # 1. risks (from strengths)
+            [],  # 2. strengths
+            [],  # 3. opportunities (from weaknesses)
+            [],  # 4. weaknesses
+            [],  # 5. value propositions from substitute products
+            [],  # 6. substitute products
+            [],  # 7. tactics
+            [],  # 8. value propositions directly linked to competitor
+            [{"node": competitor_node, "account_id": account_id}],  # 9. get_node check
+        ]
+
+        mock_neo4j_service.execute_write_operation.return_value = None
+
+        monitoring_doc = {
+            "competitor_entries": [
+                {"node_id": node_id, "name": "Test Competitor", "keywords": ["kw1"]},
+                {"node_id": other_node_id, "name": "Other Competitor", "keywords": ["kw2"]},
+            ]
+        }
+        monitoring_collection = f"accounts/{account_id}/monitoring_topics"
+
+        # Route get_document responses by collection so the test is resilient to
+        # refactors that change the number or order of other Firestore reads.
+        def get_document_side_effect(collection, document_id):
+            if collection == monitoring_collection:
+                return monitoring_doc
+            return {}
+
+        mock_firestore_service.get_document.side_effect = get_document_side_effect
+
+        # Act
+        await graph_sync_service.delete_competitor(
+            account_id, node_id, user_id, cascade=True
+        )
+
+        # Assert — get_document was called for the monitoring_topics Shape B path
+        mock_firestore_service.get_document.assert_any_call(
+            collection=monitoring_collection,
+            document_id="default",
+        )
+
+        # Assert — update_document was called for the monitoring_topics Shape B path
+        monitoring_update_calls = [
+            call
+            for call in mock_firestore_service.update_document.call_args_list
+            if call.kwargs.get("collection") == monitoring_collection
+        ]
+        assert len(monitoring_update_calls) == 1, (
+            "Expected exactly one update_document call for monitoring_topics"
+        )
+
+        # Assert — the deleted competitor's entry was removed; the other entry remains
+        update_call = monitoring_update_calls[0]
+        remaining_entries = update_call.kwargs["data"]["competitor_entries"]
+        assert len(remaining_entries) == 1
+        assert remaining_entries[0]["node_id"] == other_node_id
+
 
 class TestCompetitorTacticOperations:
     """Tests for CompetitorTactic CRUD operations."""
@@ -1347,6 +1437,93 @@ class TestCustomerProfileOperations:
         assert mock_neo4j_service.execute_write_operation.called
         # Verify firestore was synced
         assert mock_firestore_service.update_document.called
+
+    @pytest.mark.asyncio
+    async def test_delete_customer_profile_removes_monitoring_topic_entry(
+        self,
+        graph_sync_service,
+        mock_neo4j_service,
+        mock_firestore_service,
+        mock_validation_service,
+    ):
+        """Test that deleting a customer profile removes its entry from monitoring_topics
+        Shape B path (accounts/{account_id}/monitoring_topics, document_id='default')."""
+        # Arrange
+        account_id = "acc_test123"
+        user_id = "user_test456"
+        profile_node_id = "customerprofile_test123_abc"
+        other_profile_node_id = "customerprofile_test123_xyz"
+
+        profile_node = {
+            "node_id": profile_node_id,
+            "display_name": "Test Profile",
+            "narrative": "Test narrative",
+            "references": [],
+            "account_id": account_id,
+            "created_time": datetime(2025, 1, 1),
+            "last_modified": datetime(2025, 1, 1),
+            "created_by": user_id,
+            "last_modified_by": user_id,
+            "embedding": None,
+        }
+
+        # delete_customer_profile loops over 5 strategy types (each one execute_query for
+        # finding strategies — all return empty here) then calls delete_node for the profile
+        # itself which calls get_node (one more execute_query)
+        mock_neo4j_service.execute_query.side_effect = [
+            [],  # No ProblemAwarenessStrategy
+            [],  # No BrandAwarenessStrategy
+            [],  # No ConsiderationStrategy
+            [],  # No ConversionStrategy
+            [],  # No LoyaltyStrategy
+            [{"node": profile_node, "account_id": account_id}],  # get_node check
+        ]
+
+        mock_neo4j_service.execute_write_operation.return_value = None
+
+        monitoring_doc = {
+            "customer_profile_entries": [
+                {"node_id": profile_node_id, "name": "Test Profile", "keywords": ["kw1"]},
+                {"node_id": other_profile_node_id, "name": "Other Profile", "keywords": ["kw2"]},
+            ]
+        }
+        monitoring_collection = f"accounts/{account_id}/monitoring_topics"
+
+        # Route get_document responses by collection so the test is resilient to
+        # refactors that change the number or order of other Firestore reads.
+        def get_document_side_effect(collection, document_id):
+            if collection == monitoring_collection:
+                return monitoring_doc
+            return {}
+
+        mock_firestore_service.get_document.side_effect = get_document_side_effect
+
+        # Act
+        await graph_sync_service.delete_customer_profile(
+            account_id, profile_node_id, user_id
+        )
+
+        # Assert — get_document was called for the monitoring_topics Shape B path
+        mock_firestore_service.get_document.assert_any_call(
+            collection=monitoring_collection,
+            document_id="default",
+        )
+
+        # Assert — update_document was called for the monitoring_topics Shape B path
+        monitoring_update_calls = [
+            call
+            for call in mock_firestore_service.update_document.call_args_list
+            if call.kwargs.get("collection") == monitoring_collection
+        ]
+        assert len(monitoring_update_calls) == 1, (
+            "Expected exactly one update_document call for monitoring_topics"
+        )
+
+        # Assert — the deleted profile's entry was removed; the other entry remains
+        update_call = monitoring_update_calls[0]
+        remaining_entries = update_call.kwargs["data"]["customer_profile_entries"]
+        assert len(remaining_entries) == 1
+        assert remaining_entries[0]["node_id"] == other_profile_node_id
 
 
 class TestProblemAwarenessStrategyOperations:

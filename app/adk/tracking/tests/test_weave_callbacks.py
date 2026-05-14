@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -52,6 +52,7 @@ class TestWeaveBeforeAgentCallback:
         mock_client.create_call.assert_called_once_with(
             op="ken_e_agent",
             inputs={"agent": "ken_e", "context_agent_goal": None},
+            attributes=ANY,
             use_stack=True,
         )
         assert _current_agent_call.get(None) is mock_call

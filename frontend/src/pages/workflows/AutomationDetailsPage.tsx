@@ -56,7 +56,7 @@ export function AutomationDetailsPage() {
               className={cn(
                 "flex flex-col items-center justify-center rounded-[var(--radius-lg)]",
                 "border border-[var(--color-border-default)] bg-[var(--color-bg-elevated)]",
-                "p-12 text-center min-h-[300px]",
+                "p-12 text-center min-h-[18.75rem]",
               )}
             >
               <p className="text-[var(--color-text-secondary)] mb-2">
@@ -69,7 +69,7 @@ export function AutomationDetailsPage() {
           </TabsContent>
 
           <TabsContent value="outputs">
-            <div className="flex flex-col items-center justify-center min-h-[300px] p-8 text-center">
+            <div className="flex flex-col items-center justify-center min-h-[18.75rem] p-8 text-center">
               <div className="rounded-full bg-[var(--color-bg-secondary)] p-6 mb-4">
                 <FileOutput className="size-8 text-[var(--color-text-tertiary)]" />
               </div>

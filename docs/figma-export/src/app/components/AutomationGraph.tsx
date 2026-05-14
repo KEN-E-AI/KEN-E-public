@@ -248,7 +248,7 @@ function AutomationTaskNode({ data, selected }: NodeProps) {
 
       <div className="flex items-center gap-1.5 mb-1.5">
         <span
-          className="text-[9px] px-1.5 py-0.5 rounded"
+          className="text-[0.5625rem] px-1.5 py-0.5 rounded"
           style={{ background: sStyle.bg, color: sStyle.text, border: `1px solid ${sStyle.border}` }}
         >
           {runState === 'complete' ? 'Complete' : runState === 'running' ? 'Running...' : task.status}
@@ -256,9 +256,9 @@ function AutomationTaskNode({ data, selected }: NodeProps) {
       </div>
 
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1 text-[10px] text-[var(--color-text-tertiary)]">
+        <div className="flex items-center gap-1 text-[0.625rem] text-[var(--color-text-tertiary)]">
           {isAgent ? <Bot className="size-3" /> : <User className="size-3" />}
-          <span className="truncate max-w-[100px]">{task.assignee_name ?? 'Unassigned'}</span>
+          <span className="truncate max-w-[6.25rem]">{task.assignee_name ?? 'Unassigned'}</span>
         </div>
         <div className="flex items-center gap-1">
           {task.output_config?.enabled && (
@@ -270,7 +270,7 @@ function AutomationTaskNode({ data, selected }: NodeProps) {
             </div>
           )}
           {task.estimated_effort && (
-            <span className="text-[9px] text-[var(--color-text-tertiary)]">{task.estimated_effort}</span>
+            <span className="text-[0.5625rem] text-[var(--color-text-tertiary)]">{task.estimated_effort}</span>
           )}
         </div>
       </div>
@@ -451,7 +451,7 @@ function AutomationGraphInner({
 
       {/* Connection hint */}
       {!isRunning && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 text-[10px] text-[var(--color-text-tertiary)] bg-[var(--color-bg-elevated)]/80 backdrop-blur-sm px-3 py-1 rounded-full border border-[var(--color-border-subtle)] z-10">
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 text-[0.625rem] text-[var(--color-text-tertiary)] bg-[var(--color-bg-elevated)]/80 backdrop-blur-sm px-3 py-1 rounded-full border border-[var(--color-border-subtle)] z-10">
           Drag between handles to connect • Hover edges to delete • Hover node to detach
         </div>
       )}

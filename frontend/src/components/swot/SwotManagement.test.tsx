@@ -388,7 +388,7 @@ describe("SwotManagement", () => {
         /Select a strength to view opportunities/i,
       ).parentElement;
 
-      expect(emptyStateContainer).toHaveClass("h-[600px]");
+      expect(emptyStateContainer).toHaveClass("h-[37.5rem]");
       expect(emptyStateContainer).toHaveClass("flex");
       expect(emptyStateContainer).toHaveClass("items-center");
       expect(emptyStateContainer).toHaveClass("justify-center");

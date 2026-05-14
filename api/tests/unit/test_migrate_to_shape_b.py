@@ -37,9 +37,11 @@ import migrate_to_shape_b as cli_module  # noqa: E402
 from _migrate_shape_b.config import MigrateConfig  # noqa: E402
 from _migrate_shape_b.resources import RESOURCES  # noqa: E402
 from _migrate_shape_b.runner import (  # noqa: E402
+    AccountDeleteResult,
     CopyResult,
     DeleteResult,
     VerifyResult,
+    _is_valid_account_id,
     copy_resource,
     delete_source_collections,
     dry_run_resource,
@@ -440,6 +442,7 @@ class TestListCommand:
 # TestUnknownResource
 # ---------------------------------------------------------------------------
 
+
 class TestUnknownResource:
     """--resource=<name> validation against the RESOURCES registry (DM-2 / AC-2)."""
 
@@ -670,9 +673,15 @@ class TestRunner:
         # Only version 2 was newly written; main doc and version 1 were skipped
         assert result.total_docs == 1
         # All three destination docs are present and correct
-        assert client._store.get("accounts/acc_A/strategy_docs/swot") == {"title": "SWOT"}
-        assert client._store.get("accounts/acc_A/strategy_docs/swot/versions/1") == {"v": 1}
-        assert client._store.get("accounts/acc_A/strategy_docs/swot/versions/2") == {"v": 2}
+        assert client._store.get("accounts/acc_A/strategy_docs/swot") == {
+            "title": "SWOT"
+        }
+        assert client._store.get("accounts/acc_A/strategy_docs/swot/versions/1") == {
+            "v": 1
+        }
+        assert client._store.get("accounts/acc_A/strategy_docs/swot/versions/2") == {
+            "v": 2
+        }
 
     # ------------------------------------------------------------------
     # copy_resource — source_is_single_collection + destination_doc_id
@@ -972,8 +981,12 @@ class TestRunner:
         mock_fs.Client.return_value = MagicMock()
         with patch.dict("sys.modules", {"google.cloud.firestore": mock_fs}):
             exit_code = cli_module.cmd_resource(
-                "example", "proj", "(default)",
-                dry_run=False, confirm_delete=True, assume_yes=True,
+                "example",
+                "proj",
+                "(default)",
+                dry_run=False,
+                confirm_delete=True,
+                assume_yes=True,
             )
 
         assert exit_code == 0
@@ -1188,13 +1201,30 @@ class TestConfirmDeleteOrchestration:
         migrate_calls: list[str] = []
         delete_calls: list[str] = []
 
-        monkeypatch.setattr(cli_module, "migrate_resource", lambda c, n, cfg: (migrate_calls.append(n), 0)[1])
+        monkeypatch.setattr(
+            cli_module,
+            "migrate_resource",
+            lambda c, n, cfg: (migrate_calls.append(n), 0)[1],
+        )
 
         fake_result = MagicMock(source_collections_deleted=1, total_docs=3)
-        monkeypatch.setattr(cli_module, "delete_source_collections", lambda c, n, cfg: (delete_calls.append(n), fake_result)[1])
+        monkeypatch.setattr(
+            cli_module,
+            "delete_source_collections",
+            lambda c, n, cfg: (delete_calls.append(n), fake_result)[1],
+        )
 
-        with patch.dict("sys.modules", {"google.cloud.firestore": self._patch_firestore()}):
-            code = cli_module.cmd_resource("example", "proj", "(default)", dry_run=False, confirm_delete=True, assume_yes=True)
+        with patch.dict(
+            "sys.modules", {"google.cloud.firestore": self._patch_firestore()}
+        ):
+            code = cli_module.cmd_resource(
+                "example",
+                "proj",
+                "(default)",
+                dry_run=False,
+                confirm_delete=True,
+                assume_yes=True,
+            )
 
         assert code == 0
         assert migrate_calls == ["example"]
@@ -1209,11 +1239,24 @@ class TestConfirmDeleteOrchestration:
 
         monkeypatch.setattr(cli_module, "migrate_resource", lambda c, n, cfg: 0)
         fake_result = MagicMock(source_collections_deleted=1, total_docs=2)
-        monkeypatch.setattr(cli_module, "delete_source_collections", lambda c, n, cfg: (delete_calls.append(n), fake_result)[1])
+        monkeypatch.setattr(
+            cli_module,
+            "delete_source_collections",
+            lambda c, n, cfg: (delete_calls.append(n), fake_result)[1],
+        )
         monkeypatch.setattr("builtins.input", lambda: "YES")
 
-        with patch.dict("sys.modules", {"google.cloud.firestore": self._patch_firestore()}):
-            code = cli_module.cmd_resource("example", "proj", "(default)", dry_run=False, confirm_delete=True, assume_yes=False)
+        with patch.dict(
+            "sys.modules", {"google.cloud.firestore": self._patch_firestore()}
+        ):
+            code = cli_module.cmd_resource(
+                "example",
+                "proj",
+                "(default)",
+                dry_run=False,
+                confirm_delete=True,
+                assume_yes=False,
+            )
 
         assert code == 0
         assert delete_calls == ["example"]
@@ -1226,11 +1269,24 @@ class TestConfirmDeleteOrchestration:
         delete_calls: list[str] = []
 
         monkeypatch.setattr(cli_module, "migrate_resource", lambda c, n, cfg: 0)
-        monkeypatch.setattr(cli_module, "delete_source_collections", lambda c, n, cfg: (delete_calls.append(n), None)[1])
+        monkeypatch.setattr(
+            cli_module,
+            "delete_source_collections",
+            lambda c, n, cfg: (delete_calls.append(n), None)[1],
+        )
         monkeypatch.setattr("builtins.input", lambda: "yes")
 
-        with patch.dict("sys.modules", {"google.cloud.firestore": self._patch_firestore()}):
-            code = cli_module.cmd_resource("example", "proj", "(default)", dry_run=False, confirm_delete=True, assume_yes=False)
+        with patch.dict(
+            "sys.modules", {"google.cloud.firestore": self._patch_firestore()}
+        ):
+            code = cli_module.cmd_resource(
+                "example",
+                "proj",
+                "(default)",
+                dry_run=False,
+                confirm_delete=True,
+                assume_yes=False,
+            )
 
         assert code == 0
         assert delete_calls == []  # deletion skipped
@@ -1243,11 +1299,24 @@ class TestConfirmDeleteOrchestration:
         delete_calls: list[str] = []
 
         monkeypatch.setattr(cli_module, "migrate_resource", lambda c, n, cfg: 0)
-        monkeypatch.setattr(cli_module, "delete_source_collections", lambda c, n, cfg: (delete_calls.append(n), None)[1])
+        monkeypatch.setattr(
+            cli_module,
+            "delete_source_collections",
+            lambda c, n, cfg: (delete_calls.append(n), None)[1],
+        )
         monkeypatch.setattr("builtins.input", lambda: "")
 
-        with patch.dict("sys.modules", {"google.cloud.firestore": self._patch_firestore()}):
-            code = cli_module.cmd_resource("example", "proj", "(default)", dry_run=False, confirm_delete=True, assume_yes=False)
+        with patch.dict(
+            "sys.modules", {"google.cloud.firestore": self._patch_firestore()}
+        ):
+            code = cli_module.cmd_resource(
+                "example",
+                "proj",
+                "(default)",
+                dry_run=False,
+                confirm_delete=True,
+                assume_yes=False,
+            )
 
         assert code == 0
         assert delete_calls == []
@@ -1260,10 +1329,23 @@ class TestConfirmDeleteOrchestration:
         delete_calls: list[str] = []
 
         monkeypatch.setattr(cli_module, "migrate_resource", lambda c, n, cfg: 1)
-        monkeypatch.setattr(cli_module, "delete_source_collections", lambda c, n, cfg: (delete_calls.append(n), None)[1])
+        monkeypatch.setattr(
+            cli_module,
+            "delete_source_collections",
+            lambda c, n, cfg: (delete_calls.append(n), None)[1],
+        )
 
-        with patch.dict("sys.modules", {"google.cloud.firestore": self._patch_firestore()}):
-            code = cli_module.cmd_resource("example", "proj", "(default)", dry_run=False, confirm_delete=True, assume_yes=True)
+        with patch.dict(
+            "sys.modules", {"google.cloud.firestore": self._patch_firestore()}
+        ):
+            code = cli_module.cmd_resource(
+                "example",
+                "proj",
+                "(default)",
+                dry_run=False,
+                confirm_delete=True,
+                assume_yes=True,
+            )
 
         assert code == 1
         assert delete_calls == []
@@ -1273,7 +1355,14 @@ class TestConfirmDeleteOrchestration:
     ) -> None:
         """Unknown resource with --confirm-delete exits 2 immediately."""
         monkeypatch.setattr(cli_module, "RESOURCES", {})
-        code = cli_module.cmd_resource("nonexistent", "proj", "(default)", dry_run=False, confirm_delete=True, assume_yes=True)
+        code = cli_module.cmd_resource(
+            "nonexistent",
+            "proj",
+            "(default)",
+            dry_run=False,
+            confirm_delete=True,
+            assume_yes=True,
+        )
         assert code == 2
 
     # ------------------------------------------------------------------
@@ -1287,17 +1376,31 @@ class TestConfirmDeleteOrchestration:
         cfg_a = MigrateConfig(old_prefix="aaa_", new_subcollection="aaa")
         cfg_b = MigrateConfig(old_prefix="bbb_", new_subcollection="bbb")
         cfg_c = MigrateConfig(old_prefix="ccc_", new_subcollection="ccc")
-        monkeypatch.setattr(cli_module, "RESOURCES", {"bbb": cfg_b, "aaa": cfg_a, "ccc": cfg_c})
+        monkeypatch.setattr(
+            cli_module, "RESOURCES", {"bbb": cfg_b, "aaa": cfg_a, "ccc": cfg_c}
+        )
 
         migrate_order: list[str] = []
         delete_order: list[str] = []
 
-        monkeypatch.setattr(cli_module, "migrate_resource", lambda c, n, cfg: (migrate_order.append(n), 0)[1])
+        monkeypatch.setattr(
+            cli_module,
+            "migrate_resource",
+            lambda c, n, cfg: (migrate_order.append(n), 0)[1],
+        )
         fake_result = MagicMock(source_collections_deleted=1, total_docs=1)
-        monkeypatch.setattr(cli_module, "delete_source_collections", lambda c, n, cfg: (delete_order.append(n), fake_result)[1])
+        monkeypatch.setattr(
+            cli_module,
+            "delete_source_collections",
+            lambda c, n, cfg: (delete_order.append(n), fake_result)[1],
+        )
 
-        with patch.dict("sys.modules", {"google.cloud.firestore": self._patch_firestore()}):
-            code = cli_module.cmd_all("proj", "(default)", dry_run=False, confirm_delete=True, assume_yes=True)
+        with patch.dict(
+            "sys.modules", {"google.cloud.firestore": self._patch_firestore()}
+        ):
+            code = cli_module.cmd_all(
+                "proj", "(default)", dry_run=False, confirm_delete=True, assume_yes=True
+            )
 
         assert code == 0
         assert migrate_order == ["aaa", "bbb", "ccc"]
@@ -1310,7 +1413,9 @@ class TestConfirmDeleteOrchestration:
         cfg_a = MigrateConfig(old_prefix="aaa_", new_subcollection="aaa")
         cfg_b = MigrateConfig(old_prefix="bbb_", new_subcollection="bbb")
         cfg_c = MigrateConfig(old_prefix="ccc_", new_subcollection="ccc")
-        monkeypatch.setattr(cli_module, "RESOURCES", {"bbb": cfg_b, "aaa": cfg_a, "ccc": cfg_c})
+        monkeypatch.setattr(
+            cli_module, "RESOURCES", {"bbb": cfg_b, "aaa": cfg_a, "ccc": cfg_c}
+        )
 
         migrate_order: list[str] = []
         delete_order: list[str] = []
@@ -1321,14 +1426,24 @@ class TestConfirmDeleteOrchestration:
 
         monkeypatch.setattr(cli_module, "migrate_resource", fake_migrate)
         fake_result = MagicMock(source_collections_deleted=1, total_docs=1)
-        monkeypatch.setattr(cli_module, "delete_source_collections", lambda c, n, cfg: (delete_order.append(n), fake_result)[1])
+        monkeypatch.setattr(
+            cli_module,
+            "delete_source_collections",
+            lambda c, n, cfg: (delete_order.append(n), fake_result)[1],
+        )
 
-        with patch.dict("sys.modules", {"google.cloud.firestore": self._patch_firestore()}):
-            code = cli_module.cmd_all("proj", "(default)", dry_run=False, confirm_delete=True, assume_yes=True)
+        with patch.dict(
+            "sys.modules", {"google.cloud.firestore": self._patch_firestore()}
+        ):
+            code = cli_module.cmd_all(
+                "proj", "(default)", dry_run=False, confirm_delete=True, assume_yes=True
+            )
 
         assert code == 1
         assert migrate_order == ["aaa", "bbb"]  # ccc never reached
-        assert delete_order == ["aaa"]  # bbb failed, so bbb not deleted; ccc never reached
+        assert delete_order == [
+            "aaa"
+        ]  # bbb failed, so bbb not deleted; ccc never reached
 
     # ------------------------------------------------------------------
     # --yes without --confirm-delete via subprocess
@@ -1447,9 +1562,13 @@ class TestDryRun:
         output = buf.getvalue()
         lines = output.splitlines()
 
-        assert any(ln.startswith("Resource:") and "example" in ln for ln in lines), lines
+        assert any(ln.startswith("Resource:") and "example" in ln for ln in lines), (
+            lines
+        )
         assert any("Source collections found:" in ln for ln in lines), lines
-        assert any("Source doc count:" in ln and ln.rstrip().endswith("2") for ln in lines), lines
+        assert any(
+            "Source doc count:" in ln and ln.rstrip().endswith("2") for ln in lines
+        ), lines
         assert any(
             "Destination path:" in ln and "accounts/{id}/example" in ln for ln in lines
         ), lines
@@ -1612,3 +1731,307 @@ class TestAnalyticsResourcesRegistry:
             has_versions=False,
         )
         assert cfg.account_id_extractor is None
+
+
+# ---------------------------------------------------------------------------
+# TestShapeBLikeResourcesRegistry — DM-PRD-04 (DM-22)
+# ---------------------------------------------------------------------------
+
+
+class TestShapeBLikeResourcesRegistry:
+    """Assert the two Shape B-like resources are correctly registered.
+
+    DM-21 (PO-verified audit) confirmed:
+    - Both collections hold exactly one document per account, whose doc-id IS the
+      account_id.  The canonical destination doc-id is ``"default"`` for both.
+    - MonitoringTopics (monitoring_models.py:146) carries ``account_id`` as a
+      payload field only — no ``topic_id`` or ``doc_id`` field — so no Pydantic
+      model edit is required.
+    - AlertManager writes/reads via ``.document(self.account_id)``; the payload
+      also holds ``account_id`` as a content field, fully decoupled from the
+      Firestore doc-id.
+    See DM-PRD-04 §8 open-questions (resolved) for the full audit trail.
+
+    The live RESOURCES import is used (no monkeypatching) so that any accidental
+    removal or renaming of an entry fails these tests immediately.
+    """
+
+    def test_monitoring_topics_registered(self) -> None:
+        assert "monitoring_topics" in RESOURCES, (
+            "monitoring_topics not found in RESOURCES"
+        )
+
+    def test_monitoring_topics_source_is_single_collection(self) -> None:
+        assert RESOURCES["monitoring_topics"].source_is_single_collection is True
+
+    def test_monitoring_topics_destination_doc_id(self) -> None:
+        assert RESOURCES["monitoring_topics"].destination_doc_id == "default"
+
+    def test_monitoring_topics_has_no_versions(self) -> None:
+        assert RESOURCES["monitoring_topics"].has_versions is False
+
+    def test_monitoring_topics_full_config(self) -> None:
+        assert RESOURCES["monitoring_topics"] == MigrateConfig(
+            old_prefix="",
+            new_subcollection="monitoring_topics",
+            has_versions=False,
+            source_is_single_collection=True,
+            destination_doc_id="default",
+        )
+
+    def test_alert_configurations_registered(self) -> None:
+        assert "alert_configurations" in RESOURCES, (
+            "alert_configurations not found in RESOURCES"
+        )
+
+    def test_alert_configurations_source_is_single_collection(self) -> None:
+        assert RESOURCES["alert_configurations"].source_is_single_collection is True
+
+    def test_alert_configurations_destination_doc_id(self) -> None:
+        assert RESOURCES["alert_configurations"].destination_doc_id == "default"
+
+    def test_alert_configurations_has_no_versions(self) -> None:
+        assert RESOURCES["alert_configurations"].has_versions is False
+
+    def test_alert_configurations_full_config(self) -> None:
+        assert RESOURCES["alert_configurations"] == MigrateConfig(
+            old_prefix="",
+            new_subcollection="alert_configurations",
+            has_versions=False,
+            source_is_single_collection=True,
+            destination_doc_id="default",
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestMalformedSourceCollection — DM-19 / DM-PRD-00 runner empty-account-id guard.
+#
+# Discovered in DM-19: ken-e-dev's `(default)` Firestore had a top-level
+# collection literally named `strategy_docs_` (the resource prefix with no
+# account suffix). The default `_extract_account_id` strips the prefix and
+# returns `""`, which the runner then plugged into `accounts/{account_id}/...`
+# producing the malformed Firestore path `accounts//strategy_docs` and
+# `google.api_core.exceptions.InvalidArgument` at first call.
+#
+# Fix contract: every phase that walks `client.collections()` (copy, verify,
+# delete, dry-run) must skip + warn on any source collection that yields an
+# empty / `/`-bearing / `.`/`..` account_id; the rest of the migration must
+# proceed normally.
+# ---------------------------------------------------------------------------
+
+
+class TestMalformedSourceCollection:
+    """Runner skips source collections that produce an invalid account_id."""
+
+    # ------------------------------------------------------------------
+    # copy_resource
+    # ------------------------------------------------------------------
+
+    def test_copy_skips_empty_account_id_and_warns(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """`strategy_docs_` (empty suffix) is skipped; real account still copied."""
+        client = FakeFirestoreClient()
+        client.seed("strategy_docs_/orphan_doc", {"title": "Orphan"})
+        client.seed("strategy_docs_acc_A/swot", {"title": "SWOT"})
+
+        config = MigrateConfig(
+            old_prefix="strategy_docs_", new_subcollection="strategy_docs"
+        )
+        with caplog.at_level("WARNING", logger="_migrate_shape_b.runner"):
+            result = copy_resource(client, "strategy_docs", config)
+
+        # Real account copied.
+        assert client._store.get("accounts/acc_A/strategy_docs/swot") == {
+            "title": "SWOT"
+        }
+        # Malformed destination never written.
+        assert "accounts//strategy_docs/orphan_doc" not in client._store
+        # source_collections_found counts only the migratable one.
+        assert result.source_collections_found == 1
+        assert result.total_docs == 1
+        # Malformed source is recorded structurally so the CLI summary surfaces it.
+        assert result.malformed_sources == ["strategy_docs_"]
+        # A warning identifies the malformed source collection by name.
+        warning_messages = [
+            r.getMessage()
+            for r in caplog.records
+            if r.levelname == "WARNING" and r.name == "_migrate_shape_b.runner"
+        ]
+        assert any(
+            "strategy_docs_" in msg and "skipping" in msg.lower()
+            for msg in warning_messages
+        ), f"expected skip warning naming `strategy_docs_`, got: {warning_messages}"
+
+    # ------------------------------------------------------------------
+    # verify_resource
+    # ------------------------------------------------------------------
+
+    def test_verify_skips_empty_account_id(self) -> None:
+        """verify_resource ignores the malformed source collection."""
+        client = FakeFirestoreClient()
+        client.seed("strategy_docs_/orphan_doc", {"title": "Orphan"})
+        client.seed("strategy_docs_acc_A/swot", {"title": "SWOT"})
+        # Pretend acc_A was already copied to the destination.
+        client.seed("accounts/acc_A/strategy_docs/swot", {"title": "SWOT"})
+
+        config = MigrateConfig(
+            old_prefix="strategy_docs_", new_subcollection="strategy_docs"
+        )
+        result = verify_resource(client, "strategy_docs", config)
+
+        assert isinstance(result, VerifyResult)
+        # Only acc_A is verified; the malformed orphan is skipped.
+        account_ids = [a.account_id for a in result.accounts]
+        assert account_ids == ["acc_A"]
+        assert result.accounts[0].source_count == 1
+        assert result.accounts[0].destination_count == 1
+        assert result.malformed_sources == ["strategy_docs_"]
+
+    # ------------------------------------------------------------------
+    # delete_source_collections
+    # ------------------------------------------------------------------
+
+    def test_delete_skips_empty_account_id(self) -> None:
+        """delete_source_collections skips the malformed source collection."""
+        client = FakeFirestoreClient()
+        client.seed("strategy_docs_/orphan_doc", {"title": "Orphan"})
+        client.seed("strategy_docs_acc_A/swot", {"title": "SWOT"})
+
+        config = MigrateConfig(
+            old_prefix="strategy_docs_", new_subcollection="strategy_docs"
+        )
+        result = delete_source_collections(client, "strategy_docs", config)
+
+        assert isinstance(result, DeleteResult)
+        # Only acc_A's source is deleted.
+        assert "strategy_docs_acc_A/swot" not in client._store
+        # The malformed orphan is left in place (operator must clean up manually).
+        assert "strategy_docs_/orphan_doc" in client._store
+        # Reported deletion accounts exclude the malformed one.
+        account_ids = [a.account_id for a in result.accounts]
+        assert account_ids == ["acc_A"]
+        assert result.malformed_sources == ["strategy_docs_"]
+
+    # ------------------------------------------------------------------
+    # dry_run_resource
+    # ------------------------------------------------------------------
+
+    def test_dry_run_skips_empty_account_id(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """dry_run_resource counts only migratable source collections."""
+        client = FakeFirestoreClient()
+        client.seed("strategy_docs_/orphan_doc", {"title": "Orphan"})
+        client.seed("strategy_docs_acc_A/swot", {"title": "SWOT"})
+        client.seed("strategy_docs_acc_B/pestle", {"title": "PESTLE"})
+
+        config = MigrateConfig(
+            old_prefix="strategy_docs_", new_subcollection="strategy_docs"
+        )
+        exit_code = dry_run_resource(client, "strategy_docs", config)
+
+        assert exit_code == 0
+        captured = capsys.readouterr().out
+        # The dry-run summary reports 2 migratable collections, not 3.
+        assert "Source collections found:   2" in captured
+        assert "Source doc count:            2" in captured
+        # Malformed source is surfaced in the summary block, not just the WARNING log.
+        assert "Malformed source collections (skipped): 1" in captured
+        assert "strategy_docs_" in captured
+        assert "Operator action:" in captured
+
+    # ------------------------------------------------------------------
+    # migrate_resource summary block — operator-facing stdout contract
+    # ------------------------------------------------------------------
+
+    def test_migrate_resource_surfaces_malformed_in_summary_block(self) -> None:
+        """migrate_resource stdout names the malformed source + operator-action line."""
+        client = FakeFirestoreClient()
+        client.seed("strategy_docs_/orphan_doc", {"title": "Orphan"})
+        client.seed("strategy_docs_acc_A/swot", {"title": "SWOT"})
+
+        config = MigrateConfig(
+            old_prefix="strategy_docs_", new_subcollection="strategy_docs"
+        )
+
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            exit_code = migrate_resource(client, "strategy_docs", config)
+
+        output = buf.getvalue()
+        # Verify is still VERIFIED — the malformed source must not poison the verify status.
+        assert exit_code == 0, output
+        assert "Status:" in output and "VERIFIED" in output
+        # Operator-facing summary lines present and name the offender.
+        assert "Malformed source collections (skipped): 1" in output, output
+        assert "strategy_docs_" in output, output
+        assert "Operator action:" in output, output
+        assert "before --confirm-delete" in output, output
+
+    # ------------------------------------------------------------------
+    # cmd_resource --confirm-delete summary — operator-facing stdout contract
+    # ------------------------------------------------------------------
+
+    def test_cmd_resource_confirm_delete_surfaces_malformed_left_in_place(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """cmd_resource's `deletion complete` block names malformed sources left in place."""
+        fake_resources = {
+            "strategy_docs": MigrateConfig(
+                old_prefix="strategy_docs_", new_subcollection="strategy_docs"
+            )
+        }
+        monkeypatch.setattr(cli_module, "RESOURCES", fake_resources)
+        # Stub migrate_resource — irrelevant to this assertion.
+        monkeypatch.setattr(cli_module, "migrate_resource", lambda c, n, cfg: 0)
+        # Real DeleteResult so the new `malformed_sources` field is populated correctly
+        # (MagicMock auto-truthy / auto-iterable would print garbage; this pins the contract).
+        delete_result = DeleteResult(
+            resource_name="strategy_docs",
+            accounts=[
+                AccountDeleteResult(
+                    account_id="acc_A",
+                    source_collection="strategy_docs_acc_A",
+                    docs_deleted=1,
+                )
+            ],
+            malformed_sources=["strategy_docs_"],
+        )
+        monkeypatch.setattr(
+            cli_module,
+            "delete_source_collections",
+            lambda c, n, cfg: delete_result,
+        )
+
+        mock_fs = MagicMock()
+        mock_fs.Client.return_value = MagicMock()
+        with patch.dict("sys.modules", {"google.cloud.firestore": mock_fs}):
+            code = cli_module.cmd_resource(
+                "strategy_docs",
+                "proj",
+                "(default)",
+                dry_run=False,
+                confirm_delete=True,
+                assume_yes=True,
+            )
+
+        assert code == 0
+        output = capsys.readouterr().out
+        assert "Resource: strategy_docs — deletion complete" in output, output
+        assert "Malformed source collections (left in place): 1" in output, output
+        assert "strategy_docs_" in output, output
+        assert "Operator action:" in output and "AC-2" in output, output
+
+    # ------------------------------------------------------------------
+    # _extract_account_id — direct validation helper coverage
+    # ------------------------------------------------------------------
+
+    def test_invalid_account_id_helper_rejects_empty_slash_and_dots(self) -> None:
+        """The internal validator rejects empty, `/`-bearing, and `.`/`..` ids."""
+        assert _is_valid_account_id("acc_A") is True
+        assert _is_valid_account_id("_test_account_123") is True
+        assert _is_valid_account_id("") is False
+        assert _is_valid_account_id("acc/A") is False
+        assert _is_valid_account_id(".") is False
+        assert _is_valid_account_id("..") is False

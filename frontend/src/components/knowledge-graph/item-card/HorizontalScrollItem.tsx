@@ -39,11 +39,11 @@ export function HorizontalScrollItem({
         <div className="flex-shrink-0 -ml-12 relative z-10">
           <div
             className={`rounded-full ${iconBgColor} flex items-center justify-center`}
-            style={{ width: "72px", height: "72px" }}
+            style={{ width: "4.5rem", height: "4.5rem" }}
           >
             <Icon
               className="text-white"
-              style={{ width: "48px", height: "48px" }}
+              style={{ width: "3rem", height: "3rem" }}
             />
           </div>
         </div>

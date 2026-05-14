@@ -9,12 +9,14 @@ backwards compatibility with pre-Sprint-6 callers.
 """
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from google.cloud import firestore
-from pydantic import Field
+from pydantic import Field, ValidationError
 
 from shared.trace_metadata import parse_semver, validate_semver
 
@@ -23,22 +25,29 @@ from ..auth.user_context import get_current_user_context
 from ..dependencies import get_firestore
 from ..models.agent_config_models import (
     AgentConfig,
+    AgentConfigCreate,
     AgentConfigMetadata,
+    AgentConfigOverlayUpdate,
     AgentConfigUpdate,
     ConfigAuditEntry,
-    GenerateContentConfig,
+    MergedAgentConfig,
 )
 from ..services.audit_service import log_config_action
 from ..services.config_versioning import increment_version, sanitize_updated_by
 
+_SEMVER_MAJOR_RE = re.compile(r"^v?(\d+)")
+
 __all__ = [
     "ALLOWED_CONFIG_IDS",
     "AgentConfig",
+    "AgentConfigCreate",
     "AgentConfigMetadata",
+    "AgentConfigOverlayUpdate",
     "AgentConfigUpdate",
     "AgentConfigUpdateResponse",
     "ConfigAuditEntry",
-    "GenerateContentConfig",
+    "MergedAgentConfig",
+    "account_router",
     "router",
 ]
 
@@ -50,10 +59,10 @@ class AgentConfigUpdateResponse(AgentConfig):
     read top-level fields like ``response.model`` or ``response.metadata``
     keep working. Adding a new optional ``warnings`` list is additive.
 
-    Per Sprint 6 AC-6.25, changes to ``model`` or ``max_output_tokens`` /
-    ``generate_content_config`` cannot be picked up by the 60 s hot-reload
-    cache (ADK bakes them in at agent construction) — those changes surface
-    as a redeploy-required warning here so admins don't silently think the
+    Per Sprint 6 AC-6.25, changes to ``model``, ``temperature`` or
+    ``max_output_tokens`` cannot be picked up by the 60 s hot-reload cache
+    (ADK bakes them in at agent construction) — those changes surface as a
+    redeploy-required warning here so admins don't silently think the
     change is live.
     """
 
@@ -66,11 +75,36 @@ class AgentConfigUpdateResponse(AgentConfig):
 # Fields whose runtime effect requires a pod/agent redeploy. Per Sprint 6
 # Decision B, ONLY ``instruction`` propagates via the 60 s in-process cache
 # because the ADK ``Agent`` constructor only accepts a callable for the
-# ``instruction`` field. ``model``, ``generate_content_config`` (including
-# ``temperature`` and ``max_output_tokens``) and tools are baked at
-# construction time, so updates to any of them require a pod restart.
+# ``instruction`` field. ``model``, ``temperature`` and ``max_output_tokens``
+# are baked into the SDK ``GenerateContentConfig`` at construction time, so
+# updates to any of them require a pod restart.
 _REDEPLOY_REQUIRED_FIELDS: frozenset[str] = frozenset(
     {"model", "temperature", "max_output_tokens"}
+)
+
+# Storage-internal fields that live on Firestore docs but are not part of
+# the ``MergedAgentConfig`` API contract. They must be stripped before
+# Pydantic validation now that ``MergedAgentConfig`` uses ``extra="forbid"``.
+#
+# ``deployment_status`` is written by MER-E (sister repo) onto the shared
+# ``agent_configs/{id}`` docs. KEN-E doesn't surface it in this API shape;
+# strip it so an MER-E-touched doc still validates.
+#
+# ``canonical_id`` and ``legacy_agent_name`` are pre-AH-PRD-02 storage
+# metadata that survives on a handful of seeded docs (e.g. business_researcher,
+# competitive_analyst). Neither is part of the API contract; strip both so
+# those docs don't fail validation and silently disappear from the list view.
+_STORAGE_INTERNAL_FIELDS: frozenset[str] = frozenset(
+    {
+        "metadata",
+        "created_at",
+        "updated_at",
+        "created_by",
+        "updated_by",
+        "deployment_status",
+        "canonical_id",
+        "legacy_agent_name",
+    }
 )
 
 logger = logging.getLogger(__name__)
@@ -116,10 +150,18 @@ def _build_firestore_updates(
     variant_name: str | None = None,
     experiment_id: str | None = None,
     notes: str | None = None,
-    current_gen_config: dict[str, int | float] | None = None,
-) -> dict[str, str | int | float | dict[str, int | float]]:
+) -> dict[str, str | int | float]:
     """
     Build type-safe Firestore update dictionary.
+
+    ``temperature`` and ``max_output_tokens`` are written flat at the top
+    level (AH-40). The legacy nested ``generate_content_config`` wrapper
+    is no longer produced.
+
+    Note: nullable identity fields (``name``, ``title``) are NOT handled
+    here. The caller must use ``update.model_fields_set`` to distinguish
+    "client omitted" from "client sent null" and write those fields into
+    the returned dict directly. See ``update_agent_config`` for the pattern.
 
     Args:
         instruction: New instruction text
@@ -133,12 +175,11 @@ def _build_firestore_updates(
         variant_name: New variant name
         experiment_id: New experiment ID
         notes: Change notes
-        current_gen_config: Current generation config for merging
 
     Returns:
-        Dictionary with Firestore update format (dot notation for nested fields)
+        Dictionary with Firestore update format (dot notation for metadata fields)
     """
-    updates: dict[str, str | int | float | dict[str, int | float]] = {}
+    updates: dict[str, str | int | float] = {}
 
     if instruction is not None:
         updates["instruction"] = instruction
@@ -149,15 +190,11 @@ def _build_firestore_updates(
     if description is not None:
         updates["description"] = description
 
-    if temperature is not None or max_output_tokens is not None:
-        gen_config: dict[str, int | float] = (
-            current_gen_config.copy() if current_gen_config else {}
-        )
-        if temperature is not None:
-            gen_config["temperature"] = temperature
-        if max_output_tokens is not None:
-            gen_config["max_output_tokens"] = max_output_tokens
-        updates["generate_content_config"] = gen_config
+    if temperature is not None:
+        updates["temperature"] = temperature
+
+    if max_output_tokens is not None:
+        updates["max_output_tokens"] = max_output_tokens
 
     if version is not None:
         updates["metadata.version"] = version
@@ -183,10 +220,21 @@ def _build_firestore_updates(
 def _snapshot_pre_image(
     current_config: dict[str, Any], update: AgentConfigUpdate
 ) -> dict[str, Any]:
-    """Capture current values for every field the update touches."""
-    gen_cfg = current_config.get("generate_content_config", {}) or {}
-    snap: dict[str, Any] = {}
+    """Capture current values for every field the update touches.
 
+    Reads ``temperature`` and ``max_output_tokens`` flat (AH-40).
+
+    Nullable identity fields (``name``, ``title``) use ``model_fields_set``
+    to distinguish "client omitted" from "client sent null" so a
+    null-clearing update is audited as a real change.
+    """
+    snap: dict[str, Any] = {}
+    fields_set = update.model_fields_set
+
+    if "name" in fields_set:
+        snap["name"] = current_config.get("name")
+    if "title" in fields_set:
+        snap["title"] = current_config.get("title")
     if update.instruction is not None:
         snap["instruction"] = current_config.get("instruction")
     if update.model is not None:
@@ -194,9 +242,9 @@ def _snapshot_pre_image(
     if update.description is not None:
         snap["description"] = current_config.get("description")
     if update.temperature is not None:
-        snap["temperature"] = gen_cfg.get("temperature")
+        snap["temperature"] = current_config.get("temperature")
     if update.max_output_tokens is not None:
-        snap["max_output_tokens"] = gen_cfg.get("max_output_tokens")
+        snap["max_output_tokens"] = current_config.get("max_output_tokens")
 
     return snap
 
@@ -204,9 +252,13 @@ def _snapshot_pre_image(
 def _snapshot_post_image(
     updated_data: dict[str, Any], update: AgentConfigUpdate
 ) -> dict[str, Any]:
-    gen_cfg = updated_data.get("generate_content_config", {}) or {}
     snap: dict[str, Any] = {}
+    fields_set = update.model_fields_set
 
+    if "name" in fields_set:
+        snap["name"] = updated_data.get("name")
+    if "title" in fields_set:
+        snap["title"] = updated_data.get("title")
     if update.instruction is not None:
         snap["instruction"] = updated_data.get("instruction")
     if update.model is not None:
@@ -214,9 +266,9 @@ def _snapshot_post_image(
     if update.description is not None:
         snap["description"] = updated_data.get("description")
     if update.temperature is not None:
-        snap["temperature"] = gen_cfg.get("temperature")
+        snap["temperature"] = updated_data.get("temperature")
     if update.max_output_tokens is not None:
-        snap["max_output_tokens"] = gen_cfg.get("max_output_tokens")
+        snap["max_output_tokens"] = updated_data.get("max_output_tokens")
 
     return snap
 
@@ -491,8 +543,17 @@ async def update_agent_config(
             variant_name=update.variant_name,
             experiment_id=update.experiment_id,
             notes=update.notes,
-            current_gen_config=current_config.get("generate_content_config", {}),
         )
+
+        # Nullable identity fields use model_fields_set so a caller can
+        # explicitly clear them with ``{"name": null}`` — distinguishing
+        # "client omitted" from "client sent null". Mirrors the overlay
+        # endpoint's ``model_dump(exclude_unset=True)`` convention.
+        fields_set = update.model_fields_set
+        if "name" in fields_set:
+            updates["name"] = update.name
+        if "title" in fields_set:
+            updates["title"] = update.title
 
         # Snapshot pre-image for audit diff (Sprint 6 AC-6.9)
         pre_image = _snapshot_pre_image(current_config, update)
@@ -580,3 +641,347 @@ async def get_agent_config_history(
         raise HTTPException(
             status_code=500, detail="Failed to retrieve config history"
         ) from e
+
+
+# ---------------------------------------------------------------------------
+# Per-account agent-config CRUD (Phase 3 — AH-PRD-02 §6 / AC-11)
+# ---------------------------------------------------------------------------
+
+account_router = APIRouter(
+    prefix="/api/v1/accounts/{account_id}/agent-configs",
+    tags=["agent-configs"],
+)
+
+
+def _parse_based_on_version(version_str: str | None) -> int:
+    """Parse major version component from a semver string, default 1 on failure."""
+    if not version_str:
+        return 1
+    m = _SEMVER_MAJOR_RE.match(str(version_str))
+    if m:
+        try:
+            return int(m.group(1))
+        except ValueError:
+            pass
+    return 1
+
+
+def _merge_from_data(
+    config_id: str,
+    global_data: dict | None,
+    overlay_data: dict | None,
+) -> MergedAgentConfig | None:
+    """Shallow-merge pre-fetched global + overlay dicts into a MergedAgentConfig.
+
+    Returns None when neither document exists.  Called by both ``_load_merged``
+    (single-config fetch) and the list endpoint (bulk fetch, avoids N+1 reads).
+    """
+    if global_data is None and overlay_data is None:
+        return None
+
+    if global_data is not None and overlay_data is not None:
+        merged = {**global_data, **overlay_data}
+        status = "customized"
+        bov = _parse_based_on_version(overlay_data.get("based_on_version"))
+    elif global_data is not None:
+        merged = dict(global_data)
+        status = "default"
+        bov = None
+    else:
+        # overlay_data is not None, global_data is None → custom_agent
+        merged = dict(overlay_data)  # type: ignore[arg-type]
+        status = "custom_agent"
+        bov = _parse_based_on_version(overlay_data.get("based_on_version"))  # type: ignore[union-attr]
+
+    # Strip storage-internal fields that aren't part of the API contract.
+    # MergedAgentConfig uses extra="forbid" (AH-40), so a leftover nested
+    # generate_content_config would fail validation here — that's the
+    # intent, signalling a backfill miss.
+    for storage_field in _STORAGE_INTERNAL_FIELDS:
+        merged.pop(storage_field, None)
+    merged.pop("based_on_version", None)
+    merged.pop("customization_status", None)
+    merged["config_id"] = config_id
+    merged["customization_status"] = status
+    merged["based_on_version"] = bov
+
+    return MergedAgentConfig.model_validate(merged)
+
+
+def _load_merged(
+    db: firestore.Client,
+    account_id: str,
+    config_id: str,
+) -> MergedAgentConfig | None:
+    """Read global + per-account overlay docs from Firestore, then merge.
+
+    Returns None when neither document exists (caller raises 404).
+    Mirrors the merge semantics of ``app/adk/agents/agent_factory/config_loader.py``
+    without taking a runtime dependency on the ``app/`` package.
+    """
+    global_doc = db.collection("agent_configs").document(config_id).get()
+    overlay_doc = (
+        db.collection("accounts")
+        .document(account_id)
+        .collection("agent_configs")
+        .document(config_id)
+        .get()
+    )
+
+    return _merge_from_data(
+        config_id,
+        global_doc.to_dict() if global_doc.exists else None,
+        overlay_doc.to_dict() if overlay_doc.exists else None,
+    )
+
+
+@account_router.get("/", response_model=list[MergedAgentConfig])
+async def list_account_agent_configs(
+    account_id: str,
+    visible_in_frontend: bool = Query(False, description="Filter to visible_in_frontend=true"),
+    user: UserContext = Depends(get_current_user_context),
+    db: firestore.Client = Depends(get_firestore),
+) -> list[MergedAgentConfig]:
+    """List merged agent configs visible to an account.
+
+    Returns globals where ``automatically_available=true`` UNION any
+    per-account custom/overlay docs.  Optionally further restricted to
+    ``visible_in_frontend=true`` via query param.
+
+    Reads are allowed for any account member; writes require admin role.
+    """
+    if not user.has_account_access(account_id):
+        raise HTTPException(status_code=403, detail="Access denied to this account")
+
+    try:
+        global_docs = {doc.id: doc.to_dict() for doc in db.collection("agent_configs").stream()}
+        account_docs = {
+            doc.id: doc.to_dict()
+            for doc in db.collection("accounts")
+            .document(account_id)
+            .collection("agent_configs")
+            .stream()
+        }
+
+        config_ids = set(account_docs.keys())
+        for cid, data in global_docs.items():
+            if data and data.get("automatically_available", True):
+                config_ids.add(cid)
+
+        # Build merges inline from already-fetched dicts — no per-config Firestore reads.
+        # Skip docs that fail validation (e.g. a stray schema-placeholder doc lacking
+        # required fields) so one malformed row doesn't take the whole list down.
+        results: list[MergedAgentConfig] = []
+        for cid in sorted(config_ids):
+            try:
+                merged = _merge_from_data(cid, global_docs.get(cid), account_docs.get(cid))
+            except ValidationError as exc:
+                logger.warning(
+                    f"Skipping malformed agent config '{cid}' for account "
+                    f"{account_id}: {exc}"
+                )
+                continue
+            if merged is None:
+                continue
+            if visible_in_frontend and not merged.visible_in_frontend:
+                continue
+            results.append(merged)
+
+        return results
+
+    except Exception as e:
+        logger.error(f"Failed to list agent configs for account {account_id}: {e!s}")
+        raise HTTPException(status_code=500, detail="Failed to list agent configurations") from e
+
+
+@account_router.get("/{config_id}", response_model=MergedAgentConfig)
+async def get_account_agent_config(
+    account_id: str,
+    config_id: str,
+    user: UserContext = Depends(get_current_user_context),
+    db: firestore.Client = Depends(get_firestore),
+) -> MergedAgentConfig:
+    """Fetch the merged config for a specific agent in the context of an account."""
+    if not user.has_account_access(account_id):
+        raise HTTPException(status_code=403, detail="Access denied to this account")
+
+    try:
+        merged = _load_merged(db, account_id, config_id)
+    except Exception as e:
+        logger.error(f"Failed to load agent config {config_id} for account {account_id}: {e!s}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve agent configuration") from e
+
+    if merged is None:
+        raise HTTPException(status_code=404, detail="Agent configuration not found")
+    return merged
+
+
+@account_router.post("/", response_model=MergedAgentConfig, status_code=201)
+async def create_account_agent_config(
+    account_id: str,
+    body: AgentConfigCreate,
+    user: UserContext = Depends(get_current_user_context),
+    db: firestore.Client = Depends(get_firestore),
+) -> MergedAgentConfig:
+    """Create a custom agent scoped to this account.
+
+    The server generates a ``custom_{uuid8}`` config_id.  Requires admin role.
+    """
+    if not user.has_account_access(account_id, required_roles=["admin"]):
+        raise HTTPException(
+            status_code=403,
+            detail="Admin role required to create agent configurations",
+        )
+
+    custom_id = f"custom_{uuid4().hex[:8]}"
+    now = datetime.now(timezone.utc).isoformat()
+    doc_data: dict[str, Any] = {
+        "title": body.title,
+        "instruction": body.instruction,
+        "model": body.model,
+        "customization_status": "custom_agent",
+        "created_at": now,
+        "updated_at": now,
+        "created_by": user.email,
+    }
+    if body.name is not None:
+        doc_data["name"] = body.name
+    if body.description is not None:
+        doc_data["description"] = body.description
+    if body.temperature is not None:
+        doc_data["temperature"] = body.temperature
+    if body.skill_ids:
+        doc_data["skill_ids"] = body.skill_ids
+    if body.sandbox_code_executor_enabled:
+        doc_data["sandbox_code_executor_enabled"] = body.sandbox_code_executor_enabled
+
+    try:
+        (
+            db.collection("accounts")
+            .document(account_id)
+            .collection("agent_configs")
+            .document(custom_id)
+            .set(doc_data)
+        )
+        logger.info(f"User {user.email} created custom agent {custom_id} for account {account_id}")
+    except Exception as e:
+        logger.error(f"Failed to create custom agent for account {account_id}: {e!s}")
+        raise HTTPException(status_code=500, detail="Failed to create agent configuration") from e
+
+    merged = _load_merged(db, account_id, custom_id)
+    if merged is None:
+        raise HTTPException(status_code=500, detail="Created document not readable")
+    return merged
+
+
+@account_router.put("/{config_id}", response_model=MergedAgentConfig)
+async def upsert_account_agent_config_overlay(
+    account_id: str,
+    config_id: str,
+    body: AgentConfigOverlayUpdate,
+    user: UserContext = Depends(get_current_user_context),
+    db: firestore.Client = Depends(get_firestore),
+) -> MergedAgentConfig:
+    """Upsert a per-account overlay for an existing global agent config.
+
+    Stores only the fields present in the body (sparse overlay).
+    Records ``based_on_version`` from the global doc's ``metadata.version``.
+    Requires admin role.
+    """
+    if not user.has_account_access(account_id, required_roles=["admin"]):
+        raise HTTPException(
+            status_code=403,
+            detail="Admin role required to modify agent configurations",
+        )
+
+    try:
+        global_doc = db.collection("agent_configs").document(config_id).get()
+        global_data = global_doc.to_dict() if global_doc.exists else None
+
+        # Resolve based_on_version from global doc metadata
+        bov: int = 1
+        if global_data:
+            metadata = global_data.get("metadata") or {}
+            bov = _parse_based_on_version(metadata.get("version"))
+
+        overlay_data: dict[str, Any] = {
+            "based_on_version": bov,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_by": user.email,
+        }
+        body_dict = body.model_dump(exclude_unset=True)
+        overlay_data.update(body_dict)
+
+        (
+            db.collection("accounts")
+            .document(account_id)
+            .collection("agent_configs")
+            .document(config_id)
+            .set(overlay_data, merge=True)
+        )
+        logger.info(
+            f"User {user.email} upserted overlay for {config_id} on account {account_id}"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Failed to upsert overlay for {config_id} / account {account_id}: {e!s}"
+        )
+        raise HTTPException(status_code=500, detail="Failed to update agent configuration") from e
+
+    merged = _load_merged(db, account_id, config_id)
+    if merged is None:
+        raise HTTPException(status_code=404, detail="Agent configuration not found")
+    return merged
+
+
+@account_router.delete("/{config_id}", status_code=204)
+async def delete_account_agent_config(
+    account_id: str,
+    config_id: str,
+    user: UserContext = Depends(get_current_user_context),
+    db: firestore.Client = Depends(get_firestore),
+) -> None:
+    """Delete a per-account agent config.
+
+    For ``custom_*`` config IDs the custom document is deleted entirely.
+    For non-custom config IDs the overlay is deleted (revert to global default).
+    Requires admin role.
+    """
+    if not user.has_account_access(account_id, required_roles=["admin"]):
+        raise HTTPException(
+            status_code=403,
+            detail="Admin role required to delete agent configurations",
+        )
+
+    try:
+        overlay_ref = (
+            db.collection("accounts")
+            .document(account_id)
+            .collection("agent_configs")
+            .document(config_id)
+        )
+        overlay_doc = overlay_ref.get()
+
+        if config_id.startswith("custom_"):
+            if not overlay_doc.exists:
+                raise HTTPException(status_code=404, detail="Custom agent configuration not found")
+            overlay_ref.delete()
+            logger.info(
+                f"User {user.email} deleted custom agent {config_id} from account {account_id}"
+            )
+        else:
+            # Revert to global: delete the overlay doc only
+            if overlay_doc.exists:
+                overlay_ref.delete()
+            logger.info(
+                f"User {user.email} reverted overlay for {config_id} on account {account_id}"
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Failed to delete overlay for {config_id} / account {account_id}: {e!s}"
+        )
+        raise HTTPException(status_code=500, detail="Failed to delete agent configuration") from e

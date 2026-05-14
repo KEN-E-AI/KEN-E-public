@@ -288,7 +288,7 @@ function AnalysisSection() {
           <div className="mb-2">
             <span className="text-xs text-muted-foreground tracking-wide uppercase">Conversions</span>
             {' '}
-            <span className="text-[11px] text-muted-foreground/70">· Account Opens</span>
+            <span className="text-[0.6875rem] text-muted-foreground/70">· Account Opens</span>
           </div>
           <p className="text-3xl mb-1" style={{ fontFamily: 'var(--font-display)' }}>
             {currentData.conversions.toLocaleString()}

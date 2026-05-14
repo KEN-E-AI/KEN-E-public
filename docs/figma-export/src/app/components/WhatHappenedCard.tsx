@@ -410,7 +410,7 @@ function FunnelRow({
               className="relative flex items-center justify-center"
               style={{
                 width: `${topWidthPercent}%`,
-                minHeight: '40px',
+                minHeight: '2.5rem',
                 clipPath: `polygon(${((100 - topWidthPercent) / 2)}% 0%, ${100 - ((100 - topWidthPercent) / 2)}% 0%, ${100 - ((100 - bottomWidthPercent) / 2)}% 100%, ${((100 - bottomWidthPercent) / 2)}% 100%)`,
                 backgroundColor: step.color,
                 opacity: 0.85,
@@ -625,7 +625,7 @@ function ChannelItem({
     <div className="p-3 rounded-[var(--radius-sm)] border border-[var(--color-border-default)] bg-[var(--color-bg-secondary)]">
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-xs">{channel.name || <span className="italic text-muted-foreground">Unnamed</span>}</span>
-        <Badge variant="outline" className="text-[11px]">
+        <Badge variant="outline" className="text-[0.6875rem]">
           {formatCurrency(channel.spend)}
         </Badge>
       </div>
@@ -796,7 +796,7 @@ function RelatedMetricsSection({
                   />
                   <div className="min-w-0">
                     <span className="text-xs">{metric.name}</span>
-                    <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{metric.description}</p>
+                    <p className="text-[0.625rem] text-muted-foreground mt-0.5 line-clamp-2">{metric.description}</p>
                   </div>
                 </label>
               );
@@ -842,17 +842,17 @@ function RelatedMetricCard({ metric, month, year, compareMode }: { metric: Relat
 
       {/* Description */}
       <div className="mt-2 mb-1 py-2 px-2.5 rounded-[var(--radius-sm)] bg-[var(--color-bg-secondary)] border border-[var(--color-border-subtle)]">
-        <p className="text-[10px] text-muted-foreground leading-relaxed">{metric.description}</p>
+        <p className="text-[0.625rem] text-muted-foreground leading-relaxed">{metric.description}</p>
       </div>
 
       {/* Insight */}
       <div className="flex-1 mb-3 py-2 px-2.5 rounded-[var(--radius-sm)] bg-violet-50 border border-violet-200">
-        <p className="text-[10px] text-muted-foreground leading-relaxed"><span className="text-violet-600">Insight:</span> {metric.insight}</p>
+        <p className="text-[0.625rem] text-muted-foreground leading-relaxed"><span className="text-violet-600">Insight:</span> {metric.insight}</p>
       </div>
 
       {/* Chart */}
-      <div className="h-[130px] mt-auto">
-        <ResponsiveContainer width="100%" height={130}>
+      <div className="h-[8.125rem] mt-auto">
+        <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data.history} margin={{ top: 16, right: 4, bottom: 0, left: -24 }}>
             <CartesianGrid key="grid" strokeDasharray="3 3" stroke="var(--color-border-default)" vertical={false} />
             <XAxis

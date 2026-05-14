@@ -45,5 +45,21 @@ RESOURCES["performance_profiles"] = MigrateConfig(
 )
 
 # DM-PRD-03: (field migration — no entry here; uses migrate_shape_d_split.py)
-# DM-PRD-04 will add: monitoring_topics, alert_configurations
+
+# DM-PRD-04 (Shape B-like Collapse — DM-22)
+RESOURCES["alert_configurations"] = MigrateConfig(
+    old_prefix="",
+    new_subcollection="alert_configurations",
+    has_versions=False,
+    source_is_single_collection=True,
+    destination_doc_id="default",
+)
+RESOURCES["monitoring_topics"] = MigrateConfig(
+    old_prefix="",
+    new_subcollection="monitoring_topics",
+    has_versions=False,
+    source_is_single_collection=True,
+    destination_doc_id="default",
+)
+
 # DM-PRD-07 will add: members_migration (is_field_migration=True)

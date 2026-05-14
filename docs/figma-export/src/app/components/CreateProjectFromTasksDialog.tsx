@@ -41,7 +41,7 @@ export function CreateProjectFromTasksDialog({ taskCount, onClose, onConfirm }: 
 
         <div className="p-4 space-y-4">
           <div className="space-y-1.5">
-            <label className="text-[10px] text-muted-foreground uppercase tracking-wider">Project title</label>
+            <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">Project title</label>
             <input
               type="text"
               autoFocus
@@ -53,7 +53,7 @@ export function CreateProjectFromTasksDialog({ taskCount, onClose, onConfirm }: 
             />
           </div>
           <div className="space-y-1.5">
-            <label className="text-[10px] text-muted-foreground uppercase tracking-wider">Goal (optional)</label>
+            <label className="text-[0.625rem] text-muted-foreground uppercase tracking-wider">Goal (optional)</label>
             <textarea
               value={goal}
               onChange={e => setGoal(e.target.value)}
@@ -62,7 +62,7 @@ export function CreateProjectFromTasksDialog({ taskCount, onClose, onConfirm }: 
               className="w-full px-3 py-2 text-sm border border-[var(--color-border-default)] rounded-[var(--radius-md)] bg-[var(--color-bg-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-violet-400)] resize-none"
             />
           </div>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[0.6875rem] text-muted-foreground">
             Tasks move into the new project as unlinked nodes. You can wire dependencies from the DAG editor.
           </p>
         </div>

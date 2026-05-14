@@ -375,7 +375,7 @@ async def create_account_internal(
             # Create Firestore collection for strategy documents
             # Note: Firestore collection is recoverable - log but continue on failure
             try:
-                collection_name = f"strategy_docs_{account_id}"
+                collection_name = f"accounts/{account_id}/strategy_docs"
                 initial_doc_data = {
                     "account_id": account_id,
                     "created_at": datetime.utcnow().isoformat(),

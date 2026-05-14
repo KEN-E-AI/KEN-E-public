@@ -276,17 +276,24 @@ class TestConfigLoader:
     def test_overlay_wins_per_field_not_deep_merged(
         self, mock_client: MagicMock, mock_auth: MagicMock
     ) -> None:
+        """AH-40: shallow-merge semantics on flat ``temperature`` / ``max_output_tokens``.
+
+        The overlay's flat fields replace the global's per-field, with no
+        deep-merge into a nested structure.
+        """
         from app.adk.agents.agent_factory.config_loader import load_agent_config
 
         global_data = {
             "instruction": "Global.",
             "model": "gemini-2.5-pro",
-            "generate_content_config": {"temperature": 0.3, "max_output_tokens": 2500},
+            "temperature": 0.3,
+            "max_output_tokens": 2500,
         }
         overlay_data = {
             "instruction": "Overlay.",
             "model": "gemini-2.5-flash",
-            "generate_content_config": {"temperature": 0.9},
+            "temperature": 0.9,
+            # Overlay does NOT set max_output_tokens; global value flows through.
             "based_on_version": 1,
         }
         mock_auth.return_value = (MagicMock(), None)
@@ -296,10 +303,143 @@ class TestConfigLoader:
 
         result = load_agent_config("test_agent", account_id="acc_123")
 
-        extra = result.__pydantic_extra__ or {}
-        gcc = extra.get("generate_content_config", {})
-        assert gcc == {"temperature": 0.9}
-        assert "max_output_tokens" not in gcc
+        assert result.temperature == 0.9
+        assert result.max_output_tokens == 2500
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_extra_forbid_rejects_legacy_nested_block(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """AH-40 AC-6: ``MergedAgentConfig`` (factory) rejects a stray
+        ``generate_content_config`` so backfill misses fail loud here too."""
+        from app.adk.agents.agent_factory.config_loader import (
+            ConfigValidationError,
+            load_agent_config,
+        )
+
+        legacy_doc = {
+            "instruction": "Legacy nested doc.",
+            "model": "gemini-2.5-pro",
+            "generate_content_config": {"temperature": 0.3},
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=legacy_doc)
+
+        with pytest.raises(ConfigValidationError):
+            load_agent_config("test_agent")
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_storage_internal_fields_stripped_before_validate(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """``name`` / ``title`` / ``created_at`` / ``updated_at`` / ``created_by``
+        live on storage docs but not on the factory's ``MergedAgentConfig``
+        (extra="forbid"). They must be stripped before validation."""
+        from app.adk.agents.agent_factory.config_loader import load_agent_config
+
+        global_data = {
+            "name": "Dave",
+            "title": "Business Researcher",
+            "instruction": "Hello.",
+            "model": "gemini-2.5-pro",
+            "temperature": 0.5,
+            "max_output_tokens": 4096,
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z",
+            "created_by": "seed@ken-e.ai",
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=global_data)
+
+        result = load_agent_config("test_agent")
+
+        assert result.temperature == 0.5
+        assert result.max_output_tokens == 4096
+        assert not hasattr(result, "name")
+        assert not hasattr(result, "title")
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_overlay_updated_by_field_stripped(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """Every overlay write via the API persists ``updated_by: user.email``
+        (routers/agent_configs.py upsert path). The factory must strip it
+        before validation or any overlay-merged config blows up with
+        ``extra="forbid"``."""
+        from app.adk.agents.agent_factory.config_loader import load_agent_config
+
+        global_data = {
+            "instruction": "Global instruction.",
+            "model": "gemini-2.5-pro",
+        }
+        overlay_data = {
+            "instruction": "Overlay instruction with a tweak.",
+            "based_on_version": 1,
+            "updated_at": "2026-05-13T18:00:00+00:00",
+            "updated_by": "admin@ken-e.ai",
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(
+            global_data=global_data, overlay_data=overlay_data
+        )
+
+        result = load_agent_config("test_agent", account_id="acc_123")
+
+        assert result.instruction == "Overlay instruction with a tweak."
+        assert result.customization_status == "customized"
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_pre_ah_prd_02_legacy_fields_stripped(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """``canonical_id`` and ``legacy_agent_name`` are pre-AH-PRD-02 seed
+        metadata on a handful of agent_configs docs (business_researcher,
+        business_formatter, competitive_analyst, marketing_strategist). The
+        factory must strip them; otherwise loading any of those agents fails
+        with ``extra="forbid"``."""
+        from app.adk.agents.agent_factory.config_loader import load_agent_config
+
+        global_data = {
+            "instruction": "Researches business strategy.",
+            "model": "gemini-2.5-pro",
+            "canonical_id": "business_strategy",
+            "legacy_agent_name": "Business Researcher",
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=global_data)
+
+        result = load_agent_config("business_researcher")
+
+        assert result.model == "gemini-2.5-pro"
+        assert not hasattr(result, "canonical_id")
+        assert not hasattr(result, "legacy_agent_name")
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_mer_e_deployment_status_field_stripped(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """MER-E (sister repo) writes ``deployment_status`` onto shared
+        agent_configs docs. The factory doesn't consume it but must not
+        reject docs that carry it."""
+        from app.adk.agents.agent_factory.config_loader import load_agent_config
+
+        global_data = {
+            "instruction": "Hello.",
+            "model": "gemini-2.5-pro",
+            "temperature": 0.5,
+            "deployment_status": None,
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=global_data)
+
+        result = load_agent_config("test_agent")
+
+        assert result.temperature == 0.5
 
     @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
     @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
@@ -511,6 +651,47 @@ class TestConfigLoader:
         assert result.model == "gemini-2.5-flash"
         assert result.customization_status == "customized"
         assert result.based_on_version == 7
+
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_phase3_flags_default_to_true_when_absent(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        from app.adk.agents.agent_factory.config_loader import load_agent_config
+
+        minimal_doc = {"instruction": "Hello.", "model": "gemini-2.5-pro"}
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=minimal_doc)
+
+        result = load_agent_config("test_agent")
+
+        assert result.available_to_copy is True
+        assert result.automatically_available is True
+        assert result.visible_in_frontend is True
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_phase3_flags_round_trip_false_values(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        from app.adk.agents.agent_factory.config_loader import load_agent_config
+
+        doc_with_flags = {
+            "instruction": "Hello.",
+            "model": "gemini-2.5-pro",
+            "available_to_copy": False,
+            "automatically_available": False,
+            "visible_in_frontend": False,
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=doc_with_flags)
+
+        result = load_agent_config("test_agent")
+
+        assert result.available_to_copy is False
+        assert result.automatically_available is False
+        assert result.visible_in_frontend is False
 
 
 if __name__ == "__main__":

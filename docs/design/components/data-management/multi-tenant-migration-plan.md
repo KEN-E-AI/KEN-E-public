@@ -100,6 +100,36 @@ The `organizations/{org_id}` doc currently holds nested `accounts.{account_id}.a
 
 **Implementation decision for funnel/KPI tree:** profile a realistic account's current doc size during Phase 2. If p99 stays well under 500 KiB, keep the tree as a field on `accounts/{account_id}`. If it approaches 500 KiB, split `funnels` into a `funnels/` subcollection. Either way, the multi-account-in-one-doc pattern is removed.
 
+### Funnel storage style decision
+
+**Chosen style: Style A — map field on `accounts/{account_id}`** (the simpler option).
+
+**Rubric applied:** `p99 per-account funnel-tree byte footprint < 500 KiB → Style A; otherwise Style B` (per DM-PRD-03 §5 Phase 2.1).
+
+**Measured numbers from DM-35 dev run** (profiler script `api/scripts/profile_org_doc_sizes.py`, commit `474ccd19`, run against the dev Firestore project):
+
+| Metric | Value |
+|---|---|
+| `total_orgs` | 1 (dev fixture org) |
+| `total_accounts` | 0 |
+| `total_size_p50` | trivially small (no funnel data) |
+| `total_size_p95` | trivially small |
+| `total_size_p99` | trivially small |
+| `per_account_size_p50` | 0 |
+| `per_account_size_p95` | 0 |
+| `per_account_size_p99` | 0 |
+| `orgs_over_500_kib` | 0 |
+| `orgs_over_750_kib` | 0 |
+| `accounts_over_500_kib` | 0 |
+| `accounts_over_750_kib` | 0 |
+| `byte_size_methodology` | `len(json.dumps(doc, default=str).encode("utf-8"))` (overestimates by ~10–20%) |
+
+**Rationale:** The p99 per-account value (0 bytes) satisfies the `< 500 KiB` threshold vacuously — the dev environment has no populated Shape D account-funnel-trees. Style A is the PRD-stated simpler default and aligns with how the existing `firestore.py` methods at L441–L1469 already model the data (nested map paths on the org doc), minimising the DM-42 refactor surface.
+
+**Thin-signal caveat:** the measurement is structurally thin (vacuously satisfied rather than positively confirmed). Style B remains reachable as a follow-up migration if post-launch production measurement reveals accounts approaching the 500 KiB band. The escalation path: re-run `profile_org_doc_sizes.py` against staging/prod; if any account's `per_account_size_p99 >= 400 KiB`, open a follow-up issue to evaluate Style B before the 1 MiB doc-ceiling risk materialises.
+
+**Decision recorded in:** DM-38 resolution comment (cite for DM-41/DM-42 contracts) and `api/src/kene_api/firestore.py` comment block above `# KPI Operations`.
+
 ### 3.4 Code-only changes that fall out of the shape migration
 
 - **`api/src/kene_api/routers/accounts.py:968-997` — account-deletion sweep:** replace the explicit `collection_name = f"strategy_docs_{account_id}"` block with a single `firestore.recursive_delete(db.collection("accounts").document(account_id))` call. Remove the enumerated list of per-account collections entirely.

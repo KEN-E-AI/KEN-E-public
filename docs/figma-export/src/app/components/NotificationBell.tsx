@@ -106,7 +106,7 @@ export function NotificationBell({
         <Bell className="size-5" />
         {unreadCount > 0 && (
           <span 
-            className="absolute -top-1 -right-1 size-5 rounded-full bg-[#F97066] text-[var(--color-text-inverse)] text-[10px] font-bold flex items-center justify-center"
+            className="absolute -top-1 -right-1 size-5 rounded-full bg-[#F97066] text-[var(--color-text-inverse)] text-[0.625rem] font-bold flex items-center justify-center"
             style={{
               boxShadow: '0 0 6px rgba(249, 112, 102, 0.5)',
             }}
@@ -185,15 +185,15 @@ export function NotificationBell({
                             {notification.title}
                           </p>
                           {notification.actionRequired && (
-                            <span className="shrink-0 px-2 py-0.5 rounded-[var(--radius-pill)] bg-[var(--color-red-500)] text-[var(--color-text-inverse)] text-[10px] font-bold uppercase">
+                            <span className="shrink-0 px-2 py-0.5 rounded-[var(--radius-pill)] bg-[var(--color-red-500)] text-[var(--color-text-inverse)] text-[0.625rem] font-bold uppercase">
                               Action
                             </span>
                           )}
                         </div>
-                        <p className="text-[11px] text-[var(--color-text-secondary)] mb-1">
+                        <p className="text-[0.6875rem] text-[var(--color-text-secondary)] mb-1">
                           {notification.description}
                         </p>
-                        <p className="text-[10px] text-[var(--color-text-tertiary)]">
+                        <p className="text-[0.625rem] text-[var(--color-text-tertiary)]">
                           {formatTimestamp(notification.timestamp)}
                         </p>
 

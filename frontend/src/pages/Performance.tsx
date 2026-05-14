@@ -560,7 +560,7 @@ const Performance = () => {
                   <div className="flex items-center gap-2">
                     <Calendar className="h-4 w-4 text-[var(--color-text-tertiary)]" />
                     <Select defaultValue="jan-2025">
-                      <SelectTrigger className="w-48 min-w-[200px]">
+                      <SelectTrigger className="w-48 min-w-[12.5rem]">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -579,7 +579,7 @@ const Performance = () => {
                   <div className="flex items-center gap-2 text-sm text-[var(--color-text-tertiary)]">
                     <span>vs</span>
                     <Select defaultValue="previous-period">
-                      <SelectTrigger className="w-40 min-w-[160px]">
+                      <SelectTrigger className="w-40 min-w-[10rem]">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>

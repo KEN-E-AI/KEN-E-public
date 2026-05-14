@@ -23,7 +23,7 @@ const Card = React.forwardRef<
       ref={ref}
       data-slot="card"
       className={cn(
-        "bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)] flex flex-col gap-6 rounded-[var(--radius-xl)] border-2 border-[var(--color-border-default)] transition-all shadow-[var(--shadow-md)] hover:shadow-[var(--shadow-lg)] hover:-translate-y-1 hover:border-[var(--color-violet-300)]",
+        "bg-[var(--color-bg-elevated)] text-[var(--color-text-primary)] flex flex-col gap-6 rounded-[var(--radius-xl)] border-2 border-[var(--color-border-default)] transition-all shadow-md hover:shadow-lg hover:-translate-y-1 hover:border-[var(--color-violet-300)]",
         className,
       )}
       style={{

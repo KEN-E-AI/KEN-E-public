@@ -17,7 +17,7 @@ See Sprint 6 Design Decisions in Notion for rationale:
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -62,21 +62,35 @@ class AgentConfigMetadata(BaseModel):
     notes: str = Field(default="", description="Change notes or description")
 
 
-class GenerateContentConfig(BaseModel):
-    """Generation configuration for the agent."""
-
-    temperature: float = Field(default=0.3, ge=0.0, le=1.0)
-    max_output_tokens: int = Field(default=2500, ge=100, le=65535)
-
-
 class AgentConfig(BaseModel):
-    """Complete agent configuration as stored in Firestore."""
+    """Complete agent configuration as stored in Firestore.
 
-    name: str = Field(..., description="Agent name")
+    `temperature` and `max_output_tokens` are flat top-level fields. The
+    legacy nested `generate_content_config` wrapper was removed in AH-40.
+    The nested ADK SDK shape is reconstructed only at the construction
+    boundary (`agent_factory/builder.py` and `strategy_agent/config_loader.py`)
+    when a `google.genai.types.GenerateContentConfig` is required.
+
+    Identity is split into three fields:
+      * ``config_id`` — the Firestore document ID. Immutable; the routing
+        key used by the agent factory (passed to ``LlmAgent.name``).
+      * ``title`` — user-editable role description (e.g. "Business Researcher").
+      * ``name`` — user-editable human name (e.g. "Dave"). Optional.
+    """
+
+    name: str | None = Field(
+        None, max_length=100, description="Human name (e.g. 'Dave'). Optional."
+    )
+    title: str | None = Field(
+        None,
+        max_length=100,
+        description="Role description (e.g. 'Business Researcher').",
+    )
     model: str = Field(..., description="Model identifier")
     description: str = Field(..., description="Agent description")
     instruction: str = Field(..., description="Agent instruction/prompt")
-    generate_content_config: GenerateContentConfig
+    temperature: float = Field(default=0.3, ge=0.0, le=1.0)
+    max_output_tokens: int = Field(default=2500, ge=100, le=65535)
     metadata: AgentConfigMetadata
 
 
@@ -85,6 +99,18 @@ class AgentConfigUpdate(BaseModel):
 
     All fields except ``updated_by`` are optional to allow partial updates.
     """
+
+    name: str | None = Field(
+        None,
+        max_length=100,
+        description="Human name (e.g. 'Dave'). Optional.",
+    )
+
+    title: str | None = Field(
+        None,
+        max_length=100,
+        description="Role description (e.g. 'Business Researcher').",
+    )
 
     instruction: str | None = Field(
         None,
@@ -232,11 +258,143 @@ class ConfigAuditEntry(BaseModel):
     )
 
 
+class MergedAgentConfig(BaseModel):
+    """Per-account merged agent config response.
+
+    Returned by GET /api/v1/accounts/{account_id}/agent-configs/[{config_id}].
+    Merges global ``agent_configs/{id}`` with any per-account overlay at
+    ``accounts/{account_id}/agent_configs/{id}``.
+
+    Uses ``extra="forbid"`` (AH-40) so any storage divergence — including the
+    legacy nested ``generate_content_config`` wrapper — fails loud at validation
+    time rather than silently dropping data. ``_merge_from_data`` is responsible
+    for stripping storage-internal fields (see ``_STORAGE_INTERNAL_FIELDS`` in
+    ``routers/agent_configs.py``) before validation.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    config_id: str = Field(..., description="Document ID of this agent config")
+    name: str | None = Field(
+        None,
+        max_length=100,
+        description="Human name (e.g. 'Dave'). Optional, user-editable.",
+    )
+    title: str | None = Field(
+        None,
+        max_length=100,
+        description="Role description (e.g. 'Business Researcher'). User-editable.",
+    )
+    instruction: str = Field(..., description="Agent instruction/prompt")
+    model: str = Field(..., description="Model identifier")
+
+    description: str | None = Field(None, description="Agent description")
+    temperature: float | None = Field(None, ge=0.0, le=1.0)
+    max_output_tokens: int | None = Field(None, ge=100, le=65535)
+    code_execution_enabled: bool = False
+    mcp_servers: list[str] = Field(default_factory=list)
+
+    skill_ids: list[str] = Field(default_factory=list)
+    sandbox_code_executor_enabled: bool = False
+    response_schema: dict | None = None
+
+    # Phase 3 flags (AH-18)
+    available_to_copy: bool = True
+    automatically_available: bool = True
+    visible_in_frontend: bool = True
+
+    # Discriminator populated by the merge logic
+    customization_status: str = Field(
+        default="default",
+        description='One of "default", "customized", "custom_agent"',
+    )
+    based_on_version: int | None = Field(
+        None,
+        description="Major version of the global config this overlay was forked from",
+    )
+
+
+class AgentConfigCreate(BaseModel):
+    """POST /api/v1/accounts/{account_id}/agent-configs/ request body.
+
+    Creates a custom agent scoped to this account.  The server generates a
+    ``custom_{uuid8}`` config_id; callers never set it.
+    """
+
+    title: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="Role description (e.g. 'Business Researcher'). Required.",
+    )
+    name: str | None = Field(
+        None,
+        max_length=100,
+        description="Human name (e.g. 'Dave'). Optional.",
+    )
+    instruction: str = Field(..., min_length=10, max_length=50000, description="Agent instruction/prompt")
+    model: str = Field(..., description="Model identifier")
+
+    description: str | None = Field(None, min_length=10, max_length=1000)
+    temperature: float | None = Field(None, ge=0.0, le=1.0)
+    skill_ids: list[Annotated[str, Field(max_length=50)]] = Field(default_factory=list, max_length=20)
+    sandbox_code_executor_enabled: bool = False
+
+    @field_validator("model")
+    @classmethod
+    def validate_model_exists(cls, v: str) -> str:
+        if v not in SUPPORTED_MODELS:
+            gemini_models = sorted(m for m in SUPPORTED_MODELS if m.startswith("gemini"))
+            openai_models = sorted(m for m in SUPPORTED_MODELS if not m.startswith("gemini"))
+            raise ValueError(
+                f"Model '{v}' is not supported.\n"
+                f"Supported Gemini models: {', '.join(gemini_models)}\n"
+                f"Supported OpenAI models: {', '.join(openai_models)}"
+            )
+        return v
+
+
+class AgentConfigOverlayUpdate(BaseModel):
+    """PUT /api/v1/accounts/{account_id}/agent-configs/{config_id} request body.
+
+    All fields are optional — only fields present in the request body are
+    written to the overlay document.  A body with zero fields writes an empty
+    overlay doc (``customization_status="customized"``).
+    """
+
+    name: str | None = Field(None, max_length=100)
+    title: str | None = Field(None, max_length=100)
+    instruction: str | None = Field(None, min_length=10, max_length=50000)
+    model: str | None = Field(None, max_length=100)
+    description: str | None = Field(None, min_length=10, max_length=1000)
+    temperature: float | None = Field(None, ge=0.0, le=1.0)
+    max_output_tokens: int | None = Field(None, ge=100, le=65535)
+    skill_ids: list[Annotated[str, Field(max_length=50)]] | None = Field(None, max_length=20)
+    sandbox_code_executor_enabled: bool | None = None
+
+    @field_validator("model")
+    @classmethod
+    def validate_model_exists(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if v not in SUPPORTED_MODELS:
+            gemini_models = sorted(m for m in SUPPORTED_MODELS if m.startswith("gemini"))
+            openai_models = sorted(m for m in SUPPORTED_MODELS if not m.startswith("gemini"))
+            raise ValueError(
+                f"Model '{v}' is not supported.\n"
+                f"Supported Gemini models: {', '.join(gemini_models)}\n"
+                f"Supported OpenAI models: {', '.join(openai_models)}"
+            )
+        return v
+
+
 __all__ = [
     "SUPPORTED_MODELS",
     "AgentConfig",
+    "AgentConfigCreate",
     "AgentConfigMetadata",
+    "AgentConfigOverlayUpdate",
     "AgentConfigUpdate",
     "ConfigAuditEntry",
-    "GenerateContentConfig",
+    "MergedAgentConfig",
 ]

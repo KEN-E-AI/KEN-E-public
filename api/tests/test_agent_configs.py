@@ -47,13 +47,15 @@ def mock_firestore_db():
 
 @pytest.fixture
 def sample_config_data():
-    """Sample agent configuration data."""
+    """Sample agent configuration data (flat shape per AH-40)."""
     return {
-        "name": "business_researcher",
+        "name": None,
+        "title": "Business Researcher",
         "model": "gemini-2.5-pro",
         "description": "Test description",
         "instruction": "Test instruction for the agent",
-        "generate_content_config": {"temperature": 0.3, "max_output_tokens": 2500},
+        "temperature": 0.3,
+        "max_output_tokens": 2500,
         "metadata": {
             "version": "v1.0",
             "created_at": "2025-01-01T00:00:00Z",
@@ -251,17 +253,23 @@ class TestBuildFirestoreUpdates:
         updates = _build_firestore_updates(model="gemini-2.5-pro")
         assert updates == {"model": "gemini-2.5-pro"}
 
-    def test_builds_gen_config_update(self):
-        """Should build update dict with generation config."""
-        current_gen_config = {"temperature": 0.3, "max_output_tokens": 2500}
-        updates = _build_firestore_updates(
-            temperature=0.5, current_gen_config=current_gen_config
-        )
+    def test_builds_temperature_update_flat(self):
+        """temperature and max_output_tokens are written flat (AH-40)."""
+        updates = _build_firestore_updates(temperature=0.5)
 
-        assert updates["generate_content_config"] == {
-            "temperature": 0.5,
-            "max_output_tokens": 2500,
-        }
+        assert updates == {"temperature": 0.5}
+        assert "generate_content_config" not in updates
+
+    def test_builds_max_output_tokens_update_flat(self):
+        updates = _build_firestore_updates(max_output_tokens=4096)
+
+        assert updates == {"max_output_tokens": 4096}
+
+    def test_builds_combined_temperature_and_tokens_update(self):
+        updates = _build_firestore_updates(temperature=0.5, max_output_tokens=4096)
+
+        assert updates == {"temperature": 0.5, "max_output_tokens": 4096}
+        assert "generate_content_config" not in updates
 
     def test_builds_metadata_updates(self):
         """Should build update dict with metadata fields."""
@@ -290,6 +298,99 @@ class TestBuildFirestoreUpdates:
         assert "instruction" not in updates
         assert "description" not in updates
         assert updates["model"] == "gemini-2.5-pro"
+
+    def test_name_and_title_not_in_helper_signature(self):
+        """Nullable identity fields are intentionally not handled by the
+        helper — see the helper's docstring. The handler writes them
+        inline using ``model_fields_set`` so callers can distinguish
+        ``{"name": null}`` from an omitted name."""
+        import inspect
+
+        params = inspect.signature(_build_firestore_updates).parameters
+        assert "name" not in params
+        assert "title" not in params
+
+
+class TestMergeFromDataStripsStorageInternals:
+    """AH-40: ``_merge_from_data`` strips storage-internal fields that aren't
+    part of the ``MergedAgentConfig`` API contract before validation, so that
+    ``extra="forbid"`` doesn't reject docs touched by sibling repos or
+    carrying audit metadata."""
+
+    def test_strips_metadata_and_audit_fields(self):
+        from src.kene_api.routers.agent_configs import _merge_from_data
+
+        global_data = {
+            "name": "ken_e_chatbot",
+            "instruction": "Hello.",
+            "model": "gemini-2.5-pro",
+            "temperature": 0.7,
+            "metadata": {"version": "v1.0.0", "variant_name": "x"},
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-02T00:00:00Z",
+            "created_by": "seed@ken-e.ai",
+        }
+
+        merged = _merge_from_data("ken_e_chatbot", global_data, None)
+
+        assert merged is not None
+        assert merged.temperature == 0.7
+
+    def test_strips_mer_e_deployment_status(self):
+        """MER-E (sister repo) writes ``deployment_status`` onto shared
+        agent_configs docs. The API doesn't surface it; the strip list
+        keeps the doc validating cleanly."""
+        from src.kene_api.routers.agent_configs import _merge_from_data
+
+        global_data = {
+            "instruction": "Hello.",
+            "model": "gemini-2.5-pro",
+            "temperature": 0.4,
+            "deployment_status": None,
+        }
+
+        merged = _merge_from_data("ken_e_chatbot", global_data, None)
+
+        assert merged is not None
+        assert merged.temperature == 0.4
+
+    def test_exposes_name_and_title_on_merged_response(self):
+        """Identity fields flow through to the MergedAgentConfig response so
+        the frontend can render name primary / title secondary."""
+        from src.kene_api.routers.agent_configs import _merge_from_data
+
+        global_data = {
+            "name": "Dave",
+            "title": "Business Researcher",
+            "instruction": "Hello.",
+            "model": "gemini-2.5-pro",
+        }
+
+        merged = _merge_from_data("business_researcher", global_data, None)
+
+        assert merged is not None
+        assert merged.name == "Dave"
+        assert merged.title == "Business Researcher"
+
+    def test_strips_pre_ah_prd_02_legacy_fields(self):
+        """``canonical_id`` and ``legacy_agent_name`` are pre-AH-PRD-02 seed
+        metadata that lives on a handful of docs (business_researcher,
+        business_formatter, competitive_analyst, marketing_strategist). They
+        must be stripped before validation or the list endpoint silently
+        drops those docs."""
+        from src.kene_api.routers.agent_configs import _merge_from_data
+
+        global_data = {
+            "instruction": "Researches business strategy.",
+            "model": "gemini-2.5-pro",
+            "canonical_id": "business_strategy",
+            "legacy_agent_name": "Business Researcher",
+        }
+
+        merged = _merge_from_data("business_researcher", global_data, None)
+
+        assert merged is not None
+        assert merged.config_id == "business_researcher"
 
 
 class TestErrorHandling:
@@ -336,6 +437,139 @@ class TestFirestoreDependency:
 
         # Should return exact same instance
         assert client1 is client2
+
+
+class TestAdminUpdateNullClearing:
+    """Admin PUT must let callers clear nullable identity fields via {"name": null}.
+
+    Without this, ``_build_firestore_updates(name=None, ...)`` would silently
+    skip the field — indistinguishable from an omitted name. The handler uses
+    ``model_fields_set`` to tell the two cases apart.
+    """
+
+    @pytest.mark.asyncio
+    async def test_name_explicitly_set_to_null_writes_null(
+        self, admin_user, sample_config_data
+    ):
+        from unittest.mock import AsyncMock
+
+        from src.kene_api.routers import agent_configs as router_mod
+
+        pre = dict(sample_config_data)
+        pre["name"] = "Dave"
+        pre["metadata"] = {**pre["metadata"], "version": "v1.0.0"}
+        post = dict(pre)
+        post["name"] = None
+        post["metadata"] = {**pre["metadata"], "version": "v1.0.1"}
+
+        mock_db = MagicMock()
+        doc_ref = MagicMock()
+        captured_updates: dict = {}
+
+        def _capture(updates):
+            captured_updates.update(updates)
+
+        doc_ref.update.side_effect = _capture
+        doc_ref.get.side_effect = [
+            MagicMock(exists=True, to_dict=lambda: pre),
+            MagicMock(exists=True, to_dict=lambda: post),
+        ]
+        mock_db.collection.return_value.document.return_value = doc_ref
+
+        with patch.object(router_mod, "log_config_action", AsyncMock(return_value="a")):
+            await router_mod.update_agent_config(
+                "business_researcher",
+                AgentConfigUpdate(name=None, updated_by="admin@ken-e.ai"),
+                user=admin_user,
+                db=mock_db,
+            )
+
+        assert "name" in captured_updates, (
+            "Explicit {'name': null} must produce a Firestore write, not a no-op"
+        )
+        assert captured_updates["name"] is None
+
+    @pytest.mark.asyncio
+    async def test_name_omitted_is_not_written(
+        self, admin_user, sample_config_data
+    ):
+        """An update body without ``name`` must NOT include name in the write."""
+        from unittest.mock import AsyncMock
+
+        from src.kene_api.routers import agent_configs as router_mod
+
+        pre = dict(sample_config_data)
+        pre["metadata"] = {**pre["metadata"], "version": "v1.0.0"}
+        post = {**pre, "instruction": "New instruction text after update"}
+        post["metadata"] = {**pre["metadata"], "version": "v1.0.1"}
+
+        mock_db = MagicMock()
+        doc_ref = MagicMock()
+        captured_updates: dict = {}
+
+        def _capture(updates):
+            captured_updates.update(updates)
+
+        doc_ref.update.side_effect = _capture
+        doc_ref.get.side_effect = [
+            MagicMock(exists=True, to_dict=lambda: pre),
+            MagicMock(exists=True, to_dict=lambda: post),
+        ]
+        mock_db.collection.return_value.document.return_value = doc_ref
+
+        with patch.object(router_mod, "log_config_action", AsyncMock(return_value="a")):
+            await router_mod.update_agent_config(
+                "business_researcher",
+                AgentConfigUpdate(
+                    instruction="New instruction text after update",
+                    updated_by="admin@ken-e.ai",
+                ),
+                user=admin_user,
+                db=mock_db,
+            )
+
+        assert "name" not in captured_updates
+        assert "title" not in captured_updates
+
+    @pytest.mark.asyncio
+    async def test_title_clear_audited_as_change(
+        self, admin_user, sample_config_data
+    ):
+        """The audit log must capture a null-clearing change to title."""
+        from unittest.mock import AsyncMock
+
+        from src.kene_api.routers import agent_configs as router_mod
+
+        pre = dict(sample_config_data)
+        pre["title"] = "Business Researcher"
+        pre["metadata"] = {**pre["metadata"], "version": "v1.0.0"}
+        post = dict(pre)
+        post["title"] = None
+        post["metadata"] = {**pre["metadata"], "version": "v1.0.1"}
+
+        mock_db = MagicMock()
+        doc_ref = MagicMock()
+        doc_ref.get.side_effect = [
+            MagicMock(exists=True, to_dict=lambda: pre),
+            MagicMock(exists=True, to_dict=lambda: post),
+        ]
+        mock_db.collection.return_value.document.return_value = doc_ref
+
+        spy_audit = AsyncMock(return_value="audit-1")
+        with patch.object(router_mod, "log_config_action", spy_audit):
+            await router_mod.update_agent_config(
+                "business_researcher",
+                AgentConfigUpdate(title=None, updated_by="admin@ken-e.ai"),
+                user=admin_user,
+                db=mock_db,
+            )
+
+        kw = spy_audit.await_args.kwargs
+        assert "title" in kw["fields_changed"]
+        assert kw["changes"]["title"] == {
+            "before": "Business Researcher",
+            "after": None,
+        }
 
 
 class TestAllowlistDerivedFromRegistry:
@@ -408,9 +642,9 @@ class TestAuditWriteOnUpdate:
 
 
 class TestWarningsOnRedeployRequiredFields:
-    """Changes to model / max_output_tokens / generate_content_config surface a
+    """Changes to model / temperature / max_output_tokens surface a
     redeploy-required warning (AC-6.25) because ADK Agent constructor bakes
-    these fields in at module-import time."""
+    these into the SDK GenerateContentConfig at module-import time."""
 
     @pytest.mark.asyncio
     async def test_model_change_surfaces_redeploy_warning(
@@ -453,10 +687,10 @@ class TestWarningsOnRedeployRequiredFields:
     async def test_temperature_change_surfaces_redeploy_warning(
         self, admin_user, sample_config_data
     ):
-        """Temperature is baked into generate_content_config at ADK Agent
-        construction time; ADK doesn't accept a callable for this field, so
-        changes cannot propagate via the InstructionProvider cache. Must
-        surface a redeploy-required warning (corrects a 1.1.4-3 design gap)."""
+        """Temperature is baked into the SDK GenerateContentConfig at ADK
+        Agent construction time; ADK doesn't accept a callable for this
+        field, so changes cannot propagate via the InstructionProvider
+        cache. Must surface a redeploy-required warning."""
         from unittest.mock import AsyncMock
 
         from src.kene_api.routers import agent_configs as router_mod
@@ -464,10 +698,7 @@ class TestWarningsOnRedeployRequiredFields:
         pre = dict(sample_config_data)
         pre["metadata"] = {**pre["metadata"], "version": "v1.0.0"}
         post = dict(pre)
-        post["generate_content_config"] = {
-            "temperature": 0.5,
-            "max_output_tokens": 2500,
-        }
+        post["temperature"] = 0.5
         post["metadata"] = {**pre["metadata"], "version": "v1.0.1"}
 
         mock_db = MagicMock()
@@ -542,10 +773,7 @@ class TestWarningsOnRedeployRequiredFields:
         pre = dict(sample_config_data)
         pre["metadata"] = {**pre["metadata"], "version": "v1.0.0"}
         post = dict(pre)
-        post["generate_content_config"] = {
-            "temperature": 0.3,
-            "max_output_tokens": 5000,
-        }
+        post["max_output_tokens"] = 5000
         post["metadata"] = {**pre["metadata"], "version": "v1.0.1"}
 
         mock_db = MagicMock()

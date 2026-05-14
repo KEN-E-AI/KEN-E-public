@@ -1,17 +1,44 @@
-import { Bot } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import { EmptyState } from "./components/EmptyState";
+import { useSearchParams } from "react-router-dom";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
+import { AgentsListView } from "./agents/AgentsListView";
+import { AgentEditView } from "./agents/AgentEditView";
+import type { AgentConfigId } from "@/lib/api/agentConfigs";
+import { toAgentConfigId } from "@/lib/api/agentConfigs";
 
 export function AgentsPage() {
-  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const editParam = searchParams.get("edit");
+  const editingId = editParam ? toAgentConfigId(editParam) : null;
+
+  function openEdit(id: AgentConfigId) {
+    setSearchParams({ edit: id });
+  }
+
+  function closeEdit() {
+    setSearchParams({});
+  }
 
   return (
-    <EmptyState
-      icon={<Bot className="size-8 text-muted-foreground" />}
-      title="Assemble specialist agents tailored to your workflow."
-      actionLabel="Create an agent"
-      onAction={() => navigate("/workflows/agents/new")}
-    />
+    <>
+      <AgentsListView onEdit={openEdit} />
+
+      <Sheet
+        open={editingId !== null}
+        onOpenChange={(open) => {
+          if (!open) closeEdit();
+        }}
+      >
+        <SheetContent className="sm:max-w-md p-0 gap-0">
+          <VisuallyHidden>
+            <SheetTitle>Configure Agent</SheetTitle>
+          </VisuallyHidden>
+          {editingId !== null && (
+            <AgentEditView configId={editingId} onClose={closeEdit} />
+          )}
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }
 

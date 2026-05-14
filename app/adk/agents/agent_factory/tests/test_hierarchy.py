@@ -20,6 +20,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from google.adk.agents import LlmAgent
 
 from app.adk.agents.agent_factory.config_loader import (
     ConfigNotFoundError,
@@ -172,7 +173,7 @@ class _FakeRegistry:
         return []
 
 
-def _build_hierarchy_with_patches(fake_db: _FakeFirestoreDb) -> object:
+def _build_hierarchy_with_patches(fake_db: _FakeFirestoreDb) -> LlmAgent:
     """Call build_hierarchy with the standard set of patches applied."""
     import app.adk.agents.agent_factory.hierarchy as h
 
@@ -946,12 +947,152 @@ class TestErrorCases:
             with pytest.raises(MCPSchemaError):
                 h.build_hierarchy(db=fake_db)
 
-    def test_invalid_account_id_raises_value_error(self) -> None:
-        """account_id containing path-separator characters raises ValueError."""
+    @pytest.mark.parametrize(
+        "bad_id",
+        [
+            "../../admin",
+            "acc/with/slash",
+            "..",
+            "",
+            "a" * 129,
+        ],
+    )
+    def test_invalid_account_id_raises_value_error(self, bad_id: str) -> None:
+        """account_id outside [a-zA-Z0-9_-]{1,128} raises ValueError."""
         import app.adk.agents.agent_factory.hierarchy as h
 
-        with pytest.raises(ValueError, match="invalid characters"):
-            h.build_hierarchy(account_id="../../admin", db=_FakeFirestoreDb({}))
+        with pytest.raises(ValueError, match="is invalid"):
+            h.build_hierarchy(account_id=bad_id, db=_FakeFirestoreDb({}))
+
+    def test_none_account_id_skips_validation(self) -> None:
+        """account_id=None skips validation and does not raise."""
+        import app.adk.agents.agent_factory.hierarchy as h
+
+        # build_hierarchy(account_id=None) must not raise ValueError.
+        # It may raise other errors (e.g. ConfigNotFoundError) — that is fine.
+        try:
+            h.build_hierarchy(account_id=None, db=_FakeFirestoreDb({}))
+        except ValueError as exc:
+            pytest.fail(f"Unexpected ValueError with account_id=None: {exc}")
+        except Exception:
+            pass  # Other errors (ConfigNotFoundError, etc.) are acceptable
+
+    def test_valid_account_id_accepted(self) -> None:
+        """account_id matching [a-zA-Z0-9_-]{1,128} does not raise ValueError."""
+        import app.adk.agents.agent_factory.hierarchy as h
+
+        try:
+            h.build_hierarchy(account_id="acc_abcdef0123", db=_FakeFirestoreDb({}))
+        except ValueError as exc:
+            pytest.fail(f"Unexpected ValueError for valid account_id: {exc}")
+        except Exception:
+            pass  # Other errors are acceptable
+
+
+# ---------------------------------------------------------------------------
+# automatically_available filter
+# ---------------------------------------------------------------------------
+
+
+def _build_hierarchy_with_patches_for_account(
+    fake_db: _FakeFirestoreDb, account_id: str
+) -> LlmAgent:
+    """Call build_hierarchy with the standard patches and an account_id."""
+    import app.adk.agents.agent_factory.hierarchy as h
+
+    fake_registry = _FakeRegistry()
+
+    with (
+        _PATCH_BEFORE_AGENT,
+        _PATCH_AFTER_AGENT,
+        _PATCH_BEFORE_TOOL,
+        _PATCH_AFTER_TOOL,
+        _PATCH_BUILD_TOOLSET as mock_build_toolset,
+        _PATCH_GET_DEFAULT_REGISTRY as mock_get_registry,
+    ):
+        mock_build_toolset.return_value = MagicMock(name="mock_toolset")
+        mock_get_registry.return_value = fake_registry
+        return h.build_hierarchy(db=fake_db, account_id=account_id)
+
+
+class TestAutomaticallyAvailableFilter:
+    def test_default_global_with_false_is_excluded(self) -> None:
+        """A default-status specialist with automatically_available=False is excluded."""
+        spec_doc = {
+            **_SPECIALIST_A_DOC,
+            "automatically_available": False,
+        }
+        docs = {
+            ("agent_configs", "ken_e_chatbot"): _ROOT_DOC,
+            ("agent_configs", "specialist_a"): spec_doc,
+        }
+        fake_db = _FakeFirestoreDb(docs)
+        root = _build_hierarchy_with_patches(fake_db)
+
+        # No dispatch function should be generated for the excluded specialist.
+        assert root.tools == []
+
+    def test_default_global_with_true_is_included(self) -> None:
+        """A default-status specialist with automatically_available=True is included."""
+        spec_doc = {
+            **_SPECIALIST_A_DOC,
+            "automatically_available": True,
+        }
+        docs = {
+            ("agent_configs", "ken_e_chatbot"): _ROOT_DOC,
+            ("agent_configs", "specialist_a"): spec_doc,
+        }
+        fake_db = _FakeFirestoreDb(docs)
+        root = _build_hierarchy_with_patches(fake_db)
+
+        assert len(root.tools) == 1
+
+    def test_customized_config_always_included_regardless_of_flag(self) -> None:
+        """A customized specialist (account overlay exists) is always included even when
+        the global doc has automatically_available=False."""
+        global_spec_doc = {
+            **_SPECIALIST_A_DOC,
+            "automatically_available": False,
+        }
+        # Account overlay — its presence makes _load_and_merge return
+        # customization_status="customized", which bypasses the filter.
+        account_overlay_doc = {
+            "instruction": "Customized specialist A for this account.",
+            "model": "gemini-2.0-flash",
+            "description": "Account-customized version of specialist A.",
+            "based_on_version": 1,
+        }
+        docs = {
+            ("agent_configs", "ken_e_chatbot"): _ROOT_DOC,
+            ("agent_configs", "specialist_a"): global_spec_doc,
+            ("accounts", "acc_test", "agent_configs", "specialist_a"): account_overlay_doc,
+        }
+        fake_db = _FakeFirestoreDb(docs)
+        root = _build_hierarchy_with_patches_for_account(fake_db, account_id="acc_test")
+
+        # customization_status == "customized" → included despite automatically_available=False.
+        assert len(root.tools) == 1
+
+    def test_custom_agent_always_included_regardless_of_flag(self) -> None:
+        """A custom_agent (no global counterpart, only an account doc) is always
+        included even when its doc has automatically_available=False."""
+        # Only an account-level doc; no global counterpart → custom_agent status.
+        custom_doc = {
+            "instruction": "You are a fully custom agent.",
+            "model": "gemini-2.0-flash",
+            "description": "Custom agent with no global base.",
+            "automatically_available": False,
+        }
+        docs = {
+            ("agent_configs", "ken_e_chatbot"): _ROOT_DOC,
+            # No global "custom_test_agent" doc — triggers custom_agent status.
+            ("accounts", "acc_test", "agent_configs", "custom_test_agent"): custom_doc,
+        }
+        fake_db = _FakeFirestoreDb(docs)
+        root = _build_hierarchy_with_patches_for_account(fake_db, account_id="acc_test")
+
+        # customization_status == "custom_agent" → always included.
+        assert len(root.tools) == 1
 
 
 # ---------------------------------------------------------------------------

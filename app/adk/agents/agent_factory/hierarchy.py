@@ -17,7 +17,6 @@ per-request use — the function performs N+1 Firestore reads.
 from __future__ import annotations
 
 import os
-import re
 from typing import Any
 
 from google.adk.agents import LlmAgent
@@ -40,16 +39,12 @@ from app.adk.agents.agent_factory.dispatch import (
 )
 from app.adk.agents.agent_factory.mcp import MCP_COLLECTION, build_toolset_for_doc
 from app.adk.agents.agent_factory.roster import resolve_specialist_roster
+from shared.account_id_utils import validate_account_id
 from shared.structured_logging import get_structured_logger
 
 logger = get_structured_logger(__name__)
 
 ROOT_CONFIG_ID: str = "ken_e_chatbot"
-
-# Firestore document IDs must not contain "/" and must be well-formed strings.
-# This allowlist prevents path-manipulation bugs if account_id is ever
-# sourced from caller input in a multi-tenant deployment.
-_VALID_ACCOUNT_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,128}$")
 
 
 # ---------------------------------------------------------------------------
@@ -71,7 +66,7 @@ def _resolve_project_id(project_id: str | None) -> str:
     Returns:
         Non-empty project ID string.
     """
-    return project_id or os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
+    return project_id or os.getenv("GOOGLE_CLOUD_PROJECT_ID") or "ken-e-dev"
 
 
 def _build_firestore_client(project_id: str) -> Any:
@@ -177,11 +172,8 @@ def build_hierarchy(
             from both the global and account collections.
     """
     # Step 0 — validate account_id format before touching Firestore.
-    if account_id is not None and not _VALID_ACCOUNT_ID_RE.match(account_id):
-        raise ValueError(
-            f"account_id {account_id!r} contains invalid characters. "
-            "Must match [a-zA-Z0-9_-]{1,128}."
-        )
+    if account_id is not None:
+        account_id = validate_account_id(account_id)
 
     # Step 1 — resolve Firestore client.
     if db is None:
@@ -220,6 +212,28 @@ def build_hierarchy(
         raise ConfigNotFoundError(
             f"Root agent config {ROOT_CONFIG_ID!r} was not found in agent_configs. "
             "Deploy cannot proceed without the root agent definition."
+        )
+
+    # Step 4½ — filter out global specialists that are not automatically available.
+    # A default-status config with automatically_available=False is excluded from
+    # the hierarchy. Customized and custom_agent configs always pass — the account
+    # opted in explicitly. The root config was already popped above.
+    assert ROOT_CONFIG_ID not in configs, (
+        f"Root config {ROOT_CONFIG_ID!r} must be popped before the filter step; "
+        "ordering invariant violated."
+    )
+    excluded = [
+        cid
+        for cid, cfg in configs.items()
+        if cfg.customization_status == "default" and not cfg.automatically_available
+    ]
+    for cid in excluded:
+        del configs[cid]
+    if excluded:
+        logger.info(
+            "Filtered %d specialist(s) with automatically_available=False: %s",
+            len(excluded),
+            excluded,
         )
 
     # Step 5 — build specialists in deterministic alphabetical order.

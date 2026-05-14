@@ -42,8 +42,8 @@ export const CompetitorNode = memo(
             <div
               className="rounded-full bg-brand-light-blue flex items-center justify-center"
               style={{
-                width: "72px",
-                height: "72px",
+                width: "4.5rem",
+                height: "4.5rem",
                 boxShadow: data.isSelected
                   ? "0 0 0 3px rgba(159, 206, 237, 0.4)"
                   : "none",
@@ -51,7 +51,7 @@ export const CompetitorNode = memo(
             >
               <Swords
                 className="text-white"
-                style={{ width: "48px", height: "48px" }}
+                style={{ width: "3rem", height: "3rem" }}
               />
             </div>
           </div>
@@ -62,7 +62,7 @@ export const CompetitorNode = memo(
           position={Position.Bottom}
           id="bottom"
           className="opacity-0"
-          style={{ right: "30px", left: "auto" }}
+          style={{ right: "1.875rem", left: "auto" }}
         />
 
         {showButton && (
@@ -71,7 +71,7 @@ export const CompetitorNode = memo(
               e.stopPropagation();
               data.onAddChild();
             }}
-            className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-light-blue flex items-center justify-center z-20"
+            className="absolute -bottom-[0.75rem] right-[1.5625rem] w-6 h-6 rounded-full bg-brand-light-blue flex items-center justify-center z-20"
           >
             <Plus className="h-4 w-4 text-white" />
           </button>
@@ -109,8 +109,8 @@ export const CompetitorStrengthNode = memo(
             <div
               className="rounded-full bg-brand-light-red flex items-center justify-center"
               style={{
-                width: "72px",
-                height: "72px",
+                width: "4.5rem",
+                height: "4.5rem",
                 boxShadow: data.isSelected
                   ? "0 0 0 3px rgba(255, 153, 153, 0.4)"
                   : "none",
@@ -118,7 +118,7 @@ export const CompetitorStrengthNode = memo(
             >
               <Dumbbell
                 className="text-white"
-                style={{ width: "48px", height: "48px" }}
+                style={{ width: "3rem", height: "3rem" }}
               />
             </div>
           </div>
@@ -129,7 +129,7 @@ export const CompetitorStrengthNode = memo(
           position={Position.Top}
           id="top"
           className="opacity-0"
-          style={{ right: "30px", left: "auto" }}
+          style={{ right: "1.875rem", left: "auto" }}
         />
 
         <Handle
@@ -137,7 +137,7 @@ export const CompetitorStrengthNode = memo(
           position={Position.Bottom}
           id="bottom"
           className="opacity-0"
-          style={{ right: "30px", left: "auto" }}
+          style={{ right: "1.875rem", left: "auto" }}
         />
 
         <button
@@ -145,7 +145,7 @@ export const CompetitorStrengthNode = memo(
             e.stopPropagation();
             data.onAddRisk();
           }}
-          className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-light-red flex items-center justify-center z-20"
+          className="absolute -bottom-[0.75rem] right-[1.5625rem] w-6 h-6 rounded-full bg-brand-light-red flex items-center justify-center z-20"
         >
           <Plus className="h-4 w-4 text-white" />
         </button>
@@ -182,8 +182,8 @@ export const CompetitorWeaknessNode = memo(
             <div
               className="rounded-full bg-brand-light-green flex items-center justify-center"
               style={{
-                width: "72px",
-                height: "72px",
+                width: "4.5rem",
+                height: "4.5rem",
                 boxShadow: data.isSelected
                   ? "0 0 0 3px rgba(184, 226, 175, 0.4)"
                   : "none",
@@ -191,7 +191,7 @@ export const CompetitorWeaknessNode = memo(
             >
               <Unlink
                 className="text-white"
-                style={{ width: "48px", height: "48px" }}
+                style={{ width: "3rem", height: "3rem" }}
               />
             </div>
           </div>
@@ -202,7 +202,7 @@ export const CompetitorWeaknessNode = memo(
           position={Position.Top}
           id="top"
           className="opacity-0"
-          style={{ right: "30px", left: "auto" }}
+          style={{ right: "1.875rem", left: "auto" }}
         />
 
         <Handle
@@ -210,7 +210,7 @@ export const CompetitorWeaknessNode = memo(
           position={Position.Bottom}
           id="bottom"
           className="opacity-0"
-          style={{ right: "30px", left: "auto" }}
+          style={{ right: "1.875rem", left: "auto" }}
         />
 
         <button
@@ -218,7 +218,7 @@ export const CompetitorWeaknessNode = memo(
             e.stopPropagation();
             data.onAddOpportunity();
           }}
-          className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-light-green flex items-center justify-center z-20"
+          className="absolute -bottom-[0.75rem] right-[1.5625rem] w-6 h-6 rounded-full bg-brand-light-green flex items-center justify-center z-20"
         >
           <Plus className="h-4 w-4 text-white" />
         </button>
@@ -245,7 +245,7 @@ export const SubstituteProductNode = memo(
         <div className="flex items-center">
           <div
             className="bg-brand-yellow bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
-            style={{ width: "200px" }}
+            style={{ width: "12.5rem" }}
           >
             <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
               Substitute Product
@@ -259,8 +259,8 @@ export const SubstituteProductNode = memo(
             <div
               className="rounded-full bg-brand-yellow flex items-center justify-center"
               style={{
-                width: "72px",
-                height: "72px",
+                width: "4.5rem",
+                height: "4.5rem",
                 boxShadow: data.isSelected
                   ? "0 0 0 3px rgba(234, 185, 70, 0.4)"
                   : "none",
@@ -268,7 +268,7 @@ export const SubstituteProductNode = memo(
             >
               <Package
                 className="text-white"
-                style={{ width: "48px", height: "48px" }}
+                style={{ width: "3rem", height: "3rem" }}
               />
             </div>
           </div>
@@ -279,7 +279,7 @@ export const SubstituteProductNode = memo(
           position={Position.Top}
           id="top"
           className="opacity-0"
-          style={{ right: "30px", left: "auto" }}
+          style={{ right: "1.875rem", left: "auto" }}
         />
 
         {data.showHandle && (
@@ -289,7 +289,7 @@ export const SubstituteProductNode = memo(
               position={Position.Bottom}
               id="bottom"
               className="opacity-0"
-              style={{ right: "30px", left: "auto" }}
+              style={{ right: "1.875rem", left: "auto" }}
             />
 
             <button
@@ -297,7 +297,7 @@ export const SubstituteProductNode = memo(
                 e.stopPropagation();
                 data.onAddProduct();
               }}
-              className="absolute -bottom-[12px] right-[25px] w-6 h-6 rounded-full bg-brand-yellow flex items-center justify-center z-20"
+              className="absolute -bottom-[0.75rem] right-[1.5625rem] w-6 h-6 rounded-full bg-brand-yellow flex items-center justify-center z-20"
             >
               <Plus className="h-4 w-4 text-white" />
             </button>
@@ -324,7 +324,7 @@ export const OurProductNode = memo(
         <div className="flex items-center">
           <div
             className="bg-brand-light-blue bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
-            style={{ width: "200px" }}
+            style={{ width: "12.5rem" }}
           >
             <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
               Our Product
@@ -338,8 +338,8 @@ export const OurProductNode = memo(
             <div
               className="rounded-full bg-brand-medium-blue flex items-center justify-center"
               style={{
-                width: "72px",
-                height: "72px",
+                width: "4.5rem",
+                height: "4.5rem",
                 boxShadow: data.isSelected
                   ? "0 0 0 3px rgba(99, 179, 237, 0.4)"
                   : "none",
@@ -347,7 +347,7 @@ export const OurProductNode = memo(
             >
               <Box
                 className="text-white"
-                style={{ width: "48px", height: "48px" }}
+                style={{ width: "3rem", height: "3rem" }}
               />
             </div>
           </div>
@@ -358,7 +358,7 @@ export const OurProductNode = memo(
           position={Position.Top}
           id="top"
           className="opacity-0"
-          style={{ right: "30px", left: "auto" }}
+          style={{ right: "1.875rem", left: "auto" }}
         />
       </div>
     );
@@ -382,7 +382,7 @@ export const RiskNode = memo(({ data }: NodeProps<RiskNodeData>) => {
       <div className="flex items-center">
         <div
           className="bg-brand-red bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
-          style={{ width: "200px" }}
+          style={{ width: "12.5rem" }}
         >
           <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
             Risk
@@ -396,8 +396,8 @@ export const RiskNode = memo(({ data }: NodeProps<RiskNodeData>) => {
           <div
             className="rounded-full bg-brand-red flex items-center justify-center"
             style={{
-              width: "72px",
-              height: "72px",
+              width: "4.5rem",
+              height: "4.5rem",
               boxShadow: data.isSelected
                 ? "0 0 0 3px rgba(255, 107, 107, 0.4)"
                 : "none",
@@ -405,7 +405,7 @@ export const RiskNode = memo(({ data }: NodeProps<RiskNodeData>) => {
           >
             <ShieldAlert
               className="text-white"
-              style={{ width: "48px", height: "48px" }}
+              style={{ width: "3rem", height: "3rem" }}
             />
           </div>
         </div>
@@ -416,7 +416,7 @@ export const RiskNode = memo(({ data }: NodeProps<RiskNodeData>) => {
         position={Position.Top}
         id="top"
         className="opacity-0"
-        style={{ right: "30px", left: "auto" }}
+        style={{ right: "1.875rem", left: "auto" }}
       />
     </div>
   );
@@ -440,7 +440,7 @@ export const OpportunityNode = memo(
         <div className="flex items-center">
           <div
             className="bg-brand-dark-green bg-opacity-30 rounded-lg pl-4 pr-16 py-2"
-            style={{ width: "200px" }}
+            style={{ width: "12.5rem" }}
           >
             <p className="text-sm text-[var(--color-text-tertiary)] leading-tight mb-0">
               Opportunity
@@ -454,8 +454,8 @@ export const OpportunityNode = memo(
             <div
               className="rounded-full bg-brand-dark-green flex items-center justify-center"
               style={{
-                width: "72px",
-                height: "72px",
+                width: "4.5rem",
+                height: "4.5rem",
                 boxShadow: data.isSelected
                   ? "0 0 0 3px rgba(58, 116, 57, 0.4)"
                   : "none",
@@ -463,7 +463,7 @@ export const OpportunityNode = memo(
             >
               <Star
                 className="text-white"
-                style={{ width: "48px", height: "48px" }}
+                style={{ width: "3rem", height: "3rem" }}
               />
             </div>
           </div>
@@ -474,7 +474,7 @@ export const OpportunityNode = memo(
           position={Position.Top}
           id="top"
           className="opacity-0"
-          style={{ right: "30px", left: "auto" }}
+          style={{ right: "1.875rem", left: "auto" }}
         />
       </div>
     );

@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from google.cloud import firestore
 from google.cloud.firestore_v1 import FieldFilter
 
+from shared.account_id_utils import validate_account_id
+
 from .analytics_service import AnalyticsService
 from .retry_utils import with_write_retry, with_read_retry, with_batch_retry
 
@@ -94,7 +96,7 @@ class OptimizationAnalyzer:
             account_id: Account identifier
             project_id: Optional GCP project ID
         """
-        self.account_id = account_id
+        self.account_id = validate_account_id(account_id)
         self.project_id = project_id
 
         # Initialize Firestore clients
@@ -197,7 +199,7 @@ class OptimizationAnalyzer:
             Firestore document stream
         """
         cutoff_time = datetime.now(timezone.utc) - timedelta(days=days_to_analyze)
-        collection = self.analytics_db.collection(f"agent_analytics_{self.account_id}")
+        collection = self.analytics_db.collection(f"accounts/{self.account_id}/agent_analytics")
 
         return collection.where(
             filter=FieldFilter("timestamp", ">=", cutoff_time)

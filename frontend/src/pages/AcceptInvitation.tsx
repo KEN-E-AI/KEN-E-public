@@ -202,7 +202,7 @@ const AcceptInvitation = () => {
           <div className="relative inline-block mb-6">
             <div
               className="size-24 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center"
-              style={{ boxShadow: "0 8px 24px rgba(34, 197, 94, 0.3)" }}
+              style={{ boxShadow: "0 0.5rem 1.5rem rgba(34, 197, 94, 0.3)" }}
             >
               <CheckCircle2 className="size-12 text-white" />
             </div>

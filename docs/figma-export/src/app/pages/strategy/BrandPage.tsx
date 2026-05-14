@@ -59,8 +59,8 @@ export function BrandPage() {
               />
               <div>
                 <p className="text-xs">{color.name}</p>
-                <p className="text-[10px] text-muted-foreground font-mono">{color.hex}</p>
-                <p className="text-[10px] text-muted-foreground">{color.usage}</p>
+                <p className="text-[0.625rem] text-muted-foreground font-mono">{color.hex}</p>
+                <p className="text-[0.625rem] text-muted-foreground">{color.usage}</p>
               </div>
             </div>
           ))}

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -151,7 +151,10 @@ class TestAfterModelCallback:
 
     @pytest.mark.asyncio
     async def test_truncates_long_reasoning(self) -> None:
-        from app.adk.tracking.callbacks import _MAX_REASONING_LENGTH, adk_after_model_callback
+        from app.adk.tracking.callbacks import (
+            _MAX_REASONING_LENGTH,
+            adk_after_model_callback,
+        )
 
         ctx = MockCallbackContext()
         response = MockLlmResponse([_make_text_part("x" * 5000, thought=True)])

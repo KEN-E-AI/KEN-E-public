@@ -51,7 +51,7 @@ export function SessionIndicator({ sessions, compact = false, onClick }: Session
           <div className="flex flex-col items-start">
             <span className="text-[var(--text-body-sm)] font-medium">{session.name}</span>
             {session.lastMessage && (
-              <span className="text-[var(--text-caption)] text-[var(--color-text-tertiary)] max-w-[200px] truncate">
+              <span className="text-[var(--text-caption)] text-[var(--color-text-tertiary)] max-w-[12.5rem] truncate">
                 {session.lastMessage}
               </span>
             )}

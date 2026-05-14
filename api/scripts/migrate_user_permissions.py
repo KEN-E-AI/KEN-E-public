@@ -41,7 +41,7 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
         logging.FileHandler(
-            f"migrate_permissions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+            f"/tmp/migrate_permissions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
         ),
         logging.StreamHandler(sys.stdout),
     ],

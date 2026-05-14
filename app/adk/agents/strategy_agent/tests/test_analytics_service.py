@@ -1,9 +1,8 @@
 """Unit tests for Analytics Service."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from datetime import datetime, timezone
-from google.cloud import firestore
 
 from ..analytics_service import AnalyticsService
 
@@ -27,7 +26,10 @@ def mock_firestore_client():
 @pytest.fixture
 def analytics_service(mock_firestore_client):
     """Create Analytics Service instance with mocked Firestore."""
+    mock_analytics_db, _ = mock_firestore_client
     service = AnalyticsService(account_id="test_account", project_id="test_project")
+    # Inject mock analytics_db directly so the test stays hermetic (no live Firestore in CI)
+    service.analytics_db = mock_analytics_db
     return service
 
 
@@ -61,6 +63,11 @@ def test_track_agent_execution(analytics_service, mock_firestore_client):
     assert metrics["total_tokens"] == 1500
     assert metrics["execution_time_seconds"] == 2.5
     assert metrics["success"] is True
+
+    # Verify Shape B path used for write
+    mock_analytics_db.collection.assert_called_with(
+        "accounts/test_account/agent_analytics"
+    )
 
     # Check cost calculation (Flash model pricing)
     expected_prompt_cost = (1000 / 1_000_000) * 0.075
@@ -138,6 +145,11 @@ def test_track_token_estimation(analytics_service, mock_firestore_client):
         context="input",
     )
 
+    # Verify Shape B path used for write
+    mock_analytics_db.collection.assert_called_with(
+        "accounts/test_account/agent_analytics"
+    )
+
     # Verify that the estimation was tracked
     mock_collection.add.assert_called_once()
     call_args = mock_collection.add.call_args[0][0]
@@ -171,11 +183,11 @@ def test_aggregate_daily_costs(analytics_service, mock_firestore_client):
     """Test daily cost aggregation."""
     mock_analytics_db, _ = mock_firestore_client
 
-    # Mock the collection and query
-    mock_collection = MagicMock()
-    mock_analytics_db.collection.return_value = mock_collection
+    # Inject mock analytics_db directly so the test stays hermetic (no live Firestore in CI)
+    analytics_service.analytics_db = mock_analytics_db
 
-    # Mock document data
+    # Source collection mock (Shape A agent_analytics_ read path)
+    mock_source_collection = MagicMock()
     mock_doc1 = MagicMock()
     mock_doc1.to_dict.return_value = {
         "total_cost": 0.5,
@@ -183,7 +195,6 @@ def test_aggregate_daily_costs(analytics_service, mock_firestore_client):
         "agent_name": "agent1",
         "model": "gemini-2.5-flash",
     }
-
     mock_doc2 = MagicMock()
     mock_doc2.to_dict.return_value = {
         "total_cost": 0.3,
@@ -191,17 +202,35 @@ def test_aggregate_daily_costs(analytics_service, mock_firestore_client):
         "agent_name": "agent2",
         "model": "gemini-2.5-flash",
     }
-
     mock_query = MagicMock()
     mock_query.where.return_value = mock_query
     mock_query.stream.return_value = [mock_doc1, mock_doc2]
-    mock_collection.where.return_value = mock_query
+    mock_source_collection.where.return_value = mock_query
+
+    # Destination collection mock (Shape B accounts/ write path) — isolated from source
+    mock_accounts_collection = MagicMock()
+    agg_doc_mock = mock_accounts_collection.document.return_value.collection.return_value.document.return_value
+
+    def collection_side_effect(name: str) -> MagicMock:
+        return (
+            mock_accounts_collection if name == "accounts" else mock_source_collection
+        )
+
+    mock_analytics_db.collection.side_effect = collection_side_effect
 
     aggregation = analytics_service.aggregate_daily_costs()
 
     assert aggregation["total_cost"] == 0.8
     assert aggregation["total_tokens"] == 1800
     assert aggregation["total_executions"] == 2
+
+    # Verify Shape B path: accounts/{account_id}/cost_aggregations
+    mock_analytics_db.collection.assert_any_call("accounts")
+    mock_accounts_collection.document.assert_called_once_with("test_account")
+    mock_accounts_collection.document.return_value.collection.assert_called_once_with(
+        "cost_aggregations"
+    )
+    agg_doc_mock.set.assert_called_once()
 
 
 def test_cleanup_old_metrics(analytics_service, mock_firestore_client):
@@ -236,6 +265,9 @@ def test_get_cost_trends(analytics_service, mock_firestore_client):
     """Test getting cost trends."""
     mock_analytics_db, _ = mock_firestore_client
 
+    # Inject mock analytics_db directly so the test stays hermetic (no live Firestore in CI)
+    analytics_service.analytics_db = mock_analytics_db
+
     # Mock the collection
     mock_collection = MagicMock()
     mock_analytics_db.collection.return_value = mock_collection
@@ -249,7 +281,8 @@ def test_get_cost_trends(analytics_service, mock_firestore_client):
         "total_tokens": 100000,
         "total_executions": 50,
     }
-    mock_collection.document.return_value.get.return_value = mock_doc
+    # Shape B chained path: collection("accounts").document(id).collection("cost_aggregations").document(date).get()
+    mock_collection.document.return_value.collection.return_value.document.return_value.get.return_value = mock_doc
 
     trends = analytics_service.get_cost_trends(days=7)
 
@@ -258,6 +291,13 @@ def test_get_cost_trends(analytics_service, mock_firestore_client):
     # Should be sorted by date
     assert all(
         trends[i]["date"] <= trends[i + 1]["date"] for i in range(len(trends) - 1)
+    )
+
+    # Verify Shape B path: accounts/{account_id}/cost_aggregations
+    mock_analytics_db.collection.assert_called_once_with("accounts")
+    mock_collection.document.assert_called_once_with("test_account")
+    mock_collection.document.return_value.collection.assert_called_once_with(
+        "cost_aggregations"
     )
 
 

@@ -12,15 +12,15 @@ export type WorkflowsLayoutProps = {
 };
 
 const tabs = [
+  { value: "automations" as const, name: "Automations", icon: RefreshCw },
   { value: "agents" as const, name: "Agents", icon: Bot },
   { value: "skills" as const, name: "Skills", icon: Sparkles },
-  { value: "automations" as const, name: "Automations", icon: RefreshCw },
 ];
 
 const ALLOWED_TABS: readonly WorkflowTab[] = [
+  "automations",
   "agents",
   "skills",
-  "automations",
 ];
 
 // Persists focus-restoration intent across the unmount/remount cycle caused by
@@ -67,7 +67,8 @@ export function WorkflowsLayout({ activeTab, children }: WorkflowsLayoutProps) {
               <div>
                 <h1 className="mb-0">Workflows</h1>
                 <p className="text-sm text-muted-foreground">
-                  Build agents, teach them skills, and deploy automations
+                  Build specialized agents and have them complete tasks on a
+                  schedule.
                 </p>
               </div>
             </div>

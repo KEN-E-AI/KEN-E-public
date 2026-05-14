@@ -364,6 +364,10 @@ class TestCriteriaGenerationGuidance:
         )
 
     def test_migration_script_version_bumped(self):
-        """Migration script metadata.version is v1.1 after the criteria-guidance addition."""
+        """Migration script metadata.version reflects the most recent bump.
+
+        v1.1: AH-6 criteria-guidance addition.
+        v1.2: AH-41 audit-field seeding.
+        """
         migration = _load_migration_script()
-        assert migration.KEN_E_CHATBOT_CONFIG["metadata"]["version"] == "v1.1"
+        assert migration.KEN_E_CHATBOT_CONFIG["metadata"]["version"] == "v1.2"

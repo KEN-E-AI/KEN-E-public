@@ -380,7 +380,7 @@ export function DesignSystemPreview() {
           </PrimitiveBox>
 
           <PrimitiveBox label="Progress">
-            <Progress value={60} className="w-[200px]" />
+            <Progress value={60} className="w-[12.5rem]" />
           </PrimitiveBox>
 
           <PrimitiveBox label="Skeleton">

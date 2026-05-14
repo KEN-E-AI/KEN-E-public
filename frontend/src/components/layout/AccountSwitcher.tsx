@@ -33,7 +33,7 @@ type OrgAvatarProps = {
 function OrgAvatar({ orgName, orgId, size = "sm" }: OrgAvatarProps) {
   const color = AVATAR_COLORS[orgId.charCodeAt(0) % AVATAR_COLORS.length];
   const dims = size === "sm" ? "size-6" : "size-8";
-  const textSize = size === "sm" ? "text-[10px]" : "text-xs";
+  const textSize = size === "sm" ? "text-[0.625rem]" : "text-xs";
   return (
     <div
       className={cn(
@@ -113,18 +113,18 @@ export function AccountSwitcher({ compact = false }: AccountSwitcherProps) {
           {selectedOrgAccount != null ? (
             <>
               <span
-                className="text-[var(--color-text-tertiary)] truncate max-w-[100px]"
-                style={{ fontSize: compact ? "12px" : "13px" }}
+                className="text-[var(--color-text-tertiary)] truncate max-w-[6.25rem]"
+                style={{ fontSize: compact ? "0.75rem" : "0.8125rem" }}
               >
                 {selectedOrgAccount.metadata.organization_name}
               </span>
               <span className="text-[var(--color-text-disabled)]">/</span>
               <span
-                className="text-[var(--color-text-primary)] truncate max-w-[120px]"
+                className="text-[var(--color-text-primary)] truncate max-w-[7.5rem]"
                 style={{
                   fontFamily: "var(--font-display)",
                   fontWeight: 700,
-                  fontSize: compact ? "12px" : "13px",
+                  fontSize: compact ? "0.75rem" : "0.8125rem",
                 }}
               >
                 {selectedOrgAccount.metadata.account_name}
@@ -133,7 +133,7 @@ export function AccountSwitcher({ compact = false }: AccountSwitcherProps) {
           ) : (
             <span
               className="text-[var(--color-text-disabled)]"
-              style={{ fontSize: compact ? "12px" : "13px" }}
+              style={{ fontSize: compact ? "0.75rem" : "0.8125rem" }}
             >
               Select account
             </span>
@@ -145,7 +145,7 @@ export function AccountSwitcher({ compact = false }: AccountSwitcherProps) {
       <DropdownMenuContent
         align="start"
         sideOffset={8}
-        className="w-[280px] rounded-[var(--radius-lg)] border-2 border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] p-0 shadow-lg"
+        className="w-[17.5rem] rounded-[var(--radius-lg)] border-2 border-[var(--color-border-default)] bg-[var(--color-bg-elevated)] p-0 shadow-lg"
       >
         {selectedOrgAccount != null && (
           <>
@@ -179,7 +179,7 @@ export function AccountSwitcher({ compact = false }: AccountSwitcherProps) {
           </>
         )}
 
-        <div className="py-1.5 max-h-[300px] overflow-y-auto">
+        <div className="py-1.5 max-h-[18.75rem] overflow-y-auto">
           {accountsByOrg.map(({ orgId, orgName, accounts }, orgIndex) => (
             <div key={orgId}>
               {orgIndex > 0 && <DropdownMenuSeparator />}

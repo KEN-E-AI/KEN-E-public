@@ -87,44 +87,44 @@ export function CreateAccountPage() {
       {/* Background Blobs */}
       <div className="fixed inset-0 pointer-events-none z-[-1]">
         <div 
-          className="absolute rounded-full blur-[80px] opacity-[0.18] animate-blob-drift"
+          className="absolute rounded-full blur-[5rem] opacity-[0.18] animate-blob-drift"
           style={{
             top: '-60px',
             left: '10%',
-            width: '400px',
-            height: '400px',
+            width: '25rem',
+            height: '25rem',
             backgroundColor: 'rgba(59, 130, 246, 1)',
           }}
         />
         <div 
-          className="absolute rounded-full blur-[80px] opacity-[0.18] animate-blob-drift-delayed"
+          className="absolute rounded-full blur-[5rem] opacity-[0.18] animate-blob-drift-delayed"
           style={{
             top: '30%',
             right: '-80px',
-            width: '350px',
-            height: '350px',
+            width: '21.875rem',
+            height: '21.875rem',
             backgroundColor: 'rgba(99, 102, 241, 1)',
             animationDelay: '2s',
           }}
         />
         <div 
-          className="absolute rounded-full blur-[80px] opacity-[0.18] animate-blob-drift"
+          className="absolute rounded-full blur-[5rem] opacity-[0.18] animate-blob-drift"
           style={{
             bottom: '-40px',
             left: '30%',
-            width: '450px',
-            height: '450px',
+            width: '28.125rem',
+            height: '28.125rem',
             backgroundColor: 'rgba(46, 196, 182, 1)',
             animationDelay: '4s',
           }}
         />
         <div 
-          className="absolute rounded-full blur-[80px] opacity-[0.12] animate-blob-drift-delayed"
+          className="absolute rounded-full blur-[5rem] opacity-[0.12] animate-blob-drift-delayed"
           style={{
             top: '50%',
             left: '-100px',
-            width: '300px',
-            height: '300px',
+            width: '18.75rem',
+            height: '18.75rem',
             backgroundColor: 'rgba(100, 116, 139, 1)',
             animationDelay: '6s',
           }}

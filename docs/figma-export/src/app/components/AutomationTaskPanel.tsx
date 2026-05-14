@@ -68,7 +68,7 @@ function Field({
     <div className="flex items-start gap-3 py-2.5 border-b border-[var(--color-border-subtle)]">
       <Icon className="size-4 text-[var(--color-text-tertiary)] mt-0.5 shrink-0" />
       <div className="flex-1 min-w-0">
-        <p className="text-[10px] text-[var(--color-text-tertiary)] mb-0.5">{label}</p>
+        <p className="text-[0.625rem] text-[var(--color-text-tertiary)] mb-0.5">{label}</p>
         <div className="text-xs text-[var(--color-text-primary)]">{children}</div>
       </div>
     </div>
@@ -173,7 +173,7 @@ export function AutomationTaskPanel({
 
   return (
     <>
-      <div className="w-[360px] h-full border-l border-[var(--color-border-default)] bg-card flex flex-col shrink-0 overflow-hidden">
+      <div className="w-[22.5rem] h-full border-l border-[var(--color-border-default)] bg-card flex flex-col shrink-0 overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-[var(--color-border-default)]">
           <div className="flex-1 min-w-0 mr-2">
@@ -218,7 +218,7 @@ export function AutomationTaskPanel({
                             : onPinToDashboard(task.task_id, ft)
                         }
                         title={pinned ? `Unpin ${FILE_TYPE_LABELS[ft]} from dashboard` : `Pin ${FILE_TYPE_LABELS[ft]} to dashboard`}
-                        className={`flex items-center gap-1 text-[10px] px-1.5 py-1 rounded-[var(--radius-sm)] border transition-colors ${
+                        className={`flex items-center gap-1 text-[0.625rem] px-1.5 py-1 rounded-[var(--radius-sm)] border transition-colors ${
                           pinned
                             ? 'bg-[var(--color-violet-100)] border-[var(--color-violet-400)] text-[var(--color-violet-500)]'
                             : 'border-[var(--color-border-default)] text-[var(--color-text-secondary)] hover:border-[var(--color-violet-400)] hover:text-[var(--color-violet-500)]'
@@ -262,7 +262,7 @@ export function AutomationTaskPanel({
           >
             Outputs
             {outputCount > 0 && (
-              <span className="ml-1 text-[9px] px-1.5 py-0.5 rounded-full bg-[var(--color-violet-100)] text-[var(--color-violet-500)]">
+              <span className="ml-1 text-[0.5625rem] px-1.5 py-0.5 rounded-full bg-[var(--color-violet-100)] text-[var(--color-violet-500)]">
                 {outputCount}
               </span>
             )}
@@ -287,7 +287,7 @@ export function AutomationTaskPanel({
                   </select>
                 ) : (
                   <span
-                    className="text-[10px] px-1.5 py-0.5 rounded inline-block"
+                    className="text-[0.625rem] px-1.5 py-0.5 rounded inline-block"
                     style={{ background: sStyle.bg, color: sStyle.text, border: `1px solid ${sStyle.border}` }}
                   >
                     {task.status}
@@ -330,7 +330,7 @@ export function AutomationTaskPanel({
                   </div>
                 ) : (
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-bg-secondary)]">
+                    <span className="text-[0.625rem] px-1.5 py-0.5 rounded bg-[var(--color-bg-secondary)]">
                       {task.assignee_type}
                     </span>
                     <span>{task.assignee_name || '\u2014'}</span>
@@ -428,7 +428,7 @@ export function AutomationTaskPanel({
                       ? task.tags.map((t) => (
                           <span
                             key={t}
-                            className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-violet-100)] text-[var(--color-violet-500)]"
+                            className="text-[0.625rem] px-1.5 py-0.5 rounded bg-[var(--color-violet-100)] text-[var(--color-violet-500)]"
                           >
                             {t}
                           </span>
@@ -475,7 +475,7 @@ export function AutomationTaskPanel({
                         return (
                           <span
                             key={d}
-                            className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)]"
+                            className="text-[0.625rem] px-1.5 py-0.5 rounded bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)]"
                             title={d}
                           >
                             {depTask?.title ?? d}
@@ -492,7 +492,7 @@ export function AutomationTaskPanel({
             <div className="space-y-4">
               {/* Output Configuration */}
               <div>
-                <p className="text-[10px] text-[var(--color-text-tertiary)] mb-2">Output Configuration</p>
+                <p className="text-[0.625rem] text-[var(--color-text-tertiary)] mb-2">Output Configuration</p>
                 <div className="rounded-[var(--radius-md)] border border-[var(--color-border-subtle)] p-3 space-y-3">
                   {/* Toggle */}
                   <div className="flex items-center justify-between">
@@ -519,7 +519,7 @@ export function AutomationTaskPanel({
                         />
                       </button>
                     ) : (
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                      <span className={`text-[0.625rem] px-1.5 py-0.5 rounded ${
                         task.output_config?.enabled
                           ? 'bg-[var(--color-success-bg)] text-[var(--color-success-text)]'
                           : 'bg-[var(--color-bg-secondary)] text-[var(--color-text-tertiary)]'
@@ -533,14 +533,14 @@ export function AutomationTaskPanel({
                   {(editing ? draft.output_config?.enabled : task.output_config?.enabled) && (
                     <>
                       <div>
-                        <p className="text-[10px] text-[var(--color-text-tertiary)] mb-1.5">Expected File Types</p>
+                        <p className="text-[0.625rem] text-[var(--color-text-tertiary)] mb-1.5">Expected File Types</p>
                         {editing ? (
                           <div className="flex flex-wrap gap-1">
                             {ALL_FILE_TYPES.map((ft) => (
                               <button
                                 key={ft}
                                 onClick={() => toggleFileType(ft)}
-                                className={`text-[10px] px-2 py-1 rounded-[var(--radius-sm)] border transition-colors ${
+                                className={`text-[0.625rem] px-2 py-1 rounded-[var(--radius-sm)] border transition-colors ${
                                   draft.output_config?.expected_file_types.includes(ft)
                                     ? 'bg-[var(--color-violet-100)] border-[var(--color-violet-400)] text-[var(--color-violet-500)]'
                                     : 'border-[var(--color-border-default)] text-[var(--color-text-tertiary)] hover:border-[var(--color-border-strong)]'
@@ -555,7 +555,7 @@ export function AutomationTaskPanel({
                             {(task.output_config?.expected_file_types ?? []).map((ft) => (
                               <span
                                 key={ft}
-                                className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-violet-100)] text-[var(--color-violet-500)]"
+                                className="text-[0.625rem] px-1.5 py-0.5 rounded bg-[var(--color-violet-100)] text-[var(--color-violet-500)]"
                               >
                                 {FILE_TYPE_LABELS[ft]}
                               </span>
@@ -566,7 +566,7 @@ export function AutomationTaskPanel({
 
                       {/* Description */}
                       <div>
-                        <p className="text-[10px] text-[var(--color-text-tertiary)] mb-1">Description</p>
+                        <p className="text-[0.625rem] text-[var(--color-text-tertiary)] mb-1">Description</p>
                         {editing ? (
                           <input
                             className="text-xs bg-transparent border border-[var(--color-border-default)] rounded px-1.5 py-1 w-full"
@@ -591,7 +591,7 @@ export function AutomationTaskPanel({
               {/* Available Inputs (from upstream tasks) */}
               {upstreamTasks.length > 0 && (
                 <div>
-                  <p className="text-[10px] text-[var(--color-text-tertiary)] mb-2">
+                  <p className="text-[0.625rem] text-[var(--color-text-tertiary)] mb-2">
                     <Package className="size-3 inline mr-1 -mt-0.5" />
                     Available Inputs ({upstreamTasks.length} upstream task{upstreamTasks.length !== 1 ? 's' : ''})
                   </p>
@@ -609,11 +609,11 @@ export function AutomationTaskPanel({
                               ? <ChevronDown className="size-3 text-[var(--color-text-tertiary)] shrink-0" />
                               : <ChevronRight className="size-3 text-[var(--color-text-tertiary)] shrink-0" />
                             }
-                            <span className="text-[11px] text-[var(--color-text-primary)] truncate flex-1">
+                            <span className="text-[0.6875rem] text-[var(--color-text-primary)] truncate flex-1">
                               {dep.title}
                             </span>
                             {latestOutputs.length > 0 && (
-                              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[var(--color-violet-100)] text-[var(--color-violet-500)]">
+                              <span className="text-[0.5625rem] px-1.5 py-0.5 rounded-full bg-[var(--color-violet-100)] text-[var(--color-violet-500)]">
                                 {latestOutputs.length} file{latestOutputs.length !== 1 ? 's' : ''}
                               </span>
                             )}
@@ -629,7 +629,7 @@ export function AutomationTaskPanel({
                                   />
                                 ))
                               ) : (
-                                <p className="text-[10px] text-[var(--color-text-tertiary)] py-2 text-center">
+                                <p className="text-[0.625rem] text-[var(--color-text-tertiary)] py-2 text-center">
                                   No outputs from previous run
                                 </p>
                               )}
@@ -644,7 +644,7 @@ export function AutomationTaskPanel({
 
               {/* Run Outputs */}
               <div>
-                <p className="text-[10px] text-[var(--color-text-tertiary)] mb-2">
+                <p className="text-[0.625rem] text-[var(--color-text-tertiary)] mb-2">
                   <FolderOutput className="size-3 inline mr-1 -mt-0.5" />
                   Run Outputs
                 </p>
@@ -653,10 +653,10 @@ export function AutomationTaskPanel({
                     {filteredRunOutputs.map((run) => (
                       <div key={run.run_id} className="rounded-[var(--radius-md)] border border-[var(--color-border-subtle)]">
                         <div className="flex items-center gap-2 px-3 py-2 bg-[var(--color-bg-secondary)] rounded-t-[var(--radius-md)]">
-                          <span className="text-[10px] text-[var(--color-text-tertiary)] font-mono">
+                          <span className="text-[0.625rem] text-[var(--color-text-tertiary)] font-mono">
                             {run.run_id}
                           </span>
-                          <span className="text-[10px] text-[var(--color-text-tertiary)]">
+                          <span className="text-[0.625rem] text-[var(--color-text-tertiary)]">
                             {formatTimestamp(run.run_timestamp)}
                           </span>
                         </div>
@@ -676,7 +676,7 @@ export function AutomationTaskPanel({
                   <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-subtle)] p-6 text-center">
                     <Paperclip className="size-5 text-[var(--color-text-tertiary)] mx-auto mb-2" />
                     <p className="text-xs text-[var(--color-text-secondary)]">No outputs yet</p>
-                    <p className="text-[10px] text-[var(--color-text-tertiary)] mt-1">
+                    <p className="text-[0.625rem] text-[var(--color-text-tertiary)] mt-1">
                       {task.output_config?.enabled
                         ? 'Run the automation to generate output files'
                         : 'Enable output configuration to produce files'}

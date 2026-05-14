@@ -801,7 +801,7 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
                           }
                         }}
                       >
-                        <SelectTrigger className="w-[120px] h-8">
+                        <SelectTrigger className="w-[7.5rem] h-8">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -940,7 +940,7 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
                             }
                           }}
                         >
-                          <SelectTrigger className="w-[120px] h-8">
+                          <SelectTrigger className="w-[7.5rem] h-8">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>

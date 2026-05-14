@@ -180,7 +180,7 @@ export default function KnowledgeCompetitors() {
 
         {/* Edit Sheet */}
         <Sheet open={isEditing} modal={false} onOpenChange={setIsEditing}>
-          <SheetContent side="right" className="w-[400px] flex flex-col">
+          <SheetContent side="right" className="w-[25rem] flex flex-col">
             <SheetHeader>
               <SheetTitle className="flex items-center gap-2">
                 <Swords className="h-5 w-5" />
@@ -201,7 +201,7 @@ export default function KnowledgeCompetitors() {
                       setCompetitiveEnvironmentDescription(e.target.value)
                     }
                     placeholder="Describe the competitive landscape, key factors for identifying competitors, target markets, and strategic positioning..."
-                    className="min-h-[200px]"
+                    className="min-h-[12.5rem]"
                   />
                 </div>
               </div>

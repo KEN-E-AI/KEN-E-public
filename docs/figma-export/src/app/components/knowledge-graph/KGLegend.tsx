@@ -30,7 +30,7 @@ export function KGLegend({ nodeTypes, relationshipTypes }: KGLegendProps) {
             {nodeTypes.map(nt => (
               <div key={nt.id} className="flex items-center gap-1.5">
                 <div className="size-2.5 rounded-full shrink-0" style={{ backgroundColor: nt.color }} />
-                <span className="text-[10px] truncate">{nt.label}</span>
+                <span className="text-[0.625rem] truncate">{nt.label}</span>
               </div>
             ))}
           </div>

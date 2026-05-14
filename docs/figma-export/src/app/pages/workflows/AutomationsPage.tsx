@@ -181,7 +181,7 @@ export function AutomationsPage() {
                   key={page}
                   variant={page === safePage ? 'default' : 'outline'}
                   size="sm"
-                  className="min-w-[32px] px-2"
+                  className="min-w-[2rem] px-2"
                   onClick={() => setCurrentPage(page as number)}
                 >
                   {page}
@@ -369,11 +369,11 @@ function AutomationCard({ workflow }: { workflow: Workflow }) {
           <p className="text-sm truncate">{workflow.name}</p>
           <OriginBadge extensionId={workflow.extensionId} />
           {workflow.isActive === false ? (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-error-bg)] text-[var(--color-error-text)]">
+            <span className="text-[0.625rem] px-1.5 py-0.5 rounded bg-[var(--color-error-bg)] text-[var(--color-error-text)]">
               Inactive
             </span>
           ) : (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--color-success-bg)] text-[var(--color-success-text)]">
+            <span className="text-[0.625rem] px-1.5 py-0.5 rounded bg-[var(--color-success-bg)] text-[var(--color-success-text)]">
               Active
             </span>
           )}

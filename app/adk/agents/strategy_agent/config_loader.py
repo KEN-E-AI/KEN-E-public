@@ -105,6 +105,28 @@ def load_config_from_firestore(
             logger.error(error_msg)
             raise ConfigValidationError(error_msg)
 
+        # AH-40: storage is flat. ADK's ``LlmAgentConfig`` still declares
+        # ``generate_content_config`` as a nested SDK field, so we hoist
+        # the flat ``temperature`` / ``max_output_tokens`` into that block
+        # at the SDK boundary before validation. This keeps the SDK
+        # contract intact while letting storage stay flat.
+        gcc_block: dict[str, Any] = {}
+        if "temperature" in config_data:
+            gcc_block["temperature"] = config_data.pop("temperature")
+        if "max_output_tokens" in config_data:
+            gcc_block["max_output_tokens"] = config_data.pop("max_output_tokens")
+        if gcc_block:
+            existing = config_data.get("generate_content_config") or {}
+            if existing:
+                # A doc that carries both the legacy nested block *and* flat
+                # fields is a backfill-in-progress signal — let the flat
+                # values win (they are the new contract).
+                logger.warning(
+                    f"Config '{doc_id}' carries both flat and nested "
+                    "generate_content_config fields; flat values win."
+                )
+            config_data["generate_content_config"] = {**existing, **gcc_block}
+
         # Extract metadata (for Weave logging) and validate version
         metadata = config_data.get("metadata", {})
         from shared.trace_metadata import DEFAULT_VERSION, validate_semver
@@ -300,6 +322,9 @@ def get_current_config_metadata(
                 f"Falling back to {DEFAULT_VERSION}. Fix the version in Firestore."
             )
 
+        # AH-40: storage is flat. Read temperature/max_output_tokens at
+        # the top level; fall back to the legacy nested block only for
+        # docs that haven't been backfilled yet.
         gcc = config_data.get("generate_content_config") or {}
         return {
             "doc_id": doc_id,
@@ -307,8 +332,10 @@ def get_current_config_metadata(
             "variant_name": metadata.get("variant_name", "baseline"),
             "experiment_id": metadata.get("experiment_id", "baseline"),
             "model": config_data.get("model", "unknown"),
-            "temperature": gcc.get("temperature"),
-            "max_output_tokens": gcc.get("max_output_tokens"),
+            "temperature": config_data.get("temperature", gcc.get("temperature")),
+            "max_output_tokens": config_data.get(
+                "max_output_tokens", gcc.get("max_output_tokens")
+            ),
             "updated_at": metadata.get("updated_at", "unknown"),
         }
     except Exception as e:

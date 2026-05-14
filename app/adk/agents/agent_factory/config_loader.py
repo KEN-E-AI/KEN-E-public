@@ -35,13 +35,16 @@ class FirestoreConnectionError(AgentFactoryConfigError):
 
 
 class MergedAgentConfig(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    # AH-40: strict — flatten storage shape, reject the legacy nested
+    # ``generate_content_config`` wrapper so backfill misses fail loud.
+    model_config = ConfigDict(extra="forbid")
 
     instruction: str
     model: str
 
     description: str | None = None
     temperature: float | None = None
+    max_output_tokens: int | None = None
     code_execution_enabled: bool = False
     mcp_servers: list[str] = Field(default_factory=list)
 
@@ -49,10 +52,52 @@ class MergedAgentConfig(BaseModel):
     sandbox_code_executor_enabled: bool = False
     response_schema: dict | None = None
 
+    # Phase 3 (AH-18 / PRD §4) — Global config flags
+    available_to_copy: bool = True
+    automatically_available: bool = True
+    visible_in_frontend: bool = True
+
     based_on_version: int | None = None
     customization_status: Literal["default", "customized", "custom_agent"] = "default"
 
     metadata: dict | None = None
+
+
+# Storage-internal fields that live on Firestore docs but are not part of
+# the ``MergedAgentConfig`` schema. ``_build_config`` strips these before
+# validation since ``extra="forbid"`` would otherwise reject them.
+#
+# ``name`` and ``title`` are user-facing identity metadata exposed by the
+# API but never consumed by the factory; the routing key is the Firestore
+# document ID (passed separately to ``LlmAgent(name=...)`` by the builder).
+#
+# ``deployment_status`` is written by MER-E (sister repo) onto the shared
+# ``agent_configs/{id}`` docs. The factory doesn't consume it; strip it
+# so an MER-E-touched doc still validates here.
+#
+# ``canonical_id`` and ``legacy_agent_name`` are pre-AH-PRD-02 storage
+# metadata that survives on a handful of seeded docs. Strip both so the
+# factory can load those agents without tripping ``extra="forbid"``.
+#
+# Note: the router's ``_STORAGE_INTERNAL_FIELDS`` additionally strips
+# ``metadata``. The factory does NOT strip it because this module's
+# ``MergedAgentConfig`` declares ``metadata: dict | None = None`` as a
+# real field — the factory wants the metadata to flow through (e.g. for
+# version pinning), whereas the router's response model omits it. Don't
+# "fix" this asymmetry by syncing the two sets.
+_STORAGE_INTERNAL_FIELDS: frozenset[str] = frozenset(
+    {
+        "name",
+        "title",
+        "created_at",
+        "updated_at",
+        "created_by",
+        "updated_by",
+        "deployment_status",
+        "canonical_id",
+        "legacy_agent_name",
+    }
+)
 
 
 def _resolve_project_id(project_id: str | None) -> str:
@@ -168,6 +213,10 @@ def _build_config(
     doc_dict = dict(raw)
     doc_dict.pop("based_on_version", None)
     doc_dict.pop("customization_status", None)
+    # Strip storage-internal fields not in the model. ``extra="forbid"`` (AH-40)
+    # would otherwise reject them.
+    for storage_field in _STORAGE_INTERNAL_FIELDS:
+        doc_dict.pop(storage_field, None)
 
     try:
         config = MergedAgentConfig.model_validate(doc_dict)

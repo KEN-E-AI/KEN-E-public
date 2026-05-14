@@ -2295,7 +2295,8 @@ class GraphSyncService:
         try:
             # Get monitoring topics document
             doc = self.firestore.get_document(
-                collection="monitoring_topics", document_id=account_id
+                collection=f"accounts/{account_id}/monitoring_topics",
+                document_id="default",
             )
 
             if doc and "competitor_entries" in doc:
@@ -2311,8 +2312,8 @@ class GraphSyncService:
                     from datetime import datetime
 
                     self.firestore.update_document(
-                        collection="monitoring_topics",
-                        document_id=account_id,
+                        collection=f"accounts/{account_id}/monitoring_topics",
+                        document_id="default",
                         data={
                             "competitor_entries": updated_competitors,
                             "updated_at": datetime.utcnow().isoformat(),
@@ -2880,7 +2881,8 @@ class GraphSyncService:
         try:
             # Get monitoring topics document
             doc = self.firestore.get_document(
-                collection="monitoring_topics", document_id=account_id
+                collection=f"accounts/{account_id}/monitoring_topics",
+                document_id="default",
             )
 
             if doc and "customer_profile_entries" in doc:
@@ -2898,8 +2900,8 @@ class GraphSyncService:
                     from datetime import datetime
 
                     self.firestore.update_document(
-                        collection="monitoring_topics",
-                        document_id=account_id,
+                        collection=f"accounts/{account_id}/monitoring_topics",
+                        document_id="default",
                         data={
                             "customer_profile_entries": updated_profiles,
                             "updated_at": datetime.utcnow().isoformat(),
@@ -4099,7 +4101,7 @@ class GraphSyncService:
             operation: "create", "update", or "delete"
         """
         # Store directly in account-specific collection
-        doc_path = f"strategy_docs_{account_id}"
+        doc_path = f"accounts/{account_id}/strategy_docs"
         collection_name = firestore_doc_type
 
         # Get current document
