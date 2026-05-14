@@ -172,4 +172,32 @@ def compose_inventory(
     return AccountToolsResponse(tools=entries)
 
 
-__all__ = ["compose_inventory"]
+def list_known_tool_ids(
+    catalogue: dict[str, list[dict[str, Any]]] | None = None,
+) -> set[str]:
+    """Return every tool_id present in the catalogue.
+
+    Used by the agent-config router to reject ``tool_ids`` containing entries
+    that don't reference a real tool. The catalogue is the same one the
+    inventory endpoint reads, so what the picker shows and what the API
+    accepts stay in sync.
+
+    Format mirrors ``AccountToolEntry.tool_id``:
+      * ``<mcp_server>.<tool_name>`` for tools in ``tools:``
+      * ``function.<tool_name>`` for tools in ``function_tools:``
+    """
+    raw = catalogue if catalogue is not None else _load_catalogue()
+    known: set[str] = set()
+    for tool in raw["tools"]:
+        server = tool.get("mcp_server")
+        name = tool.get("name")
+        if server and name:
+            known.add(f"{server}.{name}")
+    for tool in raw["function_tools"]:
+        name = tool.get("name")
+        if name:
+            known.add(f"function.{name}")
+    return known
+
+
+__all__ = ["compose_inventory", "list_known_tool_ids"]
