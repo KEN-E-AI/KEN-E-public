@@ -7,6 +7,7 @@ import { ArrowLeft, Bot } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCreateAgentConfig } from "@/queries/agentConfigs";
 import { SUPPORTED_MODELS } from "@/lib/api/agentConfigs";
+import { mapServerErrors } from "@/lib/api/formErrors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,19 +24,55 @@ import {
 import { DisabledPlaceholderRow } from "./agents/DisabledPlaceholderRow";
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
+//
+// Field constraints mirror ``AgentConfigCreate``
+// (``api/src/kene_api/models/agent_config_models.py:317-341``). Keeping them
+// in sync surfaces validation problems inline before the request is sent —
+// the API still re-validates, and any 422 fields it returns are mapped back
+// onto the form by ``onError`` below.
 
 export const schema = z.object({
-  title: z.string().min(1, "Title is required"),
-  name: z.string().optional(),
-  instruction: z.string().min(1, "Instruction is required"),
+  title: z
+    .string()
+    .trim()
+    .min(1, "Title is required")
+    .max(100, "Title must be 100 characters or fewer"),
+  name: z
+    .string()
+    .trim()
+    .max(100, "Name must be 100 characters or fewer")
+    .optional(),
+  instruction: z
+    .string()
+    .min(10, "Instruction must be at least 10 characters")
+    .max(50000, "Instruction must be 50,000 characters or fewer"),
   model: z.enum(SUPPORTED_MODELS as [string, ...string[]], {
     errorMap: () => ({ message: "Model is required" }),
   }),
   temperature: z.number().min(0.1).max(0.9).optional(),
-  description: z.string().optional(),
+  // Optional, but the API enforces min_length=10 when provided. Allow empty
+  // (treated as "not set" — onSubmit converts it to null) or at least 10
+  // characters when the user types something.
+  description: z
+    .string()
+    .max(1000, "Description must be 1,000 characters or fewer")
+    .refine((v) => v.length === 0 || v.trim().length >= 10, {
+      message: "Description must be at least 10 characters",
+    })
+    .optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
+
+// Fields we know how to surface inline from a FastAPI 422 ``detail`` entry.
+const FORM_FIELDS = [
+  "title",
+  "name",
+  "instruction",
+  "model",
+  "temperature",
+  "description",
+] as const satisfies readonly (keyof FormValues)[];
 
 // ─── AgentCreatePage ──────────────────────────────────────────────────────────
 
@@ -49,6 +86,7 @@ export function AgentCreatePage() {
     register,
     handleSubmit,
     control,
+    setError,
     formState: { errors, isValid },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -58,9 +96,11 @@ export function AgentCreatePage() {
 
   function onSubmit(data: FormValues) {
     const trimmedName = data.name?.trim();
+    const trimmedDescription = data.description?.trim();
     const payload = {
       ...data,
       name: trimmedName ? trimmedName : null,
+      description: trimmedDescription ? trimmedDescription : null,
     };
     mutation.mutate(payload, {
       onSuccess: (created) => {
@@ -69,7 +109,15 @@ export function AgentCreatePage() {
           `/workflows/agents?edit=${encodeURIComponent(created.config_id)}`,
         );
       },
-      onError: () => {
+      onError: (err) => {
+        const mapped = mapServerErrors(err, FORM_FIELDS);
+        if (mapped) {
+          for (const [field, message] of Object.entries(mapped)) {
+            setError(field as keyof FormValues, { type: "server", message });
+          }
+          toast.error("Please fix the highlighted fields and try again.");
+          return;
+        }
         toast.error("Failed to create agent.");
       },
     });
@@ -227,6 +275,11 @@ export function AgentCreatePage() {
             className="mt-1.5"
             data-testid="description-field"
           />
+          {errors.description && (
+            <p className="text-xs text-destructive mt-1">
+              {errors.description.message}
+            </p>
+          )}
         </div>
 
         <Separator />

@@ -12,6 +12,7 @@ import type {
   AgentConfigOverlayUpdate,
 } from "@/lib/api/agentConfigs";
 import { displayNameFor, SUPPORTED_MODELS } from "@/lib/api/agentConfigs";
+import { mapServerErrors } from "@/lib/api/formErrors";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -73,6 +74,23 @@ function DirtyDot({ dirty }: { dirty: boolean }) {
 
 // ─── AgentEditView ────────────────────────────────────────────────────────────
 
+// Fields we know how to surface inline from a FastAPI 422 ``detail`` entry.
+// ``temperature`` is included defensively — the slider can't currently emit
+// out-of-range values, but listing it means a future server-side rejection
+// surfaces on the right input rather than a generic toast.
+const EDITABLE_FIELDS = [
+  "name",
+  "title",
+  "instruction",
+  "model",
+  "temperature",
+  "description",
+] as const;
+
+type EditableField = (typeof EDITABLE_FIELDS)[number];
+
+type FieldErrors = Partial<Record<EditableField, string>>;
+
 export type AgentEditViewProps = {
   configId: AgentConfigId;
   onClose: () => void;
@@ -97,6 +115,10 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
   const [temperature, setTemperature] = useState<number>(0.3);
   const [model, setModel] = useState("");
   const [description, setDescription] = useState("");
+  // Per-field errors returned by the API on 422. Cleared at the start of
+  // every save attempt; surviving entries are shown under their input until
+  // the user resubmits.
+  const [serverErrors, setServerErrors] = useState<FieldErrors>({});
 
   // Seed local state once config is loaded
   useEffect(() => {
@@ -155,7 +177,49 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
 
   const revertLabel = isCustomAgent ? "Delete agent" : "Revert to default";
 
+  // Client-side validation. Mirrors ``AgentConfigOverlayUpdate`` constraints
+  // in ``api/src/kene_api/models/agent_config_models.py`` so the user sees
+  // problems inline before the request is sent — only dirty fields are
+  // checked (a loaded config is valid by definition, so untouched fields
+  // shouldn't surface errors).
+  const clientErrors: FieldErrors = {};
+  if (isDirtyTitle && title.trim().length > 100) {
+    clientErrors.title = "Title must be 100 characters or fewer";
+  }
+  if (isDirtyName && name.trim().length > 100) {
+    clientErrors.name = "Name must be 100 characters or fewer";
+  }
+  if (isDirtyInstruction) {
+    if (instruction.length === 0) {
+      clientErrors.instruction = "Instruction is required";
+    } else if (instruction.length < 10) {
+      clientErrors.instruction = "Instruction must be at least 10 characters";
+    } else if (instruction.length > 50000) {
+      clientErrors.instruction =
+        "Instruction must be 50,000 characters or fewer";
+    }
+  }
+  if (isDirtyDescription) {
+    const trimmed = description.trim();
+    // Description is required on edit — clearing it would write a null back
+    // to Firestore and leave the agent with no description.
+    if (trimmed.length === 0) {
+      clientErrors.description = "Description is required";
+    } else if (trimmed.length < 10) {
+      clientErrors.description = "Description must be at least 10 characters";
+    } else if (description.length > 1000) {
+      clientErrors.description =
+        "Description must be 1,000 characters or fewer";
+    }
+  }
+  const hasClientError = Object.keys(clientErrors).length > 0;
+  // Client errors win over stale server errors — they reflect the current
+  // input, whereas server errors describe what was last submitted.
+  const fieldErrors: FieldErrors = { ...serverErrors, ...clientErrors };
+
   function handleSave() {
+    setServerErrors({});
+
     const dirty: AgentConfigOverlayUpdate = {};
     if (isDirtyName) dirty.name = name.trim() ? name.trim() : null;
     if (isDirtyTitle) dirty.title = title.trim() ? title.trim() : null;
@@ -171,7 +235,13 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
           toast.success("Agent updated.");
           onClose();
         },
-        onError: () => {
+        onError: (err) => {
+          const mapped = mapServerErrors(err, EDITABLE_FIELDS);
+          if (mapped) {
+            setServerErrors(mapped);
+            toast.error("Please fix the highlighted fields and try again.");
+            return;
+          }
           toast.error("Failed to save changes.");
         },
       },
@@ -258,6 +328,9 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
             className="mt-1.5"
             data-testid="title-input"
           />
+          {fieldErrors.title && (
+            <p className="text-xs text-destructive mt-1">{fieldErrors.title}</p>
+          )}
         </div>
 
         {/* Name (human, optional) */}
@@ -274,6 +347,9 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
             className="mt-1.5"
             data-testid="name-input"
           />
+          {fieldErrors.name && (
+            <p className="text-xs text-destructive mt-1">{fieldErrors.name}</p>
+          )}
         </div>
 
         {/* Instruction */}
@@ -290,6 +366,11 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
             className="mt-1.5 min-h-[10rem] resize-y"
             data-testid="instruction-field"
           />
+          {fieldErrors.instruction && (
+            <p className="text-xs text-destructive mt-1">
+              {fieldErrors.instruction}
+            </p>
+          )}
         </div>
 
         {/* Response style (stored as `temperature`) */}
@@ -338,6 +419,9 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
               ))}
             </SelectContent>
           </Select>
+          {fieldErrors.model && (
+            <p className="text-xs text-destructive mt-1">{fieldErrors.model}</p>
+          )}
         </div>
 
         {/* Description */}
@@ -355,6 +439,11 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
             className="mt-1.5"
             data-testid="description-field"
           />
+          {fieldErrors.description && (
+            <p className="text-xs text-destructive mt-1">
+              {fieldErrors.description}
+            </p>
+          )}
         </div>
 
         <Separator />
@@ -393,7 +482,12 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
           <Button
             size="sm"
             onClick={handleSave}
-            disabled={!accountId || !hasAnyDirty || upsertMutation.isPending}
+            disabled={
+              !accountId ||
+              !hasAnyDirty ||
+              hasClientError ||
+              upsertMutation.isPending
+            }
             data-testid="save-button"
           >
             Save Changes

@@ -153,7 +153,7 @@ describe("AgentCreatePage", () => {
 describe("AgentCreatePage — schema", () => {
   const baseInput = {
     title: "Business Researcher",
-    instruction: "y",
+    instruction: "You are a helpful assistant.",
     model: "gemini-2.5-flash",
   };
 
@@ -174,5 +174,87 @@ describe("AgentCreatePage — schema", () => {
     expect(schema.safeParse({ ...baseInput, temperature: 0.9 }).success).toBe(
       true,
     );
+  });
+
+  it("rejects instruction shorter than 10 characters", () => {
+    const result = schema.safeParse({ ...baseInput, instruction: "test" });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts a missing/empty description", () => {
+    expect(schema.safeParse(baseInput).success).toBe(true);
+    expect(schema.safeParse({ ...baseInput, description: "" }).success).toBe(
+      true,
+    );
+  });
+
+  it("rejects a non-empty description shorter than 10 characters", () => {
+    const result = schema.safeParse({ ...baseInput, description: "short" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a description that is only whitespace-padded short text", () => {
+    // The refine uses ``v.trim().length`` rather than ``v.length`` so an
+    // 8-char string surrounded by whitespace doesn't sneak past the floor.
+    const result = schema.safeParse({
+      ...baseInput,
+      description: "   hi   ",
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("AgentCreatePage — server validation", () => {
+  it("maps FastAPI 422 detail entries onto the matching fields", async () => {
+    // Shape mirrors what the API returns: ``{ response: { data: { detail: [...] } } }``
+    // — Axios surfaces non-2xx HTTP responses as errors with the parsed body
+    // attached at ``error.response.data``.
+    mockCreateAgentConfig.mockRejectedValueOnce({
+      response: {
+        status: 422,
+        data: {
+          detail: [
+            {
+              type: "string_too_short",
+              loc: ["body", "instruction"],
+              msg: "String should have at least 10 characters",
+              ctx: { min_length: 10 },
+            },
+          ],
+        },
+      },
+    });
+
+    const { toast } = await import("sonner");
+    const user = userEvent.setup();
+    render(<AgentCreatePage />, { wrapper: makeWrapper() });
+
+    // Type a valid-looking instruction so the client schema passes and the
+    // form can actually submit (we want to exercise the server-error path).
+    await user.type(screen.getByTestId("title-input"), "Business Researcher");
+    await user.type(
+      screen.getByTestId("instruction-field"),
+      "You are a helpful assistant.",
+    );
+    await user.click(screen.getByTestId("model-select"));
+    const modelOptions = await screen.findAllByRole("option");
+    await user.click(modelOptions[0]);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /create agent/i }),
+      ).not.toBeDisabled(),
+    );
+
+    await user.click(screen.getByRole("button", { name: /create agent/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("String should have at least 10 characters"),
+      ).toBeInTheDocument();
+      expect(toast.error).toHaveBeenCalledWith(
+        "Please fix the highlighted fields and try again.",
+      );
+    });
   });
 });
