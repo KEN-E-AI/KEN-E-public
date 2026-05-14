@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { Bot } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -7,6 +7,7 @@ import {
   useUpsertAgentConfigOverlay,
   useDeleteAgentConfig,
 } from "@/queries/agentConfigs";
+import { useAccountTools } from "@/queries/tools";
 import type {
   AgentConfigId,
   AgentConfigOverlayUpdate,
@@ -27,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { AgentToolPicker } from "./AgentToolPicker";
 import { DisabledPlaceholderRow } from "./DisabledPlaceholderRow";
 
 // ─── Customization badge (reused from list) ───────────────────────────────────
@@ -59,6 +61,14 @@ export function snapTemperatureToGrid(t: number | null | undefined): number {
   return parseFloat(clamped.toFixed(1));
 }
 
+// Order-independent array equality — semantically tool_ids is a set, so
+// reordering shouldn't count as a change.
+export function setEquals<T>(a: T[], b: T[]): boolean {
+  if (a.length !== b.length) return false;
+  const sb = new Set(b);
+  return a.every((v) => sb.has(v));
+}
+
 // ─── Dot indicator for dirty fields ──────────────────────────────────────────
 
 function DirtyDot({ dirty }: { dirty: boolean }) {
@@ -85,6 +95,7 @@ const EDITABLE_FIELDS = [
   "model",
   "temperature",
   "description",
+  "tool_ids",
 ] as const;
 
 type EditableField = (typeof EDITABLE_FIELDS)[number];
@@ -107,6 +118,7 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
   } = useAgentConfig(accountId, configId);
   const upsertMutation = useUpsertAgentConfigOverlay(accountId);
   const deleteMutation = useDeleteAgentConfig(accountId);
+  const toolsQuery = useAccountTools(accountId);
 
   // Form state (initialised from loaded config)
   const [name, setName] = useState("");
@@ -115,6 +127,15 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
   const [temperature, setTemperature] = useState<number>(0.3);
   const [model, setModel] = useState("");
   const [description, setDescription] = useState("");
+  // AH-PRD-06: tool_ids is seeded once both the config and the inventory have
+  // loaded. Legacy agents (stored ``tool_ids: null``) are expanded to "every
+  // tool currently available to the account" so a no-op save preserves prior
+  // runtime behaviour. ``initialToolIds`` is the snapshot used for dirty
+  // tracking; ``seededToolsRef`` keeps a later inventory refetch (from a
+  // ``staleTime``-expired query) from clobbering live user edits.
+  const [toolIds, setToolIds] = useState<string[]>([]);
+  const [initialToolIds, setInitialToolIds] = useState<string[]>([]);
+  const seededToolsRef = useRef(false);
   // Per-field errors returned by the API on 422. Cleared at the start of
   // every save attempt; surviving entries are shown under their input until
   // the user resubmits.
@@ -130,6 +151,22 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
     setModel(config.model);
     setDescription(config.description ?? "");
   }, [config]);
+
+  // Seed tool_ids once BOTH the config and the inventory have arrived. Done
+  // in a separate effect because it depends on two independent queries; the
+  // ref guard keeps subsequent ``toolsQuery`` resolutions (re-orderings,
+  // refetches) from overwriting in-flight user edits.
+  useEffect(() => {
+    if (seededToolsRef.current) return;
+    if (!config || !toolsQuery.data) return;
+    const initial =
+      config.tool_ids !== null
+        ? [...config.tool_ids]
+        : toolsQuery.data.tools.map((t) => t.tool_id);
+    setToolIds(initial);
+    setInitialToolIds(initial);
+    seededToolsRef.current = true;
+  }, [config, toolsQuery.data]);
 
   if (isLoading) {
     return (
@@ -164,13 +201,19 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
     temperature !== snapTemperatureToGrid(config.temperature);
   const isDirtyModel = model !== config.model;
   const isDirtyDescription = description !== (config.description ?? "");
+  // Order-independent equality: tool_ids semantically is a set, so toggling
+  // a tool off and back on should clear dirty even if the picker changed
+  // insertion order.
+  const isDirtyToolIds =
+    seededToolsRef.current && !setEquals(toolIds, initialToolIds);
   const hasAnyDirty =
     isDirtyName ||
     isDirtyTitle ||
     isDirtyInstruction ||
     isDirtyTemperature ||
     isDirtyModel ||
-    isDirtyDescription;
+    isDirtyDescription ||
+    isDirtyToolIds;
 
   const isCustomAgent = config.customization_status === "custom_agent";
   const isDefault = config.customization_status === "default";
@@ -227,6 +270,10 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
     if (isDirtyTemperature) dirty.temperature = temperature;
     if (isDirtyModel) dirty.model = model;
     if (isDirtyDescription) dirty.description = description || null;
+    // Only ship tool_ids when the user actually moved something: keeps
+    // legacy ``tool_ids: null`` agents on the legacy code path until they
+    // opt into the explicit allowlist.
+    if (isDirtyToolIds) dirty.tool_ids = toolIds;
 
     upsertMutation.mutate(
       { configId, body: dirty },
@@ -442,6 +489,26 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
           {fieldErrors.description && (
             <p className="text-xs text-destructive mt-1">
               {fieldErrors.description}
+            </p>
+          )}
+        </div>
+
+        {/* Tools (AH-PRD-06) */}
+        <div data-testid="tool-picker-section">
+          <div className="flex items-center mb-1.5">
+            <span className="text-sm font-medium">Tools</span>
+            <DirtyDot dirty={isDirtyToolIds} />
+          </div>
+          <AgentToolPicker
+            value={toolIds}
+            onChange={setToolIds}
+            tools={toolsQuery.data?.tools}
+            isLoading={toolsQuery.isLoading}
+            isError={toolsQuery.isError}
+          />
+          {fieldErrors.tool_ids && (
+            <p className="text-xs text-destructive mt-1">
+              {fieldErrors.tool_ids}
             </p>
           )}
         </div>

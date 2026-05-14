@@ -20,6 +20,10 @@ vi.mock("@/queries/agentConfigs", () => ({
   useDeleteAgentConfig: vi.fn(),
 }));
 
+vi.mock("@/queries/tools", () => ({
+  useAccountTools: vi.fn(),
+}));
+
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
@@ -30,6 +34,7 @@ import {
   useUpsertAgentConfigOverlay,
   useDeleteAgentConfig,
 } from "@/queries/agentConfigs";
+import { useAccountTools } from "@/queries/tools";
 
 const mockUseAuth = useAuth as ReturnType<typeof vi.fn>;
 const mockUseAgentConfig = useAgentConfig as ReturnType<typeof vi.fn>;
@@ -39,12 +44,37 @@ const mockUseUpsertOverlay = useUpsertAgentConfigOverlay as ReturnType<
 const mockUseDeleteAgentConfig = useDeleteAgentConfig as ReturnType<
   typeof vi.fn
 >;
+const mockUseAccountTools = useAccountTools as ReturnType<typeof vi.fn>;
+
+const fixtureTools = {
+  tools: [
+    {
+      tool_id: "function.create_visualization",
+      name: "create_visualization",
+      description: "Render a chart.",
+      category: "general",
+      source: "global_default" as const,
+      mcp_server: null,
+      integration_platform: null,
+    },
+    {
+      tool_id: "google_analytics_mcp.list_ga_accounts",
+      name: "list_ga_accounts",
+      description: "List GA accounts.",
+      category: "analytics",
+      source: "integration" as const,
+      mcp_server: "google_analytics_mcp",
+      integration_platform: "google_analytics",
+    },
+  ],
+};
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
 const baseConfig: MergedAgentConfig = {
   config_id: "google_analytics_specialist",
   name: null,
+  title: null,
   instruction: "You are a GA specialist.",
   model: "gemini-2.5-flash",
   description: "Analyzes GA data.",
@@ -52,6 +82,8 @@ const baseConfig: MergedAgentConfig = {
   code_execution_enabled: true,
   mcp_servers: [],
   skill_ids: [],
+  // Legacy default — pre-AH-PRD-06 agents store null here.
+  tool_ids: null,
   sandbox_code_executor_enabled: false,
   response_schema: null,
   available_to_copy: true,
@@ -103,6 +135,13 @@ beforeEach(() => {
   mockUseDeleteAgentConfig.mockReturnValue({
     mutate: mockMutate,
     isPending: false,
+  });
+  // Default: inventory loaded with two tools. Individual tests can override
+  // for loading / error / empty states.
+  mockUseAccountTools.mockReturnValue({
+    data: fixtureTools,
+    isLoading: false,
+    isError: false,
   });
 });
 
@@ -532,6 +571,210 @@ describe("snapTemperatureToGrid", () => {
   it("falls back to 0.3 when null/undefined", () => {
     expect(snapTemperatureToGrid(null)).toBe(0.3);
     expect(snapTemperatureToGrid(undefined)).toBe(0.3);
+  });
+});
+
+// ─── Tool picker (AH-PRD-06) ─────────────────────────────────────────────────
+
+describe("AgentEditView — tool picker", () => {
+  it("pre-selects every available tool when stored tool_ids is null (legacy)", async () => {
+    mockUseAgentConfig.mockReturnValue({
+      data: baseConfig, // tool_ids: null
+      isLoading: false,
+      isError: false,
+    });
+
+    render(<AgentEditView configId={configId} onClose={vi.fn()} />, {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("tool-picker-summary")).toHaveTextContent(
+        "2 of 2 selected",
+      ),
+    );
+  });
+
+  it("pre-selects exactly the stored tool_ids when set", async () => {
+    mockUseAgentConfig.mockReturnValue({
+      data: {
+        ...baseConfig,
+        tool_ids: ["function.create_visualization"],
+      },
+      isLoading: false,
+      isError: false,
+    });
+
+    render(<AgentEditView configId={configId} onClose={vi.fn()} />, {
+      wrapper: makeWrapper(),
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("tool-picker-summary")).toHaveTextContent(
+        "1 of 2 selected",
+      ),
+    );
+  });
+
+  it("does not include tool_ids in PUT when the picker is untouched (legacy null)", async () => {
+    const user = userEvent.setup();
+    mockUseAgentConfig.mockReturnValue({
+      data: baseConfig, // tool_ids: null
+      isLoading: false,
+      isError: false,
+    });
+
+    render(<AgentEditView configId={configId} onClose={vi.fn()} />, {
+      wrapper: makeWrapper(),
+    });
+
+    // Make a different field dirty so save is enabled.
+    const textarea = screen.getByTestId("instruction-field");
+    await user.clear(textarea);
+    await user.type(textarea, "Updated instruction text.");
+
+    await waitFor(() =>
+      expect(screen.getByTestId("save-button")).not.toBeDisabled(),
+    );
+    await user.click(screen.getByTestId("save-button"));
+
+    expect(mockMutate).toHaveBeenCalled();
+    const [args] = mockMutate.mock.calls[0];
+    expect(args.body).not.toHaveProperty("tool_ids");
+  });
+
+  it("includes tool_ids in PUT when the user toggles a tool", async () => {
+    const user = userEvent.setup();
+    mockUseAgentConfig.mockReturnValue({
+      data: baseConfig, // tool_ids: null → all available pre-selected
+      isLoading: false,
+      isError: false,
+    });
+
+    render(<AgentEditView configId={configId} onClose={vi.fn()} />, {
+      wrapper: makeWrapper(),
+    });
+
+    // Wait for the picker to seed.
+    const builtinCheckbox = await screen.findByTestId(
+      "tool-picker-checkbox-function.create_visualization",
+    );
+    // Deselecting one tool makes the selection differ from the seed.
+    await user.click(builtinCheckbox);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("save-button")).not.toBeDisabled(),
+    );
+    await user.click(screen.getByTestId("save-button"));
+
+    expect(mockMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          tool_ids: ["google_analytics_mcp.list_ga_accounts"],
+        }),
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("clears the dirty flag when the user toggles a tool back to its seeded state", async () => {
+    const user = userEvent.setup();
+    mockUseAgentConfig.mockReturnValue({
+      data: {
+        ...baseConfig,
+        tool_ids: ["function.create_visualization"],
+      },
+      isLoading: false,
+      isError: false,
+    });
+
+    render(<AgentEditView configId={configId} onClose={vi.fn()} />, {
+      wrapper: makeWrapper(),
+    });
+
+    const builtinCheckbox = await screen.findByTestId(
+      "tool-picker-checkbox-function.create_visualization",
+    );
+
+    // Toggle off then back on — the dirty dot should appear and disappear.
+    await user.click(builtinCheckbox);
+    await waitFor(() =>
+      expect(screen.getByTestId("save-button")).not.toBeDisabled(),
+    );
+
+    await user.click(builtinCheckbox);
+    await waitFor(() =>
+      expect(screen.getByTestId("save-button")).toBeDisabled(),
+    );
+  });
+
+  it("surfaces a server 422 on tool_ids onto the picker section", async () => {
+    const capture = vi.fn();
+    mockUseUpsertOverlay.mockReturnValue({
+      mutate: capture,
+      isPending: false,
+    });
+    mockUseAgentConfig.mockReturnValue({
+      data: baseConfig,
+      isLoading: false,
+      isError: false,
+    });
+
+    const user = userEvent.setup();
+    render(<AgentEditView configId={configId} onClose={vi.fn()} />, {
+      wrapper: makeWrapper(),
+    });
+
+    // Make any change so save is enabled (server can't reject a no-op save).
+    const builtinCheckbox = await screen.findByTestId(
+      "tool-picker-checkbox-function.create_visualization",
+    );
+    await user.click(builtinCheckbox);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("save-button")).not.toBeDisabled(),
+    );
+    await user.click(screen.getByTestId("save-button"));
+
+    const [, opts] = capture.mock.calls[0];
+    act(() => {
+      opts.onError({
+        response: {
+          status: 422,
+          data: {
+            detail: [
+              {
+                type: "value_error",
+                loc: ["body", "tool_ids"],
+                msg: "Unknown tool_ids — not present in the tool catalogue",
+              },
+            ],
+          },
+        },
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText(/unknown tool_ids/i)).toBeInTheDocument(),
+    );
+  });
+
+  it("renders a loading skeleton while the inventory is fetching", () => {
+    mockUseAccountTools.mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+    });
+    mockUseAgentConfig.mockReturnValue({
+      data: baseConfig,
+      isLoading: false,
+      isError: false,
+    });
+
+    render(<AgentEditView configId={configId} onClose={vi.fn()} />, {
+      wrapper: makeWrapper(),
+    });
+    expect(screen.getByTestId("tool-picker-loading")).toBeInTheDocument();
   });
 });
 

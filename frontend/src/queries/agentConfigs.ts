@@ -102,8 +102,7 @@ export function useUpsertAgentConfigOverlay(
       );
       queryClient.setQueriesData<MergedAgentConfig[] | undefined>(
         { queryKey: agentConfigKeys.listsForAccount(accountId) },
-        (prev) =>
-          prev?.map((c) => (c.config_id === configId ? updated : c)),
+        (prev) => prev?.map((c) => (c.config_id === configId ? updated : c)),
       );
     },
   });

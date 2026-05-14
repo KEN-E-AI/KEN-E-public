@@ -53,6 +53,11 @@ export type MergedAgentConfig = {
   code_execution_enabled: boolean;
   mcp_servers: string[];
   skill_ids: string[];
+  // Per-agent tool allowlist (AH-PRD-06). Semantics:
+  //   null  → legacy "all tools from attached servers" (pre-PRD agents)
+  //   []    → explicit "no tools"
+  //   [...] → exactly these tools
+  tool_ids: string[] | null;
   sandbox_code_executor_enabled: boolean;
   response_schema: Record<string, unknown> | null;
   available_to_copy: boolean;
@@ -70,6 +75,9 @@ export type AgentConfigCreate = {
   description?: string | null;
   temperature?: number | null;
   skill_ids?: string[];
+  // AH-PRD-06: omit for legacy "all tools" behaviour; [] for no tools; an
+  // explicit list for an allowlist. The API caps at 30 entries.
+  tool_ids?: string[] | null;
   sandbox_code_executor_enabled?: boolean;
 };
 
@@ -81,6 +89,7 @@ export type AgentConfigOverlayUpdate = {
   description?: string | null;
   temperature?: number | null;
   skill_ids?: string[] | null;
+  tool_ids?: string[] | null;
   sandbox_code_executor_enabled?: boolean | null;
 };
 

@@ -203,9 +203,9 @@ describe("useUpsertAgentConfigOverlay", () => {
     result.current.mutate({ configId: "ga", body: { name: "Dave" } });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(client.getQueryData(agentConfigKeys.detail("acc_test", "ga"))).toEqual(
-      updated,
-    );
+    expect(
+      client.getQueryData(agentConfigKeys.detail("acc_test", "ga")),
+    ).toEqual(updated);
   });
 
   it("updates every list variant for the account by config_id", async () => {
@@ -223,10 +223,7 @@ describe("useUpsertAgentConfigOverlay", () => {
     // might use — one with visibleInFrontend=true, one without opts.
     client.setQueryData(
       agentConfigKeys.list("acc_test", { visibleInFrontend: true }),
-      [
-        { config_id: "ga", name: null, title: null },
-        other,
-      ],
+      [{ config_id: "ga", name: null, title: null }, other],
     );
     client.setQueryData(agentConfigKeys.list("acc_test"), [
       { config_id: "ga", name: null, title: null },

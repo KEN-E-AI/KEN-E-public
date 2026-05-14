@@ -22,8 +22,9 @@ vi.mock("@/contexts/AuthContext", () => ({
   }),
 }));
 
-const { mockCreateAgentConfig } = vi.hoisted(() => ({
+const { mockCreateAgentConfig, mockGetAccountTools } = vi.hoisted(() => ({
   mockCreateAgentConfig: vi.fn(),
+  mockGetAccountTools: vi.fn(),
 }));
 
 vi.mock("@/lib/api/agentConfigs", async (importOriginal) => {
@@ -31,6 +32,36 @@ vi.mock("@/lib/api/agentConfigs", async (importOriginal) => {
     await importOriginal<typeof import("@/lib/api/agentConfigs")>();
   return { ...actual, createAgentConfig: mockCreateAgentConfig };
 });
+
+vi.mock("@/lib/api/tools", () => ({
+  getAccountTools: mockGetAccountTools,
+}));
+
+// Default fixture for the tool inventory — keeps render quiet during tests
+// that don't care about tools. Individual tests can override with their own
+// ``mockGetAccountTools.mockResolvedValueOnce(...)``.
+const defaultTools = {
+  tools: [
+    {
+      tool_id: "function.create_visualization",
+      name: "create_visualization",
+      description: "Render a chart.",
+      category: "general",
+      source: "global_default",
+      mcp_server: null,
+      integration_platform: null,
+    },
+    {
+      tool_id: "google_analytics_mcp.list_ga_accounts",
+      name: "list_ga_accounts",
+      description: "List GA accounts.",
+      category: "analytics",
+      source: "integration",
+      mcp_server: "google_analytics_mcp",
+      integration_platform: "google_analytics",
+    },
+  ],
+};
 
 // ─── Wrapper ───
 
@@ -47,6 +78,7 @@ function makeWrapper() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockGetAccountTools.mockResolvedValue(defaultTools);
 });
 
 // ─── Tests ───
@@ -148,6 +180,83 @@ describe("AgentCreatePage", () => {
 
     expect(mockNavigate).toHaveBeenCalledWith("/workflows/agents");
   });
+
+  it("submits tool_ids: [] by default when the user makes no selection", async () => {
+    mockCreateAgentConfig.mockResolvedValueOnce({
+      config_id: "custom_abc12345",
+      customization_status: "custom_agent",
+    });
+
+    const user = userEvent.setup();
+    render(<AgentCreatePage />, { wrapper: makeWrapper() });
+
+    await user.type(screen.getByTestId("title-input"), "Business Researcher");
+    await user.type(
+      screen.getByTestId("instruction-field"),
+      "You are a helpful assistant.",
+    );
+    await user.click(screen.getByTestId("model-select"));
+    const modelOptions = await screen.findAllByRole("option");
+    await user.click(modelOptions[0]);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /create agent/i }),
+      ).not.toBeDisabled(),
+    );
+
+    await user.click(screen.getByRole("button", { name: /create agent/i }));
+
+    await waitFor(() =>
+      expect(mockCreateAgentConfig).toHaveBeenCalledWith(
+        "acc_test",
+        expect.objectContaining({ tool_ids: [] }),
+      ),
+    );
+  });
+
+  it("submits the picked tool_ids when the user selects tools", async () => {
+    mockCreateAgentConfig.mockResolvedValueOnce({
+      config_id: "custom_abc12345",
+      customization_status: "custom_agent",
+    });
+
+    const user = userEvent.setup();
+    render(<AgentCreatePage />, { wrapper: makeWrapper() });
+
+    await user.type(screen.getByTestId("title-input"), "Business Researcher");
+    await user.type(
+      screen.getByTestId("instruction-field"),
+      "You are a helpful assistant.",
+    );
+    await user.click(screen.getByTestId("model-select"));
+    const modelOptions = await screen.findAllByRole("option");
+    await user.click(modelOptions[0]);
+
+    // Wait for inventory to load — render shows checkboxes once the query
+    // resolves.
+    const checkbox = await screen.findByTestId(
+      "tool-picker-checkbox-function.create_visualization",
+    );
+    await user.click(checkbox);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /create agent/i }),
+      ).not.toBeDisabled(),
+    );
+
+    await user.click(screen.getByRole("button", { name: /create agent/i }));
+
+    await waitFor(() =>
+      expect(mockCreateAgentConfig).toHaveBeenCalledWith(
+        "acc_test",
+        expect.objectContaining({
+          tool_ids: ["function.create_visualization"],
+        }),
+      ),
+    );
+  });
 });
 
 describe("AgentCreatePage — schema", () => {
@@ -201,6 +310,27 @@ describe("AgentCreatePage — schema", () => {
       description: "   hi   ",
     });
     expect(result.success).toBe(false);
+  });
+
+  it("accepts up to 30 tool_ids", () => {
+    const ids = Array.from({ length: 30 }, (_, i) => `function.t${i}`);
+    expect(schema.safeParse({ ...baseInput, tool_ids: ids }).success).toBe(
+      true,
+    );
+  });
+
+  it("rejects more than 30 tool_ids", () => {
+    const ids = Array.from({ length: 31 }, (_, i) => `function.t${i}`);
+    const result = schema.safeParse({ ...baseInput, tool_ids: ids });
+    expect(result.success).toBe(false);
+  });
+
+  it("defaults tool_ids to [] when omitted", () => {
+    const result = schema.safeParse(baseInput);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.tool_ids).toEqual([]);
+    }
   });
 });
 

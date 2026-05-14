@@ -128,6 +128,29 @@ vi.mock("@/components/notifications/NotificationSidebar", () => ({
   NotificationSidebar: () => null,
 }));
 
+// AgentCreatePage also calls ``useAccountTools`` (AH-PRD-06). Mock it for the
+// same reason as ``@/queries/agentConfigs`` below — keeps the rendered tree on
+// the loaded path without spinning up a real QueryClientProvider.
+vi.mock("@/queries/tools", () => ({
+  useAccountTools: () => ({
+    data: {
+      tools: [
+        {
+          tool_id: "function.create_visualization",
+          name: "create_visualization",
+          description: "Render a chart.",
+          category: "general",
+          source: "global_default" as const,
+          mcp_server: null,
+          integration_platform: null,
+        },
+      ],
+    },
+    isLoading: false,
+    isError: false,
+  }),
+}));
+
 // Workflows: Agents renders <AgentsListView/>, which calls useAgentConfigsList()
 // (TanStack Query). We mock the queries module so the tree resolves to a stable
 // loaded state for axe — no QueryClientProvider needed at the render site.
