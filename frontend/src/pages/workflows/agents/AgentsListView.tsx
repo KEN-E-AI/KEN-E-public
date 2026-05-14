@@ -80,63 +80,59 @@ function AgentCard({ config, index, onEdit }: AgentCardProps) {
       onClick={() => onEdit(toAgentConfigId(config.config_id))}
       data-testid={`agent-card-${config.config_id}`}
     >
-      {/* Configure gear (top-right) */}
-      <button
-        type="button"
-        className="absolute top-3 right-3 size-7 rounded-[var(--radius-sm)] flex items-center justify-center text-[var(--color-text-secondary)] cursor-pointer transition-colors hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-violet-500)]"
-        onClick={(e) => {
-          e.stopPropagation();
-          onEdit(toAgentConfigId(config.config_id));
-        }}
-        aria-label={`Configure ${primaryDisplay}`}
-      >
-        <Settings className="size-4" />
-      </button>
+      {/* Top row: customization badge + configure gear, right-aligned */}
+      <div className="flex items-center justify-end gap-2 mb-2">
+        <CustomizationBadge status={config.customization_status} />
+        <button
+          type="button"
+          className="size-7 rounded-[var(--radius-sm)] flex items-center justify-center text-[var(--color-text-secondary)] cursor-pointer transition-colors hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-violet-500)]"
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit(toAgentConfigId(config.config_id));
+          }}
+          aria-label={`Configure ${primaryDisplay}`}
+        >
+          <Settings className="size-4" />
+        </button>
+      </div>
 
-      {/* Icon */}
-      <div className="mb-3">
+      {/* Two-column section: icon (left) + name / title / model (right).
+          ``items-center`` keeps the text column visually balanced against
+          the icon's height. */}
+      <div className="flex items-center gap-3 mb-3">
         <div
-          className="size-11 rounded-xl flex items-center justify-center"
+          className="size-[5.5rem] rounded-full flex items-center justify-center shrink-0"
           style={{
             background: accentStyle.accent,
             boxShadow: accentStyle.shadow,
           }}
         >
-          <Bot className="size-5 text-white" />
+          <Bot className="size-[2.5rem] text-white" />
+        </div>
+
+        <div className="min-w-0 flex-1 flex flex-col">
+          <div
+            className="truncate text-[1.25rem]"
+            style={{ fontWeight: 700, lineHeight: 1.25 }}
+          >
+            {primaryDisplay}
+          </div>
+          {subtitleDisplay && (
+            <div
+              className="truncate text-[0.75rem] text-[var(--color-text-secondary)] mt-0.5"
+              style={{ fontWeight: 700, lineHeight: 1.25 }}
+            >
+              {subtitleDisplay}
+            </div>
+          )}
+          {/* allow-text-tertiary: secondary-metadata model identifier */}
+          <div className="truncate text-[0.6875rem] text-[var(--color-text-tertiary)] mt-0.5">
+            {config.model}
+          </div>
         </div>
       </div>
 
-      {/* Name (primary) + customization badge */}
-      <div
-        className="flex items-center gap-1.5 flex-wrap mb-1 pr-8"
-        style={{ minHeight: 22 }}
-      >
-        <span
-          className="text-[0.8125rem]"
-          style={{ fontWeight: 700, lineHeight: 1.25 }}
-        >
-          {primaryDisplay}
-        </span>
-        <CustomizationBadge status={config.customization_status} />
-      </div>
-
-      {/* Title (bold, beneath the name; only when distinct from primary) */}
-      {subtitleDisplay && (
-        <div
-          className="text-[0.75rem] text-[var(--color-text-secondary)] mb-1.5"
-          style={{ fontWeight: 700, lineHeight: 1.25 }}
-        >
-          {subtitleDisplay}
-        </div>
-      )}
-
-      {/* Model */}
-      {/* allow-text-tertiary: secondary-metadata model identifier under agent name */}
-      <div className="flex items-center gap-1 text-[0.6875rem] text-[var(--color-text-tertiary)] mb-2.5">
-        {config.model}
-      </div>
-
-      {/* Description */}
+      {/* Description — full-width row beneath the two-column section */}
       {config.description && (
         <p className="text-[0.75rem] text-[var(--color-text-secondary)] line-clamp-2">
           {config.description}
@@ -151,7 +147,7 @@ function AgentCard({ config, index, onEdit }: AgentCardProps) {
 function CardSkeleton() {
   return (
     <div className="p-4 rounded-[0.875rem] border-2 border-[var(--color-border-default)] bg-card flex flex-col gap-3">
-      <Skeleton className="size-11 rounded-xl" />
+      <Skeleton className="size-[5.5rem] rounded-full" />
       <Skeleton className="h-4 w-3/4" />
       <Skeleton className="h-3 w-1/2" />
     </div>
@@ -251,7 +247,7 @@ export function AgentsListView({ onEdit }: AgentsListViewProps) {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
           {configs.map((config, idx) => (
             <AgentCard
               key={config.config_id}
