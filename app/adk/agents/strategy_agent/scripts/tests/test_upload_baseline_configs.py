@@ -63,15 +63,18 @@ def test_seeds_cover_all_eight_strategy_agents() -> None:
 
 @pytest.mark.parametrize("agent_id", RESEARCHERS)
 def test_researcher_audit_fields_match_matrix(agent_id: str) -> None:
+    """AH-PRD-08: strategy-pipeline researchers use the hidden +
+    non-copyable profile (matches the formatter discipline) because
+    they are account-creation-only and picker-immutable."""
     seed = script.SEEDS[agent_id]
     assert seed["code_execution_enabled"] is False
     assert seed["mcp_servers"] == []
     assert seed["skill_ids"] == []
     assert seed["sandbox_code_executor_enabled"] is False
     assert seed["response_schema"] is None
-    assert seed["available_to_copy"] is True
+    assert seed["available_to_copy"] is False
     assert seed["automatically_available"] is True
-    assert seed["visible_in_frontend"] is True
+    assert seed["visible_in_frontend"] is False
 
 
 @pytest.mark.parametrize("agent_id", FORMATTERS)
@@ -124,10 +127,12 @@ def test_business_agents_carry_full_baseline_plus_audit_fields() -> None:
             assert field in seed
 
 
-def test_business_researcher_uses_researcher_profile() -> None:
+def test_business_researcher_uses_strategy_pipeline_profile() -> None:
+    """AH-PRD-08: business_researcher (and its 3 siblings) are
+    strategy-pipeline researchers — hidden + non-copyable."""
     seed = script.SEEDS["business_researcher"]
-    assert seed["available_to_copy"] is True
-    assert seed["visible_in_frontend"] is True
+    assert seed["available_to_copy"] is False
+    assert seed["visible_in_frontend"] is False
 
 
 def test_business_formatter_uses_formatter_profile() -> None:
@@ -148,15 +153,11 @@ def test_all_eight_seeds_apply_idempotently_via_shared_helper() -> None:
     ``main()`` / arg parsing."""
     fake = FakeFirestoreClient()
     for agent_id in ALL_EIGHT_STRATEGY_AGENTS:
-        upsert_agent_config(
-            script.SEEDS[agent_id], agent_id, "test-project", db=fake
-        )
+        upsert_agent_config(script.SEEDS[agent_id], agent_id, "test-project", db=fake)
     first = {a: fake.get_doc("agent_configs", a) for a in ALL_EIGHT_STRATEGY_AGENTS}
 
     for agent_id in ALL_EIGHT_STRATEGY_AGENTS:
-        upsert_agent_config(
-            script.SEEDS[agent_id], agent_id, "test-project", db=fake
-        )
+        upsert_agent_config(script.SEEDS[agent_id], agent_id, "test-project", db=fake)
     second = {a: fake.get_doc("agent_configs", a) for a in ALL_EIGHT_STRATEGY_AGENTS}
 
     assert first == second

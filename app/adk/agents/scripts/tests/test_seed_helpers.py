@@ -17,6 +17,8 @@ from app.adk.agents.scripts._seed_helpers import (
     AUDIT_FIELDS,
     AUDIT_FIELDS_FORMATTER,
     AUDIT_FIELDS_RESEARCHER,
+    AUDIT_FIELDS_STRATEGY_PIPELINE_RESEARCHER,
+    AUDIT_FIELDS_USER_FACING_RESEARCHER,
     upsert_agent_config,
 )
 from app.adk.agents.scripts.tests._fake_firestore import FakeFirestoreClient
@@ -30,18 +32,44 @@ def test_audit_fields_tuple_has_eight_fields() -> None:
     assert len(AUDIT_FIELDS) == 8
 
 
-def test_researcher_profile_has_all_audit_fields_and_nothing_else() -> None:
-    assert set(AUDIT_FIELDS_RESEARCHER.keys()) == set(AUDIT_FIELDS)
+def test_user_facing_researcher_profile_has_all_audit_fields_and_nothing_else() -> None:
+    assert set(AUDIT_FIELDS_USER_FACING_RESEARCHER.keys()) == set(AUDIT_FIELDS)
+
+
+def test_strategy_pipeline_researcher_profile_has_all_audit_fields_and_nothing_else() -> (
+    None
+):
+    assert set(AUDIT_FIELDS_STRATEGY_PIPELINE_RESEARCHER.keys()) == set(AUDIT_FIELDS)
 
 
 def test_formatter_profile_has_all_audit_fields_and_nothing_else() -> None:
     assert set(AUDIT_FIELDS_FORMATTER.keys()) == set(AUDIT_FIELDS)
 
 
-def test_researcher_profile_is_visible_and_copyable() -> None:
-    assert AUDIT_FIELDS_RESEARCHER["available_to_copy"] is True
-    assert AUDIT_FIELDS_RESEARCHER["visible_in_frontend"] is True
-    assert AUDIT_FIELDS_RESEARCHER["automatically_available"] is True
+def test_user_facing_researcher_profile_is_visible_and_copyable() -> None:
+    """User-facing researchers (chatbot, news, GA) are picker-driven."""
+    assert AUDIT_FIELDS_USER_FACING_RESEARCHER["available_to_copy"] is True
+    assert AUDIT_FIELDS_USER_FACING_RESEARCHER["visible_in_frontend"] is True
+    assert AUDIT_FIELDS_USER_FACING_RESEARCHER["automatically_available"] is True
+
+
+def test_strategy_pipeline_researcher_profile_is_hidden_and_not_copyable() -> None:
+    """AH-PRD-08: the 4 strategy-pipeline researchers (business /
+    competitive / marketing / brand) are account-creation-only and
+    constructed via a legacy loader that ignores picker selections, so
+    they're hidden from the Workflows UI to avoid offering a
+    configuration surface that has no effect."""
+    assert AUDIT_FIELDS_STRATEGY_PIPELINE_RESEARCHER["available_to_copy"] is False
+    assert AUDIT_FIELDS_STRATEGY_PIPELINE_RESEARCHER["visible_in_frontend"] is False
+    assert AUDIT_FIELDS_STRATEGY_PIPELINE_RESEARCHER["automatically_available"] is True
+
+
+def test_researcher_alias_points_at_user_facing_profile() -> None:
+    """``AUDIT_FIELDS_RESEARCHER`` is kept as a deprecation alias for one
+    release so existing user-facing migration scripts (chatbot, news,
+    GA) keep importing cleanly. The alias must resolve to the explicit
+    user-facing profile."""
+    assert AUDIT_FIELDS_RESEARCHER is AUDIT_FIELDS_USER_FACING_RESEARCHER
 
 
 def test_formatter_profile_is_hidden_and_not_copyable() -> None:
