@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import uuid
@@ -974,7 +975,7 @@ async def delete_account(
             firestore_db = firestore.get_client()
             logger.info(f"recursive_delete started for accounts/{account_id}")
             account_doc_ref = firestore_db.collection("accounts").document(account_id)
-            firestore_db.recursive_delete(account_doc_ref)
+            await asyncio.to_thread(firestore_db.recursive_delete, account_doc_ref)
             cleanup_results["firestore_account_deleted"] = True
             logger.info(f"recursive_delete completed for accounts/{account_id}")
         except Exception as e:
