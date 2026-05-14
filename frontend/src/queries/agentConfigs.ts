@@ -9,6 +9,7 @@ import {
 import type {
   AgentConfigOverlayUpdate,
   AgentConfigCreate,
+  MergedAgentConfig,
 } from "@/lib/api/agentConfigs";
 
 // ─── Query key factory ────────────────────────────────────────────────────────
@@ -16,6 +17,12 @@ import type {
 export const agentConfigKeys = {
   all: ["agentConfigs"] as const,
   lists: () => [...agentConfigKeys.all, "list"] as const,
+  // Prefix for every list variant scoped to one account — regardless of
+  // ``opts`` (e.g. ``visibleInFrontend``). Use this with TanStack's
+  // ``setQueriesData`` / ``invalidateQueries`` to touch all list variants
+  // for an account in one call.
+  listsForAccount: (accountId: string) =>
+    [...agentConfigKeys.lists(), accountId] as const,
   list: (accountId: string, opts?: { visibleInFrontend?: boolean }) =>
     [...agentConfigKeys.lists(), accountId, opts] as const,
   details: () => [...agentConfigKeys.all, "detail"] as const,
@@ -70,14 +77,28 @@ export function useUpsertAgentConfigOverlay(
       if (!accountId) return Promise.reject(new Error("No account selected"));
       return upsertAgentConfigOverlay(accountId, configId, body);
     },
-    onSuccess: (_, { configId }) => {
+    onSuccess: (updated, { configId }) => {
       if (!accountId) return;
-      queryClient.invalidateQueries({
-        queryKey: agentConfigKeys.list(accountId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: agentConfigKeys.detail(accountId, configId),
-      });
+      // Push the freshly-saved config straight into the caches that render
+      // it so the agent card updates the moment the edit sheet closes — no
+      // second GET roundtrip required. Previous behavior was
+      // ``invalidateQueries`` which triggered a refetch of the list
+      // endpoint; on top of the latency that added, the invalidation key
+      // omitted ``opts`` so it didn't actually prefix-match the
+      // ``{visibleInFrontend: true}`` list query AgentsListView uses.
+      //
+      // ``listsForAccount(accountId)`` is the 3-element prefix that
+      // matches every list variant for this account, with or without
+      // opts — atomic update across all list consumers.
+      queryClient.setQueryData(
+        agentConfigKeys.detail(accountId, configId),
+        updated,
+      );
+      queryClient.setQueriesData<MergedAgentConfig[] | undefined>(
+        { queryKey: agentConfigKeys.listsForAccount(accountId) },
+        (prev) =>
+          prev?.map((c) => (c.config_id === configId ? updated : c)),
+      );
     },
   });
 }

@@ -156,13 +156,11 @@ describe("useAgentConfig", () => {
 // ─── useUpsertAgentConfigOverlay ──────────────────────────────────────────────
 
 describe("useUpsertAgentConfigOverlay", () => {
-  it("calls upsertAgentConfigOverlay and invalidates the list key", async () => {
+  it("calls upsertAgentConfigOverlay with the right args", async () => {
     const updated = { config_id: "ga", customization_status: "customized" };
     mockUpsertAgentConfigOverlay.mockResolvedValueOnce(updated);
 
     const client = freshClient();
-    const invalidateSpy = vi.spyOn(client, "invalidateQueries");
-
     const { result } = renderHook(
       () => useUpsertAgentConfigOverlay("acc_test"),
       { wrapper: makeWrapper(client) },
@@ -176,9 +174,82 @@ describe("useUpsertAgentConfigOverlay", () => {
       "ga",
       { temperature: 0.5 },
     );
-    expect(invalidateSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ queryKey: agentConfigKeys.list("acc_test") }),
+  });
+
+  it("updates the detail cache with the freshly-saved config", async () => {
+    const updated = {
+      config_id: "ga",
+      name: "Dave",
+      title: "Business Researcher",
+      customization_status: "customized",
+    };
+    mockUpsertAgentConfigOverlay.mockResolvedValueOnce(updated);
+
+    const client = freshClient();
+    // Pre-seed the detail cache with stale data so we can prove it gets
+    // replaced (vs. relying on a no-op invalidation that happens to refetch).
+    client.setQueryData(agentConfigKeys.detail("acc_test", "ga"), {
+      config_id: "ga",
+      name: null,
+      title: null,
+      customization_status: "default",
+    });
+
+    const { result } = renderHook(
+      () => useUpsertAgentConfigOverlay("acc_test"),
+      { wrapper: makeWrapper(client) },
     );
+
+    result.current.mutate({ configId: "ga", body: { name: "Dave" } });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.getQueryData(agentConfigKeys.detail("acc_test", "ga"))).toEqual(
+      updated,
+    );
+  });
+
+  it("updates every list variant for the account by config_id", async () => {
+    const updated = {
+      config_id: "ga",
+      name: "Dave",
+      title: "Business Researcher",
+      customization_status: "customized",
+    };
+    const other = { config_id: "other", name: null, title: null };
+    mockUpsertAgentConfigOverlay.mockResolvedValueOnce(updated);
+
+    const client = freshClient();
+    // Pre-seed two list variants that AgentsListView and any other consumer
+    // might use — one with visibleInFrontend=true, one without opts.
+    client.setQueryData(
+      agentConfigKeys.list("acc_test", { visibleInFrontend: true }),
+      [
+        { config_id: "ga", name: null, title: null },
+        other,
+      ],
+    );
+    client.setQueryData(agentConfigKeys.list("acc_test"), [
+      { config_id: "ga", name: null, title: null },
+      other,
+    ]);
+
+    const { result } = renderHook(
+      () => useUpsertAgentConfigOverlay("acc_test"),
+      { wrapper: makeWrapper(client) },
+    );
+
+    result.current.mutate({ configId: "ga", body: { name: "Dave" } });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    // Both list variants should have the updated entry replaced in place.
+    // Other entries in the list are untouched.
+    const visibleList = client.getQueryData(
+      agentConfigKeys.list("acc_test", { visibleInFrontend: true }),
+    );
+    expect(visibleList).toEqual([updated, other]);
+    const allList = client.getQueryData(agentConfigKeys.list("acc_test"));
+    expect(allList).toEqual([updated, other]);
   });
 });
 
