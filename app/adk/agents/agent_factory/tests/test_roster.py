@@ -546,8 +546,13 @@ class TestResolveSpecialistRosterWithToolIds:
         assert result == []
 
     def test_tool_ids_filters_to_listed_server_tools(self) -> None:
+        # Within-toolset filtering happens at construction (hierarchy.py
+        # passes ``allowed_tool_names`` to ``build_toolset_for_doc``); the
+        # resolver just keeps or drops whole toolsets and prunes function
+        # tools. So a toolset whose server appears in tool_ids passes
+        # through unchanged.
         registry = _registry_for(("server_x", 2))
-        ts = MagicMock(name="ts_x", tool_filter=None)
+        ts = MagicMock(name="ts_x")
         result = resolve_specialist_roster(
             "filtered_spec",
             mcp_toolsets={"server_x": ts},
@@ -557,14 +562,11 @@ class TestResolveSpecialistRosterWithToolIds:
             registry=registry,
         )
         assert result == [ts]
-        # The resolver mutates ``tool_filter`` on the toolset so the downstream
-        # ADK runtime narrows the toolset's tool list to the allowlist.
-        assert ts.tool_filter == ["tool_one"]
 
     def test_tool_ids_drops_toolset_with_no_allowed_tools(self) -> None:
         registry = _registry_for(("server_x", 1), ("server_y", 1))
-        ts_x = MagicMock(name="ts_x", tool_filter=None)
-        ts_y = MagicMock(name="ts_y", tool_filter=None)
+        ts_x = MagicMock(name="ts_x")
+        ts_y = MagicMock(name="ts_y")
         result = resolve_specialist_roster(
             "drop_server_spec",
             mcp_toolsets={"server_x": ts_x, "server_y": ts_y},
@@ -573,7 +575,9 @@ class TestResolveSpecialistRosterWithToolIds:
             tool_ids=["server_x.tool_one"],
             registry=registry,
         )
-        # server_y has no entries in tool_ids and is dropped entirely.
+        # server_y has no entries in tool_ids and is dropped entirely (the
+        # resolver's belt-and-suspenders drop — hierarchy.py wouldn't have
+        # included it in the first place).
         assert result == [ts_x]
 
     def test_tool_ids_filters_function_tools_by_name(self) -> None:
@@ -594,7 +598,7 @@ class TestResolveSpecialistRosterWithToolIds:
 
     def test_tool_ids_combined_mcp_and_function_filtering(self) -> None:
         registry = _registry_for(("server_x", 1))
-        ts_x = MagicMock(name="ts_x", tool_filter=None)
+        ts_x = MagicMock(name="ts_x")
         ft = MagicMock(name="ft")
         ft.name = "create_visualization"
         result = resolve_specialist_roster(
@@ -609,7 +613,6 @@ class TestResolveSpecialistRosterWithToolIds:
             registry=registry,
         )
         assert ts_x in result and ft in result
-        assert ts_x.tool_filter == ["tool_one"]
 
     def test_tool_ids_skips_validation_block(self) -> None:
         """When ``tool_ids`` is set, the legacy ``mcp_server_ids must match
@@ -618,7 +621,7 @@ class TestResolveSpecialistRosterWithToolIds:
         callers pass an authoritative server-id list while letting the
         allowlist do the narrowing."""
         registry = _registry_for(("server_x", 1))
-        ts_x = MagicMock(name="ts_x", tool_filter=None)
+        ts_x = MagicMock(name="ts_x")
         # Note: mcp_server_ids includes an extra entry that's not in toolsets
         # — would normally raise ValueError. With tool_ids set, it shouldn't.
         result = resolve_specialist_roster(
@@ -630,6 +633,23 @@ class TestResolveSpecialistRosterWithToolIds:
             registry=registry,
         )
         assert result == [ts_x]
+
+    def test_defensive_cap_check_when_tool_ids_over_limit(self) -> None:
+        """A non-router caller (migration / seeder / test) that supplies
+        more tool_ids than ``MAX_TOOLS_PER_SPECIALIST`` must be rejected at
+        the construction boundary — the API gate is not the only line of
+        defense. (Review item #2.)"""
+        registry = _registry_for(("server_x", 1))
+        too_many = [f"server_x.tool_{i:02d}" for i in range(31)]
+        with pytest.raises(RosterCapExceededError, match="exceeds the 30-tool cap"):
+            resolve_specialist_roster(
+                "over_cap_via_tool_ids",
+                mcp_toolsets={"server_x": MagicMock()},
+                function_tools=[],
+                mcp_server_ids=["server_x"],
+                tool_ids=too_many,
+                registry=registry,
+            )
 
 
 if __name__ == "__main__":

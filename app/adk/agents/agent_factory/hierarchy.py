@@ -38,7 +38,10 @@ from app.adk.agents.agent_factory.dispatch import (
     generate_dispatch_functions,
 )
 from app.adk.agents.agent_factory.mcp import MCP_COLLECTION, build_toolset_for_doc
-from app.adk.agents.agent_factory.roster import resolve_specialist_roster
+from app.adk.agents.agent_factory.roster import (
+    per_server_allowed_tools,
+    resolve_specialist_roster,
+)
 from shared.account_id_utils import validate_account_id
 from shared.structured_logging import get_structured_logger
 
@@ -242,6 +245,12 @@ def build_hierarchy(
     for spec_name in sorted(configs):
         spec_config = configs[spec_name]
 
+        # AH-PRD-06: when the spec_config carries ``tool_ids``, derive the
+        # per-server allowlist once so each ``McpToolset`` is constructed
+        # with ADK's native ``tool_filter`` rather than mutated post-hoc.
+        # ``None`` (legacy) preserves today's "every tool" behaviour.
+        per_server_allowed = per_server_allowed_tools(spec_config.tool_ids)
+
         # Step 6a — build MCP toolsets for this specialist's declared servers.
         mcp_toolsets: dict[str, Any] = {}
         for server_id in spec_config.mcp_servers:
@@ -266,9 +275,32 @@ def build_hierarchy(
                 )
                 continue
 
+            # AH-PRD-06: when ``tool_ids`` is set, skip servers with no
+            # listed tools entirely rather than building a useless toolset.
+            if per_server_allowed is not None and not per_server_allowed.get(
+                server_id
+            ):
+                logger.debug(
+                    "MCP server %r has no tool_ids match for specialist %r; "
+                    "skipping.",
+                    server_id,
+                    spec_name,
+                )
+                continue
+
             # ValueError (unknown auth_type) and MCPSchemaError (malformed doc)
             # both propagate — intentional fail-fast at deploy time.
-            toolset = build_toolset_for_doc(server_id, doc_data)
+            # Only pass the kwarg when an allowlist applies; preserves the
+            # legacy two-arg signature for callers (and test mocks) that
+            # don't expect AH-PRD-06's per-tool filter.
+            if per_server_allowed is None:
+                toolset = build_toolset_for_doc(server_id, doc_data)
+            else:
+                toolset = build_toolset_for_doc(
+                    server_id,
+                    doc_data,
+                    allowed_tool_names=per_server_allowed[server_id],
+                )
             mcp_toolsets[server_id] = toolset
             logger.debug(
                 "Built McpToolset %r for specialist %r.", server_id, spec_name

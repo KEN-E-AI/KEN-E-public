@@ -23,6 +23,7 @@ independent of the agent runtime package.
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Any, cast
 
@@ -42,11 +43,63 @@ logger = logging.getLogger(__name__)
 _INTEGRATION_CREDENTIALS_COLLECTION: str = "integration_credentials"
 
 
-# Walk up from this file to the repo root: api/src/kene_api/services -> repo.
-# Hardcoded depth keeps the lookup explicit and cheap; tests fail loudly if the
-# catalogue moves.
-_REPO_ROOT = Path(__file__).resolve().parents[4]
-_TOOLS_YAML = _REPO_ROOT / "app" / "adk" / "tools" / "registry" / "config" / "tools.yaml"
+# Relative path of the catalogue under the repo root. Kept as a constant so
+# the resolver below can probe it without a hardcoded ``parents[N]`` depth
+# (review item #6: a parents[4] hardcode silently empties the inventory if
+# anyone restructures api/src/kene_api/).
+_CATALOGUE_RELATIVE = Path("app/adk/tools/registry/config/tools.yaml")
+_TOOLS_YAML_ENV_VAR = "KENE_TOOLS_YAML_PATH"
+
+
+def _resolve_tools_yaml_path() -> Path:
+    """Locate the catalogue YAML by env override, then by walking up.
+
+    Resolution order:
+      1. ``KENE_TOOLS_YAML_PATH`` env var, when set to a non-empty path.
+      2. Walk up from this file looking for the first ancestor that contains
+         ``app/adk/tools/registry/config/tools.yaml``. This adapts to either
+         the canonical repo layout or any future restructure where the
+         catalogue's parent shifts.
+
+    Raises ``FileNotFoundError`` when neither resolves — the inventory
+    composer turns this into an empty catalogue with a logged warning so the
+    endpoint stays up, but the lookup itself fails loudly so a misconfigured
+    deploy is visible rather than silently empty.
+    """
+    override = os.environ.get(_TOOLS_YAML_ENV_VAR)
+    if override:
+        path = Path(override).expanduser()
+        if path.exists():
+            return path
+        # Env var was set but points at nothing — fail loudly rather than
+        # silently fall through to the walk-up.
+        raise FileNotFoundError(
+            f"{_TOOLS_YAML_ENV_VAR}={override!r} does not exist"
+        )
+
+    here = Path(__file__).resolve()
+    for ancestor in (here, *here.parents):
+        candidate = ancestor / _CATALOGUE_RELATIVE
+        if candidate.exists():
+            return candidate
+
+    raise FileNotFoundError(
+        f"Could not locate {_CATALOGUE_RELATIVE} walking up from {here}. "
+        f"Set {_TOOLS_YAML_ENV_VAR} to override."
+    )
+
+
+_TOOLS_YAML: Path | None
+try:
+    _TOOLS_YAML = _resolve_tools_yaml_path()
+except FileNotFoundError as _exc:
+    # Cache the failure rather than raising at import — the inventory composer
+    # surfaces this as an empty response with a logged warning so the API
+    # stays up even in odd layouts (test harnesses, partial repos). Resolution
+    # is retried on each ``_load_catalogue(None)`` call so a moved file is
+    # picked up without a process restart.
+    logger.warning("Tool catalogue not located at import time: %s", _exc)
+    _TOOLS_YAML = None
 
 
 # Integration platform ID -> MCP server ID. Today every shipped integration
@@ -57,13 +110,35 @@ _INTEGRATION_TO_MCP_SERVER: dict[str, str] = {
 }
 
 
-def _load_catalogue(path: Path = _TOOLS_YAML) -> dict[str, list[dict[str, Any]]]:
+def _load_catalogue(
+    path: Path | None = None,
+) -> dict[str, list[dict[str, Any]]]:
     """Load the raw catalogue from the YAML file.
 
     Returns a dict with ``tools`` and ``function_tools`` lists; either may
     be empty if the section is absent. The schema deliberately mirrors
     ``tools.yaml`` so callers can iterate by source.
+
+    When ``path`` is ``None`` the canonical catalogue is resolved on each
+    call (via :func:`_resolve_tools_yaml_path`) so a moved file or a
+    runtime env-var change takes effect without an import-time restart.
+    Missing-file paths still degrade to an empty catalogue + a warning so
+    the endpoint stays up; mirrors the read-error tolerance the inventory
+    composer applies elsewhere.
+
+    Note: this parser is intentionally a slim alternative to
+    ``app.adk.tools.registry.tool_registry.ToolRegistry.load_from_config``.
+    The API keeps its runtime import graph independent of the agent runtime
+    package (per AH-PRD-06 §5.2). The two parsers must agree on the YAML
+    schema — keep them in sync when ``tools.yaml`` grows a new section.
     """
+    if path is None:
+        try:
+            path = _resolve_tools_yaml_path()
+        except FileNotFoundError as exc:
+            logger.warning("Tool catalogue lookup failed: %s", exc)
+            return {"tools": [], "function_tools": []}
+
     if not path.exists():
         logger.warning("Tool catalogue not found at %s; returning empty inventory", path)
         return {"tools": [], "function_tools": []}

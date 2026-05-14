@@ -73,20 +73,23 @@ def _validate_tool_ids_format(value: list[str] | None) -> list[str] | None:
     if value is None:
         return value
     seen: set[str] = set()
-    duplicates: list[str] = []
+    duplicates_set: set[str] = set()
     malformed: list[str] = []
     for tool_id in value:
         if not _TOOL_ID_PATTERN.match(tool_id):
             malformed.append(tool_id)
         if tool_id in seen:
-            duplicates.append(tool_id)
+            # Use a set so ``["x", "x", "x"]`` produces ``["x"]`` rather than
+            # ``["x", "x"]`` in the error message. Each duplicate ID is
+            # reported once.
+            duplicates_set.add(tool_id)
         seen.add(tool_id)
     if malformed:
         raise ValueError(
             f"Invalid tool_ids — must be '<server_or_function>.<tool_name>': {malformed!r}"
         )
-    if duplicates:
-        raise ValueError(f"Duplicate tool_ids: {duplicates!r}")
+    if duplicates_set:
+        raise ValueError(f"Duplicate tool_ids: {sorted(duplicates_set)!r}")
     return value
 
 
@@ -153,6 +156,13 @@ class AgentConfigUpdate(BaseModel):
     """Request body for PUT /api/v1/agent-configs/{id}.
 
     All fields except ``updated_by`` are optional to allow partial updates.
+
+    AH-PRD-06 note: ``tool_ids`` is intentionally NOT on this model. The
+    global PUT endpoint is admin-only and edits the canonical
+    ``agent_configs/{id}`` document; per-agent tool selection lives on the
+    per-account overlay (see ``AgentConfigOverlayUpdate``). Adding
+    ``tool_ids`` here would let an admin shape the global default, which
+    isn't a customer scenario today — keep the surface narrow.
     """
 
     name: str | None = Field(

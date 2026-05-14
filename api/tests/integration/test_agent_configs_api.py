@@ -1064,3 +1064,77 @@ class TestAgentConfigToolIds:
         resp = client.put(BASE_URL + "/some_agent", json=body)
         assert resp.status_code == 422
         assert resp.json()["detail"][0]["loc"] == ["body", "tool_ids"]
+
+    def test_put_with_tool_ids_null_writes_null_to_overlay(
+        self, client: TestClient
+    ) -> None:
+        """Review item #1: the documented ``null`` round-trip.
+
+        Pydantic's ``exclude_unset=True`` keeps ``tool_ids=None`` in the
+        body_dict (None is a 'set' value, not 'unset'), so the overlay write
+        carries ``tool_ids: None`` to Firestore. Combined with the merge
+        logic verified in ``test_overlay_null_clears_global_tool_ids``, this
+        means PUT ``tool_ids=null`` clears the overlay back to legacy
+        behaviour on the next GET.
+        """
+        self._install_user(_super_admin())
+
+        # Capture what's written to the overlay doc.
+        written: dict[str, Any] = {}
+        db = MagicMock()
+
+        global_doc = MagicMock()
+        global_doc.exists = True
+        global_doc.to_dict.return_value = {
+            "instruction": "You are a helpful assistant.",
+            "model": "gemini-2.5-flash",
+            "metadata": {"version": "v1.0.0"},
+        }
+        global_col = MagicMock()
+        global_col.document.return_value.get.return_value = global_doc
+
+        # The overlay doc ref captures .set() and returns a synthetic
+        # post-write doc on subsequent .get() so _load_merged returns
+        # a coherent MergedAgentConfig.
+        overlay_ref = MagicMock()
+        post_write_doc = MagicMock()
+        post_write_doc.exists = True
+        # The merged config will see overlay tool_ids=None (the cleared value).
+        post_write_doc.to_dict.return_value = {
+            "tool_ids": None,
+            "based_on_version": 1,
+        }
+        overlay_ref.get.return_value = post_write_doc
+
+        def _capture_set(data, **_kw):
+            written.update(data)
+
+        overlay_ref.set.side_effect = _capture_set
+        agent_configs_sub = MagicMock()
+        agent_configs_sub.document.return_value = overlay_ref
+        account_doc_ref = MagicMock()
+        account_doc_ref.collection.return_value = agent_configs_sub
+        accounts_col = MagicMock()
+        accounts_col.document.return_value = account_doc_ref
+
+        def _router(name: str):
+            if name == "agent_configs":
+                return global_col
+            if name == "accounts":
+                return accounts_col
+            return MagicMock()
+
+        db.collection.side_effect = _router
+        app.dependency_overrides[get_firestore] = lambda: db
+
+        body = {"tool_ids": None}
+        resp = client.put(BASE_URL + "/some_agent", json=body)
+
+        assert resp.status_code == 200
+        # The overlay write carried tool_ids=None — that's what eventually
+        # clears the field on subsequent GETs (verified at the merge level
+        # in test_overlay_null_clears_global_tool_ids).
+        assert "tool_ids" in written
+        assert written["tool_ids"] is None
+        # And the merged response surfaces the cleared value.
+        assert resp.json()["tool_ids"] is None

@@ -265,6 +265,25 @@ class TestToolIds:
                 )
             )
 
+    def test_create_dedupes_triple_repeats_in_error_message(self) -> None:
+        # Review item #7: ``["x", "x", "x"]`` previously reported
+        # ``["x", "x"]`` because each repeat after the first appended to
+        # the duplicate list. Now each duplicate ID is reported exactly once.
+        with pytest.raises(ValidationError) as exc_info:
+            AgentConfigCreate(
+                **_valid_create_payload(
+                    tool_ids=[
+                        "function.create_visualization",
+                        "function.create_visualization",
+                        "function.create_visualization",
+                    ]
+                )
+            )
+        # The error message contains the deduped list.
+        assert (
+            str(exc_info.value).count("'function.create_visualization'") == 1
+        )
+
     def test_create_rejects_over_cap(self) -> None:
         too_many = [f"server.tool_{i:02d}" for i in range(MAX_TOOL_IDS_PER_AGENT + 1)]
         with pytest.raises(ValidationError):

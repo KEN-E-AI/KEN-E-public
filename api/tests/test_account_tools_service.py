@@ -174,3 +174,33 @@ class TestLoadCatalogue:
         missing = tmp_path / "nonexistent.yaml"
         loaded = account_tools_service._load_catalogue(missing)
         assert loaded == {"tools": [], "function_tools": []}
+
+    def test_path_resolver_walks_up_to_canonical_location(self) -> None:
+        # Review item #6: the resolver should locate the catalogue without
+        # a hardcoded parents[N] depth, so a repo reshuffle doesn't silently
+        # empty the inventory. Smoke check: in the canonical layout the
+        # walk-up finds the live catalogue.
+        path = account_tools_service._resolve_tools_yaml_path()
+        assert path.exists()
+        assert path.name == "tools.yaml"
+
+    def test_env_override_takes_precedence(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Setting KENE_TOOLS_YAML_PATH should override the walk-up.
+        override = tmp_path / "alt_tools.yaml"
+        override.write_text("function_tools: []\ntools: []\n")
+        monkeypatch.setenv("KENE_TOOLS_YAML_PATH", str(override))
+        path = account_tools_service._resolve_tools_yaml_path()
+        assert path == override
+
+    def test_env_override_to_missing_file_raises(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # An env var that points at nothing should fail loudly rather than
+        # silently fall through to the walk-up (which would mask the
+        # operator's intent).
+        bogus = tmp_path / "does_not_exist.yaml"
+        monkeypatch.setenv("KENE_TOOLS_YAML_PATH", str(bogus))
+        with pytest.raises(FileNotFoundError, match="KENE_TOOLS_YAML_PATH"):
+            account_tools_service._resolve_tools_yaml_path()
