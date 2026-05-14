@@ -34,16 +34,16 @@ resolved inline as part of this run's pre-flight sweep (see Pre-flight section).
 rg -n "(agent_analytics|cost_aggregations|performance_profiles)_" app/
 ```
 
-**Result: 0 legacy Shape A references in production code.**
+**Result: 0 legacy Shape A *writes* in production code.**
 
-Two intentional carve-outs in test fixtures:
+Verbatim rg output (re-verified 2026-05-13 by PO during review — the earlier table on this PR had stale/wrong line citations):
 
-| File | Line | Content | Type |
-|---|---|---|---|
-| `app/adk/agents/strategy_agent/tests/test_analytics_service.py` | 54 | `agent_analytics_acc_old_test` | test fixture for legacy-path guard |
-| `app/adk/agents/strategy_agent/tests/test_async_analytics_queue.py` | 41 | `agent_analytics_acc_old_queue_test` | test fixture for legacy-path guard |
+```
+app/adk/agents/strategy_agent/tests/test_analytics_integration.py:198:        # Source collection mock (Shape A agent_analytics_ read path)
+app/adk/agents/strategy_agent/tests/test_analytics_service.py:189:    # Source collection mock (Shape A agent_analytics_ read path)
+```
 
-Both are Shape A guards, not Shape A writes. No production code writes to any legacy path.
+Both hits are **comment lines** in test files describing legacy-path read-mock fixtures — not Shape A writes. They document tests that mock the pre-migration read path for backwards-compat coverage. No production-code Shape A write call sites remain.
 
 ## Pre-flight: DM-37 Gap Resolution
 
@@ -106,8 +106,11 @@ hold is lifted.
 ### Smoke 4 — `OptimizationAnalyzer` (read + recommend)
 
 Seeded 3 `agent_analytics` docs with `success=False` and `total_tokens=7000`
-(`model="gemini-2.5-pro"`, below `pro_model_simple_task_threshold=50000`) to trigger
-multiple recommendation types. Called `generate_recommendations()`.
+(`model="gemini-2.5-pro"`, well above `pro_model_simple_task_threshold=100` at
+`optimization_analyzer.py:89`, so `model_downgrade` is intentionally NOT triggered).
+The seed is designed to exercise the OTHER recommendation paths: `error_reduction`
+via `success=False`, `context_reduction` via low context utilization on Pro, and
+`load_distribution`. Called `generate_recommendations()`.
 
 | Check | Expected | Actual | Status |
 |---|---|---|---|
@@ -157,13 +160,18 @@ references in those files. Same pre-existing posture established by DM-19/DM-37/
 cd /home/agent/workspace && make lint
 ```
 
-- **codespell:** passes after fixing 2 pre-existing typos:
+- **codespell:** passes after rewording two pre-existing false-positive triggers (neither
+  was a real typo — both were codespell appeasements, not corrections):
   - `docs/design/components/data-management/runs/DM-19-strategy-docs-dev-migration-log.md:284`
-    — a quoted codespell finding contained the raw calc-misspelling; rephrased to avoid the
-    raw misspelled token.
-  - `app/adk/agents/agent_factory/tests/test_factory.py:293`
-    — test variable `name` set to a short identifier that codespell flagged as a misspelling
-    of "not"; renamed to `name="max_out"` (false positive, not a real typo).
+    — a verbatim quote of a codespell finding (`CACL ==> CALC`) was rephrased to avoid the
+    raw misspelled token. (Note: `# codespell:ignore` on that line would have preserved the
+    quoted evidence; the rephrase chose readability over fidelity.)
+  - `app/adk/agents/agent_factory/tests/test_factory.py:293` — test variable `name="mot"`
+    renamed to `name="max_out"`. Codespell flagged `mot` as a misspelling of "not"; the
+    rename is a false-positive workaround, not a real typo fix. (Note: the symmetric
+    "no max_output_tokens" case at `test_factory.py:309` still uses `name="no_mot"`; CI's
+    codespell does not flag it, presumably because the underscore-prefix changes the
+    tokenization. Future contributors may rename for symmetry.)
 - **ruff / mypy:** pre-existing baseline (2,451+ ruff errors; ~4,385 mypy errors) identical
   to `main`. DM-43 branch introduces **0 new ruff or mypy errors** — only the run-log (markdown),
   README §5.1 status flip, and PRD status flip are changed.
@@ -185,7 +193,8 @@ cd /home/agent/workspace && make lint
 | AC-4 | `async_analytics_queue` flushes to `accounts/{id}/agent_analytics/` with no lost events | ✅ Smoke 1: 3 docs written, 3 read back — count matches |
 | AC-5 | `optimization_analyzer` returns non-empty recommendation set for seeded account | ✅ Smoke 4: 3 recommendations returned |
 | AC-6 | `performance_profiler` writes land at `accounts/{id}/performance_profiles/` | ✅ Smoke 3: 3 docs at Shape B path |
-| AC-6 (ext) | `cost_aggregations` write lands at `accounts/{id}/cost_aggregations/` (issue-level extension of AC-2) | ✅ Smoke 2: 1 doc at Shape B path |
+| AC-6 (ext) | `cost_aggregations` write lands at `accounts/{id}/cost_aggregations/` (issue-level extension of AC-2) | ✅* Smoke 2: 1 doc at Shape B path — but via post-instantiation **monkey-patch** of `AnalyticsService.analytics_db` (production has `analytics_db = None` due to ungranted IAM at `analytics_service.py:67-68`). Path logic verified; production execution gated on the IAM-grant follow-up tracked in **DM-75**. |
+| AC-7 | `RUNTIME_WARNINGS_ERRORS.md` callout reflects the new path | ✅ The `performance_profiles` §7 entry was rewritten in PR #457 (DM-40 follow-up); `agent_analytics` and `cost_aggregations` weren't called out separately in RUNTIME_WARNINGS_ERRORS to begin with, so no doc-callout update was needed for those resources. |
 | AC-8 | `pytest app/adk/agents/strategy_agent/tests/` passes; `make lint` clean | ✅ 26 analytics tests pass; codespell passes; 0 new ruff/mypy errors |
 | DM-PRD-02 docs | Status flipped to Complete in README §5.1 + PRD frontmatter | ✅ Both files updated |
 | DM-PRD-05 notify | DM-PRD-05 owner pinged on Linear that one more blocker is cleared | ✅ Posted in DM-43 comment + DM-PRD-05 issue |
@@ -203,7 +212,9 @@ cd /home/agent/workspace && make lint
   `self.analytics_db = None` (existing TODO, IAM permissions not yet granted). The
   `aggregate_daily_costs` smoke test overrode `analytics_db` post-instantiation to exercise
   the write path. The path logic itself (`accounts/{account_id}/cost_aggregations`) is
-  confirmed correct; the IAM grant is a separate operational task.
+  confirmed correct; the IAM grant is tracked as a separate operational follow-up in
+  **DM-75** (Medium priority, assigned to Ken, scoped across all 3 envs per the DM-PRD-02
+  "all envs" rule established by DM-73).
 
 - **DM-37 runbook gap:** DM-37's migration runbook only targeted `(default)` database for
   `cost_aggregations`. The `analytics` named database should also have been targeted, as
