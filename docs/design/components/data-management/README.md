@@ -161,7 +161,7 @@ The component's work is split across **8 project PRDs** under [`projects/`](./pr
 |---|---|---|---|---|---|
 | [DM-PRD-00](./projects/DM-PRD-00-migration-foundation.md) | Migration Foundation | Ready to start | 2–3 d | — | DM-PRD-01, DM-PRD-02, DM-PRD-03, DM-PRD-04 |
 | [DM-PRD-01](./projects/DM-PRD-01-strategy-suite-migration.md) | Strategy Suite Migration | Blocked | 3–4 d | DM-PRD-00 | DM-PRD-05 |
-| [DM-PRD-02](./projects/DM-PRD-02-analytics-suite-migration.md) | Analytics Suite Migration | Blocked | 2–3 d | DM-PRD-00 | DM-PRD-05 |
+| [DM-PRD-02](./projects/DM-PRD-02-analytics-suite-migration.md) | Analytics Suite Migration | Complete | 2–3 d | DM-PRD-00 | DM-PRD-05 |
 | [DM-PRD-03](./projects/DM-PRD-03-shape-d-split.md) | Shape D Split | Blocked | 3–4 d | DM-PRD-00 | DM-PRD-05 |
 | [DM-PRD-04](./projects/DM-PRD-04-shape-b-like-collapse.md) | Shape B-like Collapse | Blocked | 1–2 d | DM-PRD-00 | DM-PRD-05 |
 | [DM-PRD-05](./projects/DM-PRD-05-deletion-sweep-rewrite.md) | Deletion Sweep Rewrite (Account + User) | Blocked | 2–3 d | DM-PRD-01, DM-PRD-02, DM-PRD-03, DM-PRD-04 | DM-PRD-06, DM-PRD-07 |
