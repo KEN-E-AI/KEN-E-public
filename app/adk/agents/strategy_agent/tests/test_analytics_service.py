@@ -28,7 +28,7 @@ def analytics_service(mock_firestore_client):
     """Create Analytics Service instance with mocked Firestore."""
     mock_analytics_db, _ = mock_firestore_client
     service = AnalyticsService(account_id="test_account", project_id="test_project")
-    # analytics_db is temporarily disabled in _init_firestore_clients; inject mock directly
+    # Inject mock analytics_db directly so the test stays hermetic (no live Firestore in CI)
     service.analytics_db = mock_analytics_db
     return service
 
@@ -183,7 +183,7 @@ def test_aggregate_daily_costs(analytics_service, mock_firestore_client):
     """Test daily cost aggregation."""
     mock_analytics_db, _ = mock_firestore_client
 
-    # analytics_db is temporarily None (IAM guard); inject mock directly
+    # Inject mock analytics_db directly so the test stays hermetic (no live Firestore in CI)
     analytics_service.analytics_db = mock_analytics_db
 
     # Source collection mock (Shape A agent_analytics_ read path)
@@ -265,7 +265,7 @@ def test_get_cost_trends(analytics_service, mock_firestore_client):
     """Test getting cost trends."""
     mock_analytics_db, _ = mock_firestore_client
 
-    # analytics_db is temporarily None (IAM guard); inject mock directly
+    # Inject mock analytics_db directly so the test stays hermetic (no live Firestore in CI)
     analytics_service.analytics_db = mock_analytics_db
 
     # Mock the collection

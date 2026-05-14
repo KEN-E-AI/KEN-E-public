@@ -98,7 +98,8 @@ variable "agentengine_sa_roles" {
     "roles/discoveryengine.editor",
     "roles/logging.logWriter",
     "roles/cloudtrace.agent",
-    "roles/storage.admin"
+    "roles/storage.admin",
+    "roles/datastore.user"
   ]
 }
 

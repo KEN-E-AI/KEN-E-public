@@ -230,7 +230,7 @@ class TestCostAggregation:
         mock_analytics_db.collection.side_effect = collection_side_effect
 
         analytics = AnalyticsService("test_account", "test_project")
-        # analytics_db is temporarily None (IAM guard); inject mock directly
+        # Inject mock analytics_db directly so the test stays hermetic (no live Firestore in CI)
         analytics.analytics_db = mock_analytics_db
         aggregation = analytics.aggregate_daily_costs()
 
