@@ -16,22 +16,18 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from app.adk.agents.agent_factory.mcp import MCPFactoryError
+from shared.agent_tool_limits import MAX_TOOLS_PER_SPECIALIST
 
 if TYPE_CHECKING:
     from app.adk.tools.registry.tool_registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-MAX_TOOLS_PER_SPECIALIST: int = 30
-"""Hard cap on the number of tools a factory-built specialist may carry.
-
-Exceeding this limit is the signal that the specialist's scope is too broad
-and should be split into narrower per-platform agents (see README §2.6).
-"""
+# ``MAX_TOOLS_PER_SPECIALIST`` is re-exported above so existing
+# ``from app.adk.agents.agent_factory.roster import MAX_TOOLS_PER_SPECIALIST``
+# callsites keep working. The single source of truth lives in
+# ``shared.agent_tool_limits`` so the API model (which enforces the same
+# cap at the request boundary) and the factory can't drift.
 
 
 # ---------------------------------------------------------------------------
@@ -233,7 +229,7 @@ def resolve_specialist_roster(
     #   * prunes function tools to those whose ``function.{name}`` is listed.
     if tool_ids is not None:
         # Defensive cap (review item #2): the API layer gates len(tool_ids)
-        # to MAX_TOOL_IDS_PER_AGENT, but a direct Firestore write or a
+        # to MAX_TOOLS_PER_SPECIALIST, but a direct Firestore write or a
         # future seeder could bypass it. Raising here surfaces the problem
         # at the construction boundary rather than at agent-runtime.
         if len(tool_ids) > MAX_TOOLS_PER_SPECIALIST:

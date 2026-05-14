@@ -22,6 +22,7 @@ independent of the agent runtime package.
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
 from pathlib import Path
@@ -110,35 +111,19 @@ _INTEGRATION_TO_MCP_SERVER: dict[str, str] = {
 }
 
 
-def _load_catalogue(
-    path: Path | None = None,
-) -> dict[str, list[dict[str, Any]]]:
-    """Load the raw catalogue from the YAML file.
+@functools.lru_cache(maxsize=4)
+def _parse_catalogue(path: Path) -> dict[str, list[dict[str, Any]]]:
+    """Read + parse ``tools.yaml`` at *path*. Cached per absolute path.
 
-    Returns a dict with ``tools`` and ``function_tools`` lists; either may
-    be empty if the section is absent. The schema deliberately mirrors
-    ``tools.yaml`` so callers can iterate by source.
+    The catalogue is shipped with the deployment artifact and doesn't change
+    at runtime, so re-parsing per request is wasted work. The ``lru_cache``
+    is keyed on the ``Path`` argument (hashable) so each distinct catalogue
+    file is parsed once per process. ``maxsize=4`` is enough for the
+    canonical path plus a few test fixtures without bounding the cache.
 
-    When ``path`` is ``None`` the canonical catalogue is resolved on each
-    call (via :func:`_resolve_tools_yaml_path`) so a moved file or a
-    runtime env-var change takes effect without an import-time restart.
-    Missing-file paths still degrade to an empty catalogue + a warning so
-    the endpoint stays up; mirrors the read-error tolerance the inventory
-    composer applies elsewhere.
-
-    Note: this parser is intentionally a slim alternative to
-    ``app.adk.tools.registry.tool_registry.ToolRegistry.load_from_config``.
-    The API keeps its runtime import graph independent of the agent runtime
-    package (per AH-PRD-06 §5.2). The two parsers must agree on the YAML
-    schema — keep them in sync when ``tools.yaml`` grows a new section.
+    Missing-file paths return an empty catalogue with a logged warning —
+    consistent with the rest of the service's tolerance for partial inputs.
     """
-    if path is None:
-        try:
-            path = _resolve_tools_yaml_path()
-        except FileNotFoundError as exc:
-            logger.warning("Tool catalogue lookup failed: %s", exc)
-            return {"tools": [], "function_tools": []}
-
     if not path.exists():
         logger.warning("Tool catalogue not found at %s; returning empty inventory", path)
         return {"tools": [], "function_tools": []}
@@ -148,6 +133,40 @@ def _load_catalogue(
         "tools": list(raw.get("tools") or []),
         "function_tools": list(raw.get("function_tools") or []),
     }
+
+
+def _load_catalogue(
+    path: Path | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Load the raw catalogue from the YAML file.
+
+    Returns a dict with ``tools`` and ``function_tools`` lists; either may
+    be empty if the section is absent. The schema deliberately mirrors
+    ``tools.yaml`` so callers can iterate by source.
+
+    Resolution: when ``path`` is ``None`` and import-time resolution
+    succeeded (``_TOOLS_YAML`` is set), that cached path is used — no
+    per-call filesystem walk. When import-time resolution failed
+    (``_TOOLS_YAML is None``), the walk is retried each call so a moved
+    file or a late-set ``KENE_TOOLS_YAML_PATH`` env var can recover.
+
+    Note: this parser is intentionally a slim alternative to
+    ``app.adk.tools.registry.tool_registry.ToolRegistry.load_from_config``.
+    The API keeps its runtime import graph independent of the agent runtime
+    package (per AH-PRD-06 §5.2). The two parsers must agree on the YAML
+    schema — keep them in sync when ``tools.yaml`` grows a new section.
+    """
+    if path is None:
+        path = _TOOLS_YAML
+        if path is None:
+            # Import-time resolution failed; retry. Common in test harnesses
+            # that set ``KENE_TOOLS_YAML_PATH`` after the module imports.
+            try:
+                path = _resolve_tools_yaml_path()
+            except FileNotFoundError as exc:
+                logger.warning("Tool catalogue lookup failed: %s", exc)
+                return {"tools": [], "function_tools": []}
+    return _parse_catalogue(path)
 
 
 def _mcp_server_for_integration(integration_type: str) -> str | None:

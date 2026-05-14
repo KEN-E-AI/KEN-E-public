@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 from src.kene_api.models.agent_config_models import (
-    MAX_TOOL_IDS_PER_AGENT,
+    MAX_TOOLS_PER_SPECIALIST,
     SUPPORTED_MODELS,
     AgentConfig,
     AgentConfigCreate,
@@ -285,15 +285,15 @@ class TestToolIds:
         )
 
     def test_create_rejects_over_cap(self) -> None:
-        too_many = [f"server.tool_{i:02d}" for i in range(MAX_TOOL_IDS_PER_AGENT + 1)]
+        too_many = [f"server.tool_{i:02d}" for i in range(MAX_TOOLS_PER_SPECIALIST + 1)]
         with pytest.raises(ValidationError):
             AgentConfigCreate(**_valid_create_payload(tool_ids=too_many))
 
     def test_create_accepts_exactly_cap(self) -> None:
-        at_cap = [f"server.tool_{i:02d}" for i in range(MAX_TOOL_IDS_PER_AGENT)]
+        at_cap = [f"server.tool_{i:02d}" for i in range(MAX_TOOLS_PER_SPECIALIST)]
         body = AgentConfigCreate(**_valid_create_payload(tool_ids=at_cap))
         assert body.tool_ids is not None
-        assert len(body.tool_ids) == MAX_TOOL_IDS_PER_AGENT
+        assert len(body.tool_ids) == MAX_TOOLS_PER_SPECIALIST
 
     def test_overlay_update_accepts_none(self) -> None:
         # Sending `tool_ids=None` on the overlay clears any prior selection to

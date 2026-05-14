@@ -204,3 +204,55 @@ class TestLoadCatalogue:
         monkeypatch.setenv("KENE_TOOLS_YAML_PATH", str(bogus))
         with pytest.raises(FileNotFoundError, match="KENE_TOOLS_YAML_PATH"):
             account_tools_service._resolve_tools_yaml_path()
+
+    def test_load_catalogue_uses_import_time_path_without_walk(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Review item: _TOOLS_YAML was previously dead. Now _load_catalogue(None)
+        # uses it directly when set, so _resolve_tools_yaml_path is NOT called
+        # on every request. Patch the resolver to raise — if the code path still
+        # walks, this test fails.
+        def _fail(*args, **kwargs):
+            raise AssertionError(
+                "_resolve_tools_yaml_path should not be called when "
+                "_TOOLS_YAML is set"
+            )
+
+        monkeypatch.setattr(
+            account_tools_service, "_resolve_tools_yaml_path", _fail
+        )
+        # Sanity: in this test environment _TOOLS_YAML was resolved at import.
+        assert account_tools_service._TOOLS_YAML is not None
+        loaded = account_tools_service._load_catalogue()
+        # Catalogue parse succeeded → the import-time path was used.
+        assert "function_tools" in loaded
+
+    def test_load_catalogue_retries_resolution_when_import_failed(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # When import-time resolution failed (`_TOOLS_YAML is None`), the
+        # service should retry on each call so a moved file or a
+        # late-set env var can recover.
+        override = tmp_path / "alt_tools.yaml"
+        override.write_text(
+            "function_tools:\n"
+            "  - name: alt_tool\n"
+            "    description: Alt\n"
+            "    category: misc\n"
+            "    default_global: true\n"
+        )
+        # Simulate failed import-time resolution.
+        monkeypatch.setattr(account_tools_service, "_TOOLS_YAML", None)
+        # And a fresh resolver that finds the alt file.
+        monkeypatch.setattr(
+            account_tools_service,
+            "_resolve_tools_yaml_path",
+            lambda: override,
+        )
+        # Clear the parse cache so the override is read fresh.
+        account_tools_service._parse_catalogue.cache_clear()
+
+        loaded = account_tools_service._load_catalogue()
+        assert any(
+            t["name"] == "alt_tool" for t in loaded["function_tools"]
+        )

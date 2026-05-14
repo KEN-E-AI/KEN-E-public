@@ -21,6 +21,7 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from shared.agent_tool_limits import MAX_TOOLS_PER_SPECIALIST
 from shared.trace_metadata import SEMVER_PATTERN
 
 # Supported model identifiers. Updated as new Gemini/OpenAI models are released.
@@ -54,18 +55,12 @@ _EMAIL_PATTERN = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 # applied by ``ToolDefinition`` and the MCP server document IDs in Firestore.
 _TOOL_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$")
 
-# Mirrors ``MAX_TOOLS_PER_SPECIALIST`` in
-# ``app/adk/agents/agent_factory/roster.py`` — the agent factory's hard cap on
-# the number of tools a specialist may carry. The API enforces the same cap on
-# ``tool_ids`` so an over-budget agent is rejected before reaching the factory.
-MAX_TOOL_IDS_PER_AGENT: int = 30
-
 
 def _validate_tool_ids_format(value: list[str] | None) -> list[str] | None:
     """Reject malformed tool IDs at the API boundary.
 
     Pydantic enforces the per-ID ``max_length=80`` and the list-level
-    ``max_length=MAX_TOOL_IDS_PER_AGENT`` via ``Annotated[…]``; this validator
+    ``max_length=MAX_TOOLS_PER_SPECIALIST`` via ``Annotated[…]``; this validator
     adds the format check and duplicate-detection that don't fit in the type.
     Catalogue cross-check (does this tool actually exist?) happens at the
     router so the model stays free of YAML / Firestore dependencies.
@@ -412,7 +407,7 @@ class AgentConfigCreate(BaseModel):
     skill_ids: list[Annotated[str, Field(max_length=50)]] = Field(default_factory=list, max_length=20)
     tool_ids: list[Annotated[str, Field(max_length=80)]] | None = Field(
         default=None,
-        max_length=MAX_TOOL_IDS_PER_AGENT,
+        max_length=MAX_TOOLS_PER_SPECIALIST,
         description=(
             "Per-tool allowlist (AH-PRD-06). Omit / null = all tools from the "
             "agent's attached MCP servers; empty list = no tools; otherwise an "
@@ -458,7 +453,7 @@ class AgentConfigOverlayUpdate(BaseModel):
     skill_ids: list[Annotated[str, Field(max_length=50)]] | None = Field(None, max_length=20)
     tool_ids: list[Annotated[str, Field(max_length=80)]] | None = Field(
         default=None,
-        max_length=MAX_TOOL_IDS_PER_AGENT,
+        max_length=MAX_TOOLS_PER_SPECIALIST,
         description=(
             "Per-tool allowlist (AH-PRD-06). Omitting the field leaves any "
             "existing overlay value untouched; sending null clears the overlay "
@@ -490,7 +485,7 @@ class AgentConfigOverlayUpdate(BaseModel):
 
 
 __all__ = [
-    "MAX_TOOL_IDS_PER_AGENT",
+    "MAX_TOOLS_PER_SPECIALIST",
     "SUPPORTED_MODELS",
     "AgentConfig",
     "AgentConfigCreate",
