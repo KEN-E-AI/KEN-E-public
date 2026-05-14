@@ -38,7 +38,13 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-shared = { path = "../shared" }
+# Editable so additions to ``shared/`` are picked up without a manual
+# ``uv sync --reinstall-package shared``. Without this, adding a new module
+# under ``shared/`` (e.g. ``shared/agent_tool_limits.py``) builds and installs
+# a frozen copy into the venv, and new files don't surface until the next
+# explicit reinstall. The path source remains the same — only the install
+# mode changes.
+shared = { path = "../shared", editable = true }
 
 [dependency-groups]
 dev = [
