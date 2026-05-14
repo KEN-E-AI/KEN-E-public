@@ -5,7 +5,7 @@
 **Blocked by:** AH-PRD-02 (agent factory + `accounts/{account_id}/agent_configs/{config_id}` overlay path)
 **Parallel with:** SK-PRD-02 / SK-PRD-04 (skills attach into the same form rows and share the ≤30-tool cap)
 **Blocks:** Future narrow-specialist PRDs that want per-agent tool curation rather than entire-server attachment
-**Estimated effort:** 2 PRs across 2 phases. PR-A (backend) ≈ 3–4 days. PR-B (frontend) ≈ 2–3 days.
+**Estimated effort:** 3 PRs. PR-A (backend, merged in #472) ≈ 3–4 days. PR-B (frontend, in review at #473) ≈ 2–3 days. PR-C (`default_global` function-tool wiring) ≈ 0.5–1 day.
 
 ---
 
@@ -42,6 +42,14 @@ The cap-enforcement code at `roster.py:55-77` (`_tool_count_for_server`) already
 - Integrate the picker into `AgentCreatePage` and `AgentEditView`. The picker lives between the existing form fields and the disabled "Skills" / "Sandbox code execution" rows (both stay reserved for SK-PRD-04).
 - Extend `MergedAgentConfig`, `AgentConfigCreatePayload`, and `AgentConfigUpdatePayload` TS types with `tool_ids: string[] | null`.
 
+### In scope — PR-C (Backend: wire `default_global` function tools through the factory)
+
+PR-A shipped the per-server filtering path but left a latent gap: `app/adk/agents/agent_factory/hierarchy.py:325` hardcodes `function_tools=[]` when calling `resolve_specialist_roster`, so the `function_tools:` section of `tools.yaml` is fully wired into the catalogue but **never reaches any constructed agent**. This was always part of AH-PRD-06's intent — the §4 backward-compatibility table below already implies function tools are part of the default roster — but the implementation was deferred. PR-C closes it.
+
+- `hierarchy.py` Step 6c: replace `function_tools=[]` with `ToolRegistry.list_default_global_tools()` (or equivalent — surface the actual `FunctionTool` instances, not just metadata). `tool_ids` semantics are unchanged: `None` keeps the function tools alongside every server tool; `[…]` filters them by `function.{name}` membership; `[]` removes them. The existing PR-A function-tool filter in `roster.py` continues to do the right thing once a non-empty list is plumbed.
+- AH-PRD-04 (data visualization) is the immediate beneficiary — `create_visualization()` becomes reachable from every factory-built specialist without each specialist declaring the tool. AH-PRD-04 Story 2.4-2 explicitly described this as "the factory's default function-tool roster" and is depending on it.
+- No model, API, or frontend change. The picker UI from PR-B is already correct — its inventory response shows `function.create_visualization` and persisted `tool_ids` round-trip cleanly; PR-C is what makes those bits actually drive runtime behaviour for factory-built agents.
+
 ### Out of scope
 
 - **Server-level attachment UI** — `mcp_servers: list[str]` remains a backend concern; users see tools, not servers. AH-PRD-02's defer on per-account server rosters is preserved.
@@ -50,6 +58,12 @@ The cap-enforcement code at `roster.py:55-77` (`_tool_count_for_server`) already
 - **Live MCP `list_tools()` endpoint** — the API process does not connect to MCP servers. The tool catalogue is the static YAML. A live-discovery fallback is a future option (see §9 open questions).
 - **Tool inventory Firestore subcollection** — the inventory is computed on-demand from the static catalogue + the account's `platform_connections/*`. Nothing new is written on account creation; no migration is needed.
 - **Promoting `platform_id → mcp_server_id` to `PlatformDefinition`** — defer to an Integrations follow-up; hardcode it here.
+- **Unifying the `strategy_agent` construction path with the factory** — agents built via `app/adk/agents/strategy_agent/config_loader.py:create_agent_from_firestore_config` (notably `marketing_researcher` and `marketing_formatter`) read the same Firestore documents but go through a separate code path that strips `tool_ids` and `mcp_servers` before construction. That gap is described under **Known limitations** below and tracked separately as **[AH-PRD-07](./AH-PRD-07-unify-strategy-agent-construction.md)**.
+
+### Known limitations after PR-A/B/C ship
+
+- **Strategy-agent specialists silently ignore `tool_ids` and `mcp_servers`.** Agents constructed via `app/adk/agents/strategy_agent/config_loader.py:create_agent_from_firestore_config` (specifically `marketing_researcher` and `marketing_formatter`, plus any future agent reaching ADK's `Agent.from_config()` via this loader) filter the Firestore doc down to ADK's `LlmAgentConfig` allowed keys before validation (`strategy_agent/config_loader.py:148-149`). `tool_ids` and `mcp_servers` aren't in that allow-list, so they're dropped — tools for these agents come from hand-wired call sites (e.g., `agent.tools = [AgentTool(agent=google_search_agent)]` in `marketing_agents.py:270`). The picker UI on `/workflows/agents` will persist `tool_ids` to the same Firestore doc, but that selection has no runtime effect for these agents until [AH-PRD-07](./AH-PRD-07-unify-strategy-agent-construction.md) bridges the two construction paths.
+- **Surfaces affected:** any specialist created in `app/adk/agents/strategy_agent/` (today: `marketing_researcher`, `marketing_formatter`, plus the orchestrator's helper agents). Specialists built via `app/adk/agents/agent_factory/hierarchy.py:build_hierarchy` (the AH-PRD-02 path) are unaffected — `tool_ids` works correctly there.
 
 ## 3. Dependencies
 
@@ -124,7 +138,7 @@ Max 80 characters per ID (enforced via `Annotated[str, Field(max_length=80)]`).
 
 | Stored value | Factory behaviour |
 |---|---|
-| `tool_ids is None` (existing agents) | No tool-level filtering. Every tool from every attached `mcp_servers` server is included, exactly as today. |
+| `tool_ids is None` (existing agents) | No tool-level filtering. Every tool from every attached `mcp_servers` server is included **plus every `default_global: true` entry from `function_tools:`** (PR-C). Matches AH-PRD-04 Story 2.4-2's "default function-tool roster" expectation. |
 | `tool_ids == []` | Agent has no tools. Function tools NOT included. |
 | `tool_ids == ["…", "…"]` | Only listed tools are included; everything else is filtered out, including function tools not in the list. |
 
@@ -169,6 +183,7 @@ The factory branches on `is None` vs. "set" — empty list is meaningfully diffe
 | Modify | `app/adk/agents/agent_factory/mcp.py` — accept optional `allowed_tool_names` on `build_toolset_for_doc`; forward to `McpToolset.tool_filter` or wrap | A |
 | Modify | `app/adk/agents/agent_factory/roster.py` — `resolve_specialist_roster` accepts `tool_ids: list[str] \| None`; filters toolsets + function tools | A |
 | Modify | `app/adk/agents/agent_factory/builder.py` — plumb `tool_ids` from the loaded `AgentConfig` into the roster resolver | A |
+| Modify | `app/adk/agents/agent_factory/hierarchy.py` (Step 6c) — replace hardcoded `function_tools=[]` with the default-global function tools from `ToolRegistry.list_default_global_tools()` so `create_visualization` and future built-ins reach every factory-built specialist | C |
 | Modify | `api/src/kene_api/models/agent_config_models.py` — add `tool_ids` to `AgentConfig`, `AgentConfigCreate`, `AgentConfigOverlayUpdate`, `MergedAgentConfig` | A |
 | Modify | `api/src/kene_api/routers/agent_configs.py` — accept + merge `tool_ids`; add validator (catalogue + cap) | A |
 | Create | `api/src/kene_api/models/tool_models.py` — `AccountToolEntry`, `AccountToolsResponse` | A |
@@ -244,6 +259,7 @@ Validation failures on `tool_ids` produce FastAPI 422 with per-ID `detail` entri
 9. **Form integration — Create.** The picker appears in `AgentCreatePage` between the description field and the existing disabled placeholder rows. The submit payload includes `tool_ids` as an array (or omitted when the user has made no selection — see §9 open question on `None` vs. `[]`).
 10. **Form integration — Edit.** The picker appears in `AgentEditView` in the same position. `tool_ids` is dirty-tracked alongside other editable fields and included in the `PUT` payload only when changed. Saving without touching the picker does not write `tool_ids`.
 11. **Legacy agent load behaviour.** Loading an agent that was last saved before this PRD (`tool_ids is None` in Firestore) into the edit view pre-selects every currently-available tool from the agent's attached servers — so a no-op save preserves prior runtime behaviour. The frontend may convert `None` → "pick all current" only at load time; subsequent state changes write the explicit list.
+12. **Default function tools wired through the factory (PR-C).** Every specialist built via `agent_factory/hierarchy.py:build_hierarchy` with `tool_ids = None` includes every `default_global: true` entry from `function_tools:` in its roster (today: `create_visualization`; future entries auto-propagate). When `tool_ids = []` no function tools are wired; when `tool_ids = ["function.x", …]` only listed `function.{name}` entries are wired (existing PR-A behaviour). Verify by spying on the `tools=` argument to `build_agent` for a representative specialist.
 
 ## 8. Test plan
 
