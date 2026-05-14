@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { ArrowLeft, Bot } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCreateAgentConfig } from "@/queries/agentConfigs";
+import { useAccountTools } from "@/queries/tools";
 import { SUPPORTED_MODELS } from "@/lib/api/agentConfigs";
 import { mapServerErrors } from "@/lib/api/formErrors";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { AgentToolPicker } from "./agents/AgentToolPicker";
 import { DisabledPlaceholderRow } from "./agents/DisabledPlaceholderRow";
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
@@ -60,6 +62,14 @@ export const schema = z.object({
       message: "Description must be at least 10 characters",
     })
     .optional(),
+  // AH-PRD-06: allowlist of catalogued tool IDs. Mirrors the
+  // ``MAX_TOOLS_PER_SPECIALIST`` cap on the API side (30). Defaults to ``[]``
+  // — a new agent commits to its explicit selection, no legacy "all tools"
+  // fall-through for post-PRD creates.
+  tool_ids: z
+    .array(z.string())
+    .max(30, "You can attach up to 30 tools per agent")
+    .default([]),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -72,6 +82,7 @@ const FORM_FIELDS = [
   "model",
   "temperature",
   "description",
+  "tool_ids",
 ] as const satisfies readonly (keyof FormValues)[];
 
 // ─── AgentCreatePage ──────────────────────────────────────────────────────────
@@ -81,6 +92,7 @@ export function AgentCreatePage() {
   const { selectedOrgAccount } = useAuth();
   const accountId = selectedOrgAccount?.accountId ?? null;
   const mutation = useCreateAgentConfig(accountId);
+  const toolsQuery = useAccountTools(accountId);
 
   const {
     register,
@@ -91,7 +103,7 @@ export function AgentCreatePage() {
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     mode: "onChange",
-    defaultValues: { temperature: 0.3 },
+    defaultValues: { temperature: 0.3, tool_ids: [] },
   });
 
   function onSubmit(data: FormValues) {
@@ -101,6 +113,10 @@ export function AgentCreatePage() {
       ...data,
       name: trimmedName ? trimmedName : null,
       description: trimmedDescription ? trimmedDescription : null,
+      // Always emit the explicit array — new agents commit to their selection
+      // rather than falling back to the legacy "all tools from attached
+      // servers" behaviour reserved for pre-PRD configs.
+      tool_ids: data.tool_ids ?? [],
     };
     mutation.mutate(payload, {
       onSuccess: (created) => {
@@ -281,6 +297,26 @@ export function AgentCreatePage() {
             </p>
           )}
         </div>
+
+        {/* Tools (AH-PRD-06) */}
+        <Controller
+          name="tool_ids"
+          control={control}
+          render={({ field }) => (
+            <AgentToolPicker
+              value={field.value ?? []}
+              onChange={field.onChange}
+              tools={toolsQuery.data?.tools}
+              isLoading={toolsQuery.isLoading}
+              isError={toolsQuery.isError}
+            />
+          )}
+        />
+        {errors.tool_ids && (
+          <p className="text-xs text-destructive mt-1">
+            {errors.tool_ids.message as string}
+          </p>
+        )}
 
         <Separator />
 
