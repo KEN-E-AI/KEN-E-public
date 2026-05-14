@@ -36,6 +36,14 @@ locals {
     "monitoring.googleapis.com"
   ]
 
+  # Dev (ken-e-dev) is intentionally excluded. IAM grants on the dev Agent
+  # Engine SA (e.g. roles/datastore.user used by analytics_db) are made
+  # out-of-band by engineers as the sandbox evolves; bringing dev under this
+  # map would also pull in CICD SA roles, log sinks, monitoring, and Vertex
+  # SA roles for dev, which is a larger scope than current usage justifies.
+  # Dev still receives terraform-managed Firestore indexes via the separate
+  # `firestore_index_project_ids` variable in variables.tf — indexes are
+  # required for query correctness, IAM is not. See data-management README §7.4.
   deploy_project_ids = {
     prod    = var.prod_project_id
     staging = var.staging_project_id
