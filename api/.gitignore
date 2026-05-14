@@ -51,6 +51,7 @@ htmlcov/
 !package-lock.json
 !tsconfig.json
 !google-cloud-service-account-key.json.template
+!tests/fixtures/feature_flag_schema.snapshot.json
 !tests/integration/fixtures/monitoring_topics_pre_migration.json
 
 # Specific service account files (in case they exist)
