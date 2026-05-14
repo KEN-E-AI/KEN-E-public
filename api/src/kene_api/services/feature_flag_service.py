@@ -168,21 +168,21 @@ class FeatureFlagService:
             )
             now = self._time_provider()
             for key, result in zip(cold_keys, fetch_results, strict=True):
-                if isinstance(result, BaseException):
-                    # Transient error — log and skip cache so the next call retries.
+                if isinstance(result, Exception):
+                    # Transient error — log type only (no exc_info to avoid serialising
+                    # Firestore document contents or gRPC internals into Cloud Logging).
+                    # Do NOT cache so the next call retries.
                     logger.error(
                         "feature_flag_fetch_error",
-                        extra={"flag_key": key},
-                        exc_info=result,
+                        extra={"flag_key": key, "error_type": type(result).__name__},
                     )
                 else:
                     # result is FeatureFlag | None; cache both (None = confirmed miss).
                     self._install_cache(key, result, now)
 
-        # Build response dict — keys with no valid cache entry return unknown_flag.
-        # Re-read now once for the whole loop; entries just installed above expire
-        # TTL_SECONDS from now, so they won't be stale here.
-        now = self._time_provider()
+        # Build response dict — use the same `now` captured after the gather so
+        # freshly-installed entries (expires_at = now + TTL_SECONDS) are never
+        # incorrectly treated as expired on this same call.
         evaluations: dict[str, FlagEvaluation] = {}
         for key in flag_keys:
             entry = self._cache.get(key)

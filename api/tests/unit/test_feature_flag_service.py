@@ -10,6 +10,7 @@ deterministically without freezegun.
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
@@ -94,7 +95,6 @@ def _mock_db_with_flag(flag: FeatureFlag | None) -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_unknown_flag_returns_unknown_flag_no_exception() -> None:
     """AC-6: unknown key returns reason='unknown_flag', enabled=False, no raise."""
     db = _mock_db_with_flag(None)
@@ -114,7 +114,6 @@ async def test_unknown_flag_returns_unknown_flag_no_exception() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_batch_mixed_known_and_unknown() -> None:
     """Both entries appear in the response dict with correct enabled/reason."""
     flag = _make_flag(key="known_flag", default_enabled=True)
@@ -152,7 +151,6 @@ async def test_batch_mixed_known_and_unknown() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_second_call_within_ttl_uses_cache() -> None:
     """AC-8: two evaluate_batch calls within 60 s issue exactly one Firestore read."""
     flag = _make_flag(key="cached_flag")
@@ -175,7 +173,6 @@ async def test_second_call_within_ttl_uses_cache() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_cache_reloads_after_ttl_expires() -> None:
     """After TTL_SECONDS the cache entry expires and a fresh Firestore read is issued."""
     flag = _make_flag(key="expiring_flag")
@@ -198,7 +195,6 @@ async def test_cache_reloads_after_ttl_expires() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_cold_batch_reads_are_parallel() -> None:
     """N cold keys must issue fetches concurrently, not sequentially.
 
@@ -234,7 +230,6 @@ async def test_cold_batch_reads_are_parallel() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_transient_firestore_error_returns_unknown_flag_and_is_not_cached(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -245,8 +240,6 @@ async def test_transient_firestore_error_returns_unknown_flag_and_is_not_cached(
     )
     clock = FakeClock(start=0.0)
     svc = FeatureFlagService(db=db, time_provider=clock)
-
-    import logging
 
     with caplog.at_level(logging.ERROR, logger="src.kene_api.services.feature_flag_service"):
         result = await svc.evaluate_batch(["error_flag"], _ctx())
@@ -271,9 +264,12 @@ async def test_transient_firestore_error_returns_unknown_flag_and_is_not_cached(
     clock.advance(1.0)  # still within TTL, but error path skipped caching
     result2 = await svc.evaluate_batch(["error_flag"], _ctx())
 
-    # Should now resolve from Firestore (not stuck on unknown_flag).
-    assert result2["error_flag"].reason != "unknown_flag" or result2["error_flag"].enabled is False
-    # Specifically: call count should be 2 (both calls hit Firestore since error wasn't cached).
+    # The error was NOT cached — the second call retries Firestore and now succeeds.
+    # With default_enabled=False and no targeting rules, the result is reason="default".
+    assert result2["error_flag"] == FlagEvaluation(
+        key="error_flag", enabled=False, reason="default"
+    )
+    # Both calls hit Firestore (total=2) since the first error was not cached.
     assert db.collection.return_value.document.return_value.get.call_count == 2
 
 
@@ -282,7 +278,6 @@ async def test_transient_firestore_error_returns_unknown_flag_and_is_not_cached(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_absent_key_cached_for_ttl() -> None:
     """Unknown key (doc absent) is cached so a second call doesn't re-read Firestore."""
     db = _mock_db_with_flag(None)
@@ -304,7 +299,6 @@ async def test_absent_key_cached_for_ttl() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_cache_per_key_isolation() -> None:
     """Caching flag_a does not affect whether flag_b issues a Firestore read."""
     flag_a = _make_flag(key="flag_a")
@@ -357,7 +351,6 @@ async def test_cache_per_key_isolation() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_evaluate_batch_wires_through_to_evaluate() -> None:
     """A flag with default_enabled=True returns reason='default', enabled=True."""
     flag = _make_flag(
