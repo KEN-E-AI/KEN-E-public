@@ -282,6 +282,35 @@ tools:
       - "What's my e-commerce revenue?"
 
 # ============================================================================
+# Function Tools (Built-in, always available)
+# ============================================================================
+# Tools in this section are built-in SDK function tools — not delivered by an
+# MCP server and not gated on an integration. ``default_global: true`` marks a
+# tool as part of every account's global default tool inventory; the AH-PRD-06
+# account tool-inventory endpoint emits these unconditionally.
+#
+# These metadata entries are independent of the Python implementations: the
+# registry only describes tools, it does not instantiate them. Runtime wiring
+# is owned by the agent factory (e.g. AH-PRD-04 ships ``create_visualization``).
+
+function_tools:
+  - name: create_visualization
+    description: Render a chart artifact (e.g. Vega-Lite spec) and attach it to the response so the user can see the data alongside the agent's reply.
+    category: visualization
+    default_global: true
+    keywords:
+      - chart
+      - graph
+      - plot
+      - visualization
+      - vega
+      - artifact
+    estimated_tokens: 200
+    examples:
+      - "Chart this data as a bar chart"
+      - "Show me a line graph of the trend"
+
+# ============================================================================
 # Placeholder for future tools (Sprint 3+)
 # ============================================================================
 

@@ -13,8 +13,10 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 from src.kene_api.models.agent_config_models import (
+    MAX_TOOL_IDS_PER_AGENT,
     SUPPORTED_MODELS,
     AgentConfig,
+    AgentConfigCreate,
     AgentConfigMetadata,
     AgentConfigOverlayUpdate,
     AgentConfigUpdate,
@@ -189,6 +191,124 @@ class TestAgentConfigOverlayUpdate:
         assert only_name.title is None
         assert only_title.title == "Business Researcher"
         assert only_title.name is None
+
+
+def _valid_create_payload(**overrides: object) -> dict[str, object]:
+    base: dict[str, object] = {
+        "title": "Business Researcher",
+        "instruction": "You are a business researcher. Use tools as needed.",
+        "model": "gemini-2.5-pro",
+    }
+    base.update(overrides)
+    return base
+
+
+class TestToolIds:
+    """AH-PRD-06: per-agent tool_ids field on the four agent-config models."""
+
+    def test_agent_config_defaults_tool_ids_to_none(self) -> None:
+        config = AgentConfig(**_valid_agent_config())
+        assert config.tool_ids is None
+
+    def test_agent_config_accepts_explicit_tool_ids(self) -> None:
+        config = AgentConfig(
+            **_valid_agent_config(
+                tool_ids=[
+                    "google_analytics_mcp.list_ga_accounts",
+                    "function.create_visualization",
+                ]
+            )
+        )
+        assert config.tool_ids == [
+            "google_analytics_mcp.list_ga_accounts",
+            "function.create_visualization",
+        ]
+
+    def test_agent_config_accepts_empty_list(self) -> None:
+        # `[]` means "explicitly no tools" — distinct from `None` (legacy).
+        config = AgentConfig(**_valid_agent_config(tool_ids=[]))
+        assert config.tool_ids == []
+
+    def test_create_accepts_none(self) -> None:
+        body = AgentConfigCreate(**_valid_create_payload())
+        assert body.tool_ids is None
+
+    def test_create_accepts_valid_list(self) -> None:
+        body = AgentConfigCreate(
+            **_valid_create_payload(tool_ids=["function.create_visualization"])
+        )
+        assert body.tool_ids == ["function.create_visualization"]
+
+    @pytest.mark.parametrize(
+        "bad_id",
+        [
+            "noseparator",
+            "Two.Capitals",
+            "trailing.",
+            ".leading",
+            "double..dot",
+            "spaces in.name",
+        ],
+    )
+    def test_create_rejects_malformed_ids(self, bad_id: str) -> None:
+        with pytest.raises(ValidationError, match="tool_ids"):
+            AgentConfigCreate(**_valid_create_payload(tool_ids=[bad_id]))
+
+    def test_create_rejects_duplicates(self) -> None:
+        with pytest.raises(ValidationError, match="Duplicate"):
+            AgentConfigCreate(
+                **_valid_create_payload(
+                    tool_ids=[
+                        "function.create_visualization",
+                        "function.create_visualization",
+                    ]
+                )
+            )
+
+    def test_create_rejects_over_cap(self) -> None:
+        too_many = [f"server.tool_{i:02d}" for i in range(MAX_TOOL_IDS_PER_AGENT + 1)]
+        with pytest.raises(ValidationError):
+            AgentConfigCreate(**_valid_create_payload(tool_ids=too_many))
+
+    def test_create_accepts_exactly_cap(self) -> None:
+        at_cap = [f"server.tool_{i:02d}" for i in range(MAX_TOOL_IDS_PER_AGENT)]
+        body = AgentConfigCreate(**_valid_create_payload(tool_ids=at_cap))
+        assert body.tool_ids is not None
+        assert len(body.tool_ids) == MAX_TOOL_IDS_PER_AGENT
+
+    def test_overlay_update_accepts_none(self) -> None:
+        # Sending `tool_ids=None` on the overlay clears any prior selection to
+        # "legacy / no filter" semantics — distinct from `[]`.
+        body = AgentConfigOverlayUpdate(tool_ids=None)
+        assert body.tool_ids is None
+
+    def test_overlay_update_accepts_empty_list(self) -> None:
+        body = AgentConfigOverlayUpdate(tool_ids=[])
+        assert body.tool_ids == []
+
+    def test_overlay_update_rejects_per_id_over_limit(self) -> None:
+        # Per-ID `max_length=80` on the Annotated[str] guard.
+        long_id = "a" * 78 + ".x"  # 80 chars exactly is fine
+        AgentConfigOverlayUpdate(tool_ids=[long_id])
+        with pytest.raises(ValidationError):
+            AgentConfigOverlayUpdate(tool_ids=["a" * 79 + ".x"])  # 81 chars
+
+    def test_merged_config_passes_tool_ids_through(self) -> None:
+        merged = MergedAgentConfig(
+            config_id="custom_abc12345",
+            instruction="You are helpful.",
+            model="gemini-2.5-pro",
+            tool_ids=["function.create_visualization"],
+        )
+        assert merged.tool_ids == ["function.create_visualization"]
+
+    def test_merged_config_defaults_to_none(self) -> None:
+        merged = MergedAgentConfig(
+            config_id="custom_abc12345",
+            instruction="You are helpful.",
+            model="gemini-2.5-pro",
+        )
+        assert merged.tool_ids is None
 
 
 class TestAgentConfigMetadata:
