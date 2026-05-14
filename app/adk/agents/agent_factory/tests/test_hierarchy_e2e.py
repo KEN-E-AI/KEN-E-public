@@ -161,6 +161,15 @@ class _FakeRegistry:
     def list_tools(self) -> list:
         return []
 
+    def list_default_global_tools(self) -> list:
+        """AH-PRD-06 PR-C: empty default global function tool roster.
+
+        Per-test overrides (e.g. the PR-C tests below) attach a non-empty
+        list onto a registry instance via attribute assignment before
+        passing it to ``build_hierarchy``.
+        """
+        return []
+
 
 def _run_build_hierarchy(docs: dict, account_id: str | None = None) -> object:
     """Call build_hierarchy with the standard set of patches applied.
@@ -544,7 +553,10 @@ class TestOverlayVariant:
             h.build_hierarchy(account_id="acc_xyz", db=fake_db)
 
         assert "analytics_specialist" in specialist_instructions
-        assert "You are CUSTOM analytics." in specialist_instructions["analytics_specialist"]
+        assert (
+            "You are CUSTOM analytics."
+            in specialist_instructions["analytics_specialist"]
+        )
 
     def test_account_overlay_does_not_affect_ads_specialist(self) -> None:
         """The ads_specialist keeps its original instruction when only analytics is overridden."""
@@ -991,9 +1003,7 @@ class TestAhPrd06ToolIdsThreading:
         docs = self._docs_with_tool_ids(["ga_mcp.list_ga_accounts"])
         calls = self._run_capturing_build_toolset(docs)
 
-        ga_calls = [
-            (args, kwargs) for args, kwargs in calls if args[0] == "ga_mcp"
-        ]
+        ga_calls = [(args, kwargs) for args, kwargs in calls if args[0] == "ga_mcp"]
         # analytics_specialist references ga_mcp; ads_specialist does not.
         # analytics has tool_ids set → the call carries the kwarg.
         analytics_ga_calls = [
@@ -1027,6 +1037,211 @@ class TestAhPrd06ToolIdsThreading:
         # path).
         shared_calls = [c for c in calls if c[0][0] == "shared_viz_mcp"]
         assert len(shared_calls) == 1
+
+
+class TestAhPrd06PrcDefaultGlobalFunctionTools:
+    """AH-PRD-06 PR-C: ``hierarchy.py`` Step 6c now plumbs every catalogued
+    ``default_global: true`` function tool through ``resolve_specialist_roster``.
+    Until this PR, ``function_tools=[]`` was hardcoded and AH-PRD-04's
+    ``create_visualization`` (and any future default-global tool) would never
+    reach a constructed agent.
+
+    These tests verify the plumbing using a stub FunctionTool — AH-PRD-04
+    will register the real ``create_visualization`` callable when it ships,
+    at which point this wiring picks it up without further change.
+    """
+
+    @staticmethod
+    def _stub_callable() -> str:
+        return "stub-viz"
+
+    def _registry_with_default_global(self, names: list[str]) -> _FakeRegistry:
+        # ``SimpleNamespace`` rather than ``MagicMock`` for the entries —
+        # MagicMock's ``name`` kwarg is reserved for the mock's display name.
+        from types import SimpleNamespace
+
+        registry = _FakeRegistry()
+        registry.list_default_global_tools = lambda: [
+            SimpleNamespace(name=n) for n in names
+        ]
+        return registry
+
+    def _run_capturing_specialist_rosters(
+        self, docs: dict, registry: _FakeRegistry | None = None
+    ) -> dict[str, list]:
+        """Return ``{spec_name: tools_list}`` captured from each roster call.
+
+        Spies on ``resolve_specialist_roster`` via ``wraps=`` — the real
+        function still runs (so the cap check, filtering, and tool list
+        construction match production), but every return value is captured
+        so the test can assert on each specialist's final roster. Spying
+        here (rather than at ``build_agent``) avoids breaking downstream
+        dispatch generation that reads agent attributes.
+        """
+        import app.adk.agents.agent_factory.hierarchy as h
+
+        fake_db = _FakeFirestoreDb(docs)
+        fake_registry = registry or _FakeRegistry()
+        captured: dict[str, list] = {}
+
+        real_resolve = h.resolve_specialist_roster
+
+        def _captured_resolve(spec_name, **kwargs):
+            result = real_resolve(spec_name, **kwargs)
+            captured[spec_name] = result
+            return result
+
+        with (
+            _PATCH_BEFORE_AGENT,
+            _PATCH_AFTER_AGENT,
+            _PATCH_BEFORE_TOOL,
+            _PATCH_AFTER_TOOL,
+            _PATCH_BUILD_TOOLSET as mock_build_toolset,
+            _PATCH_GET_DEFAULT_REGISTRY as mock_get_registry,
+            patch(
+                "app.adk.agents.agent_factory.hierarchy.resolve_specialist_roster",
+                side_effect=_captured_resolve,
+            ),
+        ):
+            mock_build_toolset.side_effect = lambda *args, **kwargs: MagicMock(
+                name=f"toolset_{args[0]}"
+            )
+            mock_get_registry.return_value = fake_registry
+            h.build_hierarchy(db=fake_db)
+
+        return captured
+
+    def setup_method(self) -> None:
+        # Each test runs against a clean process-global function tool
+        # registry; the AH-PRD-06 PR-C registry is shared with production
+        # callers so leakage would cross-contaminate other tests in the run.
+        from app.adk.tools.registry.function_tool_registry import (
+            clear_function_tool_registry,
+        )
+
+        clear_function_tool_registry()
+
+    def teardown_method(self) -> None:
+        from app.adk.tools.registry.function_tool_registry import (
+            clear_function_tool_registry,
+        )
+
+        clear_function_tool_registry()
+
+    def test_registered_default_global_tool_reaches_specialist_with_tool_ids_none(
+        self,
+    ) -> None:
+        """Baseline (no tool_ids on the spec): the registered default-global
+        function tool MUST appear in the specialist's final tools list."""
+        from app.adk.tools.registry.function_tool_registry import (
+            register_function_tool,
+        )
+
+        register_function_tool("stub_viz", self._stub_callable)
+        registry = self._registry_with_default_global(["stub_viz"])
+
+        captured = self._run_capturing_specialist_rosters(_E2E_DOCS, registry)
+
+        # analytics_specialist has no tool_ids → inherits default-global.
+        analytics_tools = captured["analytics_specialist"]
+        from google.adk.tools.function_tool import FunctionTool
+
+        function_tools = [t for t in analytics_tools if isinstance(t, FunctionTool)]
+        assert len(function_tools) == 1, (
+            f"expected exactly one FunctionTool, got {len(function_tools)}: "
+            f"{analytics_tools}"
+        )
+
+    def test_tool_ids_empty_excludes_default_global_function_tools(self) -> None:
+        """When the spec sets ``tool_ids = []`` the roster filter strips
+        every function tool — explicit "no tools" beats default-global."""
+        from google.adk.tools.function_tool import FunctionTool
+
+        from app.adk.tools.registry.function_tool_registry import (
+            register_function_tool,
+        )
+
+        register_function_tool("stub_viz", self._stub_callable)
+        registry = self._registry_with_default_global(["stub_viz"])
+
+        docs = {k: dict(v) for k, v in _E2E_DOCS.items()}
+        docs[("agent_configs", "analytics_specialist")]["tool_ids"] = []
+
+        captured = self._run_capturing_specialist_rosters(docs, registry)
+
+        analytics_tools = captured["analytics_specialist"]
+        function_tools = [t for t in analytics_tools if isinstance(t, FunctionTool)]
+        assert function_tools == []
+
+    def test_tool_ids_listing_function_name_includes_default_global(self) -> None:
+        """When ``tool_ids`` explicitly lists ``function.<name>``, that
+        default-global tool is preserved through the filter."""
+        from google.adk.tools.function_tool import FunctionTool
+
+        from app.adk.tools.registry.function_tool_registry import (
+            register_function_tool,
+        )
+
+        register_function_tool("stub_viz", self._stub_callable)
+        registry = self._registry_with_default_global(["stub_viz"])
+
+        docs = {k: dict(v) for k, v in _E2E_DOCS.items()}
+        docs[("agent_configs", "analytics_specialist")]["tool_ids"] = [
+            "function.stub_viz",
+        ]
+
+        captured = self._run_capturing_specialist_rosters(docs, registry)
+
+        analytics_tools = captured["analytics_specialist"]
+        function_tools = [t for t in analytics_tools if isinstance(t, FunctionTool)]
+        assert len(function_tools) == 1
+
+    def test_tool_ids_listing_other_function_excludes_unlisted_default_global(
+        self,
+    ) -> None:
+        """``tool_ids`` listing only other tools strips default-global function
+        tools whose names aren't in the list. Confirms PR-A's function-tool
+        filter still does the right thing once PR-C plumbs a non-empty list."""
+        from google.adk.tools.function_tool import FunctionTool
+
+        from app.adk.tools.registry.function_tool_registry import (
+            register_function_tool,
+        )
+
+        register_function_tool("stub_viz", self._stub_callable)
+        registry = self._registry_with_default_global(["stub_viz"])
+
+        docs = {k: dict(v) for k, v in _E2E_DOCS.items()}
+        docs[("agent_configs", "analytics_specialist")]["tool_ids"] = [
+            "ga_mcp.list_ga_accounts",  # only an MCP tool, no function.* entries
+        ]
+
+        captured = self._run_capturing_specialist_rosters(docs, registry)
+
+        analytics_tools = captured["analytics_specialist"]
+        function_tools = [t for t in analytics_tools if isinstance(t, FunctionTool)]
+        assert function_tools == []
+
+    def test_empty_registry_matches_pr_a_baseline(self) -> None:
+        """When no callables are registered, behaviour matches the pre-PR-C
+        state: no function tools wired, regardless of catalogue contents.
+        This is today's production behaviour — AH-PRD-04 hasn't shipped, so
+        ``create_visualization`` is catalogued but not registered."""
+        from google.adk.tools.function_tool import FunctionTool
+
+        # Catalogue lists a default-global entry but the registry is empty —
+        # resolve_default_global_tools logs a warning and returns [].
+        registry = self._registry_with_default_global(["create_visualization"])
+
+        captured = self._run_capturing_specialist_rosters(_E2E_DOCS, registry)
+
+        for spec_name, tools in captured.items():
+            if spec_name == "ken_e":
+                continue
+            function_tools = [t for t in tools if isinstance(t, FunctionTool)]
+            assert function_tools == [], (
+                f"{spec_name} unexpectedly got function tools: {function_tools}"
+            )
 
 
 if __name__ == "__main__":

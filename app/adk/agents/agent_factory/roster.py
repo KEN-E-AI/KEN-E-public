@@ -95,6 +95,17 @@ def count_specialist_tool_roster(
     parameters of this function and do not contribute to the count — they
     are configured on the agent via ``code_executor=``, not via ``tools=``.
 
+    NOTE on default-global function tools (AH-PRD-06 PR-C): the
+    ``function_tools`` parameter includes any tools that
+    ``hierarchy.py`` resolves from the default-global registry on top of
+    spec-listed function tools, so a specialist with ``tool_ids=None``
+    near ``MAX_TOOLS_PER_SPECIALIST`` can trip the cap when a new
+    ``default_global: true`` entry is added to ``tools.yaml`` — even
+    though the spec doc didn't change. If you see ``RosterCapExceededError``
+    after a tools.yaml change, that's the most likely cause; either tighten
+    the spec's ``mcp_servers`` or shave the catalogue. Subtracting
+    default-globals from the cap is tracked as a future option.
+
     Args:
         specialist_name: Used only in log messages for traceability.
         mcp_server_ids: Ordered list of ``mcp_server_configs/{id}`` keys
@@ -292,9 +303,16 @@ def resolve_specialist_roster(
 
     if logical_count > MAX_TOOLS_PER_SPECIALIST:
         raise RosterCapExceededError(
-            f"Specialist {specialist_name!r} has a logical tool count of {logical_count}, "
-            f"which exceeds the {MAX_TOOLS_PER_SPECIALIST}-tool cap.  "
-            f"Split this specialist into narrower per-platform agents (see README §2.6)."
+            f"Specialist {specialist_name!r} has a logical tool count of {logical_count} "
+            f"({len(frozen_function_tools)} function tool(s) + "
+            f"{logical_count - len(frozen_function_tools)} MCP tool(s)), "
+            f"which exceeds the {MAX_TOOLS_PER_SPECIALIST}-tool cap. "
+            f"Note: function tools include any default-global entries from "
+            f"``tools.yaml`` resolved by ``hierarchy.py`` (AH-PRD-06 PR-C) — if "
+            f"this spec was passing before a recent tools.yaml change, a newly "
+            f"added ``default_global: true`` entry is the likely cause. "
+            f"Otherwise split this specialist into narrower per-platform agents "
+            f"(see README §2.6)."
         )
 
     return [*frozen_toolsets.values(), *frozen_function_tools]
