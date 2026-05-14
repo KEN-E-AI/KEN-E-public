@@ -20,7 +20,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 WORKDIR /app
 
 # Copy shared package to /shared so uv resolves the path from pyproject.toml
-# (uv.lock records it as `directory = "../shared"`, relative to /app)
+# (uv.lock records it as `editable = "../shared"`, relative to /app)
 COPY shared /shared
 
 # Copy dependency files
