@@ -978,9 +978,7 @@ async def delete_account(
             cleanup_results["firestore_account_deleted"] = True
             logger.info(f"recursive_delete completed for accounts/{account_id}")
         except Exception as e:
-            logger.error(
-                f"Failed to recursive-delete accounts/{account_id}: {e}"
-            )
+            logger.error(f"Failed to recursive-delete accounts/{account_id}: {e}")
             cleanup_results["cleanup_errors"].append(
                 f"Firestore recursive delete failed: {e}"
             )

@@ -254,7 +254,9 @@ class TestOverlayMerge:
         account_id = f"acc_{uuid.uuid4().hex[:8]}"
         config_id = f"cfg_{uuid.uuid4().hex[:8]}"
         self._seed_global(db, config_id, dict(_VALID_GLOBAL_DOC))
-        overlay_instruction = "You are the OVERLAY instruction that should win in tests."
+        overlay_instruction = (
+            "You are the OVERLAY instruction that should win in tests."
+        )
         self._seed_overlay(
             db,
             account_id,
@@ -341,7 +343,9 @@ class TestOverlayMerge:
         finally:
             self._delete_global(db, config_id)
 
-    def test_based_on_version_from_firestore_is_stripped_for_global_only(self, db) -> None:
+    def test_based_on_version_from_firestore_is_stripped_for_global_only(
+        self, db
+    ) -> None:
         """A based_on_version stored in a global-only doc must not bleed into the result."""
         from src.kene_api.routers.agent_configs import _load_merged
 
@@ -425,9 +429,7 @@ class TestAccountDeletionSweep:
         mock_neo4j = MagicMock()
         mock_neo4j.health_check = AsyncMock(return_value=True)
         # Account lookup — return one row so the endpoint does not 404.
-        mock_neo4j.execute_query = AsyncMock(
-            return_value=[{"data_region": "US"}]
-        )
+        mock_neo4j.execute_query = AsyncMock(return_value=[{"data_region": "US"}])
         # Cascade deletes — return empty summaries (nothing deleted in Neo4j).
         mock_neo4j.execute_write_operation = AsyncMock(
             return_value={"nodes_deleted": 0, "relationships_deleted": 0}
@@ -477,7 +479,13 @@ class TestAccountDeletionSweep:
             .document(account_id)
             .collection("agent_configs")
             .document(config_id)
-            .set(data or {"instruction": f"Instruction for {config_id}.", "model": "gemini-2.5-flash"})
+            .set(
+                data
+                or {
+                    "instruction": f"Instruction for {config_id}.",
+                    "model": "gemini-2.5-flash",
+                }
+            )
         )
 
     def _seed_global_agent_config(
@@ -547,9 +555,7 @@ class TestAccountDeletionSweep:
 
             # Verify global doc is untouched
             global_doc = (
-                emulator_db.collection("agent_configs")
-                .document(global_config_id)
-                .get()
+                emulator_db.collection("agent_configs").document(global_config_id).get()
             )
             assert global_doc.exists, (
                 f"Global doc agent_configs/{global_config_id} was incorrectly deleted "
