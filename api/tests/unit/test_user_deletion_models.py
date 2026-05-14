@@ -6,7 +6,7 @@ All tests are pure-logic: no I/O, no fixtures, no mocks.
 AC-1  Happy-path ``UserDeletionResult(user_id=...)`` produces expected defaults.
 AC-2  All-fields construction round-trips through ``model_dump()``.
 AC-3  ``member_rows_deleted``, ``integrations_hook_fired``, ``gcs_prefixes_purged``
-      reject non-int input.
+      reject non-coercible string input and negative values (ge=0).
 AC-4  ``user_doc_deleted`` rejects non-bool input.
 AC-5  ``errors`` rejects non-list / non-str-list input.
 AC-6  Two instances have independent ``errors`` lists (default_factory guard).
@@ -35,12 +35,14 @@ class TestHappyPathConstruction:
     def test_defaults_are_zero_and_false(self) -> None:
         result = UserDeletionResult(user_id="u_carol")
 
-        assert result.user_id == "u_carol"
-        assert result.member_rows_deleted == 0
-        assert result.integrations_hook_fired == 0
-        assert result.user_doc_deleted is False
-        assert result.gcs_prefixes_purged == 0
-        assert result.errors == []
+        assert result.model_dump() == {
+            "user_id": "u_carol",
+            "member_rows_deleted": 0,
+            "integrations_hook_fired": 0,
+            "user_doc_deleted": False,
+            "gcs_prefixes_purged": 0,
+            "errors": [],
+        }
 
     def test_user_id_is_required(self) -> None:
         with pytest.raises(ValidationError):
@@ -82,7 +84,12 @@ class TestAllFieldsRoundTrip:
 
 
 class TestIntegerFieldRejection:
-    """AC-3: Numeric count fields reject non-int values."""
+    """AC-3: Numeric count fields reject non-coercible string values.
+
+    Pydantic v2 lax mode coerces digit strings (e.g. "3") to int.  These
+    tests verify that alphabetic non-numeric strings are rejected, which is
+    the contract guaranteed by the model's int type annotation.
+    """
 
     def test_member_rows_deleted_rejects_string(self) -> None:
         with pytest.raises(ValidationError):
@@ -95,6 +102,18 @@ class TestIntegerFieldRejection:
     def test_gcs_prefixes_purged_rejects_string(self) -> None:
         with pytest.raises(ValidationError):
             UserDeletionResult(user_id="u", gcs_prefixes_purged="x")  # type: ignore[arg-type]
+
+    def test_member_rows_deleted_rejects_negative(self) -> None:
+        with pytest.raises(ValidationError):
+            UserDeletionResult(user_id="u", member_rows_deleted=-1)
+
+    def test_integrations_hook_fired_rejects_negative(self) -> None:
+        with pytest.raises(ValidationError):
+            UserDeletionResult(user_id="u", integrations_hook_fired=-1)
+
+    def test_gcs_prefixes_purged_rejects_negative(self) -> None:
+        with pytest.raises(ValidationError):
+            UserDeletionResult(user_id="u", gcs_prefixes_purged=-1)
 
 
 # ---------------------------------------------------------------------------

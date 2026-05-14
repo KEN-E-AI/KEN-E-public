@@ -21,8 +21,8 @@ class UserDeletionResult(BaseModel):
     """
 
     user_id: str
-    member_rows_deleted: int = 0
-    integrations_hook_fired: int = 0
+    member_rows_deleted: int = Field(default=0, ge=0)
+    integrations_hook_fired: int = Field(default=0, ge=0)
     user_doc_deleted: bool = False
-    gcs_prefixes_purged: int = 0
+    gcs_prefixes_purged: int = Field(default=0, ge=0)
     errors: list[str] = Field(default_factory=list)
