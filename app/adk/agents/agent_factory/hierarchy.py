@@ -42,6 +42,9 @@ from app.adk.agents.agent_factory.roster import (
     per_server_allowed_tools,
     resolve_specialist_roster,
 )
+from app.adk.tools.registry.function_tool_registry import (
+    resolve_default_global_tools,
+)
 from shared.account_id_utils import validate_account_id
 from shared.structured_logging import get_structured_logger
 
@@ -242,6 +245,18 @@ def build_hierarchy(
     # Step 5 — build specialists in deterministic alphabetical order.
     specialists: dict[str, LlmAgent] = {}
 
+    # AH-PRD-06 PR-C: resolve the default-global function tools once before
+    # the per-specialist loop. Every specialist whose ``tool_ids`` is ``None``
+    # or includes ``function.{name}`` inherits these (the roster filter in
+    # ``resolve_specialist_roster`` already handles the per-spec filtering).
+    # Today the registry is populated by AH-PRD-04 once ``create_visualization``
+    # ships; until then this is an empty list and behaviour matches PR-A.
+    # NOTE: import must stay deferred so tests can patch
+    # ``tool_registry.get_default_registry``.
+    from app.adk.tools.registry.tool_registry import get_default_registry
+
+    default_global_function_tools = resolve_default_global_tools(get_default_registry())
+
     for spec_name in sorted(configs):
         spec_config = configs[spec_name]
 
@@ -277,12 +292,9 @@ def build_hierarchy(
 
             # AH-PRD-06: when ``tool_ids`` is set, skip servers with no
             # listed tools entirely rather than building a useless toolset.
-            if per_server_allowed is not None and not per_server_allowed.get(
-                server_id
-            ):
+            if per_server_allowed is not None and not per_server_allowed.get(server_id):
                 logger.debug(
-                    "MCP server %r has no tool_ids match for specialist %r; "
-                    "skipping.",
+                    "MCP server %r has no tool_ids match for specialist %r; skipping.",
                     server_id,
                     spec_name,
                 )
@@ -302,9 +314,7 @@ def build_hierarchy(
                     allowed_tool_names=per_server_allowed[server_id],
                 )
             mcp_toolsets[server_id] = toolset
-            logger.debug(
-                "Built McpToolset %r for specialist %r.", server_id, spec_name
-            )
+            logger.debug("Built McpToolset %r for specialist %r.", server_id, spec_name)
 
         # Step 6b — warn when config declared servers but none were loaded.
         if not mcp_toolsets and spec_config.mcp_servers:
@@ -319,10 +329,12 @@ def build_hierarchy(
         # spec_config carries a ``tool_ids`` allowlist (AH-PRD-06), the
         # resolver filters per-server tools to the listed names and prunes
         # function tools to those whose ``function.{name}`` is in the list.
+        # ``default_global_function_tools`` was resolved once above and is
+        # filtered per-spec by ``resolve_specialist_roster`` when needed.
         tools = resolve_specialist_roster(
             spec_name,
             mcp_toolsets=mcp_toolsets,
-            function_tools=[],
+            function_tools=default_global_function_tools,
             mcp_server_ids=list(mcp_toolsets.keys()),
             tool_ids=spec_config.tool_ids,
         )
@@ -351,9 +363,7 @@ def build_hierarchy(
         name="ken_e",
         tools=list(dispatchers.values()),
     )
-    logger.info(
-        "Built root agent %r with %d specialist(s).", "ken_e", len(specialists)
-    )
+    logger.info("Built root agent %r with %d specialist(s).", "ken_e", len(specialists))
 
     # Step 11 — return.
     return root_agent

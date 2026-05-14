@@ -172,6 +172,10 @@ class _FakeRegistry:
     def list_tools(self) -> list:
         return []
 
+    def list_default_global_tools(self) -> list:
+        """AH-PRD-06 PR-C: empty default global function tool roster."""
+        return []
+
 
 def _build_hierarchy_with_patches(fake_db: _FakeFirestoreDb) -> LlmAgent:
     """Call build_hierarchy with the standard set of patches applied."""
@@ -371,7 +375,10 @@ class TestCodeExecutionFlag:
             _PATCH_AFTER_TOOL,
             _PATCH_BUILD_TOOLSET as mock_build_toolset,
             _PATCH_GET_DEFAULT_REGISTRY as mock_get_registry,
-            patch("app.adk.agents.agent_factory.hierarchy.build_agent", side_effect=_capture_build_agent),
+            patch(
+                "app.adk.agents.agent_factory.hierarchy.build_agent",
+                side_effect=_capture_build_agent,
+            ),
         ):
             mock_build_toolset.return_value = MagicMock(name="mock_toolset")
             mock_get_registry.return_value = fake_registry
@@ -418,7 +425,10 @@ class TestCodeExecutionFlag:
             _PATCH_AFTER_TOOL,
             _PATCH_BUILD_TOOLSET as mock_build_toolset,
             _PATCH_GET_DEFAULT_REGISTRY as mock_get_registry,
-            patch("app.adk.agents.agent_factory.hierarchy.build_agent", side_effect=_capture_build_agent),
+            patch(
+                "app.adk.agents.agent_factory.hierarchy.build_agent",
+                side_effect=_capture_build_agent,
+            ),
         ):
             mock_build_toolset.return_value = MagicMock(name="mock_toolset")
             mock_get_registry.return_value = fake_registry
@@ -888,7 +898,9 @@ class TestErrorCases:
 
         root_config = MergedAgentConfig(**_ROOT_DOC)
 
-        def _load_side_effect(db: object, config_id: str, account_id: object) -> MergedAgentConfig:
+        def _load_side_effect(
+            db: object, config_id: str, account_id: object
+        ) -> MergedAgentConfig:
             if config_id == "bad_specialist":
                 raise ConfigValidationError("bad doc")
             return root_config
@@ -1065,7 +1077,12 @@ class TestAutomaticallyAvailableFilter:
         docs = {
             ("agent_configs", "ken_e_chatbot"): _ROOT_DOC,
             ("agent_configs", "specialist_a"): global_spec_doc,
-            ("accounts", "acc_test", "agent_configs", "specialist_a"): account_overlay_doc,
+            (
+                "accounts",
+                "acc_test",
+                "agent_configs",
+                "specialist_a",
+            ): account_overlay_doc,
         }
         fake_db = _FakeFirestoreDb(docs)
         root = _build_hierarchy_with_patches_for_account(fake_db, account_id="acc_test")
