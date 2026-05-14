@@ -8,7 +8,7 @@
 
 ## Context
 
-`AnalyticsService._init_firestore_clients()` at `analytics_service.py:60-68` had a
+`AnalyticsService._init_firestore_clients()` at `analytics_service.py:57-76` had a
 long-standing TODO that set `self.analytics_db = None` because the Agent Engine SA
 lacked `roles/datastore.user` on the `analytics` named Firestore database.
 
@@ -112,11 +112,16 @@ Post-apply verification (re-run the pre-flight command above; all 3 envs should 
 | `self.analytics_db = None` (unconditional, with TODO block) | `self.analytics_db = firestore.Client(project=self.project_id, database="analytics")` (restored in try-block) |
 | Log: "analytics temporarily disabled" | Log: standard (no qualifier) |
 
-The except-block fallback `self.analytics_db = None` at the original L77-81 is retained —
+The except-block fallback `self.analytics_db = None` at L72-76 is retained —
 transient init failures still degrade gracefully.
 
-`test_analytics_integration.py:233` comment reworded from "IAM guard" to "hermetic CI"
-rationale (test logic unchanged; mock injection is still correct).
+Four stale comments reworded from "IAM guard" / "temporarily disabled" to a "hermetic CI
+by injection" rationale (test logic unchanged; mock injection is still correct):
+
+* `tests/test_analytics_service.py:28`
+* `tests/test_analytics_service.py:183`
+* `tests/test_analytics_service.py:265`
+* `tests/test_analytics_integration.py:233`
 
 ---
 
