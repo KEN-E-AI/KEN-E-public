@@ -36,9 +36,10 @@ fixtures into adjacent suites.
 
 from __future__ import annotations
 
+import functools
 import logging
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from google.adk.tools.function_tool import FunctionTool
 
@@ -52,6 +53,40 @@ logger = logging.getLogger(__name__)
 # ``ToolDefinition.name`` and the ``tool_ids`` allow-list's ``function.{name}``
 # suffix).
 _REGISTRY: dict[str, FunctionTool] = {}
+
+
+def _rename_callable(func: Callable[..., Any], new_name: str) -> Callable[..., Any]:
+    """Return a thin wrapper around ``func`` whose ``__name__`` is ``new_name``.
+
+    Returns ``func`` unchanged when its ``__name__`` already matches —
+    avoids gratuitous wrapping when the caller used a properly-named
+    function (the common case).
+
+    Why this is necessary: ADK's ``FunctionTool`` builds the
+    ``types.FunctionDeclaration`` advertised to Gemini from
+    ``self.func.__name__`` (see
+    ``google/adk/tools/_automatic_function_calling_util.py``:
+    ``name=func.__name__``). If we only renamed ``FunctionTool.name``
+    (which keys the agent's ``tools_dict``), Gemini would see one name
+    while the dispatch lookup keyed on another — every tool call would
+    silently miss. Renaming the underlying callable keeps the
+    declaration, the dict key, and the catalogue entry all in lockstep.
+
+    ``functools.wraps`` is used so docstring / annotations / module
+    metadata flow through to the FunctionDeclaration. We override
+    ``__name__`` and ``__qualname__`` *after* the decorator, since
+    ``wraps`` would otherwise copy the original name back in.
+    """
+    if getattr(func, "__name__", None) == new_name:
+        return func
+
+    @functools.wraps(func)
+    def renamed(*args: Any, **kwargs: Any) -> Any:
+        return func(*args, **kwargs)
+
+    renamed.__name__ = new_name
+    renamed.__qualname__ = new_name
+    return renamed
 
 
 def register_function_tool(
@@ -80,16 +115,28 @@ def register_function_tool(
             second — pass a fresh ``FunctionTool`` (or the bare callable)
             per registration to avoid the surprise.
 
-    The registered ``name`` is stamped onto ``tool.name`` so the roster
-    filter (``_filter_function_tools_by_ids`` in roster.py) matches on the
-    catalogue identity rather than the underlying callable's
-    ``__name__``. Otherwise a tool registered as ``"create_visualization"``
-    but implemented by a function named ``_create_viz_impl`` would be
-    silently dropped by the filter when ``tool_ids`` lists
-    ``function.create_visualization``.
+    The registered ``name`` is stamped on **both** the wrapping
+    ``FunctionTool.name`` AND the underlying ``func.__name__``. The
+    underlying rename is the load-bearing one: ADK builds the
+    ``FunctionDeclaration`` sent to Gemini from ``func.__name__``, and
+    the agent's ``tools_dict`` is keyed by ``FunctionTool.name``. If the
+    two diverge, Gemini sees one name and the dispatch lookup keys on
+    another — every tool call silently misses. See :func:`_rename_callable`
+    for the rename mechanism. A callable already named ``name`` skips
+    the wrapping entirely; in the common case (where AH-PRD-04 writes
+    ``def create_visualization(...)`` and registers it under
+    ``"create_visualization"``) the rename is a no-op.
     """
-    if not isinstance(tool, FunctionTool):
-        tool = FunctionTool(tool)
+    if isinstance(tool, FunctionTool):
+        # Already wrapped — replace ``.func`` with a renamed version so
+        # ``_get_declaration`` sees the registered name. Mutates the
+        # caller's instance (see the warning above).
+        if getattr(tool.func, "__name__", None) != name:
+            tool.func = _rename_callable(tool.func, name)
+    else:
+        # Raw callable — rename, then let ``FunctionTool.__init__`` derive
+        # ``self.name`` from ``func.__name__`` naturally.
+        tool = FunctionTool(_rename_callable(tool, name))
     tool.name = name
     if name in _REGISTRY:
         logger.warning(

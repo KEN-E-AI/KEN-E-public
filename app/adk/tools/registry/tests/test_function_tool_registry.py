@@ -67,6 +67,64 @@ class TestRegisterFunctionTool:
         register_function_tool("create_visualization", ft)
         assert ft.name == "create_visualization"
 
+    def test_underlying_func_name_matches_registered_name(self) -> None:
+        """Critical alignment: ADK builds the ``FunctionDeclaration``
+        advertised to Gemini from ``self.func.__name__``, while the agent
+        dispatches via the tools-dict key ``FunctionTool.name``. If the
+        two diverge, every tool call silently misses. This test pins the
+        contract that the rename touches both."""
+        register_function_tool("create_visualization", _stub_callable)
+        registered = get_function_tool("create_visualization")
+        assert registered.name == "create_visualization"
+        assert registered.func.__name__ == "create_visualization"
+
+    def test_rename_does_not_mutate_original_callable(self) -> None:
+        """The rename is a closure, not a mutation of the caller's
+        function object. Important when the callable is also used
+        elsewhere in the codebase under its original name."""
+        original_name = _stub_callable.__name__
+        register_function_tool("create_visualization", _stub_callable)
+        assert _stub_callable.__name__ == original_name
+
+    def test_function_declaration_advertises_registered_name(self) -> None:
+        """End-to-end of the alignment contract: ADK's ``_get_declaration``
+        must emit a ``FunctionDeclaration`` whose ``name`` matches the
+        registered identity. This is the exact field Gemini receives —
+        ensures we wouldn't ship a tool-call mismatch in production."""
+        register_function_tool("create_visualization", _stub_callable)
+        registered = get_function_tool("create_visualization")
+        decl = registered._get_declaration()
+        assert decl is not None
+        assert decl.name == "create_visualization"
+
+    def test_matching_name_skips_wrapping(self) -> None:
+        """Optimization: a callable already named correctly is registered
+        as-is (no closure overhead). The registered ``FunctionTool.func``
+        is identical to the input."""
+
+        def create_visualization() -> str:
+            return "matched"
+
+        register_function_tool("create_visualization", create_visualization)
+        registered = get_function_tool("create_visualization")
+        assert registered.func is create_visualization
+
+    def test_pre_constructed_function_tool_func_is_renamed(self) -> None:
+        """When the caller passes a pre-constructed FunctionTool whose
+        ``.func.__name__`` differs from the registered name, the
+        registry replaces ``.func`` with the renamed closure so the
+        FunctionDeclaration matches the dict key. Without this, Gemini
+        would see the original name and dispatch would miss."""
+        ft = FunctionTool(_stub_callable)
+        assert ft.func.__name__ == "_stub_callable"
+
+        register_function_tool("create_visualization", ft)
+
+        assert ft.name == "create_visualization"
+        assert ft.func.__name__ == "create_visualization"
+        # The renamed wrapper still delegates to the original callable.
+        assert ft.func() == "stub"
+
     def test_overwriting_logs_at_warning(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
