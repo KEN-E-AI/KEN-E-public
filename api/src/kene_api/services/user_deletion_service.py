@@ -29,8 +29,8 @@ from __future__ import annotations
 
 USER_SUBCOLLECTIONS: list[str] = [
     "notification_status",  # firestore_notification_repository.py
-    "preferences",          # firestore_notification_repository.py
-    "chat_categories",      # CH-PRD-03
+    "preferences",  # firestore_notification_repository.py
+    "chat_categories",  # CH-PRD-03
 ]
 
 # ---------------------------------------------------------------------------

@@ -18,13 +18,11 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
-
 from src.kene_api.models.user_deletion import UserDeletionResult
 from src.kene_api.services.user_deletion_service import (
     USER_GCS_PREFIXES,
     USER_SUBCOLLECTIONS,
 )
-
 
 # ---------------------------------------------------------------------------
 # AC-1: Happy-path default construction
