@@ -899,6 +899,7 @@ async def update_account(
 @router.delete("/{account_id}", response_model=SuccessResponse)
 async def delete_account(
     account_id: str,
+    user: UserContext = Depends(get_current_user_context),
     db: Neo4jService = Depends(get_neo4j_service),
     firestore: FirestoreService = Depends(get_firestore_service),
     storage: StorageService = Depends(get_storage_service),
@@ -924,6 +925,9 @@ async def delete_account(
     DELETE /api/v1/accounts/intellipure-b2c
     ```
     """
+    if not user.is_super_admin:
+        raise HTTPException(status_code=403, detail="Super admin access required")
+
     try:
         # Check Neo4j connectivity
         is_healthy = await db.health_check()
