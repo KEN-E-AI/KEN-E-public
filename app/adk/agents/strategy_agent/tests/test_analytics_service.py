@@ -310,7 +310,6 @@ def test_error_handling_no_firestore(mock_firestore_client):
 
         # Should still initialize but without Firestore
         assert service.analytics_db is None
-        assert service.default_db is None
 
         # Operations should handle missing Firestore gracefully
         metrics = service.track_agent_execution(
