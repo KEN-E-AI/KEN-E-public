@@ -145,6 +145,7 @@ export function AgentToolPicker({
       </div>
 
       <div className="relative">
+        {/* allow-text-tertiary: decorative leading-icon in a search input (accessible name on the <Input aria-label> below) */}
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-[var(--color-text-tertiary)] pointer-events-none" />
         <Input
           aria-label="Search tools"
