@@ -910,7 +910,7 @@ async def delete_account(
     - All entities with BELONGS_TO relationship to the account
     - All ActivityLog nodes with LOGGED relationship to deleted Activity nodes
     - All business strategy documents from Google Cloud Storage
-    - The Firestore collection strategy_docs_{account_id}
+    - All Firestore data under accounts/{account_id} (recursive delete)
 
     **Parameters:**
     - `account_id` (path): The unique identifier for the account
@@ -946,7 +946,7 @@ async def delete_account(
         # Clean up external resources before deleting from Neo4j
         cleanup_results = {
             "gcs_documents_deleted": 0,
-            "firestore_collection_deleted": False,
+            "firestore_account_deleted": False,
             "cleanup_errors": [],
         }
 
@@ -965,77 +965,25 @@ async def delete_account(
             )
             cleanup_results["cleanup_errors"].append(f"GCS cleanup failed: {e}")
 
-        # Delete Firestore collection strategy_docs_{account_id}
+        # Recursively delete all Firestore data under accounts/{account_id}
+        # (covers every Shape B subcollection — strategy_docs, strategy_audit,
+        # agent_analytics, cost_aggregations, performance_profiles,
+        # monitoring_topics, alert_configurations, agent_configs, members,
+        # audit subcollections, and any future subcollection added under Shape B)
         try:
-            collection_name = f"strategy_docs_{account_id}"
-            # Delete all documents in the collection
             firestore_db = firestore.get_client()
-            collection_ref = firestore_db.collection(collection_name)
-
-            # Get all documents in the collection
-            docs = collection_ref.list_documents()
-            deleted_docs_count = 0
-
-            for doc in docs:
-                doc.delete()
-                deleted_docs_count += 1
-
-            if deleted_docs_count > 0:
-                cleanup_results["firestore_collection_deleted"] = True
-                logger.info(
-                    f"Deleted Firestore collection '{collection_name}' with {deleted_docs_count} documents"
-                )
-            else:
-                logger.info(
-                    f"Firestore collection '{collection_name}' was empty or did not exist"
-                )
-
+            logger.info(f"recursive_delete started for accounts/{account_id}")
+            account_doc_ref = firestore_db.collection("accounts").document(account_id)
+            firestore_db.recursive_delete(account_doc_ref)
+            cleanup_results["firestore_account_deleted"] = True
+            logger.info(f"recursive_delete completed for accounts/{account_id}")
         except Exception as e:
             logger.error(
-                f"Failed to delete Firestore collection for account {account_id}: {e}"
-            )
-            cleanup_results["cleanup_errors"].append(f"Firestore cleanup failed: {e}")
-
-        # INTERIM (AC-15): Remove when DM-PRD-05 lands recursive_delete.
-        # Delete per-account agent config overlays + custom agents at
-        # accounts/{account_id}/agent_configs/*.
-        # TODO: remove this block once DM-PRD-05 ships recursive_delete(accounts/{account_id})
-        try:
-            firestore_db_for_sweep = firestore.get_client()
-            account_agent_configs_ref = (
-                firestore_db_for_sweep
-                .collection("accounts")
-                .document(account_id)
-                .collection("agent_configs")
-            )
-            agent_config_docs = list(account_agent_configs_ref.list_documents())
-            agent_configs_deleted = 0
-            for doc_ref in agent_config_docs:
-                try:
-                    doc_ref.delete()
-                    agent_configs_deleted += 1
-                except Exception as doc_err:
-                    logger.error(
-                        f"Failed to delete agent_config overlay {doc_ref.id} "
-                        f"for account {account_id}: {doc_err}"
-                    )
-                    cleanup_results["cleanup_errors"].append(
-                        f"agent_config overlay delete failed ({doc_ref.id}): {doc_err}"
-                    )
-            cleanup_results["agent_configs_deleted"] = agent_configs_deleted
-            if agent_configs_deleted > 0:
-                logger.info(
-                    f"Deleted {agent_configs_deleted} agent_config overlay(s) "
-                    f"for account {account_id}"
-                )
-        except Exception as e:
-            logger.error(
-                f"Failed to sweep agent_config overlays for account {account_id}: {e}"
+                f"Failed to recursive-delete accounts/{account_id}: {e}"
             )
             cleanup_results["cleanup_errors"].append(
-                f"agent_configs sweep failed: {e}"
+                f"Firestore recursive delete failed: {e}"
             )
-            cleanup_results.setdefault("agent_configs_deleted", 0)
 
         # Delete Neo4j entities in multiple simpler queries
         total_nodes_deleted = 0
@@ -1080,7 +1028,7 @@ async def delete_account(
             f"{total_nodes_deleted} nodes, "
             f"{total_relationships_deleted} relationships, "
             f"GCS documents: {cleanup_results['gcs_documents_deleted']}, "
-            f"Firestore collection: {cleanup_results['firestore_collection_deleted']}"
+            f"Firestore account deleted: {cleanup_results['firestore_account_deleted']}"
         )
 
         return SuccessResponse(
@@ -1090,10 +1038,9 @@ async def delete_account(
                 "nodes_deleted": total_nodes_deleted,
                 "relationships_deleted": total_relationships_deleted,
                 "gcs_documents_deleted": cleanup_results["gcs_documents_deleted"],
-                "firestore_collection_deleted": cleanup_results[
-                    "firestore_collection_deleted"
+                "firestore_account_deleted": cleanup_results[
+                    "firestore_account_deleted"
                 ],
-                "agent_configs_deleted": cleanup_results.get("agent_configs_deleted", 0),
                 "cleanup_errors": cleanup_results["cleanup_errors"],
                 "data_region": data_region,
             },
