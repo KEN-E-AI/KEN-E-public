@@ -80,24 +80,35 @@ class ToolRegistry:
         with open(config_path) as f:
             config = yaml.safe_load(f)
 
-        if not config or "tools" not in config:
+        if not config or ("tools" not in config and "function_tools" not in config):
             logger.warning(f"No tools defined in {config_path}")
             return 0
 
         loaded_count = 0
-        for tool_data in config["tools"]:
+        for tool_data in config.get("tools") or []:
             try:
-                tool = self._parse_tool_definition(tool_data)
+                tool = self._parse_tool_definition(tool_data, source="mcp")
                 self.register_tool(tool)
                 loaded_count += 1
             except Exception as e:
                 tool_name = tool_data.get("name", "unknown")
                 logger.error(f"Failed to load tool '{tool_name}': {e}")
 
+        for tool_data in config.get("function_tools") or []:
+            try:
+                tool = self._parse_tool_definition(tool_data, source="function")
+                self.register_tool(tool)
+                loaded_count += 1
+            except Exception as e:
+                tool_name = tool_data.get("name", "unknown")
+                logger.error(f"Failed to load function tool '{tool_name}': {e}")
+
         logger.info(f"Loaded {loaded_count} tools from {config_path}")
         return loaded_count
 
-    def _parse_tool_definition(self, data: dict[str, Any]) -> ToolDefinition:
+    def _parse_tool_definition(
+        self, data: dict[str, Any], *, source: str = "mcp"
+    ) -> ToolDefinition:
         """Parse tool definition from raw dict data.
 
         Args:
@@ -120,11 +131,17 @@ class ToolRegistry:
             for perm_data in data.get("permissions", []):
                 permissions.append(ToolPermission(**perm_data))
 
+            # Function tools live in a different YAML section and are never bound
+            # to an MCP server, so we ignore any stray `mcp_server` field from
+            # function-tool entries and force `source` from the loader argument.
+            mcp_server = data.get("mcp_server") if source == "mcp" else None
             return ToolDefinition(
                 name=data["name"],
                 description=data["description"],
                 category=data["category"],
-                mcp_server=data.get("mcp_server"),
+                mcp_server=mcp_server,
+                source=source,  # type: ignore[arg-type]
+                default_global=bool(data.get("default_global", False)),
                 parameters=parameters,
                 permissions=permissions,
                 keywords=data.get("keywords", []),
@@ -199,6 +216,23 @@ class ToolRegistry:
             List of all tool definitions
         """
         return list(self._tools.values())
+
+    def list_mcp_tools(self) -> list[ToolDefinition]:
+        """List tools delivered by an MCP server (``source == "mcp"``)."""
+        return [t for t in self._tools.values() if t.source == "mcp"]
+
+    def list_function_tools(self) -> list[ToolDefinition]:
+        """List built-in function tools (``source == "function"``)."""
+        return [t for t in self._tools.values() if t.source == "function"]
+
+    def list_default_global_tools(self) -> list[ToolDefinition]:
+        """List tools that are part of every account's default inventory.
+
+        These are function tools tagged ``default_global: true`` in the YAML's
+        ``function_tools:`` section. They are returned by the account tool
+        inventory endpoint unconditionally — no integration required.
+        """
+        return [t for t in self._tools.values() if t.default_global]
 
     def list_by_category(self, category: str) -> list[ToolDefinition]:
         """List tools in a specific category.

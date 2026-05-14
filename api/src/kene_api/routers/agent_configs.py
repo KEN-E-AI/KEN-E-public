@@ -32,6 +32,7 @@ from ..models.agent_config_models import (
     ConfigAuditEntry,
     MergedAgentConfig,
 )
+from ..services.account_tools_service import list_known_tool_ids
 from ..services.audit_service import log_config_action
 from ..services.config_versioning import increment_version, sanitize_updated_by
 
@@ -653,6 +654,35 @@ account_router = APIRouter(
 )
 
 
+def _reject_unknown_tool_ids(tool_ids: list[str] | None) -> None:
+    """422 when any tool_id references a tool not in the catalogue.
+
+    Called by both POST (create) and PUT (overlay update). ``None`` and the
+    empty list are no-ops — the cross-check only fires when the caller has
+    supplied at least one ID. Per-ID format / length / duplicates are
+    already enforced by Pydantic (AH-PRD-06 §5.4).
+    """
+    if not tool_ids:
+        return
+    known = list_known_tool_ids()
+    unknown = [tid for tid in tool_ids if tid not in known]
+    if unknown:
+        raise HTTPException(
+            status_code=422,
+            detail=[
+                {
+                    "type": "value_error",
+                    "loc": ["body", "tool_ids"],
+                    "msg": (
+                        "Unknown tool_ids — not present in the tool catalogue: "
+                        f"{unknown!r}"
+                    ),
+                    "ctx": {"unknown_tool_ids": unknown},
+                }
+            ],
+        )
+
+
 def _parse_based_on_version(version_str: str | None) -> int:
     """Parse major version component from a semver string, default 1 on failure."""
     if not version_str:
@@ -854,6 +884,13 @@ async def create_account_agent_config(
         doc_data["skill_ids"] = body.skill_ids
     if body.sandbox_code_executor_enabled:
         doc_data["sandbox_code_executor_enabled"] = body.sandbox_code_executor_enabled
+    # AH-PRD-06: tool_ids semantics — None = legacy (omit field), [] = "no
+    # tools" (persist explicit empty list), [...] = explicit allowlist. The
+    # `is not None` check preserves the meaningful difference between "user
+    # didn't specify" and "user explicitly chose no tools".
+    if body.tool_ids is not None:
+        _reject_unknown_tool_ids(body.tool_ids)
+        doc_data["tool_ids"] = body.tool_ids
 
     try:
         (
@@ -893,6 +930,11 @@ async def upsert_account_agent_config_overlay(
             status_code=403,
             detail="Admin role required to modify agent configurations",
         )
+
+    # AH-PRD-06: catalogue cross-check before touching Firestore. Pydantic
+    # already enforced format / max-30 / duplicates; this rejects entries
+    # that don't reference real tools.
+    _reject_unknown_tool_ids(body.tool_ids)
 
     try:
         global_doc = db.collection("agent_configs").document(config_id).get()

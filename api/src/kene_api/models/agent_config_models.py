@@ -21,6 +21,7 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from shared.agent_tool_limits import MAX_TOOLS_PER_SPECIALIST
 from shared.trace_metadata import SEMVER_PATTERN
 
 # Supported model identifiers. Updated as new Gemini/OpenAI models are released.
@@ -46,6 +47,45 @@ SUPPORTED_MODELS: frozenset[str] = frozenset(
 )
 
 _EMAIL_PATTERN = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+
+# Tool IDs are namespaced: ``<mcp_server>.<tool_name>`` for MCP tools (e.g.
+# ``google_analytics_mcp.list_ga_accounts``) and ``function.<tool_name>`` for
+# built-in function tools (e.g. ``function.create_visualization``). Both halves
+# must look like a normalised snake_case identifier — matches the normalisation
+# applied by ``ToolDefinition`` and the MCP server document IDs in Firestore.
+_TOOL_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$")
+
+
+def _validate_tool_ids_format(value: list[str] | None) -> list[str] | None:
+    """Reject malformed tool IDs at the API boundary.
+
+    Pydantic enforces the per-ID ``max_length=80`` and the list-level
+    ``max_length=MAX_TOOLS_PER_SPECIALIST`` via ``Annotated[…]``; this validator
+    adds the format check and duplicate-detection that don't fit in the type.
+    Catalogue cross-check (does this tool actually exist?) happens at the
+    router so the model stays free of YAML / Firestore dependencies.
+    """
+    if value is None:
+        return value
+    seen: set[str] = set()
+    duplicates_set: set[str] = set()
+    malformed: list[str] = []
+    for tool_id in value:
+        if not _TOOL_ID_PATTERN.match(tool_id):
+            malformed.append(tool_id)
+        if tool_id in seen:
+            # Use a set so ``["x", "x", "x"]`` produces ``["x"]`` rather than
+            # ``["x", "x"]`` in the error message. Each duplicate ID is
+            # reported once.
+            duplicates_set.add(tool_id)
+        seen.add(tool_id)
+    if malformed:
+        raise ValueError(
+            f"Invalid tool_ids — must be '<server_or_function>.<tool_name>': {malformed!r}"
+        )
+    if duplicates_set:
+        raise ValueError(f"Duplicate tool_ids: {sorted(duplicates_set)!r}")
+    return value
 
 
 class AgentConfigMetadata(BaseModel):
@@ -91,13 +131,33 @@ class AgentConfig(BaseModel):
     instruction: str = Field(..., description="Agent instruction/prompt")
     temperature: float = Field(default=0.3, ge=0.0, le=1.0)
     max_output_tokens: int = Field(default=2500, ge=100, le=65535)
+    tool_ids: list[str] | None = Field(
+        default=None,
+        description=(
+            "Optional per-tool allowlist (AH-PRD-06). None=legacy "
+            "(all tools from attached mcp_servers); []=no tools; "
+            "[…]=explicit subset."
+        ),
+    )
     metadata: AgentConfigMetadata
+
+    @field_validator("tool_ids")
+    @classmethod
+    def _validate_tool_ids(cls, v: list[str] | None) -> list[str] | None:
+        return _validate_tool_ids_format(v)
 
 
 class AgentConfigUpdate(BaseModel):
     """Request body for PUT /api/v1/agent-configs/{id}.
 
     All fields except ``updated_by`` are optional to allow partial updates.
+
+    AH-PRD-06 note: ``tool_ids`` is intentionally NOT on this model. The
+    global PUT endpoint is admin-only and edits the canonical
+    ``agent_configs/{id}`` document; per-agent tool selection lives on the
+    per-account overlay (see ``AgentConfigOverlayUpdate``). Adding
+    ``tool_ids`` here would let an admin shape the global default, which
+    isn't a customer scenario today — keep the surface narrow.
     """
 
     name: str | None = Field(
@@ -295,6 +355,13 @@ class MergedAgentConfig(BaseModel):
     mcp_servers: list[str] = Field(default_factory=list)
 
     skill_ids: list[str] = Field(default_factory=list)
+    tool_ids: list[str] | None = Field(
+        default=None,
+        description=(
+            "Per-tool allowlist (AH-PRD-06). None on legacy agents — preserved "
+            "verbatim on load."
+        ),
+    )
     sandbox_code_executor_enabled: bool = False
     response_schema: dict | None = None
 
@@ -338,6 +405,15 @@ class AgentConfigCreate(BaseModel):
     description: str | None = Field(None, min_length=10, max_length=1000)
     temperature: float | None = Field(None, ge=0.0, le=1.0)
     skill_ids: list[Annotated[str, Field(max_length=50)]] = Field(default_factory=list, max_length=20)
+    tool_ids: list[Annotated[str, Field(max_length=80)]] | None = Field(
+        default=None,
+        max_length=MAX_TOOLS_PER_SPECIALIST,
+        description=(
+            "Per-tool allowlist (AH-PRD-06). Omit / null = all tools from the "
+            "agent's attached MCP servers; empty list = no tools; otherwise an "
+            "explicit subset of <server>.<tool> / function.<tool> IDs."
+        ),
+    )
     sandbox_code_executor_enabled: bool = False
 
     @field_validator("model")
@@ -352,6 +428,11 @@ class AgentConfigCreate(BaseModel):
                 f"Supported OpenAI models: {', '.join(openai_models)}"
             )
         return v
+
+    @field_validator("tool_ids")
+    @classmethod
+    def _validate_tool_ids(cls, v: list[str] | None) -> list[str] | None:
+        return _validate_tool_ids_format(v)
 
 
 class AgentConfigOverlayUpdate(BaseModel):
@@ -370,6 +451,16 @@ class AgentConfigOverlayUpdate(BaseModel):
     temperature: float | None = Field(None, ge=0.0, le=1.0)
     max_output_tokens: int | None = Field(None, ge=100, le=65535)
     skill_ids: list[Annotated[str, Field(max_length=50)]] | None = Field(None, max_length=20)
+    tool_ids: list[Annotated[str, Field(max_length=80)]] | None = Field(
+        default=None,
+        max_length=MAX_TOOLS_PER_SPECIALIST,
+        description=(
+            "Per-tool allowlist (AH-PRD-06). Omitting the field leaves any "
+            "existing overlay value untouched; sending null clears the overlay "
+            "back to legacy 'all tools' behaviour; sending a list (including "
+            "[]) writes that exact selection."
+        ),
+    )
     sandbox_code_executor_enabled: bool | None = None
 
     @field_validator("model")
@@ -387,8 +478,14 @@ class AgentConfigOverlayUpdate(BaseModel):
             )
         return v
 
+    @field_validator("tool_ids")
+    @classmethod
+    def _validate_tool_ids(cls, v: list[str] | None) -> list[str] | None:
+        return _validate_tool_ids_format(v)
+
 
 __all__ = [
+    "MAX_TOOLS_PER_SPECIALIST",
     "SUPPORTED_MODELS",
     "AgentConfig",
     "AgentConfigCreate",

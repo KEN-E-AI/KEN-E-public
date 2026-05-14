@@ -324,7 +324,12 @@ def _build_connection_params(server_id: str, connection: dict[str, Any]) -> Any:
 # ---------------------------------------------------------------------------
 
 
-def build_toolset_for_doc(server_id: str, doc: dict[str, Any]) -> Any:
+def build_toolset_for_doc(
+    server_id: str,
+    doc: dict[str, Any],
+    *,
+    allowed_tool_names: list[str] | None = None,
+) -> Any:
     """Build an ADK ``McpToolset`` from a single raw Firestore document dict.
 
     Pure function — no Firestore dependency.  Suitable for unit testing with
@@ -334,6 +339,11 @@ def build_toolset_for_doc(server_id: str, doc: dict[str, Any]) -> Any:
         server_id: The Firestore document ID (used in error messages and logs).
         doc: Raw ``mcp_server_configs/{server_id}`` document as returned by
             ``snapshot.to_dict()``.
+        allowed_tool_names: Optional allowlist of tool names this toolset
+            should expose. Forwarded to ``McpToolset(tool_filter=...)`` which
+            accepts a ``list[str]`` natively. ``None`` (the default) means
+            "expose every tool the server provides" — matches behaviour
+            before AH-PRD-06.
 
     Returns:
         An ``McpToolset`` instance with ``connection_params`` and
@@ -364,9 +374,13 @@ def build_toolset_for_doc(server_id: str, doc: dict[str, Any]) -> Any:
     toolset = McpToolset(
         connection_params=connection_params,
         header_provider=header_provider,
+        tool_filter=allowed_tool_names,
     )
     logger.debug(
-        "Built McpToolset for server %r (auth_type=%r)", server_id, auth_type
+        "Built McpToolset for server %r (auth_type=%r, tool_filter=%r)",
+        server_id,
+        auth_type,
+        allowed_tool_names,
     )
     return toolset
 

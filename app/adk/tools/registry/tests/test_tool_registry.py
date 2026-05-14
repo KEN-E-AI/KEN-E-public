@@ -400,18 +400,161 @@ class TestLoadFromConfig:
         config_path = Path(__file__).parent.parent / "config" / "tools.yaml"
         loaded = registry.load_from_config(config_path)
 
-        # Should load multiple GA tools
-        assert loaded >= 8
+        # 8 GA tools + at least one function tool (create_visualization)
+        assert loaded >= 9
 
-        # Check specific tool exists
+        # GA tool: source=mcp, mcp_server set
         tool = registry.get_tool("query_ga_report")
         assert tool is not None
         assert tool.category == "analytics"
+        assert tool.source == "mcp"
+        assert tool.mcp_server == "google_analytics_mcp"
         assert "analytics:read" in [p.scope for p in tool.permissions]
+
+        # Function tool: source=function, default_global=True, no mcp_server
+        viz = registry.get_tool("create_visualization")
+        assert viz is not None
+        assert viz.source == "function"
+        assert viz.default_global is True
+        assert viz.mcp_server is None
 
     def test_load_nonexistent_config_raises(self, registry: ToolRegistry):
         with pytest.raises(FileNotFoundError):
             registry.load_from_config("/nonexistent/path.yaml")
+
+    def test_load_function_tools_section(self, registry: ToolRegistry, tmp_path: Path):
+        config = tmp_path / "tools.yaml"
+        config.write_text(
+            "tools:\n"
+            "  - name: query_ga_report\n"
+            "    description: Query GA\n"
+            "    category: analytics\n"
+            "    mcp_server: google_analytics_mcp\n"
+            "function_tools:\n"
+            "  - name: create_visualization\n"
+            "    description: Render a chart\n"
+            "    category: visualization\n"
+            "    default_global: true\n"
+        )
+        loaded = registry.load_from_config(config)
+        assert loaded == 2
+
+        ga = registry.get_tool("query_ga_report")
+        assert ga is not None and ga.source == "mcp"
+        assert ga.default_global is False
+
+        viz = registry.get_tool("create_visualization")
+        assert viz is not None and viz.source == "function"
+        assert viz.default_global is True
+        assert viz.mcp_server is None
+
+    def test_function_tool_section_ignores_stray_mcp_server(
+        self, registry: ToolRegistry, tmp_path: Path
+    ):
+        # A YAML author mistakenly putting `mcp_server:` inside `function_tools:`
+        # would otherwise trip the source-consistency validator. The loader scrubs
+        # the field on the way in so the entry still registers cleanly.
+        config = tmp_path / "tools.yaml"
+        config.write_text(
+            "function_tools:\n"
+            "  - name: create_visualization\n"
+            "    description: Render a chart\n"
+            "    category: visualization\n"
+            "    mcp_server: stray_value\n"
+        )
+        loaded = registry.load_from_config(config)
+        assert loaded == 1
+        viz = registry.get_tool("create_visualization")
+        assert viz is not None
+        assert viz.source == "function"
+        assert viz.mcp_server is None
+
+
+class TestSourceAndDefaultGlobal:
+    """Tests for the `source` + `default_global` fields on ToolDefinition."""
+
+    def test_default_source_is_mcp(self):
+        tool = ToolDefinition(name="t", description="d", category="c")
+        assert tool.source == "mcp"
+        assert tool.default_global is False
+
+    def test_function_tool_with_default_global(self):
+        tool = ToolDefinition(
+            name="create_visualization",
+            description="Render a chart",
+            category="visualization",
+            source="function",
+            default_global=True,
+        )
+        assert tool.source == "function"
+        assert tool.default_global is True
+        assert tool.mcp_server is None
+
+    def test_function_source_rejects_mcp_server(self):
+        with pytest.raises(ValueError, match="source='function' requires mcp_server=None"):
+            ToolDefinition(
+                name="t",
+                description="d",
+                category="c",
+                source="function",
+                mcp_server="some_server",
+            )
+
+    def test_default_global_rejects_mcp_source(self):
+        with pytest.raises(ValueError, match="default_global=True is only allowed"):
+            ToolDefinition(
+                name="t",
+                description="d",
+                category="c",
+                mcp_server="some_server",
+                default_global=True,
+            )
+
+
+class TestListByKindHelpers:
+    """Tests for list_mcp_tools / list_function_tools / list_default_global_tools."""
+
+    @pytest.fixture
+    def loaded_registry(self) -> ToolRegistry:
+        registry = ToolRegistry()
+        registry.register_tool(
+            ToolDefinition(
+                name="mcp_a",
+                description="d",
+                category="c",
+                mcp_server="server_a",
+            )
+        )
+        registry.register_tool(
+            ToolDefinition(
+                name="fn_a",
+                description="d",
+                category="c",
+                source="function",
+                default_global=True,
+            )
+        )
+        registry.register_tool(
+            ToolDefinition(
+                name="fn_b",
+                description="d",
+                category="c",
+                source="function",
+            )
+        )
+        return registry
+
+    def test_list_mcp_tools(self, loaded_registry: ToolRegistry):
+        assert [t.name for t in loaded_registry.list_mcp_tools()] == ["mcp_a"]
+
+    def test_list_function_tools(self, loaded_registry: ToolRegistry):
+        assert sorted(t.name for t in loaded_registry.list_function_tools()) == [
+            "fn_a",
+            "fn_b",
+        ]
+
+    def test_list_default_global_tools(self, loaded_registry: ToolRegistry):
+        assert [t.name for t in loaded_registry.list_default_global_tools()] == ["fn_a"]
 
 
 class TestGetIndexForContext:

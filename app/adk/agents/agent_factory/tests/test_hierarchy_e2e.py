@@ -943,5 +943,91 @@ class TestAH41RegressionContrastGaMissingMcpServers:
         )
 
 
+class TestAhPrd06ToolIdsThreading:
+    """AH-PRD-06 (review item #3): when an agent_config carries ``tool_ids``,
+    ``build_hierarchy`` must thread the per-server allowlist into
+    ``build_toolset_for_doc`` via the ``allowed_tool_names`` kwarg — not
+    mutate ``toolset.tool_filter`` after the fact. Also: servers with no
+    listed tools should be skipped entirely.
+    """
+
+    def _docs_with_tool_ids(self, tool_ids: list[str]) -> dict:
+        # Clone the base _E2E_DOCS and stamp tool_ids onto analytics_specialist.
+        docs = {k: dict(v) for k, v in _E2E_DOCS.items()}
+        docs[("agent_configs", "analytics_specialist")]["tool_ids"] = tool_ids
+        return docs
+
+    def _run_capturing_build_toolset(self, docs: dict) -> list[tuple]:
+        """Return the list of ``(args, kwargs)`` ``build_toolset_for_doc`` was called with."""
+        import app.adk.agents.agent_factory.hierarchy as h
+
+        fake_db = _FakeFirestoreDb(docs)
+        fake_registry = _FakeRegistry()
+        calls: list[tuple] = []
+
+        def _side_effect(*args, **kwargs):
+            calls.append((args, kwargs))
+            sid = args[0]
+            return MagicMock(name=f"toolset_{sid}")
+
+        with (
+            _PATCH_BEFORE_AGENT,
+            _PATCH_AFTER_AGENT,
+            _PATCH_BEFORE_TOOL,
+            _PATCH_AFTER_TOOL,
+            _PATCH_BUILD_TOOLSET as mock_build_toolset,
+            _PATCH_GET_DEFAULT_REGISTRY as mock_get_registry,
+        ):
+            mock_build_toolset.side_effect = _side_effect
+            mock_get_registry.return_value = fake_registry
+            h.build_hierarchy(db=fake_db)
+
+        return calls
+
+    def test_tool_ids_set_passes_allowed_tool_names_at_construction(self) -> None:
+        """Verifies the kwarg threading: when tool_ids names a tool on ga_mcp,
+        build_toolset_for_doc receives allowed_tool_names=["list_ga_accounts"]
+        for that server. Confirms the kwarg is live, not dead code."""
+        docs = self._docs_with_tool_ids(["ga_mcp.list_ga_accounts"])
+        calls = self._run_capturing_build_toolset(docs)
+
+        ga_calls = [
+            (args, kwargs) for args, kwargs in calls if args[0] == "ga_mcp"
+        ]
+        # analytics_specialist references ga_mcp; ads_specialist does not.
+        # analytics has tool_ids set → the call carries the kwarg.
+        analytics_ga_calls = [
+            kwargs for _, kwargs in ga_calls if "allowed_tool_names" in kwargs
+        ]
+        assert len(analytics_ga_calls) == 1
+        assert analytics_ga_calls[0]["allowed_tool_names"] == ["list_ga_accounts"]
+
+    def test_tool_ids_none_omits_kwarg(self) -> None:
+        """Legacy path: when tool_ids is absent, build_toolset_for_doc is
+        called without the allowed_tool_names kwarg, preserving the original
+        two-arg signature."""
+        # _E2E_DOCS has no tool_ids on any spec.
+        calls = self._run_capturing_build_toolset(_E2E_DOCS)
+        # Every call should be (args=(sid, doc), kwargs={}).
+        assert all(kwargs == {} for _, kwargs in calls)
+
+    def test_tool_ids_skips_servers_with_no_match(self) -> None:
+        """A server referenced by mcp_servers but not represented in tool_ids
+        is dropped before the toolset is constructed (no wasted McpToolset
+        instantiation)."""
+        # analytics_specialist references ga_mcp + shared_viz_mcp; tool_ids
+        # only names a ga_mcp tool, so shared_viz_mcp should be skipped on
+        # this specialist (it will still appear on ads_specialist which has
+        # no tool_ids restriction).
+        docs = self._docs_with_tool_ids(["ga_mcp.list_ga_accounts"])
+        calls = self._run_capturing_build_toolset(docs)
+
+        # shared_viz_mcp should only be built once (for ads_specialist),
+        # not twice (it would have been built for analytics in the legacy
+        # path).
+        shared_calls = [c for c in calls if c[0][0] == "shared_viz_mcp"]
+        assert len(shared_calls) == 1
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

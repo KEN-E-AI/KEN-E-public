@@ -49,6 +49,7 @@ class MergedAgentConfig(BaseModel):
     mcp_servers: list[str] = Field(default_factory=list)
 
     skill_ids: list[str] = Field(default_factory=list)
+    tool_ids: list[str] | None = None
     sandbox_code_executor_enabled: bool = False
     response_schema: dict | None = None
 

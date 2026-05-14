@@ -902,3 +902,239 @@ class TestAccountAgentConfigsEmulator:
             assert malformed_id not in listed_ids
         finally:
             self._cleanup(emulator_db, account_id, [global_config_id, malformed_id])
+
+
+# ---------------------------------------------------------------------------
+# AH-PRD-06 — tool_ids round-trip + catalogue validation
+# ---------------------------------------------------------------------------
+
+
+class TestAgentConfigToolIds:
+    """POST/PUT/GET round-trip for the AH-PRD-06 ``tool_ids`` field.
+
+    Uses mocked Firestore so we don't need the emulator. Patches the router's
+    catalogue lookup to a fixed set of known IDs so tests don't depend on
+    tools.yaml drift.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _reset_overrides(self):
+        app.dependency_overrides.clear()
+        yield
+        app.dependency_overrides.clear()
+
+    @pytest.fixture(autouse=True)
+    def _stub_catalogue(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # The router consults the catalogue via list_known_tool_ids. Patch
+        # it on the agent_configs module (where it was imported) so the
+        # validation has a stable input.
+        from src.kene_api.routers import agent_configs as agent_configs_router
+
+        monkeypatch.setattr(
+            agent_configs_router,
+            "list_known_tool_ids",
+            lambda: {
+                "function.create_visualization",
+                "google_analytics_mcp.list_ga_accounts",
+            },
+        )
+
+    @pytest.fixture
+    def client(self) -> TestClient:
+        return TestClient(app, raise_server_exceptions=False)
+
+    @staticmethod
+    def _install_user(user: UserContext) -> None:
+        async def _get_user() -> UserContext:
+            return user
+
+        app.dependency_overrides[get_current_user_context] = _get_user
+
+    @staticmethod
+    def _install_db_for_create(tool_ids: list[str] | None) -> MagicMock:
+        # Mock Firestore so POST .set() succeeds, GET on global returns nothing,
+        # and GET on the just-created overlay returns a doc whose to_dict
+        # reflects the request body.
+        db = MagicMock()
+
+        no_global_doc = MagicMock()
+        no_global_doc.exists = False
+        no_global_doc.to_dict.return_value = None
+
+        created_doc = MagicMock()
+        created_doc.exists = True
+        body_dict: dict[str, Any] = {
+            "title": "Tool Picker Agent",
+            "instruction": "You are a tool-aware assistant for testing.",
+            "model": "gemini-2.5-flash",
+            "customization_status": "custom_agent",
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "updated_at": "2026-01-01T00:00:00+00:00",
+            "created_by": "ops@ken-e.ai",
+        }
+        if tool_ids is not None:
+            body_dict["tool_ids"] = tool_ids
+        created_doc.to_dict.return_value = body_dict
+
+        global_col = MagicMock()
+        global_col.document.return_value.get.return_value = no_global_doc
+
+        custom_doc_ref = MagicMock()
+        custom_doc_ref.get.return_value = created_doc
+        custom_doc_ref.set.return_value = None
+        agent_configs_sub = MagicMock()
+        agent_configs_sub.document.return_value = custom_doc_ref
+        account_doc_ref = MagicMock()
+        account_doc_ref.collection.return_value = agent_configs_sub
+        accounts_col = MagicMock()
+        accounts_col.document.return_value = account_doc_ref
+
+        def _router(name: str):
+            if name == "agent_configs":
+                return global_col
+            if name == "accounts":
+                return accounts_col
+            return MagicMock()
+
+        db.collection.side_effect = _router
+        return db
+
+    def test_post_with_valid_tool_ids_returns_201(self, client: TestClient) -> None:
+        self._install_user(_super_admin())
+        app.dependency_overrides[get_firestore] = lambda: self._install_db_for_create(
+            ["function.create_visualization"]
+        )
+
+        body = {
+            "title": "Tool Picker Agent",
+            "instruction": "You are a tool-aware assistant for testing.",
+            "model": "gemini-2.5-flash",
+            "tool_ids": ["function.create_visualization"],
+        }
+        resp = client.post(BASE_URL + "/", json=body)
+        assert resp.status_code == 201
+        assert resp.json()["tool_ids"] == ["function.create_visualization"]
+
+    def test_post_with_unknown_tool_id_returns_422(self, client: TestClient) -> None:
+        self._install_user(_super_admin())
+        app.dependency_overrides[get_firestore] = lambda: self._install_db_for_create(
+            None
+        )
+
+        body = {
+            "title": "Tool Picker Agent",
+            "instruction": "You are a tool-aware assistant for testing.",
+            "model": "gemini-2.5-flash",
+            "tool_ids": ["function.does_not_exist"],
+        }
+        resp = client.post(BASE_URL + "/", json=body)
+        assert resp.status_code == 422
+        detail = resp.json()["detail"]
+        # Detail is a single-entry list with the offending IDs in ctx.
+        assert detail[0]["loc"] == ["body", "tool_ids"]
+        assert "function.does_not_exist" in detail[0]["msg"]
+
+    def test_post_with_empty_tool_ids_persists_empty_list(
+        self, client: TestClient
+    ) -> None:
+        # tool_ids=[] is meaningfully distinct from null — "no tools attached"
+        # rather than "legacy / use all server tools". The endpoint persists
+        # the explicit empty list and the merged response surfaces it.
+        self._install_user(_super_admin())
+        app.dependency_overrides[get_firestore] = lambda: self._install_db_for_create(
+            []
+        )
+
+        body = {
+            "title": "Tool Picker Agent",
+            "instruction": "You are a tool-aware assistant for testing.",
+            "model": "gemini-2.5-flash",
+            "tool_ids": [],
+        }
+        resp = client.post(BASE_URL + "/", json=body)
+        assert resp.status_code == 201
+        assert resp.json()["tool_ids"] == []
+
+    def test_put_with_unknown_tool_id_returns_422(self, client: TestClient) -> None:
+        # No db plumbing needed — the catalogue check fires before Firestore.
+        self._install_user(_super_admin())
+        app.dependency_overrides[get_firestore] = lambda: MagicMock()
+
+        body = {"tool_ids": ["function.also_does_not_exist"]}
+        resp = client.put(BASE_URL + "/some_agent", json=body)
+        assert resp.status_code == 422
+        assert resp.json()["detail"][0]["loc"] == ["body", "tool_ids"]
+
+    def test_put_with_tool_ids_null_writes_null_to_overlay(
+        self, client: TestClient
+    ) -> None:
+        """Review item #1: the documented ``null`` round-trip.
+
+        Pydantic's ``exclude_unset=True`` keeps ``tool_ids=None`` in the
+        body_dict (None is a 'set' value, not 'unset'), so the overlay write
+        carries ``tool_ids: None`` to Firestore. Combined with the merge
+        logic verified in ``test_overlay_null_clears_global_tool_ids``, this
+        means PUT ``tool_ids=null`` clears the overlay back to legacy
+        behaviour on the next GET.
+        """
+        self._install_user(_super_admin())
+
+        # Capture what's written to the overlay doc.
+        written: dict[str, Any] = {}
+        db = MagicMock()
+
+        global_doc = MagicMock()
+        global_doc.exists = True
+        global_doc.to_dict.return_value = {
+            "instruction": "You are a helpful assistant.",
+            "model": "gemini-2.5-flash",
+            "metadata": {"version": "v1.0.0"},
+        }
+        global_col = MagicMock()
+        global_col.document.return_value.get.return_value = global_doc
+
+        # The overlay doc ref captures .set() and returns a synthetic
+        # post-write doc on subsequent .get() so _load_merged returns
+        # a coherent MergedAgentConfig.
+        overlay_ref = MagicMock()
+        post_write_doc = MagicMock()
+        post_write_doc.exists = True
+        # The merged config will see overlay tool_ids=None (the cleared value).
+        post_write_doc.to_dict.return_value = {
+            "tool_ids": None,
+            "based_on_version": 1,
+        }
+        overlay_ref.get.return_value = post_write_doc
+
+        def _capture_set(data, **_kw):
+            written.update(data)
+
+        overlay_ref.set.side_effect = _capture_set
+        agent_configs_sub = MagicMock()
+        agent_configs_sub.document.return_value = overlay_ref
+        account_doc_ref = MagicMock()
+        account_doc_ref.collection.return_value = agent_configs_sub
+        accounts_col = MagicMock()
+        accounts_col.document.return_value = account_doc_ref
+
+        def _router(name: str):
+            if name == "agent_configs":
+                return global_col
+            if name == "accounts":
+                return accounts_col
+            return MagicMock()
+
+        db.collection.side_effect = _router
+        app.dependency_overrides[get_firestore] = lambda: db
+
+        body = {"tool_ids": None}
+        resp = client.put(BASE_URL + "/some_agent", json=body)
+
+        assert resp.status_code == 200
+        # The overlay write carried tool_ids=None — that's what eventually
+        # clears the field on subsequent GETs (verified at the merge level
+        # in test_overlay_null_clears_global_tool_ids).
+        assert "tool_ids" in written
+        assert written["tool_ids"] is None
+        # And the merged response surfaces the cleared value.
+        assert resp.json()["tool_ids"] is None

@@ -215,7 +215,7 @@ Transitional agents (`google_analytics_agent_v4.py`, `company_news_chatbot/agent
 
 ## 5. Project Index
 
-The component's work is split across **5 project PRDs** under [`projects/`](./projects/). The first three (AH-PRD-01 → AH-PRD-02 → AH-PRD-03) form a strictly serial Release 1 chain because each layer is a prerequisite for the next. AH-PRD-04 (Data Visualization) and AH-PRD-05 (Multi-Step Workflow Orchestration) both land in Release 3 / Expertise and sit on top of the R1 trio — AH-PRD-04 adds chart-artifact output, AH-PRD-05 adds the multi-step workflow primitive (`build_workflow_pipeline` + `execute_workflow` + approval-via-conversation-turns) deferred from AH-PRD-01 §2. Future per-platform specialist PRDs (Google Ads, Meta Ads, Mailchimp — see §2.6) land as AH-PRD-06+, consuming the pattern established in AH-PRD-03 and automatically inheriting `create_visualization()` via the factory's default function-tool roster (see AH-PRD-04).
+The component's work is split across **6 project PRDs** under [`projects/`](./projects/). The first three (AH-PRD-01 → AH-PRD-02 → AH-PRD-03) form a strictly serial Release 1 chain because each layer is a prerequisite for the next. AH-PRD-04 (Data Visualization) and AH-PRD-05 (Multi-Step Workflow Orchestration) both land in Release 3 / Expertise and sit on top of the R1 trio — AH-PRD-04 adds chart-artifact output, AH-PRD-05 adds the multi-step workflow primitive (`build_workflow_pipeline` + `execute_workflow` + approval-via-conversation-turns) deferred from AH-PRD-01 §2. AH-PRD-06 (Per-Agent Tool Mapping) layers individual-tool selection onto the agent factory built by AH-PRD-02, replacing today's coarse server-level attachment. Future per-platform specialist PRDs (Google Ads, Meta Ads, Mailchimp — see §2.6) land as AH-PRD-07+, consuming the pattern established in AH-PRD-03 and automatically inheriting `create_visualization()` via the factory's default function-tool roster (see AH-PRD-04).
 
 ### 5.1 Dependency graph
 
@@ -224,9 +224,11 @@ DM-PRD-00 (Migration Foundation) ──┐
                                     │
                                     ▼
 AH-PRD-01 (Review Loop) ──────────► AH-PRD-02 (Agent Factory) ─────► AH-PRD-03 (GA Specialist) ─────► AH-PRD-04 (Data Visualization) ─────► AH-PRD-05 (Multi-Step Workflows)
-                                         ▲
+                                         │   ▲
+                                         │   │
+                                         │   (soft) DM-PRD-05 (Deletion Sweep Rewrite)
                                          │
-                                    (soft) DM-PRD-05 (Deletion Sweep Rewrite)
+                                         └─► AH-PRD-06 (Per-Agent Tool Mapping)
 ```
 
 ### 5.2 Projects
@@ -238,6 +240,7 @@ AH-PRD-01 (Review Loop) ──────────► AH-PRD-02 (Agent Facto
 | 03 | [Google Analytics Specialist](./projects/AH-PRD-03-google-analytics-specialist.md) | Core AI | AH-PRD-01, AH-PRD-02 | Data-migration projects, SK-PRDs | 5–7 days |
 | 04 | [Data Visualization](./projects/AH-PRD-04-data-visualization.md) | Core AI (backend + frontend) | AH-PRD-01, AH-PRD-02, AH-PRD-03 | UI-PRD-01/02, KG / PR / Automations projects | 5–7 days |
 | 05 | [Multi-Step Workflow Orchestration](./projects/AH-PRD-05-multi-step-workflows.md) | Core AI | AH-PRD-01, AH-PRD-02, AH-PRD-03, AH-PRD-04 | KG-PRDs, SK-PRDs, Performance / SAR-E projects | 3–5 days |
+| 06 | [Per-Agent Tool Mapping](./projects/AH-PRD-06-tool-mapping.md) | Core AI (backend + frontend) | AH-PRD-02 | SK-PRD-02 / SK-PRD-04 (shared form rows + ≤30-tool cap) | 5–7 days |
 
 ### 5.3 Cross-PRD coordination points
 
@@ -246,6 +249,7 @@ Three touchpoints do not fit cleanly inside one PRD and need an owning team to c
 - **Dispatch generator consuming review-loop factory (AH-PRD-01 ↔ AH-PRD-02):** Story 2.2-5 imports `build_review_pipeline` from AH-PRD-01. If AH-PRD-01 reshapes the signature, AH-PRD-02 must follow. Agree on the signature in AH-PRD-01 code review; lock it before AH-PRD-02 starts.
 - **AgentCreatePage placeholder rows (AH-PRD-02 ↔ SK-PRD-04):** AH-PRD-02 delivers `AgentEditView` and `AgentCreatePage` with two disabled rows ("Skills" and "Sandbox code execution") and a tooltip pointing at Feature 2.6. SK-PRD-04 swaps them for interactive controls. Both teams should review each other's designs before either ships; both cite `docs/design/components/skills/skills-implementation-plan.md` §7.
 - **Per-account agent-config deletion (AH-PRD-02 ↔ DM-PRD-05):** AH-PRD-02 introduces `accounts/{account_id}/agent_configs/*`. Until DM-PRD-05 ships `recursive_delete`, AH-PRD-02 includes an interim extension to the enumerated sweep (AH-PRD-02 AC #15). When DM-PRD-05 lands, the extension is removed in its final PR. Coordinate the removal with the DM team.
+- **Tool picker vs. Skills rows (AH-PRD-06 ↔ SK-PRD-04):** AH-PRD-06's `AgentToolPicker` lands in `AgentCreatePage` and `AgentEditView` between the existing form fields and the two disabled "Skills" / "Sandbox code execution" placeholder rows. SK-PRD-04 swaps the disabled rows for interactive controls and the combined `tool_ids` + `skill_ids` count is gated by the same `MAX_TOOLS_PER_SPECIALIST` cap. Both PRDs reference the cap; if they ship in the same release window, the Create/Update validator must check the combined length, not either field alone.
 
 ### 5.4 Recommended workflow
 

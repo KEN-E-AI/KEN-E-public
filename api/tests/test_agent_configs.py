@@ -393,6 +393,82 @@ class TestMergeFromDataStripsStorageInternals:
         assert merged.config_id == "business_researcher"
 
 
+class TestMergeFromDataToolIds:
+    """AH-PRD-06 (review item #1): ``_merge_from_data`` must honor the
+    documented null-clearing contract for ``tool_ids``.
+
+    Contract: an overlay carrying ``tool_ids=None`` clears the merged
+    response back to ``None`` (legacy behaviour). An overlay carrying
+    ``tool_ids=[]`` produces ``tool_ids=[]`` (explicit "no tools"). An
+    overlay carrying a list produces the list. Absent overlay falls back
+    to the global value (or ``None`` when global doesn't set it).
+    """
+
+    def test_overlay_null_clears_global_tool_ids(self) -> None:
+        from src.kene_api.routers.agent_configs import _merge_from_data
+
+        global_data = {
+            "instruction": "Hello.",
+            "model": "gemini-2.5-pro",
+            "tool_ids": ["function.create_visualization"],
+        }
+        overlay_data = {"tool_ids": None}
+
+        merged = _merge_from_data("agent_x", global_data, overlay_data)
+
+        assert merged is not None
+        # Overlay-null wins via dict merge {**global, **overlay} — surfaces as
+        # None on the response, matching the documented "legacy / all tools
+        # from attached servers" semantics.
+        assert merged.tool_ids is None
+
+    def test_overlay_empty_list_persists_as_empty_list(self) -> None:
+        from src.kene_api.routers.agent_configs import _merge_from_data
+
+        global_data = {
+            "instruction": "Hello.",
+            "model": "gemini-2.5-pro",
+            "tool_ids": ["function.create_visualization"],
+        }
+        overlay_data = {"tool_ids": []}
+
+        merged = _merge_from_data("agent_x", global_data, overlay_data)
+
+        assert merged is not None
+        assert merged.tool_ids == []
+
+    def test_overlay_list_overrides_global_list(self) -> None:
+        from src.kene_api.routers.agent_configs import _merge_from_data
+
+        global_data = {
+            "instruction": "Hello.",
+            "model": "gemini-2.5-pro",
+            "tool_ids": ["function.create_visualization"],
+        }
+        overlay_data = {"tool_ids": ["google_analytics_mcp.list_ga_accounts"]}
+
+        merged = _merge_from_data("agent_x", global_data, overlay_data)
+
+        assert merged is not None
+        assert merged.tool_ids == ["google_analytics_mcp.list_ga_accounts"]
+
+    def test_absent_overlay_field_inherits_global(self) -> None:
+        from src.kene_api.routers.agent_configs import _merge_from_data
+
+        global_data = {
+            "instruction": "Hello.",
+            "model": "gemini-2.5-pro",
+            "tool_ids": ["function.create_visualization"],
+        }
+        # Overlay touches a different field; tool_ids should inherit from global.
+        overlay_data = {"temperature": 0.5}
+
+        merged = _merge_from_data("agent_x", global_data, overlay_data)
+
+        assert merged is not None
+        assert merged.tool_ids == ["function.create_visualization"]
+
+
 class TestErrorHandling:
     """Test error handling paths."""
 

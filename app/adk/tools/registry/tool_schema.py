@@ -6,9 +6,9 @@ This module defines the schema for tool registration:
 - ToolDefinition: Complete tool metadata for registry
 """
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ToolPermission(BaseModel):
@@ -66,6 +66,12 @@ class ToolDefinition(BaseModel):
         description: Human-readable tool description
         category: Tool category (e.g., "analytics", "advertising", "content")
         mcp_server: Optional MCP server name that provides this tool
+        source: "mcp" for tools delivered by an MCP server (the default — matches
+            every entry in the legacy ``tools:`` section), "function" for built-in
+            SDK function tools loaded from the YAML's ``function_tools:`` section.
+        default_global: Only meaningful on function tools — when True, the tool is
+            part of every account's global default inventory and shows up in the
+            agent tool picker without an integration. Always False on MCP tools.
         parameters: List of input parameters
         permissions: List of required permissions
         keywords: Search keywords for tool discovery
@@ -77,6 +83,14 @@ class ToolDefinition(BaseModel):
     description: str = Field(..., description="Human-readable description")
     category: str = Field(..., description="Tool category for grouping")
     mcp_server: str | None = Field(default=None, description="MCP server name")
+    source: Literal["mcp", "function"] = Field(
+        default="mcp",
+        description="Whether the tool is delivered by an MCP server or as a built-in function tool",
+    )
+    default_global: bool = Field(
+        default=False,
+        description="Function tools only: part of every account's default inventory",
+    )
     parameters: list[ToolParameter] = Field(
         default_factory=list, description="Input parameters"
     )
@@ -106,6 +120,24 @@ class ToolDefinition(BaseModel):
     def normalize_keywords(cls, v: list[str]) -> list[str]:
         """Normalize keywords to lowercase."""
         return [kw.lower() for kw in v]
+
+    @model_validator(mode="after")
+    def _validate_source_consistency(self) -> "ToolDefinition":
+        # Catches the truly broken combinations: a `source="function"` tool that
+        # also names an MCP server is contradictory; `default_global=True` is only
+        # meaningful for function tools. ``source="mcp"`` with ``mcp_server=None``
+        # is permitted because the existing schema has long allowed it (loose /
+        # placeholder entries).
+        if self.source == "function" and self.mcp_server is not None:
+            raise ValueError(
+                f"Tool {self.name!r}: source='function' requires mcp_server=None "
+                f"(got {self.mcp_server!r})"
+            )
+        if self.default_global and self.source != "function":
+            raise ValueError(
+                f"Tool {self.name!r}: default_global=True is only allowed when source='function'"
+            )
+        return self
 
     def has_required_params(self) -> list[str]:
         """Get list of required parameter names."""
