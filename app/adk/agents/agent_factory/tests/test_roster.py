@@ -516,5 +516,121 @@ class TestResolveSpecialistRoster:
         assert len(result) == 2  # 1 toolset + 1 original function tool
 
 
+class TestResolveSpecialistRosterWithToolIds:
+    """AH-PRD-06: per-agent ``tool_ids`` allowlist branch in the resolver."""
+
+    def test_tool_ids_none_preserves_legacy_behaviour(self) -> None:
+        registry = _registry_for(("server_x", 2))
+        ts = MagicMock(name="ts_x")
+        result = resolve_specialist_roster(
+            "legacy_spec",
+            mcp_toolsets={"server_x": ts},
+            function_tools=[],
+            mcp_server_ids=["server_x"],
+            tool_ids=None,
+            registry=registry,
+        )
+        assert result == [ts]
+
+    def test_tool_ids_empty_returns_empty_roster(self) -> None:
+        registry = _registry_for(("server_x", 2))
+        ts = MagicMock(name="ts_x")
+        result = resolve_specialist_roster(
+            "empty_tool_ids_spec",
+            mcp_toolsets={"server_x": ts},
+            function_tools=[],
+            mcp_server_ids=["server_x"],
+            tool_ids=[],
+            registry=registry,
+        )
+        assert result == []
+
+    def test_tool_ids_filters_to_listed_server_tools(self) -> None:
+        registry = _registry_for(("server_x", 2))
+        ts = MagicMock(name="ts_x", tool_filter=None)
+        result = resolve_specialist_roster(
+            "filtered_spec",
+            mcp_toolsets={"server_x": ts},
+            function_tools=[],
+            mcp_server_ids=["server_x"],
+            tool_ids=["server_x.tool_one"],
+            registry=registry,
+        )
+        assert result == [ts]
+        # The resolver mutates ``tool_filter`` on the toolset so the downstream
+        # ADK runtime narrows the toolset's tool list to the allowlist.
+        assert ts.tool_filter == ["tool_one"]
+
+    def test_tool_ids_drops_toolset_with_no_allowed_tools(self) -> None:
+        registry = _registry_for(("server_x", 1), ("server_y", 1))
+        ts_x = MagicMock(name="ts_x", tool_filter=None)
+        ts_y = MagicMock(name="ts_y", tool_filter=None)
+        result = resolve_specialist_roster(
+            "drop_server_spec",
+            mcp_toolsets={"server_x": ts_x, "server_y": ts_y},
+            function_tools=[],
+            mcp_server_ids=["server_x", "server_y"],
+            tool_ids=["server_x.tool_one"],
+            registry=registry,
+        )
+        # server_y has no entries in tool_ids and is dropped entirely.
+        assert result == [ts_x]
+
+    def test_tool_ids_filters_function_tools_by_name(self) -> None:
+        registry = _registry_for()
+        ft_a = MagicMock(name="ft_a")
+        ft_a.name = "create_visualization"
+        ft_b = MagicMock(name="ft_b")
+        ft_b.name = "other_tool"
+        result = resolve_specialist_roster(
+            "fn_filter_spec",
+            mcp_toolsets={},
+            function_tools=[ft_a, ft_b],
+            mcp_server_ids=[],
+            tool_ids=["function.create_visualization"],
+            registry=registry,
+        )
+        assert result == [ft_a]
+
+    def test_tool_ids_combined_mcp_and_function_filtering(self) -> None:
+        registry = _registry_for(("server_x", 1))
+        ts_x = MagicMock(name="ts_x", tool_filter=None)
+        ft = MagicMock(name="ft")
+        ft.name = "create_visualization"
+        result = resolve_specialist_roster(
+            "combined_spec",
+            mcp_toolsets={"server_x": ts_x},
+            function_tools=[ft],
+            mcp_server_ids=["server_x"],
+            tool_ids=[
+                "server_x.tool_one",
+                "function.create_visualization",
+            ],
+            registry=registry,
+        )
+        assert ts_x in result and ft in result
+        assert ts_x.tool_filter == ["tool_one"]
+
+    def test_tool_ids_skips_validation_block(self) -> None:
+        """When ``tool_ids`` is set, the legacy ``mcp_server_ids must match
+        toolsets.keys()`` validation is bypassed since the resolver is now
+        filtering toolsets rather than requiring an exact match. This lets
+        callers pass an authoritative server-id list while letting the
+        allowlist do the narrowing."""
+        registry = _registry_for(("server_x", 1))
+        ts_x = MagicMock(name="ts_x", tool_filter=None)
+        # Note: mcp_server_ids includes an extra entry that's not in toolsets
+        # — would normally raise ValueError. With tool_ids set, it shouldn't.
+        result = resolve_specialist_roster(
+            "skip_validation_spec",
+            mcp_toolsets={"server_x": ts_x},
+            function_tools=[],
+            mcp_server_ids=["server_x", "server_y"],
+            tool_ids=["server_x.tool_one"],
+            registry=registry,
+        )
+        assert result == [ts_x]
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

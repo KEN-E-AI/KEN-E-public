@@ -283,12 +283,16 @@ def build_hierarchy(
                 spec_config.mcp_servers,
             )
 
-        # Step 6c — validate cap and assemble ordered tools list.
+        # Step 6c — validate cap and assemble ordered tools list. When the
+        # spec_config carries a ``tool_ids`` allowlist (AH-PRD-06), the
+        # resolver filters per-server tools to the listed names and prunes
+        # function tools to those whose ``function.{name}`` is in the list.
         tools = resolve_specialist_roster(
             spec_name,
             mcp_toolsets=mcp_toolsets,
             function_tools=[],
             mcp_server_ids=list(mcp_toolsets.keys()),
+            tool_ids=spec_config.tool_ids,
         )
 
         # Step 6d — construct the specialist LlmAgent.

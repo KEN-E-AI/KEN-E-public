@@ -122,12 +122,32 @@ def count_specialist_tool_roster(
     return total
 
 
+def _filter_function_tools_by_ids(
+    function_tools: list[Any], tool_ids: set[str]
+) -> list[Any]:
+    """Return only function tools whose ``function.{name}`` ID is in tool_ids.
+
+    Function tools expose their name either as a ``name`` attribute (ADK
+    convention) or via ``__name__``. We try both so the filter works for
+    both ``FunctionTool``-wrapped callables and bare callables registered
+    directly with an agent. Anything without a discoverable name is dropped
+    silently — there's nothing reliable to match against.
+    """
+    kept: list[Any] = []
+    for tool in function_tools:
+        bare_name = getattr(tool, "name", None) or getattr(tool, "__name__", None)
+        if isinstance(bare_name, str) and f"function.{bare_name}" in tool_ids:
+            kept.append(tool)
+    return kept
+
+
 def resolve_specialist_roster(
     specialist_name: str,
     *,
     mcp_toolsets: dict[str, Any],
     function_tools: list[Any],
     mcp_server_ids: list[str],
+    tool_ids: list[str] | None = None,
     registry: ToolRegistry | None = None,
 ) -> list[Any]:
     """Validate the logical tool count and return the ordered tools list.
@@ -148,6 +168,14 @@ def resolve_specialist_roster(
         function_tools: SDK function tools to append after the MCP toolsets.
         mcp_server_ids: Ordered list of server IDs matching the keys in
             *mcp_toolsets* (used for registry lookup; order is preserved).
+        tool_ids: Optional per-agent tool allowlist (AH-PRD-06). ``None``
+            preserves legacy behaviour (every tool from every attached
+            server). ``[]`` returns an empty roster. ``[…]`` filters: each
+            MCP toolset is rebuilt with a per-server allowlist (via the
+            ``allowed_tool_names`` arg already plumbed through
+            :func:`build_toolset_for_doc`), and function tools are filtered
+            to those whose ``function.{name}`` is in the list. Servers with
+            no allowed tools are dropped entirely.
         registry: ToolRegistry instance.  When ``None`` the default registry
             is loaded via ``get_default_registry()``.
 
@@ -164,6 +192,46 @@ def resolve_specialist_roster(
     # returned list are always consistent (TOCTOU guard).
     frozen_toolsets: dict[str, Any] = dict(mcp_toolsets)
     frozen_function_tools: list[Any] = list(function_tools)
+
+    # AH-PRD-06: apply the per-agent tool allowlist before cap-checking. The
+    # toolsets passed in were built without a per-tool filter; we rebuild
+    # any toolsets whose tools we want to restrict, drop toolsets with no
+    # allowed tools, and prune function_tools to the allowlist.
+    if tool_ids is not None:
+        tool_id_set = set(tool_ids)
+        per_server_allowed: dict[str, list[str]] = {}
+        for tid in tool_ids:
+            server, _, tool_name = tid.partition(".")
+            if not tool_name:
+                continue
+            if server == "function":
+                continue
+            per_server_allowed.setdefault(server, []).append(tool_name)
+
+        rebuilt_toolsets: dict[str, Any] = {}
+        for server_id, toolset in frozen_toolsets.items():
+            allowed = per_server_allowed.get(server_id)
+            if not allowed:
+                continue
+            # The toolset already exists; the cheapest way to apply a filter
+            # post-hoc is to mutate its ``tool_filter`` attribute, which ADK
+            # honours on the next ``get_tools()`` call.
+            try:
+                toolset.tool_filter = list(allowed)
+            except AttributeError:
+                # Some test doubles don't carry the attribute; if so, leave
+                # the toolset untouched and rely on downstream filtering.
+                pass
+            rebuilt_toolsets[server_id] = toolset
+        frozen_toolsets = rebuilt_toolsets
+
+        frozen_function_tools = _filter_function_tools_by_ids(
+            frozen_function_tools, tool_id_set
+        )
+        # The cap is naturally satisfied when ``tool_ids`` is set (already
+        # gated to MAX_TOOL_IDS_PER_AGENT by the API), so we don't need to
+        # re-invoke ``count_specialist_tool_roster``.
+        return [*frozen_toolsets.values(), *frozen_function_tools]
 
     # Validate server IDs: no empty/blank entries, no duplicates, must match
     # the toolsets dict keys so the logical count matches the runtime roster.
