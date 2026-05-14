@@ -251,6 +251,32 @@ describe("useUpsertAgentConfigOverlay", () => {
     const allList = client.getQueryData(agentConfigKeys.list("acc_test"));
     expect(allList).toEqual([updated, other]);
   });
+
+  it("leaves the list untouched when the saved config is not in it", async () => {
+    const updated = {
+      config_id: "ga",
+      name: "Dave",
+      title: "Business Researcher",
+      customization_status: "customized",
+    };
+    mockUpsertAgentConfigOverlay.mockResolvedValueOnce(updated);
+
+    const client = freshClient();
+    const seedList = [{ config_id: "other", name: null, title: null }];
+    client.setQueryData(agentConfigKeys.list("acc_test"), seedList);
+
+    const { result } = renderHook(
+      () => useUpsertAgentConfigOverlay("acc_test"),
+      { wrapper: makeWrapper(client) },
+    );
+
+    result.current.mutate({ configId: "ga", body: { name: "Dave" } });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.getQueryData(agentConfigKeys.list("acc_test"))).toEqual(
+      seedList,
+    );
+  });
 });
 
 // ─── useCreateAgentConfig ─────────────────────────────────────────────────────
@@ -281,7 +307,9 @@ describe("useCreateAgentConfig", () => {
       validCreateBody,
     );
     expect(invalidateSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ queryKey: agentConfigKeys.list("acc_test") }),
+      expect.objectContaining({
+        queryKey: agentConfigKeys.listsForAccount("acc_test"),
+      }),
     );
   });
 
@@ -318,7 +346,9 @@ describe("useDeleteAgentConfig", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(mockDeleteAgentConfig).toHaveBeenCalledWith("acc_test", "ga");
     expect(invalidateSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ queryKey: agentConfigKeys.list("acc_test") }),
+      expect.objectContaining({
+        queryKey: agentConfigKeys.listsForAccount("acc_test"),
+      }),
     );
     expect(invalidateSpy).toHaveBeenCalledWith(
       expect.objectContaining({

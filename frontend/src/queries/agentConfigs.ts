@@ -82,14 +82,20 @@ export function useUpsertAgentConfigOverlay(
       // Push the freshly-saved config straight into the caches that render
       // it so the agent card updates the moment the edit sheet closes — no
       // second GET roundtrip required. Previous behavior was
-      // ``invalidateQueries`` which triggered a refetch of the list
+      // `invalidateQueries` which triggered a refetch of the list
       // endpoint; on top of the latency that added, the invalidation key
-      // omitted ``opts`` so it didn't actually prefix-match the
-      // ``{visibleInFrontend: true}`` list query AgentsListView uses.
+      // omitted `opts` so it didn't actually prefix-match the
+      // `{visibleInFrontend: true}` list query AgentsListView uses.
       //
-      // ``listsForAccount(accountId)`` is the 3-element prefix that
+      // `listsForAccount(accountId)` is the 3-element prefix that
       // matches every list variant for this account, with or without
       // opts — atomic update across all list consumers.
+      //
+      // In-place map is safe today because `AgentConfigOverlayUpdate`
+      // doesn't expose `visible_in_frontend`, so saving an overlay can't
+      // change a config's membership in the visible-only list. If that
+      // ever becomes editable here, switch to an add-or-update /
+      // update-or-remove strategy per list variant.
       queryClient.setQueryData(
         agentConfigKeys.detail(accountId, configId),
         updated,
@@ -114,7 +120,7 @@ export function useCreateAgentConfig(accountId: string | null | undefined) {
     onSuccess: () => {
       if (!accountId) return;
       queryClient.invalidateQueries({
-        queryKey: agentConfigKeys.list(accountId),
+        queryKey: agentConfigKeys.listsForAccount(accountId),
       });
     },
   });
@@ -131,7 +137,7 @@ export function useDeleteAgentConfig(accountId: string | null | undefined) {
     onSuccess: (_, { configId }) => {
       if (!accountId) return;
       queryClient.invalidateQueries({
-        queryKey: agentConfigKeys.list(accountId),
+        queryKey: agentConfigKeys.listsForAccount(accountId),
       });
       queryClient.invalidateQueries({
         queryKey: agentConfigKeys.detail(accountId, configId),
