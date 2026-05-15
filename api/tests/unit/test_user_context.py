@@ -185,14 +185,15 @@ class TestGetCurrentUserContext:
             assert result.organization_permissions == {}
 
     @pytest.mark.asyncio
-    async def test_super_admin_bypasses_rate_limit(self):
-        """Test that super admin users bypass rate limiting."""
+    async def test_super_admin_is_rate_limited(self):
+        """Super admins are rate limited like everyone else (bypass removed)."""
         credentials = HTTPAuthorizationCredentials(
             scheme="Bearer", credentials="valid-token"
         )
         decoded_token = {
             "uid": "super-admin-id",
             "email": "admin@ken-e.ai",  # Super admin email domain
+            "email_verified": True,
             "iat": 1234567890,
         }
 
@@ -232,7 +233,7 @@ class TestGetCurrentUserContext:
                 "src.kene_api.auth.user_context.token_rate_limiter.check_rate_limit"
             ) as mock_rate_limit:
                 with mock.patch(
-                    "src.kene_api.auth.user_context.get_cached_user_context_service"
+                    "src.kene_api.auth.cached_user_context.get_cached_user_context_service"
                 ) as mock_get_cached:
                     with mock.patch(
                         "src.kene_api.auth.user_context.get_token_revocation_service"
@@ -260,21 +261,8 @@ class TestGetCurrentUserContext:
                                 mock_request, credentials, mock_firestore_service
                             )
 
-                            # Verify rate limiter was NOT called for super admin
-                            mock_rate_limit.assert_not_called()
-
-                            # Verify audit log was called for bypass
-                            mock_audit_logger.log_event.assert_called()
-                            # Check the bypass log call
-                            for call in mock_audit_logger.log_event.call_args_list:
-                                if (
-                                    call[1].get("details", {}).get("action")
-                                    == "rate_limit_bypass"
-                                ):
-                                    assert call[1]["details"]["reason"] == "super_admin"
-                                    break
-                            else:
-                                assert False, "Rate limit bypass was not logged"
+                            # Rate limiting now applies to super admins too.
+                            mock_rate_limit.assert_called()
 
                             # Verify returned context
                             assert result.user_id == "super-admin-id"

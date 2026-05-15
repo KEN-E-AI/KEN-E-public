@@ -354,10 +354,10 @@ class TestGetUserContextWithLimiter:
             cache_service.get_user_context.assert_called_once_with("user123")
 
     @pytest.mark.asyncio
-    async def test_super_admin_bypasses_rate_limit(
+    async def test_super_admin_is_rate_limited(
         self, mock_request, mock_credentials
     ):
-        """Test that super admins bypass rate limiting."""
+        """Super admins are rate limited like everyone else (bypass removed)."""
         mock_firestore = MagicMock()
         mock_firestore.get_client().collection().document().get().exists = True
         mock_firestore.get_client().collection().document().get().to_dict.return_value = {
@@ -378,12 +378,16 @@ class TestGetUserContextWithLimiter:
                 "src.kene_api.auth.user_context._apply_rate_limiting"
             ) as mock_rate_limit,
             patch(
-                "src.kene_api.auth.user_context.get_cached_user_context_service"
+                "src.kene_api.auth.cached_user_context.get_cached_user_context_service"
             ) as mock_cache,
         ):
             mock_get_logger.return_value = AsyncMock()
             mock_verify.return_value = (
-                {"uid": "admin123", "email": "admin@ken-e.ai"},
+                {
+                    "uid": "admin123",
+                    "email": "admin@ken-e.ai",
+                    "email_verified": True,
+                },
                 "admin123",
                 "admin@ken-e.ai",
             )
@@ -400,5 +404,5 @@ class TestGetUserContextWithLimiter:
 
             assert result.user_id == "admin123"
             assert result.email == "admin@ken-e.ai"
-            # Rate limiting should not be called for super admin
-            mock_rate_limit.assert_not_called()
+            # Rate limiting now applies to super admins too.
+            mock_rate_limit.assert_called_once()
