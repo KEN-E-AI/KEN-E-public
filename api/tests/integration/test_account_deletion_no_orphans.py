@@ -59,12 +59,6 @@ pytestmark = pytest.mark.skipif(
 # Helpers
 # ---------------------------------------------------------------------------
 
-_EMULATOR_REASON = (
-    "Firestore emulator integration tests skipped by default. "
-    "Set FIRESTORE_EMULATOR_HOST=127.0.0.1:8090 (and GOOGLE_CLOUD_PROJECT_ID=test-project) "
-    "to enable."
-)
-
 # All Shape B subcollection names that should be reaped by recursive_delete.
 # Ordered to match DM-PRD-05 §7 fixture list.
 # DM-PRD-07 subcollections (members, project_plan_audit, integrations_audit) are
@@ -150,8 +144,13 @@ def cleanup_emulator(emulator_db: Any, account_id: str) -> Generator[None, None,
     yield
     try:
         _recursive_delete_emulator(emulator_db, account_id)
-    except Exception:
-        pass  # Best-effort; never fail the suite on teardown
+    except Exception as exc:
+        import warnings
+
+        warnings.warn(
+            f"cleanup_emulator failed for {account_id}: {exc}",
+            stacklevel=2,
+        )
 
 
 def _recursive_delete_emulator(db: Any, account_id: str) -> None:
@@ -209,7 +208,8 @@ def _app_overrides(emulator_db: Any) -> Generator[dict[str, Any], None, None]:
 
     yield {"neo4j": mock_neo4j, "storage": mock_storage}
 
-    app.dependency_overrides.clear()
+    for dep in (get_neo4j_service, get_storage_service, get_firestore_service, get_current_user_context):
+        app.dependency_overrides.pop(dep, None)
 
 
 @pytest.fixture
@@ -356,6 +356,10 @@ class TestAccountDeletionNoOrphans:
         """
         _seed_full_account(emulator_db, account_id, run_id)
 
+        # Seed a sibling account before DELETE to verify isolation (checked below).
+        sibling_ref = emulator_db.collection("accounts").document(f"acc_sibling_{run_id}")
+        sibling_ref.set({"sentinel": True})
+
         # --- Act ---
         resp = client.delete(f"/api/v1/accounts/{account_id}")
 
@@ -405,6 +409,18 @@ class TestAccountDeletionNoOrphans:
             f"{_app_overrides['neo4j'].execute_write_operation.call_count}"
         )
 
+        # --- Assert: sibling account is untouched ---
+        # Guards against an over-broad recursive_delete that might walk the entire
+        # `accounts/` collection instead of just `accounts/{account_id}/`.
+        try:
+            sibling_doc = sibling_ref.get()
+            assert sibling_doc.exists, (
+                "recursive_delete must not touch sibling accounts: "
+                f"acc_sibling_{run_id} was deleted"
+            )
+        finally:
+            sibling_ref.delete()
+
     def test_recursive_delete_on_empty_account_reports_success_with_no_errors(
         self,
         emulator_db: Any,
@@ -426,3 +442,33 @@ class TestAccountDeletionNoOrphans:
         data = resp.json()["data"]
         assert data["firestore_account_deleted"] is True
         assert data["cleanup_errors"] == []
+
+    def test_non_admin_cannot_delete_account(
+        self,
+        account_id: str,
+        client: TestClient,
+        _app_overrides: dict[str, Any],
+    ) -> None:
+        """Authorization: a non-super-admin caller receives 403.
+
+        Pins the single authorization gate at accounts.py:928
+        (``if not user.is_super_admin: raise HTTPException(403)``).
+        If that check is removed or weakened, this test fails.
+        """
+        regular_user = UserContext(
+            user_id="attacker-uid",
+            email="attacker@external.com",
+            organization_permissions={},
+            account_permissions={},
+        )
+        # Override only the auth dependency; leave Neo4j/GCS/Firestore mocks active.
+        app.dependency_overrides[get_current_user_context] = lambda: regular_user
+        try:
+            resp = client.delete(f"/api/v1/accounts/{account_id}")
+            assert resp.status_code == 403
+        finally:
+            # Restore the super-admin override so teardown sees the right auth.
+            async def _super_admin() -> UserContext:
+                return _super_admin_user()
+
+            app.dependency_overrides[get_current_user_context] = _super_admin
