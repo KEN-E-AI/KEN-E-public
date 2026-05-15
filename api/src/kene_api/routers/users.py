@@ -1,13 +1,14 @@
 """User management endpoints with proper authentication."""
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
-from typing import Optional
+from fastapi import APIRouter, Depends, Request
 from google.cloud import firestore
+from pydantic import BaseModel, Field
 
+from ..auth.dependencies import require_super_admin
 from ..auth.user_context import UserContext, get_current_user_context
 from ..firestore import get_firestore_service
-
+from ..models.user_deletion import UserDeletionResult
+from ..services.user_deletion_service import delete_user_data
 
 router = APIRouter(tags=["users"])
 
@@ -16,9 +17,9 @@ class UserProfile(BaseModel):
     """User profile model."""
 
     email: str
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    job_title: Optional[str] = None
+    first_name: str | None = None
+    last_name: str | None = None
+    job_title: str | None = None
     email_verified: bool = False
 
 
@@ -31,7 +32,7 @@ class UserResponse(BaseModel):
     permissions: dict[str, dict[str, str]] = Field(
         default_factory=lambda: {"accounts": {}, "organizations": {}}
     )
-    created_at: Optional[str] = None
+    created_at: str | None = None
 
 
 class NotificationSettings(BaseModel):
@@ -47,7 +48,7 @@ class SecuritySettings(BaseModel):
     """Security settings model."""
 
     two_factor_enabled: bool = False
-    last_login: Optional[str] = None
+    last_login: str | None = None
     login_count: int = 0
 
 
@@ -239,3 +240,22 @@ async def update_security_settings(
     ).document("settings").set(settings.dict())
 
     return settings
+
+
+@router.delete("/{user_id}", response_model=UserDeletionResult)
+async def delete_user(
+    user_id: str,
+    current_user: UserContext = Depends(require_super_admin),
+) -> UserDeletionResult:
+    """Purge all KEN-E-side data for a user (super-admin only).
+
+    Thin wrapper around the ``delete_user_data`` orchestrator.  All deletion
+    logic lives in ``services/user_deletion_service.py`` (DM-52).
+
+    Caller must be a super-admin (@ken-e.ai email).  Non-super-admin callers
+    receive a 403 with body ``{"error": "super_admin_required"}`` before this
+    handler is invoked.  Unauthenticated callers receive 401.
+
+    Spec: DM-PRD-05 §4.3, §6 AC-8
+    """
+    return await delete_user_data(user_id, actor=current_user)
