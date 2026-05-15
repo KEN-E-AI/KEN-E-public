@@ -293,6 +293,14 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setSelectedOrgAccountState(account);
 
     if (account) {
+      // Keep currentOrganizationId in lockstep with the selected workspace.
+      // The two are persisted under separate localStorage keys and would
+      // otherwise drift — leaving the org-settings page on a different org
+      // than the header switcher.
+      if (account.orgId) {
+        setCurrentOrganizationId(account.orgId);
+        localStorage.setItem("currentOrganizationId", account.orgId);
+      }
       localStorage.setItem("selectedOrgAccount", JSON.stringify(account));
       // 🧠 Fetch notifications here
       fetchNotifications(account.accountId);
@@ -440,6 +448,12 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
             );
           }
           setSelectedOrgAccountState(parsedOrgAccount);
+          // selectedOrgAccount is authoritative for the active workspace —
+          // realign currentOrganizationId to it so a previously drifted
+          // localStorage pair cannot survive a reload.
+          if (parsedOrgAccount.orgId) {
+            setCurrentOrganizationId(parsedOrgAccount.orgId);
+          }
         } else {
           console.warn("Invalid savedOrgAccount structure:", parsedOrgAccount);
           // Clear invalid data from localStorage

@@ -308,6 +308,7 @@ const AccountSettings = () => {
     updateUser,
     completeWorkspaceSelection,
     currentOrganizationId,
+    selectedOrgAccount,
     setCurrentOrganization,
     setSelectedOrgAccount,
     orgMetadata,
@@ -349,6 +350,18 @@ const AccountSettings = () => {
       return currentOrganizationId;
     }
 
+    // Next, fall back to the org backing the active workspace selection. This
+    // matters for super admins: their membership doc lists only the orgs they
+    // explicitly belong to, which is not the org shown in the header switcher.
+    if (selectedOrgAccount?.orgId) {
+      if (import.meta.env.DEV) {
+        console.log(
+          `[AccountSettings] Using selectedOrgAccount.orgId: ${selectedOrgAccount.orgId}`,
+        );
+      }
+      return selectedOrgAccount.orgId;
+    }
+
     // Otherwise, use the first organization the user has access to
     const userOrganizations = Object.keys(
       user?.permissions?.organizations || {},
@@ -364,7 +377,12 @@ const AccountSettings = () => {
     }
 
     return firstOrgId;
-  }, [isCreatingNew, currentOrganizationId, user?.permissions?.organizations]);
+  }, [
+    isCreatingNew,
+    currentOrganizationId,
+    selectedOrgAccount?.orgId,
+    user?.permissions?.organizations,
+  ]);
 
   const orgData = useMemo(() => {
     const data = currentOrgId ? orgMetadata[currentOrgId] || null : null;

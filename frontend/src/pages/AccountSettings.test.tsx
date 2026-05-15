@@ -166,6 +166,64 @@ describe("AccountSettings", () => {
     expect(screen.getByTestId("danger-zone")).toBeInTheDocument();
   });
 
+  it("resolves the org from selectedOrgAccount when currentOrganizationId is unset", async () => {
+    // Super-admin case: the membership doc only lists the Evals org, but the
+    // header switcher has Bank of America selected. The settings page must
+    // follow the header, not the membership doc.
+    const mockUser = {
+      id: "test-user-123",
+      email: "admin@ken-e.ai",
+      firstName: "Super",
+      lastName: "Admin",
+      permissions: {
+        organizations: {
+          "evals-org": "view",
+        },
+      },
+    };
+
+    mockUseAuth.mockReturnValue({
+      user: mockUser,
+      isAuthenticated: true,
+      currentOrganizationId: null,
+      selectedOrgAccount: {
+        orgId: "bofa-org",
+        accountId: "bofa-acct",
+        metadata: { organization_name: "Bank of America" },
+      },
+      orgMetadata: {
+        "bofa-org": {
+          organization_id: "bofa-org",
+          organization_name: "Bank of America",
+          accounts: [],
+        },
+        "evals-org": {
+          organization_id: "evals-org",
+          organization_name: "Evals 20260306",
+          accounts: [],
+        },
+      },
+      setOrgMetadata: vi.fn(),
+      setCurrentOrganization: vi.fn(),
+      setSelectedOrgAccount: vi.fn(),
+      completeWorkspaceSelection: vi.fn(),
+      updateUser: vi.fn(),
+      setAccountMetadata: vi.fn(),
+      isSuperAdmin: true,
+    });
+
+    renderAccountSettings();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Organization Form - Bank of America"),
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByText("Organization Form - Evals 20260306"),
+    ).not.toBeInTheDocument();
+  });
+
   it("should show org settings tabs when user has no organization permissions", () => {
     const mockUser = {
       id: "test-user-123",

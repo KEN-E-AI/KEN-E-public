@@ -138,6 +138,41 @@ describe("AuthContext - setSelectedOrgAccount", () => {
     expect(authContext.selectedOrgAccount).toEqual(mockSelectedAccount);
   });
 
+  test("setSelectedOrgAccount syncs currentOrganizationId to the account's org", () => {
+    renderWithAuth((auth) => {
+      authContext = auth;
+    });
+
+    act(() => {
+      authContext.setSelectedOrgAccount(mockSelectedAccount);
+    });
+
+    expect(authContext.currentOrganizationId).toBe(mockSelectedAccount.orgId);
+    expect(localStorageMock.setItem).toHaveBeenCalledWith(
+      "currentOrganizationId",
+      mockSelectedAccount.orgId,
+    );
+  });
+
+  test("mount restore realigns currentOrganizationId to selectedOrgAccount when the two keys disagree", () => {
+    const drifted: SelectedOrgAccount = {
+      ...mockSelectedAccount,
+      orgId: "org_fromaccount" as OrganizationId,
+      accountId: "acc_456" as AccountId,
+    };
+    localStorageMock.getItem.mockImplementation((key: string) => {
+      if (key === "selectedOrgAccount") return JSON.stringify(drifted);
+      if (key === "currentOrganizationId") return "org_stale";
+      return null;
+    });
+
+    renderWithAuth((auth) => {
+      authContext = auth;
+    });
+
+    expect(authContext.currentOrganizationId).toBe("org_fromaccount");
+  });
+
   test("setSelectedOrgAccount should clear context state when passed null", () => {
     renderWithAuth((auth) => {
       authContext = auth;
