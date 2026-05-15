@@ -40,9 +40,12 @@ async def require_super_admin(
     Spec: DM-PRD-05 §4.3, AC-8
     """
     if not current_user.is_super_admin:
-        raise SuperAdminRequiredError(
-            f"super-admin required; caller email={current_user.email!r}"
+        logger.warning(
+            "super-admin gate denied user_id=%s email=%r",
+            current_user.user_id,
+            current_user.email,
         )
+        raise SuperAdminRequiredError()
     return current_user
 
 

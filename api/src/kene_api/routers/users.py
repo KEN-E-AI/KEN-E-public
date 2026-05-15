@@ -242,7 +242,7 @@ async def update_security_settings(
     return settings
 
 
-@router.delete("/{user_id}", response_model=UserDeletionResult)
+@router.delete("/{user_id}", status_code=200, response_model=UserDeletionResult)
 async def delete_user(
     user_id: str,
     current_user: UserContext = Depends(require_super_admin),

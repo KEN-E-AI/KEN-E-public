@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 
@@ -231,14 +231,12 @@ app.add_middleware(LatencyMiddleware)
 # Super-admin gate: flat 403 body required by DM-PRD-05 §4.3 / AC-8.
 # Using a custom exception class + handler avoids the {"detail": ...} wrapper
 # that raise HTTPException(detail=...) produces.
-from fastapi import Request as _Request
-
 from .auth.dependencies import SuperAdminRequiredError
 
 
 @app.exception_handler(SuperAdminRequiredError)
 async def _super_admin_required_handler(
-    request: _Request, exc: SuperAdminRequiredError
+    request: Request, exc: SuperAdminRequiredError
 ) -> JSONResponse:
     return JSONResponse(status_code=403, content={"error": "super_admin_required"})
 

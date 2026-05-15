@@ -146,6 +146,7 @@ class TestDeleteUserEndpoint:
         resp = client.delete("/api/v1/users/u_target")
 
         assert resp.status_code == 401
+        assert resp.headers.get("www-authenticate") == "Bearer"
 
     def test_idempotent_rerun_returns_200_with_zero_counts(
         self, client: TestClient
