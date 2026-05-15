@@ -197,7 +197,7 @@ export function AccountSettingsTabs({ accountId }: AccountSettingsTabsProps) {
       <div className="text-center py-8">
         <div className="inline-flex items-center space-x-2">
           <div className="w-4 h-4 border-2 border-[var(--color-violet-500)] border-t-transparent rounded-full animate-spin" />
-          <span className="text-[var(--color-text-tertiary)]">
+          <span className="text-[var(--color-text-secondary)]">
             Loading account data...
           </span>
         </div>
