@@ -1,13 +1,14 @@
-"""Integration tests for _load_merged helper and account-deletion agent_configs sweep.
+"""Integration tests for _load_merged helper and account-deletion recursive sweep.
 
 Two test classes (both emulator-only) + one always-runs schema parity test:
 
 * ``TestOverlayMerge`` — unit tests of ``_load_merged`` covering the four
   logical branches (global-only, overlay-only, both-present, neither-present)
   plus field-stripping and overlay-wins semantics.
-* ``TestAccountDeletionSweep`` — end-to-end test of the AC-15 interim sweep
-  block in ``DELETE /api/v1/accounts/{account_id}``; verifies Firestore docs
-  are removed and the response reports the correct count.
+* ``TestAccountDeletionSweep`` — end-to-end test of the recursive_delete
+  sweep in ``DELETE /api/v1/accounts/{account_id}``; verifies per-account
+  Firestore subcollections (including agent_configs) are removed and global
+  collections at the root level are untouched.
 * ``test_merged_agent_config_api_model_field_parity`` — schema parity guard
   (runs always, no emulator needed).
 
@@ -19,7 +20,7 @@ Enable emulator tests:
     pytest api/tests/integration/test_agent_config_overlay.py -v
 
 Acceptance criteria covered:
-  AH-PRD-02 §7 / AC-15 (account-deletion agent_configs sweep)
+  DM-PRD-05 (account-deletion recursive_delete sweep)
   AH-PRD-02 §6 / AC-11 merge semantics (_load_merged helper)
 """
 
@@ -254,7 +255,9 @@ class TestOverlayMerge:
         account_id = f"acc_{uuid.uuid4().hex[:8]}"
         config_id = f"cfg_{uuid.uuid4().hex[:8]}"
         self._seed_global(db, config_id, dict(_VALID_GLOBAL_DOC))
-        overlay_instruction = "You are the OVERLAY instruction that should win in tests."
+        overlay_instruction = (
+            "You are the OVERLAY instruction that should win in tests."
+        )
         self._seed_overlay(
             db,
             account_id,
@@ -341,7 +344,9 @@ class TestOverlayMerge:
         finally:
             self._delete_global(db, config_id)
 
-    def test_based_on_version_from_firestore_is_stripped_for_global_only(self, db) -> None:
+    def test_based_on_version_from_firestore_is_stripped_for_global_only(
+        self, db
+    ) -> None:
         """A based_on_version stored in a global-only doc must not bleed into the result."""
         from src.kene_api.routers.agent_configs import _load_merged
 
@@ -392,7 +397,7 @@ class TestOverlayMerge:
 
 
 # ---------------------------------------------------------------------------
-# TestAccountDeletionSweep — AC-15 interim sweep (emulator required)
+# TestAccountDeletionSweep — recursive_delete covers all Shape B subcollections
 # ---------------------------------------------------------------------------
 
 
@@ -401,15 +406,13 @@ class TestOverlayMerge:
     reason=_EMULATOR_REASON,
 )
 class TestAccountDeletionSweep:
-    """End-to-end tests for the AC-15 agent_configs deletion sweep.
+    """End-to-end tests for account-scoped Firestore cleanup on DELETE /api/v1/accounts/{id}.
 
-    The ``DELETE /api/v1/accounts/{account_id}`` endpoint is exercised via
-    TestClient.  Neo4j and GCS are mocked; Firestore (emulator) is real.
+    Verifies that ``firestore_db.recursive_delete(accounts/{account_id})`` removes all
+    Shape B subcollections (including agent_configs) and that global collections at the
+    root level (agent_configs/{config_id}) are untouched.
 
-    The sweep under test lives in ``routers/accounts.py`` lines ~999-1038.
-    It uses ``firestore.get_client()`` (from the ``FirestoreService`` dependency),
-    so we override ``get_firestore_service`` to return a ``FirestoreService``
-    whose inner client is the emulator client.
+    Neo4j and GCS are mocked; Firestore is the real emulator client.
     """
 
     @pytest.fixture(scope="class")
@@ -427,9 +430,7 @@ class TestAccountDeletionSweep:
         mock_neo4j = MagicMock()
         mock_neo4j.health_check = AsyncMock(return_value=True)
         # Account lookup — return one row so the endpoint does not 404.
-        mock_neo4j.execute_query = AsyncMock(
-            return_value=[{"data_region": "US"}]
-        )
+        mock_neo4j.execute_query = AsyncMock(return_value=[{"data_region": "US"}])
         # Cascade deletes — return empty summaries (nothing deleted in Neo4j).
         mock_neo4j.execute_write_operation = AsyncMock(
             return_value={"nodes_deleted": 0, "relationships_deleted": 0}
@@ -479,7 +480,13 @@ class TestAccountDeletionSweep:
             .document(account_id)
             .collection("agent_configs")
             .document(config_id)
-            .set(data or {"instruction": f"Instruction for {config_id}.", "model": "gemini-2.5-flash"})
+            .set(
+                data
+                or {
+                    "instruction": f"Instruction for {config_id}.",
+                    "model": "gemini-2.5-flash",
+                }
+            )
         )
 
     def _seed_global_agent_config(
@@ -488,12 +495,6 @@ class TestAccountDeletionSweep:
         """Seed a global doc at agent_configs/{config_id}."""
         db.collection("agent_configs").document(config_id).set(
             data or dict(_VALID_GLOBAL_DOC)
-        )
-
-    def _seed_strategy_doc(self, db, account_id: str, doc_id: str) -> None:
-        """Seed a strategy doc in strategy_docs_{account_id} (existing sweep)."""
-        db.collection(f"strategy_docs_{account_id}").document(doc_id).set(
-            {"content": "test strategy doc content"}
         )
 
     def _cleanup(self, db, account_id: str, global_config_ids: list[str]) -> None:
@@ -511,13 +512,13 @@ class TestAccountDeletionSweep:
         db.collection("accounts").document(account_id).delete()
 
     # ------------------------------------------------------------------
-    # AC-15: sweep deletes all per-account agent_configs docs
+    # recursive_delete covers all Shape B subcollections
     # ------------------------------------------------------------------
 
-    def test_sweep_deletes_all_per_account_agent_config_docs(
+    def test_recursive_delete_removes_per_account_agent_config_docs(
         self, client: TestClient, emulator_db, account_id: str
     ) -> None:
-        """DELETE /api/v1/accounts/{id} removes all 3 per-account agent_config docs."""
+        """DELETE /api/v1/accounts/{id} removes all per-account agent_config docs via recursive_delete."""
         global_config_id = f"global_unrelated_{uuid.uuid4().hex[:8]}"
 
         # Seed: 2 overlays + 1 custom under accounts/{account_id}/agent_configs
@@ -529,11 +530,8 @@ class TestAccountDeletionSweep:
         self._seed_account_agent_config(emulator_db, account_id, overlay_b)
         self._seed_account_agent_config(emulator_db, account_id, custom_doc)
 
-        # Seed: one global doc (must NOT be touched by the sweep)
+        # Seed: one global doc at agent_configs/{id} (must NOT be touched)
         self._seed_global_agent_config(emulator_db, global_config_id)
-
-        # Seed: one strategy doc (existing sweep; must still work)
-        self._seed_strategy_doc(emulator_db, account_id, "some_doc")
 
         try:
             resp = client.delete(f"/api/v1/accounts/{account_id}")
@@ -541,10 +539,10 @@ class TestAccountDeletionSweep:
 
             data = resp.json()["data"]
 
-            # Response must report exactly 3 agent_config docs deleted
-            assert data["agent_configs_deleted"] == 3
+            # Response must confirm Firestore account was deleted
+            assert data["firestore_account_deleted"] is True
 
-            # Verify per-account collection is now empty in the emulator
+            # Verify per-account subcollection is now empty in the emulator
             remaining_docs = list(
                 emulator_db.collection("accounts")
                 .document(account_id)
@@ -558,26 +556,24 @@ class TestAccountDeletionSweep:
 
             # Verify global doc is untouched
             global_doc = (
-                emulator_db.collection("agent_configs")
-                .document(global_config_id)
-                .get()
+                emulator_db.collection("agent_configs").document(global_config_id).get()
             )
             assert global_doc.exists, (
                 f"Global doc agent_configs/{global_config_id} was incorrectly deleted "
-                f"by the per-account sweep."
+                f"by recursive_delete."
             )
 
         finally:
             self._cleanup(emulator_db, account_id, [global_config_id])
 
-    def test_sweep_with_zero_agent_configs_reports_zero(
+    def test_recursive_delete_with_no_account_data_reports_success(
         self, client: TestClient, emulator_db, account_id: str
     ) -> None:
-        """If no per-account agent_configs exist, agent_configs_deleted == 0."""
+        """If no per-account Firestore data exists, recursive_delete still reports success."""
         try:
             resp = client.delete(f"/api/v1/accounts/{account_id}")
             assert resp.status_code == 200
             data = resp.json()["data"]
-            assert data["agent_configs_deleted"] == 0
+            assert data["firestore_account_deleted"] is True
         finally:
             self._cleanup(emulator_db, account_id, [])
