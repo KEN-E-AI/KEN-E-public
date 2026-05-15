@@ -3,11 +3,13 @@
 Coverage matrix per the Implementation Plan:
   (a) happy path — 2 org-member refs + 3 account-member refs; all 6 steps fire
   (b) idempotent re-run — zero refs; recursive_delete is still called; counts=0
+  (b2) step-1 failure — _resolve_member_rows raises; subsequent steps still run
   (c) single-step failure — step 4 raises; subsequent steps still run
   (d) no org membership — only account-scope refs; audit step is NOT called
   (e) hook absent — on_user_removed is None; no raise, integrations_hook_fired=0
   (f) write_audit absent — _write_audit is None; audit step is a no-op
   (g) hook raises — on_user_removed raises; errors recorded, deletion continues
+  (h) non-super-admin actor raises PermissionError before any I/O
 
 All tests are hermetic — no live Firestore connection.  The Firestore client
 and StorageService are replaced with MagicMock / AsyncMock throughout.
@@ -21,6 +23,18 @@ import pytest
 import src.kene_api.services.user_deletion_service as svc
 from src.kene_api.auth.models import UserContext
 from src.kene_api.models.user_deletion import UserDeletionResult
+
+# ---------------------------------------------------------------------------
+# Module-level hermetic guard — prevents any test from reaching a real
+# StorageService when USER_GCS_PREFIXES is non-empty in the future.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _patch_get_storage_service():
+    with patch.object(svc, "get_storage_service", return_value=MagicMock()):
+        yield
+
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -68,6 +82,27 @@ def _make_account_ref(account_id: str, user_id: str = "u_carol") -> MagicMock:
 
 
 # ---------------------------------------------------------------------------
+# (h) Non-super-admin actor raises PermissionError before any I/O
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_non_super_admin_raises_permission_error() -> None:
+    """Non-@ken-e.ai actor raises PermissionError; no Firestore I/O performed."""
+    actor = _make_actor(email="attacker@external.com")
+    mock_db = MagicMock()
+
+    with (
+        patch.object(svc, "get_firestore_client", return_value=mock_db),
+    ):
+        with pytest.raises(PermissionError, match="super-admin"):
+            await svc.delete_user_data("u_carol", actor=actor)
+
+    mock_db.collection.assert_not_called()
+    mock_db.recursive_delete.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
 # (a) Happy path
 # ---------------------------------------------------------------------------
 
@@ -94,8 +129,7 @@ async def test_happy_path_all_steps_fire() -> None:
         patch.object(svc, "get_firestore_client", return_value=mock_db),
         patch.object(svc, "_on_user_removed", hook_mock),
         patch.object(svc, "_write_audit", write_audit_mock),
-        patch(
-            "src.kene_api.services.user_deletion_service._resolve_member_rows",
+        patch.object(svc, "_resolve_member_rows",
             return_value=(org_refs, account_refs),
         ),
     ):
@@ -133,8 +167,7 @@ async def test_idempotent_rerun_purged_user() -> None:
         patch.object(svc, "get_firestore_client", return_value=mock_db),
         patch.object(svc, "_on_user_removed", None),
         patch.object(svc, "_write_audit", None),
-        patch(
-            "src.kene_api.services.user_deletion_service._resolve_member_rows",
+        patch.object(svc, "_resolve_member_rows",
             return_value=([], []),
         ),
     ):
@@ -167,8 +200,7 @@ async def test_step1_failure_subsequent_steps_still_run() -> None:
         patch.object(svc, "get_firestore_client", return_value=mock_db),
         patch.object(svc, "_on_user_removed", None),
         patch.object(svc, "_write_audit", None),
-        patch(
-            "src.kene_api.services.user_deletion_service._resolve_member_rows",
+        patch.object(svc, "_resolve_member_rows",
             side_effect=RuntimeError("index unavailable"),
         ),
     ):
@@ -211,8 +243,7 @@ async def test_single_step_failure_does_not_abort_subsequent_steps() -> None:
     mock_db.collection.return_value.document.return_value = MagicMock()
 
     with (
-        patch(
-            "src.kene_api.services.user_deletion_service._resolve_member_rows",
+        patch.object(svc, "_resolve_member_rows",
             return_value=(org_refs, account_refs),
         ),
         patch.object(svc, "get_firestore_client", return_value=mock_db),
@@ -247,8 +278,7 @@ async def test_no_org_membership_skips_audit() -> None:
     mock_db.recursive_delete = MagicMock(return_value=None)
 
     with (
-        patch(
-            "src.kene_api.services.user_deletion_service._resolve_member_rows",
+        patch.object(svc, "_resolve_member_rows",
             return_value=([], account_refs),
         ),
         patch.object(svc, "get_firestore_client", return_value=mock_db),
@@ -277,8 +307,7 @@ async def test_hook_absent_on_user_removed_none() -> None:
     mock_db.recursive_delete = MagicMock(return_value=None)
 
     with (
-        patch(
-            "src.kene_api.services.user_deletion_service._resolve_member_rows",
+        patch.object(svc, "_resolve_member_rows",
             return_value=([], account_refs),
         ),
         patch.object(svc, "get_firestore_client", return_value=mock_db),
@@ -306,8 +335,7 @@ async def test_write_audit_absent_is_noop() -> None:
     mock_db.recursive_delete = MagicMock(return_value=None)
 
     with (
-        patch(
-            "src.kene_api.services.user_deletion_service._resolve_member_rows",
+        patch.object(svc, "_resolve_member_rows",
             return_value=(org_refs, []),
         ),
         patch.object(svc, "get_firestore_client", return_value=mock_db),
@@ -338,8 +366,7 @@ async def test_hook_raises_error_recorded_deletion_continues() -> None:
         raise ConnectionError("token revoke timeout")
 
     with (
-        patch(
-            "src.kene_api.services.user_deletion_service._resolve_member_rows",
+        patch.object(svc, "_resolve_member_rows",
             return_value=([], account_refs),
         ),
         patch.object(svc, "get_firestore_client", return_value=mock_db),

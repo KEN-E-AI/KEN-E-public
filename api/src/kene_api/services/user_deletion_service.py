@@ -72,6 +72,8 @@ USER_SUBCOLLECTIONS: list[str] = [
     "notification_status",  # firestore_notification_repository.py
     "preferences",  # firestore_notification_repository.py + routers/users.py (default_preferences seed)
     "chat_categories",  # CH-PRD-03
+    "notifications",  # routers/users.py — NotificationSettings seed on user creation
+    "security",  # routers/users.py — SecuritySettings seed on user creation
 ]
 
 # ---------------------------------------------------------------------------
@@ -204,11 +206,11 @@ async def _purge_gcs(
     """
     if not USER_GCS_PREFIXES:
         return
-    storage = get_storage_service()
-    delete_fn = getattr(storage, "delete_user_prefix", None)
     for prefix_template in USER_GCS_PREFIXES:
         prefix = prefix_template.format(user_id=user_id)
         try:
+            storage = get_storage_service()
+            delete_fn = getattr(storage, "delete_user_prefix", None)
             if delete_fn is not None:
                 await delete_fn(prefix)
                 result.gcs_prefixes_purged += 1
@@ -282,6 +284,11 @@ async def delete_user_data(
     Returns:
         UserDeletionResult with counts and any per-step errors.
     """
+    if not actor.is_super_admin:
+        raise PermissionError(
+            f"delete_user_data requires a super-admin actor; got {actor.email!r}"
+        )
+
     result = UserDeletionResult(user_id=user_id)
     db = get_firestore_client()
 
@@ -300,7 +307,7 @@ async def delete_user_data(
         )
     except Exception as exc:
         logger.exception(
-            "[user_deletion] step 1 failed user_id=%s", user_id
+            "[user_deletion] step 1:discover_members failed user_id=%s", user_id
         )
         result.errors.append(f"discover_members: {exc}")
 
