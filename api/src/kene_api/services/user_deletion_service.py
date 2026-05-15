@@ -104,9 +104,9 @@ async def _resolve_member_rows(
     DM-PRD-00 (deployment/firestore.indexes.json:114-126).
     """
 
-    def _stream_all() -> tuple[list, list]:
-        org_refs: list = []
-        account_refs: list = []
+    def _stream_all() -> tuple[list[DocumentReference], list[DocumentReference]]:
+        org_refs: list[DocumentReference] = []
+        account_refs: list[DocumentReference] = []
         members_group = db.collection_group("members")
 
         for doc in members_group.where("user_id", "==", user_id).where(
@@ -211,7 +211,7 @@ async def _purge_gcs(
         try:
             if delete_fn is not None:
                 await delete_fn(prefix)
-            result.gcs_prefixes_purged += 1
+                result.gcs_prefixes_purged += 1
         except Exception as exc:
             logger.exception(
                 "[user_deletion] GCS prefix purge failed prefix=%s", prefix
@@ -236,6 +236,7 @@ async def _write_audit_best_effort(
         return
     # Best-effort: pick the first org as the primary.
     # ref path is organizations/{org_id}/members/{user_id}
+    # TODO: If multi-org audit is ever needed, iterate org_refs and emit one entry per org.
     primary_org_id: str = org_refs[0].parent.parent.id
     try:
         await _write_audit(
@@ -290,18 +291,18 @@ async def delete_user_data(
     account_refs: list[DocumentReference] = []
     try:
         org_refs, account_refs = await _resolve_member_rows(db, user_id)
+        logger.info(
+            "[user_deletion] step 1:discover_members completed user_id=%s "
+            "org_rows=%d account_rows=%d",
+            user_id,
+            len(org_refs),
+            len(account_refs),
+        )
     except Exception as exc:
         logger.exception(
             "[user_deletion] step 1 failed user_id=%s", user_id
         )
         result.errors.append(f"discover_members: {exc}")
-    logger.info(
-        "[user_deletion] step 1:discover_members completed user_id=%s "
-        "org_rows=%d account_rows=%d",
-        user_id,
-        len(org_refs),
-        len(account_refs),
-    )
 
     # Step 2 — Fire on_user_removed hook per affected account (sequential).
     logger.info(

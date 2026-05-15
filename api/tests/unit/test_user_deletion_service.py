@@ -150,6 +150,44 @@ async def test_idempotent_rerun_purged_user() -> None:
 
 
 # ---------------------------------------------------------------------------
+# (b2) Step-1 failure — _resolve_member_rows raises; subsequent steps still run
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_step1_failure_subsequent_steps_still_run() -> None:
+    """_resolve_member_rows raises; error recorded; steps 2-6 run with empty refs."""
+    actor = _make_actor()
+
+    mock_db = MagicMock()
+    mock_db.collection.return_value.document.return_value = MagicMock()
+    mock_db.recursive_delete = MagicMock(return_value=None)
+
+    with (
+        patch.object(svc, "get_firestore_client", return_value=mock_db),
+        patch.object(svc, "_on_user_removed", None),
+        patch.object(svc, "_write_audit", None),
+        patch(
+            "src.kene_api.services.user_deletion_service._resolve_member_rows",
+            side_effect=RuntimeError("index unavailable"),
+        ),
+    ):
+        result = await svc.delete_user_data("u_carol", actor=actor)
+
+    # step 1 error is recorded
+    assert any("discover_members" in e for e in result.errors)
+    assert any("index unavailable" in e for e in result.errors)
+    # empty refs → no members to delete, no hook calls
+    assert result.member_rows_deleted == 0
+    assert result.integrations_hook_fired == 0
+    # steps 4-5 still ran with empty org/account refs
+    assert result.user_doc_deleted is True
+    assert result.gcs_prefixes_purged == 0
+    # no audit because org_refs is empty after step-1 failure
+    mock_db.recursive_delete.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
 # (c) Single-step failure — step 4 (_purge_user_doc) raises
 # ---------------------------------------------------------------------------
 
