@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { ChevronsUpDown, Check, Building2, Settings } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
@@ -12,6 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import type { SelectedOrgAccount } from "@/contexts/AuthContext";
+import { useWorkspaceOptions } from "@/hooks/useWorkspaceOptions";
 import type { OrganizationId, AccountId } from "@/lib/branded-types";
 
 type AccountSwitcherProps = {
@@ -52,11 +54,34 @@ function OrgAvatar({ orgName, orgId, size = "sm" }: OrgAvatarProps) {
 export function AccountSwitcher({ compact = false }: AccountSwitcherProps) {
   const {
     selectedOrgAccount,
-    orgMetadata,
-    accountMetadata,
+    orgMetadata: ctxOrgMetadata,
+    accountMetadata: ctxAccountMetadata,
     setSelectedOrgAccount,
     setCurrentOrganization,
+    setOrgMetadata,
+    setAccountMetadata,
   } = useAuth();
+
+  // Live workspace data — replaces the stale localStorage snapshot that was
+  // only ever written during the /select-organization flow. Until the first
+  // fetch resolves, fall back to the context snapshot so the dropdown is never
+  // empty on initial paint.
+  const { data: workspaceOptions } = useWorkspaceOptions();
+  const orgMetadata = workspaceOptions?.orgMetadata ?? ctxOrgMetadata;
+  const accountMetadata =
+    workspaceOptions?.accountMetadata ?? ctxAccountMetadata;
+
+  // Push the fresh fetch back into AuthContext so every other consumer
+  // (org settings, entity selector, …) stops reading the stale snapshot.
+  useEffect(() => {
+    if (workspaceOptions) {
+      setOrgMetadata(workspaceOptions.orgMetadata);
+      setAccountMetadata(workspaceOptions.accountMetadata);
+    }
+    // Re-sync only when the fetched data changes; the context setters are
+    // recreated each render and would otherwise loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceOptions]);
 
   const accountsByOrg: Array<{
     orgId: string;

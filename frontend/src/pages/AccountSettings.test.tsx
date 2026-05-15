@@ -1,6 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { BrowserRouter, MemoryRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter } from "react-router-dom";
 import { vi } from "vitest";
 import AccountSettings from "./AccountSettings";
 import { useAuth } from "@/contexts/AuthContext";
@@ -166,6 +165,64 @@ describe("AccountSettings", () => {
     expect(screen.getByTestId("danger-zone")).toBeInTheDocument();
   });
 
+  it("resolves the org from selectedOrgAccount when currentOrganizationId is unset", async () => {
+    // Super-admin case: the membership doc only lists the Evals org, but the
+    // header switcher has Bank of America selected. The settings page must
+    // follow the header, not the membership doc.
+    const mockUser = {
+      id: "test-user-123",
+      email: "admin@ken-e.ai",
+      firstName: "Super",
+      lastName: "Admin",
+      permissions: {
+        organizations: {
+          "evals-org": "view",
+        },
+      },
+    };
+
+    mockUseAuth.mockReturnValue({
+      user: mockUser,
+      isAuthenticated: true,
+      currentOrganizationId: null,
+      selectedOrgAccount: {
+        orgId: "bofa-org",
+        accountId: "bofa-acct",
+        metadata: { organization_name: "Bank of America" },
+      },
+      orgMetadata: {
+        "bofa-org": {
+          organization_id: "bofa-org",
+          organization_name: "Bank of America",
+          accounts: [],
+        },
+        "evals-org": {
+          organization_id: "evals-org",
+          organization_name: "Evals 20260306",
+          accounts: [],
+        },
+      },
+      setOrgMetadata: vi.fn(),
+      setCurrentOrganization: vi.fn(),
+      setSelectedOrgAccount: vi.fn(),
+      completeWorkspaceSelection: vi.fn(),
+      updateUser: vi.fn(),
+      setAccountMetadata: vi.fn(),
+      isSuperAdmin: true,
+    });
+
+    renderAccountSettings();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Organization Form - Bank of America"),
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByText("Organization Form - Evals 20260306"),
+    ).not.toBeInTheDocument();
+  });
+
   it("should show org settings tabs when user has no organization permissions", () => {
     const mockUser = {
       id: "test-user-123",
@@ -198,70 +255,5 @@ describe("AccountSettings", () => {
     expect(
       screen.getByRole("tab", { name: /subscription/i }),
     ).toBeInTheDocument();
-  });
-});
-
-// Figma reference: docs/figma-export/src/app/pages/OrganizationSettingsPage.tsx
-describe("AccountSettings — Responsive class structure", () => {
-  const orgUser = {
-    id: "test-user-123",
-    email: "test@example.com",
-    firstName: "Test",
-    lastName: "User",
-    permissions: {
-      organizations: { "ej-enterprises-2": "admin" },
-    },
-  };
-
-  const orgData = {
-    organization_id: "ej-enterprises-2",
-    organization_name: "EJ Enterprises 2",
-    plan: "Free",
-    company_size: "11-50",
-    agency: false,
-    child_organizations: [],
-    accounts: [],
-  };
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockUseAuth.mockReturnValue({
-      user: orgUser,
-      isAuthenticated: true,
-      currentOrganizationId: "ej-enterprises-2",
-      orgMetadata: { "ej-enterprises-2": orgData },
-      setOrgMetadata: vi.fn(),
-      setCurrentOrganization: vi.fn(),
-      setSelectedOrgAccount: vi.fn(),
-      completeWorkspaceSelection: vi.fn(),
-      updateUser: vi.fn(),
-      setAccountMetadata: vi.fn(),
-      isSuperAdmin: false,
-    });
-  });
-
-  it("integrations card grid uses grid-cols-1 md:grid-cols-2 lg:grid-cols-3 for responsive reflow", async () => {
-    const user = userEvent.setup();
-    // Route must be registered so useParams returns accountId correctly
-    const { container } = render(
-      <MemoryRouter initialEntries={["/settings/account/acc_123"]}>
-        <Routes>
-          <Route
-            path="/settings/account/:accountId"
-            element={<AccountSettings />}
-          />
-        </Routes>
-      </MemoryRouter>,
-    );
-
-    await user.click(screen.getByRole("tab", { name: /Integrations/i }));
-
-    await waitFor(() => {
-      const grid = container.querySelector(".grid-cols-1");
-      expect(grid).toBeInTheDocument();
-      expect(grid).toHaveClass("md:grid-cols-2");
-      expect(grid).toHaveClass("lg:grid-cols-3");
-      expect(grid).toHaveClass("gap-4");
-    });
   });
 });

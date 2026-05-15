@@ -4,7 +4,16 @@ import userEvent from "@testing-library/user-event";
 import { BrowserRouter } from "react-router-dom";
 import { AccountSwitcher } from "./AccountSwitcher";
 import { AuthContext } from "@/contexts/AuthContext";
+import { useWorkspaceOptions } from "@/hooks/useWorkspaceOptions";
 import type { AccountId, OrganizationId } from "@/lib/branded-types";
+
+// The switcher fetches live workspace data via this hook; default it to
+// "not yet resolved" so most tests exercise the context-snapshot fallback.
+vi.mock("@/hooks/useWorkspaceOptions", () => ({
+  useWorkspaceOptions: vi.fn(() => ({ data: undefined })),
+}));
+
+const mockUseWorkspaceOptions = useWorkspaceOptions as ReturnType<typeof vi.fn>;
 
 const mockAuthContext = {
   user: {
@@ -77,6 +86,7 @@ const renderWithProviders = (contextOverrides = {}) => {
 describe("AccountSwitcher", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUseWorkspaceOptions.mockReturnValue({ data: undefined });
   });
 
   test("renders trigger with org/account name when selectedOrgAccount is non-null", () => {
@@ -132,5 +142,56 @@ describe("AccountSwitcher", () => {
 
     const checkIcons = document.querySelectorAll("svg.lucide-check");
     expect(checkIcons.length).toBeGreaterThan(0);
+  });
+
+  test("renders orgs/accounts from useWorkspaceOptions, not the stale context snapshot", async () => {
+    // Context holds only a single stale org; the live fetch resolves the full
+    // accessible set (the super-admin case from the bug report).
+    mockUseWorkspaceOptions.mockReturnValue({
+      data: {
+        orgMetadata: {
+          "org-1": { organization_name: "Acme Corp", plan: "pro" },
+          "org-2": { organization_name: "Globex Inc", plan: "pro" },
+        },
+        accountMetadata: {
+          "acct-1": {
+            account_name: "Main Account",
+            industry: "Tech",
+            organization_id: "org-1",
+          },
+          "acct-9": {
+            account_name: "Globex Account",
+            industry: "Energy",
+            organization_id: "org-2",
+          },
+        },
+      },
+    });
+
+    const user = userEvent.setup();
+    renderWithProviders();
+
+    await user.click(screen.getByRole("button"));
+
+    // org-2 / acct-9 exist only in the fetched data, never in context.
+    expect(await screen.findByText("Globex Inc")).toBeInTheDocument();
+    expect(screen.getByText("Globex Account")).toBeInTheDocument();
+  });
+
+  test("syncs fetched workspace data back into AuthContext", () => {
+    const setOrgMetadata = vi.fn();
+    const setAccountMetadata = vi.fn();
+    const data = {
+      orgMetadata: { "org-1": { organization_name: "Acme Corp" } },
+      accountMetadata: {
+        "acct-1": { account_name: "Main Account", organization_id: "org-1" },
+      },
+    };
+    mockUseWorkspaceOptions.mockReturnValue({ data });
+
+    renderWithProviders({ setOrgMetadata, setAccountMetadata });
+
+    expect(setOrgMetadata).toHaveBeenCalledWith(data.orgMetadata);
+    expect(setAccountMetadata).toHaveBeenCalledWith(data.accountMetadata);
   });
 });
