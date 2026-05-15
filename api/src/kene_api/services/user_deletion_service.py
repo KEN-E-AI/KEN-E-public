@@ -61,6 +61,19 @@ try:
 except ImportError:
     _write_audit = None  # type: ignore[assignment]
 
+# One-time startup signal so ops can distinguish "hook intentionally undeployed"
+# from "hook ran successfully zero times" in production logs.
+if _on_user_removed is None:
+    logger.warning(
+        "[user_deletion] _on_user_removed (IN-PRD-05) not yet deployed; "
+        "integrations_hook_fired will stay at 0 until the hook ships"
+    )
+if _write_audit is None:
+    logger.warning(
+        "[user_deletion] _write_audit (DM-PRD-07) not yet deployed; "
+        "audit entries will be skipped silently until the function ships"
+    )
+
 # ---------------------------------------------------------------------------
 # User-scoped Firestore subcollections
 #
@@ -211,9 +224,22 @@ async def _purge_gcs(
         try:
             storage = get_storage_service()
             delete_fn = getattr(storage, "delete_user_prefix", None)
-            if delete_fn is not None:
-                await delete_fn(prefix)
-                result.gcs_prefixes_purged += 1
+            if delete_fn is None:
+                # USER_GCS_PREFIXES has entries but the v1 StorageService doesn't
+                # implement delete_user_prefix — surface explicitly so this isn't
+                # a silent skip. (Today empty-registry guards above prevent this
+                # path; activates on the first user-scoped GCS prefix.)
+                logger.error(
+                    "[user_deletion] GCS prefix purge skipped — "
+                    "StorageService.delete_user_prefix not implemented prefix=%s",
+                    prefix,
+                )
+                result.errors.append(
+                    f"gcs_purge[{prefix}]: storage.delete_user_prefix not implemented"
+                )
+                continue
+            await delete_fn(prefix)
+            result.gcs_prefixes_purged += 1
         except Exception as exc:
             logger.exception(
                 "[user_deletion] GCS prefix purge failed prefix=%s", prefix
@@ -277,6 +303,15 @@ async def delete_user_data(
     the orchestrator never rolls back.  Re-running on an already-purged user
     is a no-op (counts stay at 0, user_doc_deleted=True).
 
+    **Caller contract for disambiguating zero-counts**: a counter at 0 paired
+    with a non-empty ``result.errors`` means the corresponding step failed,
+    not that no work was needed. Callers MUST check both ``result.errors``
+    AND the per-step counters to distinguish "step failed, refs/work
+    unknowable" from "step succeeded, no work to do". Step-level errors use
+    structured prefixes (``discover_members:``, ``integrations_hook[…]:``,
+    ``member_delete[…]:``, ``user_doc_purge:``, ``gcs_purge[…]:``) so the
+    failure mode is greppable.
+
     Args:
         user_id: The Firebase/Firestore user ID to purge.
         actor: The authenticated super-admin triggering the purge.
@@ -310,6 +345,11 @@ async def delete_user_data(
             "[user_deletion] step 1:discover_members failed user_id=%s", user_id
         )
         result.errors.append(f"discover_members: {exc}")
+        logger.warning(
+            "[user_deletion] step 1 failed — steps 2-3 will see empty refs and "
+            "report zero work done; check result.errors for details. user_id=%s",
+            user_id,
+        )
 
     # Step 2 — Fire on_user_removed hook per affected account (sequential).
     logger.info(
