@@ -171,13 +171,15 @@ class TestErrorsListIndependence:
 
 
 class TestUserSubcollectionsRegistry:
-    """AC-7: USER_SUBCOLLECTIONS is exactly the three-entry list from PRD §4.2."""
+    """AC-7: USER_SUBCOLLECTIONS is the canonical registry from PRD §4.2 + DM-52 additions."""
 
     def test_user_subcollections_exact(self) -> None:
         assert USER_SUBCOLLECTIONS == [
             "notification_status",
             "preferences",
             "chat_categories",
+            "notifications",
+            "security",
         ]
 
 
