@@ -4,20 +4,22 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { AccountSettingsTabs } from "./AccountSettingsTabs";
+import { AccountSettingsTabs, withPrimaryRegion } from "./AccountSettingsTabs";
 import { getAccountById, updateAccount } from "@/data/organizationApi";
-import { useAuth } from "@/contexts/AuthContext";
+import { useWorkspaceOptions } from "@/hooks/useWorkspaceOptions";
 import type { AccountId } from "@/lib/branded-types";
 
 vi.mock("@/data/organizationApi");
-vi.mock("@/contexts/AuthContext", () => ({ useAuth: vi.fn() }));
+vi.mock("@/hooks/useWorkspaceOptions", () => ({
+  useWorkspaceOptions: vi.fn(),
+}));
 vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: vi.fn() }),
 }));
 
 const mockGetAccountById = getAccountById as ReturnType<typeof vi.fn>;
 const mockUpdateAccount = updateAccount as ReturnType<typeof vi.fn>;
-const mockUseAuth = useAuth as ReturnType<typeof vi.fn>;
+const mockUseWorkspaceOptions = useWorkspaceOptions as ReturnType<typeof vi.fn>;
 
 const mockAccount = {
   account_id: "acc_1",
@@ -47,13 +49,33 @@ const renderTabs = () => {
   });
 };
 
+describe("withPrimaryRegion", () => {
+  it("replaces the primary region and preserves secondary regions", () => {
+    expect(withPrimaryRegion(["NA", "EMEA"], "JAPAC")).toEqual([
+      "JAPAC",
+      "EMEA",
+    ]);
+  });
+
+  it("does not duplicate when the new primary already exists as a secondary", () => {
+    expect(withPrimaryRegion(["NA", "EMEA"], "EMEA")).toEqual(["EMEA"]);
+  });
+
+  it("works from an empty region array", () => {
+    expect(withPrimaryRegion([], "NA")).toEqual(["NA"]);
+  });
+});
+
 describe("AccountSettingsTabs", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseAuth.mockReturnValue({
-      orgMetadata: {
-        org_1: { organization_name: "Bank of America" },
-        org_2: { organization_name: "Globex" },
+    mockUseWorkspaceOptions.mockReturnValue({
+      data: {
+        orgMetadata: {
+          org_1: { organization_name: "Bank of America" },
+          org_2: { organization_name: "Globex" },
+        },
+        accountMetadata: {},
       },
     });
   });

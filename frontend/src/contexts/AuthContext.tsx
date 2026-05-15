@@ -449,10 +449,14 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           }
           setSelectedOrgAccountState(parsedOrgAccount);
           // selectedOrgAccount is authoritative for the active workspace —
-          // realign currentOrganizationId to it so a previously drifted
-          // localStorage pair cannot survive a reload.
+          // realign currentOrganizationId to it, in both state and storage,
+          // so a previously drifted localStorage pair cannot survive a reload.
           if (parsedOrgAccount.orgId) {
             setCurrentOrganizationId(parsedOrgAccount.orgId);
+            localStorage.setItem(
+              "currentOrganizationId",
+              parsedOrgAccount.orgId,
+            );
           }
         } else {
           console.warn("Invalid savedOrgAccount structure:", parsedOrgAccount);

@@ -171,6 +171,12 @@ describe("AuthContext - setSelectedOrgAccount", () => {
     });
 
     expect(authContext.currentOrganizationId).toBe("org_fromaccount");
+    // The realigned value must also be persisted, so the drifted key cannot
+    // resurface on the next reload.
+    expect(localStorageMock.setItem).toHaveBeenCalledWith(
+      "currentOrganizationId",
+      "org_fromaccount",
+    );
   });
 
   test("setSelectedOrgAccount should clear context state when passed null", () => {

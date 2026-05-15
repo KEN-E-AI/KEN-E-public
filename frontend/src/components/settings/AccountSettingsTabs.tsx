@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useAuth } from "@/contexts/AuthContext";
+import { useWorkspaceOptions } from "@/hooks/useWorkspaceOptions";
 import { useToast } from "@/hooks/use-toast";
 import {
   getAccountById,
@@ -87,6 +87,17 @@ const toEditable = (account: Account): EditableAccount => ({
 const isActiveStatus = (status: string) => status.toLowerCase() === "active";
 
 /**
+ * Replaces the primary (index 0) region while preserving any secondary
+ * regions. The Customer Region surface is a single select, but the Account
+ * model stores `region` as an array — a plain `[value]` replacement would
+ * silently drop a multi-region account's other regions on save.
+ */
+export const withPrimaryRegion = (
+  regions: string[],
+  primary: string,
+): string[] => [primary, ...regions.slice(1).filter((r) => r !== primary)];
+
+/**
  * Wired account-settings view rendered for /settings/account[/{accountId}].
  *
  * Replaces the previous static Figma mockup: every field now loads from the
@@ -96,7 +107,9 @@ export function AccountSettingsTabs({ accountId }: AccountSettingsTabsProps) {
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { orgMetadata } = useAuth();
+  // Use the live workspace fetch — not the AuthContext snapshot — so the
+  // transfer-org list is complete for super admins.
+  const { data: workspaceOptions } = useWorkspaceOptions();
 
   const [activeTab, setActiveTab] = useState("general");
   const [form, setForm] = useState<EditableAccount | null>(null);
@@ -260,7 +273,7 @@ export function AccountSettingsTabs({ accountId }: AccountSettingsTabsProps) {
     deleteMutation.mutate();
   };
 
-  const transferOrgOptions = Object.entries(orgMetadata)
+  const transferOrgOptions = Object.entries(workspaceOptions?.orgMetadata ?? {})
     .filter(([orgId]) => orgId !== String(account.organization_id))
     .map(([orgId, org]) => ({
       orgId,
@@ -409,7 +422,9 @@ export function AccountSettingsTabs({ accountId }: AccountSettingsTabsProps) {
                 <Label htmlFor="customer-region">Customer Region</Label>
                 <Select
                   value={form.region[0] ?? ""}
-                  onValueChange={(value) => update("region", [value])}
+                  onValueChange={(value) =>
+                    update("region", withPrimaryRegion(form.region, value))
+                  }
                 >
                   <SelectTrigger id="customer-region" className="mt-1.5">
                     <SelectValue placeholder="Select region..." />
@@ -462,10 +477,9 @@ export function AccountSettingsTabs({ accountId }: AccountSettingsTabsProps) {
                           <span
                             className={
                               connected
-                                ? "text-xs text-[var(--color-success-text)]"
-                                : "text-xs text-[var(--color-error-text)]"
+                                ? "text-xs font-semibold text-[var(--color-success-text)]"
+                                : "text-xs font-semibold text-[var(--color-error-text)]"
                             }
-                            style={{ fontWeight: 600 }}
                           >
                             {connected ? "Connected" : "Not Connected"}
                           </span>
