@@ -15,7 +15,8 @@ CI grep enforcement of this contract is owned by DM-PRD-06 §4.2.  Until that
 ships, the contract is documentation-only; the module docstring establishes the
 convention so future authors see it at the file head.
 
-Orchestrator implementation lives in DM-52; endpoint wiring in DM-53.
+Orchestrator implementation + endpoint wiring land later in DM-PRD-05; this
+module ships the registry skeleton only.
 """
 
 from __future__ import annotations
@@ -29,7 +30,7 @@ from __future__ import annotations
 
 USER_SUBCOLLECTIONS: list[str] = [
     "notification_status",  # firestore_notification_repository.py
-    "preferences",  # firestore_notification_repository.py
+    "preferences",  # firestore_notification_repository.py + routers/users.py (default_preferences seed)
     "chat_categories",  # CH-PRD-03
 ]
 

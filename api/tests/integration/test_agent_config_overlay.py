@@ -1,13 +1,14 @@
-"""Integration tests for _load_merged helper and account-deletion agent_configs sweep.
+"""Integration tests for _load_merged helper and account-deletion recursive sweep.
 
 Two test classes (both emulator-only) + one always-runs schema parity test:
 
 * ``TestOverlayMerge`` — unit tests of ``_load_merged`` covering the four
   logical branches (global-only, overlay-only, both-present, neither-present)
   plus field-stripping and overlay-wins semantics.
-* ``TestAccountDeletionSweep`` — end-to-end test of the AC-15 interim sweep
-  block in ``DELETE /api/v1/accounts/{account_id}``; verifies Firestore docs
-  are removed and the response reports the correct count.
+* ``TestAccountDeletionSweep`` — end-to-end test of the recursive_delete
+  sweep in ``DELETE /api/v1/accounts/{account_id}``; verifies per-account
+  Firestore subcollections (including agent_configs) are removed and global
+  collections at the root level are untouched.
 * ``test_merged_agent_config_api_model_field_parity`` — schema parity guard
   (runs always, no emulator needed).
 
@@ -19,7 +20,7 @@ Enable emulator tests:
     pytest api/tests/integration/test_agent_config_overlay.py -v
 
 Acceptance criteria covered:
-  AH-PRD-02 §7 / AC-15 (account-deletion agent_configs sweep)
+  DM-PRD-05 (account-deletion recursive_delete sweep)
   AH-PRD-02 §6 / AC-11 merge semantics (_load_merged helper)
 """
 

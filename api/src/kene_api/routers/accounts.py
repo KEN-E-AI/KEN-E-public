@@ -970,11 +970,10 @@ async def delete_account(
             )
             cleanup_results["cleanup_errors"].append(f"GCS cleanup failed: {e}")
 
-        # Recursively delete all Firestore data under accounts/{account_id}
-        # (covers every Shape B subcollection — strategy_docs, strategy_audit,
-        # agent_analytics, cost_aggregations, performance_profiles,
-        # monitoring_topics, alert_configurations, agent_configs, members,
-        # audit subcollections, and any future subcollection added under Shape B)
+        # Recursively delete all Firestore data under accounts/{account_id}.
+        # Covers every Shape B subcollection that exists under the account
+        # document (today: strategy_docs, strategy_audit, monitoring_topics,
+        # agent_configs) and every Shape B subcollection added in future PRDs.
         try:
             firestore_db = firestore.get_client()
             logger.info(f"recursive_delete started for accounts/{account_id}")
