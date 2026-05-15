@@ -6,9 +6,25 @@ the service class and is_feature_enabled helper are appended by FF-4 and FF-5
 respectively.
 """
 
+import asyncio
 import hashlib
+import logging
+import time
+from collections.abc import Callable
+from dataclasses import dataclass
+
+from google.cloud import firestore
 
 from ..models.feature_flag_models import EvaluationContext, FeatureFlag, FlagEvaluation
+
+logger = logging.getLogger(__name__)
+
+# TTL for in-process flag config cache entries (seconds). Exported so downstream
+# modules (FF-5 helper, tests) can reference the authoritative constant.
+TTL_SECONDS: float = 60.0
+
+# Hard ceiling on cache entries — defence against runaway key generation.
+MAX_CACHE_ENTRIES: int = 10_000
 
 
 def hash_bucket(flag_key: str, entity_id: str) -> int:
@@ -84,3 +100,135 @@ def evaluate(flag: FeatureFlag, ctx: EvaluationContext) -> FlagEvaluation:
             return FlagEvaluation(key=flag.key, enabled=True, reason="rollout")
 
     return FlagEvaluation(key=flag.key, enabled=flag.default_enabled, reason="default")
+
+
+# ---------------------------------------------------------------------------
+# FF-4: FeatureFlagService — Firestore I/O + in-process TTL cache
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _CacheEntry:
+    """Holds a resolved flag config (or None for a confirmed absent doc) with expiry."""
+
+    flag: FeatureFlag | None
+    expires_at: float
+
+
+class FeatureFlagService:
+    """Resolves and evaluates feature flags with a 60 s in-process TTL cache.
+
+    The cache is keyed by flag_key (not by user) and holds the FeatureFlag
+    config document. Unknown keys (doc absent) are also cached for the same
+    TTL so repeated absent-key lookups do not thunder Firestore.
+
+    Transient Firestore errors (transport failures, timeouts) are NOT cached —
+    a subsequent call retries the read on the next request so a brief blip
+    does not pin a flag as unknown for 60 s.
+
+    Every Cloud Run instance owns its own cache; kill-switch propagation is
+    bounded by TTL per instance (≤60 s SLO, README §7.4).
+    """
+
+    def __init__(
+        self,
+        db: firestore.Client,
+        time_provider: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._db = db
+        self._time_provider = time_provider
+        self._cache: dict[str, _CacheEntry] = {}
+
+    async def evaluate_batch(
+        self,
+        flag_keys: list[str],
+        ctx: EvaluationContext,
+    ) -> dict[str, FlagEvaluation]:
+        """Evaluate a batch of flags for the given evaluation context.
+
+        Returns one FlagEvaluation per requested key. Never raises for normal
+        flow (unknown flags, transient Firestore errors). Cold-cache reads are
+        issued in parallel via asyncio.gather.
+        """
+        now = self._time_provider()
+
+        # Separate warm (cache hit) from cold (need Firestore) keys.
+        cold_keys: list[str] = []
+        for key in flag_keys:
+            entry = self._cache.get(key)
+            if entry is None or entry.expires_at <= now:
+                cold_keys.append(key)
+
+        # Fetch cold keys in parallel; return_exceptions=True so a single
+        # Firestore error doesn't abort the whole batch.
+        if cold_keys:
+            fetch_results = await asyncio.gather(
+                *[self._fetch_flag(k) for k in cold_keys],
+                return_exceptions=True,
+            )
+            now = self._time_provider()
+            for key, result in zip(cold_keys, fetch_results, strict=True):
+                if isinstance(result, Exception):
+                    # Transient error — log type only (no exc_info to avoid serialising
+                    # Firestore document contents or gRPC internals into Cloud Logging).
+                    # Do NOT cache so the next call retries.
+                    logger.error(
+                        "feature_flag_fetch_error",
+                        extra={"flag_key": key, "error_type": type(result).__name__},
+                    )
+                else:
+                    # result is FeatureFlag | None; cache both (None = confirmed miss).
+                    self._install_cache(key, result, now)
+
+        # Build response dict — use the same `now` captured after the gather so
+        # freshly-installed entries (expires_at = now + TTL_SECONDS) are never
+        # incorrectly treated as expired on this same call.
+        evaluations: dict[str, FlagEvaluation] = {}
+        for key in flag_keys:
+            entry = self._cache.get(key)
+            if entry is None or entry.expires_at <= now:
+                # Still no entry after fetch attempt — was a transient error.
+                evaluations[key] = FlagEvaluation(
+                    key=key, enabled=False, reason="unknown_flag"
+                )
+            elif entry.flag is None:
+                # Confirmed doc-absent (cached miss).
+                evaluations[key] = FlagEvaluation(
+                    key=key, enabled=False, reason="unknown_flag"
+                )
+            else:
+                evaluations[key] = evaluate(entry.flag, ctx)
+        return evaluations
+
+    def _install_cache(
+        self,
+        flag_key: str,
+        flag: FeatureFlag | None,
+        now: float,
+    ) -> None:
+        """Write a (possibly None) flag into the cache with FIFO eviction."""
+        if len(self._cache) >= MAX_CACHE_ENTRIES and flag_key not in self._cache:
+            # Evict the oldest entry (insertion-ordered dict, O(1)).
+            oldest = next(iter(self._cache))
+            del self._cache[oldest]
+        self._cache[flag_key] = _CacheEntry(flag=flag, expires_at=now + TTL_SECONDS)
+
+    async def _fetch_flag(self, flag_key: str) -> FeatureFlag | None:
+        """Fetch a single flag document from Firestore.
+
+        Returns:
+            FeatureFlag if the doc exists and is valid.
+            None if the doc does not exist (confirmed miss — caller should cache).
+
+        Raises:
+            Any exception from Firestore or Pydantic validation — caller uses
+            return_exceptions=True in asyncio.gather and must NOT cache the result.
+        """
+        doc = await asyncio.to_thread(
+            self._db.collection("feature_flags").document(flag_key).get
+        )
+        if not doc.exists:
+            return None
+        # Merge the document-ID as the canonical key so a body/ID mismatch is
+        # corrected at read time (PRD §4, Decisions & Assumptions).
+        return FeatureFlag.model_validate(doc.to_dict() | {"key": flag_key})
