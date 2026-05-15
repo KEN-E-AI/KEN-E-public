@@ -178,6 +178,19 @@ describe("AccountSwitcher", () => {
     expect(screen.getByText("Globex Account")).toBeInTheDocument();
   });
 
+  test("renders a 'Switch workspace' link to the workspace picker", async () => {
+    const user = userEvent.setup();
+    renderWithProviders();
+
+    await user.click(screen.getByRole("button"));
+
+    // DropdownMenuItem `asChild` applies role="menuitem" onto the <Link>.
+    const link = await screen.findByRole("menuitem", {
+      name: /switch workspace/i,
+    });
+    expect(link).toHaveAttribute("href", "/select-organization?switch=true");
+  });
+
   test("syncs fetched workspace data back into AuthContext", () => {
     const setOrgMetadata = vi.fn();
     const setAccountMetadata = vi.fn();
