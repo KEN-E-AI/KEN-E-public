@@ -4,7 +4,10 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { AccountSettingsTabs, withPrimaryRegion } from "./AccountSettingsTabs";
+import {
+  AccountSettingsTabs,
+  toggleCustomerRegion,
+} from "./AccountSettingsTabs";
 import { getAccountById, updateAccount } from "@/data/organizationApi";
 import { useWorkspaceOptions } from "@/hooks/useWorkspaceOptions";
 import type { AccountId } from "@/lib/branded-types";
@@ -49,20 +52,29 @@ const renderTabs = () => {
   });
 };
 
-describe("withPrimaryRegion", () => {
-  it("replaces the primary region and preserves secondary regions", () => {
-    expect(withPrimaryRegion(["NA", "EMEA"], "JAPAC")).toEqual([
-      "JAPAC",
-      "EMEA",
-    ]);
+describe("toggleCustomerRegion", () => {
+  it("adds a region that is not yet selected", () => {
+    expect(toggleCustomerRegion(["NA"], "EMEA")).toEqual(["NA", "EMEA"]);
   });
 
-  it("does not duplicate when the new primary already exists as a secondary", () => {
-    expect(withPrimaryRegion(["NA", "EMEA"], "EMEA")).toEqual(["EMEA"]);
+  it("removes a region that is already selected", () => {
+    expect(toggleCustomerRegion(["NA", "EMEA"], "NA")).toEqual(["EMEA"]);
+  });
+
+  it("selecting Global clears the specific regions", () => {
+    expect(toggleCustomerRegion(["NA", "EMEA"], "Global")).toEqual(["Global"]);
+  });
+
+  it("selecting a specific region clears Global", () => {
+    expect(toggleCustomerRegion(["Global"], "NA")).toEqual(["NA"]);
+  });
+
+  it("toggling Global off empties the selection", () => {
+    expect(toggleCustomerRegion(["Global"], "Global")).toEqual([]);
   });
 
   it("works from an empty region array", () => {
-    expect(withPrimaryRegion([], "NA")).toEqual(["NA"]);
+    expect(toggleCustomerRegion([], "NA")).toEqual(["NA"]);
   });
 });
 
@@ -132,6 +144,34 @@ describe("AccountSettingsTabs", () => {
     await user.type(nameInput, "X");
 
     expect(saveButton).toBeEnabled();
+  });
+
+  it("shows the organization name and account name in the page header", async () => {
+    mockGetAccountById.mockResolvedValue(mockAccount);
+
+    renderTabs();
+
+    await screen.findByLabelText("Account Name");
+    // Org name resolves from the workspace-options orgMetadata.
+    expect(screen.getByText("Bank of America")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Bank of America Brand" }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders each persisted customer region as a chip", async () => {
+    mockGetAccountById.mockResolvedValue({
+      ...mockAccount,
+      region: ["NA", "EMEA"],
+    });
+
+    renderTabs();
+
+    await screen.findByLabelText("Account Name");
+    expect(screen.getByText("North America")).toBeInTheDocument();
+    expect(
+      screen.getByText("Europe, Middle East & Africa"),
+    ).toBeInTheDocument();
   });
 
   it("shows an error state when the account cannot be loaded", async () => {

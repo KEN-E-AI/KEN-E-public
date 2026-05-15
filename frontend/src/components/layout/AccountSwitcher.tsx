@@ -1,5 +1,11 @@
 import { useEffect } from "react";
-import { ChevronsUpDown, Check, Building2, Settings } from "lucide-react";
+import {
+  ChevronsUpDown,
+  Check,
+  Building2,
+  Settings,
+  ArrowLeftRight,
+} from "lucide-react";
 import { Link } from "react-router-dom";
 import {
   DropdownMenu,
@@ -255,6 +261,17 @@ export function AccountSwitcher({ compact = false }: AccountSwitcherProps) {
         <DropdownMenuSeparator className="m-0" />
 
         <div className="py-1.5">
+          <DropdownMenuItem asChild>
+            <Link
+              to="/select-organization?switch=true"
+              className="flex items-center gap-2.5 px-4 py-2.5 cursor-pointer rounded-none text-[var(--color-text-secondary)]"
+            >
+              <ArrowLeftRight className="size-4" />
+              <span className="text-[var(--text-body-sm)]">
+                Switch workspace
+              </span>
+            </Link>
+          </DropdownMenuItem>
           <DropdownMenuItem asChild>
             <Link
               to="/settings/organization"
