@@ -25,6 +25,7 @@ from pydantic import BaseModel, Field
 
 from ..auth import UserContext
 from ..auth.dependencies import get_user_context_for_polling
+from ..auth.models import SUPER_ADMIN_ROLE
 from ..auth.user_context import get_current_user_context
 from ..bigquery import BigQueryService, get_bigquery_service
 
@@ -1327,9 +1328,9 @@ async def grant_account_access(
         target_permissions = target_user_doc.get("permissions", {})
         target_org_permissions = target_permissions.get("organizations", {})
 
-        # Check if target user is a super admin
-        target_email = target_user_doc.get("profile", {}).get("email", "")
-        if target_email.lower().endswith("@ken-e.ai"):
+        # Super admins are protected from permission edits — keyed on the
+        # explicit super_admin role, not the email domain (DM-81).
+        if SUPER_ADMIN_ROLE in target_user_doc.get("roles", []):
             raise HTTPException(
                 status_code=403,
                 detail="Cannot modify permissions for KEN-E support team members",
@@ -1446,9 +1447,9 @@ async def revoke_account_access(
             target_permissions = target_user_doc.get("permissions", {})
             target_org_permissions = target_permissions.get("organizations", {})
 
-            # Check if target user is a super admin
-            target_email = target_user_doc.get("profile", {}).get("email", "")
-            if target_email.lower().endswith("@ken-e.ai"):
+            # Super admins are protected from permission edits — keyed on the
+            # explicit super_admin role, not the email domain (DM-81).
+            if SUPER_ADMIN_ROLE in target_user_doc.get("roles", []):
                 raise HTTPException(
                     status_code=403,
                     detail="Cannot modify permissions for KEN-E support team members",
