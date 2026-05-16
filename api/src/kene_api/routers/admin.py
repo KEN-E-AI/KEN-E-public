@@ -186,6 +186,11 @@ async def revoke_super_admin(
             detail=f"User {uid} is not a super admin",
         )
 
+    # Last-admin guard. This count-then-remove is not atomic: two concurrent
+    # revokes of different admins could each observe >1 and both proceed,
+    # reaching zero super admins. Very unlikely on a human-driven admin
+    # endpoint, and recovery is just re-running the bootstrap migration —
+    # make this a Firestore transaction if the race ever needs to be airtight.
     if len(current_uids) <= 1:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
