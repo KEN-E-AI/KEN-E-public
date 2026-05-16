@@ -33,8 +33,51 @@ class TestUserContext:
             email="ADMIN@KEN-E.AI",
             organization_permissions={},
             account_permissions={},
+            email_verified=True,
         )
         assert user.is_super_admin is True
+
+    def test_is_super_admin_requires_verified_email(self):
+        """A @ken-e.ai email with an unverified address is NOT a super admin.
+
+        Firebase email/password signup is open, so an attacker can register an
+        unused @ken-e.ai address and obtain a valid ID token without ever
+        controlling the mailbox. Super-admin status must additionally require a
+        verified email — which only the real KEN-E Workspace mailbox can prove.
+        """
+        user = UserContext(
+            user_id="123",
+            email="attacker@ken-e.ai",
+            organization_permissions={},
+            account_permissions={},
+            email_verified=False,
+        )
+        assert user.is_super_admin is False
+
+    def test_is_super_admin_verified_ken_e_email(self):
+        """A verified @ken-e.ai email IS a super admin."""
+        user = UserContext(
+            user_id="123",
+            email="staff@ken-e.ai",
+            organization_permissions={},
+            account_permissions={},
+            email_verified=True,
+        )
+        assert user.is_super_admin is True
+
+    def test_unverified_ken_e_email_has_no_super_admin_privileges(self):
+        """Methods that branch on super-admin must deny an unverified @ken-e.ai user."""
+        user = UserContext(
+            user_id="123",
+            email="attacker@ken-e.ai",
+            organization_permissions={},
+            account_permissions={},
+            email_verified=False,
+        )
+        assert user.has_account_permission("acc123", "org456", "edit") is False
+        assert user.has_organization_permission("org123", "admin") is False
+        assert user.get_effective_organization_role("any_org") is None
+        assert user.get_effective_account_role("any_acc", "any_org") is None
 
     def test_has_account_permission_super_admin(self):
         """Test super admin has access to any account."""

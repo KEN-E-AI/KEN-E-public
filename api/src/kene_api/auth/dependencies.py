@@ -47,12 +47,15 @@ async def get_current_user_optional(
         user_ref = firestore_db.collection("users").document(decoded_token["uid"])
         user_doc = user_ref.get()
 
-        # Build user context
+        # Build user context. email_verified is threaded from the verified
+        # token so super-admin status cannot rest on an unverified @ken-e.ai
+        # address (see UserContext.is_super_admin).
         user_context = UserContext(
             user_id=decoded_token["uid"],
             email=decoded_token.get("email", ""),
             organization_permissions={},
             account_permissions={},
+            email_verified=bool(decoded_token.get("email_verified", False)),
         )
 
         # Add permissions from user document if it exists

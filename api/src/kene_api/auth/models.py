@@ -13,11 +13,20 @@ class UserContext:
     account_permissions: dict[str, str] = field(
         default_factory=dict
     )  # account_id -> edit|view
+    # Whether the Firebase token's email address was verified. Production auth
+    # paths MUST pass the real value from the decoded token; the True default
+    # exists only for test/script construction. Super-admin status requires it.
+    email_verified: bool = True
 
     @property
     def is_super_admin(self) -> bool:
-        """Check if user is a super admin (KEN-E support team member)."""
-        return self.email.lower().endswith("@ken-e.ai")
+        """Check if user is a super admin (KEN-E support team member).
+
+        Requires BOTH an @ken-e.ai email AND a verified email address. Firebase
+        email/password signup is open, so an unverified @ken-e.ai address proves
+        nothing about who controls the mailbox — only a verified address does.
+        """
+        return self.email_verified and self.email.lower().endswith("@ken-e.ai")
 
     @property
     def accessible_accounts(self) -> list[str]:

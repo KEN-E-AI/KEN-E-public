@@ -72,8 +72,13 @@ class TestAuthPermissionFlow:
     @pytest.mark.asyncio
     async def test_super_admin_detection(self):
         """Test that super admin (@ken-e.ai) is correctly identified."""
-        # Setup: Super admin token
-        mock_token = {"uid": "admin_user_123", "email": "admin@ken-e.ai"}
+        # Setup: Super admin token. A real KEN-E staff member signs in with a
+        # verified @ken-e.ai mailbox — super-admin status now requires that.
+        mock_token = {
+            "uid": "admin_user_123",
+            "email": "admin@ken-e.ai",
+            "email_verified": True,
+        }
 
         # Setup: Mock Firestore (super admin doesn't need permissions in DB)
         mock_firestore = MagicMock()
