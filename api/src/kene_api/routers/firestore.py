@@ -22,6 +22,46 @@ ACCOUNT_ID_VALIDATION_DESCRIPTION = "Account ID for validation"
 DOCUMENT_NOT_FOUND_MESSAGE = "Document not found"
 
 
+def _reject_protected_user_field_write(collection: str, data: dict[str, Any]) -> None:
+    """Refuse client writes that would set the privileged ``roles`` field.
+
+    ``roles`` on a ``users/{uid}`` document carries super-admin status and is
+    writable only by the server-side admin endpoints
+    (``POST``/``DELETE /api/v1/admin/super-admins``). Letting this generic
+    endpoint write it would rebuild the DM-80 escalation hole — a caller could
+    grant themselves ``roles: ["super_admin"]``. Covers both a direct top-level
+    ``roles`` key and an operator-mode write (arrayUnion / replaceOne / set)
+    targeting the ``roles`` field.
+
+    Args:
+        collection: Target Firestore collection.
+        data: The write payload (direct map, or wrapped in ``update``).
+
+    Raises:
+        HTTPException: 403 if the write touches ``roles`` on a user document.
+    """
+    if collection != "users":
+        return
+
+    touched_fields: list[str] = []
+    update_config = data.get("update")
+    if isinstance(update_config, dict) and update_config.get("operator"):
+        field = update_config.get("field")
+        if isinstance(field, str):
+            touched_fields.append(field)
+    else:
+        touched_fields.extend(key for key in data if isinstance(key, str))
+
+    if any(f == "roles" or f.startswith("roles.") for f in touched_fields):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "The 'roles' field on a user document cannot be modified via "
+                "this endpoint; use the super-admin admin API"
+            ),
+        )
+
+
 # Pydantic models for Firestore operations
 
 
@@ -335,6 +375,9 @@ async def create_document(
     ```
     """
     try:
+        # Reject privileged-field escalation before touching Firestore.
+        _reject_protected_user_field_write(request.collection, request.data)
+
         # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
@@ -479,6 +522,9 @@ async def update_document(
     ```
     """
     try:
+        # Reject privileged-field escalation before touching Firestore.
+        _reject_protected_user_field_write(collection, data)
+
         # First validate the request payload structure before checking Firestore
         if "update" in data and isinstance(data["update"], dict):
             update_config = data["update"]

@@ -118,6 +118,36 @@ async def get_current_user(
     return user
 
 
+async def require_super_admin(
+    user: UserContext = Depends(get_current_user),
+) -> UserContext:
+    """
+    FastAPI dependency that requires the caller to hold the super_admin role.
+
+    Raises 401 if the request is unauthenticated, 403 if it is authenticated
+    but the user has not been granted the role.
+
+    Args:
+        user: Authenticated user context
+
+    Returns:
+        UserContext: The authenticated super-admin user
+
+    Raises:
+        HTTPException: 403 if the user is not a super admin
+    """
+    if not user.is_super_admin:
+        logger.warning(
+            f"Super-admin endpoint denied for user {user.user_id} ({user.email})"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Super-admin privileges required",
+        )
+
+    return user
+
+
 def require_account_access(
     user: UserContext,
     account_id: str,

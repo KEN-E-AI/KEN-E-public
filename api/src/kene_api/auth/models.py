@@ -2,6 +2,11 @@
 
 from dataclasses import dataclass, field
 
+# The role string that confers super-admin privileges. Single source of truth
+# shared by UserContext.is_super_admin, the admin endpoints, and the bootstrap
+# migration — never compare against the literal elsewhere.
+SUPER_ADMIN_ROLE = "super_admin"
+
 
 @dataclass
 class UserContext:
@@ -28,7 +33,7 @@ class UserContext:
         ``@ken-e.ai`` email-domain check was removed — an email string is not
         an authorization decision, and Firebase signup is open.
         """
-        return "super_admin" in self.roles
+        return SUPER_ADMIN_ROLE in self.roles
 
     @property
     def accessible_accounts(self) -> list[str]:
