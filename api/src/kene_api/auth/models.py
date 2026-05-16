@@ -13,20 +13,22 @@ class UserContext:
     account_permissions: dict[str, str] = field(
         default_factory=dict
     )  # account_id -> edit|view
-    # Whether the Firebase token's email address was verified. Production auth
-    # paths MUST pass the real value from the decoded token; the True default
-    # exists only for test/script construction. Super-admin status requires it.
-    email_verified: bool = True
+    # Explicit role grants stored on the users/{uid} Firestore doc. Super-admin
+    # status derives solely from membership here (see is_super_admin). Only
+    # server-side admin endpoints may write this field — every client write
+    # path to users/{uid} must reject a client-supplied `roles`.
+    roles: list[str] = field(default_factory=list)
 
     @property
     def is_super_admin(self) -> bool:
         """Check if user is a super admin (KEN-E support team member).
 
-        Requires BOTH an @ken-e.ai email AND a verified email address. Firebase
-        email/password signup is open, so an unverified @ken-e.ai address proves
-        nothing about who controls the mailbox — only a verified address does.
+        Derives solely from an explicit ``super_admin`` role grant on the
+        user's Firestore doc, keyed on the immutable Firebase uid. The former
+        ``@ken-e.ai`` email-domain check was removed — an email string is not
+        an authorization decision, and Firebase signup is open.
         """
-        return self.email_verified and self.email.lower().endswith("@ken-e.ai")
+        return "super_admin" in self.roles
 
     @property
     def accessible_accounts(self) -> list[str]:

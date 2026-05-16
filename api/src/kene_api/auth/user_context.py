@@ -208,7 +208,6 @@ async def _get_or_create_user_document(
 def _build_user_context_from_data(
     user_id: str,
     email: str,
-    email_verified: bool,
     user_data: dict[str, Any],
 ) -> UserContext:
     """Build UserContext from user data.
@@ -216,7 +215,6 @@ def _build_user_context_from_data(
     Args:
         user_id: User ID
         email: User email
-        email_verified: Whether the Firebase token's email was verified
         user_data: User data from Firestore
 
     Returns:
@@ -225,13 +223,14 @@ def _build_user_context_from_data(
     permissions = user_data.get("permissions", {})
     organization_permissions = permissions.get("organizations", {})
     account_permissions = permissions.get("account_permissions", {})
+    roles = user_data.get("roles", [])
 
     return UserContext(
         user_id=user_id,
         email=email,
         organization_permissions=organization_permissions,
         account_permissions=account_permissions,
-        email_verified=email_verified,
+        roles=roles,
     )
 
 
@@ -283,28 +282,6 @@ async def _get_user_context_with_limiter(
                 duration_ms=(time.time() - t0) * 1000,
             ),
         )
-
-        # Super-admin status requires a verified email (see UserContext).
-        # Firebase email/password signup is open, so an *unverified* @ken-e.ai
-        # address proves nothing about who controls it — flag it for detection.
-        email_verified = bool(decoded_token.get("email_verified", False))
-        if email.lower().endswith("@ken-e.ai") and not email_verified:
-            logger.warning(
-                "Unverified @ken-e.ai email presented a valid token; "
-                "super-admin status withheld"
-            )
-            await audit_logger.log_event(
-                event_type=SecurityEventType.SUSPICIOUS_ACTIVITY,
-                user_id=user_id,
-                email=email,
-                ip_address=client_ip,
-                user_agent=user_agent,
-                details={
-                    "reason": "unverified_ken_e_email",
-                    "action": "super_admin_withheld",
-                },
-                severity="WARNING",
-            )
 
         # Apply rate limiting to every authenticated request. Super admins are
         # NOT exempt — exempting them removed the brute-force ceiling on the
@@ -359,9 +336,7 @@ async def _get_user_context_with_limiter(
     )
 
     # Build user context from data
-    user_context = _build_user_context_from_data(
-        user_id, email, email_verified, user_data
-    )
+    user_context = _build_user_context_from_data(user_id, email, user_data)
 
     # Cache the user context
     cached_user_service.set_user_context(user_context)

@@ -210,6 +210,7 @@ class TestGetCurrentUserContext:
                 "accounts": {},
                 "organizations": {},
             },
+            "roles": ["super_admin"],
         }
 
         mock_firestore_client.collection.return_value = mock_collection

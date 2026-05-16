@@ -97,6 +97,7 @@ def _super_admin_user() -> UserContext:
         email="ops@ken-e.ai",
         organization_permissions={},
         account_permissions={},
+        roles=["super_admin"],
     )
 
 
