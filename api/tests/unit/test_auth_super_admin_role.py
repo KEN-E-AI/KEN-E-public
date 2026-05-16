@@ -1,13 +1,14 @@
-"""Security tests: super-admin status requires a verified email.
+"""Security tests: super-admin status derives only from an explicit role.
 
-Firebase email/password signup is enabled, so anyone can register an unused
-``@ken-e.ai`` address and receive a valid ID token without ever controlling the
-mailbox. These tests lock in two defences:
+Super-admin is no longer inferred from an ``@ken-e.ai`` email. It is granted
+explicitly by writing ``"super_admin"`` into the ``roles`` array on the user's
+``users/{uid}`` Firestore doc, keyed on the immutable Firebase uid. These tests
+lock in:
 
-* ``UserContext.is_super_admin`` (and everything that branches on it) requires
-  ``email_verified`` to be true.
-* The auth flow applies rate limiting to every authenticated request — super
-  admins are no longer exempt.
+* ``UserContext.is_super_admin`` is true iff ``"super_admin"`` is in ``roles``.
+* The auth flow threads ``roles`` from the user doc into the context.
+* The Redis cache round-trips ``roles`` and invalidates pre-deploy entries.
+* Rate limiting applies to every authenticated request — super admins included.
 """
 
 from unittest import mock
@@ -22,30 +23,92 @@ from src.kene_api.auth.user_context import (
 )
 
 
-class TestBuildUserContextThreadsEmailVerified:
-    """``_build_user_context_from_data`` must carry the token's verified flag."""
+class TestIsSuperAdminDerivesFromRoles:
+    """``is_super_admin`` reads the roles array and nothing else."""
 
-    def test_unverified_ken_e_email_is_not_super_admin(self):
-        context = _build_user_context_from_data(
-            "user123",
-            "attacker@ken-e.ai",
-            False,  # email_verified
-            {"permissions": {"organizations": {}, "account_permissions": {}}},
+    def test_super_admin_role_grants_status(self):
+        context = UserContext(
+            user_id="u1",
+            email="staff@example.com",
+            organization_permissions={},
+            account_permissions={},
+            roles=["super_admin"],
         )
 
-        assert context.email_verified is False
+        assert context.is_super_admin is True
+
+    def test_empty_roles_is_not_super_admin(self):
+        context = UserContext(
+            user_id="u1",
+            email="staff@example.com",
+            organization_permissions={},
+            account_permissions={},
+        )
+
         assert context.is_super_admin is False
 
-    def test_verified_ken_e_email_is_super_admin(self):
+    def test_ken_e_email_without_role_is_not_super_admin(self):
+        """An @ken-e.ai email no longer confers super-admin on its own."""
+        context = UserContext(
+            user_id="u1",
+            email="staff@ken-e.ai",
+            organization_permissions={},
+            account_permissions={},
+        )
+
+        assert context.is_super_admin is False
+
+    def test_other_roles_do_not_confer_super_admin(self):
+        context = UserContext(
+            user_id="u1",
+            email="staff@example.com",
+            organization_permissions={},
+            account_permissions={},
+            roles=["billing_admin", "viewer"],
+        )
+
+        assert context.is_super_admin is False
+
+    def test_no_role_denies_privileged_methods(self):
+        """Methods that branch on super-admin must deny a user with no role."""
+        user = UserContext(
+            user_id="u1",
+            email="staff@ken-e.ai",
+            organization_permissions={},
+            account_permissions={},
+        )
+
+        assert user.has_account_permission("acc123", "org456", "edit") is False
+        assert user.has_organization_permission("org123", "admin") is False
+        assert user.get_effective_organization_role("any_org") is None
+        assert user.get_effective_account_role("any_acc", "any_org") is None
+
+
+class TestBuildUserContextThreadsRoles:
+    """``_build_user_context_from_data`` must carry the doc's roles array."""
+
+    def test_roles_threaded_from_user_data(self):
         context = _build_user_context_from_data(
             "user123",
-            "staff@ken-e.ai",
-            True,  # email_verified
+            "staff@example.com",
+            {
+                "permissions": {"organizations": {}, "account_permissions": {}},
+                "roles": ["super_admin"],
+            },
+        )
+
+        assert context.roles == ["super_admin"]
+        assert context.is_super_admin is True
+
+    def test_missing_roles_defaults_to_empty(self):
+        context = _build_user_context_from_data(
+            "user123",
+            "staff@example.com",
             {"permissions": {"organizations": {}, "account_permissions": {}}},
         )
 
-        assert context.email_verified is True
-        assert context.is_super_admin is True
+        assert context.roles == []
+        assert context.is_super_admin is False
 
 
 def _make_request() -> mock.Mock:
@@ -57,13 +120,14 @@ def _make_request() -> mock.Mock:
     return request
 
 
-def _make_firestore_service(email: str) -> mock.Mock:
+def _make_firestore_service(email: str, roles: list[str] | None = None) -> mock.Mock:
     user_doc = mock.Mock()
     user_doc.exists = True
     user_doc.to_dict.return_value = {
         "uid": "admin123",
         "email": email,
         "permissions": {"organizations": {}, "account_permissions": {}},
+        "roles": roles or [],
     }
     client = mock.Mock()
     client.collection.return_value.document.return_value.get.return_value = user_doc
@@ -74,13 +138,15 @@ def _make_firestore_service(email: str) -> mock.Mock:
 
 @pytest.mark.asyncio
 class TestSuperAdminIsRateLimited:
-    """Super admins are no longer exempt from rate limiting."""
+    """Super admins are not exempt from rate limiting."""
 
-    async def test_rate_limiting_applied_for_ken_e_email(self):
+    async def test_rate_limiting_applied_for_super_admin(self):
         credentials = HTTPAuthorizationCredentials(
             scheme="Bearer", credentials="valid-token"
         )
-        firestore_service = _make_firestore_service("admin@ken-e.ai")
+        firestore_service = _make_firestore_service(
+            "admin@example.com", roles=["super_admin"]
+        )
 
         with (
             mock.patch(
@@ -100,9 +166,9 @@ class TestSuperAdminIsRateLimited:
             ) as mock_get_cached,
         ):
             mock_verify.return_value = (
-                {"uid": "admin123", "email": "admin@ken-e.ai", "email_verified": True},
+                {"uid": "admin123", "email": "admin@example.com"},
                 "admin123",
-                "admin@ken-e.ai",
+                "admin@example.com",
             )
             mock_check.return_value = None
             mock_rate_limit.return_value = None
@@ -121,12 +187,12 @@ class TestSuperAdminIsRateLimited:
             mock_rate_limit.assert_called_once()
             assert result.is_super_admin is True
 
-    async def test_unverified_ken_e_token_yields_no_super_admin(self):
-        """An unverified @ken-e.ai token authenticates but is not a super admin."""
+    async def test_user_without_role_is_not_super_admin(self):
+        """A normal user authenticates but is not a super admin."""
         credentials = HTTPAuthorizationCredentials(
             scheme="Bearer", credentials="valid-token"
         )
-        firestore_service = _make_firestore_service("attacker@ken-e.ai")
+        firestore_service = _make_firestore_service("user@example.com")
 
         with (
             mock.patch(
@@ -146,13 +212,9 @@ class TestSuperAdminIsRateLimited:
             ) as mock_get_cached,
         ):
             mock_verify.return_value = (
-                {
-                    "uid": "attacker123",
-                    "email": "attacker@ken-e.ai",
-                    "email_verified": False,
-                },
-                "attacker123",
-                "attacker@ken-e.ai",
+                {"uid": "user123", "email": "user@example.com"},
+                "user123",
+                "user@example.com",
             )
             mock_check.return_value = None
             mock_rate_limit.return_value = None
@@ -167,12 +229,12 @@ class TestSuperAdminIsRateLimited:
                 _make_request(), credentials, firestore_service, None
             )
 
-            assert result.email_verified is False
+            assert result.roles == []
             assert result.is_super_admin is False
 
 
-class TestCachedContextPreservesEmailVerified:
-    """The Redis cache must not silently drop the verified flag."""
+class TestCachedContextPreservesRoles:
+    """The Redis cache must round-trip roles, not silently drop them."""
 
     @pytest.fixture
     def cached_service(self):
@@ -180,7 +242,7 @@ class TestCachedContextPreservesEmailVerified:
         service._redis = mock.Mock()
         return service
 
-    def test_roundtrip_preserves_email_verified(self, cached_service):
+    def test_roundtrip_preserves_roles(self, cached_service):
         cached_service.redis.is_available.return_value = True
         captured = {}
         cached_service.redis.set_json.side_effect = (
@@ -190,10 +252,10 @@ class TestCachedContextPreservesEmailVerified:
         cached_service.set_user_context(
             UserContext(
                 user_id="staff1",
-                email="staff@ken-e.ai",
+                email="staff@example.com",
                 organization_permissions={},
                 account_permissions={},
-                email_verified=True,
+                roles=["super_admin"],
             )
         )
         cached_service.redis.get_json.return_value = captured
@@ -201,18 +263,18 @@ class TestCachedContextPreservesEmailVerified:
         restored = cached_service.get_user_context("staff1")
 
         assert restored is not None
-        assert restored.email_verified is True
+        assert restored.roles == ["super_admin"]
         assert restored.is_super_admin is True
 
-    def test_cache_entry_missing_email_verified_is_invalidated(self, cached_service):
-        """A pre-deploy cache entry without email_verified must not be trusted."""
+    def test_cache_entry_missing_roles_is_invalidated(self, cached_service):
+        """A pre-deploy cache entry without roles must not be trusted."""
         cached_service.redis.is_available.return_value = True
         cached_service.redis.get_json.return_value = {
             "user_id": "staff1",
-            "email": "staff@ken-e.ai",
+            "email": "staff@example.com",
             "organization_permissions": {},
             "account_permissions": {},
-            # email_verified intentionally absent
+            # roles intentionally absent
         }
 
         result = cached_service.get_user_context("staff1")

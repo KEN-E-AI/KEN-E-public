@@ -22,6 +22,63 @@ ACCOUNT_ID_VALIDATION_DESCRIPTION = "Account ID for validation"
 DOCUMENT_NOT_FOUND_MESSAGE = "Document not found"
 
 
+# Fields on a users/{uid} doc that confer privileges and are read straight
+# into UserContext: `roles` (super-admin) and `permissions` (org-admin /
+# account-edit). Only server-side authenticated paths may write them.
+PROTECTED_USER_FIELDS = ("roles", "permissions")
+
+
+def _reject_protected_user_field_write(collection: str, data: dict[str, Any]) -> None:
+    """Refuse client writes that would set a privileged field on a user doc.
+
+    On a ``users/{uid}`` document, ``roles`` carries super-admin and
+    ``permissions`` carries org-admin / account-edit grants — both are read
+    straight into ``UserContext``. These generic ``/firestore/documents``
+    endpoints are unauthenticated (tracked for a real fix in DM-82), so a
+    client write of either field is a direct privilege escalation: it rebuilds
+    the DM-80 hole (``roles: ["super_admin"]``) or grants org admin on any org
+    (``permissions.organizations``). Only authenticated server-side paths may
+    write them — the admin API for ``roles``; the grant/revoke and
+    invitation-accept flows for ``permissions``.
+
+    Covers a direct top-level key and operator-mode writes (arrayUnion /
+    replaceOne / set) whose ``field`` is a protected field or a nested path
+    beneath one.
+
+    Args:
+        collection: Target Firestore collection.
+        data: The write payload (direct map, or wrapped in ``update``).
+
+    Raises:
+        HTTPException: 403 if the write touches a protected field on a user doc.
+    """
+    if collection != "users":
+        return
+
+    touched_fields: list[str] = []
+    update_config = data.get("update")
+    if isinstance(update_config, dict) and update_config.get("operator"):
+        field = update_config.get("field")
+        if isinstance(field, str):
+            touched_fields.append(field)
+    else:
+        touched_fields.extend(key for key in data if isinstance(key, str))
+
+    protected = [
+        f
+        for f in touched_fields
+        if any(f == p or f.startswith(f"{p}.") for p in PROTECTED_USER_FIELDS)
+    ]
+    if protected:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Field(s) {protected} on a user document cannot be set via "
+                "this endpoint; use the dedicated server-side API"
+            ),
+        )
+
+
 # Pydantic models for Firestore operations
 
 
@@ -335,6 +392,9 @@ async def create_document(
     ```
     """
     try:
+        # Reject privileged-field escalation before touching Firestore.
+        _reject_protected_user_field_write(request.collection, request.data)
+
         # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
@@ -479,6 +539,9 @@ async def update_document(
     ```
     """
     try:
+        # Reject privileged-field escalation before touching Firestore.
+        _reject_protected_user_field_write(collection, data)
+
         # First validate the request payload structure before checking Firestore
         if "update" in data and isinstance(data["update"], dict):
             update_config = data["update"]

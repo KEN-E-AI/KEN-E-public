@@ -124,3 +124,23 @@ def get_user(uid: str) -> auth.UserRecord:
     except Exception as e:
         logger.error(f"Failed to get user {uid}: {e}")
         raise ValueError(f"User not found: {str(e)}")
+
+
+def get_user_by_email(email: str) -> auth.UserRecord:
+    """
+    Get user record by email address.
+
+    Args:
+        email: The user's email address
+
+    Returns:
+        auth.UserRecord: The user record
+
+    Raises:
+        ValueError: If no user has that email
+    """
+    try:
+        return auth.get_user_by_email(email)
+    except Exception as e:
+        logger.error(f"Failed to get user by email {email}: {e}")
+        raise ValueError(f"User not found: {str(e)}")

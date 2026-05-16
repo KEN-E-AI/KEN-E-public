@@ -25,6 +25,7 @@ def admin_user():
         email="admin@ken-e.ai",
         organization_permissions={},
         account_permissions={},
+        roles=["super_admin"],
     )
 
 

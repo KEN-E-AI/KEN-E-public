@@ -271,11 +271,18 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
       },
     };
 
+    // `permissions` is intentionally NOT sent: the API rejects client writes
+    // of permissions to a user doc (DM-81 write-path hardening). It is a
+    // server-owned field, populated by the grant/revoke and invitation flows.
     await api.post(`/api/v1/firestore/documents`, {
       account_id: firebaseUser.uid,
       collection: "users",
       document_id: firebaseUser.uid,
-      data: newUserData,
+      data: {
+        profile: newUserData.profile,
+        preferences: newUserData.preferences,
+        metadata: newUserData.metadata,
+      },
     });
 
     return newUserData;
@@ -428,6 +435,9 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
       await sendEmailVerification(firebaseUser);
       setVerificationEmail(signUpData.email.trim());
 
+      // `permissions` is intentionally omitted: the API rejects client writes
+      // of permissions to a user doc (DM-81 write-path hardening). It is a
+      // server-owned field, populated by the grant/revoke and invitation flows.
       await api.post(`/api/v1/firestore/documents`, {
         account_id: firebaseUser.uid,
         collection: "users",
@@ -438,10 +448,6 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
             first_name: firstName,
             last_name: lastName,
             job_title: "",
-          },
-          permissions: {
-            organizations: {},
-            accounts: {},
           },
           preferences: {
             language: "en",
