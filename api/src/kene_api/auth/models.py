@@ -40,7 +40,7 @@ class UserContext:
         **IMPORTANT LIMITATION:**
         This property only returns accounts with EXPLICIT permissions in account_permissions.
         It does NOT include accounts accessible via:
-        - Super admin status (@ken-e.ai emails)
+        - Super admin status (the super_admin role)
         - Organization admin role (implicit access to all org accounts)
 
         For org admins and super admins, this will return an empty list even though they
