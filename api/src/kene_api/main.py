@@ -33,6 +33,7 @@ from .routers import (
     account_tools,
     accounts,
     activities,
+    admin,
     agent_configs,
     auth,
     chat,
@@ -243,6 +244,7 @@ async def _super_admin_required_handler(
 
 # Include routers
 app.include_router(auth.router)  # Auth router already has its prefix
+app.include_router(admin.router)  # Super-admin role management (DM-81); has its prefix
 app.include_router(
     organizations.router, prefix="/api/v1/organizations", tags=["organizations"]
 )

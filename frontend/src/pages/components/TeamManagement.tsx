@@ -421,13 +421,7 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
     }
   };
 
-  const getAccessBadgeVariant = (
-    accessLevel: string,
-    isSuperAdmin?: boolean,
-  ) => {
-    if (isSuperAdmin) {
-      return "default"; // Purple/primary color for super admins
-    }
+  const getAccessBadgeVariant = (accessLevel: string) => {
     switch (accessLevel) {
       case "owner":
         return "default";
@@ -436,11 +430,6 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
       default:
         return "outline";
     }
-  };
-
-  // Helper to check if a user is a super admin
-  const isSuperAdmin = (email: string) => {
-    return email.toLowerCase().endsWith("@ken-e.ai");
   };
 
   // Load member's account permissions when opening edit dialog
@@ -537,19 +526,12 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
                             {member.first_name} {member.last_name}
                           </span>
                         )}
-                        {isSuperAdmin(member.email) ? (
-                          <Badge variant="default">
-                            <Shield className="h-3 w-3 mr-1" />
-                            Super Admin
-                          </Badge>
-                        ) : (
-                          <Badge
-                            variant={getAccessBadgeVariant(member.access_level)}
-                          >
-                            <Shield className="h-3 w-3 mr-1" />
-                            {member.access_level}
-                          </Badge>
-                        )}
+                        <Badge
+                          variant={getAccessBadgeVariant(member.access_level)}
+                        >
+                          <Shield className="h-3 w-3 mr-1" />
+                          {member.access_level}
+                        </Badge>
                       </div>
                       {/* Show account permissions for view-role users */}
                       {member.access_level === "view" &&
@@ -573,8 +555,7 @@ const TeamManagement = ({ orgData }: TeamManagementProps) => {
                   </div>
                   {canManageTeam &&
                     member.access_level !== "owner" &&
-                    member.user_id !== user?.id &&
-                    !isSuperAdmin(member.email) && (
+                    member.user_id !== user?.id && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button

@@ -4,7 +4,6 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import EmailActionHandler from "./EmailActionHandler";
 import { applyActionCode, checkActionCode } from "firebase/auth";
-import axios from "axios";
 
 // Mock Firebase auth functions
 vi.mock("firebase/auth", () => ({
@@ -19,9 +18,6 @@ vi.mock("@/lib/firebase", () => ({
   authInitialized: true,
   authBypassEnabled: false,
 }));
-
-// Mock axios
-vi.mock("axios");
 
 // Mock useNavigate
 const mockNavigate = vi.fn();
@@ -77,50 +73,18 @@ describe("EmailActionHandler", () => {
       expect(
         screen.getByRole("heading", { name: "Verification Failed" }),
       ).toBeInTheDocument();
-      expect(
-        screen.getByText(/only handles email verification/),
-      ).toBeInTheDocument();
+      expect(screen.getByText(/Invalid verification link/)).toBeInTheDocument();
     });
   });
 
   test("successfully verifies email", async () => {
     const mockCheckActionCode = vi.mocked(checkActionCode);
     const mockApplyActionCode = vi.mocked(applyActionCode);
-    const mockAxiosPost = vi.mocked(axios.post);
-    const mockAxiosPut = vi.mocked(axios.put);
 
     mockCheckActionCode.mockResolvedValue({
       data: { email: "test@example.com" },
     } as any);
     mockApplyActionCode.mockResolvedValue(undefined);
-
-    // Mock the query response
-    mockAxiosPost.mockResolvedValue({
-      data: {
-        documents: [
-          {
-            id: "user123",
-            data: {
-              profile: {
-                email: "test@example.com",
-                first_name: "Test",
-                last_name: "User",
-                email_verified: false,
-              },
-              permissions: {},
-              preferences: {},
-              metadata: {
-                createdAt: "2024-01-01T00:00:00.000Z",
-                lastUpdated: "2024-01-01T00:00:00.000Z",
-              },
-            },
-          },
-        ],
-      },
-    });
-
-    // Mock the update response
-    mockAxiosPut.mockResolvedValue({ data: { message: "Document updated" } });
 
     renderWithRouter("/auth/action?mode=verifyEmail&oobCode=validCode123");
 
@@ -135,41 +99,6 @@ describe("EmailActionHandler", () => {
 
     expect(mockCheckActionCode).toHaveBeenCalledWith({}, "validCode123");
     expect(mockApplyActionCode).toHaveBeenCalledWith({}, "validCode123");
-
-    // Verify the query was made
-    expect(mockAxiosPost).toHaveBeenCalledWith(
-      expect.stringContaining("/api/v1/firestore/documents/query"),
-      expect.objectContaining({
-        account_id: "system",
-        collection: "users",
-        field: "profile.email",
-        operator: "==",
-        value: "test@example.com",
-      }),
-    );
-
-    // Verify the updates were made with the correct structure
-    expect(mockAxiosPut).toHaveBeenCalledWith(
-      expect.stringContaining("/api/v1/firestore/documents/users/user123"),
-      {
-        update: {
-          field: "profile.email_verified",
-          operator: "set",
-          value: true,
-        },
-      },
-    );
-
-    expect(mockAxiosPut).toHaveBeenCalledWith(
-      expect.stringContaining("/api/v1/firestore/documents/users/user123"),
-      {
-        update: {
-          field: "metadata.lastUpdated",
-          operator: "set",
-          value: expect.any(String),
-        },
-      },
-    );
   });
 
   test("handles expired action code error", async () => {
@@ -228,104 +157,17 @@ describe("EmailActionHandler", () => {
     expect(screen.getByText("Verifying your email...")).toBeInTheDocument();
   });
 
-  test("shows warning when Firestore update fails", async () => {
+  test("shows Continue button for same-origin continueUrl after successful verification", async () => {
     const mockCheckActionCode = vi.mocked(checkActionCode);
     const mockApplyActionCode = vi.mocked(applyActionCode);
-    const mockAxiosPost = vi.mocked(axios.post);
-    const mockAxiosPut = vi.mocked(axios.put);
 
     mockCheckActionCode.mockResolvedValue({
       data: { email: "test@example.com" },
     } as any);
     mockApplyActionCode.mockResolvedValue(undefined);
 
-    // Mock the query response
-    mockAxiosPost.mockResolvedValue({
-      data: {
-        documents: [
-          {
-            id: "user123",
-            data: {
-              profile: { email: "test@example.com" },
-            },
-          },
-        ],
-      },
-    });
-
-    // Mock the update to fail
-    mockAxiosPut.mockRejectedValue(new Error("Update failed"));
-
-    renderWithRouter("/auth/action?mode=verifyEmail&oobCode=validCode123");
-
-    await waitFor(() => {
-      expect(screen.getByText("Email Verified!")).toBeInTheDocument();
-      expect(screen.getByText("Note")).toBeInTheDocument();
-      expect(
-        screen.getByText(
-          /Your email has been verified, but we couldn't update your profile/,
-        ),
-      ).toBeInTheDocument();
-    });
-  });
-
-  test("shows warning when user not found in Firestore", async () => {
-    const mockCheckActionCode = vi.mocked(checkActionCode);
-    const mockApplyActionCode = vi.mocked(applyActionCode);
-    const mockAxiosPost = vi.mocked(axios.post);
-
-    mockCheckActionCode.mockResolvedValue({
-      data: { email: "test@example.com" },
-    } as any);
-    mockApplyActionCode.mockResolvedValue(undefined);
-
-    // Mock the query response with no documents
-    mockAxiosPost.mockResolvedValue({
-      data: {
-        documents: [],
-      },
-    });
-
-    renderWithRouter("/auth/action?mode=verifyEmail&oobCode=validCode123");
-
-    await waitFor(() => {
-      expect(screen.getByText("Email Verified!")).toBeInTheDocument();
-      expect(screen.getByText("Note")).toBeInTheDocument();
-      expect(
-        screen.getByText(
-          /Your email has been verified, but we couldn't update your profile/,
-        ),
-      ).toBeInTheDocument();
-    });
-  });
-
-  test("handles continueUrl parameter", async () => {
-    const mockCheckActionCode = vi.mocked(checkActionCode);
-    const mockApplyActionCode = vi.mocked(applyActionCode);
-    const mockAxiosPost = vi.mocked(axios.post);
-    const mockAxiosPut = vi.mocked(axios.put);
-
-    mockCheckActionCode.mockResolvedValue({
-      data: { email: "test@example.com" },
-    } as any);
-    mockApplyActionCode.mockResolvedValue(undefined);
-
-    // Mock successful query and update
-    mockAxiosPost.mockResolvedValue({
-      data: {
-        documents: [
-          {
-            id: "user123",
-            data: {
-              profile: { email: "test@example.com" },
-            },
-          },
-        ],
-      },
-    });
-    mockAxiosPut.mockResolvedValue({ data: { message: "Document updated" } });
-
-    const continueUrl = "https://example.com/dashboard";
+    // Use the jsdom origin so safeContinueUrl passes the same-origin check
+    const continueUrl = `${window.location.origin}/dashboard`;
     renderWithRouter(
       `/auth/action?mode=verifyEmail&oobCode=validCode&continueUrl=${encodeURIComponent(
         continueUrl,
@@ -333,7 +175,33 @@ describe("EmailActionHandler", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Continue to example.com")).toBeInTheDocument();
+      expect(screen.getByText("Email Verified!")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Continue" })).toBeInTheDocument();
     });
+  });
+
+  test("does not show Continue button for cross-origin continueUrl", async () => {
+    const mockCheckActionCode = vi.mocked(checkActionCode);
+    const mockApplyActionCode = vi.mocked(applyActionCode);
+
+    mockCheckActionCode.mockResolvedValue({
+      data: { email: "test@example.com" },
+    } as any);
+    mockApplyActionCode.mockResolvedValue(undefined);
+
+    const continueUrl = "https://evil.example.com/steal";
+    renderWithRouter(
+      `/auth/action?mode=verifyEmail&oobCode=validCode&continueUrl=${encodeURIComponent(
+        continueUrl,
+      )}`,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Email Verified!")).toBeInTheDocument();
+    });
+
+    expect(
+      screen.queryByRole("button", { name: "Continue" }),
+    ).not.toBeInTheDocument();
   });
 });

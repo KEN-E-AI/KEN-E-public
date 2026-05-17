@@ -55,11 +55,23 @@ class CachedUserContextService:
                     self.invalidate_user_context(user_id)
                     return None
 
+                # Pre-deploy cache entries predate the roles field. A missing
+                # array can't be safely defaulted — a stale entry would grant
+                # or withhold super-admin incorrectly. Force a fresh fetch.
+                if "roles" not in cached_data:
+                    logger.warning(
+                        f"Cache for user {user_id} missing roles field, "
+                        "invalidating cache to force refresh from Firestore"
+                    )
+                    self.invalidate_user_context(user_id)
+                    return None
+
                 return UserContext(
                     user_id=cached_data["user_id"],
                     email=cached_data["email"],
                     organization_permissions=cached_data["organization_permissions"],
                     account_permissions=cached_data["account_permissions"],
+                    roles=cached_data["roles"],
                 )
             except Exception as e:
                 logger.error(f"Failed to deserialize cached user context: {e}")
@@ -86,6 +98,7 @@ class CachedUserContextService:
             "email": user_context.email,
             "organization_permissions": user_context.organization_permissions,
             "account_permissions": user_context.account_permissions,
+            "roles": user_context.roles,
         }
 
         success = self.redis.set_json(cache_key, context_data, USER_CONTEXT_CACHE_TTL)

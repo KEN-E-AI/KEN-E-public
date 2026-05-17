@@ -7,17 +7,18 @@ class TestUserContext:
     """Test UserContext model."""
 
     def test_is_super_admin_true(self):
-        """Test super admin detection for @ken-e.ai emails."""
+        """Super admin status comes from the super_admin role."""
         user = UserContext(
             user_id="123",
-            email="admin@ken-e.ai",
+            email="admin@example.com",
             organization_permissions={},
             account_permissions={},
+            roles=["super_admin"],
         )
         assert user.is_super_admin is True
 
     def test_is_super_admin_false(self):
-        """Test super admin detection for non @ken-e.ai emails."""
+        """A user with no roles is not a super admin."""
         user = UserContext(
             user_id="123",
             email="user@example.com",
@@ -26,23 +27,29 @@ class TestUserContext:
         )
         assert user.is_super_admin is False
 
-    def test_is_super_admin_case_insensitive(self):
-        """Test super admin detection is case insensitive."""
+    def test_is_super_admin_ignores_email_domain(self):
+        """An @ken-e.ai email without the role does NOT confer super admin.
+
+        Super-admin status derives solely from an explicit role grant keyed on
+        the immutable Firebase uid — never from the email string. Firebase
+        signup is open, so an email domain is not an authorization decision.
+        """
         user = UserContext(
             user_id="123",
-            email="ADMIN@KEN-E.AI",
+            email="anyone@ken-e.ai",
             organization_permissions={},
             account_permissions={},
         )
-        assert user.is_super_admin is True
+        assert user.is_super_admin is False
 
     def test_has_account_permission_super_admin(self):
         """Test super admin has access to any account."""
         user = UserContext(
             user_id="123",
-            email="admin@ken-e.ai",
+            email="admin@example.com",
             organization_permissions={},
             account_permissions={},
+            roles=["super_admin"],
         )
         assert user.has_account_permission("acc123", "org456", "edit") is True
         assert user.has_account_permission("acc123", "org456", "view") is True
@@ -82,9 +89,10 @@ class TestUserContext:
         """Test super admin has admin access to any organization."""
         user = UserContext(
             user_id="123",
-            email="admin@ken-e.ai",
+            email="admin@example.com",
             organization_permissions={},
             account_permissions={},
+            roles=["super_admin"],
         )
         assert user.has_organization_permission("org123", "admin") is True
         assert user.has_organization_permission("org123", "view") is True
@@ -149,9 +157,10 @@ class TestUserContext:
         """Test super admin always gets admin role."""
         user = UserContext(
             user_id="123",
-            email="admin@ken-e.ai",
+            email="admin@example.com",
             organization_permissions={},
             account_permissions={},
+            roles=["super_admin"],
         )
         assert user.get_effective_organization_role("any_org") == "admin"
 
@@ -175,8 +184,9 @@ class TestUserContext:
         """Test super admin always gets edit role."""
         user = UserContext(
             user_id="123",
-            email="admin@ken-e.ai",
+            email="admin@example.com",
             organization_permissions={},
             account_permissions={},
+            roles=["super_admin"],
         )
         assert user.get_effective_account_role("any_acc", "any_org") == "edit"

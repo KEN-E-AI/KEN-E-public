@@ -9,12 +9,13 @@ from src.kene_api.auth import UserContext
 
 @pytest.fixture
 def super_admin_user():
-    """Create super admin user (@ken-e.ai email)."""
+    """Create super admin user (granted the super_admin role)."""
     return UserContext(
         user_id="super123",
-        email="admin@ken-e.ai",
+        email="admin@example.com",
         organization_permissions={},
         account_permissions={},
+        roles=["super_admin"],
     )
 
 

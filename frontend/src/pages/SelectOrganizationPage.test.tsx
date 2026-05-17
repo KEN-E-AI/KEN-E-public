@@ -211,6 +211,42 @@ describe("SelectOrganizationPage", () => {
     expect(screen.getByText("HOME_SENTINEL")).toBeInTheDocument();
   });
 
+  it("renders the picker (no redirect) when ?switch=true even if a workspace is already selected", async () => {
+    mockUseAuth.mockReturnValue({
+      ...defaultAuthMock,
+      hasSelectedWorkspace: true,
+      setOrgMetadata: vi.fn(),
+      setAccountMetadata: vi.fn(),
+    });
+    // Two orgs so the single-account auto-navigate does not fire.
+    mockAxiosGet.mockResolvedValue(
+      makeUserPermissionsResponse(["org-1", "org-2"]),
+    );
+    mockGetOrganizationsBatch.mockResolvedValue(
+      makeOrgBatchResponse([mockOrg1, mockOrg2]),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/select-organization?switch=true"]}>
+        <Routes>
+          <Route path="/sign-in" element={<div>SIGNIN_SENTINEL</div>} />
+          <Route path="/" element={<div>HOME_SENTINEL</div>} />
+          <Route
+            path="/select-organization"
+            element={<SelectOrganizationPage />}
+          />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("Choose a workspace")).toBeInTheDocument();
+    expect(screen.queryByText("HOME_SENTINEL")).not.toBeInTheDocument();
+    // A workspace is already selected, so an explicit exit is offered.
+    expect(
+      screen.getByRole("button", { name: /back to app/i }),
+    ).toBeInTheDocument();
+  });
+
   it("continue flow: selects org + account → calls auth setters and navigates to /", async () => {
     const setSelectedOrgAccount = vi.fn();
     const completeWorkspaceSelection = vi.fn();

@@ -125,6 +125,7 @@ interface AuthContextType {
   setNotificationSettings: (settings: NotificationSetting[]) => void;
   setSecuritySettings: (settings: SecuritySetting[]) => void;
   isSuperAdmin: boolean;
+  isSuperAdminLoading: boolean;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(
@@ -162,6 +163,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [securitySettings, setSecuritySettings] = useState<SecuritySetting[]>(
     [],
   );
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [isSuperAdminLoading, setIsSuperAdminLoading] = useState(true);
 
   // Wrapper functions to persist metadata to localStorage
   const setOrgMetadata = (data: Record<string, any>) => {
@@ -293,6 +296,14 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setSelectedOrgAccountState(account);
 
     if (account) {
+      // Keep currentOrganizationId in lockstep with the selected workspace.
+      // The two are persisted under separate localStorage keys and would
+      // otherwise drift — leaving the org-settings page on a different org
+      // than the header switcher.
+      if (account.orgId) {
+        setCurrentOrganizationId(account.orgId);
+        localStorage.setItem("currentOrganizationId", account.orgId);
+      }
       localStorage.setItem("selectedOrgAccount", JSON.stringify(account));
       // 🧠 Fetch notifications here
       fetchNotifications(account.accountId);
@@ -340,6 +351,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           lastName: "Bypass",
         };
         setUser(fakeUser);
+        setIsSuperAdmin(bypassRole !== "regular");
+        setIsSuperAdminLoading(false);
         localStorage.setItem("user", JSON.stringify(fakeUser));
         if (authBypassWorkspaceSelected) {
           setHasSelectedWorkspace(true);
@@ -367,6 +380,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       if (!firebaseUser) {
         // User is signed out - clear all state
         setUser(null);
+        setIsSuperAdmin(false);
+        setIsSuperAdminLoading(false);
         setHasSelectedWorkspace(false);
         setSelectedOrgAccountState(null);
         setOrgMetadataState({});
@@ -440,6 +455,16 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
             );
           }
           setSelectedOrgAccountState(parsedOrgAccount);
+          // selectedOrgAccount is authoritative for the active workspace —
+          // realign currentOrganizationId to it, in both state and storage,
+          // so a previously drifted localStorage pair cannot survive a reload.
+          if (parsedOrgAccount.orgId) {
+            setCurrentOrganizationId(parsedOrgAccount.orgId);
+            localStorage.setItem(
+              "currentOrganizationId",
+              parsedOrgAccount.orgId,
+            );
+          }
         } else {
           console.warn("Invalid savedOrgAccount structure:", parsedOrgAccount);
           // Clear invalid data from localStorage
@@ -514,6 +539,27 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     fetchNotificationsIfReady();
   }, [user, selectedOrgAccount?.accountId]); // Re-fetch when user or account changes
 
+  // Fetch server-computed super-admin status from /api/v1/users/me
+  useEffect(() => {
+    if (!user) {
+      setIsSuperAdmin(false);
+      setIsSuperAdminLoading(false);
+      return;
+    }
+    setIsSuperAdminLoading(true);
+    type MeResponse = { is_super_admin: boolean };
+    api
+      .get<MeResponse>("/api/v1/users/me")
+      .then((res) => {
+        setIsSuperAdmin(res.data.is_super_admin);
+        setIsSuperAdminLoading(false);
+      })
+      .catch(() => {
+        setIsSuperAdmin(false);
+        setIsSuperAdminLoading(false);
+      });
+  }, [user?.id]);
+
   const value = {
     user,
     isAuthenticated: !!user,
@@ -539,7 +585,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     securitySettings,
     setNotificationSettings,
     setSecuritySettings,
-    isSuperAdmin: user?.email?.toLowerCase().endsWith("@ken-e.ai") || false,
+    isSuperAdmin,
+    isSuperAdminLoading,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

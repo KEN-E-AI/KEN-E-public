@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import api from "@/lib/api";
-import { useNavigate, Navigate } from "react-router-dom";
+import { useNavigate, Navigate, useSearchParams } from "react-router-dom";
 import { Check, Plus, ArrowRight, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +31,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 export default function SelectOrganizationPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
   const {
     user,
@@ -462,7 +463,11 @@ export default function SelectOrganizationPage() {
     return <Navigate to="/sign-in" replace />;
   }
 
-  if (hasSelectedWorkspace) {
+  // After sign-in this page is reachable again via the AccountSwitcher's
+  // "Switch workspace" action, which passes ?switch=true. Without that explicit
+  // intent, a user who already has a workspace is still bounced to the app.
+  const isExplicitSwitch = searchParams.get("switch") === "true";
+  if (hasSelectedWorkspace && !isExplicitSwitch) {
     return <Navigate to="/" replace />;
   }
 
@@ -869,7 +874,17 @@ export default function SelectOrganizationPage() {
         )}
 
         {/* Continue button */}
-        <div className="flex justify-center">
+        <div className="flex justify-center gap-3">
+          {hasSelectedWorkspace && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isLoading}
+              onClick={() => navigate("/")}
+            >
+              Back to App
+            </Button>
+          )}
           <Button
             type="button"
             disabled={

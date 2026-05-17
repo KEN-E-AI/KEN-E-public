@@ -2,6 +2,11 @@
 
 from dataclasses import dataclass, field
 
+# The role string that confers super-admin privileges. Single source of truth
+# shared by UserContext.is_super_admin, the admin endpoints, and the bootstrap
+# migration — never compare against the literal elsewhere.
+SUPER_ADMIN_ROLE = "super_admin"
+
 
 @dataclass
 class UserContext:
@@ -13,11 +18,22 @@ class UserContext:
     account_permissions: dict[str, str] = field(
         default_factory=dict
     )  # account_id -> edit|view
+    # Explicit role grants stored on the users/{uid} Firestore doc. Super-admin
+    # status derives solely from membership here (see is_super_admin). Only
+    # server-side admin endpoints may write this field — every client write
+    # path to users/{uid} must reject a client-supplied `roles`.
+    roles: list[str] = field(default_factory=list)
 
     @property
     def is_super_admin(self) -> bool:
-        """Check if user is a super admin (KEN-E support team member)."""
-        return self.email.lower().endswith("@ken-e.ai")
+        """Check if user is a super admin (KEN-E support team member).
+
+        Derives solely from an explicit ``super_admin`` role grant on the
+        user's Firestore doc, keyed on the immutable Firebase uid. The former
+        ``@ken-e.ai`` email-domain check was removed — an email string is not
+        an authorization decision, and Firebase signup is open.
+        """
+        return SUPER_ADMIN_ROLE in self.roles
 
     @property
     def accessible_accounts(self) -> list[str]:
@@ -29,7 +45,7 @@ class UserContext:
         **IMPORTANT LIMITATION:**
         This property only returns accounts with EXPLICIT permissions in account_permissions.
         It does NOT include accounts accessible via:
-        - Super admin status (@ken-e.ai emails)
+        - Super admin status (the super_admin role)
         - Organization admin role (implicit access to all org accounts)
 
         For org admins and super admins, this will return an empty list even though they

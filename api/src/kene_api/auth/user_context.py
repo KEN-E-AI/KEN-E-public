@@ -223,12 +223,14 @@ def _build_user_context_from_data(
     permissions = user_data.get("permissions", {})
     organization_permissions = permissions.get("organizations", {})
     account_permissions = permissions.get("account_permissions", {})
+    roles = user_data.get("roles", [])
 
     return UserContext(
         user_id=user_id,
         email=email,
         organization_permissions=organization_permissions,
         account_permissions=account_permissions,
+        roles=roles,
     )
 
 
@@ -281,25 +283,10 @@ async def _get_user_context_with_limiter(
             ),
         )
 
-        # Check if user is super admin (before rate limiting)
-        # Super admins are identified by @ken-e.ai email domain
-        is_super_admin = email.lower().endswith("@ken-e.ai")
-
-        # Apply rate limiting only for non-super admins
-        if not is_super_admin:
-            await _apply_rate_limiting(request, active_limiter, audit_logger, client_ip)
-        else:
-            # Log that super admin bypassed rate limiting
-            logger.debug(f"Super admin {email} bypassed rate limiting")
-            await audit_logger.log_event(
-                event_type=SecurityEventType.LOGIN_SUCCESS,
-                user_id=user_id,
-                email=email,
-                ip_address=client_ip,
-                user_agent=user_agent,
-                details={"action": "rate_limit_bypass", "reason": "super_admin"},
-                severity="INFO",
-            )
+        # Apply rate limiting to every authenticated request. Super admins are
+        # NOT exempt — exempting them removed the brute-force ceiling on the
+        # most privileged tier.
+        await _apply_rate_limiting(request, active_limiter, audit_logger, client_ip)
 
         # Check if token is revoked
         await _check_token_revocation(

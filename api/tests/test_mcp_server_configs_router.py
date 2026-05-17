@@ -28,6 +28,7 @@ def admin_user() -> UserContext:
         email="admin@ken-e.ai",
         organization_permissions={},
         account_permissions={},
+        roles=["super_admin"],
     )
 
 
