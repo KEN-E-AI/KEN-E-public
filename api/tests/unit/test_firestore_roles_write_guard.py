@@ -157,8 +157,8 @@ def test_post_documents_endpoint_rejects_roles_on_users():
     Auth is mocked with a super-admin so the request reaches the field guard
     (super-admin bypasses the scope check but the field guard is always enforced).
     """
-    from src.kene_api.main import app
     from src.kene_api.auth.dependencies import get_current_user
+    from src.kene_api.main import app
 
     super_admin = _make_super_admin_mock()
     app.dependency_overrides[get_current_user] = lambda: super_admin
@@ -184,8 +184,8 @@ def test_post_documents_endpoint_rejects_permissions_on_users():
 
     Auth is mocked with a super-admin so the request reaches the field guard.
     """
-    from src.kene_api.main import app
     from src.kene_api.auth.dependencies import get_current_user
+    from src.kene_api.main import app
 
     super_admin = _make_super_admin_mock()
     app.dependency_overrides[get_current_user] = lambda: super_admin

@@ -2335,10 +2335,11 @@ class TestTacticEndpoints:
 
 
 class TestFirestoreEndpointAuth:
-    """Auth/authz matrix for the 6 generic Firestore handlers.
+    """Auth/authz matrix for the 10 generic Firestore handlers.
 
     Each test covers one (endpoint, scenario) pair. The full matrix is:
-      endpoints: create / get / update / delete / query / list
+      endpoints: create / get / update / delete / query / list  (6 top-level)
+                 + create / get / update / delete subcollection  (4 subcollection)
       scenarios: 401-no-auth, 403-wrong-user, 403-non-users-collection,
                  200-self-user-doc, 200-super-admin
     """
@@ -2350,7 +2351,7 @@ class TestFirestoreEndpointAuth:
         """Override Firestore service for all tests in this class."""
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
         yield
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_firestore_service, None)
 
     @pytest.fixture
     def raw_client(self):
@@ -2542,6 +2543,95 @@ class TestFirestoreEndpointAuth:
         response = super_admin_user.get(
             "/api/v1/firestore/collections/users/documents",
             params={"account_id": "ignored"},
+        )
+        assert response.status_code == 200
+
+    @pytest.mark.parametrize("method,path,kwargs", [
+        ("get",  "/api/v1/firestore/documents/accounts/some_doc", {}),
+        ("put",  "/api/v1/firestore/documents/accounts/some_doc",
+         {"json": {"field": "v"}, "params": {"account_id": "ignored"}}),
+        ("delete", "/api/v1/firestore/documents/accounts/some_doc",
+         {"params": {"account_id": "ignored"}}),
+        ("post", "/api/v1/firestore/documents/query",
+         {"json": {"account_id": "ignored", "collection": "accounts"}}),
+    ])
+    def test_200_super_admin_get_update_delete_query(
+        self, super_admin_user, method, path, kwargs
+    ):
+        """super-admin bypasses scope checks on get/update/delete/query handlers."""
+        response = getattr(super_admin_user, method)(path, **kwargs)
+        assert response.status_code == 200
+
+    def test_403_super_admin_delete_users_doc_blocked(self, super_admin_user):
+        """delete_document: even a super-admin cannot delete a users/ doc here.
+
+        The users/ deletion block is unconditional — account deletion must go
+        through the dedicated account-deletion API.
+        """
+        response = super_admin_user.delete(
+            "/api/v1/firestore/documents/users/any_uid",
+            params={"account_id": "ignored"},
+        )
+        assert response.status_code == 403
+
+    # ── subcollection handlers — 401 / 403 / 200 ─────────────────────────────
+
+    @pytest.mark.parametrize("method,path,kwargs", [
+        ("post",   "/api/v1/firestore/documents/users/uid1/notifications",
+         {"json": {"f": "x"}, "params": {"account_id": "uid1"}}),
+        ("get",    "/api/v1/firestore/documents/users/uid1/notifications/sub1", {}),
+        ("put",    "/api/v1/firestore/documents/users/uid1/notifications/sub1",
+         {"json": {"f": "x"}, "params": {"account_id": "uid1"}}),
+        ("delete", "/api/v1/firestore/documents/users/uid1/notifications/sub1",
+         {"params": {"account_id": "uid1"}}),
+    ])
+    def test_401_no_auth_subcollection(self, raw_client, method, path, kwargs):
+        """All four subcollection handlers return 401 when unauthenticated."""
+        response = getattr(raw_client, method)(path, **kwargs)
+        assert response.status_code == 401
+
+    @pytest.mark.parametrize("method,path,kwargs", [
+        ("post",   "/api/v1/firestore/documents/users/ANOTHER_UID/notifications",
+         {"json": {"f": "x"}, "params": {"account_id": "ANOTHER_UID"}}),
+        ("get",    "/api/v1/firestore/documents/users/ANOTHER_UID/notifications/sub1", {}),
+        ("put",    "/api/v1/firestore/documents/users/ANOTHER_UID/notifications/sub1",
+         {"json": {"f": "x"}, "params": {"account_id": "ANOTHER_UID"}}),
+        ("delete", "/api/v1/firestore/documents/users/ANOTHER_UID/notifications/sub1",
+         {"params": {"account_id": "ANOTHER_UID"}}),
+    ])
+    def test_403_subcollection_wrong_user(self, regular_user, method, path, kwargs):
+        """All four subcollection handlers 403 when the parent doc is another user's."""
+        response = getattr(regular_user, method)(path, **kwargs)
+        assert response.status_code == 403
+
+    @pytest.mark.parametrize("method,path,kwargs", [
+        ("post",   "/api/v1/firestore/documents/accounts/acc1/members",
+         {"json": {"f": "x"}, "params": {"account_id": "acc1"}}),
+        ("get",    "/api/v1/firestore/documents/accounts/acc1/members/sub1", {}),
+        ("put",    "/api/v1/firestore/documents/accounts/acc1/members/sub1",
+         {"json": {"f": "x"}, "params": {"account_id": "acc1"}}),
+        ("delete", "/api/v1/firestore/documents/accounts/acc1/members/sub1",
+         {"params": {"account_id": "acc1"}}),
+    ])
+    def test_403_subcollection_non_users_parent(self, regular_user, method, path, kwargs):
+        """All four subcollection handlers 403 when the parent collection is not users/."""
+        response = getattr(regular_user, method)(path, **kwargs)
+        assert response.status_code == 403
+
+    @pytest.mark.parametrize("method,suffix,kwargs", [
+        ("post",   "",      {"json": {"f": "x"}}),
+        ("get",    "/sub1", {}),
+        ("put",    "/sub1", {"json": {"f": "x"}}),
+        ("delete", "/sub1", {}),
+    ])
+    def test_200_subcollection_self_scope(
+        self, regular_user, mock_regular_user_context, method, suffix, kwargs
+    ):
+        """All four subcollection handlers 200 when scoped to the caller's own user doc."""
+        own_uid = mock_regular_user_context.user_id
+        path = f"/api/v1/firestore/documents/users/{own_uid}/notifications{suffix}"
+        response = getattr(regular_user, method)(
+            path, params={"account_id": own_uid}, **kwargs
         )
         assert response.status_code == 200
 

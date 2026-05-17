@@ -478,6 +478,10 @@ async def get_document(
 
     Retrieves a document by its ID from the specified collection.
 
+    **Auth:** Requires a valid Bearer token (401 otherwise). Non-super-admin
+    callers may only read their own ``users/{caller_uid}`` document; any other
+    path returns 403.
+
     **Parameters (in URL path):**
     - `collection` (required): Firestore collection name
     - `document_id` (required): Document ID to retrieve
@@ -920,6 +924,10 @@ async def create_subcollection_document(
     Create a document in a subcollection.
 
     Creates a new document in the specified subcollection within a parent document.
+
+    **Auth:** Requires a valid Bearer token (401 otherwise). Non-super-admin
+    callers may only write subcollections under their own
+    ``users/{caller_uid}`` document; any other parent path returns 403.
     """
     try:
         # account_id is a vestigial wire-compat param; authz is enforced by user.user_id
@@ -968,6 +976,10 @@ async def get_subcollection_document(
     Get a document from a subcollection.
 
     Retrieves a document by its ID from the specified subcollection within a parent document.
+
+    **Auth:** Requires a valid Bearer token (401 otherwise). Non-super-admin
+    callers may only read subcollections under their own
+    ``users/{caller_uid}`` document; any other parent path returns 403.
     """
     try:
         _require_self_user_path_or_super_admin(
@@ -1019,6 +1031,10 @@ async def update_subcollection_document(
     Update a document in a subcollection.
 
     Updates an existing document in the specified subcollection with the provided data. Supports four modes:
+
+    **Auth:** Requires a valid Bearer token (401 otherwise). Non-super-admin
+    callers may only write subcollections under their own
+    ``users/{caller_uid}`` document; any other parent path returns 403.
 
     1. Direct update (standard functionality):
        data = {"field1": "value1", "field2": "value2"}
@@ -1228,6 +1244,10 @@ async def delete_subcollection_document(
     Delete a document from a subcollection.
 
     Deletes a document by its ID from the specified subcollection within a parent document.
+
+    **Auth:** Requires a valid Bearer token (401 otherwise). Non-super-admin
+    callers may only delete subcollections under their own
+    ``users/{caller_uid}`` document; any other parent path returns 403.
     """
     try:
         # account_id is a vestigial wire-compat param; authz is enforced by user.user_id
