@@ -164,7 +164,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     [],
   );
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-  const [isSuperAdminLoading, setIsSuperAdminLoading] = useState(false);
+  const [isSuperAdminLoading, setIsSuperAdminLoading] = useState(true);
 
   // Wrapper functions to persist metadata to localStorage
   const setOrgMetadata = (data: Record<string, any>) => {
