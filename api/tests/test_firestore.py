@@ -65,8 +65,36 @@ def client():
     return TestClient(app)
 
 
+@pytest.fixture
+def mock_super_admin_context():
+    """Mock super-admin user context for tests that need to bypass scope checks."""
+    user = MagicMock()
+    user.user_id = "test_user"
+    user.email = "test@ken-e.ai"
+    user.is_super_admin = True
+    return user
+
+
+@pytest.fixture
+def mock_regular_user_context():
+    """Mock regular user context (not super-admin)."""
+    user = MagicMock()
+    user.user_id = "test_user_uid"
+    user.email = "user@example.com"
+    user.is_super_admin = False
+    return user
+
+
 class TestFirestoreRouter:
     """Test suite for Firestore router."""
+
+    @pytest.fixture(autouse=True)
+    def setup_auth(self, mock_super_admin_context):
+        """Provide super-admin auth override for all tests in this class."""
+        from src.kene_api.auth.dependencies import get_current_user as gcu
+        app.dependency_overrides[gcu] = lambda: mock_super_admin_context
+        yield
+        app.dependency_overrides.pop(gcu, None)
 
     def test_create_document_success(self, client, mock_firestore_service):
         """Test creating a document successfully."""
@@ -1579,6 +1607,14 @@ class TestChannelEndpoints:
 class TestTacticEndpoints:
     """Test suite for tactic endpoints."""
 
+    @pytest.fixture(autouse=True)
+    def setup_auth(self, mock_super_admin_context):
+        """Provide super-admin auth override for all tests in this class."""
+        from src.kene_api.auth.dependencies import get_current_user as gcu
+        app.dependency_overrides[gcu] = lambda: mock_super_admin_context
+        yield
+        app.dependency_overrides.pop(gcu, None)
+
     def test_create_tactic_success(self, client, mock_firestore_service):
         """Test creating a tactic successfully."""
         mock_created_data = {
@@ -2296,3 +2332,229 @@ class TestTacticEndpoints:
 
         # Clean up
         app.dependency_overrides.clear()
+
+
+class TestFirestoreEndpointAuth:
+    """Auth/authz matrix for the 6 generic Firestore handlers.
+
+    Each test covers one (endpoint, scenario) pair. The full matrix is:
+      endpoints: create / get / update / delete / query / list
+      scenarios: 401-no-auth, 403-wrong-user, 403-non-users-collection,
+                 200-self-user-doc, 200-super-admin
+    """
+
+    # ── helpers ──────────────────────────────────────────────────────────────
+
+    @pytest.fixture(autouse=True)
+    def setup_firestore(self, mock_firestore_service):
+        """Override Firestore service for all tests in this class."""
+        app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
+        yield
+        app.dependency_overrides.clear()
+
+    @pytest.fixture
+    def raw_client(self):
+        """TestClient with NO auth override — simulates unauthenticated requests."""
+        return TestClient(app)
+
+    @pytest.fixture
+    def regular_user(self, mock_regular_user_context):
+        """TestClient whose get_current_user returns a regular (non-super-admin) user."""
+        from src.kene_api.auth.dependencies import get_current_user as gcu
+        app.dependency_overrides[gcu] = lambda: mock_regular_user_context
+        yield TestClient(app)
+        app.dependency_overrides.pop(gcu, None)
+
+    @pytest.fixture
+    def super_admin_user(self, mock_super_admin_context):
+        """TestClient whose get_current_user returns a super-admin user."""
+        from src.kene_api.auth.dependencies import get_current_user as gcu
+        app.dependency_overrides[gcu] = lambda: mock_super_admin_context
+        yield TestClient(app)
+        app.dependency_overrides.pop(gcu, None)
+
+    # ── 401 — no auth ────────────────────────────────────────────────────────
+
+    @pytest.mark.parametrize("method,path,kwargs", [
+        ("post",   "/api/v1/firestore/documents",
+         {"json": {"account_id": "uid1", "collection": "users", "document_id": "uid1", "data": {}}}),
+        ("get",    "/api/v1/firestore/documents/users/uid1", {}),
+        ("put",    "/api/v1/firestore/documents/users/uid1",
+         {"json": {"field": "x"}, "params": {"account_id": "uid1"}}),
+        ("delete", "/api/v1/firestore/documents/users/uid1",
+         {"params": {"account_id": "uid1"}}),
+        ("post",   "/api/v1/firestore/documents/query",
+         {"json": {"account_id": "uid1", "collection": "users/uid1/prefs"}}),
+        ("get",    "/api/v1/firestore/collections/users/documents",
+         {"params": {"account_id": "uid1"}}),
+    ])
+    def test_401_no_auth(self, raw_client, method, path, kwargs):
+        """All six handlers return 401 when no Authorization header is sent."""
+        response = getattr(raw_client, method)(path, **kwargs)
+        assert response.status_code == 401
+
+    # ── 403 — authenticated but wrong user ───────────────────────────────────
+
+    def test_403_create_wrong_user_doc(self, regular_user):
+        """create_document: 403 when trying to create a different user's doc."""
+        response = regular_user.post(
+            "/api/v1/firestore/documents",
+            json={"account_id": "ANOTHER_UID", "collection": "users", "document_id": "ANOTHER_UID", "data": {}},
+        )
+        assert response.status_code == 403
+
+    def test_403_get_wrong_user_doc(self, regular_user):
+        """get_document: 403 when fetching a different user's doc."""
+        response = regular_user.get("/api/v1/firestore/documents/users/ANOTHER_UID")
+        assert response.status_code == 403
+
+    def test_403_update_wrong_user_doc(self, regular_user):
+        """update_document: 403 when updating a different user's doc."""
+        response = regular_user.put(
+            "/api/v1/firestore/documents/users/ANOTHER_UID",
+            json={"name": "hack"},
+            params={"account_id": "ANOTHER_UID"},
+        )
+        assert response.status_code == 403
+
+    def test_403_delete_wrong_user_doc(self, regular_user):
+        """delete_document: 403 when deleting a different user's doc."""
+        response = regular_user.delete(
+            "/api/v1/firestore/documents/users/ANOTHER_UID",
+            params={"account_id": "ANOTHER_UID"},
+        )
+        assert response.status_code == 403
+
+    # ── 403 — non-users collection ───────────────────────────────────────────
+
+    @pytest.mark.parametrize("collection", ["accounts", "organizations", "agent_configs", "arbitrary"])
+    def test_403_non_users_collection_create(self, regular_user, collection):
+        """create_document: 403 for any non-users collection."""
+        response = regular_user.post(
+            "/api/v1/firestore/documents",
+            json={"account_id": "test_account", "collection": collection, "document_id": "test_doc_uid", "data": {}},
+        )
+        assert response.status_code == 403
+
+    @pytest.mark.parametrize("collection", ["accounts", "organizations", "agent_configs"])
+    def test_403_non_users_collection_get(self, regular_user, collection):
+        """get_document: 403 for non-users collections."""
+        response = regular_user.get(f"/api/v1/firestore/documents/{collection}/some_doc")
+        assert response.status_code == 403
+
+    @pytest.mark.parametrize("collection", ["accounts", "organizations"])
+    def test_403_non_users_collection_update(self, regular_user, collection):
+        """update_document: 403 for non-users collections."""
+        response = regular_user.put(
+            f"/api/v1/firestore/documents/{collection}/some_doc",
+            json={"field": "value"},
+            params={"account_id": "some_id"},
+        )
+        assert response.status_code == 403
+
+    @pytest.mark.parametrize("collection", ["accounts", "organizations"])
+    def test_403_non_users_collection_delete(self, regular_user, collection):
+        """delete_document: 403 for non-users collections."""
+        response = regular_user.delete(
+            f"/api/v1/firestore/documents/{collection}/some_doc",
+            params={"account_id": "some_id"},
+        )
+        assert response.status_code == 403
+
+    @pytest.mark.parametrize("collection", ["accounts", "users"])
+    def test_403_non_self_collection_query(self, regular_user, collection):
+        """query_documents: 403 when collection is not caller's own subcollection."""
+        response = regular_user.post(
+            "/api/v1/firestore/documents/query",
+            json={"account_id": "test_account", "collection": collection},
+        )
+        assert response.status_code == 403
+
+    def test_403_list_collection_non_super_admin(self, regular_user):
+        """list_collection_documents: 403 for non-super-admin (any collection)."""
+        response = regular_user.get(
+            "/api/v1/firestore/collections/users/documents",
+            params={"account_id": "test_user_uid"},
+        )
+        assert response.status_code == 403
+
+    # ── 200 — self-user-doc scoped calls ─────────────────────────────────────
+
+    def test_200_create_own_user_doc(self, regular_user, mock_regular_user_context):
+        """create_document: 200 when creating the caller's own user doc."""
+        own_uid = mock_regular_user_context.user_id
+        response = regular_user.post(
+            "/api/v1/firestore/documents",
+            json={"account_id": own_uid, "collection": "users", "document_id": own_uid, "data": {"name": "Alice"}},
+        )
+        assert response.status_code == 200
+
+    def test_200_get_own_user_doc(self, regular_user, mock_regular_user_context):
+        """get_document: 200 when fetching the caller's own user doc."""
+        own_uid = mock_regular_user_context.user_id
+        response = regular_user.get(f"/api/v1/firestore/documents/users/{own_uid}")
+        assert response.status_code == 200
+
+    def test_200_update_own_user_doc(self, regular_user, mock_regular_user_context):
+        """update_document: 200 when updating the caller's own user doc."""
+        own_uid = mock_regular_user_context.user_id
+        response = regular_user.put(
+            f"/api/v1/firestore/documents/users/{own_uid}",
+            json={"name": "Alice"},
+            params={"account_id": own_uid},
+        )
+        assert response.status_code == 200
+
+    def test_200_delete_own_user_doc(self, regular_user, mock_regular_user_context):
+        """delete_document: 200 when deleting the caller's own user doc."""
+        own_uid = mock_regular_user_context.user_id
+        response = regular_user.delete(
+            f"/api/v1/firestore/documents/users/{own_uid}",
+            params={"account_id": own_uid},
+        )
+        assert response.status_code == 200
+
+    def test_200_query_own_subcollection(self, regular_user, mock_regular_user_context):
+        """query_documents: 200 when querying the caller's own user subcollection."""
+        own_uid = mock_regular_user_context.user_id
+        response = regular_user.post(
+            "/api/v1/firestore/documents/query",
+            json={"account_id": own_uid, "collection": f"users/{own_uid}/notifications"},
+        )
+        assert response.status_code == 200
+
+    # ── 200 — super-admin bypasses scope checks ───────────────────────────────
+
+    @pytest.mark.parametrize("collection", ["accounts", "organizations", "agent_configs", "users"])
+    def test_200_super_admin_can_access_any_collection_create(self, super_admin_user, collection):
+        """create_document: super-admin bypasses all scope checks."""
+        response = super_admin_user.post(
+            "/api/v1/firestore/documents",
+            json={"account_id": "any_account", "collection": collection, "document_id": "any_doc", "data": {}},
+        )
+        assert response.status_code == 200
+
+    def test_200_super_admin_list_collection(self, super_admin_user):
+        """list_collection_documents: super-admin can enumerate any collection."""
+        response = super_admin_user.get(
+            "/api/v1/firestore/collections/users/documents",
+            params={"account_id": "ignored"},
+        )
+        assert response.status_code == 200
+
+    # ── DM-81 regression: _reject_protected_user_field_write still fires ─────
+
+    def test_403_protected_field_write_still_blocked_after_auth(self, regular_user, mock_regular_user_context):
+        """_reject_protected_user_field_write still rejects roles/permissions writes post-auth."""
+        own_uid = mock_regular_user_context.user_id
+        response = regular_user.post(
+            "/api/v1/firestore/documents",
+            json={
+                "account_id": own_uid,
+                "collection": "users",
+                "document_id": own_uid,
+                "data": {"roles": ["super_admin"]},
+            },
+        )
+        assert response.status_code == 403
+        assert "roles" in response.json()["detail"]
