@@ -140,37 +140,67 @@ class TestAllowsLegitimateWrites:
         _reject_protected_user_field_write("accounts", {"permissions": {"x": 1}})
 
 
+def _make_super_admin_mock():
+    """Return a super-admin UserContext mock for dependency injection."""
+    from unittest.mock import MagicMock
+
+    user = MagicMock()
+    user.user_id = "admin_uid"
+    user.email = "admin@ken-e.ai"
+    user.is_super_admin = True
+    return user
+
+
 def test_post_documents_endpoint_rejects_roles_on_users():
-    """End-to-end: the guard is wired into POST /firestore/documents."""
+    """End-to-end: the field guard is wired into POST /firestore/documents.
+
+    Auth is mocked with a super-admin so the request reaches the field guard
+    (super-admin bypasses the scope check but the field guard is always enforced).
+    """
+    from src.kene_api.auth.dependencies import get_current_user
     from src.kene_api.main import app
 
-    client = TestClient(app)
-    response = client.post(
-        "/api/v1/firestore/documents",
-        json={
-            "account_id": "a000001",
-            "collection": "users",
-            "document_id": "victim-uid",
-            "data": {"roles": ["super_admin"]},
-        },
-    )
+    super_admin = _make_super_admin_mock()
+    app.dependency_overrides[get_current_user] = lambda: super_admin
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/v1/firestore/documents",
+            json={
+                "account_id": "a000001",
+                "collection": "users",
+                "document_id": "victim-uid",
+                "data": {"roles": ["super_admin"]},
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
 
     assert response.status_code == 403
 
 
 def test_post_documents_endpoint_rejects_permissions_on_users():
-    """End-to-end: the guard also blocks the org-admin escalation vector."""
+    """End-to-end: the field guard also blocks the org-admin escalation vector.
+
+    Auth is mocked with a super-admin so the request reaches the field guard.
+    """
+    from src.kene_api.auth.dependencies import get_current_user
     from src.kene_api.main import app
 
-    client = TestClient(app)
-    response = client.post(
-        "/api/v1/firestore/documents",
-        json={
-            "account_id": "a000001",
-            "collection": "users",
-            "document_id": "victim-uid",
-            "data": {"permissions": {"organizations": {"org1": "admin"}}},
-        },
-    )
+    super_admin = _make_super_admin_mock()
+    app.dependency_overrides[get_current_user] = lambda: super_admin
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/api/v1/firestore/documents",
+            json={
+                "account_id": "a000001",
+                "collection": "users",
+                "document_id": "victim-uid",
+                "data": {"permissions": {"organizations": {"org1": "admin"}}},
+            },
+        )
+    finally:
+        app.dependency_overrides.pop(get_current_user, None)
 
     assert response.status_code == 403

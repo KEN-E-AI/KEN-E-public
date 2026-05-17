@@ -8,6 +8,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from ..auth.dependencies import get_current_user
+from ..auth.models import UserContext
 from ..email_service import get_email_service
 from ..firestore import FirestoreService, get_firestore_service
 from ..models.kene_models import BaseRequest, SuccessResponse
@@ -77,6 +79,47 @@ def _reject_protected_user_field_write(collection: str, data: dict[str, Any]) ->
                 "this endpoint; use the dedicated server-side API"
             ),
         )
+
+
+def _require_self_user_path_or_super_admin(
+    collection: str, document_id: str | None, user: UserContext
+) -> None:
+    """Enforce that the caller may only access their own user doc or is a super-admin.
+
+    Allowed scopes:
+    - ``users/{caller_uid}`` — the caller's own top-level user document
+    - ``users/{caller_uid}/{subcollection}/...`` — any subcollection under the caller's user doc
+    - super_admin users bypass all scope checks
+
+    ``list_collection_documents`` and ``query_documents`` call this with
+    ``document_id=None``; for those handlers a non-super-admin caller may only
+    target their own subcollection prefix (``collection.startswith("users/{uid}/")``) —
+    querying the top-level ``users`` collection is super-admin-only.
+
+    Args:
+        collection: Target Firestore collection (or path prefix for subcollections).
+        document_id: Target document ID, or None for collection-level operations.
+        user: The authenticated caller's UserContext.
+
+    Raises:
+        HTTPException: 403 if the caller is not authorised for this path.
+    """
+    if user.is_super_admin:
+        return
+
+    if collection == "users" and document_id == user.user_id:
+        return
+
+    if collection.startswith(f"users/{user.user_id}/"):
+        return
+
+    raise HTTPException(
+        status_code=403,
+        detail=(
+            "Access denied: you may only access your own user document "
+            "via this endpoint"
+        ),
+    )
 
 
 # Pydantic models for Firestore operations
@@ -362,6 +405,7 @@ def validate_big_bet_requirement(funnel_type: str, big_bet_name: str | None) -> 
 async def create_document(
     request: FirestoreDocumentRequest,
     firestore: FirestoreService = Depends(get_firestore_service),
+    user: UserContext = Depends(get_current_user),
 ) -> FirestoreDocumentResponse:
     """
     Create a document in Firestore.
@@ -392,6 +436,9 @@ async def create_document(
     ```
     """
     try:
+        _require_self_user_path_or_super_admin(
+            request.collection, request.document_id, user
+        )
         # Reject privileged-field escalation before touching Firestore.
         _reject_protected_user_field_write(request.collection, request.data)
 
@@ -424,11 +471,16 @@ async def get_document(
     collection: str,
     document_id: str,
     firestore: FirestoreService = Depends(get_firestore_service),
+    user: UserContext = Depends(get_current_user),
 ) -> FirestoreDocumentResponse:
     """
     Get a document from Firestore.
 
     Retrieves a document by its ID from the specified collection.
+
+    **Auth:** Requires a valid Bearer token (401 otherwise). Non-super-admin
+    callers may only read their own ``users/{caller_uid}`` document; any other
+    path returns 403.
 
     **Parameters (in URL path):**
     - `collection` (required): Firestore collection name
@@ -445,6 +497,7 @@ async def get_document(
     ```
     """
     try:
+        _require_self_user_path_or_super_admin(collection, document_id, user)
         # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
@@ -475,6 +528,7 @@ async def update_document(
     data: dict[str, Any],
     account_id: str = Query(..., description=ACCOUNT_ID_VALIDATION_DESCRIPTION),
     firestore: FirestoreService = Depends(get_firestore_service),
+    user: UserContext = Depends(get_current_user),
 ) -> SuccessResponse:
     """
     Update a document in Firestore.
@@ -539,6 +593,8 @@ async def update_document(
     ```
     """
     try:
+        # account_id is a vestigial wire-compat param; authz is enforced by user.user_id
+        _require_self_user_path_or_super_admin(collection, document_id, user)
         # Reject privileged-field escalation before touching Firestore.
         _reject_protected_user_field_write(collection, data)
 
@@ -690,6 +746,7 @@ async def delete_document(
     document_id: str,
     account_id: str = Query(..., description=ACCOUNT_ID_VALIDATION_DESCRIPTION),
     firestore: FirestoreService = Depends(get_firestore_service),
+    user: UserContext = Depends(get_current_user),
 ) -> SuccessResponse:
     """
     Delete a document from Firestore.
@@ -713,6 +770,15 @@ async def delete_document(
     ```
     """
     try:
+        # account_id is a vestigial wire-compat param; authz is enforced by user.user_id
+        _require_self_user_path_or_super_admin(collection, document_id, user)
+        # Block deletion of user documents via this generic endpoint — account deletion
+        # must go through the dedicated account-deletion API to preserve audit trails.
+        if collection == "users":
+            raise HTTPException(
+                status_code=403,
+                detail="User documents cannot be deleted via this endpoint",
+            )
         # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
@@ -740,6 +806,7 @@ async def delete_document(
 async def query_documents(
     request: FirestoreQueryRequest,
     firestore: FirestoreService = Depends(get_firestore_service),
+    user: UserContext = Depends(get_current_user),
 ) -> FirestoreDocumentListResponse:
     """
     Query documents from Firestore.
@@ -770,6 +837,7 @@ async def query_documents(
     ```
     """
     try:
+        _require_self_user_path_or_super_admin(request.collection, None, user)
         # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
@@ -807,6 +875,7 @@ async def list_collection_documents(
         None, description="Maximum number of documents to return"
     ),
     firestore: FirestoreService = Depends(get_firestore_service),
+    user: UserContext = Depends(get_current_user),
 ) -> FirestoreDocumentListResponse:
     """
     List all documents in a collection.
@@ -814,6 +883,8 @@ async def list_collection_documents(
     Retrieves all documents from the specified collection.
     """
     try:
+        # account_id is a vestigial wire-compat param; authz is enforced by user.user_id
+        _require_self_user_path_or_super_admin(collection, None, user)
         # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
@@ -847,13 +918,22 @@ async def create_subcollection_document(
     ),
     account_id: str = Query(..., description=ACCOUNT_ID_VALIDATION_DESCRIPTION),
     firestore: FirestoreService = Depends(get_firestore_service),
+    user: UserContext = Depends(get_current_user),
 ) -> FirestoreDocumentResponse:
     """
     Create a document in a subcollection.
 
     Creates a new document in the specified subcollection within a parent document.
+
+    **Auth:** Requires a valid Bearer token (401 otherwise). Non-super-admin
+    callers may only write subcollections under their own
+    ``users/{caller_uid}`` document; any other parent path returns 403.
     """
     try:
+        # account_id is a vestigial wire-compat param; authz is enforced by user.user_id
+        _require_self_user_path_or_super_admin(
+            f"{collection}/{document_id}/{subcollection}", None, user
+        )
         # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
@@ -890,13 +970,21 @@ async def get_subcollection_document(
     subcollection: str,
     subdocument_id: str,
     firestore: FirestoreService = Depends(get_firestore_service),
+    user: UserContext = Depends(get_current_user),
 ) -> FirestoreDocumentResponse:
     """
     Get a document from a subcollection.
 
     Retrieves a document by its ID from the specified subcollection within a parent document.
+
+    **Auth:** Requires a valid Bearer token (401 otherwise). Non-super-admin
+    callers may only read subcollections under their own
+    ``users/{caller_uid}`` document; any other parent path returns 403.
     """
     try:
+        _require_self_user_path_or_super_admin(
+            f"{collection}/{document_id}/{subcollection}", None, user
+        )
         # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
@@ -937,11 +1025,16 @@ async def update_subcollection_document(
     data: dict[str, Any],
     account_id: str = Query(..., description=ACCOUNT_ID_VALIDATION_DESCRIPTION),
     firestore: FirestoreService = Depends(get_firestore_service),
+    user: UserContext = Depends(get_current_user),
 ) -> SuccessResponse:
     """
     Update a document in a subcollection.
 
     Updates an existing document in the specified subcollection with the provided data. Supports four modes:
+
+    **Auth:** Requires a valid Bearer token (401 otherwise). Non-super-admin
+    callers may only write subcollections under their own
+    ``users/{caller_uid}`` document; any other parent path returns 403.
 
     1. Direct update (standard functionality):
        data = {"field1": "value1", "field2": "value2"}
@@ -976,6 +1069,10 @@ async def update_subcollection_document(
        }
     """
     try:
+        # account_id is a vestigial wire-compat param; authz is enforced by user.user_id
+        _require_self_user_path_or_super_admin(
+            f"{collection}/{document_id}/{subcollection}", None, user
+        )
         # First validate the request payload structure before checking Firestore
         if "update" in data and isinstance(data["update"], dict):
             update_config = data["update"]
@@ -1141,13 +1238,22 @@ async def delete_subcollection_document(
     subdocument_id: str,
     account_id: str = Query(..., description=ACCOUNT_ID_VALIDATION_DESCRIPTION),
     firestore: FirestoreService = Depends(get_firestore_service),
+    user: UserContext = Depends(get_current_user),
 ) -> SuccessResponse:
     """
     Delete a document from a subcollection.
 
     Deletes a document by its ID from the specified subcollection within a parent document.
+
+    **Auth:** Requires a valid Bearer token (401 otherwise). Non-super-admin
+    callers may only delete subcollections under their own
+    ``users/{caller_uid}`` document; any other parent path returns 403.
     """
     try:
+        # account_id is a vestigial wire-compat param; authz is enforced by user.user_id
+        _require_self_user_path_or_super_admin(
+            f"{collection}/{document_id}/{subcollection}", None, user
+        )
         # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
