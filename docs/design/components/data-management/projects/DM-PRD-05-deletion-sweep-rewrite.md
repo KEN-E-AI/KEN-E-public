@@ -23,7 +23,7 @@ This project rewrites both. After DM-PRD-01–DM-PRD-04 migrate every per-accoun
 firestore.recursive_delete(db.collection("accounts").document(account_id))
 ```
 
-**User deletion** becomes a coordinated sweep: collection-group cleanup of `members/{user_id}` rows across every org and account, IN-PRD-05's `on-user-removed` hook chained per affected account, deletion of user-scoped subcollections (`users/{user_id}/notification_status`, `users/{user_id}/preferences`, `users/{user_id}/chat_categories` — and any future user-scoped subcollection), then `recursive_delete(users/{user_id})` to reap the user doc itself.
+**User deletion** becomes a coordinated sweep: collection-group cleanup of `members/{user_id}` rows across every org and account, IN-PRD-05's `on-user-removed` hook chained per affected account, deletion of user-scoped subcollections (`users/{user_id}/notification_status`, `users/{user_id}/preferences`, `users/{user_id}/chat_categories`, `users/{user_id}/notifications`, `users/{user_id}/security` — and any future user-scoped subcollection), then `recursive_delete(users/{user_id})` to reap the user doc itself.
 
 This project ships both rewrites plus end-to-end tests that prove nothing is orphaned.
 
@@ -44,7 +44,7 @@ Can only start after **all four** data-migration projects (DM-PRD-01, DM-PRD-02,
 - Add `DELETE /api/v1/users/{user_id}` endpoint, super-admin-gated (`@ken-e.ai` only — full user-data purge is an internal/compliance action, not self-service)
 - Add `delete_user_data(user_id)` orchestrator in `api/src/kene_api/services/user_deletion_service.py`:
   1. Collection-group query `members.where(user_id == user_id)` — for each match, delete the row and (if `parent_kind == "account"`) call IN-PRD-05's `on-user-removed(account_id, user_id)` hook synchronously
-  2. Delete every user-scoped subcollection under `users/{user_id}` — explicitly enumerated: `notification_status`, `preferences`, `chat_categories`, plus a registered `USER_SUBCOLLECTIONS` list extended by future PRDs
+  2. Delete every user-scoped subcollection under `users/{user_id}` — explicitly enumerated: `notification_status`, `preferences`, `chat_categories`, `notifications`, `security`, plus a registered `USER_SUBCOLLECTIONS` list extended by future PRDs
   3. `firestore.recursive_delete(users/{user_id})` — reaps the user doc and any subcollections registered via `USER_SUBCOLLECTIONS`
   4. GCS prefix purge (no user-scoped GCS data exists today; the helper checks `gs://*/users/{user_id}/*` prefixes against an explicit allowlist and is a no-op until any future user-scoped GCS data is registered)
   5. Audit entry written to `organizations/{primary_org_id}/account_member_audit/` with `action=remove`, `actor_kind=super_admin` (best effort — if user has no org membership, audit is skipped)
@@ -124,6 +124,8 @@ USER_SUBCOLLECTIONS: list[str] = [
     "notification_status",   # firestore_notification_repository.py
     "preferences",           # firestore_notification_repository.py
     "chat_categories",       # CH-PRD-03
+    "notifications",         # routers/users.py — NotificationSettings seed
+    "security",              # routers/users.py — SecuritySettings seed
 ]
 
 USER_GCS_PREFIXES: list[str] = []  # empty in v1; add via separate PR if any future user-scoped GCS data is introduced
@@ -243,7 +245,7 @@ This is intentionally a thin wrapper — all logic lives in `user_deletion_servi
    - All 5 `members/{user_id}` rows are gone (verified via collection-group query).
    - IN-PRD-05's `on_user_removed` hook fired exactly 3 times (once per affected account).
    - `users/{user_id}` doc is gone.
-   - All entries in `users/{user_id}/notification_status`, `users/{user_id}/preferences`, `users/{user_id}/chat_categories` are gone.
+   - All entries in `users/{user_id}/notification_status`, `users/{user_id}/preferences`, `users/{user_id}/chat_categories`, `users/{user_id}/notifications`, `users/{user_id}/security` are gone.
    - Response body's `UserDeletionResult` has accurate counts.
 10. Re-running `DELETE /api/v1/users/{user_id}` on an already-purged user is a no-op (200 with zero-count `UserDeletionResult`).
 11. `USER_SUBCOLLECTIONS` registry is documented in `user_deletion_service.py` with one comment line per entry indicating the owning PRD; future PRDs that add user-scoped subcollections must update the registry (CI grep enforces this — see DM-PRD-06 §4.2).
@@ -293,6 +295,8 @@ setup:
     - users/u_carol/notification_status/n_1, n_2
     - users/u_carol/preferences/notifications
     - users/u_carol/chat_categories/cat_research, cat_outreach, cat_admin
+    - users/u_carol/notifications/settings
+    - users/u_carol/security/settings
     - organizations/org_acme/members/u_carol (role=member)
     - organizations/org_widgets/members/u_carol (role=admin)
     - accounts/acc_acme_a/members/u_carol (role=editor)
