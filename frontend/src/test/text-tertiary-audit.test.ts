@@ -48,6 +48,9 @@ const ALLOWED_FILES = new Set<string>([
   "components/ui/textarea.tsx",
   "components/ui/toggle.tsx",
 
+  // admin — empty-state secondary message in the Super Admins table
+  "components/admin/superAdmins/SuperAdminsTable.tsx",
+
   // chat — timestamps and captions per accessibility-baseline.md §Exemptions
   "components/chat/ChatInterface.tsx",
   "components/chat/SessionsSidebar.tsx",
