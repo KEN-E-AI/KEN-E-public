@@ -32,6 +32,7 @@ class UserResponse(BaseModel):
         default_factory=lambda: {"accounts": {}, "organizations": {}}
     )
     created_at: Optional[str] = None
+    is_super_admin: bool = False
 
 
 class NotificationSettings(BaseModel):
@@ -114,6 +115,7 @@ async def get_current_user(
             email=current_user.email,
             profile=UserProfile(email=current_user.email),
             permissions={"accounts": {}, "organizations": {}},
+            is_super_admin=current_user.is_super_admin,
         )
 
     user_data = user_doc.to_dict()
@@ -131,6 +133,7 @@ async def get_current_user(
         ),
         permissions=user_data.get("permissions", {"accounts": {}, "organizations": {}}),
         created_at=user_data.get("created_at"),
+        is_super_admin=current_user.is_super_admin,
     )
 
 

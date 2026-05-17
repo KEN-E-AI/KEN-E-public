@@ -51,3 +51,11 @@ export {
   useUpdateIntuition,
   useDeleteIntuition,
 } from "./insights";
+
+// Super Admin queries
+export {
+  superAdminKeys,
+  useSuperAdmins,
+  useGrantSuperAdmin,
+  useRevokeSuperAdmin,
+} from "./superAdmins";

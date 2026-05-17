@@ -1,6 +1,7 @@
 import { describe, test, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import TeamManagement from "./TeamManagement";
 import * as teamApi from "@/data/teamApi";
@@ -101,9 +102,11 @@ describe("TeamManagement", () => {
 
   const renderComponent = () => {
     return render(
-      <QueryClientProvider client={queryClient}>
-        <TeamManagement orgData={mockOrgData} />
-      </QueryClientProvider>,
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <TeamManagement orgData={mockOrgData} />
+        </QueryClientProvider>
+      </MemoryRouter>,
     );
   };
 
@@ -126,7 +129,7 @@ describe("TeamManagement", () => {
     });
   });
 
-  test("displays super admin badge for @ken-e.ai users", async () => {
+  test("does not display Super Admin badge for @ken-e.ai users (badge removed)", async () => {
     mockTeamApi.getOrganizationMembers.mockResolvedValue({
       members: mockMembers,
       total: 3,
@@ -139,8 +142,10 @@ describe("TeamManagement", () => {
     renderComponent();
 
     await waitFor(() => {
-      expect(screen.getByText("Super Admin")).toBeInTheDocument();
+      expect(screen.getByText("support@ken-e.ai")).toBeInTheDocument();
     });
+
+    expect(screen.queryByText("Super Admin")).not.toBeInTheDocument();
   });
 
   test("displays account permissions for view-role users", async () => {
@@ -162,7 +167,7 @@ describe("TeamManagement", () => {
     });
   });
 
-  test("disables actions for super admin users", async () => {
+  test("shows action menu for @ken-e.ai members (no longer special-cased)", async () => {
     mockTeamApi.getOrganizationMembers.mockResolvedValue({
       members: mockMembers,
       total: 3,
@@ -172,17 +177,26 @@ describe("TeamManagement", () => {
       total: 0,
     });
 
+    // Current user is admin (mockUser has org admin permission)
+    mockUseAuth.mockReturnValue({ user: mockUser } as any);
+
     renderComponent();
 
     await waitFor(() => {
-      // Find dropdown buttons (MoreVertical icons)
-      const dropdownButtons = screen
-        .getAllByRole("button")
-        .filter((button) => button.querySelector("svg"));
-
-      // Should have dropdown for user1 and user2, but not for super admin
-      expect(dropdownButtons.length).toBeLessThan(mockMembers.length);
+      expect(screen.getByText("support@ken-e.ai")).toBeInTheDocument();
     });
+
+    // The @ken-e.ai member has access_level "view" and is not the current user,
+    // so the action menu should now be rendered (no longer suppressed by email domain).
+    const dropdownButtons = screen
+      .getAllByRole("button")
+      .filter((button) => button.querySelector("svg"));
+
+    // user1 (admin), user2 (view), and super1 (view/@ken-e.ai) all get menus
+    // (owners and self are excluded; none of the mockMembers are owners or self)
+    expect(dropdownButtons.length).toBeGreaterThanOrEqual(
+      mockMembers.length - 1,
+    );
   });
 
   test("shows account permissions in invite modal for view-role", async () => {
@@ -308,5 +322,109 @@ describe("TeamManagement", () => {
     await waitFor(() => {
       expect(screen.queryByText("Account Permissions")).not.toBeInTheDocument();
     });
+  });
+});
+
+describe("TeamManagement - @ken-e.ai members are no longer special-cased", () => {
+  let queryClient: QueryClient;
+  const mockToast = vi.fn();
+
+  const mockUser = {
+    id: "user123",
+    email: "admin@example.com",
+    firstName: "Admin",
+    lastName: "User",
+    permissions: {
+      organizations: {
+        org456: "admin",
+      },
+    },
+  };
+
+  const mockOrgData = {
+    organization_id: "org456",
+    organization_name: "Test Organization",
+    team: {
+      members_limit: 10,
+    },
+  };
+
+  const kenEMember = {
+    user_id: "kene-user",
+    email: "support@ken-e.ai",
+    first_name: "Support",
+    last_name: "Admin",
+    access_level: "view" as const,
+    is_super_admin: true,
+  };
+
+  const mockAccounts = [{ account_id: "acc123", account_name: "Account 1" }];
+
+  beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+
+    mockUseAuth.mockReturnValue({ user: mockUser } as any);
+    mockUseToast.mockReturnValue({ toast: mockToast } as any);
+    mockAccountsQuery.useAccounts.mockReturnValue({
+      data: mockAccounts,
+      isLoading: false,
+    } as any);
+
+    vi.clearAllMocks();
+  });
+
+  const renderComponent = () =>
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={queryClient}>
+          <TeamManagement orgData={mockOrgData} />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+  test("a @ken-e.ai member shows their actual access_level badge, not a Super Admin badge", async () => {
+    mockTeamApi.getOrganizationMembers.mockResolvedValue({
+      members: [kenEMember],
+      total: 1,
+    });
+    mockTeamApi.getOrganizationInvitations.mockResolvedValue({
+      invitations: [],
+      total: 0,
+    });
+
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByText("support@ken-e.ai")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByText("Super Admin")).not.toBeInTheDocument();
+    expect(screen.getByText("view")).toBeInTheDocument();
+  });
+
+  test("a non-owner, non-self @ken-e.ai member renders the action menu", async () => {
+    mockTeamApi.getOrganizationMembers.mockResolvedValue({
+      members: [kenEMember],
+      total: 1,
+    });
+    mockTeamApi.getOrganizationInvitations.mockResolvedValue({
+      invitations: [],
+      total: 0,
+    });
+
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByText("support@ken-e.ai")).toBeInTheDocument();
+    });
+
+    // The action menu button (MoreVertical) should be present
+    const menuButtons = screen
+      .getAllByRole("button")
+      .filter((btn) => btn.querySelector("svg"));
+
+    expect(menuButtons.length).toBeGreaterThan(0);
   });
 });
