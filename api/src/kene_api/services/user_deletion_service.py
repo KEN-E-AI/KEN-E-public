@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING
 
 from google.cloud import firestore as firestore_module
 
+from ..auth.dependencies import SuperAdminRequiredError
 from ..auth.models import UserContext
 from ..dependencies import get_firestore_client
 from ..models.user_deletion import UserDeletionResult
@@ -124,14 +125,18 @@ async def _resolve_member_rows(
         account_refs: list[DocumentReference] = []
         members_group = db.collection_group("members")
 
-        for doc in members_group.where("user_id", "==", user_id).where(
-            "parent_kind", "==", "organization"
-        ).stream():
+        for doc in (
+            members_group.where("user_id", "==", user_id)
+            .where("parent_kind", "==", "organization")
+            .stream()
+        ):
             org_refs.append(doc.reference)
 
-        for doc in members_group.where("user_id", "==", user_id).where(
-            "parent_kind", "==", "account"
-        ).stream():
+        for doc in (
+            members_group.where("user_id", "==", user_id)
+            .where("parent_kind", "==", "account")
+            .stream()
+        ):
             account_refs.append(doc.reference)
 
         return org_refs, account_refs
@@ -320,10 +325,13 @@ async def delete_user_data(
         UserDeletionResult with counts and any per-step errors.
     """
     if not actor.is_super_admin:
-        raise PermissionError(
-            f"delete_user_data requires a super-admin actor; got {actor.email!r}"
-        )
+        raise SuperAdminRequiredError()
 
+    logger.info(
+        "[user_deletion] initiated by actor_id=%s target_user_id=%s",
+        actor.user_id,
+        user_id,
+    )
     result = UserDeletionResult(user_id=user_id)
     db = get_firestore_client()
 
@@ -365,9 +373,7 @@ async def delete_user_data(
     )
 
     # Step 3 — Delete all member rows (org + account).
-    logger.info(
-        "[user_deletion] step 3:delete_members starting user_id=%s", user_id
-    )
+    logger.info("[user_deletion] step 3:delete_members starting user_id=%s", user_id)
     await _delete_members(org_refs, account_refs, result)
     logger.info(
         "[user_deletion] step 3:delete_members completed user_id=%s deleted=%d",
@@ -394,12 +400,8 @@ async def delete_user_data(
     )
 
     # Step 6 — Best-effort audit entry.
-    logger.info(
-        "[user_deletion] step 6:write_audit starting user_id=%s", user_id
-    )
+    logger.info("[user_deletion] step 6:write_audit starting user_id=%s", user_id)
     await _write_audit_best_effort(actor, org_refs, user_id)
-    logger.info(
-        "[user_deletion] step 6:write_audit completed user_id=%s", user_id
-    )
+    logger.info("[user_deletion] step 6:write_audit completed user_id=%s", user_id)
 
     return result

@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 
@@ -229,6 +229,19 @@ from .metrics.latency_metrics import LatencyMiddleware
 
 app.add_middleware(LatencyMiddleware)
 
+# Super-admin gate: flat 403 body required by DM-PRD-05 §4.3 / AC-8.
+# Using a custom exception class + handler avoids the {"detail": ...} wrapper
+# that raise HTTPException(detail=...) produces.
+from .auth.dependencies import SuperAdminRequiredError
+
+
+@app.exception_handler(SuperAdminRequiredError)
+async def _super_admin_required_handler(
+    request: Request, exc: SuperAdminRequiredError
+) -> JSONResponse:
+    return JSONResponse(status_code=403, content={"error": "super_admin_required"})
+
+
 # Include routers
 app.include_router(auth.router)  # Auth router already has its prefix
 app.include_router(admin.router)  # Super-admin role management (DM-81); has its prefix
@@ -237,7 +250,9 @@ app.include_router(
 )
 app.include_router(accounts.router, prefix="/api/v1/accounts", tags=["accounts"])
 app.include_router(agent_configs.router)  # Agent configs router already has its prefix
-app.include_router(agent_configs.account_router)  # Per-account agent-config CRUD (AH-PRD-02 Phase 3)
+app.include_router(
+    agent_configs.account_router
+)  # Per-account agent-config CRUD (AH-PRD-02 Phase 3)
 app.include_router(account_tools.router)  # Per-account tool inventory (AH-PRD-06)
 app.include_router(integrations.router)  # Integrations router already has its prefix
 app.include_router(oauth_integrations.router)  # OAuth router already has its prefix
@@ -286,10 +301,14 @@ app.include_router(
     prefix="/api/v1",
     tags=["industry-templates"],
 )
-app.include_router(knowledge_graph.router)  # Knowledge graph router already has its prefix
+app.include_router(
+    knowledge_graph.router
+)  # Knowledge graph router already has its prefix
 app.include_router(tools.router)  # Tools router already has its prefix
 app.include_router(mcp.router)  # MCP server management router already has its prefix
-app.include_router(mcp_server_configs.router)  # MCP server config admin router has its prefix
+app.include_router(
+    mcp_server_configs.router
+)  # MCP server config admin router has its prefix
 
 
 # Health and root endpoints below routers

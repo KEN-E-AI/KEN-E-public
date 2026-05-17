@@ -9,7 +9,7 @@ Coverage matrix per the Implementation Plan:
   (e) hook absent — on_user_removed is None; no raise, integrations_hook_fired=0
   (f) write_audit absent — _write_audit is None; audit step is a no-op
   (g) hook raises — on_user_removed raises; errors recorded, deletion continues
-  (h) non-super-admin actor raises PermissionError before any I/O
+  (h) non-super-admin actor raises SuperAdminRequiredError before any I/O
 
 All tests are hermetic — no live Firestore connection.  The Firestore client
 and StorageService are replaced with MagicMock / AsyncMock throughout.
@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import src.kene_api.services.user_deletion_service as svc
+from src.kene_api.auth.dependencies import SuperAdminRequiredError
 from src.kene_api.auth.models import UserContext
 from src.kene_api.models.user_deletion import UserDeletionResult
 
@@ -82,20 +83,26 @@ def _make_account_ref(account_id: str, user_id: str = "u_carol") -> MagicMock:
 
 
 # ---------------------------------------------------------------------------
-# (h) Non-super-admin actor raises PermissionError before any I/O
+# (h) Non-super-admin actor raises SuperAdminRequiredError before any I/O
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_non_super_admin_raises_permission_error() -> None:
-    """Non-@ken-e.ai actor raises PermissionError; no Firestore I/O performed."""
+async def test_non_super_admin_raises_super_admin_required_error() -> None:
+    """Non-@ken-e.ai actor raises SuperAdminRequiredError; no Firestore I/O performed.
+
+    The service raises SuperAdminRequiredError (not PermissionError) so that if
+    delete_user_data is ever called without the route's require_super_admin gate
+    (defense-in-depth path), the global exception handler in main.py still
+    converts it to a clean 403 rather than an unhandled 500.
+    """
     actor = _make_actor(email="attacker@external.com")
     mock_db = MagicMock()
 
     with (
         patch.object(svc, "get_firestore_client", return_value=mock_db),
     ):
-        with pytest.raises(PermissionError, match="super-admin"):
+        with pytest.raises(SuperAdminRequiredError):
             await svc.delete_user_data("u_carol", actor=actor)
 
     mock_db.collection.assert_not_called()
