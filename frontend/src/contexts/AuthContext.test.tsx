@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, vi, afterEach } from "vitest";
-import { render, act } from "@testing-library/react";
+import { render, act, waitFor } from "@testing-library/react";
 import { AuthProvider, useAuth, type SelectedOrgAccount } from "./AuthContext";
 import type { OrganizationId, AccountId } from "@/lib/branded-types";
 
@@ -25,6 +25,13 @@ vi.mock("@/lib/firebase", () => ({
   },
   authInitialized: true,
   authBypassEnabled: false,
+}));
+
+// Mock @/lib/api so the isSuperAdmin suite can configure the /me response per-test
+vi.mock("@/lib/api", () => ({
+  default: {
+    get: vi.fn(),
+  },
 }));
 
 // Mock localStorage
@@ -404,5 +411,135 @@ describe("AuthContext - logout", () => {
     );
 
     consoleSpy.mockRestore();
+  });
+});
+
+describe("AuthContext - isSuperAdmin", () => {
+  let apiMock: { get: ReturnType<typeof vi.fn> };
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    localStorageMock.getItem.mockReturnValue(null);
+    const apiModule = await import("@/lib/api");
+    apiMock = apiModule.default as unknown as { get: ReturnType<typeof vi.fn> };
+    // Default: api.get never resolves (simulates pending /me call)
+    apiMock.get.mockReturnValue(new Promise(() => {}));
+  });
+
+  afterEach(() => {
+    vi.resetAllMocks();
+  });
+
+  test("isSuperAdmin defaults to false before /me resolves", () => {
+    // api.get is already set to a never-resolving promise in beforeEach
+    let authContext: any;
+    render(
+      <AuthProvider>
+        <TestComponent onContextUpdate={(ctx) => { authContext = ctx; }} />
+      </AuthProvider>
+    );
+
+    expect(authContext.isSuperAdmin).toBe(false);
+  });
+
+  test("isSuperAdmin is true when /me returns is_super_admin=true", async () => {
+    apiMock.get.mockResolvedValue({ data: { is_super_admin: true } });
+
+    const savedUser = JSON.stringify({
+      id: "uid-1",
+      email: "staff@example.com",
+      firstName: "Staff",
+      lastName: "User",
+    });
+    localStorageMock.getItem.mockImplementation((key: string) =>
+      key === "user" ? savedUser : null,
+    );
+
+    const { onAuthStateChanged } = await import("firebase/auth");
+    const firebaseLib = await import("@/lib/firebase");
+    (firebaseLib as any).authInitialized = true;
+
+    // Set up the callback capture BEFORE rendering so the useEffect captures it
+    let capturedCallback: ((user: any) => void) | null = null;
+    (onAuthStateChanged as ReturnType<typeof vi.fn>).mockImplementation(
+      (_auth: any, cb: (user: any) => void) => {
+        capturedCallback = cb;
+        return vi.fn();
+      }
+    );
+
+    let authContext: any;
+    await act(async () => {
+      render(
+        <AuthProvider>
+          <TestComponent onContextUpdate={(ctx) => { authContext = ctx; }} />
+        </AuthProvider>
+      );
+    });
+
+    await act(async () => {
+      capturedCallback?.({ uid: "uid-1", email: "staff@example.com" });
+    });
+
+    await waitFor(() => {
+      expect(authContext.isSuperAdmin).toBe(true);
+    }, { timeout: 1000 });
+  });
+
+  test("isSuperAdmin is false when /me returns is_super_admin=false", async () => {
+    apiMock.get.mockResolvedValue({ data: { is_super_admin: false } });
+
+    const savedUser = JSON.stringify({
+      id: "uid-2",
+      email: "user@external.com",
+      firstName: "Regular",
+      lastName: "User",
+    });
+    localStorageMock.getItem.mockImplementation((key: string) =>
+      key === "user" ? savedUser : null,
+    );
+
+    const { onAuthStateChanged } = await import("firebase/auth");
+    const firebaseLib = await import("@/lib/firebase");
+    (firebaseLib as any).authInitialized = true;
+
+    let capturedCallback: ((user: any) => void) | null = null;
+    (onAuthStateChanged as ReturnType<typeof vi.fn>).mockImplementation(
+      (_auth: any, cb: (user: any) => void) => {
+        capturedCallback = cb;
+        return vi.fn();
+      }
+    );
+
+    let authContext: any;
+    await act(async () => {
+      render(
+        <AuthProvider>
+          <TestComponent onContextUpdate={(ctx) => { authContext = ctx; }} />
+        </AuthProvider>
+      );
+    });
+
+    await act(async () => {
+      capturedCallback?.({ uid: "uid-2", email: "user@external.com" });
+      await new Promise((r) => setTimeout(r, 10));
+    });
+
+    expect(authContext.isSuperAdmin).toBe(false);
+  });
+
+  test("sign-out resets isSuperAdmin to false synchronously", async () => {
+    let authContext: any;
+    render(
+      <AuthProvider>
+        <TestComponent onContextUpdate={(ctx) => { authContext = ctx; }} />
+      </AuthProvider>
+    );
+
+    await act(async () => {
+      await authContext.logout();
+    });
+
+    expect(authContext.isSuperAdmin).toBe(false);
   });
 });

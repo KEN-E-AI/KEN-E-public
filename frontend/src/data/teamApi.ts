@@ -9,7 +9,7 @@ export interface TeamMember {
   access_level: "admin" | "view" | "owner";
   added_date?: string;
   account_permissions?: Record<string, "edit" | "view">; // Account ID -> access level
-  is_super_admin?: boolean; // True if email ends with @ken-e.ai
+  is_super_admin?: boolean; // Set by the backend only; not currently populated by the members endpoint.
 }
 
 export interface TeamMembersResponse {

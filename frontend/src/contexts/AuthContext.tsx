@@ -162,6 +162,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [securitySettings, setSecuritySettings] = useState<SecuritySetting[]>(
     [],
   );
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   // Wrapper functions to persist metadata to localStorage
   const setOrgMetadata = (data: Record<string, any>) => {
@@ -348,6 +349,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
           lastName: "Bypass",
         };
         setUser(fakeUser);
+        setIsSuperAdmin(bypassRole !== "regular");
         localStorage.setItem("user", JSON.stringify(fakeUser));
         if (authBypassWorkspaceSelected) {
           setHasSelectedWorkspace(true);
@@ -375,6 +377,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       if (!firebaseUser) {
         // User is signed out - clear all state
         setUser(null);
+        setIsSuperAdmin(false);
         setHasSelectedWorkspace(false);
         setSelectedOrgAccountState(null);
         setOrgMetadataState({});
@@ -532,6 +535,20 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     fetchNotificationsIfReady();
   }, [user, selectedOrgAccount?.accountId]); // Re-fetch when user or account changes
 
+  // Fetch server-computed super-admin status from /api/v1/users/me
+  useEffect(() => {
+    if (!user) {
+      setIsSuperAdmin(false);
+      return;
+    }
+    type MeResponse = { is_super_admin: boolean };
+    api.get<MeResponse>("/api/v1/users/me").then((res) => {
+      setIsSuperAdmin(res.data.is_super_admin);
+    }).catch(() => {
+      // Leave current value unchanged on error
+    });
+  }, [user?.id]);
+
   const value = {
     user,
     isAuthenticated: !!user,
@@ -557,7 +574,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     securitySettings,
     setNotificationSettings,
     setSecuritySettings,
-    isSuperAdmin: user?.email?.toLowerCase().endsWith("@ken-e.ai") || false,
+    isSuperAdmin,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
