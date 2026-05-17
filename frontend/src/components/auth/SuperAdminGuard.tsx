@@ -5,9 +5,8 @@ import { useAuth } from "@/contexts/AuthContext";
 type Props = { children: ReactNode };
 
 export function SuperAdminGuard({ children }: Props) {
-  const { isSuperAdmin } = useAuth();
-  if (!isSuperAdmin) {
-    return <Navigate to="/" replace />;
-  }
+  const { isSuperAdmin, isSuperAdminLoading } = useAuth();
+  if (isSuperAdminLoading) return null;
+  if (!isSuperAdmin) return <Navigate to="/" replace />;
   return <>{children}</>;
 }

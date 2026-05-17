@@ -8,8 +8,7 @@ import type { GrantSuperAdminRequest } from "@/data/superAdminsApi";
 
 export const superAdminKeys = {
   all: ["superAdmins"] as const,
-  lists: () => [...superAdminKeys.all, "list"] as const,
-  list: () => [...superAdminKeys.lists()] as const,
+  list: () => [...superAdminKeys.all, "list"] as const,
 };
 
 export function useSuperAdmins() {

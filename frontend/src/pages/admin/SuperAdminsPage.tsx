@@ -6,6 +6,7 @@ import {
   useGrantSuperAdmin,
   useRevokeSuperAdmin,
 } from "@/queries/superAdmins";
+import type { GrantSuperAdminRequest } from "@/data/superAdminsApi";
 import { SuperAdminsTable } from "@/components/admin/superAdmins/SuperAdminsTable";
 import { GrantSuperAdminForm } from "@/components/admin/superAdmins/GrantSuperAdminForm";
 import { RevokeConfirmDialog } from "@/components/admin/superAdmins/RevokeConfirmDialog";
@@ -21,9 +22,9 @@ export default function SuperAdminsPage() {
   const [revokeTarget, setRevokeTarget] = useState<RevokeTarget | null>(null);
   const [revokeDialogOpen, setRevokeDialogOpen] = useState(false);
 
-  const handleGrant = (body: { uid?: string; email?: string }) => {
+  const handleGrant = (body: GrantSuperAdminRequest) => {
     setGrantError(null);
-    grantMutation.mutate(body as never, {
+    grantMutation.mutate(body, {
       onSuccess: (entry) => {
         toast.success(
           `Super-admin access granted to ${entry.email ?? entry.uid}`,

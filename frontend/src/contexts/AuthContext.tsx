@@ -125,6 +125,7 @@ interface AuthContextType {
   setNotificationSettings: (settings: NotificationSetting[]) => void;
   setSecuritySettings: (settings: SecuritySetting[]) => void;
   isSuperAdmin: boolean;
+  isSuperAdminLoading: boolean;
 }
 
 export const AuthContext = createContext<AuthContextType | undefined>(
@@ -163,6 +164,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     [],
   );
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [isSuperAdminLoading, setIsSuperAdminLoading] = useState(false);
 
   // Wrapper functions to persist metadata to localStorage
   const setOrgMetadata = (data: Record<string, any>) => {
@@ -350,6 +352,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         };
         setUser(fakeUser);
         setIsSuperAdmin(bypassRole !== "regular");
+        setIsSuperAdminLoading(false);
         localStorage.setItem("user", JSON.stringify(fakeUser));
         if (authBypassWorkspaceSelected) {
           setHasSelectedWorkspace(true);
@@ -378,6 +381,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
         // User is signed out - clear all state
         setUser(null);
         setIsSuperAdmin(false);
+        setIsSuperAdminLoading(false);
         setHasSelectedWorkspace(false);
         setSelectedOrgAccountState(null);
         setOrgMetadataState({});
@@ -539,16 +543,20 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   useEffect(() => {
     if (!user) {
       setIsSuperAdmin(false);
+      setIsSuperAdminLoading(false);
       return;
     }
+    setIsSuperAdminLoading(true);
     type MeResponse = { is_super_admin: boolean };
     api
       .get<MeResponse>("/api/v1/users/me")
       .then((res) => {
         setIsSuperAdmin(res.data.is_super_admin);
+        setIsSuperAdminLoading(false);
       })
       .catch(() => {
-        // Leave current value unchanged on error
+        setIsSuperAdmin(false);
+        setIsSuperAdminLoading(false);
       });
   }, [user?.id]);
 
@@ -578,6 +586,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setNotificationSettings,
     setSecuritySettings,
     isSuperAdmin,
+    isSuperAdminLoading,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
