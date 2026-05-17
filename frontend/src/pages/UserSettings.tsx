@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import axios from "axios";
+import api from "@/lib/api";
 import {
   User,
   Bell,
@@ -62,8 +62,8 @@ const UserSettings = () => {
 
   const saveProfile = async () => {
     try {
-      await axios.put(
-        `${import.meta.env.VITE_API_BASE_URL}/api/v1/firestore/documents/users/${encodeURIComponent(user.id)}?account_id=${encodeURIComponent(user.id)}`,
+      await api.put(
+        `/api/v1/firestore/documents/users/${encodeURIComponent(user.id)}?account_id=${encodeURIComponent(user.id)}`,
         {
           profile: {
             first_name: profile.firstName,

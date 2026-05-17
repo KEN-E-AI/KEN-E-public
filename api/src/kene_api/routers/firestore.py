@@ -768,6 +768,13 @@ async def delete_document(
     try:
         # account_id is a vestigial wire-compat param; authz is enforced by user.user_id
         _require_self_user_path_or_super_admin(collection, document_id, user)
+        # Block deletion of user documents via this generic endpoint — account deletion
+        # must go through the dedicated account-deletion API to preserve audit trails.
+        if collection == "users":
+            raise HTTPException(
+                status_code=403,
+                detail="User documents cannot be deleted via this endpoint",
+            )
         # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
@@ -907,6 +914,7 @@ async def create_subcollection_document(
     ),
     account_id: str = Query(..., description=ACCOUNT_ID_VALIDATION_DESCRIPTION),
     firestore: FirestoreService = Depends(get_firestore_service),
+    user: UserContext = Depends(get_current_user),
 ) -> FirestoreDocumentResponse:
     """
     Create a document in a subcollection.
@@ -914,6 +922,10 @@ async def create_subcollection_document(
     Creates a new document in the specified subcollection within a parent document.
     """
     try:
+        # account_id is a vestigial wire-compat param; authz is enforced by user.user_id
+        _require_self_user_path_or_super_admin(
+            f"{collection}/{document_id}/{subcollection}", None, user
+        )
         # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
@@ -950,6 +962,7 @@ async def get_subcollection_document(
     subcollection: str,
     subdocument_id: str,
     firestore: FirestoreService = Depends(get_firestore_service),
+    user: UserContext = Depends(get_current_user),
 ) -> FirestoreDocumentResponse:
     """
     Get a document from a subcollection.
@@ -957,6 +970,9 @@ async def get_subcollection_document(
     Retrieves a document by its ID from the specified subcollection within a parent document.
     """
     try:
+        _require_self_user_path_or_super_admin(
+            f"{collection}/{document_id}/{subcollection}", None, user
+        )
         # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:
@@ -997,6 +1013,7 @@ async def update_subcollection_document(
     data: dict[str, Any],
     account_id: str = Query(..., description=ACCOUNT_ID_VALIDATION_DESCRIPTION),
     firestore: FirestoreService = Depends(get_firestore_service),
+    user: UserContext = Depends(get_current_user),
 ) -> SuccessResponse:
     """
     Update a document in a subcollection.
@@ -1036,6 +1053,10 @@ async def update_subcollection_document(
        }
     """
     try:
+        # account_id is a vestigial wire-compat param; authz is enforced by user.user_id
+        _require_self_user_path_or_super_admin(
+            f"{collection}/{document_id}/{subcollection}", None, user
+        )
         # First validate the request payload structure before checking Firestore
         if "update" in data and isinstance(data["update"], dict):
             update_config = data["update"]
@@ -1201,6 +1222,7 @@ async def delete_subcollection_document(
     subdocument_id: str,
     account_id: str = Query(..., description=ACCOUNT_ID_VALIDATION_DESCRIPTION),
     firestore: FirestoreService = Depends(get_firestore_service),
+    user: UserContext = Depends(get_current_user),
 ) -> SuccessResponse:
     """
     Delete a document from a subcollection.
@@ -1208,6 +1230,10 @@ async def delete_subcollection_document(
     Deletes a document by its ID from the specified subcollection within a parent document.
     """
     try:
+        # account_id is a vestigial wire-compat param; authz is enforced by user.user_id
+        _require_self_user_path_or_super_admin(
+            f"{collection}/{document_id}/{subcollection}", None, user
+        )
         # Check Firestore connectivity
         is_healthy = firestore.health_check()
         if not is_healthy:

@@ -1,5 +1,4 @@
 import { useState, useMemo, useEffect } from "react";
-import axios from "axios";
 import { useNavigate, useLocation, useParams } from "react-router-dom";
 import SettingsLayout from "@/components/layout/SettingsLayout";
 import { useAuth } from "@/contexts/AuthContext";
@@ -302,8 +301,6 @@ const AccountSettings = () => {
     isSuperAdmin,
   } = useAuth();
 
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-
   // Derived state
   const isCreatingNew = location.pathname === "/create-organization";
   const isAccountSpecific =
@@ -597,23 +594,6 @@ const AccountSettings = () => {
     }
   };
 
-  const updateUserPermissions = async (
-    userId: string,
-    organizationId: string,
-  ) => {
-    await axios.put(
-      `${API_BASE_URL}/api/v1/firestore/documents/users/${userId}?account_id=${userId}`,
-      {
-        update: {
-          // This is a nested field path for dot-notation update
-          field: `permissions.organizations.${organizationId}`,
-          operator: "set",
-          value: "admin",
-        },
-      },
-    );
-  };
-
   const updateLocalUserState = (organizationId: string) => {
     updateUser({
       permissions: {
@@ -701,9 +681,6 @@ const AccountSettings = () => {
 
       // Create organization in Neo4j
       const newOrg = await createOrganization(payload);
-
-      // Update user permissions
-      await updateUserPermissions(user?.id!, newOrg.organization_id);
 
       // Update local state
       updateLocalUserState(newOrg.organization_id);

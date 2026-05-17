@@ -2505,14 +2505,17 @@ class TestFirestoreEndpointAuth:
         )
         assert response.status_code == 200
 
-    def test_200_delete_own_user_doc(self, regular_user, mock_regular_user_context):
-        """delete_document: 200 when deleting the caller's own user doc."""
+    def test_403_delete_own_user_doc_blocked(self, regular_user, mock_regular_user_context):
+        """delete_document: 403 even for own user doc — deletion is blocked entirely on users/ collection.
+
+        Account deletion must go through the dedicated account-deletion API to preserve audit trails.
+        """
         own_uid = mock_regular_user_context.user_id
         response = regular_user.delete(
             f"/api/v1/firestore/documents/users/{own_uid}",
             params={"account_id": own_uid},
         )
-        assert response.status_code == 200
+        assert response.status_code == 403
 
     def test_200_query_own_subcollection(self, regular_user, mock_regular_user_context):
         """query_documents: 200 when querying the caller's own user subcollection."""
