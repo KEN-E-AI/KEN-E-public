@@ -435,8 +435,12 @@ describe("AuthContext - isSuperAdmin", () => {
     let authContext: any;
     render(
       <AuthProvider>
-        <TestComponent onContextUpdate={(ctx) => { authContext = ctx; }} />
-      </AuthProvider>
+        <TestComponent
+          onContextUpdate={(ctx) => {
+            authContext = ctx;
+          }}
+        />
+      </AuthProvider>,
     );
 
     expect(authContext.isSuperAdmin).toBe(false);
@@ -465,15 +469,19 @@ describe("AuthContext - isSuperAdmin", () => {
       (_auth: any, cb: (user: any) => void) => {
         capturedCallback = cb;
         return vi.fn();
-      }
+      },
     );
 
     let authContext: any;
     await act(async () => {
       render(
         <AuthProvider>
-          <TestComponent onContextUpdate={(ctx) => { authContext = ctx; }} />
-        </AuthProvider>
+          <TestComponent
+            onContextUpdate={(ctx) => {
+              authContext = ctx;
+            }}
+          />
+        </AuthProvider>,
       );
     });
 
@@ -481,9 +489,12 @@ describe("AuthContext - isSuperAdmin", () => {
       capturedCallback?.({ uid: "uid-1", email: "staff@example.com" });
     });
 
-    await waitFor(() => {
-      expect(authContext.isSuperAdmin).toBe(true);
-    }, { timeout: 1000 });
+    await waitFor(
+      () => {
+        expect(authContext.isSuperAdmin).toBe(true);
+      },
+      { timeout: 1000 },
+    );
   });
 
   test("isSuperAdmin is false when /me returns is_super_admin=false", async () => {
@@ -508,15 +519,19 @@ describe("AuthContext - isSuperAdmin", () => {
       (_auth: any, cb: (user: any) => void) => {
         capturedCallback = cb;
         return vi.fn();
-      }
+      },
     );
 
     let authContext: any;
     await act(async () => {
       render(
         <AuthProvider>
-          <TestComponent onContextUpdate={(ctx) => { authContext = ctx; }} />
-        </AuthProvider>
+          <TestComponent
+            onContextUpdate={(ctx) => {
+              authContext = ctx;
+            }}
+          />
+        </AuthProvider>,
       );
     });
 
@@ -532,8 +547,12 @@ describe("AuthContext - isSuperAdmin", () => {
     let authContext: any;
     render(
       <AuthProvider>
-        <TestComponent onContextUpdate={(ctx) => { authContext = ctx; }} />
-      </AuthProvider>
+        <TestComponent
+          onContextUpdate={(ctx) => {
+            authContext = ctx;
+          }}
+        />
+      </AuthProvider>,
     );
 
     await act(async () => {

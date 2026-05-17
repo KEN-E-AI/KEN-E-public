@@ -194,7 +194,9 @@ describe("TeamManagement", () => {
 
     // user1 (admin), user2 (view), and super1 (view/@ken-e.ai) all get menus
     // (owners and self are excluded; none of the mockMembers are owners or self)
-    expect(dropdownButtons.length).toBeGreaterThanOrEqual(mockMembers.length - 1);
+    expect(dropdownButtons.length).toBeGreaterThanOrEqual(
+      mockMembers.length - 1,
+    );
   });
 
   test("shows account permissions in invite modal for view-role", async () => {
@@ -356,9 +358,7 @@ describe("TeamManagement - @ken-e.ai members are no longer special-cased", () =>
     is_super_admin: true,
   };
 
-  const mockAccounts = [
-    { account_id: "acc123", account_name: "Account 1" },
-  ];
+  const mockAccounts = [{ account_id: "acc123", account_name: "Account 1" }];
 
   beforeEach(() => {
     queryClient = new QueryClient({

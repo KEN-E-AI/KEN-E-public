@@ -542,11 +542,14 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       return;
     }
     type MeResponse = { is_super_admin: boolean };
-    api.get<MeResponse>("/api/v1/users/me").then((res) => {
-      setIsSuperAdmin(res.data.is_super_admin);
-    }).catch(() => {
-      // Leave current value unchanged on error
-    });
+    api
+      .get<MeResponse>("/api/v1/users/me")
+      .then((res) => {
+        setIsSuperAdmin(res.data.is_super_admin);
+      })
+      .catch(() => {
+        // Leave current value unchanged on error
+      });
   }, [user?.id]);
 
   const value = {

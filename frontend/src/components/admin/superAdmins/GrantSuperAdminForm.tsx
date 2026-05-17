@@ -52,16 +52,11 @@ export function GrantSuperAdminForm({ onGrant, isPending, error }: Props) {
           disabled={isPending}
           aria-label={mode === "email" ? "User email" : "User UID"}
         />
-        <Button
-          onClick={handleSubmit}
-          disabled={!value.trim() || isPending}
-        >
+        <Button onClick={handleSubmit} disabled={!value.trim() || isPending}>
           {isPending ? "Granting…" : "Grant"}
         </Button>
       </div>
-      {error && (
-        <p className="text-sm text-destructive">{error}</p>
-      )}
+      {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
   );
 }

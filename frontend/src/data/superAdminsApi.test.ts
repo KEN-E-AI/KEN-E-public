@@ -25,7 +25,10 @@ beforeEach(() => {
 
 describe("listSuperAdmins", () => {
   it("calls GET /api/v1/admin/super-admins and returns data", async () => {
-    const fixture = { super_admins: [{ uid: "u1", email: "a@b.com" }], total: 1 };
+    const fixture = {
+      super_admins: [{ uid: "u1", email: "a@b.com" }],
+      total: 1,
+    };
     mockGet.mockResolvedValueOnce({ data: fixture });
 
     const result = await listSuperAdmins();

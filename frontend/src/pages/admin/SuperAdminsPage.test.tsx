@@ -14,7 +14,9 @@ vi.mock("@/queries/superAdmins", () => ({
 
 vi.mock("@/contexts/AuthContext", () => ({
   useAuth: vi.fn(() => ({ isSuperAdmin: true })),
-  AuthContext: { Provider: ({ children }: { children: ReactNode }) => children },
+  AuthContext: {
+    Provider: ({ children }: { children: ReactNode }) => children,
+  },
 }));
 
 vi.mock("sonner", () => ({

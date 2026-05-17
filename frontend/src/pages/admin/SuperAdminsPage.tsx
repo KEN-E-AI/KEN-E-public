@@ -35,7 +35,9 @@ export default function SuperAdminsPage() {
           message?: string;
         };
         const detail =
-          axiosErr.response?.data?.detail ?? axiosErr.message ?? "Unknown error";
+          axiosErr.response?.data?.detail ??
+          axiosErr.message ??
+          "Unknown error";
         setGrantError(detail);
       },
     });
