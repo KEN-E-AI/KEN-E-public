@@ -74,6 +74,8 @@ organizations/{org_id}/account_member_audit/{audit_id}           # DM-PRD-07 —
 users/{user_id}                                                  # root user doc
 users/{user_id}/notification_status/{notification_id}            # firestore_notification_repository.py
 users/{user_id}/preferences/notifications                        # firestore_notification_repository.py — single doc
+users/{user_id}/notifications/settings                           # routers/users.py — NotificationSettings seed
+users/{user_id}/security/settings                                # routers/users.py — SecuritySettings seed
 users/{user_id}/chat_categories/{category_id}                    # CH-PRD-03
 
 # Non-account-scoped (unchanged)
@@ -143,7 +145,7 @@ This component publishes no public HTTP API. Its contracts are structural and co
 | [Billing](../billing/README.md) | Writes to `organizations/{org_id}/billing_audit/*` via DM-PRD-07's `write_audit` (the only org-scoped audit consumer in v1). Uses `require_role(OrgRole.ADMIN, scope="org")` on every state-changing endpoint. |
 | [SAR-E](../sar-e/README.md) | Every account-scoped SAR-E collection (`sar_e_config`, `effectiveness_kpis`, `funnel_mapping`, `thresholds`, `channel_coverage`, `targets`, `kpi_time_series`, `baselines`, `irf_coefficients`) lives under `accounts/{account_id}/...`. Audits go to `accounts/{account_id}/sar_e_audit/*`. |
 | [Data Pipeline](../data-pipeline/README.md) | Account-scoped `data_pipeline_jobs` overlay catalog + `data_pipeline_runs` under `accounts/{account_id}/...`. Audits go to `accounts/{account_id}/data_pipeline_audit/*`. |
-| [Chat](../chat/README.md) | Side-table at `accounts/{account_id}/chat_sessions/*` + nested `artifacts/*`. Per-user categories at `users/{user_id}/chat_categories/*` (third user-scoped subcollection after `notification_status` and `preferences`). DM-PRD-05 user-deletion sweep cleans the user-scoped collection. |
+| [Chat](../chat/README.md) | Side-table at `accounts/{account_id}/chat_sessions/*` + nested `artifacts/*`. Per-user categories at `users/{user_id}/chat_categories/*` (one of five user-scoped subcollections, alongside `notification_status`, `preferences`, `notifications`, and `security`). DM-PRD-05 user-deletion sweep cleans the user-scoped collection. |
 | [Knowledge Graph](../knowledge-graph/README.md) | KG-PRD-04 (session-end automation) fires through an `is_system=true` project plan — consumes Shape B transitively via Project Tasks and Automations. |
 | Strategy / Analytics / Monitoring / Alerts (existing subsystems) | Every account-scoped read/write in `strategy_agent/`, `monitoring_sync_service.py`, and `alert_manager.py` migrates to Shape B in DM-PRD-01, DM-PRD-02, and DM-PRD-04. |
 
@@ -264,7 +266,7 @@ DM-PRD-05 cannot start until **all** data-migration projects (DM-PRD-01 + DM-PRD
 ### 7.4 Out of scope
 
 - **Neo4j schema** — account isolation via node properties is unchanged.
-- **Existing user-scoped subcollections** — `users/{user_id}/notification_status` and `users/{user_id}/preferences` (verified in `firestore_notification_repository.py`) stay as-is structurally; DM-PRD-05's user-deletion sweep registers them in `USER_SUBCOLLECTIONS` so they're purged on user delete. CH-PRD-03's `users/{user_id}/chat_categories` is the third user-scoped subcollection and joins the same registry.
+- **Existing user-scoped subcollections** — `users/{user_id}/notification_status` and `users/{user_id}/preferences` (verified in `firestore_notification_repository.py`), plus `users/{user_id}/notifications` and `users/{user_id}/security` (default-settings docs seeded in `routers/users.py`), stay as-is structurally; DM-PRD-05's user-deletion sweep registers them in `USER_SUBCOLLECTIONS` so they're purged on user delete. CH-PRD-03's `users/{user_id}/chat_categories` joins the same registry — five user-scoped subcollections in total.
 - **Shape C collections** — `notifications` and `usage_records` remain Shape C per the decision carve-out.
 - **Firestore security rules** — enforcement stays in Python; no rules work.
 - **Research docs** — `docs/design/multi-tenant-data-model-research-{brief,findings}.md` stay in `docs/design/` next to other architecture research. Only the migration plan lives inside this component.
