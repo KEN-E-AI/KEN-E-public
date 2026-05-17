@@ -1,5 +1,4 @@
 import { useState } from "react";
-import api from "@/lib/api";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { createOrganization } from "@/data/organizationApi";
@@ -109,22 +108,6 @@ export function CreateOrganization() {
     }
   };
 
-  const updateUserPermissions = async (
-    userId: string,
-    organizationId: string,
-  ) => {
-    await api.put(
-      `/api/v1/firestore/documents/users/${userId}?account_id=${userId}`,
-      {
-        update: {
-          field: `permissions.organizations.${organizationId}`,
-          operator: "set",
-          value: "admin",
-        },
-      },
-    );
-  };
-
   const updateLocalUserState = (organizationId: string) => {
     updateUser({
       permissions: {
@@ -218,8 +201,6 @@ export function CreateOrganization() {
       const payload = await generateOrganizationPayload(newOrgFormData);
 
       const newOrg = await createOrganization(payload);
-
-      await updateUserPermissions(user.id, newOrg.organization_id);
 
       updateLocalUserState(newOrg.organization_id);
       updateOrganizationMetadata(newOrg);

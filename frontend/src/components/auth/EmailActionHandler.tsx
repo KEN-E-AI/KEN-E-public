@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { applyActionCode, checkActionCode } from "firebase/auth";
 import { auth } from "@/lib/firebase";
-import axios from "axios";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -12,7 +11,6 @@ import {
   XCircle,
   Mail,
   ArrowRight,
-  AlertTriangle,
 } from "lucide-react";
 
 type ActionMode = "verifyEmail" | "resetPassword" | "recoverEmail";
@@ -26,13 +24,11 @@ interface ActionCodeInfo {
 const EmailActionHandler = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
-  const [warning, setWarning] = useState<string | null>(null);
 
   const mode = searchParams.get("mode") as ActionMode | null;
   const oobCode = searchParams.get("oobCode");
@@ -48,55 +44,6 @@ const EmailActionHandler = () => {
       return null;
     }
   })();
-
-  // Helper function to find user by email
-  const findUserByEmail = async (userEmail: string) => {
-    const queryResponse = await axios.post(
-      `${API_BASE_URL}/api/v1/firestore/documents/query`,
-      {
-        account_id: "system", // Using system as account_id for query
-        collection: "users",
-        field: "profile.email",
-        operator: "==",
-        value: userEmail,
-      },
-    );
-
-    if (
-      queryResponse.data.documents &&
-      queryResponse.data.documents.length > 0
-    ) {
-      return queryResponse.data.documents[0];
-    }
-    return null;
-  };
-
-  // Helper function to update user's email verification status
-  const updateUserEmailVerified = async (userId: string) => {
-    // Update email_verified field
-    await axios.put(
-      `${API_BASE_URL}/api/v1/firestore/documents/users/${userId}?account_id=${userId}`,
-      {
-        update: {
-          field: "profile.email_verified",
-          operator: "set",
-          value: true,
-        },
-      },
-    );
-
-    // Update lastUpdated timestamp
-    await axios.put(
-      `${API_BASE_URL}/api/v1/firestore/documents/users/${userId}?account_id=${userId}`,
-      {
-        update: {
-          field: "metadata.lastUpdated",
-          operator: "set",
-          value: new Date().toISOString(),
-        },
-      },
-    );
-  };
 
   useEffect(() => {
     handleAction();
@@ -134,32 +81,6 @@ const EmailActionHandler = () => {
 
       // Apply the action code to verify the email
       await applyActionCode(auth, oobCode);
-
-      // The email is now verified in Firebase Auth
-      // Update Firestore to reflect this change
-      if (userEmail) {
-        try {
-          const userDoc = await findUserByEmail(userEmail);
-
-          if (userDoc) {
-            await updateUserEmailVerified(userDoc.id);
-            // Email verified successfully with no warnings
-            setWarning(null);
-          } else {
-            // Email is verified in Firebase but user not found in Firestore
-            setWarning(
-              "Your email has been verified, but we couldn't update your profile. " +
-                "Please sign in to complete the verification process.",
-            );
-          }
-        } catch (apiError) {
-          // Email is verified in Firebase but Firestore update failed
-          setWarning(
-            "Your email has been verified, but we couldn't update your profile. " +
-              "Please sign in to complete the verification process.",
-          );
-        }
-      }
 
       setSuccess(true);
       setError(null);
@@ -262,24 +183,11 @@ const EmailActionHandler = () => {
                   </AlertDescription>
                 </Alert>
 
-                {warning && (
-                  <Alert className="border-yellow-200 bg-yellow-50">
-                    <AlertTriangle className="h-4 w-4 text-yellow-600" />
-                    <AlertTitle className="text-yellow-800">Note</AlertTitle>
-                    <AlertDescription className="text-yellow-700">
-                      {warning}
-                    </AlertDescription>
-                  </Alert>
-                )}
-
-                {!warning && (
-                  <div className="text-center text-sm text-muted-foreground">
-                    <p>
-                      You can now sign in to your account with your verified
-                      email.
-                    </p>
-                  </div>
-                )}
+                <div className="text-center text-sm text-muted-foreground">
+                  <p>
+                    You can now sign in to your account with your verified email.
+                  </p>
+                </div>
 
                 <div className="flex flex-col gap-2">
                   <Button onClick={handleSignIn} className="w-full">
