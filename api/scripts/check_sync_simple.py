@@ -81,7 +81,7 @@ def test_sync(account_id):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python test_sync_simple.py <account_id>")
+        print("Usage: python check_sync_simple.py <account_id>")
         sys.exit(1)
     
     test_sync(sys.argv[1])

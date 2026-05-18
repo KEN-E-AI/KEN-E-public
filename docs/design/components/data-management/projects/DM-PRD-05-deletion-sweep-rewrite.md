@@ -226,7 +226,7 @@ This is intentionally a thin wrapper — all logic lives in `user_deletion_servi
 | Create | `api/src/kene_api/models/user_deletion.py` — `UserDeletionResult` Pydantic model |
 | Create | `api/tests/integration/test_account_deletion_no_orphans.py` |
 | Create | `api/tests/integration/test_user_deletion_no_orphans.py` |
-| Update | `api/tests/test_cascade_delete.py` (if present) — update assertions for new cleanup_results keys | **Resolved 2026-05-15 (DM-51): no-op — the specific file `api/tests/test_cascade_delete.py` was never created.** Two related files exist but neither asserts on Firestore response fields: `api/scripts/test_cascade_delete.py` is a manual HTTP+Neo4j smoke-test script; `api/tests/unit/test_accounts_cascade_delete.py` tests Neo4j cascade logic only. Neither references `firestore_collection_deleted` or `deleted_docs_count`. Post-DM-47 contract (AC-1/AC-2) is covered by `api/tests/integration/test_agent_config_overlay.py::TestAccountDeletionSweep`. Comprehensive Shape-B no-orphan coverage ships under DM-50. |
+| Update | `api/tests/test_cascade_delete.py` (if present) — update assertions for new cleanup_results keys | **Resolved 2026-05-15 (DM-51): no-op — the specific file `api/tests/test_cascade_delete.py` was never created.** Two related files exist but neither asserts on Firestore response fields: `api/scripts/check_cascade_delete.py` is a manual HTTP+Neo4j smoke-test script; `api/tests/unit/test_accounts_cascade_delete.py` tests Neo4j cascade logic only. Neither references `firestore_collection_deleted` or `deleted_docs_count`. Post-DM-47 contract (AC-1/AC-2) is covered by `api/tests/integration/test_agent_config_overlay.py::TestAccountDeletionSweep`. Comprehensive Shape-B no-orphan coverage ships under DM-50. |
 
 ## 6. Acceptance criteria
 
@@ -326,7 +326,7 @@ assert:
 ```
 
 ### Update existing tests
-- `api/tests/test_cascade_delete.py` — response-body field rename (`firestore_collection_deleted` → `firestore_account_deleted`). **Resolved 2026-05-15 (DM-51): no-op — the specific file `api/tests/test_cascade_delete.py` was never created.** Two related files exist but neither asserts on Firestore response fields (`api/scripts/test_cascade_delete.py` is a manual HTTP+Neo4j smoke-test script; `api/tests/unit/test_accounts_cascade_delete.py` tests Neo4j cascade logic only). Post-DM-47 rename semantics are asserted in `api/tests/integration/test_agent_config_overlay.py::TestAccountDeletionSweep`. Comprehensive Shape-B no-orphan coverage ships under DM-50.
+- `api/tests/test_cascade_delete.py` — response-body field rename (`firestore_collection_deleted` → `firestore_account_deleted`). **Resolved 2026-05-15 (DM-51): no-op — the specific file `api/tests/test_cascade_delete.py` was never created.** Two related files exist but neither asserts on Firestore response fields (`api/scripts/check_cascade_delete.py` is a manual HTTP+Neo4j smoke-test script; `api/tests/unit/test_accounts_cascade_delete.py` tests Neo4j cascade logic only). Post-DM-47 rename semantics are asserted in `api/tests/integration/test_agent_config_overlay.py::TestAccountDeletionSweep`. Comprehensive Shape-B no-orphan coverage ships under DM-50.
 
 ### Manual verification
 - In dev, create a realistic account via the normal onboarding flow; run it through for a day so analytics / audit / etc. exist; then call `DELETE` and verify via Firestore console + GCS console that nothing is orphaned

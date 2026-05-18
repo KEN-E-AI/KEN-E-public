@@ -109,7 +109,7 @@ Not the canonical Shape B from the brief (subcollections under an account doc) �
 | Usage records for one account | `routers/usage.py:188-189` | Shape C | Working |
 | **Strategy audit — "user activity across all accounts"** | `services/audit_service.py:189` uses `db.collection_group("strategy_audit")` | Shape B via `collection_group` | **BROKEN by Shape A.** `collection_group` matches collections *literally named* `strategy_audit`; our collections are named `strategy_audit_{account_id}`. The query returns empty. Silent bug. |
 | Active composite indexes on collection groups | `deployment/firestore.indexes.json` — 4 entries on `notifications` and `notification_status` | Shape B / C | Deployed |
-| Scripts doing cross-account Shape A sweeps | `scripts/delete_intellipure_accounts.py`, `scripts/redis_performance_test.py` | Shape A forces per-account iteration | Working but must enumerate every per-account collection by name |
+| Scripts doing cross-account Shape A sweeps | `scripts/delete_intellipure_accounts.py`, `scripts/redis_performance_check.py` | Shape A forces per-account iteration | Working but must enumerate every per-account collection by name |
 
 ### 2.2. Cross-account queries required by in-flight PRDs
 

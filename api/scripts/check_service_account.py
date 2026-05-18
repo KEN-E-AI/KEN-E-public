@@ -137,7 +137,7 @@ def main():
                 
         if not found:
             print("\n❌ No working service accounts found")
-            print("\nUsage: python test_service_account.py <path_to_service_account.json>")
+            print("\nUsage: python check_service_account.py <path_to_service_account.json>")
             sys.exit(1)
     else:
         sa_file = sys.argv[1]
