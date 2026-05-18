@@ -337,7 +337,7 @@ class TestFirestoreErrorHandling:
                 "src.kene_api.firestore.get_env_or_secret"
             ) as mock_get_secret,
         ):
-            # get_env_or_secret returns a raw string; an unparseable value
+            # get_env_or_secret returns a raw string; a malformed value
             # makes firestore.py raise on json.loads.
             mock_get_secret.return_value = "{not-valid-json"
 
