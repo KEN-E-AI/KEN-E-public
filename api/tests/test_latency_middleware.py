@@ -153,10 +153,12 @@ class TestPrometheusMetricsExposure:
         ]
 
         assert len(bucket_lines) > 0
-        sample_line = bucket_lines[0]
-        assert 'method="GET"' in sample_line
-        assert 'status_code="200"' in sample_line
-        assert "route=" in sample_line
+        # When the full suite runs, multiple label combos accumulate; check that
+        # at least one bucket line carries the labels from this request.
+        assert any(
+            'method="GET"' in line and 'status_code="200"' in line and "route=" in line
+            for line in bucket_lines
+        )
 
     def test_route_normalization_uses_pattern_when_scope_has_route(self) -> None:
         """When scope["route"] is populated, the pattern is used as the label.

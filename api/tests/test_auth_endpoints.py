@@ -1,12 +1,18 @@
 """Integration tests for authenticated endpoints."""
 
 import json
+import os
 from unittest import mock
 
 import pytest
 from fastapi.testclient import TestClient
 
 from src.kene_api.main import app
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
 
 
 @pytest.fixture

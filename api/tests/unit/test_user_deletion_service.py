@@ -42,12 +42,15 @@ def _patch_get_storage_service():
 # ---------------------------------------------------------------------------
 
 
-def _make_actor(email: str = "admin@ken-e.ai") -> UserContext:
+def _make_actor(
+    email: str = "admin@ken-e.ai", roles: list[str] | None = None
+) -> UserContext:
     return UserContext(
         user_id="u_admin",
         email=email,
         organization_permissions={},
         account_permissions={},
+        roles=roles if roles is not None else ["super_admin"],
     )
 
 
@@ -96,7 +99,7 @@ async def test_non_super_admin_raises_super_admin_required_error() -> None:
     (defense-in-depth path), the global exception handler in main.py still
     converts it to a clean 403 rather than an unhandled 500.
     """
-    actor = _make_actor(email="attacker@external.com")
+    actor = _make_actor(email="attacker@external.com", roles=[])
     mock_db = MagicMock()
 
     with (

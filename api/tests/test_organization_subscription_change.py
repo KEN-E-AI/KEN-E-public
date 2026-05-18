@@ -1,6 +1,7 @@
 """Tests for organization subscription change functionality."""
 
 import json
+import os
 from datetime import datetime, timezone
 from unittest.mock import Mock, AsyncMock, patch
 
@@ -18,6 +19,11 @@ from src.kene_api.models.kene_models import (
 )
 from src.kene_api.database import Neo4jService, get_neo4j_service
 from src.kene_api.firestore import FirestoreService, get_firestore_service
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
 
 
 @pytest.fixture

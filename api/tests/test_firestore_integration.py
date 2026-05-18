@@ -5,11 +5,7 @@ import os
 import tempfile
 from unittest.mock import Mock, patch
 
-import pytest
 from google.auth import credentials
-from google.cloud import firestore
-from google.oauth2 import service_account
-
 from src.kene_api.firestore import FirestoreService
 
 
@@ -38,13 +34,15 @@ class TestFirestoreSecretManagerIntegration:
         "src.kene_api.firestore.service_account.Credentials.from_service_account_info"
     )
     @patch("src.kene_api.firestore.firestore.Client")
-    @patch("src.kene_api.firestore.get_env_var_or_secret_json")
+    @patch("src.kene_api.firestore.get_env_or_secret")
     def test_initialize_with_secret_manager_service_account(
         self, mock_get_secret_json, mock_firestore_client, mock_from_info
     ):
         """Test Firestore initialization with service account from Secret Manager."""
         # Arrange
-        mock_get_secret_json.return_value = self.test_service_account_data
+        # get_env_or_secret returns the raw JSON string; firestore.py parses it
+        # with json.loads before calling from_service_account_info.
+        mock_get_secret_json.return_value = json.dumps(self.test_service_account_data)
         mock_credentials = Mock(spec=credentials.Credentials)
         mock_from_info.return_value = mock_credentials
         mock_client_instance = Mock()
@@ -160,7 +158,7 @@ class TestFirestoreSecretManagerIntegration:
                 credentials=mock_credentials,
             )
 
-    @patch("src.kene_api.firestore.get_env_var_or_secret_json")
+    @patch("src.kene_api.firestore.get_env_or_secret")
     def test_initialize_secret_manager_failure_with_fallback(
         self, mock_get_secret_json
     ):
@@ -186,7 +184,7 @@ class TestFirestoreSecretManagerIntegration:
             assert result is False
             assert self.firestore_service._initialized is False
 
-    @patch("src.kene_api.firestore.get_env_var_or_secret_json")
+    @patch("src.kene_api.firestore.get_env_or_secret")
     def test_initialize_secret_manager_returns_none(self, mock_get_secret_json):
         """Test Firestore initialization when Secret Manager returns None."""
         # Arrange
@@ -225,13 +223,13 @@ class TestFirestoreSecretManagerIntegration:
         "src.kene_api.firestore.service_account.Credentials.from_service_account_info"
     )
     @patch("src.kene_api.firestore.firestore.Client")
-    @patch("src.kene_api.firestore.get_env_var_or_secret_json")
+    @patch("src.kene_api.firestore.get_env_or_secret")
     def test_health_check_with_secret_manager_auth(
         self, mock_get_secret_json, mock_firestore_client, mock_from_info
     ):
         """Test health check functionality with Secret Manager authentication."""
         # Arrange
-        mock_get_secret_json.return_value = self.test_service_account_data
+        mock_get_secret_json.return_value = json.dumps(self.test_service_account_data)
         mock_credentials = Mock(spec=credentials.Credentials)
         mock_from_info.return_value = mock_credentials
         mock_client_instance = Mock()
@@ -268,13 +266,13 @@ class TestFirestoreSecretManagerIntegration:
         "src.kene_api.firestore.service_account.Credentials.from_service_account_info"
     )
     @patch("src.kene_api.firestore.firestore.Client")
-    @patch("src.kene_api.firestore.get_env_var_or_secret_json")
+    @patch("src.kene_api.firestore.get_env_or_secret")
     def test_document_operations_with_secret_manager_auth(
         self, mock_get_secret_json, mock_firestore_client, mock_from_info
     ):
         """Test basic document operations with Secret Manager authentication."""
         # Arrange
-        mock_get_secret_json.return_value = self.test_service_account_data
+        mock_get_secret_json.return_value = json.dumps(self.test_service_account_data)
         mock_credentials = Mock(spec=credentials.Credentials)
         mock_from_info.return_value = mock_credentials
         mock_client_instance = Mock()
@@ -336,11 +334,12 @@ class TestFirestoreErrorHandling:
                 },
             ),
             patch(
-                "src.kene_api.firestore.get_env_var_or_secret_json"
+                "src.kene_api.firestore.get_env_or_secret"
             ) as mock_get_secret,
         ):
-            # Return invalid service account data
-            mock_get_secret.return_value = {"invalid": "format"}
+            # get_env_or_secret returns a raw string; a malformed value
+            # makes firestore.py raise on json.loads.
+            mock_get_secret.return_value = "{not-valid-json"
 
             # Act
             result = self.firestore_service.initialize()
@@ -367,18 +366,24 @@ class TestFirestoreErrorHandling:
             # Assert
             assert result is False
 
+    @patch(
+        "src.kene_api.firestore.service_account.Credentials.from_service_account_info"
+    )
     @patch("src.kene_api.firestore.firestore.Client")
-    @patch("src.kene_api.firestore.get_env_var_or_secret_json")
+    @patch("src.kene_api.firestore.get_env_or_secret")
     def test_firestore_client_initialization_failure(
-        self, mock_get_secret_json, mock_firestore_client
+        self, mock_get_secret_json, mock_firestore_client, mock_from_info
     ):
         """Test handling of Firestore client initialization failure."""
         # Arrange
-        mock_get_secret_json.return_value = {
-            "type": "service_account",
-            "project_id": "test-project-123",
-            "private_key": "test-key",
-        }
+        mock_get_secret_json.return_value = json.dumps(
+            {
+                "type": "service_account",
+                "project_id": "test-project-123",
+                "private_key": "test-key",
+            }
+        )
+        mock_from_info.return_value = Mock(spec=credentials.Credentials)
         mock_firestore_client.side_effect = Exception("Firestore initialization failed")
 
         secret_path = "projects/123/secrets/service-account-json/versions/latest"

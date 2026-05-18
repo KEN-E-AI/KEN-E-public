@@ -1,5 +1,6 @@
 """Fixed tests for OAuth 2.0 integration endpoints using dependency overrides."""
 
+import os
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -11,6 +12,11 @@ from src.kene_api.firestore import get_firestore_service
 from src.kene_api.main import app
 from src.kene_api.models.integration_models import (
     IntegrationStatus,
+)
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
 )
 
 

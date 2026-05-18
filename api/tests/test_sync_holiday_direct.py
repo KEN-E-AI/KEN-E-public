@@ -1,10 +1,10 @@
 """Direct test of holiday sync functionality to debug deletion issues."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import date
-from src.kene_api.database import Neo4jService
+
+import pytest
 from src.kene_api.bigquery import BigQueryService
+from src.kene_api.database import Neo4jService
 from src.kene_api.routers.accounts import _sync_holiday_activity_logs_for_account
 
 
@@ -31,29 +31,25 @@ async def test_sync_removes_us_holidays_when_changing_to_au(
     """Test that US holidays are removed when region changes to AU."""
     account_id = "acc_af08bd32c4f540da96f1c7d9642f8009"
 
-    # Mock existing US holiday logs
-    mock_neo4j_service.execute_query.side_effect = [
-        # First call: get existing logs
-        [
-            {
-                "log_id": "log_us_presidents_day",
-                "description": "US_PresidentDay",
-                "start_date": "2024-02-19",
-                "end_date": "2024-02-19",
-                "has_metric_relationship": False,
-            },
-            {
-                "log_id": "log_us_memorial_day",
-                "description": "US_MemorialDay",
-                "start_date": "2024-05-27",
-                "end_date": "2024-05-27",
-                "has_metric_relationship": False,
-            },
-        ],
-        # Second call: check act_00 exists
-        [{"count": 1}],
-        # Third call: count deletable logs
-        [{"to_delete_count": 2}],
+    # Mock existing US holiday logs. _sync_holiday_activity_logs_for_account
+    # only issues a single read query (fetch existing logs).
+    mock_neo4j_service.execute_query.return_value = [
+        {
+            "log_id": "log_us_presidents_day",
+            "description": "US_PresidentDay",
+            "start_date": "2024-02-19",
+            "end_date": "2024-02-19",
+            "activity_id": "act_00_us",
+            "has_metric_relationship": False,
+        },
+        {
+            "log_id": "log_us_memorial_day",
+            "description": "US_MemorialDay",
+            "start_date": "2024-05-27",
+            "end_date": "2024-05-27",
+            "activity_id": "act_00_us",
+            "has_metric_relationship": False,
+        },
     ]
 
     # Mock BigQuery returns AU holidays only
@@ -62,11 +58,13 @@ async def test_sync_removes_us_holidays_when_changing_to_au(
             "description": "AU_AustraliaDay",
             "start_date": "2024-01-26",
             "end_date": "2024-01-26",
+            "region": "AU",
         },
         {
             "description": "AU_AnzacDay",
             "start_date": "2024-04-25",
             "end_date": "2024-04-25",
+            "region": "AU",
         },
     ]
 
@@ -118,28 +116,23 @@ async def test_sync_protected_logs_not_deleted(
     account_id = "acc_af08bd32c4f540da96f1c7d9642f8009"
 
     # Mock existing logs with one protected
-    mock_neo4j_service.execute_query.side_effect = [
-        # First call: get existing logs
-        [
-            {
-                "log_id": "log_us_presidents_day",
-                "description": "US_PresidentDay",
-                "start_date": "2024-02-19",
-                "end_date": "2024-02-19",
-                "has_metric_relationship": True,  # Protected
-            },
-            {
-                "log_id": "log_us_memorial_day",
-                "description": "US_MemorialDay",
-                "start_date": "2024-05-27",
-                "end_date": "2024-05-27",
-                "has_metric_relationship": False,
-            },
-        ],
-        # Second call: check act_00 exists
-        [{"count": 1}],
-        # Third call: count deletable logs (only unprotected)
-        [{"to_delete_count": 1}],
+    mock_neo4j_service.execute_query.return_value = [
+        {
+            "log_id": "log_us_presidents_day",
+            "description": "US_PresidentDay",
+            "start_date": "2024-02-19",
+            "end_date": "2024-02-19",
+            "activity_id": "act_00_us",
+            "has_metric_relationship": True,  # Protected
+        },
+        {
+            "log_id": "log_us_memorial_day",
+            "description": "US_MemorialDay",
+            "start_date": "2024-05-27",
+            "end_date": "2024-05-27",
+            "activity_id": "act_00_us",
+            "has_metric_relationship": False,
+        },
     ]
 
     # Mock BigQuery returns empty (switching to region with no holidays)

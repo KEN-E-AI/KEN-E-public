@@ -1,5 +1,6 @@
 """Tests for industry keywords API endpoints."""
 
+import os
 import pytest
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -8,6 +9,11 @@ from fastapi import HTTPException
 
 from src.kene_api.auth.models import UserContext
 from src.kene_api.main import app
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
 
 
 class TestIndustryKeywordsEndpoints:
@@ -19,11 +25,9 @@ class TestIndustryKeywordsEndpoints:
         return UserContext(
             user_id="super_admin",
             email="admin@ken-e.ai",
-            accessible_accounts=[],
-            permissions={},
             organization_permissions={},
             account_permissions={},
-            is_super_admin=True,
+            roles=["super_admin"],
         )
 
     @pytest.fixture
@@ -32,11 +36,8 @@ class TestIndustryKeywordsEndpoints:
         return UserContext(
             user_id="regular_user",
             email="user@example.com",
-            accessible_accounts=["acc_test"],
-            permissions={},
             organization_permissions={"org_test": "admin"},
             account_permissions={"acc_test": "edit"},
-            is_super_admin=False,
         )
 
     @pytest.fixture

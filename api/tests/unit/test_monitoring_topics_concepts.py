@@ -1,6 +1,7 @@
 """Unit tests for monitoring topics concept endpoints."""
 
 import json
+import os
 import pytest
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -14,6 +15,10 @@ from src.kene_api.models.monitoring_models import (
     CustomerKeywordConcept,
 )
 
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
 
 client = TestClient(app)
 

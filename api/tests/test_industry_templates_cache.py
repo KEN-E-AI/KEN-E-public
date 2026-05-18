@@ -1,14 +1,11 @@
 """Tests for industry templates cache behavior and concurrency."""
 
-import pytest
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timedelta, timezone
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
+import pytest
 from src.kene_api.routers.industry_templates import ThreadSafeTemplateCache
-from src.kene_api.models.kene_models import IndustryTemplate
 
 
 class TestThreadSafeTemplateCache:
@@ -288,25 +285,40 @@ class TestCacheIntegration:
         """Test that cache is properly invalidated on template update."""
         from src.kene_api.routers.industry_templates import _template_cache
 
-        # Setup cache with test data
-        _template_cache.set("all_templates", ["template1", "template2"])
-        _template_cache.set("id:test_id", "template1")
-        _template_cache.set("industry:Test Industry", "template1")
+        # The module-level cache is configured for the current environment;
+        # in development (the test default) caching is disabled (max_size=0,
+        # ttl_seconds=0). Temporarily enable caching so this test exercises the
+        # real invalidate() behavior on the actual module-level cache object.
+        original_max_size = _template_cache._max_size
+        original_ttl = _template_cache._ttl_seconds
+        _template_cache._max_size = 128
+        _template_cache._ttl_seconds = 3600
+        try:
+            _template_cache.invalidate()  # Start from a clean slate
 
-        # Verify cache has data
-        assert _template_cache.get("all_templates") is not None
-        assert _template_cache.get("id:test_id") is not None
-        assert _template_cache.get("industry:Test Industry") is not None
+            # Setup cache with test data
+            _template_cache.set("all_templates", ["template1", "template2"])
+            _template_cache.set("id:test_id", "template1")
+            _template_cache.set("industry:Test Industry", "template1")
 
-        # Simulate update - should invalidate related entries
-        _template_cache.invalidate("all_templates")
-        _template_cache.invalidate("id:test_id")
-        _template_cache.invalidate("industry:Test Industry")
+            # Verify cache has data
+            assert _template_cache.get("all_templates") is not None
+            assert _template_cache.get("id:test_id") is not None
+            assert _template_cache.get("industry:Test Industry") is not None
 
-        # Verify cache was cleared
-        assert _template_cache.get("all_templates") is None
-        assert _template_cache.get("id:test_id") is None
-        assert _template_cache.get("industry:Test Industry") is None
+            # Simulate update - should invalidate related entries
+            _template_cache.invalidate("all_templates")
+            _template_cache.invalidate("id:test_id")
+            _template_cache.invalidate("industry:Test Industry")
+
+            # Verify cache was cleared
+            assert _template_cache.get("all_templates") is None
+            assert _template_cache.get("id:test_id") is None
+            assert _template_cache.get("industry:Test Industry") is None
+        finally:
+            _template_cache.invalidate()
+            _template_cache._max_size = original_max_size
+            _template_cache._ttl_seconds = original_ttl
 
 
 class TestCacheParameterized:

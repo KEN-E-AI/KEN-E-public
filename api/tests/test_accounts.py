@@ -1,5 +1,6 @@
 """Tests for accounts endpoints."""
 
+import os
 from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
@@ -7,6 +8,11 @@ from fastapi.testclient import TestClient
 from src.kene_api.database import get_neo4j_service
 from src.kene_api.firestore import FirestoreService, get_firestore_service
 from src.kene_api.main import app
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
 
 # Create test client
 client = TestClient(app)

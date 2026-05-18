@@ -95,23 +95,24 @@ class TestSupersetClient:
         superset_client.access_token = "test_token"
 
         # Mock get_dataset call
-        dataset_response = MagicMock()
-        dataset_response.status_code = 200
-        dataset_response.json.return_value = {
-            "result": {"id": 1, "name": "test_dataset"}
+        # GET existing dataset (create_metric reads then PUTs the full metrics list)
+        get_response = MagicMock()
+        get_response.status_code = 200
+        get_response.json.return_value = {
+            "result": {"id": 1, "name": "test_dataset", "metrics": []}
         }
-        dataset_response.raise_for_status = MagicMock()
+        get_response.raise_for_status = MagicMock()
 
-        # Mock create_metric call
-        metric_response = MagicMock()
-        metric_response.status_code = 201
-        metric_response.json.return_value = {
-            "result": {"id": 123, "metric_name": "test_metric"}
+        # PUT updated dataset (returns the saved metrics list)
+        put_response = MagicMock()
+        put_response.status_code = 200
+        put_response.json.return_value = {
+            "result": {"metrics": [{"metric_name": "test_metric", "id": 123}]}
         }
-        metric_response.raise_for_status = MagicMock()
+        put_response.raise_for_status = MagicMock()
 
-        mock_session.get.return_value = dataset_response
-        mock_session.post.return_value = metric_response
+        mock_session.get.return_value = get_response
+        mock_session.put.return_value = put_response
 
         metric_data = {
             "metric_name": "test_metric",
@@ -122,17 +123,19 @@ class TestSupersetClient:
 
         result = await superset_client.create_metric(1, metric_data)
 
-        assert result == {"id": 123, "metric_name": "test_metric"}
-        mock_session.post.assert_called_once()
+        assert result == {"metric_name": "test_metric", "id": 123}
+        mock_session.put.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_create_metric_dataset_not_found(self, superset_client, mock_session):
         """Test metric creation when dataset doesn't exist."""
         superset_client.access_token = "test_token"
 
-        # Mock dataset not found
+        # Mock: GET returns 200 but empty result — triggers the "not found" branch
         dataset_response = MagicMock()
-        dataset_response.status_code = 404
+        dataset_response.status_code = 200
+        dataset_response.json.return_value = {"result": {}}
+        dataset_response.raise_for_status = MagicMock()
         mock_session.get.return_value = dataset_response
 
         metric_data = {"metric_name": "test_metric", "expression": "COUNT(*)"}

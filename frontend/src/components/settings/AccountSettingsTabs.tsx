@@ -231,8 +231,8 @@ export function AccountSettingsTabs({ accountId }: AccountSettingsTabsProps) {
     return (
       <Card className="p-6">
         <p className="text-sm text-muted-foreground">
-          We couldn&apos;t load this account. It may have been deleted, or you
-          may not have access to it.
+          Unable to load this account. It may have been deleted, or you may not
+          have access to it.
         </p>
       </Card>
     );
