@@ -80,6 +80,8 @@ _ALL_SUBCOLLECTIONS: list[str] = [
     "members",
     "project_plan_audit",
     "integrations_audit",
+    # CH-PRD-01 — chat session side-table + artifact metadata index
+    "chat_sessions",
 ]
 
 
@@ -312,6 +314,27 @@ def _seed_dm_prd_07_subcollections(db: Any, account_id: str, run_id: str) -> Non
     )
 
 
+def _seed_chat_sessions(db: Any, account_id: str, run_id: str) -> None:
+    """Seed chat_sessions + nested artifacts subcollection (CH-PRD-01 regression guard).
+
+    Verifies recursive_delete descends into accounts/{account_id}/chat_sessions/{id}/artifacts/*.
+    """
+    # CH-PRD-01
+    session_ref = (
+        db.collection("accounts")
+        .document(account_id)
+        .collection("chat_sessions")
+        .document(f"sess_{run_id}")
+    )
+    session_ref.set(
+        {"user_id": "u_test", "account_id": account_id, "seeded_for": "CH-9 regression guard"}
+    )
+    # Nested artifacts subcollection — proves recursive_delete descends two levels deep
+    session_ref.collection("artifacts").document(f"art_{run_id}").set(
+        {"filename": "test.pdf", "seeded_for": "CH-9 regression guard"}
+    )
+
+
 def _seed_full_account(db: Any, account_id: str, run_id: str) -> None:
     """Seed the complete DM-PRD-05 §7 fixture set under accounts/{account_id}."""
     _seed_root_doc(db, account_id)
@@ -324,6 +347,7 @@ def _seed_full_account(db: Any, account_id: str, run_id: str) -> None:
     _seed_monitoring_topics(db, account_id)
     _seed_alert_configurations(db, account_id)
     _seed_dm_prd_07_subcollections(db, account_id, run_id)
+    _seed_chat_sessions(db, account_id, run_id)
 
 
 # ---------------------------------------------------------------------------
