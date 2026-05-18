@@ -104,7 +104,20 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 pythonpath = "."
-addopts = "--ignore=tests/unit/test_audit_service.py --ignore=tests/unit/test_strategy_access_control.py --ignore=tests/unit/test_strategy_agent_v3.py --ignore=tests/unit/test_strategy_v3_models.py"
+# Explicit test roots for repo-root `pytest` invocations. Without `testpaths`,
+# a bare `pytest` here recurses into api/scripts/, app/adk/, and api/ itself —
+# directories holding ~60 `test_*.py`-named diagnostic SCRIPTS (not tests).
+# 20+ of them call sys.exit() at import time; SystemExit during collection is
+# reported as INTERNALERROR and aborts the entire run, producing wildly
+# under-counted results. Pinning `testpaths` makes a bare run deterministic;
+# the scripts themselves are renamed under DM-89.
+#
+# NOTE: the api/ package is a separate sub-project with its own config
+# (api/pytest.ini) and a ~2100-test suite. It is NOT collected from here —
+# run it with `cd api && pytest` (or `uv run --directory api pytest`).
+testpaths = ["tests/unit", "tests/integration"]
+norecursedirs = [".*", "build", "dist", "node_modules", ".venv", ".terraform", "scripts"]
+addopts = "--ignore=tests/unit/test_audit_service.py --ignore=tests/unit/test_strategy_access_control.py --ignore=tests/unit/test_strategy_v3_models.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["frontend"]
