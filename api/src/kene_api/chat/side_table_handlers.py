@@ -64,7 +64,6 @@ def apply_side_table_update(
     try:
         idem_ref.create(
             {
-                "key_hash": key_hash,
                 "applied_at": now,
                 "expires_at": expires_at,
             }
