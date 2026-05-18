@@ -265,6 +265,7 @@ app.include_router(activities.router, prefix="/api/v1/activities", tags=["activi
 app.include_router(insights.router, prefix="/api/v1/insights", tags=["insights"])
 app.include_router(intuitions.router, prefix="/api/v1/intuitions", tags=["intuitions"])
 app.include_router(chat.router)  # Chat router already has its prefix
+app.include_router(chat.internal_router)  # Internal OIDC bridge (CH-11)
 app.include_router(items.router, prefix="/api/v1/items", tags=["items"])
 app.include_router(home.router, prefix="/api/v1/home", tags=["home"])
 app.include_router(users.router, prefix="/api/v1/users", tags=["users"])

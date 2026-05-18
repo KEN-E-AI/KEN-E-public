@@ -5,6 +5,7 @@ No cost fields anywhere in this module — per-session cost is out of scope
 """
 
 from datetime import datetime, timezone
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -215,3 +216,21 @@ class ListArtifactsResponseItem(BaseModel):
 
 class ListArtifactsResponse(BaseModel):
     items: list[ListArtifactsResponseItem]
+
+
+# ---------------------------------------------------------------------------
+# Internal OIDC bridge — CH-11
+# ---------------------------------------------------------------------------
+
+
+class InternalSideTableUpdateRequest(BaseModel):
+    """Request body for POST /api/v1/internal/chat/side-table/update.
+
+    delta values may include {"_increment": n} wire sentinels which the
+    handler converts to firestore.Increment before writing.
+    """
+
+    session_id: str
+    account_id: str
+    delta: dict[str, Any]
+    idempotency_key: str = Field(min_length=1, max_length=256)
