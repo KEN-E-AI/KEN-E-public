@@ -6,9 +6,9 @@ Spec: docs/design/components/feature-flags/projects/FF-PRD-01-data-model-evaluat
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 FLAG_KEY_REGEX = r"^[a-z0-9][a-z0-9_]{2,63}$"
 
@@ -40,8 +40,8 @@ class FeatureFlag(BaseModel):
 
 
 class EvaluationContext(BaseModel):
-    user_id: str
-    user_email: str
+    user_id: str = Field(min_length=1)
+    user_email: EmailStr
     organization_id: str | None = None
     account_id: str | None = None
 
@@ -61,8 +61,11 @@ class FlagEvaluation(BaseModel):
     ]
 
 
+FlagKeyStr = Annotated[str, Field(pattern=FLAG_KEY_REGEX)]
+
+
 class EvaluateRequest(BaseModel):
-    flag_keys: list[str] = Field(min_length=1, max_length=100)
+    flag_keys: list[FlagKeyStr] = Field(min_length=1, max_length=100)
 
 
 class EvaluateResponse(BaseModel):

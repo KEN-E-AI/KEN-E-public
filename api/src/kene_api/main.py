@@ -38,6 +38,7 @@ from .routers import (
     auth,
     chat,
     datasets,
+    feature_flags,
     firestore,
     funnel_reports,
     home,
@@ -309,6 +310,7 @@ app.include_router(mcp.router)  # MCP server management router already has its p
 app.include_router(
     mcp_server_configs.router
 )  # MCP server config admin router has its prefix
+app.include_router(feature_flags.router)  # Feature flags router already has its prefix
 
 
 # Health and root endpoints below routers

@@ -2,8 +2,8 @@
 
 This module is the home for all Feature Flags evaluation logic as defined in
 FF-PRD-01. hash_bucket is landed in FF-2; the evaluator is now landed by FF-3;
-the service class and is_feature_enabled helper are appended by FF-4 and FF-5
-respectively.
+the service class is landed by FF-4; is_feature_enabled and
+get_feature_flag_service are landed by FF-5.
 """
 
 import asyncio
@@ -12,9 +12,11 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import lru_cache
 
 from google.cloud import firestore
 
+from ..dependencies import get_firestore_client
 from ..models.feature_flag_models import EvaluationContext, FeatureFlag, FlagEvaluation
 
 logger = logging.getLogger(__name__)
@@ -44,7 +46,9 @@ def hash_bucket(flag_key: str, entity_id: str) -> int:
     return int(digest[:8], 16) % 100
 
 
-def evaluate(flag: FeatureFlag, ctx: EvaluationContext) -> FlagEvaluation:
+def evaluate(
+    flag: FeatureFlag, ctx: EvaluationContext, *, cache_hit: bool
+) -> FlagEvaluation:
     """Evaluate a feature flag against an evaluation context.
 
     Applies the precedence ladder defined in component README §7.2 and FF-PRD-01 §4
@@ -65,41 +69,56 @@ def evaluate(flag: FeatureFlag, ctx: EvaluationContext) -> FlagEvaluation:
     was already at GA. To guarantee the feature is off, set both is_active=False and
     default_enabled=False.
 
-    This function is pure: no I/O, no logging, no side effects.
-    Logging is FF-8's concern (AC-13/§5.3).
+    Emits exactly one structured INFO log per call with the fixed field set
+    {flag_key, reason, cache_hit} (FF-PRD-01 §5.3 / AC-13). The message string is
+    always the literal "feature_flag_evaluated" — no f-string interpolation — to
+    eliminate the most common PII-leak vector. PII fields (user_id, user_email,
+    organization_id, account_id) are never logged.
+
+    cache_hit is a required keyword-only argument (no default) so a future call site
+    that omits it raises TypeError immediately rather than silently logging False for
+    a cached read and corrupting the ops cache-health signal.
     """
-    # AC-13/§5.3: logging is FF-8's concern; do NOT log from this function.
     if not flag.is_active:
-        return FlagEvaluation(
+        result = FlagEvaluation(
             key=flag.key, enabled=flag.default_enabled, reason="kill_switch"
         )
+    else:
+        rules = flag.targeting_rules
+        email = ctx.user_email.strip().lower()
 
-    rules = flag.targeting_rules
-    email = ctx.user_email.strip().lower()
+        if email in rules.user_emails:
+            result = FlagEvaluation(key=flag.key, enabled=True, reason="email_match")
+        elif (
+            domain := (email.split("@", 1)[-1] if "@" in email else "")
+        ) and domain in rules.email_domains:
+            result = FlagEvaluation(key=flag.key, enabled=True, reason="domain_match")
+        elif ctx.organization_id and ctx.organization_id in rules.organization_ids:
+            result = FlagEvaluation(key=flag.key, enabled=True, reason="org_match")
+        elif ctx.account_id and ctx.account_id in rules.account_ids:
+            result = FlagEvaluation(key=flag.key, enabled=True, reason="account_match")
+        elif (
+            rules.rollout_percentage > 0
+            and (
+                entity_id := {
+                    "account": ctx.account_id,
+                    "organization": ctx.organization_id,
+                    "user": ctx.user_id,
+                }[flag.bucketing_entity]
+            )
+            and hash_bucket(flag.key, entity_id) < rules.rollout_percentage
+        ):
+            result = FlagEvaluation(key=flag.key, enabled=True, reason="rollout")
+        else:
+            result = FlagEvaluation(
+                key=flag.key, enabled=flag.default_enabled, reason="default"
+            )
 
-    if email in rules.user_emails:
-        return FlagEvaluation(key=flag.key, enabled=True, reason="email_match")
-
-    domain = email.split("@", 1)[-1] if "@" in email else ""
-    if domain and domain in rules.email_domains:
-        return FlagEvaluation(key=flag.key, enabled=True, reason="domain_match")
-
-    if ctx.organization_id and ctx.organization_id in rules.organization_ids:
-        return FlagEvaluation(key=flag.key, enabled=True, reason="org_match")
-
-    if ctx.account_id and ctx.account_id in rules.account_ids:
-        return FlagEvaluation(key=flag.key, enabled=True, reason="account_match")
-
-    if rules.rollout_percentage > 0:
-        entity_id = {
-            "account": ctx.account_id,
-            "organization": ctx.organization_id,
-            "user": ctx.user_id,
-        }[flag.bucketing_entity]
-        if entity_id and hash_bucket(flag.key, entity_id) < rules.rollout_percentage:
-            return FlagEvaluation(key=flag.key, enabled=True, reason="rollout")
-
-    return FlagEvaluation(key=flag.key, enabled=flag.default_enabled, reason="default")
+    logger.info(
+        "feature_flag_evaluated",
+        extra={"flag_key": result.key, "reason": result.reason, "cache_hit": cache_hit},
+    )
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +177,7 @@ class FeatureFlagService:
             entry = self._cache.get(key)
             if entry is None or entry.expires_at <= now:
                 cold_keys.append(key)
+        cold_set: frozenset[str] = frozenset(cold_keys)
 
         # Fetch cold keys in parallel; return_exceptions=True so a single
         # Firestore error doesn't abort the whole batch.
@@ -197,7 +217,9 @@ class FeatureFlagService:
                     key=key, enabled=False, reason="unknown_flag"
                 )
             else:
-                evaluations[key] = evaluate(entry.flag, ctx)
+                evaluations[key] = evaluate(
+                    entry.flag, ctx, cache_hit=(key not in cold_set)
+                )
         return evaluations
 
     def _install_cache(
@@ -232,3 +254,63 @@ class FeatureFlagService:
         # Merge the document-ID as the canonical key so a body/ID mismatch is
         # corrected at read time (PRD §4, Decisions & Assumptions).
         return FeatureFlag.model_validate(doc.to_dict() | {"key": flag_key})
+
+
+# ---------------------------------------------------------------------------
+# FF-5: Process-wide singleton factory + is_feature_enabled ergonomic helper
+# ---------------------------------------------------------------------------
+
+
+@lru_cache(maxsize=1)
+def get_feature_flag_service() -> FeatureFlagService:
+    """Return the process-wide FeatureFlagService singleton.
+
+    Uses @lru_cache(maxsize=1) so the 60 s in-process TTL cache inside
+    FeatureFlagService is preserved across all helper calls — constructing
+    a new instance per call would discard the cache and defeat the SLO.
+
+    Reuses the cached Firestore client from dependencies.get_firestore_client()
+    to preserve the single connection pool (see api/CLAUDE.md §Dependency
+    Injection).
+
+    Call get_feature_flag_service.cache_clear() in tests to reset the singleton
+    between cases.
+    """
+    return FeatureFlagService(db=get_firestore_client())
+
+
+async def is_feature_enabled(
+    flag_key: str,
+    ctx: EvaluationContext,
+    default: bool = False,
+) -> bool:
+    """Return whether a feature flag is enabled for the given evaluation context.
+
+    This is the primary call-site API for routers and services. It is intentionally
+    async — callers must await it; do not invoke synchronously inside FastAPI routes.
+
+    On success, returns FlagEvaluation.enabled for flag_key. On any exception from
+    the service layer (Firestore outage, transient network error, validation failure),
+    logs the error type at WARN level and returns default. A flag-system outage must
+    never propagate into an unrelated request path (FF-PRD-01 §9).
+
+    The WARN log payload is {flag_key, error_type} only — no PII from ctx is logged.
+
+    Args:
+        flag_key: The snake_case flag key to evaluate.
+        ctx: The evaluation context built from the authenticated user's token.
+        default: Fallback value when the service raises. Defaults to False (safe floor).
+
+    Returns:
+        bool — True if the flag is enabled for this context, False otherwise.
+    """
+    try:
+        service = get_feature_flag_service()
+        result = await service.evaluate_batch([flag_key], ctx)
+        return result[flag_key].enabled
+    except Exception as exc:
+        logger.warning(
+            "feature_flag_helper_error",
+            extra={"flag_key": flag_key, "error_type": type(exc).__name__},
+        )
+        return default

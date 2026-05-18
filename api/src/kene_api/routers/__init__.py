@@ -3,6 +3,7 @@
 from . import accounts as accounts
 from . import activities as activities
 from . import datasets as datasets
+from . import feature_flags as feature_flags
 from . import firestore as firestore
 from . import funnel_reports as funnel_reports
 from . import home as home

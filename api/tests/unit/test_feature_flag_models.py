@@ -295,7 +295,7 @@ class TestEvaluateRequestFlagKeys:
             EvaluateRequest(flag_keys=["a"] * 101)
 
     def test_exactly_100_keys_accepted(self) -> None:
-        req = EvaluateRequest(flag_keys=["a"] * 100)
+        req = EvaluateRequest(flag_keys=[f"key_{i:03d}" for i in range(100)])
 
         assert len(req.flag_keys) == 100
 

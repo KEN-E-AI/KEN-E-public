@@ -241,11 +241,15 @@ async def test_transient_firestore_error_returns_unknown_flag_and_is_not_cached(
     clock = FakeClock(start=0.0)
     svc = FeatureFlagService(db=db, time_provider=clock)
 
-    with caplog.at_level(logging.ERROR, logger="src.kene_api.services.feature_flag_service"):
+    with caplog.at_level(
+        logging.ERROR, logger="src.kene_api.services.feature_flag_service"
+    ):
         result = await svc.evaluate_batch(["error_flag"], _ctx())
 
     assert result == {
-        "error_flag": FlagEvaluation(key="error_flag", enabled=False, reason="unknown_flag")
+        "error_flag": FlagEvaluation(
+            key="error_flag", enabled=False, reason="unknown_flag"
+        )
     }
 
     # The error was logged.
@@ -367,3 +371,30 @@ async def test_evaluate_batch_wires_through_to_evaluate() -> None:
     assert result["ga_flag"] == FlagEvaluation(
         key="ga_flag", enabled=True, reason="default"
     )
+
+
+# ---------------------------------------------------------------------------
+# Case 10 — AC-13 cache_hit plumbing: warm reads log cache_hit=True
+# ---------------------------------------------------------------------------
+
+
+async def test_warm_cache_read_logs_cache_hit_true(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Second evaluate_batch call within TTL must log cache_hit=True via evaluate()."""
+    flag = _make_flag(key="warm_flag")
+    db = _mock_db_with_flag(flag)
+    clock = FakeClock(start=0.0)
+    svc = FeatureFlagService(db=db, time_provider=clock)
+
+    await svc.evaluate_batch(["warm_flag"], _ctx())  # cold read — warms the cache
+
+    caplog.clear()  # discard cold-read records before asserting warm-read behaviour
+    with caplog.at_level(
+        logging.INFO, logger="src.kene_api.services.feature_flag_service"
+    ):
+        await svc.evaluate_batch(["warm_flag"], _ctx())  # warm read
+
+    info_records = [r for r in caplog.records if r.levelno == logging.INFO]
+    assert len(info_records) == 1
+    assert info_records[0].__dict__["cache_hit"] is True
