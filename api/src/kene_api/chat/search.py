@@ -13,7 +13,7 @@ from typing import Any
 
 from google.cloud import firestore
 
-from kene_api.models.chat import ChatSessionMetadata
+from ..models.chat import ChatSessionMetadata
 
 CHAT_LIST_WINDOW_DAYS = 30
 
@@ -50,7 +50,7 @@ def list_sessions(
 
     if cursor is not None:
         try:
-            ref_path, updated_at = decode_cursor(cursor)
+            ref_path, _updated_at = decode_cursor(cursor)
             cursor_doc = db.document(ref_path).get()
             if cursor_doc.exists:
                 q = q.start_after(cursor_doc)
@@ -98,8 +98,15 @@ def encode_cursor(doc_snapshot: Any) -> str:
 
 
 def decode_cursor(cursor: str) -> tuple[str, datetime | None]:
-    """Decode a page cursor into (doc_path, updated_at)."""
-    raw = base64.urlsafe_b64decode(cursor.encode()).decode()
+    """Decode a page cursor into (doc_path, updated_at).
+
+    Returns ("", None) for any malformed input so callers can safely ignore
+    bad cursors without raising.
+    """
+    try:
+        raw = base64.urlsafe_b64decode(cursor.encode() + b"==").decode()
+    except Exception:
+        return "", None
     parts = raw.split("|", 1)
     ref_path = parts[0]
     updated_at: datetime | None = None

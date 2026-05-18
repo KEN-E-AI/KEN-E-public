@@ -17,6 +17,8 @@ from typing import Any
 
 from google.cloud import firestore
 
+from .side_table import get_chat_side_table_service
+
 logger = logging.getLogger(__name__)
 
 _IDEMPOTENCY_TTL_HOURS = 24
@@ -61,8 +63,6 @@ def apply_side_table_update(
             return {"status": "duplicate", "applied_at": data.get("applied_at")}
 
     reconstructed = _reconstruct_increments(delta)
-
-    from kene_api.chat.side_table import get_chat_side_table_service
 
     svc = get_chat_side_table_service()
     svc.update_from_delta(account_id=account_id, session_id=session_id, delta=reconstructed)

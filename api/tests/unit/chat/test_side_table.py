@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from src.kene_api.chat.side_table import ChatSessionSideTableService, _doc_path
 

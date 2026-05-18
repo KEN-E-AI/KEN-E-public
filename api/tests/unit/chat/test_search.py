@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from src.kene_api.chat.search import (
     CHAT_LIST_WINDOW_DAYS,
@@ -40,7 +38,7 @@ class TestCursorRoundtrip:
         assert dt.month == 6
 
     def test_decode_malformed_cursor_returns_empty_datetime(self) -> None:
-        path, dt = decode_cursor("not-valid-base64!!!")
+        _path, _dt = decode_cursor("not-valid-base64!!!")
         # Should not raise; path and dt may be garbage but no exception
         # (the caller ignores malformed cursors)
 
@@ -81,7 +79,6 @@ class TestListSessions:
         account_id: str = "acc_1",
         search_text: str = "",
     ) -> dict:
-        from datetime import timedelta
 
         return {
             "session_id": session_id,
@@ -102,7 +99,7 @@ class TestListSessions:
         ]
         db = self._make_db(docs)
 
-        results, next_cursor = list_sessions(db=db, user_id="user_1", account_id="acc_1")
+        results, _next_cursor = list_sessions(db=db, user_id="user_1", account_id="acc_1")
 
         assert len(results) == 1
         assert results[0].session_id == "s1"
@@ -133,7 +130,7 @@ class TestListSessions:
         docs = [self._session_doc(f"s{i}") for i in range(3)]
         db = self._make_db(docs)
 
-        results, next_cursor = list_sessions(
+        _results, next_cursor = list_sessions(
             db=db, user_id="user_1", account_id="acc_1", limit=20
         )
 
@@ -143,7 +140,7 @@ class TestListSessions:
         docs = [self._session_doc(f"s{i}") for i in range(5)]
         db = self._make_db(docs)
 
-        results, next_cursor = list_sessions(
+        _results, next_cursor = list_sessions(
             db=db, user_id="user_1", account_id="acc_1", limit=5
         )
 

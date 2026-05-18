@@ -11,8 +11,8 @@ from typing import Any
 
 from google.cloud import firestore
 
-from kene_api.dependencies import get_firestore_client
-from kene_api.models.chat import ChatSessionMetadata
+from ..dependencies import get_firestore_client
+from ..models.chat import ChatSessionMetadata
 
 
 def _now_utc() -> datetime:
@@ -42,10 +42,10 @@ class ChatSessionSideTableService:
         model_id: str,
     ) -> ChatSessionMetadata:
         """Create a new side-table row. Raises if document already exists."""
-        from kene_api.chat.context_windows import get_model_context_window
+        from .context_windows import get_model_context_window
 
         now = _now_utc()
-        context_window_max = get_model_context_window(model_id)
+        context_window_max = get_model_context_window(model_id).context_window_max
         metadata = ChatSessionMetadata(
             session_id=session_id,
             user_id=user_id,
@@ -77,7 +77,7 @@ class ChatSessionSideTableService:
         limit: int = 20,
     ) -> tuple[list[ChatSessionMetadata], str | None]:
         """Cursor-paginated listing for a user. Delegates to search.list_sessions."""
-        from kene_api.chat.search import list_sessions
+        from .search import list_sessions
 
         return list_sessions(
             db=self._db,

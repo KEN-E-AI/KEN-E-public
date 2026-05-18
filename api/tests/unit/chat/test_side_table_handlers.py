@@ -5,8 +5,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from src.kene_api.chat.side_table_handlers import (
     _reconstruct_increments,
     _sha256_hex,
@@ -141,7 +139,7 @@ class TestApplySideTableUpdate:
     def test_writes_idempotency_doc_on_apply(self) -> None:
         db = self._make_db(idem_doc_exists=False)
         idem_ref = db.collection.return_value.document.return_value
-        ctx, svc = self._patch_svc()
+        ctx, _svc = self._patch_svc()
 
         with ctx:
             apply_side_table_update(
