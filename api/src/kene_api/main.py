@@ -34,6 +34,7 @@ from .routers import (
     accounts,
     activities,
     admin,
+    admin_feature_flags,
     agent_configs,
     auth,
     chat,
@@ -311,6 +312,9 @@ app.include_router(
     mcp_server_configs.router
 )  # MCP server config admin router has its prefix
 app.include_router(feature_flags.router)  # Feature flags router already has its prefix
+app.include_router(
+    admin_feature_flags.router
+)  # Admin feature flag management (FF-PRD-02)
 
 
 # Health and root endpoints below routers
