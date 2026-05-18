@@ -50,19 +50,52 @@ steps:
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
 
-  # Run API integration tests
-  - name: "python:3.11-slim"
+  # Run API integration tests against a live Firestore emulator.
+  #
+  # 12 integration test files are gated behind FIRESTORE_EMULATOR_HOST via
+  # pytest.mark.skipif (gate established in DM-85 / PR #509). Without a running
+  # emulator they skip silently in CI, leaving AC-9 / AC-10 / FF-9 verified only
+  # on developer machines. This step starts the emulator so the gate opens in
+  # CI (DM-84).
+  #
+  # Image note: the cloud-sdk `:emulators` tag bundles gcloud + the JRE the
+  # Firestore emulator requires; python:3.11-slim has neither. The emulator and
+  # pytest MUST run in the same step — Cloud Build steps are separate
+  # containers, so a background emulator started elsewhere would not survive.
+  - name: "gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators"
     id: api-integration-tests
     entrypoint: /bin/bash
     args:
       - "-c"
       - |
+        set -euo pipefail
         cd api
-        pip install uv --user
+
+        # Start the Firestore emulator in the background on the port the test
+        # suite expects (see tests/integration/*_no_orphans.py skip gate).
+        gcloud emulators firestore start --host-port=127.0.0.1:8090 &
+
+        # Block until the emulator accepts connections; fail fast after ~60s.
+        for _ in $(seq 1 60); do
+          curl -sf http://127.0.0.1:8090/ >/dev/null 2>&1 && break
+          sleep 1
+        done
+        curl -sf http://127.0.0.1:8090/ >/dev/null 2>&1 \
+          || { echo "Firestore emulator failed to start"; exit 1; }
+
+        # Install uv via the standalone installer — the cloud-sdk image is an
+        # externally-managed Python env where `pip install` is blocked (PEP 668).
+        # The installer drops uv under HOME/.local/bin, and Cloud Build sets
+        # HOME to /builder/home. The doubled dollar-signs escape Cloud Build
+        # substitution so the shell receives literal HOME and PATH references.
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        export PATH="$$HOME/.local/bin:$$PATH"
         uv sync --frozen
-        uv run pytest tests/integration
-    env:
-      - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
+
+        FIRESTORE_EMULATOR_HOST=127.0.0.1:8090 \
+        GOOGLE_CLOUD_PROJECT_ID=test-project \
+        GOOGLE_CLOUD_PROJECT=test-project \
+          uv run pytest tests/integration
 
   # Run agent-side unit tests for the clean subdirectories of app/adk/.
   # Scope: agent_factory, mcp_config, and tracking test directories.
