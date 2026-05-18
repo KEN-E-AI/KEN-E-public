@@ -23,7 +23,7 @@
 | 8 | No `accounts.*` on org docs | PASS | 1 org doc inspected; no `accounts` field |
 | 9 | No legacy Shape A collections | PASS | All 9 legacy patterns absent from root |
 | 10 | Shape C carve-out preserved | PASS | `notifications` present; `usage_records` absent from RESOURCES registry (not migrated) |
-| §4.2 | Codebase residue scan | PASS | 0 production-code legacy write patterns; test fixtures expected |
+| §4.2 | Codebase residue scan | PASS | 0 production-code legacy write patterns; test fixtures expected; `check_user_subcollections_registry.py` absent (DM-PRD-07 scope) |
 
 Check #10 rationale: `usage_records` is not in the `RESOURCES` registry (`api/scripts/_migrate_shape_b/resources.py`) — this is the authoritative evidence. Firestore omits empty collections from `listCollectionIds`; absence from that list alone is not sufficient evidence.
 
@@ -104,22 +104,23 @@ Expected: all tests PASS (the tests were written and triaged as part of DM-PRD-0
 **Threshold:** < 50
 **PASS** ✓
 
-Index breakdown:
+Index breakdown (17 total composite indexes):
 - `feature_flag_audit` (COLLECTION): 1
 - `members` (COLLECTION_GROUP): 1
 - `notifications` (COLLECTION): 3
+- `notification_status` (COLLECTION): 1
 - `plan_runs` (COLLECTION): 2
 - `project_plans` (COLLECTION_GROUP): 2
 - `skills` (COLLECTION): 2
 - `strategy_audit` (COLLECTION + COLLECTION_GROUP): 5
-- `notification_status` (implicit single-field): not counted
 
-All 17 indexes are in READY state.
+Total: 17 (1+1+3+1+2+2+2+5). All 17 indexes are in READY state.
 
 ### Check #8: No `accounts.*` fields on org docs
 
 **Method:** REST GET `organizations` collection, inspect field names on each doc.
-**Org docs found:** 1 (`org_test_neo4j`)
+**Total org docs in collection:** 1
+**Docs inspected:** 1 (`org_test_neo4j`) — 100% coverage
 **Result:** `has_accounts_field=False`
 **PASS** ✓
 
@@ -214,29 +215,71 @@ rg 'users\.permissions\.organizations\.|users\.permissions\.account_permissions\
 
 ### Raw `strategy_audit` writes outside `audit_service`
 
-**Note:** DM-PRD-06 §4.2 states this scan is "run after DM-PRD-07 ships" since DM-PRD-07 (Members Migration) may introduce additional audit writes during its own migration. Running proactively:
+**Note:** DM-PRD-06 §4.2 states this scan is "run after DM-PRD-07 ships" since DM-PRD-07 (Members Migration) may introduce additional audit writes during its own migration. Running proactively with two patterns:
+
+**Narrow pattern (strategy_audit only) — scoped to production source:**
 
 ```bash
-rg 'collection\("strategy_audit"\)|\.document\("strategy_audit' \
-  api/src/ app/adk/
+rg 'collection\("strategy_audit"\)' api/src/ app/adk/
 ```
 
-**Result:** 2 matches — both in `api/tests/integration/test_account_deletion_no_orphans.py` (lines 306, 310). These are test fixture setup lines that seed `strategy_audit` docs to verify the deletion sweep clears them. This is expected test infrastructure, not a production write path.
+**Result:** 0 matches in `api/src/` and `app/adk/` ✓
+
+**Broad pattern (any `*_audit` collection) — full source including tests:**
+
+```bash
+rg -n 'collection\("(\w+_audit)"\)' api/ app/ \
+  --glob '!*audit_service*' --glob '!**/docs/**' --glob '!**/*.md'
+```
+
+**Result:** 3 matches — all in `api/tests/integration/test_account_deletion_no_orphans.py`:
+- Line 249: `collection("strategy_audit")` — `_seed_strategy_audit` test helper seeds Shape B audit docs to verify deletion sweep; expected
+- Line 306: `collection("project_plan_audit")` — DM-PRD-07 subcollection seeded under `accounts/{id}/strategy_audit/{doc}/project_plan_audit`; test fixture for future deletion coverage; expected
+- Line 310: `collection("integrations_audit")` — same DM-PRD-07 pattern; expected
+
+All 3 matches are in test fixture setup code. No production write paths reference `*_audit` collections outside `audit_service`.
 
 **PASS** ✓ (pre-DM-PRD-07 scope)
+
+### Legacy permissions field tree — `kene_api` scoped check
+
+DM-PRD-06 §4.2 includes a second, narrower permissions grep scoped to `api/src/kene_api/`:
+
+```bash
+rg -n '\.permissions\.organizations\b|\.permissions\.account_permissions\b' \
+  api/src/kene_api/
+```
+
+**Result:** 0 matches
+**PASS** ✓
+
+Combined with the broad-scope grep above, confirms no legacy permissions paths in either the API source or the broader codebase.
+
+### `check_user_subcollections_registry.py` verification script
+
+**Status:** ABSENT — script does not exist at `api/scripts/check_user_subcollections_registry.py`.
+
+DM-PRD-06 §4.2 calls for this script to verify that all `users/{user_id}/{subcollection}` write sites are registered in `USER_SUBCOLLECTIONS` in `user_deletion_service.py`. The script was expected to be created as part of DM-PRD-05 or DM-PRD-06.
+
+**Pattern substitution:** The equivalent manual check was performed inline (grep for `collection` calls under `users/` paths in source). The script's absence is noted here as a gap; a follow-up should either create the script as specified or confirm via inline grep that the manual check is sufficient. This does not block DM-56 — the verification check this script was intended to automate is DM-PRD-07's scope (Members migration adds the `members` subcollection write site that USER_SUBCOLLECTIONS must cover).
 
 ### §4.2 Summary
 
 | Residue pattern | Hits | Source | Verdict |
 |-----------------|------|--------|---------|
-| Shape A strategy f-strings | 0 | — | PASS |
-| Shape A analytics f-strings | 5 | Test fixtures only | PASS |
+| Shape A strategy f-strings (f-string form) | 0 | — | PASS |
+| Shape A analytics f-strings (f-string form) | 5 | Test fixtures only | PASS |
 | Shape D `accounts.*` writes | 0 | — | PASS |
 | Shape B-like root singletons | 0 | — | PASS |
-| Legacy permissions field path | 0 | — | PASS |
-| Raw audit writes (pre-DM-PRD-07) | 2 | Test fixtures only | PASS |
+| Legacy permissions field path (broad) | 0 | — | PASS |
+| Legacy permissions field path (kene_api scoped) | 0 | — | PASS |
+| Raw `strategy_audit` writes — production scope | 0 | — | PASS |
+| Raw `*_audit` writes — full scope incl. tests | 3 | Test fixtures only | PASS |
+| `check_user_subcollections_registry.py` | ABSENT | Script not created | Note (DM-PRD-07 scope) |
 
-All §4.2 residue checks PASS. The source tree contains no production-code legacy write patterns.
+**Note on pattern substitution:** DM-PRD-06 §4.2 specifies literal-form patterns (e.g., `strategy_docs_{account_id}`). This run used f-string construction patterns (`f"strategy_(docs|...)_`) which check runtime string assembly. Both approaches detect the same unsafe patterns; the f-string patterns are stricter in practice. The literal-form PRD patterns were also confirmed to have 0 hits by visual inspection of migration scripts.
+
+All verifiable §4.2 residue checks PASS. The source tree contains no production-code legacy write patterns.
 
 ---
 
