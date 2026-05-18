@@ -1,17 +1,20 @@
 """Integration tests: Firestore security rules for CH-PRD-01 collections (CH-9 AC-3).
 
-Covers PRD §7 acceptance criteria AC-3 — six assertions, three ALLOW / three DENY:
+Covers PRD §7 acceptance criteria AC-3 — six assertions, two ALLOW / four DENY:
 
   (a) user reads own session  → ALLOWED
   (b) user reads other's session  → PERMISSION_DENIED
-  (c) user writes with mismatched account_id claim  → PERMISSION_DENIED
+  (c) client writes to chat_sessions  → PERMISSION_DENIED (allow write: if false)
   (d) client writes to artifacts subcollection  → PERMISSION_DENIED (allow write: if false)
   (e) user reads own chat_category  → ALLOWED
   (f) user reads another user's chat_category  → PERMISSION_DENIED
 
+chat_sessions and its artifacts subcollection are server-write-only: all writes
+go through server-side services using the Admin SDK, which bypasses rules.
+
 Auth simulation: The Firestore emulator parses JWT claims without verifying the
-signature. We craft minimal RS256-header JWTs with the desired uid / account_id
-claims. Seeding and cleanup use `Authorization: Bearer owner` which the emulator
+signature. We craft minimal RS256-header JWTs with the desired uid claim.
+Seeding and cleanup use `Authorization: Bearer owner` which the emulator
 treats as admin (bypasses rules).
 
 Enable with:
@@ -191,7 +194,6 @@ def ctx() -> Generator[dict[str, str], None, None]:
 
     _admin_delete(f"accounts/{acc}/chat_sessions/{sess_a}")
     _admin_delete(f"accounts/{acc}/chat_sessions/{sess_b}")
-    _admin_delete(f"accounts/{acc}/chat_sessions/new_{rid}")  # written by test_write_own_session_allowed
     _admin_delete(f"users/{ua}/chat_categories/{cat_a}")
 
 
@@ -217,26 +219,21 @@ class TestChatSessionRules:
         )
         assert resp.status_code == 403, f"Expected 403 (other's session), got {resp.status_code}: {resp.text}"
 
-    def test_write_own_session_allowed(self, ctx: dict[str, str]) -> None:
+    def test_client_write_session_denied(self, ctx: dict[str, str]) -> None:
+        """chat_sessions is server-write-only (allow write: if false).
+
+        ChatSessionSideTableService is the single write path; it uses the
+        Admin SDK, which bypasses rules. A direct client write — even by the
+        owning user writing their own row — must be denied.
+        """
         resp = _patch(
             f"accounts/{ctx['acc']}/chat_sessions/new_{ctx['rid']}",
             uid=ctx["ua"],
             fields={"user_id": ctx["ua"], "account_id": ctx["acc"]},
-            extra_claims={"account_id": ctx["acc"]},  # token.account_id == path accountId → allowed
-        )
-        assert resp.status_code == 200, (
-            f"Expected 200 (write own session, matching account_id claim), got {resp.status_code}: {resp.text}"
-        )
-
-    def test_write_mismatched_account_id_denied(self, ctx: dict[str, str]) -> None:
-        resp = _patch(
-            f"accounts/{ctx['acc']}/chat_sessions/other_{ctx['rid']}",
-            uid=ctx["ua"],
-            fields={"user_id": ctx["ua"], "account_id": ctx["acc"]},
-            extra_claims={"account_id": "wrong_account"},  # token.account_id != path accountId → denied
+            extra_claims={"account_id": ctx["acc"]},
         )
         assert resp.status_code == 403, (
-            f"Expected 403 (mismatched account_id claim), got {resp.status_code}: {resp.text}"
+            f"Expected 403 (chat_sessions allow write: if false), got {resp.status_code}: {resp.text}"
         )
 
     def test_client_write_artifacts_denied(self, ctx: dict[str, str]) -> None:

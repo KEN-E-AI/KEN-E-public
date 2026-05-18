@@ -25,7 +25,7 @@ Landing the substrate first lets CH-PRD-02 build the sidebar against real data a
 
 - **Pydantic models** for `ChatSessionMetadata`, `ChatArtifactIndex`, `ChatCategoryDefinition`, `TodoItem`, `TodoList`, `ChatStatusDetail`, `ModelContextWindowEntry` (shapes in §4).
 - **Firestore layout** — new subcollection `accounts/{account_id}/chat_sessions/{session_id}` (Shape B) + nested `chat_sessions/{session_id}/artifacts/{artifact_id}`. Per-user `users/{user_id}/chat_categories/{category_id}` collection (shape registered here; CH-PRD-03 implements CRUD). Composite indexes per §4.3. DM-PRD-00 registry entries, DM-PRD-05 sweep inclusion.
-- **Firestore security rules** — enforce `resource.data.user_id == request.auth.uid` on every `chat_sessions/*` read and write, and `request.auth.uid == userId` on `users/{userId}/chat_categories/*`. Rules file: `deployment/firestore.rules` (net-new), deployed to all three environments by `deployment/terraform/firestore_rules.tf`. Unit-tested with the Firestore emulator.
+- **Firestore security rules** — gate `chat_sessions/*` reads on `resource.data.user_id == request.auth.uid`; `chat_sessions/*` (and its `artifacts/*`) are server-write-only (`allow write: if false`, since `ChatSessionSideTableService` is the single write path via the Admin SDK); `users/{userId}/chat_categories/*` gated on `request.auth.uid == userId`. Rules file: `deployment/firestore.rules` (net-new), deployed to all three environments by `deployment/terraform/firestore_rules.tf`. Unit-tested with the Firestore emulator.
 - **`ChatSessionSideTableService`** (`api/src/kene_api/chat/side_table.py`) — `create(session_id, user_id, account_id, organization_id, model_id)`, `get(session_id)`, `list_for_user(user_id, account_id, cursor?, category_id?, query?)`, `update_from_delta(session_id, delta)`, `tombstone(session_id)`. Single write path into the side-table.
 - **ADK callbacks** (`app/adk/agents/chat_callbacks.py`) — registered on the root runner via the Agent Factory (AH-PRD-02) or hardcoded root fallback. Two top-level callbacks:
   - `before_agent_callback` → stamps `last_agent_started_at = now()` on the side-table.
@@ -267,9 +267,12 @@ so rules and indexes deploy in lockstep):
 match /accounts/{accountId}/chat_sessions/{sessionId} {
   allow read: if request.auth != null
               && resource.data.user_id == request.auth.uid;
-  allow write: if request.auth != null
-               && request.auth.token.account_id == accountId
-               && request.resource.data.user_id == request.auth.uid;
+  // Server-write-only — ChatSessionSideTableService is the single write path
+  // (Admin SDK, bypasses rules). Account scoping is NOT expressed here: a KEN-E
+  // user belongs to many accounts (plus org-admin / super-admin implicit
+  // access), which no single-valued Firebase custom claim can represent.
+  // The API layer enforces account scope.
+  allow write: if false;
 
   match /artifacts/{artifactId} {
     allow read: if request.auth != null
@@ -532,7 +535,7 @@ Auth gates:
 
 1. **Pydantic shapes land** in `api/src/kene_api/models/chat.py` per §4.1 — no `cost_usd_cents`, no `ModelPricingEntry`, no `creator` on artifacts, and `last_agent_started_at` / `last_agent_stopped_at` replacing `is_agent_running`.
 2. **Firestore layout + 4 composite indexes** provisioned via Terraform (§4.3). DM-PRD-00 registry lists `chat_sessions` + nested `artifacts` + user-scoped `chat_categories`.
-3. **Firestore security rules** from §4.5 land; emulator test asserts cross-user reads return PERMISSION_DENIED; cross-account writes return PERMISSION_DENIED; artifact writes from the client are disallowed.
+3. **Firestore security rules** from §4.5 land; emulator test asserts cross-user reads return PERMISSION_DENIED; client writes to `chat_sessions` are disallowed (server-write-only); artifact writes from the client are disallowed.
 4. **Day-1 ADK callback spike** completes; `docs/spike-adk-chat-callbacks.md` records confirmed signatures. PRD §5.2 amended if the spike finds different names.
 5. **`ChatSessionSideTableService` lands** — create / get / list_for_user / update_from_delta / tombstone work against the real Firestore client. Uses `firestore.Increment` for counter fields.
 6. **Callbacks fire on the hot path.** Unit test constructs a fake agent invocation; the accumulator aggregates correctly; one `update` call hits Firestore per turn (not per event).
@@ -570,7 +573,7 @@ Auth gates:
 - Back-fill against a seed dataset: 100 ADK sessions → 100 side-table rows; re-run idempotent.
 - Internal endpoint `POST /internal/chat/side-table/update` with OIDC — 200 on valid; 401 without token; idempotent on `idempotency_key`.
 - Parity test — Chat and Billing both import `extract_billable_tokens` and produce identical output on a shared fixture (CI asserts).
-- Firestore security rules — user A cannot read user B's `chat_sessions`; anyone authenticated against account A cannot read/write another account's docs; client-side artifact writes fail.
+- Firestore security rules — user A cannot read user B's `chat_sessions`; client writes to `chat_sessions` and its `artifacts` subcollection fail (server-write-only); a user cannot read another user's `chat_categories`.
 
 ### Manual verification
 - Dev-env: run `setup_local_dev.sh`, create a session via the existing `POST /conversations`, inspect Firestore console, confirm `chat_sessions/{session_id}` exists with default values. Send a message via `/completions`, confirm token counters increment + timestamps stamp correctly.
