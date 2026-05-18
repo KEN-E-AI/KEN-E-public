@@ -811,14 +811,16 @@ class TestAccountAgentConfigsEmulator:
             self._cleanup(emulator_db, account_id, [custom_id])
 
     # ------------------------------------------------------------------
-    # AC: PUT overlay over nonexistent global still writes overlay (custom_agent path)
+    # AC: PUT over a config_id with neither a global nor an existing account
+    #     doc is rejected — POST owns standalone custom-agent creation
     # ------------------------------------------------------------------
 
-    def test_put_overlay_without_global_creates_standalone_overlay(
+    def test_put_overlay_without_global_returns_404(
         self, client: TestClient, emulator_db, account_id: str
     ) -> None:
-        """PUT on a config_id with no global doc stores the overlay;
-        _load_merged returns it as custom_agent status."""
+        """PUT on a config_id with neither a global config nor an existing
+        account doc is rejected with 404 — a sparse overlay body cannot form a
+        valid custom agent (model is required); POST creates custom agents."""
         config_id = f"orphan_overlay_{uuid.uuid4().hex[:8]}"
         base_url = f"/api/v1/accounts/{account_id}/agent-configs"
 
@@ -827,13 +829,46 @@ class TestAccountAgentConfigsEmulator:
                 f"{base_url}/{config_id}",
                 json={"instruction": "Orphan overlay instruction for testing purposes."},
             )
-            assert resp.status_code == 200
-            body = resp.json()
-            # No global → customization_status is custom_agent
-            assert body["customization_status"] == "custom_agent"
-            assert body["config_id"] == config_id
+            assert resp.status_code == 404
         finally:
             self._cleanup(emulator_db, account_id, [config_id])
+
+    # ------------------------------------------------------------------
+    # AC: PUT on an existing custom agent edits it in place (no global)
+    # ------------------------------------------------------------------
+
+    def test_put_edits_existing_custom_agent(
+        self, client: TestClient, emulator_db, account_id: str
+    ) -> None:
+        """PUT on a POST-created custom_* config_id (no global) merges the
+        overlay onto the existing doc and stays custom_agent."""
+        base_url = f"/api/v1/accounts/{account_id}/agent-configs"
+        custom_id: str | None = None
+
+        try:
+            resp = client.post(
+                base_url + "/",
+                json={
+                    "title": "Editable Agent",
+                    "instruction": "You are a custom agent slated for an edit.",
+                    "model": "gemini-2.5-flash",
+                },
+            )
+            assert resp.status_code == 201
+            custom_id = resp.json()["config_id"]
+
+            resp = client.put(
+                f"{base_url}/{custom_id}",
+                json={"instruction": "Edited instruction for the existing custom agent."},
+            )
+            assert resp.status_code == 200
+            body = resp.json()
+            assert body["customization_status"] == "custom_agent"
+            assert body["instruction"] == "Edited instruction for the existing custom agent."
+            assert body["model"] == "gemini-2.5-flash"
+        finally:
+            if custom_id:
+                self._cleanup(emulator_db, account_id, [custom_id])
 
     # ------------------------------------------------------------------
     # AC: LIST includes both globals and per-account overlays/customs

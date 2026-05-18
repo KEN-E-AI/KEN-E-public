@@ -919,10 +919,13 @@ async def upsert_account_agent_config_overlay(
     user: UserContext = Depends(get_current_user_context),
     db: firestore.Client = Depends(get_firestore),
 ) -> MergedAgentConfig:
-    """Upsert a per-account overlay for an existing global agent config.
+    """Upsert a per-account overlay for an existing global agent config, or
+    edit an existing custom agent.
 
     Stores only the fields present in the body (sparse overlay).
     Records ``based_on_version`` from the global doc's ``metadata.version``.
+    Returns 404 when ``config_id`` matches neither a global config nor an
+    existing account doc — POST owns standalone custom-agent creation.
     Requires admin role.
     """
     if not user.has_account_access(account_id, required_roles=["admin"]):
@@ -940,6 +943,26 @@ async def upsert_account_agent_config_overlay(
         global_doc = db.collection("agent_configs").document(config_id).get()
         global_data = global_doc.to_dict() if global_doc.exists else None
 
+        account_config_ref = (
+            db.collection("accounts")
+            .document(account_id)
+            .collection("agent_configs")
+            .document(config_id)
+        )
+
+        # PUT overlays an existing global config or edits an existing custom
+        # agent. With neither present there is nothing to overlay: a sparse
+        # overlay body cannot satisfy the MergedAgentConfig contract (model is
+        # required), and standalone creation is POST's job.
+        if global_data is None and not account_config_ref.get().exists:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"No agent configuration '{config_id}' to overlay. "
+                    "Use POST /agent-configs to create a custom agent."
+                ),
+            )
+
         # Resolve based_on_version from global doc metadata
         bov: int = 1
         if global_data:
@@ -954,13 +977,7 @@ async def upsert_account_agent_config_overlay(
         body_dict = body.model_dump(exclude_unset=True)
         overlay_data.update(body_dict)
 
-        (
-            db.collection("accounts")
-            .document(account_id)
-            .collection("agent_configs")
-            .document(config_id)
-            .set(overlay_data, merge=True)
-        )
+        account_config_ref.set(overlay_data, merge=True)
         logger.info(
             f"User {user.email} upserted overlay for {config_id} on account {account_id}"
         )
