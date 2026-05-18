@@ -76,7 +76,7 @@ class TestSideTableUpdateOIDC:
             headers={"Authorization": "Bearer dummy-skip-token"},
         )
         assert response.status_code == 200
-        assert response.json()["status"] in ("applied", "duplicate")
+        assert response.json()["status"] == "applied"
 
     def test_missing_auth_returns_401(self, client) -> None:
         # When OIDC_SKIP is false this would 401; with skip=true it passes through.

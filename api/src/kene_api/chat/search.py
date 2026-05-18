@@ -8,12 +8,15 @@ queries cannot filter by parent document ID without a custom field index.
 from __future__ import annotations
 
 import base64
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from google.cloud import firestore
 
 from ..models.chat import ChatSessionMetadata
+
+logger = logging.getLogger(__name__)
 
 CHAT_LIST_WINDOW_DAYS = 30
 
@@ -54,8 +57,8 @@ def list_sessions(
             cursor_doc = db.document(ref_path).get()
             if cursor_doc.exists:
                 q = q.start_after(cursor_doc)
-        except Exception:
-            pass  # malformed cursor → ignore, return from beginning
+        except Exception as exc:
+            logger.debug("Ignoring malformed pagination cursor: %s", exc)
 
     # Over-fetch to find enough after post-fetch filtering.
     # Limit is multiplied by a small factor so short pages from account filtering

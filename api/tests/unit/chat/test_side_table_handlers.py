@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
+import google.api_core.exceptions
 from src.kene_api.chat.side_table_handlers import (
     _reconstruct_increments,
     _sha256_hex,
@@ -64,24 +65,34 @@ class TestReconstructIncrements:
 
 
 class TestApplySideTableUpdate:
-    def _make_db(self, idem_doc_exists: bool = False, expires_at_future: bool = False):
+    def _make_db(self, create_raises: bool = False, expire_at_future: bool = True) -> MagicMock:
+        """Build a mock Firestore client.
+
+        create_raises=True simulates AlreadyExists (duplicate key).
+        expire_at_future controls whether the stored idempotency doc is still valid.
+        """
         db = MagicMock()
-
-        idem_snap = MagicMock()
-        idem_snap.exists = idem_doc_exists
-        now = datetime.now(timezone.utc)
-        idem_snap.to_dict.return_value = {
-            "applied_at": now - timedelta(hours=1),
-            "expires_at": now + timedelta(hours=1) if expires_at_future else now - timedelta(hours=1),
-        }
-
         idem_ref = MagicMock()
-        idem_ref.get.return_value = idem_snap
+
+        if create_raises:
+            idem_ref.create.side_effect = google.api_core.exceptions.AlreadyExists("duplicate")
+            now = datetime.now(timezone.utc)
+            stored_snap = MagicMock()
+            stored_snap.exists = True
+            stored_snap.to_dict.return_value = {
+                "applied_at": now - timedelta(hours=1),
+                "expires_at": (
+                    now + timedelta(hours=1) if expire_at_future else now - timedelta(hours=1)
+                ),
+            }
+            idem_ref.get.return_value = stored_snap
+        else:
+            idem_ref.create.return_value = None
 
         db.collection.return_value.document.return_value = idem_ref
         return db
 
-    def _patch_svc(self):
+    def _patch_svc(self) -> tuple[object, MagicMock]:
         svc = MagicMock()
         return patch(
             "src.kene_api.chat.side_table_handlers.get_chat_side_table_service",
@@ -89,7 +100,7 @@ class TestApplySideTableUpdate:
         ), svc
 
     def test_applies_delta_when_new_key(self) -> None:
-        db = self._make_db(idem_doc_exists=False)
+        db = self._make_db(create_raises=False)
         ctx, svc = self._patch_svc()
 
         with ctx:
@@ -105,7 +116,7 @@ class TestApplySideTableUpdate:
         svc.update_from_delta.assert_called_once()
 
     def test_returns_duplicate_when_key_exists_and_not_expired(self) -> None:
-        db = self._make_db(idem_doc_exists=True, expires_at_future=True)
+        db = self._make_db(create_raises=True, expire_at_future=True)
         ctx, svc = self._patch_svc()
 
         with ctx:
@@ -121,7 +132,7 @@ class TestApplySideTableUpdate:
         svc.update_from_delta.assert_not_called()
 
     def test_applies_when_key_exists_but_expired(self) -> None:
-        db = self._make_db(idem_doc_exists=True, expires_at_future=False)
+        db = self._make_db(create_raises=True, expire_at_future=False)
         ctx, svc = self._patch_svc()
 
         with ctx:
@@ -137,7 +148,7 @@ class TestApplySideTableUpdate:
         svc.update_from_delta.assert_called_once()
 
     def test_writes_idempotency_doc_on_apply(self) -> None:
-        db = self._make_db(idem_doc_exists=False)
+        db = self._make_db(create_raises=False)
         idem_ref = db.collection.return_value.document.return_value
         ctx, _svc = self._patch_svc()
 
@@ -146,11 +157,11 @@ class TestApplySideTableUpdate:
                 db=db,
                 session_id="sess_1",
                 account_id="acc_1",
-                delta={},
+                delta={"message_count": {"_increment": 1}},
                 idempotency_key="new-key",
             )
 
-        idem_ref.set.assert_called_once()
-        written = idem_ref.set.call_args[0][0]
+        idem_ref.create.assert_called_once()
+        written = idem_ref.create.call_args[0][0]
         assert "expires_at" in written
         assert "applied_at" in written

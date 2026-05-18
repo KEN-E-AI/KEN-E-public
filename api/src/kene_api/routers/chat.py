@@ -29,6 +29,7 @@ except ImportError:
     WEAVE_AVAILABLE = False
 
 from ..auth.dependencies import get_current_user
+from ..auth.internal_oidc import verify_internal_oidc_caller
 from ..auth.models import UserContext
 from ..auth.user_context import get_current_user_context
 from ..cache import (
@@ -37,8 +38,11 @@ from ..cache import (
     session_metadata_key,
     user_session_ids_key,
 )
+from ..chat.side_table_handlers import apply_side_table_update
 from ..database import get_neo4j_service
+from ..dependencies import get_firestore_client as _get_firestore_client
 from ..firestore import get_firestore_service
+from ..models.chat import InternalSideTableUpdateRequest
 from ..models.kene_models import RecoverableSessionInfo
 from ..redis_client import get_redis_service
 from ..services.ga_credential_helper import GACredentialHelper
@@ -2487,11 +2491,6 @@ async def invalidate_cache(
 # ---------------------------------------------------------------------------
 # Internal OIDC bridge — CH-11
 # ---------------------------------------------------------------------------
-
-from ..auth.internal_oidc import verify_internal_oidc_caller  # noqa: E402
-from ..chat.side_table_handlers import apply_side_table_update  # noqa: E402
-from ..dependencies import get_firestore_client as _get_firestore_client  # noqa: E402
-from ..models.chat import InternalSideTableUpdateRequest  # noqa: E402
 
 internal_router = APIRouter(prefix="/api/v1/internal/chat", tags=["chat-internal"])
 
