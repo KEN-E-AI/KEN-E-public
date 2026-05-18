@@ -6,21 +6,13 @@ without requiring the full API dependency chain.
 
 from __future__ import annotations
 
-import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 
 import pytest
 
 from app.adk.session.recovery import (
-    RecoverableSession,
-    SessionRecoveryResult,
     SessionRecoveryService,
-)
-
-pytestmark = pytest.mark.skipif(
-    not os.getenv("FIRESTORE_EMULATOR_HOST"),
-    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
 )
 
 
@@ -48,10 +40,11 @@ class TestListRecoverableSessions:
             "message_count": 12,
             "account_id": "acct1",
         }
-        mock_session.update_time = datetime(
-            2026, 2, 17, 14, 30, tzinfo=timezone.utc
-        )
-        mock_session.create_time = datetime(2026, 2, 17, 10, 0, tzinfo=timezone.utc)
+        # Timestamps must fall inside the RECOVERY_WINDOW_DAYS=7 window,
+        # so anchor them relative to now rather than a fixed date.
+        now = datetime.now(timezone.utc)
+        mock_session.update_time = now - timedelta(days=1)
+        mock_session.create_time = now - timedelta(days=1, hours=4)
         mock_session.events = []
 
         mock_session_service.list_sessions.return_value = AsyncMock()

@@ -1,22 +1,15 @@
 """Tests for account permission endpoints."""
 
-import os
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from fastapi import HTTPException
-from fastapi.testclient import TestClient
 
+import pytest
+from fastapi import HTTPException
 from src.kene_api.auth.models import UserContext
 from src.kene_api.routers.accounts import (
+    GrantAccountAccessRequest,
+    get_account_permissions,
     grant_account_access,
     revoke_account_access,
-    get_account_permissions,
-    GrantAccountAccessRequest,
-)
-
-pytestmark = pytest.mark.skipif(
-    not os.getenv("FIRESTORE_EMULATOR_HOST"),
-    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
 )
 
 
@@ -88,7 +81,11 @@ class TestGrantAccountAccess:
         request = GrantAccountAccessRequest(user_id="target123", access_level="edit")
 
         # Execute
-        with patch("src.kene_api.routers.accounts.get_cached_user_context_service"):
+        # NOTE: get_cached_user_context_service is imported inside the function
+        # body from auth.cached_user_context, so patch the SOURCE module.
+        with patch(
+            "src.kene_api.auth.cached_user_context.get_cached_user_context_service"
+        ):
             result = await grant_account_access(
                 "acc123", request, admin_user, mock_db, mock_firestore
             )
@@ -150,9 +147,12 @@ class TestGrantAccountAccess:
         """Test cannot grant access to super admin."""
         # Setup
         mock_db.execute_query = AsyncMock(return_value=[{"organization_id": "org456"}])
+        # Super-admin status now derives from the explicit super_admin role
+        # grant on the user doc, not the @ken-e.ai email domain (DM-81).
         mock_firestore.get_document.return_value = {
             "profile": {"email": "support@ken-e.ai"},
             "permissions": {"organizations": {"org456": "view"}},
+            "roles": ["super_admin"],
         }
 
         request = GrantAccountAccessRequest(user_id="super123", access_level="edit")
@@ -226,7 +226,11 @@ class TestRevokeAccountAccess:
         mock_firestore.get_client.return_value = firestore_client
 
         # Execute
-        with patch("src.kene_api.routers.accounts.get_cached_user_context_service"):
+        # NOTE: get_cached_user_context_service is imported inside the function
+        # body from auth.cached_user_context, so patch the SOURCE module.
+        with patch(
+            "src.kene_api.auth.cached_user_context.get_cached_user_context_service"
+        ):
             result = await revoke_account_access(
                 "acc123", "target123", admin_user, mock_db, mock_firestore
             )
@@ -242,9 +246,12 @@ class TestRevokeAccountAccess:
         """Test cannot revoke access from super admin."""
         # Setup
         mock_db.execute_query = AsyncMock(return_value=[{"organization_id": "org456"}])
+        # Super-admin status now derives from the explicit super_admin role
+        # grant on the user doc, not the @ken-e.ai email domain (DM-81).
         mock_firestore.get_document.return_value = {
             "profile": {"email": "support@ken-e.ai"},
             "permissions": {"organizations": {"org456": "view"}},
+            "roles": ["super_admin"],
         }
 
         # Execute & Verify

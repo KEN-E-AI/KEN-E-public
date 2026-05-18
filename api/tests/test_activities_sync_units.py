@@ -1,23 +1,16 @@
 """Unit tests for sync helper functions."""
 
-import os
+from unittest.mock import AsyncMock
 
 import pytest
-from unittest.mock import Mock, AsyncMock
 from fastapi import HTTPException
-
 from src.kene_api.routers.activities import (
-    _validate_account_and_get_regions,
-    _fetch_existing_activity_logs,
     _calculate_sync_operations,
     _create_activity_logs_batch,
     _delete_activity_logs_batch,
     _execute_sync_operations,
-)
-
-pytestmark = pytest.mark.skipif(
-    not os.getenv("FIRESTORE_EMULATOR_HOST"),
-    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+    _fetch_existing_activity_logs,
+    _validate_account_and_get_regions,
 )
 
 
@@ -30,7 +23,7 @@ class TestValidateAccountAndGetRegions:
         mock_db = AsyncMock()
         mock_db.execute_query.side_effect = [
             [{"regions": ["US", "CA"]}],  # Account query
-            [{"a": {}}],  # Activity exists query
+            [{"holiday_activity_count": 2}],  # Holiday activity count query
         ]
 
         result = await _validate_account_and_get_regions(mock_db, "acc_123")
@@ -66,18 +59,22 @@ class TestValidateAccountAndGetRegions:
 
     @pytest.mark.asyncio
     async def test_activity_not_found(self):
-        """Test when act_00 doesn't exist for account."""
+        """Test that missing holiday activities still proceed with sync.
+
+        When no regional holiday activities (act_00_*) exist, the function
+        logs a warning but proceeds rather than raising — sync still needs
+        to run so it can clean up any stale logs.
+        """
         mock_db = AsyncMock()
         mock_db.execute_query.side_effect = [
             [{"regions": ["US"]}],  # Account query
-            [],  # Activity not found
+            [{"holiday_activity_count": 0}],  # No holiday activities found
         ]
 
-        with pytest.raises(HTTPException) as exc_info:
-            await _validate_account_and_get_regions(mock_db, "acc_123")
+        result = await _validate_account_and_get_regions(mock_db, "acc_123")
 
-        assert exc_info.value.status_code == 404
-        assert "Activity act_00 not found" in str(exc_info.value.detail)
+        assert result == {"regions": ["US"], "has_regions": True}
+        assert mock_db.execute_query.call_count == 2
 
 
 class TestFetchExistingActivityLogs:
@@ -93,6 +90,7 @@ class TestFetchExistingActivityLogs:
                 "description": "Holiday1",
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-01",
+                "activity_id": "act_00_us",
                 "has_metric_relationship": False,
             },
             {
@@ -100,6 +98,7 @@ class TestFetchExistingActivityLogs:
                 "description": "Holiday2",
                 "start_date": "2024-02-01",
                 "end_date": "2024-02-01",
+                "activity_id": "act_00_us",
                 "has_metric_relationship": True,
             },
         ]
@@ -109,8 +108,8 @@ class TestFetchExistingActivityLogs:
         )
 
         assert len(existing_holidays) == 2
-        assert ("Holiday1", "2024-01-01", "2024-01-01") in existing_holidays
-        assert ("Holiday2", "2024-02-01", "2024-02-01") in existing_holidays
+        assert ("Holiday1", "2024-01-01", "2024-01-01", "act_00_us") in existing_holidays
+        assert ("Holiday2", "2024-02-01", "2024-02-01", "act_00_us") in existing_holidays
         assert len(protected_logs) == 1
         assert "log_2" in protected_logs
 
@@ -134,9 +133,9 @@ class TestCalculateSyncOperations:
     def test_all_operations(self):
         """Test with creates, deletes, and protected logs."""
         existing_holidays = {
-            ("Holiday1", "2024-01-01", "2024-01-01"): "log_1",
-            ("Holiday2", "2024-02-01", "2024-02-01"): "log_2",
-            ("Holiday3", "2024-03-01", "2024-03-01"): "log_3",
+            ("Holiday1", "2024-01-01", "2024-01-01", "act_00_us"): "log_1",
+            ("Holiday2", "2024-02-01", "2024-02-01", "act_00_us"): "log_2",
+            ("Holiday3", "2024-03-01", "2024-03-01", "act_00_us"): "log_3",
         }
 
         bigquery_holidays = [
@@ -144,11 +143,13 @@ class TestCalculateSyncOperations:
                 "description": "Holiday1",
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-01",
+                "region": "US",
             },
             {
                 "description": "Holiday4",
                 "start_date": "2024-04-01",
                 "end_date": "2024-04-01",
+                "region": "US",
             },
         ]
 
@@ -173,7 +174,7 @@ class TestCalculateSyncOperations:
     def test_no_changes_needed(self):
         """Test when everything is already in sync."""
         existing_holidays = {
-            ("Holiday1", "2024-01-01", "2024-01-01"): "log_1",
+            ("Holiday1", "2024-01-01", "2024-01-01", "act_00_us"): "log_1",
         }
 
         bigquery_holidays = [
@@ -181,6 +182,7 @@ class TestCalculateSyncOperations:
                 "description": "Holiday1",
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-01",
+                "region": "US",
             },
         ]
 
@@ -227,26 +229,26 @@ class TestBatchOperations:
     async def test_delete_batch_success(self):
         """Test successful batch deletion."""
         mock_db = AsyncMock()
-        mock_db.execute_query.return_value = [{"to_delete_count": 2}]
         mock_db.execute_write_query.return_value = {"nodes_deleted": 2}
 
         deleted = await _delete_activity_logs_batch(mock_db, ["log_1", "log_2"])
 
         assert deleted == 2
-        assert mock_db.execute_query.call_count == 1  # Count query
         assert mock_db.execute_write_query.call_count == 1  # Delete query
 
     @pytest.mark.asyncio
     async def test_delete_batch_all_protected(self):
-        """Test when all logs are protected."""
+        """Test when all logs are protected.
+
+        The delete query filters out logs with metric relationships via its
+        WHERE clause, so protected logs simply yield ``nodes_deleted == 0``.
+        """
         mock_db = AsyncMock()
-        mock_db.execute_query.return_value = [{"to_delete_count": 0}]
+        mock_db.execute_write_query.return_value = {"nodes_deleted": 0}
 
         deleted = await _delete_activity_logs_batch(mock_db, ["log_1", "log_2"])
 
         assert deleted == 0
-        # Should not execute delete when count is 0
-        mock_db.execute_write_query.assert_not_called()
 
 
 class TestExecuteSyncOperations:
@@ -256,8 +258,15 @@ class TestExecuteSyncOperations:
     async def test_execute_with_batching(self):
         """Test operations are properly batched."""
         mock_db = AsyncMock()
-        mock_db.execute_write_query.return_value = {"nodes_created": 50}
-        mock_db.execute_query.return_value = [{"to_delete_count": 50}]
+
+        # Create/delete batches dispatch on the params dict (positional arg 1):
+        # creates pass {"logs": ...}, deletes pass {"log_ids": ...}.
+        async def write_side_effect(query, params):
+            if "logs" in params:
+                return {"nodes_created": 50}
+            return {"nodes_deleted": 50}
+
+        mock_db.execute_write_query.side_effect = write_side_effect
 
         # Create 120 items to test batching (batch size is 50)
         operations = {
@@ -274,16 +283,16 @@ class TestExecuteSyncOperations:
         assert results["deleted"] == 100  # 2 batches * 50 (mock returns 50)
         assert len(results["errors"]) == 0
 
-        # Verify correct number of calls
+        # Verify correct number of calls (params dict passed positionally)
         create_calls = [
             call
             for call in mock_db.execute_write_query.call_args_list
-            if "logs" in call.kwargs
+            if "logs" in call.args[1]
         ]
         delete_calls = [
             call
             for call in mock_db.execute_write_query.call_args_list
-            if "log_ids" in call.kwargs
+            if "log_ids" in call.args[1]
         ]
 
         assert len(create_calls) == 3

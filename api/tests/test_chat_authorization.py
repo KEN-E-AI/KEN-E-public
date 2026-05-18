@@ -4,19 +4,12 @@ Tests that account_id parameter is properly validated and unauthorized
 access attempts are rejected with 403.
 """
 
-import os
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import HTTPException
-from unittest.mock import AsyncMock, MagicMock, patch
-
-from src.kene_api.routers.chat import agent_client
 from src.kene_api.auth.models import UserContext
-
-pytestmark = pytest.mark.skipif(
-    not os.getenv("FIRESTORE_EMULATOR_HOST"),
-    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
-)
+from src.kene_api.routers.chat import agent_client
 
 
 @pytest.mark.asyncio
@@ -33,7 +26,7 @@ async def test_chat_completion_rejects_unauthorized_account():
     # Mock the agent client to avoid actual API calls
     with patch.object(agent_client, "chat_completion", new_callable=AsyncMock) as mock_chat:
         # Try to access a different account
-        from src.kene_api.routers.chat import ChatRequest, ChatMessage
+        from src.kene_api.routers.chat import ChatMessage, ChatRequest
 
         request = ChatRequest(
             messages=[ChatMessage(role="user", content="test")],
@@ -71,7 +64,7 @@ async def test_chat_completion_allows_authorized_account():
     ) as mock_chat:
         mock_chat.return_value = ("Response", "session_123")
 
-        from src.kene_api.routers.chat import ChatRequest, ChatMessage, chat_completion
+        from src.kene_api.routers.chat import ChatMessage, ChatRequest, chat_completion
 
         request = ChatRequest(
             messages=[ChatMessage(role="user", content="test")],
@@ -124,12 +117,13 @@ async def test_create_conversation_rejects_unauthorized_account():
 @pytest.mark.asyncio
 async def test_super_admin_can_access_any_account():
     """Super admins should have access to all accounts."""
-    # Setup: Super admin user (@ken-e.ai email)
+    # Setup: Super admin user (super_admin role grant — DM-81)
     user_context = UserContext(
         user_id="admin_123",
-        email="admin@ken-e.ai",  # Super admin
+        email="admin@ken-e.ai",
         organization_permissions={},
         account_permissions={},  # No explicit account permissions
+        roles=["super_admin"],
     )
 
     # Super admin should have access via has_account_access()
@@ -152,6 +146,10 @@ async def test_super_admin_can_access_any_account():
 
         # Should not raise exception
         result = await create_conversation(request, user_context)
+
+        # The endpoint defers the real session creation to a background task;
+        # await it so the call to agent_client.create_conversation completes.
+        await agent_client._pending_sessions[result.session_id]
 
         # Verify conversation WAS created
         assert mock_create.called
@@ -186,5 +184,9 @@ async def test_org_admin_can_access_org_accounts():
 
         # Should not raise exception for org admin
         result = await create_conversation(request, user_context)
+
+        # The endpoint defers the real session creation to a background task;
+        # await it so the call to agent_client.create_conversation completes.
+        await agent_client._pending_sessions[result.session_id]
 
         assert mock_create.called

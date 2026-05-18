@@ -5,7 +5,6 @@ from unittest import mock
 import pytest
 from fastapi import HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials
-
 from src.kene_api.auth.models import UserContext
 from src.kene_api.auth.user_context import (
     get_current_user_context,
@@ -357,7 +356,7 @@ class TestGetCurrentUserContext:
             "uid": "existing-user-id",
             "email": "user@example.com",
             "permissions": {
-                "accounts": {"acc_1": "admin", "acc_2": "viewer"},
+                "account_permissions": {"acc_1": "admin", "acc_2": "viewer"},
                 "organizations": {"org_1": "admin"},
             },
         }
@@ -406,8 +405,8 @@ class TestGetCurrentUserContext:
             # Verify returned context
             assert result.user_id == "existing-user-id"
             assert result.email == "user@example.com"
-            assert result.accessible_accounts == []
-            assert result.account_permissions == {}
+            assert set(result.accessible_accounts) == {"acc_1", "acc_2"}
+            assert result.account_permissions == {"acc_1": "admin", "acc_2": "viewer"}
             assert result.organization_permissions == {"org_1": "admin"}
 
 

@@ -1,26 +1,19 @@
 """Debug test to understand deletion issue."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch, call
-from datetime import date
 import os
 import sys
+from unittest.mock import AsyncMock
+
+import pytest
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.kene_api.database import Neo4jService
-from src.kene_api.bigquery import BigQueryService
 from src.kene_api.routers.activities import (
-    _fetch_existing_activity_logs,
-    _fetch_bigquery_holidays,
     _calculate_sync_operations,
     _delete_activity_logs_batch,
-)
-
-pytestmark = pytest.mark.skipif(
-    not os.getenv("FIRESTORE_EMULATOR_HOST"),
-    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+    _fetch_existing_activity_logs,
 )
 
 
@@ -72,6 +65,7 @@ async def test_fetch_existing_logs_format():
             "description": "US_PresidentDay",
             "start_date": "2024-02-19",
             "end_date": "2024-02-19",
+            "activity_id": "act_00_us",
             "has_metric_relationship": False,
         },
         {
@@ -79,6 +73,7 @@ async def test_fetch_existing_logs_format():
             "description": "US_MemorialDay",
             "start_date": "2024-05-27",
             "end_date": "2024-05-27",
+            "activity_id": "act_00_us",
             "has_metric_relationship": False,
         },
     ]
@@ -94,12 +89,10 @@ async def test_fetch_existing_logs_format():
 
     print(f"\nProtected logs: {protected_logs}")
 
-    # Verify the structure
-    assert ("US_PresidentDay", "2024-02-19", "2024-02-19") in existing_holidays
-    assert (
-        existing_holidays[("US_PresidentDay", "2024-02-19", "2024-02-19")]
-        == "log_us_presidents_day"
-    )
+    # Verify the structure: keys are (description, start_date, end_date, activity_id)
+    key = ("US_PresidentDay", "2024-02-19", "2024-02-19", "act_00_us")
+    assert key in existing_holidays
+    assert existing_holidays[key] == "log_us_presidents_day"
     assert len(protected_logs) == 0
 
 
@@ -108,8 +101,18 @@ async def test_calculate_sync_operations():
     """Test sync operation calculation."""
     # Existing holidays in Neo4j
     existing_holidays = {
-        ("US_PresidentDay", "2024-02-19", "2024-02-19"): "log_us_presidents_day",
-        ("US_MemorialDay", "2024-05-27", "2024-05-27"): "log_us_memorial_day",
+        (
+            "US_PresidentDay",
+            "2024-02-19",
+            "2024-02-19",
+            "act_00_us",
+        ): "log_us_presidents_day",
+        (
+            "US_MemorialDay",
+            "2024-05-27",
+            "2024-05-27",
+            "act_00_us",
+        ): "log_us_memorial_day",
     }
 
     # BigQuery returns AU holidays
@@ -118,11 +121,13 @@ async def test_calculate_sync_operations():
             "description": "AU_AustraliaDay",
             "start_date": "2024-01-26",
             "end_date": "2024-01-26",
+            "region": "AU",
         },
         {
             "description": "AU_AnzacDay",
             "start_date": "2024-04-25",
             "end_date": "2024-04-25",
+            "region": "AU",
         },
     ]
 

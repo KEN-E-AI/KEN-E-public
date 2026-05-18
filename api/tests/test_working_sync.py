@@ -1,18 +1,11 @@
 """Working test of holiday sync with proper mocks."""
 
-import os
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import date
-from src.kene_api.database import Neo4jService
 from src.kene_api.bigquery import BigQueryService
+from src.kene_api.database import Neo4jService
 from src.kene_api.routers.accounts import _sync_holiday_activity_logs_for_account
-
-pytestmark = pytest.mark.skipif(
-    not os.getenv("FIRESTORE_EMULATOR_HOST"),
-    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
-)
 
 
 @pytest.fixture
@@ -53,7 +46,7 @@ async def test_us_to_au_region_change_deletes_us_holidays(
         query_calls.append(call_info)
 
         # Determine response based on query content
-        if 'MATCH (a:Activity {activity_id: "act_00"})' in query and "LOGGED" in query:
+        if "LOGGED" in query and "ActivityLog" in query:
             # Fetching existing activity logs
             return [
                 {
@@ -61,6 +54,7 @@ async def test_us_to_au_region_change_deletes_us_holidays(
                     "description": "US_PresidentDay",
                     "start_date": "2024-02-19",
                     "end_date": "2024-02-19",
+                    "activity_id": "act_00_us",
                     "has_metric_relationship": False,
                 },
                 {
@@ -68,22 +62,10 @@ async def test_us_to_au_region_change_deletes_us_holidays(
                     "description": "US_MemorialDay",
                     "start_date": "2024-05-27",
                     "end_date": "2024-05-27",
+                    "activity_id": "act_00_us",
                     "has_metric_relationship": False,
                 },
             ]
-        elif (
-            'MATCH (a:Activity {activity_id: "act_00"})' in query
-            and "count(a)" in query
-        ):
-            # Checking if act_00 exists
-            return [{"count": 1}]
-        elif (
-            "UNWIND $log_ids AS log_id" in query
-            and "count(al) as to_delete_count" in query
-        ):
-            # Counting deletable logs
-            log_ids = params.get("log_ids", [])
-            return [{"to_delete_count": len(log_ids)}]
         else:
             return []
 
@@ -111,11 +93,13 @@ async def test_us_to_au_region_change_deletes_us_holidays(
             "description": "AU_AustraliaDay",
             "start_date": "2024-01-26",
             "end_date": "2024-01-26",
+            "region": "AU",
         },
         {
             "description": "AU_AnzacDay",
             "start_date": "2024-04-25",
             "end_date": "2024-04-25",
+            "region": "AU",
         },
     ]
 
@@ -193,7 +177,7 @@ async def test_au_to_us_region_change_adds_us_holidays(
     account_id = "acc_af08bd32c4f540da96f1c7d9642f8009"
 
     async def mock_execute_query(query, params):
-        if 'MATCH (a:Activity {activity_id: "act_00"})' in query and "LOGGED" in query:
+        if "LOGGED" in query and "ActivityLog" in query:
             # Currently has AU holidays
             return [
                 {
@@ -201,6 +185,7 @@ async def test_au_to_us_region_change_adds_us_holidays(
                     "description": "AU_AustraliaDay",
                     "start_date": "2024-01-26",
                     "end_date": "2024-01-26",
+                    "activity_id": "act_00_au",
                     "has_metric_relationship": False,
                 },
                 {
@@ -208,20 +193,10 @@ async def test_au_to_us_region_change_adds_us_holidays(
                     "description": "AU_AnzacDay",
                     "start_date": "2024-04-25",
                     "end_date": "2024-04-25",
+                    "activity_id": "act_00_au",
                     "has_metric_relationship": False,
                 },
             ]
-        elif (
-            'MATCH (a:Activity {activity_id: "act_00"})' in query
-            and "count(a)" in query
-        ):
-            return [{"count": 1}]
-        elif (
-            "UNWIND $log_ids AS log_id" in query
-            and "count(al) as to_delete_count" in query
-        ):
-            log_ids = params.get("log_ids", [])
-            return [{"to_delete_count": len(log_ids)}]
         else:
             return []
 
@@ -244,11 +219,13 @@ async def test_au_to_us_region_change_adds_us_holidays(
             "description": "US_PresidentDay",
             "start_date": "2024-02-19",
             "end_date": "2024-02-19",
+            "region": "US",
         },
         {
             "description": "US_MemorialDay",
             "start_date": "2024-05-27",
             "end_date": "2024-05-27",
+            "region": "US",
         },
     ]
 
@@ -283,6 +260,5 @@ async def test_au_to_us_region_change_adds_us_holidays(
 
 
 if __name__ == "__main__":
-    import asyncio
 
     pytest.main([__file__, "-v"])

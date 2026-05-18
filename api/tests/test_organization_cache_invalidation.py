@@ -1,25 +1,18 @@
 """Test that user cache is properly invalidated when organization permissions change."""
 
 import json
-import os
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from src.kene_api.auth.models import UserContext
-from src.kene_api.routers.organizations import create_organization
 from src.kene_api.models.kene_models import (
-    Organization,
-    OrganizationRequest,
-    Subscription,
     Billing,
-    Team,
+    OrganizationRequest,
     PaymentMethod,
+    Subscription,
+    Team,
 )
-
-pytestmark = pytest.mark.skipif(
-    not os.getenv("FIRESTORE_EMULATOR_HOST"),
-    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
-)
+from src.kene_api.routers.organizations import create_organization
 
 
 @pytest.mark.asyncio
@@ -38,6 +31,7 @@ async def test_organization_creation_invalidates_user_cache():
     request = OrganizationRequest(
         organization_name="Test Organization",
         plan="Professional",
+        website="https://test-org.example.com",
         agency=False,
         subscription=Subscription(
             plan_name="Professional",
@@ -69,6 +63,8 @@ async def test_organization_creation_invalidates_user_cache():
     mock_db = MagicMock()
     mock_db.health_check = AsyncMock(return_value=True)
     mock_db.execute_write_query = AsyncMock(return_value=[])
+    # The org record mirrors what Neo4j returns after creation. Organization
+    # requires a non-null `website`, so the stored record must include it.
     mock_db.execute_query = AsyncMock(
         return_value=[
             {
@@ -76,6 +72,7 @@ async def test_organization_creation_invalidates_user_cache():
                     "organization_id": "org_test123",
                     "organization_name": "Test Organization",
                     "plan": "Professional",
+                    "website": "https://test-org.example.com",
                     "agency": False,
                     "subscription": json.dumps(request.subscription.model_dump()),
                     "billing": json.dumps(request.billing.model_dump()),

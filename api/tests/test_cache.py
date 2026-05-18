@@ -1,12 +1,10 @@
 """Tests for caching functionality."""
 
 import json
-import os
 from datetime import datetime, timedelta
 from unittest.mock import Mock, patch
 
 import pytest
-
 from src.kene_api.cache import (
     CacheService,
     InMemoryCache,
@@ -16,10 +14,33 @@ from src.kene_api.cache import (
     monitoring_topics_key,
 )
 
-pytestmark = pytest.mark.skipif(
-    not os.getenv("FIRESTORE_EMULATOR_HOST"),
-    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
-)
+
+class _FakeRedis:
+    """Minimal in-process Redis stand-in implementing the subset of the
+    Redis protocol that CacheService relies on (get/setex/delete).
+
+    CacheService is built against a redis-py client interface, not the
+    InMemoryCache interface, so a working unit test must supply something
+    that speaks that protocol.
+    """
+
+    def __init__(self):
+        self._store: dict[str, str] = {}
+
+    def get(self, key: str):
+        return self._store.get(key)
+
+    def setex(self, key: str, ttl_seconds: int, value: str):
+        self._store[key] = value
+        return True
+
+    def delete(self, *keys: str):
+        deleted = 0
+        for key in keys:
+            if key in self._store:
+                del self._store[key]
+                deleted += 1
+        return deleted
 
 
 class TestInMemoryCache:
@@ -155,8 +176,7 @@ class TestCacheDecorator:
     @pytest.mark.asyncio
     async def test_cache_hit(self):
         """Test decorator returns cached value on hit."""
-        cache = InMemoryCache()
-        cache_service = CacheService(cache)
+        cache_service = CacheService(_FakeRedis())
 
         call_count = 0
 

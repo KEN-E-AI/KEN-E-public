@@ -3,14 +3,7 @@
 import os
 from unittest.mock import Mock, patch
 
-import pytest
-
 from src.kene_api.email_service import EmailService
-
-pytestmark = pytest.mark.skipif(
-    not os.getenv("FIRESTORE_EMULATOR_HOST"),
-    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
-)
 
 
 class TestEmailService:
@@ -31,9 +24,8 @@ class TestEmailService:
         with patch.dict(os.environ, {}, clear=True):
             service = EmailService()
             service._ensure_initialized()  # Trigger lazy initialization
-            assert (
-                service.api_key == ""
-            )  # get_env_var_or_secret returns empty string by default
+            # get_env_or_secret returns None when the env var is absent
+            assert service.api_key is None
             assert service.client is None
 
     def test_init_with_custom_values(self):
