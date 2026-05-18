@@ -59,8 +59,6 @@ _SCAN_DIRS = [
     _REPO_ROOT / "app",
 ]
 
-_TEST_DIR_PATTERNS = ("tests", "test_")
-
 # ---------------------------------------------------------------------------
 # Regex patterns for user-subcollection writes
 #
