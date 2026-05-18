@@ -1,25 +1,19 @@
 """Unit tests for api/src/kene_api/models/chat.py (CH-PRD-01 §7 AC-1)."""
 
-import pytest
-from datetime import datetime, timezone
+from datetime import datetime
 
+import pytest
 from kene_api.models.chat import (
-    AssignCategoryRequest,
     BillableTokenCounts,
     ChatArtifactIndex,
     ChatCategoryDefinition,
     ChatSessionMetadata,
     ChatStatusDetail,
-    DeleteSessionResponse,
-    ListArtifactsResponse,
-    ListArtifactsResponseItem,
-    ListTodosResponse,
     ModelContextWindowEntry,
     TodoItem,
     TodoList,
     compute_name_casefold,
 )
-
 
 # ---------------------------------------------------------------------------
 # ChatSessionMetadata
@@ -88,7 +82,7 @@ class TestChatSessionMetadata:
         assert len(meta.title) == 120
 
     def test_title_max_length_exceeded_raises(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             ChatSessionMetadata(**self._minimal(title="A" * 121))
 
     def test_created_at_defaults_to_now(self) -> None:
@@ -169,11 +163,11 @@ class TestChatCategoryDefinition:
         assert hasattr(cat, "name_casefold")
 
     def test_name_min_length(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             ChatCategoryDefinition(**self._minimal(name="", name_casefold=""))
 
     def test_name_max_length(self) -> None:
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             ChatCategoryDefinition(
                 **self._minimal(name="A" * 65, name_casefold="a" * 65)
             )

@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from kene_api.chat.context_windows import (
     MODEL_CONTEXT_WINDOW_REGISTRY,
     get_model_context_window,
