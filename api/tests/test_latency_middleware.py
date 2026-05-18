@@ -1,7 +1,6 @@
 """Unit tests for LatencyMiddleware and _normalize_route."""
 
 import logging
-import os
 import time
 from unittest.mock import MagicMock, patch
 
@@ -18,11 +17,6 @@ from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
-
-pytestmark = pytest.mark.skipif(
-    not os.getenv("FIRESTORE_EMULATOR_HOST"),
-    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
-)
 
 
 def _ok_handler(request: Request) -> PlainTextResponse:
@@ -159,10 +153,12 @@ class TestPrometheusMetricsExposure:
         ]
 
         assert len(bucket_lines) > 0
-        sample_line = bucket_lines[0]
-        assert 'method="GET"' in sample_line
-        assert 'status_code="200"' in sample_line
-        assert "route=" in sample_line
+        # When the full suite runs, multiple label combos accumulate; check that
+        # at least one bucket line carries the labels from this request.
+        assert any(
+            'method="GET"' in line and 'status_code="200"' in line and "route=" in line
+            for line in bucket_lines
+        )
 
     def test_route_normalization_uses_pattern_when_scope_has_route(self) -> None:
         """When scope["route"] is populated, the pattern is used as the label.
