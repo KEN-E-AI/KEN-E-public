@@ -1,5 +1,7 @@
 """Test region change holiday sync functionality."""
 
+import os
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import date
@@ -10,6 +12,11 @@ from src.kene_api.routers.accounts import (
     _sync_holiday_activity_logs_for_account,
 )
 from src.kene_api.models.kene_models import AccountRequest
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
 
 
 @pytest.fixture

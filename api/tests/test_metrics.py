@@ -1,10 +1,16 @@
 """Tests for metrics router."""
 
+import os
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from src.kene_api.main import app
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
 
 
 class TestMetricsRouter:

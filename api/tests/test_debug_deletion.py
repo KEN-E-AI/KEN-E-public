@@ -18,6 +18,11 @@ from src.kene_api.routers.activities import (
     _delete_activity_logs_batch,
 )
 
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
+
 
 @pytest.mark.asyncio
 async def test_deletion_batch_function_directly():

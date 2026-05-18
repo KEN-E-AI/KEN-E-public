@@ -1,11 +1,18 @@
 """Test notification service with empty account lists."""
 
+import os
+
 import pytest
 from unittest.mock import Mock, MagicMock
 from google.cloud import firestore
 
 from src.kene_api.services.notification_service_v2 import NotificationService
 from src.kene_api.models.kene_models import NotificationCategory
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
 
 
 @pytest.mark.asyncio

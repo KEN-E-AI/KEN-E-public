@@ -271,10 +271,9 @@ class TestBuildUserContextFromData:
 
         assert context.user_id == "user123"
         assert context.email == "test@example.com"
-        assert set(context.accessible_accounts) == {"acc1", "acc2", "acc3"}
-        assert context.permissions == {"acc1": "admin", "acc2": "viewer"}
-        assert context.organization_permissions == {"org1": "owner"}
+        assert set(context.accessible_accounts) == {"acc3"}
         assert context.account_permissions == {"acc3": "editor"}
+        assert context.organization_permissions == {"org1": "owner"}
 
     def test_build_context_no_permissions(self):
         """Test building user context without permissions."""
@@ -287,7 +286,7 @@ class TestBuildUserContextFromData:
         assert context.user_id == "user123"
         assert context.email == "test@example.com"
         assert context.accessible_accounts == []
-        assert context.permissions == {}
+        assert context.account_permissions == {}
         assert context.organization_permissions == {}
 
 
@@ -318,7 +317,8 @@ class TestGetUserContextWithLimiter:
         mock_firestore = MagicMock()
         cached_context = UserContext(
             user_id="user123",
-            email="test@example.com",            permissions={"acc1": "admin"},
+            email="test@example.com",
+            account_permissions={"acc1": "admin"},
             organization_permissions={},
         )
 
@@ -331,7 +331,7 @@ class TestGetUserContextWithLimiter:
                 "src.kene_api.auth.user_context._check_token_revocation"
             ) as mock_check,
             patch(
-                "src.kene_api.auth.user_context.get_cached_user_context_service"
+                "src.kene_api.auth.cached_user_context.get_cached_user_context_service"
             ) as mock_cache,
         ):
             mock_get_logger.return_value = AsyncMock()

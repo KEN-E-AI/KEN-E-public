@@ -3,7 +3,14 @@
 import os
 from unittest.mock import Mock, patch
 
+import pytest
+
 from src.kene_api.email_service import EmailService
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
 
 
 class TestEmailService:

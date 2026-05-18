@@ -1,11 +1,18 @@
 """Direct test of holiday sync functionality to debug deletion issues."""
 
+import os
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import date
 from src.kene_api.database import Neo4jService
 from src.kene_api.bigquery import BigQueryService
 from src.kene_api.routers.accounts import _sync_holiday_activity_logs_for_account
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
 
 
 @pytest.fixture

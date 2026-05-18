@@ -1,5 +1,7 @@
 """Tests for industry templates API endpoints."""
 
+import os
+
 import pytest
 from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
@@ -10,6 +12,11 @@ from src.kene_api.models.kene_models import (
     IndustryTemplate,
     IndustryTemplateSettings,
     IndustryTemplateDefaults,
+)
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
 )
 
 

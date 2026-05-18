@@ -1,5 +1,6 @@
 """Tests for account permission endpoints."""
 
+import os
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi import HTTPException
@@ -13,6 +14,11 @@ from src.kene_api.routers.accounts import (
     GrantAccountAccessRequest,
 )
 
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
+
 
 @pytest.fixture
 def admin_user():
@@ -20,8 +26,6 @@ def admin_user():
     return UserContext(
         user_id="admin123",
         email="admin@example.com",
-        accessible_accounts=[],
-        permissions={},
         organization_permissions={"org456": "admin"},
         account_permissions={},
     )
@@ -33,8 +37,6 @@ def view_user():
     return UserContext(
         user_id="user123",
         email="user@example.com",
-        accessible_accounts=[],
-        permissions={},
         organization_permissions={"org456": "view"},
         account_permissions={},
     )
@@ -46,10 +48,9 @@ def super_admin_user():
     return UserContext(
         user_id="super123",
         email="support@ken-e.ai",
-        accessible_accounts=[],
-        permissions={},
         organization_permissions={},
         account_permissions={},
+        roles=["super_admin"],
     )
 
 

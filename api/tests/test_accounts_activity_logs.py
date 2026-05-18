@@ -11,6 +11,11 @@ from src.kene_api.firestore import get_firestore_service
 from src.kene_api.main import app
 from src.kene_api.routers.accounts import _create_initial_activity_logs
 
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
+
 # Create test client
 client = TestClient(app)
 

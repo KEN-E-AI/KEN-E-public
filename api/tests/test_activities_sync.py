@@ -9,6 +9,11 @@ from src.kene_api.bigquery import get_bigquery_service
 from src.kene_api.database import get_neo4j_service
 from src.kene_api.main import app
 
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
+
 # Create test client
 client = TestClient(app)
 

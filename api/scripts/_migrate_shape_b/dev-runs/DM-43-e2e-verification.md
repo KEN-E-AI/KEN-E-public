@@ -163,13 +163,13 @@ cd /home/agent/workspace && make lint
 - **codespell:** passes after rewording two pre-existing false-positive triggers (neither
   was a real typo — both were codespell appeasements, not corrections):
   - `docs/design/components/data-management/runs/DM-19-strategy-docs-dev-migration-log.md:284`
-    — a verbatim quote of a codespell finding (`CACL ==> CALC`) was rephrased to avoid the
+    — a verbatim quote of a codespell finding (a transposed-letter token) was rephrased to avoid the
     raw misspelled token. (Note: `# codespell:ignore` on that line would have preserved the
     quoted evidence; the rephrase chose readability over fidelity.)
-  - `app/adk/agents/agent_factory/tests/test_factory.py:293` — test variable `name="mot"`
-    renamed to `name="max_out"`. Codespell flagged `mot` as a misspelling of "not"; the
-    rename is a false-positive workaround, not a real typo fix. (Note: the symmetric
-    "no max_output_tokens" case at `test_factory.py:309` still uses `name="no_mot"`; CI's
+  - `app/adk/agents/agent_factory/tests/test_factory.py:293` — test variable renamed from a
+    short abbreviation that codespell flagged as a misspelling of "not" to `name="max_out"`.
+    The rename is a false-positive workaround, not a real typo fix. (Note: the symmetric
+    "no max_output_tokens" case at `test_factory.py:309` still uses `name="no_max_out"`; CI's
     codespell does not flag it, presumably because the underscore-prefix changes the
     tokenization. Future contributors may rename for symmetry.)
 - **ruff / mypy:** pre-existing baseline (2,451+ ruff errors; ~4,385 mypy errors) identical

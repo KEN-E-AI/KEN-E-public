@@ -1,5 +1,6 @@
 """Tests for invitation-related endpoints in the Firestore router."""
 
+import os
 from datetime import datetime, timedelta
 from unittest.mock import Mock
 
@@ -8,6 +9,11 @@ from fastapi.testclient import TestClient
 from src.kene_api.email_service import EmailService, get_email_service
 from src.kene_api.firestore import FirestoreService, get_firestore_service
 from src.kene_api.main import app
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
 
 
 class TestInvitationEndpoints:

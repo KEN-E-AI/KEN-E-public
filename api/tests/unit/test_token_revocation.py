@@ -15,12 +15,12 @@ class TestTokenRevocationService:
     def revocation_service(self):
         """Create a token revocation service for testing."""
         with mock.patch(
-            "src.kene_api.auth.token_revocation.get_redis_service"
+            "src.kene_api.redis_client.get_redis_service"
         ) as mock_redis:
             mock_redis_service = mock.Mock()
             mock_redis.return_value = mock_redis_service
             service = TokenRevocationService()
-            service.redis = mock_redis_service
+            service._redis = mock_redis_service
             return service
 
     @pytest.mark.asyncio

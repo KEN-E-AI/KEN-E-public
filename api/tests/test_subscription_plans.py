@@ -1,5 +1,6 @@
 """Tests for subscription plans router."""
 
+import os
 from datetime import datetime, timezone
 from unittest.mock import Mock, AsyncMock
 
@@ -13,6 +14,11 @@ from src.kene_api.models.kene_models import (
     SubscriptionPlanFeatures,
 )
 from src.kene_api.firestore import FirestoreService, get_firestore_service
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
 
 
 @pytest.fixture

@@ -22,7 +22,8 @@ class TestUserContext:
         """Test account access check without specific roles."""
         user = UserContext(
             user_id="test-user",
-            email="test@example.com",            permissions={"acc_1": "admin", "acc_2": "viewer"},
+            email="test@example.com",
+            account_permissions={"acc_1": "admin", "acc_2": "viewer"},
             organization_permissions={},
         )
 
@@ -37,7 +38,8 @@ class TestUserContext:
         """Test account access check with specific role requirements."""
         user = UserContext(
             user_id="test-user",
-            email="test@example.com",            permissions={"acc_1": "admin", "acc_2": "viewer"},
+            email="test@example.com",
+            account_permissions={"acc_1": "admin", "acc_2": "viewer"},
             organization_permissions={},
         )
 
@@ -53,7 +55,8 @@ class TestUserContext:
         """Test organization access check without specific roles."""
         user = UserContext(
             user_id="test-user",
-            email="test@example.com",            permissions={},
+            email="test@example.com",
+            account_permissions={},
             organization_permissions={"org_1": "admin", "org_2": "viewer"},
         )
 
@@ -68,7 +71,8 @@ class TestUserContext:
         """Test organization access check with specific role requirements."""
         user = UserContext(
             user_id="test-user",
-            email="test@example.com",            permissions={},
+            email="test@example.com",
+            account_permissions={},
             organization_permissions={"org_1": "admin", "org_2": "viewer"},
         )
 
@@ -107,6 +111,9 @@ class TestGetCurrentUserContext:
         )
         mock_firestore = mock.Mock()
         mock_request = mock.Mock(spec=Request)
+        mock_request.client.host = "127.0.0.1"
+        mock_request.url = "http://test.com/api/test"
+        mock_request.headers = {}
 
         with mock.patch(
             "src.kene_api.auth.user_context.verify_id_token",
@@ -150,6 +157,13 @@ class TestGetCurrentUserContext:
         mock_firestore_service.get_client.return_value = mock_firestore_client
 
         mock_request = mock.Mock(spec=Request)
+        mock_request.client = mock.Mock(host="127.0.0.1")
+        mock_request.headers = mock.Mock()
+        mock_request.headers.get = mock.Mock(return_value="TestAgent/1.0")
+        mock_request.url = "http://test.com/api/test"
+
+        mock_revocation_service = mock.AsyncMock()
+        mock_revocation_service.is_token_revoked = mock.AsyncMock(return_value=False)
 
         with mock.patch(
             "src.kene_api.auth.user_context.verify_id_token", return_value=decoded_token
@@ -158,30 +172,34 @@ class TestGetCurrentUserContext:
                 "src.kene_api.auth.user_context.token_rate_limiter.check_rate_limit"
             ):
                 with mock.patch(
-                    "src.kene_api.auth.user_context.get_cached_user_context_service"
-                ) as mock_get_cached:
-                    mock_cached_service = mock.Mock()
-                    mock_cached_service.get_user_context.return_value = None
-                    mock_cached_service.set_user_context.return_value = True
-                    mock_get_cached.return_value = mock_cached_service
+                    "src.kene_api.auth.user_context.get_token_revocation_service",
+                    return_value=mock_revocation_service,
+                ):
+                    with mock.patch(
+                        "src.kene_api.auth.cached_user_context.get_cached_user_context_service"
+                    ) as mock_get_cached:
+                        mock_cached_service = mock.Mock()
+                        mock_cached_service.get_user_context.return_value = None
+                        mock_cached_service.set_user_context.return_value = True
+                        mock_get_cached.return_value = mock_cached_service
 
-                    result = await get_current_user_context(
-                        mock_request, credentials, mock_firestore_service
-                    )
+                        result = await get_current_user_context(
+                            mock_request, credentials, mock_firestore_service
+                        )
 
             # Verify user creation
             mock_document.set.assert_called_once()
             created_data = mock_document.set.call_args[0][0]
             assert created_data["uid"] == "new-user-id"
             assert created_data["email"] == "newuser@example.com"
-            assert created_data["permissions"]["accounts"] == {}
+            assert created_data["permissions"]["account_permissions"] == {}
             assert created_data["permissions"]["organizations"] == {}
 
             # Verify returned context
             assert result.user_id == "new-user-id"
             assert result.email == "newuser@example.com"
             assert result.accessible_accounts == []
-            assert result.permissions == {}
+            assert result.account_permissions == {}
             assert result.organization_permissions == {}
 
     @pytest.mark.asyncio
@@ -352,6 +370,13 @@ class TestGetCurrentUserContext:
         mock_firestore_service.get_client.return_value = mock_firestore_client
 
         mock_request = mock.Mock(spec=Request)
+        mock_request.client = mock.Mock(host="127.0.0.1")
+        mock_request.headers = mock.Mock()
+        mock_request.headers.get = mock.Mock(return_value="TestAgent/1.0")
+        mock_request.url = "http://test.com/api/test"
+
+        mock_revocation_service = mock.AsyncMock()
+        mock_revocation_service.is_token_revoked = mock.AsyncMock(return_value=False)
 
         with mock.patch(
             "src.kene_api.auth.user_context.verify_id_token", return_value=decoded_token
@@ -360,16 +385,20 @@ class TestGetCurrentUserContext:
                 "src.kene_api.auth.user_context.token_rate_limiter.check_rate_limit"
             ):
                 with mock.patch(
-                    "src.kene_api.auth.user_context.get_cached_user_context_service"
-                ) as mock_get_cached:
-                    mock_cached_service = mock.Mock()
-                    mock_cached_service.get_user_context.return_value = None
-                    mock_cached_service.set_user_context.return_value = True
-                    mock_get_cached.return_value = mock_cached_service
+                    "src.kene_api.auth.user_context.get_token_revocation_service",
+                    return_value=mock_revocation_service,
+                ):
+                    with mock.patch(
+                        "src.kene_api.auth.cached_user_context.get_cached_user_context_service"
+                    ) as mock_get_cached:
+                        mock_cached_service = mock.Mock()
+                        mock_cached_service.get_user_context.return_value = None
+                        mock_cached_service.set_user_context.return_value = True
+                        mock_get_cached.return_value = mock_cached_service
 
-                    result = await get_current_user_context(
-                        mock_request, credentials, mock_firestore_service
-                    )
+                        result = await get_current_user_context(
+                            mock_request, credentials, mock_firestore_service
+                        )
 
             # Verify no user creation (existing user)
             mock_document.set.assert_not_called()
@@ -377,8 +406,8 @@ class TestGetCurrentUserContext:
             # Verify returned context
             assert result.user_id == "existing-user-id"
             assert result.email == "user@example.com"
-            assert result.accessible_accounts == ["acc_1", "acc_2"]
-            assert result.permissions == {"acc_1": "admin", "acc_2": "viewer"}
+            assert result.accessible_accounts == []
+            assert result.account_permissions == {}
             assert result.organization_permissions == {"org_1": "admin"}
 
 
@@ -423,7 +452,8 @@ class TestGetOptionalUserContext:
 
         expected_context = UserContext(
             user_id="test-user",
-            email="test@example.com",            permissions={"acc_1": "admin"},
+            email="test@example.com",
+            account_permissions={"acc_1": "admin"},
             organization_permissions={},
         )
 
@@ -444,7 +474,8 @@ class TestRequireAccountAccess:
         """Test that access is granted when user has permission."""
         user = UserContext(
             user_id="test-user",
-            email="test@example.com",            permissions={"acc_1": "admin"},
+            email="test@example.com",
+            account_permissions={"acc_1": "admin"},
             organization_permissions={},
         )
 
@@ -456,13 +487,15 @@ class TestRequireAccountAccess:
         """Test that access is denied when user lacks permission."""
         user = UserContext(
             user_id="test-user",
-            email="test@example.com",            permissions={"acc_1": "admin"},
+            email="test@example.com",
+            account_permissions={"acc_1": "admin"},
             organization_permissions={},
         )
 
         check_fn = require_account_access("acc_2")
-        with pytest.raises(HTTPException) as exc_info:
-            check_fn(user)
+        with mock.patch("asyncio.create_task"):
+            with pytest.raises(HTTPException) as exc_info:
+                check_fn(user)
 
         assert exc_info.value.status_code == 403
         assert "Access denied to account acc_2" in exc_info.value.detail
@@ -471,18 +504,21 @@ class TestRequireAccountAccess:
         """Test that access requires specific roles when specified."""
         user = UserContext(
             user_id="test-user",
-            email="test@example.com",            permissions={"acc_1": "viewer"},
+            email="test@example.com",
+            account_permissions={"acc_1": "viewer"},
             organization_permissions={},
         )
 
         # Should succeed with correct role
         check_fn = require_account_access("acc_1", ["viewer", "admin"])
-        check_fn(user)
+        with mock.patch("asyncio.create_task"):
+            check_fn(user)
 
         # Should fail with wrong role
         check_fn = require_account_access("acc_1", ["admin"])
-        with pytest.raises(HTTPException) as exc_info:
-            check_fn(user)
+        with mock.patch("asyncio.create_task"):
+            with pytest.raises(HTTPException) as exc_info:
+                check_fn(user)
 
         assert exc_info.value.status_code == 403
         assert "with role in ['admin']" in exc_info.value.detail
@@ -495,7 +531,8 @@ class TestRequireOrganizationAccess:
         """Test that access is granted when user has permission."""
         user = UserContext(
             user_id="test-user",
-            email="test@example.com",            permissions={},
+            email="test@example.com",
+            account_permissions={},
             organization_permissions={"org_1": "admin"},
         )
 
@@ -507,13 +544,15 @@ class TestRequireOrganizationAccess:
         """Test that access is denied when user lacks permission."""
         user = UserContext(
             user_id="test-user",
-            email="test@example.com",            permissions={},
+            email="test@example.com",
+            account_permissions={},
             organization_permissions={"org_1": "admin"},
         )
 
         check_fn = require_organization_access("org_2")
-        with pytest.raises(HTTPException) as exc_info:
-            check_fn(user)
+        with mock.patch("asyncio.create_task"):
+            with pytest.raises(HTTPException) as exc_info:
+                check_fn(user)
 
         assert exc_info.value.status_code == 403
         assert "Access denied to organization org_2" in exc_info.value.detail

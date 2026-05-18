@@ -1,5 +1,6 @@
 """Tests for industry templates cache behavior and concurrency."""
 
+import os
 import pytest
 import threading
 import time
@@ -9,6 +10,11 @@ from unittest.mock import Mock, patch
 
 from src.kene_api.routers.industry_templates import ThreadSafeTemplateCache
 from src.kene_api.models.kene_models import IndustryTemplate
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
 
 
 class TestThreadSafeTemplateCache:

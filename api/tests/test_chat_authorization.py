@@ -4,12 +4,19 @@ Tests that account_id parameter is properly validated and unauthorized
 access attempts are rejected with 403.
 """
 
+import os
+
 import pytest
 from fastapi import HTTPException
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.kene_api.routers.chat import agent_client
 from src.kene_api.auth.models import UserContext
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
 
 
 @pytest.mark.asyncio

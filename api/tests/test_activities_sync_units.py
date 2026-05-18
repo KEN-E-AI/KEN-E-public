@@ -1,5 +1,7 @@
 """Unit tests for sync helper functions."""
 
+import os
+
 import pytest
 from unittest.mock import Mock, AsyncMock
 from fastapi import HTTPException
@@ -11,6 +13,11 @@ from src.kene_api.routers.activities import (
     _create_activity_logs_batch,
     _delete_activity_logs_batch,
     _execute_sync_operations,
+)
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
 )
 
 

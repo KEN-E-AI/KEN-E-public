@@ -1,11 +1,17 @@
 """Integration tests for competitive knowledge graph endpoints with monitoring sync."""
 
+import os
 import pytest
 from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
 from src.kene_api.auth.models import UserContext
 from src.kene_api.main import app
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
 
 
 class TestCompetitorEndpoints:
@@ -17,8 +23,6 @@ class TestCompetitorEndpoints:
         return UserContext(
             user_id="test_user",
             email="test@example.com",
-            accessible_accounts=["acc_test"],
-            permissions={},
             organization_permissions={"org_test": "admin"},
             account_permissions={"acc_test": "edit"},
         )

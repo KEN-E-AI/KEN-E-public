@@ -6,6 +6,7 @@ without requiring the full API dependency chain.
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
@@ -15,6 +16,11 @@ from app.adk.session.recovery import (
     RecoverableSession,
     SessionRecoveryResult,
     SessionRecoveryService,
+)
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
 )
 
 

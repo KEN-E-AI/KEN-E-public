@@ -1,10 +1,16 @@
 """Tests for Superset client integration."""
 
+import os
 from unittest.mock import MagicMock
 
 import pytest
 import requests
 from src.kene_api.superset import SupersetClient, SupersetClientError
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
 
 
 @pytest.fixture

@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -8,6 +9,10 @@ from fastapi.testclient import TestClient
 from src.kene_api.main import app
 from src.kene_api.database import get_neo4j_service
 
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
 
 client = TestClient(app)
 

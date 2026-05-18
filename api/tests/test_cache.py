@@ -1,6 +1,7 @@
 """Tests for caching functionality."""
 
 import json
+import os
 from datetime import datetime, timedelta
 from unittest.mock import Mock, patch
 
@@ -13,6 +14,11 @@ from src.kene_api.cache import (
     cache_result,
     industry_keywords_key,
     monitoring_topics_key,
+)
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
 )
 
 

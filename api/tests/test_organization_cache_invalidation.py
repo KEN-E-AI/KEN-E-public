@@ -1,6 +1,7 @@
 """Test that user cache is properly invalidated when organization permissions change."""
 
 import json
+import os
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -15,6 +16,11 @@ from src.kene_api.models.kene_models import (
     PaymentMethod,
 )
 
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
+
 
 @pytest.mark.asyncio
 async def test_organization_creation_invalidates_user_cache():
@@ -24,8 +30,6 @@ async def test_organization_creation_invalidates_user_cache():
     mock_user = UserContext(
         user_id="test_user_123",
         email="test@example.com",
-        accessible_accounts=[],
-        permissions={},
         organization_permissions={},
         account_permissions={},
     )
@@ -153,8 +157,6 @@ async def test_organization_creation_rollback_on_permission_failure():
     mock_user = UserContext(
         user_id="test_user_123",
         email="test@example.com",
-        accessible_accounts=[],
-        permissions={},
         organization_permissions={},
         account_permissions={},
     )

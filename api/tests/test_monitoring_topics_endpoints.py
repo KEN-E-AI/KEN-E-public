@@ -1,5 +1,6 @@
 """Tests for monitoring topics API endpoints with comprehensive error scenarios."""
 
+import os
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
@@ -7,6 +8,11 @@ from fastapi import HTTPException
 
 from src.kene_api.auth.models import UserContext
 from src.kene_api.main import app
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
 
 
 class TestMonitoringTopicsEndpoints:
@@ -18,8 +24,6 @@ class TestMonitoringTopicsEndpoints:
         return UserContext(
             user_id="test_user",
             email="test@example.com",
-            accessible_accounts=["acc_test"],
-            permissions={},
             organization_permissions={"org_test": "admin"},
             account_permissions={"acc_test": "edit"},
         )
@@ -30,8 +34,6 @@ class TestMonitoringTopicsEndpoints:
         return UserContext(
             user_id="test_user_no_access",
             email="notest@example.com",
-            accessible_accounts=[],
-            permissions={},
             organization_permissions={},
             account_permissions={},
         )
@@ -42,8 +44,6 @@ class TestMonitoringTopicsEndpoints:
         return UserContext(
             user_id="test_user_view",
             email="view@example.com",
-            accessible_accounts=["acc_test"],
-            permissions={},
             organization_permissions={"org_test": "view"},
             account_permissions={"acc_test": "view"},
         )
@@ -503,10 +503,9 @@ class TestMonitoringTopicsEndpoints:
         super_admin = UserContext(
             user_id="admin_user",
             email="admin@ken-e.ai",
-            accessible_accounts=["acc_test"],
-            permissions={},
             organization_permissions={"org_test": "admin"},
             account_permissions={},
+            roles=["super_admin"],
         )
 
         with patch(

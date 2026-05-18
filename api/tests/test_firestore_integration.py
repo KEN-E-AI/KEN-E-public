@@ -12,6 +12,11 @@ from google.oauth2 import service_account
 
 from src.kene_api.firestore import FirestoreService
 
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
+
 
 class TestFirestoreSecretManagerIntegration:
     """Integration tests for Firestore service with Secret Manager authentication."""

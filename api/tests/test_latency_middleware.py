@@ -1,6 +1,7 @@
 """Unit tests for LatencyMiddleware and _normalize_route."""
 
 import logging
+import os
 import time
 from unittest.mock import MagicMock, patch
 
@@ -17,6 +18,11 @@ from starlette.requests import Request
 from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+)
 
 
 def _ok_handler(request: Request) -> PlainTextResponse:

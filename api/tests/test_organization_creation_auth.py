@@ -1,6 +1,7 @@
 """Tests for organization creation with authentication."""
 
 import json
+import os
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -20,6 +21,11 @@ from src.kene_api.models.kene_models import (
     PaymentMethod,
     Subscription,
     Team,
+)
+
+pytestmark = pytest.mark.skipif(
+    not os.getenv("FIRESTORE_EMULATOR_HOST"),
+    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
 )
 
 client = TestClient(app)
@@ -60,7 +66,7 @@ def mock_user_context():
     """Create a mock user context."""
     return UserContext(
         user_id="test-user-123",
-        email="test@example.com",        permissions={},
+        email="test@example.com",
         organization_permissions={"existing-org": "admin"},
         account_permissions={},
     )
@@ -71,9 +77,10 @@ def mock_super_admin_context():
     """Create a mock super admin user context."""
     return UserContext(
         user_id="super-admin-123",
-        email="admin@ken-e.ai",        permissions={},
+        email="admin@ken-e.ai",
         organization_permissions={},
         account_permissions={},
+        roles=["super_admin"],
     )
 
 

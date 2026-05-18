@@ -16,7 +16,8 @@ class TestCachedUserContextService:
         """Create a test user context."""
         return UserContext(
             user_id="test-user-123",
-            email="test@example.com",            permissions={"acc_1": "admin", "acc_2": "viewer"},
+            email="test@example.com",
+            account_permissions={"acc_1": "edit", "acc_2": "view"},
             organization_permissions={"org_1": "admin"},
         )
 
@@ -24,12 +25,12 @@ class TestCachedUserContextService:
     def cached_service(self):
         """Create a cached user context service with mocked Redis."""
         with mock.patch(
-            "src.kene_api.auth.cached_user_context.get_redis_service"
+            "src.kene_api.redis_client.get_redis_service"
         ) as mock_get_redis:
             mock_redis = mock.Mock()
             mock_get_redis.return_value = mock_redis
             service = CachedUserContextService()
-            service.redis = mock_redis
+            service._redis = mock_redis
             return service
 
     def test_get_cache_key(self, cached_service):
@@ -44,9 +45,9 @@ class TestCachedUserContextService:
         cached_data = {
             "user_id": user_context.user_id,
             "email": user_context.email,
-            "accessible_accounts": user_context.accessible_accounts,
-            "permissions": user_context.permissions,
+            "account_permissions": user_context.account_permissions,
             "organization_permissions": user_context.organization_permissions,
+            "roles": user_context.roles,
         }
         cached_service.redis.get_json.return_value = cached_data
 
@@ -55,8 +56,7 @@ class TestCachedUserContextService:
         assert result is not None
         assert result.user_id == user_context.user_id
         assert result.email == user_context.email
-        assert result.accessible_accounts == user_context.accessible_accounts
-        assert result.permissions == user_context.permissions
+        assert result.account_permissions == user_context.account_permissions
         assert result.organization_permissions == user_context.organization_permissions
 
         cached_service.redis.get_json.assert_called_once_with(
@@ -103,10 +103,9 @@ class TestCachedUserContextService:
         expected_data = {
             "user_id": user_context.user_id,
             "email": user_context.email,
-            "accessible_accounts": user_context.accessible_accounts,
-            "permissions": user_context.permissions,
             "organization_permissions": user_context.organization_permissions,
             "account_permissions": user_context.account_permissions,
+            "roles": user_context.roles,
         }
         cached_service.redis.set_json.assert_called_once_with(
             "user_context:test-user-123",
