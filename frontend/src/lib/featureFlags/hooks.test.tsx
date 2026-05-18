@@ -143,13 +143,16 @@ describe("useFeatureFlag", () => {
     expect(mockGetFlag).toHaveBeenCalledWith(testKey);
   });
 
-  it("is disabled when key is undefined", () => {
+  it("is disabled when key is undefined and uses a non-colliding cache key", () => {
     const client = freshClient();
     const { result } = renderHook(() => useFeatureFlag(undefined), {
       wrapper: makeWrapper(client),
     });
     expect(result.current.fetchStatus).toBe("idle");
     expect(mockGetFlag).not.toHaveBeenCalled();
+    // Cache key must be in the detail namespace, not the list root, to avoid collisions.
+    const cachedList = client.getQueryData(featureFlagKeys.list());
+    expect(cachedList).toBeUndefined();
   });
 });
 

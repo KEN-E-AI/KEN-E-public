@@ -1,19 +1,13 @@
-/**
- * Typed axios wrappers for the Feature Flags admin API.
- *
- * Endpoints: /api/v1/admin/feature-flags/*  (super-admin only)
- * Auth is handled by the shared `api` instance (Firebase JWT interceptor).
- */
+// Typed axios wrappers for the Feature Flags admin API (super-admin only).
 import api from "@/lib/api";
 import type { FeatureFlag, FeatureFlagAuditEntry, FlagKey } from "./types";
 
 // ─── Request body types ───────────────────────────────────────────────────────
 
-/** POST body: FeatureFlag without server-generated timestamps */
 export type FeatureFlagCreate = Omit<FeatureFlag, "created_at" | "updated_at">;
 
-/** PUT body: full replace of flag config; server fills updated_at */
-export type FeatureFlagUpdate = Omit<FeatureFlag, "created_at" | "updated_at">;
+// PUT is a full replace; same shape as create. Aliased for call-site clarity.
+export type FeatureFlagUpdate = FeatureFlagCreate;
 
 // ─── Response types ───────────────────────────────────────────────────────────
 
@@ -67,8 +61,8 @@ export async function getFlagAudit(
   opts: { limit?: number; cursor?: string | null } = {},
 ): Promise<AuditListResponse> {
   const params = new URLSearchParams();
-  params.set("limit", String(opts.limit ?? 50));
-  if (opts.cursor) {
+  params.set("limit", String(Math.min(Math.max(1, opts.limit ?? 50), 200)));
+  if (opts.cursor != null) {
     params.set("cursor", opts.cursor);
   }
   const { data } = await api.get<AuditListResponse>(

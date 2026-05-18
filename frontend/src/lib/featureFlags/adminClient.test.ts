@@ -7,7 +7,7 @@ import {
   deleteFlag,
   getFlagAudit,
 } from "./adminClient";
-import type { FeatureFlagCreate } from "./adminClient";
+import type { FeatureFlagCreate, FeatureFlagUpdate } from "./adminClient";
 import { toFlagKey } from "./types";
 import type { FeatureFlag } from "./types";
 
@@ -116,7 +116,7 @@ describe("createFlag", () => {
 
 describe("updateFlag", () => {
   it("calls PUT /api/v1/admin/feature-flags/{key} with body", async () => {
-    const body: FeatureFlagCreate = {
+    const body: FeatureFlagUpdate = {
       key: testKey,
       description: "Updated",
       default_enabled: false,

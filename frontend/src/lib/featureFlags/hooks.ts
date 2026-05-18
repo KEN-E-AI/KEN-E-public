@@ -1,10 +1,4 @@
-/**
- * React Query hooks for the Feature Flags admin API.
- *
- * NOTE: This file exports admin-config hooks for managing flag settings.
- * The runtime evaluation hook (useFeatureFlag returning {enabled, reason})
- * is in frontend/src/contexts/FeatureFlagsContext.tsx (FF-PRD-03).
- */
+// Admin-config React Query hooks. The runtime evaluation hook lives in FeatureFlagsContext (FF-PRD-03).
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listFlags,
@@ -39,8 +33,8 @@ export function useFeatureFlags() {
 
 export function useFeatureFlag(key: FlagKey | undefined) {
   return useQuery({
-    queryKey: key ? featureFlagKeys.detail(key) : featureFlagKeys.all,
-    queryFn: () => getFlag(key!),
+    queryKey: featureFlagKeys.detail((key ?? "__none__") as FlagKey),
+    queryFn: () => getFlag(key as FlagKey),
     enabled: !!key,
     staleTime: 1000 * 60,
   });

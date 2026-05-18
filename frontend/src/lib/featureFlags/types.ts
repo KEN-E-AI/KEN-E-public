@@ -1,16 +1,4 @@
-/**
- * Canonical shared types for the Feature Flags component.
- *
- * This file is the contract owner for FF-PRD-02's typed-client agreement with FF-PRD-03.
- * The admin SDK (FF-PRD-02) and the runtime SDK (FF-PRD-03) both import from here.
- * Any change to this file must be kept in sync with the Pydantic models in
- * api/src/kene_api/models/feature_flag_models.py — verified via the schema snapshot
- * at api/tests/fixtures/feature_flag_schema.snapshot.json (FF-PRD-01 §5.4).
- *
- * NOTE: This file exports admin-config types (flag shape, CRUD).
- * The runtime evaluation types (useFeatureFlag hook result) are appended by FF-PRD-03
- * in frontend/src/contexts/FeatureFlagsContext.tsx.
- */
+// Hand-mirrors feature_flag_models.py — keep in sync via api/tests/fixtures/feature_flag_schema.snapshot.json.
 import type { Brand } from "@/lib/branded-types";
 
 // ─── FlagKey branded type ────────────────────────────────────────────────────
