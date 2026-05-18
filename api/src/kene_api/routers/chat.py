@@ -29,6 +29,7 @@ except ImportError:
     WEAVE_AVAILABLE = False
 
 from ..auth.dependencies import get_current_user
+from ..auth.internal_oidc import verify_internal_oidc_caller
 from ..auth.models import UserContext
 from ..auth.user_context import get_current_user_context
 from ..cache import (
@@ -37,8 +38,11 @@ from ..cache import (
     session_metadata_key,
     user_session_ids_key,
 )
+from ..chat.side_table_handlers import apply_side_table_update
 from ..database import get_neo4j_service
+from ..dependencies import get_firestore_client as _get_firestore_client
 from ..firestore import get_firestore_service
+from ..models.chat import InternalSideTableUpdateRequest
 from ..models.kene_models import RecoverableSessionInfo
 from ..redis_client import get_redis_service
 from ..services.ga_credential_helper import GACredentialHelper
@@ -2482,3 +2486,32 @@ async def invalidate_cache(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to invalidate cache",
         ) from e
+
+
+# ---------------------------------------------------------------------------
+# Internal OIDC bridge — CH-11
+# ---------------------------------------------------------------------------
+
+internal_router = APIRouter(prefix="/api/v1/internal/chat", tags=["chat-internal"])
+
+
+@internal_router.post("/side-table/update")
+async def side_table_update(
+    body: InternalSideTableUpdateRequest,
+    caller: str = Depends(verify_internal_oidc_caller),
+) -> dict:
+    """Apply a session metadata delta from the ADK callback layer.
+
+    Authenticated by Google OIDC bearer token (service-to-service).
+    Idempotency is enforced via a 24 h Firestore key cache.
+
+    CH-19 will add the chat_v2_enabled feature-flag guard.
+    """
+    db = _get_firestore_client()
+    return apply_side_table_update(
+        db=db,
+        session_id=body.session_id,
+        account_id=body.account_id,
+        delta=body.delta,
+        idempotency_key=body.idempotency_key,
+    )
