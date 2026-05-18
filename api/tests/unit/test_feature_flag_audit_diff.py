@@ -410,19 +410,16 @@ class TestRecordAuditErrorSwallow:
         assert len(error_records) == 1, "Expected exactly one ERROR log record"
         record = error_records[0]
 
-        # Required fields must be present.
-        assert hasattr(record, "flag_key") or "flag_key" in str(record.getMessage()) or \
-               (hasattr(record, "__dict__") and "flaggy_flag" in str(record.__dict__)), \
-            "flag_key must be identifiable in the error log"
+        # Structured extra fields are set directly on the LogRecord via extra=.
+        assert getattr(record, "flag_key", None) == "flaggy_flag"
+        assert getattr(record, "action", None) == "delete"
+        assert getattr(record, "error_type", None) == "ValueError"
 
-        # PII fields must not be present in the extra dict.
-        pii_fields = {"actor_email", "user_id", "user_email", "organization_id", "account_id"}
-        record_extra_keys = {
-            k for k in record.__dict__
-            if k not in logging.LogRecord("", 0, "", 0, "", (), None).__dict__
-        }
-        pii_present = pii_fields & record_extra_keys
-        assert not pii_present, f"PII fields found in error log extra: {pii_present}"
+        # PII fields must be absent from the extra dict.
+        for pii_field in ("actor_email", "user_id", "user_email", "organization_id", "account_id"):
+            assert not hasattr(record, pii_field), (
+                f"PII field {pii_field!r} found in error log record"
+            )
 
 
 class TestRecordAuditNoPII:

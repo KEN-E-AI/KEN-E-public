@@ -80,12 +80,19 @@ def compute_flag_diff(
     for key in all_keys:
         old_val = before_dict.get(key, _ABSENT)
         new_val = after_dict.get(key, _ABSENT)
-        # Identity-check first: _ABSENT is not _ABSENT is always False (same object),
-        # but _ABSENT is not some_real_value catches the absent-vs-present case.
-        if old_val is not new_val and old_val != new_val:
+        # Sentinel presence is checked separately from value equality so that
+        # the "one side absent" case (create/delete) is always caught regardless
+        # of the field's value type (including types where __eq__ is irregular).
+        old_is_absent = old_val is _ABSENT
+        new_is_absent = new_val is _ABSENT
+        if old_is_absent != new_is_absent:
+            changed = True
+        else:
+            changed = old_val != new_val
+        if changed:
             diff[key] = {
-                "before": None if old_val is _ABSENT else old_val,
-                "after": None if new_val is _ABSENT else new_val,
+                "before": None if old_is_absent else old_val,
+                "after": None if new_is_absent else new_val,
             }
 
     return diff
@@ -105,7 +112,7 @@ async def record_audit(
 
     On Firestore failure the exception is caught, logged at ERROR with the
     fixed payload ``{flag_key, action, error_type}`` (no PII — actor_email is
-    intentionally excluded from the log per FF-PRD-01 §5.3 invariant), and
+    intentionally excluded from the log per FF-PRD-02 §5.1 no-PII convention), and
     ``None`` is returned. Audit failures must never propagate to the caller's
     main mutation path.
 
@@ -136,6 +143,9 @@ async def record_audit(
         "created_at": iso_now,
     }
 
+    # feature_flag_audit is a Shape C global collection (not account-scoped) —
+    # feature flags are platform-admin tooling with no per-tenant scoping.
+    # See docs/design/components/feature-flags/README.md §7.5 for rationale.
     try:
         await asyncio.to_thread(
             db.collection("feature_flag_audit").document(audit_id).set,
