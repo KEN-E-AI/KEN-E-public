@@ -120,6 +120,31 @@ Non-critical services (Redis, Weave, MCP) log errors but don't block startup. Cr
 
 `X-Request-Id` propagation via `contextvars`. Every request gets a unique ID available anywhere via `get_request_id()`. See `middleware/request_id.py`.
 
+## Feature Flags
+
+See [`../docs/design/components/feature-flags/README.md`](../docs/design/components/feature-flags/README.md) for the full component design, targeting model, and architecture.
+
+### Helper usage
+
+```python
+from kene_api.services.feature_flag_service import is_feature_enabled
+
+# In a router or service — the helper swallows service errors and returns `default`
+# so a flag-system outage never takes down the caller.
+if await is_feature_enabled("automations_beta", ctx):
+    # new code path
+else:
+    # existing code path
+```
+
+### Kill-switch SLO
+
+A super-admin flipping `is_active=false` on a flag propagates to every Cloud Run instance within ≤60 s (per-instance TTL; no Redis or Firestore listener in Release 1).
+
+### Incident response
+
+To kill a misbehaving feature in production, open `/admin/feature-flags` as a super-admin and toggle `is_active` off. If `default_enabled` is `true` (the flag was promoted for GA), also set `default_enabled` to `false` — otherwise `is_active=false` returns `default_enabled` and the feature remains on. Each Cloud Run instance propagates the change within ≤60 s of the last write.
+
 ## Email Service Setup (Local Development)
 
 The API uses SendGrid for sending invitation emails. To enable this locally:
