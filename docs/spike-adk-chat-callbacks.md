@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-18
 **Author:** Dev Team (CH-7)
-**ADK version:** `google-adk==1.27.5` (pinned in `app/adk/pyproject.toml`)
+**ADK version:** `google-adk==1.27.5` (resolved in `app/adk/uv.lock`; lower-bound specifier `>=1.27.4` in `pyproject.toml`)
 **Spike script:** `scripts/spike_adk_callbacks.py` (runs without GCP credentials or LLM)
 
 ---
@@ -169,6 +169,8 @@ def chat_before_agent_callback(
     account_id = callback_context.state.get("account_id", "unknown")
 
     # upsert chat_sessions row (async-safe via fire-and-forget or sync Firestore client)
+    # NOTE: production implementation must guard each _invocation_context chain step with
+    # getattr(..., None) — follow the pattern in tracking/callbacks.py lines 141–149.
     ...
     return None
 ```
@@ -201,16 +203,17 @@ Sub-agents do not need them because the root's after-callback fires only after a
 
 ## 5. PRD Amendment Required
 
-**`CH-PRD-01-session-metadata-substrate.md` §5.2 must be amended:**
+**`CH-PRD-01-session-metadata-substrate.md` — 6 occurrences replaced (`agent.parent` → `agent.parent_agent`):**
 
-| Location | Before | After |
-|----------|--------|-------|
-| §2 "Key fields" table (session metadata row) | `invocation_context.agent.parent` | `invocation_context.agent.parent_agent` |
-| §5.2 "Root detection" code snippet | `agent.parent is not None` | `agent.parent_agent is not None` |
-| §7 AC-3 acceptance criterion | `agent.parent` | `agent.parent_agent` |
-| §9 Risk mitigation | `agent.parent` | `agent.parent_agent` |
+| Location | Context |
+|----------|---------|
+| §2 "Root-only firing" narrative (×2) | Guard description + spike question (b) |
+| §5.2 "Day-1 spike deliverable" intro | Root-guard description |
+| §5.2 `on_agent_start` / `on_agent_stop` pseudocode (×2) | `if invocation_context.agent.parent_agent is not None: return` |
+| §7 AC-19 acceptance criterion | Integration test guard assertion |
+| §9 risk-table mitigation row | `agent.parent_agent is None` canonical detection |
 
-This amendment is tracked in CH-7 and applied in the same PR as this spike document.
+All six occurrences confirmed replaced. Amendment is tracked in CH-7 and applied in the same PR as this spike document.
 
 ---
 
@@ -222,6 +225,6 @@ The `_invocation_context` field is a private ADK API. If a future ADK version re
 
 **Secondary fallback:** `BaseAgent.parent_agent` is set by `_create_invocation_context`. If the private field is inaccessible, check whether `callback_context.invocation_id` correlates with the session — ADK may expose a public `session_id` property in a future version.
 
-**Monitoring:** Pin `google-adk` in `app/adk/pyproject.toml` and run `scripts/spike_adk_callbacks.py` as part of any ADK version bump. The spike script is intentionally kept dependency-light (no GCP credentials required) so it can run in CI.
+**Monitoring:** Run `scripts/spike_adk_callbacks.py` as part of any ADK version bump (`uv lock` change for `google-adk` in `app/adk/uv.lock`). The spike script is intentionally kept dependency-light (no GCP credentials required) so it can run in CI.
 
 **Note:** The `tracking/callbacks.py` Weave callbacks already access `_invocation_context` in production (`session.id`, `user_id` extraction at lines 142–151). This spike confirms no new private-API surface is introduced — the CH-PRD-01 pattern reuses the existing access pattern.

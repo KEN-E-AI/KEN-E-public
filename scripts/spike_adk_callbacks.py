@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator, Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from google.adk.agents.base_agent import BaseAgent
 from google.adk.agents.invocation_context import InvocationContext
@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 # Observation log — records every callback firing in order.
 # ---------------------------------------------------------------------------
 
-firing_log: list[dict[str, object]] = []
+firing_log: list[dict[str, Any]] = []
 
 
 def _make_callback(label: str) -> Callable[[CallbackContext], types.Content | None]:
@@ -46,9 +46,9 @@ def _make_callback(label: str) -> Callable[[CallbackContext], types.Content | No
     def callback(callback_context: CallbackContext) -> types.Content | None:
         inv_ctx = getattr(callback_context, "_invocation_context", None)
 
-        agent_name = "?"
-        parent_agent = "?"
-        invocation_id = "?"
+        agent_name: str = "?"
+        parent_agent: str | None = "?"
+        invocation_id: str = "?"
 
         if inv_ctx is not None:
             agent = getattr(inv_ctx, "agent", None)
@@ -139,7 +139,7 @@ async def experiment_1_root_only_registration() -> None:
     print(f"\n  Firing order: {[e['label'] for e in firing_log]}")
     assert firing_log[0]["label"] == "root.before", "root.before must fire first"
     assert firing_log[-1]["label"] == "root.after", "root.after must fire last"
-    assert not any(e["label"].startswith("nested") for e in firing_log), (
+    assert not any(str(e["label"]).startswith("nested") for e in firing_log), (
         "No nested callbacks registered → none should fire"
     )
     print("  ✓ Only root.before / root.after fired (nested had no callbacks).")
@@ -341,6 +341,7 @@ async def experiment_4_callback_context_attrs() -> None:
         print(f"  {k}: {v!r}")
 
     assert observed_attrs.get("agent_name") == "simple"
+    assert observed_attrs.get("has_state") is True
     assert observed_attrs.get("has_invocation_context") is True
     assert observed_attrs.get("inv_ctx.agent.name") == "simple"
     assert observed_attrs.get("inv_ctx.agent.parent_agent") is None
