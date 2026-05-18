@@ -17,7 +17,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Directories DM-89 has cleared of test-named non-test scripts. As later
 # phases land, append their directories here so a regression fails CI.
-_CLEANED_DIRS = ["api/scripts"]
+_CLEANED_DIRS = ["api/scripts", "api", "app/adk"]
 
 
 @pytest.mark.parametrize("rel_dir", _CLEANED_DIRS)

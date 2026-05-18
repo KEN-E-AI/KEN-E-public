@@ -28,7 +28,7 @@ The KEN-E ADK codebase lives at `app/adk/`. **Read `app/adk/README.md` first** �
 - `session/` — Session recovery for returning users, timeout management.
 - `mcp_config/config/mcp_servers.yaml` — MCP server config with env var / Secret Manager substitution. Currently enabled: `google_analytics_mcp` (SSE + OAuth). Pending: HubSpot, Meta Ads, Google Ads, Slack, Notion.
 - `deploy_ken_e.py`, `deploy_with_sys_version.py`, `manage_reasoning_engines.py`, `cleanup_*.py` — Vertex AI Agent Engine deployment surface.
-- `test_agent_local.py`, `test_deployed_strategy.py`, `test_*.py` — local and deployed smoke tests.
+- `check_agent_local.py`, `check_deployed_strategy.py`, `check_*.py` — local and deployed smoke-check scripts (renamed from `test_*` so pytest does not collect them as tests).
 
 ## What you own
 
