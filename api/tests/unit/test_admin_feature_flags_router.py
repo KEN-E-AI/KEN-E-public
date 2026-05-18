@@ -17,6 +17,7 @@ Scenarios:
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
@@ -82,7 +83,7 @@ def _stub_service_raising() -> MagicMock:
 
 
 @pytest.fixture(autouse=True)
-def _reset_overrides() -> None:
+def _reset_overrides() -> Generator[None, None, None]:
     """Guarantee dependency_overrides is clean before and after each test."""
     app.dependency_overrides.clear()
     yield
@@ -125,7 +126,8 @@ class TestListFlagsAuth:
         body = resp.json()
         assert "flags" in body
         assert len(body["flags"]) == 2
-        assert body["flags"][0]["key"] == "aaa_flag"
+        # Assert set membership, not order — ordering is the service's contract.
+        assert {f["key"] for f in body["flags"]} == {"aaa_flag", "bbb_flag"}
 
     def test_non_super_admin_list_returns_403(self, client: TestClient) -> None:
         """Non-super-admin receives flat 403 with {'error': 'super_admin_required'}."""
@@ -206,6 +208,17 @@ class TestGetFlagAuth:
         assert resp.status_code == 404
         body = resp.json()
         assert "absent_flag" in body["detail"]
+
+    def test_super_admin_get_invalid_key_returns_422(self, client: TestClient) -> None:
+        """Key not matching FLAG_KEY_REGEX → 422 (validated by FlagKeyStr before handler)."""
+
+        async def _admin() -> UserContext:
+            return _make_super_admin()
+
+        app.dependency_overrides[require_super_admin] = _admin
+
+        resp = client.get("/api/v1/admin/feature-flags/INVALID-KEY!")
+        assert resp.status_code == 422
 
 
 class TestServiceExceptionPropagation:

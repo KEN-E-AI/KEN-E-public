@@ -476,7 +476,9 @@ class TestListAndGetFlags:
 
         assert result1 is not None
         assert result1.key == "get_test_flag"
-        assert result2 == result1  # same object from cache
+        assert (
+            result2 is result1
+        )  # identical object — served from cache, not reconstructed
 
         # Only one Firestore read should have been issued.
         get_mock = db.collection.return_value.document.return_value.get

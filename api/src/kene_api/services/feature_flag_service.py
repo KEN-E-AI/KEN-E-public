@@ -252,7 +252,12 @@ class FeatureFlagService:
         )
         flags: list[FeatureFlag] = []
         for doc in docs:
-            flags.append(FeatureFlag.model_validate(doc.to_dict() | {"key": doc.id}))
+            try:
+                flags.append(
+                    FeatureFlag.model_validate(doc.to_dict() | {"key": doc.id})
+                )
+            except Exception:
+                logger.error("feature_flag_invalid_doc", extra={"doc_id": doc.id})
         flags.sort(key=lambda f: f.updated_at, reverse=True)
         return flags
 
@@ -277,6 +282,9 @@ class FeatureFlagService:
             return entry.flag
 
         flag = await self._fetch_flag(flag_key)
+        now = (
+            self._time_provider()
+        )  # re-capture after I/O, mirrors evaluate_batch pattern
         self._install_cache(flag_key, flag, now)
         return flag
 

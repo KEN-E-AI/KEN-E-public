@@ -11,13 +11,18 @@ Security model (README §7.6):
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..auth.dependencies import UserContext, require_super_admin
+from ..auth.dependencies import require_super_admin
 from ..dependencies import get_feature_flag_service
-from ..models.feature_flag_models import FeatureFlag
+from ..models.feature_flag_models import FeatureFlag, FlagKeyStr
 from ..services.feature_flag_service import FeatureFlagService
+
+if TYPE_CHECKING:
+    from ..auth.dependencies import UserContext
 
 router = APIRouter(
     prefix="/api/v1/admin/feature-flags",
@@ -35,7 +40,7 @@ class AdminFeatureFlagListResponse(BaseModel):
     flags: list[FeatureFlag]
 
 
-@router.get("", response_model=AdminFeatureFlagListResponse)
+@router.get("/", response_model=AdminFeatureFlagListResponse)
 async def list_flags(
     _admin: UserContext = Depends(require_super_admin),
     service: FeatureFlagService = Depends(get_feature_flag_service),
@@ -47,13 +52,14 @@ async def list_flags(
 
 @router.get("/{key}", response_model=FeatureFlag)
 async def get_flag(
-    key: str,
+    key: FlagKeyStr,
     _admin: UserContext = Depends(require_super_admin),
     service: FeatureFlagService = Depends(get_feature_flag_service),
 ) -> FeatureFlag:
     """Get a single feature flag by key (super-admin only).
 
     Returns 404 when the flag does not exist.
+    Key is validated against FLAG_KEY_REGEX before the handler executes.
     """
     flag = await service.get_flag(key)
     if flag is None:
