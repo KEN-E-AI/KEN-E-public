@@ -150,7 +150,7 @@ Run the integration test to verify everything is working:
 
 ```bash
 cd /path/to/api
-python test_superset_integration.py
+python check_superset_integration.py
 ```
 
 ## Troubleshooting

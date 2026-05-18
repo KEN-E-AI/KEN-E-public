@@ -7,7 +7,7 @@ import pytest
 from unittest.mock import Mock, AsyncMock, MagicMock
 from fastapi import UploadFile
 
-from account_creation_service import (
+from src.kene_api.services.account_creation_service import (
     upload_strategy_documents,
     prepare_strategy_generation_params
 )

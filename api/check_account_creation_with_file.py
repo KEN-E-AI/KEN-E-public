@@ -9,7 +9,7 @@ import sys
 if len(sys.argv) > 1:
     token = sys.argv[1]
 else:
-    print("Usage: python test_account_creation_with_file.py <auth_token>")
+    print("Usage: python check_account_creation_with_file.py <auth_token>")
     print("Get auth token from browser DevTools > Network tab > Request Headers > Authorization")
     sys.exit(1)
 
