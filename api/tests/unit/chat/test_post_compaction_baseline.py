@@ -116,7 +116,7 @@ class TestAccumulatorPostCompactionBaseline:
         a.add_event(_compaction_event())
         delta = a.build_delta()
         cct = delta["current_context_tokens"]
-        assert isinstance(cct, int), f"Expected plain int, got {type(cct)}"
+        assert type(cct) is int, f"Expected plain int, got {type(cct)}"
 
     def test_current_context_tokens_equals_sum_not_zero(self) -> None:
         """AC-10 end-to-end: accumulator produces the correct sum."""
@@ -177,7 +177,7 @@ class TestAccumulatorPostCompactionBaseline:
         #   [retained(100)] * 10 + [compaction(200)] = 11 items total
         # compute_post_compaction: compaction_ev (200) + retained (10 * 100) = 1200
         cct = delta["current_context_tokens"]
-        assert isinstance(cct, int)
+        assert type(cct) is int
         assert cct == 200 + 10 * 100  # 1200
 
     def test_single_compaction_event_no_retained(self) -> None:

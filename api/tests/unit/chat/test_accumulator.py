@@ -363,8 +363,14 @@ class TestBuildDeltaNormal:
         assert "summary_updated_at" not in delta
         assert "compaction_count" not in delta
 
-    def test_idempotent_second_call_same_dict(self) -> None:
-        """Calling build_delta() twice must return the same dict (read-only semantics)."""
+    def test_counter_values_stable_across_repeated_calls(self) -> None:
+        """Counter Increment values are stable across repeated build_delta() calls.
+
+        Note: each call produces a new dict with a fresh timestamp, so dicts are
+        not identical objects. The one-shot contract (CH-13) must prevent double-
+        application of Increments; this test only verifies that repeated reads
+        return the same token values.
+        """
         a = SessionTurnAccumulator()
         a.add_event(_make_token_event(prompt=100, candidates=50))
         d1 = a.build_delta()
@@ -392,7 +398,7 @@ class TestBuildDeltaCompaction:
         a.add_event(_make_compaction_event(summary="s", total_token_count=800))
         delta = a.build_delta()
         cct = delta["current_context_tokens"]
-        assert isinstance(cct, int), f"Expected plain int, got {type(cct)}"
+        assert type(cct) is int, f"Expected plain int, got {type(cct)}"
 
     def test_current_context_tokens_value_equals_sum(self) -> None:
         """AC-10: sum of usage_metadata.total_token_count across retained window."""

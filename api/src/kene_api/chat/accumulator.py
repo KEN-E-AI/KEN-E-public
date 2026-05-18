@@ -41,12 +41,11 @@ from google.cloud import firestore
 
 # ---------------------------------------------------------------------------
 # Import the Billing-owned token-accounting helper.
-# The app/ package lives next to api/ in the workspace root.  Both the
-# existing api-side callers (routers/chat.py:2087, routers/mcp.py:118) and
-# tests/unit/chat/test_token_accounting.py use a sys.path manipulation to
-# resolve the cross-package import.  We follow the same pattern here so
-# local development and CI both work without editable-install trickery.
-# CH-13 will validate the real ADK event shapes when wiring callbacks.
+# The app/ package lives next to api/ in the workspace root.
+# tests/unit/chat/test_token_accounting.py uses the same sys.path pattern to
+# resolve this cross-package import.  We follow that precedent here so local
+# development and CI both work without editable-install trickery.
+# TODO(CH-13): replace with an editable install of app/adk in the Dockerfile.
 # ---------------------------------------------------------------------------
 _ADK_PATH = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "app", "adk"))
 if _ADK_PATH not in sys.path:
@@ -213,7 +212,8 @@ class SessionTurnAccumulator:
 
         # Compaction: capture summary + recompute baseline (AC-10).
         if _is_compaction_summary_event(event):
-            self.latest_summary = getattr(event, "content", None)
+            raw_content = getattr(event, "content", None)
+            self.latest_summary = raw_content if isinstance(raw_content, str) else None
             self.compaction_count_delta += 1
             # The buffer at this point contains the compaction event plus the
             # retained-window events that precede it in the turn.  Per PRD §2
@@ -254,7 +254,8 @@ class SessionTurnAccumulator:
         delta: dict[str, Any] = {
             "last_agent_stopped_at": now,
             "updated_at": now,
-            "last_agent_message_at": now,
+            "last_agent_message_at": now,  # v1 approximation: stamped on every turn; pure-tool turns may not have one
+            # TODO(CH-13): stamp last_user_message_at on user-authored turns
             "input_tokens_total": firestore.Increment(self._input),
             "output_tokens_total": firestore.Increment(self._output),
             "reasoning_tokens_total": firestore.Increment(self._reasoning),
