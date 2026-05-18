@@ -14,7 +14,7 @@ The main migration script that:
 - Handles organizations that already exist in Neo4j
 - Logs all operations and errors to both console and file
 
-### 2. `test_firestore_neo4j_migration.py`
+### 2. `check_firestore_neo4j_migration.py`
 
 Test script to verify the migration setup:
 - Tests Firestore connection and read capabilities
@@ -57,7 +57,7 @@ Always run the test script first to verify your setup:
 
 ```bash
 cd api/scripts
-python test_firestore_neo4j_migration.py
+python check_firestore_neo4j_migration.py
 ```
 
 This will:
@@ -191,7 +191,7 @@ RETURN org.organization_name, org.migration_timestamp;
 - The migration is non-destructive to Firestore data
 - Neo4j data is updated, not deleted (unless organization is removed from Firestore)
 - Always backup Neo4j before major migrations
-- Test with `test_firestore_neo4j_migration.py` first
+- Test with `check_firestore_neo4j_migration.py` first
 
 ## Future Enhancements
 

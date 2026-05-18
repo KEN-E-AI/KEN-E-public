@@ -172,7 +172,7 @@ update_cloud_build() {
     echo "   - Update api/.env.production with Redis connection details"
     echo ""
     echo "3. Test Redis connection:"
-    echo "   - Run: cd api && uv run -- python scripts/test_redis_connection.py"
+    echo "   - Run: cd api && uv run -- python scripts/check_redis_connection.py"
     echo ""
     echo "4. Deploy updated API with Redis support:"
     echo "   - Commit changes and push to trigger CI/CD pipeline"

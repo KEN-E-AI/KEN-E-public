@@ -43,8 +43,8 @@ def test_sync_endpoint(account_id, api_base_url="http://localhost:8000"):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python test_sync_endpoint.py <account_id>")
-        print("Example: python test_sync_endpoint.py acc_123456")
+        print("Usage: python check_sync_endpoint.py <account_id>")
+        print("Example: python check_sync_endpoint.py acc_123456")
         sys.exit(1)
     
     account_id = sys.argv[1]

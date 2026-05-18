@@ -38,7 +38,7 @@ This script will:
 ### 2. Test Organization Creation
 ```bash
 cd api
-ENVIRONMENT=staging python scripts/test_create_organization.py
+ENVIRONMENT=staging python scripts/check_create_organization.py
 ```
 
 This script will:

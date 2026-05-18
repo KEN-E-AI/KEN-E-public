@@ -21,8 +21,8 @@ This directory contains configuration files and scripts for Google Cloud Memorys
 
 ```bash
 # Test Redis connection and performance
-cd api && uv run -- python scripts/test_redis_connection.py
-cd api && uv run -- python scripts/redis_performance_test.py
+cd api && uv run -- python scripts/check_redis_connection.py
+cd api && uv run -- python scripts/redis_performance_check.py
 ```
 
 ### 3. Update Application Configuration
@@ -52,8 +52,8 @@ Update the Cloud Build deployment files with Redis connection details:
 - `../monitoring/redis-availability-alert.yaml` - Instance availability alerts
 
 ### Testing and Utilities
-- `../../api/scripts/test_redis_connection.py` - Connection and functionality tests
-- `../../api/scripts/redis_performance_test.py` - Performance benchmarking
+- `../../api/scripts/check_redis_connection.py` - Connection and functionality tests
+- `../../api/scripts/redis_performance_check.py` - Performance benchmarking
 - `../scripts/deploy-redis.sh` - Automated deployment script
 
 ## Instance Configuration
@@ -138,10 +138,10 @@ subscription_plans:all                   # Cached subscription plans
 
 ```bash
 # Run performance tests
-cd api && uv run -- python scripts/redis_performance_test.py
+cd api && uv run -- python scripts/redis_performance_check.py
 
 # Test specific patterns
-cd api && uv run -- python scripts/test_redis_connection.py
+cd api && uv run -- python scripts/check_redis_connection.py
 ```
 
 ## Monitoring and Alerting
@@ -303,7 +303,7 @@ REDIS_PASSWORD=
 ### 2. Testing Changes
 ```bash
 # Test Redis integration
-cd api && uv run -- python scripts/test_redis_connection.py
+cd api && uv run -- python scripts/check_redis_connection.py
 
 # Run API tests with Redis
 cd api && pytest tests/ -v

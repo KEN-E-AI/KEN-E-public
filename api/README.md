@@ -194,10 +194,10 @@ For staging and production environments, the API uses Google Cloud service accou
 **Testing Service Account Permissions:**
 ```bash
 # Test a specific service account
-python scripts/test_service_account.py ken-e-staging.json
+python scripts/check_service_account.py ken-e-staging.json
 
 # Test all available service accounts
-python scripts/test_service_account.py
+python scripts/check_service_account.py
 ```
 
 If your service account lacks Secret Manager permissions, you can either:
@@ -607,7 +607,7 @@ uv run --active -- uvicorn src.kene_api.main:app --reload --host 0.0.0.0 --port 
 - For local development with service accounts:
   ```bash
   # Test your service account
-  python scripts/test_service_account.py ken-e-staging.json
+  python scripts/check_service_account.py ken-e-staging.json
   
   # Use the service account for environment setup
   ./scripts/use_staging_with_sa_fixed.sh

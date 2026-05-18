@@ -149,8 +149,8 @@ def delete_account(account_id):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python test_cascade_delete.py <account_id>")
-        print("Example: python test_cascade_delete.py acc_56a8acfa9ed24858b7a93a283713b6b7")
+        print("Usage: python check_cascade_delete.py <account_id>")
+        print("Example: python check_cascade_delete.py acc_56a8acfa9ed24858b7a93a283713b6b7")
         sys.exit(1)
     
     account_id = sys.argv[1]

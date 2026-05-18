@@ -505,7 +505,7 @@ SUPPRESS_REDIS_WARNING=false
 
 ### 4. Testing Redis Connection
 
-Create a test script `api/scripts/test_redis_connection.py`:
+Create a test script `api/scripts/check_redis_connection.py`:
 
 ```python
 #!/usr/bin/env python3
@@ -584,7 +584,7 @@ if __name__ == "__main__":
 
 Run the test:
 ```bash
-cd api && uv run -- python scripts/test_redis_connection.py
+cd api && uv run -- python scripts/check_redis_connection.py
 ```
 
 ## Cost Optimization
