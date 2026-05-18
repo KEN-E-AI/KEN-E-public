@@ -8,7 +8,7 @@ that every model= kwarg in app/adk/agents/**/*.py is a key in this registry.
 Adding a new model without a registry entry fails the build.
 """
 
-from kene_api.models.chat import ModelContextWindowEntry
+from ..models.chat import ModelContextWindowEntry
 
 # ---------------------------------------------------------------------------
 # Context-window values sourced from public model cards.

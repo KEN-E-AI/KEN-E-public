@@ -3,8 +3,7 @@
 from datetime import datetime
 
 import pytest
-from kene_api.models.chat import (
-    BillableTokenCounts,
+from src.kene_api.models.chat import (
     ChatArtifactIndex,
     ChatCategoryDefinition,
     ChatSessionMetadata,
@@ -243,25 +242,6 @@ class TestModelContextWindowEntry:
         assert not hasattr(entry, "cost_per_input_token")
         assert not hasattr(entry, "cost_per_output_token")
         assert not hasattr(entry, "price")
-
-
-# ---------------------------------------------------------------------------
-# BillableTokenCounts
-# ---------------------------------------------------------------------------
-
-
-class TestBillableTokenCounts:
-    def test_total_billable(self) -> None:
-        counts = BillableTokenCounts(input=10, output=20, reasoning=5)
-        assert counts.total_billable == 35
-
-    def test_total_billable_zero(self) -> None:
-        counts = BillableTokenCounts(input=0, output=0, reasoning=0)
-        assert counts.total_billable == 0
-
-    def test_reasoning_can_be_zero_for_non_reasoning_models(self) -> None:
-        counts = BillableTokenCounts(input=100, output=50, reasoning=0)
-        assert counts.total_billable == 150
 
 
 # ---------------------------------------------------------------------------

@@ -25,7 +25,7 @@ Landing the substrate first lets CH-PRD-02 build the sidebar against real data a
 
 - **Pydantic models** for `ChatSessionMetadata`, `ChatArtifactIndex`, `ChatCategoryDefinition`, `TodoItem`, `TodoList`, `ChatStatusDetail`, `ModelContextWindowEntry` (shapes in §4).
 - **Firestore layout** — new subcollection `accounts/{account_id}/chat_sessions/{session_id}` (Shape B) + nested `chat_sessions/{session_id}/artifacts/{artifact_id}`. Per-user `users/{user_id}/chat_categories/{category_id}` collection (shape registered here; CH-PRD-03 implements CRUD). Composite indexes per §4.3. DM-PRD-00 registry entries, DM-PRD-05 sweep inclusion.
-- **Firestore security rules** — enforce `resource.data.user_id == request.auth.uid` on every `chat_sessions/*` read and write, and `request.auth.uid == userId` on `users/{userId}/chat_categories/*`. Rules file: `firestore.rules` additions. Unit-tested with the Firestore emulator.
+- **Firestore security rules** — enforce `resource.data.user_id == request.auth.uid` on every `chat_sessions/*` read and write, and `request.auth.uid == userId` on `users/{userId}/chat_categories/*`. Rules file: `deployment/firestore.rules` (net-new), deployed to all three environments by `deployment/terraform/firestore_rules.tf`. Unit-tested with the Firestore emulator.
 - **`ChatSessionSideTableService`** (`api/src/kene_api/chat/side_table.py`) — `create(session_id, user_id, account_id, organization_id, model_id)`, `get(session_id)`, `list_for_user(user_id, account_id, cursor?, category_id?, query?)`, `update_from_delta(session_id, delta)`, `tombstone(session_id)`. Single write path into the side-table.
 - **ADK callbacks** (`app/adk/agents/chat_callbacks.py`) — registered on the root runner via the Agent Factory (AH-PRD-02) or hardcoded root fallback. Two top-level callbacks:
   - `before_agent_callback` → stamps `last_agent_started_at = now()` on the side-table.
@@ -87,7 +87,7 @@ Landing the substrate first lets CH-PRD-02 build the sidebar against real data a
 | Existing Redis metadata cache | Preserved as a speed-up. Side-table is authoritative. | `api/src/kene_api/cache.py` |
 | Existing `app/adk/session/recovery.py` | `RECOVERY_WINDOW_DAYS` constant lifted 7 → 30 here. Other code paths using the window are grep-audited. | `app/adk/session/recovery.py` |
 | OIDC internal-endpoint auth | Reused from Integrations for the side-table-update bridge. | `api/src/kene_api/auth/` |
-| Firebase Auth / Firestore security rules | Per-user-per-account enforcement lives here. | `firestore.rules` |
+| Firebase Auth / Firestore security rules | Per-user-per-account enforcement lives here. | `deployment/firestore.rules` |
 
 ## 4. Data contract
 
@@ -257,7 +257,11 @@ The CI coverage test walks `app/adk/agents/**/*.py` for `model=` kwargs and asse
 
 ### 4.5 Firestore security rules
 
-Added to `firestore.rules`:
+The rules live in `deployment/firestore.rules` (a net-new file — no prior
+Firestore ruleset existed in the repo) and are deployed to every environment by
+`deployment/terraform/firestore_rules.tf` (a `google_firebaserules_ruleset` +
+`google_firebaserules_release` per project, keyed off `var.firestore_index_project_ids`
+so rules and indexes deploy in lockstep):
 
 ```
 match /accounts/{accountId}/chat_sessions/{sessionId} {
@@ -300,8 +304,9 @@ Enforcement belt-and-braces: the API layer additionally checks ownership server-
 | Create | `app/adk/agents/chat_callbacks.py` — `before_agent_callback`, `after_agent_callback`. **Only file that fires the ADK callbacks.** Posts to the internal update endpoint. |
 | Modify | `api/src/kene_api/routers/chat.py` — extend `POST /conversations` to write the side-table row; extend `GET /conversations` signature for cursor + filters; add completion-endpoint accumulator flush on cancellation / exception; add `POST /internal/chat/side-table/update` handler. |
 | Modify | `app/adk/session/recovery.py` — `RECOVERY_WINDOW_DAYS = 30` |
-| Modify | `deployment/terraform/firestore.tf` — 4 composite indexes from §4.3 |
-| Modify | `firestore.rules` — add the security-rules blocks from §4.5 |
+| Modify | `deployment/firestore.indexes.json` — 4 composite indexes from §4.3 (provisioned by the existing `firestore_indexes.tf`) |
+| Create | `deployment/firestore.rules` — the security-rules blocks from §4.5 (net-new file) |
+| Create | `deployment/terraform/firestore_rules.tf` — deploys `firestore.rules` as the live ruleset for every environment |
 | Create | `api/scripts/migrate_chat_side_table_backfill.py` — one-shot back-fill |
 | Create | `api/scripts/lint/check_context_window_registry_coverage.py` — CI lint |
 | Create | `docs/spike-adk-chat-callbacks.md` — Day-1 spike output (confirmed ADK callback signatures + fallback plan) |

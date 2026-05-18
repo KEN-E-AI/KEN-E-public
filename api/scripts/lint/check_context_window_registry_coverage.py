@@ -4,6 +4,10 @@ MODEL_CONTEXT_WINDOW_REGISTRY (api/src/kene_api/chat/context_windows.py).
 Usage (from repo root):
     uv run python api/scripts/lint/check_context_window_registry_coverage.py
 
+The scan root defaults to app/adk/agents/; pass --agents-root <dir> to scan a
+different tree (used by the unit test to scan a temp fixture dir rather than
+mutating the real source tree).
+
 Exits 0 when all deployed model literals are registered; exits 1 with a
 human-readable list of violations otherwise.
 
@@ -19,6 +23,7 @@ What is excluded:
     verified statically; they are a known limitation documented in the plan)
 """
 
+import argparse
 import ast
 import sys
 from pathlib import Path
@@ -103,10 +108,20 @@ def _load_registry() -> set[str]:
 # ---------------------------------------------------------------------------
 
 
-def main() -> int:
-    if not AGENTS_ROOT.is_dir():
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--agents-root",
+        type=Path,
+        default=AGENTS_ROOT,
+        help="Directory tree to scan for model= kwargs (default: app/adk/agents).",
+    )
+    args = parser.parse_args(argv)
+    agents_root: Path = args.agents_root.resolve()
+
+    if not agents_root.is_dir():
         print(
-            f"ERROR: agents directory not found at {AGENTS_ROOT}. "
+            f"ERROR: agents directory not found at {agents_root}. "
             "Run this script from the repo root.",
             file=sys.stderr,
         )
@@ -117,7 +132,7 @@ def main() -> int:
     violations: list[tuple[Path, int, str]] = []
     files_scanned = 0
 
-    for py_file in sorted(AGENTS_ROOT.rglob("*.py")):
+    for py_file in sorted(agents_root.rglob("*.py")):
         if _is_excluded(py_file):
             continue
         files_scanned += 1
@@ -137,7 +152,11 @@ def main() -> int:
         file=sys.stderr,
     )
     for file, lineno, model_id in violations:
-        rel = file.relative_to(REPO_ROOT)
+        try:
+            rel: Path = file.relative_to(REPO_ROOT)
+        except ValueError:
+            # --agents-root pointed outside the repo (e.g. a temp fixture dir)
+            rel = file
         print(f'  {rel}:{lineno}  model="{model_id}"', file=sys.stderr)
     print(
         "\nRemediation: add each model to MODEL_CONTEXT_WINDOW_REGISTRY in "

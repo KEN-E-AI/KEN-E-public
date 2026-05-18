@@ -153,7 +153,7 @@ class ChatStatusDetail(BaseModel):
 | `accounts/{account_id}/chat_sessions/{session_id}/artifacts/{artifact_id}` | Artifact metadata index. |
 | `users/{user_id}/chat_categories/{category_id}` | Per-user categories. One of five user-scoped subcollections in the codebase (alongside `notification_status` and `preferences` per `firestore_notification_repository.py`, and `notifications` and `security` per `routers/users.py`). Registered in DM-PRD-05's `USER_SUBCOLLECTIONS` so the user-deletion sweep covers it. — see README §7.2. |
 
-**Four composite indexes** (CH-PRD-01 §4.3) — two sidebar variants (with/without category filter; both include `deleted_at` for index-covered tombstone exclusion), artifact listing, category dedup. Firestore security rules (`firestore.rules`) enforce per-user-per-account access; API-layer checks are belt-and-braces.
+**Four composite indexes** (CH-PRD-01 §4.3) — two sidebar variants (with/without category filter; both include `deleted_at` for index-covered tombstone exclusion), artifact listing, category dedup. Firestore security rules (`deployment/firestore.rules`, deployed via `deployment/terraform/firestore_rules.tf`) enforce per-user-per-account access; API-layer checks are belt-and-braces.
 
 ### 3.3 `session.state` extension — `todo_lists`
 

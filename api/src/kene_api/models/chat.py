@@ -175,27 +175,13 @@ class ModelContextWindowEntry(BaseModel):
     context_window_max: int  # tokens
 
 
-class BillableTokenCounts(BaseModel):
-    """Token counts extracted from an ADK event.
-
-    Owned by Billing (BL-PRD-02); declared here so Chat (accumulator) and
-    Billing (meter) share a single shape without a circular import. The helper
-    extract_billable_tokens(event) lives at app/adk/token_accounting.py.
-
-    Definition (invariant shared with Billing):
-      input    = prompt_token_count - cached_content_token_count
-      output   = candidates_token_count
-      reasoning = thoughts_token_count (0 for non-reasoning models)
-    Cached-input tokens are excluded (KEN-E margin, not customer cost).
-    """
-
-    input: int
-    output: int
-    reasoning: int
-
-    @property
-    def total_billable(self) -> int:
-        return self.input + self.output + self.reasoning
+# NOTE: `BillableTokenCounts` is intentionally NOT defined here. It is the
+# single canonical shape owned by Billing and lives at
+# `app/adk/token_accounting.py` alongside the `extract_billable_tokens` helper
+# that produces it. Declaring a copy here would create two divergent classes
+# (the api copy previously lacked the `ge=0` validation the helper relies on).
+# When an api-side consumer needs the type (CH-12 accumulator), that issue
+# resolves the app↔api import boundary rather than duplicating the model.
 
 
 # ---------------------------------------------------------------------------

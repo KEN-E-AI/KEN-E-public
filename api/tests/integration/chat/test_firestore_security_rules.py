@@ -51,9 +51,10 @@ pytestmark = pytest.mark.skipif(
     ),
 )
 
-# Path to firestore.rules at repo root.
+# Path to deployment/firestore.rules — the file terraform (firestore_rules.tf)
+# deploys as the live ruleset; the emulator test loads the same file.
 # api/tests/integration/chat/ → api/tests/integration/ → api/tests/ → api/ → repo root
-RULES_FILE = Path(__file__).parents[4] / "firestore.rules"
+RULES_FILE = Path(__file__).parents[4] / "deployment" / "firestore.rules"
 
 # ---------------------------------------------------------------------------
 # REST helpers — thin wrappers around the Firestore emulator HTTP API.
