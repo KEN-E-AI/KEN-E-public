@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // CH-PRD-01: Chat session metadata (belt-and-braces with API-layer enforcement).
+    // Per-user-per-account scoping: only the owning user may read their sessions;
+    // write allowed only when the token's account_id claim matches the path segment.
+    // See docs/design/components/chat/README.md §7.1
+    //
+    // NOTE: The write rule requires request.auth.token.account_id — a Firebase
+    // custom claim the API must set via set_custom_user_claims() on account login.
+    // Until that is wired (tracked in Linear), direct-client writes are implicitly
+    // blocked (null != accountId). Server-side Admin SDK writes are unaffected.
+    match /accounts/{accountId}/chat_sessions/{sessionId} {
+      allow read: if request.auth != null
+                  && resource != null
+                  && resource.data.user_id == request.auth.uid;
+      allow write: if request.auth != null
+                   && request.auth.token.account_id == accountId
+                   && request.resource.data.user_id == request.auth.uid;
+
+      // Artifact metadata rows are written only by the server-side
+      // register_artifact wrapper (CH-PRD-05). Client writes are disabled.
+      // Reads are gated by parent-session ownership via exists() + get() to guard
+      // against a null resource when the parent session has been deleted.
+      match /artifacts/{artifactId} {
+        allow read: if request.auth != null
+                    && exists(/databases/$(database)/documents/accounts/$(accountId)/chat_sessions/$(sessionId))
+                    && get(/databases/$(database)/documents/accounts/$(accountId)/chat_sessions/$(sessionId)).data.user_id == request.auth.uid;
+        allow write: if false;
+      }
+    }
+
+    // CH-PRD-01: Per-user categories (one of five user-scoped subcollections).
+    // See docs/design/components/chat/README.md §7.2
+    match /users/{userId}/chat_categories/{categoryId} {
+      allow read, write: if request.auth != null
+                         && request.auth.uid == userId;
+    }
+
+    // All other paths are DENIED by default — Firebase denies when no rule matches.
+    // Add explicit allow blocks here as each component ships its own security rules.
+    // Do NOT add a permissive catch-all: Firebase grants access if ANY matching rule
+    // allows the operation, so a catch-all would negate every specific rule above.
+  }
+}

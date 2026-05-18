@@ -63,3 +63,11 @@ RESOURCES["monitoring_topics"] = MigrateConfig(
 )
 
 # DM-PRD-07 will add: members_migration (is_field_migration=True)
+
+# CH-PRD-01 (chat_sessions, artifacts): no entry — net-new collections, no
+# Shape A predecessor exists, so MigrateConfig validation would fail.
+# Account-level reaping is handled by recursive_delete(accounts/{account_id})
+# in api/src/kene_api/routers/accounts.py. The four composite indexes for these
+# collections live in deployment/firestore.indexes.json (added in CH-9).
+# User-scoped chat_categories are covered by USER_SUBCOLLECTIONS in
+# api/src/kene_api/services/user_deletion_service.py.
