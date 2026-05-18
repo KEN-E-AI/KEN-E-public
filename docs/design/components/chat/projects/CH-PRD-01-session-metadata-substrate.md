@@ -25,17 +25,17 @@ Landing the substrate first lets CH-PRD-02 build the sidebar against real data a
 
 - **Pydantic models** for `ChatSessionMetadata`, `ChatArtifactIndex`, `ChatCategoryDefinition`, `TodoItem`, `TodoList`, `ChatStatusDetail`, `ModelContextWindowEntry` (shapes in §4).
 - **Firestore layout** — new subcollection `accounts/{account_id}/chat_sessions/{session_id}` (Shape B) + nested `chat_sessions/{session_id}/artifacts/{artifact_id}`. Per-user `users/{user_id}/chat_categories/{category_id}` collection (shape registered here; CH-PRD-03 implements CRUD). Composite indexes per §4.3. DM-PRD-00 registry entries, DM-PRD-05 sweep inclusion.
-- **Firestore security rules** — enforce `resource.data.user_id == request.auth.uid` on every `chat_sessions/*` read and write, and `request.auth.uid == userId` on `users/{userId}/chat_categories/*`. Rules file: `firestore.rules` additions. Unit-tested with the Firestore emulator.
+- **Firestore security rules** — gate `chat_sessions/*` reads on `resource.data.user_id == request.auth.uid`; `chat_sessions/*` (and its `artifacts/*`) are server-write-only (`allow write: if false`, since `ChatSessionSideTableService` is the single write path via the Admin SDK); `users/{userId}/chat_categories/*` gated on `request.auth.uid == userId`. Rules file: `deployment/firestore.rules` (net-new), deployed to all three environments by `deployment/terraform/firestore_rules.tf`. Unit-tested with the Firestore emulator.
 - **`ChatSessionSideTableService`** (`api/src/kene_api/chat/side_table.py`) — `create(session_id, user_id, account_id, organization_id, model_id)`, `get(session_id)`, `list_for_user(user_id, account_id, cursor?, category_id?, query?)`, `update_from_delta(session_id, delta)`, `tombstone(session_id)`. Single write path into the side-table.
 - **ADK callbacks** (`app/adk/agents/chat_callbacks.py`) — registered on the root runner via the Agent Factory (AH-PRD-02) or hardcoded root fallback. Two top-level callbacks:
   - `before_agent_callback` → stamps `last_agent_started_at = now()` on the side-table.
   - `after_agent_callback` → flushes the per-invocation accumulator, stamps `last_agent_stopped_at = now()`, writes all token / tool-call / compaction-summary deltas in one Firestore update.
 
-  **Root-only firing.** AH-PRD-02 wires `before_agent_callback` + `after_agent_callback` on **every factory-built specialist** (Weave parent-span open/close), so during a turn ADK fires these callbacks once per agent dispatch — root.before → specialist.before → specialist.after → root.after. Chat must filter to the **root** invocation only; otherwise nested specialist firings would overwrite `last_agent_started_at` mid-turn (corrupting the running-state derivation, since `last_agent_stopped_at` from a returning specialist would arrive with `last_agent_started_at` already advanced past it). Both callbacks therefore guard with `if invocation_context.agent.parent is not None: return` at entry — see §5.2 for the exact code. AH-PRD-02's Weave-span use of these callbacks is unaffected (Weave wants per-agent spans; Chat wants per-turn semantics).
+  **Root-only firing.** AH-PRD-02 wires `before_agent_callback` + `after_agent_callback` on **every factory-built specialist** (Weave parent-span open/close), so during a turn ADK fires these callbacks once per agent dispatch — root.before → specialist.before → specialist.after → root.after. Chat must filter to the **root** invocation only; otherwise nested specialist firings would overwrite `last_agent_started_at` mid-turn (corrupting the running-state derivation, since `last_agent_stopped_at` from a returning specialist would arrive with `last_agent_started_at` already advanced past it). Both callbacks therefore guard with `if invocation_context.agent.parent_agent is not None: return` at entry — see §5.2 for the exact code. AH-PRD-02's Weave-span use of these callbacks is unaffected (Weave wants per-agent spans; Chat wants per-turn semantics).
 
   **Per-event work** happens inside the completion endpoint's event loop (`async for event in runner.run_async(...)`). The endpoint maintains a `SessionTurnAccumulator` and calls `.add_event(event)` as events stream. At end-of-turn the accumulator posts a single delta to the side-table via the internal endpoint — this is the handoff that `after_agent_callback` also covers for ADK-native invocation paths.
 
-  **Pre-implementation spike (Day 1).** Confirms two questions before any callback code lands: (a) does ADK fire `before_agent_callback` / `after_agent_callback` on nested sub-agents during dispatch, or only on the runner-level invocation? (b) is `invocation_context.agent.parent is None` the canonical way to detect root-vs-nested? If ADK fires only on the runner-level (no nested firings), the root-only guard becomes a defensive no-op but still ships. If ADK fires on every nested agent (the AH-PRD-02 wiring assumes), the guard is load-bearing. Spike findings + confirmed callback signatures land in `docs/spike-adk-chat-callbacks.md` with an "if the expected callbacks don't exist, here is the fallback" section. Findings feed §5.2.
+  **Pre-implementation spike (Day 1).** Confirms two questions before any callback code lands: (a) does ADK fire `before_agent_callback` / `after_agent_callback` on nested sub-agents during dispatch, or only on the runner-level invocation? (b) is `invocation_context.agent.parent_agent is None` the canonical way to detect root-vs-nested? If ADK fires only on the runner-level (no nested firings), the root-only guard becomes a defensive no-op but still ships. If ADK fires on every nested agent (the AH-PRD-02 wiring assumes), the guard is load-bearing. Spike findings + confirmed callback signatures land in `docs/spike-adk-chat-callbacks.md` with an "if the expected callbacks don't exist, here is the fallback" section. Findings feed §5.2.
 - **Events-based `is_agent_running` derivation** (no in-process sweeper). Instead of a boolean field, the side-table stores `last_agent_started_at` and `last_agent_stopped_at`. `is_agent_running` is *derived at read time*:
   ```
   is_agent_running = (
@@ -87,7 +87,7 @@ Landing the substrate first lets CH-PRD-02 build the sidebar against real data a
 | Existing Redis metadata cache | Preserved as a speed-up. Side-table is authoritative. | `api/src/kene_api/cache.py` |
 | Existing `app/adk/session/recovery.py` | `RECOVERY_WINDOW_DAYS` constant lifted 7 → 30 here. Other code paths using the window are grep-audited. | `app/adk/session/recovery.py` |
 | OIDC internal-endpoint auth | Reused from Integrations for the side-table-update bridge. | `api/src/kene_api/auth/` |
-| Firebase Auth / Firestore security rules | Per-user-per-account enforcement lives here. | `firestore.rules` |
+| Firebase Auth / Firestore security rules | Per-user-per-account enforcement lives here. | `deployment/firestore.rules` |
 
 ## 4. Data contract
 
@@ -257,15 +257,22 @@ The CI coverage test walks `app/adk/agents/**/*.py` for `model=` kwargs and asse
 
 ### 4.5 Firestore security rules
 
-Added to `firestore.rules`:
+The rules live in `deployment/firestore.rules` (a net-new file — no prior
+Firestore ruleset existed in the repo) and are deployed to every environment by
+`deployment/terraform/firestore_rules.tf` (a `google_firebaserules_ruleset` +
+`google_firebaserules_release` per project, keyed off `var.firestore_index_project_ids`
+so rules and indexes deploy in lockstep):
 
 ```
 match /accounts/{accountId}/chat_sessions/{sessionId} {
   allow read: if request.auth != null
               && resource.data.user_id == request.auth.uid;
-  allow write: if request.auth != null
-               && request.auth.token.account_id == accountId
-               && request.resource.data.user_id == request.auth.uid;
+  // Server-write-only — ChatSessionSideTableService is the single write path
+  // (Admin SDK, bypasses rules). Account scoping is NOT expressed here: a KEN-E
+  // user belongs to many accounts (plus org-admin / super-admin implicit
+  // access), which no single-valued Firebase custom claim can represent.
+  // The API layer enforces account scope.
+  allow write: if false;
 
   match /artifacts/{artifactId} {
     allow read: if request.auth != null
@@ -300,8 +307,9 @@ Enforcement belt-and-braces: the API layer additionally checks ownership server-
 | Create | `app/adk/agents/chat_callbacks.py` — `before_agent_callback`, `after_agent_callback`. **Only file that fires the ADK callbacks.** Posts to the internal update endpoint. |
 | Modify | `api/src/kene_api/routers/chat.py` — extend `POST /conversations` to write the side-table row; extend `GET /conversations` signature for cursor + filters; add completion-endpoint accumulator flush on cancellation / exception; add `POST /internal/chat/side-table/update` handler. |
 | Modify | `app/adk/session/recovery.py` — `RECOVERY_WINDOW_DAYS = 30` |
-| Modify | `deployment/terraform/firestore.tf` — 4 composite indexes from §4.3 |
-| Modify | `firestore.rules` — add the security-rules blocks from §4.5 |
+| Modify | `deployment/firestore.indexes.json` — 4 composite indexes from §4.3 (provisioned by the existing `firestore_indexes.tf`) |
+| Create | `deployment/firestore.rules` — the security-rules blocks from §4.5 (net-new file) |
+| Create | `deployment/terraform/firestore_rules.tf` — deploys `firestore.rules` as the live ruleset for every environment |
 | Create | `api/scripts/migrate_chat_side_table_backfill.py` — one-shot back-fill |
 | Create | `api/scripts/lint/check_context_window_registry_coverage.py` — CI lint |
 | Create | `docs/spike-adk-chat-callbacks.md` — Day-1 spike output (confirmed ADK callback signatures + fallback plan) |
@@ -310,7 +318,7 @@ Enforcement belt-and-braces: the API layer additionally checks ownership server-
 
 ### 5.2 Callback wiring — detail
 
-**Day-1 spike deliverable.** Confirmed ADK callback names + nested-firing semantics before any implementation begins. The names below are the expected public names (`before_agent_callback`, `after_agent_callback`); the root-only guard (`invocation_context.agent.parent is None`) is the expected canonical detection mechanism — if the spike finds different names or a different way to detect the root invocation, the spike doc is updated and this PRD file is amended in a one-line commit before implementation starts.
+**Day-1 spike deliverable.** Confirmed ADK callback names + nested-firing semantics before any implementation begins. The names below are the expected public names (`before_agent_callback`, `after_agent_callback`); the root-only guard (`invocation_context.agent.parent_agent is None`) is the expected canonical detection mechanism — if the spike finds different names or a different way to detect the root invocation, the spike doc is updated and this PRD file is amended in a one-line commit before implementation starts.
 
 ```
 # app/adk/agents/chat_callbacks.py
@@ -323,7 +331,7 @@ def on_agent_start(invocation_context):
     # last_agent_started_at mid-turn and corrupt the is_agent_running derivation
     # (specialist.after fires while root is still running → derivation reports
     # stopped). See §2 ADK callbacks.
-    if invocation_context.agent.parent is not None:
+    if invocation_context.agent.parent_agent is not None:
         return
     session_id = invocation_context.session.id
     post_side_table_update(session_id, {
@@ -336,7 +344,7 @@ def on_agent_stop(invocation_context):
     # Root-only firing — same rationale as on_agent_start. Without this guard,
     # a nested specialist's after-callback would flush an incomplete accumulator
     # and stamp last_agent_stopped_at while the root is still processing.
-    if invocation_context.agent.parent is not None:
+    if invocation_context.agent.parent_agent is not None:
         return
     session_id = invocation_context.session.id
     # The accumulator was built by the completion endpoint iterating events;
@@ -527,7 +535,7 @@ Auth gates:
 
 1. **Pydantic shapes land** in `api/src/kene_api/models/chat.py` per §4.1 — no `cost_usd_cents`, no `ModelPricingEntry`, no `creator` on artifacts, and `last_agent_started_at` / `last_agent_stopped_at` replacing `is_agent_running`.
 2. **Firestore layout + 4 composite indexes** provisioned via Terraform (§4.3). DM-PRD-00 registry lists `chat_sessions` + nested `artifacts` + user-scoped `chat_categories`.
-3. **Firestore security rules** from §4.5 land; emulator test asserts cross-user reads return PERMISSION_DENIED; cross-account writes return PERMISSION_DENIED; artifact writes from the client are disallowed.
+3. **Firestore security rules** from §4.5 land; emulator test asserts cross-user reads return PERMISSION_DENIED; client writes to `chat_sessions` are disallowed (server-write-only); artifact writes from the client are disallowed.
 4. **Day-1 ADK callback spike** completes; `docs/spike-adk-chat-callbacks.md` records confirmed signatures. PRD §5.2 amended if the spike finds different names.
 5. **`ChatSessionSideTableService` lands** — create / get / list_for_user / update_from_delta / tombstone work against the real Firestore client. Uses `firestore.Increment` for counter fields.
 6. **Callbacks fire on the hot path.** Unit test constructs a fake agent invocation; the accumulator aggregates correctly; one `update` call hits Firestore per turn (not per event).
@@ -543,7 +551,7 @@ Auth gates:
 16. **Internal side-table-update endpoint** — OIDC-authed; rejects unauthenticated requests with 401; applies deltas correctly; idempotent on `idempotency_key`.
 17. **Feature flags** — three flags registered; `chat_v2_enabled=false` keeps new endpoints returning 404; existing endpoints always functional. `chat_manual_compaction_enabled` is NOT registered (Compact-now is out of v1).
 18. **No user-visible change** from CH-PRD-01 alone beyond the window-lift. The `/chat` frontend is unchanged; session creation + history still works; sidebar is not yet wired.
-19. **Nested-specialist callbacks do not corrupt timestamps.** Integration test simulates a turn that dispatches a sub-agent: root-before → specialist-before → specialist-after → root-after. Asserts (a) `last_agent_started_at` reflects root-before's timestamp (not specialist-before's), (b) `last_agent_stopped_at` reflects root-after's timestamp (not specialist-after's), (c) only one accumulator flush hits Firestore per turn (not three), (d) the `invocation_context.agent.parent is not None` guard returns early on the two specialist invocations. Critical: without the guard, `is_agent_running` derivation would briefly report `false` mid-turn.
+19. **Nested-specialist callbacks do not corrupt timestamps.** Integration test simulates a turn that dispatches a sub-agent: root-before → specialist-before → specialist-after → root-after. Asserts (a) `last_agent_started_at` reflects root-before's timestamp (not specialist-before's), (b) `last_agent_stopped_at` reflects root-after's timestamp (not specialist-after's), (c) only one accumulator flush hits Firestore per turn (not three), (d) the `invocation_context.agent.parent_agent is not None` guard returns early on the two specialist invocations. Critical: without the guard, `is_agent_running` derivation would briefly report `false` mid-turn.
 
 ## 8. Test plan
 
@@ -565,7 +573,7 @@ Auth gates:
 - Back-fill against a seed dataset: 100 ADK sessions → 100 side-table rows; re-run idempotent.
 - Internal endpoint `POST /internal/chat/side-table/update` with OIDC — 200 on valid; 401 without token; idempotent on `idempotency_key`.
 - Parity test — Chat and Billing both import `extract_billable_tokens` and produce identical output on a shared fixture (CI asserts).
-- Firestore security rules — user A cannot read user B's `chat_sessions`; anyone authenticated against account A cannot read/write another account's docs; client-side artifact writes fail.
+- Firestore security rules — user A cannot read user B's `chat_sessions`; client writes to `chat_sessions` and its `artifacts` subcollection fail (server-write-only); a user cannot read another user's `chat_categories`.
 
 ### Manual verification
 - Dev-env: run `setup_local_dev.sh`, create a session via the existing `POST /conversations`, inspect Firestore console, confirm `chat_sessions/{session_id}` exists with default values. Send a message via `/completions`, confirm token counters increment + timestamps stamp correctly.
@@ -576,7 +584,7 @@ Auth gates:
 | Risk | Mitigation |
 |------|------------|
 | Day-1 ADK callback spike finds different names or no per-event callbacks at all | Spike is the gating first task. If names differ, §5.2 is amended before implementation. Per-event updates are already handled by the completion endpoint's event loop (not a callback), so the fallback is already in the design. |
-| Callbacks fire on every nested specialist (per AH-PRD-02 wiring) → `last_agent_started_at` corrupted mid-turn → `is_agent_running` derivation reports false-stopped while root still running | Root-only filter at callback entry: `if invocation_context.agent.parent is not None: return`. Day-1 spike confirms (a) ADK's nested-firing semantics and (b) `agent.parent is None` is the canonical detection. AC #19 (integration test simulating root → specialist → root invocation flow) gates merge. AH-PRD-02's Weave-span use of the same callbacks is unaffected — Weave wants per-agent spans; Chat wants per-turn semantics. |
+| Callbacks fire on every nested specialist (per AH-PRD-02 wiring) → `last_agent_started_at` corrupted mid-turn → `is_agent_running` derivation reports false-stopped while root still running | Root-only filter at callback entry: `if invocation_context.agent.parent_agent is not None: return`. Day-1 spike confirms (a) ADK's nested-firing semantics and (b) `agent.parent_agent is None` is the canonical detection. AC #19 (integration test simulating root → specialist → root invocation flow) gates merge. AH-PRD-02's Weave-span use of the same callbacks is unaffected — Weave wants per-agent spans; Chat wants per-turn semantics. |
 | Callbacks fire on the hot path with unbounded latency (Firestore slow) | Fire-and-forget writes from the callback; one `update` per turn (batch-coalesce); log + meter callback latency; alert on p95 > 1s. |
 | SSE cancellation doesn't fire `after_agent_callback` | `finally` block in the completion endpoint is the authoritative flush site — runs regardless of ADK callback behavior. |
 | Token definition drifts from Billing | Shared `extract_billable_tokens` under Billing ownership + parity test on every PR. Divergence fails CI. |

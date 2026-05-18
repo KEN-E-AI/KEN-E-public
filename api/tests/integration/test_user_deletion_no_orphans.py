@@ -66,6 +66,15 @@ from src.kene_api.firestore import get_firestore_service
 from src.kene_api.main import app
 from src.kene_api.services.user_deletion_service import USER_SUBCOLLECTIONS
 
+# CH-9 invariant: chat_categories must be in USER_SUBCOLLECTIONS so the
+# user-deletion sweep covers it. This assertion runs at import time and fails
+# loudly if a future refactor removes the entry from the registry.
+assert "chat_categories" in USER_SUBCOLLECTIONS, (
+    "chat_categories must be registered in USER_SUBCOLLECTIONS "
+    "(api/src/kene_api/services/user_deletion_service.py) — "
+    "removing it would orphan users/{user_id}/chat_categories/* on user deletion"
+)
+
 # ---------------------------------------------------------------------------
 # Skip gate — identical to test_account_deletion_no_orphans.py
 # ---------------------------------------------------------------------------

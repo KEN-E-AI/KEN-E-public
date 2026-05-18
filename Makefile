@@ -27,3 +27,4 @@ lint:
 	uv run ruff check . --diff
 	uv run ruff format . --check --diff
 	uv run mypy .
+	uv run python api/scripts/lint/check_context_window_registry_coverage.py

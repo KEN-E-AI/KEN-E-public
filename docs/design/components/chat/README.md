@@ -150,7 +150,7 @@ A developer reading only this section should understand: this component owns the
 | `api/scripts/chat_adk_session_orphan_scan.py` | Daily ADK-session orphan scan — safety net for CH-PRD-04 delete-cleanup failures. Auto-deletes tombstoned orphans > 1h old; pages ops on missing orphans. (CH-PRD-05) |
 | `api/scripts/lint/check_artifact_register.py` | CI lint blocking raw `save_artifact()` calls outside the wrapper. (CH-PRD-05) |
 | `api/scripts/lint/check_context_window_registry_coverage.py` | CI lint asserting every deployed model has a context-window registry entry. (CH-PRD-01) |
-| `firestore.rules` | **Modified** — security rules enforce `resource.data.user_id == request.auth.uid` on `chat_sessions/*`, `request.auth.uid == userId` on `chat_categories/*`, artifact subcollection reads gated by parent-session ownership (client-side writes disabled). (CH-PRD-01) |
+| `deployment/firestore.rules` | **New** — security rules gate `chat_sessions/*` reads on `resource.data.user_id == request.auth.uid` and `chat_categories/*` on `request.auth.uid == userId`; artifact subcollection reads are gated by parent-session ownership. `chat_sessions/*` and `artifacts/*` are server-write-only (`allow write: if false`). Deployed by `deployment/terraform/firestore_rules.tf`. (CH-PRD-01) |
 | `frontend/src/pages/Chat.tsx` | Top-level route component. Owns route state (`?session=`), sidebar collapse state, `SessionStatusView` toggle. (CH-PRD-02) |
 | `frontend/src/components/chat/SessionsSidebar.tsx` | Port of `docs/figma-export/src/app/components/SessionsSidebar.tsx`; production wiring to `/api/v1/chat/conversations` with infinite scroll + search + category filter + status dots. (CH-PRD-02) |
 | `frontend/src/components/chat/SessionStatusDot.tsx` | 3-state (active / needs-review / idle) dot with tooltip. Used in sidebar and page header. (CH-PRD-02) |
@@ -372,7 +372,7 @@ Four touchpoints need conscious coordination:
 
 ### 7.1 Session scope is per-user-per-account
 
-Every `chat_sessions/{session_id}` doc carries both `user_id` and `account_id`. The sidebar lists only sessions matching the currently selected account AND the authenticated user. Sessions do not migrate between accounts. Firestore security rules enforce `resource.data.user_id == request.auth.uid` server-side — belt-and-braces with API-layer checks so a rules gap doesn't leak data on the API path. Unit-tested against the Firestore emulator. See CH-PRD-01 §4.5.
+Every `chat_sessions/{session_id}` doc carries both `user_id` and `account_id`. The sidebar lists only sessions matching the currently selected account AND the authenticated user. Sessions do not migrate between accounts. Firestore security rules gate reads on `resource.data.user_id == request.auth.uid`; `chat_sessions` is server-write-only (`allow write: if false`) because `ChatSessionSideTableService` is the single write path via the Admin SDK. Account scoping is enforced by the API layer, not the rules — a KEN-E user belongs to many accounts (plus org-admin / super-admin implicit access), which no single-valued Firebase custom claim can represent. Belt-and-braces with API-layer checks so a rules gap doesn't leak data on the API path. Unit-tested against the Firestore emulator. See CH-PRD-01 §4.5.
 
 ### 7.2 Categories are per-user, not per-account
 
