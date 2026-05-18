@@ -65,13 +65,15 @@ def extract_billable_tokens(event: Any) -> BillableTokenCounts:
         BillableTokenCounts with non-negative integer fields.
     """
     usage = getattr(event, "usage_metadata", None)
-    if not usage:
+    if usage is None:
         return BillableTokenCounts()
 
-    prompt = getattr(usage, "prompt_token_count", 0) or 0
-    candidates = getattr(usage, "candidates_token_count", 0) or 0
-    thoughts = getattr(usage, "thoughts_token_count", 0) or 0
-    cached = getattr(usage, "cached_content_token_count", 0) or 0
+    # int() casts guard against silent float/string coercion in Pydantic v2.
+    # Both getattr default and `or 0` handle missing/None fields from SDK.
+    prompt: int = int(getattr(usage, "prompt_token_count", 0) or 0)
+    candidates: int = int(getattr(usage, "candidates_token_count", 0) or 0)
+    thoughts: int = int(getattr(usage, "thoughts_token_count", 0) or 0)
+    cached: int = int(getattr(usage, "cached_content_token_count", 0) or 0)
 
     return BillableTokenCounts(
         input=max(0, prompt - cached),

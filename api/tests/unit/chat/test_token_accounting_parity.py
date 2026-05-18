@@ -42,9 +42,12 @@ from token_accounting import BillableTokenCounts, extract_billable_tokens
 # ---------------------------------------------------------------------------
 # Canonical fixture — must match BL-PRD-02's duplicated copy verbatim.
 # ---------------------------------------------------------------------------
+# thoughts_token_count=None models the actual SDK behavior: non-reasoning models
+# set this field to None, not 0. The `or 0` guard in extract_billable_tokens
+# converts it to 0, so reasoning=0 in the expected output.
 _CANONICAL_PROMPT_TOKEN_COUNT = 1250
 _CANONICAL_CANDIDATES_TOKEN_COUNT = 380
-_CANONICAL_THOUGHTS_TOKEN_COUNT = 0
+_CANONICAL_THOUGHTS_TOKEN_COUNT = None  # non-reasoning model: SDK returns None
 _CANONICAL_CACHED_TOKEN_COUNT = 200
 
 _EXPECTED = BillableTokenCounts(input=1050, output=380, reasoning=0)
@@ -62,17 +65,16 @@ def _build_canonical_event() -> SimpleNamespace:
 
 
 class TestTokenAccountingParity:
-    def test_canonical_fixture_produces_expected_counts(self) -> None:
+    def test_canonical_fixture_produces_expected_counts_and_total(self) -> None:
         """The canonical fixture must always produce exactly the expected counts.
 
         This is the parity contract: BL-PRD-02's duplicated test must produce
         the same result on the same input. Any helper change that alters this
         output trips both the Chat copy and the Billing copy simultaneously.
+
+        Both assertions share a single computed result (T-8: assert the entire
+        structure in one pass).
         """
         result = extract_billable_tokens(_build_canonical_event())
         assert result == _EXPECTED
-
-    def test_total_billable_matches_expected(self) -> None:
-        """total_billable on the canonical fixture must equal 1430."""
-        result = extract_billable_tokens(_build_canonical_event())
         assert result.total_billable == _EXPECTED_TOTAL_BILLABLE
