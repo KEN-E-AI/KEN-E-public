@@ -9,7 +9,7 @@ from ..firestore import FirestoreService, get_firestore_service
 from ..rate_limiter import progress_rate_limiter
 from .firebase_admin import verify_id_token
 from .models import UserContext
-from .user_context import _get_user_context_with_limiter, get_current_user_context
+from .user_context import _get_user_context_with_limiter
 
 logger = logging.getLogger(__name__)
 
@@ -23,30 +23,6 @@ class SuperAdminRequiredError(Exception):
     ``{"detail": ...}`` wrapping that ``raise HTTPException(detail=...)``
     produces.
     """
-
-
-async def require_super_admin(
-    current_user: UserContext = Depends(get_current_user_context),
-) -> UserContext:
-    """FastAPI dependency: assert the caller is a super-admin (@ken-e.ai email).
-
-    Returns the authenticated ``UserContext`` when the caller is a super-admin.
-    Raises ``SuperAdminRequiredError`` otherwise so the global exception handler
-    in ``main.py`` can return the exact flat 403 body required by PRD §4.3.
-
-    An unauthenticated caller (no Bearer token) never reaches this check —
-    ``get_current_user_context`` raises 401 first.
-
-    Spec: DM-PRD-05 §4.3, AC-8
-    """
-    if not current_user.is_super_admin:
-        logger.warning(
-            "super-admin gate denied user_id=%s email=%r",
-            current_user.user_id,
-            current_user.email,
-        )
-        raise SuperAdminRequiredError()
-    return current_user
 
 
 # Security scheme for Bearer tokens
@@ -174,12 +150,11 @@ async def require_super_admin(
     """
     if not user.is_super_admin:
         logger.warning(
-            f"Super-admin endpoint denied for user {user.user_id} ({user.email})"
+            "super-admin gate denied user_id=%s email=%r",
+            user.user_id,
+            user.email,
         )
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Super-admin privileges required",
-        )
+        raise SuperAdminRequiredError()
 
     return user
 

@@ -6,7 +6,7 @@ hermetic and fast — full deletion semantics are covered by DM-54's
 integration test (test_user_deletion_no_orphans.py).
 
 Pattern mirrors ``api/tests/integration/test_agent_configs_api.py`` —
-``app.dependency_overrides`` on ``get_current_user_context`` + an autouse
+``app.dependency_overrides`` on ``get_current_user`` + an autouse
 fixture that clears overrides before and after each test.
 
 Spec: docs/design/components/data-management/projects/DM-PRD-05-deletion-sweep-rewrite.md §4.3, §6 AC-8
@@ -18,8 +18,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from src.kene_api.auth.dependencies import get_current_user
 from src.kene_api.auth.models import UserContext
-from src.kene_api.auth.user_context import get_current_user_context
 from src.kene_api.main import app
 from src.kene_api.models.user_deletion import UserDeletionResult
 
@@ -36,16 +36,17 @@ def _reset_overrides() -> None:
     app.dependency_overrides.clear()
 
 
-def _make_user(email: str) -> UserContext:
+def _make_user(email: str, roles: list[str] | None = None) -> UserContext:
     return UserContext(
         user_id="u_test",
         email=email,
         organization_permissions={},
         account_permissions={},
+        roles=roles or [],
     )
 
 
-SUPER_ADMIN_USER = _make_user("admin@ken-e.ai")
+SUPER_ADMIN_USER = _make_user("admin@ken-e.ai", roles=["super_admin"])
 REGULAR_USER = _make_user("user@example.com")
 
 
@@ -83,7 +84,7 @@ class TestDeleteUserEndpoint:
             gcs_prefixes_purged=0,
             errors=[],
         )
-        app.dependency_overrides[get_current_user_context] = lambda: SUPER_ADMIN_USER
+        app.dependency_overrides[get_current_user] = lambda: SUPER_ADMIN_USER
 
         with patch(
             "src.kene_api.routers.users.delete_user_data",
@@ -107,7 +108,7 @@ class TestDeleteUserEndpoint:
         self, client: TestClient
     ) -> None:
         """Orchestrator is called with the path param user_id, not the actor's user_id."""
-        app.dependency_overrides[get_current_user_context] = lambda: SUPER_ADMIN_USER
+        app.dependency_overrides[get_current_user] = lambda: SUPER_ADMIN_USER
 
         with patch(
             "src.kene_api.routers.users.delete_user_data",
@@ -126,7 +127,7 @@ class TestDeleteUserEndpoint:
 
         The body must be exactly this flat shape — NOT {\"detail\": {\"error\": ...}}.
         """
-        app.dependency_overrides[get_current_user_context] = lambda: REGULAR_USER
+        app.dependency_overrides[get_current_user] = lambda: REGULAR_USER
 
         with patch(
             "src.kene_api.routers.users.delete_user_data",
@@ -141,7 +142,7 @@ class TestDeleteUserEndpoint:
 
     def test_unauthenticated_returns_401(self, client: TestClient) -> None:
         """Callers with no auth token receive 401 before the super-admin check."""
-        # No dependency override — real get_current_user_context raises 401 when
+        # No dependency override — real get_current_user raises 401 when
         # no Bearer token is present.
         resp = client.delete("/api/v1/users/u_target")
 
@@ -160,7 +161,7 @@ class TestDeleteUserEndpoint:
         # Simulate the idempotent no-op — user_doc_deleted stays False when
         # the user doc was already absent (recursive_delete on a missing doc
         # is a no-op that does NOT raise).
-        app.dependency_overrides[get_current_user_context] = lambda: SUPER_ADMIN_USER
+        app.dependency_overrides[get_current_user] = lambda: SUPER_ADMIN_USER
 
         with patch(
             "src.kene_api.routers.users.delete_user_data",
