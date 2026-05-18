@@ -221,3 +221,34 @@ class TestCacheDecorator:
         await test_func("abc")
         await test_func("abc")
         assert call_count == 2
+
+
+class TestRouterCacheWiring:
+    """Regression tests for DM-87.
+
+    The industry_keywords router previously wired ``CacheService(InMemoryCache())``.
+    ``InMemoryCache`` does not implement the redis-py client protocol that
+    ``CacheService`` depends on (``setex``/``scan_iter``/``incr``/``ttl``), yet it
+    made ``CacheService.enabled`` evaluate ``True`` — so every cache write raised
+    an uncaught ``AttributeError``. The router now passes ``None`` so the service
+    is correctly disabled and every operation short-circuits.
+    """
+
+    def test_industry_keywords_cache_service_is_disabled(self):
+        """The router's module-level cache service must be a disabled CacheService."""
+        from src.kene_api.routers import industry_keywords
+
+        assert isinstance(industry_keywords._cache_service, CacheService)
+        assert not industry_keywords._cache_service.enabled
+
+    def test_disabled_cache_writes_do_not_raise(self):
+        """A disabled CacheService must short-circuit writes instead of raising.
+
+        This is the exact path that raised AttributeError under the old wiring.
+        """
+        from src.kene_api.routers import industry_keywords
+
+        cache = industry_keywords._cache_service
+        assert cache.set("industry_keywords:tech", ["a", "b"], ttl_seconds=86400) is False
+        assert cache.get("industry_keywords:tech") is None
+        assert cache.delete("industry_keywords:tech") is False

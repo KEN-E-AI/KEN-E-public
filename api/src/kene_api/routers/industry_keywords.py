@@ -10,7 +10,6 @@ from ..auth import UserContext
 from ..auth.user_context import get_current_user_context
 from ..cache import (
     CacheService,
-    InMemoryCache,
     all_industry_keywords_key,
     industry_keywords_key,
 )
@@ -20,9 +19,11 @@ from ..models.monitoring_models import IndustryKeywords, IndustryKeywordsListRes
 
 logger = logging.getLogger(__name__)
 
-# Create a module-level cache service (in-memory for now)
-# In production, this would be initialized with Redis
-_cache_service = CacheService(InMemoryCache())
+# Module-level cache service. CacheService speaks the redis-py client
+# protocol; with no Redis client configured it is constructed disabled so
+# every get/set/delete cleanly short-circuits. Pass a real Redis client here
+# to enable caching.
+_cache_service = CacheService(None)
 
 # Constants
 INDUSTRY_KEYWORDS_COLLECTION = "industry_keywords"
