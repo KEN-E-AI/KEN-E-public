@@ -10,6 +10,7 @@ CH-PRD-01 §5.1 (ADK callback wiring), §7 AC-6, AC-19.
 from __future__ import annotations
 
 import os
+import threading
 import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -60,8 +61,30 @@ def _post_side_table_update(
     delta: dict[str, Any],
     idempotency_key: str,
 ) -> None:
-    """POST delta to the internal side-table update endpoint.
+    """Dispatch side-table POST fire-and-forget in a background daemon thread.
 
+    ADK runs sync callbacks on the agent runtime's event loop; a blocking
+    requests.post here would stall every chat turn. Dispatching to a daemon
+    thread returns control to the event loop immediately.
+    Failure is swallowed-and-logged inside _post_side_table_update_sync.
+    """
+    thread = threading.Thread(
+        target=_post_side_table_update_sync,
+        args=(session_id, account_id, delta, idempotency_key),
+        daemon=True,
+    )
+    thread.start()
+
+
+def _post_side_table_update_sync(
+    session_id: str,
+    account_id: str,
+    delta: dict[str, Any],
+    idempotency_key: str,
+) -> None:
+    """POST delta to the internal side-table update endpoint (blocking).
+
+    Called from a background daemon thread by _post_side_table_update.
     Non-blocking on failure: all exceptions are caught and logged.
     """
     api_url = os.getenv("CHAT_INTERNAL_API_URL", "").rstrip("/")
