@@ -3,7 +3,8 @@
 This module is the home for all Feature Flags evaluation logic as defined in
 FF-PRD-01. hash_bucket is landed in FF-2; the evaluator is now landed by FF-3;
 the service class is landed by FF-4; is_feature_enabled and
-get_feature_flag_service are landed by FF-5.
+get_feature_flag_service are landed by FF-5; mutating methods and domain
+exceptions are landed by FF-13.
 """
 
 import asyncio
@@ -12,12 +13,20 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from functools import lru_cache
 
+from google.api_core import exceptions as gcp_exceptions
 from google.cloud import firestore
 
 from ..dependencies import get_firestore_client
-from ..models.feature_flag_models import EvaluationContext, FeatureFlag, FlagEvaluation
+from ..models.feature_flag_models import (
+    EvaluationContext,
+    FeatureFlag,
+    FeatureFlagWriteRequest,
+    FlagEvaluation,
+)
+from .feature_flag_audit import compute_flag_diff, record_audit
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +128,33 @@ def evaluate(
         extra={"flag_key": result.key, "reason": result.reason, "cache_hit": cache_hit},
     )
     return result
+
+
+# ---------------------------------------------------------------------------
+# FF-13: Domain exceptions for mutating operations
+# ---------------------------------------------------------------------------
+
+
+class FeatureFlagNotFoundError(Exception):
+    """Raised by mutating service methods when the target flag doc does not exist.
+
+    Callers (routers) catch this and convert it to an HTTP 404 response.
+    """
+
+    def __init__(self, key: str) -> None:
+        super().__init__(f"Feature flag '{key}' not found")
+        self.key = key
+
+
+class DuplicateFeatureFlagError(Exception):
+    """Raised by create_flag when a doc already exists for the given key.
+
+    Callers (routers) catch this and convert it to an HTTP 409 response.
+    """
+
+    def __init__(self, key: str) -> None:
+        super().__init__(f"Feature flag '{key}' already exists")
+        self.key = key
 
 
 # ---------------------------------------------------------------------------
@@ -307,6 +343,150 @@ class FeatureFlagService:
         # Merge the document-ID as the canonical key so a body/ID mismatch is
         # corrected at read time (PRD §4, Decisions & Assumptions).
         return FeatureFlag.model_validate(doc.to_dict() | {"key": flag_key})
+
+    # -------------------------------------------------------------------------
+    # FF-13: Mutating methods — create_flag / update_flag / delete_flag
+    #
+    # Audit writes happen inside these methods (service-as-chokepoint per
+    # FF-PRD-02 §5 Backend).  Local-instance cache invalidation also lives here
+    # so FF-16's cache-invalidation hook has a single place to extend.
+    # -------------------------------------------------------------------------
+
+    async def create_flag(
+        self,
+        request: FeatureFlagWriteRequest,
+        actor_email: str,
+    ) -> FeatureFlag:
+        """Create a new feature flag document in Firestore.
+
+        Uses DocumentReference.create() for an atomic, conflict-safe write so
+        a duplicate key raises google.api_core.exceptions.AlreadyExists rather
+        than silently overwriting an existing flag (FF-PRD-02 §5 Backend,
+        architecture decision 1).
+
+        Args:
+            request:     Validated inbound payload (server ignores timestamps).
+            actor_email: Email of the super-admin performing the create.
+
+        Returns:
+            The newly created FeatureFlag with server-stamped timestamps.
+
+        Raises:
+            DuplicateFeatureFlagError: if a flag with request.key already exists.
+        """
+        now = datetime.now(timezone.utc)
+        flag = FeatureFlag(
+            **request.model_dump(),
+            created_at=now,
+            updated_at=now,
+        )
+        data = flag.model_dump(mode="json")
+        data.pop("key", None)  # key lives as the document ID, not in the body
+
+        try:
+            await asyncio.to_thread(
+                self._db.collection("feature_flags").document(flag.key).create,
+                data,
+            )
+        except gcp_exceptions.AlreadyExists:
+            raise DuplicateFeatureFlagError(flag.key)
+
+        # Invalidate any stale cache entry so a GET /{key} immediately after
+        # POST returns the newly-created state, not a cached absent entry.
+        self._cache.pop(flag.key, None)
+
+        diff = compute_flag_diff(None, flag)
+        await record_audit(self._db, flag.key, actor_email, "create", diff)
+
+        return flag
+
+    async def update_flag(
+        self,
+        key: str,
+        request: FeatureFlagWriteRequest,
+        actor_email: str,
+    ) -> FeatureFlag:
+        """Full-replace a feature flag document in Firestore.
+
+        Reads the existing document first so the audit diff records the true
+        before-state.  Race-condition risk is accepted for this low-volume
+        super-admin surface (FF-PRD-02 §5 Backend, architecture decision 2 —
+        get-then-write rather than a Firestore transaction).
+
+        Args:
+            key:         The snake_case flag key to update.  Must equal
+                         ``request.key`` — the router enforces this before calling.
+            request:     Validated inbound payload; server preserves
+                         ``created_at`` from the existing document and stamps
+                         a new ``updated_at``.
+            actor_email: Email of the super-admin performing the update.
+
+        Returns:
+            The updated FeatureFlag with a fresh ``updated_at`` timestamp.
+
+        Raises:
+            FeatureFlagNotFoundError: if no document exists for ``key``.
+        """
+        existing = await self._fetch_flag(key)
+        if existing is None:
+            raise FeatureFlagNotFoundError(key)
+
+        now = datetime.now(timezone.utc)
+        updated = FeatureFlag(
+            **request.model_dump(),
+            key=key,  # canonical key from URL (router ensures body key == URL key)
+            created_at=existing.created_at,
+            updated_at=now,
+        )
+        data = updated.model_dump(mode="json")
+        data.pop("key", None)
+
+        await asyncio.to_thread(
+            self._db.collection("feature_flags").document(key).set,
+            data,
+        )
+
+        # Invalidate so subsequent reads don't serve the stale pre-update entry.
+        self._cache.pop(key, None)
+
+        diff = compute_flag_diff(existing, updated)
+        await record_audit(self._db, key, actor_email, "update", diff)
+
+        return updated
+
+    async def delete_flag(
+        self,
+        key: str,
+        actor_email: str,
+    ) -> None:
+        """Hard-delete a feature flag document from Firestore.
+
+        Reads the existing document before deletion so the audit diff records
+        the full before-state (after=None).  The audit entry for the deleted
+        flag persists in ``feature_flag_audit`` so the action remains traceable
+        after the flag document is gone (PRD §9 accepted risk — orphaned audit).
+
+        Args:
+            key:         The snake_case flag key to delete.
+            actor_email: Email of the super-admin performing the delete.
+
+        Raises:
+            FeatureFlagNotFoundError: if no document exists for ``key``.
+        """
+        existing = await self._fetch_flag(key)
+        if existing is None:
+            raise FeatureFlagNotFoundError(key)
+
+        await asyncio.to_thread(
+            self._db.collection("feature_flags").document(key).delete,
+        )
+
+        # Remove the cache entry so a subsequent evaluation returns unknown_flag
+        # rather than the stale config within the TTL window.
+        self._cache.pop(key, None)
+
+        diff = compute_flag_diff(existing, None)
+        await record_audit(self._db, key, actor_email, "delete", diff)
 
 
 # ---------------------------------------------------------------------------

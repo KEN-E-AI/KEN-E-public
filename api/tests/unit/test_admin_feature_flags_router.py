@@ -26,7 +26,11 @@ from fastapi.testclient import TestClient
 from src.kene_api.auth.dependencies import UserContext, require_super_admin
 from src.kene_api.dependencies import get_feature_flag_service
 from src.kene_api.main import app
-from src.kene_api.models.feature_flag_models import FeatureFlag, TargetingRules
+from src.kene_api.models.feature_flag_models import FeatureFlag, FeatureFlagWriteRequest, TargetingRules
+from src.kene_api.services.feature_flag_service import (
+    DuplicateFeatureFlagError,
+    FeatureFlagNotFoundError,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -249,3 +253,328 @@ class TestServiceExceptionPropagation:
 
         resp = client.get("/api/v1/admin/feature-flags/any_flag")
         assert resp.status_code == 500
+
+
+# ---------------------------------------------------------------------------
+# Helpers for mutating endpoint tests (FF-13)
+# ---------------------------------------------------------------------------
+
+
+def _valid_write_payload(**overrides: object) -> dict[str, object]:
+    base: dict[str, object] = {
+        "key": "new_flag",
+        "description": "A brand new flag",
+        "default_enabled": False,
+        "is_active": True,
+        "owner": "dev@ken-e.ai",
+        "targeting_rules": {
+            "user_emails": [],
+            "email_domains": [],
+            "organization_ids": [],
+            "account_ids": [],
+            "rollout_percentage": 0,
+        },
+        "bucketing_entity": "account",
+        "expected_ga_release": None,
+    }
+    base.update(overrides)
+    return base
+
+
+def _stub_service_for_create(
+    result_flag: FeatureFlag | None = None,
+    raise_exc: Exception | None = None,
+) -> MagicMock:
+    """Service stub for POST tests."""
+    svc = MagicMock()
+    if raise_exc is not None:
+        svc.create_flag = AsyncMock(side_effect=raise_exc)
+    else:
+        svc.create_flag = AsyncMock(return_value=result_flag or _make_flag(key="new_flag"))
+    return svc
+
+
+def _stub_service_for_update(
+    result_flag: FeatureFlag | None = None,
+    raise_exc: Exception | None = None,
+) -> MagicMock:
+    """Service stub for PUT tests."""
+    svc = MagicMock()
+    if raise_exc is not None:
+        svc.update_flag = AsyncMock(side_effect=raise_exc)
+    else:
+        svc.update_flag = AsyncMock(return_value=result_flag or _make_flag(key="upd_flag"))
+    return svc
+
+
+def _stub_service_for_delete(
+    raise_exc: Exception | None = None,
+) -> MagicMock:
+    """Service stub for DELETE tests."""
+    svc = MagicMock()
+    if raise_exc is not None:
+        svc.delete_flag = AsyncMock(side_effect=raise_exc)
+    else:
+        svc.delete_flag = AsyncMock(return_value=None)
+    return svc
+
+
+# ---------------------------------------------------------------------------
+# TestCreateFlag — POST /api/v1/admin/feature-flags
+# ---------------------------------------------------------------------------
+
+
+class TestCreateFlag:
+    """AC-1 (mutating half) and AC-2: POST auth gate, validation, and success."""
+
+    def test_super_admin_post_valid_payload_returns_201(self, client: TestClient) -> None:
+        """Super-admin POST with valid payload returns 201 with the created flag."""
+        stub = _stub_service_for_create()
+
+        async def _admin() -> UserContext:
+            return _make_super_admin()
+
+        app.dependency_overrides[require_super_admin] = _admin
+        app.dependency_overrides[get_feature_flag_service] = lambda: stub
+
+        resp = client.post("/api/v1/admin/feature-flags", json=_valid_write_payload())
+
+        assert resp.status_code == 201
+        assert resp.json()["key"] == "new_flag"
+
+    def test_post_non_super_admin_returns_403(self, client: TestClient) -> None:
+        """Non-super-admin POST returns flat 403."""
+        from src.kene_api.auth.dependencies import SuperAdminRequiredError
+
+        async def _non_admin_gate() -> UserContext:
+            raise SuperAdminRequiredError()
+
+        app.dependency_overrides[require_super_admin] = _non_admin_gate
+
+        resp = client.post("/api/v1/admin/feature-flags", json=_valid_write_payload())
+
+        assert resp.status_code == 403
+        assert resp.json() == {"error": "super_admin_required"}
+
+    def test_post_missing_token_returns_401(self, client: TestClient) -> None:
+        """No Authorization header → 401."""
+        resp = client.post("/api/v1/admin/feature-flags", json=_valid_write_payload())
+        assert resp.status_code == 401
+
+    def test_post_invalid_key_regex_returns_422(self, client: TestClient) -> None:
+        """Key violating FLAG_KEY_REGEX → 422 from Pydantic before handler runs."""
+
+        async def _admin() -> UserContext:
+            return _make_super_admin()
+
+        app.dependency_overrides[require_super_admin] = _admin
+
+        resp = client.post(
+            "/api/v1/admin/feature-flags",
+            json=_valid_write_payload(key="INVALID-KEY!"),
+        )
+
+        assert resp.status_code == 422
+
+    def test_post_duplicate_key_returns_409(self, client: TestClient) -> None:
+        """Duplicate key → 409 Conflict."""
+        stub = _stub_service_for_create(raise_exc=DuplicateFeatureFlagError("new_flag"))
+
+        async def _admin() -> UserContext:
+            return _make_super_admin()
+
+        app.dependency_overrides[require_super_admin] = _admin
+        app.dependency_overrides[get_feature_flag_service] = lambda: stub
+
+        resp = client.post("/api/v1/admin/feature-flags", json=_valid_write_payload())
+
+        assert resp.status_code == 409
+        assert "new_flag" in resp.json()["detail"]
+
+    def test_post_extra_timestamp_fields_are_ignored(self, client: TestClient) -> None:
+        """Sending created_at / updated_at in the body is silently ignored (extra='ignore')."""
+        stub = _stub_service_for_create()
+
+        async def _admin() -> UserContext:
+            return _make_super_admin()
+
+        app.dependency_overrides[require_super_admin] = _admin
+        app.dependency_overrides[get_feature_flag_service] = lambda: stub
+
+        payload = _valid_write_payload()
+        payload["created_at"] = "2020-01-01T00:00:00Z"
+        payload["updated_at"] = "2020-01-01T00:00:00Z"
+
+        resp = client.post("/api/v1/admin/feature-flags", json=payload)
+
+        assert resp.status_code == 201
+
+
+# ---------------------------------------------------------------------------
+# TestUpdateFlag — PUT /api/v1/admin/feature-flags/{key}
+# ---------------------------------------------------------------------------
+
+
+class TestUpdateFlag:
+    """AC-1 (mutating half) and AC-3: PUT auth gate, 404, URL/body mismatch, success."""
+
+    def test_super_admin_put_valid_payload_returns_200(self, client: TestClient) -> None:
+        """Super-admin PUT with valid payload returns 200 with the updated flag."""
+        stub = _stub_service_for_update(result_flag=_make_flag(key="upd_flag"))
+
+        async def _admin() -> UserContext:
+            return _make_super_admin()
+
+        app.dependency_overrides[require_super_admin] = _admin
+        app.dependency_overrides[get_feature_flag_service] = lambda: stub
+
+        resp = client.put(
+            "/api/v1/admin/feature-flags/upd_flag",
+            json=_valid_write_payload(key="upd_flag"),
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["key"] == "upd_flag"
+
+    def test_put_non_super_admin_returns_403(self, client: TestClient) -> None:
+        """Non-super-admin PUT returns flat 403."""
+        from src.kene_api.auth.dependencies import SuperAdminRequiredError
+
+        async def _non_admin_gate() -> UserContext:
+            raise SuperAdminRequiredError()
+
+        app.dependency_overrides[require_super_admin] = _non_admin_gate
+
+        resp = client.put(
+            "/api/v1/admin/feature-flags/upd_flag",
+            json=_valid_write_payload(key="upd_flag"),
+        )
+
+        assert resp.status_code == 403
+        assert resp.json() == {"error": "super_admin_required"}
+
+    def test_put_missing_token_returns_401(self, client: TestClient) -> None:
+        """No Authorization header → 401."""
+        resp = client.put(
+            "/api/v1/admin/feature-flags/upd_flag",
+            json=_valid_write_payload(key="upd_flag"),
+        )
+        assert resp.status_code == 401
+
+    def test_put_missing_flag_returns_404(self, client: TestClient) -> None:
+        """PUT on a non-existent flag → 404 with detail containing the key."""
+        stub = _stub_service_for_update(raise_exc=FeatureFlagNotFoundError("upd_flag"))
+
+        async def _admin() -> UserContext:
+            return _make_super_admin()
+
+        app.dependency_overrides[require_super_admin] = _admin
+        app.dependency_overrides[get_feature_flag_service] = lambda: stub
+
+        resp = client.put(
+            "/api/v1/admin/feature-flags/upd_flag",
+            json=_valid_write_payload(key="upd_flag"),
+        )
+
+        assert resp.status_code == 404
+        assert "upd_flag" in resp.json()["detail"]
+
+    def test_put_url_body_key_mismatch_returns_422(self, client: TestClient) -> None:
+        """Body key different from URL key → 422."""
+
+        async def _admin() -> UserContext:
+            return _make_super_admin()
+
+        app.dependency_overrides[require_super_admin] = _admin
+
+        resp = client.put(
+            "/api/v1/admin/feature-flags/url_key",
+            json=_valid_write_payload(key="different_key"),
+        )
+
+        assert resp.status_code == 422
+
+    def test_put_invalid_url_key_returns_422(self, client: TestClient) -> None:
+        """URL key violating FLAG_KEY_REGEX → 422 before handler runs."""
+
+        async def _admin() -> UserContext:
+            return _make_super_admin()
+
+        app.dependency_overrides[require_super_admin] = _admin
+
+        resp = client.put(
+            "/api/v1/admin/feature-flags/INVALID-KEY!",
+            json=_valid_write_payload(key="INVALID-KEY!"),
+        )
+
+        assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# TestDeleteFlag — DELETE /api/v1/admin/feature-flags/{key}
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteFlag:
+    """AC-1 (mutating half): DELETE auth gate, 404, and success (204 No Content)."""
+
+    def test_super_admin_delete_existing_key_returns_204(self, client: TestClient) -> None:
+        """Super-admin DELETE of an existing flag returns 204 with no body."""
+        stub = _stub_service_for_delete()
+
+        async def _admin() -> UserContext:
+            return _make_super_admin()
+
+        app.dependency_overrides[require_super_admin] = _admin
+        app.dependency_overrides[get_feature_flag_service] = lambda: stub
+
+        resp = client.delete("/api/v1/admin/feature-flags/del_flag")
+
+        assert resp.status_code == 204
+        assert resp.content == b""
+
+    def test_delete_non_super_admin_returns_403(self, client: TestClient) -> None:
+        """Non-super-admin DELETE returns flat 403."""
+        from src.kene_api.auth.dependencies import SuperAdminRequiredError
+
+        async def _non_admin_gate() -> UserContext:
+            raise SuperAdminRequiredError()
+
+        app.dependency_overrides[require_super_admin] = _non_admin_gate
+
+        resp = client.delete("/api/v1/admin/feature-flags/del_flag")
+
+        assert resp.status_code == 403
+        assert resp.json() == {"error": "super_admin_required"}
+
+    def test_delete_missing_token_returns_401(self, client: TestClient) -> None:
+        """No Authorization header → 401."""
+        resp = client.delete("/api/v1/admin/feature-flags/del_flag")
+        assert resp.status_code == 401
+
+    def test_delete_missing_flag_returns_404(self, client: TestClient) -> None:
+        """DELETE on a non-existent flag → 404 with detail containing the key."""
+        stub = _stub_service_for_delete(raise_exc=FeatureFlagNotFoundError("del_flag"))
+
+        async def _admin() -> UserContext:
+            return _make_super_admin()
+
+        app.dependency_overrides[require_super_admin] = _admin
+        app.dependency_overrides[get_feature_flag_service] = lambda: stub
+
+        resp = client.delete("/api/v1/admin/feature-flags/del_flag")
+
+        assert resp.status_code == 404
+        assert "del_flag" in resp.json()["detail"]
+
+    def test_delete_invalid_key_returns_422(self, client: TestClient) -> None:
+        """URL key violating FLAG_KEY_REGEX → 422 before handler runs."""
+
+        async def _admin() -> UserContext:
+            return _make_super_admin()
+
+        app.dependency_overrides[require_super_admin] = _admin
+
+        resp = client.delete("/api/v1/admin/feature-flags/INVALID-KEY!")
+
+        assert resp.status_code == 422
