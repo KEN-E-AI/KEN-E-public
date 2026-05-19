@@ -78,7 +78,6 @@ def apply_side_table_update(
         # overwrite and apply the delta.
         idem_ref.set(
             {
-                "key_hash": key_hash,
                 "applied_at": now,
                 "expires_at": expires_at,
             }

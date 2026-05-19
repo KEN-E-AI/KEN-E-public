@@ -32,7 +32,7 @@ def verify_internal_oidc_caller(request: Request) -> str:
     misconfigured (missing audience or allowlist).
     """
     if os.getenv(_SKIP_ENV, "").lower() == "true":
-        logger.debug("OIDC verification skipped (CHAT_INTERNAL_OIDC_SKIP=true)")
+        logger.warning("OIDC verification skipped (CHAT_INTERNAL_OIDC_SKIP=true)")
         return "oidc-skip@local"
 
     authorization: str = request.headers.get("Authorization", "")
