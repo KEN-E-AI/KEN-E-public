@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
+from src.kene_api.auth.models import UserContext
+from src.kene_api.auth.user_context import get_current_user_context
 from src.kene_api.database import get_neo4j_service
 from src.kene_api.main import app
 
@@ -28,15 +30,28 @@ class TestOrganizationDeletionConstraints:
         mock_service = MagicMock()
         mock_service.health_check = AsyncMock(return_value=True)
         mock_service.execute_query = AsyncMock()
-        mock_service.execute_write_query = AsyncMock()
+        mock_service.execute_write_operation = AsyncMock()
         return mock_service
 
     @pytest.fixture
     def mock_db_dependency(self, mock_neo4j_service):
-        """Override database dependency."""
+        """Override database dependency and authenticate every request.
+
+        Snapshots ``app.dependency_overrides`` and restores it on teardown so
+        overrides cannot leak into adjacent test files.
+        """
+        saved = dict(app.dependency_overrides)
         app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service
+        app.dependency_overrides[get_current_user_context] = lambda: UserContext(
+            user_id="test-user",
+            email="test@example.com",
+            organization_permissions={},
+            account_permissions={},
+            roles=["super_admin"],
+        )
         yield mock_neo4j_service
         app.dependency_overrides.clear()
+        app.dependency_overrides.update(saved)
 
     def test_delete_organization_with_accounts_should_fail(
         self, client, mock_db_dependency
@@ -82,7 +97,7 @@ class TestOrganizationDeletionConstraints:
         assert second_call[0][1] == {"organization_id": organization_id}
 
         # Verify delete was NOT called
-        mock_db_dependency.execute_write_query.assert_not_called()
+        mock_db_dependency.execute_write_operation.assert_not_called()
 
     def test_delete_organization_without_accounts_should_succeed(
         self, client, mock_db_dependency
@@ -99,7 +114,7 @@ class TestOrganizationDeletionConstraints:
         ]
 
         # Mock successful deletion
-        mock_db_dependency.execute_write_query.return_value = {
+        mock_db_dependency.execute_write_operation.return_value = {
             "nodes_deleted": 1,
             "relationships_deleted": 0,
         }
@@ -115,8 +130,8 @@ class TestOrganizationDeletionConstraints:
         assert response.json()["data"]["nodes_deleted"] == 1
 
         # Verify delete was called
-        mock_db_dependency.execute_write_query.assert_called_once()
-        delete_call = mock_db_dependency.execute_write_query.call_args
+        mock_db_dependency.execute_write_operation.assert_called_once()
+        delete_call = mock_db_dependency.execute_write_operation.call_args
         assert "DETACH DELETE org" in delete_call[0][0]
         assert delete_call[0][1] == {"organization_id": organization_id}
 
@@ -136,7 +151,7 @@ class TestOrganizationDeletionConstraints:
 
         # Verify only existence check was called
         assert mock_db_dependency.execute_query.call_count == 1
-        mock_db_dependency.execute_write_query.assert_not_called()
+        mock_db_dependency.execute_write_operation.assert_not_called()
 
     def test_delete_organization_with_one_account_shows_correct_count(
         self, client, mock_db_dependency
@@ -209,7 +224,7 @@ class TestOrganizationDeletionConstraints:
         ]
 
         # Mock deletion failure
-        mock_db_dependency.execute_write_query.side_effect = Exception(
+        mock_db_dependency.execute_write_operation.side_effect = Exception(
             "Deletion failed"
         )
 
@@ -262,7 +277,7 @@ class TestOrganizationDeletionConstraints:
             [{"account_count": 0}],
         ]
 
-        mock_db_dependency.execute_write_query.return_value = {
+        mock_db_dependency.execute_write_operation.return_value = {
             "nodes_deleted": 1,
             "relationships_deleted": 2,
         }
@@ -270,7 +285,7 @@ class TestOrganizationDeletionConstraints:
         client.delete(f"/api/v1/organizations/{organization_id}")
 
         # Verify deletion query uses DETACH DELETE
-        delete_call = mock_db_dependency.execute_write_query.call_args
+        delete_call = mock_db_dependency.execute_write_operation.call_args
         query = delete_call[0][0]
 
         assert "DETACH DELETE org" in query
@@ -285,7 +300,7 @@ class TestOrganizationDeletionConstraints:
             [{"account_count": 0}],
         ]
 
-        mock_db_dependency.execute_write_query.return_value = {
+        mock_db_dependency.execute_write_operation.return_value = {
             "nodes_deleted": 1,
             "relationships_deleted": 3,
         }
