@@ -1,12 +1,13 @@
 """Pydantic models for the Feature Flags component.
 
 Spec: docs/design/components/feature-flags/projects/FF-PRD-01-data-model-evaluation-api.md §4
+      docs/design/components/feature-flags/projects/FF-PRD-02-admin-api-and-ui.md §4
 """
 
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -70,3 +71,45 @@ class EvaluateRequest(BaseModel):
 
 class EvaluateResponse(BaseModel):
     evaluations: dict[str, FlagEvaluation]
+
+
+# ---------------------------------------------------------------------------
+# FF-15: Audit read models (FF-PRD-02 §4)
+# ---------------------------------------------------------------------------
+
+# Action values that produce an audit row. Mirrors AuditAction in
+# feature_flag_audit.py — defined here to avoid a circular import since
+# feature_flag_audit.py imports FeatureFlag from this module.
+AuditActionLiteral = Literal["create", "update", "delete", "toggle_active"]
+
+
+class FeatureFlagAuditEntry(BaseModel):
+    """A single audit log entry for a feature flag mutation.
+
+    Produced by record_audit (feature_flag_audit.py) and returned by
+    GET /api/v1/admin/feature-flags/{key}/audit.
+
+    Spec: FF-PRD-02 §4 (FeatureFlagAuditEntry shape).
+    created_at is an ISO-8601 string — stored as a string by record_audit
+    and passed through without server-side datetime parsing (pure pass-through).
+    """
+
+    audit_id: str
+    flag_key: str
+    actor_email: str
+    action: AuditActionLiteral
+    diff: dict[str, dict[str, Any]]
+    created_at: str  # ISO-8601
+
+
+class FlagAuditResponse(BaseModel):
+    """Paginated response envelope for GET /{key}/audit.
+
+    next_cursor is None when no further pages exist; otherwise it equals
+    the audit_id of the last entry on the current page (opaque to callers).
+
+    Spec: FF-PRD-02 §4 — { entries: FeatureFlagAuditEntry[], next_cursor: string | null }
+    """
+
+    entries: list[FeatureFlagAuditEntry]
+    next_cursor: str | None

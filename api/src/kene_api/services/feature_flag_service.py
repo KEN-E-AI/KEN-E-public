@@ -17,7 +17,12 @@ from functools import lru_cache
 from google.cloud import firestore
 
 from ..dependencies import get_firestore_client
-from ..models.feature_flag_models import EvaluationContext, FeatureFlag, FlagEvaluation
+from ..models.feature_flag_models import (
+    EvaluationContext,
+    FeatureFlag,
+    FeatureFlagAuditEntry,
+    FlagEvaluation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -287,6 +292,78 @@ class FeatureFlagService:
         )  # re-capture after I/O, mirrors evaluate_batch pattern
         self._install_cache(flag_key, flag, now)
         return flag
+
+    async def get_flag_audit(
+        self,
+        flag_key: str,
+        limit: int,
+        cursor: str | None,
+    ) -> tuple[list[FeatureFlagAuditEntry], str | None]:
+        """Return a page of audit entries for flag_key, newest-first.
+
+        Queries the global ``feature_flag_audit`` collection using the composite
+        index on ``(flag_key ASC, created_at DESC)`` added by FF-PRD-01.  Does NOT
+        read ``feature_flags/{flag_key}`` — intentionally works for deleted flags
+        whose audit history is retained (FF-PRD-02 §9 risk row).
+
+        created_at is stored as an ISO-8601 string by record_audit.  String
+        comparison on ISO-8601 timestamps is time-monotonic, which is why this
+        works correctly without a Firestore Timestamp field.
+
+        Cursor semantics:
+        - cursor is an opaque ``audit_id`` value from a prior page's next_cursor.
+        - Resolved server-side by fetching ``feature_flag_audit/{cursor}`` and
+          passing the resulting DocumentSnapshot to Firestore's start_after().
+        - A stale cursor (audit doc no longer exists) returns ([], None) without
+          raising — callers (FF-22 Load more) treat this as an empty terminal page.
+
+        Exception semantics:
+        - Firestore exceptions propagate to the caller; this method does NOT
+          swallow them.  Admin callers need real errors (contrast with
+          is_feature_enabled which swallows for the evaluation hot-path).
+
+        Spec: FF-PRD-02 §4, §7 AC-5.
+
+        Args:
+            flag_key: The snake_case flag key to query.
+            limit:    Maximum entries to return per page (1-50; validated by caller).
+            cursor:   audit_id of the last entry from the prior page, or None for
+                      the first page.
+
+        Returns:
+            (entries, next_cursor) where next_cursor is None when no more pages exist,
+            or equals the audit_id of the last entry when a further page is available.
+        """
+
+        def _run() -> tuple[list[FeatureFlagAuditEntry], str | None]:
+            coll = self._db.collection("feature_flag_audit")
+
+            query = (
+                coll.where(filter=firestore.FieldFilter("flag_key", "==", flag_key))
+                .order_by("created_at", direction=firestore.Query.DESCENDING)
+            )
+
+            if cursor is not None:
+                cursor_doc = coll.document(cursor).get()
+                if not cursor_doc.exists:
+                    # Stale cursor — audit doc was deleted; return empty terminal page.
+                    return [], None
+                query = query.start_after(cursor_doc)
+
+            # Fetch limit+1 to detect whether a next page exists.
+            raw_docs = list(query.limit(limit + 1).stream())
+
+            has_next = len(raw_docs) == limit + 1
+            page_docs = raw_docs[:limit]
+
+            entries = [
+                FeatureFlagAuditEntry.model_validate(doc.to_dict())
+                for doc in page_docs
+            ]
+            next_cursor: str | None = entries[-1].audit_id if has_next else None
+            return entries, next_cursor
+
+        return await asyncio.to_thread(_run)
 
     async def _fetch_flag(self, flag_key: str) -> FeatureFlag | None:
         """Fetch a single flag document from Firestore.
