@@ -398,3 +398,108 @@ async def test_warm_cache_read_logs_cache_hit_true(
     info_records = [r for r in caplog.records if r.levelno == logging.INFO]
     assert len(info_records) == 1
     assert info_records[0].__dict__["cache_hit"] is True
+
+
+# ---------------------------------------------------------------------------
+# TestListAndGetFlags — FF-12 (FF-PRD-02 B1)
+# ---------------------------------------------------------------------------
+
+
+class TestListAndGetFlags:
+    """Unit tests for the two new FeatureFlagService read methods added in FF-12.
+
+    Cases:
+      (a) list_flags() returns docs from a mocked Firestore client in updated_at desc order.
+      (b) list_flags() does NOT warm the per-flag TTL cache.
+      (c) get_flag(key) returns the same FeatureFlag on the second call within TTL
+          without a second Firestore read (cache-aware path).
+      (d) get_flag("absent") returns None.
+      (e) get_flag propagates Firestore exceptions (not swallowed).
+    """
+
+    def _make_list_db(self, flags: list[FeatureFlag]) -> MagicMock:
+        """Mock Firestore client whose collection().stream() returns flag docs."""
+        db = MagicMock()
+        docs = []
+        for flag in flags:
+            doc = MagicMock()
+            doc.id = flag.key
+            data = flag.model_dump(mode="json")
+            data.pop("key", None)
+            doc.to_dict.return_value = data
+            docs.append(doc)
+        db.collection.return_value.stream.return_value = iter(docs)
+        return db
+
+    async def test_list_flags_returns_docs_sorted_updated_at_desc(self) -> None:
+        """(a) list_flags() returns flags sorted by updated_at descending."""
+        older = _make_flag(
+            key="older_flag",
+            updated_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        newer = _make_flag(
+            key="newer_flag",
+            updated_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+        )
+        db = self._make_list_db([older, newer])
+        svc = FeatureFlagService(db=db, time_provider=FakeClock())
+
+        result = await svc.list_flags()
+
+        assert [f.key for f in result] == ["newer_flag", "older_flag"]
+
+    async def test_list_flags_does_not_warm_cache(self) -> None:
+        """(b) list_flags() bypasses the per-flag TTL cache entirely.
+
+        After list_flags(), calling evaluate_batch for the same key should still
+        issue a Firestore read (cache was not warmed).
+        """
+        flag = _make_flag(key="list_cache_test")
+        list_db = self._make_list_db([flag])
+        svc = FeatureFlagService(db=list_db, time_provider=FakeClock())
+
+        await svc.list_flags()
+
+        # The cache should still be empty for this key.
+        assert "list_cache_test" not in svc._cache
+
+    async def test_get_flag_returns_flag_and_caches(self) -> None:
+        """(c) get_flag() returns the flag and the second call within TTL skips Firestore."""
+        flag = _make_flag(key="get_test_flag")
+        db = _mock_db_with_flag(flag)
+        clock = FakeClock(start=0.0)
+        svc = FeatureFlagService(db=db, time_provider=clock)
+
+        result1 = await svc.get_flag("get_test_flag")
+        clock.advance(30.0)  # still within TTL
+        result2 = await svc.get_flag("get_test_flag")
+
+        assert result1 is not None
+        assert result1.key == "get_test_flag"
+        assert (
+            result2 is result1
+        )  # identical object — served from cache, not reconstructed
+
+        # Only one Firestore read should have been issued.
+        get_mock = db.collection.return_value.document.return_value.get
+        assert get_mock.call_count == 1
+
+    async def test_get_flag_absent_returns_none(self) -> None:
+        """(d) get_flag() returns None for a key with no matching Firestore doc."""
+        db = _mock_db_with_flag(None)
+        svc = FeatureFlagService(db=db, time_provider=FakeClock())
+
+        result = await svc.get_flag("absent_flag")
+
+        assert result is None
+
+    async def test_get_flag_propagates_firestore_exception(self) -> None:
+        """(e) get_flag() does not swallow Firestore exceptions — admin callers need them."""
+        db = MagicMock()
+        db.collection.return_value.document.return_value.get.side_effect = RuntimeError(
+            "Firestore boom"
+        )
+        svc = FeatureFlagService(db=db, time_provider=FakeClock())
+
+        with pytest.raises(RuntimeError, match="Firestore boom"):
+            await svc.get_flag("boom_flag")

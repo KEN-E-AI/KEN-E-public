@@ -235,6 +235,59 @@ class FeatureFlagService:
             del self._cache[oldest]
         self._cache[flag_key] = _CacheEntry(flag=flag, expires_at=now + TTL_SECONDS)
 
+    async def list_flags(self) -> list[FeatureFlag]:
+        """Return every flag document sorted by updated_at descending.
+
+        Issues a single unbounded Firestore read — does NOT consult or warm the
+        per-flag TTL cache because the cache is keyed per flag_key and cannot
+        serve a full-collection list without a separate meta-entry.
+
+        This is intentionally uncached; it is a super-admin-only endpoint on a
+        small collection (<100 flags in Release 1). If N exceeds ~500 in a future
+        release, add cursor pagination and an indexed updated_at sort instead of
+        caching the full list.
+        """
+        docs = await asyncio.to_thread(
+            lambda: list(self._db.collection("feature_flags").stream())
+        )
+        flags: list[FeatureFlag] = []
+        for doc in docs:
+            try:
+                flags.append(
+                    FeatureFlag.model_validate(doc.to_dict() | {"key": doc.id})
+                )
+            except Exception:
+                logger.error("feature_flag_invalid_doc", extra={"doc_id": doc.id})
+        flags.sort(key=lambda f: f.updated_at, reverse=True)
+        return flags
+
+    async def get_flag(self, flag_key: str) -> FeatureFlag | None:
+        """Return a single flag by key, using the in-process TTL cache.
+
+        Mirrors the _fetch_flag cache-aware path used by evaluate_batch so a
+        recently-evaluated flag appears in the admin UI without an extra Firestore
+        read (same TTL, same cache entry).
+
+        Returns:
+            FeatureFlag if the doc exists.
+            None if the doc does not exist (confirmed miss).
+
+        Raises:
+            Any exception from Firestore or Pydantic — admin callers need real
+            errors (unlike is_feature_enabled which swallows them).
+        """
+        now = self._time_provider()
+        entry = self._cache.get(flag_key)
+        if entry is not None and entry.expires_at > now:
+            return entry.flag
+
+        flag = await self._fetch_flag(flag_key)
+        now = (
+            self._time_provider()
+        )  # re-capture after I/O, mirrors evaluate_batch pattern
+        self._install_cache(flag_key, flag, now)
+        return flag
+
     async def _fetch_flag(self, flag_key: str) -> FeatureFlag | None:
         """Fetch a single flag document from Firestore.
 
