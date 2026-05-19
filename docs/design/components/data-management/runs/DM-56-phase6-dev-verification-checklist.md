@@ -23,7 +23,7 @@
 | 8 | No `accounts.*` on org docs | PASS | 1 org doc inspected; no `accounts` field |
 | 9 | No legacy Shape A collections | PASS | All 9 legacy patterns absent from root |
 | 10 | Shape C carve-out preserved | PASS | `notifications` present; `usage_records` absent from RESOURCES registry (not migrated) |
-| §4.2 | Codebase residue scan | PASS | 0 production-code legacy write patterns; test fixtures expected; `check_user_subcollections_registry.py` absent (DM-PRD-07 scope) |
+| §4.2 | Codebase residue scan | PASS | 0 production-code legacy write patterns; test fixtures expected; `check_user_subcollections_registry.py` PASS (4 names, all registered) |
 
 Check #10 rationale: `usage_records` is not in the `RESOURCES` registry (`api/scripts/_migrate_shape_b/resources.py`) — this is the authoritative evidence. Firestore omits empty collections from `listCollectionIds`; absence from that list alone is not sufficient evidence.
 
@@ -257,11 +257,21 @@ Combined with the broad-scope grep above, confirms no legacy permissions paths i
 
 ### `check_user_subcollections_registry.py` verification script
 
-**Status:** ABSENT — script does not exist at `api/scripts/check_user_subcollections_registry.py`.
+**Status:** PASS — script added in this PR (DM-57) and run against the integration branch.
 
-DM-PRD-06 §4.2 calls for this script to verify that all `users/{user_id}/{subcollection}` write sites are registered in `USER_SUBCOLLECTIONS` in `user_deletion_service.py`. The script was expected to be created as part of DM-PRD-05 or DM-PRD-06.
+Output:
 
-**Pattern substitution:** The equivalent manual check was performed inline (grep for `collection` calls under `users/` paths in source). The script's absence is noted here as a gap; a follow-up should either create the script as specified or confirm via inline grep that the manual check is sufficient. This does not block DM-56 — the verification check this script was intended to automate is DM-PRD-07's scope (Members migration adds the `members` subcollection write site that USER_SUBCOLLECTIONS must cover).
+```
+Observed user/{user_id}/<subcollection> writes in source:
+  OK  'notification_status'
+  OK  'notifications'
+  OK  'preferences'
+  OK  'security'
+
+PASS: all 4 observed subcollection name(s) are registered in USER_SUBCOLLECTIONS (5 entries total).
+```
+
+All four write-site subcollection names are covered by the `USER_SUBCOLLECTIONS` registry in `api/src/kene_api/services/user_deletion_service.py`. The fifth registry entry (`members`) is pre-registered for DM-PRD-07's Members migration write site.
 
 ### §4.2 Summary
 
@@ -275,7 +285,7 @@ DM-PRD-06 §4.2 calls for this script to verify that all `users/{user_id}/{subco
 | Legacy permissions field path (kene_api scoped) | 0 | — | PASS |
 | Raw `strategy_audit` writes — production scope | 0 | — | PASS |
 | Raw `*_audit` writes — full scope incl. tests | 3 | Test fixtures only | PASS |
-| `check_user_subcollections_registry.py` | ABSENT | Script not created | Note (DM-PRD-07 scope) |
+| `check_user_subcollections_registry.py` | 0 | All 4 observed names registered (`notification_status`, `notifications`, `preferences`, `security`) | PASS |
 
 **Note on pattern substitution:** DM-PRD-06 §4.2 specifies literal-form patterns (e.g., `strategy_docs_{account_id}`). This run used f-string construction patterns (`f"strategy_(docs|...)_`) which check runtime string assembly. Both approaches detect the same unsafe patterns; the f-string patterns are stricter in practice. The literal-form PRD patterns were also confirmed to have 0 hits by visual inspection of migration scripts.
 
