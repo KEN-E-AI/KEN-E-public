@@ -13,10 +13,10 @@ from typing import Any
 from uuid import uuid4
 
 import vertexai
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from google.adk.sessions import VertexAiSessionService
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from shared.secrets import get_env_or_secret
 from shared.structured_logging import get_structured_logger, log_context
@@ -38,9 +38,12 @@ from ..cache import (
     session_metadata_key,
     user_session_ids_key,
 )
+from ..chat.accumulator import SessionTurnAccumulator
+from ..chat.side_table import get_chat_side_table_service
 from ..chat.side_table_handlers import apply_side_table_update
 from ..database import get_neo4j_service
 from ..dependencies import get_firestore_client as _get_firestore_client
+from ..exceptions import ServiceUnavailableError
 from ..firestore import get_firestore_service
 from ..models.chat import InternalSideTableUpdateRequest
 from ..models.kene_models import RecoverableSessionInfo
@@ -158,6 +161,25 @@ async def load_organization_context_from_neo4j(account_id: str) -> str | None:
         return context_str
 
     except Exception as e:
+        import neo4j.exceptions as _neo4j_exc
+
+        if isinstance(e, (_neo4j_exc.ServiceUnavailable, _neo4j_exc.SessionExpired, _neo4j_exc.TransientError)):
+            logger.error(
+                "Neo4j unreachable while loading organization context",
+                extra=log_context(
+                    component="organization_context",
+                    action="load",
+                    account_id=account_id,
+                    success=False,
+                    error_id="CHAT_ORG_RESOLVE_FAILED",
+                    error_message=str(e),
+                ),
+            )
+            raise ServiceUnavailableError(
+                service="neo4j",
+                reason=str(e),
+                error_id="CHAT_ORG_RESOLVE_FAILED",
+            ) from e
         logger.error(
             "Failed to load organization context",
             extra=log_context(
@@ -165,11 +187,60 @@ async def load_organization_context_from_neo4j(account_id: str) -> str | None:
                 action="load",
                 account_id=account_id,
                 success=False,
+                error_id="CHAT_ORG_RESOLVE_FAILED",
                 error_message=str(e),
             ),
         )
         return None
 
+
+async def _get_organization_id_for_account(account_id: str) -> str | None:
+    """Resolve organization_id for account_id via Neo4j (best-effort, never raises)."""
+    try:
+        neo4j_service = await get_neo4j_service()
+        result = await neo4j_service.execute_query(
+            "MATCH (acc:Account {account_id: $account_id})-[:BELONGS_TO]->(org:Organization) "
+            "RETURN org.organization_id AS organization_id",
+            {"account_id": account_id},
+        )
+        if result:
+            return result[0].get("organization_id")
+        return None
+    except Exception as e:
+        logger.warning(
+            "Failed to resolve organization_id for side-table write",
+            extra=log_context(
+                component="chat",
+                action="org_id_resolve",
+                account_id=account_id,
+                extra={"error_type": type(e).__name__},
+            ),
+        )
+        return None
+
+
+def _get_agent_model_id() -> str:
+    """Return the model ID from the ADK agent singleton (best-effort).
+
+    Lazy-imports the ADK module to avoid a circular dependency at module load.
+    Falls back to the known default so a misconfigured agent does not block
+    side-table writes; logs a warning so the mismatch is visible in structured
+    logs.
+    """
+    try:
+        from app.adk.agents.ken_e_agent import ken_e_agent
+
+        return str(ken_e_agent.model)
+    except Exception as e:
+        logger.warning(
+            "Could not read model ID from ADK agent; using fallback",
+            extra=log_context(
+                component="chat",
+                action="get_agent_model_id",
+                extra={"error_type": type(e).__name__},
+            ),
+        )
+        return "gemini-2.5-pro"
 
 
 class ChatMessage(BaseModel):
@@ -226,6 +297,9 @@ class ConversationInfo(BaseModel):
         ..., description="Number of messages in the conversation"
     )
     preview: str | None = Field(None, description="Preview of last message")
+    last_agent_started_at: datetime | None = Field(None, description="When agent last started")
+    last_agent_stopped_at: datetime | None = Field(None, description="When agent last stopped")
+    last_viewed_at: datetime | None = Field(None, description="When user last viewed")
 
 
 class ConversationListResponse(BaseModel):
@@ -235,6 +309,12 @@ class ConversationListResponse(BaseModel):
         ..., description="List of user conversations"
     )
     total_count: int = Field(..., description="Total number of conversations")
+    next_cursor: str | None = Field(None, description="Opaque cursor for next page")
+
+    @computed_field(description="Alias of conversations for cursor-pagination callers")
+    @property
+    def items(self) -> list[ConversationInfo]:
+        return self.conversations
 
 
 class CreateConversationRequest(BaseModel):
@@ -466,6 +546,8 @@ class AgentEngineClient:
                             )
 
                         return org_context
+                    except ServiceUnavailableError:
+                        raise
                     except Exception as e:
                         logger.error(f"Failed to load organization context: {e}")
                         return None
@@ -875,9 +957,9 @@ class AgentEngineClient:
             user_id: User identifier
 
         Returns:
-            Sorted list of ConversationInfo from the last 7 days
+            Sorted list of ConversationInfo from the last 30 days
         """
-        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
         conversations = []
         prefix = f"{user_id}:"
 
@@ -907,7 +989,7 @@ class AgentEngineClient:
         return conversations
 
     async def get_user_conversations(self, user_id: str) -> list[ConversationInfo]:
-        """Get conversations for a user from the last 7 days."""
+        """Get conversations for a user from the last 30 days."""
         # Serve from cache if we've already loaded this user's sessions
         if user_id in self._sessions_loaded_for:
             conversations = self._get_cached_conversations(user_id)
@@ -924,7 +1006,7 @@ class AgentEngineClient:
             return conversations
 
         conversations = []
-        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
 
         # Try Redis session list before expensive list_sessions call
         try:
@@ -1048,7 +1130,7 @@ class AgentEngineClient:
                 if isinstance(last_updated, str):
                     last_updated = datetime.fromisoformat(last_updated)
 
-                # Skip sessions older than 7 days and mark for cleanup
+                # Skip sessions older than 30 days and mark for cleanup
                 if last_updated < cutoff:
                     old_session_ids.append(session_id)
                     continue
@@ -1662,8 +1744,14 @@ class AgentEngineClient:
         session_id: str | None = None,
         conversation_name: str | None = None,
         account_id: str | None = None,
+        accumulator: SessionTurnAccumulator | None = None,
     ) -> AsyncGenerator[str, None]:
-        """Stream a chat completion from the Agent Engine using agent_engines API."""
+        """Stream a chat completion from the Agent Engine using agent_engines API.
+
+        When `accumulator` is supplied, every raw chunk is folded into it via
+        `add_stream_chunk` before text extraction — this is how a cancelled
+        stream still flushes partial token counts (CH-PRD-01 §7 AC-8).
+        """
         if not self.agent_engine:
             yield "I'm sorry, but I'm unable to process your request at the moment. Please try again later."
             return
@@ -1764,6 +1852,14 @@ class AgentEngineClient:
 
                         if exception_holder["exception"]:
                             raise exception_holder["exception"]
+
+                        # Fold the raw chunk into the per-turn accumulator
+                        # before text extraction discards everything but the
+                        # text — this is how a cancelled stream still flushes
+                        # partial token counts (CH-PRD-01 §7 AC-8).
+                        if accumulator is not None:
+                            accumulator.add_stream_chunk(chunk)
+
                         if isinstance(chunk, dict):
                             # Handle actual dictionary response
                             # Handle nested structure: {'content': {'parts': [{'text': '...'}]}}
@@ -1976,6 +2072,109 @@ def _preload_agent_engine() -> None:
         )
 
 
+async def _flush_stream_turn(
+    *,
+    session_id: str | None,
+    account_id: str,
+    accumulator: SessionTurnAccumulator,
+    turn_failed: bool,
+    turn_uuid: str,
+) -> None:
+    """Flush the side-table at the end of a streaming completion.
+
+    On a cancelled or failed turn the accumulator's partial token counts are
+    persisted under the shared per-turn idempotency key
+    (``{session_id}:turn:{invocation_id}``) — the same key
+    ``after_agent_callback`` uses — so whichever site lands first wins and the
+    other is a 409 no-op. The /completions finally fires first on a client
+    disconnect, so the partial counts are the ones that persist (CH-PRD-01
+    §7 AC-8).
+
+    On a clean turn only a stop-stamp safety net is written, under a distinct
+    ``api-finally`` key: ``after_agent_callback`` is authoritative for the
+    counters and the separate key means the two writes never conflict.
+
+    Never raises — a side-table failure must not surface to the SSE client.
+    """
+    try:
+        if not session_id or str(session_id).startswith("pending_") or not account_id:
+            return
+
+        if turn_failed and accumulator.invocation_id:
+            # Cancelled / failed stream: persist the partial token counts
+            # observed before the stream ended, under the shared per-turn key.
+            delta = accumulator.build_stream_delta()
+            idempotency_key = f"{session_id}:turn:{accumulator.invocation_id}"
+        else:
+            # Clean completion, or a failure before any chunk arrived (no
+            # invocation id): stop-stamp safety net only.
+            now = datetime.now(timezone.utc)
+            delta = {"last_agent_stopped_at": now, "updated_at": now}
+            idempotency_key = f"{session_id}:api-finally:{turn_uuid}"
+
+        db = _get_firestore_client()
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None,
+            lambda: apply_side_table_update(
+                db=db,
+                session_id=session_id,
+                account_id=account_id,
+                delta=delta,
+                idempotency_key=idempotency_key,
+            ),
+        )
+    except Exception as exc:
+        logger.debug("Stream side-table flush skipped: %s", exc)
+
+
+async def _stream_completion_sse(
+    *,
+    messages: list[ChatMessage],
+    user_context: UserContext,
+    session_id: str | None,
+    conversation_name: str | None,
+    account_id: str | None,
+    turn_uuid: str,
+) -> AsyncGenerator[str, None]:
+    """Server-Sent-Events generator for a streaming chat completion.
+
+    Streams the agent response while a ``SessionTurnAccumulator`` folds in each
+    raw chunk. The finally block flushes the side-table via
+    ``_flush_stream_turn`` on every exit path — clean completion, agent-side
+    exception, or SSE cancellation (``GeneratorExit`` from ``aclose()``) — so a
+    cancelled turn still records ``last_agent_stopped_at`` and its partial
+    token counts (CH-PRD-01 §7 AC-8).
+    """
+    accumulator = SessionTurnAccumulator()
+    turn_failed = False
+    try:
+        async for chunk in agent_client.stream_chat_completion(
+            messages=messages,
+            user_context=user_context,
+            session_id=session_id,
+            conversation_name=conversation_name,
+            account_id=account_id,
+            accumulator=accumulator,
+        ):
+            # Format as Server-Sent Events
+            yield f"data: {chunk}\n\n"
+        yield "data: [DONE]\n\n"
+    except (asyncio.CancelledError, GeneratorExit, Exception):
+        # SSE cancellation (GeneratorExit / CancelledError) or an agent-side
+        # failure — mark the turn failed so the finally flushes partial counts.
+        turn_failed = True
+        raise
+    finally:
+        await _flush_stream_turn(
+            session_id=session_id,
+            account_id=account_id or "",
+            accumulator=accumulator,
+            turn_failed=turn_failed,
+            turn_uuid=turn_uuid,
+        )
+
+
 @router.post("/completions", response_model=ChatResponse)
 async def chat_completion(
     request: ChatRequest, user_context: UserContext = Depends(get_current_user_context)
@@ -1987,6 +2186,7 @@ async def chat_completion(
     and returns a response from the deployed Agent Engine.
     """
     _exit_stack = ExitStack()
+    turn_uuid = str(uuid4())
     try:
         # PERFORMANCE: Log request arrival time for latency measurement
         logger.info(
@@ -2016,21 +2216,15 @@ async def chat_completion(
                 _attrs_cm = None
 
         if request.stream:
-            # Return streaming response
-            async def generate_response():
-                async for chunk in agent_client.stream_chat_completion(
+            return StreamingResponse(
+                _stream_completion_sse(
                     messages=request.messages,
                     user_context=user_context,
                     session_id=request.session_id,
                     conversation_name=request.conversation_name,
                     account_id=request.account_id,
-                ):
-                    # Format as Server-Sent Events
-                    yield f"data: {chunk}\n\n"
-                yield "data: [DONE]\n\n"
-
-            return StreamingResponse(
-                generate_response(),
+                    turn_uuid=turn_uuid,
+                ),
                 media_type="text/plain",
                 headers={
                     "Cache-Control": "no-cache",
@@ -2039,13 +2233,38 @@ async def chat_completion(
             )
         else:
             # Return single response
-            response_content, actual_session_id = await agent_client.chat_completion(
-                messages=request.messages,
-                user_context=user_context,
-                session_id=request.session_id,
-                conversation_name=request.conversation_name,
-                account_id=request.account_id,
-            )
+            try:
+                response_content, actual_session_id = await agent_client.chat_completion(
+                    messages=request.messages,
+                    user_context=user_context,
+                    session_id=request.session_id,
+                    conversation_name=request.conversation_name,
+                    account_id=request.account_id,
+                )
+            finally:
+                # Safety-net stop-stamp: fires whether chat_completion succeeds or raises.
+                # Primary flush is after_agent_callback.
+                try:
+                    _s_id = request.session_id
+                    _a_id = request.account_id or ""
+                    if _s_id and not str(_s_id).startswith("pending_") and _a_id:
+                        _now = datetime.now(timezone.utc)
+                        _db = _get_firestore_client()
+                        _idem_key = f"{_s_id}:api-finally:{turn_uuid}"
+                        _delta = {"last_agent_stopped_at": _now, "updated_at": _now}
+                        _loop = asyncio.get_running_loop()
+                        await _loop.run_in_executor(
+                            None,
+                            lambda: apply_side_table_update(
+                                db=_db,
+                                session_id=_s_id,
+                                account_id=_a_id,
+                                delta=_delta,
+                                idempotency_key=_idem_key,
+                            ),
+                        )
+                except Exception as _stamp_err:
+                    logger.debug("Non-stream stop-stamp skipped: %s", _stamp_err)
 
             # Fire post-response writes in background (non-blocking)
             async def _post_response_writes(
@@ -2070,10 +2289,10 @@ async def chat_completion(
                                     session_metadata,
                                     ttl_seconds=SESSION_METADATA_TTL_SECONDS,
                                 )
-                        except Exception:
-                            pass
-                except Exception:
-                    logger.debug(f"Background session preview update failed for {sid}")
+                        except Exception as _redis_err:
+                            logger.debug("Redis session-preview cache write failed: %s", _redis_err)
+                except Exception as _preview_err:
+                    logger.debug("Background session preview update failed for %s: %s", sid, _preview_err)
 
             task = asyncio.create_task(
                 _post_response_writes(
@@ -2205,6 +2424,44 @@ async def create_conversation(
                 conversation_name=request.conversation_name,
                 account_id=request.account_id,
             )
+            # Best-effort side-table write — non-fatal, off the event loop
+            if request.account_id:
+                try:
+                    org_id = await _get_organization_id_for_account(request.account_id)
+                    if org_id is None:
+                        # Skip rather than persist a malformed row; CH-17 back-fill repairs.
+                        logger.warning(
+                            "Side-table create skipped — no org_id for account",
+                            extra=log_context(
+                                component="chat",
+                                action="side_table_create_skip",
+                                extra={"account_id": request.account_id},
+                            ),
+                        )
+                        return sid
+                    model_id = _get_agent_model_id()
+                    loop = asyncio.get_running_loop()
+                    svc = get_chat_side_table_service()
+                    account_id = request.account_id
+                    await loop.run_in_executor(
+                        None,
+                        lambda: svc.create(
+                            session_id=sid,
+                            user_id=user_id,
+                            account_id=account_id,
+                            organization_id=org_id,
+                            model_id=model_id,
+                        ),
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "Side-table write failed (non-fatal)",
+                        extra=log_context(
+                            component="chat",
+                            action="side_table_create",
+                            extra={"error_type": type(e).__name__},
+                        ),
+                    )
             return sid
 
         agent_client._pending_sessions[pending_id] = asyncio.create_task(
@@ -2230,15 +2487,27 @@ async def create_conversation(
 
 
 @router.get("/conversations", response_model=ConversationListResponse)
-async def list_conversations(user_context: UserContext = Depends(get_current_user_context)):
+async def list_conversations(
+    cursor: str | None = Query(None, description="Opaque cursor for pagination"),
+    category_id: str | None = Query(None, description="Filter by category ID"),
+    query: str | None = Query(None, description="Full-text search query"),
+    limit: int = Query(20, ge=1, le=100, description="Maximum results to return"),
+    user_context: UserContext = Depends(get_current_user_context),
+):
     """
     List all conversations for the current user.
+
+    Supports optional cursor pagination and filtering. The response always
+    includes both ``conversations`` (legacy) and ``items`` (cursor-pagination
+    callers) pointing to the same list, plus ``next_cursor`` for the next page.
     """
     try:
         conversations = await agent_client.get_user_conversations(user_context.user_id)
 
         return ConversationListResponse(
-            conversations=conversations, total_count=len(conversations)
+            conversations=conversations,
+            total_count=len(conversations),
+            next_cursor=None,
         )
 
     except Exception as e:
@@ -2366,7 +2635,7 @@ async def get_recoverable_sessions(
 ) -> list[RecoverableSessionInfo]:
     """List sessions available for recovery.
 
-    Returns sessions from the last 7 days that can be resumed.
+    Returns sessions from the last 30 days that can be resumed.
     """
     try:
         from app.adk.session.recovery import get_recovery_service
