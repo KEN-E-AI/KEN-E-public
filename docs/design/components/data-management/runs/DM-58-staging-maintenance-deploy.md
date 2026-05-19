@@ -42,6 +42,8 @@ Pre-conditions (both passed per prior issues):
 
 > **[Staging maintenance window open — Data Management Shape B cutover]**
 >
+> **Start time: [INSERT ISO 8601 UTC — e.g. 2026-05-19T14:00:00Z]**
+>
 > The DM-PRD-06 staging cutover is starting now. `ken-e-staging` Firestore + GCS may be briefly inconsistent during the migration sequence (~30–60 min).
 >
 > **Impact:** Staging API writes to any account-scoped Firestore collection may fail or land in unexpected paths during the migration window. No production impact.
@@ -70,7 +72,7 @@ Source: `git rev-parse HEAD` on `main` at 2026-05-19.
 **Trigger name:** `cd-pipeline`  
 **Staging YAML:** `deployment/cd/staging.yaml`  
 **Cloud Run service:** `kene-api-staging`  
-**Expected revision label format:** `kene-api-staging-ef31ad3d` (Cloud Build sets `COMMIT_SHA` to the first 8 chars)  
+**Expected revision label format:** `kene-api-staging-<auto-suffix>` (Cloud Run auto-generates the revision suffix; `staging.yaml` does not pass `--revision-suffix`). Confirm the revision is READY and the URL resolves correctly — do not expect the suffix to embed the commit SHA.  
 **Staging API URL:** `https://kene-api-staging-391472102753.us-central1.run.app`
 
 > **Operator note:** Confirm the deployed Cloud Run revision name embeds `ef31ad3d` before starting DM-59. If `main` advanced after this commit, the revision will carry a different hash — record that hash in the amendment box below.
@@ -102,10 +104,10 @@ _(operator: paste output here)_
 ### 2 — `/health` endpoint
 
 ```bash
-curl -fsS https://kene-api-staging-391472102753.us-central1.run.app/health
+curl -isS https://kene-api-staging-391472102753.us-central1.run.app/health
 ```
 
-**Expected:** `200 OK` with JSON body (e.g., `{"status": "ok"}`)
+**Expected:** First line `HTTP/2 200` followed by JSON body (e.g., `{"status": "ok"}`). `-i` includes the response headers so the status code is visible.
 
 _(operator: paste output here)_
 
@@ -141,7 +143,7 @@ gcloud projects get-iam-policy ken-e-staging \
   --format='value(bindings.role)'
 ```
 
-**Expected:** `roles/datastore.user` (or `roles/datastore.owner`)
+**Expected:** `roles/datastore.owner` (required for `recursive_delete` in the `--confirm-delete` migration step — `roles/datastore.user` is insufficient and will cause PERMISSION_DENIED at DM-60)
 
 _(operator: paste output here)_
 
@@ -182,7 +184,7 @@ _(operator: paste output here)_
 | AC-1 | Staging maintenance window scheduled and announced to relevant teams | PENDING — PO confirms Slack #engineering message sent |
 | AC-2 | DM-PRD-00–DM-PRD-05 code deployed to staging; service is up and healthy | PENDING — operator pastes healthcheck evidence above |
 | AC-3 | Service-account IAM verified for migration + deletion operations | PENDING — operator pastes IAM evidence above |
-| AC-4 | Deploy commit hash recorded for DM-61's residue scan | DONE — `ef31ad3deb02795544cf3c3b1141831bee92e12c` |
+| AC-4 | Deploy commit hash recorded for DM-61 (issue #6) residue scan | DONE — `ef31ad3deb02795544cf3c3b1141831bee92e12c` |
 
 ---
 
