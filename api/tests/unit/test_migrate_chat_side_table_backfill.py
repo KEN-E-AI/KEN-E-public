@@ -74,17 +74,15 @@ class _FakeCollectionRef:
     def stream(self) -> list[Any]:
         prefix = self._col_path + "/"
         docs = []
-        seen: set[str] = set()
         for full_path, data in self._store.items():
             if not full_path.startswith(prefix):
                 continue
             rel = full_path[len(prefix):]
-            doc_id = rel.split("/")[0]
-            if doc_id not in seen:
-                seen.add(doc_id)
-                snap = _FakeDocSnapshot(data)
-                snap.id = doc_id  # type: ignore[attr-defined]
-                docs.append(snap)
+            if "/" in rel:  # skip subcollection documents
+                continue
+            snap = _FakeDocSnapshot(data)
+            snap.id = rel  # type: ignore[attr-defined]
+            docs.append(snap)
         return docs
 
 
@@ -422,7 +420,7 @@ class TestNormalizeListSessionsResponse:
     def test_response_with_next_page_token_raises(self) -> None:
         inner = [_fake_session("s1")]
         response = SimpleNamespace(sessions=inner, next_page_token="tok_abc")
-        with pytest.raises(AssertionError, match="paginated"):
+        with pytest.raises(RuntimeError, match="paginated"):
             cli._normalize_list_sessions_response(response)
 
     def test_empty_list(self) -> None:
@@ -446,12 +444,6 @@ class TestRunBackfill:
             {"permissions": {"account_permissions": {"acc_A": {"role": "admin"}}}},
         )
         return db
-
-    def _make_session_service(self, sessions: list[Any]) -> Any:
-        """Stub session service that returns a fixed list for any user."""
-        service = MagicMock()
-        # _list_sessions_for_user is called in a thread; we patch it at module level instead
-        return service
 
     def test_dry_run_logs_but_does_not_write(self, monkeypatch: pytest.MonkeyPatch) -> None:
         db = self._make_db()
@@ -615,3 +607,102 @@ class TestRunBackfill:
         )
         # A list_sessions error increments errored (not per-session, but per-user)
         assert summary["errored"] == 1
+
+    def test_iterates_users_from_firestore_when_no_filter(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """run_backfill without user_id_filter calls _iter_users to enumerate users."""
+        db = self._make_db()
+        session = _fake_session("sess_001", account_id="acc_A")
+        monkeypatch.setattr(cli, "_list_sessions_for_user", lambda svc, uid: [session])
+        summary = cli.run_backfill(
+            db,
+            MagicMock(),
+            dry_run=False,
+            # No user_id_filter — exercises _iter_users path
+        )
+        assert summary["created"] == 1
+        assert "accounts/acc_A/chat_sessions/sess_001" in db._store
+
+    def test_path_injection_invalid_account_id_errors(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Sessions with a non-ASCII account_id in state are rejected as errored."""
+        db = FakeFirestoreClient()
+        db.seed("accounts/bad/../id", {"organization_id": "org_X"})
+        session = _fake_session("sess_001", account_id="bad/../id")
+        monkeypatch.setattr(cli, "_list_sessions_for_user", lambda svc, uid: [session])
+        summary = cli.run_backfill(
+            db,
+            MagicMock(),
+            dry_run=False,
+            user_id_filter="uid_x",
+        )
+        assert summary["errored"] == 1
+        assert summary["created"] == 0
+
+    def test_path_injection_invalid_session_id_errors(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Sessions with a non-ASCII session_id are rejected as errored."""
+        db = FakeFirestoreClient()
+        db.seed("accounts/acc_A", {"organization_id": "org_A"})
+        session = _fake_session("../../etc/passwd", account_id="acc_A")
+        monkeypatch.setattr(cli, "_list_sessions_for_user", lambda svc, uid: [session])
+        summary = cli.run_backfill(
+            db,
+            MagicMock(),
+            dry_run=False,
+            user_id_filter="uid_x",
+        )
+        assert summary["errored"] == 1
+        assert summary["created"] == 0
+
+
+# ---------------------------------------------------------------------------
+# TestIterUsers — direct coverage for the user-enumeration helper
+# ---------------------------------------------------------------------------
+
+
+class TestIterUsers:
+    def test_yields_all_users_when_no_account_filter(self) -> None:
+        db = FakeFirestoreClient()
+        db.seed(
+            "users/uid_A",
+            {"permissions": {"account_permissions": {"acc_A": {"role": "admin"}}}},
+        )
+        db.seed(
+            "users/uid_B",
+            {"permissions": {"account_permissions": {"acc_B": {"role": "admin"}}}},
+        )
+        result = list(cli._iter_users(db, account_id=None))
+        assert {uid for uid, _ in result} == {"uid_A", "uid_B"}
+
+    def test_filters_to_users_with_account_permission(self) -> None:
+        db = FakeFirestoreClient()
+        db.seed(
+            "users/uid_A",
+            {"permissions": {"account_permissions": {"acc_A": {"role": "admin"}}}},
+        )
+        db.seed(
+            "users/uid_B",
+            {"permissions": {"account_permissions": {"acc_B": {"role": "admin"}}}},
+        )
+        result = list(cli._iter_users(db, account_id="acc_A"))
+        assert [(uid, _) for uid, _ in result]
+        assert all(uid == "uid_A" for uid, _ in result)
+
+    def test_excludes_users_without_matching_account_permission(self) -> None:
+        db = FakeFirestoreClient()
+        db.seed("users/uid_A", {"permissions": {}})
+        result = list(cli._iter_users(db, account_id="acc_A"))
+        assert result == []
+
+    def test_subcollection_docs_not_yielded_by_stream(self) -> None:
+        """_FakeCollectionRef.stream() should not yield subcollection documents."""
+        db = FakeFirestoreClient()
+        db.seed("users/uid_A", {"name": "Alice"})
+        db.seed("users/uid_A/sub/doc", {"nested": True})
+        result = list(cli._iter_users(db, account_id=None))
+        assert len(result) == 1
+        assert result[0][0] == "uid_A"

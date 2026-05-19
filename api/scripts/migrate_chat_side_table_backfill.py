@@ -43,9 +43,11 @@ Re-running after a real run is safe: idempotency is enforced by an existence che
 
 import argparse
 import asyncio
+import concurrent.futures
 import json
 import logging
 import os
+import re
 import sys
 from collections.abc import Iterator
 from datetime import datetime, timezone
@@ -85,6 +87,9 @@ _DEFAULT_MODEL_ID = "gemini-2.5-pro"
 # Max preview length for last_message_preview (matches CH-12 accumulator).
 _PREVIEW_MAX = 160
 
+# Valid Firestore document-ID pattern: alphanumeric, underscore, hyphen, 1-128 chars.
+_FIRESTORE_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,128}$")
+
 
 # ---------------------------------------------------------------------------
 # Environment contract
@@ -123,12 +128,11 @@ def _normalize_list_sessions_response(sessions: Any) -> list[Any]:
     """
     if hasattr(sessions, "sessions"):
         result = list(sessions.sessions)
-        # Assert no pagination field present — if this fires, the back-fill
-        # may be silently truncating results and needs to be updated.
-        assert not getattr(sessions, "next_page_token", None), (
-            "ADK list_sessions returned a paginated response — back-fill must be "
-            "updated to iterate pages. Observed next_page_token is set."
-        )
+        if getattr(sessions, "next_page_token", None):
+            raise RuntimeError(
+                "ADK list_sessions returned a paginated response — back-fill must be "
+                "updated to iterate pages. Observed next_page_token is set."
+            )
         return result
     return list(sessions)
 
@@ -318,8 +322,6 @@ def _list_sessions_for_user(session_service: Any, user_id: str) -> list[Any]:
         finally:
             loop.close()
 
-    import concurrent.futures
-
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
         result = pool.submit(_run).result()
     return _normalize_list_sessions_response(result)
@@ -398,6 +400,25 @@ def run_backfill(
                     continue
 
                 dest_account_id = session_account_id
+
+                # Guard against Firestore path injection from untrusted ADK state.
+                if not _FIRESTORE_ID_RE.match(dest_account_id):
+                    logger.error(
+                        "%s: dest_account_id=%r fails ID validation — skipping",
+                        log_prefix,
+                        dest_account_id,
+                    )
+                    errored += 1
+                    continue
+                if not _FIRESTORE_ID_RE.match(raw_session_id):
+                    logger.error(
+                        "%s: session_id=%r fails ID validation — skipping",
+                        log_prefix,
+                        raw_session_id,
+                    )
+                    errored += 1
+                    continue
+
                 doc_path = (
                     f"accounts/{dest_account_id}/chat_sessions/{raw_session_id}"
                 )
@@ -444,12 +465,13 @@ def run_backfill(
                 )
 
                 if dry_run:
-                    logger.info(
+                    logger.debug(
                         "DRY-RUN would write: %s (title=%r message_count=%d)",
                         doc_path,
                         metadata.title,
                         metadata.message_count,
                     )
+                    logger.info("DRY-RUN would write: %s", doc_path)
                     created += 1
                 else:
                     db.document(doc_path).set(metadata.model_dump())
@@ -539,7 +561,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         from google.adk.sessions import VertexAiSessionService  # type: ignore[import]
 
-        session_service = VertexAiSessionService(project=project_id, location="us-central1")
+        location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
+        session_service = VertexAiSessionService(project=project_id, location=location)
     except ImportError:
         print(
             "ERROR: google-adk package not installed. "
