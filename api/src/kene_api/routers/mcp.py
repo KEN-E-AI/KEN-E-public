@@ -478,7 +478,7 @@ async def get_session_status(
         )
     except Exception:
         return SessionStatusResponse(
-            recovery_window_days=7,
+            recovery_window_days=30,
         )
 
 
@@ -489,7 +489,7 @@ async def get_recoverable_sessions(
 ) -> list[RecoverableSessionInfo]:
     """List recoverable sessions for the current user.
 
-    Returns sessions from the last 7 days that can be recovered.
+    Returns sessions from the last 30 days that can be recovered.
     Sessions are sorted by last updated time (most recent first).
 
     Requires: Authenticated user

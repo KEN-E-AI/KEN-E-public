@@ -4,7 +4,7 @@ This module handles session recovery, allowing users to resume
 previous conversations and maintain context across visits.
 
 Features:
-- List recoverable sessions within 7-day window
+- List recoverable sessions within 30-day window
 - Full state restoration from ADK session store
 - Conversation history reloading
 - Graceful degradation for corrupted data
@@ -73,7 +73,7 @@ class SessionRecoveryService:
     """Handles session recovery for returning users.
 
     Builds on Sprint 1's session infrastructure to add:
-    - Session listing with 7-day window
+    - Session listing with 30-day window
     - Full state restoration
     - Conversation history reloading
     - Graceful degradation for corrupted data
@@ -91,7 +91,7 @@ class SessionRecoveryService:
             history = result.conversation_history
     """
 
-    RECOVERY_WINDOW_DAYS = 7
+    RECOVERY_WINDOW_DAYS = 30
 
     def __init__(
         self,
@@ -114,14 +114,14 @@ class SessionRecoveryService:
     ) -> list[RecoverableSession]:
         """List sessions available for recovery.
 
-        Returns sessions from the last 7 days, sorted by last_updated desc.
+        Returns sessions from the last 30 days, sorted by last_updated desc.
 
         Args:
             user_id: User to list sessions for
             limit: Maximum number of sessions to return
 
         Returns:
-            List of recoverable sessions, newest first
+            List of recoverable sessions, newest first (30-day window)
         """
         cutoff = datetime.now(timezone.utc) - timedelta(days=self.RECOVERY_WINDOW_DAYS)
 

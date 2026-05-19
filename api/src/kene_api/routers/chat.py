@@ -875,9 +875,9 @@ class AgentEngineClient:
             user_id: User identifier
 
         Returns:
-            Sorted list of ConversationInfo from the last 7 days
+            Sorted list of ConversationInfo from the last 30 days
         """
-        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
         conversations = []
         prefix = f"{user_id}:"
 
@@ -907,7 +907,7 @@ class AgentEngineClient:
         return conversations
 
     async def get_user_conversations(self, user_id: str) -> list[ConversationInfo]:
-        """Get conversations for a user from the last 7 days."""
+        """Get conversations for a user from the last 30 days."""
         # Serve from cache if we've already loaded this user's sessions
         if user_id in self._sessions_loaded_for:
             conversations = self._get_cached_conversations(user_id)
@@ -924,7 +924,7 @@ class AgentEngineClient:
             return conversations
 
         conversations = []
-        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
 
         # Try Redis session list before expensive list_sessions call
         try:
@@ -1048,7 +1048,7 @@ class AgentEngineClient:
                 if isinstance(last_updated, str):
                     last_updated = datetime.fromisoformat(last_updated)
 
-                # Skip sessions older than 7 days and mark for cleanup
+                # Skip sessions older than 30 days and mark for cleanup
                 if last_updated < cutoff:
                     old_session_ids.append(session_id)
                     continue
@@ -2366,7 +2366,7 @@ async def get_recoverable_sessions(
 ) -> list[RecoverableSessionInfo]:
     """List sessions available for recovery.
 
-    Returns sessions from the last 7 days that can be resumed.
+    Returns sessions from the last 30 days that can be resumed.
     """
     try:
         from app.adk.session.recovery import get_recovery_service
