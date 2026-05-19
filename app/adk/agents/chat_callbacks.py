@@ -41,8 +41,11 @@ try:
         from token_accounting import (
             extract_billable_tokens as _extract_billable_tokens,  # type: ignore[no-redef]
         )
-except Exception:
-    logger.warning("token_accounting import failed; token counters will be zero-filled")
+except ImportError:
+    logger.error(
+        "token_accounting module not found; token counters will be zero-filled",
+        extra={"error_id": "CHAT_TOKEN_ACCOUNTING_MISSING"},
+    )
     _extract_billable_tokens = None  # type: ignore[assignment]
 
 
@@ -81,15 +84,35 @@ def _post_side_table_update(
             headers={"Authorization": f"Bearer {token}"},
             timeout=_REQUEST_TIMEOUT,
         )
-        if resp.status_code not in (200,):
+        if resp.status_code == 409:
+            # 409 is expected for duplicate idempotency keys; not a warning.
+            logger.debug(
+                "Side-table update duplicate (idempotent): session=%r key=%r",
+                session_id,
+                idempotency_key,
+            )
+        elif 400 <= resp.status_code < 500:
             logger.warning(
-                "Side-table update returned %d for session=%r: %s",
+                "Side-table update rejected (4xx=%d) for session=%r: %s",
                 resp.status_code,
                 session_id,
                 resp.text[:200],
+                extra={"error_id": "CHAT_SIDE_TABLE_CLIENT_ERROR", "session_id": session_id},
+            )
+        elif resp.status_code >= 500:
+            logger.error(
+                "Side-table update server error (5xx=%d) for session=%r: %s",
+                resp.status_code,
+                session_id,
+                resp.text[:200],
+                extra={"error_id": "CHAT_SIDE_TABLE_SERVER_ERROR", "session_id": session_id},
             )
     except Exception as exc:
-        logger.warning("Side-table update failed (non-blocking): %s", exc)
+        logger.warning(
+            "Side-table update failed (non-blocking): %s",
+            exc,
+            extra={"error_id": "CHAT_SIDE_TABLE_NETWORK_ERROR", "session_id": session_id},
+        )
 
 
 def _isoformat_sentinel(dt: datetime) -> dict[str, str]:
@@ -117,6 +140,7 @@ def _build_turn_delta(events: list[Any], now: datetime) -> dict[str, Any]:
     tool_call_count = 0
     message_count = 0
     final_text = ""
+    _token_extract_errors = 0
 
     for event in events:
         if _extract_billable_tokens is not None:
@@ -125,17 +149,35 @@ def _build_turn_delta(events: list[Any], now: datetime) -> dict[str, Any]:
                 input_tokens += counts.input
                 output_tokens += counts.output
                 reasoning_tokens += counts.reasoning
-            except Exception:
-                pass
+            except Exception as _tok_err:
+                _token_extract_errors += 1
+                logger.debug("Token extraction failed for event: %s", _tok_err)
 
-        if getattr(event, "type", None) == "tool_call":
-            tool_call_count += 1
+        # Count function calls using the real ADK Event API.
+        _get_fn_calls = getattr(event, "get_function_calls", None)
+        if callable(_get_fn_calls):
+            tool_call_count += len(_get_fn_calls() or [])
 
         if getattr(event, "author", None) in ("user", "model"):
             message_count += 1
 
-        if getattr(event, "is_final_text", False):
-            final_text = getattr(event, "text", "") or ""
+        # Extract final-response text using the real ADK Event API.
+        _is_final = getattr(event, "is_final_response", None)
+        if callable(_is_final) and _is_final():
+            _content = getattr(event, "content", None)
+            if _content is not None:
+                _parts = getattr(_content, "parts", None) or []
+                final_text = "".join(
+                    getattr(_p, "text", None) or ""
+                    for _p in _parts
+                    if getattr(_p, "text", None)
+                )
+
+    if _token_extract_errors:
+        logger.warning(
+            "Token extraction failed for %d event(s) in this turn; counts may be under-reported",
+            _token_extract_errors,
+        )
 
     turn_tokens = input_tokens + output_tokens + reasoning_tokens
     now_sentinel = _isoformat_sentinel(now)
