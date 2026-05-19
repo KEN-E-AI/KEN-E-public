@@ -15,7 +15,6 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 from src.kene_api.models.feature_flag_models import (
     EvaluationContext,
     FeatureFlag,
@@ -530,7 +529,7 @@ def _make_write_request(**overrides: object) -> FeatureFlagWriteRequest:
 
 def _mock_create_db(raise_already_exists: bool = False) -> MagicMock:
     """Firestore mock suitable for create_flag tests."""
-    from google.api_core import exceptions as gcp_exceptions  # noqa: PLC0415
+    from google.api_core import exceptions as gcp_exceptions
 
     db = MagicMock()
     doc_ref = MagicMock()
@@ -596,10 +595,8 @@ class TestMutatingFlags:
         assert result.created_at == result.updated_at
 
         # Audit called with action="create" and before=None in diff.
-        mock_audit.assert_called_once()
-        _, kwargs = mock_audit.call_args
-        action = mock_audit.call_args.args[3] if mock_audit.call_args.args else mock_audit.call_args.kwargs.get("action")
         # record_audit(db, flag_key, actor_email, action, diff)
+        mock_audit.assert_called_once()
         call_args = mock_audit.call_args.args
         assert call_args[3] == "create"
         diff = call_args[4]
@@ -651,7 +648,11 @@ class TestMutatingFlags:
 
         with patch(self._AUDIT_PATCH, new_callable=AsyncMock):
             with pytest.raises(FeatureFlagNotFoundError) as exc_info:
-                await svc.update_flag("ghost_flag", _make_write_request(key="ghost_flag"), "admin@ken-e.ai")
+                await svc.update_flag(
+                    "ghost_flag",
+                    _make_write_request(key="ghost_flag"),
+                    "admin@ken-e.ai",
+                )
 
         assert exc_info.value.key == "ghost_flag"
 

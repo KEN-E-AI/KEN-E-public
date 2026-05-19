@@ -18,7 +18,11 @@ from pydantic import BaseModel
 
 from ..auth.dependencies import require_super_admin
 from ..dependencies import get_feature_flag_service
-from ..models.feature_flag_models import FeatureFlag, FeatureFlagWriteRequest, FlagKeyStr
+from ..models.feature_flag_models import (
+    FeatureFlag,
+    FeatureFlagWriteRequest,
+    FlagKeyStr,
+)
 from ..services.feature_flag_service import (
     DuplicateFeatureFlagError,
     FeatureFlagNotFoundError,
@@ -77,7 +81,7 @@ async def get_flag(
 @router.post("", response_model=FeatureFlag, status_code=201)
 async def create_flag(
     body: FeatureFlagWriteRequest,
-    _admin: "UserContext" = Depends(require_super_admin),
+    _admin: UserContext = Depends(require_super_admin),
     service: FeatureFlagService = Depends(get_feature_flag_service),
 ) -> FeatureFlag:
     """Create a new feature flag (super-admin only).
@@ -92,14 +96,14 @@ async def create_flag(
         raise HTTPException(
             status_code=409,
             detail=f"Feature flag '{exc.key}' already exists",
-        )
+        ) from exc
 
 
 @router.put("/{key}", response_model=FeatureFlag)
 async def update_flag(
     key: FlagKeyStr,
     body: FeatureFlagWriteRequest,
-    _admin: "UserContext" = Depends(require_super_admin),
+    _admin: UserContext = Depends(require_super_admin),
     service: FeatureFlagService = Depends(get_feature_flag_service),
 ) -> FeatureFlag:
     """Full-replace a feature flag by key (super-admin only).
@@ -120,13 +124,13 @@ async def update_flag(
         raise HTTPException(
             status_code=404,
             detail=f"Feature flag '{exc.key}' not found",
-        )
+        ) from exc
 
 
 @router.delete("/{key}", status_code=204)
 async def delete_flag(
     key: FlagKeyStr,
-    _admin: "UserContext" = Depends(require_super_admin),
+    _admin: UserContext = Depends(require_super_admin),
     service: FeatureFlagService = Depends(get_feature_flag_service),
 ) -> None:
     """Hard-delete a feature flag by key (super-admin only).
@@ -141,4 +145,4 @@ async def delete_flag(
         raise HTTPException(
             status_code=404,
             detail=f"Feature flag '{exc.key}' not found",
-        )
+        ) from exc

@@ -26,7 +26,10 @@ from fastapi.testclient import TestClient
 from src.kene_api.auth.dependencies import UserContext, require_super_admin
 from src.kene_api.dependencies import get_feature_flag_service
 from src.kene_api.main import app
-from src.kene_api.models.feature_flag_models import FeatureFlag, FeatureFlagWriteRequest, TargetingRules
+from src.kene_api.models.feature_flag_models import (
+    FeatureFlag,
+    TargetingRules,
+)
 from src.kene_api.services.feature_flag_service import (
     DuplicateFeatureFlagError,
     FeatureFlagNotFoundError,
@@ -290,7 +293,9 @@ def _stub_service_for_create(
     if raise_exc is not None:
         svc.create_flag = AsyncMock(side_effect=raise_exc)
     else:
-        svc.create_flag = AsyncMock(return_value=result_flag or _make_flag(key="new_flag"))
+        svc.create_flag = AsyncMock(
+            return_value=result_flag or _make_flag(key="new_flag")
+        )
     return svc
 
 
@@ -303,7 +308,9 @@ def _stub_service_for_update(
     if raise_exc is not None:
         svc.update_flag = AsyncMock(side_effect=raise_exc)
     else:
-        svc.update_flag = AsyncMock(return_value=result_flag or _make_flag(key="upd_flag"))
+        svc.update_flag = AsyncMock(
+            return_value=result_flag or _make_flag(key="upd_flag")
+        )
     return svc
 
 
@@ -327,7 +334,9 @@ def _stub_service_for_delete(
 class TestCreateFlag:
     """AC-1 (mutating half) and AC-2: POST auth gate, validation, and success."""
 
-    def test_super_admin_post_valid_payload_returns_201(self, client: TestClient) -> None:
+    def test_super_admin_post_valid_payload_returns_201(
+        self, client: TestClient
+    ) -> None:
         """Super-admin POST with valid payload returns 201 with the created flag."""
         stub = _stub_service_for_create()
 
@@ -418,7 +427,9 @@ class TestCreateFlag:
 class TestUpdateFlag:
     """AC-1 (mutating half) and AC-3: PUT auth gate, 404, URL/body mismatch, success."""
 
-    def test_super_admin_put_valid_payload_returns_200(self, client: TestClient) -> None:
+    def test_super_admin_put_valid_payload_returns_200(
+        self, client: TestClient
+    ) -> None:
         """Super-admin PUT with valid payload returns 200 with the updated flag."""
         stub = _stub_service_for_update(result_flag=_make_flag(key="upd_flag"))
 
@@ -518,7 +529,9 @@ class TestUpdateFlag:
 class TestDeleteFlag:
     """AC-1 (mutating half): DELETE auth gate, 404, and success (204 No Content)."""
 
-    def test_super_admin_delete_existing_key_returns_204(self, client: TestClient) -> None:
+    def test_super_admin_delete_existing_key_returns_204(
+        self, client: TestClient
+    ) -> None:
         """Super-admin DELETE of an existing flag returns 204 with no body."""
         stub = _stub_service_for_delete()
 

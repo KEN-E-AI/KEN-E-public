@@ -224,7 +224,7 @@ class FeatureFlagService:
             )
             now = self._time_provider()
             for key, result in zip(cold_keys, fetch_results, strict=True):
-                if isinstance(result, Exception):
+                if isinstance(result, BaseException):
                     # Transient error — log type only (no exc_info to avoid serialising
                     # Firestore document contents or gRPC internals into Cloud Logging).
                     # Do NOT cache so the next call retries.
@@ -388,8 +388,8 @@ class FeatureFlagService:
                 self._db.collection("feature_flags").document(flag.key).create,
                 data,
             )
-        except gcp_exceptions.AlreadyExists:
-            raise DuplicateFeatureFlagError(flag.key)
+        except gcp_exceptions.AlreadyExists as exc:
+            raise DuplicateFeatureFlagError(flag.key) from exc
 
         # Invalidate any stale cache entry so a GET /{key} immediately after
         # POST returns the newly-created state, not a cached absent entry.
@@ -432,12 +432,11 @@ class FeatureFlagService:
             raise FeatureFlagNotFoundError(key)
 
         now = datetime.now(timezone.utc)
-        updated = FeatureFlag(
-            **request.model_dump(),
-            key=key,  # canonical key from URL (router ensures body key == URL key)
-            created_at=existing.created_at,
-            updated_at=now,
-        )
+        flag_data = request.model_dump()
+        flag_data["key"] = key  # canonical key from URL, overwrites body key
+        flag_data["created_at"] = existing.created_at
+        flag_data["updated_at"] = now
+        updated = FeatureFlag(**flag_data)
         data = updated.model_dump(mode="json")
         data.pop("key", None)
 
