@@ -301,14 +301,6 @@ class TestGetFlagAudit:
       9. Service exception → 500.
     """
 
-    def _admin_override(self, app: object) -> None:  # type: ignore[override]
-        from src.kene_api.main import app as _app
-
-        async def _admin() -> UserContext:
-            return _make_super_admin()
-
-        _app.dependency_overrides[require_super_admin] = _admin
-
     # ------------------------------------------------------------------
     # Case 1: super-admin happy path — non-null next_cursor
     # ------------------------------------------------------------------

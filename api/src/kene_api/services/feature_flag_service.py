@@ -348,6 +348,11 @@ class FeatureFlagService:
                 if not cursor_doc.exists:
                     # Stale cursor — audit doc was deleted; return empty terminal page.
                     return [], None
+                # Verify the cursor belongs to the same flag_key to prevent cross-flag
+                # position leakage: a valid audit_id from a different flag would cause
+                # start_after() to advance the index position outside flag_key's rows.
+                if cursor_doc.to_dict().get("flag_key") != flag_key:
+                    return [], None
                 query = query.start_after(cursor_doc)
 
             # Fetch limit+1 to detect whether a next page exists.
@@ -356,11 +361,18 @@ class FeatureFlagService:
             has_next = len(raw_docs) == limit + 1
             page_docs = raw_docs[:limit]
 
-            entries = [
-                FeatureFlagAuditEntry.model_validate(doc.to_dict())
-                for doc in page_docs
-            ]
-            next_cursor: str | None = entries[-1].audit_id if has_next else None
+            entries: list[FeatureFlagAuditEntry] = []
+            for doc in page_docs:
+                try:
+                    entries.append(FeatureFlagAuditEntry.model_validate(doc.to_dict()))
+                except Exception:
+                    logger.error(
+                        "feature_flag_audit_invalid_doc", extra={"doc_id": doc.id}
+                    )
+
+            # Guard against empty entries when has_next is True (can occur if all
+            # page_docs fail Pydantic validation — skipped by the loop above).
+            next_cursor: str | None = entries[-1].audit_id if (has_next and entries) else None
             return entries, next_cursor
 
         return await asyncio.to_thread(_run)

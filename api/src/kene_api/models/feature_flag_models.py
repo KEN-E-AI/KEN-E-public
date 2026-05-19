@@ -96,7 +96,7 @@ class FeatureFlagAuditEntry(BaseModel):
 
     audit_id: str
     flag_key: str
-    actor_email: str
+    actor_email: EmailStr
     action: AuditActionLiteral
     diff: dict[str, dict[str, Any]]
     created_at: str  # ISO-8601

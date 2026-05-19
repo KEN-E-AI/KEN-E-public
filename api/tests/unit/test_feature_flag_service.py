@@ -653,3 +653,59 @@ class TestGetFlagAudit:
 
         with pytest.raises(RuntimeError, match="Firestore down"):
             await svc.get_flag_audit("test_flag", limit=5, cursor=None)
+
+    async def test_cross_flag_cursor_returns_empty_page(self) -> None:
+        """Cross-flag cursor: cursor doc belongs to a different flag_key → ([], None)."""
+        # Cursor doc exists but its flag_key doesn't match the request flag_key.
+        cross_flag_cursor_doc = MagicMock()
+        cross_flag_cursor_doc.exists = True
+        cross_flag_cursor_doc.to_dict.return_value = {
+            "audit_id": "stale_id",
+            "flag_key": "other_flag",  # different from "test_flag"
+            "actor_email": "admin@ken-e.ai",
+            "action": "update",
+            "diff": {},
+            "created_at": "2026-01-01T00:00:00+00:00",
+        }
+        db = self._mock_audit_db([], cursor_doc=cross_flag_cursor_doc)
+        svc = FeatureFlagService(db=db, time_provider=FakeClock())
+
+        entries, next_cursor = await svc.get_flag_audit(
+            "test_flag", limit=5, cursor="cross_flag_cursor"
+        )
+
+        assert entries == []
+        assert next_cursor is None
+        # The page query (stream) should NOT have been issued.
+        query_mock = db.collection.return_value.where.return_value
+        query_mock.stream.assert_not_called()
+
+    async def test_empty_entries_with_has_next_returns_null_cursor(self) -> None:
+        """IndexError guard: has_next=True but all docs fail Pydantic validation → next_cursor=None."""
+        # The inner _run function would fetch limit+1 docs to detect has_next=True,
+        # but after model_validate strips invalid docs entries would be [].
+        # This test directly verifies the `has_next and entries` guard by
+        # simulating 6 docs for limit=5 but making model_validate raise on all of them.
+        from unittest.mock import patch
+
+        class _FailingAuditEntry:
+            @classmethod
+            def model_validate(cls, data: object) -> object:
+                raise ValueError("Intentional validation failure for testing")
+
+        with patch(
+            "src.kene_api.services.feature_flag_service.FeatureFlagAuditEntry",
+            _FailingAuditEntry,
+        ):
+            docs = [
+                self._make_audit_doc(f"id_{i}", f"2026-01-0{i+1}T00:00:00+00:00")
+                for i in range(6)
+            ]
+            db2 = self._mock_audit_db(docs)
+            svc2 = FeatureFlagService(db=db2, time_provider=FakeClock())
+
+            # Should not raise IndexError even though has_next=True and entries=[].
+            entries, next_cursor = await svc2.get_flag_audit("test_flag", limit=5, cursor=None)
+
+        assert entries == []
+        assert next_cursor is None
