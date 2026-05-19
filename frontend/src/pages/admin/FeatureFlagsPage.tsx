@@ -2,6 +2,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useFeatureFlags } from "@/lib/featureFlags/hooks";
 
 export default function FeatureFlagsPage() {
+  // isError and data are intentionally unused in this shell — F3 fills the content slot.
   const { isLoading } = useFeatureFlags();
 
   return (

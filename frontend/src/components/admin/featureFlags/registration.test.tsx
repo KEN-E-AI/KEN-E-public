@@ -76,7 +76,9 @@ async function openMenu() {
 describe("feature-flags registration", () => {
   beforeEach(() => {
     resetSuperAdminNavForTesting();
-    // Re-register after each reset to simulate module load effect
+    // Static module imports are cached, so the registration.ts side effect only fires
+    // once. Re-register manually here with the same values so each test starts with
+    // the expected registry state after the reset.
     registerSuperAdminNavRow({
       id: "feature-flags" as NavRowId,
       label: "Feature Flags",
