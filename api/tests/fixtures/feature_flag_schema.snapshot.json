@@ -6,6 +6,7 @@
           "items": {
             "type": "string"
           },
+          "maxItems": 1000,
           "title": "Account Ids",
           "type": "array"
         },
@@ -13,6 +14,7 @@
           "items": {
             "type": "string"
           },
+          "maxItems": 1000,
           "title": "Email Domains",
           "type": "array"
         },
@@ -20,6 +22,7 @@
           "items": {
             "type": "string"
           },
+          "maxItems": 1000,
           "title": "Organization Ids",
           "type": "array"
         },
@@ -34,6 +37,7 @@
           "items": {
             "type": "string"
           },
+          "maxItems": 1000,
           "title": "User Emails",
           "type": "array"
         }

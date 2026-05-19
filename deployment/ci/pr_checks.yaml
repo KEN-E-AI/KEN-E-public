@@ -50,18 +50,18 @@ steps:
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
 
-  # Run API integration tests against a live Firestore emulator.
+  # Run API integration tests against a live Firestore emulator (DM-84).
   #
   # 12 integration test files are gated behind FIRESTORE_EMULATOR_HOST via
   # pytest.mark.skipif (gate established in DM-85 / PR #509). Without a running
-  # emulator they skip silently in CI, leaving AC-9 / AC-10 / FF-9 verified only
-  # on developer machines. This step starts the emulator so the gate opens in
-  # CI (DM-84).
+  # emulator they skip silently in CI; this step starts one so the gate opens.
   #
-  # Image note: the cloud-sdk `:emulators` tag bundles gcloud + the JRE the
-  # Firestore emulator requires; python:3.11-slim has neither. The emulator and
-  # pytest MUST run in the same step — Cloud Build steps are separate
-  # containers, so a background emulator started elsewhere would not survive.
+  # The emulator + uv bootstrap is shared with the api-unit-tests step below
+  # via deployment/ci/scripts/start_firestore_emulator.sh. Both steps run on
+  # the cloud-sdk `:emulators` image (bundles gcloud + the JRE the emulator
+  # needs; python:3.11-slim has neither). Each step starts its own emulator —
+  # Cloud Build steps are separate containers, so one started elsewhere would
+  # not survive.
   - name: "gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators"
     id: api-integration-tests
     entrypoint: /bin/bash
@@ -69,37 +69,73 @@ steps:
       - "-c"
       - |
         set -euo pipefail
+        source deployment/ci/scripts/start_firestore_emulator.sh
         cd api
-
-        # Start the Firestore emulator in the background on the port the test
-        # suite expects (see tests/integration/*_no_orphans.py skip gate).
-        gcloud emulators firestore start --host-port=127.0.0.1:8090 &
-
-        # Block until the emulator accepts connections; fail fast after ~60s.
-        for _ in $(seq 1 60); do
-          curl -sf http://127.0.0.1:8090/ >/dev/null 2>&1 && break
-          sleep 1
-        done
-        curl -sf http://127.0.0.1:8090/ >/dev/null 2>&1 \
-          || { echo "Firestore emulator failed to start"; exit 1; }
-
-        # Install uv via the standalone installer — the cloud-sdk image is an
-        # externally-managed Python env where `pip install` is blocked (PEP 668).
-        # The installer drops uv under HOME/.local/bin, and Cloud Build sets
-        # HOME to /builder/home. The doubled dollar-signs escape Cloud Build
-        # substitution so the shell receives literal HOME and PATH references.
-        curl -LsSf https://astral.sh/uv/install.sh | sh
-        export PATH="$$HOME/.local/bin:$$PATH"
         uv sync --frozen
-
         FIRESTORE_EMULATOR_HOST=127.0.0.1:8090 \
         GOOGLE_CLOUD_PROJECT_ID=test-project \
         GOOGLE_CLOUD_PROJECT=test-project \
           uv run pytest tests/integration
 
+  # Run the API unit suite + the bulk top-level api/tests/test_*.py files (DM-90).
+  #
+  # Before DM-90 only api/tests/integration was gated in CI; api/tests/unit and
+  # the bulk api/tests/test_*.py (~1900 tests) ran on no PR gate at all. This
+  # step closes that gap.
+  #
+  # PHASED GATE: the full api/tests suite is not yet green, so this step runs
+  # the known-green subset and --ignores the files still failing. `pytest tests`
+  # is invoked as a DIRECTORY (not a test_*.py glob) so --ignore actually
+  # filters during collection — passing glob-expanded file args makes --ignore
+  # a silent no-op. New test files are therefore gated by default; only the
+  # files listed below are excluded. Each is tracked by a DM-90 follow-up
+  # issue — as a file is fixed, delete its --ignore line and the gate grows.
+  #
+  # tests/integration is excluded (gated by api-integration-tests above);
+  # tests/middleware is out of DM-90 scope (api/tests/unit + bulk top-level).
+  #
+  # test_notification_service.py is ignored as flaky, not failing: across
+  # repeated runs different tests in it fail nondeterministically (tight-loop
+  # created_at ties + intra-class state bleed). A blocking gate cannot carry a
+  # flaky file; its triage is a DM-90 follow-up.
+  - name: "gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators"
+    id: api-unit-tests
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        set -euo pipefail
+        source deployment/ci/scripts/start_firestore_emulator.sh
+        cd api
+        uv sync --frozen
+        FIRESTORE_EMULATOR_HOST=127.0.0.1:8090 \
+        GOOGLE_CLOUD_PROJECT_ID=test-project \
+        GOOGLE_CLOUD_PROJECT=test-project \
+          uv run pytest tests \
+            --ignore=tests/integration \
+            --ignore=tests/middleware \
+            --ignore=tests/unit/test_chat_performance.py \
+            --ignore=tests/unit/test_migrate_to_shape_b.py \
+            --ignore=tests/unit/test_notification_service.py \
+            --ignore=tests/test_accounts.py \
+            --ignore=tests/test_accounts_activity_logs.py \
+            --ignore=tests/test_auth_endpoints.py \
+            --ignore=tests/test_competitive_endpoints.py \
+            --ignore=tests/test_ga_property_selection.py \
+            --ignore=tests/test_insights.py \
+            --ignore=tests/test_invitation_endpoints.py \
+            --ignore=tests/test_metrics.py \
+            --ignore=tests/test_monitoring_topics_endpoints.py \
+            --ignore=tests/test_oauth_integrations.py \
+            --ignore=tests/test_organization_creation_auth.py
+
   # Run agent-side unit tests for the clean subdirectories of app/adk/.
   # Scope: agent_factory, mcp_config, and tracking test directories, plus the
-  # colocated chat-callback suite in app/adk/agents/tests/ (CH-PRD-01 wave 3).
+  # colocated suites in app/adk/agents/utils/ and app/adk/agents/models/ and
+  # the chat-callback suite in app/adk/agents/tests/ (CH-PRD-01 wave 3).
+  # The utils/ and models/ suites (~191 tests, including the review-pipeline
+  # suite) were added in AH-54 — they are genuine pytest files that, living
+  # outside a tests/ directory, previously ran on no PR.
   # The chat-callback files are named explicitly rather than gating the whole
   # app/adk/agents/tests/ directory — the legacy suites there (test_ken_e_agent
   # etc.) are not yet CI-clean.
@@ -116,6 +152,8 @@ steps:
         uv sync --frozen
         uv run pytest \
           app/adk/agents/agent_factory/tests/ \
+          app/adk/agents/utils/ \
+          app/adk/agents/models/ \
           app/adk/agents/tests/test_chat_callbacks.py \
           app/adk/agents/tests/test_callback_writes_counters.py \
           app/adk/mcp_config/tests/ \

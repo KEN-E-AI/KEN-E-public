@@ -176,7 +176,9 @@ describe("EmailActionHandler", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Email Verified!")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Continue" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Continue" }),
+      ).toBeInTheDocument();
     });
   });
 

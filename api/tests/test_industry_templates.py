@@ -1,11 +1,14 @@
 """Tests for industry templates API endpoints."""
 
 import os
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from unittest.mock import Mock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from src.kene_api.auth.user_context import get_current_user_context
+from src.kene_api.firestore import get_firestore_service
 from src.kene_api.main import app
 from src.kene_api.models.kene_models import (
     IndustryTemplate,
@@ -15,6 +18,22 @@ pytestmark = pytest.mark.skipif(
     not os.getenv("FIRESTORE_EMULATOR_HOST"),
     reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
 )
+
+
+@contextmanager
+def override_dependency(dependency, value):
+    """Temporarily override a FastAPI dependency.
+
+    FastAPI captures ``Depends()`` callables at route-registration time, so a
+    plain ``unittest.mock.patch`` of the module attribute has no effect. This
+    registers an ``app.dependency_overrides`` entry and removes only that key
+    on exit so overrides never leak into other test files.
+    """
+    app.dependency_overrides[dependency] = lambda: value
+    try:
+        yield value
+    finally:
+        app.dependency_overrides.pop(dependency, None)
 
 
 @pytest.fixture
@@ -233,31 +252,26 @@ class TestGetTemplateById:
 class TestUpdateIndustryTemplate:
     """Tests for updating industry templates."""
 
-    @patch("src.kene_api.auth.get_current_user_context")
-    @patch("src.kene_api.routers.industry_templates.get_firestore_service")
     def test_update_template_as_super_admin(
         self,
-        mock_get_firestore,
-        mock_get_user,
         client,
         sample_template_data,
         mock_super_admin,
         mock_firestore_service,
     ):
         """Test successful template update by super admin."""
-        # Setup mocks
-        mock_get_user.return_value = mock_super_admin
         mock_firestore_service.set_document.return_value = True
-        mock_get_firestore.return_value = mock_firestore_service
 
         # Prepare update data
         update_data = sample_template_data.copy()
         update_data["description"] = "Updated description"
 
         # Make request
-        response = client.put(
-            "/api/v1/industry-templates/retail_trade_b2c", json=update_data
-        )
+        with override_dependency(get_current_user_context, mock_super_admin):
+            with override_dependency(get_firestore_service, mock_firestore_service):
+                response = client.put(
+                    "/api/v1/industry-templates/retail_trade_b2c", json=update_data
+                )
 
         # Assert
         assert response.status_code == 200
@@ -265,50 +279,43 @@ class TestUpdateIndustryTemplate:
         assert data["description"] == "Updated description"
         mock_firestore_service.set_document.assert_called_once()
 
-    @patch("src.kene_api.auth.get_current_user_context")
-    @patch("src.kene_api.routers.industry_templates.get_firestore_service")
     def test_update_template_as_regular_user_forbidden(
         self,
-        mock_get_firestore,
-        mock_get_user,
         client,
         sample_template_data,
         mock_auth_user,
+        mock_firestore_service,
     ):
         """Test that regular users cannot update templates."""
-        # Setup mocks
-        mock_get_user.return_value = mock_auth_user
-
         # Make request
-        response = client.put(
-            "/api/v1/industry-templates/retail_trade_b2c", json=sample_template_data
-        )
+        with override_dependency(get_current_user_context, mock_auth_user):
+            with override_dependency(get_firestore_service, mock_firestore_service):
+                response = client.put(
+                    "/api/v1/industry-templates/retail_trade_b2c",
+                    json=sample_template_data,
+                )
 
         # Assert forbidden
         assert response.status_code == 403
         assert "Only super admins can update" in response.json()["detail"]
 
-    @patch("src.kene_api.auth.get_current_user_context")
-    @patch("src.kene_api.routers.industry_templates.get_firestore_service")
     def test_update_template_firestore_failure(
         self,
-        mock_get_firestore,
-        mock_get_user,
         client,
         sample_template_data,
         mock_super_admin,
         mock_firestore_service,
     ):
         """Test handling of Firestore update failure."""
-        # Setup mocks
-        mock_get_user.return_value = mock_super_admin
         mock_firestore_service.set_document.return_value = False
-        mock_get_firestore.return_value = mock_firestore_service
 
         # Make request
-        response = client.put(
-            "/api/v1/industry-templates/retail_trade_b2c", json=sample_template_data
-        )
+        with override_dependency(get_current_user_context, mock_super_admin):
+            with override_dependency(get_firestore_service, mock_firestore_service):
+                response = client.put(
+                    "/api/v1/industry-templates/retail_trade_b2c",
+                    json=sample_template_data,
+                )
 
         # Assert error
         assert response.status_code == 500
@@ -318,28 +325,27 @@ class TestUpdateIndustryTemplate:
 class TestCacheBehavior:
     """Tests for caching behavior."""
 
-    @patch("src.kene_api.routers.industry_templates.get_firestore_service")
     def test_cache_hit_avoids_firestore_call(
-        self, mock_get_firestore, client, sample_template_data, mock_firestore_service
+        self, client, sample_template_data, mock_firestore_service
     ):
         """Test that cached data avoids additional Firestore calls."""
         # Setup mock
         mock_firestore_service.list_documents.return_value = [sample_template_data]
-        mock_get_firestore.return_value = mock_firestore_service
 
         # Import and clear cache
         from src.kene_api.routers.industry_templates import _template_cache
 
         _template_cache.invalidate()
 
-        # First request - should call Firestore
-        response1 = client.get("/api/v1/industry-templates")
-        assert response1.status_code == 200
-        assert mock_firestore_service.list_documents.call_count == 1
+        with override_dependency(get_firestore_service, mock_firestore_service):
+            # First request - should call Firestore
+            response1 = client.get("/api/v1/industry-templates")
+            assert response1.status_code == 200
+            assert mock_firestore_service.list_documents.call_count == 1
 
-        # Second request - should use cache (if caching is enabled)
-        response2 = client.get("/api/v1/industry-templates")
-        assert response2.status_code == 200
+            # Second request - should use cache (if caching is enabled)
+            response2 = client.get("/api/v1/industry-templates")
+            assert response2.status_code == 200
 
         # In development, cache is disabled so it will call again
         # In production, it would use cache

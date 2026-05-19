@@ -6,11 +6,46 @@ import logging
 import os
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from .agent_retry import DEFAULT_RETRY_CONFIG, FAST_RETRY_CONFIG
 from .dispatch_handlers import (
     dispatch_to_company_news,
     dispatch_to_google_analytics,
     dispatch_to_strategy,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_dispatch_handlers():
+    """Isolate dispatch tests from unmocked network dependencies.
+
+    Three leaks would otherwise hang or badly slow CI on real GCP calls:
+
+    1. dispatch_to_company_news / dispatch_to_google_analytics resolve their
+       specialist via get_registry().get(...), which importlib-imports the
+       agent package — and those modules load config from Firestore at import
+       time. Specialist invocation is mocked per-test, so a stub agent object
+       is sufficient.
+    2. dispatch_to_strategy builds a StrategyAgentLogger, which writes to
+       Google Cloud Logging. Forcing HAS_CLOUD_LOGGING off selects the
+       logger's intended local-only fallback path.
+    3. dispatch_to_strategy imports strategy_agent.orchestrator, whose
+       module-level reasoning_engines.AdkApp(...) resolves the GCP project via
+       a Resource Manager RPC that retries for ~60s without credentials.
+       Seeding vertexai.init() with a project short-circuits that lookup.
+    """
+    import vertexai
+
+    vertexai.init(project="test-project", location="us-central1")
+
+    stub_registry = MagicMock()
+    stub_registry.get.return_value = MagicMock(name="stub_specialist_agent")
+    with (
+        patch("agents.registry.get_registry", return_value=stub_registry),
+        patch("agents.strategy_agent.logging_config.HAS_CLOUD_LOGGING", False),
+    ):
+        yield
 
 
 class TestDispatchToCompanyNews:
@@ -68,12 +103,11 @@ class TestDispatchToGoogleAnalytics:
         """Test successful dispatch to Google Analytics agent."""
         mock_invoke.return_value = "Analytics data"
 
-        tenant_context = {
-            "tenant_id": "test-org",
-            "tenant_credentials": "test-creds",
-        }
+        tenant_context = {"tenant_id": "test-org"}
 
-        result = dispatch_to_google_analytics("Get analytics", tenant_context)
+        result = dispatch_to_google_analytics(
+            "Get analytics", tenant_context=tenant_context
+        )
 
         assert result["status"] == "success"
         assert result["query"] == "Get analytics"
@@ -81,31 +115,6 @@ class TestDispatchToGoogleAnalytics:
         assert result["source"] == "google_analytics_specialist"
         assert result["agent"] == "analytics"
         assert result["tenant_id"] == "test-org"
-
-        # Check that credentials were injected into query
-        args = mock_invoke.call_args[0]
-        enhanced_query = args[1]
-        assert "TENANT_ID:test-org" in enhanced_query
-        assert "TENANT_CREDS:test-creds" in enhanced_query
-
-    @patch("agents.utils.dispatch_handlers.invoke_agent_with_retry")
-    @patch.dict(
-        os.environ, {"GA_PERSONAL_CREDENTIALS": "env-creds", "GA_TENANT_ID": "env-org"}
-    )
-    def test_dispatch_with_env_credentials(self, mock_invoke):
-        """Test using environment credentials when no tenant context."""
-        mock_invoke.return_value = "Analytics response"
-
-        result = dispatch_to_google_analytics("Get data")
-
-        assert result["status"] == "success"
-        assert result["tenant_id"] == "env-org"
-
-        # Check that env credentials were used
-        args = mock_invoke.call_args[0]
-        enhanced_query = args[1]
-        assert "TENANT_ID:env-org" in enhanced_query
-        assert "TENANT_CREDS:env-creds" in enhanced_query
 
     @patch("agents.utils.dispatch_handlers.invoke_agent_with_retry")
     def test_dispatch_without_credentials(self, mock_invoke):
@@ -291,28 +300,24 @@ class TestRetryIntegration:
     """Test that retry logic is properly integrated."""
 
     @patch("agents.utils.dispatch_handlers.invoke_agent_with_retry")
-    def test_news_uses_retry_with_max_attempts(self, mock_invoke):
-        """Test that news dispatch uses retry with 3 attempts."""
+    def test_news_uses_fast_retry_config(self, mock_invoke):
+        """News dispatch wires the fast retry config into invoke_agent_with_retry."""
         mock_invoke.return_value = "News"
 
         dispatch_to_company_news("Query")
 
-        # Verify max_attempts=3 was passed
         mock_invoke.assert_called_once()
-        args = mock_invoke.call_args
-        assert args[1]["max_attempts"] == 3
+        assert mock_invoke.call_args.kwargs["retry_config"] is FAST_RETRY_CONFIG
 
     @patch("agents.utils.dispatch_handlers.invoke_agent_with_retry")
-    def test_analytics_uses_retry_with_max_attempts(self, mock_invoke):
-        """Test that analytics dispatch uses retry with 3 attempts."""
+    def test_analytics_uses_default_retry_config(self, mock_invoke):
+        """Analytics dispatch wires the default retry config into invoke_agent_with_retry."""
         mock_invoke.return_value = "Analytics"
 
         dispatch_to_google_analytics("Query")
 
-        # Verify max_attempts=3 was passed
         mock_invoke.assert_called_once()
-        kwargs = mock_invoke.call_args[1]
-        assert kwargs["max_attempts"] == 3
+        assert mock_invoke.call_args.kwargs["retry_config"] is DEFAULT_RETRY_CONFIG
 
 
 class TestDispatchToGoogleAnalyticsState:
