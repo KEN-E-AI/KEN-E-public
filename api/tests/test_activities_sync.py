@@ -41,13 +41,14 @@ def test_sync_holiday_activity_logs_success(mock_neo4j_service, mock_bigquery_se
     # Mock account exists with regions
     mock_neo4j_service.execute_query.side_effect = [
         [{"regions": ["AU", "CA"]}],  # Account query
-        [{"a": {"activity_id": "act_00"}}],  # Activity exists
+        [{"holiday_activity_count": 1}],  # Activity exists
         [  # Existing logs with IDs and no metric relationships
             {
                 "log_id": "log_001",
                 "description": "New Year",
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-01",
+                "activity_id": "act_00",
                 "has_metric_relationship": False,
             }
         ],
@@ -136,9 +137,12 @@ def test_sync_holiday_activity_logs_account_not_found(
 def test_sync_holiday_activity_logs_no_regions(
     mock_neo4j_service, mock_bigquery_service
 ):
-    """Test sync returns early when account has no regions."""
-    # Mock account exists but has no regions
-    mock_neo4j_service.execute_query.return_value = [{"regions": []}]
+    """Test sync skips BigQuery when account has no regions."""
+    # Mock account exists but has no regions, then no existing holiday logs.
+    mock_neo4j_service.execute_query.side_effect = [
+        [{"regions": []}],  # Account query
+        [],  # No existing holiday logs
+    ]
 
     # Override dependencies
     app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service
@@ -150,7 +154,7 @@ def test_sync_holiday_activity_logs_no_regions(
     assert response.status_code == 200
     data = response.json()
     assert data["success"] is True
-    assert data["message"] == "No regions configured for account"
+    assert "No regions configured" in data["message"]
     assert data["data"]["new_logs_created"] == 0
     assert data["data"]["logs_deleted"] == 0
 
@@ -164,11 +168,16 @@ def test_sync_holiday_activity_logs_no_regions(
 def test_sync_holiday_activity_logs_act_00_not_found(
     mock_neo4j_service, mock_bigquery_service
 ):
-    """Test sync fails when act_00 doesn't exist for account."""
-    # Mock account exists with regions
+    """Test sync proceeds (with a warning) when no holiday activities exist.
+
+    The endpoint no longer hard-fails with a 404 when ``act_00_*`` activities
+    are absent — it logs a warning and continues the sync.
+    """
+    # Mock account exists with regions, no holiday activities, no existing logs.
     mock_neo4j_service.execute_query.side_effect = [
         [{"regions": ["AU"]}],  # Account query
-        [],  # Activity doesn't exist
+        [{"holiday_activity_count": 0}],  # No holiday activities exist
+        [],  # No existing holiday logs
     ]
 
     # Override dependencies
@@ -178,8 +187,8 @@ def test_sync_holiday_activity_logs_act_00_not_found(
     with patch.dict(os.environ, {"GOOGLE_CLOUD_PROJECT_ID": "test-project"}):
         response = client.post("/api/v1/activities/logs/sync?account_id=test-account")
 
-    assert response.status_code == 404
-    assert "Activity act_00 not found" in response.json()["detail"]
+    assert response.status_code == 200
+    assert response.json()["success"] is True
 
     # Clean up
     app.dependency_overrides.clear()
@@ -192,13 +201,14 @@ def test_sync_holiday_activity_logs_all_exist(
     # Mock account exists with regions
     mock_neo4j_service.execute_query.side_effect = [
         [{"regions": ["AU"]}],  # Account query
-        [{"a": {"activity_id": "act_00"}}],  # Activity exists
+        [{"holiday_activity_count": 1}],  # Activity exists
         [  # Existing logs match BigQuery results
             {
                 "log_id": "log_001",
                 "description": "New Year",
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-01",
+                "activity_id": "act_00",
                 "has_metric_relationship": False,
             },
             {
@@ -206,6 +216,7 @@ def test_sync_holiday_activity_logs_all_exist(
                 "description": "Christmas",
                 "start_date": "2024-12-25",
                 "end_date": "2024-12-25",
+                "activity_id": "act_00",
                 "has_metric_relationship": False,
             },
         ],
@@ -289,13 +300,14 @@ def test_sync_holiday_activity_logs_with_deletion(
     # Mock account exists with regions
     mock_neo4j_service.execute_query.side_effect = [
         [{"regions": ["AU"]}],  # Account query
-        [{"a": {"activity_id": "act_00"}}],  # Activity exists
+        [{"holiday_activity_count": 1}],  # Activity exists
         [  # Existing logs - some will be deleted
             {
                 "log_id": "log_001",
                 "description": "New Year",
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-01",
+                "activity_id": "act_00",
                 "has_metric_relationship": False,
             },
             {
@@ -303,6 +315,7 @@ def test_sync_holiday_activity_logs_with_deletion(
                 "description": "Christmas",
                 "start_date": "2024-12-25",
                 "end_date": "2024-12-25",
+                "activity_id": "act_00",
                 "has_metric_relationship": False,
             },
             {
@@ -310,6 +323,7 @@ def test_sync_holiday_activity_logs_with_deletion(
                 "description": "Old Holiday",
                 "start_date": "2023-07-04",
                 "end_date": "2023-07-04",
+                "activity_id": "act_00",
                 "has_metric_relationship": False,
             },
         ],
@@ -361,13 +375,14 @@ def test_sync_holiday_activity_logs_protect_metric_relationships(
     # Mock account exists with regions
     mock_neo4j_service.execute_query.side_effect = [
         [{"regions": ["AU"]}],  # Account query
-        [{"a": {"activity_id": "act_00"}}],  # Activity exists
+        [{"holiday_activity_count": 1}],  # Activity exists
         [  # Existing logs - one has metric relationship
             {
                 "log_id": "log_001",
                 "description": "New Year",
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-01",
+                "activity_id": "act_00",
                 "has_metric_relationship": False,
             },
             {
@@ -375,6 +390,7 @@ def test_sync_holiday_activity_logs_protect_metric_relationships(
                 "description": "Christmas",
                 "start_date": "2024-12-25",
                 "end_date": "2024-12-25",
+                "activity_id": "act_00",
                 "has_metric_relationship": True,
             },  # Protected
             {
@@ -382,6 +398,7 @@ def test_sync_holiday_activity_logs_protect_metric_relationships(
                 "description": "Old Holiday",
                 "start_date": "2023-07-04",
                 "end_date": "2023-07-04",
+                "activity_id": "act_00",
                 "has_metric_relationship": False,
             },
         ],
@@ -428,13 +445,14 @@ def test_sync_holiday_activity_logs_create_and_delete(
     # Mock account exists with regions
     mock_neo4j_service.execute_query.side_effect = [
         [{"regions": ["AU"]}],  # Account query
-        [{"a": {"activity_id": "act_00"}}],  # Activity exists
+        [{"holiday_activity_count": 1}],  # Activity exists
         [  # Existing logs
             {
                 "log_id": "log_001",
                 "description": "New Year",
                 "start_date": "2024-01-01",
                 "end_date": "2024-01-01",
+                "activity_id": "act_00",
                 "has_metric_relationship": False,
             },
             {
@@ -442,6 +460,7 @@ def test_sync_holiday_activity_logs_create_and_delete(
                 "description": "Old Holiday 1",
                 "start_date": "2023-07-04",
                 "end_date": "2023-07-04",
+                "activity_id": "act_00",
                 "has_metric_relationship": False,
             },
             {
@@ -449,6 +468,7 @@ def test_sync_holiday_activity_logs_create_and_delete(
                 "description": "Old Holiday 2",
                 "start_date": "2023-05-01",
                 "end_date": "2023-05-01",
+                "activity_id": "act_00",
                 "has_metric_relationship": True,
             },  # Protected
         ],

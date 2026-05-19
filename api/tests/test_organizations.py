@@ -4,7 +4,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from src.kene_api.auth.models import UserContext
+from src.kene_api.auth.user_context import get_current_user_context
 from src.kene_api.database import get_neo4j_service
+from src.kene_api.firestore import get_firestore_service
 from src.kene_api.main import app
 
 pytestmark = pytest.mark.skipif(
@@ -13,6 +16,26 @@ pytestmark = pytest.mark.skipif(
 )
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _override_auth():
+    """Authenticate every request and isolate dependency overrides.
+
+    Snapshots ``app.dependency_overrides`` so the ``.clear()`` calls inside
+    individual tests cannot leak overrides into adjacent test files.
+    """
+    saved = dict(app.dependency_overrides)
+    app.dependency_overrides[get_current_user_context] = lambda: UserContext(
+        user_id="test-user",
+        email="test@example.com",
+        organization_permissions={"test-org": "admin"},
+        account_permissions={},
+        roles=["super_admin"],
+    )
+    yield
+    app.dependency_overrides.clear()
+    app.dependency_overrides.update(saved)
 
 
 @pytest.fixture
@@ -416,14 +439,17 @@ def test_delete_organization(mock_neo4j_service):
 
     mock_neo4j_service.execute_query.side_effect = mock_execute_query
 
-    # Mock the write query to return proper summary
-    mock_neo4j_service.execute_write_query.return_value = {
-        "nodes_deleted": 1,
-        "relationships_deleted": 0,
-        "nodes_created": 0,
-        "relationships_created": 0,
-        "properties_set": 0,
-    }
+    # Mock the write operation to return proper summary counters. The endpoint
+    # deletes via execute_write_operation (mutation without RETURN).
+    mock_neo4j_service.execute_write_operation = AsyncMock(
+        return_value={
+            "nodes_deleted": 1,
+            "relationships_deleted": 0,
+            "nodes_created": 0,
+            "relationships_created": 0,
+            "properties_set": 0,
+        }
+    )
 
     # Mock Firestore service
     mock_firestore_service = MagicMock()
@@ -454,8 +480,6 @@ def test_delete_organization(mock_neo4j_service):
 
     # Override dependencies
     app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service
-    from src.kene_api.firestore import get_firestore_service
-
     app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
 
     response = client.delete("/api/v1/organizations/test-org")

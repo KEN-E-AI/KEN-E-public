@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from src.kene_api.auth.user_context import get_current_user_context
+from src.kene_api.firestore import get_firestore_service
 from src.kene_api.main import app
 from src.kene_api.models.monitoring_models import (
     ConceptOption,
@@ -23,29 +25,36 @@ client = TestClient(app)
 class TestMonitoringTopicsConcepts:
     """Test monitoring topics concept-related endpoints."""
 
+    @pytest.fixture(autouse=True)
+    def _isolate_overrides(self):
+        """Snapshot and restore ``app.dependency_overrides`` around each test."""
+        saved = dict(app.dependency_overrides)
+        yield
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(saved)
+
     @pytest.fixture
     def mock_user_context(self):
-        """Mock user context for authentication."""
-        with patch(
-            "src.kene_api.routers.monitoring_topics.get_current_user_context"
-        ) as mock:
-            user = MagicMock()
-            user.email = "test@example.com"
-            user.user_id = "user123"
-            user.is_super_admin = False
-            user.has_account_access.return_value = True
-            mock.return_value = user
-            yield user
+        """Authenticate requests via a FastAPI dependency override.
+
+        FastAPI captures ``Depends()`` callables at route-registration time, so
+        the auth dependency must be replaced through ``app.dependency_overrides``
+        rather than ``unittest.mock.patch``.
+        """
+        user = MagicMock()
+        user.email = "test@example.com"
+        user.user_id = "user123"
+        user.is_super_admin = False
+        user.has_account_access.return_value = True
+        app.dependency_overrides[get_current_user_context] = lambda: user
+        return user
 
     @pytest.fixture
     def mock_firestore(self):
-        """Mock Firestore service."""
-        with patch(
-            "src.kene_api.routers.monitoring_topics.get_firestore_service"
-        ) as mock:
-            firestore = MagicMock()
-            mock.return_value = firestore
-            yield firestore
+        """Provide the Firestore service via a FastAPI dependency override."""
+        firestore = MagicMock()
+        app.dependency_overrides[get_firestore_service] = lambda: firestore
+        return firestore
 
     @pytest.fixture
     def mock_concept_service(self):
@@ -216,13 +225,16 @@ class TestMonitoringTopicsConcepts:
         with patch(
             "src.kene_api.routers.monitoring_topics.get_neo4j_service"
         ) as mock_neo4j:
-            neo4j_service = AsyncMock()
+            # get_neo4j_service is awaited; its result must expose get_session()
+            # as an async context manager.
+            neo4j_service = MagicMock()
             mock_neo4j.return_value = neo4j_service
 
             mock_session = AsyncMock()
-            neo4j_service.get_session.return_value.__aenter__.return_value = (
-                mock_session
-            )
+            session_cm = MagicMock()
+            session_cm.__aenter__ = AsyncMock(return_value=mock_session)
+            session_cm.__aexit__ = AsyncMock(return_value=None)
+            neo4j_service.get_session.return_value = session_cm
 
             mock_result = AsyncMock()
             mock_record = {"industry": "Technology", "organization_id": "org123"}
@@ -287,7 +299,7 @@ class TestMonitoringTopicsConcepts:
         )
 
         assert response.status_code == 422
-        assert "validation error" in response.json()["detail"][0]["msg"]
+        assert "Invalid website URL" in response.json()["detail"][0]["msg"]
 
     @pytest.mark.asyncio
     async def test_remove_customer_concept_success(

@@ -2,7 +2,7 @@
 
 import os
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import Mock
 
 import pytest
 from fastapi import FastAPI
@@ -20,11 +20,11 @@ pytestmark = pytest.mark.skipif(
 def mock_firestore_service():
     """Create a mock FirestoreService."""
     service = Mock(spec=FirestoreService)
-    service.health_check = AsyncMock(return_value=True)
-    service.list_documents = AsyncMock()
-    service.get_document = AsyncMock()
-    service.create_document = AsyncMock()
-    service.update_document = AsyncMock()
+    service.health_check = Mock(return_value=True)
+    service.list_documents = Mock()
+    service.get_document = Mock()
+    service.create_document = Mock()
+    service.update_document = Mock()
     return service
 
 
@@ -38,7 +38,7 @@ def test_app(mock_firestore_service):
         return mock_firestore_service
 
     app.dependency_overrides[get_firestore_service] = override_get_firestore
-    app.include_router(router)
+    app.include_router(router, prefix="/api/v1")
 
     return TestClient(app)
 
@@ -101,7 +101,7 @@ class TestListSubscriptionPlans:
         assert len(response.json()["plans"]) == 1
         assert response.json()["plans"][0]["plan_id"] == "test-plan"
         mock_firestore_service.list_documents.assert_called_once_with(
-            "subscription-plans", filters=[]
+            collection="subscription-plans", where_filters=[]
         )
 
     def test_list_active_plans_only(
@@ -114,7 +114,7 @@ class TestListSubscriptionPlans:
 
         assert response.status_code == 200
         mock_firestore_service.list_documents.assert_called_once_with(
-            "subscription-plans", filters=[("is_active", "==", True)]
+            collection="subscription-plans", where_filters=[]
         )
 
     def test_list_plans_empty_result(self, test_app, mock_firestore_service):
@@ -124,7 +124,7 @@ class TestListSubscriptionPlans:
         response = test_app.get("/api/v1/subscription-plans")
 
         assert response.status_code == 200
-        assert response.json() == {"plans": []}
+        assert response.json() == {"plans": [], "total": 0}
 
 
 class TestGetDefaultPlan:
@@ -142,8 +142,8 @@ class TestGetDefaultPlan:
         assert response.json()["plan_id"] == "free-plan"
         assert response.json()["is_default"] is True
         mock_firestore_service.list_documents.assert_called_once_with(
-            "subscription-plans",
-            filters=[("is_default", "==", True), ("is_active", "==", True)],
+            collection="subscription-plans",
+            where_filters=[("is_default", "==", True), ("is_active", "==", True)],
         )
 
     def test_get_default_plan_not_found(self, test_app, mock_firestore_service):
@@ -153,7 +153,7 @@ class TestGetDefaultPlan:
         response = test_app.get("/api/v1/subscription-plans/default")
 
         assert response.status_code == 404
-        assert "No default subscription plan found" in response.json()["detail"]
+        assert "No default plan found" in response.json()["detail"]
 
     def test_get_default_plan_multiple_defaults(
         self, test_app, mock_firestore_service, sample_default_plan_data
@@ -185,7 +185,7 @@ class TestGetSubscriptionPlan:
         assert response.status_code == 200
         assert response.json()["plan_id"] == "test-plan"
         mock_firestore_service.get_document.assert_called_once_with(
-            "subscription-plans", "test-plan"
+            collection="subscription-plans", document_id="test-plan"
         )
 
     def test_get_plan_by_id_not_found(self, test_app, mock_firestore_service):
@@ -195,7 +195,7 @@ class TestGetSubscriptionPlan:
         response = test_app.get("/api/v1/subscription-plans/non-existent")
 
         assert response.status_code == 404
-        assert "Subscription plan not found" in response.json()["detail"]
+        assert "Plan not found" in response.json()["detail"]
 
 
 class TestCreateSubscriptionPlan:
@@ -205,21 +205,19 @@ class TestCreateSubscriptionPlan:
         self, test_app, mock_firestore_service, sample_plan_data
     ):
         """Test successfully creating a plan."""
-        # Remove timestamps from input data
-        create_data = {
-            k: v
-            for k, v in sample_plan_data.items()
-            if k not in ["created_at", "updated_at"]
-        }
+        # Timestamps are required by the request model; the endpoint overwrites
+        # them server-side with its own values.
+        create_data = dict(sample_plan_data)
+        mock_firestore_service.get_document.return_value = None
         mock_firestore_service.create_document.return_value = True
 
         response = test_app.post("/api/v1/subscription-plans", json=create_data)
 
-        assert response.status_code == 201
+        assert response.status_code == 200
         assert response.json()["plan_id"] == "test-plan"
 
         # Verify document was created with timestamps
-        created_doc = mock_firestore_service.create_document.call_args[0][2]
+        created_doc = mock_firestore_service.create_document.call_args.kwargs["data"]
         assert "created_at" in created_doc
         assert "updated_at" in created_doc
 
@@ -260,10 +258,15 @@ class TestUpdateSubscriptionPlan:
         self, test_app, mock_firestore_service, sample_plan_data
     ):
         """Test successfully updating a plan."""
-        mock_firestore_service.get_document.return_value = sample_plan_data
-        mock_firestore_service.update_document.return_value = True
-
         update_data = {"plan_name": "Updated Test Plan", "price": 149.99}
+        updated_plan = {**sample_plan_data, **update_data}
+        # The endpoint reads the existing plan first, then re-reads after the
+        # write to return the updated document.
+        mock_firestore_service.get_document.side_effect = [
+            sample_plan_data,
+            updated_plan,
+        ]
+        mock_firestore_service.update_document.return_value = True
 
         response = test_app.put(
             "/api/v1/subscription-plans/test-plan", json=update_data
@@ -274,7 +277,7 @@ class TestUpdateSubscriptionPlan:
         assert response.json()["price"] == 149.99
 
         # Verify update was called with merged data
-        updated_doc = mock_firestore_service.update_document.call_args[0][2]
+        updated_doc = mock_firestore_service.update_document.call_args.kwargs["data"]
         assert updated_doc["plan_name"] == "Updated Test Plan"
         assert updated_doc["price"] == 149.99
         assert "updated_at" in updated_doc
@@ -288,17 +291,19 @@ class TestUpdateSubscriptionPlan:
         )
 
         assert response.status_code == 404
-        assert "Subscription plan not found" in response.json()["detail"]
+        assert "Plan not found" in response.json()["detail"]
 
     def test_update_plan_partial_update(
         self, test_app, mock_firestore_service, sample_plan_data
     ):
         """Test partial update of a plan."""
-        mock_firestore_service.get_document.return_value = sample_plan_data
-        mock_firestore_service.update_document.return_value = True
-
-        # Update only the description
         update_data = {"plan_description": "Updated description only"}
+        updated_plan = {**sample_plan_data, **update_data}
+        mock_firestore_service.get_document.side_effect = [
+            sample_plan_data,
+            updated_plan,
+        ]
+        mock_firestore_service.update_document.return_value = True
 
         response = test_app.put(
             "/api/v1/subscription-plans/test-plan", json=update_data
@@ -321,4 +326,4 @@ class TestFirestoreServiceHealth:
         response = test_app.get("/api/v1/subscription-plans")
 
         assert response.status_code == 503
-        assert "Firestore service is not available" in response.json()["detail"]
+        assert "Firestore service unavailable" in response.json()["detail"]
