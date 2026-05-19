@@ -40,7 +40,7 @@ class AdminFeatureFlagListResponse(BaseModel):
     flags: list[FeatureFlag]
 
 
-@router.get("/", response_model=AdminFeatureFlagListResponse)
+@router.get("", response_model=AdminFeatureFlagListResponse)
 async def list_flags(
     _admin: UserContext = Depends(require_super_admin),
     service: FeatureFlagService = Depends(get_feature_flag_service),
