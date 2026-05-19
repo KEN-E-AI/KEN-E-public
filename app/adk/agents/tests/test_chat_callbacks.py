@@ -13,17 +13,13 @@ from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from app.adk.agents.chat_callbacks import (
     _build_turn_delta,
     _extract_session_id,
-    _extract_state,
     _gather_turn_events,
     chat_after_agent_callback,
     chat_before_agent_callback,
 )
-
 
 # ---------------------------------------------------------------------------
 # ADK Event stub helpers
@@ -150,7 +146,6 @@ class TestBuildTurnDelta:
         assert delta["input_tokens_total"] == {"_increment": 0}
 
     def test_token_extraction_accumulates_counts(self) -> None:
-        from app.adk.token_accounting import BillableTokenCounts
 
         usage = _MockUsage(prompt_token_count=100, candidates_token_count=50)
         events = [_MockEvent(usage=usage), _MockEvent(usage=usage)]
@@ -161,8 +156,8 @@ class TestBuildTurnDelta:
 
     def test_datetime_fields_are_isoformat_sentinels(self) -> None:
         delta = _build_turn_delta([], self._now())
-        for field in ("last_agent_stopped_at", "updated_at", "last_agent_message_at"):
-            assert "_isoformat" in delta[field], f"{field} missing _isoformat sentinel"
+        for field_name in ("last_agent_stopped_at", "updated_at", "last_agent_message_at"):
+            assert "_isoformat" in delta[field_name], f"{field_name} missing _isoformat sentinel"
 
 
 # ---------------------------------------------------------------------------
@@ -290,3 +285,90 @@ class TestGatherTurnEvents:
         session = _MockSession(events=[_MockEvent()])
         inv_ctx = _MockInvocationContext(session=session)
         assert _gather_turn_events(inv_ctx, None) == []
+
+
+# ---------------------------------------------------------------------------
+# AC-19: nested-specialist callback sequence
+# ---------------------------------------------------------------------------
+
+
+class TestNestedSpecialistSequence:
+    """Simulate a turn that dispatches a sub-agent and assert the root-only
+    guard keeps the side-table per-turn (CH-PRD-01 §7 AC-19).
+
+    ADK fires the agent callbacks once per agent dispatch, so a turn that
+    dispatches one specialist produces the sequence:
+
+        root.before -> specialist.before -> specialist.after -> root.after
+
+    Without the ``parent_agent`` guard the two specialist firings would post
+    their own deltas — overwriting ``last_agent_started_at`` mid-turn and
+    flushing an incomplete accumulator — which corrupts the ``is_agent_running``
+    derivation. This test drives the full four-call sequence and asserts the
+    PRD AC-19 sub-assertions (a)-(d).
+    """
+
+    _T0 = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)  # root.before stamp
+    _T1 = datetime(2026, 1, 1, 12, 0, 9, tzinfo=timezone.utc)  # root.after stamp
+
+    def test_only_root_callbacks_post_one_delta_each(self) -> None:
+        root = _make_callback_context(
+            parent_agent=None,
+            session_id="sess-seq",
+            account_id="acc-seq",
+            invocation_id="inv-seq",
+        )
+        specialist = _make_callback_context(
+            parent_agent=_MockAgent(),
+            session_id="sess-seq",
+            account_id="acc-seq",
+            invocation_id="inv-seq",
+        )
+
+        posted: list[dict[str, Any]] = []
+
+        mock_dt = MagicMock()
+        # Two stamps are consumed on the correct path (root.before, root.after);
+        # the extra entries let a broken guard fail on the assertions below
+        # rather than on a StopIteration inside the callback.
+        mock_dt.now.side_effect = [self._T0, self._T1, self._T1, self._T1]
+
+        with patch(
+            "app.adk.agents.chat_callbacks._post_side_table_update",
+            side_effect=lambda **kw: posted.append(kw),
+        ), patch("app.adk.agents.chat_callbacks.datetime", mock_dt):
+            assert chat_before_agent_callback(root) is None
+            assert len(posted) == 1, "root before-callback must post exactly once"
+
+            # AC-19 (d): the guard returns early on the specialist invocations.
+            assert chat_before_agent_callback(specialist) is None
+            assert len(posted) == 1, "specialist before-callback must not post"
+
+            assert chat_after_agent_callback(specialist) is None
+            assert len(posted) == 1, "specialist after-callback must not post"
+
+            assert chat_after_agent_callback(root) is None
+
+        # AC-19 (c): exactly one flush per root callback — two for the turn,
+        # not the four that an unguarded wiring would produce.
+        assert len(posted) == 2
+
+        before_post, after_post = posted
+
+        # AC-19 (a): last_agent_started_at carries the root before-callback's
+        # timestamp, never overwritten by specialist.before.
+        assert before_post["idempotency_key"] == "sess-seq:before-agent:inv-seq"
+        assert before_post["delta"]["last_agent_started_at"] == {
+            "_isoformat": self._T0.isoformat()
+        }
+        assert "last_agent_stopped_at" not in before_post["delta"]
+
+        # AC-19 (b): last_agent_stopped_at carries the root after-callback's
+        # timestamp, never stamped early by specialist.after.
+        assert after_post["idempotency_key"] == "sess-seq:after-agent:inv-seq"
+        assert after_post["delta"]["last_agent_stopped_at"] == {
+            "_isoformat": self._T1.isoformat()
+        }
+        # The after-post carries the full per-turn delta, not just a stamp.
+        assert "input_tokens_total" in after_post["delta"]
+        assert "message_count" in after_post["delta"]
