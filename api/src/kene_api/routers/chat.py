@@ -40,6 +40,7 @@ from ..cache import (
 )
 from ..chat.side_table import get_chat_side_table_service
 from ..chat.side_table_handlers import apply_side_table_update
+from ..exceptions import ServiceUnavailableError
 from ..database import get_neo4j_service
 from ..dependencies import get_firestore_client as _get_firestore_client
 from ..firestore import get_firestore_service
@@ -159,6 +160,25 @@ async def load_organization_context_from_neo4j(account_id: str) -> str | None:
         return context_str
 
     except Exception as e:
+        import neo4j.exceptions as _neo4j_exc
+
+        if isinstance(e, (_neo4j_exc.ServiceUnavailable, _neo4j_exc.SessionExpired, _neo4j_exc.TransientError)):
+            logger.error(
+                "Neo4j unreachable while loading organization context",
+                extra=log_context(
+                    component="organization_context",
+                    action="load",
+                    account_id=account_id,
+                    success=False,
+                    error_id="CHAT_ORG_RESOLVE_FAILED",
+                    error_message=str(e),
+                ),
+            )
+            raise ServiceUnavailableError(
+                service="neo4j",
+                reason=str(e),
+                error_id="CHAT_ORG_RESOLVE_FAILED",
+            ) from e
         logger.error(
             "Failed to load organization context",
             extra=log_context(
@@ -166,6 +186,7 @@ async def load_organization_context_from_neo4j(account_id: str) -> str | None:
                 action="load",
                 account_id=account_id,
                 success=False,
+                error_id="CHAT_ORG_RESOLVE_FAILED",
                 error_message=str(e),
             ),
         )
@@ -524,6 +545,8 @@ class AgentEngineClient:
                             )
 
                         return org_context
+                    except ServiceUnavailableError:
+                        raise
                     except Exception as e:
                         logger.error(f"Failed to load organization context: {e}")
                         return None
@@ -2077,16 +2100,41 @@ async def chat_completion(
         if request.stream:
             # Return streaming response
             async def generate_response():
-                async for chunk in agent_client.stream_chat_completion(
-                    messages=request.messages,
-                    user_context=user_context,
-                    session_id=request.session_id,
-                    conversation_name=request.conversation_name,
-                    account_id=request.account_id,
-                ):
-                    # Format as Server-Sent Events
-                    yield f"data: {chunk}\n\n"
-                yield "data: [DONE]\n\n"
+                try:
+                    async for chunk in agent_client.stream_chat_completion(
+                        messages=request.messages,
+                        user_context=user_context,
+                        session_id=request.session_id,
+                        conversation_name=request.conversation_name,
+                        account_id=request.account_id,
+                    ):
+                        # Format as Server-Sent Events
+                        yield f"data: {chunk}\n\n"
+                    yield "data: [DONE]\n\n"
+                finally:
+                    # Safety-net stop-stamp: fires after stream is fully consumed or on
+                    # SSE cancellation. Primary flush is after_agent_callback.
+                    try:
+                        _s_id = request.session_id
+                        _a_id = request.account_id or ""
+                        if _s_id and not str(_s_id).startswith("pending_") and _a_id:
+                            _now = datetime.now(timezone.utc)
+                            _db = _get_firestore_client()
+                            _idem_key = f"{_s_id}:api-finally:{turn_uuid}"
+                            _delta = {"last_agent_stopped_at": _now, "updated_at": _now}
+                            _loop = asyncio.get_running_loop()
+                            await _loop.run_in_executor(
+                                None,
+                                lambda: apply_side_table_update(
+                                    db=_db,
+                                    session_id=_s_id,
+                                    account_id=_a_id,
+                                    delta=_delta,
+                                    idempotency_key=_idem_key,
+                                ),
+                            )
+                    except Exception as _stamp_err:
+                        logger.debug("Stream stop-stamp skipped: %s", _stamp_err)
 
             return StreamingResponse(
                 generate_response(),
@@ -2098,13 +2146,38 @@ async def chat_completion(
             )
         else:
             # Return single response
-            response_content, actual_session_id = await agent_client.chat_completion(
-                messages=request.messages,
-                user_context=user_context,
-                session_id=request.session_id,
-                conversation_name=request.conversation_name,
-                account_id=request.account_id,
-            )
+            try:
+                response_content, actual_session_id = await agent_client.chat_completion(
+                    messages=request.messages,
+                    user_context=user_context,
+                    session_id=request.session_id,
+                    conversation_name=request.conversation_name,
+                    account_id=request.account_id,
+                )
+            finally:
+                # Safety-net stop-stamp: fires whether chat_completion succeeds or raises.
+                # Primary flush is after_agent_callback.
+                try:
+                    _s_id = request.session_id
+                    _a_id = request.account_id or ""
+                    if _s_id and not str(_s_id).startswith("pending_") and _a_id:
+                        _now = datetime.now(timezone.utc)
+                        _db = _get_firestore_client()
+                        _idem_key = f"{_s_id}:api-finally:{turn_uuid}"
+                        _delta = {"last_agent_stopped_at": _now, "updated_at": _now}
+                        _loop = asyncio.get_running_loop()
+                        await _loop.run_in_executor(
+                            None,
+                            lambda: apply_side_table_update(
+                                db=_db,
+                                session_id=_s_id,
+                                account_id=_a_id,
+                                delta=_delta,
+                                idempotency_key=_idem_key,
+                            ),
+                        )
+                except Exception as _stamp_err:
+                    logger.debug("Non-stream stop-stamp skipped: %s", _stamp_err)
 
             # Fire post-response writes in background (non-blocking)
             async def _post_response_writes(
@@ -2129,10 +2202,10 @@ async def chat_completion(
                                     session_metadata,
                                     ttl_seconds=SESSION_METADATA_TTL_SECONDS,
                                 )
-                        except Exception:
-                            pass
-                except Exception:
-                    logger.debug(f"Background session preview update failed for {sid}")
+                        except Exception as _redis_err:
+                            logger.debug("Redis session-preview cache write failed: %s", _redis_err)
+                except Exception as _preview_err:
+                    logger.debug("Background session preview update failed for %s: %s", sid, _preview_err)
 
             task = asyncio.create_task(
                 _post_response_writes(
@@ -2196,25 +2269,6 @@ async def chat_completion(
         ) from e
     finally:
         _exit_stack.close()
-        # Defensive stop-stamp: record last_agent_stopped_at on any exit path.
-        # The deployed agent's after_agent_callback is the primary flush;
-        # this is a safety net for SSE cancellation / exceptions.
-        try:
-            # Resolve session_id: skip if still a pending placeholder
-            _stamp_session_id = getattr(request, 'session_id', None)
-            if _stamp_session_id and not str(_stamp_session_id).startswith("pending_"):
-                _stamp_account_id = getattr(request, 'account_id', None) or ""
-                if _stamp_account_id and _stamp_session_id:
-                    _now_stamp = datetime.now(timezone.utc)
-                    apply_side_table_update(
-                        db=_get_firestore_client(),
-                        session_id=_stamp_session_id,
-                        account_id=_stamp_account_id,
-                        delta={"last_agent_stopped_at": _now_stamp, "updated_at": _now_stamp},
-                        idempotency_key=f"{_stamp_session_id}:api-finally:{turn_uuid}",
-                    )
-        except Exception as _stamp_err:
-            logger.debug(f"Side-table stop-stamp skipped: {_stamp_err}")
 
 
 @router.get("/health")

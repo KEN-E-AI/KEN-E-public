@@ -39,13 +39,26 @@ def _make_event(
     candidates: int = 0,
     thoughts: int = 0,
     cached: int = 0,
-    event_type: str | None = None,
     author: str | None = None,
-    is_final_text: bool = False,
-    text: str = "",
     invocation_id: str = "inv_001",
+    is_tool_call: bool = False,
+    final_text: str | None = None,
 ) -> Any:
-    """Build a minimal ADK-event-like namespace for use in delta tests."""
+    """Build a minimal ADK-event-like namespace using the real ADK Event API."""
+    fn_calls = [SimpleNamespace(name="fake_tool")] if is_tool_call else []
+
+    def get_function_calls() -> list[Any]:
+        return fn_calls
+
+    _final_text = final_text
+
+    def is_final_response() -> bool:
+        return _final_text is not None
+
+    content = None
+    if final_text is not None:
+        content = SimpleNamespace(parts=[SimpleNamespace(text=final_text)])
+
     return SimpleNamespace(
         usage_metadata=SimpleNamespace(
             prompt_token_count=prompt,
@@ -53,10 +66,10 @@ def _make_event(
             thoughts_token_count=thoughts,
             cached_content_token_count=cached,
         ) if (prompt or candidates or thoughts or cached) else None,
-        type=event_type,
         author=author,
-        is_final_text=is_final_text,
-        text=text,
+        get_function_calls=get_function_calls,
+        is_final_response=is_final_response,
+        content=content,
         invocation_id=invocation_id,
     )
 
@@ -126,8 +139,8 @@ class TestBuildTurnDelta:
     def test_tool_call_count_incremented(self) -> None:
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
         events = [
-            _make_event(event_type="tool_call"),
-            _make_event(event_type="tool_call"),
+            _make_event(is_tool_call=True),
+            _make_event(is_tool_call=True),
         ]
         delta = _build_turn_delta(events, now)
         assert delta["tool_call_count"] == {"_increment": 2}
@@ -135,9 +148,9 @@ class TestBuildTurnDelta:
     def test_non_tool_call_events_not_counted(self) -> None:
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
         events = [
-            _make_event(event_type="message"),
-            _make_event(event_type=None),
-            _make_event(event_type="tool_call"),
+            _make_event(),
+            _make_event(),
+            _make_event(is_tool_call=True),
         ]
         delta = _build_turn_delta(events, now)
         assert delta["tool_call_count"] == {"_increment": 1}
@@ -157,21 +170,21 @@ class TestBuildTurnDelta:
     def test_final_text_preview_truncated_at_160(self) -> None:
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
         long_text = "x" * 200
-        events = [_make_event(is_final_text=True, text=long_text)]
+        events = [_make_event(final_text=long_text)]
         delta = _build_turn_delta(events, now)
         assert delta["last_message_preview"] == "x" * 160
 
     def test_final_text_short_not_padded(self) -> None:
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
-        events = [_make_event(is_final_text=True, text="hello")]
+        events = [_make_event(final_text="hello")]
         delta = _build_turn_delta(events, now)
         assert delta["last_message_preview"] == "hello"
 
     def test_last_final_text_wins(self) -> None:
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
         events = [
-            _make_event(is_final_text=True, text="first"),
-            _make_event(is_final_text=True, text="last"),
+            _make_event(final_text="first"),
+            _make_event(final_text="last"),
         ]
         delta = _build_turn_delta(events, now)
         assert delta["last_message_preview"] == "last"
@@ -179,8 +192,8 @@ class TestBuildTurnDelta:
     def test_non_final_text_events_ignored_for_preview(self) -> None:
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
         events = [
-            _make_event(is_final_text=False, text="ignored"),
-            _make_event(is_final_text=True, text="kept"),
+            _make_event(),
+            _make_event(final_text="kept"),
         ]
         delta = _build_turn_delta(events, now)
         assert delta["last_message_preview"] == "kept"
@@ -199,8 +212,8 @@ class TestBuildTurnDelta:
         # Events with no usage_metadata (None) should not blow up and should
         # contribute 0 tokens.
         events = [
-            _make_event(event_type="tool_call"),   # no usage_metadata set
-            _make_event(author="user"),             # no usage_metadata set
+            _make_event(is_tool_call=True),   # no usage_metadata set
+            _make_event(author="user"),        # no usage_metadata set
         ]
         delta = _build_turn_delta(events, now)
         assert delta["input_tokens_total"] == {"_increment": 0}
@@ -212,9 +225,9 @@ class TestBuildTurnDelta:
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
         events = [
             _make_event(prompt=100, candidates=50, cached=10, author="user"),
-            _make_event(event_type="tool_call"),
+            _make_event(is_tool_call=True),
             _make_event(prompt=200, candidates=80, thoughts=20, cached=0, author="model"),
-            _make_event(is_final_text=True, text="final answer"),
+            _make_event(final_text="final answer"),
         ]
         delta = _build_turn_delta(events, now)
         # input = (100-10) + (200-0) = 90 + 200 = 290

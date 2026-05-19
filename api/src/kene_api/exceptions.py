@@ -88,6 +88,18 @@ class ValidationException(Exception):
         super().__init__(message)
 
 
+class ServiceUnavailableError(Exception):
+    """Raised when a required upstream service (Neo4j, Firestore, Agent Engine) is unreachable.
+
+    Callers should surface this as HTTP 503.
+    """
+
+    def __init__(self, service: str, reason: str, error_id: str | None = None):
+        self.service = service
+        self.error_id = error_id
+        super().__init__(f"{service} unavailable: {reason}")
+
+
 class GraphSyncException(Exception):
     """Raised when Neo4j and Firestore synchronization fails."""
 
