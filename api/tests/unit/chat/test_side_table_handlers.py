@@ -140,7 +140,7 @@ class TestApplySideTableUpdate:
                 db=db,
                 session_id="sess_1",
                 account_id="acc_1",
-                delta={"title": "New title"},
+                delta={"message_count": {"_increment": 1}},
                 idempotency_key="expired-key",
             )
 
