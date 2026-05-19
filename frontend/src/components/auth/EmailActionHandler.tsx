@@ -5,13 +5,7 @@ import { auth } from "@/lib/firebase";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import {
-  Loader2,
-  CheckCircle,
-  XCircle,
-  Mail,
-  ArrowRight,
-} from "lucide-react";
+import { Loader2, CheckCircle, XCircle, Mail, ArrowRight } from "lucide-react";
 
 type ActionMode = "verifyEmail" | "resetPassword" | "recoverEmail";
 
@@ -185,7 +179,8 @@ const EmailActionHandler = () => {
 
                 <div className="text-center text-sm text-muted-foreground">
                   <p>
-                    You can now sign in to your account with your verified email.
+                    You can now sign in to your account with your verified
+                    email.
                   </p>
                 </div>
 
