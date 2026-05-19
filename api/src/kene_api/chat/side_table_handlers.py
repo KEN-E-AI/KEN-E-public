@@ -3,8 +3,9 @@
 Provides idempotency via a Firestore `chat_idempotency_keys` collection:
   chat_idempotency_keys/{sha256(idempotency_key)}
 
-Wire-protocol convention for firestore.Increment fields:
-  {"_increment": n}  →  firestore.Increment(n)
+Wire-protocol conventions for delta field values:
+  {"_increment": n}        → firestore.Increment(n)
+  {"_isoformat": "..."}   → datetime.fromisoformat("...")  (used for timestamp fields)
   (used when the ADK callback serialises delta fields over HTTP)
 """
 
@@ -25,17 +26,45 @@ logger = logging.getLogger(__name__)
 _IDEMPOTENCY_TTL_HOURS = 24
 _IDEMPOTENCY_COLLECTION = "chat_idempotency_keys"
 
+# Fields the internal endpoint is permitted to write. Unknown keys are stripped
+# with a warning to prevent buggy or malicious callers from corrupting ownership
+# fields (user_id, organization_id) or lifecycle fields (deleted_at).
+_ALLOWED_DELTA_FIELDS: frozenset[str] = frozenset({
+    "last_agent_started_at",
+    "last_agent_stopped_at",
+    "last_agent_message_at",
+    "updated_at",
+    "last_message_preview",
+    "input_tokens_total",
+    "output_tokens_total",
+    "reasoning_tokens_total",
+    "tool_call_count",
+    "message_count",
+    "current_context_tokens",
+    # Compaction fields written by SessionTurnAccumulator (CH-12):
+    "latest_summary",
+    "summary_updated_at",
+    "compaction_count",
+})
+
 
 def _sha256_hex(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
 
 
 def _reconstruct_increments(delta: dict[str, Any]) -> dict[str, Any]:
-    """Convert {"_increment": n} wire values to firestore.Increment(n) sentinels."""
+    """Convert wire sentinels to Firestore-native values.
+
+    Supported sentinels:
+      {"_increment": n}      → firestore.Increment(n)
+      {"_isoformat": "..."}  → datetime.fromisoformat("...")
+    """
     result: dict[str, Any] = {}
     for k, v in delta.items():
         if isinstance(v, dict) and set(v.keys()) == {"_increment"}:
             result[k] = firestore.Increment(v["_increment"])
+        elif isinstance(v, dict) and set(v.keys()) == {"_isoformat"}:
+            result[k] = datetime.fromisoformat(v["_isoformat"])
         else:
             result[k] = v
     return result
@@ -60,6 +89,16 @@ def apply_side_table_update(
     idem_ref = db.collection(_IDEMPOTENCY_COLLECTION).document(key_hash)
     now = datetime.now(timezone.utc)
     expires_at = now + timedelta(hours=_IDEMPOTENCY_TTL_HOURS)
+
+    # Strip disallowed fields before writing to prevent accidental or malicious
+    # corruption of ownership/lifecycle fields (user_id, deleted_at, etc.).
+    unknown_keys = set(delta.keys()) - _ALLOWED_DELTA_FIELDS
+    if unknown_keys:
+        logger.warning("Side-table update stripped disallowed delta keys: %s", unknown_keys)
+        delta = {k: v for k, v in delta.items() if k in _ALLOWED_DELTA_FIELDS}
+
+    if not delta:
+        return {"status": "applied"}
 
     try:
         idem_ref.create(

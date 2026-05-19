@@ -1987,6 +1987,7 @@ async def chat_completion(
     and returns a response from the deployed Agent Engine.
     """
     _exit_stack = ExitStack()
+    turn_uuid = str(uuid4())
     try:
         # PERFORMANCE: Log request arrival time for latency measurement
         logger.info(
@@ -2137,6 +2138,25 @@ async def chat_completion(
         ) from e
     finally:
         _exit_stack.close()
+        # Defensive stop-stamp: record last_agent_stopped_at on any exit path.
+        # The deployed agent's after_agent_callback is the primary flush;
+        # this is a safety net for SSE cancellation / exceptions.
+        try:
+            # Resolve session_id: skip if still a pending placeholder
+            _stamp_session_id = getattr(request, 'session_id', None)
+            if _stamp_session_id and not str(_stamp_session_id).startswith("pending_"):
+                _stamp_account_id = getattr(request, 'account_id', None) or ""
+                if _stamp_account_id and _stamp_session_id:
+                    _now_stamp = datetime.now(timezone.utc)
+                    apply_side_table_update(
+                        db=_get_firestore_client(),
+                        session_id=_stamp_session_id,
+                        account_id=_stamp_account_id,
+                        delta={"last_agent_stopped_at": _now_stamp, "updated_at": _now_stamp},
+                        idempotency_key=f"{_stamp_session_id}:api-finally:{turn_uuid}",
+                    )
+        except Exception as _stamp_err:
+            logger.debug(f"Side-table stop-stamp skipped: {_stamp_err}")
 
 
 @router.get("/health")

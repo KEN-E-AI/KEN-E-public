@@ -29,6 +29,10 @@ try:
 except ImportError:
     pass
 
+from app.adk.agents.chat_callbacks import (
+    chat_after_agent_callback,
+    chat_before_agent_callback,
+)
 from app.adk.security.hooks import adk_before_tool_callback
 from app.adk.tracking.callbacks import (
     adk_after_model_callback,
@@ -305,8 +309,8 @@ def create_ken_e_agent(config_doc_id: str = "ken_e_chatbot"):
         description=description,
         instruction=_make_instruction_provider(config_doc_id),
         generate_content_config=generate_content_config,
-        before_agent_callback=weave_before_agent_callback,
-        after_agent_callback=weave_after_agent_callback,
+        before_agent_callback=[weave_before_agent_callback, chat_before_agent_callback],
+        after_agent_callback=[weave_after_agent_callback, chat_after_agent_callback],
         after_model_callback=adk_after_model_callback,
         before_tool_callback=adk_before_tool_callback,
         after_tool_callback=adk_after_tool_callback,
