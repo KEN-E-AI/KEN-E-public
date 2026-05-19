@@ -75,6 +75,33 @@ def _purge_session(db: Any) -> None:
     db.document(f"accounts/{_ACCOUNT_ID}/chat_sessions/{_SESSION_ID}").delete()
 
 
+def _set_flag(db: Any, key: str, *, default_enabled: bool) -> None:
+    """Write (or overwrite) a minimal feature_flags/{key} doc."""
+    db.collection("feature_flags").document(key).set(
+        {
+            "key": key,
+            "description": f"test flag {key}",
+            "default_enabled": default_enabled,
+            "is_active": True,
+            "targeting_rules": {
+                "user_emails": [],
+                "email_domains": [],
+                "organization_ids": [],
+                "account_ids": [],
+                "rollout_percentage": 0,
+            },
+            "bucketing_entity": "account",
+            "owner": "test@ken-e.ai",
+            "created_at": _NOW.isoformat(),
+            "updated_at": _NOW.isoformat(),
+        }
+    )
+
+
+def _delete_flag(db: Any, key: str) -> None:
+    db.collection("feature_flags").document(key).delete()
+
+
 @pytest.fixture(scope="module")
 def client() -> Generator[TestClient, None, None]:
     """TestClient wired to the real Firestore emulator (no MagicMock)."""
@@ -85,9 +112,11 @@ def client() -> Generator[TestClient, None, None]:
     # different project so this run picks up FIRESTORE_EMULATOR_HOST cleanly.
     from src.kene_api.chat.side_table import get_chat_side_table_service
     from src.kene_api.dependencies import get_firestore_client
+    from src.kene_api.services.feature_flag_service import get_feature_flag_service
 
     get_firestore_client.cache_clear()
     get_chat_side_table_service.cache_clear()
+    get_feature_flag_service.cache_clear()
 
     from src.kene_api.main import app
 
@@ -118,6 +147,26 @@ def _payload(**overrides: Any) -> dict[str, Any]:
 
 
 class TestSideTableUpdateOIDC:
+    @pytest.fixture(autouse=True)
+    def _seed_chat_v2_enabled_on(self) -> Generator[None, None, None]:
+        """Seed chat_v2_enabled=True so the flag gate passes in all OIDC tests.
+
+        The gate added by CH-19 returns 404 when chat_v2_enabled is absent or
+        False.  Without this fixture every 200-expecting test would become a
+        404 failure once that gate lands.
+        """
+        db = _emulator_client()
+        _set_flag(db, "chat_v2_enabled", default_enabled=True)
+
+        from src.kene_api.services.feature_flag_service import get_feature_flag_service
+
+        get_feature_flag_service.cache_clear()
+
+        yield
+
+        _delete_flag(db, "chat_v2_enabled")
+        get_feature_flag_service.cache_clear()
+
     def test_returns_200_applied_on_first_call(self, client: TestClient) -> None:
         response = client.post(
             "/api/v1/internal/chat/side-table/update",
