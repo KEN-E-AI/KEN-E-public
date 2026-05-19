@@ -154,7 +154,7 @@ def _post_side_table_update_sync(
 def _isoformat_sentinel(dt: datetime) -> dict[str, str]:
     """Return the {"_isoformat": "..."} wire sentinel for a datetime value.
 
-    The internal endpoint's _reconstruct_increments converts this back to a
+    The internal endpoint's inline sentinel reconstruction converts this back to a
     datetime object before calling Firestore, ensuring TIMESTAMP type storage.
     """
     return {"_isoformat": dt.isoformat()}

@@ -71,7 +71,10 @@ class TurnDelta(BaseModel):
     @classmethod
     def _parse_datetime_sentinel(cls, v: Any) -> Any:
         if isinstance(v, dict) and set(v.keys()) == {"_isoformat"}:
-            return datetime.fromisoformat(v["_isoformat"])
+            dt = datetime.fromisoformat(v["_isoformat"])
+            if dt.tzinfo is None:
+                raise ValueError("_isoformat datetime must include timezone (e.g. +00:00 or Z)")
+            return dt
         return v
 
     @field_validator(

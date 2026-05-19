@@ -37,6 +37,29 @@ logger = logging.getLogger(__name__)
 _IDEMPOTENCY_TTL_HOURS = 24
 _IDEMPOTENCY_COLLECTION = "chat_idempotency_keys"
 
+# Fields the internal endpoint is permitted to write. Applied to the legacy dict
+# path (before-callback and in-process streaming) as defence-in-depth against
+# accidental or malicious writes to ownership fields (user_id, organization_id)
+# or lifecycle fields (deleted_at). The TurnDelta typed path is already guarded
+# by extra="forbid" on the model itself.
+_ALLOWED_DELTA_FIELDS: frozenset[str] = frozenset({
+    "last_agent_started_at",
+    "last_agent_stopped_at",
+    "last_agent_message_at",
+    "updated_at",
+    "last_message_preview",
+    "input_tokens_total",
+    "output_tokens_total",
+    "reasoning_tokens_total",
+    "tool_call_count",
+    "message_count",
+    "current_context_tokens",
+    # Compaction fields written by SessionTurnAccumulator (CH-12):
+    "latest_summary",
+    "summary_updated_at",
+    "compaction_count",
+})
+
 
 def _sha256_hex(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
@@ -74,9 +97,18 @@ def apply_side_table_update(
             if isinstance(v, dict) and set(v.keys()) == {"_increment"}:
                 firestore_delta[k] = firestore.Increment(v["_increment"])
             elif isinstance(v, dict) and set(v.keys()) == {"_isoformat"}:
-                firestore_delta[k] = datetime.fromisoformat(v["_isoformat"])
+                dt = datetime.fromisoformat(v["_isoformat"])
+                if dt.tzinfo is None:
+                    logger.warning("Side-table update received timezone-naive _isoformat for key=%r; skipping", k)
+                    continue
+                firestore_delta[k] = dt
             else:
                 firestore_delta[k] = v
+        # Strip fields outside the allowlist to protect ownership/lifecycle fields.
+        unknown_keys = set(firestore_delta.keys()) - _ALLOWED_DELTA_FIELDS
+        if unknown_keys:
+            logger.warning("Side-table update stripped disallowed delta keys: %s", unknown_keys)
+            firestore_delta = {k: v for k, v in firestore_delta.items() if k in _ALLOWED_DELTA_FIELDS}
 
     if not firestore_delta:
         return {"status": "applied"}
