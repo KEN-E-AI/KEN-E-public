@@ -699,7 +699,7 @@ class TestCacheInvalidationOnWrites:
     """Unit tests that pin the cache-invalidation contract for all three mutating methods.
 
     Each case:
-      1. Warms the in-process LRU cache (either via evaluate_batch or direct seeding).
+      1. Warms the in-process LRU cache via evaluate_batch.
       2. Performs the mutation while holding FakeClock steady (no advance()) so any
          pass cannot be attributed to TTL expiry.
       3. Asserts the cache entry is absent immediately after the mutation.
@@ -762,10 +762,12 @@ class TestCacheInvalidationOnWrites:
 
         result = await svc.evaluate_batch(["inv_create_flag"], _ctx())
 
-        assert result["inv_create_flag"].reason != "unknown_flag", (
-            "evaluate_batch after create_flag must not return unknown_flag — cache was invalidated"
-        )
-        assert result["inv_create_flag"].enabled == result_flag.default_enabled
+        # default_enabled=False + no targeting rules → reason="default", enabled=False.
+        # Checking exact reason (not just != "unknown_flag") ensures the re-read produced
+        # a real evaluation, not an absent-key response masquerading as the same enabled value.
+        assert result["inv_create_flag"] == FlagEvaluation(
+            key="inv_create_flag", enabled=result_flag.default_enabled, reason="default"
+        ), "evaluate_batch after create_flag must return a real evaluation, not unknown_flag"
 
     async def test_update_flag_invalidates_cached_pre_update_entry(self) -> None:
         """(b) update_flag removes the cached pre-update entry; re-evaluation returns post-update value."""
@@ -820,13 +822,12 @@ class TestCacheInvalidationOnWrites:
         # update_flag with record_audit patched to raise — the pop() must still have run.
         request = _make_write_request(key="inv_audit_raise_flag", default_enabled=True)
 
-        with patch(self._AUDIT_PATCH, side_effect=RuntimeError("audit down")):
+        with patch(self._AUDIT_PATCH, new_callable=AsyncMock, side_effect=RuntimeError("audit down")):
             with pytest.raises(RuntimeError, match="audit down"):
                 await svc.update_flag("inv_audit_raise_flag", request, "admin@ken-e.ai")
 
-        # The pop() happens before record_audit in update_flag (line 540 before line 543).
-        # If this assertion fails, the pop() was moved after record_audit, breaking AC-6
-        # in scenarios where audit writes fail.
+        # If this assertion fails, pop() was moved after record_audit — a failing audit
+        # write would leave a stale cache entry, violating the kill-switch SLO.
         assert "inv_audit_raise_flag" not in svc._cache, (
             "self._cache.pop() must execute before record_audit so a failing audit "
             "does not leave a stale cache entry"
