@@ -1,6 +1,7 @@
 """Pydantic models for the Feature Flags component.
 
 Spec: docs/design/components/feature-flags/projects/FF-PRD-01-data-model-evaluation-api.md §4
+      docs/design/components/feature-flags/projects/FF-PRD-02-admin-api-and-ui.md §4
 """
 
 from __future__ import annotations
@@ -8,16 +9,16 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 FLAG_KEY_REGEX = r"^[a-z0-9][a-z0-9_]{2,63}$"
 
 
 class TargetingRules(BaseModel):
-    user_emails: list[str] = Field(default_factory=list)
-    email_domains: list[str] = Field(default_factory=list)
-    organization_ids: list[str] = Field(default_factory=list)
-    account_ids: list[str] = Field(default_factory=list)
+    user_emails: list[str] = Field(default_factory=list, max_length=1000)
+    email_domains: list[str] = Field(default_factory=list, max_length=1000)
+    organization_ids: list[str] = Field(default_factory=list, max_length=1000)
+    account_ids: list[str] = Field(default_factory=list, max_length=1000)
     rollout_percentage: int = Field(default=0, ge=0, le=100)
 
     @field_validator("user_emails", "email_domains")
@@ -62,6 +63,27 @@ class FlagEvaluation(BaseModel):
 
 
 FlagKeyStr = Annotated[str, Field(pattern=FLAG_KEY_REGEX)]
+
+
+class FeatureFlagWriteRequest(BaseModel):
+    """Inbound payload for POST (create) and PUT (full-replace) admin endpoints.
+
+    Mirrors FeatureFlag but omits ``created_at`` and ``updated_at`` — the server
+    fills those on every write.  Extra timestamp fields sent by a client are silently
+    dropped (``extra="ignore"``) rather than rejected with 422, as specified in
+    FF-PRD-02 §5 Decisions & Assumptions (server-fills-timestamps decision).
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    key: FlagKeyStr
+    description: str = Field(max_length=2000)
+    default_enabled: bool
+    is_active: bool = True
+    targeting_rules: TargetingRules = Field(default_factory=TargetingRules)
+    bucketing_entity: Literal["account", "organization", "user"] = "account"
+    owner: EmailStr
+    expected_ga_release: str | None = Field(default=None, max_length=32)
 
 
 class EvaluateRequest(BaseModel):

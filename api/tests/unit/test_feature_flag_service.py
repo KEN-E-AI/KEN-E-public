@@ -12,17 +12,20 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from src.kene_api.models.feature_flag_models import (
     EvaluationContext,
     FeatureFlag,
+    FeatureFlagWriteRequest,
     FlagEvaluation,
     TargetingRules,
 )
 from src.kene_api.services.feature_flag_service import (
     TTL_SECONDS,
+    DuplicateFeatureFlagError,
+    FeatureFlagNotFoundError,
     FeatureFlagService,
 )
 
@@ -503,3 +506,185 @@ class TestListAndGetFlags:
 
         with pytest.raises(RuntimeError, match="Firestore boom"):
             await svc.get_flag("boom_flag")
+
+
+# ---------------------------------------------------------------------------
+# TestMutatingFlags — FF-13 (FF-PRD-02 B2)
+# ---------------------------------------------------------------------------
+
+
+def _make_write_request(**overrides: object) -> FeatureFlagWriteRequest:
+    base: dict[str, object] = {
+        "key": "mut_flag",
+        "description": "A mutable test flag",
+        "default_enabled": False,
+        "is_active": True,
+        "owner": "dev@ken-e.ai",
+        "targeting_rules": TargetingRules(),
+        "bucketing_entity": "account",
+    }
+    base.update(overrides)
+    return FeatureFlagWriteRequest(**base)
+
+
+def _mock_create_db(raise_already_exists: bool = False) -> MagicMock:
+    """Firestore mock suitable for create_flag tests."""
+    from google.api_core import exceptions as gcp_exceptions
+
+    db = MagicMock()
+    doc_ref = MagicMock()
+    if raise_already_exists:
+        doc_ref.create.side_effect = gcp_exceptions.AlreadyExists("flag exists")
+    else:
+        doc_ref.create.return_value = None
+    db.collection.return_value.document.return_value = doc_ref
+    return db
+
+
+def _mock_existing_db(flag: FeatureFlag) -> MagicMock:
+    """Firestore mock that returns an existing flag doc on .get() and no-ops on .set/.delete."""
+    db = MagicMock()
+    doc = MagicMock()
+    doc.exists = True
+    data = flag.model_dump(mode="json")
+    data.pop("key", None)
+    doc.to_dict.return_value = data
+    doc_ref = MagicMock()
+    doc_ref.get.return_value = doc
+    doc_ref.set.return_value = None
+    doc_ref.delete.return_value = None
+    db.collection.return_value.document.return_value = doc_ref
+    return db
+
+
+class TestMutatingFlags:
+    """Unit tests for create_flag / update_flag / delete_flag on FeatureFlagService.
+
+    All tests patch record_audit at the module level so Firestore's audit
+    collection is never touched and the audit-invocation arguments are
+    inspectable via mock assertions.
+
+    Cases:
+      (a) create_flag writes to Firestore and calls record_audit with action="create"
+          and before=None.
+      (b) create_flag raises DuplicateFeatureFlagError when Firestore raises AlreadyExists.
+      (c) update_flag reads existing doc, stamps updated_at, preserves created_at, and
+          calls record_audit with action="update".
+      (d) update_flag raises FeatureFlagNotFoundError when the doc is absent.
+      (e) delete_flag reads existing doc, deletes it, and calls record_audit with
+          action="delete" and after=None.
+      (f) delete_flag raises FeatureFlagNotFoundError when absent.
+    """
+
+    _AUDIT_PATCH = "src.kene_api.services.feature_flag_service.record_audit"
+
+    async def test_create_flag_writes_firestore_and_calls_audit(self) -> None:
+        """(a) Successful create: Firestore .create() called; audit action='create'."""
+        db = _mock_create_db()
+        svc = FeatureFlagService(db=db, time_provider=FakeClock())
+        request = _make_write_request()
+
+        with patch(self._AUDIT_PATCH, new_callable=AsyncMock) as mock_audit:
+            result = await svc.create_flag(request, "admin@ken-e.ai")
+
+        # Firestore create was called once.
+        db.collection.return_value.document.return_value.create.assert_called_once()
+
+        # Returned flag has server-stamped timestamps.
+        assert result.key == "mut_flag"
+        assert result.created_at == result.updated_at
+
+        # Audit called with action="create" and before=None in diff.
+        # record_audit(db, flag_key, actor_email, action, diff)
+        mock_audit.assert_called_once()
+        call_args = mock_audit.call_args.args
+        assert call_args[3] == "create"
+        diff = call_args[4]
+        # A create diff should have at least the core fields and before=None for all.
+        assert len(diff) > 0
+        assert "key" in diff
+        assert all(entry["before"] is None for entry in diff.values())
+
+    async def test_create_flag_raises_duplicate_error_on_already_exists(self) -> None:
+        """(b) Firestore AlreadyExists → DuplicateFeatureFlagError with offending key."""
+        db = _mock_create_db(raise_already_exists=True)
+        svc = FeatureFlagService(db=db, time_provider=FakeClock())
+
+        with patch(self._AUDIT_PATCH, new_callable=AsyncMock):
+            with pytest.raises(DuplicateFeatureFlagError) as exc_info:
+                await svc.create_flag(_make_write_request(), "admin@ken-e.ai")
+
+        assert exc_info.value.key == "mut_flag"
+
+    async def test_update_flag_stamps_updated_at_preserves_created_at_and_calls_audit(
+        self,
+    ) -> None:
+        """(c) Successful update: server stamps updated_at, preserves created_at."""
+        existing = _make_flag(
+            key="mut_flag",
+            created_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
+            updated_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        )
+        db = _mock_existing_db(existing)
+        svc = FeatureFlagService(db=db, time_provider=FakeClock())
+        request = _make_write_request(description="Updated description")
+
+        with patch(self._AUDIT_PATCH, new_callable=AsyncMock) as mock_audit:
+            result = await svc.update_flag("mut_flag", request, "admin@ken-e.ai")
+
+        # created_at preserved; updated_at is newer than the original.
+        assert result.created_at == existing.created_at
+        assert result.updated_at > existing.updated_at
+
+        # Firestore .set() was called with the updated doc.
+        db.collection.return_value.document.return_value.set.assert_called_once()
+
+        # Audit called with action="update".
+        mock_audit.assert_called_once()
+        assert mock_audit.call_args.args[3] == "update"
+
+    async def test_update_flag_raises_not_found_when_absent(self) -> None:
+        """(d) update_flag on a non-existent key → FeatureFlagNotFoundError."""
+        db = _mock_db_with_flag(None)
+        svc = FeatureFlagService(db=db, time_provider=FakeClock())
+
+        with patch(self._AUDIT_PATCH, new_callable=AsyncMock):
+            with pytest.raises(FeatureFlagNotFoundError) as exc_info:
+                await svc.update_flag(
+                    "ghost_flag",
+                    _make_write_request(key="ghost_flag"),
+                    "admin@ken-e.ai",
+                )
+
+        assert exc_info.value.key == "ghost_flag"
+
+    async def test_delete_flag_deletes_doc_and_calls_audit(self) -> None:
+        """(e) Successful delete: Firestore .delete() called; audit action='delete' with after=None."""
+        existing = _make_flag(key="mut_flag")
+        db = _mock_existing_db(existing)
+        svc = FeatureFlagService(db=db, time_provider=FakeClock())
+
+        with patch(self._AUDIT_PATCH, new_callable=AsyncMock) as mock_audit:
+            await svc.delete_flag("mut_flag", "admin@ken-e.ai")
+
+        db.collection.return_value.document.return_value.delete.assert_called_once()
+
+        # Audit called with action="delete" and diff entries having after=None.
+        mock_audit.assert_called_once()
+        call_args = mock_audit.call_args.args
+        assert call_args[3] == "delete"
+        diff = call_args[4]
+        assert len(diff) > 0
+        assert "key" in diff
+        assert all(entry["after"] is None for entry in diff.values())
+
+    async def test_delete_flag_raises_not_found_when_absent(self) -> None:
+        """(f) delete_flag on a non-existent key → FeatureFlagNotFoundError."""
+        db = _mock_db_with_flag(None)
+        svc = FeatureFlagService(db=db, time_provider=FakeClock())
+
+        with patch(self._AUDIT_PATCH, new_callable=AsyncMock):
+            with pytest.raises(FeatureFlagNotFoundError) as exc_info:
+                await svc.delete_flag("ghost_flag", "admin@ken-e.ai")
+
+        assert exc_info.value.key == "ghost_flag"
