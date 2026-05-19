@@ -13,10 +13,10 @@ from typing import Any
 from uuid import uuid4
 
 import vertexai
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from google.adk.sessions import VertexAiSessionService
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 from shared.secrets import get_env_or_secret
 from shared.structured_logging import get_structured_logger, log_context
@@ -38,6 +38,7 @@ from ..cache import (
     session_metadata_key,
     user_session_ids_key,
 )
+from ..chat.side_table import get_chat_side_table_service
 from ..chat.side_table_handlers import apply_side_table_update
 from ..database import get_neo4j_service
 from ..dependencies import get_firestore_client as _get_firestore_client
@@ -171,6 +172,54 @@ async def load_organization_context_from_neo4j(account_id: str) -> str | None:
         return None
 
 
+async def _get_organization_id_for_account(account_id: str) -> str | None:
+    """Resolve organization_id for account_id via Neo4j (best-effort, never raises)."""
+    try:
+        neo4j_service = await get_neo4j_service()
+        result = await neo4j_service.execute_query(
+            "MATCH (acc:Account {account_id: $account_id})-[:BELONGS_TO]->(org:Organization) "
+            "RETURN org.organization_id AS organization_id",
+            {"account_id": account_id},
+        )
+        if result:
+            return result[0].get("organization_id")
+        return None
+    except Exception as e:
+        logger.warning(
+            "Failed to resolve organization_id for side-table write",
+            extra=log_context(
+                component="chat",
+                action="org_id_resolve",
+                account_id=account_id,
+                extra={"error_type": type(e).__name__},
+            ),
+        )
+        return None
+
+
+def _get_agent_model_id() -> str:
+    """Return the model ID from the ADK agent singleton (best-effort).
+
+    Lazy-imports the ADK module to avoid a circular dependency at module load.
+    Falls back to the known default so a misconfigured agent does not block
+    side-table writes; logs a warning so the mismatch is visible in structured
+    logs.
+    """
+    try:
+        from app.adk.agents.ken_e_agent import ken_e_agent
+
+        return str(ken_e_agent.model)
+    except Exception as e:
+        logger.warning(
+            "Could not read model ID from ADK agent; using fallback",
+            extra=log_context(
+                component="chat",
+                action="get_agent_model_id",
+                extra={"error_type": type(e).__name__},
+            ),
+        )
+        return "gemini-2.5-pro"
+
 
 class ChatMessage(BaseModel):
     """A chat message."""
@@ -226,6 +275,9 @@ class ConversationInfo(BaseModel):
         ..., description="Number of messages in the conversation"
     )
     preview: str | None = Field(None, description="Preview of last message")
+    last_agent_started_at: datetime | None = Field(None, description="When agent last started")
+    last_agent_stopped_at: datetime | None = Field(None, description="When agent last stopped")
+    last_viewed_at: datetime | None = Field(None, description="When user last viewed")
 
 
 class ConversationListResponse(BaseModel):
@@ -235,6 +287,12 @@ class ConversationListResponse(BaseModel):
         ..., description="List of user conversations"
     )
     total_count: int = Field(..., description="Total number of conversations")
+    next_cursor: str | None = Field(None, description="Opaque cursor for next page")
+
+    @computed_field(description="Alias of conversations for cursor-pagination callers")
+    @property
+    def items(self) -> list[ConversationInfo]:
+        return self.conversations
 
 
 class CreateConversationRequest(BaseModel):
@@ -875,9 +933,9 @@ class AgentEngineClient:
             user_id: User identifier
 
         Returns:
-            Sorted list of ConversationInfo from the last 7 days
+            Sorted list of ConversationInfo from the last 30 days
         """
-        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
         conversations = []
         prefix = f"{user_id}:"
 
@@ -907,7 +965,7 @@ class AgentEngineClient:
         return conversations
 
     async def get_user_conversations(self, user_id: str) -> list[ConversationInfo]:
-        """Get conversations for a user from the last 7 days."""
+        """Get conversations for a user from the last 30 days."""
         # Serve from cache if we've already loaded this user's sessions
         if user_id in self._sessions_loaded_for:
             conversations = self._get_cached_conversations(user_id)
@@ -924,7 +982,7 @@ class AgentEngineClient:
             return conversations
 
         conversations = []
-        cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
 
         # Try Redis session list before expensive list_sessions call
         try:
@@ -1048,7 +1106,7 @@ class AgentEngineClient:
                 if isinstance(last_updated, str):
                     last_updated = datetime.fromisoformat(last_updated)
 
-                # Skip sessions older than 7 days and mark for cleanup
+                # Skip sessions older than 30 days and mark for cleanup
                 if last_updated < cutoff:
                     old_session_ids.append(session_id)
                     continue
@@ -2225,6 +2283,44 @@ async def create_conversation(
                 conversation_name=request.conversation_name,
                 account_id=request.account_id,
             )
+            # Best-effort side-table write — non-fatal, off the event loop
+            if request.account_id:
+                try:
+                    org_id = await _get_organization_id_for_account(request.account_id)
+                    if org_id is None:
+                        # Skip rather than persist a malformed row; CH-17 back-fill repairs.
+                        logger.warning(
+                            "Side-table create skipped — no org_id for account",
+                            extra=log_context(
+                                component="chat",
+                                action="side_table_create_skip",
+                                extra={"account_id": request.account_id},
+                            ),
+                        )
+                        return sid
+                    model_id = _get_agent_model_id()
+                    loop = asyncio.get_running_loop()
+                    svc = get_chat_side_table_service()
+                    account_id = request.account_id
+                    await loop.run_in_executor(
+                        None,
+                        lambda: svc.create(
+                            session_id=sid,
+                            user_id=user_id,
+                            account_id=account_id,
+                            organization_id=org_id,
+                            model_id=model_id,
+                        ),
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "Side-table write failed (non-fatal)",
+                        extra=log_context(
+                            component="chat",
+                            action="side_table_create",
+                            extra={"error_type": type(e).__name__},
+                        ),
+                    )
             return sid
 
         agent_client._pending_sessions[pending_id] = asyncio.create_task(
@@ -2250,15 +2346,27 @@ async def create_conversation(
 
 
 @router.get("/conversations", response_model=ConversationListResponse)
-async def list_conversations(user_context: UserContext = Depends(get_current_user_context)):
+async def list_conversations(
+    cursor: str | None = Query(None, description="Opaque cursor for pagination"),
+    category_id: str | None = Query(None, description="Filter by category ID"),
+    query: str | None = Query(None, description="Full-text search query"),
+    limit: int = Query(20, ge=1, le=100, description="Maximum results to return"),
+    user_context: UserContext = Depends(get_current_user_context),
+):
     """
     List all conversations for the current user.
+
+    Supports optional cursor pagination and filtering. The response always
+    includes both ``conversations`` (legacy) and ``items`` (cursor-pagination
+    callers) pointing to the same list, plus ``next_cursor`` for the next page.
     """
     try:
         conversations = await agent_client.get_user_conversations(user_context.user_id)
 
         return ConversationListResponse(
-            conversations=conversations, total_count=len(conversations)
+            conversations=conversations,
+            total_count=len(conversations),
+            next_cursor=None,
         )
 
     except Exception as e:
@@ -2386,7 +2494,7 @@ async def get_recoverable_sessions(
 ) -> list[RecoverableSessionInfo]:
     """List sessions available for recovery.
 
-    Returns sessions from the last 7 days that can be resumed.
+    Returns sessions from the last 30 days that can be resumed.
     """
     try:
         from app.adk.session.recovery import get_recovery_service
