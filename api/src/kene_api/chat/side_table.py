@@ -5,7 +5,7 @@ Shape B layout: accounts/{account_id}/chat_sessions/{session_id}
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Any
 
@@ -13,6 +13,51 @@ from google.cloud import firestore
 
 from ..dependencies import get_firestore_client
 from ..models.chat import ChatSessionMetadata
+
+STUCK_THRESHOLD = timedelta(minutes=10)
+
+
+def derive_is_agent_running(
+    started_at: datetime | None,
+    stopped_at: datetime | None,
+    *,
+    now: datetime | None = None,
+    threshold: timedelta = STUCK_THRESHOLD,
+) -> bool:
+    """Derive whether the agent is currently running from timestamps.
+
+    No persistent boolean field; no in-process sweeper. Three-state logic:
+    - never-started: started_at is None → False
+    - running-stuck: running more than threshold → False
+    - stopped: stopped_at >= started_at → False
+    - running-fresh: started_at set, stopped_at None or started_at > stopped_at,
+      and elapsed < threshold → True
+
+    Args:
+        started_at: Timestamp from before_agent_callback. None if never started.
+        stopped_at: Timestamp from after_agent_callback/finally. None if not stopped.
+        now: Override for the current time (test injection). Defaults to utcnow.
+        threshold: Max duration before treating an in-flight turn as stuck.
+                   Default 10 minutes per PRD §7.7.
+
+    Returns:
+        True only when the agent turn is live and within threshold.
+    """
+    if started_at is None:
+        return False
+    _now = now if now is not None else datetime.now(timezone.utc)
+    # Normalise naive datetimes that may arrive as strings coerced by Pydantic.
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+    if stopped_at is not None and stopped_at.tzinfo is None:
+        stopped_at = stopped_at.replace(tzinfo=timezone.utc)
+    # Stopped-after-start: agent completed normally
+    if stopped_at is not None and stopped_at >= started_at:
+        return False
+    # Running-stuck: elapsed exceeds threshold (crash/hang safety)
+    if (_now - started_at) >= threshold:
+        return False
+    return True
 
 
 def _now_utc() -> datetime:

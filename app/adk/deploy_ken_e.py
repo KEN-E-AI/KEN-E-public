@@ -49,14 +49,20 @@ ENV_CONFIG = {
     "dev": {
         "project_id": "ken-e-dev",
         "project_number": "525657242938",
+        "chat_internal_api_url": "sm://525657242938/kene-api-url",
+        "chat_internal_api_audience": "sm://525657242938/kene-api-url",
     },
     "staging": {
         "project_id": "ken-e-staging",
         "project_number": "391472102753",
+        "chat_internal_api_url": "sm://391472102753/kene-api-url",
+        "chat_internal_api_audience": "sm://391472102753/kene-api-url",
     },
     "prod": {
         "project_id": "ken-e-production",
         "project_number": "395770269870",
+        "chat_internal_api_url": "sm://395770269870/kene-api-url",
+        "chat_internal_api_audience": "sm://395770269870/kene-api-url",
     },
 }
 
@@ -160,6 +166,41 @@ def process_env_file(source_path: Path, dest_path: Path) -> None:
     logger.info(f"Processed .env file written to {dest_path}")
 
 
+def _append_chat_env_vars(env_config: dict, *dest_paths: Path) -> None:
+    """Resolve and append CHAT_INTERNAL_API_URL/AUDIENCE to deployed .env files."""
+    url_ref = env_config.get("chat_internal_api_url", "")
+    audience_ref = env_config.get("chat_internal_api_audience", "")
+    if not url_ref:
+        logger.warning("chat_internal_api_url not in ENV_CONFIG; skipping")
+        return
+
+    chat_url = url_ref
+    chat_audience = audience_ref or url_ref
+
+    if get_env_or_secret:
+        try:
+            os.environ.setdefault("CHAT_INTERNAL_API_URL", url_ref)
+            resolved = get_env_or_secret("CHAT_INTERNAL_API_URL")
+            if resolved:
+                chat_url = resolved
+        except Exception as e:
+            logger.warning(f"Failed to resolve CHAT_INTERNAL_API_URL: {e}")
+        try:
+            os.environ.setdefault("CHAT_INTERNAL_API_AUDIENCE", audience_ref or url_ref)
+            resolved = get_env_or_secret("CHAT_INTERNAL_API_AUDIENCE")
+            if resolved:
+                chat_audience = resolved
+        except Exception as e:
+            logger.warning(f"Failed to resolve CHAT_INTERNAL_API_AUDIENCE: {e}")
+
+    for dest_path in dest_paths:
+        if dest_path.exists():
+            with open(dest_path, "a") as f:
+                f.write(f"\nCHAT_INTERNAL_API_URL={chat_url}\n")
+                f.write(f"CHAT_INTERNAL_API_AUDIENCE={chat_audience}\n")
+            logger.info(f"Appended CHAT_INTERNAL_API_URL/AUDIENCE to {dest_path}")
+
+
 def deploy_ken_e() -> str | None:
     """Deploy the KEN-E chat agent to Agent Engine."""
 
@@ -198,6 +239,13 @@ def deploy_ken_e() -> str | None:
             # Also copy to agents directory for runtime loading
             process_env_file(env_file, temp_path / "agents" / ".env")
             logger.info("Copied .env file to agents/ directory for runtime loading")
+            # Wire CHAT_INTERNAL_API_URL and CHAT_INTERNAL_API_AUDIENCE for agent callbacks
+            target_env_key = os.getenv("_TARGET_ENV", "dev")
+            _append_chat_env_vars(
+                ENV_CONFIG[target_env_key],
+                temp_path / ".env",
+                temp_path / "agents" / ".env",
+            )
         else:
             logger.error("❌ No .env file found")
             sys.exit(1)
