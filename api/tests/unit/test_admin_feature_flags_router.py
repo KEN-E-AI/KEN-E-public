@@ -26,7 +26,11 @@ from fastapi.testclient import TestClient
 from src.kene_api.auth.dependencies import UserContext, require_super_admin
 from src.kene_api.dependencies import get_feature_flag_service
 from src.kene_api.main import app
-from src.kene_api.models.feature_flag_models import FeatureFlag, TargetingRules
+from src.kene_api.models.feature_flag_models import (
+    FeatureFlag,
+    FeatureFlagAuditEntry,
+    TargetingRules,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -74,6 +78,32 @@ def _stub_service_raising() -> MagicMock:
     svc = MagicMock()
     svc.list_flags = AsyncMock(side_effect=RuntimeError("Firestore down"))
     svc.get_flag = AsyncMock(side_effect=RuntimeError("Firestore down"))
+    return svc
+
+
+def _make_audit_entry(**overrides: object) -> FeatureFlagAuditEntry:
+    base: dict[str, object] = {
+        "audit_id": "2026-01-01T00:00:00+00:00_abc12345",
+        "flag_key": "test_flag",
+        "actor_email": "admin@ken-e.ai",
+        "action": "update",
+        "diff": {"description": {"before": "old desc", "after": "new desc"}},
+        "created_at": "2026-01-01T00:00:00+00:00",
+    }
+    base.update(overrides)
+    return FeatureFlagAuditEntry.model_validate(base)
+
+
+def _stub_service_with_audit_pages(
+    pages: list[tuple[list[FeatureFlagAuditEntry], str | None]],
+) -> MagicMock:
+    """Return a service mock whose get_flag_audit yields successive page tuples.
+
+    ``pages`` is a list of (entries, next_cursor) pairs that are returned in
+    sequence on successive calls to get_flag_audit.
+    """
+    svc = MagicMock()
+    svc.get_flag_audit = AsyncMock(side_effect=pages)
     return svc
 
 
@@ -248,4 +278,195 @@ class TestServiceExceptionPropagation:
         app.dependency_overrides[get_feature_flag_service] = lambda: stub
 
         resp = client.get("/api/v1/admin/feature-flags/any_flag")
+        assert resp.status_code == 500
+
+
+# ---------------------------------------------------------------------------
+# TestGetFlagAudit — FF-15 (FF-PRD-02 B4)
+# ---------------------------------------------------------------------------
+
+
+class TestGetFlagAudit:
+    """AC-5: GET /{key}/audit authorization gate and response shape.
+
+    Covers:
+      1. Super-admin happy path — entries returned with non-null next_cursor.
+      2. Super-admin terminal page — entries returned with next_cursor=None.
+      3. Deleted/absent flag — empty entries list, next_cursor=None (no 404).
+      4. Non-super-admin → 403.
+      5. Missing token → 401.
+      6. Invalid key → 422 (FLAG_KEY_REGEX rejected by FlagKeyStr path validator).
+      7. limit=0 → 422 (FastAPI Query ge=1 violated).
+      8. limit=51 → 422 (FastAPI Query le=50 violated).
+      9. Service exception → 500.
+    """
+
+    def _admin_override(self, app: object) -> None:  # type: ignore[override]
+        from src.kene_api.main import app as _app
+
+        async def _admin() -> UserContext:
+            return _make_super_admin()
+
+        _app.dependency_overrides[require_super_admin] = _admin
+
+    # ------------------------------------------------------------------
+    # Case 1: super-admin happy path — non-null next_cursor
+    # ------------------------------------------------------------------
+
+    def test_super_admin_gets_entries_with_next_cursor(self, client: TestClient) -> None:
+        """200 response with entries list and non-null next_cursor."""
+        entry1 = _make_audit_entry(audit_id="id_newer", created_at="2026-03-01T00:00:00+00:00")
+        entry2 = _make_audit_entry(audit_id="id_older", created_at="2026-02-01T00:00:00+00:00")
+        stub = _stub_service_with_audit_pages([([entry1, entry2], "id_older")])
+
+        async def _admin() -> UserContext:
+            return _make_super_admin()
+
+        app.dependency_overrides[require_super_admin] = _admin
+        app.dependency_overrides[get_feature_flag_service] = lambda: stub
+
+        resp = client.get("/api/v1/admin/feature-flags/test_flag/audit")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["entries"]) == 2
+        assert body["entries"][0]["audit_id"] == "id_newer"
+        assert body["entries"][1]["audit_id"] == "id_older"
+        assert body["next_cursor"] == "id_older"
+
+    # ------------------------------------------------------------------
+    # Case 2: super-admin terminal page — next_cursor=None
+    # ------------------------------------------------------------------
+
+    def test_super_admin_terminal_page_returns_null_next_cursor(
+        self, client: TestClient
+    ) -> None:
+        """200 response for the last page has next_cursor=null."""
+        entry = _make_audit_entry()
+        stub = _stub_service_with_audit_pages([([entry], None)])
+
+        async def _admin() -> UserContext:
+            return _make_super_admin()
+
+        app.dependency_overrides[require_super_admin] = _admin
+        app.dependency_overrides[get_feature_flag_service] = lambda: stub
+
+        resp = client.get("/api/v1/admin/feature-flags/test_flag/audit")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["entries"]) == 1
+        assert body["next_cursor"] is None
+
+    # ------------------------------------------------------------------
+    # Case 3: deleted/absent flag — empty entries, not 404
+    # ------------------------------------------------------------------
+
+    def test_deleted_flag_returns_empty_entries_not_404(
+        self, client: TestClient
+    ) -> None:
+        """200 with empty entries when the flag has been deleted (no flag doc read)."""
+        stub = _stub_service_with_audit_pages([([], None)])
+
+        async def _admin() -> UserContext:
+            return _make_super_admin()
+
+        app.dependency_overrides[require_super_admin] = _admin
+        app.dependency_overrides[get_feature_flag_service] = lambda: stub
+
+        resp = client.get("/api/v1/admin/feature-flags/deleted_flag/audit")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["entries"] == []
+        assert body["next_cursor"] is None
+
+    # ------------------------------------------------------------------
+    # Case 4: non-super-admin → 403
+    # ------------------------------------------------------------------
+
+    def test_non_super_admin_returns_403(self, client: TestClient) -> None:
+        """Non-super-admin receives flat 403."""
+        from src.kene_api.auth.dependencies import SuperAdminRequiredError
+
+        async def _non_admin_gate() -> UserContext:
+            raise SuperAdminRequiredError()
+
+        app.dependency_overrides[require_super_admin] = _non_admin_gate
+
+        resp = client.get("/api/v1/admin/feature-flags/test_flag/audit")
+
+        assert resp.status_code == 403
+        assert resp.json() == {"error": "super_admin_required"}
+
+    # ------------------------------------------------------------------
+    # Case 5: missing token → 401
+    # ------------------------------------------------------------------
+
+    def test_missing_token_returns_401(self, client: TestClient) -> None:
+        """No Authorization header → 401."""
+        resp = client.get("/api/v1/admin/feature-flags/test_flag/audit")
+        assert resp.status_code == 401
+
+    # ------------------------------------------------------------------
+    # Case 6: invalid key → 422
+    # ------------------------------------------------------------------
+
+    def test_invalid_key_returns_422(self, client: TestClient) -> None:
+        """Key not matching FLAG_KEY_REGEX → 422."""
+
+        async def _admin() -> UserContext:
+            return _make_super_admin()
+
+        app.dependency_overrides[require_super_admin] = _admin
+
+        resp = client.get("/api/v1/admin/feature-flags/INVALID-KEY!/audit")
+        assert resp.status_code == 422
+
+    # ------------------------------------------------------------------
+    # Case 7: limit=0 → 422
+    # ------------------------------------------------------------------
+
+    def test_limit_zero_returns_422(self, client: TestClient) -> None:
+        """limit=0 violates Query(ge=1) → 422."""
+
+        async def _admin() -> UserContext:
+            return _make_super_admin()
+
+        app.dependency_overrides[require_super_admin] = _admin
+
+        resp = client.get("/api/v1/admin/feature-flags/test_flag/audit?limit=0")
+        assert resp.status_code == 422
+
+    # ------------------------------------------------------------------
+    # Case 8: limit=51 → 422
+    # ------------------------------------------------------------------
+
+    def test_limit_51_returns_422(self, client: TestClient) -> None:
+        """limit=51 violates Query(le=50) → 422."""
+
+        async def _admin() -> UserContext:
+            return _make_super_admin()
+
+        app.dependency_overrides[require_super_admin] = _admin
+
+        resp = client.get("/api/v1/admin/feature-flags/test_flag/audit?limit=51")
+        assert resp.status_code == 422
+
+    # ------------------------------------------------------------------
+    # Case 9: service exception → 500
+    # ------------------------------------------------------------------
+
+    def test_service_exception_propagates_to_500(self, client: TestClient) -> None:
+        """Firestore failure propagates to 500 — admin callers need real errors."""
+        svc = MagicMock()
+        svc.get_flag_audit = AsyncMock(side_effect=RuntimeError("Firestore down"))
+
+        async def _admin() -> UserContext:
+            return _make_super_admin()
+
+        app.dependency_overrides[require_super_admin] = _admin
+        app.dependency_overrides[get_feature_flag_service] = lambda: svc
+
+        resp = client.get("/api/v1/admin/feature-flags/test_flag/audit")
         assert resp.status_code == 500

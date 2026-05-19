@@ -24,6 +24,8 @@ from src.kene_api.models.feature_flag_models import (
     EvaluateResponse,
     EvaluationContext,
     FeatureFlag,
+    FeatureFlagAuditEntry,
+    FlagAuditResponse,
     FlagEvaluation,
     TargetingRules,
 )
@@ -335,3 +337,71 @@ class TestRolloutPercentageBounds:
         rules = TargetingRules(rollout_percentage=50)
 
         assert rules.rollout_percentage == 50
+
+
+# ---------------------------------------------------------------------------
+# FF-15: FeatureFlagAuditEntry round-trip test
+# ---------------------------------------------------------------------------
+
+
+class TestFeatureFlagAuditEntry:
+    """Round-trip parse for FeatureFlagAuditEntry and FlagAuditResponse.
+
+    Verifies that FeatureFlagAuditEntry parses a row dict produced by
+    record_audit (feature_flag_audit.py) byte-for-byte, and that
+    FlagAuditResponse accepts both next_cursor=None and next_cursor="<id>".
+    """
+
+    def _audit_row(self, **overrides: object) -> dict[str, object]:
+        base: dict[str, object] = {
+            "audit_id": "2026-01-01T00:00:00+00:00_abc12345",
+            "flag_key": "test_flag",
+            "actor_email": "admin@ken-e.ai",
+            "action": "update",
+            "diff": {"description": {"before": "old desc", "after": "new desc"}},
+            "created_at": "2026-01-01T00:00:00+00:00",
+        }
+        base.update(overrides)
+        return base
+
+    def test_round_trip_parses_all_fields(self) -> None:
+        """FeatureFlagAuditEntry parses a realistic record_audit row."""
+        row = self._audit_row()
+        entry = FeatureFlagAuditEntry.model_validate(row)
+
+        assert entry.audit_id == row["audit_id"]
+        assert entry.flag_key == "test_flag"
+        assert entry.actor_email == "admin@ken-e.ai"
+        assert entry.action == "update"
+        assert entry.diff == {"description": {"before": "old desc", "after": "new desc"}}
+        assert entry.created_at == "2026-01-01T00:00:00+00:00"
+
+    @pytest.mark.parametrize("action", ["create", "update", "delete", "toggle_active"])
+    def test_all_action_literals_accepted(self, action: str) -> None:
+        """All four AuditAction values parse without error."""
+        entry = FeatureFlagAuditEntry.model_validate(self._audit_row(action=action))
+        assert entry.action == action
+
+    def test_invalid_action_raises(self) -> None:
+        """An unrecognised action value raises a ValidationError."""
+        with pytest.raises(ValidationError):
+            FeatureFlagAuditEntry.model_validate(self._audit_row(action="read"))
+
+    def test_flag_audit_response_next_cursor_none(self) -> None:
+        """FlagAuditResponse accepts next_cursor=None (terminal page)."""
+        entry = FeatureFlagAuditEntry.model_validate(self._audit_row())
+        resp = FlagAuditResponse(entries=[entry], next_cursor=None)
+        assert resp.next_cursor is None
+        assert len(resp.entries) == 1
+
+    def test_flag_audit_response_next_cursor_string(self) -> None:
+        """FlagAuditResponse accepts next_cursor as an audit_id string."""
+        entry = FeatureFlagAuditEntry.model_validate(self._audit_row())
+        resp = FlagAuditResponse(entries=[entry], next_cursor="2026-01-01T00:00:00+00:00_abc12345")
+        assert resp.next_cursor == "2026-01-01T00:00:00+00:00_abc12345"
+
+    def test_empty_entries_with_no_cursor(self) -> None:
+        """FlagAuditResponse accepts an empty entries list with next_cursor=None."""
+        resp = FlagAuditResponse(entries=[], next_cursor=None)
+        assert resp.entries == []
+        assert resp.next_cursor is None
