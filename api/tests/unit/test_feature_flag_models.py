@@ -144,13 +144,13 @@ class TestFlagKeyRegex:
     @pytest.mark.parametrize(
         "bad_key",
         [
-            "Foo",           # uppercase
-            "_foo_bar",      # leading underscore
-            "ab",            # too short (only 2 chars; minimum valid is 3)
-            "a" * 65,        # too long (65 chars; max is 64)
-            "foo-bar",       # hyphen not in allowed chars
-            "foo bar",       # whitespace
-            "foo@bar",       # special char
+            "Foo",  # uppercase
+            "_foo_bar",  # leading underscore
+            "ab",  # too short (only 2 chars; minimum valid is 3)
+            "a" * 65,  # too long (65 chars; max is 64)
+            "foo-bar",  # hyphen not in allowed chars
+            "foo bar",  # whitespace
+            "foo@bar",  # special char
         ],
     )
     def test_invalid_key_raises(self, bad_key: str) -> None:

@@ -1,8 +1,7 @@
 """Tests for agent retry utilities."""
 
 import pytest
-from pydantic import ValidationError
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from ..utils.agent_retry import (
     RETRIABLE_EXCEPTIONS,
@@ -39,7 +38,9 @@ class TestRetryWithExponentialBackoff:
     def test_connection_error_retried_up_to_max_attempts(self):
         call_count = 0
 
-        @retry_with_exponential_backoff(max_attempts=3, initial_delay=0.01, jitter=False)
+        @retry_with_exponential_backoff(
+            max_attempts=3, initial_delay=0.01, jitter=False
+        )
         def failing_fn():
             nonlocal call_count
             call_count += 1
@@ -81,7 +82,9 @@ class TestRetryWithExponentialBackoff:
     def test_success_on_second_attempt(self):
         call_count = 0
 
-        @retry_with_exponential_backoff(max_attempts=3, initial_delay=0.01, jitter=False)
+        @retry_with_exponential_backoff(
+            max_attempts=3, initial_delay=0.01, jitter=False
+        )
         def flaky_fn():
             nonlocal call_count
             call_count += 1
@@ -97,7 +100,9 @@ class TestRetryWithExponentialBackoff:
     def test_max_attempts_respected(self):
         call_count = 0
 
-        @retry_with_exponential_backoff(max_attempts=2, initial_delay=0.01, jitter=False)
+        @retry_with_exponential_backoff(
+            max_attempts=2, initial_delay=0.01, jitter=False
+        )
         def failing_fn():
             nonlocal call_count
             call_count += 1

@@ -14,7 +14,9 @@ class TestWorkflowMetadataOnRootSpan:
     _execute_strategy_generation_impl to be created with these attributes.
     """
 
-    @patch("app.adk.agents.strategy_agent.orchestrator._execute_strategy_generation_impl")
+    @patch(
+        "app.adk.agents.strategy_agent.orchestrator._execute_strategy_generation_impl"
+    )
     @patch("app.adk.agents.strategy_agent.orchestrator.weave")
     def test_wrapper_enters_weave_attributes_with_workflow_metadata(
         self,
@@ -48,7 +50,9 @@ class TestWorkflowMetadataOnRootSpan:
         mock_attrs_ctx.__enter__.assert_called_once()
         mock_impl.assert_called_once()
 
-    @patch("app.adk.agents.strategy_agent.orchestrator._execute_strategy_generation_impl")
+    @patch(
+        "app.adk.agents.strategy_agent.orchestrator._execute_strategy_generation_impl"
+    )
     @patch("app.adk.agents.strategy_agent.orchestrator.weave")
     def test_wrapper_passes_execution_id_to_impl(
         self,
@@ -77,7 +81,9 @@ class TestWorkflowMetadataOnRootSpan:
         impl_kwargs = mock_impl.call_args[1]
         assert attrs_dict["workflow_id"] == impl_kwargs["execution_id"]
 
-    @patch("app.adk.agents.strategy_agent.orchestrator._execute_strategy_generation_impl")
+    @patch(
+        "app.adk.agents.strategy_agent.orchestrator._execute_strategy_generation_impl"
+    )
     @patch("app.adk.agents.strategy_agent.orchestrator.weave")
     def test_wrapper_builds_session_id_from_same_execution_id_as_workflow_id(
         self,
@@ -125,7 +131,9 @@ class TestWorkflowMetadataOnRootSpan:
         workflow_id = attrs_dict["workflow_id"]
         assert attrs_dict["session_id"] == f"strategy_acc_test_{workflow_id}"
 
-    @patch("app.adk.agents.strategy_agent.orchestrator._execute_strategy_generation_impl")
+    @patch(
+        "app.adk.agents.strategy_agent.orchestrator._execute_strategy_generation_impl"
+    )
     @patch("app.adk.agents.strategy_agent.orchestrator.weave")
     def test_wrapper_populates_full_root_metadata_block(
         self,
@@ -233,11 +241,11 @@ class TestStepMetadataHelper:
         }
 
     def test_unknown_strategy_raises(self) -> None:
+        import pytest
+
         from app.adk.agents.strategy_agent.orchestrator import (
             _get_strategy_step_metadata,
         )
-
-        import pytest
 
         with pytest.raises(KeyError):
             _get_strategy_step_metadata("nonexistent_strategy")
@@ -264,7 +272,11 @@ class TestStepMetadataHelper:
 
         step_types = {
             _get_strategy_step_metadata(name)["step_type"]
-            for name in ["competitive_strategy", "marketing_strategy", "brand_guidelines"]
+            for name in [
+                "competitive_strategy",
+                "marketing_strategy",
+                "brand_guidelines",
+            ]
         }
         # Parallel strategies have at least 2 distinct step_types (analysis + generation)
         assert len(step_types) >= 2

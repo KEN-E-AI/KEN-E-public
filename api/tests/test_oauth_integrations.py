@@ -326,12 +326,20 @@ class TestOAuthCallback:
                                     },
                                 )
 
-                        assert response.status_code == status.HTTP_307_TEMPORARY_REDIRECT
+                        assert (
+                            response.status_code == status.HTTP_307_TEMPORARY_REDIRECT
+                        )
 
                         # Verify stored credentials preserved the existing refresh token
                         stored_creds = mock_service_instance.store_credentials.call_args
-                        assert stored_creds.kwargs["credentials"]["refresh_token"] == "existing_refresh_token"
-                        assert stored_creds.kwargs["credentials"]["access_token"] == "new_access_token"
+                        assert (
+                            stored_creds.kwargs["credentials"]["refresh_token"]
+                            == "existing_refresh_token"
+                        )
+                        assert (
+                            stored_creds.kwargs["credentials"]["access_token"]
+                            == "new_access_token"
+                        )
 
     def test_google_oauth_callback_invalid_state(self, client):
         """Test OAuth callback with invalid state token."""

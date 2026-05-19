@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-import json
-import pytest
-from unittest.mock import Mock, patch, AsyncMock
 from io import BytesIO
+from unittest.mock import AsyncMock, Mock, patch
 
+import pytest
+from src.kene_api.models.kene_models import AccountRequest
 from src.kene_api.services.form_parsing_service import (
     parse_account_form_data,
     parse_json_field,
 )
-from src.kene_api.models.kene_models import AccountRequest
 
 
 class TestFormDataParsing:
@@ -305,7 +304,6 @@ class TestRateLimiting:
     @pytest.mark.asyncio
     async def test_polling_endpoint_uses_higher_rate_limit(self):
         """Test that polling endpoints use the progress_rate_limiter."""
-        from src.kene_api.auth.dependencies import get_user_context_for_polling
         from src.kene_api.rate_limiter import progress_rate_limiter
 
         assert progress_rate_limiter.requests_per_minute == 120

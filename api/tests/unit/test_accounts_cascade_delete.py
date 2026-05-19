@@ -1,7 +1,8 @@
 """Unit tests for account cascade deletion logic."""
 
+from unittest.mock import AsyncMock, Mock
+
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
 
 
 class TestAccountsCascadeDelete:

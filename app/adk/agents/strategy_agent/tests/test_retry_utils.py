@@ -1,21 +1,20 @@
 """Unit tests for retry utilities."""
 
-import pytest
 import time
-from unittest.mock import Mock, patch, MagicMock, call
+from unittest.mock import MagicMock, Mock
 
+import pytest
 from google.api_core import exceptions as google_exceptions
 
 from ..retry_utils import (
+    RETRIABLE_EXCEPTIONS,
+    RetryableTransaction,
     RetryConfig,
+    retry_on_conflict,
+    with_batch_retry,
     with_firestore_retry,
     with_read_retry,
     with_write_retry,
-    with_batch_retry,
-    retry_on_conflict,
-    RetryableTransaction,
-    RETRIABLE_EXCEPTIONS,
-    NON_RETRIABLE_EXCEPTIONS,
 )
 
 

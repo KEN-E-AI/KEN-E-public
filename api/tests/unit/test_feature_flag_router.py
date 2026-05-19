@@ -69,7 +69,12 @@ def _stub_service(
     ) -> dict[str, FlagEvaluation]:
         captured_ctx.append(ctx)
         result_map = evaluations or {}
-        return {k: result_map.get(k, FlagEvaluation(key=k, enabled=False, reason="unknown_flag")) for k in flag_keys}
+        return {
+            k: result_map.get(
+                k, FlagEvaluation(key=k, enabled=False, reason="unknown_flag")
+            )
+            for k in flag_keys
+        }
 
     svc.evaluate_batch = _evaluate_batch
     return svc
@@ -131,10 +136,10 @@ class TestEvaluateFlagsAuth:
             "/api/v1/feature-flags/evaluate",
             json={
                 "flag_keys": ["foo"],
-                "user_id": "spoof_uid",           # silently dropped
+                "user_id": "spoof_uid",  # silently dropped
                 "user_email": "attacker@evil.com",  # silently dropped
-                "organization_id": "spoof_org",   # silently dropped
-                "account_id": "spoof_acc",        # silently dropped
+                "organization_id": "spoof_org",  # silently dropped
+                "account_id": "spoof_acc",  # silently dropped
             },
         )
 
@@ -146,9 +151,7 @@ class TestEvaluateFlagsAuth:
         assert ctx.organization_id is None
         assert ctx.account_id is None
 
-    def test_invalid_email_jwt_claim_returns_401(
-        self, client: TestClient
-    ) -> None:
+    def test_invalid_email_jwt_claim_returns_401(self, client: TestClient) -> None:
         """A JWT with a missing/malformed email claim → 401 not 500."""
         # Simulate a JWT whose email claim is empty (fails EmailStr).
         user = _make_user(user_id="uid_no_email", email="")

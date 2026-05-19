@@ -132,8 +132,10 @@ async def run_step1_probe() -> StepResult:
     pass. We deliberately do not rely on ``TraceCapture`` here because
     the minimal probe agent has no Weave wiring of its own.
     """
-    print("[1/4] probe — running strategy formatter with output_schema "
-          "(OTEL google-genai instrumentation ENABLED)...")
+    print(
+        "[1/4] probe — running strategy formatter with output_schema "
+        "(OTEL google-genai instrumentation ENABLED)..."
+    )
 
     # Force the workaround OFF for the probe regardless of .env state.
     os.environ.pop("OTEL_PYTHON_DISABLED_INSTRUMENTATIONS", None)
@@ -215,7 +217,9 @@ async def run_step1_probe() -> StepResult:
         error_text = f"{type(e).__name__}: {e}"
 
     if crashed_in_otel:
-        print("      OUTCOME A — google-genai OTEL bug STILL PRESENT on this ADK version")
+        print(
+            "      OUTCOME A — google-genai OTEL bug STILL PRESENT on this ADK version"
+        )
         return StepResult(
             name="probe",
             passed=True,  # probe completed; outcome is informational
@@ -308,9 +312,9 @@ _DEPLOY_PY = _REPO_ROOT / "app" / "adk" / "deploy_ken_e.py"
 
 _WORKAROUND_KEY = "OTEL_PYTHON_DISABLED_INSTRUMENTATIONS=google-genai"
 _DEPLOY_ANCHOR = (
-    '        os.environ.setdefault(\n'
+    "        os.environ.setdefault(\n"
     '            "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", _capture_content\n'
-    '        )\n'
+    "        )\n"
 )
 
 
@@ -326,9 +330,7 @@ def _apply_outcome_a(verification_date: str) -> dict[str, Any]:
 
     changes: dict[str, Any] = {}
     active_re = re.compile(rf"^{re.escape(_WORKAROUND_KEY)}\s*$", re.MULTILINE)
-    commented_re = re.compile(
-        rf"^#\s*{re.escape(_WORKAROUND_KEY)}\s*$", re.MULTILINE
-    )
+    commented_re = re.compile(rf"^#\s*{re.escape(_WORKAROUND_KEY)}\s*$", re.MULTILINE)
     insert_block = (
         f"# Workaround for buggy google-genai OTEL instrumentation "
         f"(re-enabled by run_otel_stability.py probe Outcome A on {verification_date}).\n"
@@ -387,9 +389,7 @@ def _apply_outcome_a(verification_date: str) -> dict[str, Any]:
                 "        # See docs/spike-otel-pydantic-findings.md.\n"
                 '        os.environ.setdefault("OTEL_PYTHON_DISABLED_INSTRUMENTATIONS", "google-genai")\n'
             )
-            new_text = text.replace(
-                _DEPLOY_ANCHOR, _DEPLOY_ANCHOR + insertion, 1
-            )
+            new_text = text.replace(_DEPLOY_ANCHOR, _DEPLOY_ANCHOR + insertion, 1)
             _DEPLOY_PY.write_text(new_text)
             changes[rel] = "inserted"
         else:
@@ -506,9 +506,7 @@ def _run_subprocess_with_rss_sample(
 
     cmd = [
         sys.executable,
-        str(
-            _REPO_ROOT / "tests/integration/stability/runs/run_adk_stability.py"
-        ),
+        str(_REPO_ROOT / "tests/integration/stability/runs/run_adk_stability.py"),
         "--invocations",
         str(invocations),
     ]
@@ -525,7 +523,7 @@ def _run_subprocess_with_rss_sample(
     started = time.monotonic()
     peak_rss = 0
     with open(subprocess_log_path, "w") as log_fh:
-        proc = subprocess.Popen(  # noqa: S603
+        proc = subprocess.Popen(
             cmd,
             env=env,
             stdout=log_fh,
@@ -570,21 +568,25 @@ def _run_subprocess_with_rss_sample(
 
 def run_step2_memory_delta(invocations: int) -> StepResult:
     """Compare peak RSS with OTEL on vs off (paired runs)."""
-    print(f"[2/4] memory delta — paired {invocations}-invocation runs "
-          "(OTEL on vs OTEL_SDK_DISABLED=true)...")
+    print(
+        f"[2/4] memory delta — paired {invocations}-invocation runs "
+        "(OTEL on vs OTEL_SDK_DISABLED=true)..."
+    )
 
     print("      → run A: OTEL_SDK_DISABLED=true")
-    a = _run_subprocess_with_rss_sample(
-        {"OTEL_SDK_DISABLED": "true"}, invocations
+    a = _run_subprocess_with_rss_sample({"OTEL_SDK_DISABLED": "true"}, invocations)
+    print(
+        f"        peak={a['peak_rss_mb']:.1f} MB  duration={a['duration_s']:.1f}s "
+        f"exit={a['exit_code']}"
     )
-    print(f"        peak={a['peak_rss_mb']:.1f} MB  duration={a['duration_s']:.1f}s "
-          f"exit={a['exit_code']}")
 
     print("      → run B: OTEL on (default)")
     # Make sure SDK_DISABLED is NOT inherited
     b = _run_subprocess_with_rss_sample({"OTEL_SDK_DISABLED": "false"}, invocations)
-    print(f"        peak={b['peak_rss_mb']:.1f} MB  duration={b['duration_s']:.1f}s "
-          f"exit={b['exit_code']}")
+    print(
+        f"        peak={b['peak_rss_mb']:.1f} MB  duration={b['duration_s']:.1f}s "
+        f"exit={b['exit_code']}"
+    )
 
     if a["exit_code"] != 0 or b["exit_code"] != 0:
         for label, run in (("A", a), ("B", b)):
@@ -603,8 +605,10 @@ def run_step2_memory_delta(invocations: int) -> StepResult:
     delta = b["peak_rss_mb"] - a["peak_rss_mb"]
     delta_pct = (delta / a["peak_rss_mb"] * 100) if a["peak_rss_mb"] else 0
     passed = abs(delta_pct) < 10
-    print(f"      delta = {delta:+.1f} MB ({delta_pct:+.1f}%)  "
-          f"[{'PASS' if passed else 'FAIL'}]")
+    print(
+        f"      delta = {delta:+.1f} MB ({delta_pct:+.1f}%)  "
+        f"[{'PASS' if passed else 'FAIL'}]"
+    )
 
     return StepResult(
         name="memory_delta",
@@ -629,8 +633,9 @@ async def run_step3_genai_coverage(invocations: int) -> StepResult:
     span carries the GenAI required fields: ``model_used`` and
     ``temperature``.
     """
-    print(f"[3/4] genai span coverage — {invocations} invocations under "
-          "TraceCapture...")
+    print(
+        f"[3/4] genai span coverage — {invocations} invocations under TraceCapture..."
+    )
 
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
@@ -664,7 +669,9 @@ async def run_step3_genai_coverage(invocations: int) -> StepResult:
                 async for _ in runner.run_async(
                     user_id=user_id,
                     session_id=session_id,
-                    new_message=Content(role="user", parts=[Part.from_text(text=prompt)]),
+                    new_message=Content(
+                        role="user", parts=[Part.from_text(text=prompt)]
+                    ),
                 ):
                     pass
             except Exception:
@@ -676,22 +683,21 @@ async def run_step3_genai_coverage(invocations: int) -> StepResult:
 
     # Find genai spans by op_name pattern.
     genai_spans = [
-        s for s in spans
+        s
+        for s in spans
         if "google.genai" in (s.get("_weave_op_name") or "")
         and "generate_content" in (s.get("_weave_op_name") or "")
     ]
 
     required_fields = ("model_used", "temperature")
-    field_present = {f: 0 for f in required_fields}
+    field_present = dict.fromkeys(required_fields, 0)
     for span in genai_spans:
         for f in required_fields:
             if span.get(f) is not None:
                 field_present[f] += 1
 
     n = len(genai_spans)
-    coverage = {
-        f: (field_present[f] / n * 100 if n else 0.0) for f in required_fields
-    }
+    coverage = {f: (field_present[f] / n * 100 if n else 0.0) for f in required_fields}
     passed = n > 0 and all(coverage[f] == 100.0 for f in required_fields)
 
     print(f"      genai spans captured: {n}")
@@ -722,8 +728,7 @@ async def run_step4_non_genai(invocations: int) -> StepResult:
     least one HTTP-shaped op (``mcp.client.session.ClientSession.call_tool.*``)
     in the captured set.
     """
-    print(f"[4/4] non-genai spans — {invocations} invocations under "
-          "TraceCapture...")
+    print(f"[4/4] non-genai spans — {invocations} invocations under TraceCapture...")
 
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
@@ -757,7 +762,9 @@ async def run_step4_non_genai(invocations: int) -> StepResult:
                 async for _ in runner.run_async(
                     user_id=user_id,
                     session_id=session_id,
-                    new_message=Content(role="user", parts=[Part.from_text(text=prompt)]),
+                    new_message=Content(
+                        role="user", parts=[Part.from_text(text=prompt)]
+                    ),
                 ):
                     pass
             except Exception:
@@ -829,8 +836,10 @@ async def run_all(
         cleanup_applied = True
         step1.details["cleanup_changes"] = changes
         step1.details["spike_doc_updated"] = spike_updated
-        print(f"      cleanup applied → {len(changes)} files changed; "
-              f"spike doc updated={spike_updated}")
+        print(
+            f"      cleanup applied → {len(changes)} files changed; "
+            f"spike doc updated={spike_updated}"
+        )
     print()
 
     # Steps 2–4: only meaningful if probe didn't fail catastrophically

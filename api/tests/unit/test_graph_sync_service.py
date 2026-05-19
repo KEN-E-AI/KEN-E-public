@@ -18,7 +18,6 @@ from src.kene_api.models.graph_models import (
     StrengthCreate,
 )
 from src.kene_api.services.graph_sync_service import GraphSyncService
-from src.kene_api.services.graph_validation_service import GraphValidationService
 
 
 @pytest.fixture
@@ -266,7 +265,9 @@ class TestProductCategoryOperations:
         mock_firestore_service.update_document.assert_called_once()
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="GraphSyncService API changed: delete_product_category now cascades directly instead of blocking via validate_can_delete_product_category")
+    @pytest.mark.skip(
+        reason="GraphSyncService API changed: delete_product_category now cascades directly instead of blocking via validate_can_delete_product_category"
+    )
     async def test_delete_product_category_with_products_fails(
         self, graph_sync_service, mock_neo4j_service, mock_validation_service
     ):
@@ -454,7 +455,9 @@ class TestStrengthOperations:
 
         # Assert
         assert result.display_name == "Strong Brand"
-        assert mock_neo4j_service.execute_write_query.call_count == 1  # Strength only (hub via mocked validation)
+        assert (
+            mock_neo4j_service.execute_write_query.call_count == 1
+        )  # Strength only (hub via mocked validation)
 
 
 class TestOpportunityOperations:
@@ -787,7 +790,7 @@ class TestCompetitorOperations:
         }
         mock_neo4j_service.execute_query.side_effect = [
             [{"total": 0}],  # count_nodes: below limit
-            [hub_record],    # list_nodes: existing hub found
+            [hub_record],  # list_nodes: existing hub found
         ]
 
         # Mock Competitor creation
@@ -911,7 +914,11 @@ class TestCompetitorOperations:
         monitoring_doc = {
             "competitor_entries": [
                 {"node_id": node_id, "name": "Test Competitor", "keywords": ["kw1"]},
-                {"node_id": other_node_id, "name": "Other Competitor", "keywords": ["kw2"]},
+                {
+                    "node_id": other_node_id,
+                    "name": "Other Competitor",
+                    "keywords": ["kw2"],
+                },
             ]
         }
         monitoring_collection = f"accounts/{account_id}/monitoring_topics"
@@ -1248,11 +1255,13 @@ class TestCompetitorLimits:
         )
 
         # Mock count_nodes to return 4 (below limit), list_nodes returns [] (no hub)
-        mock_neo4j_service.execute_query = AsyncMock(side_effect=[
-            [{"total": 4}],  # count_nodes: below limit
-            [],              # list_nodes in create_competitor: no CompetitiveEnvironment hub
-            [],              # list_nodes in create_competitive_environment: no hub exists
-        ])
+        mock_neo4j_service.execute_query = AsyncMock(
+            side_effect=[
+                [{"total": 4}],  # count_nodes: below limit
+                [],  # list_nodes in create_competitor: no CompetitiveEnvironment hub
+                [],  # list_nodes in create_competitive_environment: no hub exists
+            ]
+        )
 
         # Mock hub creation + competitor creation
         env_node = {
@@ -1277,10 +1286,12 @@ class TestCompetitorLimits:
             "last_modified_by": user_id,
             "embedding": None,
         }
-        mock_neo4j_service.execute_write_query = AsyncMock(side_effect=[
-            [{"node": env_node}],        # create_competitive_environment
-            [{"node": competitor_node}], # create_competitor
-        ])
+        mock_neo4j_service.execute_write_query = AsyncMock(
+            side_effect=[
+                [{"node": env_node}],  # create_competitive_environment
+                [{"node": competitor_node}],  # create_competitor
+            ]
+        )
 
         # Mock validation services
         mock_validation_service.validate_non_empty_string = Mock(
@@ -1488,8 +1499,16 @@ class TestCustomerProfileOperations:
 
         monitoring_doc = {
             "customer_profile_entries": [
-                {"node_id": profile_node_id, "name": "Test Profile", "keywords": ["kw1"]},
-                {"node_id": other_profile_node_id, "name": "Other Profile", "keywords": ["kw2"]},
+                {
+                    "node_id": profile_node_id,
+                    "name": "Test Profile",
+                    "keywords": ["kw1"],
+                },
+                {
+                    "node_id": other_profile_node_id,
+                    "name": "Other Profile",
+                    "keywords": ["kw2"],
+                },
             ]
         }
         monitoring_collection = f"accounts/{account_id}/monitoring_topics"
@@ -2870,7 +2889,9 @@ class TestBrandIdentityOperations:
     """Tests for BrandIdentity hub operations."""
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="GraphSyncService API changed: get_or_create_brand_identity method no longer exists")
+    @pytest.mark.skip(
+        reason="GraphSyncService API changed: get_or_create_brand_identity method no longer exists"
+    )
     async def test_get_or_create_brand_identity_creates_new(
         self,
         graph_sync_service,
@@ -2912,7 +2933,9 @@ class TestBrandIdentityOperations:
         assert mock_neo4j_service.execute_write_query.called
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="GraphSyncService API changed: get_or_create_brand_identity method no longer exists")
+    @pytest.mark.skip(
+        reason="GraphSyncService API changed: get_or_create_brand_identity method no longer exists"
+    )
     async def test_get_or_create_brand_identity_reuses_existing(
         self, graph_sync_service, mock_neo4j_service
     ):
@@ -2950,7 +2973,9 @@ class TestBrandPersonalityOperations:
     """Tests for BrandPersonality CRUD operations."""
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="GraphSyncService API changed: create_brand_personality method no longer exists")
+    @pytest.mark.skip(
+        reason="GraphSyncService API changed: create_brand_personality method no longer exists"
+    )
     async def test_create_brand_personality_auto_creates_hub(
         self,
         graph_sync_service,
@@ -3023,7 +3048,9 @@ class TestColorPaletteOperations:
     """Tests for ColorPalette CRUD operations."""
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="GraphSyncService API changed: create_color_palette method no longer exists")
+    @pytest.mark.skip(
+        reason="GraphSyncService API changed: create_color_palette method no longer exists"
+    )
     async def test_create_color_palette_success(
         self,
         graph_sync_service,
@@ -3084,7 +3111,9 @@ class TestBrandStrategyIntegration:
     """Integration tests for complete brand strategy workflows."""
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="GraphSyncService API changed: create_brand_personality and create_voice_and_tone methods no longer exist")
+    @pytest.mark.skip(
+        reason="GraphSyncService API changed: create_brand_personality and create_voice_and_tone methods no longer exist"
+    )
     async def test_create_multiple_brand_children_share_hub(
         self,
         graph_sync_service,
@@ -3262,29 +3291,31 @@ class TestRollupStrategyListOptimization:
         strategy_type = "ProblemAwarenessStrategy"
 
         # Mock single combined query result
-        mock_neo4j_service.execute_query = AsyncMock(return_value=[
-            {
-                "paginated_strategies": [
-                    {
-                        "strategy": {
-                            "node_id": "rollup_problemawareness_acc_test123_abc",
-                            "description": "Test strategy 1",
-                            "created_time": datetime.now(),
+        mock_neo4j_service.execute_query = AsyncMock(
+            return_value=[
+                {
+                    "paginated_strategies": [
+                        {
+                            "strategy": {
+                                "node_id": "rollup_problemawareness_acc_test123_abc",
+                                "description": "Test strategy 1",
+                                "created_time": datetime.now(),
+                            },
+                            "individual_count": 3,
                         },
-                        "individual_count": 3,
-                    },
-                    {
-                        "strategy": {
-                            "node_id": "rollup_problemawareness_acc_test123_def",
-                            "description": "Test strategy 2",
-                            "created_time": datetime.now(),
+                        {
+                            "strategy": {
+                                "node_id": "rollup_problemawareness_acc_test123_def",
+                                "description": "Test strategy 2",
+                                "created_time": datetime.now(),
+                            },
+                            "individual_count": 5,
                         },
-                        "individual_count": 5,
-                    },
-                ],
-                "total": 10,
-            }
-        ])
+                    ],
+                    "total": 10,
+                }
+            ]
+        )
 
         # Act
         result = await graph_sync_service.list_rollup_strategies_by_type(
@@ -3312,22 +3343,24 @@ class TestRollupStrategyListOptimization:
         account_id = "acc_test123"
         strategy_type = "ConsiderationStrategy"
 
-        mock_neo4j_service.execute_query = AsyncMock(return_value=[
-            {
-                "paginated_strategies": [
-                    {
-                        "strategy": {
-                            "node_id": f"rollup_consideration_acc_test123_{i}",
-                            "description": f"Strategy {i}",
-                            "created_time": datetime.now(),
-                        },
-                        "individual_count": i,
-                    }
-                    for i in range(5, 10)  # Simulating skip=5
-                ],
-                "total": 10,
-            }
-        ])
+        mock_neo4j_service.execute_query = AsyncMock(
+            return_value=[
+                {
+                    "paginated_strategies": [
+                        {
+                            "strategy": {
+                                "node_id": f"rollup_consideration_acc_test123_{i}",
+                                "description": f"Strategy {i}",
+                                "created_time": datetime.now(),
+                            },
+                            "individual_count": i,
+                        }
+                        for i in range(5, 10)  # Simulating skip=5
+                    ],
+                    "total": 10,
+                }
+            ]
+        )
 
         # Act
         result = await graph_sync_service.list_rollup_strategies_by_type(
@@ -3351,9 +3384,9 @@ class TestRollupStrategyListOptimization:
     ):
         """Test handling of empty result set."""
         # Arrange
-        mock_neo4j_service.execute_query = AsyncMock(return_value=[
-            {"paginated_strategies": [], "total": 0}
-        ])
+        mock_neo4j_service.execute_query = AsyncMock(
+            return_value=[{"paginated_strategies": [], "total": 0}]
+        )
 
         # Act
         result = await graph_sync_service.list_rollup_strategies_by_type(

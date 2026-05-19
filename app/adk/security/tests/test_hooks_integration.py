@@ -121,9 +121,7 @@ class TestAdkBeforeToolCallback:
     async def test_allows_unregistered_tools(self):
         tool = MockBaseTool(name="internal_adk_tool")
         ctx = _make_context()
-        allowed = PermissionCheckResult(
-            allowed=True, reason="Tool not in registry"
-        )
+        allowed = PermissionCheckResult(allowed=True, reason="Tool not in registry")
 
         with patch(
             "app.adk.security.hooks.before_tool_execution_hook",

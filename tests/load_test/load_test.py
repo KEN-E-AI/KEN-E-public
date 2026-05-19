@@ -26,7 +26,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Get API endpoint from environment or use default
-api_base_url = os.environ.get("API_BASE_URL", "https://kene-api-staging-391472102753.us-central1.run.app")
+api_base_url = os.environ.get(
+    "API_BASE_URL", "https://kene-api-staging-391472102753.us-central1.run.app"
+)
 logger.info("Using API base URL: %s", api_base_url)
 
 
@@ -47,22 +49,28 @@ class ChatStreamUser(HttpUser):
             if response.status_code == 200:
                 response.success()
             else:
-                response.failure(f"Health check failed with status {response.status_code}")
+                response.failure(
+                    f"Health check failed with status {response.status_code}"
+                )
 
     @task(3)  # Weight of 3 - this task is 3x more likely to run
     def chat_completion(self) -> None:
         """Simulates a chat completion request."""
         headers = {"Content-Type": "application/json"}
-        
+
         # Use the auth token if available, otherwise skip auth for public endpoints
         if "_AUTH_TOKEN" in os.environ:
             headers["Authorization"] = f"Bearer {os.environ['_AUTH_TOKEN']}"
 
         data = {
             "messages": [
-                {"role": "user", "content": "Hello, how can you help me today?", "timestamp": "2025-01-01T00:00:00Z"}
+                {
+                    "role": "user",
+                    "content": "Hello, how can you help me today?",
+                    "timestamp": "2025-01-01T00:00:00Z",
+                }
             ],
-            "stream": False
+            "stream": False,
         }
 
         start_time = time.time()
@@ -94,7 +102,7 @@ class ChatStreamUser(HttpUser):
     def list_conversations(self) -> None:
         """Simulates listing conversations."""
         headers = {"Content-Type": "application/json"}
-        
+
         # Use the auth token if available
         if "_AUTH_TOKEN" in os.environ:
             headers["Authorization"] = f"Bearer {os.environ['_AUTH_TOKEN']}"
@@ -140,4 +148,6 @@ class ChatStreamUser(HttpUser):
                 except json.JSONDecodeError:
                     response.failure("Failed to parse JSON response")
             else:
-                response.failure(f"Chat health check failed with status {response.status_code}")
+                response.failure(
+                    f"Chat health check failed with status {response.status_code}"
+                )

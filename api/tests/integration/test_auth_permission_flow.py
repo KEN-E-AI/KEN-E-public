@@ -1,10 +1,9 @@
 """Integration tests for authentication flow with new permission structure."""
 
-import pytest
 from unittest.mock import MagicMock, patch
 
+import pytest
 from src.kene_api.auth.dependencies import get_current_user_optional
-from src.kene_api.auth.models import UserContext
 
 
 class TestAuthPermissionFlow:

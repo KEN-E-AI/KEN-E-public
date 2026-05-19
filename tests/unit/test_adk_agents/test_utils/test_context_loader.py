@@ -9,15 +9,13 @@ Tests cover:
 - HierarchicalContextManager class methods
 """
 
-from typing import Any
-from unittest.mock import MagicMock, Mock, patch
-
-import pytest
-
 # Import the module file directly to avoid triggering app.adk.agents.__init__.py
 # which imports all agents at module level
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
 
 # Add the app directory to the path
 app_dir = Path(__file__).parents[4] / "app"
@@ -33,14 +31,12 @@ sys.modules["neo4j.exceptions"] = neo4j_mock.exceptions
 
 # Now import directly from the module file
 from adk.agents.utils.context_loader import (
-    MAX_CONTEXT_TOKENS,
     HierarchicalContextManager,
     _fetch_context_from_neo4j,
     _format_context_markdown,
     inject_organization_context,
     load_organization_context,
 )
-
 
 # Sample test data
 SAMPLE_ACCOUNT_DATA = {
@@ -66,7 +62,13 @@ SAMPLE_BRAND_DATA = {
     ],
     "personality_traits": ["Analytical Advisor", "Trusted Partner", "Forward-thinking"],
     "mission": "Empower marketing teams to make confident decisions backed by AI-powered insights.",
-    "values": ["Data Transparency", "Customer Success", "Continuous Innovation", "Ethical AI", "Collaboration"],
+    "values": [
+        "Data Transparency",
+        "Customer Success",
+        "Continuous Innovation",
+        "Ethical AI",
+        "Collaboration",
+    ],
 }
 
 SAMPLE_COMPLETE_CONTEXT = {
@@ -124,7 +126,10 @@ def test_load_organization_context_with_complete_data(
     assert "**Tone:** Professional, Data-driven, Approachable, Innovative" in result
     assert "**DO:**" in result
     assert "**DON'T:**" in result
-    assert "**Personality Traits:** Analytical Advisor, Trusted Partner, Forward-thinking" in result
+    assert (
+        "**Personality Traits:** Analytical Advisor, Trusted Partner, Forward-thinking"
+        in result
+    )
     assert "**Mission:**" in result
     assert "**Core Values:**" in result
 
@@ -260,7 +265,10 @@ def test_format_context_markdown_complete_data() -> None:
     # Assert content
     assert "# Company Context" in result
     assert "Acme Marketing Solutions provides AI-powered marketing analytics" in result
-    assert "**Websites:** https://acme-marketing.com, https://blog.acme-marketing.com" in result
+    assert (
+        "**Websites:** https://acme-marketing.com, https://blog.acme-marketing.com"
+        in result
+    )
     assert "## Brand Voice & Communication Style" in result
     assert "**Tone:** Professional, Data-driven, Approachable, Innovative" in result
 
@@ -275,9 +283,15 @@ def test_format_context_markdown_complete_data() -> None:
     assert "- Make claims without evidence" in result
 
     # Assert personality, mission, values
-    assert "**Personality Traits:** Analytical Advisor, Trusted Partner, Forward-thinking" in result
+    assert (
+        "**Personality Traits:** Analytical Advisor, Trusted Partner, Forward-thinking"
+        in result
+    )
     assert "**Mission:** Empower marketing teams" in result
-    assert "**Core Values:** Data Transparency, Customer Success, Continuous Innovation, Ethical AI, Collaboration" in result
+    assert (
+        "**Core Values:** Data Transparency, Customer Success, Continuous Innovation, Ethical AI, Collaboration"
+        in result
+    )
 
 
 # Test: _format_context_markdown with minimal data (no brand)
@@ -498,8 +512,14 @@ class TestHierarchicalContextManagerConstants:
     def test_available_sections_defined(self) -> None:
         """Test that AVAILABLE_SECTIONS contains expected sections."""
         expected_sections = [
-            "products", "icps", "competitors", "campaigns",
-            "strategies", "brand", "performance", "calendar"
+            "products",
+            "icps",
+            "competitors",
+            "campaigns",
+            "strategies",
+            "brand",
+            "performance",
+            "calendar",
         ]
 
         assert HierarchicalContextManager.AVAILABLE_SECTIONS == expected_sections
@@ -523,7 +543,9 @@ class TestHierarchicalContextManagerLoadExecutiveSummary:
         # Setup mocks
         mock_connection = Mock()
         mock_neo4j_class.return_value = mock_connection
-        mock_connection.execute_query.return_value = [{"context": SAMPLE_COMPLETE_CONTEXT}]
+        mock_connection.execute_query.return_value = [
+            {"context": SAMPLE_COMPLETE_CONTEXT}
+        ]
 
         mock_token_estimator_class.check_input_limit.return_value = {
             "estimated_tokens": 1500,
@@ -581,7 +603,9 @@ class TestHierarchicalContextManagerLoadSection:
 
         # Campaigns is a valid section - will return None without Neo4j
         # but should not raise an error
-        with patch("adk.agents.utils.context_loader._fetch_campaigns_from_neo4j") as mock_fetch:
+        with patch(
+            "adk.agents.utils.context_loader._fetch_campaigns_from_neo4j"
+        ) as mock_fetch:
             mock_fetch.return_value = None
             result = manager.load_section("campaigns")
             # Currently returns None as section loading not fully implemented
@@ -703,36 +727,60 @@ class TestHierarchicalContextManagerShouldLoadSection:
 
     def test_should_load_section_campaign_keywords(self) -> None:
         """Test detection of campaign-related messages."""
-        assert HierarchicalContextManager.should_load_section(
-            "How are our campaigns performing?", "campaigns"
-        ) is True
-        assert HierarchicalContextManager.should_load_section(
-            "What's our ad spend?", "campaigns"
-        ) is True
+        assert (
+            HierarchicalContextManager.should_load_section(
+                "How are our campaigns performing?", "campaigns"
+            )
+            is True
+        )
+        assert (
+            HierarchicalContextManager.should_load_section(
+                "What's our ad spend?", "campaigns"
+            )
+            is True
+        )
 
     def test_should_load_section_product_keywords(self) -> None:
         """Test detection of product-related messages."""
-        assert HierarchicalContextManager.should_load_section(
-            "Tell me about our products", "products"
-        ) is True
-        assert HierarchicalContextManager.should_load_section(
-            "What services do we offer?", "products"
-        ) is True
+        assert (
+            HierarchicalContextManager.should_load_section(
+                "Tell me about our products", "products"
+            )
+            is True
+        )
+        assert (
+            HierarchicalContextManager.should_load_section(
+                "What services do we offer?", "products"
+            )
+            is True
+        )
 
     def test_should_load_section_no_match(self) -> None:
         """Test no match for unrelated messages."""
-        assert HierarchicalContextManager.should_load_section(
-            "Hello, how are you?", "campaigns"
-        ) is False
-        assert HierarchicalContextManager.should_load_section(
-            "What's the weather?", "products"
-        ) is False
+        assert (
+            HierarchicalContextManager.should_load_section(
+                "Hello, how are you?", "campaigns"
+            )
+            is False
+        )
+        assert (
+            HierarchicalContextManager.should_load_section(
+                "What's the weather?", "products"
+            )
+            is False
+        )
 
     def test_should_load_section_case_insensitive(self) -> None:
         """Test that matching is case insensitive."""
-        assert HierarchicalContextManager.should_load_section(
-            "CAMPAIGNS PERFORMANCE", "campaigns"
-        ) is True
-        assert HierarchicalContextManager.should_load_section(
-            "Our PRODUCTS are great", "products"
-        ) is True
+        assert (
+            HierarchicalContextManager.should_load_section(
+                "CAMPAIGNS PERFORMANCE", "campaigns"
+            )
+            is True
+        )
+        assert (
+            HierarchicalContextManager.should_load_section(
+                "Our PRODUCTS are great", "products"
+            )
+            is True
+        )

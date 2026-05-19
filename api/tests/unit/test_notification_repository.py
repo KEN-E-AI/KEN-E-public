@@ -3,7 +3,6 @@
 from datetime import datetime, timedelta
 
 import pytest
-
 from src.kene_api.models.kene_models import (
     Notification,
     NotificationCategory,

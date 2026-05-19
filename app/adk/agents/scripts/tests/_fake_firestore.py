@@ -63,7 +63,9 @@ class FakeFirestoreClient:
     test.
     """
 
-    def __init__(self, stores: dict[str, dict[str, dict[str, Any]]] | None = None) -> None:
+    def __init__(
+        self, stores: dict[str, dict[str, dict[str, Any]]] | None = None
+    ) -> None:
         self._stores: dict[str, dict[str, dict[str, Any]]] = stores or {}
 
     def collection(self, name: str) -> _Collection:

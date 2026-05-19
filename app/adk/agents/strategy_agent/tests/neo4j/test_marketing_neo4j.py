@@ -298,7 +298,9 @@ Ensure all required fields are populated with rich, detailed content.""",
                 is_marketed_to_count = len(
                     graph_nodes.get("is_marketed_to_relationships", [])
                 )
-                print(f"   ✅ IS_MARKETED_TO relationships: {is_marketed_to_count} created")
+                print(
+                    f"   ✅ IS_MARKETED_TO relationships: {is_marketed_to_count} created"
+                )
 
             except Exception as e:
                 print(f"\n❌ Graph creation failed: {e}")

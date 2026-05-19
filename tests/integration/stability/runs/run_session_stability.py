@@ -156,8 +156,10 @@ async def run_test1_sustained_session(
     Wraps the run in :class:`MemoryProfiler` (RSS sampler thread, daemon).
     Asserts ``delta_pct < 10`` — the AC-6.21 threshold.
     """
-    print(f"[1/4] sustained session — duration={duration_s}s, "
-          f"interval={interval_s}s (~{duration_s // interval_s} interactions)")
+    print(
+        f"[1/4] sustained session — duration={duration_s}s, "
+        f"interval={interval_s}s (~{duration_s // interval_s} interactions)"
+    )
 
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
@@ -195,9 +197,7 @@ async def run_test1_sustained_session(
         while time.monotonic() < deadline:
             case = QUERIES[i % len(QUERIES)]
             inv_started = time.monotonic()
-            response, error = await _invoke_one(
-                runner, user_id, session_id, case.query
-            )
+            response, error = await _invoke_one(runner, user_id, session_id, case.query)
             inv_dur = time.monotonic() - inv_started
             invocations.append(
                 {
@@ -230,11 +230,7 @@ async def run_test1_sustained_session(
     error_count = sum(1 for inv in invocations if inv["error"])
     # AC-6.21 is about *growth* — large negative deltas mean Python's GC
     # reclaimed memory, which is healthy, not a failure. Cap at +10%.
-    passed = (
-        delta_pct < 10.0
-        and error_count == 0
-        and len(invocations) > 0
-    )
+    passed = delta_pct < 10.0 and error_count == 0 and len(invocations) > 0
 
     print(
         f"      done — {len(invocations)} invocations, "
@@ -277,8 +273,10 @@ async def run_test2_stream_reconnect() -> StepResult:
     print("[2/4] stream reconnect — uvicorn subprocess + mid-stream kill")
     auth_token = os.environ.get("HARNESS_AUTH_TOKEN")
     if not auth_token:
-        print("      SKIP — HARNESS_AUTH_TOKEN not set "
-              "(super-admin Bearer required for /chat/completions)")
+        print(
+            "      SKIP — HARNESS_AUTH_TOKEN not set "
+            "(super-admin Bearer required for /chat/completions)"
+        )
         return StepResult(
             name="stream_reconnect",
             passed=True,
@@ -312,9 +310,7 @@ async def run_test2_stream_reconnect() -> StepResult:
         # — it never exposes the session_id back to the client mid-stream, so
         # we must know the session_id up front to make the AC's reconnect
         # check ("issue a follow-up against the same session_id") meaningful.
-        async with httpx.AsyncClient(
-            base_url=server.base_url, timeout=30.0
-        ) as client:
+        async with httpx.AsyncClient(base_url=server.base_url, timeout=30.0) as client:
             create_resp = await client.post(
                 "/api/v1/chat/conversations",
                 json={"name": "harness-stream-reconnect"},
@@ -337,9 +333,7 @@ async def run_test2_stream_reconnect() -> StepResult:
         # Step 3: hit the restarted subprocess with a non-streaming follow-up
         # against the same session. AC-6.22 passes when this returns 200,
         # confirming the ADK session survived the process kill.
-        async with httpx.AsyncClient(
-            base_url=server.base_url, timeout=120.0
-        ) as client:
+        async with httpx.AsyncClient(base_url=server.base_url, timeout=120.0) as client:
             follow_up = await client.post(
                 "/api/v1/chat/completions",
                 json={
@@ -443,9 +437,11 @@ def run_test3_redis_ttl() -> StepResult:
         and expired is True
         and after_expire is None
     )
-    print(f"      seeded={seeded}, after_seed_match={after_seed == payload}, "
-          f"expired={expired}, after_expire_None={after_expire is None}  "
-          f"[{'PASS' if passed else 'FAIL'}]")
+    print(
+        f"      seeded={seeded}, after_seed_match={after_seed == payload}, "
+        f"expired={expired}, after_expire_None={after_expire is None}  "
+        f"[{'PASS' if passed else 'FAIL'}]"
+    )
 
     return StepResult(
         name="redis_ttl",
@@ -522,7 +518,7 @@ async def run_test4_long_session(invocations_n: int = 25) -> StepResult:
 
     snapshots: list[dict[str, Any]] = []
     error_count = 0
-    state_key_seen: dict[str, int] = {k: 0 for k in _REQUIRED_STATE_KEYS}
+    state_key_seen: dict[str, int] = dict.fromkeys(_REQUIRED_STATE_KEYS, 0)
 
     for i in range(invocations_n):
         case = QUERIES[i % len(QUERIES)]
@@ -552,8 +548,10 @@ async def run_test4_long_session(invocations_n: int = 25) -> StepResult:
 
         if (i + 1) % 5 == 0:
             seen_summary = {k: state_key_seen[k] for k in _REQUIRED_STATE_KEYS}
-            print(f"  [{i + 1}/{invocations_n}] errors={error_count} "
-                  f"key_appearances={seen_summary}")
+            print(
+                f"  [{i + 1}/{invocations_n}] errors={error_count} "
+                f"key_appearances={seen_summary}"
+            )
 
     # Final state snapshot: which keys exist + are non-null + reasonable type?
     final_session = await session_service.get_session(
@@ -561,7 +559,9 @@ async def run_test4_long_session(invocations_n: int = 25) -> StepResult:
         user_id=user_id,
         session_id=session_id,
     )
-    final_state = dict(final_session.state) if final_session and final_session.state else {}
+    final_state = (
+        dict(final_session.state) if final_session and final_session.state else {}
+    )
     final_keys_present = {
         k: (k in final_state and final_state[k] is not None)
         for k in _REQUIRED_STATE_KEYS
@@ -575,14 +575,12 @@ async def run_test4_long_session(invocations_n: int = 25) -> StepResult:
     #    (KEN-E populates these only as the agent uses them; absence of all
     #    four would indicate a session-state plumbing failure)
     any_key_seen = any(v > 0 for v in state_key_seen.values())
-    passed = (
-        len(snapshots) >= 20
-        and error_count == 0
-        and any_key_seen
-    )
+    passed = len(snapshots) >= 20 and error_count == 0 and any_key_seen
 
-    print(f"      [{'PASS' if passed else 'FAIL'}] invocations={len(snapshots)}, "
-          f"errors={error_count}, cache_expiry_triggered={cache_expiry_triggered}")
+    print(
+        f"      [{'PASS' if passed else 'FAIL'}] invocations={len(snapshots)}, "
+        f"errors={error_count}, cache_expiry_triggered={cache_expiry_triggered}"
+    )
     print(f"      state-key appearances across run: {state_key_seen}")
     print(f"      final state keys present: {final_keys_present}")
 
@@ -639,8 +637,10 @@ async def run_all(
         "tests_passed": [s.name for s in steps if s.passed and not s.skipped],
         "tests_failed": [s.name for s in steps if not s.passed],
         "tests_skipped": [s.name for s in steps if s.skipped],
-        "step_results": {s.name: ("SKIP" if s.skipped else ("PASS" if s.passed else "FAIL"))
-                         for s in steps},
+        "step_results": {
+            s.name: ("SKIP" if s.skipped else ("PASS" if s.passed else "FAIL"))
+            for s in steps
+        },
         "overall_passed": overall,
         "skip_count": skip_count,
     }

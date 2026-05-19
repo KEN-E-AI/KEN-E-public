@@ -1,18 +1,17 @@
 """Tests for firestore.py - testing the FirestoreClient class and related functions."""
 
-import pytest
-from unittest.mock import Mock, MagicMock, patch
 import json
-from datetime import datetime
+from unittest.mock import Mock, patch
+
+import pytest
 
 from app.adk.agents.strategy_agent.firestore import (
+    ContextManager,
     FirestoreClient,
-    get_default_client,
-    parse_json_response,
     extract_field_requirements_from_best_practices,
     extract_validation_criteria_from_guidelines,
     format_new_information,
-    ContextManager,
+    parse_json_response,
 )
 from app.adk.agents.strategy_agent.models import StrategyContext
 
@@ -165,8 +164,12 @@ class TestContextManager:
         result = await manager.save_context(context)
 
         assert result is True
-        mock_db.collection.assert_called_once_with("accounts/test_account/strategy_processing_state")
-        mock_db.collection.return_value.document.assert_called_once_with("current_state")
+        mock_db.collection.assert_called_once_with(
+            "accounts/test_account/strategy_processing_state"
+        )
+        mock_db.collection.return_value.document.assert_called_once_with(
+            "current_state"
+        )
         mock_doc_ref.set.assert_called_once()
 
     @pytest.mark.asyncio
@@ -184,7 +187,9 @@ class TestContextManager:
             "industry": "Technology",
             "customer_regions": ["USA"],
         }
-        mock_db.collection.return_value.document.return_value.get.return_value = mock_doc
+        mock_db.collection.return_value.document.return_value.get.return_value = (
+            mock_doc
+        )
         mock_client.db = mock_db
 
         manager = ContextManager(firestore_client=mock_client)
@@ -193,8 +198,12 @@ class TestContextManager:
         assert result is not None
         assert result.account_id == "test_account"
         assert result.company_name == "Test Corp"
-        mock_db.collection.assert_called_once_with("accounts/test_account/strategy_processing_state")
-        mock_db.collection.return_value.document.assert_called_once_with("current_state")
+        mock_db.collection.assert_called_once_with(
+            "accounts/test_account/strategy_processing_state"
+        )
+        mock_db.collection.return_value.document.assert_called_once_with(
+            "current_state"
+        )
 
 
 class TestUtilityFunctions:

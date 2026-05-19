@@ -1,9 +1,10 @@
 """Unit tests for Neo4j database service methods."""
 
-import pytest
-from unittest.mock import AsyncMock, Mock, patch
-from src.kene_api.database import Neo4jService
 from contextlib import asynccontextmanager
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
+from src.kene_api.database import Neo4jService
 
 
 class TestNeo4jService:

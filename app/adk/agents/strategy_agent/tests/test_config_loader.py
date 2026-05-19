@@ -4,8 +4,9 @@ Unit tests for config_loader module.
 Tests Firestore config loading and agent creation.
 """
 
+from unittest.mock import Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock
 
 
 class TestConfigLoader:
@@ -115,8 +116,8 @@ class TestConfigLoader:
     def test_load_config_not_found(self, mock_firestore_client):
         """Test config not found error."""
         from app.adk.agents.strategy_agent.config_loader import (
-            load_config_from_firestore,
             ConfigNotFoundError,
+            load_config_from_firestore,
         )
 
         # Mock Firestore response - document doesn't exist
@@ -218,9 +219,7 @@ class TestConfigLoader:
         assert config.generate_content_config.max_output_tokens == 4096
 
     @patch("app.adk.agents.strategy_agent.config_loader.firestore.Client")
-    def test_load_config_flat_wins_over_legacy_nested(
-        self, mock_firestore_client
-    ):
+    def test_load_config_flat_wins_over_legacy_nested(self, mock_firestore_client):
         """Mid-backfill safety: if a doc carries both flat and nested fields,
         flat values win (new contract) and we keep loading without crashing."""
         from app.adk.agents.strategy_agent.config_loader import (

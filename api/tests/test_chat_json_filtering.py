@@ -4,19 +4,18 @@ Verifies that function_call and function_response data is properly filtered from
 """
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 
 def clean_agent_response(response: str | None) -> str | None:
     """
     Clean function_call and function_response JSON data from agent responses.
-    
+
     This is a simplified version for testing. The actual implementation
     is in src.kene_api.routers.chat module.
     """
     if not response:
         return response
-    
+
     # Check for function_call or function_response patterns
     if "{'function_call'" in response or "{'function_response'" in response:
         # Try to extract text after the last }}
@@ -26,7 +25,7 @@ def clean_agent_response(response: str | None) -> str | None:
                 cleaned = parts[1].strip()
                 if not cleaned.startswith("{"):
                     return cleaned
-    
+
     return response
 
 
@@ -37,7 +36,7 @@ class TestChatJSONFiltering:
         """Test that function_call JSON is removed from response."""
         # Input with function_call JSON followed by actual response
         input_text = "{'function_call': {'name': 'search', 'arguments': {'query': 'test'}}}This is the actual response"
-        
+
         # Should extract only the text after the JSON
         result = clean_agent_response(input_text)
         assert result == "This is the actual response"
@@ -46,7 +45,7 @@ class TestChatJSONFiltering:
         """Test that function_response JSON is removed from response."""
         # Input with function_response JSON
         input_text = "{'function_response': {'result': 'success', 'data': [1, 2, 3]}}Here is the processed result"
-        
+
         result = clean_agent_response(input_text)
         assert result == "Here is the processed result"
 
@@ -58,7 +57,7 @@ class TestChatJSONFiltering:
             "{'function_response': {'status': 'ok'}}"
             "The final answer is 42"
         )
-        
+
         result = clean_agent_response(input_text)
         assert result == "The final answer is 42"
 
@@ -66,14 +65,14 @@ class TestChatJSONFiltering:
         """Test extraction based on closing braces pattern."""
         # Response with }} pattern that indicates end of JSON
         input_text = "{'function_call': {'nested': {'deep': 'value'}}}The actual content starts here"
-        
+
         result = clean_agent_response(input_text)
         assert result == "The actual content starts here"
 
     def test_clean_response_no_json(self):
         """Test that regular text without JSON passes through unchanged."""
         input_text = "This is a normal response without any JSON data"
-        
+
         result = clean_agent_response(input_text)
         assert result == input_text
 
@@ -90,7 +89,7 @@ class TestChatJSONFiltering:
     def test_clean_response_json_only(self):
         """Test response that contains only JSON and no text."""
         input_text = "{'function_call': {'name': 'test'}}"
-        
+
         # Should return empty or the JSON itself if no text found
         result = clean_agent_response(input_text)
         # Based on the implementation, this might return empty or the original
@@ -106,7 +105,7 @@ class TestChatJSONFiltering:
         Here is the formatted response:
         - Point 1
         - Point 2"""
-        
+
         result = clean_agent_response(input_text)
         # Should preserve the formatted text after JSON
         assert "Here is the formatted response:" in result
@@ -117,7 +116,7 @@ class TestChatJSONFiltering:
     def test_clean_response_partial_json(self):
         """Test handling of malformed/partial JSON."""
         input_text = "{'function_call': {'incomplete': The rest of the message"
-        
+
         # Should return as-is if JSON is malformed
         result = clean_agent_response(input_text)
         assert result == input_text
@@ -125,7 +124,7 @@ class TestChatJSONFiltering:
     def test_clean_response_mixed_content(self):
         """Test response with JSON in the middle of text."""
         input_text = "Start of response {'not_a_function': 'data'} end of response"
-        
+
         # Should not filter JSON that's not function_call/function_response
         result = clean_agent_response(input_text)
         assert result == input_text
@@ -139,7 +138,7 @@ class TestChatJSONFiltering:
 | Score  | 95%   |
 
 **Conclusion**: Performance is excellent."""
-        
+
         result = clean_agent_response(input_text)
         assert "## Analysis Results" in result
         assert "| Metric | Value |" in result

@@ -94,7 +94,8 @@ class TestAgentRegistryCIValidation:
         sub_config_doc_ids include both researcher and formatter entries.
         """
         strategy_entries = [
-            e for e in registry.list_agents()
+            e
+            for e in registry.list_agents()
             if "strategy" in e.capabilities or "strategy" in e.name
         ]
         assert strategy_entries, "No strategy agent found in registry"
@@ -156,7 +157,6 @@ class TestAgentRegistryCIValidation:
             if not (is_file or is_package):
                 invalid.append(f"{entry.name}: {entry.module_path}")
 
-        assert invalid == [], (
-            "Agents with unresolvable module_path:\n"
-            + "\n".join(f"  - {i}" for i in invalid)
+        assert invalid == [], "Agents with unresolvable module_path:\n" + "\n".join(
+            f"  - {i}" for i in invalid
         )

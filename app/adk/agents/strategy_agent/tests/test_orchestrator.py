@@ -1,21 +1,18 @@
 """Tests for orchestrator.py - testing the strategy orchestration and execution."""
 
-import pytest
-from unittest.mock import Mock, MagicMock, patch, call
 import json
-from datetime import datetime
-import uuid
+from unittest.mock import Mock, patch
 
+import pytest
+
+from app.adk.agents.strategy_agent.firestore import FirestoreClient
+from app.adk.agents.strategy_agent.models import StrategyContext
 from app.adk.agents.strategy_agent.orchestrator import (
+    clean_json_string,
     create_strategy_sequential_agent,
     execute_strategy_generation,
     process_and_save_documents,
-    parse_document_content,
-    clean_json_string,
-    DOCUMENT_KEY_MAPPING,
 )
-from app.adk.agents.strategy_agent.models import StrategyContext
-from app.adk.agents.strategy_agent.firestore import FirestoreClient
 
 
 class TestCreateStrategySequentialAgent:

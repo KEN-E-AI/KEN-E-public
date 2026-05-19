@@ -9,7 +9,6 @@ import os
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-
 from src.kene_api.main import app
 from src.kene_api.models.graph_models import (
     BrandAwarenessStrategyCreate,
@@ -167,7 +166,9 @@ class TestCustomerProfileLinking:
             f"{base_url}/problem-awareness-strategies?customer_profile_node_id={profile_id}"
         )
         strategies1 = list_response1.json()["problem_awareness_strategies"]
-        initial_count = len([s for s in strategies1 if s.get("product_category_node_id") == category_id])
+        initial_count = len(
+            [s for s in strategies1 if s.get("product_category_node_id") == category_id]
+        )
         assert initial_count == 1
 
         # Attempting to link again should fail at API level (duplicate check)
@@ -184,7 +185,9 @@ class TestCustomerProfileLinking:
             f"{base_url}/problem-awareness-strategies?customer_profile_node_id={profile_id}"
         )
         strategies2 = list_response2.json()["problem_awareness_strategies"]
-        final_count = len([s for s in strategies2 if s.get("product_category_node_id") == category_id])
+        final_count = len(
+            [s for s in strategies2 if s.get("product_category_node_id") == category_id]
+        )
         assert final_count == 1, "Should still have exactly 1 strategy, not duplicates"
 
     @pytest.mark.asyncio
@@ -270,9 +273,9 @@ class TestCascadeDeletion:
             strategy_get = await authenticated_client.get(
                 f"{base_url}/{endpoint_name}/{strategy_id}"
             )
-            assert (
-                strategy_get.status_code == 404
-            ), f"Strategy {endpoint_name} with ID {strategy_id} should be deleted"
+            assert strategy_get.status_code == 404, (
+                f"Strategy {endpoint_name} with ID {strategy_id} should be deleted"
+            )
 
     @pytest.mark.asyncio
     async def test_atomic_deletion_no_partial_state(
@@ -308,7 +311,9 @@ class TestCascadeDeletion:
             list_response = await authenticated_client.get(
                 f"{base_url}/{endpoint}?customer_profile_node_id={profile_id}"
             )
-            strategies_key = [k for k in list_response.json().keys() if k.endswith("_strategies")][0]
+            strategies_key = [
+                k for k in list_response.json().keys() if k.endswith("_strategies")
+            ][0]
             strategies = list_response.json()[strategies_key]
 
             for strategy in strategies:
@@ -418,7 +423,9 @@ class TestNewEndpoints:
 
             strategies_data = list_response.json()
             # The response field name varies by strategy type
-            strategies_key = [k for k in strategies_data.keys() if k.endswith("_strategies")][0]
+            strategies_key = [
+                k for k in strategies_data.keys() if k.endswith("_strategies")
+            ][0]
             strategies = strategies_data[strategies_key]
 
             # Should have exactly 1 auto-created strategy
@@ -426,8 +433,12 @@ class TestNewEndpoints:
 
             # Find the strategy for this category
             strategy = next(
-                (s for s in strategies if s.get("product_category_node_id") == category_id),
-                None
+                (
+                    s
+                    for s in strategies
+                    if s.get("product_category_node_id") == category_id
+                ),
+                None,
             )
             assert strategy is not None, f"No strategy found for category {category_id}"
 
@@ -467,7 +478,9 @@ class TestNewEndpoints:
             assert list_response.status_code == 200
 
             strategies_data = list_response.json()
-            strategies_key = [k for k in strategies_data.keys() if k.endswith("_strategies")][0]
+            strategies_key = [
+                k for k in strategies_data.keys() if k.endswith("_strategies")
+            ][0]
             strategies = strategies_data[strategies_key]
 
             for strategy in strategies:
@@ -475,7 +488,9 @@ class TestNewEndpoints:
                     strategy_ids.append((endpoint, strategy["node_id"]))
 
         # Should have found all 5 auto-created strategies
-        assert len(strategy_ids) == 5, f"Expected 5 strategies, found {len(strategy_ids)}"
+        assert len(strategy_ids) == 5, (
+            f"Expected 5 strategies, found {len(strategy_ids)}"
+        )
 
         # Unlink (triggers cascade deletion with CASE statement)
         unlink_response = await authenticated_client.delete(

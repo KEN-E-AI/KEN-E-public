@@ -1,18 +1,14 @@
 """Unit tests for concept disambiguation service."""
 
 import json
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
-from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
-
-from src.kene_api.services.concept_service import ConceptDisambiguationService
+import pytest
 from src.kene_api.models.monitoring_models import (
-    ConceptOption,
     ConceptType,
-    ConceptReference,
 )
+from src.kene_api.services.concept_service import ConceptDisambiguationService
 
 
 class TestConceptDisambiguationService:
@@ -129,7 +125,9 @@ class TestConceptDisambiguationService:
         assert concepts == []
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Async mock setup is incorrect for current httpx/concept_service API — needs rewrite — see DM-85")
+    @pytest.mark.skip(
+        reason="Async mock setup is incorrect for current httpx/concept_service API — needs rewrite — see DM-85"
+    )
     async def test_search_wikipedia_success(self, service, mock_http_client):
         """Test successful Wikipedia search."""
         # Mock Wikipedia API responses
@@ -198,7 +196,9 @@ class TestConceptDisambiguationService:
         assert concepts == []
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Async mock setup is incorrect for current httpx/concept_service API — needs rewrite — see DM-85")
+    @pytest.mark.skip(
+        reason="Async mock setup is incorrect for current httpx/concept_service API — needs rewrite — see DM-85"
+    )
     async def test_search_wikidata_success(self, service, mock_http_client):
         """Test successful Wikidata search."""
         response = AsyncMock()
@@ -282,7 +282,9 @@ class TestConceptDisambiguationService:
         assert ConceptDisambiguationService._http_client is None
 
     @pytest.mark.asyncio
-    @pytest.mark.skip(reason="Async mock setup is incorrect for current httpx/concept_service API — needs rewrite — see DM-85")
+    @pytest.mark.skip(
+        reason="Async mock setup is incorrect for current httpx/concept_service API — needs rewrite — see DM-85"
+    )
     async def test_model_caching(self, mock_gemini_model, mock_vertexai_init):
         """Test Gemini model name caching."""
         # Reset class-level cache

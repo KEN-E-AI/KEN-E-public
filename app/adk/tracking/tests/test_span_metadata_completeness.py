@@ -158,8 +158,7 @@ class TestChatbotL1Metadata:
         attrs = mock_weave.attributes.call_args[0][0]
         result = validate_trace_compliance(attrs)
         assert result.is_compliant, (
-            f"Chatbot L1 metadata failed compliance: "
-            f"{[str(i) for i in result.issues]}"
+            f"Chatbot L1 metadata failed compliance: {[str(i) for i in result.issues]}"
         )
 
 
@@ -310,4 +309,3 @@ class TestStrategyL2Metadata:
             REQUIRED_FIELDS["agent_version"],
         )
         assert not version_issues
-

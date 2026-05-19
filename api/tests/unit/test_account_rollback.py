@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
+import pytest
 from src.kene_api.services.account_service import _rollback_account_creation
 
 
@@ -51,7 +51,9 @@ class TestAccountRollback:
     async def test_rollback_handles_failure_gracefully(self):
         """Test that rollback failures are logged but don't raise exceptions"""
         mock_neo4j_service = AsyncMock()
-        mock_neo4j_service.execute_write_query.side_effect = Exception("Neo4j connection error")
+        mock_neo4j_service.execute_write_query.side_effect = Exception(
+            "Neo4j connection error"
+        )
         account_id = "test_account_789"
 
         # Should not raise exception

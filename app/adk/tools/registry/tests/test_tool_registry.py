@@ -491,7 +491,9 @@ class TestSourceAndDefaultGlobal:
         assert tool.mcp_server is None
 
     def test_function_source_rejects_mcp_server(self):
-        with pytest.raises(ValueError, match="source='function' requires mcp_server=None"):
+        with pytest.raises(
+            ValueError, match="source='function' requires mcp_server=None"
+        ):
             ToolDefinition(
                 name="t",
                 description="d",

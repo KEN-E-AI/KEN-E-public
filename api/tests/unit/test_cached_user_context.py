@@ -3,7 +3,6 @@
 from unittest import mock
 
 import pytest
-
 from src.kene_api.auth.cached_user_context import CachedUserContextService
 from src.kene_api.auth.models import UserContext
 

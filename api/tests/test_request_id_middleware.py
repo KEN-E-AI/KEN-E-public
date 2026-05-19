@@ -30,14 +30,18 @@ def client() -> TestClient:
 class TestRequestIdMiddleware:
     """Tests for RequestIdMiddleware."""
 
-    def test_auto_generates_request_id_when_header_absent(self, client: TestClient) -> None:
+    def test_auto_generates_request_id_when_header_absent(
+        self, client: TestClient
+    ) -> None:
         response = client.get("/ping")
         header_value = response.headers["X-Request-Id"]
         assert header_value != ""
         # Should be a valid hex UUID (32 chars)
         uuid.UUID(header_value)  # raises ValueError if invalid
 
-    def test_passes_through_client_provided_request_id(self, client: TestClient) -> None:
+    def test_passes_through_client_provided_request_id(
+        self, client: TestClient
+    ) -> None:
         response = client.get("/ping", headers={"X-Request-Id": "custom-id-123"})
         assert response.headers["X-Request-Id"] == "custom-id-123"
 
@@ -45,7 +49,9 @@ class TestRequestIdMiddleware:
         response = client.get("/ping", headers={"X-Request-Id": "ctx-test-456"})
         assert response.text == "ctx-test-456"
 
-    def test_contextvars_auto_generated_matches_response_header(self, client: TestClient) -> None:
+    def test_contextvars_auto_generated_matches_response_header(
+        self, client: TestClient
+    ) -> None:
         response = client.get("/ping")
         assert response.text == response.headers["X-Request-Id"]
 

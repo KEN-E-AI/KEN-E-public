@@ -2,29 +2,29 @@
 Unit tests for strategy agent creation functions.
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
-from typing import Optional
+from unittest.mock import patch
 
-from ..models import StrategyContext
+import pytest
+
 from ..agents import (
-    create_google_search_agent,
-    create_business_strategist,
-    create_business_reviewer,
-    create_business_editor,
-    create_competitive_strategist,
-    create_competitive_reviewer,
-    create_competitive_editor,
-    create_customer_strategist,
-    create_customer_reviewer,
-    create_customer_editor,
-    create_marketing_strategist,
-    create_marketing_reviewer,
-    create_marketing_editor,
-    create_brand_strategist,
-    create_brand_reviewer,
     create_brand_editor,
+    create_brand_reviewer,
+    create_brand_strategist,
+    create_business_editor,
+    create_business_reviewer,
+    create_business_strategist,
+    create_competitive_editor,
+    create_competitive_reviewer,
+    create_competitive_strategist,
+    create_customer_editor,
+    create_customer_reviewer,
+    create_customer_strategist,
+    create_google_search_agent,
+    create_marketing_editor,
+    create_marketing_reviewer,
+    create_marketing_strategist,
 )
+from ..models import StrategyContext
 
 
 class TestAgentCreation:

@@ -230,7 +230,9 @@ def cleanup_emulator(
         except Exception as exc:
             import warnings
 
-            warnings.warn(f"cleanup_emulator failed for {col}/{doc_id}: {exc}", stacklevel=2)
+            warnings.warn(
+                f"cleanup_emulator failed for {col}/{doc_id}: {exc}", stacklevel=2
+            )
 
 
 @pytest.fixture
@@ -457,9 +459,11 @@ class TestUserDeletionNoOrphans:
             f"Expected on_user_removed to be called 3 times, got {mock.await_count}"
         )
         called_account_ids = {c.kwargs["account_id"] for c in mock.await_args_list}
-        assert called_account_ids == {acc_acme_a_id, acc_acme_b_id, acc_widgets_main_id}, (
-            f"on_user_removed called with unexpected account_ids: {called_account_ids}"
-        )
+        assert called_account_ids == {
+            acc_acme_a_id,
+            acc_acme_b_id,
+            acc_widgets_main_id,
+        }, f"on_user_removed called with unexpected account_ids: {called_account_ids}"
         # Each account fires exactly once
         for c in mock.await_args_list:
             assert c.kwargs.get("user_id") == user_id, (
@@ -507,9 +511,7 @@ class TestUserDeletionNoOrphans:
         # --- Assert: org members rows are gone ---
         remaining_org_members: dict[str, bool] = {}
         for org_id in (org_acme_id, org_widgets_id):
-            docs = _list_docs_at(
-                emulator_db, "organizations", org_id, "members"
-            )
+            docs = _list_docs_at(emulator_db, "organizations", org_id, "members")
             matching = [d for d in docs if d.id == user_id]
             if matching:
                 remaining_org_members[org_id] = True

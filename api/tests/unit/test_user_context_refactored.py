@@ -1,20 +1,20 @@
 """Unit tests for refactored user context authentication functions."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from fastapi import HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials
-
+from src.kene_api.auth.audit_logger import SecurityEventType
+from src.kene_api.auth.models import UserContext
 from src.kene_api.auth.user_context import (
     _apply_rate_limiting,
-    _verify_and_decode_token,
+    _build_user_context_from_data,
     _check_token_revocation,
     _get_or_create_user_document,
-    _build_user_context_from_data,
     _get_user_context_with_limiter,
+    _verify_and_decode_token,
 )
-from src.kene_api.auth.models import UserContext
-from src.kene_api.auth.audit_logger import SecurityEventType
 
 
 @pytest.fixture
@@ -354,9 +354,7 @@ class TestGetUserContextWithLimiter:
             cache_service.get_user_context.assert_called_once_with("user123")
 
     @pytest.mark.asyncio
-    async def test_super_admin_is_rate_limited(
-        self, mock_request, mock_credentials
-    ):
+    async def test_super_admin_is_rate_limited(self, mock_request, mock_credentials):
         """Super admins are rate limited like everyone else (bypass removed)."""
         mock_firestore = MagicMock()
         mock_firestore.get_client().collection().document().get().exists = True

@@ -10,10 +10,10 @@ Run with:
 """
 
 import re
-import tomllib
 from pathlib import Path
 
 import pytest
+import tomllib
 
 REPO_ROOT = Path(__file__).parent.parent.parent
 LYCHEE_CONFIG_PATH = REPO_ROOT / "lychee.toml"
@@ -52,7 +52,11 @@ def _collect_markdown_files(base: Path, config: dict) -> list[Path]:
             files.append(base)
     elif base.is_dir():
         for f in sorted(base.rglob("*")):
-            if f.is_file() and f.suffix.lstrip(".") in exts and not _is_excluded(f, excluded):
+            if (
+                f.is_file()
+                and f.suffix.lstrip(".") in exts
+                and not _is_excluded(f, excluded)
+            ):
                 files.append(f)
     return files
 
@@ -70,7 +74,9 @@ def _extract_relative_links(content: str, include_verbatim: bool = True) -> list
     return [
         lnk
         for lnk in raw
-        if not lnk.startswith(("http://", "https://", "mailto:", "ftp://", "#", "<", "{"))
+        if not lnk.startswith(
+            ("http://", "https://", "mailto:", "ftp://", "#", "<", "{")
+        )
         and not lnk.startswith("/")  # absolute paths are not local relative links
     ]
 
@@ -122,7 +128,7 @@ class TestConfigStructure:
         cfg = _load_config()
         scheme = cfg.get("scheme")
         assert scheme == ["file"], (
-            f"Expected scheme = [\"file\"] for offline mode, got: {scheme!r}. "
+            f'Expected scheme = ["file"] for offline mode, got: {scheme!r}. '
             "lychee ignores 'offline = true' in config; use scheme instead."
         )
 
@@ -282,7 +288,7 @@ class TestExtensionsFilter:
     def test_python_files_not_collected(self, tmp_path: Path) -> None:
         cfg = _load_config()
         py_file = tmp_path / "test.py"
-        py_file.write_text('# [link](./missing.md)')
+        py_file.write_text("# [link](./missing.md)")
         files = _collect_markdown_files(py_file, cfg)
         assert files == [], ".py files must not be collected"
 
@@ -293,7 +299,9 @@ class TestExtensionsFilter:
         md_file = tmp_path / "test.md"
         md_file.write_text("# hello\n")
         # Temporarily bypass exclude check by using empty config
-        files = _collect_markdown_files(md_file, {"exclude_path": [], "extensions": ["md"]})
+        files = _collect_markdown_files(
+            md_file, {"exclude_path": [], "extensions": ["md"]}
+        )
         assert md_file in files
 
     def test_only_md_files_collected_from_docs(self) -> None:
@@ -314,7 +322,9 @@ class TestRootMarkdownFiles:
         f = REPO_ROOT / filename
         if not f.exists():
             return []
-        return _find_broken_links([f], include_verbatim=cfg.get("include_verbatim", True))
+        return _find_broken_links(
+            [f], include_verbatim=cfg.get("include_verbatim", True)
+        )
 
     def test_readme_has_no_broken_links(self) -> None:
         broken = self._check("README.md")
@@ -347,12 +357,12 @@ class TestPositiveScan:
         cfg = _load_config()
         docs_dir = REPO_ROOT / "docs"
         files = _collect_markdown_files(docs_dir, cfg)
-        broken = _find_broken_links(files, include_verbatim=cfg.get("include_verbatim", True))
+        broken = _find_broken_links(
+            files, include_verbatim=cfg.get("include_verbatim", True)
+        )
 
         unexpected = [
-            (f, lnk)
-            for f, lnk in broken
-            if "docs/design/components/chat" not in str(f)
+            (f, lnk) for f, lnk in broken if "docs/design/components/chat" not in str(f)
         ]
         assert unexpected == [], (
             "Broken links found OUTSIDE docs/design/components/chat/ — "
@@ -366,7 +376,9 @@ class TestPositiveScan:
         cfg = _load_config()
         chat_dir = REPO_ROOT / "docs" / "design" / "components" / "chat"
         files = _collect_markdown_files(chat_dir, cfg)
-        broken = _find_broken_links(files, include_verbatim=cfg.get("include_verbatim", True))
+        broken = _find_broken_links(
+            files, include_verbatim=cfg.get("include_verbatim", True)
+        )
 
         # After CH-1, this list will be empty.
         # Before CH-1, the broken links should point to either implementation
@@ -381,8 +393,8 @@ class TestPositiveScan:
             "frontend/src/",
             "firestore.rules",
             "deployment/",
-            "path/to/",       # placeholder used as example in CH-PRD-06 prose
-            "does-not-exist", # example link in CH-PRD-06 test-plan description
+            "path/to/",  # placeholder used as example in CH-PRD-06 prose
+            "does-not-exist",  # example link in CH-PRD-06 test-plan description
         )
         unexpected_chat = [
             (f, lnk)
@@ -392,5 +404,7 @@ class TestPositiveScan:
         assert unexpected_chat == [], (
             "Unexpected broken links in chat PRDs (not recognised as "
             "implementation forward-refs):\n"
-            + "\n".join(f"  {f.relative_to(REPO_ROOT)}: {lnk}" for f, lnk in unexpected_chat)
+            + "\n".join(
+                f"  {f.relative_to(REPO_ROOT)}: {lnk}" for f, lnk in unexpected_chat
+            )
         )

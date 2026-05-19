@@ -1,9 +1,9 @@
 """Integration tests for customer profile monitoring keywords."""
 
-import pytest
 from unittest.mock import MagicMock
-from fastapi.testclient import TestClient
 
+import pytest
+from fastapi.testclient import TestClient
 from src.kene_api.auth.models import UserContext
 from src.kene_api.auth.user_context import get_current_user_context
 from src.kene_api.firestore import get_firestore_service
@@ -75,9 +75,7 @@ class TestCustomerProfileMonitoring:
 
             assert response.status_code == 200
             data = response.json()
-            assert (
-                data["message"] == "Customer profile keywords added successfully"
-            )
+            assert data["message"] == "Customer profile keywords added successfully"
             assert data["data"]["customer_profile"]["node_id"] == "prof_123"
 
             # Verify Firestore was updated
@@ -141,9 +139,7 @@ class TestCustomerProfileMonitoring:
 
             assert response.status_code == 200
             data = response.json()
-            assert (
-                data["message"] == "Customer profile keywords updated successfully"
-            )
+            assert data["message"] == "Customer profile keywords updated successfully"
             assert "new_keyword1" in data["data"]["customer_profile"]["keywords"]
         finally:
             app.dependency_overrides.clear()
@@ -203,9 +199,7 @@ class TestCustomerProfileMonitoring:
 
             assert response.status_code == 200
             data = response.json()
-            assert (
-                data["message"] == "Customer profile keywords deleted successfully"
-            )
+            assert data["message"] == "Customer profile keywords deleted successfully"
             assert data["data"]["deleted_customer_profile"]["node_id"] == "prof_123"
         finally:
             app.dependency_overrides.clear()

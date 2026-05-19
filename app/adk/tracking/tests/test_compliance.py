@@ -87,9 +87,7 @@ class TestSemverValidation:
         trace["agent_version"] = version
         result = validate_trace_compliance(trace)
         assert result.is_compliant is False
-        assert any(
-            issue.field == "agent_version" for issue in result.issues
-        )
+        assert any(issue.field == "agent_version" for issue in result.issues)
 
 
 class TestFieldsWithDefaults:

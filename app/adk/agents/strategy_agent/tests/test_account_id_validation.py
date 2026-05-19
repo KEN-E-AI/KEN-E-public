@@ -41,7 +41,8 @@ def test_validate_account_id_rejects_malformed(bad):
 
 
 @pytest.mark.parametrize(
-    "ctor", [AnalyticsService, PerformanceProfiler, AsyncAnalyticsQueue, OptimizationAnalyzer]
+    "ctor",
+    [AnalyticsService, PerformanceProfiler, AsyncAnalyticsQueue, OptimizationAnalyzer],
 )
 @pytest.mark.parametrize("bad", ["acc/with/slash", "..", ""])
 def test_analytics_constructors_reject_bad_account_id(ctor, bad):

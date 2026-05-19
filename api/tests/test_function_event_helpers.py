@@ -79,7 +79,13 @@ class TestContainsFunctionEventStr:
             '{"function_response": {"name": "search"}}',
             "prefix{'function_call': {}}suffix",
         ],
-        ids=["python_call", "python_response", "json_call", "json_response", "embedded"],
+        ids=[
+            "python_call",
+            "python_response",
+            "json_call",
+            "json_response",
+            "embedded",
+        ],
     )
     def test_returns_true_when_function_event_present(self, text: str) -> None:
         assert _contains_function_event_str(text) is True

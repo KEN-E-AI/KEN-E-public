@@ -17,7 +17,9 @@ class TestCheckGaMcpHealth:
 
     async def test_returns_reachable_on_200(self) -> None:
         mock_response = httpx.Response(status_code=200)
-        with patch("src.kene_api.services.mcp_health_service.httpx.AsyncClient") as mock_cls:
+        with patch(
+            "src.kene_api.services.mcp_health_service.httpx.AsyncClient"
+        ) as mock_cls:
             mock_client = AsyncMock()
             mock_client.get.return_value = mock_response
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -37,7 +39,9 @@ class TestCheckGaMcpHealth:
     async def test_returns_reachable_on_4xx(self) -> None:
         """4xx responses mean the server is reachable (just rejecting the request)."""
         mock_response = httpx.Response(status_code=404)
-        with patch("src.kene_api.services.mcp_health_service.httpx.AsyncClient") as mock_cls:
+        with patch(
+            "src.kene_api.services.mcp_health_service.httpx.AsyncClient"
+        ) as mock_cls:
             mock_client = AsyncMock()
             mock_client.get.return_value = mock_response
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -51,7 +55,9 @@ class TestCheckGaMcpHealth:
 
     async def test_returns_unreachable_on_500(self) -> None:
         mock_response = httpx.Response(status_code=500)
-        with patch("src.kene_api.services.mcp_health_service.httpx.AsyncClient") as mock_cls:
+        with patch(
+            "src.kene_api.services.mcp_health_service.httpx.AsyncClient"
+        ) as mock_cls:
             mock_client = AsyncMock()
             mock_client.get.return_value = mock_response
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -64,7 +70,9 @@ class TestCheckGaMcpHealth:
         assert result["error"] == "HTTP 500"
 
     async def test_returns_unreachable_on_timeout(self) -> None:
-        with patch("src.kene_api.services.mcp_health_service.httpx.AsyncClient") as mock_cls:
+        with patch(
+            "src.kene_api.services.mcp_health_service.httpx.AsyncClient"
+        ) as mock_cls:
             mock_client = AsyncMock()
             mock_client.get.side_effect = httpx.TimeoutException("timed out")
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -81,7 +89,9 @@ class TestCheckGaMcpHealth:
         }
 
     async def test_returns_unreachable_on_connect_error(self) -> None:
-        with patch("src.kene_api.services.mcp_health_service.httpx.AsyncClient") as mock_cls:
+        with patch(
+            "src.kene_api.services.mcp_health_service.httpx.AsyncClient"
+        ) as mock_cls:
             mock_client = AsyncMock()
             mock_client.get.side_effect = httpx.ConnectError("refused")
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -98,6 +108,7 @@ class TestCheckGaMcpHealth:
         with patch.dict("os.environ", {}, clear=False):
             # Ensure GA_MCP_SERVER_URL is not set
             import os
+
             os.environ.pop("GA_MCP_SERVER_URL", None)
 
             result = await check_ga_mcp_health(url="")
@@ -113,7 +124,9 @@ class TestCheckGaMcpHealth:
         mock_response = httpx.Response(status_code=200)
         with (
             patch.dict("os.environ", {"GA_MCP_SERVER_URL": TEST_URL}),
-            patch("src.kene_api.services.mcp_health_service.httpx.AsyncClient") as mock_cls,
+            patch(
+                "src.kene_api.services.mcp_health_service.httpx.AsyncClient"
+            ) as mock_cls,
         ):
             mock_client = AsyncMock()
             mock_client.get.return_value = mock_response
@@ -128,7 +141,9 @@ class TestCheckGaMcpHealth:
 
     async def test_strips_trailing_slash_from_url(self) -> None:
         mock_response = httpx.Response(status_code=200)
-        with patch("src.kene_api.services.mcp_health_service.httpx.AsyncClient") as mock_cls:
+        with patch(
+            "src.kene_api.services.mcp_health_service.httpx.AsyncClient"
+        ) as mock_cls:
             mock_client = AsyncMock()
             mock_client.get.return_value = mock_response
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)

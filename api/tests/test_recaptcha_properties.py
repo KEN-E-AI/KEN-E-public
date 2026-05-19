@@ -1,9 +1,9 @@
 """Property-based tests for reCAPTCHA service."""
 
-import pytest
-from hypothesis import given, strategies as st, assume
 from unittest.mock import patch
 
+from hypothesis import assume, given
+from hypothesis import strategies as st
 from src.kene_api.recaptcha import RecaptchaService, RecaptchaVerificationResult
 
 

@@ -1,10 +1,8 @@
 """Tests for strategy generation error handling and empty response scenarios."""
 
-import asyncio
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
-
 from src.kene_api.tasks.strategy_tasks import trigger_strategy_generation
 
 

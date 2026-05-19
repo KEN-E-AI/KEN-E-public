@@ -174,6 +174,7 @@ def test_no_other_indexes_modified(indexes_doc: dict) -> None:
 # The COLLECTION_GROUP entry already present (user_id, timestamp DESC) is for
 # get_user_activity's collection_group query — distinct index space.
 
+
 def _strategy_audit_collection_indexes(indexes_doc: dict) -> list[dict]:
     """Return all strategy_audit COLLECTION-scoped indexes."""
     return [
@@ -226,9 +227,7 @@ def test_strategy_audit_doc_type_timestamp_terraform_key(indexes_doc: dict) -> N
         f"{f['fieldPath']}-{f.get('order', f.get('arrayConfig', ''))}"
         for f in idx["fields"]
     )
-    derived_key = (
-        f"{_TEST_PROJECT}_{idx['collectionGroup']}_{idx['queryScope']}_{field_signature}"
-    )
+    derived_key = f"{_TEST_PROJECT}_{idx['collectionGroup']}_{idx['queryScope']}_{field_signature}"
     expected_key = (
         f"{_TEST_PROJECT}_strategy_audit_COLLECTION_"
         "doc_type-ASCENDING__timestamp-DESCENDING"
@@ -244,7 +243,11 @@ def test_strategy_audit_doc_type_action_timestamp_index_exists(
     """(doc_type ASC, action ASC, timestamp DESC) — get_strategy_audit_log with action filter."""
     idx = _find_strategy_audit_collection_index(
         indexes_doc,
-        [("doc_type", "ASCENDING"), ("action", "ASCENDING"), ("timestamp", "DESCENDING")],
+        [
+            ("doc_type", "ASCENDING"),
+            ("action", "ASCENDING"),
+            ("timestamp", "DESCENDING"),
+        ],
     )
     assert idx is not None, (
         "strategy_audit COLLECTION index (doc_type ASC, action ASC, timestamp DESC) not found"
@@ -257,7 +260,11 @@ def test_strategy_audit_doc_type_action_timestamp_terraform_key(
     """Terraform for_each key for (doc_type ASC, action ASC, timestamp DESC)."""
     idx = _find_strategy_audit_collection_index(
         indexes_doc,
-        [("doc_type", "ASCENDING"), ("action", "ASCENDING"), ("timestamp", "DESCENDING")],
+        [
+            ("doc_type", "ASCENDING"),
+            ("action", "ASCENDING"),
+            ("timestamp", "DESCENDING"),
+        ],
     )
     assert idx is not None
 
@@ -265,9 +272,7 @@ def test_strategy_audit_doc_type_action_timestamp_terraform_key(
         f"{f['fieldPath']}-{f.get('order', f.get('arrayConfig', ''))}"
         for f in idx["fields"]
     )
-    derived_key = (
-        f"{_TEST_PROJECT}_{idx['collectionGroup']}_{idx['queryScope']}_{field_signature}"
-    )
+    derived_key = f"{_TEST_PROJECT}_{idx['collectionGroup']}_{idx['queryScope']}_{field_signature}"
     expected_key = (
         f"{_TEST_PROJECT}_strategy_audit_COLLECTION_"
         "doc_type-ASCENDING__action-ASCENDING__timestamp-DESCENDING"
@@ -298,9 +303,7 @@ def test_strategy_audit_user_id_timestamp_terraform_key(indexes_doc: dict) -> No
         f"{f['fieldPath']}-{f.get('order', f.get('arrayConfig', ''))}"
         for f in idx["fields"]
     )
-    derived_key = (
-        f"{_TEST_PROJECT}_{idx['collectionGroup']}_{idx['queryScope']}_{field_signature}"
-    )
+    derived_key = f"{_TEST_PROJECT}_{idx['collectionGroup']}_{idx['queryScope']}_{field_signature}"
     expected_key = (
         f"{_TEST_PROJECT}_strategy_audit_COLLECTION_"
         "user_id-ASCENDING__timestamp-DESCENDING"
@@ -316,7 +319,11 @@ def test_strategy_audit_user_id_doc_type_timestamp_index_exists(
     """(user_id ASC, doc_type ASC, timestamp DESC) — get_recent_actions with user_id + doc_type."""
     idx = _find_strategy_audit_collection_index(
         indexes_doc,
-        [("user_id", "ASCENDING"), ("doc_type", "ASCENDING"), ("timestamp", "DESCENDING")],
+        [
+            ("user_id", "ASCENDING"),
+            ("doc_type", "ASCENDING"),
+            ("timestamp", "DESCENDING"),
+        ],
     )
     assert idx is not None, (
         "strategy_audit COLLECTION index (user_id ASC, doc_type ASC, timestamp DESC) not found"
@@ -329,7 +336,11 @@ def test_strategy_audit_user_id_doc_type_timestamp_terraform_key(
     """Terraform for_each key for (user_id ASC, doc_type ASC, timestamp DESC)."""
     idx = _find_strategy_audit_collection_index(
         indexes_doc,
-        [("user_id", "ASCENDING"), ("doc_type", "ASCENDING"), ("timestamp", "DESCENDING")],
+        [
+            ("user_id", "ASCENDING"),
+            ("doc_type", "ASCENDING"),
+            ("timestamp", "DESCENDING"),
+        ],
     )
     assert idx is not None
 
@@ -337,9 +348,7 @@ def test_strategy_audit_user_id_doc_type_timestamp_terraform_key(
         f"{f['fieldPath']}-{f.get('order', f.get('arrayConfig', ''))}"
         for f in idx["fields"]
     )
-    derived_key = (
-        f"{_TEST_PROJECT}_{idx['collectionGroup']}_{idx['queryScope']}_{field_signature}"
-    )
+    derived_key = f"{_TEST_PROJECT}_{idx['collectionGroup']}_{idx['queryScope']}_{field_signature}"
     expected_key = (
         f"{_TEST_PROJECT}_strategy_audit_COLLECTION_"
         "user_id-ASCENDING__doc_type-ASCENDING__timestamp-DESCENDING"
@@ -355,7 +364,11 @@ def test_strategy_audit_doc_type_doc_id_timestamp_index_exists(
     """(doc_type ASC, doc_id ASC, timestamp DESC) — get_document_history."""
     idx = _find_strategy_audit_collection_index(
         indexes_doc,
-        [("doc_type", "ASCENDING"), ("doc_id", "ASCENDING"), ("timestamp", "DESCENDING")],
+        [
+            ("doc_type", "ASCENDING"),
+            ("doc_id", "ASCENDING"),
+            ("timestamp", "DESCENDING"),
+        ],
     )
     assert idx is not None, (
         "strategy_audit COLLECTION index (doc_type ASC, doc_id ASC, timestamp DESC) not found"
@@ -368,7 +381,11 @@ def test_strategy_audit_doc_type_doc_id_timestamp_terraform_key(
     """Terraform for_each key for (doc_type ASC, doc_id ASC, timestamp DESC)."""
     idx = _find_strategy_audit_collection_index(
         indexes_doc,
-        [("doc_type", "ASCENDING"), ("doc_id", "ASCENDING"), ("timestamp", "DESCENDING")],
+        [
+            ("doc_type", "ASCENDING"),
+            ("doc_id", "ASCENDING"),
+            ("timestamp", "DESCENDING"),
+        ],
     )
     assert idx is not None
 
@@ -376,9 +393,7 @@ def test_strategy_audit_doc_type_doc_id_timestamp_terraform_key(
         f"{f['fieldPath']}-{f.get('order', f.get('arrayConfig', ''))}"
         for f in idx["fields"]
     )
-    derived_key = (
-        f"{_TEST_PROJECT}_{idx['collectionGroup']}_{idx['queryScope']}_{field_signature}"
-    )
+    derived_key = f"{_TEST_PROJECT}_{idx['collectionGroup']}_{idx['queryScope']}_{field_signature}"
     expected_key = (
         f"{_TEST_PROJECT}_strategy_audit_COLLECTION_"
         "doc_type-ASCENDING__doc_id-ASCENDING__timestamp-DESCENDING"
@@ -514,7 +529,9 @@ def test_performance_profiles_bottleneck_terraform_key(indexes_doc: dict) -> Non
         for f in pp_idx["fields"]
     )
     # Named-database key: interpolates database between project and collectionGroup
-    derived_key = f"{project}_{database}_{collection_group}_{query_scope}_{field_signature}"
+    derived_key = (
+        f"{project}_{database}_{collection_group}_{query_scope}_{field_signature}"
+    )
 
     expected_key = (
         f"{_TEST_PROJECT}_analytics_performance_profiles_COLLECTION_"

@@ -7,7 +7,6 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from src.kene_api.services.ga_credential_helper import GACredentialHelper
 
 
@@ -89,7 +88,9 @@ class TestGACredentialHelper:
     @pytest.mark.asyncio
     async def test_get_oauth_credentials_not_found(self, ga_helper):
         """Test retrieval when no credentials are found."""
-        with patch.object(ga_helper.creds_service, "get_credentials", return_value=None):
+        with patch.object(
+            ga_helper.creds_service, "get_credentials", return_value=None
+        ):
             result = await ga_helper.get_oauth_credentials("test_account_id")
             assert result is None
 
@@ -167,7 +168,9 @@ class TestGACredentialHelper:
 class TestChatRouterGAIntegration:
     """Test the chat router's Google Analytics integration."""
 
-    @pytest.mark.skip(reason="Requires full FastAPI test client setup with mocked dependencies")
+    @pytest.mark.skip(
+        reason="Requires full FastAPI test client setup with mocked dependencies"
+    )
     @pytest.mark.asyncio
     async def test_chat_injects_ga_credentials(self):
         """Test that GA credentials are injected for analytics queries."""
@@ -175,7 +178,9 @@ class TestChatRouterGAIntegration:
         # with mocked Firestore, Agent Engine, and authentication
         pass
 
-    @pytest.mark.skip(reason="Requires full FastAPI test client setup with mocked dependencies")
+    @pytest.mark.skip(
+        reason="Requires full FastAPI test client setup with mocked dependencies"
+    )
     @pytest.mark.asyncio
     async def test_chat_auto_selects_single_property(self):
         """Test that a single property is auto-selected."""

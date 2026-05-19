@@ -26,18 +26,10 @@ _PATCH_INVOKE_PIPELINE = "app.adk.agents.utils.supervisor_utils.invoke_pipeline"
 _PATCH_CHECK_HALLUCINATION = (
     "app.adk.agents.agent_factory.dispatch._check_hallucinated_approval"
 )
-_PATCH_EXTRACT_RESULT = (
-    "app.adk.agents.agent_factory.dispatch.extract_pipeline_result"
-)
-_PATCH_EXTRACT_ITERATIONS = (
-    "app.adk.agents.agent_factory.dispatch.extract_iterations"
-)
-_PATCH_EMIT_ITERATION_SPAN = (
-    "app.adk.agents.agent_factory.dispatch.emit_iteration_span"
-)
-_PATCH_SET_PIPELINE_ATTRS = (
-    "app.adk.agents.agent_factory.dispatch.set_pipeline_attrs"
-)
+_PATCH_EXTRACT_RESULT = "app.adk.agents.agent_factory.dispatch.extract_pipeline_result"
+_PATCH_EXTRACT_ITERATIONS = "app.adk.agents.agent_factory.dispatch.extract_iterations"
+_PATCH_EMIT_ITERATION_SPAN = "app.adk.agents.agent_factory.dispatch.emit_iteration_span"
+_PATCH_SET_PIPELINE_ATTRS = "app.adk.agents.agent_factory.dispatch.set_pipeline_attrs"
 _PATCH_GET_WORKER_NAME = "app.adk.agents.agent_factory.dispatch.get_worker_name"
 _PATCH_GET_REVIEWER_NAME = "app.adk.agents.agent_factory.dispatch.get_reviewer_name"
 _PATCH_INVOKE_WITH_RETRY = (
@@ -112,7 +104,9 @@ class TestDispatchSinglePassBranch:
         fn = dispatchers["my_agent"]
 
         with (
-            patch(_PATCH_INVOKE_WITH_RETRY, return_value="retried result") as mock_retry,
+            patch(
+                _PATCH_INVOKE_WITH_RETRY, return_value="retried result"
+            ) as mock_retry,
             patch(_PATCH_BUILD_PIPELINE) as mock_build,
         ):
             result = fn("test query")
@@ -410,9 +404,7 @@ class TestDispatchStateForwarding:
 
         with (
             patch(_PATCH_BUILD_PIPELINE, return_value=MagicMock()),
-            patch(
-                _PATCH_INVOKE_PIPELINE, return_value=("text", {}, [])
-            ) as mock_invoke,
+            patch(_PATCH_INVOKE_PIPELINE, return_value=("text", {}, [])) as mock_invoke,
             patch(_PATCH_CHECK_HALLUCINATION),
             patch(_PATCH_EXTRACT_RESULT, return_value={"result": "ok"}),
             patch(_PATCH_EXTRACT_ITERATIONS, return_value=[]),
@@ -560,7 +552,9 @@ class TestIntegrationSmoke:
             patch(_PATCH_BUILD_PIPELINE, return_value=MagicMock()),
             patch(_PATCH_INVOKE_PIPELINE, return_value=("text", {}, [])),
             patch(_PATCH_CHECK_HALLUCINATION),
-            patch(_PATCH_EXTRACT_RESULT, return_value={"result": "alpha answer"}) as mock_extract,
+            patch(
+                _PATCH_EXTRACT_RESULT, return_value={"result": "alpha answer"}
+            ) as mock_extract,
             patch(_PATCH_EXTRACT_ITERATIONS, return_value=[mock_iter]),
             patch(_PATCH_EMIT_ITERATION_SPAN),
             patch(_PATCH_SET_PIPELINE_ATTRS),
@@ -608,9 +602,7 @@ class TestAssembleAvailableSpecialistsBlockSanitisation:
         assert "Does analytics" in result
 
     def test_description_truncated_to_500_chars(self) -> None:
-        specialists = {
-            "my_agent": _make_specialist("my_agent", description="X" * 600)
-        }
+        specialists = {"my_agent": _make_specialist("my_agent", description="X" * 600)}
         result = assemble_available_specialists_block(specialists)
 
         # The description portion of the bullet should not exceed 500 chars
@@ -650,7 +642,8 @@ class TestDispatchUnapprovedWarning:
             patch(_PATCH_INVOKE_PIPELINE, return_value=("text", {}, [])),
             patch(_PATCH_CHECK_HALLUCINATION),
             patch(
-                _PATCH_EXTRACT_RESULT, return_value={"result": "last draft", "approved": False}
+                _PATCH_EXTRACT_RESULT,
+                return_value={"result": "last draft", "approved": False},
             ),
             patch(_PATCH_EXTRACT_ITERATIONS, return_value=[mock_iter]),
             patch(_PATCH_EMIT_ITERATION_SPAN),
@@ -755,7 +748,9 @@ class TestDispatchCloudpickleRoundTrip:
         tool = FunctionTool(restored)
         declaration = tool._get_declaration()
 
-        assert declaration is not None, "FunctionTool must produce a FunctionDeclaration"
+        assert declaration is not None, (
+            "FunctionTool must produce a FunctionDeclaration"
+        )
         # ADK sends parameters to Gemini; an empty schema indicates the closure's
         # type annotations were not resolved (the regression symptom).
         assert declaration.parameters is not None

@@ -8,13 +8,12 @@ This test verifies the complete account creation process including:
 - Proper error handling
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime
 
-from src.kene_api.services.account_service import create_account_internal
-from src.kene_api.models.kene_models import AccountRequest
+import pytest
 from src.kene_api.auth import UserContext
+from src.kene_api.models.kene_models import AccountRequest
+from src.kene_api.services.account_service import create_account_internal
 
 
 @pytest.mark.asyncio
@@ -83,9 +82,18 @@ async def test_create_account_creates_initial_activities():
         if "MATCH (org:Organization" in query:
             # Organization lookup
             return [{"organization_name": "Test Org", "agency": False}]
-        elif "MATCH (acc:Account {account_id:" in query and "RETURN acc.websites" in query:
+        elif (
+            "MATCH (acc:Account {account_id:" in query
+            and "RETURN acc.websites" in query
+        ):
             # Account verification query
-            return [{"websites": ["https://test.com"], "industry": "Technology", "budget": 100000}]
+            return [
+                {
+                    "websites": ["https://test.com"],
+                    "industry": "Technology",
+                    "budget": 100000,
+                }
+            ]
         return []
 
     async def mock_execute_write_query(query, params=None):
@@ -96,7 +104,9 @@ async def test_create_account_creates_initial_activities():
         elif "UNWIND $activities AS activity" in query:
             # Activity creation - verify this is called
             assert "activities" in params, "activities parameter missing"
-            assert len(params["activities"]) == 2, f"Expected 2 activities, got {len(params['activities'])}"
+            assert len(params["activities"]) == 2, (
+                f"Expected 2 activities, got {len(params['activities'])}"
+            )
             return [{"created_count": 2}]
         return []
 
@@ -172,7 +182,13 @@ async def test_account_creation_handles_missing_activity_templates():
         if "MATCH (org:Organization" in query:
             return [{"organization_name": "Test Org", "agency": False}]
         elif "RETURN acc.websites" in query:
-            return [{"websites": ["https://test2.com"], "industry": "Retail", "budget": 50000}]
+            return [
+                {
+                    "websites": ["https://test2.com"],
+                    "industry": "Retail",
+                    "budget": 50000,
+                }
+            ]
         return []
 
     async def mock_execute_write_query(query, params=None):
@@ -248,7 +264,13 @@ async def test_account_creation_handles_activity_creation_failure():
         if "MATCH (org:Organization" in query:
             return [{"organization_name": "Test Org", "agency": False}]
         elif "RETURN acc.websites" in query:
-            return [{"websites": ["https://test3.com"], "industry": "Healthcare", "budget": 200000}]
+            return [
+                {
+                    "websites": ["https://test3.com"],
+                    "industry": "Healthcare",
+                    "budget": 200000,
+                }
+            ]
         return []
 
     async def mock_execute_write_query(query, params=None):

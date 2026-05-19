@@ -180,9 +180,19 @@ def test_performance_profiles_copy_and_verify(
     src_b = f"performance_profiles_{account_b}"
 
     # Different doc counts per account to catch per-account copy errors.
-    _seed_doc(emulator_client, f"{src_a}/prof_1", {"type": "baseline", "account_id": account_a})
-    _seed_doc(emulator_client, f"{src_a}/prof_2", {"type": "weekly", "account_id": account_a})
-    _seed_doc(emulator_client, f"{src_b}/prof_1", {"type": "baseline", "account_id": account_b})
+    _seed_doc(
+        emulator_client,
+        f"{src_a}/prof_1",
+        {"type": "baseline", "account_id": account_a},
+    )
+    _seed_doc(
+        emulator_client, f"{src_a}/prof_2", {"type": "weekly", "account_id": account_a}
+    )
+    _seed_doc(
+        emulator_client,
+        f"{src_b}/prof_1",
+        {"type": "baseline", "account_id": account_b},
+    )
 
     buf = io.StringIO()
     with redirect_stdout(buf):
@@ -193,8 +203,12 @@ def test_performance_profiles_copy_and_verify(
     assert "VERIFIED" in output
 
     # Both accounts' docs land at the correct Shape B destinations.
-    assert _count_docs(emulator_client, f"accounts/{account_a}/performance_profiles") == 2
-    assert _count_docs(emulator_client, f"accounts/{account_b}/performance_profiles") == 1
+    assert (
+        _count_docs(emulator_client, f"accounts/{account_a}/performance_profiles") == 2
+    )
+    assert (
+        _count_docs(emulator_client, f"accounts/{account_b}/performance_profiles") == 1
+    )
 
     # Source collections are untouched (--confirm-delete not passed).
     assert _count_docs(emulator_client, src_a) == 2
@@ -222,9 +236,19 @@ def test_performance_profiles_confirm_delete_removes_sources(
     src_a = f"performance_profiles_{account_a}"
     src_b = f"performance_profiles_{account_b}"
 
-    _seed_doc(emulator_client, f"{src_a}/prof_1", {"type": "baseline", "account_id": account_a})
-    _seed_doc(emulator_client, f"{src_a}/prof_2", {"type": "weekly", "account_id": account_a})
-    _seed_doc(emulator_client, f"{src_b}/prof_1", {"type": "baseline", "account_id": account_b})
+    _seed_doc(
+        emulator_client,
+        f"{src_a}/prof_1",
+        {"type": "baseline", "account_id": account_a},
+    )
+    _seed_doc(
+        emulator_client, f"{src_a}/prof_2", {"type": "weekly", "account_id": account_a}
+    )
+    _seed_doc(
+        emulator_client,
+        f"{src_b}/prof_1",
+        {"type": "baseline", "account_id": account_b},
+    )
 
     buf = io.StringIO()
     with redirect_stdout(buf):
@@ -238,8 +262,12 @@ def test_performance_profiles_confirm_delete_removes_sources(
     assert _count_docs(emulator_client, src_b) == 0
 
     # Destination subcollections intact.
-    assert _count_docs(emulator_client, f"accounts/{account_a}/performance_profiles") == 2
-    assert _count_docs(emulator_client, f"accounts/{account_b}/performance_profiles") == 1
+    assert (
+        _count_docs(emulator_client, f"accounts/{account_a}/performance_profiles") == 2
+    )
+    assert (
+        _count_docs(emulator_client, f"accounts/{account_b}/performance_profiles") == 1
+    )
 
     # Deletion summary correctly accounts for both source collections and all docs.
     assert delete_result.source_collections_deleted == 2

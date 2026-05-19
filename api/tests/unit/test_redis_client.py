@@ -4,7 +4,6 @@ import json
 from unittest import mock
 
 import pytest
-
 from src.kene_api.redis_client import RedisService
 
 

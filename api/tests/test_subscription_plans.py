@@ -2,18 +2,13 @@
 
 import os
 from datetime import datetime, timezone
-from unittest.mock import Mock, AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
-from fastapi.testclient import TestClient
 from fastapi import FastAPI
-
-from src.kene_api.routers.subscription_plans import router
-from src.kene_api.models.kene_models import (
-    SubscriptionPlanDefinition,
-    SubscriptionPlanFeatures,
-)
+from fastapi.testclient import TestClient
 from src.kene_api.firestore import FirestoreService, get_firestore_service
+from src.kene_api.routers.subscription_plans import router
 
 pytestmark = pytest.mark.skipif(
     not os.getenv("FIRESTORE_EMULATOR_HOST"),

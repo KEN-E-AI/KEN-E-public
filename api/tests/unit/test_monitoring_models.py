@@ -2,7 +2,6 @@
 
 import pytest
 from pydantic import ValidationError
-
 from src.kene_api.models.monitoring_models import (
     CompetitorEntry,
     CustomerProfileEntry,

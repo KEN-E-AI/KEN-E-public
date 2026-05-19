@@ -234,11 +234,15 @@ class TestTodoList:
 
 class TestModelContextWindowEntry:
     def test_instantiates(self) -> None:
-        entry = ModelContextWindowEntry(model_id="gemini-2.5-pro", context_window_max=1_048_576)
+        entry = ModelContextWindowEntry(
+            model_id="gemini-2.5-pro", context_window_max=1_048_576
+        )
         assert entry.context_window_max == 1_048_576
 
     def test_no_pricing_fields(self) -> None:
-        entry = ModelContextWindowEntry(model_id="gemini-2.5-pro", context_window_max=1_048_576)
+        entry = ModelContextWindowEntry(
+            model_id="gemini-2.5-pro", context_window_max=1_048_576
+        )
         assert not hasattr(entry, "cost_per_input_token")
         assert not hasattr(entry, "cost_per_output_token")
         assert not hasattr(entry, "price")

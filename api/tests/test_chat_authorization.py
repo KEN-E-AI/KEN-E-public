@@ -24,7 +24,9 @@ async def test_chat_completion_rejects_unauthorized_account():
     )
 
     # Mock the agent client to avoid actual API calls
-    with patch.object(agent_client, "chat_completion", new_callable=AsyncMock) as mock_chat:
+    with patch.object(
+        agent_client, "chat_completion", new_callable=AsyncMock
+    ) as mock_chat:
         # Try to access a different account
         from src.kene_api.routers.chat import ChatMessage, ChatRequest
 

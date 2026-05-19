@@ -1,11 +1,11 @@
 """Tests for selective strategy execution feature."""
 
 import pytest
-from typing import Optional
-from unittest.mock import Mock, MagicMock, patch
 
-from agents.strategy_agent.constants import VALID_STRATEGY_TYPES, DEFAULT_PRODUCT_CATEGORIES
-from agents.strategy_agent.models import StrategyContext
+from agents.strategy_agent.constants import (
+    DEFAULT_PRODUCT_CATEGORIES,
+    VALID_STRATEGY_TYPES,
+)
 
 
 class TestSelectiveStrategyExecution:
@@ -34,9 +34,18 @@ class TestSelectiveStrategyExecution:
     @pytest.mark.parametrize(
         "enabled_strategies,should_skip",
         [
-            (["marketing_strategy"], ["business_strategy", "competitive_strategy", "brand_guidelines"]),
-            (["business_strategy", "marketing_strategy"], ["competitive_strategy", "brand_guidelines"]),
-            (["competitive_strategy"], ["business_strategy", "marketing_strategy", "brand_guidelines"]),
+            (
+                ["marketing_strategy"],
+                ["business_strategy", "competitive_strategy", "brand_guidelines"],
+            ),
+            (
+                ["business_strategy", "marketing_strategy"],
+                ["competitive_strategy", "brand_guidelines"],
+            ),
+            (
+                ["competitive_strategy"],
+                ["business_strategy", "marketing_strategy", "brand_guidelines"],
+            ),
             ([], VALID_STRATEGY_TYPES),  # Empty list should skip all
         ],
     )
@@ -56,29 +65,47 @@ class TestSelectiveStrategyExecution:
         business_categories = ["Business Category"]
 
         # When override is provided, use it
-        categories_to_use = override_categories if override_categories else (
-            business_categories if business_categories else DEFAULT_PRODUCT_CATEGORIES
+        categories_to_use = (
+            override_categories
+            if override_categories
+            else (
+                business_categories
+                if business_categories
+                else DEFAULT_PRODUCT_CATEGORIES
+            )
         )
         assert categories_to_use == override_categories
 
         # Priority 2: business strategy categories
         override_categories = None
-        categories_to_use = override_categories if override_categories else (
-            business_categories if business_categories else DEFAULT_PRODUCT_CATEGORIES
+        categories_to_use = (
+            override_categories
+            if override_categories
+            else (
+                business_categories
+                if business_categories
+                else DEFAULT_PRODUCT_CATEGORIES
+            )
         )
         assert categories_to_use == business_categories
 
         # Priority 3: default categories
         override_categories = None
         business_categories = []
-        categories_to_use = override_categories if override_categories else (
-            business_categories if business_categories else DEFAULT_PRODUCT_CATEGORIES
+        categories_to_use = (
+            override_categories
+            if override_categories
+            else (
+                business_categories
+                if business_categories
+                else DEFAULT_PRODUCT_CATEGORIES
+            )
         )
         assert categories_to_use == DEFAULT_PRODUCT_CATEGORIES
 
     def test_enabled_strategies_defaults_to_all(self):
         """Test that enabled_strategies defaults to all strategies when None."""
-        enabled_strategies: Optional[list[str]] = None
+        enabled_strategies: list[str] | None = None
 
         if enabled_strategies is None:
             enabled_strategies = VALID_STRATEGY_TYPES.copy()
@@ -88,9 +115,15 @@ class TestSelectiveStrategyExecution:
 
     def test_invalid_strategy_types_validation(self):
         """Test that invalid strategy types are detected."""
-        enabled_strategies = ["marketing_strategy", "invalid_strategy", "another_invalid"]
+        enabled_strategies = [
+            "marketing_strategy",
+            "invalid_strategy",
+            "another_invalid",
+        ]
 
-        invalid_strategies = [s for s in enabled_strategies if s not in VALID_STRATEGY_TYPES]
+        invalid_strategies = [
+            s for s in enabled_strategies if s not in VALID_STRATEGY_TYPES
+        ]
 
         assert invalid_strategies == ["invalid_strategy", "another_invalid"]
         assert len(invalid_strategies) == 2
@@ -110,7 +143,11 @@ class TestSelectiveStrategyExecution:
         business_ran = "business_strategy" in enabled_strategies
 
         # When marketing runs without business and no override
-        if "marketing_strategy" in enabled_strategies and not business_ran and not override_categories:
+        if (
+            "marketing_strategy" in enabled_strategies
+            and not business_ran
+            and not override_categories
+        ):
             categories_to_use = DEFAULT_PRODUCT_CATEGORIES
             assert categories_to_use == DEFAULT_PRODUCT_CATEGORIES
             assert len(categories_to_use) == 5

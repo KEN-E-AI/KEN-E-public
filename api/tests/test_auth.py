@@ -1,12 +1,11 @@
 """Tests for authentication endpoints."""
 
-import pytest
-from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, patch
 
+import pytest
+from fastapi.testclient import TestClient
 from src.kene_api.main import app
 from src.kene_api.recaptcha import RecaptchaVerificationResult
-
 
 client = TestClient(app)
 

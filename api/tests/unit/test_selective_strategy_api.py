@@ -1,6 +1,5 @@
 """Tests for selective strategy execution API integration."""
 
-import pytest
 from src.kene_api.models.kene_models import AccountRequest
 
 
@@ -21,7 +20,10 @@ class TestAccountRequestModel:
             enabled_strategies=["marketing_strategy", "competitive_strategy"],
         )
 
-        assert request.enabled_strategies == ["marketing_strategy", "competitive_strategy"]
+        assert request.enabled_strategies == [
+            "marketing_strategy",
+            "competitive_strategy",
+        ]
         assert len(request.enabled_strategies) == 2
 
     def test_account_request_with_override_product_categories(self):
@@ -38,7 +40,10 @@ class TestAccountRequestModel:
             override_product_categories=["Core Products", "Premium Services"],
         )
 
-        assert request.override_product_categories == ["Core Products", "Premium Services"]
+        assert request.override_product_categories == [
+            "Core Products",
+            "Premium Services",
+        ]
         assert len(request.override_product_categories) == 2
 
     def test_account_request_optional_fields_default_to_none(self):
@@ -77,7 +82,10 @@ class TestAccountRequestModel:
 
         assert request.account_name == "Test Account"
         assert request.enabled_strategies == ["business_strategy", "marketing_strategy"]
-        assert request.override_product_categories == ["Product Line A", "Product Line B"]
+        assert request.override_product_categories == [
+            "Product Line A",
+            "Product Line B",
+        ]
         assert request.marketing_channels == ["SEO", "PPC"]
         assert request.product_integrations == ["GA4"]
         assert request.estimated_annual_ad_budget == 100000
@@ -112,7 +120,7 @@ class TestFormParsingWithSelectiveStrategies:
         """Test that empty JSON arrays parse correctly."""
         import json
 
-        json_string = '[]'
+        json_string = "[]"
         parsed = json.loads(json_string)
 
         assert isinstance(parsed, list)
@@ -124,6 +132,7 @@ class TestAdminAuthorizationForSelectiveStrategies:
 
     def test_admin_can_use_selective_strategies(self):
         """Test that admin users can provide enabled_strategies."""
+
         # Simulate admin user
         class MockUser:
             is_super_admin = True
@@ -142,6 +151,7 @@ class TestAdminAuthorizationForSelectiveStrategies:
 
     def test_non_admin_cannot_use_selective_strategies(self):
         """Test that non-admin users cannot provide enabled_strategies."""
+
         # Simulate non-admin user
         class MockUser:
             is_super_admin = False
@@ -160,6 +170,7 @@ class TestAdminAuthorizationForSelectiveStrategies:
 
     def test_non_admin_can_create_account_without_strategy_selection(self):
         """Test that non-admin users can create accounts with default behavior."""
+
         # Simulate non-admin user
         class MockUser:
             is_super_admin = False

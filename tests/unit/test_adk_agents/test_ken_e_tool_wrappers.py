@@ -58,6 +58,6 @@ def test_tool_wrappers_accept_acceptance_criteria():
         assert param_order.index("query") < param_order.index("acceptance_criteria"), (
             f"In {tool_name}, 'query' must come before 'acceptance_criteria'"
         )
-        assert param_order.index("acceptance_criteria") < param_order.index("tool_context"), (
-            f"In {tool_name}, 'acceptance_criteria' must come before 'tool_context'"
-        )
+        assert param_order.index("acceptance_criteria") < param_order.index(
+            "tool_context"
+        ), f"In {tool_name}, 'acceptance_criteria' must come before 'tool_context'"

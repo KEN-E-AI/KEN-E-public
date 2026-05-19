@@ -299,9 +299,7 @@ class TestSessionRecoveryService:
     @pytest.mark.asyncio
     async def test_recover_session_handles_error(self, service, mock_session_service):
         """Test recovery handles errors gracefully."""
-        mock_session_service.get_session = AsyncMock(
-            side_effect=Exception("API Error")
-        )
+        mock_session_service.get_session = AsyncMock(side_effect=Exception("API Error"))
 
         result = await service.recover_session("user1", "sess1")
 

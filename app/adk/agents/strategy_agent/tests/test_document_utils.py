@@ -3,28 +3,24 @@ Integration tests for document processing utilities.
 Following existing test patterns from test_integration.py.
 """
 
-import pytest
-import io
 import time
-import sys
-import concurrent.futures
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
+
+import pytest
 from google.cloud import storage
 
 from app.adk.agents.strategy_agent.document_utils import (
+    MAX_DOCUMENT_SIZE,
+    MAX_TEXT_LENGTH,
+    MAX_TOTAL_SIZE,
+    DocumentProcessingError,
+    DocumentSizeError,
+    create_document_loading_summary,
+    create_error_context,
     extract_text_from_pdf,
-    _extract_text_from_pdf_impl,
     load_document_from_gcs,
     load_documents_from_gcs_urls,
     validate_document_size,
-    create_document_loading_summary,
-    create_error_context,
-    DocumentSizeError,
-    DocumentProcessingError,
-    DocumentFormatError,
-    MAX_DOCUMENT_SIZE,
-    MAX_TOTAL_SIZE,
-    MAX_TEXT_LENGTH,
 )
 
 

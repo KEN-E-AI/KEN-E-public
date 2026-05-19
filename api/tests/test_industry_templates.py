@@ -1,17 +1,14 @@
 """Tests for industry templates API endpoints."""
 
 import os
+from datetime import datetime, timezone
+from unittest.mock import Mock, patch
 
 import pytest
-from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
-from datetime import datetime, timezone
-
 from src.kene_api.main import app
 from src.kene_api.models.kene_models import (
     IndustryTemplate,
-    IndustryTemplateSettings,
-    IndustryTemplateDefaults,
 )
 
 pytestmark = pytest.mark.skipif(
@@ -356,8 +353,8 @@ class TestCacheBehavior:
     def test_no_caching_in_development(self, client):
         """Test that caching is disabled in development mode."""
         from src.kene_api.routers.industry_templates import (
-            _template_cache,
             IS_DEVELOPMENT,
+            _template_cache,
         )
 
         if IS_DEVELOPMENT:

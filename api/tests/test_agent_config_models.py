@@ -280,9 +280,7 @@ class TestToolIds:
                 )
             )
         # The error message contains the deduped list.
-        assert (
-            str(exc_info.value).count("'function.create_visualization'") == 1
-        )
+        assert str(exc_info.value).count("'function.create_visualization'") == 1
 
     def test_create_rejects_over_cap(self) -> None:
         too_many = [f"server.tool_{i:02d}" for i in range(MAX_TOOLS_PER_SPECIALIST + 1)]

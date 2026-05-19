@@ -272,9 +272,7 @@ def test_profile_summary_counts(emulator_client: Any, run_id: str) -> None:
 
     # --- AC assertions ---
 
-    assert summary.total_orgs == 2, (
-        f"expected 2 orgs, got {summary.total_orgs}"
-    )
+    assert summary.total_orgs == 2, f"expected 2 orgs, got {summary.total_orgs}"
 
     assert summary.total_accounts == 3, (
         f"expected 3 accounts (2 realistic + 1 minimal), got {summary.total_accounts}"
@@ -293,13 +291,9 @@ def test_profile_summary_counts(emulator_client: Any, run_id: str) -> None:
         f"got {summary.max_funnel_depth_overall}"
     )
 
-    assert summary.total_size_p50 > 0, (
-        "expected non-zero total_size_p50"
-    )
+    assert summary.total_size_p50 > 0, "expected non-zero total_size_p50"
 
-    assert summary.byte_size_methodology, (
-        "byte_size_methodology must not be empty"
-    )
+    assert summary.byte_size_methodology, "byte_size_methodology must not be empty"
 
     # Verify JSON output is valid and contains the expected org count
     json_output = summary.model_dump_json(indent=2)

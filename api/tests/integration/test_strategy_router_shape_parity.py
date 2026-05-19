@@ -115,9 +115,7 @@ class TestStrategyRouterShapeParity:
                 f"Expected 200, got {response.status_code}: {response.text}"
             )
 
-            mock_db.collection.assert_any_call(
-                f"accounts/{_ACCOUNT_ID}/strategy_docs"
-            )
+            mock_db.collection.assert_any_call(f"accounts/{_ACCOUNT_ID}/strategy_docs")
         finally:
             app.dependency_overrides.pop(get_current_user, None)
 
@@ -391,9 +389,7 @@ class TestStrategyAuditWriteReadParity:
         # ---- Step 2: capture the read path via GET /history/{doc_type} ----
         mock_router_db = MagicMock()
         # stream() → empty iterator so the for-loop skips safely.
-        mock_router_db.collection.return_value.where.return_value.where.return_value\
-            .where.return_value.order_by.return_value.limit.return_value\
-            .stream.return_value = []
+        mock_router_db.collection.return_value.where.return_value.where.return_value.where.return_value.order_by.return_value.limit.return_value.stream.return_value = []
 
         monkeypatch.setattr("src.kene_api.routers.strategy.db", mock_router_db)
         app.dependency_overrides[get_current_user] = lambda: mock_user

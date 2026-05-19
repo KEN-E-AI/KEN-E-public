@@ -40,9 +40,7 @@ class TestPreviousToolCallsTracking:
         tool = MockBaseTool("search_company_news")
         ctx = MockToolContext({"user_id": "u1", "account_id": "a1"})
 
-        with patch(
-            "app.adk.tracking.callbacks.get_usage_tracker"
-        ) as mock_tracker_fn:
+        with patch("app.adk.tracking.callbacks.get_usage_tracker") as mock_tracker_fn:
             mock_tracker = AsyncMock()
             mock_tracker_fn.return_value = mock_tracker
 
@@ -53,15 +51,15 @@ class TestPreviousToolCallsTracking:
     @pytest.mark.asyncio
     async def test_second_tool_call_appends_to_existing_list(self) -> None:
         tool = MockBaseTool("query_google_analytics")
-        ctx = MockToolContext({
-            "user_id": "u1",
-            "account_id": "a1",
-            "_previous_tool_calls": ["search_company_news"],
-        })
+        ctx = MockToolContext(
+            {
+                "user_id": "u1",
+                "account_id": "a1",
+                "_previous_tool_calls": ["search_company_news"],
+            }
+        )
 
-        with patch(
-            "app.adk.tracking.callbacks.get_usage_tracker"
-        ) as mock_tracker_fn:
+        with patch("app.adk.tracking.callbacks.get_usage_tracker") as mock_tracker_fn:
             mock_tracker = AsyncMock()
             mock_tracker_fn.return_value = mock_tracker
 
@@ -75,15 +73,18 @@ class TestPreviousToolCallsTracking:
     @pytest.mark.asyncio
     async def test_third_tool_call_preserves_full_history(self) -> None:
         tool = MockBaseTool("dispatch_to_strategy")
-        ctx = MockToolContext({
-            "user_id": "u1",
-            "account_id": "a1",
-            "_previous_tool_calls": ["search_company_news", "query_google_analytics"],
-        })
+        ctx = MockToolContext(
+            {
+                "user_id": "u1",
+                "account_id": "a1",
+                "_previous_tool_calls": [
+                    "search_company_news",
+                    "query_google_analytics",
+                ],
+            }
+        )
 
-        with patch(
-            "app.adk.tracking.callbacks.get_usage_tracker"
-        ) as mock_tracker_fn:
+        with patch("app.adk.tracking.callbacks.get_usage_tracker") as mock_tracker_fn:
             mock_tracker = AsyncMock()
             mock_tracker_fn.return_value = mock_tracker
 
@@ -114,9 +115,11 @@ class TestPreviousToolCallsWeaveAttribute:
         mock_weave.attributes.return_value = mock_attrs_ctx
 
         tool = MockBaseTool("query_google_analytics")
-        ctx = MockToolContext({
-            "_previous_tool_calls": ["search_company_news"],
-        })
+        ctx = MockToolContext(
+            {
+                "_previous_tool_calls": ["search_company_news"],
+            }
+        )
 
         await adk_before_tool_callback(tool, {"q": "test"}, ctx)
 

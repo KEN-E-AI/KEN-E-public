@@ -2,12 +2,11 @@
 
 import asyncio
 import re
-import pytest
 from datetime import datetime, timedelta
-from unittest.mock import Mock, MagicMock, patch, AsyncMock
+from unittest.mock import Mock, patch
 
+import pytest
 from google.cloud import firestore
-
 from src.kene_api.models.kene_models import (
     Notification,
     NotificationCategory,

@@ -221,7 +221,12 @@ class TestFirestoreServiceShapeDPaths:
 
         assert result == {"budget": 1000, "cpc": 2.5}
         mock_doc_ref.update.assert_called_once_with(
-            {"funnels.organization.1.channels.paid_search": {"budget": 1000, "cpc": 2.5}}
+            {
+                "funnels.organization.1.channels.paid_search": {
+                    "budget": 1000,
+                    "cpc": 2.5,
+                }
+            }
         )
         all_calls_str = str(mock_doc_ref.update.call_args_list)
         assert "accounts.acc_123" not in all_calls_str

@@ -7,7 +7,12 @@ from app.adk.agents.strategy_agent.constants import (
     VALID_STRATEGY_TYPES,
 )
 
-EXPECTED_AGENTS = {"business_strategy", "competitive_strategy", "marketing_strategy", "brand_guidelines"}
+EXPECTED_AGENTS = {
+    "business_strategy",
+    "competitive_strategy",
+    "marketing_strategy",
+    "brand_guidelines",
+}
 EXPECTED_PHASES = {"research", "report"}
 
 
@@ -41,5 +46,7 @@ class TestOutputCategoriesNaming:
         assert OUTPUT_CATEGORIES[agent_name]["report"] == expected
 
     def test_all_values_are_unique(self) -> None:
-        all_values = [v for phases in OUTPUT_CATEGORIES.values() for v in phases.values()]
+        all_values = [
+            v for phases in OUTPUT_CATEGORIES.values() for v in phases.values()
+        ]
         assert len(all_values) == len(set(all_values))

@@ -1,11 +1,10 @@
 """Unit tests for Alert Manager."""
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock, call
-from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock, patch
 
-from ..alert_manager import AlertManager, AlertSeverity, AlertChannel, AlertThreshold
-from shared.token_utils import TokenEstimator
+import pytest
+
+from ..alert_manager import AlertManager, AlertSeverity
 
 
 @pytest.fixture

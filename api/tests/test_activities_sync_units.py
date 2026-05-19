@@ -108,8 +108,18 @@ class TestFetchExistingActivityLogs:
         )
 
         assert len(existing_holidays) == 2
-        assert ("Holiday1", "2024-01-01", "2024-01-01", "act_00_us") in existing_holidays
-        assert ("Holiday2", "2024-02-01", "2024-02-01", "act_00_us") in existing_holidays
+        assert (
+            "Holiday1",
+            "2024-01-01",
+            "2024-01-01",
+            "act_00_us",
+        ) in existing_holidays
+        assert (
+            "Holiday2",
+            "2024-02-01",
+            "2024-02-01",
+            "act_00_us",
+        ) in existing_holidays
         assert len(protected_logs) == 1
         assert "log_2" in protected_logs
 
