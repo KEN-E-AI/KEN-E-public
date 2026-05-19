@@ -688,3 +688,209 @@ class TestMutatingFlags:
                 await svc.delete_flag("ghost_flag", "admin@ken-e.ai")
 
         assert exc_info.value.key == "ghost_flag"
+
+
+# ---------------------------------------------------------------------------
+# TestGetFlagAudit — FF-15 (FF-PRD-02 B4)
+# ---------------------------------------------------------------------------
+
+
+class TestGetFlagAudit:
+    """Unit tests for FeatureFlagService.get_flag_audit.
+
+    All tests use MagicMock for the Firestore client — no Firestore emulator
+    (that is FF-17's territory per the implementation plan).
+
+    Cases:
+      (a) Results are returned newest-first (ordered by created_at DESC via query).
+      (b) limit+1 detection: mock 6 docs, limit=5 → 5 entries + cursor = 5th audit_id.
+      (c) Terminal page: mock 3 docs, limit=5 → 3 entries + next_cursor=None.
+      (d) First page: cursor=None → start_after is NOT called.
+      (e) Stale cursor: cursor doc .exists is False → returns ([], None) immediately,
+          no page query issued.
+      (f) Exception propagation: Firestore raises → service raises (not swallowed).
+    """
+
+    def _make_audit_doc(self, audit_id: str, created_at: str) -> MagicMock:
+        """Return a MagicMock Firestore doc whose to_dict() returns a valid audit row."""
+        doc = MagicMock()
+        doc.id = audit_id
+        doc.to_dict.return_value = {
+            "audit_id": audit_id,
+            "flag_key": "test_flag",
+            "actor_email": "admin@ken-e.ai",
+            "action": "update",
+            "diff": {"description": {"before": "old", "after": "new"}},
+            "created_at": created_at,
+        }
+        return doc
+
+    def _mock_audit_db(
+        self,
+        page_docs: list[MagicMock],
+        cursor_doc: MagicMock | None = None,
+        raise_on_stream: Exception | None = None,
+    ) -> MagicMock:
+        """Return a Firestore mock suitable for get_flag_audit.
+
+        The mock sets up the fluent query chain:
+          db.collection(...).where(...).order_by(...)[.start_after(...)].limit(...).stream()
+        """
+        db = MagicMock()
+        coll = db.collection.return_value
+
+        # Cursor doc lookup: db.collection("feature_flag_audit").document(cursor_id).get()
+        if cursor_doc is not None:
+            coll.document.return_value.get.return_value = cursor_doc
+        else:
+            # No cursor path expected — set exists=True as a safe default
+            default_cursor_doc = MagicMock()
+            default_cursor_doc.exists = False
+            coll.document.return_value.get.return_value = default_cursor_doc
+
+        # Build the fluent query chain.  Each chained method returns the same
+        # mock so start_after / no start_after both resolve to the same query object.
+        query_mock = MagicMock()
+        coll.where.return_value = query_mock
+        query_mock.order_by.return_value = query_mock
+        query_mock.start_after.return_value = query_mock
+        query_mock.limit.return_value = query_mock
+        if raise_on_stream:
+            query_mock.stream.side_effect = raise_on_stream
+        else:
+            query_mock.stream.return_value = iter(page_docs)
+        return db
+
+    async def test_entries_returned_newest_first(self) -> None:
+        """(a) Documents returned by the query (order_by DESC) are passed through in order."""
+        # Simulate Firestore returning 3 docs newest-first.
+        docs = [
+            self._make_audit_doc("2026-03-01_aaa", "2026-03-01T00:00:00+00:00"),
+            self._make_audit_doc("2026-02-01_bbb", "2026-02-01T00:00:00+00:00"),
+            self._make_audit_doc("2026-01-01_ccc", "2026-01-01T00:00:00+00:00"),
+        ]
+        db = self._mock_audit_db(docs)
+        svc = FeatureFlagService(db=db, time_provider=FakeClock())
+
+        entries, next_cursor = await svc.get_flag_audit("test_flag", limit=5, cursor=None)
+
+        assert len(entries) == 3
+        assert [e.audit_id for e in entries] == ["2026-03-01_aaa", "2026-02-01_bbb", "2026-01-01_ccc"]
+        assert next_cursor is None
+
+    async def test_limit_plus_one_detection_sets_next_cursor(self) -> None:
+        """(b) When 6 docs come back for limit=5, next_cursor = 5th entry's audit_id."""
+        docs = [
+            self._make_audit_doc(f"2026-01-0{7 - i}_id{i}", f"2026-01-0{7 - i}T00:00:00+00:00")
+            for i in range(1, 7)
+        ]
+        db = self._mock_audit_db(docs)
+        svc = FeatureFlagService(db=db, time_provider=FakeClock())
+
+        entries, next_cursor = await svc.get_flag_audit("test_flag", limit=5, cursor=None)
+
+        assert len(entries) == 5
+        assert next_cursor == entries[-1].audit_id
+
+    async def test_terminal_page_returns_no_cursor(self) -> None:
+        """(c) When 3 docs come back for limit=5, next_cursor=None."""
+        docs = [
+            self._make_audit_doc(f"2026-01-0{3 - i}_id{i}", f"2026-01-0{3 - i}T00:00:00+00:00")
+            for i in range(3)
+        ]
+        db = self._mock_audit_db(docs)
+        svc = FeatureFlagService(db=db, time_provider=FakeClock())
+
+        entries, next_cursor = await svc.get_flag_audit("test_flag", limit=5, cursor=None)
+
+        assert len(entries) == 3
+        assert next_cursor is None
+
+    async def test_no_cursor_does_not_call_start_after(self) -> None:
+        """(d) When cursor=None, start_after is never called."""
+        db = self._mock_audit_db([])
+        svc = FeatureFlagService(db=db, time_provider=FakeClock())
+
+        await svc.get_flag_audit("test_flag", limit=5, cursor=None)
+
+        query_mock = db.collection.return_value.where.return_value
+        query_mock.start_after.assert_not_called()
+
+    async def test_stale_cursor_returns_empty_page_no_exception(self) -> None:
+        """(e) Stale cursor (doc not in Firestore) returns ([], None) without raising."""
+        absent_cursor_doc = MagicMock()
+        absent_cursor_doc.exists = False
+        db = self._mock_audit_db([], cursor_doc=absent_cursor_doc)
+        svc = FeatureFlagService(db=db, time_provider=FakeClock())
+
+        entries, next_cursor = await svc.get_flag_audit("test_flag", limit=5, cursor="stale_id")
+
+        assert entries == []
+        assert next_cursor is None
+        # The page query (stream) should NOT have been issued.
+        query_mock = db.collection.return_value.where.return_value
+        query_mock.stream.assert_not_called()
+
+    async def test_firestore_exception_propagates(self) -> None:
+        """(f) Firestore exceptions are not swallowed — admin callers need real errors."""
+        db = self._mock_audit_db([], raise_on_stream=RuntimeError("Firestore down"))
+        svc = FeatureFlagService(db=db, time_provider=FakeClock())
+
+        with pytest.raises(RuntimeError, match="Firestore down"):
+            await svc.get_flag_audit("test_flag", limit=5, cursor=None)
+
+    async def test_cross_flag_cursor_returns_empty_page(self) -> None:
+        """Cross-flag cursor: cursor doc belongs to a different flag_key → ([], None)."""
+        # Cursor doc exists but its flag_key doesn't match the request flag_key.
+        cross_flag_cursor_doc = MagicMock()
+        cross_flag_cursor_doc.exists = True
+        cross_flag_cursor_doc.to_dict.return_value = {
+            "audit_id": "stale_id",
+            "flag_key": "other_flag",  # different from "test_flag"
+            "actor_email": "admin@ken-e.ai",
+            "action": "update",
+            "diff": {},
+            "created_at": "2026-01-01T00:00:00+00:00",
+        }
+        db = self._mock_audit_db([], cursor_doc=cross_flag_cursor_doc)
+        svc = FeatureFlagService(db=db, time_provider=FakeClock())
+
+        entries, next_cursor = await svc.get_flag_audit(
+            "test_flag", limit=5, cursor="cross_flag_cursor"
+        )
+
+        assert entries == []
+        assert next_cursor is None
+        # The page query (stream) should NOT have been issued.
+        query_mock = db.collection.return_value.where.return_value
+        query_mock.stream.assert_not_called()
+
+    async def test_empty_entries_with_has_next_returns_null_cursor(self) -> None:
+        """IndexError guard: has_next=True but all docs fail Pydantic validation → next_cursor=None."""
+        # The inner _run function would fetch limit+1 docs to detect has_next=True,
+        # but after model_validate strips invalid docs entries would be [].
+        # This test directly verifies the `has_next and entries` guard by
+        # simulating 6 docs for limit=5 but making model_validate raise on all of them.
+        from unittest.mock import patch
+
+        class _FailingAuditEntry:
+            @classmethod
+            def model_validate(cls, data: object) -> object:
+                raise ValueError("Intentional validation failure for testing")
+
+        with patch(
+            "src.kene_api.services.feature_flag_service.FeatureFlagAuditEntry",
+            _FailingAuditEntry,
+        ):
+            docs = [
+                self._make_audit_doc(f"id_{i}", f"2026-01-0{i+1}T00:00:00+00:00")
+                for i in range(6)
+            ]
+            db2 = self._mock_audit_db(docs)
+            svc2 = FeatureFlagService(db=db2, time_provider=FakeClock())
+
+            # Should not raise IndexError even though has_next=True and entries=[].
+            entries, next_cursor = await svc2.get_flag_audit("test_flag", limit=5, cursor=None)
+
+        assert entries == []
+        assert next_cursor is None

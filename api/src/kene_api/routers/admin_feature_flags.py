@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from ..auth.dependencies import require_super_admin
@@ -21,6 +21,7 @@ from ..dependencies import get_feature_flag_service
 from ..models.feature_flag_models import (
     FeatureFlag,
     FeatureFlagWriteRequest,
+    FlagAuditResponse,
     FlagKeyStr,
 )
 from ..services.feature_flag_service import (
@@ -56,6 +57,28 @@ async def list_flags(
     """List all feature flags sorted by updated_at descending (super-admin only)."""
     flags = await service.list_flags()
     return AdminFeatureFlagListResponse(flags=flags)
+
+
+@router.get("/{key}/audit", response_model=FlagAuditResponse)
+async def get_flag_audit(
+    key: FlagKeyStr,
+    limit: int = Query(50, ge=1, le=50, description="Max audit entries per page"),
+    cursor: str | None = Query(None, description="audit_id of the last entry from the prior page"),
+    _admin: UserContext = Depends(require_super_admin),
+    service: FeatureFlagService = Depends(get_feature_flag_service),
+) -> FlagAuditResponse:
+    """Return a page of audit log entries for a feature flag, newest-first.
+
+    Works for deleted flags — the audit collection is queryable by flag_key alone
+    without reading the flag document itself (FF-PRD-02 §9).
+
+    Registered before GET /{key} so the static "/audit" segment is not consumed
+    by the wildcard key parameter (FastAPI resolves routes in registration order).
+
+    Spec: FF-PRD-02 §4, §7 AC-5.
+    """
+    entries, next_cursor = await service.get_flag_audit(key, limit, cursor)
+    return FlagAuditResponse(entries=entries, next_cursor=next_cursor)
 
 
 @router.get("/{key}", response_model=FeatureFlag)
