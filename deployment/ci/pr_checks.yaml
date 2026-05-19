@@ -98,7 +98,11 @@ steps:
           uv run pytest tests/integration
 
   # Run agent-side unit tests for the clean subdirectories of app/adk/.
-  # Scope: agent_factory, mcp_config, and tracking test directories.
+  # Scope: agent_factory, mcp_config, and tracking test directories, plus the
+  # colocated suites in app/adk/agents/utils/ and app/adk/agents/models/.
+  # The utils/ and models/ suites (~191 tests, including the review-pipeline
+  # suite) were added in AH-54 — they are genuine pytest files that, living
+  # outside a tests/ directory, previously ran on no PR.
   # strategy_agent and other legacy subdirectories are excluded (pre-existing
   # failures / missing neo4j; tracked in follow-up issues AH-24+).
   # See AH-23 for the full gate rationale.
@@ -112,6 +116,8 @@ steps:
         uv sync --frozen
         uv run pytest \
           app/adk/agents/agent_factory/tests/ \
+          app/adk/agents/utils/ \
+          app/adk/agents/models/ \
           app/adk/mcp_config/tests/ \
           app/adk/tracking/tests/ \
           -q

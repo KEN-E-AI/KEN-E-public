@@ -51,14 +51,10 @@ class TestRetryWithExponentialBackoff:
         # Should have delayed ~0.1 seconds
         assert 0.05 < elapsed < 0.2
 
-    def test_retry_on_validation_error(self):
-        """Test retry on Pydantic ValidationError."""
+    def test_no_retry_on_validation_error(self):
+        """ValidationError is deterministic — it must surface without retry."""
         mock_func = MagicMock(
-            side_effect=[
-                ValidationError.from_exception_data("test", []),
-                ValidationError.from_exception_data("test", []),
-                "success",
-            ]
+            side_effect=ValidationError.from_exception_data("test", [])
         )
 
         @retry_with_exponential_backoff(
@@ -67,9 +63,10 @@ class TestRetryWithExponentialBackoff:
         def test_func():
             return mock_func()
 
-        result = test_func()
-        assert result == "success"
-        assert mock_func.call_count == 3
+        with pytest.raises(ValidationError):
+            test_func()
+
+        assert mock_func.call_count == 1
 
     def test_max_attempts_exceeded(self):
         """Test that it gives up after max attempts."""
@@ -223,7 +220,9 @@ class TestInvokeAgentWithRetry:
         result = invoke_agent_with_retry(mock_agent, "test query", max_attempts=3)
 
         assert result == "Agent response"
-        mock_invoke.assert_called_once_with(mock_agent, "test query", None, None)
+        mock_invoke.assert_called_once_with(
+            mock_agent, "test query", None, None, state=None
+        )
 
     @patch("agents.utils.supervisor_utils.invoke_agent_sync")
     @patch("time.sleep")
@@ -257,7 +256,7 @@ class TestInvokeAgentWithRetry:
 
         assert result == "Agent response"
         mock_invoke.assert_called_once_with(
-            mock_agent, "test query", "user123", "session456"
+            mock_agent, "test query", "user123", "session456", state=None
         )
 
 
@@ -272,8 +271,6 @@ class TestAgentRetryConfig:
         assert config.max_delay == 30.0
         assert config.exponential_base == 2.0
         assert config.jitter is True
-        assert config.retry_on_validation_error is True
-        assert config.retry_on_timeout is True
 
     def test_custom_config(self):
         """Test custom configuration values."""
@@ -283,16 +280,12 @@ class TestAgentRetryConfig:
             max_delay=10.0,
             exponential_base=3.0,
             jitter=False,
-            retry_on_validation_error=False,
-            retry_on_timeout=False,
         )
         assert config.max_attempts == 5
         assert config.initial_delay == 0.5
         assert config.max_delay == 10.0
         assert config.exponential_base == 3.0
         assert config.jitter is False
-        assert config.retry_on_validation_error is False
-        assert config.retry_on_timeout is False
 
     def test_get_decorator(self):
         """Test that get_decorator returns a configured decorator."""
