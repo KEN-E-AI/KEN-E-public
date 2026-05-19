@@ -600,7 +600,9 @@ class TestMutatingFlags:
         call_args = mock_audit.call_args.args
         assert call_args[3] == "create"
         diff = call_args[4]
-        # A create diff should have before=None for all flag fields.
+        # A create diff should have at least the core fields and before=None for all.
+        assert len(diff) > 0
+        assert "key" in diff
         assert all(entry["before"] is None for entry in diff.values())
 
     async def test_create_flag_raises_duplicate_error_on_already_exists(self) -> None:
@@ -672,6 +674,8 @@ class TestMutatingFlags:
         call_args = mock_audit.call_args.args
         assert call_args[3] == "delete"
         diff = call_args[4]
+        assert len(diff) > 0
+        assert "key" in diff
         assert all(entry["after"] is None for entry in diff.values())
 
     async def test_delete_flag_raises_not_found_when_absent(self) -> None:

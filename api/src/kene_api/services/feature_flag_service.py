@@ -225,8 +225,11 @@ class FeatureFlagService:
             now = self._time_provider()
             for key, result in zip(cold_keys, fetch_results, strict=True):
                 if isinstance(result, BaseException):
-                    # Transient error — log type only (no exc_info to avoid serialising
-                    # Firestore document contents or gRPC internals into Cloud Logging).
+                    # BaseException catches asyncio.CancelledError, which is not a
+                    # subclass of Exception in Python 3.8+, but can surface here via
+                    # gather(return_exceptions=True).  Transient error — log type only
+                    # (no exc_info to avoid serialising Firestore document contents or
+                    # gRPC internals into Cloud Logging).
                     # Do NOT cache so the next call retries.
                     logger.error(
                         "feature_flag_fetch_error",
@@ -427,6 +430,9 @@ class FeatureFlagService:
         Raises:
             FeatureFlagNotFoundError: if no document exists for ``key``.
         """
+        # Read fresh from Firestore (bypasses TTL cache) so the audit diff
+        # records the true before-state and updated_at reflects the actual
+        # current document, not a potentially stale cache entry.
         existing = await self._fetch_flag(key)
         if existing is None:
             raise FeatureFlagNotFoundError(key)
@@ -472,6 +478,8 @@ class FeatureFlagService:
         Raises:
             FeatureFlagNotFoundError: if no document exists for ``key``.
         """
+        # Read fresh from Firestore (bypasses TTL cache) so the audit diff
+        # captures the full before-state that was actually deleted.
         existing = await self._fetch_flag(key)
         if existing is None:
             raise FeatureFlagNotFoundError(key)

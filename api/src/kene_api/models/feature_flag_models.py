@@ -15,10 +15,10 @@ FLAG_KEY_REGEX = r"^[a-z0-9][a-z0-9_]{2,63}$"
 
 
 class TargetingRules(BaseModel):
-    user_emails: list[str] = Field(default_factory=list)
-    email_domains: list[str] = Field(default_factory=list)
-    organization_ids: list[str] = Field(default_factory=list)
-    account_ids: list[str] = Field(default_factory=list)
+    user_emails: list[str] = Field(default_factory=list, max_length=1000)
+    email_domains: list[str] = Field(default_factory=list, max_length=1000)
+    organization_ids: list[str] = Field(default_factory=list, max_length=1000)
+    account_ids: list[str] = Field(default_factory=list, max_length=1000)
     rollout_percentage: int = Field(default=0, ge=0, le=100)
 
     @field_validator("user_emails", "email_domains")
@@ -77,13 +77,13 @@ class FeatureFlagWriteRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     key: FlagKeyStr
-    description: str
+    description: str = Field(max_length=2000)
     default_enabled: bool
     is_active: bool = True
     targeting_rules: TargetingRules = Field(default_factory=TargetingRules)
     bucketing_entity: Literal["account", "organization", "user"] = "account"
-    owner: str
-    expected_ga_release: str | None = None
+    owner: EmailStr
+    expected_ga_release: str | None = Field(default=None, max_length=32)
 
 
 class EvaluateRequest(BaseModel):
