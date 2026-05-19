@@ -160,7 +160,7 @@ def _isoformat_sentinel(dt: datetime) -> dict[str, str]:
     return {"_isoformat": dt.isoformat()}
 
 
-def _build_turn_delta(events: list[Any], now: datetime) -> "TurnDelta":
+def _build_turn_delta(events: list[Any], now: datetime) -> TurnDelta:
     """Build a typed TurnDelta from this turn's ADK events.
 
     Returns a TurnDelta whose .to_wire_dict() produces the HTTP wire format

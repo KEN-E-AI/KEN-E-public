@@ -16,15 +16,12 @@ import logging
 import os
 import sys
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import google.api_core.exceptions
 from google.cloud import firestore
 
 from .side_table import get_chat_side_table_service
-
-if TYPE_CHECKING:
-    from turn_delta import TurnDelta
 
 # TurnDelta lives in app/adk/ (cross-package).
 _ADK_PATH = os.path.normpath(
@@ -49,7 +46,7 @@ def apply_side_table_update(
     db: firestore.Client,
     session_id: str,
     account_id: str,
-    delta: "_TurnDelta | dict[str, Any]",
+    delta: _TurnDelta | dict[str, Any],
     idempotency_key: str,
 ) -> dict[str, Any]:
     """Apply a delta to the side-table with at-most-once idempotency.
