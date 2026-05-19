@@ -214,13 +214,10 @@ class TestLoadCatalogue:
         # walks, this test fails.
         def _fail(*args, **kwargs):
             raise AssertionError(
-                "_resolve_tools_yaml_path should not be called when "
-                "_TOOLS_YAML is set"
+                "_resolve_tools_yaml_path should not be called when _TOOLS_YAML is set"
             )
 
-        monkeypatch.setattr(
-            account_tools_service, "_resolve_tools_yaml_path", _fail
-        )
+        monkeypatch.setattr(account_tools_service, "_resolve_tools_yaml_path", _fail)
         # Sanity: in this test environment _TOOLS_YAML was resolved at import.
         assert account_tools_service._TOOLS_YAML is not None
         loaded = account_tools_service._load_catalogue()
@@ -253,6 +250,4 @@ class TestLoadCatalogue:
         account_tools_service._parse_catalogue.cache_clear()
 
         loaded = account_tools_service._load_catalogue()
-        assert any(
-            t["name"] == "alt_tool" for t in loaded["function_tools"]
-        )
+        assert any(t["name"] == "alt_tool" for t in loaded["function_tools"])

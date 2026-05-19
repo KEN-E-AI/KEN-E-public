@@ -48,9 +48,7 @@ class TestInitWeaveIfNeeded:
 
         with patch("app.utils.weave_observability.weave"):
             # Patch secret retrieval to return None
-            with patch(
-                "shared.secrets.get_env_or_secret", return_value=None
-            ):
+            with patch("shared.secrets.get_env_or_secret", return_value=None):
                 result = init_weave_if_needed()
                 assert result is False
 
@@ -107,9 +105,7 @@ class TestInitWeaveIfNeeded:
         from app.utils.weave_observability import init_weave_if_needed
 
         with patch("app.utils.weave_observability.weave"):
-            with patch(
-                "shared.secrets.get_env_or_secret", return_value=None
-            ):
+            with patch("shared.secrets.get_env_or_secret", return_value=None):
                 with pytest.raises(RuntimeError, match="WANDB_API_KEY"):
                     init_weave_if_needed(required=True)
 

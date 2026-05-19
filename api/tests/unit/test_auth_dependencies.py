@@ -171,9 +171,7 @@ class TestGetCurrentUserOptional:
             }
         }
         mock_user_doc.to_dict.return_value = user_data
-        mock_firestore_client.collection.return_value.document.return_value.get.return_value = (
-            mock_user_doc
-        )
+        mock_firestore_client.collection.return_value.document.return_value.get.return_value = mock_user_doc
         mock_firestore_service.get_client.return_value = mock_firestore_client
 
         decoded_token = {
@@ -230,9 +228,7 @@ class TestGetCurrentUserOptional:
             }
         }
         mock_user_doc.to_dict.return_value = user_data
-        mock_firestore_client.collection.return_value.document.return_value.get.return_value = (
-            mock_user_doc
-        )
+        mock_firestore_client.collection.return_value.document.return_value.get.return_value = mock_user_doc
         mock_firestore_service.get_client.return_value = mock_firestore_client
 
         decoded_token = {

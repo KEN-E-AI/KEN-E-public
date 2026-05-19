@@ -15,7 +15,9 @@ from src.kene_api.chat.context_windows import (
 # ---------------------------------------------------------------------------
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-LINT_SCRIPT = REPO_ROOT / "api" / "scripts" / "lint" / "check_context_window_registry_coverage.py"
+LINT_SCRIPT = (
+    REPO_ROOT / "api" / "scripts" / "lint" / "check_context_window_registry_coverage.py"
+)
 
 # Models that are deployed in non-test code under app/adk/agents/
 DEPLOYED_MODEL_IDS = frozenset(

@@ -53,26 +53,35 @@ class TestAfterModelCallback:
         from app.adk.tracking.callbacks import adk_after_model_callback
 
         ctx = MockCallbackContext()
-        response = MockLlmResponse([
-            _make_text_part("I'll search for Apple news to answer your question.", thought=True),
-            _make_function_call_part(),
-        ])
+        response = MockLlmResponse(
+            [
+                _make_text_part(
+                    "I'll search for Apple news to answer your question.", thought=True
+                ),
+                _make_function_call_part(),
+            ]
+        )
 
         result = await adk_after_model_callback(ctx, response)
 
         assert result is response  # Modified response returned
-        assert ctx.state["_last_reasoning"] == "I'll search for Apple news to answer your question."
+        assert (
+            ctx.state["_last_reasoning"]
+            == "I'll search for Apple news to answer your question."
+        )
 
     @pytest.mark.asyncio
     async def test_prefers_thought_parts_over_regular_text(self) -> None:
         from app.adk.tracking.callbacks import adk_after_model_callback
 
         ctx = MockCallbackContext()
-        response = MockLlmResponse([
-            _make_text_part("Thinking about which tool to use...", thought=True),
-            _make_text_part("Here's what I found:"),
-            _make_function_call_part(),
-        ])
+        response = MockLlmResponse(
+            [
+                _make_text_part("Thinking about which tool to use...", thought=True),
+                _make_text_part("Here's what I found:"),
+                _make_function_call_part(),
+            ]
+        )
 
         result = await adk_after_model_callback(ctx, response)
 
@@ -85,10 +94,12 @@ class TestAfterModelCallback:
         from app.adk.tracking.callbacks import adk_after_model_callback
 
         ctx = MockCallbackContext()
-        response = MockLlmResponse([
-            _make_text_part("I'll search for Apple news."),
-            _make_function_call_part(),
-        ])
+        response = MockLlmResponse(
+            [
+                _make_text_part("I'll search for Apple news."),
+                _make_function_call_part(),
+            ]
+        )
 
         result = await adk_after_model_callback(ctx, response)
 
@@ -100,11 +111,13 @@ class TestAfterModelCallback:
         from app.adk.tracking.callbacks import adk_after_model_callback
 
         ctx = MockCallbackContext()
-        response = MockLlmResponse([
-            _make_text_part("Let me check the analytics data.", thought=True),
-            _make_text_part("I'll use the GA report tool.", thought=True),
-            _make_function_call_part(),
-        ])
+        response = MockLlmResponse(
+            [
+                _make_text_part("Let me check the analytics data.", thought=True),
+                _make_text_part("I'll use the GA report tool.", thought=True),
+                _make_function_call_part(),
+            ]
+        )
 
         result = await adk_after_model_callback(ctx, response)
 
@@ -184,7 +197,9 @@ class TestAfterModelCallback:
         from app.adk.tracking.callbacks import adk_after_model_callback
 
         ctx = MockCallbackContext()
-        response = MockLlmResponse([_make_text_part("regular text"), _make_function_call_part()])
+        response = MockLlmResponse(
+            [_make_text_part("regular text"), _make_function_call_part()]
+        )
 
         result = await adk_after_model_callback(ctx, response)
 
@@ -212,9 +227,11 @@ class TestReasoningInBeforeToolCallback:
         tool.name = "search_company_news"
 
         ctx = MagicMock()
-        ctx.state = MockState({
-            "_last_reasoning": "I need to search for Apple news.",
-        })
+        ctx.state = MockState(
+            {
+                "_last_reasoning": "I need to search for Apple news.",
+            }
+        )
         ctx.user_content = None
 
         await adk_before_tool_callback(tool, {"q": "test"}, ctx)
@@ -240,9 +257,11 @@ class TestReasoningInBeforeToolCallback:
         tool.name = "search_company_news"
 
         ctx = MagicMock()
-        ctx.state = MockState({
-            "_last_reasoning": "Some reasoning text.",
-        })
+        ctx.state = MockState(
+            {
+                "_last_reasoning": "Some reasoning text.",
+            }
+        )
         ctx.user_content = None
 
         await adk_before_tool_callback(tool, {"q": "test"}, ctx)

@@ -268,9 +268,7 @@ def test_get_product_category_node_id_returns_correct_value(
     assert params["category_name"] == category_name
 
 
-def test_get_product_category_node_id_handles_not_found(
-    graph_builder, mock_neo4j_ops
-):
+def test_get_product_category_node_id_handles_not_found(graph_builder, mock_neo4j_ops):
     """
     Test that _get_product_category_node_id returns None when category not found.
 
@@ -290,7 +288,9 @@ def test_get_product_category_node_id_handles_not_found(
     assert result is None
 
 
-@pytest.mark.skip(reason="Test uses obsolete methods that have been refactored. Functionality covered by batch query tests.")
+@pytest.mark.skip(
+    reason="Test uses obsolete methods that have been refactored. Functionality covered by batch query tests."
+)
 def test_build_marketing_graph_skips_invalid_product_categories(
     graph_builder, mock_neo4j_ops, sample_marketing_report
 ):
@@ -351,7 +351,9 @@ def test_build_marketing_graph_skips_invalid_product_categories(
     # Calculate expected count: mappings[1] (Business Banking) + mappings[2] (Wealth Management)
     expected_strategies = sum(
         len(mapping.customer_strategies)
-        for mapping in sample_marketing_report.product_category_mappings[1:]  # Skip first (Consumer Banking)
+        for mapping in sample_marketing_report.product_category_mappings[
+            1:
+        ]  # Skip first (Consumer Banking)
     )
     assert len(created_strategies) == expected_strategies
 
@@ -373,9 +375,7 @@ def test_build_marketing_graph_skips_invalid_product_categories(
 
     # Verify Student Steve and Maria strategies were NOT created
     steve_strategies = [
-        s
-        for s in created_strategies
-        if s["customer_profile_name"] == "Student Steve"
+        s for s in created_strategies if s["customer_profile_name"] == "Student Steve"
     ]
     assert len(steve_strategies) == 0
 
@@ -479,7 +479,10 @@ def test_customer_profile_includes_display_name(graph_builder, mock_neo4j_ops):
 
     # Mock the create_strategy_node method to capture the call
     mock_neo4j_ops.create_strategy_node = Mock(
-        return_value={"node_id": "icp_test_123", "display_name": "recent graduate rachel"}
+        return_value={
+            "node_id": "icp_test_123",
+            "display_name": "recent graduate rachel",
+        }
     )
 
     # Execute
@@ -548,10 +551,10 @@ def test_display_name_lowercasing(graph_builder, mock_neo4j_ops):
         assert node_data["display_name"] == expected_lowercase
 
 
-@pytest.mark.skip(reason="Test uses obsolete methods. Functionality now covered by Pydantic validation test.")
-def test_build_graph_with_nonexistent_profile_reference(
-    graph_builder, mock_neo4j_ops
-):
+@pytest.mark.skip(
+    reason="Test uses obsolete methods. Functionality now covered by Pydantic validation test."
+)
+def test_build_graph_with_nonexistent_profile_reference(graph_builder, mock_neo4j_ops):
     """
     Test that build_marketing_graph raises ValueError when a customer strategy
     references a profile that doesn't exist in the master profile list.
@@ -607,10 +610,10 @@ def test_build_graph_with_nonexistent_profile_reference(
     assert "Non-Existent Profile" in error_msg
 
 
-@pytest.mark.skip(reason="Test uses obsolete methods. Functionality now covered by Pydantic validation test.")
-def test_build_graph_with_all_strategies_skipped(
-    graph_builder, mock_neo4j_ops
-):
+@pytest.mark.skip(
+    reason="Test uses obsolete methods. Functionality now covered by Pydantic validation test."
+)
+def test_build_graph_with_all_strategies_skipped(graph_builder, mock_neo4j_ops):
     """
     Test that build_marketing_graph raises ValueError when all strategies
     are skipped due to profile name mismatches.
@@ -687,10 +690,10 @@ def test_build_graph_with_all_strategies_skipped(
     assert "Wrong Name 2" in error_msg
 
 
-@pytest.mark.skip(reason="Test uses obsolete methods. Functionality now covered by Pydantic validation test.")
-def test_build_graph_with_partial_profile_matches(
-    graph_builder, mock_neo4j_ops
-):
+@pytest.mark.skip(
+    reason="Test uses obsolete methods. Functionality now covered by Pydantic validation test."
+)
+def test_build_graph_with_partial_profile_matches(graph_builder, mock_neo4j_ops):
     """
     Test that build_marketing_graph raises ValueError when some (but not all)
     profile references don't match, providing detailed error information.
@@ -755,9 +758,7 @@ def test_build_graph_with_partial_profile_matches(
     assert "Invalid Profile" in error_msg
 
 
-def test_get_product_category_node_ids_batch_query(
-    graph_builder, mock_neo4j_ops
-):
+def test_get_product_category_node_ids_batch_query(graph_builder, mock_neo4j_ops):
     """
     Test that _get_product_category_node_ids correctly handles batch queries.
 
@@ -796,9 +797,7 @@ def test_get_product_category_node_ids_batch_query(
     assert params["category_names"] == category_names
 
 
-def test_get_product_category_node_ids_empty_result(
-    graph_builder, mock_neo4j_ops
-):
+def test_get_product_category_node_ids_empty_result(graph_builder, mock_neo4j_ops):
     """
     Test that _get_product_category_node_ids handles empty results correctly.
 
@@ -817,9 +816,7 @@ def test_get_product_category_node_ids_empty_result(
     assert result == {}
 
 
-def test_get_product_category_node_ids_empty_input(
-    graph_builder, mock_neo4j_ops
-):
+def test_get_product_category_node_ids_empty_input(graph_builder, mock_neo4j_ops):
     """
     Test that _get_product_category_node_ids handles empty input list.
 
@@ -838,9 +835,7 @@ def test_get_product_category_node_ids_empty_input(
     mock_neo4j_ops.connection.execute_query.assert_not_called()
 
 
-def test_get_product_category_node_ids_partial_matches(
-    graph_builder, mock_neo4j_ops
-):
+def test_get_product_category_node_ids_partial_matches(graph_builder, mock_neo4j_ops):
     """
     Test that _get_product_category_node_ids handles partial matches correctly.
 
@@ -866,9 +861,7 @@ def test_get_product_category_node_ids_partial_matches(
     assert "Nonexistent Category" not in result
 
 
-def test_strategy_count_validation_success(
-    graph_builder, mock_neo4j_ops
-):
+def test_strategy_count_validation_success(graph_builder, mock_neo4j_ops):
     """
     Test that strategy count validation passes when counts match.
 
@@ -1000,7 +993,10 @@ def test_create_rollup_marketing_hub(graph_builder, mock_neo4j_ops):
 
     # Verify node structure
     assert hub_node["node_id"] == f"rollup_marketing_hub_{account_id}"
-    assert hub_node["description"] == "Consolidated marketing strategy for the entire business"
+    assert (
+        hub_node["description"]
+        == "Consolidated marketing strategy for the entire business"
+    )
     assert hub_node["created_by"] == user_id
     assert hub_node["last_modified_by"] == user_id
     assert hub_node["embedding"] is None
@@ -1117,6 +1113,7 @@ def test_create_rollup_strategies_success(
 
     # Create minimal research report (not actually used in this test, just satisfies validation)
     from ..marketing_models import MarketingResearchReport
+
     research_report = MarketingResearchReport(
         ideal_customer_profiles=[
             IdealCustomerProfile(
@@ -1174,6 +1171,7 @@ def test_create_rollup_strategies_fails_without_individuals(
 
     # Create minimal research report (not actually used in this test, just satisfies validation)
     from ..marketing_models import MarketingResearchReport
+
     research_report = MarketingResearchReport(
         ideal_customer_profiles=[
             IdealCustomerProfile(
@@ -1217,7 +1215,8 @@ def test_build_marketing_graph_includes_rollups(
     )
 
     # Create narrative with all required sections (Pydantic validation requirement)
-    long_narrative = """
+    long_narrative = (
+        """
 Demographics: Test user, 25 years old, software engineer.
 
 Psychographics: Values efficiency and modern technology.
@@ -1235,7 +1234,9 @@ Buying Behaviors: Researches online, prefers self-service trials.
 Communication Channels: LinkedIn, email, product documentation.
 
 Exclusion Criteria: Not interested in enterprise-only solutions.
-    """ * 4  # Repeat to ensure >2000 characters
+    """
+        * 4
+    )  # Repeat to ensure >2000 characters
 
     report = MarketingResearchReport(
         ideal_customer_profiles=[
@@ -1287,9 +1288,7 @@ Exclusion Criteria: Not interested in enterprise-only solutions.
 
     # Verify hub exists
     assert result["rollup_marketing_hub"] is not None
-    assert result["rollup_marketing_hub"]["node_id"].startswith(
-        "rollup_marketing_hub_"
-    )
+    assert result["rollup_marketing_hub"]["node_id"].startswith("rollup_marketing_hub_")
 
     # Verify 5 rollup strategies
     assert len(result["rollup_strategies"]) == 5
@@ -1314,7 +1313,8 @@ def test_build_marketing_graph_rollup_failure_is_non_critical(
     )
 
     # Create narrative with all required sections (Pydantic validation requirement)
-    long_narrative = """
+    long_narrative = (
+        """
 Demographics: Test user, 25 years old, software engineer.
 
 Psychographics: Values efficiency and modern technology.
@@ -1332,7 +1332,9 @@ Buying Behaviors: Researches online, prefers self-service trials.
 Communication Channels: LinkedIn, email, product documentation.
 
 Exclusion Criteria: Not interested in enterprise-only solutions.
-    """ * 4  # Repeat to ensure >2000 characters
+    """
+        * 4
+    )  # Repeat to ensure >2000 characters
 
     report = MarketingResearchReport(
         ideal_customer_profiles=[

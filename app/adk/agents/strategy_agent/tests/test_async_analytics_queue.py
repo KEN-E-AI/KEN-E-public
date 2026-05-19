@@ -8,12 +8,14 @@ import pytest
 from ..async_analytics_queue import AsyncAnalyticsAdapter, AsyncAnalyticsQueue
 
 # gemini-2.5-flash pricing constants (mirrored from AnalyticsService.MODEL_PRICING)
-_FLASH_PROMPT_RATE = 0.075   # USD per 1M prompt tokens
-_FLASH_RESP_RATE = 0.30      # USD per 1M response tokens
+_FLASH_PROMPT_RATE = 0.075  # USD per 1M prompt tokens
+_FLASH_RESP_RATE = 0.30  # USD per 1M response tokens
 
 
 def _flash_cost(prompt_tokens: int, response_tokens: int) -> float:
-    return (prompt_tokens * _FLASH_PROMPT_RATE + response_tokens * _FLASH_RESP_RATE) / 1_000_000
+    return (
+        prompt_tokens * _FLASH_PROMPT_RATE + response_tokens * _FLASH_RESP_RATE
+    ) / 1_000_000
 
 
 @pytest.fixture

@@ -3,10 +3,10 @@ Pytest configuration and fixtures for API tests.
 """
 
 import os
-from typing import Generator
+from collections.abc import Generator
+from unittest.mock import MagicMock, patch
 
 import pytest
-from unittest.mock import MagicMock, patch
 from prometheus_client import REGISTRY
 
 

@@ -14,20 +14,18 @@
 
 """Integration tests for ADK (Agent Development Kit) functionality."""
 
+import logging
 import os
 import sys
-import logging
 from datetime import datetime, timezone
+from unittest.mock import MagicMock, patch
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from typing import Dict, Any
 
 # Add src to path so imports work in Cloud Build
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src"))
 
-from kene_api.routers.chat import AgentEngineClient, ChatMessage
-from kene_api.auth.models import UserContext
+from kene_api.routers.chat import AgentEngineClient
 
 
 @pytest.fixture
@@ -84,14 +82,17 @@ def test_agent_engine_initialization(mock_vertexai, mock_agent_engines):
     """
     Test that the Agent Engine initializes correctly.
     """
-    with patch.dict(
-        os.environ,
-        {
-            "GOOGLE_CLOUD_PROJECT_ID": "test-project",
-            "VERTEX_AI_LOCATION": "us-central1",
-            "VERTEX_AI_AGENT_ENGINE_ID": "projects/test/locations/us-central1/reasoningEngines/test-id",
-        },
-    ), patch("shared.secrets.get_env_or_secret") as mock_get_env:
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "GOOGLE_CLOUD_PROJECT_ID": "test-project",
+                "VERTEX_AI_LOCATION": "us-central1",
+                "VERTEX_AI_AGENT_ENGINE_ID": "projects/test/locations/us-central1/reasoningEngines/test-id",
+            },
+        ),
+        patch("shared.secrets.get_env_or_secret") as mock_get_env,
+    ):
         # Mock get_env_or_secret to return the test engine ID
         def side_effect(key):
             if key == "KEN_E_ENGINE_ID":
@@ -325,15 +326,17 @@ async def test_error_handling():
         # Now using vertexai.Client().agent_engines.get() pattern
         with patch("vertexai.Client") as mock_client_class:
             mock_client = MagicMock()
-            mock_client.agent_engines.get.side_effect = Exception("Failed to connect to Agent Engine")
+            mock_client.agent_engines.get.side_effect = Exception(
+                "Failed to connect to Agent Engine"
+            )
             mock_client_class.return_value = mock_client
 
             client = AgentEngineClient()
 
             # The code raises an HTTPException when agent engine fails to initialize
             # This is the expected behavior for production
-            from fastapi import HTTPException
             import pytest
+            from fastapi import HTTPException
 
             with pytest.raises(HTTPException) as exc_info:
                 engine = client.agent_engine

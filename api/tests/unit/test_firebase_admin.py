@@ -6,7 +6,6 @@ from unittest import mock
 import pytest
 from firebase_admin import auth
 from firebase_admin.exceptions import FirebaseError
-
 from src.kene_api.auth.firebase_admin import (
     get_firebase_auth,
     get_user,
@@ -18,7 +17,9 @@ from src.kene_api.auth.firebase_admin import (
 class TestInitializeFirebaseAdmin:
     """Test Firebase Admin SDK initialization."""
 
-    @pytest.mark.skip(reason="Firebase initialization behavior changed — needs rewrite against current firebase_admin.py — see DM-85")
+    @pytest.mark.skip(
+        reason="Firebase initialization behavior changed — needs rewrite against current firebase_admin.py — see DM-85"
+    )
     def test_initialize_with_application_default_credentials(self):
         """Test initialization with Application Default Credentials."""
         with mock.patch.dict(
@@ -33,7 +34,9 @@ class TestInitializeFirebaseAdmin:
                     mock_init.assert_called_once()
                     assert app == mock_init.return_value
 
-    @pytest.mark.skip(reason="Firebase initialization behavior changed — needs rewrite against current firebase_admin.py — see DM-85")
+    @pytest.mark.skip(
+        reason="Firebase initialization behavior changed — needs rewrite against current firebase_admin.py — see DM-85"
+    )
     def test_initialize_with_service_account_file(self):
         """Test initialization with service account key file."""
         with mock.patch.dict(
@@ -53,7 +56,9 @@ class TestInitializeFirebaseAdmin:
                     mock_init.assert_called_once_with(mock_cert.return_value)
                     assert app == mock_init.return_value
 
-    @pytest.mark.skip(reason="Firebase initialization behavior changed — needs rewrite against current firebase_admin.py — see DM-85")
+    @pytest.mark.skip(
+        reason="Firebase initialization behavior changed — needs rewrite against current firebase_admin.py — see DM-85"
+    )
     def test_initialize_returns_existing_app(self):
         """Test that existing app is returned if already initialized."""
         existing_app = mock.Mock()
@@ -61,7 +66,9 @@ class TestInitializeFirebaseAdmin:
             app = initialize_firebase_admin()
             assert app == existing_app
 
-    @pytest.mark.skip(reason="Firebase initialization behavior changed — needs rewrite against current firebase_admin.py — see DM-85")
+    @pytest.mark.skip(
+        reason="Firebase initialization behavior changed — needs rewrite against current firebase_admin.py — see DM-85"
+    )
     def test_initialize_handles_errors(self):
         """Test that initialization errors are propagated."""
         with mock.patch("firebase_admin.get_app", side_effect=ValueError):

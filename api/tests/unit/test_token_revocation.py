@@ -1,10 +1,9 @@
 """Unit tests for token revocation service."""
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from unittest import mock
 
 import pytest
-
 from src.kene_api.auth.token_revocation import TokenRevocationService
 
 
@@ -14,9 +13,7 @@ class TestTokenRevocationService:
     @pytest.fixture
     def revocation_service(self):
         """Create a token revocation service for testing."""
-        with mock.patch(
-            "src.kene_api.redis_client.get_redis_service"
-        ) as mock_redis:
+        with mock.patch("src.kene_api.redis_client.get_redis_service") as mock_redis:
             mock_redis_service = mock.Mock()
             mock_redis.return_value = mock_redis_service
             service = TokenRevocationService()

@@ -68,7 +68,9 @@ def _emulator_client() -> Any:
     return _fs.Client(project=project)
 
 
-def _make_user(email: str = "user@example.com", user_id: str = "uid_test") -> UserContext:
+def _make_user(
+    email: str = "user@example.com", user_id: str = "uid_test"
+) -> UserContext:
     return UserContext(
         user_id=user_id,
         email=email,
@@ -315,9 +317,7 @@ class TestEvaluateEndpoint:
         captured_ctx: list[Any] = []
         real_evaluate = _ff_svc_module.evaluate
 
-        def _capturing_evaluate(
-            flag: Any, ctx: Any, *, cache_hit: bool
-        ) -> Any:
+        def _capturing_evaluate(flag: Any, ctx: Any, *, cache_hit: bool) -> Any:
             captured_ctx.append(ctx)
             return real_evaluate(flag, ctx, cache_hit=cache_hit)
 

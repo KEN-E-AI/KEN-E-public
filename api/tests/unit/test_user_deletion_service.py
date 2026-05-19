@@ -139,7 +139,9 @@ async def test_happy_path_all_steps_fire() -> None:
         patch.object(svc, "get_firestore_client", return_value=mock_db),
         patch.object(svc, "_on_user_removed", hook_mock),
         patch.object(svc, "_write_audit", write_audit_mock),
-        patch.object(svc, "_resolve_member_rows",
+        patch.object(
+            svc,
+            "_resolve_member_rows",
             return_value=(org_refs, account_refs),
         ),
     ):
@@ -177,7 +179,9 @@ async def test_idempotent_rerun_purged_user() -> None:
         patch.object(svc, "get_firestore_client", return_value=mock_db),
         patch.object(svc, "_on_user_removed", None),
         patch.object(svc, "_write_audit", None),
-        patch.object(svc, "_resolve_member_rows",
+        patch.object(
+            svc,
+            "_resolve_member_rows",
             return_value=([], []),
         ),
     ):
@@ -210,7 +214,9 @@ async def test_step1_failure_subsequent_steps_still_run() -> None:
         patch.object(svc, "get_firestore_client", return_value=mock_db),
         patch.object(svc, "_on_user_removed", None),
         patch.object(svc, "_write_audit", None),
-        patch.object(svc, "_resolve_member_rows",
+        patch.object(
+            svc,
+            "_resolve_member_rows",
             side_effect=RuntimeError("index unavailable"),
         ),
     ):
@@ -249,11 +255,15 @@ async def test_single_step_failure_does_not_abort_subsequent_steps() -> None:
     write_audit_mock = AsyncMock(return_value=None)
     mock_db = MagicMock()
     # Make recursive_delete raise to trigger the internal try/except in _purge_user_doc
-    mock_db.recursive_delete = MagicMock(side_effect=RuntimeError("recursive_delete exploded"))
+    mock_db.recursive_delete = MagicMock(
+        side_effect=RuntimeError("recursive_delete exploded")
+    )
     mock_db.collection.return_value.document.return_value = MagicMock()
 
     with (
-        patch.object(svc, "_resolve_member_rows",
+        patch.object(
+            svc,
+            "_resolve_member_rows",
             return_value=(org_refs, account_refs),
         ),
         patch.object(svc, "get_firestore_client", return_value=mock_db),
@@ -288,7 +298,9 @@ async def test_no_org_membership_skips_audit() -> None:
     mock_db.recursive_delete = MagicMock(return_value=None)
 
     with (
-        patch.object(svc, "_resolve_member_rows",
+        patch.object(
+            svc,
+            "_resolve_member_rows",
             return_value=([], account_refs),
         ),
         patch.object(svc, "get_firestore_client", return_value=mock_db),
@@ -317,7 +329,9 @@ async def test_hook_absent_on_user_removed_none() -> None:
     mock_db.recursive_delete = MagicMock(return_value=None)
 
     with (
-        patch.object(svc, "_resolve_member_rows",
+        patch.object(
+            svc,
+            "_resolve_member_rows",
             return_value=([], account_refs),
         ),
         patch.object(svc, "get_firestore_client", return_value=mock_db),
@@ -345,7 +359,9 @@ async def test_write_audit_absent_is_noop() -> None:
     mock_db.recursive_delete = MagicMock(return_value=None)
 
     with (
-        patch.object(svc, "_resolve_member_rows",
+        patch.object(
+            svc,
+            "_resolve_member_rows",
             return_value=(org_refs, []),
         ),
         patch.object(svc, "get_firestore_client", return_value=mock_db),
@@ -376,7 +392,9 @@ async def test_hook_raises_error_recorded_deletion_continues() -> None:
         raise ConnectionError("token revoke timeout")
 
     with (
-        patch.object(svc, "_resolve_member_rows",
+        patch.object(
+            svc,
+            "_resolve_member_rows",
             return_value=([], account_refs),
         ),
         patch.object(svc, "get_firestore_client", return_value=mock_db),

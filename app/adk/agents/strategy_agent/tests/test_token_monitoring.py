@@ -1,10 +1,11 @@
 """Test suite for token monitoring and logging utilities."""
 
-import json
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import MagicMock, patch
 
 from shared.token_utils import TokenEstimator, TokenLimitError, check_and_log_tokens
+
 from ..logging_config import StrategyAgentLogger, safe_agent_execution
 from ..tracing_config import WeaveTracer, check_token_budget
 

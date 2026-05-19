@@ -9,9 +9,7 @@ the app directory to sys.path so relative imports resolve correctly.
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 # ── import setup ──────────────────────────────────────────────────────────────
 # Mock neo4j before any app imports (supervisor_utils → context_loader →
@@ -74,7 +72,9 @@ class TestDispatchToCompanyNewsNoCriteria:
         mock_get_registry.return_value.get.return_value = MagicMock()
         mock_invoke.return_value = "News"
 
-        with patch("adk.agents.utils.dispatch_handlers.build_review_pipeline") as mock_brp:
+        with patch(
+            "adk.agents.utils.dispatch_handlers.build_review_pipeline"
+        ) as mock_brp:
             result = dispatch_to_company_news("query", acceptance_criteria=None)
 
         mock_brp.assert_not_called()
@@ -85,12 +85,16 @@ class TestDispatchToCompanyNewsNoCriteria:
 
     @patch("adk.agents.registry.get_registry")
     @patch("adk.agents.utils.dispatch_handlers.invoke_agent_with_retry")
-    def test_empty_string_criteria_uses_single_pass(self, mock_invoke, mock_get_registry):
+    def test_empty_string_criteria_uses_single_pass(
+        self, mock_invoke, mock_get_registry
+    ):
         mock_get_registry.return_value = MagicMock()
         mock_get_registry.return_value.get.return_value = MagicMock()
         mock_invoke.return_value = "News"
 
-        with patch("adk.agents.utils.dispatch_handlers.build_review_pipeline") as mock_brp:
+        with patch(
+            "adk.agents.utils.dispatch_handlers.build_review_pipeline"
+        ) as mock_brp:
             result = dispatch_to_company_news("query", acceptance_criteria="")
 
         mock_brp.assert_not_called()
@@ -99,12 +103,16 @@ class TestDispatchToCompanyNewsNoCriteria:
 
     @patch("adk.agents.registry.get_registry")
     @patch("adk.agents.utils.dispatch_handlers.invoke_agent_with_retry")
-    def test_whitespace_only_criteria_uses_single_pass(self, mock_invoke, mock_get_registry):
+    def test_whitespace_only_criteria_uses_single_pass(
+        self, mock_invoke, mock_get_registry
+    ):
         mock_get_registry.return_value = MagicMock()
         mock_get_registry.return_value.get.return_value = MagicMock()
         mock_invoke.return_value = "News"
 
-        with patch("adk.agents.utils.dispatch_handlers.build_review_pipeline") as mock_brp:
+        with patch(
+            "adk.agents.utils.dispatch_handlers.build_review_pipeline"
+        ) as mock_brp:
             result = dispatch_to_company_news("query", acceptance_criteria="   ")
 
         mock_brp.assert_not_called()
@@ -157,10 +165,16 @@ class TestDispatchToCompanyNewsWithCriteria:
 
         mock_pipeline = MagicMock()
         mock_build_pipeline.return_value = mock_pipeline
-        mock_invoke_pipeline.return_value = ("draft text", {"news_review_draft": "draft text"}, [])
+        mock_invoke_pipeline.return_value = (
+            "draft text",
+            {"news_review_draft": "draft text"},
+            [],
+        )
         mock_extract.return_value = {"result": "draft text", "approved": True}
 
-        result = dispatch_to_company_news("Get news", acceptance_criteria="Must cite sources.")
+        result = dispatch_to_company_news(
+            "Get news", acceptance_criteria="Must cite sources."
+        )
 
         assert result == {
             "status": "success",
@@ -219,14 +233,20 @@ class TestDispatchToCompanyNewsWithCriteria:
         mock_get_registry.return_value.get.return_value = MagicMock()
 
         mock_build_pipeline.return_value = MagicMock()
-        mock_invoke_pipeline.return_value = ("last draft", {"news_review_feedback": "needs sources"}, [])
+        mock_invoke_pipeline.return_value = (
+            "last draft",
+            {"news_review_feedback": "needs sources"},
+            [],
+        )
         mock_extract.return_value = {
             "result": "last draft",
             "approved": False,
             "warning": "needs sources",
         }
 
-        result = dispatch_to_company_news("Get news", acceptance_criteria="Must cite sources.")
+        result = dispatch_to_company_news(
+            "Get news", acceptance_criteria="Must cite sources."
+        )
 
         assert result["status"] == "success"
         assert result["approved"] is False
@@ -326,8 +346,12 @@ class TestDispatchToGoogleAnalyticsNoCriteria:
         mock_get_registry.return_value.get.return_value = MagicMock()
         mock_invoke.return_value = "Analytics"
 
-        with patch("adk.agents.utils.dispatch_handlers.build_review_pipeline") as mock_brp:
-            result = dispatch_to_google_analytics("sessions last week", acceptance_criteria=None)
+        with patch(
+            "adk.agents.utils.dispatch_handlers.build_review_pipeline"
+        ) as mock_brp:
+            result = dispatch_to_google_analytics(
+                "sessions last week", acceptance_criteria=None
+            )
 
         mock_brp.assert_not_called()
         mock_invoke.assert_called_once()
@@ -341,7 +365,9 @@ class TestDispatchToGoogleAnalyticsNoCriteria:
         mock_get_registry.return_value.get.return_value = MagicMock()
         mock_invoke.return_value = "Analytics"
 
-        with patch("adk.agents.utils.dispatch_handlers.build_review_pipeline") as mock_brp:
+        with patch(
+            "adk.agents.utils.dispatch_handlers.build_review_pipeline"
+        ) as mock_brp:
             result = dispatch_to_google_analytics("query", acceptance_criteria="")
 
         mock_brp.assert_not_called()
@@ -355,7 +381,9 @@ class TestDispatchToGoogleAnalyticsNoCriteria:
         mock_get_registry.return_value.get.return_value = MagicMock()
         mock_invoke.return_value = "Analytics"
 
-        with patch("adk.agents.utils.dispatch_handlers.build_review_pipeline") as mock_brp:
+        with patch(
+            "adk.agents.utils.dispatch_handlers.build_review_pipeline"
+        ) as mock_brp:
             result = dispatch_to_google_analytics("query", acceptance_criteria="\t  ")
 
         mock_brp.assert_not_called()
@@ -445,7 +473,9 @@ class TestDispatchToGoogleAnalyticsWithCriteria:
         mock_invoke_pipeline.return_value = ("", {}, [])
         mock_extract.return_value = {"result": "", "approved": True}
 
-        tool_ctx = _mock_tool_context({"account_id": "acc_123", "ga_credentials": ga_creds})
+        tool_ctx = _mock_tool_context(
+            {"account_id": "acc_123", "ga_credentials": ga_creds}
+        )
         dispatch_to_google_analytics(
             "bounce rate", tool_context=tool_ctx, acceptance_criteria="Include chart."
         )
@@ -529,7 +559,9 @@ class TestDispatchToGoogleAnalyticsWithCriteria:
             "warning": "missing date range",
         }
 
-        result = dispatch_to_google_analytics("sessions", acceptance_criteria="Cover 7 days.")
+        result = dispatch_to_google_analytics(
+            "sessions", acceptance_criteria="Cover 7 days."
+        )
 
         assert result["approved"] is False
         assert result["warning"] == "missing date range"
@@ -591,7 +623,9 @@ def _make_iteration(iteration: int, escalate: bool):
     )
 
 
-def _standard_pipeline_mock(worker_name: str = "worker", reviewer_name: str = "reviewer"):
+def _standard_pipeline_mock(
+    worker_name: str = "worker", reviewer_name: str = "reviewer"
+):
     """Return a MagicMock pipeline with two named sub_agents."""
     mock_worker = MagicMock()
     mock_worker.name = worker_name
@@ -678,7 +712,10 @@ class TestDispatchReviewLoopTracingNews:
         mock_build_pipeline.return_value = _standard_pipeline_mock()
         mock_invoke_pipeline.return_value = ("text", {"news_review_feedback": ""}, [])
 
-        iterations = [_make_iteration(1, escalate=False), _make_iteration(2, escalate=True)]
+        iterations = [
+            _make_iteration(1, escalate=False),
+            _make_iteration(2, escalate=True),
+        ]
         mock_extract_iters.return_value = iterations
         mock_extract_result.return_value = {"result": "text", "approved": True}
 
@@ -747,7 +784,10 @@ class TestDispatchReviewLoopTracingNews:
         final_state = {"news_review_feedback": ""}
         mock_invoke_pipeline.return_value = ("text", final_state, [])
 
-        iterations = [_make_iteration(1, escalate=False), _make_iteration(2, escalate=True)]
+        iterations = [
+            _make_iteration(1, escalate=False),
+            _make_iteration(2, escalate=True),
+        ]
         mock_extract_iters.return_value = iterations
         mock_extract_result.return_value = {"result": "text", "approved": True}
 
@@ -779,7 +819,10 @@ class TestDispatchReviewLoopTracingNews:
         final_state = {"news_review_feedback": ""}
         mock_invoke_pipeline.return_value = ("text", final_state, [])
 
-        iterations = [_make_iteration(1, escalate=False), _make_iteration(2, escalate=True)]
+        iterations = [
+            _make_iteration(1, escalate=False),
+            _make_iteration(2, escalate=True),
+        ]
         mock_extract_iters.return_value = iterations
         mock_extract_result.return_value = {"result": "text", "approved": True}
 
@@ -934,7 +977,10 @@ class TestDispatchReviewLoopTracingGA:
         mock_build_pipeline.return_value = _standard_pipeline_mock()
         mock_invoke_pipeline.return_value = ("text", {"ga_review_feedback": ""}, [])
 
-        iterations = [_make_iteration(1, escalate=False), _make_iteration(2, escalate=True)]
+        iterations = [
+            _make_iteration(1, escalate=False),
+            _make_iteration(2, escalate=True),
+        ]
         mock_extract_iters.return_value = iterations
         mock_extract_result.return_value = {"result": "text", "approved": True}
 
@@ -970,7 +1016,10 @@ class TestDispatchReviewLoopTracingGA:
         final_state = {"ga_review_feedback": ""}
         mock_invoke_pipeline.return_value = ("text", final_state, [])
 
-        iterations = [_make_iteration(1, escalate=False), _make_iteration(2, escalate=True)]
+        iterations = [
+            _make_iteration(1, escalate=False),
+            _make_iteration(2, escalate=True),
+        ]
         mock_extract_iters.return_value = iterations
         mock_extract_result.return_value = {"result": "text", "approved": True}
 
@@ -1002,7 +1051,10 @@ class TestDispatchReviewLoopTracingGA:
         final_state = {"ga_review_feedback": ""}
         mock_invoke_pipeline.return_value = ("text", final_state, [])
 
-        iterations = [_make_iteration(1, escalate=False), _make_iteration(2, escalate=True)]
+        iterations = [
+            _make_iteration(1, escalate=False),
+            _make_iteration(2, escalate=True),
+        ]
         mock_extract_iters.return_value = iterations
         mock_extract_result.return_value = {"result": "text", "approved": True}
 
@@ -1075,7 +1127,9 @@ class TestDispatchReviewLoopTracingGA:
 # ── TestHallucinatedApprovalDetectionDispatch ─────────────────────────────────
 
 
-def _make_event(author: str, text: str, escalate: bool | None = None, partial: bool = False):
+def _make_event(
+    author: str, text: str, escalate: bool | None = None, partial: bool = False
+):
     """Build a minimal mock ADK Event for hallucination detection tests."""
     event = MagicMock()
     event.author = author
@@ -1116,12 +1170,18 @@ class TestHallucinatedApprovalDetectionDispatch:
         mock_build_pipeline.return_value = MagicMock()
 
         reviewer_event = _make_event("news_review_reviewer", "All criteria met.")
-        mock_invoke_pipeline.return_value = ("draft", {"news_review_draft": "draft"}, [reviewer_event])
+        mock_invoke_pipeline.return_value = (
+            "draft",
+            {"news_review_draft": "draft"},
+            [reviewer_event],
+        )
         mock_extract.return_value = {"result": "draft", "approved": True}
 
         dispatch_to_company_news("Get news", acceptance_criteria="Must cite sources.")
 
-        mock_check_hallucination.assert_called_once_with([reviewer_event], "news_review")
+        mock_check_hallucination.assert_called_once_with(
+            [reviewer_event], "news_review"
+        )
 
     @patch("adk.agents.registry.get_registry")
     @patch("adk.agents.utils.dispatch_handlers.extract_pipeline_result")
@@ -1142,10 +1202,16 @@ class TestHallucinatedApprovalDetectionDispatch:
         mock_build_pipeline.return_value = MagicMock()
 
         reviewer_event = _make_event("ga_review_reviewer", "Approved.")
-        mock_invoke_pipeline.return_value = ("draft", {"ga_review_draft": "draft"}, [reviewer_event])
+        mock_invoke_pipeline.return_value = (
+            "draft",
+            {"ga_review_draft": "draft"},
+            [reviewer_event],
+        )
         mock_extract.return_value = {"result": "draft", "approved": True}
 
-        dispatch_to_google_analytics("bounce rate", acceptance_criteria="Include table.")
+        dispatch_to_google_analytics(
+            "bounce rate", acceptance_criteria="Include table."
+        )
 
         mock_check_hallucination.assert_called_once_with([reviewer_event], "ga_review")
 
@@ -1167,7 +1233,11 @@ class TestHallucinatedApprovalDetectionDispatch:
         mock_get_registry.return_value.get.return_value = MagicMock()
         mock_build_pipeline.return_value = MagicMock()
         mock_invoke_pipeline.return_value = ("Error: timed out", {}, [])
-        mock_extract.return_value = {"result": "", "approved": False, "warning": "no draft"}
+        mock_extract.return_value = {
+            "result": "",
+            "approved": False,
+            "warning": "no draft",
+        }
 
         dispatch_to_company_news("Get news", acceptance_criteria="Must cite sources.")
 

@@ -28,7 +28,6 @@ BRAND_FIELDS = [
 
 
 class TestOrgContextQuery:
-
     @pytest.mark.parametrize("field", ACCOUNT_FIELDS)
     def test_query_contains_account_field(self, field: str):
         assert field in ORG_CONTEXT_QUERY
@@ -39,7 +38,6 @@ class TestOrgContextQuery:
 
 
 class TestExtractContextFromResult:
-
     def test_valid_result(self):
         result = [{"context": {"account": {"company_name": "Acme"}, "brand": {}}}]
         assert extract_context_from_result(result) == {
@@ -58,7 +56,6 @@ class TestExtractContextFromResult:
 
 
 class TestFormatConsistency:
-
     def test_full_context_contains_all_sections(self):
         context = {
             "account": {

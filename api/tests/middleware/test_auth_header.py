@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
-
 from src.kene_api.middleware.auth_header import (
     AuthHeaderMiddleware,
     OAuthCredentials,
@@ -72,7 +71,9 @@ class TestAuthHeaderMiddleware:
     async def test_simple_bearer_token(self, middleware):
         """Test extraction of simple bearer token."""
         request = _make_request()
-        auth = HTTPAuthorizationCredentials(scheme="Bearer", credentials="my_access_token")
+        auth = HTTPAuthorizationCredentials(
+            scheme="Bearer", credentials="my_access_token"
+        )
 
         credentials, source = await middleware.extract_credentials(request, auth)
 

@@ -65,7 +65,9 @@ RULES_FILE = Path(__file__).parents[4] / "deployment" / "firestore.rules"
 
 
 def _base() -> str:
-    host = EMULATOR_HOST if EMULATOR_HOST.startswith("http") else f"http://{EMULATOR_HOST}"
+    host = (
+        EMULATOR_HOST if EMULATOR_HOST.startswith("http") else f"http://{EMULATOR_HOST}"
+    )
     return f"{host}/v1/projects/{PROJECT_ID}/databases/(default)/documents"
 
 
@@ -75,9 +77,11 @@ def _fake_jwt(uid: str, extra_claims: dict[str, Any] | None = None) -> str:
     The emulator decodes the payload to populate request.auth without verifying
     the RS256 signature.  This mirrors the approach used by @firebase/rules-unit-testing.
     """
-    hdr = base64.urlsafe_b64encode(
-        json.dumps({"alg": "RS256", "kid": "fake"}).encode()
-    ).rstrip(b"=").decode()
+    hdr = (
+        base64.urlsafe_b64encode(json.dumps({"alg": "RS256", "kid": "fake"}).encode())
+        .rstrip(b"=")
+        .decode()
+    )
 
     claims: dict[str, Any] = {
         "iss": f"https://securetoken.google.com/{PROJECT_ID}",
@@ -91,7 +95,9 @@ def _fake_jwt(uid: str, extra_claims: dict[str, Any] | None = None) -> str:
     return f"{hdr}.{pld}.{sig}"
 
 
-def _get(path: str, uid: str, extra_claims: dict[str, Any] | None = None) -> requests.Response:
+def _get(
+    path: str, uid: str, extra_claims: dict[str, Any] | None = None
+) -> requests.Response:
     return requests.get(
         f"{_base()}/{path}",
         headers={"Authorization": f"Bearer {_fake_jwt(uid, extra_claims)}"},
@@ -141,7 +147,9 @@ def _admin_delete(path: str) -> None:
 
 def _upload_rules() -> None:
     """Push firestore.rules to the emulator for the current test run."""
-    host = EMULATOR_HOST if EMULATOR_HOST.startswith("http") else f"http://{EMULATOR_HOST}"
+    host = (
+        EMULATOR_HOST if EMULATOR_HOST.startswith("http") else f"http://{EMULATOR_HOST}"
+    )
     content = RULES_FILE.read_text()
     resp = requests.put(
         f"{host}/emulator/v1/projects/{PROJECT_ID}:securityRules",
@@ -209,7 +217,9 @@ class TestChatSessionRules:
             uid=ctx["ua"],
             extra_claims={"account_id": ctx["acc"]},
         )
-        assert resp.status_code == 200, f"Expected 200 (own session read), got {resp.status_code}: {resp.text}"
+        assert resp.status_code == 200, (
+            f"Expected 200 (own session read), got {resp.status_code}: {resp.text}"
+        )
 
     def test_read_other_session_denied(self, ctx: dict[str, str]) -> None:
         resp = _get(
@@ -217,7 +227,9 @@ class TestChatSessionRules:
             uid=ctx["ua"],
             extra_claims={"account_id": ctx["acc"]},
         )
-        assert resp.status_code == 403, f"Expected 403 (other's session), got {resp.status_code}: {resp.text}"
+        assert resp.status_code == 403, (
+            f"Expected 403 (other's session), got {resp.status_code}: {resp.text}"
+        )
 
     def test_client_write_session_denied(self, ctx: dict[str, str]) -> None:
         """chat_sessions is server-write-only (allow write: if false).
@@ -254,7 +266,9 @@ class TestChatCategoryRules:
             f"users/{ctx['ua']}/chat_categories/{ctx['cat_a']}",
             uid=ctx["ua"],
         )
-        assert resp.status_code == 200, f"Expected 200 (own category read), got {resp.status_code}: {resp.text}"
+        assert resp.status_code == 200, (
+            f"Expected 200 (own category read), got {resp.status_code}: {resp.text}"
+        )
 
     def test_read_other_category_denied(self, ctx: dict[str, str]) -> None:
         resp = _get(

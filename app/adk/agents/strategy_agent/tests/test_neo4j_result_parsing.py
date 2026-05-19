@@ -26,7 +26,9 @@ def test_neo4j_result_format():
     # NEW (FIXED) CODE - This works correctly
     if neo4j_result and len(neo4j_result) > 0:
         node_id = neo4j_result[0]["node_id"]
-        assert node_id == "prod_banking_001", f"Expected 'prod_banking_001', got '{node_id}'"
+        assert node_id == "prod_banking_001", (
+            f"Expected 'prod_banking_001', got '{node_id}'"
+        )
         print(f"✅ PASS: Correctly extracted node_id: {node_id}")
         return True
 
@@ -66,7 +68,9 @@ def test_multiple_results():
     # NEW (FIXED) CODE - Should return first result
     if neo4j_result and len(neo4j_result) > 0:
         node_id = neo4j_result[0]["node_id"]
-        assert node_id == "prod_banking_001", f"Expected 'prod_banking_001', got '{node_id}'"
+        assert node_id == "prod_banking_001", (
+            f"Expected 'prod_banking_001', got '{node_id}'"
+        )
         print(f"✅ PASS: Correctly extracted first node_id: {node_id}")
         return True
 
@@ -78,9 +82,9 @@ def demonstrate_bug():
     """
     Demonstrate the original bug that caused KeyError: 0.
     """
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("DEMONSTRATING THE ORIGINAL BUG")
-    print("="*70)
+    print("=" * 70)
 
     neo4j_result = [{"node_id": "prod_banking_001"}]
 
@@ -96,7 +100,7 @@ def demonstrate_bug():
         # This is what the old code was doing
         first_element = neo4j_result[0]  # This is {"node_id": "prod_banking_001"}
         print(f"\nresult[0] = {first_element} (type: {type(first_element)})")
-        print(f"Attempting: result[0][0] (treating dict as list)")
+        print("Attempting: result[0][0] (treating dict as list)")
         _ = first_element[0]  # Treating dictionary as list causes KeyError
     except KeyError as e:
         print(f"❌ KeyError: {e}")
@@ -112,13 +116,13 @@ def demonstrate_bug():
     except Exception as e:
         print(f"❌ Error: {e}")
 
-    print("\n" + "="*70 + "\n")
+    print("\n" + "=" * 70 + "\n")
 
 
 if __name__ == "__main__":
-    print("\n" + "="*70)
+    print("\n" + "=" * 70)
     print("TESTING NEO4J RESULT PARSING FIX")
-    print("="*70)
+    print("=" * 70)
     print("\nThis test verifies the fix for KeyError: 0 in marketing_graph_builder.py")
     print("Bug location: _get_product_category_node_id() method, lines 218-220")
     print()
@@ -150,4 +154,4 @@ if __name__ == "__main__":
     else:
         print(f"\n❌ {tests_total - tests_passed} test(s) failed")
 
-    print("\n" + "="*70 + "\n")
+    print("\n" + "=" * 70 + "\n")

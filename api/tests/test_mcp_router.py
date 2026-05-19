@@ -110,8 +110,20 @@ def mock_usage_tracker():
         "avg_duration_ms": 150.0,
         "total_tokens": 1000,
         "by_tool": {
-            "analytics": {"calls": 30, "success": 28, "failure": 2, "success_rate": 0.93, "avg_duration_ms": 120.0},
-            "crm": {"calls": 20, "success": 17, "failure": 3, "success_rate": 0.85, "avg_duration_ms": 200.0},
+            "analytics": {
+                "calls": 30,
+                "success": 28,
+                "failure": 2,
+                "success_rate": 0.93,
+                "avg_duration_ms": 120.0,
+            },
+            "crm": {
+                "calls": 20,
+                "success": 17,
+                "failure": 3,
+                "success_rate": 0.85,
+                "avg_duration_ms": 200.0,
+            },
         },
         "by_user": {
             "user1": {"calls": 25, "success": 23, "failure": 2, "success_rate": 0.92},
@@ -436,12 +448,15 @@ class TestAdminDashboard:
         mock_usage_tracker,
     ):
         """Test GET /api/v1/mcp/admin/dashboard returns complete status."""
-        with patch(
-            "src.kene_api.routers.mcp._get_mcp_manager",
-            return_value=mock_mcp_manager,
-        ), patch(
-            "src.kene_api.routers.mcp._get_usage_tracker",
-            return_value=mock_usage_tracker,
+        with (
+            patch(
+                "src.kene_api.routers.mcp._get_mcp_manager",
+                return_value=mock_mcp_manager,
+            ),
+            patch(
+                "src.kene_api.routers.mcp._get_usage_tracker",
+                return_value=mock_usage_tracker,
+            ),
         ):
             response = test_client.get("/api/v1/mcp/admin/dashboard")
 

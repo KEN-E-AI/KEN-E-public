@@ -9,7 +9,6 @@ import os
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-
 from src.kene_api.main import app
 from src.kene_api.models.graph_models import RollupMarketingStrategyCreate
 
@@ -477,7 +476,7 @@ async def test_rollup_strategy_links_to_individual_strategies(
         strategy_response = await authenticated_client.post(
             f"{base_url}/problem-awareness-strategies",
             json={
-                "strategy_text": f"Test individual strategy {i+1}",
+                "strategy_text": f"Test individual strategy {i + 1}",
                 "customer_profile_node_id": profile_node_id,
             },
         )
@@ -494,7 +493,10 @@ async def test_rollup_strategy_links_to_individual_strategies(
     # If no rollup exists, this test can't verify the relationship
     if rollup_list_response.status_code == 200:
         rollup_list_data = rollup_list_response.json()
-        if rollup_list_data.get("strategies") and len(rollup_list_data["strategies"]) > 0:
+        if (
+            rollup_list_data.get("strategies")
+            and len(rollup_list_data["strategies"]) > 0
+        ):
             rollup_strategy = rollup_list_data["strategies"][0]
 
             # Step 4: Verify the rollup strategy has linked_individual_strategies field

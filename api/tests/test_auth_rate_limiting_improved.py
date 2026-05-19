@@ -3,11 +3,10 @@
 import pytest
 from fastapi import status
 from httpx import ASGITransport, AsyncClient
-from hypothesis import given, strategies as st, settings
-
+from hypothesis import given, settings
+from hypothesis import strategies as st
 from src.kene_api.main import app
 from src.kene_api.rate_limiter import recaptcha_rate_limiter
-
 
 # Constants for expected values
 HTTP_OK = status.HTTP_200_OK

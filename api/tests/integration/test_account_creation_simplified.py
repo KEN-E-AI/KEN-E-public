@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.kene_api.routers.accounts import AccountCreationStatus
+import pytest
 from src.kene_api.tasks.strategy_tasks import (
     trigger_strategy_generation,
-    update_account_setup_status,
-    verify_strategy_documents_created,
 )
 
 
@@ -20,7 +17,6 @@ from src.kene_api.tasks.strategy_tasks import (
 async def test_account_creation_status_uses_progress_rate_limiter():
     """Test that the creation-status endpoint uses higher rate limits."""
     from src.kene_api.auth.dependencies import get_user_context_for_polling
-    from src.kene_api.rate_limiter import progress_rate_limiter
 
     # Mock request
     mock_request = MagicMock()

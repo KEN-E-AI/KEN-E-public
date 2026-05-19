@@ -337,9 +337,9 @@ def test_idempotency_rerun_is_noop(
     # (b) count unchanged
     assert _count_docs(emulator_client, f"accounts/acc_A/{res_name}") == 2
     # (c) at least one "already migrated" log record
-    assert any(
-        "already migrated" in r.message for r in caplog.records
-    ), "expected at least one 'already migrated' debug log on the second run"
+    assert any("already migrated" in r.message for r in caplog.records), (
+        "expected at least one 'already migrated' debug log on the second run"
+    )
     # (d) summary still reports VERIFIED (destination count still equals source count)
     assert "VERIFIED" in buf2.getvalue()
 
@@ -389,9 +389,9 @@ def test_partial_state_resume(
     assert _count_docs(emulator_client, f"accounts/acc_R/{res_name}") == 4
 
     # (b) pre-seeded docs were skipped (logged)
-    assert any(
-        "already migrated" in r.message for r in caplog.records
-    ), "expected at least one 'already migrated' debug log for the pre-seeded docs"
+    assert any("already migrated" in r.message for r in caplog.records), (
+        "expected at least one 'already migrated' debug log for the pre-seeded docs"
+    )
 
     # (c) migration reports VERIFIED
     assert "VERIFIED" in buf.getvalue()

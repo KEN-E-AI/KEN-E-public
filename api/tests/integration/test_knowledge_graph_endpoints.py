@@ -34,7 +34,7 @@ TEST_USER_ID = "test_user_integration_456"
 # Skip all tests in this module in CI unless DATABASE_INTEGRATION_TESTS is enabled
 pytestmark = pytest.mark.skipif(
     os.getenv("DATABASE_INTEGRATION_TESTS") != "true",
-    reason="Requires real Neo4j and Firestore databases - set DATABASE_INTEGRATION_TESTS=true to run"
+    reason="Requires real Neo4j and Firestore databases - set DATABASE_INTEGRATION_TESTS=true to run",
 )
 
 
@@ -43,7 +43,9 @@ async def authenticated_client():
     """Create authenticated test client."""
     # Note: In real integration tests, you'd set up proper auth
     # For now, we assume auth is mocked or bypassed in test environment
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         # Add auth headers if needed
         client.headers.update({"Authorization": "Bearer test_token"})
         yield client
@@ -1417,7 +1419,9 @@ class TestSubstituteProductEndpoints:
         )
         await authenticated_client.delete(f"{base_url}/competitors/{competitor_id}")
         await authenticated_client.delete(f"{base_url}/products/{product_id}")
-        await authenticated_client.delete(f"{base_url}/product-categories/{category_id}")
+        await authenticated_client.delete(
+            f"{base_url}/product-categories/{category_id}"
+        )
 
 
 # ==================== Marketing Strategy Integration Tests ====================
@@ -2167,7 +2171,9 @@ class TestCompetitorStrengthEndpoints:
         await authenticated_client.delete(
             f"{base_url}/competitor-strengths/{strength_node_id}"
         )
-        await authenticated_client.delete(f"{base_url}/competitors/{competitor_node_id}")
+        await authenticated_client.delete(
+            f"{base_url}/competitors/{competitor_node_id}"
+        )
 
     @pytest.mark.asyncio
     async def test_delete_strength_preserves_competitor(self, authenticated_client):
@@ -2209,7 +2215,9 @@ class TestCompetitorStrengthEndpoints:
         assert get_comp_response.status_code == 200
 
         # Cleanup
-        await authenticated_client.delete(f"{base_url}/competitors/{competitor_node_id}")
+        await authenticated_client.delete(
+            f"{base_url}/competitors/{competitor_node_id}"
+        )
 
 
 class TestCompetitorWeaknessEndpoints:
@@ -2261,7 +2269,9 @@ class TestCompetitorWeaknessEndpoints:
         await authenticated_client.delete(
             f"{base_url}/competitor-weaknesses/{weakness_node_id}"
         )
-        await authenticated_client.delete(f"{base_url}/competitors/{competitor_node_id}")
+        await authenticated_client.delete(
+            f"{base_url}/competitors/{competitor_node_id}"
+        )
 
 
 class TestSubstituteProductEndpoints:
@@ -2310,15 +2320,15 @@ class TestSubstituteProductEndpoints:
         assert list_response.status_code == 200
         substitutes = list_response.json()
         assert substitutes["total_count"] >= 1
-        assert any(
-            s["node_id"] == substitute_node_id for s in substitutes["products"]
-        )
+        assert any(s["node_id"] == substitute_node_id for s in substitutes["products"])
 
         # Cleanup
         await authenticated_client.delete(
             f"{base_url}/substitute-products/{substitute_node_id}"
         )
-        await authenticated_client.delete(f"{base_url}/competitors/{competitor_node_id}")
+        await authenticated_client.delete(
+            f"{base_url}/competitors/{competitor_node_id}"
+        )
 
     @pytest.mark.asyncio
     async def test_link_product_to_substitute(self, authenticated_client):
@@ -2382,15 +2392,15 @@ class TestSubstituteProductEndpoints:
         )
         assert list_response.status_code == 200
         substitutes = list_response.json()
-        assert any(
-            s["node_id"] == substitute_node_id for s in substitutes["products"]
-        )
+        assert any(s["node_id"] == substitute_node_id for s in substitutes["products"])
 
         # Cleanup
         await authenticated_client.delete(
             f"{base_url}/substitute-products/{substitute_node_id}"
         )
-        await authenticated_client.delete(f"{base_url}/competitors/{competitor_node_id}")
+        await authenticated_client.delete(
+            f"{base_url}/competitors/{competitor_node_id}"
+        )
         await authenticated_client.delete(f"{base_url}/products/{product_node_id}")
         await authenticated_client.delete(
             f"{base_url}/product-categories/{category_node_id}"
@@ -2467,7 +2477,9 @@ class TestSubstituteProductEndpoints:
         await authenticated_client.delete(
             f"{base_url}/substitute-products/{substitute_node_id}"
         )
-        await authenticated_client.delete(f"{base_url}/competitors/{competitor_node_id}")
+        await authenticated_client.delete(
+            f"{base_url}/competitors/{competitor_node_id}"
+        )
         await authenticated_client.delete(f"{base_url}/products/{product_node_id}")
         await authenticated_client.delete(
             f"{base_url}/product-categories/{category_node_id}"

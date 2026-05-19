@@ -8,11 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-
 from src.kene_api.auth import UserContext
 from src.kene_api.config import settings
-from src.kene_api.database import get_neo4j_service
-from src.kene_api.firestore import get_firestore_service
 from src.kene_api.main import app
 from src.kene_api.models.kene_models import (
     Billing,

@@ -3,7 +3,6 @@
 import pytest
 from fastapi import status
 from httpx import ASGITransport, AsyncClient
-
 from src.kene_api.main import app
 
 

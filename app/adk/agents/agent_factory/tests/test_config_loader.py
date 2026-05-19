@@ -212,9 +212,7 @@ class TestConfigLoader:
         )
 
         mock_auth.return_value = (MagicMock(), None)
-        mock_client.return_value = _make_mock_db(
-            global_data=None, overlay_data=None
-        )
+        mock_client.return_value = _make_mock_db(global_data=None, overlay_data=None)
 
         with pytest.raises(ConfigNotFoundError):
             load_agent_config("test_agent", account_id="acc_123")
@@ -522,7 +520,9 @@ class TestConfigLoader:
 
         result = list_account_agent_configs("acc_123")
 
-        assert result == sorted({"agent_alpha", "agent_beta", "agent_gamma", "agent_delta"})
+        assert result == sorted(
+            {"agent_alpha", "agent_beta", "agent_gamma", "agent_delta"}
+        )
 
     @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
     @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
@@ -584,7 +584,10 @@ class TestConfigLoader:
     @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
     @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
     def test_load_falls_back_to_env_var_when_no_project_id(
-        self, mock_client: MagicMock, mock_auth: MagicMock, monkeypatch: pytest.MonkeyPatch
+        self,
+        mock_client: MagicMock,
+        mock_auth: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         from app.adk.agents.agent_factory.config_loader import load_agent_config
 
@@ -614,7 +617,9 @@ class TestConfigLoader:
         with pytest.raises(FirestoreConnectionError):
             load_agent_config("test_agent")
 
-    def test_load_with_stateful_fake_firestore(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_load_with_stateful_fake_firestore(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from app.adk.agents.agent_factory import config_loader
 
         global_doc = {
@@ -651,7 +656,6 @@ class TestConfigLoader:
         assert result.model == "gemini-2.5-flash"
         assert result.customization_status == "customized"
         assert result.based_on_version == 7
-
 
     @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
     @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")

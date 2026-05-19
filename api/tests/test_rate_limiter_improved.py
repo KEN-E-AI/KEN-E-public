@@ -5,10 +5,9 @@ from unittest.mock import MagicMock
 
 import pytest
 from fastapi import HTTPException, Request, status
-from hypothesis import given, strategies as st, assume
-
+from hypothesis import assume, given
+from hypothesis import strategies as st
 from src.kene_api.rate_limiter import RateLimiter
-
 
 # Constants for expected values
 HTTP_TOO_MANY_REQUESTS = status.HTTP_429_TOO_MANY_REQUESTS

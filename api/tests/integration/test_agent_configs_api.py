@@ -121,7 +121,9 @@ def _noop_firestore() -> MagicMock:
     # stream() returns an empty iterable by default from MagicMock, but
     # explicitly set it to be safe.
     db.collection.return_value.stream.return_value = iter([])
-    db.collection.return_value.document.return_value.collection.return_value.stream.return_value = iter([])
+    db.collection.return_value.document.return_value.collection.return_value.stream.return_value = iter(
+        []
+    )
     return db
 
 
@@ -454,7 +456,9 @@ class TestAccountAgentConfigsAuth:
         resp = client.delete(BASE_URL + f"/{config_id}")
         assert resp.status_code == 204
 
-    def test_account_admin_delete_custom_missing_is_404(self, client: TestClient) -> None:
+    def test_account_admin_delete_custom_missing_is_404(
+        self, client: TestClient
+    ) -> None:
         """Deleting a nonexistent custom_* config returns 404."""
         self._install_user(_account_admin())
 
@@ -514,6 +518,7 @@ class TestAccountAgentConfigsEmulator:
     @pytest.fixture(autouse=True)
     def _install_app_overrides(self, emulator_db):
         """Override FastAPI dependencies for every test in this class."""
+
         async def _super_admin_user():
             return _super_admin()
 
@@ -827,7 +832,9 @@ class TestAccountAgentConfigsEmulator:
         try:
             resp = client.put(
                 f"{base_url}/{config_id}",
-                json={"instruction": "Orphan overlay instruction for testing purposes."},
+                json={
+                    "instruction": "Orphan overlay instruction for testing purposes."
+                },
             )
             assert resp.status_code == 404
         finally:
@@ -859,12 +866,17 @@ class TestAccountAgentConfigsEmulator:
 
             resp = client.put(
                 f"{base_url}/{custom_id}",
-                json={"instruction": "Edited instruction for the existing custom agent."},
+                json={
+                    "instruction": "Edited instruction for the existing custom agent."
+                },
             )
             assert resp.status_code == 200
             body = resp.json()
             assert body["customization_status"] == "custom_agent"
-            assert body["instruction"] == "Edited instruction for the existing custom agent."
+            assert (
+                body["instruction"]
+                == "Edited instruction for the existing custom agent."
+            )
             assert body["model"] == "gemini-2.5-flash"
         finally:
             if custom_id:

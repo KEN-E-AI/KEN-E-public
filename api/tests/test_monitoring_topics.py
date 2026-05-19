@@ -68,9 +68,7 @@ async def test_get_or_create_monitoring_topics_new():
     firestore_mock = MagicMock()
     firestore_mock.get_document.return_value = None
 
-    with patch(
-        "src.kene_api.routers.monitoring_topics._cache_service"
-    ) as mock_cache:
+    with patch("src.kene_api.routers.monitoring_topics._cache_service") as mock_cache:
         mock_cache.get.return_value = None
         mock_cache.set = MagicMock()
         result = await get_or_create_monitoring_topics(
@@ -104,9 +102,7 @@ async def test_get_industry_keywords_for_industry():
     }
 
     # Patch the module-level cache so CacheService.set() doesn't call redis.setex
-    with patch(
-        "src.kene_api.routers.monitoring_topics._cache_service"
-    ) as mock_cache:
+    with patch("src.kene_api.routers.monitoring_topics._cache_service") as mock_cache:
         mock_cache.get.return_value = None
         mock_cache.set = MagicMock()
         # Call function

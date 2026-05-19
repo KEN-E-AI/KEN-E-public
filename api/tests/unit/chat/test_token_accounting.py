@@ -12,7 +12,9 @@ import os
 import sys
 from types import SimpleNamespace
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "app", "adk"))
+sys.path.insert(
+    0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "app", "adk")
+)
 
 from token_accounting import BillableTokenCounts, extract_billable_tokens
 

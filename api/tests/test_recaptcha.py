@@ -1,10 +1,10 @@
 """Tests for reCAPTCHA service."""
 
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
-import httpx
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.kene_api.recaptcha import RecaptchaService, RecaptchaVerificationResult
+import httpx
+import pytest
+from src.kene_api.recaptcha import RecaptchaService
 
 
 @pytest.fixture

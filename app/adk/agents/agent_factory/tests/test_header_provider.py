@@ -15,6 +15,7 @@ from app.adk.agents.agent_factory.header_provider import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_context(state: dict) -> MagicMock:
     """Build a minimal ReadonlyContext mock with the given state dict."""
     ctx = MagicMock()
@@ -31,7 +32,9 @@ class TestMakeHeaderProvider:
     """Tests for _make_header_provider covering all AH-PRD-02 §5.3 + AC-4 cases."""
 
     @pytest.mark.parametrize("auth_type,state_key", list(CREDENTIAL_KEYS.items()))
-    def test_known_auth_type_returns_callable(self, auth_type: str, state_key: str) -> None:
+    def test_known_auth_type_returns_callable(
+        self, auth_type: str, state_key: str
+    ) -> None:
         """Each known auth_type constructs a closure without raising."""
         provider = _make_header_provider(auth_type)
         assert callable(provider)
@@ -260,17 +263,25 @@ class TestMakeHeaderProvider:
         """Non-string access_token values must not produce an Authorization header."""
         provider = _make_header_provider("ga_oauth")
         for bad_value in [123, {"sub": "val"}, ["tok"], None, True]:
-            ctx = _make_context({"ga_credentials": {"access_token": bad_value, "tenant_id": "t"}})
+            ctx = _make_context(
+                {"ga_credentials": {"access_token": bad_value, "tenant_id": "t"}}
+            )
             headers = provider(ctx)
-            assert "Authorization" not in headers, f"Expected no Authorization header for {bad_value!r}"
+            assert "Authorization" not in headers, (
+                f"Expected no Authorization header for {bad_value!r}"
+            )
 
     def test_non_string_tenant_id_omits_x_tenant_id_header(self) -> None:
         """Non-string tenant_id values must not produce an X-Tenant-ID header."""
         provider = _make_header_provider("ga_oauth")
         for bad_value in [123, {"org": "id"}, None]:
-            ctx = _make_context({"ga_credentials": {"access_token": "tok", "tenant_id": bad_value}})
+            ctx = _make_context(
+                {"ga_credentials": {"access_token": "tok", "tenant_id": bad_value}}
+            )
             headers = provider(ctx)
-            assert "X-Tenant-ID" not in headers, f"Expected no X-Tenant-ID header for {bad_value!r}"
+            assert "X-Tenant-ID" not in headers, (
+                f"Expected no X-Tenant-ID header for {bad_value!r}"
+            )
             assert headers == {"Authorization": "Bearer tok"}
 
     # -----------------------------------------------------------------------
@@ -280,7 +291,11 @@ class TestMakeHeaderProvider:
     def test_crlf_in_access_token_raises(self) -> None:
         """CRLF in access_token must raise ValueError to prevent header injection."""
         provider = _make_header_provider("ga_oauth")
-        for malicious in ["valid\r\nX-Injected: evil", "valid\nX-Injected: evil", "tok\r"]:
+        for malicious in [
+            "valid\r\nX-Injected: evil",
+            "valid\nX-Injected: evil",
+            "tok\r",
+        ]:
             ctx = _make_context({"ga_credentials": {"access_token": malicious}})
             with pytest.raises(ValueError, match="illegal header characters"):
                 provider(ctx)
@@ -289,6 +304,8 @@ class TestMakeHeaderProvider:
         """CRLF in tenant_id must raise ValueError to prevent header injection."""
         provider = _make_header_provider("ga_oauth")
         malicious_tenant = "org-123\r\nX-Tenant-ID: other-org"
-        ctx = _make_context({"ga_credentials": {"access_token": "tok", "tenant_id": malicious_tenant}})
+        ctx = _make_context(
+            {"ga_credentials": {"access_token": "tok", "tenant_id": malicious_tenant}}
+        )
         with pytest.raises(ValueError, match="illegal header characters"):
             provider(ctx)

@@ -12,12 +12,11 @@ Tests:
 5. Redis unavailability degrades gracefully (falls back to Neo4j)
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from src.kene_api.cache import org_context_key
 from src.kene_api.routers.chat import ORG_CONTEXT_TTL_SECONDS
-
 
 ACCOUNT_ID = "acc_test_redis_caching_12345"
 ORG_CONTEXT = "---\ncompany: Test Corp\nindustry: Technology\n---\n# Company Context\nTest Corp is a technology company."

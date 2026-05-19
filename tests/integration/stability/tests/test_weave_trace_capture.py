@@ -68,9 +68,7 @@ def test_capture_records_finished_calls(stub_finish_call: None) -> None:
 
     with TraceCapture() as cap:
         WeaveClient.finish_call(None, _make_call(_COMPLIANT_ATTRS))
-        WeaveClient.finish_call(
-            None, _make_call({"agent_id": "x"}, op_name="other_op")
-        )
+        WeaveClient.finish_call(None, _make_call({"agent_id": "x"}, op_name="other_op"))
 
     traces = cap.traces
     assert len(traces) == 2

@@ -1,11 +1,10 @@
 """Tests for monitoring topics API endpoints with comprehensive error scenarios."""
 
 import os
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from fastapi.testclient import TestClient
-from fastapi import HTTPException
+from unittest.mock import AsyncMock, patch
 
+import pytest
+from fastapi.testclient import TestClient
 from src.kene_api.auth.models import UserContext
 from src.kene_api.main import app
 

@@ -173,9 +173,7 @@ class TestPrometheusMetricsExposure:
             mock_labels = MagicMock()
             mock_hist.labels.return_value = mock_labels
 
-            app = Starlette(
-                routes=[Route("/api/v1/items/{item_id}", _ok_handler)]
-            )
+            app = Starlette(routes=[Route("/api/v1/items/{item_id}", _ok_handler)])
             app.add_middleware(LatencyMiddleware)
             test_client = TestClient(app)
             test_client.get("/api/v1/items/42")
@@ -243,9 +241,7 @@ class TestLatencyMiddlewareLogging:
             with caplog.at_level(logging.INFO):
                 client.get("/api/v1/items/99")
 
-        completed = [
-            r for r in caplog.records if r.message == "HTTP request completed"
-        ]
+        completed = [r for r in caplog.records if r.message == "HTTP request completed"]
         assert len(completed) == 1
 
         record = completed[0]

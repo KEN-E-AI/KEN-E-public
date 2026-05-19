@@ -77,7 +77,7 @@ class TestAuditServiceShapeBPaths:
         )
 
         # The suffix follows the {doc_type}_{iso_ts}_{uuid8} pattern.
-        suffix = document_call_arg[len(expected_prefix):]
+        suffix = document_call_arg[len(expected_prefix) :]
         assert re.match(
             r"^[a-z_]+_[\d\-T:.+]+_[0-9a-f]{8}$",
             suffix,
@@ -92,10 +92,7 @@ class TestAuditServiceShapeBPaths:
         """get_recent_actions queries accounts/{account_id}/strategy_audit."""
         # Configure the full query chain: collection → order_by → limit → stream.
         (
-            mock_db.collection.return_value
-            .order_by.return_value
-            .limit.return_value
-            .stream.return_value
+            mock_db.collection.return_value.order_by.return_value.limit.return_value.stream.return_value
         ) = []
 
         result = await audit_service.get_recent_actions(
@@ -117,12 +114,7 @@ class TestAuditServiceShapeBPaths:
         """get_document_history queries accounts/{account_id}/strategy_audit."""
         # Configure the full query chain: collection → where → where → order_by → limit → stream.
         (
-            mock_db.collection.return_value
-            .where.return_value
-            .where.return_value
-            .order_by.return_value
-            .limit.return_value
-            .stream.return_value
+            mock_db.collection.return_value.where.return_value.where.return_value.order_by.return_value.limit.return_value.stream.return_value
         ) = []
 
         result = await audit_service.get_document_history(

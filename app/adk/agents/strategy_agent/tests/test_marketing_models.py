@@ -80,7 +80,9 @@ Exclusion Criteria:
 """
     # Pad to meet 2000 character minimum if needed
     if len(base_narrative) < 2000:
-        base_narrative += "\n" + "Additional context: " + "x" * (2000 - len(base_narrative) - 20)
+        base_narrative += (
+            "\n" + "Additional context: " + "x" * (2000 - len(base_narrative) - 20)
+        )
     return base_narrative
 
 
@@ -244,7 +246,8 @@ Exclusion Criteria:
 
     def test_profile_has_no_strategy_fields(self):
         """Test that profiles do NOT contain strategy fields."""
-        minimal_valid_narrative = """Demographics:
+        minimal_valid_narrative = (
+            """Demographics:
 - Age: 30-45
 - Gender: All
 - Education: Bachelor's
@@ -280,7 +283,9 @@ Communication Channels:
 
 Exclusion Criteria:
 - Non-target demographics
-""" + "x" * (2000 - 500)
+"""
+            + "x" * (2000 - 500)
+        )
 
         profile = IdealCustomerProfile(
             display_name="Test Profile",
@@ -523,12 +528,15 @@ Exclusion Criteria:
 
     def test_narrative_missing_multiple_sections_fails(self):
         """Narrative missing multiple sections should list all missing sections."""
-        narrative_partial = """Demographics:
+        narrative_partial = (
+            """Demographics:
 - Age: 30-45
 
 Psychographics:
 - Values efficiency
-""" + "x" * 2000
+"""
+            + "x" * 2000
+        )
 
         with pytest.raises(ValidationError) as exc_info:
             IdealCustomerProfile(
@@ -577,7 +585,10 @@ class TestProductCategoryMapping:
 
         assert mapping.category_name == "Cloud Services"
         assert len(mapping.customer_strategies) == 2
-        assert mapping.customer_strategies[0].customer_profile_name == "Marketing Manager Mary"
+        assert (
+            mapping.customer_strategies[0].customer_profile_name
+            == "Marketing Manager Mary"
+        )
 
     def test_mapping_requires_minimum_one_strategy(self):
         """Test that at least 1 customer strategy is required per category."""
@@ -889,9 +900,13 @@ class TestProfileReusageAcrossCategories:
             for cs in mapping.customer_strategies:
                 if cs.customer_profile_name == "Enterprise Buyer":
                     if mapping.category_name == "Software Suite":
-                        software_enterprise_strategy = cs.strategy.problem_awareness_strategy
+                        software_enterprise_strategy = (
+                            cs.strategy.problem_awareness_strategy
+                        )
                     elif mapping.category_name == "Cloud Storage":
-                        cloud_enterprise_strategy = cs.strategy.problem_awareness_strategy
+                        cloud_enterprise_strategy = (
+                            cs.strategy.problem_awareness_strategy
+                        )
 
         # Strategies should be different
         assert software_enterprise_strategy != cloud_enterprise_strategy

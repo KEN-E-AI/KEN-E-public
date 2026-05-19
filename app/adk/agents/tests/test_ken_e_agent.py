@@ -69,9 +69,9 @@ def test_tool_wrappers_accept_acceptance_criteria():
         assert param_order.index("query") < param_order.index("acceptance_criteria"), (
             f"In {tool_name}, 'query' must come before 'acceptance_criteria'"
         )
-        assert param_order.index("acceptance_criteria") < param_order.index("tool_context"), (
-            f"In {tool_name}, 'acceptance_criteria' must come before 'tool_context'"
-        )
+        assert param_order.index("acceptance_criteria") < param_order.index(
+            "tool_context"
+        ), f"In {tool_name}, 'acceptance_criteria' must come before 'tool_context'"
 
 
 def test_ken_e_agent_name():
@@ -291,9 +291,13 @@ class TestMakeInstructionProvider:
 def _load_migration_script():
     """Load migrate_chatbot_to_firestore by file path (scripts/ has no __init__.py)."""
     script_path = (
-        pathlib.Path(__file__).parent.parent / "scripts" / "migrate_chatbot_to_firestore.py"
+        pathlib.Path(__file__).parent.parent
+        / "scripts"
+        / "migrate_chatbot_to_firestore.py"
     )
-    spec = importlib.util.spec_from_file_location("migrate_chatbot_to_firestore", script_path)
+    spec = importlib.util.spec_from_file_location(
+        "migrate_chatbot_to_firestore", script_path
+    )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -322,7 +326,10 @@ class TestCriteriaGenerationGuidance:
 
     def test_base_instruction_bad_example_forbids_fact_checking(self):
         """Bad-criteria list explicitly calls out factual-accuracy as unverifiable by the reviewer."""
-        assert "fact-check" in _BASE_INSTRUCTION.lower() or "cannot verify factual" in _BASE_INSTRUCTION.lower()
+        assert (
+            "fact-check" in _BASE_INSTRUCTION.lower()
+            or "cannot verify factual" in _BASE_INSTRUCTION.lower()
+        )
         assert "Numbers must be accurate" in _BASE_INSTRUCTION
 
     def test_base_instruction_trivially_simple_lookup_escape_hatch(self):
@@ -335,9 +342,15 @@ class TestCriteriaGenerationGuidance:
         delegation_idx = _BASE_INSTRUCTION.upper().find("TASK DELEGATION")
         important_idx = _BASE_INSTRUCTION.find("IMPORTANT NOTES")
 
-        assert routing_idx != -1, "ROUTING INSTRUCTIONS block not found in _BASE_INSTRUCTION"
-        assert delegation_idx != -1, "TASK DELEGATION section not found in _BASE_INSTRUCTION"
-        assert important_idx != -1, "IMPORTANT NOTES block not found in _BASE_INSTRUCTION"
+        assert routing_idx != -1, (
+            "ROUTING INSTRUCTIONS block not found in _BASE_INSTRUCTION"
+        )
+        assert delegation_idx != -1, (
+            "TASK DELEGATION section not found in _BASE_INSTRUCTION"
+        )
+        assert important_idx != -1, (
+            "IMPORTANT NOTES block not found in _BASE_INSTRUCTION"
+        )
         assert routing_idx < delegation_idx < important_idx, (
             "Expected order: ROUTING INSTRUCTIONS < TASK DELEGATION < IMPORTANT NOTES"
         )

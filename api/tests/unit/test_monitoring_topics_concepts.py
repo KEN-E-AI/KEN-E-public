@@ -1,18 +1,15 @@
 """Unit tests for monitoring topics concept endpoints."""
 
-import json
 import os
-import pytest
-from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
-from fastapi.testclient import TestClient
 
+import pytest
+from fastapi.testclient import TestClient
 from src.kene_api.main import app
 from src.kene_api.models.monitoring_models import (
     ConceptOption,
     ConceptReference,
     ConceptType,
-    CustomerKeywordConcept,
 )
 
 pytestmark = pytest.mark.skipif(
@@ -200,7 +197,9 @@ class TestMonitoringTopicsConcepts:
         # Verify Firestore update was called
         mock_firestore.update_document.assert_called_once()
         update_call = mock_firestore.update_document.call_args
-        assert update_call.kwargs["collection"] == "accounts/account123/monitoring_topics"
+        assert (
+            update_call.kwargs["collection"] == "accounts/account123/monitoring_topics"
+        )
         assert update_call.kwargs["document_id"] == "default"
         assert len(update_call.kwargs["data"]["customer_concepts"]) == 1
         assert "Apple" in update_call.kwargs["data"]["customer_keywords"]

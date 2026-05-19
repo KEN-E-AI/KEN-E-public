@@ -1,12 +1,10 @@
 """Tests for BigQuery service."""
 
 import os
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
-from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
-
 from src.kene_api.bigquery import BigQueryService, get_bigquery_service
 
 

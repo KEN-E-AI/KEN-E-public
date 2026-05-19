@@ -837,7 +837,9 @@ class TestPerAccountErrorPath:
                 self._store[self._path] = data
 
         class _SelectiveColRef:
-            def __init__(self, name: str, store: dict[str, Any], fail_ids: set[str]) -> None:
+            def __init__(
+                self, name: str, store: dict[str, Any], fail_ids: set[str]
+            ) -> None:
                 self._name = name
                 self._store = store
                 self._fail_ids = fail_ids
@@ -846,7 +848,9 @@ class TestPerAccountErrorPath:
                 return []
 
             def document(self, doc_id: str) -> _SelectiveDocRef:
-                return _SelectiveDocRef(f"{self._name}/{doc_id}", self._store, self._fail_ids)
+                return _SelectiveDocRef(
+                    f"{self._name}/{doc_id}", self._store, self._fail_ids
+                )
 
         store: dict[str, Any] = {}
         org_snap = _Snap(
@@ -935,6 +939,7 @@ class TestMainExitOnErrors:
         )
         code = self._run_main_with_mock_migration(summary)
         assert code == m.EXIT_SUCCESS
+
 
 # ===========================================================================
 # TestDeleteFieldPass

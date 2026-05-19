@@ -52,15 +52,13 @@ class FakeMCPDb:
 
     def __init__(self, docs: dict[str, dict | None]) -> None:
         """Args:
-            docs: mapping of {server_id: doc_data} — use None to represent
-                  a doc that should not appear (not the same as disabled=False).
-                  Disabled docs should be represented by setting ``enabled=False``
-                  in the data dict.
+        docs: mapping of {server_id: doc_data} — use None to represent
+              a doc that should not appear (not the same as disabled=False).
+              Disabled docs should be represented by setting ``enabled=False``
+              in the data dict.
         """
         self._snapshots = [
-            _FakeSnapshot(sid, data)
-            for sid, data in docs.items()
-            if data is not None
+            _FakeSnapshot(sid, data) for sid, data in docs.items() if data is not None
         ]
 
     def collection(self, name: str) -> _FakeCollection:
@@ -512,7 +510,9 @@ class TestBuildToolsetForConfig:
         unknown_conn.connection_type = "grpc"
         config = config.model_copy(update={"connection": unknown_conn})
 
-        with pytest.raises(MCPSchemaError, match="SseConnectionConfig or StdioConnectionConfig"):
+        with pytest.raises(
+            MCPSchemaError, match="SseConnectionConfig or StdioConnectionConfig"
+        ):
             build_toolset_for_config(config)
 
     def test_already_expanded_url_is_idempotent(self) -> None:
@@ -539,7 +539,9 @@ class TestBuildToolsetForConfig:
 
 
 class TestBuildConnectionParams:
-    def _run(self, server_id: str, connection: dict, MockSse: Any, MockStdio: Any) -> Any:
+    def _run(
+        self, server_id: str, connection: dict, MockSse: Any, MockStdio: Any
+    ) -> Any:
         from app.adk.agents.agent_factory.mcp import _build_connection_params
 
         sse_module = MagicMock()
@@ -619,7 +621,10 @@ class TestBuildConnectionParams:
         no_type_conn = {"url": "https://example.com"}
 
         with (
-            patch.dict("sys.modules", {"google.adk.tools.mcp_tool.mcp_session_manager": MagicMock()}),
+            patch.dict(
+                "sys.modules",
+                {"google.adk.tools.mcp_tool.mcp_session_manager": MagicMock()},
+            ),
             pytest.raises(MCPSchemaError, match="connection_type"),
         ):
             _build_connection_params("some_server", no_type_conn)
@@ -692,9 +697,9 @@ class TestBuildConnectionParams:
             "https://100.64.0.1/sse",  # RFC 6598 CGNAT shared address space
             # IPv4-mapped IPv6 forms — must be unwrapped to embedded IPv4 so the
             # v6-mapped form cannot bypass blocks that rely on IPv4Network membership.
-            "https://[::ffff:10.0.0.1]/sse",      # RFC 1918 via mapped form
-            "https://[::ffff:127.0.0.1]/sse",     # loopback via mapped form
-            "https://[::ffff:100.64.0.1]/sse",    # CGNAT via mapped form (regression: IPv4Network rejects v6 addrs)
+            "https://[::ffff:10.0.0.1]/sse",  # RFC 1918 via mapped form
+            "https://[::ffff:127.0.0.1]/sse",  # loopback via mapped form
+            "https://[::ffff:100.64.0.1]/sse",  # CGNAT via mapped form (regression: IPv4Network rejects v6 addrs)
         ],
     )
     def test_sse_private_ip_raises_mcp_schema_error(self, private_url: str) -> None:
@@ -743,7 +748,7 @@ class TestBuildConnectionParams:
         "zone_url",
         [
             "https://[fe80::1%25eth0]/sse",  # RFC 6874 percent-encoded zone ID
-            "https://[fe80::1%eth0]/sse",    # non-encoded form (also passed through by urlparse)
+            "https://[fe80::1%eth0]/sse",  # non-encoded form (also passed through by urlparse)
         ],
     )
     def test_sse_ipv6_zone_id_bypasses_blocked(self, zone_url: str) -> None:
@@ -807,7 +812,9 @@ class TestBuildConnectionParams:
                     "mcp.client.stdio": MagicMock(),
                 },
             ),
-            pytest.raises(MCPSchemaError, match="stdio 'command' must be a non-empty string"),
+            pytest.raises(
+                MCPSchemaError, match="stdio 'command' must be a non-empty string"
+            ),
         ):
             _build_connection_params("srv", no_cmd_conn)
 
@@ -1003,7 +1010,9 @@ class TestLoadAllMcpToolsets:
                 raise MCPSchemaError("missing connection")
             return MagicMock(name=f"toolset_{server_id}")
 
-        with patch.object(mcp_module, "build_toolset_for_doc", side_effect=_side_effect):
+        with patch.object(
+            mcp_module, "build_toolset_for_doc", side_effect=_side_effect
+        ):
             result = mcp_module.load_all_mcp_toolsets(db=db)
 
         assert "ga_mcp" in result
@@ -1058,9 +1067,7 @@ class TestLoadToolsetsForSpecialist:
             return MagicMock(name=f"toolset_{server_id}")
 
         with patch.object(mcp_module, "build_toolset_for_doc", side_effect=_build):
-            result = mcp_module.load_toolsets_for_specialist(
-                "google_analytics", db=db
-            )
+            result = mcp_module.load_toolsets_for_specialist("google_analytics", db=db)
 
         assert "ga_mcp" in result
         assert "stdio_mcp" not in result
@@ -1078,9 +1085,7 @@ class TestLoadToolsetsForSpecialist:
             result_ga = mcp_module.load_toolsets_for_specialist(
                 "google_analytics", db=db
             )
-            result_ads = mcp_module.load_toolsets_for_specialist(
-                "google_ads", db=db
-            )
+            result_ads = mcp_module.load_toolsets_for_specialist("google_ads", db=db)
 
         assert "shared_mcp" in result_ga
         assert "shared_mcp" in result_ads
@@ -1107,16 +1112,19 @@ class TestLoadToolsetsForSpecialist:
         from app.adk.agents.agent_factory import mcp as mcp_module
 
         db = self._make_db(
-            {"disabled_ga": {**_DISABLED_DOC, "specialist_categories": ["google_analytics"]}}
+            {
+                "disabled_ga": {
+                    **_DISABLED_DOC,
+                    "specialist_categories": ["google_analytics"],
+                }
+            }
         )
 
         def _build(server_id: str, doc: dict) -> MagicMock:
             return MagicMock(name=f"toolset_{server_id}")
 
         with patch.object(mcp_module, "build_toolset_for_doc", side_effect=_build):
-            result = mcp_module.load_toolsets_for_specialist(
-                "google_analytics", db=db
-            )
+            result = mcp_module.load_toolsets_for_specialist("google_analytics", db=db)
 
         assert "disabled_ga" not in result
 
@@ -1148,9 +1156,7 @@ class TestLoadToolsetsForSpecialist:
             "build_toolset_for_doc",
             side_effect=MCPSchemaError("bad"),
         ):
-            result = mcp_module.load_toolsets_for_specialist(
-                "google_analytics", db=db
-            )
+            result = mcp_module.load_toolsets_for_specialist("google_analytics", db=db)
 
         assert result == {}
 
@@ -1169,9 +1175,7 @@ class TestExpandEnvPlaceholders:
         from app.adk.agents.agent_factory.mcp import _expand_env_placeholders
 
         monkeypatch.setenv("MY_URL", "https://example.com")
-        result = _expand_env_placeholders(
-            "${MY_URL}/path", "srv", "connection.url"
-        )
+        result = _expand_env_placeholders("${MY_URL}/path", "srv", "connection.url")
         assert result == "https://example.com/path"
 
     def test_unset_var_raises_mcp_schema_error(
@@ -1185,9 +1189,7 @@ class TestExpandEnvPlaceholders:
 
         monkeypatch.delenv("MISSING_VAR", raising=False)
         with pytest.raises(MCPSchemaError) as exc_info:
-            _expand_env_placeholders(
-                "${MISSING_VAR}/sse", "ga_mcp", "connection.url"
-            )
+            _expand_env_placeholders("${MISSING_VAR}/sse", "ga_mcp", "connection.url")
         msg = str(exc_info.value)
         assert "ga_mcp" in msg
         assert "MISSING_VAR" in msg
@@ -1203,9 +1205,7 @@ class TestExpandEnvPlaceholders:
 
         monkeypatch.setenv("EMPTY_VAR", "")
         with pytest.raises(MCPSchemaError, match="EMPTY_VAR"):
-            _expand_env_placeholders(
-                "${EMPTY_VAR}", "my_server", "connection.url"
-            )
+            _expand_env_placeholders("${EMPTY_VAR}", "my_server", "connection.url")
 
     def test_multi_placeholder_resolves_all(
         self, monkeypatch: pytest.MonkeyPatch
@@ -1349,9 +1349,7 @@ class TestExpandEnvPlaceholders:
                     SseConnectionParams=MagicMock(),
                     StdioConnectionParams=MockStdio,
                 ),
-                "mcp.client.stdio": MagicMock(
-                    StdioServerParameters=MockStdioParams
-                ),
+                "mcp.client.stdio": MagicMock(StdioServerParameters=MockStdioParams),
             },
         ):
             _build_connection_params("slack_mcp", conn)

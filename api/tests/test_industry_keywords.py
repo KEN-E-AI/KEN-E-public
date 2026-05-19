@@ -1,12 +1,10 @@
 """Tests for industry keywords API endpoints."""
 
 import os
-import pytest
-from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
-from fastapi.testclient import TestClient
-from fastapi import HTTPException
+from unittest.mock import patch
 
+import pytest
+from fastapi.testclient import TestClient
 from src.kene_api.auth.models import UserContext
 from src.kene_api.main import app
 

@@ -4,7 +4,6 @@ import time
 from datetime import datetime
 
 import pytest
-
 from src.kene_api.models.kene_models import (
     NotificationCategory,
     NotificationChannel,
@@ -193,7 +192,9 @@ class TestCachedNotificationRepository:
         call_count = 0
         original_get_by_account = base_repository.get_by_account
 
-        async def tracking_get_by_account(aids, include_archived=False, limit=None, offset=0):
+        async def tracking_get_by_account(
+            aids, include_archived=False, limit=None, offset=0
+        ):
             nonlocal call_count
             call_count += 1
             return await original_get_by_account(aids, include_archived, limit, offset)

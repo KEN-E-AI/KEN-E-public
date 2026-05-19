@@ -567,9 +567,7 @@ class TestAdminUpdateNullClearing:
         assert captured_updates["name"] is None
 
     @pytest.mark.asyncio
-    async def test_name_omitted_is_not_written(
-        self, admin_user, sample_config_data
-    ):
+    async def test_name_omitted_is_not_written(self, admin_user, sample_config_data):
         """An update body without ``name`` must NOT include name in the write."""
         from unittest.mock import AsyncMock
 
@@ -609,9 +607,7 @@ class TestAdminUpdateNullClearing:
         assert "title" not in captured_updates
 
     @pytest.mark.asyncio
-    async def test_title_clear_audited_as_change(
-        self, admin_user, sample_config_data
-    ):
+    async def test_title_clear_audited_as_change(self, admin_user, sample_config_data):
         """The audit log must capture a null-clearing change to title."""
         from unittest.mock import AsyncMock
 

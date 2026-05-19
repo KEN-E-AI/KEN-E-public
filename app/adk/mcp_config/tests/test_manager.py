@@ -97,7 +97,9 @@ def _make_mock_toolset(tool_names: list[str]) -> MagicMock:
 
 
 async def _fake_connect(
-    config, tool_names: list[str], toolset: MagicMock | None = None,
+    config,
+    tool_names: list[str],
+    toolset: MagicMock | None = None,
 ) -> tuple[list[dict], MagicMock]:
     """Build a (tools_metadata, toolset) tuple matching _connect_server's return."""
     if toolset is None:
@@ -329,7 +331,9 @@ class TestCapacityCap:
             call_count += 1
             raise RuntimeError("MCP server capacity reached (1); unload first")
 
-        with patch.object(manager, "load_server", side_effect=load_raises_on_second_call):
+        with patch.object(
+            manager, "load_server", side_effect=load_raises_on_second_call
+        ):
             # Should NOT raise — RuntimeError must be caught and logged, not propagated.
             await manager._attempt_reconnection("test_server_1")
 
@@ -424,7 +428,9 @@ class TestHealthMonitoring:
 
         loaded = manager._loaded_servers["test_server_1"]
 
-        mock_toolset.get_tools = AsyncMock(side_effect=ConnectionError("lost connection"))
+        mock_toolset.get_tools = AsyncMock(
+            side_effect=ConnectionError("lost connection")
+        )
         healthy = await manager._check_server_health(loaded)
         assert healthy is False
 

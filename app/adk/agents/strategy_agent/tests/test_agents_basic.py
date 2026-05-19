@@ -2,10 +2,11 @@
 Basic unit tests for strategy agent creation - Quick implementation for immediate coverage.
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
-import sys
 import os
+import sys
+from unittest.mock import patch
+
+import pytest
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -36,11 +37,11 @@ class TestCriticalAgentFeatures:
     ):
         """CRITICAL: Ensure all strategists use expensive Pro model for quality."""
         from agents import (
+            create_brand_strategist,
             create_business_strategist,
             create_competitive_strategist,
             create_customer_strategist,
             create_marketing_strategist,
-            create_brand_strategist,
         )
 
         mock_best_practices.return_value = '{"test": "data"}'
@@ -66,11 +67,11 @@ class TestCriticalAgentFeatures:
     def test_reviewers_use_flash_model(self, mock_guidelines):
         """CRITICAL: Ensure all reviewers use cheaper Flash model for cost optimization."""
         from agents import (
+            create_brand_reviewer,
             create_business_reviewer,
             create_competitive_reviewer,
             create_customer_reviewer,
             create_marketing_reviewer,
-            create_brand_reviewer,
         )
 
         mock_guidelines.return_value = "test guidelines"
@@ -95,11 +96,11 @@ class TestCriticalAgentFeatures:
     def test_editors_use_flash_model(self, mock_extract, mock_best_practices):
         """CRITICAL: Ensure all editors use cheaper Flash model for cost optimization."""
         from agents import (
+            create_brand_editor,
             create_business_editor,
             create_competitive_editor,
             create_customer_editor,
             create_marketing_editor,
-            create_brand_editor,
         )
 
         mock_best_practices.return_value = "test practices"
@@ -181,11 +182,11 @@ class TestCriticalAgentFeatures:
     ):
         """CRITICAL: Ensure all agents have correct output keys for state management."""
         from agents import (
+            create_brand_strategist,
             create_business_strategist,
             create_competitive_strategist,
             create_customer_strategist,
             create_marketing_strategist,
-            create_brand_strategist,
         )
 
         mock_best_practices.return_value = '{"test": "data"}'

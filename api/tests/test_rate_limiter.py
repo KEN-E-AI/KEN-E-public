@@ -5,7 +5,6 @@ from unittest.mock import MagicMock
 
 import pytest
 from fastapi import HTTPException, Request
-
 from src.kene_api.rate_limiter import RateLimiter
 
 

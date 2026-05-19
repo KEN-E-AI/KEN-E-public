@@ -1,12 +1,13 @@
 """Unit tests for form parsing service."""
 
 import json
+
 import pytest
-from src.kene_api.services.form_parsing_service import (
-    parse_json_field,
-    parse_account_form_data,
-)
 from src.kene_api.models.kene_models import AccountRequest
+from src.kene_api.services.form_parsing_service import (
+    parse_account_form_data,
+    parse_json_field,
+)
 
 
 class TestParseJsonField:

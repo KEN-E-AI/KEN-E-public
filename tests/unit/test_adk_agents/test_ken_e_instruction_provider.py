@@ -72,10 +72,12 @@ class TestBuildKenEInstruction:
 
     def test_unrelated_state_keys_ignored(self):
         """Other state keys don't affect instruction generation."""
-        ctx = _make_context({
-            "ga_credentials": {"access_token": "secret"},
-            "account_id": "acc_123",
-        })
+        ctx = _make_context(
+            {
+                "ga_credentials": {"access_token": "secret"},
+                "account_id": "acc_123",
+            }
+        )
         assert build_ken_e_instruction(ctx) == _BASE_INSTRUCTION
 
     def test_context_appears_before_instruction(self):

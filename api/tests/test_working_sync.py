@@ -260,5 +260,4 @@ async def test_au_to_us_region_change_adds_us_holidays(
 
 
 if __name__ == "__main__":
-
     pytest.main([__file__, "-v"])

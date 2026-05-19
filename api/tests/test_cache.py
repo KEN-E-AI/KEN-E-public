@@ -249,6 +249,8 @@ class TestRouterCacheWiring:
         from src.kene_api.routers import industry_keywords
 
         cache = industry_keywords._cache_service
-        assert cache.set("industry_keywords:tech", ["a", "b"], ttl_seconds=86400) is False
+        assert (
+            cache.set("industry_keywords:tech", ["a", "b"], ttl_seconds=86400) is False
+        )
         assert cache.get("industry_keywords:tech") is None
         assert cache.delete("industry_keywords:tech") is False

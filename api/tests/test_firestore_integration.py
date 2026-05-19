@@ -333,9 +333,7 @@ class TestFirestoreErrorHandling:
                     "USE_APPLICATION_DEFAULT_CREDENTIALS": "false",
                 },
             ),
-            patch(
-                "src.kene_api.firestore.get_env_or_secret"
-            ) as mock_get_secret,
+            patch("src.kene_api.firestore.get_env_or_secret") as mock_get_secret,
         ):
             # get_env_or_secret returns a raw string; a malformed value
             # makes firestore.py raise on json.loads.

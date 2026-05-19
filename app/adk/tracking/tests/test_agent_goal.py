@@ -8,7 +8,9 @@ from unittest.mock import MagicMock, patch
 class TestWeaveBeforeAgentCallbackGoal:
     """Test that weave_before_agent_callback sets context_agent_goal."""
 
-    def _make_callback_context(self, user_text: str = "What is Apple's stock price?") -> MagicMock:
+    def _make_callback_context(
+        self, user_text: str = "What is Apple's stock price?"
+    ) -> MagicMock:
         ctx = MagicMock()
         part = MagicMock()
         part.text = user_text
@@ -35,7 +37,11 @@ class TestWeaveBeforeAgentCallbackGoal:
 
         assert result is None
         call_kwargs = mock_client.create_call.call_args
-        inputs = call_kwargs[1]["inputs"] if "inputs" in call_kwargs[1] else call_kwargs[0][1]
+        inputs = (
+            call_kwargs[1]["inputs"]
+            if "inputs" in call_kwargs[1]
+            else call_kwargs[0][1]
+        )
         assert inputs.get("context_agent_goal") == "Tell me about Tesla earnings"
 
     @patch("app.adk.tracking.callbacks._weave_call_context")
@@ -57,7 +63,11 @@ class TestWeaveBeforeAgentCallbackGoal:
 
         assert result is None
         call_kwargs = mock_client.create_call.call_args
-        inputs = call_kwargs[1]["inputs"] if "inputs" in call_kwargs[1] else call_kwargs[0][1]
+        inputs = (
+            call_kwargs[1]["inputs"]
+            if "inputs" in call_kwargs[1]
+            else call_kwargs[0][1]
+        )
         assert inputs.get("context_agent_goal") is None
 
     @patch("app.adk.tracking.callbacks._weave_call_context")
@@ -79,7 +89,11 @@ class TestWeaveBeforeAgentCallbackGoal:
 
         assert result is None
         call_kwargs = mock_client.create_call.call_args
-        inputs = call_kwargs[1]["inputs"] if "inputs" in call_kwargs[1] else call_kwargs[0][1]
+        inputs = (
+            call_kwargs[1]["inputs"]
+            if "inputs" in call_kwargs[1]
+            else call_kwargs[0][1]
+        )
         goal = inputs.get("context_agent_goal")
         assert goal is not None
         assert len(goal) <= 500
@@ -93,8 +107,11 @@ class TestAgentGoalContextPropagation:
     @patch("app.adk.tracking.callbacks.init_weave_if_needed")
     @patch("app.adk.tracking.callbacks.weave")
     def test_before_callback_enters_attributes_context(
-        self, mock_weave: MagicMock, mock_init: MagicMock,
-        mock_get_client: MagicMock, mock_call_ctx: MagicMock
+        self,
+        mock_weave: MagicMock,
+        mock_init: MagicMock,
+        mock_get_client: MagicMock,
+        mock_call_ctx: MagicMock,
     ) -> None:
         from app.adk.tracking.callbacks import weave_before_agent_callback
 

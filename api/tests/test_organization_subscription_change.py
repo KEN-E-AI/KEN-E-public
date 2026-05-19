@@ -3,22 +3,14 @@
 import json
 import os
 from datetime import datetime, timezone
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import AsyncMock, Mock
 
 import pytest
-from fastapi.testclient import TestClient
 from fastapi import FastAPI
-
-from src.kene_api.routers.organizations import router
-from src.kene_api.models.kene_models import (
-    Organization,
-    ChangeSubscriptionRequest,
-    Subscription,
-    Team,
-    Billing,
-)
+from fastapi.testclient import TestClient
 from src.kene_api.database import Neo4jService, get_neo4j_service
 from src.kene_api.firestore import FirestoreService, get_firestore_service
+from src.kene_api.routers.organizations import router
 
 pytestmark = pytest.mark.skipif(
     not os.getenv("FIRESTORE_EMULATOR_HOST"),

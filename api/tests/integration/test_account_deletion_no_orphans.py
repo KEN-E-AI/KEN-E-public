@@ -211,7 +211,12 @@ def _app_overrides(emulator_db: Any) -> Generator[dict[str, Any], None, None]:
 
     yield {"neo4j": mock_neo4j, "storage": mock_storage}
 
-    for dep in (get_neo4j_service, get_storage_service, get_firestore_service, get_current_user_context):
+    for dep in (
+        get_neo4j_service,
+        get_storage_service,
+        get_firestore_service,
+        get_current_user_context,
+    ):
         app.dependency_overrides.pop(dep, None)
 
 
@@ -327,7 +332,11 @@ def _seed_chat_sessions(db: Any, account_id: str, run_id: str) -> None:
         .document(f"sess_{run_id}")
     )
     session_ref.set(
-        {"user_id": "u_test", "account_id": account_id, "seeded_for": "CH-9 regression guard"}
+        {
+            "user_id": "u_test",
+            "account_id": account_id,
+            "seeded_for": "CH-9 regression guard",
+        }
     )
     # Nested artifacts subcollection — proves recursive_delete descends two levels deep
     session_ref.collection("artifacts").document(f"art_{run_id}").set(
@@ -382,7 +391,9 @@ class TestAccountDeletionNoOrphans:
         _seed_full_account(emulator_db, account_id, run_id)
 
         # Seed a sibling account before DELETE to verify isolation (checked below).
-        sibling_ref = emulator_db.collection("accounts").document(f"acc_sibling_{run_id}")
+        sibling_ref = emulator_db.collection("accounts").document(
+            f"acc_sibling_{run_id}"
+        )
         sibling_ref.set({"sentinel": True})
 
         # --- Act ---

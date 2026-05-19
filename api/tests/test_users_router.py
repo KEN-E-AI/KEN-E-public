@@ -10,7 +10,6 @@ from unittest import mock
 
 import pytest
 from fastapi.testclient import TestClient
-
 from src.kene_api.auth.models import SUPER_ADMIN_ROLE, UserContext
 from src.kene_api.auth.user_context import get_current_user_context
 from src.kene_api.firestore import get_firestore_service

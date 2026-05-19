@@ -8,8 +8,6 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 # Add the app directory to the path to avoid full import chain
 app_dir = Path(__file__).parents[3] / "app"
 sys.path.insert(0, str(app_dir))
@@ -67,7 +65,9 @@ class TestDispatchWithContext:
 
     def test_dispatch_with_tool_context_and_org_context_in_state(self):
         """Should use org context from session state and skip Neo4j."""
-        mock_dispatch = MagicMock(__name__="mock_dispatch", return_value="GA analytics result")
+        mock_dispatch = MagicMock(
+            __name__="mock_dispatch", return_value="GA analytics result"
+        )
         wrapped = dispatch_with_context(mock_dispatch)
 
         mock_tool_context = MagicMock()
@@ -122,7 +122,9 @@ class TestDispatchWithContext:
         ) as mock_manager_class:
             mock_manager = MagicMock()
             mock_manager_class.return_value = mock_manager
-            mock_manager.load_executive_summary.return_value = "# Company Context\nTest Company"
+            mock_manager.load_executive_summary.return_value = (
+                "# Company Context\nTest Company"
+            )
             mock_manager.inject_context.return_value = "[ORGANIZATION CONTEXT]\n# Company Context\n[END CONTEXT]\n\nGet latest news"
 
             result = wrapped("Get latest news", tool_context=mock_tool_context)
@@ -141,12 +143,14 @@ class TestDispatchWithContext:
         wrapped = dispatch_with_context(mock_dispatch)
 
         # JSON input (legacy format)
-        json_input = json.dumps({
-            "message": "Get analytics",
-            "tenant_id": "acc_123",
-            "tenant_credentials": "base64_creds",
-            "account_id": "acc_123",
-        })
+        json_input = json.dumps(
+            {
+                "message": "Get analytics",
+                "tenant_id": "acc_123",
+                "tenant_credentials": "base64_creds",
+                "account_id": "acc_123",
+            }
+        )
 
         # Mock HierarchicalContextManager
         with patch(
@@ -183,7 +187,9 @@ class TestDispatchWithContext:
 
     def test_dispatch_handles_dict_result(self):
         """Should extract 'result' key from dict return values."""
-        mock_dispatch = MagicMock(__name__="mock_dispatch", return_value={"result": "Extracted result"})
+        mock_dispatch = MagicMock(
+            __name__="mock_dispatch", return_value={"result": "Extracted result"}
+        )
         wrapped = dispatch_with_context(mock_dispatch)
 
         result = wrapped("Query", tool_context=None)
@@ -235,9 +241,7 @@ class TestInvokeAgentSyncState:
 
         ga_state = {"ga_credentials": {"access_token": "tok_123"}}
 
-        invoke_agent_sync(
-            mock_agent, "test query", state=ga_state
-        )
+        invoke_agent_sync(mock_agent, "test query", state=ga_state)
 
         mock_session_service.create_session.assert_called_once()
         call_kwargs = mock_session_service.create_session.call_args[1]
@@ -282,7 +286,10 @@ class TestInvokePipelineState:
         mock_session_cls.return_value = mock_session_service
 
         mock_session = MagicMock()
-        mock_session.state = {"ga_review_draft": "traffic up 12%", "ga_review_feedback": ""}
+        mock_session.state = {
+            "ga_review_draft": "traffic up 12%",
+            "ga_review_feedback": "",
+        }
         mock_session_service.create_session = AsyncMock()
         mock_session_service.get_session = AsyncMock(return_value=mock_session)
 

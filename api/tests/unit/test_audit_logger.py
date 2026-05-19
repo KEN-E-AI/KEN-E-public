@@ -1,11 +1,9 @@
 """Unit tests for audit logger."""
 
 import json
-from datetime import datetime
 from unittest import mock
 
 import pytest
-
 from src.kene_api.auth.audit_logger import AuditLogger, SecurityEventType
 
 

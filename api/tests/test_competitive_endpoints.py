@@ -1,10 +1,10 @@
 """Integration tests for competitive knowledge graph endpoints with monitoring sync."""
 
 import os
-import pytest
 from unittest.mock import AsyncMock, patch
-from fastapi.testclient import TestClient
 
+import pytest
+from fastapi.testclient import TestClient
 from src.kene_api.auth.models import UserContext
 from src.kene_api.main import app
 

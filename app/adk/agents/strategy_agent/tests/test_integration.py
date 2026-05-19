@@ -1,22 +1,19 @@
 """Integration tests for the strategy agent system - testing actual components together."""
 
-import pytest
 import json
 from datetime import datetime
-from unittest.mock import Mock, patch, MagicMock
-import tempfile
-import os
+from unittest.mock import Mock, patch
 
+import pytest
+
+from app.adk.agents.strategy_agent.firestore import ContextManager, FirestoreClient
 from app.adk.agents.strategy_agent.models import (
     StrategyContext,
-    StrategyGenerationRequest,
 )
-from app.adk.agents.strategy_agent.firestore import FirestoreClient, ContextManager
 from app.adk.agents.strategy_agent.orchestrator import (
+    clean_json_string,
     execute_strategy_generation,
     process_and_save_documents,
-    parse_document_content,
-    clean_json_string,
 )
 
 

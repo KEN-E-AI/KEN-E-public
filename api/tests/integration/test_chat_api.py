@@ -16,15 +16,15 @@
 
 import os
 import sys
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from typing import Dict, List, Any
 
 # Add src to path so imports work in Cloud Build
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src"))
 
-from kene_api.routers.chat import AgentEngineClient, ChatMessage
 from kene_api.auth.models import UserContext
+from kene_api.routers.chat import AgentEngineClient, ChatMessage
 
 
 @pytest.fixture
@@ -150,7 +150,6 @@ async def test_session_management(agent_client, test_user):
     Test session creation and management.
     Verifies that sessions are properly handled.
     """
-    import asyncio
 
     # Mock the session service with async methods
     mock_session_service = MagicMock()

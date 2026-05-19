@@ -1,9 +1,9 @@
 """Tests for OAuth permission checks."""
 
+from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
 from fastapi import HTTPException
-from unittest.mock import Mock, AsyncMock, patch
-
 from src.kene_api.auth import UserContext
 
 
@@ -71,16 +71,29 @@ class TestOAuthAuthorizePermissions:
         """Super admins should be able to authorize OAuth."""
         from src.kene_api.routers.oauth_integrations import authorize_google_analytics
 
-        with patch("src.kene_api.routers.oauth_integrations.GOOGLE_CLIENT_ID", "test_id"):
-            with patch("src.kene_api.routers.oauth_integrations.GOOGLE_CLIENT_SECRET", "test_secret"):
-                with patch("src.kene_api.routers.oauth_integrations.get_google_redirect_uri", return_value="http://localhost/callback"):
-                    with patch("src.kene_api.routers.oauth_integrations.get_firestore_service") as mock_fs:
+        with patch(
+            "src.kene_api.routers.oauth_integrations.GOOGLE_CLIENT_ID", "test_id"
+        ):
+            with patch(
+                "src.kene_api.routers.oauth_integrations.GOOGLE_CLIENT_SECRET",
+                "test_secret",
+            ):
+                with patch(
+                    "src.kene_api.routers.oauth_integrations.get_google_redirect_uri",
+                    return_value="http://localhost/callback",
+                ):
+                    with patch(
+                        "src.kene_api.routers.oauth_integrations.get_firestore_service"
+                    ) as mock_fs:
                         mock_db = Mock()
                         mock_fs.return_value.get_client.return_value = mock_db
 
                         # Mock OAuth state service
                         mock_state_service = AsyncMock()
-                        with patch("src.kene_api.routers.oauth_integrations.OAuthStateService", return_value=mock_state_service):
+                        with patch(
+                            "src.kene_api.routers.oauth_integrations.OAuthStateService",
+                            return_value=mock_state_service,
+                        ):
                             result = await authorize_google_analytics(
                                 account_id="acc123",
                                 current_user=super_admin_user,
@@ -94,15 +107,28 @@ class TestOAuthAuthorizePermissions:
         """Organization admins should be able to authorize OAuth."""
         from src.kene_api.routers.oauth_integrations import authorize_google_analytics
 
-        with patch("src.kene_api.routers.oauth_integrations.GOOGLE_CLIENT_ID", "test_id"):
-            with patch("src.kene_api.routers.oauth_integrations.GOOGLE_CLIENT_SECRET", "test_secret"):
-                with patch("src.kene_api.routers.oauth_integrations.get_google_redirect_uri", return_value="http://localhost/callback"):
-                    with patch("src.kene_api.routers.oauth_integrations.get_firestore_service") as mock_fs:
+        with patch(
+            "src.kene_api.routers.oauth_integrations.GOOGLE_CLIENT_ID", "test_id"
+        ):
+            with patch(
+                "src.kene_api.routers.oauth_integrations.GOOGLE_CLIENT_SECRET",
+                "test_secret",
+            ):
+                with patch(
+                    "src.kene_api.routers.oauth_integrations.get_google_redirect_uri",
+                    return_value="http://localhost/callback",
+                ):
+                    with patch(
+                        "src.kene_api.routers.oauth_integrations.get_firestore_service"
+                    ) as mock_fs:
                         mock_db = Mock()
                         mock_fs.return_value.get_client.return_value = mock_db
 
                         mock_state_service = AsyncMock()
-                        with patch("src.kene_api.routers.oauth_integrations.OAuthStateService", return_value=mock_state_service):
+                        with patch(
+                            "src.kene_api.routers.oauth_integrations.OAuthStateService",
+                            return_value=mock_state_service,
+                        ):
                             result = await authorize_google_analytics(
                                 account_id="acc123",
                                 current_user=org_admin_user,
@@ -116,15 +142,28 @@ class TestOAuthAuthorizePermissions:
         """Users with explicit edit permission should be able to authorize OAuth."""
         from src.kene_api.routers.oauth_integrations import authorize_google_analytics
 
-        with patch("src.kene_api.routers.oauth_integrations.GOOGLE_CLIENT_ID", "test_id"):
-            with patch("src.kene_api.routers.oauth_integrations.GOOGLE_CLIENT_SECRET", "test_secret"):
-                with patch("src.kene_api.routers.oauth_integrations.get_google_redirect_uri", return_value="http://localhost/callback"):
-                    with patch("src.kene_api.routers.oauth_integrations.get_firestore_service") as mock_fs:
+        with patch(
+            "src.kene_api.routers.oauth_integrations.GOOGLE_CLIENT_ID", "test_id"
+        ):
+            with patch(
+                "src.kene_api.routers.oauth_integrations.GOOGLE_CLIENT_SECRET",
+                "test_secret",
+            ):
+                with patch(
+                    "src.kene_api.routers.oauth_integrations.get_google_redirect_uri",
+                    return_value="http://localhost/callback",
+                ):
+                    with patch(
+                        "src.kene_api.routers.oauth_integrations.get_firestore_service"
+                    ) as mock_fs:
                         mock_db = Mock()
                         mock_fs.return_value.get_client.return_value = mock_db
 
                         mock_state_service = AsyncMock()
-                        with patch("src.kene_api.routers.oauth_integrations.OAuthStateService", return_value=mock_state_service):
+                        with patch(
+                            "src.kene_api.routers.oauth_integrations.OAuthStateService",
+                            return_value=mock_state_service,
+                        ):
                             result = await authorize_google_analytics(
                                 account_id="acc123",
                                 current_user=account_editor_user,
@@ -169,12 +208,17 @@ class TestOAuthDisconnectPermissions:
         """Organization admins should be able to disconnect OAuth."""
         from src.kene_api.routers.oauth_integrations import disconnect_google_analytics
 
-        with patch("src.kene_api.routers.oauth_integrations.get_firestore_service") as mock_fs:
+        with patch(
+            "src.kene_api.routers.oauth_integrations.get_firestore_service"
+        ) as mock_fs:
             mock_db = Mock()
             mock_fs.return_value.get_client.return_value = mock_db
 
             mock_creds_service = AsyncMock()
-            with patch("src.kene_api.routers.oauth_integrations.IntegrationCredentialsService", return_value=mock_creds_service):
+            with patch(
+                "src.kene_api.routers.oauth_integrations.IntegrationCredentialsService",
+                return_value=mock_creds_service,
+            ):
                 result = await disconnect_google_analytics(
                     account_id="acc123",
                     current_user=org_admin_user,
@@ -203,17 +247,24 @@ class TestOAuthPropertiesPermissions:
     @pytest.mark.asyncio
     async def test_org_admin_can_view_properties(self, org_admin_user):
         """Organization admins should be able to view properties."""
-        from src.kene_api.routers.oauth_integrations import get_google_analytics_properties
+        from src.kene_api.routers.oauth_integrations import (
+            get_google_analytics_properties,
+        )
 
         # Should not raise 403 - will fail later due to no credentials, but that's expected
-        with patch("src.kene_api.routers.oauth_integrations.get_firestore_service") as mock_fs:
+        with patch(
+            "src.kene_api.routers.oauth_integrations.get_firestore_service"
+        ) as mock_fs:
             mock_db = Mock()
             mock_fs.return_value.get_client.return_value = mock_db
 
             mock_creds_service = AsyncMock()
             mock_creds_service.get_credentials.return_value = None
 
-            with patch("src.kene_api.routers.oauth_integrations.IntegrationCredentialsService", return_value=mock_creds_service):
+            with patch(
+                "src.kene_api.routers.oauth_integrations.IntegrationCredentialsService",
+                return_value=mock_creds_service,
+            ):
                 with pytest.raises(HTTPException) as exc_info:
                     await get_google_analytics_properties(
                         account_id="acc123",
@@ -226,16 +277,23 @@ class TestOAuthPropertiesPermissions:
     @pytest.mark.asyncio
     async def test_viewer_can_view_properties(self, viewer_user):
         """Viewers should be able to view (read-only) properties."""
-        from src.kene_api.routers.oauth_integrations import get_google_analytics_properties
+        from src.kene_api.routers.oauth_integrations import (
+            get_google_analytics_properties,
+        )
 
-        with patch("src.kene_api.routers.oauth_integrations.get_firestore_service") as mock_fs:
+        with patch(
+            "src.kene_api.routers.oauth_integrations.get_firestore_service"
+        ) as mock_fs:
             mock_db = Mock()
             mock_fs.return_value.get_client.return_value = mock_db
 
             mock_creds_service = AsyncMock()
             mock_creds_service.get_credentials.return_value = None
 
-            with patch("src.kene_api.routers.oauth_integrations.IntegrationCredentialsService", return_value=mock_creds_service):
+            with patch(
+                "src.kene_api.routers.oauth_integrations.IntegrationCredentialsService",
+                return_value=mock_creds_service,
+            ):
                 with pytest.raises(HTTPException) as exc_info:
                     await get_google_analytics_properties(
                         account_id="acc123",
@@ -252,7 +310,9 @@ class TestUserContextPermissionLogic:
     def test_super_admin_has_access_to_any_account(self, super_admin_user):
         """Super admins should have access to any account."""
         assert super_admin_user.has_account_access("any_account_id")
-        assert super_admin_user.has_account_access("any_account_id", required_roles=["edit"])
+        assert super_admin_user.has_account_access(
+            "any_account_id", required_roles=["edit"]
+        )
 
     def test_org_admin_has_access_to_any_account(self, org_admin_user):
         """Organization admins should have access to any account."""

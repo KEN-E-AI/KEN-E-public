@@ -77,14 +77,11 @@ class TestDetermineStatus:
 
     def test_rate_limited(self):
         assert (
-            _determine_status({"error": "rate_limited"})
-            == ExecutionStatus.RATE_LIMITED
+            _determine_status({"error": "rate_limited"}) == ExecutionStatus.RATE_LIMITED
         )
 
     def test_timeout(self):
-        assert (
-            _determine_status({"error": "timeout"}) == ExecutionStatus.TIMEOUT
-        )
+        assert _determine_status({"error": "timeout"}) == ExecutionStatus.TIMEOUT
 
     def test_generic_error(self):
         assert (
@@ -114,7 +111,9 @@ class TestAdkAfterToolCallback:
             "app.adk.tracking.callbacks.get_usage_tracker",
             return_value=mock_tracker,
         ):
-            result = await adk_after_tool_callback(tool, {"query": "traffic"}, ctx, response)
+            result = await adk_after_tool_callback(
+                tool, {"query": "traffic"}, ctx, response
+            )
 
         assert result is None
         mock_tracker.track_execution.assert_awaited_once()
@@ -223,7 +222,9 @@ class TestAdkAfterToolCallback:
             "app.adk.tracking.callbacks.get_usage_tracker",
             return_value=mock_tracker,
         ):
-            result = await adk_after_tool_callback(tool, {"query": "traffic"}, ctx, response)
+            result = await adk_after_tool_callback(
+                tool, {"query": "traffic"}, ctx, response
+            )
 
         assert result is None
         mock_tracker.track_execution.assert_awaited_once()

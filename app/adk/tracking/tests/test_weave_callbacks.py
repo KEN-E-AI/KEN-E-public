@@ -41,12 +41,8 @@ class TestWeaveBeforeAgentCallback:
         mock_client = MagicMock()
         mock_client.create_call.return_value = mock_call
 
-        with patch(_INIT_WEAVE_PATH), patch(
-            _GET_CLIENT_PATH, return_value=mock_client
-        ):
-            result = weave_before_agent_callback(
-                callback_context=MockCallbackContext()
-            )
+        with patch(_INIT_WEAVE_PATH), patch(_GET_CLIENT_PATH, return_value=mock_client):
+            result = weave_before_agent_callback(callback_context=MockCallbackContext())
 
         assert result is None
         mock_client.create_call.assert_called_once_with(
@@ -67,22 +63,17 @@ class TestWeaveBeforeAgentCallback:
             call_order.append("get_client")
             return None
 
-        with patch(
-            _INIT_WEAVE_PATH, side_effect=mock_init
-        ), patch(_GET_CLIENT_PATH, side_effect=mock_get):
-            weave_before_agent_callback(
-                callback_context=MockCallbackContext()
-            )
+        with (
+            patch(_INIT_WEAVE_PATH, side_effect=mock_init),
+            patch(_GET_CLIENT_PATH, side_effect=mock_get),
+        ):
+            weave_before_agent_callback(callback_context=MockCallbackContext())
 
         assert call_order == ["init", "get_client"]
 
     def test_noop_when_client_is_none(self):
-        with patch(_INIT_WEAVE_PATH), patch(
-            _GET_CLIENT_PATH, return_value=None
-        ):
-            result = weave_before_agent_callback(
-                callback_context=MockCallbackContext()
-            )
+        with patch(_INIT_WEAVE_PATH), patch(_GET_CLIENT_PATH, return_value=None):
+            result = weave_before_agent_callback(callback_context=MockCallbackContext())
 
         assert result is None
         assert _current_agent_call.get(None) is None
@@ -91,12 +82,8 @@ class TestWeaveBeforeAgentCallback:
         mock_client = MagicMock()
         mock_client.create_call.side_effect = RuntimeError("Weave down")
 
-        with patch(_INIT_WEAVE_PATH), patch(
-            _GET_CLIENT_PATH, return_value=mock_client
-        ):
-            result = weave_before_agent_callback(
-                callback_context=MockCallbackContext()
-            )
+        with patch(_INIT_WEAVE_PATH), patch(_GET_CLIENT_PATH, return_value=mock_client):
+            result = weave_before_agent_callback(callback_context=MockCallbackContext())
 
         assert result is None
         assert _current_agent_call.get(None) is None
@@ -111,12 +98,11 @@ class TestWeaveAfterAgentCallback:
 
         mock_client = MagicMock()
 
-        with patch(
-            _GET_CLIENT_PATH, return_value=mock_client
-        ), patch(_CALL_CTX_PATH) as mock_ctx:
-            result = weave_after_agent_callback(
-                callback_context=MockCallbackContext()
-            )
+        with (
+            patch(_GET_CLIENT_PATH, return_value=mock_client),
+            patch(_CALL_CTX_PATH) as mock_ctx,
+        ):
+            result = weave_after_agent_callback(callback_context=MockCallbackContext())
 
         assert result is None
         mock_client.finish_call.assert_called_once_with(
@@ -126,9 +112,7 @@ class TestWeaveAfterAgentCallback:
         assert _current_agent_call.get(None) is None
 
     def test_noop_when_no_call_in_context_var(self):
-        result = weave_after_agent_callback(
-            callback_context=MockCallbackContext()
-        )
+        result = weave_after_agent_callback(callback_context=MockCallbackContext())
 
         assert result is None
         assert _current_agent_call.get(None) is None
@@ -140,12 +124,11 @@ class TestWeaveAfterAgentCallback:
         mock_client = MagicMock()
         mock_client.finish_call.side_effect = RuntimeError("Weave error")
 
-        with patch(
-            _GET_CLIENT_PATH, return_value=mock_client
-        ), patch(_CALL_CTX_PATH) as mock_ctx:
-            result = weave_after_agent_callback(
-                callback_context=MockCallbackContext()
-            )
+        with (
+            patch(_GET_CLIENT_PATH, return_value=mock_client),
+            patch(_CALL_CTX_PATH) as mock_ctx,
+        ):
+            result = weave_after_agent_callback(callback_context=MockCallbackContext())
 
         assert result is None
         mock_ctx.pop_call.assert_called_with("call-789")
@@ -158,13 +141,12 @@ class TestWeaveAfterAgentCallback:
         mock_client = MagicMock()
         mock_client.finish_call.side_effect = RuntimeError("finish fail")
 
-        with patch(
-            _GET_CLIENT_PATH, return_value=mock_client
-        ), patch(_CALL_CTX_PATH) as mock_ctx:
+        with (
+            patch(_GET_CLIENT_PATH, return_value=mock_client),
+            patch(_CALL_CTX_PATH) as mock_ctx,
+        ):
             mock_ctx.pop_call.side_effect = RuntimeError("pop fail")
-            result = weave_after_agent_callback(
-                callback_context=MockCallbackContext()
-            )
+            result = weave_after_agent_callback(callback_context=MockCallbackContext())
 
         assert result is None
         assert _current_agent_call.get(None) is None
