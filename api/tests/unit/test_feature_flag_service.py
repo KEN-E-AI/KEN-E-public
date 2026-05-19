@@ -691,6 +691,181 @@ class TestMutatingFlags:
 
 
 # ---------------------------------------------------------------------------
+# TestCacheInvalidationOnWrites — FF-16 (FF-PRD-02 B5)
+# ---------------------------------------------------------------------------
+
+
+class TestCacheInvalidationOnWrites:
+    """Unit tests that pin the cache-invalidation contract for all three mutating methods.
+
+    Each case:
+      1. Warms the in-process LRU cache (either via evaluate_batch or direct seeding).
+      2. Performs the mutation while holding FakeClock steady (no advance()) so any
+         pass cannot be attributed to TTL expiry.
+      3. Asserts the cache entry is absent immediately after the mutation.
+      4. Re-runs evaluate_batch against a DB mock that returns the post-mutation state
+         and asserts the result reflects the new state (not stale).
+
+    This pins FF-PRD-02 §7 AC-6: "Mutating a flag through the service invalidates
+    the in-process cache for that flag_key on the *current* Cloud Run instance."
+
+    The existing test_cache_reloads_after_ttl_expires (line 179) covers the TTL path
+    separately — mixing both mechanisms in these cases would conflate them.
+
+    All cases patch record_audit at the service-module level (_AUDIT_PATCH) so
+    Firestore audit writes are never issued and audit arguments are inspectable.
+
+    Cases:
+      (a) create_flag invalidates a cached-absent entry so the next evaluate_batch
+          returns the new flag (not unknown_flag).
+      (b) update_flag invalidates a cached pre-update entry so the next evaluate_batch
+          returns the post-update FlagEvaluation.
+      (b2) update_flag: even when record_audit raises the pop() already happened — the
+           cache entry is gone before audit, so the invalidation is unconditional.
+      (c) delete_flag invalidates a cached entry so the next evaluate_batch returns
+          reason="unknown_flag".
+    """
+
+    _AUDIT_PATCH = "src.kene_api.services.feature_flag_service.record_audit"
+
+    async def test_create_flag_invalidates_cached_absent_entry(self) -> None:
+        """(a) create_flag removes a cached-absent entry; re-evaluation returns the new flag."""
+        clock = FakeClock(start=0.0)
+
+        # Phase 1: Build a DB that returns absent (simulates a prior evaluate_batch that
+        # cached "this key does not exist").
+        db = _mock_db_with_flag(None)
+        svc = FeatureFlagService(db=db, time_provider=clock)
+
+        # Warm the cache with a confirmed-absent entry by evaluating the absent key.
+        await svc.evaluate_batch(["inv_create_flag"], _ctx())
+        assert "inv_create_flag" in svc._cache
+        assert svc._cache["inv_create_flag"].flag is None  # absent entry cached
+
+        # Phase 2: create_flag - DB mock for the create call (no doc.get needed for create).
+        db_create = _mock_create_db()
+        svc._db = db_create
+        request = _make_write_request(key="inv_create_flag")
+
+        with patch(self._AUDIT_PATCH, new_callable=AsyncMock):
+            result_flag = await svc.create_flag(request, "admin@ken-e.ai")
+
+        # Phase 3: Assert the cache entry is gone (pop happened).
+        assert "inv_create_flag" not in svc._cache, (
+            "create_flag must remove the cached-absent entry immediately"
+        )
+
+        # Phase 4: Re-evaluate without advancing FakeClock — DB now returns the new flag.
+        # Re-bind db to return the newly created flag so _fetch_flag sees fresh state.
+        db_post = _mock_db_with_flag(result_flag)
+        svc._db = db_post
+
+        result = await svc.evaluate_batch(["inv_create_flag"], _ctx())
+
+        assert result["inv_create_flag"].reason != "unknown_flag", (
+            "evaluate_batch after create_flag must not return unknown_flag — cache was invalidated"
+        )
+        assert result["inv_create_flag"].enabled == result_flag.default_enabled
+
+    async def test_update_flag_invalidates_cached_pre_update_entry(self) -> None:
+        """(b) update_flag removes the cached pre-update entry; re-evaluation returns post-update value."""
+        clock = FakeClock(start=0.0)
+
+        pre_update_flag = _make_flag(key="inv_update_flag", default_enabled=False)
+        db = _mock_existing_db(pre_update_flag)
+        svc = FeatureFlagService(db=db, time_provider=clock)
+
+        # Phase 1: Warm the cache by evaluating — forces a Firestore read and caches the flag.
+        await svc.evaluate_batch(["inv_update_flag"], _ctx())
+        assert "inv_update_flag" in svc._cache
+        cached_entry = svc._cache["inv_update_flag"]
+        assert cached_entry.flag is not None
+        assert cached_entry.flag.default_enabled is False
+
+        # Phase 2: update_flag — DB still returns the pre-update flag on .get() (for the
+        # audit diff read inside update_flag), then .set() no-ops.
+        request = _make_write_request(key="inv_update_flag", default_enabled=True)
+
+        with patch(self._AUDIT_PATCH, new_callable=AsyncMock):
+            await svc.update_flag("inv_update_flag", request, "admin@ken-e.ai")
+
+        # Phase 3: Cache entry must be gone immediately (before TTL expires).
+        assert "inv_update_flag" not in svc._cache, (
+            "update_flag must remove the cached pre-update entry immediately"
+        )
+
+        # Phase 4: Re-evaluate without advancing FakeClock — DB now returns post-update flag.
+        post_update_flag = _make_flag(key="inv_update_flag", default_enabled=True)
+        db_post = _mock_db_with_flag(post_update_flag)
+        svc._db = db_post
+
+        result = await svc.evaluate_batch(["inv_update_flag"], _ctx())
+
+        assert result["inv_update_flag"] == FlagEvaluation(
+            key="inv_update_flag", enabled=True, reason="default"
+        ), "evaluate_batch must return the post-update value after cache invalidation"
+
+    async def test_update_flag_pop_happens_before_audit(self) -> None:
+        """(b2) Even when record_audit raises, the pop() already ran — cache entry absent."""
+        clock = FakeClock(start=0.0)
+
+        pre_update_flag = _make_flag(key="inv_audit_raise_flag", default_enabled=False)
+        db = _mock_existing_db(pre_update_flag)
+        svc = FeatureFlagService(db=db, time_provider=clock)
+
+        # Warm the cache.
+        await svc.evaluate_batch(["inv_audit_raise_flag"], _ctx())
+        assert "inv_audit_raise_flag" in svc._cache
+
+        # update_flag with record_audit patched to raise — the pop() must still have run.
+        request = _make_write_request(key="inv_audit_raise_flag", default_enabled=True)
+
+        with patch(self._AUDIT_PATCH, side_effect=RuntimeError("audit down")):
+            with pytest.raises(RuntimeError, match="audit down"):
+                await svc.update_flag("inv_audit_raise_flag", request, "admin@ken-e.ai")
+
+        # The pop() happens before record_audit in update_flag (line 540 before line 543).
+        # If this assertion fails, the pop() was moved after record_audit, breaking AC-6
+        # in scenarios where audit writes fail.
+        assert "inv_audit_raise_flag" not in svc._cache, (
+            "self._cache.pop() must execute before record_audit so a failing audit "
+            "does not leave a stale cache entry"
+        )
+
+    async def test_delete_flag_invalidates_cached_entry(self) -> None:
+        """(c) delete_flag removes the cached entry; re-evaluation returns unknown_flag."""
+        clock = FakeClock(start=0.0)
+
+        existing_flag = _make_flag(key="inv_delete_flag")
+        db = _mock_existing_db(existing_flag)
+        svc = FeatureFlagService(db=db, time_provider=clock)
+
+        # Phase 1: Warm the cache.
+        await svc.evaluate_batch(["inv_delete_flag"], _ctx())
+        assert "inv_delete_flag" in svc._cache
+        assert svc._cache["inv_delete_flag"].flag is not None
+
+        # Phase 2: delete_flag.
+        with patch(self._AUDIT_PATCH, new_callable=AsyncMock):
+            await svc.delete_flag("inv_delete_flag", "admin@ken-e.ai")
+
+        # Phase 3: Cache entry must be gone immediately.
+        assert "inv_delete_flag" not in svc._cache, (
+            "delete_flag must remove the cached entry immediately"
+        )
+
+        # Phase 4: Re-evaluate without advancing FakeClock — DB returns absent (doc deleted).
+        db_post = _mock_db_with_flag(None)
+        svc._db = db_post
+
+        result = await svc.evaluate_batch(["inv_delete_flag"], _ctx())
+
+        assert result["inv_delete_flag"] == FlagEvaluation(
+            key="inv_delete_flag", enabled=False, reason="unknown_flag"
+        ), "evaluate_batch after delete_flag must return unknown_flag — cache was invalidated"
+
+
+# ---------------------------------------------------------------------------
 # TestGetFlagAudit — FF-15 (FF-PRD-02 B4)
 # ---------------------------------------------------------------------------
 
