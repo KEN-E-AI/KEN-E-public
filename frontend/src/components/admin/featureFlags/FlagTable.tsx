@@ -37,7 +37,8 @@ function compareExpectedGaRelease(
   if (!a && !b) return 0;
   if (!a) return 1;
   if (!b) return -1;
-  const cmp = a.localeCompare(b);
+  // numeric:true so "Release 10" sorts after "Release 2"
+  const cmp = a.localeCompare(b, undefined, { numeric: true });
   return direction === "asc" ? cmp : -cmp;
 }
 
@@ -84,12 +85,15 @@ export function FlagTable({ flags, onRowClick, onCreate }: Props) {
     }
   }
 
-  function handleToggleActive(flag: FeatureFlag) {
+  // NOTE: rapid double-toggles on different rows can race on `previousFlags` because
+  // useUpdateFlag is a shared singleton. Acceptable for admin-only low-frequency surface.
+  async function handleToggleActive(flag: FeatureFlag) {
     const newActive = !flag.is_active;
 
-    // Optimistic update: cancel in-flight list queries, snapshot, write toggled row
+    // Optimistic update: cancel in-flight list queries, snapshot, write toggled row.
+    // `await cancelQueries` ensures the snapshot below does not capture stale in-flight data.
     const listKey = featureFlagKeys.list();
-    queryClient.cancelQueries({ queryKey: listKey });
+    await queryClient.cancelQueries({ queryKey: listKey });
     const previousFlags = queryClient.getQueryData<FeatureFlag[]>(listKey);
     queryClient.setQueryData<FeatureFlag[]>(listKey, (old) =>
       (old ?? []).map((f) =>
@@ -168,7 +172,14 @@ export function FlagTable({ flags, onRowClick, onCreate }: Props) {
               <TableHead>Owner</TableHead>
               <TableHead
                 className="cursor-pointer select-none hover:text-[var(--color-text-primary)]"
+                tabIndex={0}
                 onClick={handleGaReleaseHeaderClick}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    handleGaReleaseHeaderClick();
+                  }
+                }}
                 aria-sort={
                   sortColumn === "expected_ga_release"
                     ? sortDirection === "asc"
@@ -208,8 +219,9 @@ export function FlagTable({ flags, onRowClick, onCreate }: Props) {
                 <TableCell onClick={(e) => e.stopPropagation()}>
                   <Switch
                     checked={flag.is_active}
-                    onCheckedChange={() => handleToggleActive(flag)}
+                    onCheckedChange={() => void handleToggleActive(flag)}
                     aria-label={`Toggle ${flag.key} active state`}
+                    disabled={updateFlag.isPending}
                   />
                 </TableCell>
                 <TableCell>
