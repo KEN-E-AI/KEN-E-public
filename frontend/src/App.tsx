@@ -56,8 +56,10 @@ import { SkillsPage } from "./pages/workflows/SkillsPage";
 import { AgentCreatePage } from "./pages/workflows/AgentCreatePage";
 import { AutomationDetailsPage } from "./pages/workflows/AutomationDetailsPage";
 import "@/components/admin/superAdmins/registration";
+import "@/components/admin/featureFlags/registration";
 import { SuperAdminGuard } from "@/components/auth/SuperAdminGuard";
 import SuperAdminsPage from "@/pages/admin/SuperAdminsPage";
+import FeatureFlagsPage from "@/pages/admin/FeatureFlagsPage";
 // Import test utilities in development
 if (import.meta.env.DEV) {
   import("./utils/testNotification");
@@ -331,6 +333,14 @@ const App = () => (
                         element={
                           <SuperAdminGuard>
                             <SuperAdminsPage />
+                          </SuperAdminGuard>
+                        }
+                      />
+                      <Route
+                        path="/admin/feature-flags"
+                        element={
+                          <SuperAdminGuard>
+                            <FeatureFlagsPage />
                           </SuperAdminGuard>
                         }
                       />
