@@ -2267,16 +2267,28 @@ async def create_conversation(
             if request.account_id:
                 try:
                     org_id = await _get_organization_id_for_account(request.account_id)
+                    if org_id is None:
+                        # Skip rather than persist a malformed row; CH-17 back-fill repairs.
+                        logger.warning(
+                            "Side-table create skipped — no org_id for account",
+                            extra=log_context(
+                                component="chat",
+                                action="side_table_create_skip",
+                                extra={"account_id": request.account_id},
+                            ),
+                        )
+                        return sid
                     model_id = _get_agent_model_id()
-                    loop = asyncio.get_event_loop()
+                    loop = asyncio.get_running_loop()
                     svc = get_chat_side_table_service()
+                    account_id = request.account_id
                     await loop.run_in_executor(
                         None,
                         lambda: svc.create(
                             session_id=sid,
                             user_id=user_id,
-                            account_id=request.account_id,
-                            organization_id=org_id or "",
+                            account_id=account_id,
+                            organization_id=org_id,
                             model_id=model_id,
                         ),
                     )
