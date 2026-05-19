@@ -3,7 +3,8 @@
 This module is the home for all Feature Flags evaluation logic as defined in
 FF-PRD-01. hash_bucket is landed in FF-2; the evaluator is now landed by FF-3;
 the service class is landed by FF-4; is_feature_enabled and
-get_feature_flag_service are landed by FF-5.
+get_feature_flag_service are landed by FF-5; mutating methods and domain
+exceptions are landed by FF-13.
 """
 
 import asyncio
@@ -12,12 +13,21 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from functools import lru_cache
 
+from google.api_core import exceptions as gcp_exceptions
 from google.cloud import firestore
 
 from ..dependencies import get_firestore_client
-from ..models.feature_flag_models import EvaluationContext, FeatureFlag, FlagEvaluation
+from ..models.feature_flag_models import (
+    EvaluationContext,
+    FeatureFlag,
+    FeatureFlagAuditEntry,
+    FeatureFlagWriteRequest,
+    FlagEvaluation,
+)
+from .feature_flag_audit import compute_flag_diff, record_audit
 
 logger = logging.getLogger(__name__)
 
@@ -122,6 +132,33 @@ def evaluate(
 
 
 # ---------------------------------------------------------------------------
+# FF-13: Domain exceptions for mutating operations
+# ---------------------------------------------------------------------------
+
+
+class FeatureFlagNotFoundError(Exception):
+    """Raised by mutating service methods when the target flag doc does not exist.
+
+    Callers (routers) catch this and convert it to an HTTP 404 response.
+    """
+
+    def __init__(self, key: str) -> None:
+        super().__init__(f"Feature flag '{key}' not found")
+        self.key = key
+
+
+class DuplicateFeatureFlagError(Exception):
+    """Raised by create_flag when a doc already exists for the given key.
+
+    Callers (routers) catch this and convert it to an HTTP 409 response.
+    """
+
+    def __init__(self, key: str) -> None:
+        super().__init__(f"Feature flag '{key}' already exists")
+        self.key = key
+
+
+# ---------------------------------------------------------------------------
 # FF-4: FeatureFlagService — Firestore I/O + in-process TTL cache
 # ---------------------------------------------------------------------------
 
@@ -188,9 +225,12 @@ class FeatureFlagService:
             )
             now = self._time_provider()
             for key, result in zip(cold_keys, fetch_results, strict=True):
-                if isinstance(result, Exception):
-                    # Transient error — log type only (no exc_info to avoid serialising
-                    # Firestore document contents or gRPC internals into Cloud Logging).
+                if isinstance(result, BaseException):
+                    # BaseException catches asyncio.CancelledError, which is not a
+                    # subclass of Exception in Python 3.8+, but can surface here via
+                    # gather(return_exceptions=True).  Transient error — log type only
+                    # (no exc_info to avoid serialising Firestore document contents or
+                    # gRPC internals into Cloud Logging).
                     # Do NOT cache so the next call retries.
                     logger.error(
                         "feature_flag_fetch_error",
@@ -288,6 +328,90 @@ class FeatureFlagService:
         self._install_cache(flag_key, flag, now)
         return flag
 
+    async def get_flag_audit(
+        self,
+        flag_key: str,
+        limit: int,
+        cursor: str | None,
+    ) -> tuple[list[FeatureFlagAuditEntry], str | None]:
+        """Return a page of audit entries for flag_key, newest-first.
+
+        Queries the global ``feature_flag_audit`` collection using the composite
+        index on ``(flag_key ASC, created_at DESC)`` added by FF-PRD-01.  Does NOT
+        read ``feature_flags/{flag_key}`` — intentionally works for deleted flags
+        whose audit history is retained (FF-PRD-02 §9 risk row).
+
+        created_at is stored as an ISO-8601 string by record_audit.  String
+        comparison on ISO-8601 timestamps is time-monotonic, which is why this
+        works correctly without a Firestore Timestamp field.
+
+        Cursor semantics:
+        - cursor is an opaque ``audit_id`` value from a prior page's next_cursor.
+        - Resolved server-side by fetching ``feature_flag_audit/{cursor}`` and
+          passing the resulting DocumentSnapshot to Firestore's start_after().
+        - A stale cursor (audit doc no longer exists) returns ([], None) without
+          raising — callers (FF-22 Load more) treat this as an empty terminal page.
+
+        Exception semantics:
+        - Firestore exceptions propagate to the caller; this method does NOT
+          swallow them.  Admin callers need real errors (contrast with
+          is_feature_enabled which swallows for the evaluation hot-path).
+
+        Spec: FF-PRD-02 §4, §7 AC-5.
+
+        Args:
+            flag_key: The snake_case flag key to query.
+            limit:    Maximum entries to return per page (1-50; validated by caller).
+            cursor:   audit_id of the last entry from the prior page, or None for
+                      the first page.
+
+        Returns:
+            (entries, next_cursor) where next_cursor is None when no more pages exist,
+            or equals the audit_id of the last entry when a further page is available.
+        """
+
+        def _run() -> tuple[list[FeatureFlagAuditEntry], str | None]:
+            coll = self._db.collection("feature_flag_audit")
+
+            query = (
+                coll.where(filter=firestore.FieldFilter("flag_key", "==", flag_key))
+                .order_by("created_at", direction=firestore.Query.DESCENDING)
+            )
+
+            if cursor is not None:
+                cursor_doc = coll.document(cursor).get()
+                if not cursor_doc.exists:
+                    # Stale cursor — audit doc was deleted; return empty terminal page.
+                    return [], None
+                # Verify the cursor belongs to the same flag_key to prevent cross-flag
+                # position leakage: a valid audit_id from a different flag would cause
+                # start_after() to advance the index position outside flag_key's rows.
+                if cursor_doc.to_dict().get("flag_key") != flag_key:
+                    return [], None
+                query = query.start_after(cursor_doc)
+
+            # Fetch limit+1 to detect whether a next page exists.
+            raw_docs = list(query.limit(limit + 1).stream())
+
+            has_next = len(raw_docs) == limit + 1
+            page_docs = raw_docs[:limit]
+
+            entries: list[FeatureFlagAuditEntry] = []
+            for doc in page_docs:
+                try:
+                    entries.append(FeatureFlagAuditEntry.model_validate(doc.to_dict()))
+                except Exception:
+                    logger.error(
+                        "feature_flag_audit_invalid_doc", extra={"doc_id": doc.id}
+                    )
+
+            # Guard against empty entries when has_next is True (can occur if all
+            # page_docs fail Pydantic validation — skipped by the loop above).
+            next_cursor: str | None = entries[-1].audit_id if (has_next and entries) else None
+            return entries, next_cursor
+
+        return await asyncio.to_thread(_run)
+
     async def _fetch_flag(self, flag_key: str) -> FeatureFlag | None:
         """Fetch a single flag document from Firestore.
 
@@ -307,6 +431,154 @@ class FeatureFlagService:
         # Merge the document-ID as the canonical key so a body/ID mismatch is
         # corrected at read time (PRD §4, Decisions & Assumptions).
         return FeatureFlag.model_validate(doc.to_dict() | {"key": flag_key})
+
+    # -------------------------------------------------------------------------
+    # FF-13: Mutating methods — create_flag / update_flag / delete_flag
+    #
+    # Audit writes happen inside these methods (service-as-chokepoint per
+    # FF-PRD-02 §5 Backend).  Local-instance cache invalidation also lives here
+    # so FF-16's cache-invalidation hook has a single place to extend.
+    # -------------------------------------------------------------------------
+
+    async def create_flag(
+        self,
+        request: FeatureFlagWriteRequest,
+        actor_email: str,
+    ) -> FeatureFlag:
+        """Create a new feature flag document in Firestore.
+
+        Uses DocumentReference.create() for an atomic, conflict-safe write so
+        a duplicate key raises google.api_core.exceptions.AlreadyExists rather
+        than silently overwriting an existing flag (FF-PRD-02 §5 Backend,
+        architecture decision 1).
+
+        Args:
+            request:     Validated inbound payload (server ignores timestamps).
+            actor_email: Email of the super-admin performing the create.
+
+        Returns:
+            The newly created FeatureFlag with server-stamped timestamps.
+
+        Raises:
+            DuplicateFeatureFlagError: if a flag with request.key already exists.
+        """
+        now = datetime.now(timezone.utc)
+        flag = FeatureFlag(
+            **request.model_dump(),
+            created_at=now,
+            updated_at=now,
+        )
+        data = flag.model_dump(mode="json")
+        data.pop("key", None)  # key lives as the document ID, not in the body
+
+        try:
+            await asyncio.to_thread(
+                self._db.collection("feature_flags").document(flag.key).create,
+                data,
+            )
+        except gcp_exceptions.AlreadyExists as exc:
+            raise DuplicateFeatureFlagError(flag.key) from exc
+
+        # Invalidate any stale cache entry so a GET /{key} immediately after
+        # POST returns the newly-created state, not a cached absent entry.
+        self._cache.pop(flag.key, None)
+
+        diff = compute_flag_diff(None, flag)
+        await record_audit(self._db, flag.key, actor_email, "create", diff)
+
+        return flag
+
+    async def update_flag(
+        self,
+        key: str,
+        request: FeatureFlagWriteRequest,
+        actor_email: str,
+    ) -> FeatureFlag:
+        """Full-replace a feature flag document in Firestore.
+
+        Reads the existing document first so the audit diff records the true
+        before-state.  Race-condition risk is accepted for this low-volume
+        super-admin surface (FF-PRD-02 §5 Backend, architecture decision 2 —
+        get-then-write rather than a Firestore transaction).
+
+        Args:
+            key:         The snake_case flag key to update.  Must equal
+                         ``request.key`` — the router enforces this before calling.
+            request:     Validated inbound payload; server preserves
+                         ``created_at`` from the existing document and stamps
+                         a new ``updated_at``.
+            actor_email: Email of the super-admin performing the update.
+
+        Returns:
+            The updated FeatureFlag with a fresh ``updated_at`` timestamp.
+
+        Raises:
+            FeatureFlagNotFoundError: if no document exists for ``key``.
+        """
+        # Read fresh from Firestore (bypasses TTL cache) so the audit diff
+        # records the true before-state and updated_at reflects the actual
+        # current document, not a potentially stale cache entry.
+        existing = await self._fetch_flag(key)
+        if existing is None:
+            raise FeatureFlagNotFoundError(key)
+
+        now = datetime.now(timezone.utc)
+        flag_data = request.model_dump()
+        flag_data["key"] = key  # canonical key from URL, overwrites body key
+        flag_data["created_at"] = existing.created_at
+        flag_data["updated_at"] = now
+        updated = FeatureFlag(**flag_data)
+        data = updated.model_dump(mode="json")
+        data.pop("key", None)
+
+        await asyncio.to_thread(
+            self._db.collection("feature_flags").document(key).set,
+            data,
+        )
+
+        # Invalidate so subsequent reads don't serve the stale pre-update entry.
+        self._cache.pop(key, None)
+
+        diff = compute_flag_diff(existing, updated)
+        await record_audit(self._db, key, actor_email, "update", diff)
+
+        return updated
+
+    async def delete_flag(
+        self,
+        key: str,
+        actor_email: str,
+    ) -> None:
+        """Hard-delete a feature flag document from Firestore.
+
+        Reads the existing document before deletion so the audit diff records
+        the full before-state (after=None).  The audit entry for the deleted
+        flag persists in ``feature_flag_audit`` so the action remains traceable
+        after the flag document is gone (PRD §9 accepted risk — orphaned audit).
+
+        Args:
+            key:         The snake_case flag key to delete.
+            actor_email: Email of the super-admin performing the delete.
+
+        Raises:
+            FeatureFlagNotFoundError: if no document exists for ``key``.
+        """
+        # Read fresh from Firestore (bypasses TTL cache) so the audit diff
+        # captures the full before-state that was actually deleted.
+        existing = await self._fetch_flag(key)
+        if existing is None:
+            raise FeatureFlagNotFoundError(key)
+
+        await asyncio.to_thread(
+            self._db.collection("feature_flags").document(key).delete,
+        )
+
+        # Remove the cache entry so a subsequent evaluation returns unknown_flag
+        # rather than the stale config within the TTL window.
+        self._cache.pop(key, None)
+
+        diff = compute_flag_diff(existing, None)
+        await record_audit(self._db, key, actor_email, "delete", diff)
 
 
 # ---------------------------------------------------------------------------

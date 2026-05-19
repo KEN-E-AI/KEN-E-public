@@ -1,0 +1,50 @@
+{
+  "description": "A single audit log entry for a feature flag mutation.\n\nProduced by record_audit (feature_flag_audit.py) and returned by\nGET /api/v1/admin/feature-flags/{key}/audit.\n\nSpec: FF-PRD-02 \u00a74 (FeatureFlagAuditEntry shape).\ncreated_at is an ISO-8601 string \u2014 stored as a string by record_audit\nand passed through without server-side datetime parsing (pure pass-through).",
+  "properties": {
+    "action": {
+      "enum": [
+        "create",
+        "update",
+        "delete",
+        "toggle_active"
+      ],
+      "title": "Action",
+      "type": "string"
+    },
+    "actor_email": {
+      "format": "email",
+      "title": "Actor Email",
+      "type": "string"
+    },
+    "audit_id": {
+      "title": "Audit Id",
+      "type": "string"
+    },
+    "created_at": {
+      "title": "Created At",
+      "type": "string"
+    },
+    "diff": {
+      "additionalProperties": {
+        "additionalProperties": true,
+        "type": "object"
+      },
+      "title": "Diff",
+      "type": "object"
+    },
+    "flag_key": {
+      "title": "Flag Key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "audit_id",
+    "flag_key",
+    "actor_email",
+    "action",
+    "diff",
+    "created_at"
+  ],
+  "title": "FeatureFlagAuditEntry",
+  "type": "object"
+}

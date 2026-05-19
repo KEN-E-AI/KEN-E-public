@@ -23,10 +23,13 @@ import json
 from pathlib import Path
 
 import pytest
-from src.kene_api.models.feature_flag_models import FeatureFlag
+from src.kene_api.models.feature_flag_models import FeatureFlag, FeatureFlagAuditEntry
 
 _FIXTURES_DIR = (Path(__file__).parent.parent / "fixtures").resolve()
 _SNAPSHOT_PATH = (_FIXTURES_DIR / "feature_flag_schema.snapshot.json").resolve()
+_AUDIT_ENTRY_SNAPSHOT_PATH = (
+    _FIXTURES_DIR / "feature_flag_audit_entry_schema.snapshot.json"
+).resolve()
 
 
 def _canonical(schema: dict[str, object]) -> str:
@@ -79,6 +82,59 @@ class TestFeatureFlagSchemaContract:
 
         snapshot_text = _read_snapshot()
         drift_schema = _canonical(_DriftFeatureFlag.model_json_schema())
+
+        assert drift_schema != snapshot_text, (
+            "Drift subclass schema should differ from the snapshot but did not. "
+            "The contract gate may be broken."
+        )
+
+
+class TestFeatureFlagAuditEntrySchemaContract:
+    """Snapshot contract for FeatureFlagAuditEntry (FF-PRD-02 §5.4).
+
+    Guards against unintentional drift between the Python FeatureFlagAuditEntry
+    model and the TypeScript mirror in frontend/src/lib/featureFlags/types.ts
+    (owned by FF-PRD-02).  When FeatureFlagAuditEntry is intentionally changed,
+    regenerate the snapshot in the same PR as the matching types.ts edit:
+
+        cd api
+        uv run python -c "
+        from src.kene_api.models.feature_flag_models import FeatureFlagAuditEntry
+        import json
+        print(json.dumps(FeatureFlagAuditEntry.model_json_schema(), sort_keys=True, indent=2))
+        " > tests/fixtures/feature_flag_audit_entry_schema.snapshot.json
+    """
+
+    def _read_audit_snapshot(self) -> str:
+        assert _AUDIT_ENTRY_SNAPSHOT_PATH.is_relative_to(_FIXTURES_DIR), (
+            f"Snapshot path escaped fixtures dir: {_AUDIT_ENTRY_SNAPSHOT_PATH}"
+        )
+        if not _AUDIT_ENTRY_SNAPSHOT_PATH.exists():
+            pytest.fail(
+                f"Snapshot fixture missing at {_AUDIT_ENTRY_SNAPSHOT_PATH}. "
+                "Regenerate using the recipe in this class's docstring."
+            )
+        return _AUDIT_ENTRY_SNAPSHOT_PATH.read_text(encoding="utf-8")
+
+    def test_audit_entry_schema_matches_snapshot(self) -> None:
+        """FeatureFlagAuditEntry.model_json_schema() must match the committed snapshot."""
+        snapshot_text = self._read_audit_snapshot()
+        current = _canonical(FeatureFlagAuditEntry.model_json_schema())
+
+        assert current == snapshot_text, (
+            f"FeatureFlagAuditEntry schema has drifted from {_AUDIT_ENTRY_SNAPSHOT_PATH}. "
+            "Regenerate the snapshot (see class docstring) and update "
+            "frontend/src/lib/featureFlags/types.ts in the same PR."
+        )
+
+    def test_subclass_with_extra_field_does_not_match_snapshot(self) -> None:
+        """A model with an extra field must NOT match the snapshot (gate is not trivial)."""
+
+        class _DriftAuditEntry(FeatureFlagAuditEntry):
+            extra_drift_field: str
+
+        snapshot_text = self._read_audit_snapshot()
+        drift_schema = _canonical(_DriftAuditEntry.model_json_schema())
 
         assert drift_schema != snapshot_text, (
             "Drift subclass schema should differ from the snapshot but did not. "
