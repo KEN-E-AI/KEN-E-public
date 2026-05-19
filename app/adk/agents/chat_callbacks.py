@@ -302,11 +302,15 @@ def chat_after_agent_callback(
         delta = _build_turn_delta(events, now)
 
         turn_id = invocation_id or str(uuid.uuid4())
+        # Shared per-turn key: the /completions finally block flushes partial
+        # token counts under the SAME key on a cancelled stream, so whichever
+        # site lands first wins and the other is a 409 no-op — no double-count
+        # of token increments (CH-PRD-01 §7 AC-8).
         _post_side_table_update(
             session_id=session_id,
             account_id=account_id,
             delta=delta,
-            idempotency_key=f"{session_id}:after-agent:{turn_id}",
+            idempotency_key=f"{session_id}:turn:{turn_id}",
         )
     except Exception:
         logger.warning("chat_after_agent_callback failed (non-blocking)", exc_info=True)

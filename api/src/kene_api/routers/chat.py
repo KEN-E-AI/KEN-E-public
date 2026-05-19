@@ -38,11 +38,12 @@ from ..cache import (
     session_metadata_key,
     user_session_ids_key,
 )
+from ..chat.accumulator import SessionTurnAccumulator
 from ..chat.side_table import get_chat_side_table_service
 from ..chat.side_table_handlers import apply_side_table_update
-from ..exceptions import ServiceUnavailableError
 from ..database import get_neo4j_service
 from ..dependencies import get_firestore_client as _get_firestore_client
+from ..exceptions import ServiceUnavailableError
 from ..firestore import get_firestore_service
 from ..models.chat import InternalSideTableUpdateRequest
 from ..models.kene_models import RecoverableSessionInfo
@@ -1743,8 +1744,14 @@ class AgentEngineClient:
         session_id: str | None = None,
         conversation_name: str | None = None,
         account_id: str | None = None,
+        accumulator: SessionTurnAccumulator | None = None,
     ) -> AsyncGenerator[str, None]:
-        """Stream a chat completion from the Agent Engine using agent_engines API."""
+        """Stream a chat completion from the Agent Engine using agent_engines API.
+
+        When `accumulator` is supplied, every raw chunk is folded into it via
+        `add_stream_chunk` before text extraction — this is how a cancelled
+        stream still flushes partial token counts (CH-PRD-01 §7 AC-8).
+        """
         if not self.agent_engine:
             yield "I'm sorry, but I'm unable to process your request at the moment. Please try again later."
             return
@@ -1845,6 +1852,14 @@ class AgentEngineClient:
 
                         if exception_holder["exception"]:
                             raise exception_holder["exception"]
+
+                        # Fold the raw chunk into the per-turn accumulator
+                        # before text extraction discards everything but the
+                        # text — this is how a cancelled stream still flushes
+                        # partial token counts (CH-PRD-01 §7 AC-8).
+                        if accumulator is not None:
+                            accumulator.add_stream_chunk(chunk)
+
                         if isinstance(chunk, dict):
                             # Handle actual dictionary response
                             # Handle nested structure: {'content': {'parts': [{'text': '...'}]}}
@@ -2057,6 +2072,109 @@ def _preload_agent_engine() -> None:
         )
 
 
+async def _flush_stream_turn(
+    *,
+    session_id: str | None,
+    account_id: str,
+    accumulator: SessionTurnAccumulator,
+    turn_failed: bool,
+    turn_uuid: str,
+) -> None:
+    """Flush the side-table at the end of a streaming completion.
+
+    On a cancelled or failed turn the accumulator's partial token counts are
+    persisted under the shared per-turn idempotency key
+    (``{session_id}:turn:{invocation_id}``) — the same key
+    ``after_agent_callback`` uses — so whichever site lands first wins and the
+    other is a 409 no-op. The /completions finally fires first on a client
+    disconnect, so the partial counts are the ones that persist (CH-PRD-01
+    §7 AC-8).
+
+    On a clean turn only a stop-stamp safety net is written, under a distinct
+    ``api-finally`` key: ``after_agent_callback`` is authoritative for the
+    counters and the separate key means the two writes never conflict.
+
+    Never raises — a side-table failure must not surface to the SSE client.
+    """
+    try:
+        if not session_id or str(session_id).startswith("pending_") or not account_id:
+            return
+
+        if turn_failed and accumulator.invocation_id:
+            # Cancelled / failed stream: persist the partial token counts
+            # observed before the stream ended, under the shared per-turn key.
+            delta = accumulator.build_stream_delta()
+            idempotency_key = f"{session_id}:turn:{accumulator.invocation_id}"
+        else:
+            # Clean completion, or a failure before any chunk arrived (no
+            # invocation id): stop-stamp safety net only.
+            now = datetime.now(timezone.utc)
+            delta = {"last_agent_stopped_at": now, "updated_at": now}
+            idempotency_key = f"{session_id}:api-finally:{turn_uuid}"
+
+        db = _get_firestore_client()
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None,
+            lambda: apply_side_table_update(
+                db=db,
+                session_id=session_id,
+                account_id=account_id,
+                delta=delta,
+                idempotency_key=idempotency_key,
+            ),
+        )
+    except Exception as exc:
+        logger.debug("Stream side-table flush skipped: %s", exc)
+
+
+async def _stream_completion_sse(
+    *,
+    messages: list[ChatMessage],
+    user_context: UserContext,
+    session_id: str | None,
+    conversation_name: str | None,
+    account_id: str | None,
+    turn_uuid: str,
+) -> AsyncGenerator[str, None]:
+    """Server-Sent-Events generator for a streaming chat completion.
+
+    Streams the agent response while a ``SessionTurnAccumulator`` folds in each
+    raw chunk. The finally block flushes the side-table via
+    ``_flush_stream_turn`` on every exit path — clean completion, agent-side
+    exception, or SSE cancellation (``GeneratorExit`` from ``aclose()``) — so a
+    cancelled turn still records ``last_agent_stopped_at`` and its partial
+    token counts (CH-PRD-01 §7 AC-8).
+    """
+    accumulator = SessionTurnAccumulator()
+    turn_failed = False
+    try:
+        async for chunk in agent_client.stream_chat_completion(
+            messages=messages,
+            user_context=user_context,
+            session_id=session_id,
+            conversation_name=conversation_name,
+            account_id=account_id,
+            accumulator=accumulator,
+        ):
+            # Format as Server-Sent Events
+            yield f"data: {chunk}\n\n"
+        yield "data: [DONE]\n\n"
+    except (asyncio.CancelledError, GeneratorExit, Exception):
+        # SSE cancellation (GeneratorExit / CancelledError) or an agent-side
+        # failure — mark the turn failed so the finally flushes partial counts.
+        turn_failed = True
+        raise
+    finally:
+        await _flush_stream_turn(
+            session_id=session_id,
+            account_id=account_id or "",
+            accumulator=accumulator,
+            turn_failed=turn_failed,
+            turn_uuid=turn_uuid,
+        )
+
+
 @router.post("/completions", response_model=ChatResponse)
 async def chat_completion(
     request: ChatRequest, user_context: UserContext = Depends(get_current_user_context)
@@ -2098,46 +2216,15 @@ async def chat_completion(
                 _attrs_cm = None
 
         if request.stream:
-            # Return streaming response
-            async def generate_response():
-                try:
-                    async for chunk in agent_client.stream_chat_completion(
-                        messages=request.messages,
-                        user_context=user_context,
-                        session_id=request.session_id,
-                        conversation_name=request.conversation_name,
-                        account_id=request.account_id,
-                    ):
-                        # Format as Server-Sent Events
-                        yield f"data: {chunk}\n\n"
-                    yield "data: [DONE]\n\n"
-                finally:
-                    # Safety-net stop-stamp: fires after stream is fully consumed or on
-                    # SSE cancellation. Primary flush is after_agent_callback.
-                    try:
-                        _s_id = request.session_id
-                        _a_id = request.account_id or ""
-                        if _s_id and not str(_s_id).startswith("pending_") and _a_id:
-                            _now = datetime.now(timezone.utc)
-                            _db = _get_firestore_client()
-                            _idem_key = f"{_s_id}:api-finally:{turn_uuid}"
-                            _delta = {"last_agent_stopped_at": _now, "updated_at": _now}
-                            _loop = asyncio.get_running_loop()
-                            await _loop.run_in_executor(
-                                None,
-                                lambda: apply_side_table_update(
-                                    db=_db,
-                                    session_id=_s_id,
-                                    account_id=_a_id,
-                                    delta=_delta,
-                                    idempotency_key=_idem_key,
-                                ),
-                            )
-                    except Exception as _stamp_err:
-                        logger.debug("Stream stop-stamp skipped: %s", _stamp_err)
-
             return StreamingResponse(
-                generate_response(),
+                _stream_completion_sse(
+                    messages=request.messages,
+                    user_context=user_context,
+                    session_id=request.session_id,
+                    conversation_name=request.conversation_name,
+                    account_id=request.account_id,
+                    turn_uuid=turn_uuid,
+                ),
                 media_type="text/plain",
                 headers={
                     "Cache-Control": "no-cache",

@@ -35,6 +35,7 @@ import os
 import sys
 from collections import deque
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any
 
 from google.cloud import firestore
@@ -178,6 +179,11 @@ class SessionTurnAccumulator:
         # Final-text preview (last 160 chars of the most recent final-text event)
         self.final_text: str = ""
 
+        # ADK invocation id, captured from the first stream chunk that carries
+        # one (add_stream_chunk path only). The /completions finally block uses
+        # it to build the shared per-turn idempotency key.
+        self.invocation_id: str | None = None
+
         # Rolling buffer: last 11 events (summary + overlap + 10 retained)
         # Used by compute_post_compaction_window_tokens on compaction.
         self._event_buffer: deque[Any] = deque(maxlen=11)
@@ -233,6 +239,37 @@ class SessionTurnAccumulator:
             text = getattr(event, "text", "") or ""
             self.final_text = text
 
+    def add_stream_chunk(self, chunk: Any) -> None:
+        """Fold one Agent Engine ``stream_query`` chunk into the running totals.
+
+        Unlike `add_event`, which receives ADK Event objects, this normalises
+        the JSON-shaped dict that Agent Engine yields over the wire. Only token
+        counts and the invocation id are extracted — enough for the
+        `/completions` finally block to flush partial token counts when a
+        stream is cancelled (CH-PRD-01 §7 AC-8). Non-dict chunks (bare text
+        fragments) and chunks without `usage_metadata` are ignored.
+
+        message_count / tool_call_count / final-text are NOT derived here — the
+        wire chunk shape for those is not guaranteed, and `after_agent_callback`
+        writes them authoritatively from `session.events`.
+        """
+        if not isinstance(chunk, dict):
+            return
+
+        if self.invocation_id is None:
+            invocation_id = chunk.get("invocation_id")
+            if invocation_id:
+                self.invocation_id = str(invocation_id)
+
+        usage = chunk.get("usage_metadata")
+        if isinstance(usage, dict):
+            counts: BillableTokenCounts = extract_billable_tokens(
+                SimpleNamespace(usage_metadata=SimpleNamespace(**usage))
+            )
+            self._input += counts.input
+            self._output += counts.output
+            self._reasoning += counts.reasoning
+
     def build_delta(self) -> dict[str, Any]:
         """Produce the Firestore update dict for this turn.
 
@@ -276,3 +313,27 @@ class SessionTurnAccumulator:
             delta["current_context_tokens"] = firestore.Increment(turn_tokens)
 
         return delta
+
+    def build_stream_delta(self) -> dict[str, Any]:
+        """Produce a partial side-table delta from `add_stream_chunk` data.
+
+        Returned by the `/completions` finally block on a cancelled or failed
+        streaming turn: a stop-stamp plus the partial token increments observed
+        before the stream ended (CH-PRD-01 §7 AC-8). Counter fields are
+        `firestore.Increment` so the write composes with prior counter state.
+
+        Deliberately omits message_count / tool_call_count /
+        last_message_preview — those need ADK Event objects (`add_event`) and
+        are written authoritatively by `after_agent_callback`. Writing them
+        here from incomplete stream data would clobber the real values.
+        """
+        now = _now_utc()
+        turn_tokens = self._input + self._output + self._reasoning
+        return {
+            "last_agent_stopped_at": now,
+            "updated_at": now,
+            "input_tokens_total": firestore.Increment(self._input),
+            "output_tokens_total": firestore.Increment(self._output),
+            "reasoning_tokens_total": firestore.Increment(self._reasoning),
+            "current_context_tokens": firestore.Increment(turn_tokens),
+        }

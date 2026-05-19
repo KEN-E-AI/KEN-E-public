@@ -263,7 +263,7 @@ class TestChatAfterAgentCallbackIntegration:
         call = posted[0]
         assert call["session_id"] == "sess_001"
         assert call["account_id"] == "acc_001"
-        assert "after-agent:inv_001" in call["idempotency_key"]
+        assert "turn:inv_001" in call["idempotency_key"]
         assert "last_agent_stopped_at" in call["delta"]
         assert "updated_at" in call["delta"]
         assert "last_agent_message_at" in call["delta"]
@@ -381,7 +381,11 @@ class TestChatAfterAgentCallbackIntegration:
         assert delta["message_count"] == {"_increment": 1}  # only author="model" event
 
     def test_idempotency_key_contains_session_and_invocation(self) -> None:
-        """Idempotency key format: '{session_id}:after-agent:{invocation_id}'."""
+        """Idempotency key format: '{session_id}:turn:{invocation_id}'.
+
+        The shared per-turn key — the /completions finally block flushes
+        partial counts under the same key on a cancelled stream (AC-8).
+        """
         posted: list[dict] = []
 
         with patch(
@@ -396,7 +400,7 @@ class TestChatAfterAgentCallbackIntegration:
             )
             chat_after_agent_callback(ctx)
 
-        assert posted[0]["idempotency_key"] == "sess_idem:after-agent:inv_idem"
+        assert posted[0]["idempotency_key"] == "sess_idem:turn:inv_idem"
 
 
 # ---------------------------------------------------------------------------

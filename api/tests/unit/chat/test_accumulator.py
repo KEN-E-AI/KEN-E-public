@@ -472,3 +472,153 @@ class TestComputePostCompactionWindowTokens:
         compaction_ev = SimpleNamespace(usage_metadata=SimpleNamespace())  # no total_token_count
         result = compute_post_compaction_window_tokens(compaction_ev, [])
         assert result == 0
+
+
+# ---------------------------------------------------------------------------
+# add_stream_chunk — Agent Engine stream_query chunk path (AC-8)
+# ---------------------------------------------------------------------------
+
+
+def _stream_chunk(
+    *,
+    invocation_id: str | None = None,
+    prompt: int | None = None,
+    candidates: int | None = None,
+    thoughts: int | None = None,
+    cached: int | None = None,
+) -> dict:
+    """Build a JSON-shaped Agent Engine stream_query chunk."""
+    chunk: dict = {"content": {"parts": [{"text": "hi"}]}}
+    if invocation_id is not None:
+        chunk["invocation_id"] = invocation_id
+    if any(v is not None for v in (prompt, candidates, thoughts, cached)):
+        chunk["usage_metadata"] = {
+            "prompt_token_count": prompt or 0,
+            "candidates_token_count": candidates or 0,
+            "thoughts_token_count": thoughts or 0,
+            "cached_content_token_count": cached or 0,
+        }
+    return chunk
+
+
+class TestAddStreamChunk:
+    def test_initial_invocation_id_none(self) -> None:
+        assert SessionTurnAccumulator().invocation_id is None
+
+    def test_captures_invocation_id(self) -> None:
+        a = SessionTurnAccumulator()
+        a.add_stream_chunk(_stream_chunk(invocation_id="inv-1"))
+        assert a.invocation_id == "inv-1"
+
+    def test_invocation_id_captured_from_first_chunk_only(self) -> None:
+        a = SessionTurnAccumulator()
+        a.add_stream_chunk(_stream_chunk(invocation_id="inv-first"))
+        a.add_stream_chunk(_stream_chunk(invocation_id="inv-second"))
+        assert a.invocation_id == "inv-first"
+
+    def test_tokens_accumulate(self) -> None:
+        a = SessionTurnAccumulator()
+        a.add_stream_chunk(_stream_chunk(prompt=100, candidates=40))
+        a.add_stream_chunk(_stream_chunk(prompt=200, candidates=60, thoughts=10))
+        assert a._input == 300
+        assert a._output == 100
+        assert a._reasoning == 10
+
+    def test_cached_tokens_excluded_from_input(self) -> None:
+        a = SessionTurnAccumulator()
+        a.add_stream_chunk(_stream_chunk(prompt=1250, candidates=380, cached=200))
+        assert a._input == 1050
+        assert a._output == 380
+
+    def test_string_chunk_ignored(self) -> None:
+        a = SessionTurnAccumulator()
+        a.add_stream_chunk("plain text fragment")  # must not raise
+        assert a._input == 0
+        assert a.invocation_id is None
+
+    def test_chunk_without_usage_metadata_no_tokens(self) -> None:
+        a = SessionTurnAccumulator()
+        a.add_stream_chunk({"invocation_id": "inv-x", "content": {"parts": []}})
+        assert a.invocation_id == "inv-x"
+        assert a._input == 0
+
+    def test_usage_metadata_not_a_dict_ignored(self) -> None:
+        a = SessionTurnAccumulator()
+        a.add_stream_chunk({"invocation_id": "inv-y", "usage_metadata": None})
+        assert a._input == 0
+        assert a.invocation_id == "inv-y"
+
+    def test_extra_usage_keys_tolerated(self) -> None:
+        """Agent Engine includes total_token_count and detail lists — must not break."""
+        a = SessionTurnAccumulator()
+        a.add_stream_chunk({
+            "invocation_id": "inv-z",
+            "usage_metadata": {
+                "prompt_token_count": 100,
+                "candidates_token_count": 50,
+                "total_token_count": 150,
+                "prompt_tokens_details": [{"modality": "TEXT", "token_count": 100}],
+            },
+        })
+        assert a._input == 100
+        assert a._output == 50
+
+
+# ---------------------------------------------------------------------------
+# build_stream_delta — partial flush for the /completions finally block (AC-8)
+# ---------------------------------------------------------------------------
+
+
+class TestBuildStreamDelta:
+    def test_required_keys_present(self) -> None:
+        delta = SessionTurnAccumulator().build_stream_delta()
+        for key in (
+            "last_agent_stopped_at",
+            "updated_at",
+            "input_tokens_total",
+            "output_tokens_total",
+            "reasoning_tokens_total",
+            "current_context_tokens",
+        ):
+            assert key in delta, f"Missing key: {key}"
+
+    def test_omits_event_only_fields(self) -> None:
+        """message_count / tool_call_count / preview need add_event — not written here."""
+        delta = SessionTurnAccumulator().build_stream_delta()
+        assert "message_count" not in delta
+        assert "tool_call_count" not in delta
+        assert "last_message_preview" not in delta
+
+    def test_token_increment_values(self) -> None:
+        a = SessionTurnAccumulator()
+        a.add_stream_chunk(_stream_chunk(prompt=1250, candidates=380, cached=200, thoughts=20))
+        delta = a.build_stream_delta()
+        assert delta["input_tokens_total"].value == 1050
+        assert delta["output_tokens_total"].value == 380
+        assert delta["reasoning_tokens_total"].value == 20
+        assert delta["current_context_tokens"].value == 1050 + 380 + 20
+
+    def test_counter_fields_are_increments(self) -> None:
+        delta = SessionTurnAccumulator().build_stream_delta()
+        for key in (
+            "input_tokens_total",
+            "output_tokens_total",
+            "reasoning_tokens_total",
+            "current_context_tokens",
+        ):
+            assert isinstance(delta[key], Increment)
+
+    def test_datetime_stamps_utc_and_recent(self) -> None:
+        before = datetime.now(timezone.utc)
+        delta = SessionTurnAccumulator().build_stream_delta()
+        after = datetime.now(timezone.utc)
+        for key in ("last_agent_stopped_at", "updated_at"):
+            stamp = delta[key]
+            assert isinstance(stamp, datetime)
+            assert stamp.tzinfo is not None
+            assert before <= stamp <= after
+
+    def test_zero_tokens_when_no_chunks(self) -> None:
+        delta = SessionTurnAccumulator().build_stream_delta()
+        assert delta["input_tokens_total"].value == 0
+        assert delta["current_context_tokens"].value == 0

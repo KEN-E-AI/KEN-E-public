@@ -365,7 +365,7 @@ class TestNestedSpecialistSequence:
 
         # AC-19 (b): last_agent_stopped_at carries the root after-callback's
         # timestamp, never stamped early by specialist.after.
-        assert after_post["idempotency_key"] == "sess-seq:after-agent:inv-seq"
+        assert after_post["idempotency_key"] == "sess-seq:turn:inv-seq"
         assert after_post["delta"]["last_agent_stopped_at"] == {
             "_isoformat": self._T1.isoformat()
         }
