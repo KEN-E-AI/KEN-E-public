@@ -1,29 +1,20 @@
-"""Integration tests: chat_callbacks._build_turn_delta and callback wiring.
+"""Unit tests: chat_callbacks._build_turn_delta and callback wiring.
 
 Verifies that chat_after_agent_callback (and chat_before_agent_callback) build
 the correct wire-format delta from ADK events (CH-PRD-01 §7 AC-6, AC-19).
 
-These tests exercise the full callback-to-delta path and import from
-app/adk. They do not require a Firestore emulator.
+These tests exercise the full callback-to-delta path with _post_side_table_update
+mocked — no network and no Firestore emulator required.
 """
 
 from __future__ import annotations
 
-import os
-import sys
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
-# ---------------------------------------------------------------------------
-# Path setup: resolve app/ relative to this test file so the adk package is
-# importable regardless of which directory pytest is launched from.
-# ---------------------------------------------------------------------------
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "app"))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
-
-from adk.agents.chat_callbacks import (
+from app.adk.agents.chat_callbacks import (
     _build_turn_delta,
     chat_after_agent_callback,
     chat_before_agent_callback,
@@ -256,7 +247,7 @@ class TestChatAfterAgentCallbackIntegration:
         posted: list[dict] = []
 
         with patch(
-            "adk.agents.chat_callbacks._post_side_table_update",
+            "app.adk.agents.chat_callbacks._post_side_table_update",
             side_effect=lambda **kw: posted.append(kw),
         ):
             ctx = _make_callback_ctx(
@@ -288,7 +279,7 @@ class TestChatAfterAgentCallbackIntegration:
         posted: list[dict] = []
 
         with patch(
-            "adk.agents.chat_callbacks._post_side_table_update",
+            "app.adk.agents.chat_callbacks._post_side_table_update",
             side_effect=lambda **kw: posted.append(kw),
         ):
             parent = SimpleNamespace()
@@ -308,7 +299,7 @@ class TestChatAfterAgentCallbackIntegration:
         posted: list[dict] = []
 
         with patch(
-            "adk.agents.chat_callbacks._post_side_table_update",
+            "app.adk.agents.chat_callbacks._post_side_table_update",
             side_effect=lambda **kw: posted.append(kw),
         ):
             ctx = _make_callback_ctx(
@@ -327,7 +318,7 @@ class TestChatAfterAgentCallbackIntegration:
         posted: list[dict] = []
 
         with patch(
-            "adk.agents.chat_callbacks._post_side_table_update",
+            "app.adk.agents.chat_callbacks._post_side_table_update",
             side_effect=lambda **kw: posted.append(kw),
         ):
             ctx = _make_callback_ctx(
@@ -344,7 +335,7 @@ class TestChatAfterAgentCallbackIntegration:
     def test_callback_returns_none_on_post_exception(self) -> None:
         """Even if _post_side_table_update raises, callback returns None (non-blocking)."""
         with patch(
-            "adk.agents.chat_callbacks._post_side_table_update",
+            "app.adk.agents.chat_callbacks._post_side_table_update",
             side_effect=RuntimeError("network failure"),
         ):
             ctx = _make_callback_ctx(
@@ -370,7 +361,7 @@ class TestChatAfterAgentCallbackIntegration:
         ]
 
         with patch(
-            "adk.agents.chat_callbacks._post_side_table_update",
+            "app.adk.agents.chat_callbacks._post_side_table_update",
             side_effect=lambda **kw: posted.append(kw),
         ):
             ctx = _make_callback_ctx(
@@ -394,7 +385,7 @@ class TestChatAfterAgentCallbackIntegration:
         posted: list[dict] = []
 
         with patch(
-            "adk.agents.chat_callbacks._post_side_table_update",
+            "app.adk.agents.chat_callbacks._post_side_table_update",
             side_effect=lambda **kw: posted.append(kw),
         ):
             ctx = _make_callback_ctx(
@@ -421,7 +412,7 @@ class TestChatBeforeAgentCallback:
         posted: list[dict] = []
 
         with patch(
-            "adk.agents.chat_callbacks._post_side_table_update",
+            "app.adk.agents.chat_callbacks._post_side_table_update",
             side_effect=lambda **kw: posted.append(kw),
         ):
             ctx = _make_callback_ctx(
@@ -447,7 +438,7 @@ class TestChatBeforeAgentCallback:
         posted: list[dict] = []
 
         with patch(
-            "adk.agents.chat_callbacks._post_side_table_update",
+            "app.adk.agents.chat_callbacks._post_side_table_update",
             side_effect=lambda **kw: posted.append(kw),
         ):
             ctx = _make_callback_ctx(
@@ -472,7 +463,7 @@ class TestChatBeforeAgentCallback:
         posted: list[dict] = []
 
         with patch(
-            "adk.agents.chat_callbacks._post_side_table_update",
+            "app.adk.agents.chat_callbacks._post_side_table_update",
             side_effect=lambda **kw: posted.append(kw),
         ):
             parent = SimpleNamespace()
@@ -492,7 +483,7 @@ class TestChatBeforeAgentCallback:
         posted: list[dict] = []
 
         with patch(
-            "adk.agents.chat_callbacks._post_side_table_update",
+            "app.adk.agents.chat_callbacks._post_side_table_update",
             side_effect=lambda **kw: posted.append(kw),
         ):
             ctx = _make_callback_ctx(
@@ -510,7 +501,7 @@ class TestChatBeforeAgentCallback:
         posted: list[dict] = []
 
         with patch(
-            "adk.agents.chat_callbacks._post_side_table_update",
+            "app.adk.agents.chat_callbacks._post_side_table_update",
             side_effect=lambda **kw: posted.append(kw),
         ):
             ctx = _make_callback_ctx(
@@ -528,7 +519,7 @@ class TestChatBeforeAgentCallback:
         posted: list[dict] = []
 
         with patch(
-            "adk.agents.chat_callbacks._post_side_table_update",
+            "app.adk.agents.chat_callbacks._post_side_table_update",
             side_effect=lambda **kw: posted.append(kw),
         ):
             ctx = _make_callback_ctx(
@@ -544,7 +535,7 @@ class TestChatBeforeAgentCallback:
     def test_before_callback_returns_none_on_post_exception(self) -> None:
         """Even if _post_side_table_update raises, callback returns None (non-blocking)."""
         with patch(
-            "adk.agents.chat_callbacks._post_side_table_update",
+            "app.adk.agents.chat_callbacks._post_side_table_update",
             side_effect=RuntimeError("network failure"),
         ):
             ctx = _make_callback_ctx(

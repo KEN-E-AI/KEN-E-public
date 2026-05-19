@@ -98,7 +98,11 @@ steps:
           uv run pytest tests/integration
 
   # Run agent-side unit tests for the clean subdirectories of app/adk/.
-  # Scope: agent_factory, mcp_config, and tracking test directories.
+  # Scope: agent_factory, mcp_config, and tracking test directories, plus the
+  # colocated chat-callback suite in app/adk/agents/tests/ (CH-PRD-01 wave 3).
+  # The chat-callback files are named explicitly rather than gating the whole
+  # app/adk/agents/tests/ directory — the legacy suites there (test_ken_e_agent
+  # etc.) are not yet CI-clean.
   # strategy_agent and other legacy subdirectories are excluded (pre-existing
   # failures / missing neo4j; tracked in follow-up issues AH-24+).
   # See AH-23 for the full gate rationale.
@@ -112,6 +116,8 @@ steps:
         uv sync --frozen
         uv run pytest \
           app/adk/agents/agent_factory/tests/ \
+          app/adk/agents/tests/test_chat_callbacks.py \
+          app/adk/agents/tests/test_callback_writes_counters.py \
           app/adk/mcp_config/tests/ \
           app/adk/tracking/tests/ \
           -q
