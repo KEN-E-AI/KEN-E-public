@@ -87,9 +87,9 @@ _REDEPLOY_REQUIRED_FIELDS: frozenset[str] = frozenset(
 # the ``MergedAgentConfig`` API contract. They must be stripped before
 # Pydantic validation now that ``MergedAgentConfig`` uses ``extra="forbid"``.
 #
-# ``deployment_status`` is written by MER-E (sister repo) onto the shared
-# ``agent_configs/{id}`` docs. KEN-E doesn't surface it in this API shape;
-# strip it so an MER-E-touched doc still validates.
+# ``deployment_status`` and ``lifecycle_status`` are written by MER-E (sister
+# repo) onto the shared ``agent_configs/{id}`` docs. KEN-E doesn't surface
+# them in this API shape; strip them so an MER-E-touched doc still validates.
 #
 # ``canonical_id`` and ``legacy_agent_name`` are pre-AH-PRD-02 storage
 # metadata that survives on a handful of seeded docs (e.g. business_researcher,
@@ -103,6 +103,7 @@ _STORAGE_INTERNAL_FIELDS: frozenset[str] = frozenset(
         "created_by",
         "updated_by",
         "deployment_status",
+        "lifecycle_status",
         "canonical_id",
         "legacy_agent_name",
     }
