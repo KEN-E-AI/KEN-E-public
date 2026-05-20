@@ -50,7 +50,7 @@ import EmailActionHandler from "./components/auth/EmailActionHandler";
 import Authentication from "./pages/Authentication";
 import Chat from "./pages/Chat";
 import { useFlagEnabled } from "./lib/featureFlags/runtime";
-import type { FlagKey } from "./lib/featureFlags/types";
+import { toFlagKey } from "./lib/featureFlags/types";
 import { WorkflowsLayout } from "./pages/workflows/WorkflowsLayout";
 import { AgentsPage } from "./pages/workflows/AgentsPage";
 import { AutomationsPage } from "./pages/workflows/AutomationsPage";
@@ -145,7 +145,10 @@ const AuthenticationPage = () => {
 };
 
 const App = () => {
-  const isChatV2Enabled = useFlagEnabled("chat_v2_enabled" as FlagKey);
+  // TODO(ff-prd-03): move useFlagEnabled below <BrowserRouter> (into AppRoutes)
+  // once the real hook lands — the current shim reads window.location directly
+  // so it works outside BrowserRouter, but the real hook may use useSearchParams.
+  const isChatV2Enabled = useFlagEnabled(toFlagKey("chat_v2_enabled"));
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>

@@ -24,9 +24,13 @@ function writeSidebarCollapsed(collapsed: boolean): void {
   }
 }
 
+const SESSION_ID_RE = /^[a-zA-Z0-9_-]{1,128}$/;
+
 export default function Chat() {
   const [searchParams] = useSearchParams();
-  const sessionId = searchParams.get("session");
+  const rawSession = searchParams.get("session");
+  const sessionId =
+    rawSession && SESSION_ID_RE.test(rawSession) ? rawSession : null;
 
   const [viewState, setViewState] = useState<ViewState>("message");
   const [sidebarCollapsed, setSidebarCollapsed] =
