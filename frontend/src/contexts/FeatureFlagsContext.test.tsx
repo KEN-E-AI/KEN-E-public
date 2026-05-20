@@ -294,11 +294,13 @@ describe("useFeatureFlag — dev override precedence over server", () => {
     // before the query".
     await waitFor(() => expect(mockEvaluate).toHaveBeenCalledTimes(1));
 
-    expect(result.current).toEqual({
-      enabled: false,
-      reason: "dev_override",
-      isLoading: false,
-    });
+    await waitFor(() =>
+      expect(result.current).toEqual({
+        enabled: false,
+        reason: "dev_override",
+        isLoading: false,
+      }),
+    );
   });
 });
 
