@@ -83,20 +83,23 @@ export const useFeatureFlag = (key: FlagKey): UseFeatureFlagResult => {
     return { enabled: override, reason: "dev_override", isLoading: false };
   }
 
+  if (!KNOWN_FLAGS.includes(key)) {
+    if (import.meta.env.VITE_ENVIRONMENT !== "production") {
+      console.warn(
+        `[FeatureFlags] useFeatureFlag("${key}") called but "${key}" is not in KNOWN_FLAGS. Add it to frontend/src/lib/featureFlags/registry.ts before use.`,
+      );
+    }
+    return { enabled: false, reason: "unknown_flag", isLoading: false };
+  }
+
   const evaluation = evaluations[key];
   if (evaluation !== undefined) {
     return {
       enabled: evaluation.enabled,
       reason: evaluation.reason,
-      isLoading,
+      isLoading: false,
     };
   }
 
-  if (import.meta.env.VITE_ENVIRONMENT !== "production") {
-    console.warn(
-      `[FeatureFlags] useFeatureFlag("${key}") called but "${key}" is not in KNOWN_FLAGS. Add it to frontend/src/lib/featureFlags/registry.ts before use.`,
-    );
-  }
-
-  return { enabled: false, reason: "unknown_flag", isLoading: false };
+  return { enabled: false, reason: "default", isLoading: true };
 };
