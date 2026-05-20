@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 from fastapi import HTTPException
-
 from src.kene_api.chat.mark_read_limiter import MarkReadRateLimiter
 
 

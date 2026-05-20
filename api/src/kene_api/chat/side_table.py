@@ -154,7 +154,7 @@ class ChatSessionSideTableService:
         self,
         user_id: str,
         session_id: str,
-    ) -> "ChatSessionMetadata | None":
+    ) -> ChatSessionMetadata | None:
         """Locate a session by (user_id, session_id) without knowing account_id.
 
         Issues a collection-group query filtered by both equality conditions.

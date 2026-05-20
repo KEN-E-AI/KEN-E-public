@@ -39,6 +39,7 @@ from ..cache import (
     user_session_ids_key,
 )
 from ..chat.accumulator import SessionTurnAccumulator
+from ..chat.mark_read_limiter import mark_read_limiter
 from ..chat.side_table import get_chat_side_table_service
 from ..chat.side_table_handlers import apply_side_table_update
 from ..database import get_neo4j_service
@@ -2562,6 +2563,68 @@ async def update_conversation(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update conversation",
         ) from e
+
+
+class MarkReadResponse(BaseModel):
+    """Response for POST /conversations/{session_id}/mark-read."""
+
+    last_viewed_at: datetime
+
+
+@router.post("/conversations/{session_id}/mark-read", response_model=MarkReadResponse)
+async def mark_conversation_read(
+    session_id: str,
+    user_context: UserContext = Depends(get_current_user_context),
+) -> MarkReadResponse:
+    """Stamp last_viewed_at = now() on the session side-table row.
+
+    Idempotent: calls within a 5-second dedup window return the existing
+    timestamp without writing to Firestore.
+
+    Rate-limited to 60 requests/minute per session (in-process sliding window).
+    A 404 is returned for any session the authenticated user does not own —
+    same response whether the session does not exist or belongs to another user
+    (no existence leak).
+
+    Returns:
+        ``{"last_viewed_at": "<iso>"}`` so the client can optimistically
+        flip the sidebar status indicator without waiting for the next poll.
+    """
+    # Rate check — 429 if the per-session cap is exceeded.
+    mark_read_limiter.check(session_id)
+
+    loop = asyncio.get_running_loop()
+    svc = get_chat_side_table_service()
+    user_id = user_context.user_id
+
+    meta = await loop.run_in_executor(
+        None,
+        lambda: svc.find_session_for_user(user_id=user_id, session_id=session_id),
+    )
+    if meta is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found",
+        )
+
+    now = datetime.now(timezone.utc)
+
+    # 5-second server-side dedup: if already viewed within the window, no-op.
+    if meta.last_viewed_at is not None and (now - meta.last_viewed_at) < timedelta(
+        seconds=5
+    ):
+        return MarkReadResponse(last_viewed_at=meta.last_viewed_at)
+
+    account_id = meta.account_id
+    await loop.run_in_executor(
+        None,
+        lambda: svc.update_from_delta(
+            account_id=account_id,
+            session_id=session_id,
+            delta={"last_viewed_at": now, "updated_at": now},
+        ),
+    )
+    return MarkReadResponse(last_viewed_at=now)
 
 
 @router.get("/conversations/{session_id}/history")

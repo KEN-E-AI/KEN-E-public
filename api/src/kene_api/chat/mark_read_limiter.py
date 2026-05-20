@@ -2,7 +2,7 @@
 
 This is the BL-PRD-05 fallback limiter — an in-process deque per session_id.
 It is per-pod (not per-fleet), which means horizontal autoscaling allows up to
-N×60 requests/min across N pods. Acceptable for v1 per CH-PRD-02 §3.
+N x 60 requests/min across N pods. Acceptable for v1 per CH-PRD-02 §3.
 
 TODO(BL-PRD-05): replace with Firestore-backed sliding-window limiter once
 the Billing rate-limit substrate ships, to enforce the cap per-fleet.
@@ -11,8 +11,8 @@ the Billing rate-limit substrate ships, to enforce the cap per-fleet.
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Callable
 
 from fastapi import HTTPException, status
 
