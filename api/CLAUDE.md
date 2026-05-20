@@ -137,7 +137,19 @@ else:
     # existing code path
 ```
 
-### Feature flag kill-switch
+### Chat-component flags
+
+Three flags registered by `api/scripts/seed_chat_feature_flags.py` (run once per environment):
+
+| Flag key | Default | Gates |
+|---|---|---|
+| `chat_v2_enabled` | `False` | Master kill switch — `POST /api/v1/internal/chat/side-table/update` returns 404 when this is off. Public chat endpoints are unaffected. |
+| `chat_status_detail_enabled` | `False` | Session status view endpoint + toggle button (depends on `chat_v2_enabled`). |
+| `chat_categories_enabled` | `False` | Category CRUD, sidebar filter, assign dropdown (depends on `chat_v2_enabled`). |
+
+The flag gate is fail-closed: a Firestore outage on the flag read returns `default=False`, so the internal endpoint returns 404 rather than letting an unverified write through.
+
+### Kill-switch SLO
 
 A super-admin flipping `is_active=false` on a flag propagates to every Cloud Run instance within ≤60 s (per-instance TTL; no Redis or Firestore listener in Release 1). Use this runbook to disable a misbehaving feature in production without a deploy.
 

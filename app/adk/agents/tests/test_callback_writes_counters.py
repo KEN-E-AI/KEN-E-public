@@ -97,13 +97,13 @@ class TestBuildTurnDelta:
     def test_empty_events_produces_zero_increments(self) -> None:
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
         delta = _build_turn_delta([], now)
-        assert delta["input_tokens_total"] == {"_increment": 0}
-        assert delta["output_tokens_total"] == {"_increment": 0}
-        assert delta["reasoning_tokens_total"] == {"_increment": 0}
-        assert delta["current_context_tokens"] == {"_increment": 0}
-        assert delta["tool_call_count"] == {"_increment": 0}
-        assert delta["message_count"] == {"_increment": 0}
-        assert delta["last_message_preview"] == ""
+        assert delta.input_tokens_increment == 0
+        assert delta.output_tokens_increment == 0
+        assert delta.reasoning_tokens_increment == 0
+        assert delta.current_context_tokens == 0
+        assert delta.tool_call_count == 0
+        assert delta.message_count == 0
+        assert delta.last_message_preview == ""
 
     def test_token_events_are_summed(self) -> None:
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -112,20 +112,20 @@ class TestBuildTurnDelta:
             _make_event(prompt=200, candidates=80, thoughts=30, cached=0),  # input=200, output=80, reasoning=30
         ]
         delta = _build_turn_delta(events, now)
-        assert delta["input_tokens_total"] == {"_increment": 280}    # 80 + 200
-        assert delta["output_tokens_total"] == {"_increment": 130}   # 50 + 80
-        assert delta["reasoning_tokens_total"] == {"_increment": 30}
-        assert delta["current_context_tokens"] == {"_increment": 440}  # 280 + 130 + 30
+        assert delta.input_tokens_increment == 280    # 80 + 200
+        assert delta.output_tokens_increment == 130   # 50 + 80
+        assert delta.reasoning_tokens_increment == 30
+        assert delta.current_context_tokens == 440    # 280 + 130 + 30
 
     def test_cached_tokens_excluded_from_input(self) -> None:
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
         # prompt=1250, cached=200 => input=1050 (canonical fixture from token_accounting parity test)
         events = [_make_event(prompt=1250, candidates=380, thoughts=0, cached=200)]
         delta = _build_turn_delta(events, now)
-        assert delta["input_tokens_total"] == {"_increment": 1050}
-        assert delta["output_tokens_total"] == {"_increment": 380}
-        assert delta["reasoning_tokens_total"] == {"_increment": 0}
-        assert delta["current_context_tokens"] == {"_increment": 1430}
+        assert delta.input_tokens_increment == 1050
+        assert delta.output_tokens_increment == 380
+        assert delta.reasoning_tokens_increment == 0
+        assert delta.current_context_tokens == 1430
 
     def test_tool_call_count_incremented(self) -> None:
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -134,7 +134,7 @@ class TestBuildTurnDelta:
             _make_event(is_tool_call=True),
         ]
         delta = _build_turn_delta(events, now)
-        assert delta["tool_call_count"] == {"_increment": 2}
+        assert delta.tool_call_count == 2
 
     def test_non_tool_call_events_not_counted(self) -> None:
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -144,7 +144,7 @@ class TestBuildTurnDelta:
             _make_event(is_tool_call=True),
         ]
         delta = _build_turn_delta(events, now)
-        assert delta["tool_call_count"] == {"_increment": 1}
+        assert delta.tool_call_count == 1
 
     def test_message_count_only_user_and_model(self) -> None:
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -156,20 +156,20 @@ class TestBuildTurnDelta:
             _make_event(author=None),      # not counted
         ]
         delta = _build_turn_delta(events, now)
-        assert delta["message_count"] == {"_increment": 2}
+        assert delta.message_count == 2
 
     def test_final_text_preview_truncated_at_160(self) -> None:
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
         long_text = "x" * 200
         events = [_make_event(final_text=long_text)]
         delta = _build_turn_delta(events, now)
-        assert delta["last_message_preview"] == "x" * 160
+        assert delta.last_message_preview == "x" * 160
 
     def test_final_text_short_not_padded(self) -> None:
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
         events = [_make_event(final_text="hello")]
         delta = _build_turn_delta(events, now)
-        assert delta["last_message_preview"] == "hello"
+        assert delta.last_message_preview == "hello"
 
     def test_last_final_text_wins(self) -> None:
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -178,7 +178,7 @@ class TestBuildTurnDelta:
             _make_event(final_text="last"),
         ]
         delta = _build_turn_delta(events, now)
-        assert delta["last_message_preview"] == "last"
+        assert delta.last_message_preview == "last"
 
     def test_non_final_text_events_ignored_for_preview(self) -> None:
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -187,16 +187,34 @@ class TestBuildTurnDelta:
             _make_event(final_text="kept"),
         ]
         delta = _build_turn_delta(events, now)
-        assert delta["last_message_preview"] == "kept"
+        assert delta.last_message_preview == "kept"
 
-    def test_datetime_fields_use_isoformat_sentinel(self) -> None:
+    def test_datetime_fields_are_typed_datetimes(self) -> None:
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
         delta = _build_turn_delta([], now)
-        for key in ("last_agent_stopped_at", "updated_at", "last_agent_message_at"):
-            assert isinstance(delta[key], dict), f"{key} should be a sentinel dict"
-            assert set(delta[key].keys()) == {"_isoformat"}, f"{key} should use _isoformat sentinel"
-            parsed = datetime.fromisoformat(delta[key]["_isoformat"])
-            assert parsed == now, f"{key} should match the input datetime"
+        for attr in ("last_agent_stopped_at", "updated_at", "last_agent_message_at"):
+            val = getattr(delta, attr)
+            assert isinstance(val, datetime), f"{attr} should be a datetime"
+            assert val == now, f"{attr} should match the input datetime"
+
+    def test_wire_round_trip_reproduces_sentinel_format(self) -> None:
+        """to_wire_dict() reproduces the legacy sentinel format byte-for-byte."""
+        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        events = [_make_event(prompt=280, candidates=130, thoughts=30, cached=0)]
+        wire = _build_turn_delta(events, now).to_wire_dict()
+        now_sentinel = {"_isoformat": now.isoformat()}
+        assert wire == {
+            "last_agent_stopped_at": now_sentinel,
+            "updated_at": now_sentinel,
+            "last_agent_message_at": now_sentinel,
+            "input_tokens_total": {"_increment": 280},
+            "output_tokens_total": {"_increment": 130},
+            "reasoning_tokens_total": {"_increment": 30},
+            "tool_call_count": {"_increment": 0},
+            "message_count": {"_increment": 0},
+            "current_context_tokens": {"_increment": 440},
+            "last_message_preview": "",
+        }
 
     def test_events_without_usage_metadata_are_skipped_for_tokens(self) -> None:
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -207,10 +225,10 @@ class TestBuildTurnDelta:
             _make_event(author="user"),        # no usage_metadata set
         ]
         delta = _build_turn_delta(events, now)
-        assert delta["input_tokens_total"] == {"_increment": 0}
-        assert delta["output_tokens_total"] == {"_increment": 0}
-        assert delta["tool_call_count"] == {"_increment": 1}
-        assert delta["message_count"] == {"_increment": 1}
+        assert delta.input_tokens_increment == 0
+        assert delta.output_tokens_increment == 0
+        assert delta.tool_call_count == 1
+        assert delta.message_count == 1
 
     def test_mixed_events_compound_correctly(self) -> None:
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -222,16 +240,16 @@ class TestBuildTurnDelta:
         ]
         delta = _build_turn_delta(events, now)
         # input = (100-10) + (200-0) = 90 + 200 = 290
-        assert delta["input_tokens_total"] == {"_increment": 290}
+        assert delta.input_tokens_increment == 290
         # output = 50 + 80 = 130
-        assert delta["output_tokens_total"] == {"_increment": 130}
+        assert delta.output_tokens_increment == 130
         # reasoning = 20
-        assert delta["reasoning_tokens_total"] == {"_increment": 20}
+        assert delta.reasoning_tokens_increment == 20
         # context = 290 + 130 + 20 = 440
-        assert delta["current_context_tokens"] == {"_increment": 440}
-        assert delta["tool_call_count"] == {"_increment": 1}
-        assert delta["message_count"] == {"_increment": 2}
-        assert delta["last_message_preview"] == "final answer"
+        assert delta.current_context_tokens == 440
+        assert delta.tool_call_count == 1
+        assert delta.message_count == 2
+        assert delta.last_message_preview == "final answer"
 
 
 # ---------------------------------------------------------------------------

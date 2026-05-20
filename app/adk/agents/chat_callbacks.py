@@ -49,6 +49,19 @@ except ImportError:
     )
     _extract_billable_tokens = None  # type: ignore[assignment]
 
+# Resolve TurnDelta — same fallback pattern as token_accounting above.
+try:
+    try:
+        from app.adk.turn_delta import TurnDelta
+    except ImportError:
+        from turn_delta import TurnDelta  # type: ignore[no-redef]
+except ImportError:
+    logger.error(
+        "turn_delta module not found; _build_turn_delta will fall back to dict",
+        extra={"error_id": "CHAT_TURN_DELTA_MISSING"},
+    )
+    TurnDelta = None  # type: ignore[assignment,misc]
+
 
 def _mint_oidc_token(audience: str) -> str:
     """Fetch a short-lived Google OIDC token for the given audience."""
@@ -141,21 +154,20 @@ def _post_side_table_update_sync(
 def _isoformat_sentinel(dt: datetime) -> dict[str, str]:
     """Return the {"_isoformat": "..."} wire sentinel for a datetime value.
 
-    The internal endpoint's _reconstruct_increments converts this back to a
+    The internal endpoint's inline sentinel reconstruction converts this back to a
     datetime object before calling Firestore, ensuring TIMESTAMP type storage.
     """
     return {"_isoformat": dt.isoformat()}
 
 
-def _build_turn_delta(events: list[Any], now: datetime) -> dict[str, Any]:
-    """Build a wire-format delta dict from this turn's ADK events.
+def _build_turn_delta(events: list[Any], now: datetime) -> TurnDelta:
+    """Build a typed TurnDelta from this turn's ADK events.
 
-    Counter fields use {"_increment": n} sentinels; datetime fields use
-    {"_isoformat": "..."} sentinels. The internal endpoint's
-    _reconstruct_increments converts both back to Firestore-native types.
+    Returns a TurnDelta whose .to_wire_dict() produces the HTTP wire format
+    and whose .to_firestore_delta() produces Firestore-native types.
 
-    Mirrors SessionTurnAccumulator.build_delta() but outputs HTTP-serialisable
-    wire format instead of firestore.Increment / datetime objects.
+    Mirrors SessionTurnAccumulator.build_delta() but outputs a typed model
+    instead of an untyped dict.
     """
     input_tokens = 0
     output_tokens = 0
@@ -203,20 +215,19 @@ def _build_turn_delta(events: list[Any], now: datetime) -> dict[str, Any]:
         )
 
     turn_tokens = input_tokens + output_tokens + reasoning_tokens
-    now_sentinel = _isoformat_sentinel(now)
 
-    return {
-        "last_agent_stopped_at": now_sentinel,
-        "updated_at": now_sentinel,
-        "last_agent_message_at": now_sentinel,
-        "input_tokens_total": {"_increment": input_tokens},
-        "output_tokens_total": {"_increment": output_tokens},
-        "reasoning_tokens_total": {"_increment": reasoning_tokens},
-        "tool_call_count": {"_increment": tool_call_count},
-        "message_count": {"_increment": message_count},
-        "current_context_tokens": {"_increment": turn_tokens},
-        "last_message_preview": final_text[:160],
-    }
+    return TurnDelta(
+        last_agent_stopped_at=now,
+        updated_at=now,
+        last_agent_message_at=now,
+        input_tokens_increment=input_tokens,
+        output_tokens_increment=output_tokens,
+        reasoning_tokens_increment=reasoning_tokens,
+        tool_call_count=tool_call_count,
+        message_count=message_count,
+        current_context_tokens=turn_tokens,
+        last_message_preview=final_text[:160],
+    )
 
 
 def chat_before_agent_callback(
@@ -309,7 +320,7 @@ def chat_after_agent_callback(
         _post_side_table_update(
             session_id=session_id,
             account_id=account_id,
-            delta=delta,
+            delta=delta.to_wire_dict(),
             idempotency_key=f"{session_id}:turn:{turn_id}",
         )
     except Exception:

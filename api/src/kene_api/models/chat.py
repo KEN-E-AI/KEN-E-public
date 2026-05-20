@@ -4,10 +4,22 @@ No cost fields anywhere in this module — per-session cost is out of scope
 (subscription-level pricing is Billing's concern; Chat shows token counts only).
 """
 
+import os
+import sys
 from datetime import datetime, timezone
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
+
+# TurnDelta lives in app/adk/ (cross-package import via sys.path).
+# Same pattern as api/src/kene_api/chat/accumulator.py.
+_ADK_PATH = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "app", "adk")
+)
+if _ADK_PATH not in sys.path:
+    sys.path.insert(0, _ADK_PATH)
+
+from turn_delta import TurnDelta  # noqa: E402
 
 
 def _now_utc() -> datetime:
@@ -226,11 +238,12 @@ class ListArtifactsResponse(BaseModel):
 class InternalSideTableUpdateRequest(BaseModel):
     """Request body for POST /api/v1/internal/chat/side-table/update.
 
-    delta values may include {"_increment": n} wire sentinels which the
-    handler converts to firestore.Increment before writing.
+    delta is parsed as TurnDelta when the payload matches (chat_after_agent_callback).
+    Plain dicts (chat_before_agent_callback, in-process streaming path) fall through
+    to dict[str, Any]; the handler reconstructs any wire sentinels inline.
     """
 
     session_id: str
     account_id: str
-    delta: dict[str, Any]
+    delta: TurnDelta | dict[str, Any]
     idempotency_key: str = Field(min_length=1, max_length=256)

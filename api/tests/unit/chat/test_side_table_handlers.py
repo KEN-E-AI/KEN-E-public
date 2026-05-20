@@ -2,15 +2,36 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import google.api_core.exceptions
 from src.kene_api.chat.side_table_handlers import (
-    _reconstruct_increments,
     _sha256_hex,
     apply_side_table_update,
 )
+
+# TurnDelta lives in app/adk/ (cross-package).
+_ADK_PATH = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "app", "adk")
+)
+if _ADK_PATH not in sys.path:
+    sys.path.insert(0, _ADK_PATH)
+
+from turn_delta import TurnDelta  # noqa: E402
+
+_NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+
+def _make_turn_delta(**overrides: object) -> TurnDelta:
+    return TurnDelta(
+        last_agent_stopped_at=_NOW,
+        updated_at=_NOW,
+        last_agent_message_at=_NOW,
+        **overrides,  # type: ignore[arg-type]
+    )
 
 
 class TestSha256Hex:
@@ -24,44 +45,6 @@ class TestSha256Hex:
         result = _sha256_hex("hello")
         assert len(result) == 64
         assert all(c in "0123456789abcdef" for c in result)
-
-
-class TestReconstructIncrements:
-    def test_converts_increment_wire_sentinel(self) -> None:
-        from google.cloud import firestore
-
-        delta = {"message_count": {"_increment": 1}}
-        result = _reconstruct_increments(delta)
-
-        assert isinstance(result["message_count"], firestore.Increment)
-
-    def test_passes_through_non_increment_values(self) -> None:
-        delta = {"title": "My session", "updated_at": "2025-01-01T00:00:00Z"}
-        result = _reconstruct_increments(delta)
-
-        assert result["title"] == "My session"
-        assert result["updated_at"] == "2025-01-01T00:00:00Z"
-
-    def test_mixed_delta(self) -> None:
-        from google.cloud import firestore
-
-        delta = {
-            "message_count": {"_increment": 3},
-            "title": "Hello",
-        }
-        result = _reconstruct_increments(delta)
-
-        assert isinstance(result["message_count"], firestore.Increment)
-        assert result["title"] == "Hello"
-
-    def test_dict_without_increment_key_not_converted(self) -> None:
-        from google.cloud import firestore
-
-        delta = {"meta": {"key": "value"}}
-        result = _reconstruct_increments(delta)
-
-        assert result["meta"] == {"key": "value"}
-        assert not isinstance(result["meta"], firestore.Increment)
 
 
 class TestApplySideTableUpdate:
@@ -114,6 +97,30 @@ class TestApplySideTableUpdate:
 
         assert result["status"] == "applied"
         svc.update_from_delta.assert_called_once()
+
+    def test_turn_delta_instance_applies_via_to_firestore_delta(self) -> None:
+        from google.cloud import firestore
+
+        db = self._make_db(create_raises=False)
+        ctx, svc = self._patch_svc()
+        delta = _make_turn_delta(input_tokens_increment=100, message_count=2)
+
+        with ctx:
+            result = apply_side_table_update(
+                db=db,
+                session_id="sess_td",
+                account_id="acc_td",
+                delta=delta,
+                idempotency_key="turn-delta-key-1",
+            )
+
+        assert result["status"] == "applied"
+        svc.update_from_delta.assert_called_once()
+        _, call_kwargs = svc.update_from_delta.call_args
+        fs_delta = call_kwargs["delta"]
+        assert isinstance(fs_delta["input_tokens_total"], firestore.Increment)
+        assert isinstance(fs_delta["message_count"], firestore.Increment)
+        assert isinstance(fs_delta["last_agent_stopped_at"], datetime)
 
     def test_returns_duplicate_when_key_exists_and_not_expired(self) -> None:
         db = self._make_db(create_raises=True, expire_at_future=True)
@@ -171,7 +178,7 @@ class TestApplySideTableUpdate:
 # AC-8 stop-stamp coverage. Relocated from api/tests/integration/chat/ — these
 # are pure unit tests (mocked Firestore client), not emulator-backed
 # integration tests. They cover the stop-stamp delta written by the
-# /completions finally block and the wire-sentinel reconstruction it relies on.
+# /completions finally block and the inline sentinel reconstruction it relies on.
 # ---------------------------------------------------------------------------
 
 
@@ -211,7 +218,7 @@ class TestApplySideTableUpdateStopStamp:
         mock_svc.update_from_delta.assert_called_once_with(
             account_id=account_id,
             session_id=session_id,
-            delta=delta,  # datetime values pass through _reconstruct_increments unchanged
+            delta=delta,  # datetime values pass through the inline sentinel reconstruction unchanged
         )
 
     def test_duplicate_idempotency_key_returns_duplicate(self) -> None:
@@ -251,45 +258,63 @@ class TestApplySideTableUpdateStopStamp:
         mock_svc.update_from_delta.assert_not_called()
 
 
-class TestReconstructIncrementsParity:
-    """_reconstruct_increments parity: wire sentinels and pass-through values."""
+class TestInlineSentinelReconstruction:
+    """apply_side_table_update's dict path reconstructs wire sentinels correctly."""
+
+    def _patch_svc(self) -> tuple[object, MagicMock]:
+        svc = MagicMock()
+        return patch(
+            "src.kene_api.chat.side_table_handlers.get_chat_side_table_service",
+            return_value=svc,
+        ), svc
+
+    def _make_db(self) -> MagicMock:
+        db = MagicMock()
+        db.collection.return_value.document.return_value.create.return_value = None
+        return db
 
     def test_increment_sentinel_converted(self) -> None:
-        from google.cloud.firestore_v1.transforms import Increment
+        from google.cloud import firestore
 
-        delta = {"message_count": {"_increment": 5}}
-        result = _reconstruct_increments(delta)
-        assert isinstance(result["message_count"], Increment)
-
-    def test_datetime_passes_through(self) -> None:
-        now = datetime(2026, 1, 1, tzinfo=timezone.utc)
-        delta = {"last_agent_stopped_at": now, "updated_at": now}
-        result = _reconstruct_increments(delta)
-        assert result["last_agent_stopped_at"] is now
-        assert result["updated_at"] is now
+        ctx, svc = self._patch_svc()
+        with ctx:
+            apply_side_table_update(
+                db=self._make_db(),
+                session_id="sess_incr",
+                account_id="acc_incr",
+                delta={"message_count": {"_increment": 5}},
+                idempotency_key="incr-key-1",
+            )
+        _, kw = svc.update_from_delta.call_args
+        assert isinstance(kw["delta"]["message_count"], firestore.Increment)
 
     def test_isoformat_sentinel_converted_to_datetime(self) -> None:
         now_iso = "2026-01-01T00:00:00+00:00"
-        delta = {"last_agent_stopped_at": {"_isoformat": now_iso}}
-        result = _reconstruct_increments(delta)
-        assert isinstance(result["last_agent_stopped_at"], datetime)
-        assert result["last_agent_stopped_at"] == datetime.fromisoformat(now_iso)
+        ctx, svc = self._patch_svc()
+        with ctx:
+            apply_side_table_update(
+                db=self._make_db(),
+                session_id="sess_iso",
+                account_id="acc_iso",
+                delta={"last_agent_started_at": {"_isoformat": now_iso}},
+                idempotency_key="iso-key-1",
+            )
+        _, kw = svc.update_from_delta.call_args
+        val = kw["delta"]["last_agent_started_at"]
+        assert isinstance(val, datetime)
+        assert val == datetime.fromisoformat(now_iso)
 
-    def test_mixed_delta_converted_correctly(self) -> None:
-        """Full stop-stamp delta from the API finally block is reconstructed correctly."""
-        from google.cloud.firestore_v1.transforms import Increment
-
+    def test_native_datetime_passes_through_unchanged(self) -> None:
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
-        delta = {
-            "last_agent_stopped_at": now,
-            "updated_at": now,
-            "input_tokens_total": {"_increment": 100},
-            "output_tokens_total": {"_increment": 50},
-            "message_count": {"_increment": 2},
-        }
-        result = _reconstruct_increments(delta)
-        assert result["last_agent_stopped_at"] is now
-        assert result["updated_at"] is now
-        assert isinstance(result["input_tokens_total"], Increment)
-        assert isinstance(result["output_tokens_total"], Increment)
-        assert isinstance(result["message_count"], Increment)
+        ctx, svc = self._patch_svc()
+        with ctx:
+            apply_side_table_update(
+                db=self._make_db(),
+                session_id="sess_native",
+                account_id="acc_native",
+                delta={"last_agent_stopped_at": now, "updated_at": now},
+                idempotency_key="native-dt-key-1",
+            )
+        _, kw = svc.update_from_delta.call_args
+        assert kw["delta"]["last_agent_stopped_at"] is now
+        assert kw["delta"]["updated_at"] is now
