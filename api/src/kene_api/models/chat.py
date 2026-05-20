@@ -230,6 +230,12 @@ class ListArtifactsResponse(BaseModel):
     items: list[ListArtifactsResponseItem]
 
 
+class MarkReadResponse(BaseModel):
+    """Response for POST /conversations/{session_id}/mark-read (CH-16)."""
+
+    last_viewed_at: datetime
+
+
 # ---------------------------------------------------------------------------
 # Internal OIDC bridge — CH-11
 # ---------------------------------------------------------------------------

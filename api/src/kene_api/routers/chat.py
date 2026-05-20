@@ -13,7 +13,7 @@ from typing import Any
 from uuid import uuid4
 
 import vertexai
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from fastapi.responses import StreamingResponse
 from google.adk.sessions import VertexAiSessionService
 from pydantic import BaseModel, Field, computed_field
@@ -39,13 +39,14 @@ from ..cache import (
     user_session_ids_key,
 )
 from ..chat.accumulator import SessionTurnAccumulator
+from ..chat.mark_read_limiter import mark_read_limiter
 from ..chat.side_table import get_chat_side_table_service
 from ..chat.side_table_handlers import apply_side_table_update
 from ..database import get_neo4j_service
 from ..dependencies import get_firestore_client as _get_firestore_client
 from ..exceptions import ServiceUnavailableError
 from ..firestore import get_firestore_service
-from ..models.chat import ChatSessionMetadata, InternalSideTableUpdateRequest
+from ..models.chat import ChatSessionMetadata, InternalSideTableUpdateRequest, MarkReadResponse
 from ..models.feature_flag_models import EvaluationContext
 from ..models.kene_models import RecoverableSessionInfo
 from ..redis_client import get_redis_service
@@ -2637,6 +2638,68 @@ async def update_conversation(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update conversation",
         ) from e
+
+
+@router.post("/conversations/{session_id}/mark-read", response_model=MarkReadResponse)
+async def mark_conversation_read(
+    session_id: str = Path(..., max_length=256, pattern=r"^[\w\-]+$"),
+    user_context: UserContext = Depends(get_current_user_context),
+) -> MarkReadResponse:
+    """Stamp last_viewed_at = now() on the session side-table row.
+
+    Idempotent: calls within a 5-second dedup window return the existing
+    timestamp without writing to Firestore.
+
+    Rate-limited to 60 requests/minute per session (in-process sliding window).
+    A 404 is returned for any session the authenticated user does not own —
+    same response whether the session does not exist or belongs to another user
+    (no existence leak).
+
+    Returns:
+        ``{"last_viewed_at": "<iso>"}`` so the client can optimistically
+        flip the sidebar status indicator without waiting for the next poll.
+
+    Note: ``chat_v2_enabled`` does not gate this endpoint — per api/CLAUDE.md
+    that flag only disables the internal side-table update path; public chat
+    endpoints are unaffected.
+    """
+    # Rate check — 429 if the per-session cap is exceeded.
+    mark_read_limiter.check(session_id)
+
+    loop = asyncio.get_running_loop()
+    svc = get_chat_side_table_service()
+    user_id = user_context.user_id
+
+    meta = await loop.run_in_executor(
+        None,
+        lambda: svc.find_session_for_user(user_id=user_id, session_id=session_id),
+    )
+    if meta is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found",
+        )
+
+    now = datetime.now(timezone.utc)
+
+    # 5-second server-side dedup: if already viewed within the window, no-op.
+    if meta.last_viewed_at is not None:
+        lva = meta.last_viewed_at
+        if lva.tzinfo is None:
+            lva = lva.replace(tzinfo=timezone.utc)
+        if (now - lva) < timedelta(seconds=5):
+            return MarkReadResponse(last_viewed_at=lva)
+
+    account_id = meta.account_id
+    await loop.run_in_executor(
+        None,
+        lambda: svc.update_from_delta(
+            account_id=account_id,
+            session_id=session_id,
+            delta={"last_viewed_at": now, "updated_at": now},
+        ),
+    )
+    return MarkReadResponse(last_viewed_at=now)
 
 
 @router.get("/conversations/{session_id}/history")

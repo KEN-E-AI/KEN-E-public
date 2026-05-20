@@ -150,6 +150,44 @@ class ChatSessionSideTableService:
         doc_ref = self._db.document(_doc_path(account_id, session_id))
         doc_ref.update(delta)
 
+    def find_session_for_user(
+        self,
+        user_id: str,
+        session_id: str,
+    ) -> ChatSessionMetadata | None:
+        """Locate a session by (user_id, session_id) without knowing account_id.
+
+        Issues a collection-group query filtered by both equality conditions.
+        Returns the row only when it exists, belongs to user_id, and is not
+        tombstoned (deleted_at is None).
+
+        This is the canonical lookup for endpoints whose URL carries only
+        session_id — callers resolve account_id from the returned metadata.
+
+        Args:
+            user_id: The authenticated user's ID.
+            session_id: The ADK session ID.
+
+        Returns:
+            ChatSessionMetadata if found and owned by user_id, else None.
+        """
+        query = (
+            self._db.collection_group("chat_sessions")
+            .where("user_id", "==", user_id)
+            .where("session_id", "==", session_id)
+            .limit(1)
+        )
+        docs = list(query.get())
+        if not docs:
+            return None
+        doc = docs[0]
+        if not doc.exists:
+            return None
+        meta = ChatSessionMetadata(**doc.to_dict())
+        if meta.deleted_at is not None:
+            return None
+        return meta
+
     def tombstone(self, account_id: str, session_id: str) -> datetime:
         """Soft-delete: set deleted_at and updated_at to now. Returns deleted_at."""
         now = _now_utc()
