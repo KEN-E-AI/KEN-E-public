@@ -4,4 +4,5 @@ import type { FlagKey } from "./types";
 // Add entries here before using useFeatureFlag(key) anywhere in the app.
 export const KNOWN_FLAGS: FlagKey[] = [
   // "automations_beta" as FlagKey,
+  "chat_v2_enabled" as FlagKey,
 ] satisfies FlagKey[];
