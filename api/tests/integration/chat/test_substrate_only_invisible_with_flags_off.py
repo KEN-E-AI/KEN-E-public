@@ -25,6 +25,18 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+# Module-level import ensures the FastAPI app (and all its dependency bindings,
+# including get_firestore_service in user_context.py) is imported during test
+# *collection*, before the session-scoped `mock_firebase_auth` fixture in
+# api/tests/conftest.py patches src.kene_api.firestore.get_firestore_service
+# with a MagicMock(return_value=...).  Without this, running the file in
+# isolation causes user_context.py to bind to that MagicMock; FastAPI's
+# analyze_param() does not skip VAR_POSITIONAL/VAR_KEYWORD parameters and
+# instead promotes them to required query params named "args"/"kwargs",
+# producing 422 on every request to an endpoint that depends on
+# get_current_user_context.
+from src.kene_api.main import app
+
 pytestmark = pytest.mark.skipif(
     not os.getenv("FIRESTORE_EMULATOR_HOST"),
     reason=(
@@ -82,8 +94,6 @@ def client() -> Generator[TestClient, None, None]:
     get_firestore_client.cache_clear()
     get_chat_side_table_service.cache_clear()
     get_feature_flag_service.cache_clear()
-
-    from src.kene_api.main import app
 
     with TestClient(app) as c:
         yield c
