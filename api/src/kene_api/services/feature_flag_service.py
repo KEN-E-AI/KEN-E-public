@@ -10,6 +10,7 @@ exceptions are landed by FF-13.
 import asyncio
 import hashlib
 import logging
+import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -33,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 # TTL for in-process flag config cache entries (seconds). Exported so downstream
 # modules (FF-5 helper, tests) can reference the authoritative constant.
-TTL_SECONDS: float = 60.0
+TTL_SECONDS: float = float(os.environ.get("KENE_FF_CACHE_TTL_SECONDS", "60.0"))
 
 # Hard ceiling on cache entries — defence against runaway key generation.
 MAX_CACHE_ENTRIES: int = 10_000

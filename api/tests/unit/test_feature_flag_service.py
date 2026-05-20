@@ -894,3 +894,27 @@ class TestGetFlagAudit:
 
         assert entries == []
         assert next_cursor is None
+
+
+# ---------------------------------------------------------------------------
+# TTL_SECONDS env override
+# ---------------------------------------------------------------------------
+
+
+def test_ttl_seconds_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """TTL_SECONDS defaults to 60.0 and reads from KENE_FF_CACHE_TTL_SECONDS when set."""
+    import importlib
+
+    import src.kene_api.services.feature_flag_service as svc_module
+
+    monkeypatch.delenv("KENE_FF_CACHE_TTL_SECONDS", raising=False)
+    importlib.reload(svc_module)
+    assert svc_module.TTL_SECONDS == 60.0
+
+    monkeypatch.setenv("KENE_FF_CACHE_TTL_SECONDS", "1.0")
+    importlib.reload(svc_module)
+    assert svc_module.TTL_SECONDS == 1.0
+
+    # Restore default
+    monkeypatch.delenv("KENE_FF_CACHE_TTL_SECONDS", raising=False)
+    importlib.reload(svc_module)
