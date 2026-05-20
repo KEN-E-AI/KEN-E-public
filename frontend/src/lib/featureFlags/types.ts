@@ -69,3 +69,33 @@ export type FeatureFlagAuditEntry = {
   diff: FeatureFlagAuditDiff;
   created_at: string; // ISO-8601
 };
+
+// ─── Evaluation types (mirror feature_flag_models.py FlagEvaluation; reason is a TS-only superset adding "dev_override") ───
+
+// Added here per FF-PRD-03 §4; FF-PRD-02 authored types.ts but omitted FlagEvaluation.
+export type FlagEvaluation = {
+  key: FlagKey;
+  enabled: boolean;
+  reason:
+    | "kill_switch"
+    | "email_match"
+    | "domain_match"
+    | "org_match"
+    | "account_match"
+    | "rollout"
+    | "default"
+    | "unknown_flag"
+    | "dev_override";
+};
+
+export type FeatureFlagsContextValue = {
+  evaluations: Record<string, FlagEvaluation>;
+  isLoading: boolean;
+  refetch: () => Promise<void>;
+};
+
+export type UseFeatureFlagResult = {
+  enabled: boolean;
+  reason: FlagEvaluation["reason"];
+  isLoading: boolean;
+};
