@@ -206,7 +206,7 @@ return <NewView />;
 
 **Dev override:** in non-production environments, toggle a flag for the current browser tab with `?ff.<key>=on` or `?ff.<key>=off`. See [README §7.7](../docs/design/components/feature-flags/README.md#77-dev-override-non-production-only) for persistence and production-gating behavior.
 
-**Kill switch:** the production kill-switch runbook lives in [`api/CLAUDE.md`](../api/CLAUDE.md) (`Feature Flags → Incident response` section; full expanded runbook also landed by FF-32).
+**Kill switch:** the production kill-switch runbook lives in [`api/CLAUDE.md`](../api/CLAUDE.md) under `Feature Flags → Feature flag kill-switch`.
 
 ## Layout Troubleshooting
 

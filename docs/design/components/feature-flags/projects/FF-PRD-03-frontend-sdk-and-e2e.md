@@ -63,7 +63,7 @@ export type FlagEvaluation = {
 
 ```ts
 export type FeatureFlagsContextValue = {
-  evaluations: Record<string, FlagEvaluation>;
+  evaluations: Record<FlagKey, FlagEvaluation>;
   isLoading: boolean;
   refetch: () => Promise<void>;
 };
@@ -74,6 +74,8 @@ export type UseFeatureFlagResult = {
   isLoading: boolean;
 };
 ```
+
+> **Why `Record<FlagKey, …>` and not `Record<string, …>`:** every entry point that writes into or reads from `evaluations` already holds a `FlagKey`-branded value — `KNOWN_FLAGS: FlagKey[]` (§4 Registry), the `useFeatureFlag(key: FlagKey)` hook (§5.2), and the validated dev-override map (§5.3). Keying the record by the brand makes that invariant load-bearing in the type system and prevents consumers from accidentally indexing with an unvalidated `string` (which would silently return `undefined` and report `unknown_flag`).
 
 ### Registry (`frontend/src/lib/featureFlags/registry.ts`)
 
@@ -122,6 +124,7 @@ on explicit refetch()
 
 ### 5.2 `useFeatureFlag(key)`
 
+- Signature: `useFeatureFlag(key: FlagKey): UseFeatureFlagResult`. Callers cast string literals at the boundary (`"automations_beta" as FlagKey`) — see §5.5 recipe — so the branded key flows unbroken into the `Record<FlagKey, FlagEvaluation>` lookup defined in §4.
 - If a dev override exists for `key` (only possible in non-production), return `{ enabled: <override>, reason: "dev_override", isLoading: false }`.
 - Else return `{ enabled, reason, isLoading }` from the context.
 - If `key` is not in `KNOWN_FLAGS`, return `{ enabled: false, reason: "unknown_flag", isLoading: false }` and log a `console.warn` in development (not production).
@@ -135,6 +138,8 @@ on explicit refetch()
 // Value persisted to sessionStorage under key "kene.ff-overrides"
 // Only honored when import.meta.env.VITE_ENVIRONMENT !== "production"
 ```
+
+Keys read from the URL or `sessionStorage` are validated via `tryFlagKey()` before being inserted into the override map; entries that fail validation are dropped (with a dev-only `console.warn`) rather than coerced. This preserves the `Record<FlagKey, …>` invariant from §4 even though the source is untyped browser state.
 
 ### 5.4 E2E test outline (`frontend/e2e/featureFlags.spec.ts`)
 
