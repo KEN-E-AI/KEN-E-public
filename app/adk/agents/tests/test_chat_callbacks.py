@@ -82,11 +82,11 @@ class TestBuildTurnDelta:
 
     def test_empty_events(self) -> None:
         delta = _build_turn_delta([], self._now())
-        assert delta["input_tokens_total"] == {"_increment": 0}
-        assert delta["output_tokens_total"] == {"_increment": 0}
-        assert delta["tool_call_count"] == {"_increment": 0}
-        assert delta["message_count"] == {"_increment": 0}
-        assert delta["last_message_preview"] == ""
+        assert delta.input_tokens_increment == 0
+        assert delta.output_tokens_increment == 0
+        assert delta.tool_call_count == 0
+        assert delta.message_count == 0
+        assert delta.last_message_preview == ""
 
     def test_tool_call_count_uses_get_function_calls(self) -> None:
         """Critical 5: tool_call_count must use get_function_calls(), not event.type."""
@@ -96,12 +96,12 @@ class TestBuildTurnDelta:
             _MockEvent(fn_calls=[fn_call]),
         ]
         delta = _build_turn_delta(events, self._now())
-        assert delta["tool_call_count"] == {"_increment": 3}
+        assert delta.tool_call_count == 3
 
     def test_tool_call_zero_when_no_function_calls(self) -> None:
         events = [_MockEvent()]
         delta = _build_turn_delta(events, self._now())
-        assert delta["tool_call_count"] == {"_increment": 0}
+        assert delta.tool_call_count == 0
 
     def test_final_text_uses_is_final_response_and_content_parts(self) -> None:
         """Critical 5: last_message_preview must use is_final_response() + content.parts."""
@@ -110,18 +110,18 @@ class TestBuildTurnDelta:
             _MockEvent(is_final=True, parts=["hello ", "world"]),
         ]
         delta = _build_turn_delta(events, self._now())
-        assert delta["last_message_preview"] == "hello world"
+        assert delta.last_message_preview == "hello world"
 
     def test_final_text_truncated_at_160(self) -> None:
         long_text = "x" * 200
         events = [_MockEvent(is_final=True, parts=[long_text])]
         delta = _build_turn_delta(events, self._now())
-        assert len(delta["last_message_preview"]) == 160
+        assert len(delta.last_message_preview) == 160
 
     def test_final_text_empty_when_no_final_event(self) -> None:
         events = [_MockEvent(is_final=False, parts=["not final"])]
         delta = _build_turn_delta(events, self._now())
-        assert delta["last_message_preview"] == ""
+        assert delta.last_message_preview == ""
 
     def test_message_count_author_check(self) -> None:
         events = [
@@ -130,7 +130,7 @@ class TestBuildTurnDelta:
             _MockEvent(author="other_agent"),
         ]
         delta = _build_turn_delta(events, self._now())
-        assert delta["message_count"] == {"_increment": 2}
+        assert delta.message_count == 2
 
     def test_token_extraction_errors_do_not_raise(self) -> None:
         """Critical 4: token extraction failures must not propagate."""
@@ -143,21 +143,30 @@ class TestBuildTurnDelta:
         ):
             delta = _build_turn_delta([bad_event], self._now())
 
-        assert delta["input_tokens_total"] == {"_increment": 0}
+        assert delta.input_tokens_increment == 0
 
     def test_token_extraction_accumulates_counts(self) -> None:
-
         usage = _MockUsage(prompt_token_count=100, candidates_token_count=50)
         events = [_MockEvent(usage=usage), _MockEvent(usage=usage)]
         delta = _build_turn_delta(events, self._now())
         # input = prompt - cached = 100 - 0 = 100, output = 50 each → total 200 input, 100 output
-        assert delta["input_tokens_total"] == {"_increment": 200}
-        assert delta["output_tokens_total"] == {"_increment": 100}
+        assert delta.input_tokens_increment == 200
+        assert delta.output_tokens_increment == 100
 
-    def test_datetime_fields_are_isoformat_sentinels(self) -> None:
-        delta = _build_turn_delta([], self._now())
-        for field_name in ("last_agent_stopped_at", "updated_at", "last_agent_message_at"):
-            assert "_isoformat" in delta[field_name], f"{field_name} missing _isoformat sentinel"
+    def test_datetime_fields_are_typed_datetimes(self) -> None:
+        now = self._now()
+        delta = _build_turn_delta([], now)
+        for attr in ("last_agent_stopped_at", "updated_at", "last_agent_message_at"):
+            val = getattr(delta, attr)
+            assert isinstance(val, datetime), f"{attr} should be a datetime"
+            assert val == now, f"{attr} should match the input datetime"
+
+    def test_wire_dict_emits_isoformat_sentinels(self) -> None:
+        now = self._now()
+        wire = _build_turn_delta([], now).to_wire_dict()
+        for key in ("last_agent_stopped_at", "updated_at", "last_agent_message_at"):
+            assert set(wire[key].keys()) == {"_isoformat"}, f"{key} missing _isoformat sentinel"
+            assert datetime.fromisoformat(wire[key]["_isoformat"]) == now
 
 
 # ---------------------------------------------------------------------------
