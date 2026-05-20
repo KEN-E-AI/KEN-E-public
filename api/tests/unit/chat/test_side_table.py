@@ -146,3 +146,106 @@ class TestTombstone:
         assert "deleted_at" in call_kwargs
         assert "updated_at" in call_kwargs
         assert call_kwargs["deleted_at"] == deleted_at
+
+
+def _base_row(
+    *,
+    session_id: str = "sess_1",
+    user_id: str = "user_1",
+    account_id: str = "acc_1",
+    organization_id: str = "org_1",
+    model_id: str = "gemini-2.5-flash",
+    deleted_at: datetime | None = None,
+) -> dict:
+    now = datetime.now(timezone.utc)
+    return {
+        "session_id": session_id,
+        "user_id": user_id,
+        "account_id": account_id,
+        "organization_id": organization_id,
+        "model_id": model_id,
+        "created_at": now,
+        "updated_at": now,
+        "deleted_at": deleted_at,
+    }
+
+
+def _make_collection_group_result(rows: list[dict]) -> MagicMock:
+    """Return a db mock whose collection_group().where().where().limit().get() chain
+    yields the given rows as document snapshots."""
+    db = MagicMock()
+
+    snapshots = []
+    for row in rows:
+        snap = MagicMock()
+        snap.exists = True
+        snap.to_dict.return_value = row
+        snapshots.append(snap)
+
+    # Chain: db.collection_group(...).where(...).where(...).limit(...).get()
+    query_chain = MagicMock()
+    query_chain.where.return_value = query_chain
+    query_chain.limit.return_value = query_chain
+    query_chain.get.return_value = snapshots
+    db.collection_group.return_value = query_chain
+
+    return db
+
+
+class TestFindSessionForUser:
+    def test_returns_metadata_when_found(self) -> None:
+        row = _base_row(session_id="sess_1", user_id="user_1")
+        db = _make_collection_group_result([row])
+
+        svc = ChatSessionSideTableService(db=db)
+        result = svc.find_session_for_user(user_id="user_1", session_id="sess_1")
+
+        assert result is not None
+        assert result.session_id == "sess_1"
+        assert result.user_id == "user_1"
+        assert result.account_id == "acc_1"
+
+    def test_returns_none_when_no_rows(self) -> None:
+        db = _make_collection_group_result([])
+
+        svc = ChatSessionSideTableService(db=db)
+        result = svc.find_session_for_user(user_id="user_1", session_id="sess_missing")
+
+        assert result is None
+
+    def test_returns_none_for_tombstoned_session(self) -> None:
+        row = _base_row(deleted_at=datetime.now(timezone.utc))
+        db = _make_collection_group_result([row])
+
+        svc = ChatSessionSideTableService(db=db)
+        result = svc.find_session_for_user(user_id="user_1", session_id="sess_1")
+
+        assert result is None
+
+    def test_queries_collection_group_with_correct_filters(self) -> None:
+        row = _base_row()
+        db = _make_collection_group_result([row])
+
+        svc = ChatSessionSideTableService(db=db)
+        svc.find_session_for_user(user_id="user_1", session_id="sess_1")
+
+        db.collection_group.assert_called_once_with("chat_sessions")
+        # Two where() calls chained
+        assert db.collection_group.return_value.where.call_count == 2
+
+    def test_returns_none_when_snapshot_not_exists(self) -> None:
+        snap = MagicMock()
+        snap.exists = False
+
+        query_chain = MagicMock()
+        query_chain.where.return_value = query_chain
+        query_chain.limit.return_value = query_chain
+        query_chain.get.return_value = [snap]
+
+        db = MagicMock()
+        db.collection_group.return_value = query_chain
+
+        svc = ChatSessionSideTableService(db=db)
+        result = svc.find_session_for_user(user_id="user_1", session_id="sess_1")
+
+        assert result is None
