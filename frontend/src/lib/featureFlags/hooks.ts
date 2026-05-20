@@ -1,4 +1,7 @@
-// Admin-config React Query hooks. The runtime evaluation hook lives in FeatureFlagsContext (FF-PRD-03).
+// Admin-config React Query hooks for /admin/feature-flags. The runtime
+// boolean-evaluation hook (`useFeatureFlag`) lives in FeatureFlagsContext
+// (FF-PRD-03); the singular admin hook here is `useFeatureFlagConfig` to
+// avoid name collision at the import level.
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listFlags,
@@ -31,7 +34,7 @@ export function useFeatureFlags() {
   });
 }
 
-export function useFeatureFlag(key: FlagKey | undefined) {
+export function useFeatureFlagConfig(key: FlagKey | undefined) {
   return useQuery({
     queryKey: featureFlagKeys.detail((key ?? "__none__") as FlagKey),
     queryFn: () => getFlag(key as FlagKey),
