@@ -35,6 +35,8 @@ from fastapi.testclient import TestClient
 # instead promotes them to required query params named "args"/"kwargs",
 # producing 422 on every request to an endpoint that depends on
 # get_current_user_context.
+from src.kene_api.auth.models import UserContext
+from src.kene_api.auth.user_context import get_current_user_context
 from src.kene_api.main import app
 
 pytestmark = pytest.mark.skipif(
@@ -47,6 +49,12 @@ pytestmark = pytest.mark.skipif(
 )
 
 _NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+_MOCK_USER = UserContext(
+    user_id="test-user-123",
+    email="test@example.com",
+    organization_permissions={"test-org": "admin"},
+)
 
 _CHAT_FLAG_KEYS = (
     "chat_v2_enabled",
@@ -95,8 +103,17 @@ def client() -> Generator[TestClient, None, None]:
     get_chat_side_table_service.cache_clear()
     get_feature_flag_service.cache_clear()
 
+    # Override Firebase auth for public endpoints. conftest.py patches
+    # src.kene_api.auth.firebase_admin.verify_id_token at the module attribute,
+    # but user_context.py uses `from .firebase_admin import verify_id_token`
+    # (a local binding) so that patch is ineffective here. FastAPI's
+    # app.dependency_overrides is the correct mechanism.
+    app.dependency_overrides[get_current_user_context] = lambda: _MOCK_USER
+
     with TestClient(app) as c:
         yield c
+
+    app.dependency_overrides.pop(get_current_user_context, None)
 
 
 @pytest.fixture(autouse=True)
