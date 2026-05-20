@@ -143,14 +143,32 @@ def _clear_caches() -> None:
 
 @pytest.fixture(scope="module")
 def client() -> Generator[TestClient, None, None]:
-    """TestClient wired to the real Firestore emulator."""
+    """TestClient wired to the real Firestore emulator.
+
+    conftest.py patches ``src.kene_api.auth.firebase_admin.verify_id_token`` at
+    the module attribute, but ``user_context.py`` uses ``from .firebase_admin
+    import verify_id_token`` (a local binding) so that patch is ineffective
+    here. FastAPI's ``app.dependency_overrides`` is the correct mechanism —
+    same workaround used by ``test_substrate_only_invisible_with_flags_off.py``.
+    """
     os.environ.setdefault("GOOGLE_CLOUD_PROJECT_ID", "test-project")
     _clear_caches()
 
+    from src.kene_api.auth.models import UserContext
+    from src.kene_api.auth.user_context import get_current_user_context
     from src.kene_api.main import app
+
+    mock_user = UserContext(
+        user_id=_USER_ID,
+        email="test@example.com",
+        account_permissions={_ACCOUNT_ID: "edit"},
+    )
+    app.dependency_overrides[get_current_user_context] = lambda: mock_user
 
     with TestClient(app) as c:
         yield c
+
+    app.dependency_overrides.pop(get_current_user_context, None)
 
 
 @pytest.fixture(autouse=True)
