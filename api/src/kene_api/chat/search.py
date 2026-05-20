@@ -54,9 +54,16 @@ def list_sessions(
     if cursor is not None:
         try:
             ref_path, _updated_at = decode_cursor(cursor)
-            cursor_doc = db.document(ref_path).get()
-            if cursor_doc.exists:
-                q = q.start_after(cursor_doc)
+            # Validate the path is within the expected account/collection to
+            # prevent an attacker from forcing the server to resolve arbitrary
+            # Firestore paths via a crafted cursor value.
+            expected_prefix = f"accounts/{account_id}/chat_sessions/"
+            if ref_path.startswith(expected_prefix):
+                cursor_doc = db.document(ref_path).get()
+                if cursor_doc.exists:
+                    q = q.start_after(cursor_doc)
+            else:
+                logger.debug("cursor path rejected (unexpected prefix): %s", ref_path[:80])
         except Exception as exc:
             logger.debug("Ignoring malformed pagination cursor: %s", exc)
 

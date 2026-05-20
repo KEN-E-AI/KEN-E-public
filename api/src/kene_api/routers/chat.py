@@ -2509,9 +2509,9 @@ def _metadata_to_conversation_info(m: ChatSessionMetadata) -> ConversationInfo:
 
 @router.get("/conversations", response_model=ConversationListResponse)
 async def list_conversations(
-    cursor: str | None = Query(None, description="Opaque cursor for pagination"),
-    category_id: str | None = Query(None, description="Filter by category ID"),
-    query: str | None = Query(None, description="Full-text search query"),
+    cursor: str | None = Query(None, max_length=512, description="Opaque cursor for pagination"),
+    category_id: str | None = Query(None, max_length=100, description="Filter by category ID"),
+    query: str | None = Query(None, max_length=200, description="Full-text search query"),
     limit: int = Query(20, ge=1, le=100, description="Maximum results to return"),
     account_id: str | None = Query(
         None,
@@ -2556,7 +2556,7 @@ async def list_conversations(
             if not user_context.has_account_access(resolved_account_id):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Access denied to account {resolved_account_id}",
+                    detail="Access denied",
                 )
 
             svc = get_chat_side_table_service()

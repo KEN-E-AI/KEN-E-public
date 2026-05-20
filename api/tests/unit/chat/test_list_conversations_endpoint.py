@@ -116,7 +116,7 @@ class TestMetadataToConversationInfo:
 class TestListConversationsFlagOn:
     """When chat_v2_enabled=True, the handler uses the side-table service."""
 
-    def _run(
+    async def _run(
         self,
         metadata_rows: list[ChatSessionMetadata],
         next_cursor: str | None,
@@ -128,83 +128,78 @@ class TestListConversationsFlagOn:
         limit: int = 20,
         account_id: str | None = None,
     ) -> ConversationListResponse:
-        """Drive the handler synchronously via AsyncMock + patch."""
-        import asyncio
-
+        """Drive the handler via AsyncMock + patch."""
         from src.kene_api.routers.chat import list_conversations
 
         mock_svc = MagicMock()
         mock_svc.list_for_user.return_value = (metadata_rows, next_cursor)
 
-        async def _run_handler() -> ConversationListResponse:
-            with (
-                patch(
-                    "src.kene_api.routers.chat.is_feature_enabled",
-                    new=AsyncMock(return_value=True),
-                ),
-                patch(
-                    "src.kene_api.routers.chat.get_chat_side_table_service",
-                    return_value=mock_svc,
-                ),
-            ):
-                return await list_conversations(
-                    cursor=cursor,
-                    category_id=category_id,
-                    query=query,
-                    limit=limit,
-                    account_id=account_id,
-                    user_context=user_context,
-                )
+        with (
+            patch(
+                "src.kene_api.routers.chat.is_feature_enabled",
+                new=AsyncMock(return_value=True),
+            ),
+            patch(
+                "src.kene_api.routers.chat.get_chat_side_table_service",
+                return_value=mock_svc,
+            ),
+        ):
+            return await list_conversations(
+                cursor=cursor,
+                category_id=category_id,
+                query=query,
+                limit=limit,
+                account_id=account_id,
+                user_context=user_context,
+            )
 
-        return asyncio.get_event_loop().run_until_complete(_run_handler())
-
-    def test_happy_path_returns_side_table_rows(self) -> None:
+    @pytest.mark.asyncio
+    async def test_happy_path_returns_side_table_rows(self) -> None:
         rows = [_make_metadata("s1"), _make_metadata("s2")]
-        resp = self._run(rows, None, _make_user_context())
+        resp = await self._run(rows, None, _make_user_context())
         assert len(resp.conversations) == 2
         assert resp.conversations[0].session_id == "s1"
         assert resp.conversations[1].session_id == "s2"
         assert resp.next_cursor is None
 
-    def test_next_cursor_propagated(self) -> None:
+    @pytest.mark.asyncio
+    async def test_next_cursor_propagated(self) -> None:
         rows = [_make_metadata()]
-        resp = self._run(rows, "cursor_xyz", _make_user_context())
+        resp = await self._run(rows, "cursor_xyz", _make_user_context())
         assert resp.next_cursor == "cursor_xyz"
 
-    def test_items_mirrors_conversations(self) -> None:
+    @pytest.mark.asyncio
+    async def test_items_mirrors_conversations(self) -> None:
         rows = [_make_metadata()]
-        resp = self._run(rows, None, _make_user_context())
-        assert resp.items is resp.conversations
+        resp = await self._run(rows, None, _make_user_context())
+        assert resp.items == resp.conversations
 
-    def test_explicit_account_id_forwarded_to_service(self) -> None:
-        import asyncio
-
+    @pytest.mark.asyncio
+    async def test_explicit_account_id_forwarded_to_service(self) -> None:
         from src.kene_api.routers.chat import list_conversations
 
         mock_svc = MagicMock()
         mock_svc.list_for_user.return_value = ([], None)
 
-        async def _run() -> None:
-            with (
-                patch(
-                    "src.kene_api.routers.chat.is_feature_enabled",
-                    new=AsyncMock(return_value=True),
-                ),
-                patch(
-                    "src.kene_api.routers.chat.get_chat_side_table_service",
-                    return_value=mock_svc,
-                ),
-            ):
-                await list_conversations(
-                    cursor=None,
-                    category_id="cat_abc",
-                    query="revenue",
-                    limit=5,
-                    account_id=_ACCOUNT_ID,
-                    user_context=_make_user_context(),
-                )
+        with (
+            patch(
+                "src.kene_api.routers.chat.is_feature_enabled",
+                new=AsyncMock(return_value=True),
+            ),
+            patch(
+                "src.kene_api.routers.chat.get_chat_side_table_service",
+                return_value=mock_svc,
+            ),
+        ):
+            await list_conversations(
+                cursor=None,
+                category_id="cat_abc",
+                query="revenue",
+                limit=5,
+                account_id=_ACCOUNT_ID,
+                user_context=_make_user_context(),
+            )
 
-        asyncio.get_event_loop().run_until_complete(_run())
         mock_svc.list_for_user.assert_called_once_with(
             user_id=_USER_ID,
             account_id=_ACCOUNT_ID,
@@ -214,40 +209,40 @@ class TestListConversationsFlagOn:
             limit=5,
         )
 
-    def test_no_account_id_defaults_to_first_accessible(self) -> None:
-        import asyncio
-
+    @pytest.mark.asyncio
+    async def test_no_account_id_defaults_to_first_accessible(self) -> None:
         from src.kene_api.routers.chat import list_conversations
 
         mock_svc = MagicMock()
         mock_svc.list_for_user.return_value = ([], None)
 
-        async def _run() -> None:
-            with (
-                patch(
-                    "src.kene_api.routers.chat.is_feature_enabled",
-                    new=AsyncMock(return_value=True),
-                ),
-                patch(
-                    "src.kene_api.routers.chat.get_chat_side_table_service",
-                    return_value=mock_svc,
-                ),
-            ):
-                await list_conversations(
-                    cursor=None,
-                    category_id=None,
-                    query=None,
-                    limit=20,
-                    account_id=None,
-                    user_context=_make_user_context(["acc_first_one", "acc_second"]),
-                )
+        with (
+            patch(
+                "src.kene_api.routers.chat.is_feature_enabled",
+                new=AsyncMock(return_value=True),
+            ),
+            patch(
+                "src.kene_api.routers.chat.get_chat_side_table_service",
+                return_value=mock_svc,
+            ),
+        ):
+            await list_conversations(
+                cursor=None,
+                category_id=None,
+                query=None,
+                limit=20,
+                account_id=None,
+                user_context=_make_user_context(["acc_first_one", "acc_second"]),
+            )
 
-        asyncio.get_event_loop().run_until_complete(_run())
         call_kwargs = mock_svc.list_for_user.call_args.kwargs
         assert call_kwargs["account_id"] == "acc_first_one"
 
-    def test_no_account_id_and_no_accessible_accounts_returns_empty(self) -> None:
-        resp = self._run(
+    @pytest.mark.asyncio
+    async def test_no_account_id_and_no_accessible_accounts_returns_empty(
+        self,
+    ) -> None:
+        resp = await self._run(
             [],
             None,
             _make_user_context(account_ids=[]),
@@ -256,13 +251,12 @@ class TestListConversationsFlagOn:
         assert resp.conversations == []
         assert resp.next_cursor is None
 
-    def test_cross_account_access_raises_403(self) -> None:
-        import asyncio
-
+    @pytest.mark.asyncio
+    async def test_cross_account_access_raises_403(self) -> None:
         from fastapi import HTTPException
         from src.kene_api.routers.chat import list_conversations
 
-        async def _run() -> None:
+        with pytest.raises(HTTPException) as exc_info:
             with patch(
                 "src.kene_api.routers.chat.is_feature_enabled",
                 new=AsyncMock(return_value=True),
@@ -277,8 +271,6 @@ class TestListConversationsFlagOn:
                     user_context=_make_user_context([_ACCOUNT_ID]),
                 )
 
-        with pytest.raises(HTTPException) as exc_info:
-            asyncio.get_event_loop().run_until_complete(_run())
         assert exc_info.value.status_code == 403
 
 
@@ -290,7 +282,7 @@ class TestListConversationsFlagOn:
 class TestListConversationsFlagOff:
     """When chat_v2_enabled=False, the legacy in-memory + ADK path runs."""
 
-    def _run_legacy(
+    async def _run_legacy(
         self,
         legacy_convs: list[ConversationInfo],
         *,
@@ -300,31 +292,26 @@ class TestListConversationsFlagOff:
         limit: int = 5,
         account_id: str | None = "acc_ignored_0123456789",
     ) -> ConversationListResponse:
-        import asyncio
-
         from src.kene_api.routers.chat import list_conversations
 
-        async def _run() -> ConversationListResponse:
-            with (
-                patch(
-                    "src.kene_api.routers.chat.is_feature_enabled",
-                    new=AsyncMock(return_value=False),
-                ),
-                patch(
-                    "src.kene_api.routers.chat.agent_client.get_user_conversations",
-                    new=AsyncMock(return_value=legacy_convs),
-                ),
-            ):
-                return await list_conversations(
-                    cursor=cursor,
-                    category_id=category_id,
-                    query=query,
-                    limit=limit,
-                    account_id=account_id,
-                    user_context=_make_user_context(),
-                )
-
-        return asyncio.get_event_loop().run_until_complete(_run())
+        with (
+            patch(
+                "src.kene_api.routers.chat.is_feature_enabled",
+                new=AsyncMock(return_value=False),
+            ),
+            patch(
+                "src.kene_api.routers.chat.agent_client.get_user_conversations",
+                new=AsyncMock(return_value=legacy_convs),
+            ),
+        ):
+            return await list_conversations(
+                cursor=cursor,
+                category_id=category_id,
+                query=query,
+                limit=limit,
+                account_id=account_id,
+                user_context=_make_user_context(),
+            )
 
     def _make_conv_info(self, session_id: str = "legacy_s1") -> ConversationInfo:
         return ConversationInfo(
@@ -335,18 +322,21 @@ class TestListConversationsFlagOff:
             message_count=1,
         )
 
-    def test_legacy_path_returns_all_conversations(self) -> None:
+    @pytest.mark.asyncio
+    async def test_legacy_path_returns_all_conversations(self) -> None:
         convs = [self._make_conv_info("s1"), self._make_conv_info("s2")]
-        resp = self._run_legacy(convs)
+        resp = await self._run_legacy(convs)
         assert len(resp.conversations) == 2
 
-    def test_legacy_path_next_cursor_is_none(self) -> None:
-        resp = self._run_legacy([self._make_conv_info()])
+    @pytest.mark.asyncio
+    async def test_legacy_path_next_cursor_is_none(self) -> None:
+        resp = await self._run_legacy([self._make_conv_info()])
         assert resp.next_cursor is None
 
-    def test_legacy_path_ignores_new_query_params(self) -> None:
+    @pytest.mark.asyncio
+    async def test_legacy_path_ignores_new_query_params(self) -> None:
         """New params must not cause errors on the legacy path."""
-        resp = self._run_legacy(
+        resp = await self._run_legacy(
             [],
             cursor="some_cursor",
             category_id="cat_123",
