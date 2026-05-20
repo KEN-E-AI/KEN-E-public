@@ -30,7 +30,4 @@ function parseFixtureFlags(): FlagKey[] {
 // Keys the app batch-evaluates on provider mount.
 // Add entries here before using useFeatureFlag(key) anywhere in the app.
 // VITE_FF_E2E_FIXTURE_FLAGS (comma-separated) unions additional keys for E2E tests only.
-export const KNOWN_FLAGS: FlagKey[] = [
-  ...BASE_FLAGS,
-  ...parseFixtureFlags(),
-];
+export const KNOWN_FLAGS: FlagKey[] = [...BASE_FLAGS, ...parseFixtureFlags()];

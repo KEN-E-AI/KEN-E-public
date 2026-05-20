@@ -15,10 +15,7 @@ export function FeatureFlagStatusHarness() {
       <p data-testid="ff-enabled">{String(enabled)}</p>
       <p data-testid="ff-reason">{reason}</p>
       <p data-testid="ff-isloading">{String(isLoading)}</p>
-      <button
-        data-testid="ff-refetch"
-        onClick={() => void refetch()}
-      >
+      <button data-testid="ff-refetch" onClick={() => void refetch()}>
         Refetch
       </button>
     </div>

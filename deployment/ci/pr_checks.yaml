@@ -247,6 +247,73 @@ steps:
         npm ci --prefer-offline
         npx vitest --run src/test/*.test.ts src/test/*.test.tsx
 
+  # Run Playwright E2E tests for the feature-flag admin-to-hook loop (FF-PRD-03 §5.4).
+  # Starts Firestore + Auth emulators, seeds test users, runs the FastAPI backend at TTL=1s,
+  # then exercises SC-1…SC-4 (domain_match, default, kill_switch, dev_override) via a headless
+  # Chromium browser.
+  #
+  # Path-filter guard: the step exits 0 immediately when no changed file touches
+  # frontend/** or the feature-flag service/router source, avoiding unnecessary ~3-min runs
+  # for unrelated PRs.  Cloud Build doesn't support per-step fileFilter natively, so the
+  # guard is implemented inline with `git diff --name-only`.
+  #
+  # Artifact upload: test-results/ (screenshots + traces) is copied to GCS on failure so
+  # engineers can diagnose flaky tests without re-running locally.
+  - name: "mcr.microsoft.com/playwright:v1.49.0-jammy"
+    id: frontend-e2e-tests
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        set -euo pipefail
+
+        # Path-filter guard — skip step when no relevant files changed.
+        CHANGED=$(git diff --name-only "$(git merge-base HEAD origin/main)" HEAD)
+        RELEVANT=$(echo "$CHANGED" | grep -E \
+          '^frontend/|^api/src/kene_api/services/feature_flag_service\.py$|^api/src/kene_api/routers/(feature_flags|admin_feature_flags)\.py$' \
+          || true)
+        if [ -z "$RELEVANT" ]; then
+          echo "No feature-flag or frontend files changed — skipping E2E suite."
+          exit 0
+        fi
+
+        # Start the emulator + backend stack in the background.
+        bash deployment/ci/scripts/start_e2e_stack.sh &
+        STACK_PID=$!
+
+        # Wait for the backend health endpoint (start_e2e_stack.sh waits internally,
+        # but add a belt-and-suspenders poll here in case the script exits early).
+        for i in $(seq 1 30); do
+          if curl -sf http://127.0.0.1:8000/healthz > /dev/null 2>&1; then
+            echo "Backend ready."
+            break
+          fi
+          sleep 2
+        done
+
+        # Install Playwright browsers (Chromium only — saves ~1 GB vs full install).
+        cd frontend
+        npm ci --prefer-offline
+        npx playwright install --with-deps chromium
+
+        # Run the E2E suite; capture exit code so we can upload artifacts before exiting.
+        set +e
+        npx playwright test
+        E2E_EXIT=$?
+        set -e
+
+        # Upload test-results to GCS on failure for post-mortem inspection.
+        if [ $E2E_EXIT -ne 0 ] && [ -d test-results ] && [ "$(ls -A test-results)" ]; then
+          gsutil -m cp -r test-results \
+            "gs://${PROJECT_ID}-logs-data/build-logs/${BUILD_ID}/playwright-test-results/" \
+            || echo "WARNING: artifact upload failed (non-fatal)."
+        fi
+
+        kill $STACK_PID 2>/dev/null || true
+        exit $E2E_EXIT
+    env:
+      - 'PATH=/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin'
+
   # Validate markdown link integrity using lychee (offline mode — file:// links only).
   # Scope: docs/**/*.md and root-level *.md per lychee.toml. No network calls.
   # See docs/design/components/chat/projects/CH-PRD-06-documentation-link-integrity.md (CH-3)
