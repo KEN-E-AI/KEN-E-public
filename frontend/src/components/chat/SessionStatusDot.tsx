@@ -1,17 +1,12 @@
 import { cn } from "@/lib/utils";
 
-/**
- * Minimal input type for status derivation.
- * Structurally compatible with ChatSessionSidebarItem (CH-18) which will
- * ship these same three fields. `is_agent_running` is server-derived from
- * last_agent_started_at + last_agent_stopped_at + a 10-min stuck-threshold
- * (CH-PRD-01 backend); the client receives it as a pre-computed boolean.
- */
-export interface SessionStatusInput {
+// TODO(CH-18): replace with Pick<ChatSessionSidebarItem, "is_agent_running" | "last_agent_message_at" | "last_viewed_at">
+// when ChatSessionSidebarItem ships. Structural compatibility is guaranteed — same three fields, same types.
+export type SessionStatusInput = {
   is_agent_running: boolean;
   last_agent_message_at: string | null;
   last_viewed_at: string | null;
-}
+};
 
 export type SessionStatus = "active" | "needs-review" | "idle";
 
@@ -30,10 +25,10 @@ export function deriveSessionStatus(item: SessionStatusInput): SessionStatus {
   return "idle";
 }
 
-interface SessionStatusDotProps {
+type SessionStatusDotProps = {
   item: SessionStatusInput;
   className?: string;
-}
+};
 
 /**
  * Renders a 10×10px status dot (or empty placeholder for idle) matching the

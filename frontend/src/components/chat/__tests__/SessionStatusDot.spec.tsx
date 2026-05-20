@@ -153,4 +153,18 @@ describe("SessionStatusDot", () => {
     const results = await runAxe(container);
     expect(results).toHaveNoViolations();
   });
+
+  test("needs-review state passes axe accessibility check", async () => {
+    const { container } = render(
+      <SessionStatusDot
+        item={{
+          is_agent_running: false,
+          last_agent_message_at: MSG,
+          last_viewed_at: null,
+        }}
+      />,
+    );
+    const results = await runAxe(container);
+    expect(results).toHaveNoViolations();
+  });
 });
