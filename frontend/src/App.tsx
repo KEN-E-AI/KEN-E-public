@@ -49,7 +49,9 @@ import AcceptInvitation from "./pages/AcceptInvitation";
 import NotFoundPage from "./pages/NotFoundPage";
 import EmailActionHandler from "./components/auth/EmailActionHandler";
 import Authentication from "./pages/Authentication";
-import { ChatInterface } from "@/components/chat/ChatInterface";
+import Chat from "./pages/Chat";
+import { useFlagEnabled } from "./lib/featureFlags/runtime";
+import { toFlagKey } from "./lib/featureFlags/types";
 import { WorkflowsLayout } from "./pages/workflows/WorkflowsLayout";
 import { AgentsPage } from "./pages/workflows/AgentsPage";
 import { AutomationsPage } from "./pages/workflows/AutomationsPage";
@@ -143,12 +145,17 @@ const AuthenticationPage = () => {
   return <Authentication onAuthenticated={handleAuthenticated} />;
 };
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <ThemeProvider>
-        <AuthProvider>
-          <FeatureFlagsProvider>
+const App = () => {
+  // TODO(ff-prd-03): move useFlagEnabled below <BrowserRouter> (into AppRoutes)
+  // once the real hook lands — the current shim reads window.location directly
+  // so it works outside BrowserRouter, but the real hook may use useSearchParams.
+  const isChatV2Enabled = useFlagEnabled(toFlagKey("chat_v2_enabled"));
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <FeatureFlagsProvider>
             <ChatProvider>
               <AccountOperationsProvider>
                 <BrowserRouter>
@@ -242,7 +249,9 @@ const App = () => (
                           </ProtectedRoute>
                         }
                       >
-                        <Route path="/chat" element={<ChatInterface />} />
+                        {isChatV2Enabled && (
+                          <Route path="/chat" element={<Chat />} />
+                        )}
                         <Route
                           path="/"
                           element={<Navigate to="/performance" replace />}
@@ -417,11 +426,12 @@ const App = () => (
                 </BrowserRouter>
               </AccountOperationsProvider>
             </ChatProvider>
-          </FeatureFlagsProvider>
-        </AuthProvider>
-      </ThemeProvider>
-    </TooltipProvider>
-  </QueryClientProvider>
-);
+            </FeatureFlagsProvider>
+          </AuthProvider>
+        </ThemeProvider>
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+};
 
 export default App;
