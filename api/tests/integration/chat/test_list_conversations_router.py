@@ -161,6 +161,7 @@ def client() -> Generator[TestClient, None, None]:
     mock_user = UserContext(
         user_id=_USER_ID,
         email="test@example.com",
+        organization_permissions={},
         account_permissions={_ACCOUNT_ID: "edit"},
     )
     app.dependency_overrides[get_current_user_context] = lambda: mock_user
