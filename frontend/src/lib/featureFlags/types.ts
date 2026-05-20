@@ -69,3 +69,32 @@ export type FeatureFlagAuditEntry = {
   diff: FeatureFlagAuditDiff;
   created_at: string; // ISO-8601
 };
+
+// ─── Evaluation types ────────────────────────────────────────────────────────
+
+export type FlagEvaluation = {
+  key: FlagKey;
+  enabled: boolean;
+  reason:
+    | "kill_switch"
+    | "email_match"
+    | "domain_match"
+    | "org_match"
+    | "account_match"
+    | "rollout"
+    | "default"
+    | "unknown_flag"
+    | "dev_override"; // client-only; never returned by the server
+};
+
+export type FeatureFlagsContextValue = {
+  evaluations: Record<FlagKey, FlagEvaluation>;
+  isLoading: boolean;
+  refetch: () => Promise<void>;
+};
+
+export type UseFeatureFlagResult = {
+  enabled: boolean;
+  reason: FlagEvaluation["reason"];
+  isLoading: boolean;
+};

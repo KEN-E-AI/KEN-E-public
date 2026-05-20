@@ -137,13 +137,25 @@ else:
     # existing code path
 ```
 
-### Kill-switch SLO
+### Feature flag kill-switch
 
-A super-admin flipping `is_active=false` on a flag propagates to every Cloud Run instance within ≤60 s (per-instance TTL; no Redis or Firestore listener in Release 1).
+A super-admin flipping `is_active=false` on a flag propagates to every Cloud Run instance within ≤60 s (per-instance TTL; no Redis or Firestore listener in Release 1). Use this runbook to disable a misbehaving feature in production without a deploy.
 
-### Incident response
+```
+To kill a feature in production:
 
-To kill a misbehaving feature in production, open `/admin/feature-flags` as a super-admin and toggle `is_active` off. If `default_enabled` is `true` (the flag was promoted for GA), also set `default_enabled` to `false` — otherwise `is_active=false` returns `default_enabled` and the feature remains on. Each Cloud Run instance propagates the change within ≤60 s of the last write.
+1. Open /admin/feature-flags as a super-admin.
+2. Find the flag; flip is_active → off.
+3. Confirm the toast ("Kill switch applied. Fully effective within 60 s").
+4. Monitor error rates / user reports. Full propagation across all Cloud Run
+   instances takes ≤60 s (cache TTL).
+```
+
+> **Important:** If the flag was promoted to GA (`default_enabled` is `true`), also set `default_enabled → false` after step 2 — otherwise `is_active=false` falls back to `default_enabled=true` and the feature remains on for all users.
+
+**See also:** [`../docs/design/components/feature-flags/README.md`](../docs/design/components/feature-flags/README.md) — full component design; [§7.4 Caching and propagation](../docs/design/components/feature-flags/README.md#74-caching-and-propagation) — canonical ≤60 s end-to-end SLO.
+
+The ≤60 s propagation is two-layered: backend Cloud Run instances re-read Firestore after the 60 s in-process LRU TTL expires; frontend clients revalidate via TanStack Query (`staleTime=60_000`) on the next `selectedAccount.accountId` change or explicit refetch.
 
 ## Email Service Setup (Local Development)
 
