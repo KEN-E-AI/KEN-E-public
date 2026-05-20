@@ -1,4 +1,4 @@
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useCallback, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { evaluate } from "@/lib/featureFlags/client";
@@ -53,9 +53,9 @@ export const FeatureFlagsProvider = ({
     ? (data as Record<FlagKey, FlagEvaluation>)
     : EMPTY_EVALUATIONS;
 
-  const refetch = async (): Promise<void> => {
+  const refetch = useCallback(async (): Promise<void> => {
     await queryClient.invalidateQueries({ queryKey: ["feature-flags"] });
-  };
+  }, [queryClient]);
 
   return (
     <FeatureFlagsContext.Provider value={{ evaluations, isLoading, refetch }}>
