@@ -33,7 +33,7 @@ export const toChatCategoryId = (value: string): ChatCategoryId => {
 export const tryChatCategoryId = (value: string): ChatCategoryId | undefined =>
   isChatCategoryId(value) ? (value as ChatCategoryId) : undefined;
 
-// ─── Legacy types (mirrors services/chatService.ts; authoritative copy) ───────
+// ─── Legacy wire-protocol types — authoritative definition ───────────────────
 
 export type ChatMessage = {
   role: "user" | "assistant";
@@ -253,7 +253,7 @@ export async function* streamChatCompletion(
 
   const response = await api.post(`${CHAT_BASE}/completions`, request, {
     responseType: "stream",
-    headers: { Accept: "text/plain" },
+    headers: { Accept: "text/event-stream" },
     timeout: COMPLETION_TIMEOUT,
   });
 
