@@ -1,4 +1,10 @@
-import { createContext, useContext, useCallback, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useCallback,
+  useMemo,
+  type ReactNode,
+} from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { evaluate } from "@/lib/featureFlags/client";
@@ -57,22 +63,20 @@ export const FeatureFlagsProvider = ({
     await queryClient.invalidateQueries({ queryKey: ["feature-flags"] });
   }, [queryClient]);
 
+  const value = useMemo<FeatureFlagsContextValue>(
+    () => ({ evaluations, isLoading, refetch }),
+    [evaluations, isLoading, refetch],
+  );
+
   return (
-    <FeatureFlagsContext.Provider value={{ evaluations, isLoading, refetch }}>
+    <FeatureFlagsContext.Provider value={value}>
       {children}
     </FeatureFlagsContext.Provider>
   );
 };
 
 export const useFeatureFlag = (key: FlagKey): UseFeatureFlagResult => {
-  const context = useContext(FeatureFlagsContext);
-  if (context === undefined) {
-    throw new Error(
-      "useFeatureFlag must be used within a FeatureFlagsProvider",
-    );
-  }
-
-  const { evaluations, isLoading } = context;
+  const { evaluations, isLoading } = useFeatureFlagsContext();
 
   const override = getDevOverride(key);
   if (override !== undefined) {
