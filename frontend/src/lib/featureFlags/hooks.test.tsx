@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import {
   featureFlagKeys,
   useFeatureFlags,
-  useFeatureFlag,
+  useFeatureFlagConfig,
   useFlagAudit,
   useCreateFlag,
   useUpdateFlag,
@@ -129,13 +129,13 @@ describe("useFeatureFlags", () => {
   });
 });
 
-// ─── useFeatureFlag ───────────────────────────────────────────────────────────
+// ─── useFeatureFlagConfig ─────────────────────────────────────────────────────
 
-describe("useFeatureFlag", () => {
+describe("useFeatureFlagConfig", () => {
   it("fetches a single flag when key is provided", async () => {
     mockGetFlag.mockResolvedValueOnce(baseFlag);
     const client = freshClient();
-    const { result } = renderHook(() => useFeatureFlag(testKey), {
+    const { result } = renderHook(() => useFeatureFlagConfig(testKey), {
       wrapper: makeWrapper(client),
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
@@ -145,7 +145,7 @@ describe("useFeatureFlag", () => {
 
   it("is disabled when key is undefined and uses a non-colliding cache key", () => {
     const client = freshClient();
-    const { result } = renderHook(() => useFeatureFlag(undefined), {
+    const { result } = renderHook(() => useFeatureFlagConfig(undefined), {
       wrapper: makeWrapper(client),
     });
     expect(result.current.fetchStatus).toBe("idle");
