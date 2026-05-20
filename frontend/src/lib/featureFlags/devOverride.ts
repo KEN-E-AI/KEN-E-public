@@ -1,7 +1,7 @@
 import { tryFlagKey } from "./types";
 import type { FlagKey } from "./types";
 
-const SESSION_STORAGE_KEY = "kene.ff-overrides";
+export const SESSION_STORAGE_KEY = "kene.ff-overrides";
 
 function isProduction(): boolean {
   return import.meta.env.VITE_ENVIRONMENT === "production";
@@ -16,7 +16,7 @@ function loadFromSessionStorage(): Record<string, boolean> {
       return {};
     const result: Record<string, boolean> = {};
     for (const [k, v] of Object.entries(parsed)) {
-      if (typeof v === "boolean") {
+      if (typeof v === "boolean" && tryFlagKey(k) !== undefined) {
         result[k] = v;
       }
     }

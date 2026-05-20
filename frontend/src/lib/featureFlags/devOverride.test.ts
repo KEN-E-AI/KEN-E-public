@@ -1,7 +1,11 @@
 import { beforeEach, afterEach, describe, it, expect, vi } from "vitest";
-import { readDevOverrides, getDevOverride } from "./devOverride";
+import {
+  readDevOverrides,
+  getDevOverride,
+  SESSION_STORAGE_KEY,
+} from "./devOverride";
 
-const SESSION_KEY = "kene.ff-overrides";
+const SESSION_KEY = SESSION_STORAGE_KEY;
 
 function setUrl(search: string): void {
   window.history.replaceState({}, "", search || "/");
@@ -94,6 +98,29 @@ describe("readDevOverrides", () => {
       sessionStorage.setItem(SESSION_KEY, JSON.stringify({ bar: true }));
       setUrl("/?ff.foo=on");
       expect(readDevOverrides()).toEqual({ foo: true, bar: true });
+    });
+  });
+
+  describe("sessionStorage key re-validation", () => {
+    it("strips invalid keys when restoring from sessionStorage", () => {
+      sessionStorage.setItem(
+        SESSION_KEY,
+        JSON.stringify({ "BAD-KEY": true, foo: false }),
+      );
+      setUrl("/");
+      const result = readDevOverrides();
+      expect(result).not.toHaveProperty("BAD-KEY");
+      expect(result).toEqual({ foo: false });
+    });
+
+    it("strips __proto__ keys from stored JSON (prototype pollution guard)", () => {
+      // JSON.parse of {"__proto__": true} technically sets a key named "__proto__";
+      // tryFlagKey rejects it since it does not match FLAG_KEY_REGEX.
+      sessionStorage.setItem(SESSION_KEY, '{"__proto__": true, "foo": false}');
+      setUrl("/");
+      const result = readDevOverrides();
+      expect(result).not.toHaveProperty("__proto__");
+      expect(result).toEqual({ foo: false });
     });
   });
 
