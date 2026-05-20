@@ -159,6 +159,8 @@ To kill a feature in production:
    instances takes ≤60 s (cache TTL).
 ```
 
+> **Important:** If the flag was promoted to GA (`default_enabled` is `true`), also set `default_enabled → false` after step 2 — otherwise `is_active=false` falls back to `default_enabled=true` and the feature remains on for all users. See [Incident response](#incident-response) for the full explanation.
+
 **See also:** [`../docs/design/components/feature-flags/README.md`](../docs/design/components/feature-flags/README.md) — full component design; [§7.4 Caching and propagation](../docs/design/components/feature-flags/README.md#74-caching-and-propagation) — canonical ≤60 s end-to-end SLO.
 
 The ≤60 s propagation is two-layered: backend Cloud Run instances re-read Firestore after the 60 s in-process LRU TTL expires; frontend clients revalidate via TanStack Query (`staleTime=60_000`) on the next `selectedAccount.accountId` change or explicit refetch.
