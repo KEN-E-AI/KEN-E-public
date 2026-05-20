@@ -20,7 +20,11 @@ const firebaseConfig = {
 // and inject a synthetic user so protected routes render. Used by the
 // autonomous test team's VM image when no real Firebase credentials are
 // available. Must never be set in any deployed environment.
-export const authBypassEnabled = import.meta.env.VITE_AUTH_BYPASS === "true";
+// VITE_AUTH_BYPASS may never be true in a production build — guard here so an
+// accidental mis-set of the variable in .env.production is a no-op.
+export const authBypassEnabled =
+  import.meta.env.VITE_AUTH_BYPASS === "true" &&
+  import.meta.env.VITE_ENVIRONMENT !== "production";
 
 // VITE_AUTH_BYPASS_ROLE=regular injects a non-super-admin user (non @ken-e.ai
 // email) so the org-selection flow can be exercised. Defaults to super-admin.

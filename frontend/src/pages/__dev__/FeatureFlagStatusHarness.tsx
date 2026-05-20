@@ -1,5 +1,7 @@
-import { useFeatureFlag } from "@/contexts/FeatureFlagsContext";
-import { useFeatureFlagsContext } from "@/contexts/FeatureFlagsContext";
+import {
+  useFeatureFlag,
+  useFeatureFlagsContext,
+} from "@/contexts/FeatureFlagsContext";
 import type { FlagKey } from "@/lib/featureFlags/types";
 
 const E2E_FLAG_KEY = "e2e_test_flag" as FlagKey;

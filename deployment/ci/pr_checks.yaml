@@ -309,7 +309,9 @@ steps:
             || echo "WARNING: artifact upload failed (non-fatal)."
         fi
 
-        kill $STACK_PID 2>/dev/null || true
+        # Kill the process group so all emulator children are cleaned up.
+        STACK_PGID=$(ps -o pgid= $STACK_PID 2>/dev/null | tr -d ' ' || true)
+        [ -n "$STACK_PGID" ] && kill -- "-${STACK_PGID}" 2>/dev/null || true
         exit $E2E_EXIT
     env:
       - 'PATH=/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin'

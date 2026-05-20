@@ -12,14 +12,14 @@
  *   - Firebase Auth emulator: 127.0.0.1:9099
  *     Seeded users: alice@ken-e.ai / password123   (super-admin by email suffix)
  *                   bob@example.com / password123   (regular user)
- *   - FastAPI backend      : 127.0.0.1:8000 (KENE_FF_CACHE_TTL_SECONDS=1)
+ *   - FastAPI backend      : 127.0.0.1:8000 (KENE_FF_CACHE_TTL_SECONDS=0)
  *   - Vite dev server      : 127.0.0.1:8080 (VITE_USE_AUTH_EMULATOR=true,
  *                                             VITE_FF_E2E_FIXTURE_FLAGS=e2e_test_flag)
  *
  * Risk mitigations per PRD §9:
  *   - sessionStorage cleared in beforeEach to prevent override bleed.
  *   - IndexedDB (Firebase auth) cleared in signInAs to prevent auth bleed.
- *   - kill-switch scenario uses 1-s backend TTL + 1.5-s wait instead of 60-s prod TTL.
+ *   - kill-switch scenario uses TTL=0 so the cache is always cold — no fixed wait needed.
  */
 
 import { test, expect } from "@playwright/test";
@@ -101,11 +101,8 @@ test("SC-3: kill switch propagates to kill_switch", async ({
   const aliceToken = await getIdToken(request, "alice@ken-e.ai", "password123");
   await flipKillSwitch(request, FLAG_KEY, aliceToken);
 
-  // Wait for the backend cache TTL to expire (KENE_FF_CACHE_TTL_SECONDS=1 in
-  // the E2E stack, so 1.5 s gives a comfortable margin).
-  await page.waitForTimeout(1_500);
-
   // Trigger a re-evaluation via the refetch button (invalidates TanStack Query).
+  // TTL=0 means the backend cache is always cold — no fixed wait needed.
   const responsePromise = page.waitForResponse(
     (resp) =>
       resp.url().includes("/api/v1/feature-flags/evaluate") &&

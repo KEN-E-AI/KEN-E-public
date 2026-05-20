@@ -907,14 +907,15 @@ def test_ttl_seconds_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
 
     import src.kene_api.services.feature_flag_service as svc_module
 
-    monkeypatch.delenv("KENE_FF_CACHE_TTL_SECONDS", raising=False)
-    importlib.reload(svc_module)
-    assert svc_module.TTL_SECONDS == 60.0
+    try:
+        monkeypatch.delenv("KENE_FF_CACHE_TTL_SECONDS", raising=False)
+        importlib.reload(svc_module)
+        assert svc_module.TTL_SECONDS == 60.0
 
-    monkeypatch.setenv("KENE_FF_CACHE_TTL_SECONDS", "1.0")
-    importlib.reload(svc_module)
-    assert svc_module.TTL_SECONDS == 1.0
-
-    # Restore default
-    monkeypatch.delenv("KENE_FF_CACHE_TTL_SECONDS", raising=False)
-    importlib.reload(svc_module)
+        monkeypatch.setenv("KENE_FF_CACHE_TTL_SECONDS", "1.0")
+        importlib.reload(svc_module)
+        assert svc_module.TTL_SECONDS == 1.0
+    finally:
+        # Always restore default so later tests see the unmodified module state.
+        monkeypatch.delenv("KENE_FF_CACHE_TTL_SECONDS", raising=False)
+        importlib.reload(svc_module)

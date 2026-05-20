@@ -417,16 +417,18 @@ const App = () => (
                           }
                         />
                       )}
-                      {import.meta.env.DEV && LazyFeatureFlagStatusHarness && (
-                        <Route
-                          path="/__dev__/feature-flag-status"
-                          element={
-                            <Suspense fallback={null}>
-                              <LazyFeatureFlagStatusHarness />
-                            </Suspense>
-                          }
-                        />
-                      )}
+                      {import.meta.env.DEV &&
+                        import.meta.env.VITE_ENVIRONMENT !== "production" &&
+                        LazyFeatureFlagStatusHarness && (
+                          <Route
+                            path="/__dev__/feature-flag-status"
+                            element={
+                              <Suspense fallback={null}>
+                                <LazyFeatureFlagStatusHarness />
+                              </Suspense>
+                            }
+                          />
+                        )}
                     </Routes>
                     {/* Legacy Radix Toaster (88 callsites use useToast()) and sonner Toaster coexist */}
                     <Toaster />

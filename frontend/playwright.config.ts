@@ -23,7 +23,7 @@ export default defineConfig({
   webServer: {
     command: [
       "VITE_USE_AUTH_EMULATOR=true",
-      "VITE_FF_E2E_FIXTURE_FLAGS=e2e_test_flag",
+      "VITE_FF_E2E_FIXTURE_FLAGS='e2e_test_flag'",
       "VITE_ENVIRONMENT=development",
       "npm run dev:development",
     ].join(" "),

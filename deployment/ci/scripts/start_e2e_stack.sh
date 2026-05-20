@@ -48,10 +48,10 @@ echo "[e2e-stack] Starting Firestore emulator on ${FIRESTORE_HOST}..."
 gcloud emulators firestore start --host-port="${FIRESTORE_HOST}" &
 
 for _ in $(seq 1 60); do
-  curl -sf "http://${FIRESTORE_HOST}/" >/dev/null 2>&1 && break
+  curl -sf "http://${FIRESTORE_HOST}/v1/projects/test-project/databases/(default)/documents" >/dev/null 2>&1 && break
   sleep 1
 done
-curl -sf "http://${FIRESTORE_HOST}/" >/dev/null 2>&1 \
+curl -sf "http://${FIRESTORE_HOST}/v1/projects/test-project/databases/(default)/documents" >/dev/null 2>&1 \
   || { echo "[e2e-stack] ERROR: Firestore emulator failed to start"; exit 1; }
 echo "[e2e-stack] Firestore emulator ready."
 
@@ -109,7 +109,7 @@ uv sync --frozen
 
 FIRESTORE_EMULATOR_HOST="${FIRESTORE_HOST}" \
 FIREBASE_AUTH_EMULATOR_HOST="${AUTH_HOST}" \
-KENE_FF_CACHE_TTL_SECONDS=1 \
+KENE_FF_CACHE_TTL_SECONDS=0 \
 GOOGLE_CLOUD_PROJECT_ID="test-project" \
 GOOGLE_CLOUD_PROJECT="test-project" \
   uv run uvicorn src.kene_api.main:app --host 127.0.0.1 --port "${API_PORT}" &
