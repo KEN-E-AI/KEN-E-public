@@ -183,6 +183,8 @@ API calls use Axios with Firebase Auth token injection. See `src/lib/api.ts` for
 
 ## Gating a feature behind a flag
 
+> **Prerequisite:** This recipe requires FF-PRD-03 (Frontend SDK + E2E) to have shipped. The files referenced below (`FeatureFlagsContext`, `registry.ts`, and the runtime `useFeatureFlag` hook) are delivered by that PRD and do not exist until it merges.
+
 When shipping a feature behind a flag, follow the four steps below. The full contract lives in the [Feature Flags component README](../docs/design/components/feature-flags/README.md).
 
 ```ts
@@ -202,9 +204,9 @@ return <NewView />;
 // 4. In dev, toggle with ?ff.automations_beta=on
 ```
 
-**Dev override:** in non-production environments, toggle a flag for the current browser tab with `?ff.<key>=on` or `?ff.<key>=off`. See [README §7.7](../docs/design/components/feature-flags/README.md#77-dev-override-non-production-only) for persistence and production-gating behaviour.
+**Dev override:** in non-production environments, toggle a flag for the current browser tab with `?ff.<key>=on` or `?ff.<key>=off`. See [README §7.7](../docs/design/components/feature-flags/README.md#77-dev-override-non-production-only) for persistence and production-gating behavior.
 
-**Kill switch:** the production kill-switch runbook lives in [`api/CLAUDE.md`](../api/CLAUDE.md) (`Feature flag kill-switch` section, landed by FF-32).
+**Kill switch:** the production kill-switch runbook lives in [`api/CLAUDE.md`](../api/CLAUDE.md) (`Feature Flags → Incident response` section; full expanded runbook also landed by FF-32).
 
 ## Layout Troubleshooting
 
