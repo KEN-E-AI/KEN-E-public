@@ -70,9 +70,8 @@ export type FeatureFlagAuditEntry = {
   created_at: string; // ISO-8601
 };
 
-// ─── Evaluation types (mirror feature_flag_models.py FlagEvaluation; reason is a TS-only superset adding "dev_override") ───
+// ─── Evaluation types ────────────────────────────────────────────────────────
 
-// Added here per FF-PRD-03 §4; FF-PRD-02 authored types.ts but omitted FlagEvaluation.
 export type FlagEvaluation = {
   key: FlagKey;
   enabled: boolean;
@@ -85,11 +84,11 @@ export type FlagEvaluation = {
     | "rollout"
     | "default"
     | "unknown_flag"
-    | "dev_override";
+    | "dev_override"; // client-only; never returned by the server
 };
 
 export type FeatureFlagsContextValue = {
-  evaluations: Record<string, FlagEvaluation>;
+  evaluations: Record<FlagKey, FlagEvaluation>;
   isLoading: boolean;
   refetch: () => Promise<void>;
 };
