@@ -19,8 +19,7 @@ import pytest
 from fastapi import HTTPException
 from src.kene_api.auth.models import UserContext
 from src.kene_api.chat.mark_read_limiter import MarkReadRateLimiter
-from src.kene_api.models.chat import ChatSessionMetadata
-from src.kene_api.routers.chat import MarkReadResponse
+from src.kene_api.models.chat import ChatSessionMetadata, MarkReadResponse
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -212,16 +211,17 @@ class TestMarkConversationRead:
 
     def test_429_when_rate_limit_exceeded(self) -> None:
         """61st call in window raises 429 before reaching the side-table."""
-        import time
+        from src.kene_api.chat import mark_read_limiter as limiter_module
 
         limiter = MarkReadRateLimiter(max_requests=60, window_seconds=60)
-        t = time.time()
-        # Exhaust the limit with a constant fake clock anchored at real now
-        # so entries aren't pruned when the handler calls check with the real clock.
+        t = 1_000_000.0  # Fixed epoch well within any pruning window.
         for _ in range(60):
             limiter.check("sess_1", now=lambda: t)
 
         meta = _make_meta()
-        with pytest.raises(HTTPException) as exc_info:
-            self._run(session_id="sess_1", meta=meta, limiter=limiter)
+        # Patch _now_utc so the handler's bare check() call also uses the
+        # frozen clock — prevents the pre-filled entries from being pruned.
+        with patch.object(limiter_module, "_now_utc", return_value=t):
+            with pytest.raises(HTTPException) as exc_info:
+                self._run(session_id="sess_1", meta=meta, limiter=limiter)
         assert exc_info.value.status_code == 429

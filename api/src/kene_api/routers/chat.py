@@ -13,7 +13,7 @@ from typing import Any
 from uuid import uuid4
 
 import vertexai
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from fastapi.responses import StreamingResponse
 from google.adk.sessions import VertexAiSessionService
 from pydantic import BaseModel, Field, computed_field
@@ -46,7 +46,7 @@ from ..database import get_neo4j_service
 from ..dependencies import get_firestore_client as _get_firestore_client
 from ..exceptions import ServiceUnavailableError
 from ..firestore import get_firestore_service
-from ..models.chat import InternalSideTableUpdateRequest
+from ..models.chat import InternalSideTableUpdateRequest, MarkReadResponse
 from ..models.feature_flag_models import EvaluationContext
 from ..models.kene_models import RecoverableSessionInfo
 from ..redis_client import get_redis_service
@@ -2565,15 +2565,9 @@ async def update_conversation(
         ) from e
 
 
-class MarkReadResponse(BaseModel):
-    """Response for POST /conversations/{session_id}/mark-read."""
-
-    last_viewed_at: datetime
-
-
 @router.post("/conversations/{session_id}/mark-read", response_model=MarkReadResponse)
 async def mark_conversation_read(
-    session_id: str,
+    session_id: str = Path(..., max_length=256, pattern=r"^[\w\-]+$"),
     user_context: UserContext = Depends(get_current_user_context),
 ) -> MarkReadResponse:
     """Stamp last_viewed_at = now() on the session side-table row.
@@ -2589,6 +2583,10 @@ async def mark_conversation_read(
     Returns:
         ``{"last_viewed_at": "<iso>"}`` so the client can optimistically
         flip the sidebar status indicator without waiting for the next poll.
+
+    Note: ``chat_v2_enabled`` does not gate this endpoint — per api/CLAUDE.md
+    that flag only disables the internal side-table update path; public chat
+    endpoints are unaffected.
     """
     # Rate check — 429 if the per-session cap is exceeded.
     mark_read_limiter.check(session_id)
@@ -2610,10 +2608,12 @@ async def mark_conversation_read(
     now = datetime.now(timezone.utc)
 
     # 5-second server-side dedup: if already viewed within the window, no-op.
-    if meta.last_viewed_at is not None and (now - meta.last_viewed_at) < timedelta(
-        seconds=5
-    ):
-        return MarkReadResponse(last_viewed_at=meta.last_viewed_at)
+    if meta.last_viewed_at is not None:
+        lva = meta.last_viewed_at
+        if lva.tzinfo is None:
+            lva = lva.replace(tzinfo=timezone.utc)
+        if (now - lva) < timedelta(seconds=5):
+            return MarkReadResponse(last_viewed_at=lva)
 
     account_id = meta.account_id
     await loop.run_in_executor(
