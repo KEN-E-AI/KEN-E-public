@@ -46,8 +46,10 @@ from ..dependencies import get_firestore_client as _get_firestore_client
 from ..exceptions import ServiceUnavailableError
 from ..firestore import get_firestore_service
 from ..models.chat import InternalSideTableUpdateRequest
+from ..models.feature_flag_models import EvaluationContext
 from ..models.kene_models import RecoverableSessionInfo
 from ..redis_client import get_redis_service
+from ..services.feature_flag_service import is_feature_enabled
 from ..services.ga_credential_helper import GACredentialHelper
 
 logger = get_structured_logger(__name__)
@@ -2774,8 +2776,22 @@ async def side_table_update(
     Authenticated by Google OIDC bearer token (service-to-service).
     Idempotency is enforced via a 24 h Firestore key cache.
 
-    CH-19 will add the chat_v2_enabled feature-flag guard.
+    Gated by the ``chat_v2_enabled`` feature flag (master kill switch).
+    Returns 404 when the flag is off so that ADK-callback deltas from
+    service accounts are short-circuited until the Chat component is
+    enabled for a tenant.  The flag helper swallows service errors and
+    returns ``default=False``, so a Firestore outage on the flag read
+    fails closed (returns 404) rather than letting an unverified write
+    through.
     """
+    ctx = EvaluationContext(
+        user_id="system",
+        user_email="system@ken-e.ai",
+        organization_id=None,
+        account_id=None,
+    )
+    if not await is_feature_enabled("chat_v2_enabled", ctx, default=False):
+        raise HTTPException(status_code=404, detail="Not Found")
     db = _get_firestore_client()
     return apply_side_table_update(
         db=db,
