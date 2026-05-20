@@ -355,6 +355,24 @@ class TestMergeFromDataStripsStorageInternals:
         assert merged is not None
         assert merged.temperature == 0.4
 
+    def test_strips_mer_e_lifecycle_status(self):
+        """MER-E also writes ``lifecycle_status`` onto shared agent_configs
+        docs. Without stripping, ``extra="forbid"`` on ``MergedAgentConfig``
+        causes the list endpoint to silently drop the doc — observed on
+        staging where ``rud_e`` disappeared from /workflows/agents."""
+        from src.kene_api.routers.agent_configs import _merge_from_data
+
+        global_data = {
+            "instruction": "Hello.",
+            "model": "gemini-2.5-pro",
+            "lifecycle_status": "active",
+        }
+
+        merged = _merge_from_data("rud_e", global_data, None)
+
+        assert merged is not None
+        assert merged.config_id == "rud_e"
+
     def test_exposes_name_and_title_on_merged_response(self):
         """Identity fields flow through to the MergedAgentConfig response so
         the frontend can render name primary / title secondary."""
