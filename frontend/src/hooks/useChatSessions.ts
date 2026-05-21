@@ -29,11 +29,12 @@ export function useChatSessions({
     getNextPageParam: (lastPage: ListChatSessionsResponse) =>
       lastPage.next_cursor,
     enabled: accountId != null,
+    // Cap retained pages at 1 so each 5 s poll fetches a single page regardless
+    // of how far the user has scrolled. Without this, useInfiniteQuery refetches
+    // every loaded page on every tick, multiplying API load by the page count.
+    // `fetchNextPage` still works — it replaces the retained page (sliding window).
+    maxPages: 1,
     // Pause polling when tab is hidden; resume on visibility change via refetchOnWindowFocus.
-    // NOTE: useInfiniteQuery re-fetches ALL loaded pages on each poll interval. If users
-    // paginate deeply, each 5 s tick multiplies API calls by the page count. For now the
-    // sidebar resets to page 1 on navigation, so deep pagination is ephemeral; revisit
-    // maxPages if this becomes a cost concern.
     refetchInterval: () =>
       document.visibilityState === "visible" ? 5000 : false,
     refetchOnWindowFocus: true,

@@ -2,7 +2,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { InfiniteData } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
-import { createChatConversation, toChatSessionId } from "@/lib/chatApi";
+import {
+  OPTIMISTIC_SESSION_ID_PREFIX,
+  createChatConversation,
+  toChatSessionId,
+} from "@/lib/chatApi";
 import type {
   ConversationInfo,
   ChatSessionSidebarItem,
@@ -108,7 +112,11 @@ export function useCreateChatSession() {
       // don't overwrite the optimistic row when they settle.
       await queryClient.cancelQueries({ queryKey: ["chat-sessions"] });
 
-      const tempId = toChatSessionId(`optimistic-${crypto.randomUUID()}`);
+      // Prefix uses ':' (not in Chat.tsx's SESSION_ID_RE) so a click on the
+      // placeholder before onSuccess fires cannot produce a routable URL.
+      const tempId = toChatSessionId(
+        `${OPTIMISTIC_SESSION_ID_PREFIX}${crypto.randomUUID()}`,
+      );
       const now = new Date().toISOString();
       const optimisticItem: ChatSessionSidebarItem = {
         session_id: tempId,

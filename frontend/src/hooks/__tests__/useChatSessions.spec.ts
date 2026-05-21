@@ -112,7 +112,7 @@ describe("useChatSessions", () => {
     expect(result.current.data?.pages[0]).toEqual(PAGE_1);
   });
 
-  it("fetches next page via fetchNextPage and returns hasNextPage=false at end", async () => {
+  it("fetches next page via fetchNextPage and slides the window (maxPages=1)", async () => {
     mockListChatSessions
       .mockResolvedValueOnce(PAGE_1)
       .mockResolvedValueOnce(PAGE_2);
@@ -123,6 +123,7 @@ describe("useChatSessions", () => {
     );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.pages).toEqual([PAGE_1]);
 
     // Fire without awaiting the returned promise — waitFor below polls until state settles.
     // Wrapping in act() suppresses "not wrapped in act" console noise from React 18.
@@ -130,9 +131,9 @@ describe("useChatSessions", () => {
       result.current.fetchNextPage();
     });
 
-    await waitFor(() => expect(result.current.data?.pages.length).toBe(2));
+    // maxPages: 1 → fetching the next page drops the previous one; only the most-recent is retained.
+    await waitFor(() => expect(result.current.data?.pages).toEqual([PAGE_2]));
 
-    expect(result.current.data?.pages[1]).toEqual(PAGE_2);
     expect(result.current.hasNextPage).toBe(false);
   });
 

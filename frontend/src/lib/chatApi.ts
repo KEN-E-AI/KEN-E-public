@@ -18,6 +18,15 @@ export const toChatSessionId = (value: string): ChatSessionId => {
 export const tryChatSessionId = (value: string): ChatSessionId | undefined =>
   isChatSessionId(value) ? (value as ChatSessionId) : undefined;
 
+// Sentinel for optimistic placeholder rows created by useCreateChatSession.
+// The colon deliberately violates Chat.tsx's SESSION_ID_RE so a click that
+// races onSuccess cannot produce a routable `/chat?session=optimistic:...`
+// URL — the page treats the param as invalid and falls back to "no session".
+export const OPTIMISTIC_SESSION_ID_PREFIX = "optimistic:" as const;
+
+export const isOptimisticSessionId = (id: string): boolean =>
+  id.startsWith(OPTIMISTIC_SESSION_ID_PREFIX);
+
 export type ChatCategoryId = Brand<string, "ChatCategoryId">;
 
 export const isChatCategoryId = (value: string): value is ChatCategoryId =>

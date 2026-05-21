@@ -140,7 +140,7 @@ describe("useCreateChatSession — happy path", () => {
       );
 
     const optimisticRow = cacheAfterMutate?.pages[0].items[0];
-    expect(optimisticRow?.session_id).toMatch(/^optimistic-/);
+    expect(optimisticRow?.session_id).toMatch(/^optimistic:/);
     expect(optimisticRow?.title).toBe("Untitled session");
     expect(optimisticRow?.is_agent_running).toBe(false);
 
@@ -193,7 +193,7 @@ describe("useCreateChatSession — happy path", () => {
     await waitFor(() => {
       const cache =
         client.getQueryData<InfiniteData<ListChatSessionsResponse>>(KEY_ALL);
-      expect(cache?.pages[0].items[0].session_id).toMatch(/^optimistic-/);
+      expect(cache?.pages[0].items[0].session_id).toMatch(/^optimistic:/);
     });
 
     // All three variants get the optimistic prepend
@@ -204,9 +204,9 @@ describe("useCreateChatSession — happy path", () => {
     const cacheSearched =
       client.getQueryData<InfiniteData<ListChatSessionsResponse>>(KEY_SEARCHED);
 
-    expect(cacheAll?.pages[0].items[0].session_id).toMatch(/^optimistic-/);
-    expect(cacheFiltered?.pages[0].items[0].session_id).toMatch(/^optimistic-/);
-    expect(cacheSearched?.pages[0].items[0].session_id).toMatch(/^optimistic-/);
+    expect(cacheAll?.pages[0].items[0].session_id).toMatch(/^optimistic:/);
+    expect(cacheFiltered?.pages[0].items[0].session_id).toMatch(/^optimistic:/);
+    expect(cacheSearched?.pages[0].items[0].session_id).toMatch(/^optimistic:/);
 
     // Resolve to avoid unhandled-promise warnings
     act(() => {
@@ -248,7 +248,7 @@ describe("useCreateChatSession — happy path", () => {
     expect(realRow?.title).toBe("My New Session");
     // No optimistic id remains in the cache
     const hasOptimistic = cacheAfter?.pages[0].items.some((i) =>
-      String(i.session_id).startsWith("optimistic-"),
+      String(i.session_id).startsWith("optimistic:"),
     );
     expect(hasOptimistic).toBe(false);
   });
@@ -354,7 +354,7 @@ describe("useCreateChatSession — error path", () => {
     expect(cacheAfter?.pages[0].items[0].session_id).toBe("session-abc");
     expect(
       cacheAfter?.pages[0].items.some((i) =>
-        String(i.session_id).startsWith("optimistic-"),
+        String(i.session_id).startsWith("optimistic:"),
       ),
     ).toBe(false);
   });
@@ -465,6 +465,54 @@ describe("useCreateChatSession — no sidebar mounted", () => {
     );
     // No toast
     expect(mockToast).not.toHaveBeenCalled();
+  });
+});
+
+describe("useCreateChatSession — optimistic id is non-routable", () => {
+  // Matches Chat.tsx SESSION_ID_RE. If someone changes the optimistic id
+  // sentinel to a value that satisfies this regex, a click on the placeholder
+  // before onSuccess fires can produce a bogus /chat?session=optimistic-... URL.
+  const SESSION_ID_RE = /^[a-zA-Z0-9_-]{1,128}$/;
+
+  it("mints an optimistic session_id that fails Chat.tsx's SESSION_ID_RE", async () => {
+    const navigateMock = vi.fn();
+    mockUseNavigate.mockReturnValue(navigateMock);
+    let resolveCreate: (v: ConversationInfo) => void;
+    mockCreateConversation.mockReturnValue(
+      new Promise<ConversationInfo>((res) => {
+        resolveCreate = res;
+      }),
+    );
+
+    const client = freshClient();
+    client.setQueryData(CHAT_SESSIONS_KEY, makeInfiniteData([]));
+
+    const { result } = renderHook(() => useCreateChatSession(), {
+      wrapper: makeWrapper(client),
+    });
+
+    act(() => {
+      result.current.mutate({ account_id: "acc_test" });
+    });
+
+    await waitFor(() => {
+      const cache =
+        client.getQueryData<InfiniteData<ListChatSessionsResponse>>(
+          CHAT_SESSIONS_KEY,
+        );
+      expect(cache?.pages[0].items).toHaveLength(1);
+    });
+
+    const optimisticId = String(
+      client.getQueryData<InfiniteData<ListChatSessionsResponse>>(
+        CHAT_SESSIONS_KEY,
+      )?.pages[0].items[0].session_id,
+    );
+    expect(SESSION_ID_RE.test(optimisticId)).toBe(false);
+
+    act(() => {
+      resolveCreate!(mockConversationInfo);
+    });
   });
 });
 

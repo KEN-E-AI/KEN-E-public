@@ -128,11 +128,15 @@ steps:
       - "-c"
       - |
         set -euo pipefail
-        uv add locust==2.32.6 gevent==24.11.1 requests==2.32.3 firebase-admin==6.5.0
+        # `uv pip install --system` installs into the container's system Python
+        # without mutating pyproject.toml / uv.lock in the shared workspace —
+        # `uv add` would, and later steps share that workspace volume.
+        uv pip install --system \
+          locust==2.32.6 gevent==24.11.1 requests==2.32.3 firebase-admin==6.5.0
         FIREBASE_WEB_API_KEY=${_VITE_FIREBASE_API_KEY} \
         CHAT_LOADTEST_UID=${_CHAT_LOADTEST_UID} \
         API_BASE_URL=${_STAGING_API_URL} \
-        uv run locust -f tests/load_test/chat_sidebar_polling.py \
+        locust -f tests/load_test/chat_sidebar_polling.py \
           --headless \
           -t 6m -u 1000 -r 33 \
           --csv=tests/load_test/.results/chat_sidebar \
