@@ -23,6 +23,13 @@ Required environment variables
 FIREBASE_WEB_API_KEY
     The Firebase web API key (found in the Firebase console under Project
     Settings → General → Web API Key).  This is *not* a service-account key.
+FIREBASE_PROJECT_ID
+    The target Firebase project (e.g. ``ken-e-staging``).
+FIREBASE_ADMIN_SA_EMAIL
+    The target project's Firebase Admin SDK service account, formatted as
+    ``firebase-adminsdk-*@<project>.iam.gserviceaccount.com``.  The caller
+    must hold ``roles/iam.serviceAccountTokenCreator`` on this SA so the
+    Admin SDK can sign custom tokens for the target project via signBlob.
 CHAT_LOADTEST_UID
     The Firebase Auth UID of the pre-created load-test user account.
 
@@ -60,10 +67,42 @@ _TOKEN_REFRESH_BUFFER_SECONDS = 300  # 5 minutes
 
 
 def _ensure_firebase() -> None:
-    """Initialize the Firebase Admin SDK exactly once."""
+    """Initialize the Firebase Admin SDK exactly once.
+
+    Binds the SDK to the target Firebase project and tells it which service
+    account to sign custom tokens as.  Both are required when running from
+    Cloud Build: ADC otherwise resolves to the build project and signs custom
+    tokens as the build service account, so ``signInWithCustomToken`` against
+    the target project's API key returns 400.
+
+    Required env vars (load-test step sets both via Cloud Build substitutions):
+        FIREBASE_PROJECT_ID         — target project (e.g. ``ken-e-staging``)
+        FIREBASE_ADMIN_SA_EMAIL     — the project's Firebase Admin SDK SA
+                                      (``firebase-adminsdk-*@<project>.iam.gserviceaccount.com``).
+                                      The caller must hold
+                                      ``roles/iam.serviceAccountTokenCreator``
+                                      on this SA so the Admin SDK can sign
+                                      custom tokens via signBlob.
+    """
     global _firebase_app
-    if _firebase_app is None:
-        _firebase_app = firebase_admin.initialize_app()
+    if _firebase_app is not None:
+        return
+
+    project_id = os.environ.get("FIREBASE_PROJECT_ID")
+    if not project_id:
+        raise RuntimeError(
+            "Required environment variable FIREBASE_PROJECT_ID is not set"
+        )
+
+    admin_sa_email = os.environ.get("FIREBASE_ADMIN_SA_EMAIL")
+    if not admin_sa_email:
+        raise RuntimeError(
+            "Required environment variable FIREBASE_ADMIN_SA_EMAIL is not set"
+        )
+
+    _firebase_app = firebase_admin.initialize_app(
+        options={"projectId": project_id, "serviceAccountId": admin_sa_email}
+    )
 
 
 def _exchange_custom_token(custom_token_str: str, api_key: str) -> tuple[str, int]:
