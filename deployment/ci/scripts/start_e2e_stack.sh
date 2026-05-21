@@ -234,14 +234,24 @@ GOOGLE_CLOUD_PROJECT="test-project" \
 cd ..
 
 # ---------------------------------------------------------------------------
-# 6. Wait for the backend /health to return 200.
+# 6. Wait for the backend to be responsive on /health.
+#    We accept 200 (fully healthy) AND 503 (degraded — typically Neo4j down,
+#    which is expected: Neo4j has no lightweight emulator and the feature-flag
+#    endpoints don't need it). 5xx from FastAPI means the app is up and
+#    serving requests; only connection-level failures count as "not ready".
 # ---------------------------------------------------------------------------
-echo "[e2e-stack] Waiting for backend /health..."
+echo "[e2e-stack] Waiting for backend to accept requests..."
+backend_responsive() {
+  local code
+  code=$(curl -s -o /dev/null -w "%{http_code}" \
+    "http://127.0.0.1:${API_PORT}/health" 2>/dev/null || echo "000")
+  case "$code" in 200|503) return 0 ;; *) return 1 ;; esac
+}
 for _ in $(seq 1 60); do
-  curl -sf "http://127.0.0.1:${API_PORT}/health" >/dev/null 2>&1 && break
+  backend_responsive && break
   sleep 1
 done
-curl -sf "http://127.0.0.1:${API_PORT}/health" >/dev/null 2>&1 \
+backend_responsive \
   || { echo "[e2e-stack] ERROR: Backend failed to start"; exit 1; }
 
 echo "[e2e-stack] Full E2E stack is ready."

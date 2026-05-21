@@ -292,13 +292,16 @@ steps:
         bash deployment/ci/scripts/start_e2e_stack.sh &
         STACK_PID=$!
 
-        # Wait for the backend health endpoint (start_e2e_stack.sh waits internally,
-        # but add a belt-and-suspenders poll here in case the script exits early).
-        for i in $(seq 1 30); do
-          if curl -sf http://127.0.0.1:8000/health > /dev/null 2>&1; then
-            echo "Backend ready."
-            break
-          fi
+        # Wait for the backend to accept requests (start_e2e_stack.sh waits
+        # internally, but add a belt-and-suspenders poll here in case the
+        # script exits early). 503 is acceptable: Neo4j is not in the E2E
+        # stack, so the app reports "degraded" while still serving FF endpoints.
+        for i in $$(seq 1 30); do
+          CODE=$$(curl -s -o /dev/null -w "%{http_code}" \
+            http://127.0.0.1:8000/health 2>/dev/null || echo "000")
+          case "$$CODE" in
+            200|503) echo "Backend ready (HTTP $$CODE)."; break ;;
+          esac
           sleep 2
         done
 
