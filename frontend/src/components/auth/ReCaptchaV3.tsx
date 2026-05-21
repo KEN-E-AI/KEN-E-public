@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useGoogleReCaptcha } from "react-google-recaptcha-v3";
 import axios from "axios";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -23,6 +23,11 @@ const ReCaptchaV3 = ({
   const [error, setError] = useState<string>("");
   const [isVerified, setIsVerified] = useState(false);
 
+  // Keep a stable ref to onVerify so the fallback timer's useEffect does not
+  // restart on every render that produces a new inline-function reference.
+  const onVerifyRef = useRef(onVerify);
+  onVerifyRef.current = onVerify;
+
   useEffect(() => {
     // Only execute when executeRecaptcha becomes available
     if (executeRecaptcha && !isVerifying && !isVerified) {
@@ -34,7 +39,10 @@ const ReCaptchaV3 = ({
     }
   }, [executeRecaptcha, isVerifying, isVerified]);
 
-  // Fallback timeout if reCAPTCHA never loads
+  // Fallback timeout if reCAPTCHA never loads.
+  // onVerify is intentionally not in the dependency array — it is read via
+  // onVerifyRef so a new inline-function reference on re-render does not
+  // cancel and restart the timer before it fires.
   useEffect(() => {
     const fallbackTimer = setTimeout(() => {
       if (!isVerified && !isVerifying) {
@@ -42,18 +50,18 @@ const ReCaptchaV3 = ({
           "ReCAPTCHA not available after timeout, bypassing verification",
         );
         setIsVerified(true);
-        onVerify(true);
+        onVerifyRef.current(true);
       }
     }, 3000);
 
     return () => clearTimeout(fallbackTimer);
-  }, [isVerified, isVerifying, onVerify]);
+  }, [isVerified, isVerifying]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleReCaptchaVerify = async () => {
     if (!executeRecaptcha) {
       console.warn("reCAPTCHA not available, bypassing verification");
       setIsVerified(true);
-      onVerify(true);
+      onVerifyRef.current(true);
       return;
     }
 

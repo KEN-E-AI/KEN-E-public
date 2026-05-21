@@ -13,6 +13,7 @@ type SignInViewProps = {
   password: string;
   rememberMe: boolean;
   isLoading: boolean;
+  isCaptchaVerified: boolean;
   errorMessage: string;
   invitationToken: string | null;
   invitationData: { organization_name: string; access_level: string } | null;
@@ -29,6 +30,7 @@ export function SignInView({
   password,
   rememberMe,
   isLoading,
+  isCaptchaVerified,
   errorMessage,
   invitationToken,
   invitationData,
@@ -203,7 +205,7 @@ export function SignInView({
               type="submit"
               className="w-full gap-2 bg-[var(--color-cta-coral)] hover:bg-[var(--color-cta-coral-hover)] text-[var(--color-text-inverse)] transition-all duration-200 hover:-translate-y-0.5 hover:rotate-[-1deg]"
               style={{ boxShadow: "var(--shadow-color-coral)" }}
-              disabled={isLoading}
+              disabled={isLoading || !isCaptchaVerified}
             >
               {isLoading ? (
                 <>

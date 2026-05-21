@@ -68,6 +68,7 @@ export default defineConfig(({ mode }) => {
       setupFiles: ["./src/test/setup.ts"],
       globals: true,
       environment: "jsdom",
+      exclude: ["e2e/**", "**/node_modules/**"],
     },
     // Use resolved environment file if available
     envDir: hasResolvedSecrets ? __dirname : undefined,

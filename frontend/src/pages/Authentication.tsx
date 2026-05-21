@@ -687,6 +687,7 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
               password={signInData.password}
               rememberMe={signInData.rememberMe}
               isLoading={isLoading}
+              isCaptchaVerified={isSignInCaptchaVerified}
               errorMessage={errorMessage}
               invitationToken={invitationToken}
               invitationData={invitationData}
