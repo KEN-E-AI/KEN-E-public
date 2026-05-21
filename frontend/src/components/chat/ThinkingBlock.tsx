@@ -91,7 +91,7 @@ export function ThinkingBlock({
               "size-4 shrink-0 transition-colors",
               isThinking
                 ? "text-[var(--color-violet-500)]"
-                : "text-[var(--color-text-secondary)]",
+                : "text-[var(--color-text-tertiary)]",
             )}
           />
           <span
@@ -99,7 +99,7 @@ export function ThinkingBlock({
               "flex-1 text-[var(--text-body-sm)]",
               isThinking
                 ? "text-[var(--color-violet-500)] italic"
-                : "text-[var(--color-text-secondary)]",
+                : "text-[var(--color-text-tertiary)]",
             )}
           >
             {summaryText}
@@ -147,7 +147,7 @@ export function ThinkingBlock({
 
           <ChevronDown
             className={cn(
-              "size-4 shrink-0 text-[var(--color-text-secondary)] transition-transform duration-200",
+              "size-4 shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-200",
               isOpen && "rotate-180",
             )}
           />
@@ -180,7 +180,7 @@ export function ThinkingBlock({
                     </motion.p>
                   ))}
                   {isThinking && thoughts.length === 0 && (
-                    <p className="text-[var(--text-caption)] text-[var(--color-text-secondary)] italic">
+                    <p className="text-[var(--text-caption)] text-[var(--color-text-tertiary)] italic">
                       Analyzing your request...
                     </p>
                   )}

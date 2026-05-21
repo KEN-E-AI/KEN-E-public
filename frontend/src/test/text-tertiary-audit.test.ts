@@ -51,9 +51,15 @@ const ALLOWED_FILES = new Set<string>([
   // admin — empty-state secondary message in the Super Admins table
   "components/admin/superAdmins/SuperAdminsTable.tsx",
 
-  // chat — timestamps and captions per accessibility-baseline.md §Exemptions
+  // chat — timestamps and captions per accessibility-baseline.md §Exemptions.
+  // ArtifactBlock and ThinkingBlock are 1:1 ports of docs/figma-export and use
+  // text-tertiary for secondary captions (filename helper, reasoning summary,
+  // chevron, "Analyzing..." placeholder) — keeping the export alignment per
+  // frontend/src/components/CLAUDE.md.
+  "components/chat/ArtifactBlock.tsx",
   "components/chat/ChatInterface.tsx",
   "components/chat/SessionsSidebar.tsx",
+  "components/chat/ThinkingBlock.tsx",
 
   // layout — secondary metadata, breadcrumb separators, inactive-link tertiary state
   "components/layout/AccountSwitcher.tsx",
