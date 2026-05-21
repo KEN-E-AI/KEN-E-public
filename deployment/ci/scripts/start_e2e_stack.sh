@@ -3,9 +3,9 @@
 #
 # Starts the Firestore emulator, Firebase Auth emulator, and the FastAPI backend
 # with short cache TTL so the kill-switch scenario runs in <5s instead of 60s.
-# Seeds two Firebase Auth emulator users:
-#   alice@ken-e.ai  (super-admin — also written to Firestore users/alice-uid with roles:["super_admin"])
-#   bob@example.com (non-super-admin external user)
+# Seeds two Firebase Auth emulator users and their Firestore user documents:
+#   alice@ken-e.ai  (super-admin — Firestore users/alice-uid with roles:["super_admin"])
+#   bob@example.com (external user — Firestore users/bob-uid with empty roles)
 #
 # Uses `firebase emulators:start` (bundles its own JRE) instead of gcloud so
 # this script works on the playwright:jammy CI image which has no gcloud or JRE.
@@ -159,7 +159,42 @@ curl -sf -X PATCH "${FIRESTORE_REST}/users/alice-uid" \
 echo "[e2e-stack] Alice super_admin role seeded."
 
 # ---------------------------------------------------------------------------
-# 4. Start FastAPI backend with emulator env vars and short cache TTL.
+# 4. Seed Bob's user document in Firestore.
+#    The frontend's fetchUserDataAndSettings calls GET /api/v1/firestore/documents/users/{uid}
+#    before the auth middleware's _get_or_create_user_document runs. Without this
+#    doc, the API returns 404 and the frontend shows "Failed to sign in."
+# ---------------------------------------------------------------------------
+echo "[e2e-stack] Seeding Bob's user document in Firestore..."
+curl -sf -X PATCH "${FIRESTORE_REST}/users/bob-uid" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fields": {
+      "uid":   {"stringValue": "bob-uid"},
+      "email": {"stringValue": "bob@example.com"},
+      "profile": {
+        "mapValue": {
+          "fields": {
+            "email": {"stringValue": "bob@example.com"}
+          }
+        }
+      },
+      "roles": {
+        "arrayValue": { "values": [] }
+      },
+      "permissions": {
+        "mapValue": {
+          "fields": {
+            "organizations":        {"mapValue": {"fields": {}}},
+            "account_permissions":  {"mapValue": {"fields": {}}}
+          }
+        }
+      }
+    }
+  }' >/dev/null
+echo "[e2e-stack] Bob user document seeded."
+
+# ---------------------------------------------------------------------------
+# 5. Start FastAPI backend with emulator env vars and short cache TTL.
 # ---------------------------------------------------------------------------
 echo "[e2e-stack] Starting FastAPI backend on port ${API_PORT}..."
 cd api
@@ -175,7 +210,7 @@ GOOGLE_CLOUD_PROJECT="test-project" \
 cd ..
 
 # ---------------------------------------------------------------------------
-# 5. Wait for the backend /health to return 200.
+# 6. Wait for the backend /health to return 200.
 # ---------------------------------------------------------------------------
 echo "[e2e-stack] Waiting for backend /health..."
 for _ in $(seq 1 60); do
