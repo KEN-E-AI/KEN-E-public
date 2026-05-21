@@ -218,7 +218,7 @@ class TestThirtyDayWindow:
 
         resp = _get_conversations(client)
         assert resp.status_code == 200
-        ids = [c["session_id"] for c in resp.json()["conversations"]]
+        ids = [c["session_id"] for c in resp.json()["items"]]
         assert recent_id in ids
 
     def test_session_31_days_old_is_excluded(self, client: TestClient) -> None:
@@ -228,7 +228,7 @@ class TestThirtyDayWindow:
 
         resp = _get_conversations(client)
         assert resp.status_code == 200
-        ids = [c["session_id"] for c in resp.json()["conversations"]]
+        ids = [c["session_id"] for c in resp.json()["items"]]
         assert stale_id not in ids
 
     def test_recent_included_stale_excluded_together(
@@ -242,7 +242,7 @@ class TestThirtyDayWindow:
 
         resp = _get_conversations(client)
         assert resp.status_code == 200
-        ids = [c["session_id"] for c in resp.json()["conversations"]]
+        ids = [c["session_id"] for c in resp.json()["items"]]
         assert recent_id in ids
         assert stale_id not in ids
 
@@ -262,7 +262,7 @@ class TestDeletedExclusion:
 
         resp = _get_conversations(client)
         assert resp.status_code == 200
-        ids = [c["session_id"] for c in resp.json()["conversations"]]
+        ids = [c["session_id"] for c in resp.json()["items"]]
         assert deleted_id not in ids
         assert live_id in ids
 
@@ -284,7 +284,7 @@ class TestCategoryFilter:
 
         resp = _get_conversations(client, category_id="cat_x_abc")
         assert resp.status_code == 200
-        ids = [c["session_id"] for c in resp.json()["conversations"]]
+        ids = [c["session_id"] for c in resp.json()["items"]]
         assert cat_x_id in ids
         assert cat_y_id not in ids
 
@@ -299,7 +299,7 @@ class TestCategoryFilter:
 
         resp = _get_conversations(client)
         assert resp.status_code == 200
-        ids = [c["session_id"] for c in resp.json()["conversations"]]
+        ids = [c["session_id"] for c in resp.json()["items"]]
         assert cat_x_id in ids
         assert cat_y_id in ids
 
@@ -319,7 +319,7 @@ class TestCaseInsensitiveSearch:
 
         resp = _get_conversations(client, query="REVENUE")
         assert resp.status_code == 200
-        ids = [c["session_id"] for c in resp.json()["conversations"]]
+        ids = [c["session_id"] for c in resp.json()["items"]]
         assert match_id in ids
         assert no_match_id not in ids
 
@@ -334,5 +334,5 @@ class TestCaseInsensitiveSearch:
 
         resp = _get_conversations(client, query="petitive")
         assert resp.status_code == 200
-        ids = [c["session_id"] for c in resp.json()["conversations"]]
+        ids = [c["session_id"] for c in resp.json()["items"]]
         assert match_id in ids

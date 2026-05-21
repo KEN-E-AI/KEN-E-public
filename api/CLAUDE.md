@@ -143,7 +143,7 @@ Three flags registered by `api/scripts/seed_chat_feature_flags.py` (run once per
 
 | Flag key | Default | Gates |
 |---|---|---|
-| `chat_v2_enabled` | `False` | Master kill switch — `POST /api/v1/internal/chat/side-table/update` returns 404 when this is off. Public chat endpoints are unaffected. |
+| `chat_v2_enabled` | `False` | Master kill switch — `POST /api/v1/internal/chat/side-table/update` returns 404 when off; `GET /api/v1/chat/conversations` returns the `ListChatSessionsResponse` (PRD §4.1 shape) when on, or falls back to the legacy `ConversationListResponse` shape when off. |
 | `chat_status_detail_enabled` | `False` | Session status view endpoint + toggle button (depends on `chat_v2_enabled`). |
 | `chat_categories_enabled` | `False` | Category CRUD, sidebar filter, assign dropdown (depends on `chat_v2_enabled`). |
 

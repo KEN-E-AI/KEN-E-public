@@ -237,6 +237,32 @@ class MarkReadResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Sidebar list — CH-30 / PRD §4.1
+# ---------------------------------------------------------------------------
+
+
+class ChatSessionSidebarItem(BaseModel):
+    """Wire shape for one row in the session-history sidebar (PRD §4.1)."""
+
+    session_id: str
+    title: str | None = None
+    category_id: str | None = None
+    category_name: str | None = None
+    last_message_preview: str | None = None
+    updated_at: datetime
+    created_at: datetime
+    is_agent_running: bool
+    last_agent_message_at: datetime | None = None
+    last_viewed_at: datetime | None = None
+
+
+class ListChatSessionsResponse(BaseModel):
+    """Response envelope for GET /conversations when chat_v2_enabled=True."""
+
+    items: list[ChatSessionSidebarItem]
+    next_cursor: str | None = None
+
+
 # Internal OIDC bridge — CH-11
 # ---------------------------------------------------------------------------
 

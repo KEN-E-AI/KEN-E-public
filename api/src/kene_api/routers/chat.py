@@ -40,13 +40,19 @@ from ..cache import (
 )
 from ..chat.accumulator import SessionTurnAccumulator
 from ..chat.mark_read_limiter import mark_read_limiter
-from ..chat.side_table import get_chat_side_table_service
+from ..chat.side_table import derive_is_agent_running, get_chat_side_table_service
 from ..chat.side_table_handlers import apply_side_table_update
 from ..database import get_neo4j_service
 from ..dependencies import get_firestore_client as _get_firestore_client
 from ..exceptions import ServiceUnavailableError
 from ..firestore import get_firestore_service
-from ..models.chat import ChatSessionMetadata, InternalSideTableUpdateRequest, MarkReadResponse
+from ..models.chat import (
+    ChatSessionMetadata,
+    ChatSessionSidebarItem,
+    InternalSideTableUpdateRequest,
+    ListChatSessionsResponse,
+    MarkReadResponse,
+)
 from ..models.feature_flag_models import EvaluationContext
 from ..models.kene_models import RecoverableSessionInfo
 from ..redis_client import get_redis_service
@@ -2508,7 +2514,34 @@ def _metadata_to_conversation_info(m: ChatSessionMetadata) -> ConversationInfo:
     )
 
 
-@router.get("/conversations", response_model=ConversationListResponse)
+def _metadata_to_sidebar_item(m: ChatSessionMetadata) -> ChatSessionSidebarItem:
+    """Translate a ChatSessionMetadata row to the PRD §4.1 sidebar wire shape.
+
+    category_name is always None until ChatCategoryService ships (CH-PRD-03).
+    is_agent_running is derived from timestamps — no persistent boolean stored.
+    """
+    return ChatSessionSidebarItem(
+        session_id=m.session_id,
+        title=m.title,
+        category_id=m.category_id,
+        category_name=None,  # TODO(CH-PRD-03): resolve via ChatCategoryService
+        last_message_preview=m.last_message_preview,
+        updated_at=m.updated_at,
+        created_at=m.created_at,
+        is_agent_running=derive_is_agent_running(
+            m.last_agent_started_at,
+            m.last_agent_stopped_at,
+            now=None,  # uses datetime.now(utc) inside
+        ),
+        last_agent_message_at=m.last_agent_message_at,
+        last_viewed_at=m.last_viewed_at,
+    )
+
+
+@router.get(
+    "/conversations",
+    response_model=ListChatSessionsResponse | ConversationListResponse,
+)
 async def list_conversations(
     cursor: str | None = Query(None, max_length=512, description="Opaque cursor for pagination"),
     category_id: str | None = Query(None, max_length=100, description="Filter by category ID"),
@@ -2549,9 +2582,7 @@ async def list_conversations(
             if resolved_account_id is None:
                 accounts = user_context.accessible_accounts
                 if not accounts:
-                    return ConversationListResponse(
-                        conversations=[], total_count=0, next_cursor=None
-                    )
+                    return ListChatSessionsResponse(items=[], next_cursor=None)
                 resolved_account_id = accounts[0]
 
             if not user_context.has_account_access(resolved_account_id):
@@ -2569,12 +2600,8 @@ async def list_conversations(
                 query=query,
                 limit=limit,
             )
-            items = [_metadata_to_conversation_info(m) for m in metadata_rows]
-            return ConversationListResponse(
-                conversations=items,
-                total_count=len(items),
-                next_cursor=next_cursor,
-            )
+            items = [_metadata_to_sidebar_item(m) for m in metadata_rows]
+            return ListChatSessionsResponse(items=items, next_cursor=next_cursor)
 
         # --- Legacy branch (chat_v2_enabled = false) ---
         # All new query params are silently ignored so rolling back the flag
