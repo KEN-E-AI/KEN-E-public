@@ -120,9 +120,13 @@ steps:
       - 'FIREBASE_PROJECT_ID=${_STAGING_PROJECT_ID}'
 
   # Chat Sidebar Load Test
+  # waitFors deploy-api-to-cloud-run so the load test exercises the API image
+  # built from this commit (and the LOAD_TEST_BYPASS_UID env var that comes
+  # with it).  Without this, the load test would hit the previous build's
+  # image and re-trigger the per-IP rate limiter loop indefinitely.
   - name: "python:3.11-slim"
     id: chat-sidebar-load-test
-    waitFor: ['seed-chat-loadtest']
+    waitFor: ['seed-chat-loadtest', 'deploy-api-to-cloud-run']
     entrypoint: /bin/bash
     args:
       - "-c"
@@ -250,9 +254,15 @@ steps:
       - "--memory=1Gi"
       - "--project=${_STAGING_PROJECT_ID}"
 
-  # Copy shared package into api directory so Dockerfile can access it
+  # Copy shared package into api directory so Dockerfile can access it.
+  # waitFor ['-'] hoists the API build+deploy chain (copy-shared → build →
+  # push → deploy) so it runs in parallel with the agent deploys and the
+  # load-test setup, not after them.  chat-sidebar-load-test then waitFors
+  # deploy-api-to-cloud-run, ensuring it exercises the API image built from
+  # this commit instead of the previous build's image.
   - name: "gcr.io/cloud-builders/gcloud"
     id: copy-shared-to-api
+    waitFor: ['-']
     entrypoint: /bin/bash
     args:
       - "-c"
@@ -262,6 +272,7 @@ steps:
 
   - name: "gcr.io/cloud-builders/docker"
     id: build-api-image
+    waitFor: ['copy-shared-to-api']
     dir: api
     args:
       - build
@@ -273,12 +284,14 @@ steps:
 
   - name: "gcr.io/cloud-builders/docker"
     id: push-api-image
+    waitFor: ['build-api-image']
     args:
       - push
       - "gcr.io/${PROJECT_ID}/kene-api-staging:${COMMIT_SHA}"
 
   - name: "gcr.io/cloud-builders/gcloud"
     id: deploy-api-to-cloud-run
+    waitFor: ['push-api-image']
     entrypoint: /bin/bash
     args:
       - "-c"
