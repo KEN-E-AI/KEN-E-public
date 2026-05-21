@@ -541,15 +541,15 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   // Fetch server-computed super-admin status from /api/v1/users/me
   useEffect(() => {
+    // Auth bypass sets isSuperAdmin=true synchronously before this effect runs.
+    // Guard must be first — the !user branch below would otherwise reset it to
+    // false on the initial render (user is null before Firebase resolves).
+    if (authBypassEnabled) return;
     if (!user) {
       setIsSuperAdmin(false);
       setIsSuperAdminLoading(false);
       return;
     }
-    // Auth bypass already set isSuperAdmin synchronously; re-fetching would
-    // reset isSuperAdminLoading=true and race against the mock response,
-    // causing SuperAdminGuard to redirect during the async window.
-    if (authBypassEnabled) return;
     setIsSuperAdminLoading(true);
     type MeResponse = { is_super_admin: boolean };
     api
