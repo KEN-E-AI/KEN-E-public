@@ -416,6 +416,34 @@ describe("streamChatCompletion", () => {
     expect(chunks).toEqual(["chunk1", "chunk2"]);
     expect(fakeReader.releaseLock).toHaveBeenCalled();
   });
+
+  it("forwards AbortSignal to axios so an aborted stream propagates", async () => {
+    const controller = new AbortController();
+    const abortError = Object.assign(new Error("canceled"), {
+      name: "CanceledError",
+    });
+    mockApi.post.mockRejectedValueOnce(abortError);
+
+    const messages = [{ role: "user" as const, content: "abort me" }];
+    controller.abort();
+
+    await expect(async () => {
+      for await (const _ of streamChatCompletion(
+        messages,
+        undefined,
+        undefined,
+        controller.signal,
+      )) {
+        // should not reach here
+      }
+    }).rejects.toThrow("canceled");
+
+    expect(mockApi.post).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Object),
+      expect.objectContaining({ signal: controller.signal }),
+    );
+  });
 });
 
 // ─── chatHealth ───────────────────────────────────────────────────────────────

@@ -243,6 +243,7 @@ export async function* streamChatCompletion(
   messages: ChatMessage[],
   sessionId?: string,
   accountId?: string,
+  signal?: AbortSignal,
 ): AsyncGenerator<string, void, unknown> {
   const request: ChatRequest = {
     messages,
@@ -255,6 +256,7 @@ export async function* streamChatCompletion(
     responseType: "stream",
     headers: { Accept: "text/event-stream" },
     timeout: COMPLETION_TIMEOUT,
+    signal,
   });
 
   const reader = response.data.getReader();
