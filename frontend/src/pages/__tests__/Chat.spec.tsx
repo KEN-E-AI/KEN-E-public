@@ -11,16 +11,25 @@ vi.mock("@/lib/telemetry", () => ({
   emitPageView: (...args: unknown[]) => mockEmitPageView(...args),
 }));
 
-// Mock useFlagEnabled so we can flip flag state per test.
-const mockUseFlagEnabled = vi.fn<[string], boolean>(() => false);
-vi.mock("@/lib/featureFlags/runtime", () => ({
-  useFlagEnabled: (key: string) => mockUseFlagEnabled(key),
+// Mock useFeatureFlag so we can flip flag state per test.
+const mockUseFeatureFlag = vi.fn(() => ({
+  enabled: false,
+  reason: "default" as const,
+  isLoading: false,
+}));
+vi.mock("@/contexts/FeatureFlagsContext", () => ({
+  useFeatureFlag: (key: string) => mockUseFeatureFlag(key),
+  FeatureFlagsProvider: ({ children }: { children: React.ReactNode }) =>
+    children,
+  useFeatureFlagsContext: vi.fn(),
+  FeatureFlagsContext: {},
 }));
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 import Chat from "../Chat";
 import NotFoundPage from "../NotFoundPage";
+import { ChatInterface } from "@/components/chat/ChatInterface";
 
 /**
  * Renders Chat inside a MemoryRouter at `/chat` with optional query params.
@@ -174,39 +183,79 @@ describe("Chat page shell", () => {
   });
 });
 
-// ─── Flag-off integration: no route registered → 404 ─────────────────────────
+// ─── Flag-gate integration: ternary route renders correct component ───────────
 
-describe("App-level flag-off behavior", () => {
+describe("App-level flag-gate behavior", () => {
   beforeEach(() => {
-    mockUseFlagEnabled.mockReturnValue(false);
+    mockUseFeatureFlag.mockReturnValue({
+      enabled: false,
+      reason: "default",
+      isLoading: false,
+    });
     vi.clearAllMocks();
   });
 
   /**
-   * Simulates the App.tsx route-registration block:
-   *   {isChatV2Enabled && <Route path="/chat" element={<Chat />} />}
-   *   <Route path="*" element={<NotFoundPage />} />
+   * Mirrors the AppRoutes ternary:
+   *   <Route path="/chat" element={isChatV2Enabled ? <Chat /> : <ChatInterface />} />
    */
   function renderAppSlice(flagEnabled: boolean, path = "/chat") {
     return render(
       <MemoryRouter initialEntries={[path]}>
         <Routes>
-          {flagEnabled && <Route path="/chat" element={<Chat />} />}
+          <Route
+            path="/chat"
+            element={flagEnabled ? <Chat /> : <ChatInterface />}
+          />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </MemoryRouter>,
     );
   }
 
-  it("renders Chat component when chat_v2_enabled is true", () => {
+  /**
+   * Mirrors the top-level redirect + ternary chat route to verify
+   * "/" → "/chat" lands on ChatInterface (not 404) when flag is off.
+   */
+  function renderWithRootRedirect(flagEnabled: boolean) {
+    return render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="/" element={<Navigate to="/chat" replace />} />
+          <Route
+            path="/chat"
+            element={flagEnabled ? <Chat /> : <ChatInterface />}
+          />
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  it("renders new Chat shell when chat_v2_enabled is true", () => {
     renderAppSlice(true);
     expect(
       document.querySelector("[data-slot='sessions-sidebar']"),
     ).not.toBeNull();
   });
 
-  it("renders NotFoundPage when chat_v2_enabled is false", () => {
+  it("renders legacy ChatInterface when chat_v2_enabled is false", () => {
     renderAppSlice(false);
-    expect(screen.getByRole("heading", { name: /404/i })).toBeInTheDocument();
+    expect(
+      document.querySelector("[data-testid='chat-interface']"),
+    ).not.toBeNull();
+  });
+
+  it("does NOT show NotFoundPage when chat_v2_enabled is false", () => {
+    renderAppSlice(false);
+    expect(screen.queryByRole("heading", { name: /404/i })).toBeNull();
+  });
+
+  it("'/' → '/chat' renders ChatInterface (not 404) when flag is off", () => {
+    renderWithRootRedirect(false);
+    expect(
+      document.querySelector("[data-testid='chat-interface']"),
+    ).not.toBeNull();
+    expect(screen.queryByRole("heading", { name: /404/i })).toBeNull();
   });
 });
