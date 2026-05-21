@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "@/hooks/use-toast";
 import { createChatConversation, toChatSessionId } from "@/lib/chatApi";
 import type {
+  ConversationInfo,
   ChatSessionSidebarItem,
   ListChatSessionsResponse,
 } from "@/lib/chatApi";
@@ -12,6 +13,11 @@ type CreateChatSessionInput = {
   conversation_name?: string;
   account_id?: string;
 };
+
+// Server-generated session IDs: alphanumeric + underscore/hyphen, 1–128 chars.
+// Matches Chat.tsx SESSION_ID_RE; validate here so a crafted server response
+// cannot produce a malformed URL or silent session-drop in the page.
+const SESSION_ID_RE = /^[a-zA-Z0-9_-]{1,128}$/;
 
 /**
  * Maps the `ConversationInfo` returned by POST /conversations into the
@@ -25,20 +31,16 @@ type CreateChatSessionInput = {
  * this mapper is deleted and the server row passes through directly.
  */
 function mapConversationInfoToSidebarItem(
-  sessionId: string,
-  conversationName: string | undefined,
-  createdAt: string,
-  updatedAt: string,
-  preview: string | null | undefined,
+  info: ConversationInfo,
 ): ChatSessionSidebarItem {
   return {
-    session_id: toChatSessionId(sessionId),
-    title: conversationName ?? null,
+    session_id: toChatSessionId(info.session_id),
+    title: info.conversation_name ?? null,
     category_id: null,
     category_name: null,
-    last_message_preview: preview ?? null,
-    updated_at: updatedAt,
-    created_at: createdAt,
+    last_message_preview: info.preview ?? null,
+    updated_at: info.last_updated,
+    created_at: info.created_at,
     is_agent_running: false,
     last_agent_message_at: null,
     last_viewed_at: new Date().toISOString(),
@@ -59,24 +61,6 @@ function prependToInfiniteCache(
   return {
     ...old,
     pages: [{ ...firstPage, items: [item, ...firstPage.items] }, ...rest],
-  };
-}
-
-/**
- * Removes the row identified by `sessionId` from every page of an
- * InfiniteData<ListChatSessionsResponse> cache entry.
- */
-function removeFromInfiniteCache(
-  sessionId: string,
-  old: InfiniteData<ListChatSessionsResponse> | undefined,
-): InfiniteData<ListChatSessionsResponse> | undefined {
-  if (!old) return old;
-  return {
-    ...old,
-    pages: old.pages.map((page) => ({
-      ...page,
-      items: page.items.filter((i) => i.session_id !== sessionId),
-    })),
   };
 }
 
@@ -119,7 +103,11 @@ export function useCreateChatSession() {
     mutationFn: (input: CreateChatSessionInput) =>
       createChatConversation(input),
 
-    onMutate: (input) => {
+    onMutate: async (_input) => {
+      // Cancel any in-flight background refetches for the sidebar so they
+      // don't overwrite the optimistic row when they settle.
+      await queryClient.cancelQueries({ queryKey: ["chat-sessions"] });
+
       const tempId = toChatSessionId(`optimistic-${crypto.randomUUID()}`);
       const now = new Date().toISOString();
       const optimisticItem: ChatSessionSidebarItem = {
@@ -153,15 +141,24 @@ export function useCreateChatSession() {
 
     onSuccess: (data, _input, context) => {
       if (!context) return;
-      const { tempId } = context;
+      const { tempId, snapshots } = context;
 
-      const realItem = mapConversationInfoToSidebarItem(
-        data.session_id,
-        data.conversation_name,
-        data.created_at,
-        data.last_updated,
-        data.preview,
-      );
+      // Validate the server-returned session_id before using it in a URL.
+      // A malformed id would cause Chat.tsx to silently drop the session;
+      // treat it as a creation failure and roll back.
+      if (!SESSION_ID_RE.test(data.session_id)) {
+        snapshots.forEach(([queryKey, snapshotData]) => {
+          queryClient.setQueryData(queryKey, snapshotData);
+        });
+        toast({
+          variant: "destructive",
+          title: "Couldn't start a new session",
+          description: "Please try again.",
+        });
+        return;
+      }
+
+      const realItem = mapConversationInfoToSidebarItem(data);
 
       // Replace the optimistic placeholder with the real server row.
       queryClient.setQueriesData<InfiniteData<ListChatSessionsResponse>>(

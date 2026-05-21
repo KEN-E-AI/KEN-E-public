@@ -3,7 +3,7 @@ import { renderHook, act, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { InfiniteData } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { useCreateChatSession } from "../useCreateChatSession";
+import { useCreateChatSession } from "./useCreateChatSession";
 import type {
   ConversationInfo,
   ChatSessionSidebarItem,
