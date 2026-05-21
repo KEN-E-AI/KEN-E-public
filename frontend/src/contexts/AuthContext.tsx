@@ -544,6 +544,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   // VITE_AUTH_BYPASS_ROLE, so skip the API call to avoid overriding it on
   // backend-unavailable test VMs.
   useEffect(() => {
+    // Auth bypass sets isSuperAdmin=true synchronously before this effect runs.
+    // Guard must be first — the !user branch below would otherwise reset it to
+    // false on the initial render (user is null before Firebase resolves).
     if (authBypassEnabled) return;
     if (!user) {
       setIsSuperAdmin(false);
