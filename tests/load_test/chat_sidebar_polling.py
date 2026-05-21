@@ -28,6 +28,12 @@ Required environment variables
 -------------------------------
 FIREBASE_WEB_API_KEY
     Firebase web API key used by ``chat_load_test_auth`` to mint an ID token.
+FIREBASE_PROJECT_ID
+    Target Firebase project ID (e.g. ``ken-e-staging``).
+FIREBASE_ADMIN_SA_EMAIL
+    Firebase Admin SDK service account that the load-test runner impersonates
+    to sign custom tokens for the target project.  See
+    ``chat_load_test_auth`` for the IAM prerequisites.
 CHAT_LOADTEST_UID
     Firebase Auth UID of the pre-created load-test user.
 API_BASE_URL (optional)

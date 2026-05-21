@@ -134,6 +134,8 @@ steps:
         uv pip install --system \
           locust==2.32.6 gevent==24.11.1 requests==2.32.3 firebase-admin==6.5.0
         FIREBASE_WEB_API_KEY=${_VITE_FIREBASE_API_KEY} \
+        FIREBASE_PROJECT_ID=${_STAGING_PROJECT_ID} \
+        FIREBASE_ADMIN_SA_EMAIL=${_FIREBASE_ADMIN_SA_EMAIL_STAGING} \
         CHAT_LOADTEST_UID=${_CHAT_LOADTEST_UID} \
         API_BASE_URL=${_STAGING_API_URL} \
         locust -f tests/load_test/chat_sidebar_polling.py \
@@ -363,6 +365,10 @@ substitutions:
   # Chat sidebar load test
   _CHAT_LOADTEST_UID: ''
   _STAGING_API_URL: https://kene-api-staging-391472102753.us-central1.run.app
+  # Firebase Admin SDK SA that the load-test step impersonates to sign
+  # custom tokens for the staging project.  cicd-runner@ken-e-cicd holds
+  # roles/iam.serviceAccountTokenCreator on this SA.
+  _FIREBASE_ADMIN_SA_EMAIL_STAGING: firebase-adminsdk-fbsvc@ken-e-staging.iam.gserviceaccount.com
 
 logsBucket: gs://${PROJECT_ID}-logs-data/build-logs
 options:
