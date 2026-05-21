@@ -295,12 +295,15 @@ async def _get_user_context_with_limiter(
         # configured via the LOAD_TEST_BYPASS_UID env var on staging only.
         bypass_uid = settings.load_test_bypass_uid
         if bypass_uid and user_id == bypass_uid:
+            # `user_id` goes through `extra` (a free-form dict on LogContext)
+            # rather than as a positional/keyword arg, since LogContext is a
+            # fixed-schema dataclass and rejects unknown fields.
             logger.info(
                 "Skipping rate limit for load-test UID",
                 extra=log_context(
                     component="auth",
                     action="rate_limit_bypass",
-                    user_id=user_id,
+                    extra={"user_id": user_id},
                 ),
             )
         else:
