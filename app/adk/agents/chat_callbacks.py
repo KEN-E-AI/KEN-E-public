@@ -49,10 +49,7 @@ except ImportError:
 
 # Resolve TurnDelta — same fallback pattern as token_accounting above.
 try:
-    try:
-        from app.adk.turn_delta import TurnDelta
-    except ImportError:
-        from turn_delta import TurnDelta  # type: ignore[no-redef]
+    from shared.turn_delta import TurnDelta
 except ImportError:
     logger.error(
         "turn_delta module not found; _build_turn_delta will fall back to dict",

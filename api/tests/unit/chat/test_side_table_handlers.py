@@ -2,25 +2,15 @@
 
 from __future__ import annotations
 
-import os
-import sys
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import google.api_core.exceptions
+from shared.turn_delta import TurnDelta
 from src.kene_api.chat.side_table_handlers import (
     _sha256_hex,
     apply_side_table_update,
 )
-
-# TurnDelta lives in app/adk/ (cross-package).
-_ADK_PATH = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "app", "adk")
-)
-if _ADK_PATH not in sys.path:
-    sys.path.insert(0, _ADK_PATH)
-
-from turn_delta import TurnDelta  # noqa: E402
 
 _NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
 

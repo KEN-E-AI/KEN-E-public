@@ -4,22 +4,11 @@ No cost fields anywhere in this module — per-session cost is out of scope
 (subscription-level pricing is Billing's concern; Chat shows token counts only).
 """
 
-import os
-import sys
 from datetime import datetime, timezone
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
-
-# TurnDelta lives in app/adk/ (cross-package import via sys.path).
-# Same pattern as api/src/kene_api/chat/accumulator.py.
-_ADK_PATH = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "app", "adk")
-)
-if _ADK_PATH not in sys.path:
-    sys.path.insert(0, _ADK_PATH)
-
-from turn_delta import TurnDelta  # noqa: E402
+from shared.turn_delta import TurnDelta
 
 
 def _now_utc() -> datetime:
