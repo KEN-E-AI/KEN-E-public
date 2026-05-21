@@ -10,6 +10,7 @@ from google.cloud import firestore
 
 from shared.structured_logging import log_context
 
+from ..config import settings
 from ..firestore import FirestoreService, get_firestore_service
 from ..rate_limiter import RateLimiter
 from .audit_logger import AuditLogger, SecurityEventType, get_audit_logger
@@ -286,7 +287,26 @@ async def _get_user_context_with_limiter(
         # Apply rate limiting to every authenticated request. Super admins are
         # NOT exempt — exempting them removed the brute-force ceiling on the
         # most privileged tier.
-        await _apply_rate_limiting(request, active_limiter, audit_logger, client_ip)
+        #
+        # The chat-sidebar load-test UID *is* exempt: 1000 VUs polling from a
+        # single Cloud Build egress IP would otherwise saturate the 60-req/min
+        # per-IP bucket on the very first volley and prevent the test from
+        # measuring conversation-endpoint latency.  Bypass is empty in prod —
+        # configured via the LOAD_TEST_BYPASS_UID env var on staging only.
+        bypass_uid = settings.load_test_bypass_uid
+        if bypass_uid and user_id == bypass_uid:
+            logger.info(
+                "Skipping rate limit for load-test UID",
+                extra=log_context(
+                    component="auth",
+                    action="rate_limit_bypass",
+                    user_id=user_id,
+                ),
+            )
+        else:
+            await _apply_rate_limiting(
+                request, active_limiter, audit_logger, client_ip
+            )
 
         # Check if token is revoked
         await _check_token_revocation(
