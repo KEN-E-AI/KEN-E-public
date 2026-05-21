@@ -1,9 +1,9 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { useFeatureFlags } from "@/lib/featureFlags/hooks";
+import { FlagTable } from "@/components/admin/featureFlags/FlagTable";
 
 export default function FeatureFlagsPage() {
-  // isError and data are intentionally unused in this shell — F3 fills the content slot.
-  const { isLoading } = useFeatureFlags();
+  const { isLoading, data } = useFeatureFlags();
 
   return (
     <div className="p-6 max-w-4xl space-y-6">
@@ -23,7 +23,7 @@ export default function FeatureFlagsPage() {
           <Skeleton className="h-10 w-full" />
         </div>
       ) : (
-        <div data-testid="feature-flags-content-slot" />
+        <FlagTable flags={data ?? []} />
       )}
     </div>
   );

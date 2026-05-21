@@ -539,8 +539,12 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     fetchNotificationsIfReady();
   }, [user, selectedOrgAccount?.accountId]); // Re-fetch when user or account changes
 
-  // Fetch server-computed super-admin status from /api/v1/users/me
+  // Fetch server-computed super-admin status from /api/v1/users/me.
+  // In auth-bypass mode the first useEffect already resolved isSuperAdmin from
+  // VITE_AUTH_BYPASS_ROLE, so skip the API call to avoid overriding it on
+  // backend-unavailable test VMs.
   useEffect(() => {
+    if (authBypassEnabled) return;
     if (!user) {
       setIsSuperAdmin(false);
       setIsSuperAdminLoading(false);
