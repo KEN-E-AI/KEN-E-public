@@ -241,6 +241,32 @@ describe("listChatSessions", () => {
     const result = await listChatSessions();
     expect(result).toEqual(fixture);
   });
+
+  it("runtime shape: items[0].is_agent_running is a boolean and deriveSessionStatus works", async () => {
+    const fixture = {
+      items: [
+        {
+          session_id: mkSessionId("s1"),
+          title: "Revenue Q3",
+          category_id: null,
+          category_name: null,
+          last_message_preview: "Analyse trends",
+          updated_at: "2026-05-21T12:00:00Z",
+          created_at: "2026-05-21T11:00:00Z",
+          is_agent_running: false,
+          last_agent_message_at: "2026-05-21T11:55:00Z",
+          last_viewed_at: null,
+        },
+      ],
+      next_cursor: null,
+    };
+    mockApi.get.mockResolvedValueOnce({ data: fixture });
+    const result = await listChatSessions();
+    const item = result.items[0];
+    expect(typeof item.is_agent_running).toBe("boolean");
+    // is_agent_running=false + last_agent_message_at set + last_viewed_at=null → "needs-review"
+    expect(deriveSessionStatus(item)).toBe("needs-review");
+  });
 });
 
 // ─── listChatConversationsLegacy ──────────────────────────────────────────────
