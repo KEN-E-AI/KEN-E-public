@@ -14,7 +14,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import pytest
-
 from src.kene_api.models.chat import ChatSessionMetadata, ChatSessionSidebarItem
 from src.kene_api.routers.chat import _metadata_to_sidebar_item
 

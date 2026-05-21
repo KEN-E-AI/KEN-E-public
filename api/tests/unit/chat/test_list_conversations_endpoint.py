@@ -24,7 +24,6 @@ from src.kene_api.routers.chat import (
     ConversationInfo,
     ConversationListResponse,
     _metadata_to_conversation_info,
-    _metadata_to_sidebar_item,
 )
 
 _NOW = datetime(2026, 5, 1, 12, 0, 0, tzinfo=timezone.utc)
