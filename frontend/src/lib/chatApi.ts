@@ -127,6 +127,15 @@ export function deriveSessionStatus(
   return "idle";
 }
 
+// ─── Categories types (CH-PRD-03 §4.1 — list-only stub until CH-PRD-03 ships full CRUD) ──
+
+export type ChatCategory = {
+  category_id: ChatCategoryId;
+  name: string;
+  created_at: string;
+  updated_at: string;
+};
+
 // ─── API client functions ─────────────────────────────────────────────────────
 
 const CHAT_BASE = "/api/v1/chat";
@@ -332,6 +341,16 @@ export async function* streamChatCompletion(
   } finally {
     reader.releaseLock();
   }
+}
+
+/**
+ * GET /api/v1/chat/categories
+ * Minimal list-only wrapper — CH-PRD-03 delivers the full useChatCategories hook + CRUD.
+ * Gated by chat_categories_enabled flag; caller must check the flag before calling.
+ */
+export async function listChatCategories(): Promise<ChatCategory[]> {
+  const { data } = await api.get<ChatCategory[]>(`${CHAT_BASE}/categories`);
+  return data;
 }
 
 /**

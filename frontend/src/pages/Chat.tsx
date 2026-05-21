@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeftRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { emitPageView } from "@/lib/telemetry";
 import { ChatInterface } from "@/components/chat/ChatInterface";
+import { SessionsSidebar } from "@/components/chat/SessionsSidebar";
+import { useAuth } from "@/contexts/AuthContext";
+import { useCreateChatSession } from "@/hooks/useCreateChatSession";
+import { toChatSessionId } from "@/lib/chatApi";
 
 type ViewState = "message" | "status";
 
@@ -28,10 +32,15 @@ function writeSidebarCollapsed(collapsed: boolean): void {
 const SESSION_ID_RE = /^[a-zA-Z0-9_-]{1,128}$/;
 
 export default function Chat() {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const rawSession = searchParams.get("session");
   const sessionId =
     rawSession && SESSION_ID_RE.test(rawSession) ? rawSession : null;
+
+  const { selectedOrgAccount } = useAuth();
+  const accountId = selectedOrgAccount?.accountId ?? null;
+  const createSession = useCreateChatSession();
 
   const [viewState, setViewState] = useState<ViewState>("message");
   const [sidebarCollapsed, setSidebarCollapsed] =
@@ -61,10 +70,21 @@ export default function Chat() {
 
   return (
     <div className="flex flex-1 min-h-0 overflow-hidden">
-      {/* Left: Sessions sidebar slot — CH-25 mounts here */}
-      <div data-slot="sessions-sidebar" aria-label="Sessions sidebar">
-        {/* CH-25: SessionsSidebar */}
-      </div>
+      {/* Left: Sessions sidebar */}
+      <SessionsSidebar
+        accountId={accountId}
+        currentSessionId={sessionId ? toChatSessionId(sessionId) : null}
+        isCollapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
+        onSessionSelect={(id) => {
+          const params = new URLSearchParams({ session: id });
+          navigate(`/chat?${params}`);
+        }}
+        onNewSession={() =>
+          createSession.mutate({ account_id: accountId ?? undefined })
+        }
+        isNewSessionPending={createSession.isPending}
+      />
 
       {/* Right: Main content area */}
       <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
@@ -86,19 +106,6 @@ export default function Chat() {
           >
             <ArrowLeftRight className="size-4" />
             {viewState === "message" ? "Session Status" : "Chat"}
-          </Button>
-
-          {/* Sidebar collapse toggle */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setSidebarCollapsed((c) => !c)}
-            aria-label={
-              sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
-            }
-            className="ml-2"
-          >
-            {sidebarCollapsed ? "›" : "‹"}
           </Button>
         </div>
 
