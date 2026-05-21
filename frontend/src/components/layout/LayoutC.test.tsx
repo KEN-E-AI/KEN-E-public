@@ -343,7 +343,10 @@ describe("LayoutC", () => {
 
     test("onNewSession calls mutate with account_id from auth context", () => {
       const mutate = vi.fn();
-      (useCreateChatSession as Mock).mockReturnValue({ mutate, isPending: false });
+      (useCreateChatSession as Mock).mockReturnValue({
+        mutate,
+        isPending: false,
+      });
       renderLayoutC();
       const { onNewSession } = (SessionsSidebar as Mock).mock.calls[0][0];
       onNewSession();
