@@ -31,13 +31,16 @@ Environment variables
 Idempotency
 -----------
 Each session document is checked for existence before writing.  Re-running the
-script against a project that already has the data is safe — existing docs are
-counted as `already_present` and skipped.
+script against a project that already has the data is safe — existing session
+docs are counted as `already_present` and skipped.  The user-permissions write
+uses `set(merge=True)` and will re-stamp `granted_at` on every run; that's
+intentional for a load-test fixture and has no effect on the sidebar polling
+behaviour.
 
 Cleanup
 -------
 --cleanup removes the 200 session docs, the accounts/acc_load_test document, and
-the user-permissions doc at users/{uid}/permissions/account_permissions/acc_load_test.
+the nested user-permissions field at users/{uid} → permissions.account_permissions.acc_load_test.
 The Firebase Auth user (chat-loadtest@ken-e-loadtest.local) is NOT deleted by
 --cleanup because Firebase Auth deletions require a separate Admin SDK call and are
 harder to undo in a load-test recovery scenario.  To delete the Auth user manually:
@@ -352,21 +355,35 @@ def _seed_user_permissions(
 ) -> None:
     """Grant the load-test user member access to acc_load_test.
 
-    Path: users/{uid}/permissions/account_permissions/acc_load_test
+    Writes a nested field on the user document — matches the schema in
+    `routers/admin.py` (super-admin seed) and `firestore.py` (which uses the
+    dot-path `permissions.account_permissions.<accountId>` as an update field
+    path, not a Firestore document path).
+
+    Target: users/{uid} doc, field permissions.account_permissions.acc_load_test
     """
-    perm_path = (
-        f"users/{uid}/permissions/account_permissions/{LOAD_TEST_ACCOUNT_ID}"
+    field_target = (
+        f"users/{uid} field permissions.account_permissions.{LOAD_TEST_ACCOUNT_ID}"
     )
     if dry_run:
-        logger.info("DRY-RUN: would write %s", perm_path)
+        logger.info("DRY-RUN: would set %s", field_target)
         return
-    doc_ref = db.document(perm_path)
-    existing = doc_ref.get()
-    if existing.exists:
-        logger.info("%s already exists — skipping", perm_path)
-        return
-    doc_ref.set({"role": "member", "granted_at": now})
-    logger.info("Wrote %s", perm_path)
+    user_ref = db.collection("users").document(uid)
+    user_ref.set(
+        {
+            "uid": uid,
+            "permissions": {
+                "account_permissions": {
+                    LOAD_TEST_ACCOUNT_ID: {
+                        "role": "member",
+                        "granted_at": now,
+                    },
+                },
+            },
+        },
+        merge=True,
+    )
+    logger.info("Wrote %s", field_target)
 
 
 def _seed_sessions(
@@ -432,7 +449,8 @@ def _cleanup(db: Any, uid: str | None) -> dict[str, int]:
     Deletes:
       - accounts/acc_load_test/chat_sessions/load_test_session_001..200
       - accounts/acc_load_test (the account doc itself)
-      - users/{uid}/permissions/account_permissions/acc_load_test  (if uid known)
+      - the nested field permissions.account_permissions.acc_load_test on
+        users/{uid}  (if uid known)
 
     Does NOT delete the Firebase Auth user.  See module docstring for rationale.
 
@@ -463,22 +481,29 @@ def _cleanup(db: Any, uid: str | None) -> dict[str, int]:
         logger.error("Error deleting %s: %s", account_path, exc, exc_info=True)
         errored += 1
 
-    # Delete user permissions doc (only if we have a UID)
+    # Delete the user permissions entry — a nested field on users/{uid},
+    # not a subcollection doc.  Uses the dot-path field-delete shape.
     if uid:
-        perm_path = (
-            f"users/{uid}/permissions/account_permissions/{LOAD_TEST_ACCOUNT_ID}"
+        from google.cloud import firestore as gcf
+        field_target = (
+            f"users/{uid} field permissions.account_permissions.{LOAD_TEST_ACCOUNT_ID}"
         )
         try:
-            db.document(perm_path).delete()
+            db.collection("users").document(uid).update(
+                {
+                    f"permissions.account_permissions.{LOAD_TEST_ACCOUNT_ID}":
+                        gcf.DELETE_FIELD,
+                }
+            )
             deleted += 1
-            logger.info("Deleted %s", perm_path)
+            logger.info("Deleted %s", field_target)
         except Exception as exc:
-            logger.error("Error deleting %s: %s", perm_path, exc, exc_info=True)
+            logger.error("Error deleting %s: %s", field_target, exc, exc_info=True)
             errored += 1
     else:
         logger.warning(
-            "No uid available — skipping deletion of user permissions doc. "
-            "Delete manually: users/<uid>/permissions/account_permissions/%s",
+            "No uid available — skipping deletion of user permissions field. "
+            "Delete manually: users/<uid> permissions.account_permissions.%s",
             LOAD_TEST_ACCOUNT_ID,
         )
 
