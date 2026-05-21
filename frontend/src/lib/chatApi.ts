@@ -1,5 +1,6 @@
 import type { Brand } from "@/lib/branded-types";
 import api from "@/lib/api";
+import { auth } from "@/lib/firebase";
 
 // ─── Branded types ────────────────────────────────────────────────────────────
 
@@ -261,23 +262,53 @@ export async function* streamChatCompletion(
     account_id: accountId,
   };
 
-  const response = await api.post(`${CHAT_BASE}/completions`, request, {
-    responseType: "stream",
-    headers: { Accept: "text/event-stream" },
-    timeout: COMPLETION_TIMEOUT,
-    signal,
+  // Native Fetch — axios `responseType: "stream"` is Node-only, so the
+  // browser path needs `response.body.getReader()` directly. Auth + base URL
+  // are injected manually since fetch bypasses the axios interceptor.
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) {
+    throw new Error("Not authenticated");
+  }
+
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+  const url = `${baseUrl}${CHAT_BASE}/completions`;
+
+  const timeoutSignal = AbortSignal.timeout(COMPLETION_TIMEOUT);
+  const combinedSignal = signal
+    ? AbortSignal.any([signal, timeoutSignal])
+    : timeoutSignal;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+    },
+    body: JSON.stringify(request),
+    signal: combinedSignal,
   });
 
-  const reader = response.data.getReader();
+  if (!response.ok || !response.body) {
+    throw new Error(
+      `Chat completion request failed: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  // Buffer carries an incomplete trailing line across reads so an SSE line
+  // split across TCP packets isn't silently dropped.
+  let buffer = "";
 
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
 
-      const chunk = decoder.decode(value, { stream: true });
-      const lines = chunk.split("\n");
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
 
       for (const line of lines) {
         if (line.startsWith("data: ")) {
@@ -289,6 +320,13 @@ export async function* streamChatCompletion(
             yield data;
           }
         }
+      }
+    }
+
+    if (buffer.startsWith("data: ")) {
+      const data = buffer.slice(6).trim();
+      if (data && data !== "[DONE]") {
+        yield data;
       }
     }
   } finally {

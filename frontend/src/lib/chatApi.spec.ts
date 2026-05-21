@@ -32,6 +32,17 @@ vi.mock("@/lib/api", () => ({
   },
 }));
 
+// streamChatCompletion uses native fetch + Firebase token directly (axios
+// `responseType: "stream"` is Node-only, see chatApi.ts). Stub the auth
+// module so getIdToken resolves without a real Firebase init.
+vi.mock("@/lib/firebase", () => ({
+  auth: {
+    currentUser: {
+      getIdToken: vi.fn().mockResolvedValue("test-token"),
+    },
+  },
+}));
+
 import api from "@/lib/api";
 
 const mockApi = api as {
@@ -40,6 +51,8 @@ const mockApi = api as {
   put: ReturnType<typeof vi.fn>;
   delete: ReturnType<typeof vi.fn>;
 };
+
+const mockFetch = global.fetch as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -391,21 +404,18 @@ describe("postChatCompletion", () => {
 describe("streamChatCompletion", () => {
   it("yields data payloads from SSE lines and stops at [DONE]", async () => {
     const sseChunk = "data: chunk1\n\ndata: chunk2\n\ndata: [DONE]\n\n";
-    const encoder = new TextEncoder();
-    const encoded = encoder.encode(sseChunk);
-
-    // Fake reader: returns encoded bytes on first read, then done
-    const fakeReader = {
-      read: vi
-        .fn()
-        .mockResolvedValueOnce({ done: false, value: encoded })
-        .mockResolvedValueOnce({ done: true, value: undefined }),
-      releaseLock: vi.fn(),
-    };
-
-    mockApi.post.mockResolvedValueOnce({
-      data: { getReader: () => fakeReader },
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(sseChunk));
+        controller.close();
+      },
     });
+    mockFetch.mockResolvedValueOnce(
+      new Response(body, {
+        status: 200,
+        headers: { "Content-Type": "text/plain" },
+      }),
+    );
 
     const messages = [{ role: "user" as const, content: "Stream this" }];
     const chunks: string[] = [];
@@ -414,35 +424,82 @@ describe("streamChatCompletion", () => {
     }
 
     expect(chunks).toEqual(["chunk1", "chunk2"]);
-    expect(fakeReader.releaseLock).toHaveBeenCalled();
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/v1/chat/completions"),
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer test-token",
+          Accept: "text/event-stream",
+          "Content-Type": "application/json",
+        }),
+        body: expect.stringContaining("Stream this"),
+      }),
+    );
   });
 
-  it("forwards AbortSignal to axios so an aborted stream propagates", async () => {
-    const controller = new AbortController();
-    const abortError = Object.assign(new Error("canceled"), {
-      name: "CanceledError",
+  it("reassembles SSE lines that span chunk boundaries", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const enc = new TextEncoder();
+        // "data: hello" is split mid-line across two reads.
+        controller.enqueue(enc.encode("data: hel"));
+        controller.enqueue(enc.encode("lo\n\ndata: [DONE]\n\n"));
+        controller.close();
+      },
     });
-    mockApi.post.mockRejectedValueOnce(abortError);
+    mockFetch.mockResolvedValueOnce(new Response(body, { status: 200 }));
 
-    const messages = [{ role: "user" as const, content: "abort me" }];
+    const chunks: string[] = [];
+    for await (const chunk of streamChatCompletion([
+      { role: "user" as const, content: "split" },
+    ])) {
+      chunks.push(chunk);
+    }
+    expect(chunks).toEqual(["hello"]);
+  });
+
+  it("throws when fetch is invoked with an aborted signal", async () => {
+    const controller = new AbortController();
     controller.abort();
+
+    mockFetch.mockImplementation((_url: string, init: RequestInit) => {
+      if (init.signal?.aborted) {
+        return Promise.reject(
+          new DOMException("The user aborted a request.", "AbortError"),
+        );
+      }
+      return Promise.resolve(new Response());
+    });
 
     await expect(async () => {
       for await (const _ of streamChatCompletion(
-        messages,
+        [{ role: "user" as const, content: "abort me" }],
         undefined,
         undefined,
         controller.signal,
       )) {
         // should not reach here
       }
-    }).rejects.toThrow("canceled");
+    }).rejects.toThrow();
 
-    expect(mockApi.post).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.any(Object),
-      expect.objectContaining({ signal: controller.signal }),
+    const callArgs = mockFetch.mock.calls[0];
+    const initArg = callArgs[1] as RequestInit;
+    expect(initArg.signal?.aborted).toBe(true);
+  });
+
+  it("throws when the response is non-OK", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response("server error", { status: 500, statusText: "Internal" }),
     );
+
+    await expect(async () => {
+      for await (const _ of streamChatCompletion([
+        { role: "user" as const, content: "boom" },
+      ])) {
+        // should not reach here
+      }
+    }).rejects.toThrow(/500/);
   });
 });
 
