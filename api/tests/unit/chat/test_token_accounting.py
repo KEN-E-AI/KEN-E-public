@@ -8,15 +8,9 @@ and the input floor-at-zero guard.
 
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 
-sys.path.insert(
-    0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "app", "adk")
-)
-
-from token_accounting import BillableTokenCounts, extract_billable_tokens
+from shared.token_accounting import BillableTokenCounts, extract_billable_tokens
 
 
 def _make_event(

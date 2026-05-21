@@ -31,28 +31,13 @@ Design decisions (per CH-12 Implementation Plan):
 
 from __future__ import annotations
 
-import os
-import sys
 from collections import deque
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from typing import Any
 
 from google.cloud import firestore
-
-# ---------------------------------------------------------------------------
-# Import the Billing-owned token-accounting helper.
-# The app/ package lives next to api/ in the workspace root.
-# tests/unit/chat/test_token_accounting.py uses the same sys.path pattern to
-# resolve this cross-package import.  We follow that precedent here so local
-# development and CI both work without editable-install trickery.
-# TODO(CH-13): replace with an editable install of app/adk in the Dockerfile.
-# ---------------------------------------------------------------------------
-_ADK_PATH = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "app", "adk"))
-if _ADK_PATH not in sys.path:
-    sys.path.insert(0, _ADK_PATH)
-
-from token_accounting import BillableTokenCounts, extract_billable_tokens  # noqa: E402
+from shared.token_accounting import BillableTokenCounts, extract_billable_tokens
 
 
 def _now_utc() -> datetime:

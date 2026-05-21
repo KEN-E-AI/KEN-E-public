@@ -190,11 +190,9 @@ class ModelContextWindowEntry(BaseModel):
 
 # NOTE: `BillableTokenCounts` is intentionally NOT defined here. It is the
 # single canonical shape owned by Billing and lives at
-# `app/adk/token_accounting.py` alongside the `extract_billable_tokens` helper
+# `shared/token_accounting.py` alongside the `extract_billable_tokens` helper
 # that produces it. Declaring a copy here would create two divergent classes
 # (the api copy previously lacked the `ge=0` validation the helper relies on).
-# When an api-side consumer needs the type (CH-12 accumulator), that issue
-# resolves the app↔api import boundary rather than duplicating the model.
 
 
 # ---------------------------------------------------------------------------

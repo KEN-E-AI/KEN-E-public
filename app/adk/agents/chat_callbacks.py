@@ -32,16 +32,14 @@ logger = get_structured_logger(__name__)
 _REQUEST_TIMEOUT = (2.0, 5.0)
 
 # Resolve the Billing-owned token-accounting helper once at import time.
+# `shared/` is bundled into both the API container (via api/Dockerfile) and
+# the Agent Engine deployment (via extra_packages in deploy_ken_e.py /
+# deploy_with_sys_version.py), so this import works in all runtime contexts.
 # Falls back gracefully: token counters zero-fill rather than blocking turns.
 try:
-    try:
-        from app.adk.token_accounting import (
-            extract_billable_tokens as _extract_billable_tokens,
-        )
-    except ImportError:
-        from token_accounting import (
-            extract_billable_tokens as _extract_billable_tokens,  # type: ignore[no-redef]
-        )
+    from shared.token_accounting import (
+        extract_billable_tokens as _extract_billable_tokens,
+    )
 except ImportError:
     logger.error(
         "token_accounting module not found; token counters will be zero-filled",

@@ -2,7 +2,7 @@
 
 This file implements AC-12 from CH-PRD-01 §7:
 
-    `extract_billable_tokens` lands at `app/adk/token_accounting.py`
+    `extract_billable_tokens` lands at `shared/token_accounting.py`
     under Billing ownership. Parity test passes — identical output on a
     fixed fixture, with CI assertion of identity between Chat and Billing
     test copies.
@@ -31,15 +31,9 @@ Owner: Chat (CH-10 / CH-PRD-01) until BL-PRD-02 merges, then Billing.
 
 from __future__ import annotations
 
-import os
-import sys
 from types import SimpleNamespace
 
-sys.path.insert(
-    0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "app", "adk")
-)
-
-from token_accounting import BillableTokenCounts, extract_billable_tokens
+from shared.token_accounting import BillableTokenCounts, extract_billable_tokens
 
 # ---------------------------------------------------------------------------
 # Canonical fixture — must match BL-PRD-02's duplicated copy verbatim.

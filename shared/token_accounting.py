@@ -1,4 +1,4 @@
-"""Shared token-accounting helper for the KEN-E agentic harness.
+"""Shared token-accounting helper for KEN-E.
 
 Owner: Billing (BL-PRD-02). Chat consumes. Changes require Billing review.
 Ownership transfers on BL-PRD-02 merge. No changes to this file without
@@ -11,6 +11,11 @@ monthly token meter (BL-PRD-02) count tokens against the same definition:
 This single helper ensures divergence is impossible by construction — any
 change to the token definition is applied once here and reflected in both
 consumers simultaneously.
+
+Lives in the `shared/` package so both the API container (which copies
+`shared/` via api/Dockerfile) and the Agent Engine deployment (which
+packages `shared/` as an extra_package — see app/adk/deploy_ken_e.py and
+deploy_with_sys_version.py) can import it without sys.path trickery.
 
 Parity test: api/tests/unit/chat/test_token_accounting_parity.py pins the
 canonical fixture (prompt=1250, cached=200, candidates=380, thoughts=0 →
