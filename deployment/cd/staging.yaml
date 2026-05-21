@@ -93,29 +93,42 @@ steps:
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
 
+  # Validate load-test substitution variables before running the gate
+  - name: "bash"
+    id: validate-loadtest-vars
+    args:
+      - "-c"
+      - |
+        set -euo pipefail
+        [[ -n "${_CHAT_LOADTEST_UID}" ]] || { echo "ERROR: _CHAT_LOADTEST_UID is empty — set it in the Cloud Build trigger substitutions"; exit 1; }
+        echo "validate-loadtest-vars: _CHAT_LOADTEST_UID is set"
+
   # Seed Firestore with chat sessions for the sidebar load test
   - name: "python:3.11-slim"
     id: seed-chat-loadtest
+    waitFor: ['validate-loadtest-vars']
     entrypoint: /bin/bash
     args:
       - "-c"
       - |
+        set -euo pipefail
         uv run python api/scripts/seed_chat_load_test_data.py
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
       - 'GOOGLE_CLOUD_PROJECT_ID=${_STAGING_PROJECT_ID}'
       - 'ENVIRONMENT=staging'
       - 'FIREBASE_PROJECT_ID=${_STAGING_PROJECT_ID}'
-      - 'CHAT_LOADTEST_UID=${_CHAT_LOADTEST_UID}'
 
   # Chat Sidebar Load Test
   - name: "python:3.11-slim"
     id: chat-sidebar-load-test
+    waitFor: ['seed-chat-loadtest']
     entrypoint: /bin/bash
     args:
       - "-c"
       - |
-        uv add locust==2.32.6 gevent==24.11.1 requests firebase-admin
+        set -euo pipefail
+        uv add locust==2.32.6 gevent==24.11.1 requests==2.32.3 firebase-admin==6.5.0
         FIREBASE_WEB_API_KEY=${_VITE_FIREBASE_API_KEY} \
         CHAT_LOADTEST_UID=${_CHAT_LOADTEST_UID} \
         API_BASE_URL=${_STAGING_API_URL} \
@@ -130,10 +143,12 @@ steps:
   # Chat Sidebar p95 Latency Gate
   - name: "python:3.11-slim"
     id: chat-sidebar-p95-check
+    waitFor: ['chat-sidebar-load-test']
     entrypoint: /bin/bash
     args:
       - "-c"
       - |
+        set -euo pipefail
         uv run python tests/load_test/check_p95_threshold.py \
           tests/load_test/.results/chat_sidebar_stats.csv \
           --threshold-ms 100 \

@@ -40,6 +40,7 @@ back to ``None`` before calling ``get_id_token()`` again.
 
 import logging
 import os
+import time
 
 import firebase_admin
 import requests
@@ -49,10 +50,13 @@ logger = logging.getLogger(__name__)
 
 _firebase_app: firebase_admin.App | None = None
 _cached_id_token: str | None = None
+_token_expiry: float = 0.0  # epoch seconds; 0 means "not yet fetched"
 
 _SIGN_IN_URL = (
     "https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken"
 )
+# Re-fetch the token this many seconds before its actual expiry.
+_TOKEN_REFRESH_BUFFER_SECONDS = 300  # 5 minutes
 
 
 def _ensure_firebase() -> None:
@@ -62,7 +66,7 @@ def _ensure_firebase() -> None:
         _firebase_app = firebase_admin.initialize_app()
 
 
-def _exchange_custom_token(custom_token_str: str, api_key: str) -> str:
+def _exchange_custom_token(custom_token_str: str, api_key: str) -> tuple[str, int]:
     """Exchange a Firebase custom token for a Firebase ID token.
 
     Separated into its own function so that tests can monkey-patch it without
@@ -73,7 +77,7 @@ def _exchange_custom_token(custom_token_str: str, api_key: str) -> str:
         api_key: The Firebase web API key.
 
     Returns:
-        The ``idToken`` string from the Identity Toolkit response.
+        Tuple of ``(idToken, expiresIn)`` from the Identity Toolkit response.
 
     Raises:
         RuntimeError: On any network error or if the response does not contain
@@ -105,14 +109,17 @@ def _exchange_custom_token(custom_token_str: str, api_key: str) -> str:
             "Firebase Identity Toolkit response did not contain an 'idToken' field"
         )
 
-    return str(id_token)
+    expires_in = int(payload.get("expiresIn", 3600))
+    return str(id_token), expires_in
 
 
 def get_id_token() -> str:
     """Return a Firebase ID token for the load-test user.
 
     The token is cached at module level after the first successful fetch.
-    Subsequent calls return the cached value immediately without network I/O.
+    Subsequent calls return the cached value until the token is within
+    ``_TOKEN_REFRESH_BUFFER_SECONDS`` of expiry, at which point a fresh
+    token is minted automatically.  Firebase ID tokens expire after 1 hour.
 
     Returns:
         A Firebase ID token string suitable for use in an ``Authorization:
@@ -122,10 +129,10 @@ def get_id_token() -> str:
         RuntimeError: If required environment variables are absent, or if
             token minting or exchange fails.
     """
-    global _cached_id_token
+    global _cached_id_token, _token_expiry
 
-    if _cached_id_token is not None:
-        logger.info("Returning cached Firebase ID token")
+    if _cached_id_token is not None and time.time() < _token_expiry - _TOKEN_REFRESH_BUFFER_SECONDS:
+        logger.debug("Returning cached Firebase ID token (%.0fs remaining)", _token_expiry - time.time())
         return _cached_id_token
 
     api_key = os.environ.get("FIREBASE_WEB_API_KEY")
@@ -145,9 +152,12 @@ def get_id_token() -> str:
     custom_token_bytes: bytes = fb_auth.create_custom_token(uid)
     custom_token_str = custom_token_bytes.decode("utf-8")
 
-    id_token = _exchange_custom_token(custom_token_str, api_key)
+    id_token, expires_in = _exchange_custom_token(custom_token_str, api_key)
 
     _cached_id_token = id_token
-    logger.info("Fetched and cached new Firebase ID token for load-test user")
+    _token_expiry = time.time() + expires_in
+    logger.info(
+        "Fetched and cached new Firebase ID token for load-test user (expires_in=%ds)", expires_in
+    )
 
     return _cached_id_token

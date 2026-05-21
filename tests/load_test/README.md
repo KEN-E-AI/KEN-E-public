@@ -55,6 +55,25 @@ Validates that `GET /api/v1/chat/conversations` (the Chat component's sidebar po
 | `API_BASE_URL` | Base URL of the API to load (e.g., `https://kene-api-staging-391472102753.us-central1.run.app`). |
 | `GOOGLE_CLOUD_PROJECT_ID` | GCP project ID used by the seed script to access Firestore (staging: `ken-e-staging`). |
 
+### Prerequisite — enable the `chat_v2_enabled` feature flag
+
+`GET /api/v1/chat/conversations` branches on the `chat_v2_enabled` feature flag. When the flag is **off** (the default), the endpoint reads from the legacy ADK session cache rather than the Firestore side-table — making the seeded 200-session dataset irrelevant and the load test measure the wrong code path.
+
+Before running the load test, ensure the flag is registered and enabled in the target environment:
+
+```bash
+# Register flags (idempotent — safe to re-run)
+python api/scripts/seed_chat_feature_flags.py
+
+# Enable chat_v2 for acc_load_test in the Feature Flags admin UI, or
+# temporarily enable globally with:
+#   gcloud firestore documents update \
+#     projects/ken-e-staging/databases/(default)/documents/feature_flags/chat_v2_enabled \
+#     --data='{"is_active": true}'
+```
+
+The seed script will print a warning if the flag is not active in Firestore.
+
 ### Step 1 — Provision the seed data
 
 The seed script creates the load-test account (`acc_load_test`) and 200 synthetic chat sessions in Firestore. Run it once per environment; it is idempotent (safe to re-run).

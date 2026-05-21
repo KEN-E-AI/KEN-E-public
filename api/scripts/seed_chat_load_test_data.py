@@ -98,6 +98,17 @@ EXIT_SUCCESS = 0
 EXIT_ERRORS = 1
 EXIT_USAGE_ERROR = 2
 
+# Project IDs that are permitted to receive load-test seed data.
+# Production project IDs must never appear here.
+_ALLOWED_SEED_PROJECTS: frozenset[str] = frozenset(
+    {
+        "ken-e-dev",
+        "ken-e-staging",
+        "ken-e-ci",
+        "ken-e-staging-391472102753",  # legacy alias
+    }
+)
+
 
 # ---------------------------------------------------------------------------
 # Environment / project helpers
@@ -115,6 +126,28 @@ def _resolve_project_id(cli_project_id: str | None) -> str:
         )
         sys.exit(EXIT_USAGE_ERROR)
     return pid
+
+
+def _check_project_guard(project_id: str, bypass: bool) -> None:
+    """Refuse to seed into projects outside the known-safe allowlist.
+
+    This is a secondary safeguard on top of the ENVIRONMENT check: even if
+    ENVIRONMENT is set incorrectly, an unexpected project ID is rejected.
+    """
+    if project_id not in _ALLOWED_SEED_PROJECTS:
+        if not bypass:
+            print(
+                f"ERROR: project '{project_id}' is not in the load-test allowlist "
+                f"({', '.join(sorted(_ALLOWED_SEED_PROJECTS))}).\n"
+                "Pass --yes-i-know-its-not-dev to override (use with extreme caution).",
+                file=sys.stderr,
+            )
+            sys.exit(EXIT_USAGE_ERROR)
+        print(
+            f"WARNING: project '{project_id}' is not in the allowlist — "
+            "--yes-i-know-its-not-dev was passed. Proceeding.",
+            file=sys.stderr,
+        )
 
 
 def _check_environment_guard(bypass: bool) -> None:
@@ -145,6 +178,42 @@ def _check_environment_guard(bypass: bool) -> None:
             "Proceeding.",
             file=sys.stderr,
         )
+
+
+def _warn_if_chat_v2_disabled(db: Any) -> None:
+    """Print a warning if the chat_v2_enabled flag is not active in Firestore.
+
+    GET /api/v1/chat/conversations branches on chat_v2_enabled: when the flag
+    is off (default=False), the endpoint falls back to the legacy ADK path and
+    ignores the seeded Firestore sessions, making the load test measure the
+    wrong code path.
+
+    This is a non-blocking warning because the flag state may be unknown (e.g.
+    when running in a fresh CI environment) or because the caller knows the
+    flag is enabled at the account level.
+    """
+    try:
+        flag_doc = db.collection("feature_flags").document("chat_v2_enabled").get()
+        if not flag_doc.exists:
+            print(
+                "WARNING: feature_flags/chat_v2_enabled document not found in Firestore. "
+                "Run api/scripts/seed_chat_feature_flags.py to register flags, then enable "
+                "chat_v2_enabled so the load test exercises the Firestore path.",
+                file=sys.stderr,
+            )
+            return
+        data = flag_doc.to_dict() or {}
+        if not data.get("is_active", False) and not data.get("default_enabled", False):
+            print(
+                "WARNING: chat_v2_enabled flag is not active (is_active=False, "
+                "default_enabled=False). GET /api/v1/chat/conversations will use the "
+                "legacy ADK path and will NOT read the seeded Firestore sessions. "
+                "Enable the flag in the Feature Flags admin UI before running the "
+                "load test to exercise the correct code path.",
+                file=sys.stderr,
+            )
+    except Exception as exc:
+        logger.warning("Could not read chat_v2_enabled flag from Firestore: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -491,6 +560,7 @@ def main(argv: list[str] | None = None) -> int:
     _check_environment_guard(bypass=args.yes_i_know_its_not_dev)
 
     project_id = _resolve_project_id(args.project_id)
+    _check_project_guard(project_id, bypass=args.yes_i_know_its_not_dev)
     database_id = os.environ.get("FIRESTORE_DATABASE_ID", "(default)")
 
     print("=== seed_chat_load_test_data ===")
@@ -543,6 +613,11 @@ def main(argv: list[str] | None = None) -> int:
     # ------------------------------------------------------------------
     # Seed path
     # ------------------------------------------------------------------
+
+    # Warn early if chat_v2_enabled flag is not active — the load test will
+    # exercise the wrong code path if the flag is off.
+    if not args.dry_run:
+        _warn_if_chat_v2_disabled(db)
 
     # 1. Firebase Auth user
     _ensure_firebase_app()
