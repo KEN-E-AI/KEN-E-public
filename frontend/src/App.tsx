@@ -89,6 +89,14 @@ const LazyDesignSystemPreview = import.meta.env.DEV
     )
   : undefined;
 
+const LazyFeatureFlagStatusHarness = import.meta.env.DEV
+  ? lazy(() =>
+      import("./pages/__dev__/FeatureFlagStatusHarness").then((m) => ({
+        default: m.FeatureFlagStatusHarness,
+      })),
+    )
+  : undefined;
+
 const queryClient = new QueryClient();
 
 // Wrapper component for Authentication with navigation
@@ -341,6 +349,18 @@ const AppRoutes = () => {
             }
           />
         )}
+        {import.meta.env.DEV &&
+          import.meta.env.VITE_ENVIRONMENT !== "production" &&
+          LazyFeatureFlagStatusHarness && (
+            <Route
+              path="/__dev__/feature-flag-status"
+              element={
+                <Suspense fallback={null}>
+                  <LazyFeatureFlagStatusHarness />
+                </Suspense>
+              }
+            />
+          )}
       </Routes>
       {/* Legacy Radix Toaster (88 callsites use useToast()) and sonner Toaster coexist */}
       <Toaster />

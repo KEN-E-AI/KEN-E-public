@@ -16,7 +16,8 @@
     "resolve-secrets": "node scripts/resolve-secrets.js",
     "test": "NODE_OPTIONS=--no-experimental-webstorage vitest --run",
     "format.fix": "prettier --write .",
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
@@ -104,6 +105,7 @@
     "typescript": "^5.5.3",
     "vite": "^6.2.2",
     "vitest": "^3.1.4",
-    "vitest-axe": "^0.1.0"
+    "vitest-axe": "^0.1.0",
+    "@playwright/test": "^1.49.0"
   }
 }

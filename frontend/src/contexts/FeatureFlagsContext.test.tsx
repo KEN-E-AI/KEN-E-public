@@ -1,8 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, waitFor } from "@testing-library/react";
+import { renderHook, waitFor, act } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { FeatureFlagsProvider, useFeatureFlag } from "./FeatureFlagsContext";
+import {
+  FeatureFlagsProvider,
+  useFeatureFlag,
+  useFeatureFlagsContext,
+} from "./FeatureFlagsContext";
 import { toFlagKey } from "@/lib/featureFlags/types";
 import type { FlagKey, FlagEvaluation } from "@/lib/featureFlags/types";
 
@@ -267,5 +271,62 @@ describe("FeatureFlagsProvider — fetch lifecycle", () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(mockEvaluate).toHaveBeenCalledTimes(1);
     expect(mockEvaluate).toHaveBeenCalledWith([flagA]);
+  });
+});
+
+// ─── Dev override precedence over server (PRD §8 scenario 3) ─────────────────
+
+describe("useFeatureFlag — dev override precedence over server", () => {
+  it("wins even when evaluate() returned enabled:true", async () => {
+    mockKnownFlags = [flagA];
+    // Server says enabled: true, but the local override says false.
+    mockEvaluate.mockResolvedValue({
+      [flagA]: evalFor(flagA, true, "domain_match"),
+    });
+    mockGetDevOverride.mockReturnValue(false);
+
+    const { result } = renderHook(() => useFeatureFlag(flagA), {
+      wrapper: makeWrapper(freshClient()),
+    });
+
+    // Prove the query ran (flagA is in KNOWN_FLAGS and user is set), so this
+    // is genuinely "override wins over server" rather than "override short-circuits
+    // before the query".
+    await waitFor(() => expect(mockEvaluate).toHaveBeenCalledTimes(1));
+
+    await waitFor(() =>
+      expect(result.current).toEqual({
+        enabled: false,
+        reason: "dev_override",
+        isLoading: false,
+      }),
+    );
+  });
+});
+
+// ─── refetch() invalidates query (PRD §8 scenario 5) ─────────────────────────
+
+describe("FeatureFlagsProvider — refetch()", () => {
+  it("invalidates the query and triggers a second evaluate call", async () => {
+    mockKnownFlags = [flagA];
+    mockEvaluate.mockResolvedValue({
+      [flagA]: evalFor(flagA, false, "default"),
+    });
+
+    const { result } = renderHook(
+      () => ({
+        flag: useFeatureFlag(flagA),
+        refetch: useFeatureFlagsContext().refetch,
+      }),
+      { wrapper: makeWrapper(freshClient()) },
+    );
+
+    await waitFor(() => expect(mockEvaluate).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+
+    await waitFor(() => expect(mockEvaluate).toHaveBeenCalledTimes(2));
   });
 });

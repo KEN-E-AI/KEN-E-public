@@ -10,6 +10,7 @@ exceptions are landed by FF-13.
 import asyncio
 import hashlib
 import logging
+import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -33,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 # TTL for in-process flag config cache entries (seconds). Exported so downstream
 # modules (FF-5 helper, tests) can reference the authoritative constant.
-TTL_SECONDS: float = 60.0
+TTL_SECONDS: float = float(os.environ.get("KENE_FF_CACHE_TTL_SECONDS", "60.0"))
 
 # Hard ceiling on cache entries — defence against runaway key generation.
 MAX_CACHE_ENTRIES: int = 10_000
@@ -212,7 +213,7 @@ class FeatureFlagService:
         cold_keys: list[str] = []
         for key in flag_keys:
             entry = self._cache.get(key)
-            if entry is None or entry.expires_at <= now:
+            if entry is None or entry.expires_at < now:
                 cold_keys.append(key)
         cold_set: frozenset[str] = frozenset(cold_keys)
 
@@ -246,7 +247,7 @@ class FeatureFlagService:
         evaluations: dict[str, FlagEvaluation] = {}
         for key in flag_keys:
             entry = self._cache.get(key)
-            if entry is None or entry.expires_at <= now:
+            if entry is None or entry.expires_at < now:
                 # Still no entry after fetch attempt — was a transient error.
                 evaluations[key] = FlagEvaluation(
                     key=key, enabled=False, reason="unknown_flag"
