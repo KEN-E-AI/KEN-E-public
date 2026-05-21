@@ -35,8 +35,12 @@ CSV_HEADER = (
 )
 
 DEFAULT_ENDPOINT = "/api/v1/chat/conversations"
-SCRIPT_PATH = "tests/load_test/check_p95_threshold.py"
-WORKSPACE = "/home/agent/workspace"
+
+# Resolve script + workspace relative to this test file so the suite works
+# both locally and on CI agent VMs (no hardcoded /home/agent/workspace path).
+_THIS_DIR = Path(__file__).resolve().parent
+SCRIPT_PATH = str(_THIS_DIR / "check_p95_threshold.py")
+WORKSPACE = str(_THIS_DIR.parent.parent)  # repo root
 
 
 def make_csv_row(name: str, failure_count: int, p95: float) -> str:
@@ -55,18 +59,22 @@ def run_checker(
     csv_path: Path,
     endpoint: str = DEFAULT_ENDPOINT,
     threshold_ms: float = 100.0,
+    max_failure_ratio: float | None = None,
 ) -> tuple[int, str, str]:
     """Run check_p95_threshold.py as a subprocess and return (returncode, stdout, stderr)."""
+    cmd = [
+        sys.executable,
+        SCRIPT_PATH,
+        str(csv_path),
+        "--endpoint",
+        endpoint,
+        "--threshold-ms",
+        str(threshold_ms),
+    ]
+    if max_failure_ratio is not None:
+        cmd.extend(["--max-failure-ratio", str(max_failure_ratio)])
     result = subprocess.run(
-        [
-            sys.executable,
-            SCRIPT_PATH,
-            str(csv_path),
-            "--endpoint",
-            endpoint,
-            "--threshold-ms",
-            str(threshold_ms),
-        ],
+        cmd,
         capture_output=True,
         text=True,
         cwd=WORKSPACE,
@@ -92,7 +100,7 @@ class TestCheckP95Threshold:
         assert returncode == 0
         assert "[PASS]" in stdout
         assert "p95=50ms" in stdout
-        assert "0 failures" in stdout
+        assert "failure_ratio=0.0000" in stdout
 
     def test_fail_high_p95(self, tmp_path: Path) -> None:
         """p95=150ms, failure_count=0, threshold=100ms should exit 1."""
@@ -114,7 +122,36 @@ class TestCheckP95Threshold:
         returncode, stdout, _ = run_checker(csv_file, threshold_ms=100.0)
         assert returncode == 1
         assert "[FAIL]" in stdout
-        assert "5 failures" in stdout
+        # Default max_failure_ratio=0 means any failure_ratio > 0 fails.
+        assert "failure_ratio=0.0050" in stdout
+        assert "max_failure_ratio=0.0000" in stdout
+
+    def test_pass_failures_within_max_ratio(self, tmp_path: Path) -> None:
+        """5 failures out of 1000 (= 0.5 %) with max_failure_ratio=0.01 should exit 0."""
+        csv_file = write_csv(
+            tmp_path,
+            [make_csv_row(DEFAULT_ENDPOINT, failure_count=5, p95=50.0)],
+        )
+        returncode, stdout, _ = run_checker(
+            csv_file, threshold_ms=100.0, max_failure_ratio=0.01
+        )
+        assert returncode == 0
+        assert "[PASS]" in stdout
+        assert "failure_ratio=0.0050" in stdout
+
+    def test_fail_failures_exceed_max_ratio(self, tmp_path: Path) -> None:
+        """20 failures out of 1000 (= 2 %) with max_failure_ratio=0.01 should exit 1."""
+        csv_file = write_csv(
+            tmp_path,
+            [make_csv_row(DEFAULT_ENDPOINT, failure_count=20, p95=50.0)],
+        )
+        returncode, stdout, _ = run_checker(
+            csv_file, threshold_ms=100.0, max_failure_ratio=0.01
+        )
+        assert returncode == 1
+        assert "[FAIL]" in stdout
+        assert "failure_ratio=0.0200" in stdout
+        assert "max_failure_ratio=0.0100" in stdout
 
     def test_error_endpoint_not_found(self, tmp_path: Path) -> None:
         """Endpoint not present in CSV should exit 2."""
