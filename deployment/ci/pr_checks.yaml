@@ -261,6 +261,7 @@ steps:
   # engineers can diagnose flaky tests without re-running locally.
   - name: "mcr.microsoft.com/playwright:v1.49.0-jammy"
     id: frontend-e2e-tests
+    waitFor: ['-']
     entrypoint: /bin/bash
     args:
       - "-c"
@@ -351,3 +352,4 @@ steps:
 logsBucket: gs://${PROJECT_ID}-logs-data/build-logs
 options:
   defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
+  machineType: E2_HIGHCPU_8
