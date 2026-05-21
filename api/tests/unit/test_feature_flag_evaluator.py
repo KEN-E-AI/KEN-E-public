@@ -474,26 +474,42 @@ class TestMissingEntityId:
 class TestDegenerateEmail:
     """Degenerate email address edge cases in domain extraction."""
 
-    def test_no_at_sign_email_rejected_by_email_validation(self) -> None:
-        # EmailStr (FF-6 hardening) rejects strings without "@" at model
-        # construction time.  The evaluator never receives such an email —
-        # the input is now caught at the boundary.
-        with pytest.raises(ValidationError):
-            _ctx(user_email="no-at-sign")
+    def test_no_at_sign_email_accepted_and_does_not_match(self) -> None:
+        # Targeting-key model: EvaluationContext.user_email is plain str (the
+        # auth layer accepts non-RFC emails for synthetic / load-test users
+        # whose domains are special-use names like .local).  Degenerate
+        # inputs without "@" are stored as-is; domain extraction yields ""
+        # so no domain-match fires and the default branch is taken.
+        flag = _flag(
+            targeting_rules=TargetingRules(email_domains=["ken-e.ai"]),
+            default_enabled=False,
+        )
+        ctx = _ctx(user_email="no-at-sign")  # no ValidationError
+        result = evaluate(flag, ctx, cache_hit=False)
 
-    def test_empty_local_part_rejected_by_email_validation(self) -> None:
-        # EmailStr (FF-6 hardening) rejects "@ken-e.ai" at model construction time —
-        # the empty local part is invalid per RFC 5322.  EvaluationContext can no
-        # longer be constructed with this value, so the evaluator never sees it.
-        with pytest.raises(ValidationError):
-            _ctx(user_email="@ken-e.ai")
+        assert result.enabled is False
+        assert result.reason == "default"
+
+    def test_empty_local_part_accepted_and_does_not_match(self) -> None:
+        # "@ken-e.ai" is no longer rejected — stored as-is.  Domain extraction
+        # yields "ken-e.ai" (string-split on "@"), so domain-match still fires
+        # if "ken-e.ai" is in email_domains.
+        flag = _flag(targeting_rules=TargetingRules(email_domains=["ken-e.ai"]))
+        ctx = _ctx(user_email="@ken-e.ai")
+        result = evaluate(flag, ctx, cache_hit=False)
+
+        assert result == FlagEvaluation(
+            key="test_flag", enabled=True, reason="domain_match"
+        )
 
     def test_whitespace_padded_email_normalised_then_matches(self) -> None:
-        # EmailStr strips leading/trailing whitespace and normalises the value to
-        # "alice@ken-e.ai" before storing it.  The evaluator then matches it
-        # against the allowlist entry exactly as expected.
+        # The _normalise_email field validator on EvaluationContext strips
+        # leading/trailing whitespace and lowercases, so " ALICE@ken-e.ai "
+        # is stored as "alice@ken-e.ai" and matches the allowlist entry
+        # exactly.  The normalisation contract is preserved across the
+        # EmailStr → str + field_validator migration.
         flag = _flag(targeting_rules=TargetingRules(user_emails=["alice@ken-e.ai"]))
-        result = evaluate(flag, _ctx(user_email=" alice@ken-e.ai "), cache_hit=False)
+        result = evaluate(flag, _ctx(user_email=" ALICE@ken-e.ai "), cache_hit=False)
 
         assert result == FlagEvaluation(
             key="test_flag", enabled=True, reason="email_match"
