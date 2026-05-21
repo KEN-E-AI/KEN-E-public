@@ -39,14 +39,23 @@ if ! command -v uv &>/dev/null; then
 fi
 
 # ---------------------------------------------------------------------------
-# Install Java if not present (Firestore + Auth emulators are Java apps).
-# Using default-jre-headless saves ~120 MB vs the full default-jre.
+# Install JDK 21 if a sufficient Java is not present.
+# firebase-tools >= 14 dropped support for JDK < 21 — using default-jre on
+# Ubuntu 22.04 installs OpenJDK 11, which fails with:
+#   "firebase-tools no longer supports Java version before 21."
+# openjdk-21-jre-headless is available in jammy-updates (Feb 2024+).
 # ---------------------------------------------------------------------------
-if ! command -v java &>/dev/null; then
-  echo "[e2e-stack] Java not found — installing default-jre-headless..."
+need_jdk21() {
+  command -v java &>/dev/null || return 0
+  local major
+  major=$(java -version 2>&1 | head -n1 | sed -E 's/.*"([0-9]+).*".*/\1/')
+  [ -z "$major" ] || [ "$major" -lt 21 ]
+}
+if need_jdk21; then
+  echo "[e2e-stack] Installing OpenJDK 21 (firebase-tools requires Java >= 21)..."
   apt-get update -qq
   DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    default-jre-headless >/dev/null
+    openjdk-21-jre-headless >/dev/null
 fi
 
 # ---------------------------------------------------------------------------
