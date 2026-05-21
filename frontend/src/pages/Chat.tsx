@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { ArrowLeftRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { emitPageView } from "@/lib/telemetry";
+import { ChatInterface } from "@/components/chat/ChatInterface";
 
 type ViewState = "message" | "status";
 
@@ -107,15 +108,7 @@ export default function Chat() {
           className="flex-1 min-h-0 overflow-hidden px-6 flex flex-col"
         >
           {viewState === "message" ? (
-            sessionId ? (
-              <p className="text-sm text-[var(--color-text-secondary)] mt-4">
-                Session: {sessionId}
-              </p>
-            ) : (
-              <p className="text-sm text-[var(--color-text-secondary)] mt-4">
-                Start a new session…
-              </p>
-            )
+            <ChatInterface sessionId={sessionId ?? undefined} />
           ) : (
             // CH-PRD-04 SessionStatusView placeholder
             <p className="text-sm text-[var(--color-text-secondary)] mt-4">
