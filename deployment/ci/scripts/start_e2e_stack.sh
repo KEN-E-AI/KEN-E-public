@@ -7,8 +7,9 @@
 #   alice@ken-e.ai  (super-admin — Firestore users/alice-uid with roles:["super_admin"])
 #   bob@example.com (external user — Firestore users/bob-uid with empty roles)
 #
-# Uses `firebase emulators:start` (bundles its own JRE) instead of gcloud so
-# this script works on the playwright:jammy CI image which has no gcloud or JRE.
+# Uses `firebase emulators:start` instead of gcloud's emulators (which require
+# the full Cloud SDK). The Firestore + Auth emulators are Java apps, so this
+# script installs default-jre-headless if `java` is not already on PATH.
 #
 # Usage (executed in the background):
 #   bash deployment/ci/scripts/start_e2e_stack.sh &
@@ -38,9 +39,19 @@ if ! command -v uv &>/dev/null; then
 fi
 
 # ---------------------------------------------------------------------------
+# Install Java if not present (Firestore + Auth emulators are Java apps).
+# Using default-jre-headless saves ~120 MB vs the full default-jre.
+# ---------------------------------------------------------------------------
+if ! command -v java &>/dev/null; then
+  echo "[e2e-stack] Java not found — installing default-jre-headless..."
+  apt-get update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    default-jre-headless >/dev/null
+fi
+
+# ---------------------------------------------------------------------------
 # Install firebase-tools if not present.
 # The playwright:jammy image includes Node.js; gcloud is not available there.
-# firebase-tools bundles its own JRE — no external Java installation needed.
 # ---------------------------------------------------------------------------
 if ! command -v firebase &>/dev/null; then
   npm install -g firebase-tools
