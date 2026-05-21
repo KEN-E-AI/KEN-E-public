@@ -224,12 +224,18 @@ def _warn_if_chat_v2_disabled(db: Any) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _ensure_firebase_app() -> None:
-    """Initialize Firebase Admin SDK if not already initialized."""
+def _ensure_firebase_app(project_id: str) -> None:
+    """Initialize Firebase Admin SDK bound to ``project_id`` if not already done.
+
+    Why explicit projectId: ``firebase_admin.initialize_app()`` with no args
+    infers the project from ADC / the metadata server. On Cloud Build that
+    returns the build project (``ken-e-cicd``), not the target Firestore
+    project — Identity Toolkit calls then 403 against the wrong project.
+    """
     import firebase_admin
 
     if not firebase_admin._apps:
-        firebase_admin.initialize_app()
+        firebase_admin.initialize_app(options={"projectId": project_id})
 
 
 def _get_or_create_auth_user(email: str, dry_run: bool) -> str | None:
@@ -510,7 +516,7 @@ def _cleanup(db: Any, uid: str | None) -> dict[str, int]:
     return {"deleted": deleted, "errored": errored}
 
 
-def _resolve_uid_for_cleanup(db: Any) -> str | None:
+def _resolve_uid_for_cleanup(db: Any, project_id: str) -> str | None:
     """Look up the UID of the load-test user from Firebase Auth (for cleanup path).
 
     Returns None if the user does not exist or Firebase Admin SDK is unavailable.
@@ -518,7 +524,7 @@ def _resolve_uid_for_cleanup(db: Any) -> str | None:
     try:
         from firebase_admin import auth as fb_auth
 
-        _ensure_firebase_app()
+        _ensure_firebase_app(project_id)
         user = fb_auth.get_user_by_email(LOAD_TEST_USER_EMAIL)
         return user.uid
     except Exception as exc:
@@ -610,7 +616,7 @@ def main(argv: list[str] | None = None) -> int:
     # Cleanup path
     # ------------------------------------------------------------------
     if args.cleanup:
-        uid = _resolve_uid_for_cleanup(db)
+        uid = _resolve_uid_for_cleanup(db, project_id)
         print(
             f"Cleaning up load-test fixtures for account {LOAD_TEST_ACCOUNT_ID!r}..."
         )
@@ -645,7 +651,7 @@ def main(argv: list[str] | None = None) -> int:
         _warn_if_chat_v2_disabled(db)
 
     # 1. Firebase Auth user
-    _ensure_firebase_app()
+    _ensure_firebase_app(project_id)
     uid = _get_or_create_auth_user(LOAD_TEST_USER_EMAIL, dry_run=args.dry_run)
 
     # For dry-run we use a placeholder UID so the rest of the flow can proceed.
