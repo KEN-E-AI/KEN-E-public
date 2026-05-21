@@ -10,16 +10,18 @@
 # Uses `firebase emulators:start` (bundles its own JRE) instead of gcloud so
 # this script works on the playwright:jammy CI image which has no gcloud or JRE.
 #
-# Usage (sourced or executed):
-#   bash deployment/ci/scripts/start_e2e_stack.sh
+# Usage (executed in the background):
+#   bash deployment/ci/scripts/start_e2e_stack.sh &
 #
 # Caller contract:
 #   - Run from the repo root.
-#   - After this script returns, the following are live:
+#   - The script supervises its children and BLOCKS after the stack is ready.
+#     Once "[e2e-stack] Full E2E stack is ready." is logged, the following are live:
 #       Firestore emulator : 127.0.0.1:8090
 #       Auth emulator      : 127.0.0.1:9099
 #       FastAPI backend    : 127.0.0.1:8000  (GET /health → 200)
-#   - Cleanup is handled by a trap on EXIT.
+#   - The caller is responsible for tearing the stack down (e.g. by killing
+#     this script's process group). The EXIT trap then reaps the children.
 
 set -euo pipefail
 
@@ -45,7 +47,9 @@ if ! command -v firebase &>/dev/null; then
 fi
 
 # ---------------------------------------------------------------------------
-# Cleanup trap — kill all background processes on exit.
+# Cleanup trap — kill background processes when this supervisor exits.
+# Fires when the caller signals the script's process group (the script blocks
+# on `wait` at the end, so the trap does NOT fire after the "ready" log line).
 # ---------------------------------------------------------------------------
 cleanup() {
   echo "[e2e-stack] Cleaning up background processes..."
@@ -224,3 +228,23 @@ echo "[e2e-stack] Full E2E stack is ready."
 echo "[e2e-stack]   Firestore emulator : http://${FIRESTORE_HOST}"
 echo "[e2e-stack]   Auth emulator      : http://${AUTH_HOST}"
 echo "[e2e-stack]   FastAPI backend    : http://127.0.0.1:${API_PORT}"
+
+# ---------------------------------------------------------------------------
+# 7. Block as a supervisor so background children stay alive until the caller
+#    tears the stack down. Without this, the script would exit here, fire its
+#    EXIT trap, and kill the emulators + backend before Playwright could run.
+#    `wait -n` returns when ANY child exits — propagate that as a failure so
+#    the caller sees a dead stack instead of silently hanging.
+# ---------------------------------------------------------------------------
+if wait -n; then
+  echo "[e2e-stack] ERROR: a background child exited unexpectedly (rc=0)"
+  exit 1
+else
+  rc=$?
+  # rc=143 (SIGTERM) means the caller signalled us — clean shutdown path.
+  if [ "$rc" -eq 143 ]; then
+    exit 0
+  fi
+  echo "[e2e-stack] ERROR: a background child exited unexpectedly (rc=$rc)"
+  exit "$rc"
+fi
