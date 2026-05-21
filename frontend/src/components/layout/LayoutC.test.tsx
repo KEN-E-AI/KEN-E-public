@@ -1,5 +1,6 @@
 // NOTE: Class-contract lock only — runtime breakpoint behaviour is not verified by JSDOM.
 import { describe, test, expect, beforeEach, vi } from "vitest";
+import type { Mock } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { AuthContextType } from "@/contexts/AuthContext";
@@ -13,6 +14,8 @@ import {
   resetLayoutBannersForTesting,
 } from "./LayoutC";
 import type { LayoutBannerId } from "./LayoutC";
+import { SessionsSidebar } from "@/components/chat/SessionsSidebar";
+import { useCreateChatSession } from "@/hooks/useCreateChatSession";
 
 // TopNav is mocked here to keep this file focused on LayoutC composition.
 // The TopNav <nav aria-label="Primary navigation"> landmark and its mobile
@@ -30,7 +33,11 @@ vi.mock("./TopNav", async () => {
 });
 
 vi.mock("@/components/chat/SessionsSidebar", () => ({
-  SessionsSidebar: () => <div data-testid="sessions-sidebar" />,
+  SessionsSidebar: vi.fn(() => <div data-testid="sessions-sidebar" />),
+}));
+
+vi.mock("@/hooks/useCreateChatSession", () => ({
+  useCreateChatSession: vi.fn(),
 }));
 
 vi.mock("@/components/chat/ChatInterface", () => ({
@@ -78,6 +85,11 @@ function renderLayoutC({
 describe("LayoutC", () => {
   beforeEach(() => {
     resetLayoutBannersForTesting();
+    (useCreateChatSession as Mock).mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    });
+    (SessionsSidebar as Mock).mockClear();
   });
 
   describe("composition", () => {
@@ -318,6 +330,37 @@ describe("LayoutC", () => {
       const inline = mobileNav.getAttribute("style") ?? "";
       expect(inline).toMatch(/border-top:\s*3px solid transparent/i);
       expect(inline).toMatch(/border-image:\s*var\(--gradient-rainbow\)\s*1/i);
+    });
+  });
+
+  describe("New Session wiring (CH-26)", () => {
+    test("passes onNewSession function and isNewSessionPending=false to SessionsSidebar", () => {
+      renderLayoutC();
+      const props = (SessionsSidebar as Mock).mock.calls[0][0];
+      expect(typeof props.onNewSession).toBe("function");
+      expect(props.isNewSessionPending).toBe(false);
+    });
+
+    test("onNewSession calls mutate with account_id from auth context", () => {
+      const mutate = vi.fn();
+      (useCreateChatSession as Mock).mockReturnValue({
+        mutate,
+        isPending: false,
+      });
+      renderLayoutC();
+      const { onNewSession } = (SessionsSidebar as Mock).mock.calls[0][0];
+      onNewSession();
+      expect(mutate).toHaveBeenCalledWith({ account_id: undefined });
+    });
+
+    test("isNewSessionPending=true disables the SessionsSidebar buttons", () => {
+      (useCreateChatSession as Mock).mockReturnValue({
+        mutate: vi.fn(),
+        isPending: true,
+      });
+      renderLayoutC();
+      const props = (SessionsSidebar as Mock).mock.calls[0][0];
+      expect(props.isNewSessionPending).toBe(true);
     });
   });
 

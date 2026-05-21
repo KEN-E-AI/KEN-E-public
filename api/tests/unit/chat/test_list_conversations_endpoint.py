@@ -15,7 +15,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from src.kene_api.auth.models import UserContext
-from src.kene_api.models.chat import ChatSessionMetadata
+from src.kene_api.models.chat import (
+    ChatSessionMetadata,
+    ChatSessionSidebarItem,
+    ListChatSessionsResponse,
+)
 from src.kene_api.routers.chat import (
     ConversationInfo,
     ConversationListResponse,
@@ -127,7 +131,7 @@ class TestListConversationsFlagOn:
         query: str | None = None,
         limit: int = 20,
         account_id: str | None = None,
-    ) -> ConversationListResponse:
+    ) -> ListChatSessionsResponse | ConversationListResponse:
         """Drive the handler via AsyncMock + patch."""
         from src.kene_api.routers.chat import list_conversations
 
@@ -157,9 +161,10 @@ class TestListConversationsFlagOn:
     async def test_happy_path_returns_side_table_rows(self) -> None:
         rows = [_make_metadata("s1"), _make_metadata("s2")]
         resp = await self._run(rows, None, _make_user_context())
-        assert len(resp.conversations) == 2
-        assert resp.conversations[0].session_id == "s1"
-        assert resp.conversations[1].session_id == "s2"
+        assert isinstance(resp, ListChatSessionsResponse)
+        assert len(resp.items) == 2
+        assert resp.items[0].session_id == "s1"
+        assert resp.items[1].session_id == "s2"
         assert resp.next_cursor is None
 
     @pytest.mark.asyncio
@@ -169,10 +174,11 @@ class TestListConversationsFlagOn:
         assert resp.next_cursor == "cursor_xyz"
 
     @pytest.mark.asyncio
-    async def test_items_mirrors_conversations(self) -> None:
+    async def test_items_are_sidebar_items(self) -> None:
         rows = [_make_metadata()]
         resp = await self._run(rows, None, _make_user_context())
-        assert resp.items == resp.conversations
+        assert isinstance(resp, ListChatSessionsResponse)
+        assert all(isinstance(item, ChatSessionSidebarItem) for item in resp.items)
 
     @pytest.mark.asyncio
     async def test_explicit_account_id_forwarded_to_service(self) -> None:
@@ -248,7 +254,8 @@ class TestListConversationsFlagOn:
             _make_user_context(account_ids=[]),
             account_id=None,
         )
-        assert resp.conversations == []
+        assert isinstance(resp, ListChatSessionsResponse)
+        assert resp.items == []
         assert resp.next_cursor is None
 
     @pytest.mark.asyncio
