@@ -269,13 +269,23 @@ steps:
 
         # Path-filter guard — skip step when no relevant files changed.
         # NOTE: shell vars are escaped as $$ to avoid Cloud Build substitution parsing.
-        CHANGED=$(git diff --name-only "$(git merge-base HEAD origin/main)" HEAD)
-        RELEVANT=$(echo "$$CHANGED" | grep -E \
-          '^frontend/|^api/src/kene_api/services/feature_flag_service\.py$|^api/src/kene_api/routers/(feature_flags|admin_feature_flags)\.py$' \
-          || true)
-        if [ -z "$$RELEVANT" ]; then
-          echo "No feature-flag or frontend files changed — skipping E2E suite."
-          exit 0
+        # Cloud Build's checkout has no remote-tracking refs, so fetch main
+        # explicitly. If anything in the merge-base flow fails (detached HEAD,
+        # network error, etc.) we fail open and run the full E2E suite — a
+        # spurious 3-minute run is preferable to silently skipping the gate.
+        git fetch --no-tags --depth=50 origin main 2>/dev/null || true
+        BASE=$$(git merge-base HEAD FETCH_HEAD 2>/dev/null || true)
+        if [ -z "$$BASE" ]; then
+          echo "Could not determine merge-base with origin/main — running full E2E suite."
+        else
+          CHANGED=$$(git diff --name-only "$$BASE" HEAD)
+          RELEVANT=$$(echo "$$CHANGED" | grep -E \
+            '^frontend/|^api/src/kene_api/services/feature_flag_service\.py$|^api/src/kene_api/routers/(feature_flags|admin_feature_flags)\.py$' \
+            || true)
+          if [ -z "$$RELEVANT" ]; then
+            echo "No feature-flag or frontend files changed — skipping E2E suite."
+            exit 0
+          fi
         fi
 
         # Start the emulator + backend stack in the background.
