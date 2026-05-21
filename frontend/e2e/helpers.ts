@@ -163,6 +163,10 @@ async function clearBrowserStorage(page: Page): Promise<void> {
             const req = window.indexedDB.deleteDatabase(db.name);
             req.onsuccess = () => resolve();
             req.onerror = () => resolve();
+            // onblocked fires when a live Firebase Auth connection holds the DB
+            // open. Resolve immediately so the test can proceed; the browser
+            // will complete the deletion once the connection closes naturally.
+            req.onblocked = () => resolve();
           }),
       ),
     );
