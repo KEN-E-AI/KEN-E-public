@@ -13,24 +13,14 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import os
-import sys
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import google.api_core.exceptions
 from google.cloud import firestore
+from shared.turn_delta import TurnDelta as _TurnDelta
 
 from .side_table import get_chat_side_table_service
-
-# TurnDelta lives in app/adk/ (cross-package).
-_ADK_PATH = os.path.normpath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "app", "adk")
-)
-if _ADK_PATH not in sys.path:
-    sys.path.insert(0, _ADK_PATH)
-
-from turn_delta import TurnDelta as _TurnDelta  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

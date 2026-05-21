@@ -1,4 +1,4 @@
-"""Unit tests for app/adk/turn_delta.TurnDelta (CH-PRD-01 §7 AC-3).
+"""Unit tests for shared.turn_delta.TurnDelta (CH-PRD-01 §7 AC-3).
 
 Covers:
   - Wire round-trip: model_dump(mode="json", by_alias=True) produces legacy sentinel dict
@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from app.adk.turn_delta import TurnDelta
+from shared.turn_delta import TurnDelta
 
 _NOW = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
 _NOW_ISO = _NOW.isoformat()
