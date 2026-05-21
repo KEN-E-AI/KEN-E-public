@@ -268,11 +268,12 @@ steps:
         set -euo pipefail
 
         # Path-filter guard — skip step when no relevant files changed.
+        # NOTE: shell vars are escaped as $$ to avoid Cloud Build substitution parsing.
         CHANGED=$(git diff --name-only "$(git merge-base HEAD origin/main)" HEAD)
-        RELEVANT=$(echo "$CHANGED" | grep -E \
+        RELEVANT=$(echo "$$CHANGED" | grep -E \
           '^frontend/|^api/src/kene_api/services/feature_flag_service\.py$|^api/src/kene_api/routers/(feature_flags|admin_feature_flags)\.py$' \
           || true)
-        if [ -z "$RELEVANT" ]; then
+        if [ -z "$$RELEVANT" ]; then
           echo "No feature-flag or frontend files changed — skipping E2E suite."
           exit 0
         fi
@@ -303,16 +304,17 @@ steps:
         set -e
 
         # Upload test-results to GCS on failure for post-mortem inspection.
-        if [ $E2E_EXIT -ne 0 ] && [ -d test-results ] && [ "$(ls -A test-results)" ]; then
+        # ${PROJECT_ID} and ${BUILD_ID} are Cloud Build built-in substitutions (intentional, not escaped).
+        if [ $$E2E_EXIT -ne 0 ] && [ -d test-results ] && [ "$(ls -A test-results)" ]; then
           gsutil -m cp -r test-results \
             "gs://${PROJECT_ID}-logs-data/build-logs/${BUILD_ID}/playwright-test-results/" \
             || echo "WARNING: artifact upload failed (non-fatal)."
         fi
 
         # Kill the process group so all emulator children are cleaned up.
-        STACK_PGID=$(ps -o pgid= $STACK_PID 2>/dev/null | tr -d ' ' || true)
-        [ -n "$STACK_PGID" ] && kill -- "-${STACK_PGID}" 2>/dev/null || true
-        exit $E2E_EXIT
+        STACK_PGID=$(ps -o pgid= $$STACK_PID 2>/dev/null | tr -d ' ' || true)
+        [ -n "$$STACK_PGID" ] && kill -- "-$${STACK_PGID}" 2>/dev/null || true
+        exit $$E2E_EXIT
     env:
       - 'PATH=/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin'
 
