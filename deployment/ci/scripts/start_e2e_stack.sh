@@ -82,11 +82,13 @@ echo "[e2e-stack] Starting Firebase emulators (auth + firestore) on ${AUTH_HOST}
 (cd "${FIREBASE_TMP}" && firebase emulators:start --only auth,firestore --project test-project) &
 
 # Wait for Firestore emulator.
+# The root path "/" returns 200 "Ok"; the documents endpoint returns 404 before
+# any documents exist, so we use "/" as the health-check URL.
 for _ in $(seq 1 60); do
-  curl -sf "http://${FIRESTORE_HOST}/v1/projects/test-project/databases/(default)/documents" >/dev/null 2>&1 && break
+  curl -sf "http://${FIRESTORE_HOST}/" >/dev/null 2>&1 && break
   sleep 1
 done
-curl -sf "http://${FIRESTORE_HOST}/v1/projects/test-project/databases/(default)/documents" >/dev/null 2>&1 \
+curl -sf "http://${FIRESTORE_HOST}/" >/dev/null 2>&1 \
   || { echo "[e2e-stack] ERROR: Firestore emulator failed to start"; exit 1; }
 echo "[e2e-stack] Firestore emulator ready."
 
@@ -111,6 +113,7 @@ AUTH_BASE="http://${AUTH_HOST}/identitytoolkit.googleapis.com/v1/projects/${PROJ
 echo "[e2e-stack] Seeding Alice (alice@ken-e.ai)..."
 curl -sf -X POST "${AUTH_BASE}/accounts" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer owner" \
   -d '{
     "localId": "alice-uid",
     "email": "alice@ken-e.ai",
@@ -121,6 +124,7 @@ curl -sf -X POST "${AUTH_BASE}/accounts" \
 echo "[e2e-stack] Seeding Bob (bob@example.com)..."
 curl -sf -X POST "${AUTH_BASE}/accounts" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer owner" \
   -d '{
     "localId": "bob-uid",
     "email": "bob@example.com",

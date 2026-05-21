@@ -192,9 +192,12 @@ export async function signInAs(
   await page.fill("#email", email);
   await page.fill("#password", password);
 
-  // Wait for the ReCaptcha fallback (3 s) to mark the form as safe to submit.
-  // The shield-check icon appears when isVerified=true in ReCaptchaV3.
-  await expect(page.locator('[data-testid="shield-check-icon"]')).toBeVisible({
+  // Wait for the ReCaptcha 3-second fallback to fire (isVerified=true enables the
+  // submit button). We do NOT wait for the shield-check icon — ReCaptchaV3 renders
+  // it inside a `className="hidden"` wrapper in Authentication.tsx, so it is always
+  // display:none regardless of verification state. Waiting on button enabled-ness
+  // is the reliable functional signal.
+  await expect(page.locator('button[type="submit"]')).not.toBeDisabled({
     timeout: 10_000,
   });
 
