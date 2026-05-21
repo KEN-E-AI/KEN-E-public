@@ -31,8 +31,11 @@ Environment variables
 Idempotency
 -----------
 Each session document is checked for existence before writing.  Re-running the
-script against a project that already has the data is safe — existing docs are
-counted as `already_present` and skipped.
+script against a project that already has the data is safe — existing session
+docs are counted as `already_present` and skipped.  The user-permissions write
+uses `set(merge=True)` and will re-stamp `granted_at` on every run; that's
+intentional for a load-test fixture and has no effect on the sidebar polling
+behaviour.
 
 Cleanup
 -------
@@ -446,7 +449,8 @@ def _cleanup(db: Any, uid: str | None) -> dict[str, int]:
     Deletes:
       - accounts/acc_load_test/chat_sessions/load_test_session_001..200
       - accounts/acc_load_test (the account doc itself)
-      - users/{uid}/permissions/account_permissions/acc_load_test  (if uid known)
+      - the nested field permissions.account_permissions.acc_load_test on
+        users/{uid}  (if uid known)
 
     Does NOT delete the Firebase Auth user.  See module docstring for rationale.
 
