@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
-import { ChevronDown, Brain, Square } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { cn } from '@/lib/utils';
+import { useState, useEffect, useRef } from "react";
+import { ChevronDown, Brain, Square } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { cn } from "@/lib/utils";
 
 interface ThinkingBlockProps {
   isThinking: boolean;
@@ -10,7 +10,12 @@ interface ThinkingBlockProps {
   onStop?: () => void;
 }
 
-export function ThinkingBlock({ isThinking, thoughts, durationSeconds, onStop }: ThinkingBlockProps) {
+export function ThinkingBlock({
+  isThinking,
+  thoughts,
+  durationSeconds,
+  onStop,
+}: ThinkingBlockProps) {
   const [isOpen, setIsOpen] = useState(true);
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -33,8 +38,8 @@ export function ThinkingBlock({ isThinking, thoughts, durationSeconds, onStop }:
   }, [thoughts, isOpen]);
 
   const summaryText = isThinking
-    ? 'Reasoning...'
-    : `Thought for ${durationSeconds ?? 0} second${(durationSeconds ?? 0) !== 1 ? 's' : ''}`;
+    ? "Reasoning..."
+    : `Thought for ${durationSeconds ?? 0} second${(durationSeconds ?? 0) !== 1 ? "s" : ""}`;
 
   return (
     <div className="relative rounded-[var(--radius-lg)] overflow-hidden">
@@ -43,17 +48,18 @@ export function ThinkingBlock({ isThinking, thoughts, durationSeconds, onStop }:
         <motion.div
           className="absolute inset-0 rounded-[var(--radius-lg)]"
           style={{
-            padding: '2px',
-            background: 'linear-gradient(90deg, var(--color-violet-400), var(--color-teal-400), var(--color-violet-400))',
-            backgroundSize: '200% 100%',
+            padding: "2px",
+            background:
+              "linear-gradient(90deg, var(--color-violet-400), var(--color-teal-400), var(--color-violet-400))",
+            backgroundSize: "200% 100%",
           }}
           animate={{
-            backgroundPosition: ['0% 0%', '200% 0%'],
+            backgroundPosition: ["0% 0%", "200% 0%"],
           }}
           transition={{
             duration: 2,
             repeat: Infinity,
-            ease: 'linear',
+            ease: "linear",
           }}
         >
           <div className="w-full h-full rounded-[calc(var(--radius-lg)-2px)] bg-[var(--color-bg-elevated)]" />
@@ -62,34 +68,38 @@ export function ThinkingBlock({ isThinking, thoughts, durationSeconds, onStop }:
 
       <div
         className={cn(
-          'relative rounded-[var(--radius-lg)] bg-[var(--color-bg-elevated)]',
-          !isThinking && 'border-2 border-[var(--color-border-default)]',
-          isThinking && 'm-[2px]'
+          "relative rounded-[var(--radius-lg)] bg-[var(--color-bg-elevated)]",
+          !isThinking && "border-2 border-[var(--color-border-default)]",
+          isThinking && "m-[2px]",
         )}
       >
         {/* Trigger / Summary Bar */}
         <div
           role="button"
           tabIndex={0}
-          onClick={() => setIsOpen(prev => !prev)}
+          onClick={() => setIsOpen((prev) => !prev)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
+            if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
-              setIsOpen(prev => !prev);
+              setIsOpen((prev) => !prev);
             }
           }}
           className="w-full flex items-center gap-2 px-4 py-3 text-left group transition-colors hover:bg-[var(--color-accent)] rounded-[var(--radius-lg)] cursor-pointer"
         >
           <Brain
             className={cn(
-              'size-4 shrink-0 transition-colors',
-              isThinking ? 'text-[var(--color-violet-500)]' : 'text-[var(--color-text-tertiary)]'
+              "size-4 shrink-0 transition-colors",
+              isThinking
+                ? "text-[var(--color-violet-500)]"
+                : "text-[var(--color-text-tertiary)]",
             )}
           />
           <span
             className={cn(
-              'flex-1 text-[var(--text-body-sm)]',
-              isThinking ? 'text-[var(--color-violet-500)] italic' : 'text-[var(--color-text-tertiary)]'
+              "flex-1 text-[var(--text-body-sm)]",
+              isThinking
+                ? "text-[var(--color-violet-500)] italic"
+                : "text-[var(--color-text-tertiary)]",
             )}
           >
             {summaryText}
@@ -98,9 +108,18 @@ export function ThinkingBlock({ isThinking, thoughts, durationSeconds, onStop }:
           {/* Pulsing dots while thinking */}
           {isThinking && (
             <span className="flex gap-1 mr-2">
-              <span className="size-1.5 rounded-full bg-[var(--color-violet-400)] animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="size-1.5 rounded-full bg-[var(--color-violet-400)] animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="size-1.5 rounded-full bg-[var(--color-violet-400)] animate-bounce" style={{ animationDelay: '300ms' }} />
+              <span
+                className="size-1.5 rounded-full bg-[var(--color-violet-400)] animate-bounce"
+                style={{ animationDelay: "0ms" }}
+              />
+              <span
+                className="size-1.5 rounded-full bg-[var(--color-violet-400)] animate-bounce"
+                style={{ animationDelay: "150ms" }}
+              />
+              <span
+                className="size-1.5 rounded-full bg-[var(--color-violet-400)] animate-bounce"
+                style={{ animationDelay: "300ms" }}
+              />
             </span>
           )}
 
@@ -112,11 +131,11 @@ export function ThinkingBlock({ isThinking, thoughts, durationSeconds, onStop }:
                 onStop();
               }}
               className={cn(
-                'flex items-center gap-1.5 px-2.5 py-1 rounded-[var(--radius-md)]',
-                'bg-[var(--color-bg-primary)] border border-[var(--color-border-default)]',
-                'text-[var(--text-caption)] text-[var(--color-text-secondary)]',
-                'hover:bg-[#F97066]/10 hover:border-[#F97066]/40 hover:text-[#F97066]',
-                'transition-colors duration-150 shrink-0'
+                "flex items-center gap-1.5 px-2.5 py-1 rounded-[var(--radius-md)]",
+                "bg-[var(--color-bg-primary)] border border-[var(--color-border-default)]",
+                "text-[var(--text-caption)] text-[var(--color-text-secondary)]",
+                "hover:bg-[#F97066]/10 hover:border-[#F97066]/40 hover:text-[#F97066]",
+                "transition-colors duration-150 shrink-0",
               )}
               title="Stop generating"
             >
@@ -127,8 +146,8 @@ export function ThinkingBlock({ isThinking, thoughts, durationSeconds, onStop }:
 
           <ChevronDown
             className={cn(
-              'size-4 shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-200',
-              isOpen && 'rotate-180'
+              "size-4 shrink-0 text-[var(--color-text-tertiary)] transition-transform duration-200",
+              isOpen && "rotate-180",
             )}
           />
         </div>
@@ -138,7 +157,7 @@ export function ThinkingBlock({ isThinking, thoughts, durationSeconds, onStop }:
           {isOpen && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
+              animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
               transition={{ duration: 0.25, ease: [0.25, 0.46, 0.45, 0.94] }}
               className="overflow-hidden"
