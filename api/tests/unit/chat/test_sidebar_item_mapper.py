@@ -100,11 +100,10 @@ def test_is_agent_running_states(
         last_agent_stopped_at=stopped_at,
     )
     # Freeze 'now' so the stuck-threshold assertions are deterministic.
-    with patch(
-        "src.kene_api.chat.side_table.datetime"
-    ) as mock_dt:
+    # Only mock_dt.now.return_value is needed — derive_is_agent_running never
+    # calls datetime(...) directly, so no side_effect on the class is required.
+    with patch("src.kene_api.chat.side_table.datetime") as mock_dt:
         mock_dt.now.return_value = _NOW
-        mock_dt.side_effect = lambda *a, **kw: datetime(*a, **kw)
         result = _metadata_to_sidebar_item(m)
 
     assert result.is_agent_running is expected

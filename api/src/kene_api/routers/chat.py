@@ -2531,7 +2531,7 @@ def _metadata_to_sidebar_item(m: ChatSessionMetadata) -> ChatSessionSidebarItem:
         is_agent_running=derive_is_agent_running(
             m.last_agent_started_at,
             m.last_agent_stopped_at,
-            now=None,  # uses datetime.now(utc) inside
+            now=None,  # uses datetime.now(timezone.utc) inside
         ),
         last_agent_message_at=m.last_agent_message_at,
         last_viewed_at=m.last_viewed_at,
@@ -2557,6 +2557,14 @@ async def list_conversations(
 ):
     """
     List all conversations for the current user.
+
+    **Response shape depends on the ``chat_v2_enabled`` feature flag:**
+
+    - Flag **on** → ``ListChatSessionsResponse`` (PRD §4.1): ``{items: [...], next_cursor}``.
+      Each item is a ``ChatSessionSidebarItem`` with ``is_agent_running`` derived
+      from timestamps (not a stored field).
+    - Flag **off** → legacy ``ConversationListResponse``: ``{conversations: [...],
+      total_count, next_cursor}``.
 
     When ``chat_v2_enabled`` is on for the caller, returns cursor-paginated
     results from the Firestore side-table with 30-day window, optional

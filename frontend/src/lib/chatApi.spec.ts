@@ -264,8 +264,8 @@ describe("listChatSessions", () => {
     const result = await listChatSessions();
     const item = result.items[0];
     expect(typeof item.is_agent_running).toBe("boolean");
-    const status = deriveSessionStatus(item);
-    expect(["active", "needs-review", "idle"]).toContain(status);
+    // is_agent_running=false + last_agent_message_at set + last_viewed_at=null → "needs-review"
+    expect(deriveSessionStatus(item)).toBe("needs-review");
   });
 });
 
