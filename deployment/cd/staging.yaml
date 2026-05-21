@@ -204,17 +204,21 @@ steps:
         # `uv add` would, and later steps share that workspace volume.
         uv pip install --system \
           locust==2.32.6 gevent==24.11.1 requests==2.32.3 firebase-admin==6.5.0
+        # --exit-code-on-error 0 on locust: don't fail this step on individual
+        # request failures.  The dedicated chat-sidebar-p95-check step is the
+        # gate; it reads the stats CSV and applies a tolerated failure_ratio
+        # + p95 threshold.
+        #
+        # The FIREBASE_* / CHAT_LOADTEST_UID / API_BASE_URL assignments below
+        # MUST stay on the lines immediately preceding `locust` with no
+        # comments in between — they're shell inline env-vars passed to that
+        # one process, and an interleaved `# ...` line breaks the backslash
+        # continuation and silently strips them (build 3ae6a795 — 0 reqs).
         FIREBASE_WEB_API_KEY=${_VITE_FIREBASE_API_KEY} \
         FIREBASE_PROJECT_ID=${_STAGING_PROJECT_ID} \
         FIREBASE_ADMIN_SA_EMAIL=${_FIREBASE_ADMIN_SA_EMAIL_STAGING} \
         CHAT_LOADTEST_UID=${_CHAT_LOADTEST_UID} \
         API_BASE_URL=${_STAGING_API_URL} \
-        # --exit-code-on-error 0: don't fail this step on individual request
-        # failures.  The dedicated chat-sidebar-p95-check step is the gate; it
-        # reads the stats CSV and applies a tolerated failure_ratio + p95
-        # threshold.  This separation surfaces transient infra blips (e.g.
-        # Cloud Run scale-up 502s) without short-circuiting the latency
-        # measurement.
         locust -f tests/load_test/chat_sidebar_polling.py \
           --headless \
           --exit-code-on-error 0 \
