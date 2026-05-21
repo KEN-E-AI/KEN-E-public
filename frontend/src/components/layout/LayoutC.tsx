@@ -173,21 +173,23 @@ function LayoutCInner() {
       )}
 
       <div className="flex-1 overflow-hidden flex">
-        {/* Sessions Sidebar — desktop only */}
-        <aside
-          aria-label="Chat sessions"
-          className="hidden md:flex md:flex-col md:min-h-0 md:h-full"
-        >
-          <SessionsSidebar
-            sessions={[]}
-            onNewSession={() =>
-              createSession.mutate({
-                account_id: selectedOrgAccount?.accountId,
-              })
-            }
-            isNewSessionPending={createSession.isPending}
-          />
-        </aside>
+        {/* Sessions Sidebar — desktop only; suppressed on /chat where Chat.tsx owns it */}
+        {!isHome && (
+          <aside
+            aria-label="Chat sessions"
+            className="hidden md:flex md:flex-col md:min-h-0 md:h-full"
+          >
+            <SessionsSidebar
+              sessions={[]}
+              onNewSession={() =>
+                createSession.mutate({
+                  account_id: selectedOrgAccount?.accountId,
+                })
+              }
+              isNewSessionPending={createSession.isPending}
+            />
+          </aside>
+        )}
 
         {/* Page content */}
         <main className="flex-1 min-h-0 overflow-hidden flex flex-col bg-[var(--color-bg-secondary)]">

@@ -243,6 +243,22 @@ describe("LayoutC", () => {
     });
   });
 
+  describe("Sessions Sidebar visibility", () => {
+    test("does NOT render <aside aria-label='Chat sessions'> at /chat (Chat.tsx owns its own sidebar)", () => {
+      renderLayoutC({ initialPath: "/chat" });
+      expect(
+        screen.queryByRole("complementary", { name: /chat sessions/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    test("renders <aside aria-label='Chat sessions'> at non-chat routes (e.g., /performance)", () => {
+      renderLayoutC({ initialPath: "/performance" });
+      expect(
+        screen.getByRole("complementary", { name: /chat sessions/i }),
+      ).toBeInTheDocument();
+    });
+  });
+
   describe("mobile bottom tab bar", () => {
     test('renders <nav aria-label="Primary navigation (mobile)"> with 7 links', () => {
       renderLayoutC();
