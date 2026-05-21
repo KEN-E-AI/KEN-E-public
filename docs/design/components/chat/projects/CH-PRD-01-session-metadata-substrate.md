@@ -50,7 +50,7 @@ Landing the substrate first lets CH-PRD-02 build the sidebar against real data a
 - **Multi-agent model handling** — the side-table snapshots the **root agent's** `model_id` and `context_window_max` at session creation. The context meter uses those for its denominator. Specialists that use different models still contribute to `current_context_tokens` (their `event.usage_metadata` is counted), but the bar is always rendered against the root's max window. Documented caveat in the status view copy: "Context usage is measured against the root model's window." No cost math — see Out of scope.
 - **`current_context_tokens` post-compaction baseline** — on compaction event, after writing the summary, `current_context_tokens` is recomputed by summing `event.usage_metadata.total_token_count` across the events in the post-compaction active window (summary event + overlap invocation + last 10 retained events). Correct math, not "reset to 0."
 - **`message_count` increment rule** — `message_count += 1` on every event where `event.author` is `"user"` or `"model"`. System and tool events are excluded.
-- **Token-accounting helper** (owned by **Billing**, not Chat) — `extract_billable_tokens(event) → BillableTokenCounts(input, output, reasoning)` lives at `app/adk/token_accounting.py`. Billing's BL-PRD-02 is the authoritative owner. If Billing hasn't shipped when CH-PRD-01 starts, Chat authors the helper **under Billing's namespace**, with Billing as the PR reviewer and future maintainer — not under Chat ownership. Chat is a consumer in perpetuity. Token definition: input + output + reasoning, cached-input excluded — invariant shared with Billing.
+- **Token-accounting helper** (owned by **Billing**, not Chat) — `extract_billable_tokens(event) → BillableTokenCounts(input, output, reasoning)` lives at `shared/token_accounting.py` (in the `shared/` package so both the API container and the Agent Engine deployment import it without sys.path trickery). Billing's BL-PRD-02 is the authoritative owner. If Billing hasn't shipped when CH-PRD-01 starts, Chat authors the helper **under Billing's namespace**, with Billing as the PR reviewer and future maintainer — not under Chat ownership. Chat is a consumer in perpetuity. Token definition: input + output + reasoning, cached-input excluded — invariant shared with Billing.
 - **30-day window** — lift `RECOVERY_WINDOW_DAYS` from 7 to 30 in `app/adk/session/recovery.py`. Mirror constant in `api/src/kene_api/chat/search.py` (used by CH-PRD-02's list endpoint). Callers validated via grep audit.
 - **Back-fill migration** (`api/scripts/migrate_chat_side_table_backfill.py`) — iterates every ADK session via `list_sessions(app_name="ken_e_chatbot", user_id=...)` for every user in the org, writes a minimal `ChatSessionMetadata` row for each session that lacks one. Idempotent. `--dry-run` mode. Reports `{processed, created, already_present, errored}`. **Pre-work spike** measures actual `list_sessions` return shape on a realistic dev session count (known ADK Issue #3154 causes empty `user_id` on returned Session objects in some versions — the back-fill reads `user_id` from the enclosing iteration loop, never trusts the `Session.user_id` field).
 - **Internal endpoint** `POST /api/v1/internal/chat/side-table/update` (OIDC) — the HTTP bridge from ADK-deployment callbacks to the API's side-table service. Idempotent on a request-body hash. Handler lives in `api/src/kene_api/chat/side_table_handlers.py` (NOT a Python module named `hooks.py` — see §5.1).
@@ -183,7 +183,7 @@ class ModelContextWindowEntry(BaseModel):
     context_window_max: int                  # tokens
 
 class BillableTokenCounts(BaseModel):
-    """Shared with Billing. Lives at app/adk/token_accounting.py (Billing owns)."""
+    """Shared with Billing. Lives at shared/token_accounting.py (Billing owns)."""
     input: int
     output: int
     reasoning: int
@@ -303,7 +303,7 @@ Enforcement belt-and-braces: the API layer additionally checks ownership server-
 | Create | `api/src/kene_api/chat/context_windows.py` — `MODEL_CONTEXT_WINDOW_REGISTRY`, `get_model_context_window(model_id)` |
 | Create | `api/src/kene_api/chat/search.py` — `list_sessions(user_id, account_id, cursor?, category_id?, query?)` |
 | Create | `api/src/kene_api/chat/accumulator.py` — `SessionTurnAccumulator` (per-turn in-memory delta) |
-| Create | `app/adk/token_accounting.py` — `extract_billable_tokens(event)`, `BillableTokenCounts`. **Billing-owned.** |
+| Create | `shared/token_accounting.py` — `extract_billable_tokens(event)`, `BillableTokenCounts`. **Billing-owned.** |
 | Create | `app/adk/agents/chat_callbacks.py` — `before_agent_callback`, `after_agent_callback`. **Only file that fires the ADK callbacks.** Posts to the internal update endpoint. |
 | Modify | `api/src/kene_api/routers/chat.py` — extend `POST /conversations` to write the side-table row; extend `GET /conversations` signature for cursor + filters; add completion-endpoint accumulator flush on cancellation / exception; add `POST /internal/chat/side-table/update` handler. |
 | Modify | `app/adk/session/recovery.py` — `RECOVERY_WINDOW_DAYS = 30` |
@@ -461,7 +461,7 @@ migrate_chat_side_table_backfill(--dry-run?, --account-id?):
 ### 5.4 Token-accounting helper — owned by Billing
 
 ```python
-# app/adk/token_accounting.py
+# shared/token_accounting.py
 # OWNER: Billing (BL-PRD-02). Chat consumes. Changes require Billing review.
 
 def extract_billable_tokens(event) -> BillableTokenCounts:
@@ -544,7 +544,7 @@ Auth gates:
 9. **`message_count` rule** — unit test constructs events with authors `user`, `model`, `system`, `tool` in a mixed sequence; asserts `message_count` increments only on `user`/`model`.
 10. **Post-compaction `current_context_tokens` baseline** — unit test constructs a fake compaction event + active window; asserts `current_context_tokens` equals the sum of `usage_metadata.total_token_count` across the retained events (NOT zero).
 11. **Model context-window registry + CI coverage** — every `model=` kwarg found in `app/adk/agents/**/*.py` is a key in `MODEL_CONTEXT_WINDOW_REGISTRY`. Lint test fails on a deliberately-unregistered model.
-12. **Shared token-accounting helper** — `extract_billable_tokens` lands at `app/adk/token_accounting.py` under Billing ownership. Parity test passes: identical output on a fixed fixture (symlinked / duplicated between chat and billing test dirs; CI asserts identical).
+12. **Shared token-accounting helper** — `extract_billable_tokens` lands at `shared/token_accounting.py` under Billing ownership. Parity test passes: identical output on a fixed fixture (symlinked / duplicated between chat and billing test dirs; CI asserts identical).
 13. **30-day window** — `RECOVERY_WINDOW_DAYS = 30` in `session/recovery.py`; `CHAT_LIST_WINDOW_DAYS = 30` in `chat/search.py`. Grep audit confirms no other 7-day chat window exists.
 14. **Creation path** — `POST /api/v1/chat/conversations` writes a side-table row after the ADK session commits. The pending-session pattern still works.
 15. **Back-fill** — `migrate_chat_side_table_backfill.py --dry-run` reports zero divergence after a real run on a seed dataset; real run is idempotent. User-id is read from the iteration loop, not from `Session.user_id` (ADK Issue #3154 guard).
@@ -601,7 +601,7 @@ Auth gates:
 ### Open questions
 - **Q:** Does `event.usage_metadata.cached_content_token_count` populate reliably across Gemini model versions? → **Proposal:** default to 0 when field missing; unit test covers both branches. Validate against production traces in week 1.
 - **Q:** What is the right `STUCK_THRESHOLD` for `is_agent_running` derivation (10 min in the proposal)? → **Proposal:** 10 min covers p99 agent response time comfortably. Revisit if users report stuck "working…" indicators; adjustable via config.
-- **Q:** Where should `extract_billable_tokens` actually live in repo layout if Billing hasn't defined the namespace yet? → **Proposal:** `app/adk/token_accounting.py` in Billing's `BL-PRD-02` Pydantic module layout. If that layout hasn't settled, a stub commit lands alongside this PRD's PR to reserve the path.
+- **Q:** Where should `extract_billable_tokens` actually live in repo layout if Billing hasn't defined the namespace yet? → **Resolved:** `shared/token_accounting.py` in the `shared/` package — both runtimes (API container + Agent Engine deployment) bundle `shared/` natively, so no sys.path trickery is needed. Billing remains the owner.
 
 ## 10. Reference
 

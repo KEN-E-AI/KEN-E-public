@@ -467,7 +467,7 @@ async def generate_session_title(session_id: str, user_id: str) -> None:
 
 **Manual-edit suppression.** `PUT /conversations/{id}` (title-edit) is extended in this PRD to set `auto_title_attempted_at = now()` in the same Firestore update as the title write. This means: if a user types a title within the first ~2 seconds of the first agent reply (before the auto-title call lands), the suppression race is resolved synchronously by the user write; the in-flight auto-title generator's final re-read sees the user title and skips the title overwrite, only stamping `auto_title_attempted_at` (which is a no-op since the user already set it).
 
-**Billing.** The Gemini call's `usage_metadata` is extracted via the shared `extract_billable_tokens(event)` helper (per CH-PRD-01 §5.4 — Billing-owned, in `app/adk/token_accounting.py`) and incremented against the org via `billing.meter_increment`. Same code path as agent calls; no duplicate metering. `test_auto_title_billing_meter.py` integration test asserts the meter advances.
+**Billing.** The Gemini call's `usage_metadata` is extracted via the shared `extract_billable_tokens(event)` helper (per CH-PRD-01 §5.4 — Billing-owned, in `shared/token_accounting.py`) and incremented against the org via `billing.meter_increment`. Same code path as agent calls; no duplicate metering. `test_auto_title_billing_meter.py` integration test asserts the meter advances.
 
 **Failure semantics.** Any failure (Gemini API error, timeout, malformed response, empty string, post-strip 0-length) → log warning, leave title null, stamp `auto_title_attempted_at` to prevent retry. The user sees "Untitled session" until they edit. Acceptable v1 behavior; not worth a retry queue.
 

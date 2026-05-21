@@ -242,7 +242,7 @@ The target architecture generalises credentials to support all integrated platfo
 
 **Superseded by the Chat component.** The originally proposed approach (extend `ChatResponse` with a `usage` field) is replaced by Chat's per-turn accumulator + composite endpoint design:
 
-- **Per-turn aggregation** — CH-PRD-01's `SessionTurnAccumulator` extracts tokens from every event via `extract_billable_tokens(event)` (Billing-owned helper at `app/adk/token_accounting.py`) and writes input / output / reasoning aggregates + `current_context_tokens` + `context_window_max` to the Firestore `chat_sessions` side-table at end-of-turn.
+- **Per-turn aggregation** — CH-PRD-01's `SessionTurnAccumulator` extracts tokens from every event via `extract_billable_tokens(event)` (Billing-owned helper at `shared/token_accounting.py`) and writes input / output / reasoning aggregates + `current_context_tokens` + `context_window_max` to the Firestore `chat_sessions` side-table at end-of-turn.
 - **Composite read** — CH-PRD-04's `GET /api/v1/chat/conversations/{id}/status-detail` returns metadata + server-derived `context_usage_percent`, `total_tokens`, and `activity_summary` in one round-trip.
 - **UI surface** — CH-PRD-04's `TokenUsagePanel.tsx` renders a context-window bar (Healthy / Moderate / Near-limit badge) and a 3-card token grid (Input / Output / Total). **No cost line** — subscription-level pricing is Billing's concern; Chat shows token counts only.
 
@@ -253,7 +253,7 @@ See [Chat component README](design/components/chat/README.md) §2.3 for the cano
 **Superseded by the Billing component.** [BL-PRD-02](design/components/billing/projects/BL-PRD-02-token-meter-monthly-enforcement.md) owns the org-level token meter end-to-end:
 
 - **Org-scoped meter** — Billing maintains `usage_windows` per `(org_id, billing_period)` rolled up from per-account `accounts/{account_id}/usage_daily/*` increments. Organization is the billing unit; sub-accounts contribute to the org-level total.
-- **Single token-extraction helper** — `extract_billable_tokens(event)` at `app/adk/token_accounting.py` (Billing-owned per BL-PRD-02; Chat consumes via `SessionTurnAccumulator`). Token definition: input + output + reasoning, cached-input excluded. CI parity test enforces both consumers produce identical output.
+- **Single token-extraction helper** — `extract_billable_tokens(event)` at `shared/token_accounting.py` (Billing-owned per BL-PRD-02; Chat consumes via `SessionTurnAccumulator`). Token definition: input + output + reasoning, cached-input excluded. CI parity test enforces both consumers produce identical output.
 - **Enforcement path** — every LLM-consuming agent invocation wraps `billing.check_status` (pre-call) + `billing.meter_increment` (post-call); on `BillingInactiveError`, the API maps to HTTP 402.
 
 Tool observability and billing remain separate concerns — `tool_usage_events` (tool-call observability owned by the Agentic Harness) is no longer part of the billing pipeline. See [Billing component README](design/components/billing/README.md) §3 and [Review 26 in DESIGN-REVIEW-LOG](design/DESIGN-REVIEW-LOG.md#review-26-backfill--decision-20-unified-usage-tracking-for-billing-superseded-in-part) for historical context.
