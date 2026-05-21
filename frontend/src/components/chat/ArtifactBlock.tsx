@@ -48,7 +48,7 @@ export function ArtifactBlock({ filename, mime_type }: ArtifactBlockProps) {
         <p className="text-sm truncate text-[var(--color-text-primary)]">
           {filename}
         </p>
-        <p className="text-xs text-[var(--color-text-tertiary)]">
+        <p className="text-xs text-[var(--color-text-secondary)]">
           Click to view (coming soon)
         </p>
       </div>
