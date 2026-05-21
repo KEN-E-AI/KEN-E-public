@@ -5,11 +5,11 @@ import { listChatSessions } from "@/lib/chatApi";
 
 export const CHAT_SESSIONS_QUERY_KEY = "chat-sessions" as const;
 
-interface UseChatSessionsParams {
+type UseChatSessionsParams = {
   accountId: AccountId | null;
   categoryId?: ChatCategoryId;
   query?: string;
-}
+};
 
 export function useChatSessions({
   accountId,
@@ -30,6 +30,10 @@ export function useChatSessions({
       lastPage.next_cursor,
     enabled: accountId != null,
     // Pause polling when tab is hidden; resume on visibility change via refetchOnWindowFocus.
+    // NOTE: useInfiniteQuery re-fetches ALL loaded pages on each poll interval. If users
+    // paginate deeply, each 5 s tick multiplies API calls by the page count. For now the
+    // sidebar resets to page 1 on navigation, so deep pagination is ephemeral; revisit
+    // maxPages if this becomes a cost concern.
     refetchInterval: () =>
       document.visibilityState === "visible" ? 5000 : false,
     refetchOnWindowFocus: true,

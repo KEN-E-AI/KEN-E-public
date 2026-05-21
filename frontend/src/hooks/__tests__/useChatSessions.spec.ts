@@ -92,6 +92,7 @@ describe("useChatSessions", () => {
     await act(async () => {});
 
     expect(result.current.status).toBe("pending");
+    expect(result.current.fetchStatus).toBe("idle");
     expect(mockListChatSessions).not.toHaveBeenCalled();
   });
 
@@ -123,7 +124,8 @@ describe("useChatSessions", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-    // Fire without awaiting — waitFor below polls until state settles.
+    // Fire without awaiting the returned promise — waitFor below polls until state settles.
+    // Wrapping in act() suppresses "not wrapped in act" console noise from React 18.
     act(() => {
       result.current.fetchNextPage();
     });
@@ -220,9 +222,7 @@ describe("useChatSessions", () => {
         await vi.advanceTimersByTimeAsync(15000);
       });
 
-      expect(mockListChatSessions.mock.calls.length).toBeLessThanOrEqual(
-        callsAfterHide + 1,
-      );
+      expect(mockListChatSessions.mock.calls.length).toBe(callsAfterHide);
     });
   });
 });
