@@ -194,6 +194,49 @@ async def test_cache_reloads_after_ttl_expires() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Case 4b — TTL=0 boundary: same-timestamp call is a cache hit, not a miss
+# ---------------------------------------------------------------------------
+
+
+async def test_ttl_zero_same_timestamp_is_cache_hit() -> None:
+    """With TTL_SECONDS=0 the freshness check must use strict < (not <=).
+
+    At install time expires_at == now.  A subsequent call at the same
+    monotonic timestamp must NOT treat the entry as expired — doing so would
+    cause every request to incur a Firestore read even though TTL=0 is
+    intentionally used only for the E2E kill-switch scenario (where one fresh
+    read per request is the correct behaviour, but the first call within that
+    request must use the entry it just fetched).
+
+    Regression guard: the `<=` bug in lines ~216 and ~250 of
+    feature_flag_service.py would fail this test by issuing 2 Firestore reads.
+    """
+    flag = _make_flag(key="ttl_zero_flag")
+    db = _mock_db_with_flag(flag)
+    # Clock is frozen — both calls occur at the same monotonic timestamp.
+    clock = FakeClock(start=42.0)
+
+    with patch(
+        "src.kene_api.services.feature_flag_service.TTL_SECONDS", 0
+    ):
+        svc = FeatureFlagService(db=db, time_provider=clock)
+        result1 = await svc.evaluate_batch(["ttl_zero_flag"], _ctx())
+        # Do NOT advance the clock — same timestamp as the install.
+        result2 = await svc.evaluate_batch(["ttl_zero_flag"], _ctx())
+
+    get_mock = db.collection.return_value.document.return_value.get
+    assert get_mock.call_count == 1, (
+        f"TTL=0 same-timestamp: expected 1 Firestore read; got {get_mock.call_count}"
+    )
+    assert result1["ttl_zero_flag"].reason != "unknown_flag", (
+        "First call must not return unknown_flag with TTL=0"
+    )
+    assert result2["ttl_zero_flag"].reason != "unknown_flag", (
+        "Second call at same timestamp must not return unknown_flag with TTL=0"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Case 5 — Cold-batch parallelism: N cold keys trigger concurrent reads
 # ---------------------------------------------------------------------------
 

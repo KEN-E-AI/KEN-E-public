@@ -213,7 +213,7 @@ class FeatureFlagService:
         cold_keys: list[str] = []
         for key in flag_keys:
             entry = self._cache.get(key)
-            if entry is None or entry.expires_at <= now:
+            if entry is None or entry.expires_at < now:
                 cold_keys.append(key)
         cold_set: frozenset[str] = frozenset(cold_keys)
 
@@ -247,7 +247,7 @@ class FeatureFlagService:
         evaluations: dict[str, FlagEvaluation] = {}
         for key in flag_keys:
             entry = self._cache.get(key)
-            if entry is None or entry.expires_at <= now:
+            if entry is None or entry.expires_at < now:
                 # Still no entry after fetch attempt — was a transient error.
                 evaluations[key] = FlagEvaluation(
                     key=key, enabled=False, reason="unknown_flag"

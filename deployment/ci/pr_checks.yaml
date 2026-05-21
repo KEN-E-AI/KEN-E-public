@@ -284,7 +284,7 @@ steps:
         # Wait for the backend health endpoint (start_e2e_stack.sh waits internally,
         # but add a belt-and-suspenders poll here in case the script exits early).
         for i in $(seq 1 30); do
-          if curl -sf http://127.0.0.1:8000/healthz > /dev/null 2>&1; then
+          if curl -sf http://127.0.0.1:8000/health > /dev/null 2>&1; then
             echo "Backend ready."
             break
           fi

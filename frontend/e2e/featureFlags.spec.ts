@@ -10,7 +10,7 @@
  * Prerequisites (started by deployment/ci/scripts/start_e2e_stack.sh):
  *   - Firestore emulator   : 127.0.0.1:8090
  *   - Firebase Auth emulator: 127.0.0.1:9099
- *     Seeded users: alice@ken-e.ai / password123   (super-admin by email suffix)
+ *     Seeded users: alice@ken-e.ai / password123   (super-admin — roles:["super_admin"] seeded in Firestore)
  *                   bob@example.com / password123   (regular user)
  *   - FastAPI backend      : 127.0.0.1:8000 (KENE_FF_CACHE_TTL_SECONDS=0)
  *   - Vite dev server      : 127.0.0.1:8080 (VITE_USE_AUTH_EMULATOR=true,
@@ -90,7 +90,7 @@ test("SC-3: kill switch propagates to kill_switch", async ({
     default_enabled: false,
   });
 
-  // Sign in as Alice (super-admin by @ken-e.ai suffix).
+  // Sign in as Alice (super-admin — roles:["super_admin"] seeded in Firestore).
   await signInAs(page, "alice@ken-e.ai", "password123");
   await page.goto(HARNESS_PATH);
 
