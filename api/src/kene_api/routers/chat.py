@@ -13,7 +13,7 @@ from typing import Any
 from uuid import uuid4
 
 import vertexai
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 from fastapi.responses import StreamingResponse
 from google.adk.sessions import VertexAiSessionService
 from pydantic import BaseModel, Field, computed_field
@@ -39,13 +39,14 @@ from ..cache import (
     user_session_ids_key,
 )
 from ..chat.accumulator import SessionTurnAccumulator
+from ..chat.mark_read_limiter import mark_read_limiter
 from ..chat.side_table import get_chat_side_table_service
 from ..chat.side_table_handlers import apply_side_table_update
 from ..database import get_neo4j_service
 from ..dependencies import get_firestore_client as _get_firestore_client
 from ..exceptions import ServiceUnavailableError
 from ..firestore import get_firestore_service
-from ..models.chat import InternalSideTableUpdateRequest
+from ..models.chat import ChatSessionMetadata, InternalSideTableUpdateRequest, MarkReadResponse
 from ..models.feature_flag_models import EvaluationContext
 from ..models.kene_models import RecoverableSessionInfo
 from ..redis_client import get_redis_service
@@ -2488,30 +2489,105 @@ async def create_conversation(
         ) from e
 
 
+def _metadata_to_conversation_info(m: ChatSessionMetadata) -> ConversationInfo:
+    """Translate a ChatSessionMetadata side-table row to ConversationInfo.
+
+    title is passed through as None so the frontend renders "Untitled session"
+    per PRD-02 §4.1 — distinct from the legacy synthesised "Chat {id[-8:]}" name.
+    """
+    return ConversationInfo(
+        session_id=m.session_id,
+        conversation_name=m.title,
+        created_at=m.created_at,
+        last_updated=m.updated_at,
+        message_count=m.message_count,
+        preview=m.last_message_preview,
+        last_agent_started_at=m.last_agent_started_at,
+        last_agent_stopped_at=m.last_agent_stopped_at,
+        last_viewed_at=m.last_viewed_at,
+    )
+
+
 @router.get("/conversations", response_model=ConversationListResponse)
 async def list_conversations(
-    cursor: str | None = Query(None, description="Opaque cursor for pagination"),
-    category_id: str | None = Query(None, description="Filter by category ID"),
-    query: str | None = Query(None, description="Full-text search query"),
+    cursor: str | None = Query(None, max_length=512, description="Opaque cursor for pagination"),
+    category_id: str | None = Query(None, max_length=100, description="Filter by category ID"),
+    query: str | None = Query(None, max_length=200, description="Full-text search query"),
     limit: int = Query(20, ge=1, le=100, description="Maximum results to return"),
+    account_id: str | None = Query(
+        None,
+        description="Account ID to list sessions for. Defaults to the user's first accessible account.",
+        min_length=10,
+        max_length=100,
+    ),
     user_context: UserContext = Depends(get_current_user_context),
 ):
     """
     List all conversations for the current user.
 
-    Supports optional cursor pagination and filtering. The response always
-    includes both ``conversations`` (legacy) and ``items`` (cursor-pagination
-    callers) pointing to the same list, plus ``next_cursor`` for the next page.
+    When ``chat_v2_enabled`` is on for the caller, returns cursor-paginated
+    results from the Firestore side-table with 30-day window, optional
+    ``category_id`` / ``query`` filters, and ``next_cursor`` for infinite scroll.
+
+    When the flag is off, falls back to the legacy in-memory + ADK path
+    (ignores cursor/category_id/query/account_id; returns ``next_cursor=None``).
     """
     try:
-        conversations = await agent_client.get_user_conversations(user_context.user_id)
+        ctx = EvaluationContext(
+            user_id=user_context.user_id,
+            user_email=user_context.email,
+            organization_id=None,
+            account_id=account_id,
+        )
+        if await is_feature_enabled("chat_v2_enabled", ctx, default=False):
+            # --- Side-table branch (chat_v2_enabled = true) ---
+            # Resolve effective account_id: param → first accessible account.
+            # accessible_accounts only returns accounts with explicit permissions;
+            # super-admins and org-admins have empty lists here even though they
+            # have broader access. The fallback is safe: the user's own data only.
+            resolved_account_id: str | None = account_id
+            if resolved_account_id is None:
+                accounts = user_context.accessible_accounts
+                if not accounts:
+                    return ConversationListResponse(
+                        conversations=[], total_count=0, next_cursor=None
+                    )
+                resolved_account_id = accounts[0]
 
+            if not user_context.has_account_access(resolved_account_id):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied",
+                )
+
+            svc = get_chat_side_table_service()
+            metadata_rows, next_cursor = svc.list_for_user(
+                user_id=user_context.user_id,
+                account_id=resolved_account_id,
+                cursor=cursor,
+                category_id=category_id,
+                query=query,
+                limit=limit,
+            )
+            items = [_metadata_to_conversation_info(m) for m in metadata_rows]
+            return ConversationListResponse(
+                conversations=items,
+                total_count=len(items),
+                next_cursor=next_cursor,
+            )
+
+        # --- Legacy branch (chat_v2_enabled = false) ---
+        # All new query params are silently ignored so rolling back the flag
+        # immediately restores pre-CH-PRD-02 behaviour (PRD §7.17).
+        conversations = await agent_client.get_user_conversations(user_context.user_id)
         return ConversationListResponse(
             conversations=conversations,
             total_count=len(conversations),
             next_cursor=None,
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error listing conversations: {e}")
         raise HTTPException(
@@ -2562,6 +2638,68 @@ async def update_conversation(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update conversation",
         ) from e
+
+
+@router.post("/conversations/{session_id}/mark-read", response_model=MarkReadResponse)
+async def mark_conversation_read(
+    session_id: str = Path(..., max_length=256, pattern=r"^[\w\-]+$"),
+    user_context: UserContext = Depends(get_current_user_context),
+) -> MarkReadResponse:
+    """Stamp last_viewed_at = now() on the session side-table row.
+
+    Idempotent: calls within a 5-second dedup window return the existing
+    timestamp without writing to Firestore.
+
+    Rate-limited to 60 requests/minute per session (in-process sliding window).
+    A 404 is returned for any session the authenticated user does not own —
+    same response whether the session does not exist or belongs to another user
+    (no existence leak).
+
+    Returns:
+        ``{"last_viewed_at": "<iso>"}`` so the client can optimistically
+        flip the sidebar status indicator without waiting for the next poll.
+
+    Note: ``chat_v2_enabled`` does not gate this endpoint — per api/CLAUDE.md
+    that flag only disables the internal side-table update path; public chat
+    endpoints are unaffected.
+    """
+    # Rate check — 429 if the per-session cap is exceeded.
+    mark_read_limiter.check(session_id)
+
+    loop = asyncio.get_running_loop()
+    svc = get_chat_side_table_service()
+    user_id = user_context.user_id
+
+    meta = await loop.run_in_executor(
+        None,
+        lambda: svc.find_session_for_user(user_id=user_id, session_id=session_id),
+    )
+    if meta is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found",
+        )
+
+    now = datetime.now(timezone.utc)
+
+    # 5-second server-side dedup: if already viewed within the window, no-op.
+    if meta.last_viewed_at is not None:
+        lva = meta.last_viewed_at
+        if lva.tzinfo is None:
+            lva = lva.replace(tzinfo=timezone.utc)
+        if (now - lva) < timedelta(seconds=5):
+            return MarkReadResponse(last_viewed_at=lva)
+
+    account_id = meta.account_id
+    await loop.run_in_executor(
+        None,
+        lambda: svc.update_from_delta(
+            account_id=account_id,
+            session_id=session_id,
+            delta={"last_viewed_at": now, "updated_at": now},
+        ),
+    )
+    return MarkReadResponse(last_viewed_at=now)
 
 
 @router.get("/conversations/{session_id}/history")

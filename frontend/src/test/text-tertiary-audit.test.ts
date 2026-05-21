@@ -188,6 +188,7 @@ const ALLOWED_FILES = new Set<string>([
   "components/ErrorBoundary.tsx",
 
   // pages — back-link buttons, empty-state messages, page-level descriptions, dim metadata
+  "pages/Chat.tsx",
   "pages/AccountSettings.tsx",
   "pages/AccountSettingsPage.tsx",
   "pages/AnalysisReport.tsx",

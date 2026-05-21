@@ -15,7 +15,10 @@ import {
   useSearchParams,
 } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
-import { FeatureFlagsProvider } from "@/contexts/FeatureFlagsContext";
+import {
+  FeatureFlagsProvider,
+  useFeatureFlag,
+} from "@/contexts/FeatureFlagsContext";
 import { ChatProvider } from "@/contexts/ChatContext";
 import { AccountOperationsProvider } from "@/contexts/AccountOperationsContext";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
@@ -49,7 +52,9 @@ import AcceptInvitation from "./pages/AcceptInvitation";
 import NotFoundPage from "./pages/NotFoundPage";
 import EmailActionHandler from "./components/auth/EmailActionHandler";
 import Authentication from "./pages/Authentication";
+import Chat from "./pages/Chat";
 import { ChatInterface } from "@/components/chat/ChatInterface";
+import type { FlagKey } from "@/lib/featureFlags/types";
 import { WorkflowsLayout } from "./pages/workflows/WorkflowsLayout";
 import { AgentsPage } from "./pages/workflows/AgentsPage";
 import { AutomationsPage } from "./pages/workflows/AutomationsPage";
@@ -151,6 +156,219 @@ const AuthenticationPage = () => {
   return <Authentication onAuthenticated={handleAuthenticated} />;
 };
 
+// Inner component so useFeatureFlag runs inside <FeatureFlagsProvider> context.
+const AppRoutes = () => {
+  const { enabled: isChatV2Enabled } = useFeatureFlag(
+    "chat_v2_enabled" as FlagKey,
+  );
+  return (
+    <>
+      <BackgroundEffects />
+      <Routes>
+        {/* Unprotected routes */}
+        <Route path="/sign-in" element={<AuthenticationPage />} />
+        <Route path="/sign-up" element={<AuthenticationPage />} />
+        <Route path="/auth/signin" element={<AuthenticationPage />} />
+        <Route path="/auth/signup" element={<AuthenticationPage />} />
+        <Route path="/create-account" element={<AuthenticationPage />} />
+        <Route path="/create-organization" element={<CreateOrganization />} />
+        <Route path="/invite/:token" element={<AcceptInvitation />} />
+        <Route path="/auth/action" element={<EmailActionHandler />} />
+        {/* Standalone workspace-selection page — outside ProtectedRoute to avoid
+          circular redirect when !hasSelectedWorkspace, but internally gated on auth */}
+        <Route
+          path="/select-organization"
+          element={<SelectOrganizationPage />}
+        />
+        {/* Top-level redirects — outside layouts so no chrome mounts before the
+          redirect fires. Destinations inside ProtectedRoute handle auth gating. */}
+        <Route path="/" element={<Navigate to="/chat" replace />} />
+        <Route
+          path="/settings"
+          element={<Navigate to="/settings/organization" replace />}
+        />
+        <Route path="/verify-email" element={<AuthenticationPage />} />
+        {/* Backward compatibility redirects */}
+        <Route
+          path="/organization-selection"
+          element={<Navigate to="/select-organization" replace />}
+        />
+        <Route path="/login" element={<Navigate to="/sign-in" replace />} />
+        <Route path="/signup" element={<Navigate to="/sign-up" replace />} />
+        <Route
+          path="/organization-settings"
+          element={<Navigate to="/settings/organization" replace />}
+        />
+        <Route
+          path="/account-settings"
+          element={<Navigate to="/settings/organization" replace />}
+        />
+        <Route
+          path="/user-settings"
+          element={<Navigate to="/settings/user" replace />}
+        />
+        {/* Protected routes — nested under LayoutC. ProtectedRoute
+          is hoisted to the parent so child routes don't repeat it. */}
+        <Route
+          element={
+            <ProtectedRoute>
+              <LayoutC />
+            </ProtectedRoute>
+          }
+        >
+          {/* /chat: new Chat shell when flag on; legacy ChatInterface when off (dark-launch) */}
+          <Route
+            path="/chat"
+            element={isChatV2Enabled ? <Chat /> : <ChatInterface />}
+          />
+          <Route path="/" element={<Navigate to="/performance" replace />} />
+          <Route path="/performance" element={<Performance />} />
+          <Route path="/recommendations" element={<Recommendations />} />
+          <Route path="/campaigns" element={<Campaigns />} />
+          <Route path="/reports" element={<Reports />} />
+          <Route path="/simulations" element={<Simulations />} />
+          <Route path="/knowledge" element={<Knowledge />} />
+          <Route path="/knowledge/strategy" element={<KnowledgeStrategy />} />
+          <Route path="/knowledge/products" element={<Products />} />
+          <Route path="/knowledge/customers" element={<KnowledgeCustomers />} />
+          <Route path="/knowledge/metrics" element={<KnowledgeMetrics />} />
+          <Route
+            path="/knowledge/activities"
+            element={<KnowledgeActivities />}
+          />
+          <Route path="/knowledge/insights" element={<Insights />} />
+          <Route path="/knowledge/account" element={<KnowledgeAccount />} />
+          <Route
+            path="/knowledge/competitors"
+            element={<KnowledgeCompetitors />}
+          />
+          <Route path="/knowledge/brand" element={<KnowledgeBrand />} />
+          {/* Workflows shell — UI-PRD-03 page shells wired to production components. */}
+          <Route
+            path="/workflows"
+            element={<Navigate to="/workflows/automations" replace />}
+          />
+          <Route
+            path="/workflows/agents"
+            element={
+              <WorkflowsLayout activeTab="agents">
+                <AgentsPage />
+              </WorkflowsLayout>
+            }
+          />
+          <Route
+            path="/workflows/agents/new"
+            element={
+              <WorkflowsLayout activeTab="agents">
+                <AgentCreatePage />
+              </WorkflowsLayout>
+            }
+          />
+          <Route
+            path="/workflows/automations"
+            element={
+              <WorkflowsLayout activeTab="automations">
+                <AutomationsPage />
+              </WorkflowsLayout>
+            }
+          />
+          <Route
+            path="/workflows/automations/:planId"
+            element={
+              <WorkflowsLayout activeTab="automations">
+                <AutomationDetailsPage />
+              </WorkflowsLayout>
+            }
+          />
+          <Route
+            path="/workflows/skills"
+            element={
+              <WorkflowsLayout activeTab="skills">
+                <SkillsPage />
+              </WorkflowsLayout>
+            }
+          />
+          <Route
+            path="/admin/super-admins"
+            element={
+              <SuperAdminGuard>
+                <SuperAdminsPage />
+              </SuperAdminGuard>
+            }
+          />
+          <Route
+            path="/admin/feature-flags"
+            element={
+              <SuperAdminGuard>
+                <FeatureFlagsPage />
+              </SuperAdminGuard>
+            }
+          />
+          <Route path="/measurement-plan" element={<Index />} />
+          <Route
+            path="/analysis-report/:reportId"
+            element={<AnalysisReport />}
+          />
+          {/* Catch-all inside LayoutC so authenticated users see the 404 with chrome */}
+          <Route path="*" element={<NotFoundPage />} />
+        </Route>
+        {/* Settings routes — inside LayoutSettings (left-rail nav shell) */}
+        <Route
+          element={
+            <ProtectedRoute>
+              <LayoutSettings />
+            </ProtectedRoute>
+          }
+        >
+          <Route path="/settings/organization" element={<AccountSettings />} />
+          <Route path="/settings/account" element={<AccountSettings />} />
+          <Route
+            path="/settings/account/:accountId"
+            element={<AccountSettings />}
+          />
+          <Route path="/settings/user" element={<UserSettings />} />
+        </Route>
+        {/* Dev-only harness routes — tree-shaken from production bundle */}
+        {import.meta.env.DEV && LazyLayoutSettingsHarness && (
+          <Route
+            path="/__dev__/layout-settings"
+            element={
+              <Suspense fallback={null}>
+                <LazyLayoutSettingsHarness />
+              </Suspense>
+            }
+          />
+        )}
+        {import.meta.env.DEV && LazyDesignSystemPreview && (
+          <Route
+            path="/__dev__/design-system"
+            element={
+              <Suspense fallback={null}>
+                <LazyDesignSystemPreview />
+              </Suspense>
+            }
+          />
+        )}
+        {import.meta.env.DEV &&
+          import.meta.env.VITE_ENVIRONMENT !== "production" &&
+          LazyFeatureFlagStatusHarness && (
+            <Route
+              path="/__dev__/feature-flag-status"
+              element={
+                <Suspense fallback={null}>
+                  <LazyFeatureFlagStatusHarness />
+                </Suspense>
+              }
+            />
+          )}
+      </Routes>
+      {/* Legacy Radix Toaster (88 callsites use useToast()) and sonner Toaster coexist */}
+      <Toaster />
+      <SonnerToaster />
+    </>
+  );
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -161,278 +379,7 @@ const App = () => (
               <AccountOperationsProvider>
                 <BrowserRouter>
                   <AppErrorBoundary>
-                    <BackgroundEffects />
-                    <Routes>
-                      {/* Unprotected routes */}
-                      <Route path="/sign-in" element={<AuthenticationPage />} />
-                      <Route path="/sign-up" element={<AuthenticationPage />} />
-                      <Route
-                        path="/auth/signin"
-                        element={<AuthenticationPage />}
-                      />
-                      <Route
-                        path="/auth/signup"
-                        element={<AuthenticationPage />}
-                      />
-                      <Route
-                        path="/create-account"
-                        element={<AuthenticationPage />}
-                      />
-                      <Route
-                        path="/create-organization"
-                        element={<CreateOrganization />}
-                      />
-                      <Route
-                        path="/invite/:token"
-                        element={<AcceptInvitation />}
-                      />
-                      <Route
-                        path="/auth/action"
-                        element={<EmailActionHandler />}
-                      />
-                      {/* Standalone workspace-selection page — outside ProtectedRoute to avoid
-                        circular redirect when !hasSelectedWorkspace, but internally gated on auth */}
-                      <Route
-                        path="/select-organization"
-                        element={<SelectOrganizationPage />}
-                      />
-                      {/* Top-level redirects — outside layouts so no chrome mounts before the
-                        redirect fires. Destinations inside ProtectedRoute handle auth gating. */}
-                      <Route
-                        path="/"
-                        element={<Navigate to="/chat" replace />}
-                      />
-                      <Route
-                        path="/settings"
-                        element={
-                          <Navigate to="/settings/organization" replace />
-                        }
-                      />
-                      <Route
-                        path="/verify-email"
-                        element={<AuthenticationPage />}
-                      />
-                      {/* Backward compatibility redirects */}
-                      <Route
-                        path="/organization-selection"
-                        element={<Navigate to="/select-organization" replace />}
-                      />
-                      <Route
-                        path="/login"
-                        element={<Navigate to="/sign-in" replace />}
-                      />
-                      <Route
-                        path="/signup"
-                        element={<Navigate to="/sign-up" replace />}
-                      />
-                      <Route
-                        path="/organization-settings"
-                        element={
-                          <Navigate to="/settings/organization" replace />
-                        }
-                      />
-                      <Route
-                        path="/account-settings"
-                        element={
-                          <Navigate to="/settings/organization" replace />
-                        }
-                      />
-                      <Route
-                        path="/user-settings"
-                        element={<Navigate to="/settings/user" replace />}
-                      />
-                      {/* Protected routes — nested under LayoutC. ProtectedRoute
-                        is hoisted to the parent so child routes don't repeat it. */}
-                      <Route
-                        element={
-                          <ProtectedRoute>
-                            <LayoutC />
-                          </ProtectedRoute>
-                        }
-                      >
-                        <Route path="/chat" element={<ChatInterface />} />
-                        <Route
-                          path="/"
-                          element={<Navigate to="/performance" replace />}
-                        />
-                        <Route path="/performance" element={<Performance />} />
-                        <Route
-                          path="/recommendations"
-                          element={<Recommendations />}
-                        />
-                        <Route path="/campaigns" element={<Campaigns />} />
-                        <Route path="/reports" element={<Reports />} />
-                        <Route path="/simulations" element={<Simulations />} />
-                        <Route path="/knowledge" element={<Knowledge />} />
-                        <Route
-                          path="/knowledge/strategy"
-                          element={<KnowledgeStrategy />}
-                        />
-                        <Route
-                          path="/knowledge/products"
-                          element={<Products />}
-                        />
-                        <Route
-                          path="/knowledge/customers"
-                          element={<KnowledgeCustomers />}
-                        />
-                        <Route
-                          path="/knowledge/metrics"
-                          element={<KnowledgeMetrics />}
-                        />
-                        <Route
-                          path="/knowledge/activities"
-                          element={<KnowledgeActivities />}
-                        />
-                        <Route
-                          path="/knowledge/insights"
-                          element={<Insights />}
-                        />
-                        <Route
-                          path="/knowledge/account"
-                          element={<KnowledgeAccount />}
-                        />
-                        <Route
-                          path="/knowledge/competitors"
-                          element={<KnowledgeCompetitors />}
-                        />
-                        <Route
-                          path="/knowledge/brand"
-                          element={<KnowledgeBrand />}
-                        />
-                        {/* Workflows shell — UI-PRD-03 page shells wired to production components. */}
-                        <Route
-                          path="/workflows"
-                          element={
-                            <Navigate to="/workflows/automations" replace />
-                          }
-                        />
-                        <Route
-                          path="/workflows/agents"
-                          element={
-                            <WorkflowsLayout activeTab="agents">
-                              <AgentsPage />
-                            </WorkflowsLayout>
-                          }
-                        />
-                        <Route
-                          path="/workflows/agents/new"
-                          element={
-                            <WorkflowsLayout activeTab="agents">
-                              <AgentCreatePage />
-                            </WorkflowsLayout>
-                          }
-                        />
-                        <Route
-                          path="/workflows/automations"
-                          element={
-                            <WorkflowsLayout activeTab="automations">
-                              <AutomationsPage />
-                            </WorkflowsLayout>
-                          }
-                        />
-                        <Route
-                          path="/workflows/automations/:planId"
-                          element={
-                            <WorkflowsLayout activeTab="automations">
-                              <AutomationDetailsPage />
-                            </WorkflowsLayout>
-                          }
-                        />
-                        <Route
-                          path="/workflows/skills"
-                          element={
-                            <WorkflowsLayout activeTab="skills">
-                              <SkillsPage />
-                            </WorkflowsLayout>
-                          }
-                        />
-                        <Route
-                          path="/admin/super-admins"
-                          element={
-                            <SuperAdminGuard>
-                              <SuperAdminsPage />
-                            </SuperAdminGuard>
-                          }
-                        />
-                        <Route
-                          path="/admin/feature-flags"
-                          element={
-                            <SuperAdminGuard>
-                              <FeatureFlagsPage />
-                            </SuperAdminGuard>
-                          }
-                        />
-                        <Route path="/measurement-plan" element={<Index />} />
-                        <Route
-                          path="/analysis-report/:reportId"
-                          element={<AnalysisReport />}
-                        />
-                        {/* Catch-all inside LayoutC so authenticated users see the 404 with chrome */}
-                        <Route path="*" element={<NotFoundPage />} />
-                      </Route>
-                      {/* Settings routes — inside LayoutSettings (left-rail nav shell) */}
-                      <Route
-                        element={
-                          <ProtectedRoute>
-                            <LayoutSettings />
-                          </ProtectedRoute>
-                        }
-                      >
-                        <Route
-                          path="/settings/organization"
-                          element={<AccountSettings />}
-                        />
-                        <Route
-                          path="/settings/account"
-                          element={<AccountSettings />}
-                        />
-                        <Route
-                          path="/settings/account/:accountId"
-                          element={<AccountSettings />}
-                        />
-                        <Route
-                          path="/settings/user"
-                          element={<UserSettings />}
-                        />
-                      </Route>
-                      {/* Dev-only harness routes — tree-shaken from production bundle */}
-                      {import.meta.env.DEV && LazyLayoutSettingsHarness && (
-                        <Route
-                          path="/__dev__/layout-settings"
-                          element={
-                            <Suspense fallback={null}>
-                              <LazyLayoutSettingsHarness />
-                            </Suspense>
-                          }
-                        />
-                      )}
-                      {import.meta.env.DEV && LazyDesignSystemPreview && (
-                        <Route
-                          path="/__dev__/design-system"
-                          element={
-                            <Suspense fallback={null}>
-                              <LazyDesignSystemPreview />
-                            </Suspense>
-                          }
-                        />
-                      )}
-                      {import.meta.env.DEV &&
-                        import.meta.env.VITE_ENVIRONMENT !== "production" &&
-                        LazyFeatureFlagStatusHarness && (
-                          <Route
-                            path="/__dev__/feature-flag-status"
-                            element={
-                              <Suspense fallback={null}>
-                                <LazyFeatureFlagStatusHarness />
-                              </Suspense>
-                            }
-                          />
-                        )}
-                    </Routes>
-                    {/* Legacy Radix Toaster (88 callsites use useToast()) and sonner Toaster coexist */}
-                    <Toaster />
-                    <SonnerToaster />
+                    <AppRoutes />
                   </AppErrorBoundary>
                 </BrowserRouter>
               </AccountOperationsProvider>

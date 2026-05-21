@@ -1,8 +1,9 @@
-import { tryFlagKey } from "./types";
+import { toFlagKey, tryFlagKey } from "./types";
 import type { FlagKey } from "./types";
 
 const BASE_FLAGS: FlagKey[] = [
-  // "automations_beta" as FlagKey,
+  // toFlagKey("automations_beta"),
+  toFlagKey("chat_v2_enabled"),
 ] satisfies FlagKey[];
 
 function parseFixtureFlags(): FlagKey[] {
