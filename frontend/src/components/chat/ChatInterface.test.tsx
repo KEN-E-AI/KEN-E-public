@@ -178,7 +178,9 @@ describe("ChatInterface", () => {
     expect(emptyBubble).toBeUndefined();
 
     // Unblock the stream generator so it can GC
-    resolve();
+    await act(async () => {
+      resolve();
+    });
   });
 
   // ── TC-4: Text-size CustomEvent re-renders messages at new size ──────────
