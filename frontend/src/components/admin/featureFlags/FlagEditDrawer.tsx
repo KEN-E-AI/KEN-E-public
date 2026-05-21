@@ -1,11 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCreateFlag, useUpdateFlag } from "@/lib/featureFlags/hooks";
-import type { FeatureFlag, BucketingEntity } from "@/lib/featureFlags/types";
+import type { FeatureFlag } from "@/lib/featureFlags/types";
 import type {
   FeatureFlagCreate,
   FeatureFlagUpdate,
@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/sheet";
 import {
   Form,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -52,7 +53,7 @@ export const BUCKETING_ENTITY_HELP_TEXT =
 
 const FLAG_KEY_REGEX = /^[a-z0-9][a-z0-9_]{2,63}$/;
 
-const targetingRulesSchema = z.object({
+export const targetingRulesSchema = z.object({
   user_emails: z.array(z.string()).default([]),
   email_domains: z.array(z.string()).default([]),
   organization_ids: z.array(z.string()).default([]),
@@ -71,7 +72,10 @@ const flagSchema = z.object({
   description: z.string().min(1, "Description is required"),
   default_enabled: z.boolean().default(false),
   is_active: z.boolean().default(true),
-  owner: z.string().min(1, "Owner is required"),
+  owner: z
+    .string()
+    .min(1, "Owner is required")
+    .email("Owner must be a valid email"),
   expected_ga_release: z.string().nullable().optional(),
   bucketing_entity: z
     .enum(["account", "organization", "user"] as const)
@@ -115,34 +119,40 @@ export function FlagEditDrawer(props: FlagEditDrawerProps) {
   const createFlag = useCreateFlag();
   const updateFlag = useUpdateFlag();
 
-  const defaultValues: FlagFormValues =
-    mode === "edit" && flag
-      ? {
-          key: flag.key,
-          description: flag.description,
-          default_enabled: flag.default_enabled,
-          is_active: flag.is_active,
-          owner: flag.owner,
-          expected_ga_release: flag.expected_ga_release ?? null,
-          bucketing_entity: flag.bucketing_entity,
-          targeting_rules: flag.targeting_rules,
-        }
-      : {
-          key: "",
-          description: "",
-          default_enabled: false,
-          is_active: true,
-          owner: user?.email ?? "",
-          expected_ga_release: null,
-          bucketing_entity: "account",
-          targeting_rules: {
-            user_emails: [],
-            email_domains: [],
-            organization_ids: [],
-            account_ids: [],
-            rollout_percentage: 0,
+  const defaultValues = useMemo<FlagFormValues>(
+    () =>
+      mode === "edit" && flag
+        ? {
+            key: flag.key,
+            description: flag.description,
+            default_enabled: flag.default_enabled,
+            is_active: flag.is_active,
+            owner: flag.owner,
+            expected_ga_release: flag.expected_ga_release ?? null,
+            bucketing_entity: flag.bucketing_entity,
+            targeting_rules: flag.targeting_rules,
+          }
+        : {
+            key: "",
+            description: "",
+            default_enabled: false,
+            is_active: true,
+            owner: user?.email ?? "",
+            expected_ga_release: null,
+            bucketing_entity: "account",
+            targeting_rules: {
+              user_emails: [],
+              email_domains: [],
+              organization_ids: [],
+              account_ids: [],
+              rollout_percentage: 0,
+            },
           },
-        };
+    // flag?.key: recompute when a different flag is loaded; user?.email: seeds
+    // the owner field for new flags. Both are stable across re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mode, flag?.key, user?.email],
+  );
 
   const form = useForm<FlagFormValues>({
     resolver: zodResolver(flagSchema),
@@ -150,13 +160,13 @@ export function FlagEditDrawer(props: FlagEditDrawerProps) {
     mode: "onChange",
   });
 
-  // Reset form when the drawer opens with a flag in edit mode
   useEffect(() => {
     if (open) {
       form.reset(defaultValues);
     }
+    // form is a stable ref from useForm; the real triggers are open + defaultValues
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, flag?.key]);
+  }, [open, defaultValues]);
 
   function onSubmit(data: FlagFormValues) {
     if (mode === "create") {
@@ -167,7 +177,7 @@ export function FlagEditDrawer(props: FlagEditDrawerProps) {
         is_active: data.is_active,
         owner: data.owner,
         expected_ga_release: data.expected_ga_release ?? null,
-        bucketing_entity: data.bucketing_entity as BucketingEntity,
+        bucketing_entity: data.bucketing_entity,
         targeting_rules: data.targeting_rules,
       };
       createFlag.mutate(payload, {
@@ -189,7 +199,7 @@ export function FlagEditDrawer(props: FlagEditDrawerProps) {
         is_active: data.is_active,
         owner: data.owner,
         expected_ga_release: data.expected_ga_release ?? null,
-        bucketing_entity: data.bucketing_entity as BucketingEntity,
+        bucketing_entity: data.bucketing_entity,
         targeting_rules: data.targeting_rules,
       };
       updateFlag.mutate(
@@ -359,9 +369,9 @@ export function FlagEditDrawer(props: FlagEditDrawerProps) {
                       <SelectItem value="user">user</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-[var(--color-text-tertiary)] mt-1">
+                  <FormDescription className="text-xs text-[var(--color-text-tertiary)] mt-1">
                     {BUCKETING_ENTITY_HELP_TEXT}
-                  </p>
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}

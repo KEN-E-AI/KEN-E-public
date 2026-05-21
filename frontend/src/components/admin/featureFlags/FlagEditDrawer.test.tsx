@@ -5,7 +5,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { FlagEditDrawer, BUCKETING_ENTITY_HELP_TEXT } from "./FlagEditDrawer";
+import {
+  FlagEditDrawer,
+  BUCKETING_ENTITY_HELP_TEXT,
+  targetingRulesSchema,
+} from "./FlagEditDrawer";
 import type { FeatureFlag } from "@/lib/featureFlags/types";
 import { toFlagKey } from "@/lib/featureFlags/types";
 
@@ -218,6 +222,17 @@ describe("FlagEditDrawer — create mode", () => {
     });
   });
 
+  it("shows inline error for invalid owner email", async () => {
+    renderDrawer({ open: true, onOpenChange: vi.fn(), mode: "create" });
+    const ownerInput = screen.getByRole("textbox", { name: /owner/i });
+    await userEvent.clear(ownerInput);
+    await userEvent.type(ownerInput, "not-an-email");
+    await userEvent.click(screen.getByRole("button", { name: /create flag/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/valid email/i)).toBeInTheDocument();
+    });
+  });
+
   it("cancel button calls onOpenChange(false) without firing a mutation", async () => {
     const onOpenChange = vi.fn();
     const mutate = vi.fn();
@@ -331,6 +346,46 @@ describe("FlagEditDrawer — bucketing_entity help text (AC-12)", () => {
       .trim();
 
     expect(between).toBe(BUCKETING_ENTITY_HELP_TEXT);
+  });
+});
+
+describe("FlagEditDrawer — schema validation (AC-9)", () => {
+  it("rejects rollout_percentage below 0", () => {
+    const result = targetingRulesSchema.safeParse({
+      user_emails: [],
+      email_domains: [],
+      organization_ids: [],
+      account_ids: [],
+      rollout_percentage: -1,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects rollout_percentage above 100", () => {
+    const result = targetingRulesSchema.safeParse({
+      user_emails: [],
+      email_domains: [],
+      organization_ids: [],
+      account_ids: [],
+      rollout_percentage: 101,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts rollout_percentage at the boundaries 0 and 100", () => {
+    const base = {
+      user_emails: [],
+      email_domains: [],
+      organization_ids: [],
+      account_ids: [],
+    };
+    expect(
+      targetingRulesSchema.safeParse({ ...base, rollout_percentage: 0 }).success,
+    ).toBe(true);
+    expect(
+      targetingRulesSchema.safeParse({ ...base, rollout_percentage: 100 })
+        .success,
+    ).toBe(true);
   });
 });
 
