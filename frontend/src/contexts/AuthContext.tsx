@@ -546,6 +546,10 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       setIsSuperAdminLoading(false);
       return;
     }
+    // Auth bypass already set isSuperAdmin synchronously; re-fetching would
+    // reset isSuperAdminLoading=true and race against the mock response,
+    // causing SuperAdminGuard to redirect during the async window.
+    if (authBypassEnabled) return;
     setIsSuperAdminLoading(true);
     type MeResponse = { is_super_admin: boolean };
     api

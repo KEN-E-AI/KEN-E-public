@@ -380,7 +380,8 @@ describe("FlagEditDrawer — schema validation (AC-9)", () => {
       account_ids: [],
     };
     expect(
-      targetingRulesSchema.safeParse({ ...base, rollout_percentage: 0 }).success,
+      targetingRulesSchema.safeParse({ ...base, rollout_percentage: 0 })
+        .success,
     ).toBe(true);
     expect(
       targetingRulesSchema.safeParse({ ...base, rollout_percentage: 100 })
