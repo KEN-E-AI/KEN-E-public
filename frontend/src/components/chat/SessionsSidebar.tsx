@@ -39,12 +39,14 @@ interface SessionsSidebarProps {
   sessions: AISession[];
   onSessionSelect?: (sessionId: string) => void;
   onNewSession?: () => void;
+  isNewSessionPending?: boolean;
 }
 
 export function SessionsSidebar({
   sessions,
   onSessionSelect,
   onNewSession,
+  isNewSessionPending,
 }: SessionsSidebarProps) {
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -87,6 +89,7 @@ export function SessionsSidebar({
           size="icon"
           onClick={onNewSession}
           aria-label="New session"
+          disabled={isNewSessionPending}
           className="shrink-0"
         >
           <Plus className="size-4" />
@@ -154,7 +157,12 @@ export function SessionsSidebar({
         </div>
 
         {/* New Session Button */}
-        <Button onClick={onNewSession} className="w-full mb-4" size="sm">
+        <Button
+          onClick={onNewSession}
+          className="w-full mb-4"
+          size="sm"
+          disabled={isNewSessionPending}
+        >
           <Plus className="size-4 mr-2" />
           New Session
         </Button>
