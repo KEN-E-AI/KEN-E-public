@@ -138,6 +138,49 @@ describe("ChatInterface", () => {
     ).not.toBeDisabled();
   });
 
+  // ── TC-Stop: Ghost placeholder removed after Stop; stopped message shown ──
+
+  test("TC-Stop: ghost placeholder removed and stopped message visible after Stop", async () => {
+    let resolve!: () => void;
+    const blockingStream = (async function* () {
+      yield "partial";
+      await new Promise<void>((r) => (resolve = r));
+    })();
+    mockStreamChatCompletion.mockReturnValue(blockingStream);
+
+    render(<ChatInterface />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: /chat input/i }), {
+      target: { value: "test abort" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    // Wait for ThinkingBlock stop button to appear (title="Stop generating")
+    const stopBtn = await waitFor(() =>
+      screen.getByRole("button", { name: /stop generating/i }),
+    );
+
+    fireEvent.click(stopBtn);
+
+    // Stopped message should appear
+    await waitFor(() =>
+      expect(
+        screen.getByText("Generation was stopped by the user."),
+      ).toBeInTheDocument(),
+    );
+
+    // Ghost placeholder (empty assistant bubble) should NOT be in the DOM
+    const allParagraphs = document.querySelectorAll("p");
+    const emptyBubble = Array.from(allParagraphs).find(
+      (p) =>
+        p.textContent === "" && p.classList.contains("whitespace-pre-wrap"),
+    );
+    expect(emptyBubble).toBeUndefined();
+
+    // Unblock the stream generator so it can GC
+    resolve();
+  });
+
   // ── TC-4: Text-size CustomEvent re-renders messages at new size ──────────
 
   test("TC-4: kene-chat-text-size-change event changes message text size", async () => {

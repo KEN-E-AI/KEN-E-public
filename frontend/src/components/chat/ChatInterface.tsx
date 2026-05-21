@@ -28,16 +28,12 @@ type Message = {
 
 type ChatInterfaceProps = {
   sessionId?: string;
+  // TODO(CH-PRD-XX): compact mode is reserved for the mini-widget in LayoutC
   compact?: boolean;
 };
 
-const INTRO_MESSAGE: Message = {
-  id: "intro",
-  role: "assistant",
-  content:
-    "Hi! I'm your KEN-E AI assistant. I can help you build marketing campaigns, analyze performance, create workflows, and manage your calendar. What would you like to work on?",
-  timestamp: new Date(),
-};
+const INTRO_CONTENT =
+  "Hi! I'm your KEN-E AI assistant. I can help you build marketing campaigns, analyze performance, create workflows, and manage your calendar. What would you like to work on?";
 
 const TEXT_SIZE_CLASSES: Record<TextSize, string> = {
   small: "text-sm",
@@ -49,7 +45,14 @@ export function ChatInterface({
   sessionId,
   compact: _compact = false,
 }: ChatInterfaceProps) {
-  const [messages, setMessages] = useState<Message[]>([INTRO_MESSAGE]);
+  const [messages, setMessages] = useState<Message[]>(() => [
+    {
+      id: "intro",
+      role: "assistant",
+      content: INTRO_CONTENT,
+      timestamp: new Date(),
+    },
+  ]);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [thinkingStartTime, setThinkingStartTime] = useState(0);
@@ -58,11 +61,16 @@ export function ChatInterface({
   const abortRef = useRef<AbortController | null>(null);
   const handleStopRef = useRef<() => void>(() => {});
 
+  // Cancel any in-flight stream when the component unmounts
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+    };
+  }, []);
+
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(
-        "kene-chat-text-size",
-      ) as TextSize | null;
+      const saved = localStorage.getItem("kene-chat-text-size");
       if (saved === "small" || saved === "medium" || saved === "large") {
         setChatTextSize(saved);
       }
@@ -72,7 +80,12 @@ export function ChatInterface({
   }, []);
 
   useEffect(() => {
-    const handler = (e: CustomEvent<TextSize>) => setChatTextSize(e.detail);
+    const handler = (e: CustomEvent<unknown>) => {
+      const detail = e.detail;
+      if (detail === "small" || detail === "medium" || detail === "large") {
+        setChatTextSize(detail);
+      }
+    };
     window.addEventListener(
       "kene-chat-text-size-change",
       handler as EventListener,
@@ -110,7 +123,7 @@ export function ChatInterface({
     abortRef.current = null;
     const duration = Math.round((Date.now() - thinkingStartTime) / 1000);
     const stoppedMsg: Message = {
-      id: `stopped-${Date.now()}`,
+      id: `stopped-${crypto.randomUUID()}`,
       role: "assistant",
       content: "Generation was stopped by the user.",
       timestamp: new Date(),
@@ -130,11 +143,17 @@ export function ChatInterface({
     if (!trimmed || isStreaming || isOrgInactive) return;
 
     const userMsg: Message = {
-      id: `user-${Date.now()}`,
+      id: `user-${crypto.randomUUID()}`,
       role: "user",
       content: trimmed,
       timestamp: new Date(),
     };
+
+    // Build history before any state mutations to avoid stale closure issues
+    const history: ChatMessage[] = [...messages, userMsg].map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
 
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
@@ -144,12 +163,7 @@ export function ChatInterface({
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const history: ChatMessage[] = [...messages, userMsg].map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
-
-    const assistantId = `asst-${Date.now()}`;
+    const assistantId = `asst-${crypto.randomUUID()}`;
     let accumulated = "";
 
     setMessages((prev) => [
@@ -180,7 +194,8 @@ export function ChatInterface({
     } catch (err: unknown) {
       const name = (err as Error)?.name;
       if (name === "CanceledError" || name === "AbortError") {
-        // handled by handleStop
+        // handleStop already appended the stopped message; remove the ghost placeholder
+        setMessages((prev) => prev.filter((m) => m.id !== assistantId));
         return;
       }
       setMessages((prev) =>
@@ -231,9 +246,9 @@ export function ChatInterface({
                     durationSeconds={message.reasoning.durationSeconds}
                   />
                 )}
-                {message.artifacts?.map((a, i) => (
+                {message.artifacts?.map((a) => (
                   <ArtifactBlock
-                    key={i}
+                    key={a.filename}
                     filename={a.filename}
                     mime_type={a.mime_type}
                   />

@@ -3,12 +3,12 @@ import { ChevronDown, Brain, Square } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
-interface ThinkingBlockProps {
+type ThinkingBlockProps = {
   isThinking: boolean;
   thoughts: string[];
   durationSeconds?: number;
   onStop?: () => void;
-}
+};
 
 export function ThinkingBlock({
   isThinking,
@@ -137,6 +137,7 @@ export function ThinkingBlock({
                 "hover:bg-[#F97066]/10 hover:border-[#F97066]/40 hover:text-[#F97066]",
                 "transition-colors duration-150 shrink-0",
               )}
+              aria-label="Stop generating"
               title="Stop generating"
             >
               <Square className="size-3 fill-current" />
