@@ -81,6 +81,11 @@ resource "google_cloudbuild_trigger" "cd_pipeline" {
     # (`_REDIS_HOST_STAGING: ${_REDIS_HOST_STAGING}`) so must be overridden here
     # or the build fails with "cycle in evaluating substitutions".
     _REDIS_HOST_STAGING = google_redis_instance.staging.host
+    # CH-24 chat-sidebar loadtest UID — the staging.yaml validate-loadtest-vars
+    # step fails fast if this is empty (deployment/cd/staging.yaml:170). Seeded
+    # out-of-band when CH-24 shipped; tracked in TF now so the trigger config
+    # stays reproducible.
+    _CHAT_LOADTEST_UID = "O9x67v0VXQQmACoXlW4A4i0nqMm1"
   }
   depends_on = [resource.google_project_service.cicd_services, resource.google_project_service.shared_services]
 
