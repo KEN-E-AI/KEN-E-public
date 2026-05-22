@@ -5,7 +5,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCreateFlag, useUpdateFlag } from "@/lib/featureFlags/hooks";
-import type { FeatureFlag } from "@/lib/featureFlags/types";
+import type { FeatureFlag, TargetingRules } from "@/lib/featureFlags/types";
 import type {
   FeatureFlagCreate,
   FeatureFlagUpdate,
@@ -185,7 +185,10 @@ export function FlagEditDrawer(props: FlagEditDrawerProps) {
         owner: data.owner,
         expected_ga_release: data.expected_ga_release ?? null,
         bucketing_entity: data.bucketing_entity,
-        targeting_rules: data.targeting_rules,
+        // The zod schema marks each targeting_rules field as optional
+        // because of `.default(...)`, but the form always supplies them
+        // at runtime — cast to satisfy the strict FeatureFlagCreate type.
+        targeting_rules: data.targeting_rules as TargetingRules,
       };
       createFlag.mutate(payload, {
         onSuccess: (created) => {
@@ -207,7 +210,9 @@ export function FlagEditDrawer(props: FlagEditDrawerProps) {
         owner: data.owner,
         expected_ga_release: data.expected_ga_release ?? null,
         bucketing_entity: data.bucketing_entity,
-        targeting_rules: data.targeting_rules,
+        // See note above; zod `.default(...)` widens to optional in the
+        // inferred type but runtime values are always populated.
+        targeting_rules: data.targeting_rules as TargetingRules,
       };
       updateFlag.mutate(
         { key: flag.key, body },
@@ -377,7 +382,7 @@ export function FlagEditDrawer(props: FlagEditDrawerProps) {
           name="targeting_rules"
           render={({ field }) => (
             <TargetingRulesEditor
-              value={field.value}
+              value={field.value as TargetingRules}
               onChange={field.onChange}
             />
           )}

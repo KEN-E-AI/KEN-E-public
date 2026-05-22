@@ -24,7 +24,7 @@ vi.mock("@/lib/api", () => ({
 
 import api from "@/lib/api";
 
-const mockApi = api as {
+const mockApi = api as unknown as {
   get: ReturnType<typeof vi.fn>;
   post: ReturnType<typeof vi.fn>;
   put: ReturnType<typeof vi.fn>;
@@ -126,6 +126,7 @@ describe("getAgentConfig", () => {
 describe("createAgentConfig", () => {
   it("calls POST /api/v1/accounts/{accountId}/agent-configs/", async () => {
     const body = {
+      title: "My Agent",
       name: "My Agent",
       instruction: "Be helpful.",
       model: "gemini-2.5-flash",

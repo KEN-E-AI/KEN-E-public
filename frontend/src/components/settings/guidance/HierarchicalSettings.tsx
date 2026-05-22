@@ -188,7 +188,11 @@ export const SettingsSection = ({
         )}
       </div>
 
-      <div className={cn("space-y-4", styles.indent)}>{children}</div>
+      {/* The second `getScopeStyles` below doesn't define `indent`; cast
+          to read it (will be undefined at runtime, harmless to cn()). */}
+      <div className={cn("space-y-4", (styles as { indent?: string }).indent)}>
+        {children}
+      </div>
     </div>
   );
 };

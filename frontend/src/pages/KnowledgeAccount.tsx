@@ -572,6 +572,7 @@ export default function KnowledgeAccount() {
                           description: valuePropositionFormData.description,
                           references: valuePropositionFormData.references,
                         },
+                        parentNodeId: parentNodeId || "",
                       });
                       toast({
                         title: "Success",
@@ -649,6 +650,7 @@ export default function KnowledgeAccount() {
                     await deleteVPMutation.mutateAsync({
                       accountId: selectedOrgAccount.accountId,
                       nodeId: selectedValueProposition.node_id,
+                      parentNodeId: parentNodeId || "",
                     });
 
                     // Invalidate VP query to refetch updated data

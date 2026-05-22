@@ -1,4 +1,4 @@
-import { describe, test, expect, vi, beforeEach } from "vitest";
+import { describe, test, expect, vi, beforeEach , type Mocked} from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -9,7 +9,7 @@ import axios from "axios";
 
 // Mock axios
 vi.mock("axios");
-const mockedAxios = axios as jest.Mocked<typeof axios>;
+const mockedAxios = axios as Mocked<typeof axios>;
 
 // Mock toast
 vi.mock("@/components/ui/use-toast", () => ({
@@ -17,11 +17,11 @@ vi.mock("@/components/ui/use-toast", () => ({
   useToast: () => ({ toast: vi.fn() }),
 }));
 
-const mockAuthContext: Partial<AuthContextType> = {
-  selectedAccount: {
-    account_id: "acc_123" as any,
+const mockAuthContext = {
+  selectedOrgAccount: {
+    account_id: "acc_123",
     account_name: "Test Account",
-    organization_id: "org_456" as any,
+    organization_id: "org_456",
     industry: "Technology",
     status: "Active",
     websites: [],
@@ -29,7 +29,7 @@ const mockAuthContext: Partial<AuthContextType> = {
     data_region: "US",
     region: ["US"],
   },
-};
+} as unknown as Partial<AuthContextType>;
 
 const renderComponent = () => {
   const queryClient = new QueryClient({

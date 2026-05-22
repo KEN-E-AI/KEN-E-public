@@ -122,7 +122,21 @@ export const EnhancedFormField = ({
                     Setting Inheritance:
                   </div>
                   <InheritanceChain
-                    chain={inheritanceChain}
+                    // SmartDefaultResult's `inheritedFrom` aligns with
+                    // InheritanceChain's `scope` field at runtime; their
+                    // type shapes diverge cosmetically. Cast to bridge.
+                    chain={
+                      inheritanceChain as unknown as {
+                        scope:
+                          | "template"
+                          | "user"
+                          | "organization"
+                          | "account"
+                          | "system";
+                        value: unknown;
+                        source?: string;
+                      }[]
+                    }
                     currentScope={scope}
                     className="mb-2"
                   />

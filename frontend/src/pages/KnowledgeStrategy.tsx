@@ -51,6 +51,7 @@ import {
   DIAGRAM_LAYOUT,
   DEFAULT_EDGE_STYLE,
 } from "@/components/knowledge-graph";
+import type { KnowledgeGraphItem } from "@/components/knowledge-graph";
 import type { ProductCategory } from "@/services/productCategoryService";
 import type { CustomerProfile } from "@/services/customerProfileService";
 import type {
@@ -771,23 +772,35 @@ function KnowledgeStrategy() {
               tooltip="Select a product category to view marketing strategies for customer profiles within that category."
             >
               <HorizontalScrollList
-                items={categories}
+                // ProductCategory uses `product_name`, not `display_name`;
+                // KnowledgeGraphItem requires display_name. Cast through
+                // unknown — the list only reads node_id and the renderItem
+                // callback handles the rest. Same pattern as
+                // CompetitorsManagement (Phase 3B) and ProductCategoriesManagement.
+                items={categories as unknown as KnowledgeGraphItem[]}
                 selectedId={selectedCategoryId}
-                onItemClick={handleCategoryClick}
+                onItemClick={
+                  handleCategoryClick as unknown as (
+                    item: KnowledgeGraphItem,
+                  ) => void
+                }
                 isLoading={isLoadingCategories}
                 emptyMessage="No product categories found."
                 hasEditAccess={false}
-                renderItem={(category, isSelected) => (
-                  <HorizontalScrollItem
-                    label={category.product_name}
-                    sublabel="Product Category"
-                    icon={Blocks}
-                    bgColor="bg-brand-light-blue bg-opacity-30"
-                    iconBgColor="bg-brand-light-blue"
-                    isSelected={isSelected}
-                    onClick={() => {}}
-                  />
-                )}
+                renderItem={(category, isSelected) => {
+                  const c = category as unknown as ProductCategory;
+                  return (
+                    <HorizontalScrollItem
+                      label={c.product_name}
+                      sublabel="Product Category"
+                      icon={Blocks}
+                      bgColor="bg-brand-light-blue bg-opacity-30"
+                      iconBgColor="bg-brand-light-blue"
+                      isSelected={isSelected}
+                      onClick={() => {}}
+                    />
+                  );
+                }}
               />
             </KnowledgeGraphCard>
 

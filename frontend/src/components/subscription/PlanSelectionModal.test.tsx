@@ -16,7 +16,7 @@ vi.mock("@/hooks/use-toast", () => ({
   }),
 }));
 
-const mockOrganization: Organization = {
+const mockOrganization = {
   organization_id: "org_test123",
   organization_name: "Test Organization",
   plan: "Free Plan",
@@ -50,7 +50,7 @@ const mockOrganization: Organization = {
     members_limit: 1,
     pending_invitations: 0,
   },
-};
+} as unknown as Organization;
 
 const mockPlans: SubscriptionPlanDefinition[] = [
   {

@@ -36,6 +36,11 @@ export const UnsavedChangesIndicator = ({
   size = "md",
   className,
 }: UnsavedChangesIndicatorProps) => {
+  // Button's `size` prop accepts "default" | "icon" | "sm" | "lg"; this
+  // component's API uses the more conventional "sm" | "md" | "lg" trio.
+  // Map "md" → "default" at the Button boundary.
+  const buttonSize: "default" | "sm" | "lg" =
+    size === "md" ? "default" : size;
   const sizeClasses = {
     sm: "text-xs px-2 py-1",
     md: "text-sm px-2.5 py-1.5",
@@ -167,7 +172,7 @@ export const UnsavedChangesIndicator = ({
                 {onReset && (
                   <Button
                     variant="outline"
-                    size={size}
+                    size={buttonSize}
                     onClick={onReset}
                     disabled={isLoading}
                     className={buttonSizes[size]}
@@ -179,7 +184,7 @@ export const UnsavedChangesIndicator = ({
                 {onSave && (
                   <Button
                     variant="default"
-                    size={size}
+                    size={buttonSize}
                     onClick={onSave}
                     disabled={saveDisabled || isLoading}
                     className={buttonSizes[size]}
@@ -216,7 +221,7 @@ export const UnsavedChangesIndicator = ({
           {onReset && (
             <Button
               variant="outline"
-              size={size}
+              size={buttonSize}
               onClick={onReset}
               disabled={isLoading}
               className={buttonSizes[size]}
@@ -228,7 +233,7 @@ export const UnsavedChangesIndicator = ({
           {onSave && (
             <Button
               variant="default"
-              size={size}
+              size={buttonSize}
               onClick={onSave}
               disabled={saveDisabled || isLoading}
               className={buttonSizes[size]}

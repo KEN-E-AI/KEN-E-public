@@ -11,7 +11,7 @@ vi.mock("@/lib/api", () => ({
 
 import api from "@/lib/api";
 
-const mockApi = api as { get: ReturnType<typeof vi.fn> };
+const mockApi = api as unknown as { get: ReturnType<typeof vi.fn> };
 
 beforeEach(() => {
   vi.clearAllMocks();

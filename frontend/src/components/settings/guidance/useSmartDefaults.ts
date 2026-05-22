@@ -17,9 +17,12 @@ export const useSmartDefaults = (
   const getTemplateInfo = (setting: string) => {
     const templateId = accountMetadata?.template_id || orgMetadata?.template_id;
     const template = templateId ? getTemplateById(templateId) : null;
-    const templateDefault =
-      template?.recommendedSettings?.[setting] ||
-      template?.defaultSettings?.[setting];
+    // AccountTemplate only exposes `recommendedSettings`. A previous
+    // `defaultSettings` fallback referenced a field that never existed on
+    // the type; removed.
+    const templateDefault = template?.recommendedSettings?.[
+      setting as keyof typeof template.recommendedSettings
+    ];
 
     return { template, templateDefault };
   };
@@ -109,8 +112,14 @@ export const useSmartDefaults = (
     const currentUser = user || {};
     const { template, templateDefault } = getTemplateInfo(setting);
 
+    // User type doesn't declare settings/preferences fields, but the runtime
+    // shape carries them when populated from the backend profile blob.
+    const userWithPrefs = currentUser as {
+      settings?: Record<string, unknown>;
+      preferences?: Record<string, unknown>;
+    };
     const userValue =
-      currentUser.settings?.[setting] || currentUser.preferences?.[setting];
+      userWithPrefs.settings?.[setting] || userWithPrefs.preferences?.[setting];
     if (userValue) {
       return createResult(userValue, "user", "User preferences");
     }
@@ -172,8 +181,16 @@ export const useSmartDefaults = (
       }
     };
 
-    // User level
-    const userValue = user?.settings?.[setting] || user?.preferences?.[setting];
+    // User level (see comment on the matching cast in resolveAccountScope).
+    const userWithPrefs = user as
+      | {
+          settings?: Record<string, unknown>;
+          preferences?: Record<string, unknown>;
+        }
+      | null;
+    const userValue =
+      userWithPrefs?.settings?.[setting] ||
+      userWithPrefs?.preferences?.[setting];
     addToChainIfExists(userValue, "user", "User preferences");
 
     // Account level
@@ -230,7 +247,9 @@ export const useSmartDefaults = (
         "Non-Profit",
       ],
       status: ["Active", "Inactive", "Setup", "Paused"],
-      data_retention: [30, 90, 180, 365, 730, 1825], // days
+      // Days, stringified so the array type matches the surrounding
+      // `Record<string, string[]>` suggestion-map contract.
+      data_retention: ["30", "90", "180", "365", "730", "1825"],
     };
 
     // Template-based suggestions

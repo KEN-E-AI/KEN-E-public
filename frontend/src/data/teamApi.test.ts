@@ -75,6 +75,9 @@ describe("teamApi", () => {
       const result = await inviteMemberToOrganization(
         mockOrganizationId,
         mockData,
+        "test-user-id",
+        "Test User",
+        "Test Organization",
       );
 
       expect(axios.post).toHaveBeenCalledWith(

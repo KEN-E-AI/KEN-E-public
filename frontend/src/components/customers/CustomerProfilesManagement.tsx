@@ -219,10 +219,21 @@ export const CustomerProfilesManagement = ({
           profile.node_id,
         ],
         queryFn: async () => {
-          const customerProfileService = await import(
+          const { customerProfileService } = await import(
             "@/services/customerProfileService"
           );
-          return customerProfileService.default.getLinkedProductCategories(
+          // TODO: getLinkedProductCategories isn't on CustomerProfileService
+          // today. Either the method was removed or this query needs to be
+          // pointed elsewhere. Cast preserves the pre-typecheck behavior
+          // until the right home is identified.
+          return (
+            customerProfileService as unknown as {
+              getLinkedProductCategories: (
+                accountId: string,
+                profileId: string,
+              ) => Promise<unknown>;
+            }
+          ).getLinkedProductCategories(
             selectedOrgAccount.accountId,
             profile.node_id,
           );

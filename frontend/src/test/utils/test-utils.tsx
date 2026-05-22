@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthContext, type AuthContextType } from "@/contexts/AuthContext";
 
 // Default mock auth context
-const defaultMockAuthContext: AuthContextType = {
+const defaultMockAuthContext = {
   user: null,
   isAuthenticated: false,
   isLoading: false,
@@ -25,7 +25,7 @@ const defaultMockAuthContext: AuthContextType = {
   getOrganizationData: vi.fn(),
   refetchUser: vi.fn(),
   clearUserData: vi.fn(),
-};
+} as unknown as AuthContextType;
 
 interface CustomRenderOptions extends Omit<RenderOptions, "wrapper"> {
   authContext?: Partial<AuthContextType>;

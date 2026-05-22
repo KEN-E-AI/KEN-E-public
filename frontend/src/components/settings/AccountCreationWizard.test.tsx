@@ -26,7 +26,10 @@ const renderWithAuth = (
   ui: React.ReactElement,
   { isSuperAdmin = false } = {},
 ) => {
-  const contextValue = { ...mockAuthContext, isSuperAdmin };
+  const contextValue = {
+    ...mockAuthContext,
+    isSuperAdmin,
+  } as unknown as import("@/contexts/AuthContext").AuthContextType;
   return render(
     <AuthContext.Provider value={contextValue}>{ui}</AuthContext.Provider>,
   );
@@ -290,7 +293,7 @@ describe("AccountCreationWizard", () => {
     // Uncheck all objectives and channels
     const checkboxes = screen.getAllByRole("checkbox");
     for (const checkbox of checkboxes) {
-      if (checkbox.checked) {
+      if ((checkbox as HTMLInputElement).checked) {
         await user.click(checkbox);
       }
     }

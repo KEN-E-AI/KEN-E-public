@@ -52,11 +52,19 @@ export const IndustrySelectDropdownAPI = React.forwardRef<
         try {
           const templates = await templateService.getAllTemplates();
           const options: IndustryOption[] = templates.map((template) => ({
+            // `industry` is the canonical field; the legacy fallbacks to
+            // `recommendedSettings.industry` / `name` reference fields that
+            // IndustryTemplate doesn't expose. Cast preserves the runtime
+            // fallback behavior in case the API ever returns either.
             value:
               template.industry ||
-              template.recommendedSettings?.industry ||
+              (template as { recommendedSettings?: { industry?: string } })
+                .recommendedSettings?.industry ||
               template.id,
-            label: template.industry || template.name,
+            label:
+              template.industry ||
+              (template as { name?: string }).name ||
+              template.id,
             description: template.description || "",
           }));
           // Sort alphabetically by label

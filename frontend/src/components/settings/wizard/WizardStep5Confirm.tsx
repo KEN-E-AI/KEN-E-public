@@ -52,7 +52,7 @@ export const WizardStep5Confirm = ({
                   Template
                 </p>
                 <p className="text-[var(--color-text-tertiary)]">
-                  {selectedTemplate?.name || "Not loaded"}
+                  {selectedTemplate?.industry || "Not loaded"}
                 </p>
               </div>
               <div>

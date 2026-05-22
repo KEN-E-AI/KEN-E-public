@@ -5,6 +5,12 @@ import type {
   MarketingStrategy,
   MarketingStrategyUpdate,
 } from "@/services/marketingStrategyService";
+import type { AccountId } from "@/lib/branded-types";
+
+// TODO: propagate AccountId end-to-end and drop this bridge. Same pattern
+// as queries/competitors.ts; runtime values come from
+// useAuth().selectedOrgAccount.accountId.
+const asAccountId = (id: string): AccountId => id as AccountId;
 
 interface RollupStrategiesData {
   problemAwareness: MarketingStrategy | null;
@@ -28,19 +34,19 @@ export const useRollupStrategies = (accountId: string | null) => {
         loyaltyRes,
       ] = await Promise.all([
         marketingStrategyService.listRollupStrategies(
-          accountId,
+          asAccountId(accountId),
           "problem-awareness",
         ),
         marketingStrategyService.listRollupStrategies(
-          accountId,
+          asAccountId(accountId),
           "brand-awareness",
         ),
         marketingStrategyService.listRollupStrategies(
-          accountId,
+          asAccountId(accountId),
           "consideration",
         ),
-        marketingStrategyService.listRollupStrategies(accountId, "conversion"),
-        marketingStrategyService.listRollupStrategies(accountId, "loyalty"),
+        marketingStrategyService.listRollupStrategies(asAccountId(accountId), "conversion"),
+        marketingStrategyService.listRollupStrategies(asAccountId(accountId), "loyalty"),
       ]);
 
       return {
@@ -81,7 +87,7 @@ export const useIndividualStrategies = (
 
       const results = await Promise.all(
         strategyTypes.map((type) =>
-          marketingStrategyService.listIndividualStrategies(accountId, type),
+          marketingStrategyService.listIndividualStrategies(asAccountId(accountId), type),
         ),
       );
 
@@ -118,7 +124,7 @@ export const useUpdateStrategy = (strategyType: StrategyType) => {
       updates: MarketingStrategyUpdate;
     }) => {
       return await marketingStrategyService.updateStrategy(
-        accountId,
+        asAccountId(accountId),
         strategyType,
         nodeId,
         updates,
@@ -147,7 +153,7 @@ export const useDeleteStrategy = (strategyType: StrategyType) => {
       nodeId: string;
     }) => {
       return await marketingStrategyService.deleteStrategy(
-        accountId,
+        asAccountId(accountId),
         strategyType,
         nodeId,
       );

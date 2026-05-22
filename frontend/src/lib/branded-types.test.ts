@@ -173,15 +173,7 @@ describe("Branded Types", () => {
       expect(isOrganizationId("org_123_émoji")).toBe(false);
     });
 
-    it("handles null and undefined inputs for type guards", () => {
-      // @ts-expect-error - Testing runtime behavior with invalid input
-      expect(isAccountId(null)).toBe(false);
-      // @ts-expect-error - Testing runtime behavior with invalid input
-      expect(isAccountId(undefined)).toBe(false);
-      // @ts-expect-error - Testing runtime behavior with invalid input
-      expect(isOrganizationId(null)).toBe(false);
-      // @ts-expect-error - Testing runtime behavior with invalid input
-      expect(isOrganizationId(undefined)).toBe(false);
+    it("handles null and undefined inputs for type guards", () => {      expect(isAccountId(null)).toBe(false);      expect(isAccountId(undefined)).toBe(false);      expect(isOrganizationId(null)).toBe(false);      expect(isOrganizationId(undefined)).toBe(false);
     });
 
     it("handles empty strings", () => {
@@ -234,17 +226,11 @@ describe("Branded Types", () => {
     });
 
     it("try functions handle edge cases gracefully", () => {
-      expect(tryAccountId("")).toBeUndefined();
-      // @ts-expect-error - Testing runtime behavior
-      expect(tryAccountId(null)).toBeUndefined();
-      // @ts-expect-error - Testing runtime behavior
-      expect(tryAccountId(undefined)).toBeUndefined();
+      expect(tryAccountId("")).toBeUndefined();      expect(tryAccountId(null)).toBeUndefined();      expect(tryAccountId(undefined)).toBeUndefined();
       expect(tryAccountId("acc_123!@#")).toBeUndefined();
       expect(tryAccountId("ACC_123")).toBeUndefined();
 
-      expect(tryOrganizationId("")).toBeUndefined();
-      // @ts-expect-error - Testing runtime behavior
-      expect(tryOrganizationId(null)).toBeUndefined();
+      expect(tryOrganizationId("")).toBeUndefined();      expect(tryOrganizationId(null)).toBeUndefined();
       expect(tryOrganizationId("org_123 456")).toBeUndefined();
     });
   });

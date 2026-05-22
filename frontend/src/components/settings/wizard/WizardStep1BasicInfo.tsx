@@ -116,7 +116,10 @@ const REGION_OPTIONS = [
 
 interface WizardStep1BasicInfoProps {
   formData: AccountCreationData;
-  setFormData: (data: AccountCreationData) => void;
+  // The component calls setFormData with both direct values and updater
+  // functions (see industry-template loader below), so the prop accepts
+  // React's full SetStateAction shape.
+  setFormData: React.Dispatch<React.SetStateAction<AccountCreationData>>;
   onTemplateLoad?: (template: IndustryTemplate | null) => void;
 }
 

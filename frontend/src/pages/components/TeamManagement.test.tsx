@@ -1,10 +1,20 @@
-import { describe, test, expect, vi, beforeEach } from "vitest";
+import {
+  describe,
+  test,
+  expect,
+  vi,
+  beforeEach,
+  type MockedFunction,
+  type Mocked,
+} from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import TeamManagement from "./TeamManagement";
 import * as teamApi from "@/data/teamApi";
+import type { TeamMember } from "@/data/teamApi";
+import type { Organization } from "@/data/organizationTypes";
 import * as accountsQuery from "@/queries/accounts";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -15,10 +25,10 @@ vi.mock("@/hooks/use-toast");
 vi.mock("@/data/teamApi");
 vi.mock("@/queries/accounts");
 
-const mockUseAuth = useAuth as vi.MockedFunction<typeof useAuth>;
-const mockUseToast = useToast as vi.MockedFunction<typeof useToast>;
-const mockTeamApi = teamApi as vi.Mocked<typeof teamApi>;
-const mockAccountsQuery = accountsQuery as vi.Mocked<typeof accountsQuery>;
+const mockUseAuth = useAuth as MockedFunction<typeof useAuth>;
+const mockUseToast = useToast as MockedFunction<typeof useToast>;
+const mockTeamApi = teamApi as Mocked<typeof teamApi>;
+const mockAccountsQuery = accountsQuery as Mocked<typeof accountsQuery>;
 
 describe("TeamManagement", () => {
   let queryClient: QueryClient;
@@ -42,7 +52,7 @@ describe("TeamManagement", () => {
     team: {
       members_limit: 10,
     },
-  };
+  } as unknown as Organization;
 
   const mockMembers = [
     {
@@ -71,7 +81,7 @@ describe("TeamManagement", () => {
       access_level: "view",
       is_super_admin: true,
     },
-  ];
+  ] as unknown as TeamMember[];
 
   const mockAccounts = [
     { account_id: "acc123", account_name: "Account 1" },
@@ -347,7 +357,7 @@ describe("TeamManagement - @ken-e.ai members are no longer special-cased", () =>
     team: {
       members_limit: 10,
     },
-  };
+  } as unknown as Organization;
 
   const kenEMember = {
     user_id: "kene-user",

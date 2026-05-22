@@ -71,7 +71,7 @@ export const SettingsLayout: React.FC<SettingsLayoutProps> = ({
         {currentPage !== "settings" &&
           currentPage !== "organization" &&
           currentPage !== "user" &&
-          currentPage !== "admin" && (
+          (currentPage as string) !== "admin" && (
             <ContextBreadcrumb currentPage={currentPage} />
           )}
 
