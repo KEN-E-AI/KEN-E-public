@@ -8,10 +8,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { ExtensionsProvider } from "@/contexts/ExtensionsContext";
-import { useAuth } from "@/contexts/AuthContext";
-import { SessionsSidebar } from "@/components/chat/SessionsSidebar";
 import { ChatInterface } from "@/components/chat/ChatInterface";
-import { useCreateChatSession } from "@/hooks/useCreateChatSession";
 import { cn } from "@/lib/utils";
 import { TopNav, NAVIGATION } from "./TopNav";
 
@@ -94,8 +91,6 @@ export function LayoutC() {
 
 function LayoutCInner() {
   const location = useLocation();
-  const { selectedOrgAccount } = useAuth();
-  const createSession = useCreateChatSession();
   const [miniChatOpen, setMiniChatOpen] = useState(false);
   const [miniChatHeight, setMiniChatHeight] = useState(
     MINI_CHAT_DEFAULT_HEIGHT,
@@ -173,22 +168,6 @@ function LayoutCInner() {
       )}
 
       <div className="flex-1 overflow-hidden flex">
-        {/* Sessions Sidebar — desktop only */}
-        <aside
-          aria-label="Chat sessions"
-          className="hidden md:flex md:flex-col md:min-h-0 md:h-full"
-        >
-          <SessionsSidebar
-            sessions={[]}
-            onNewSession={() =>
-              createSession.mutate({
-                account_id: selectedOrgAccount?.accountId,
-              })
-            }
-            isNewSessionPending={createSession.isPending}
-          />
-        </aside>
-
         {/* Page content */}
         <main className="flex-1 min-h-0 overflow-hidden flex flex-col bg-[var(--color-bg-secondary)]">
           <div
