@@ -12,6 +12,8 @@ import type {
 } from "@/lib/featureFlags/adminClient";
 import { toFlagKey } from "@/lib/featureFlags/types";
 import { TargetingRulesEditor } from "./TargetingRulesEditor";
+import { FlagAuditList } from "./FlagAuditList";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Sheet,
   SheetContent,
@@ -41,6 +43,11 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+
+// ─── Tab value constants (used by tests for deterministic tab targeting) ──────
+
+export const EDIT_TAB_VALUE = "edit" as const;
+export const AUDIT_TAB_VALUE = "audit" as const;
 
 // ─── Canonical admin-facing bucketing_entity help text ────────────────────────
 // Kept in sync with docs/design/components/feature-flags/README.md §7.3
@@ -222,6 +229,163 @@ export function FlagEditDrawer(props: FlagEditDrawerProps) {
   const isPending = createFlag.isPending || updateFlag.isPending;
   const title = mode === "create" ? "New feature flag" : "Edit feature flag";
 
+  const formFields = (
+    <>
+      {/* Key */}
+      <FormField
+        control={form.control}
+        name="key"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Flag key</FormLabel>
+            <FormControl>
+              <Input
+                {...field}
+                placeholder="my_feature_flag"
+                disabled={mode === "edit"}
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      {/* Description */}
+      <FormField
+        control={form.control}
+        name="description"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Description</FormLabel>
+            <FormControl>
+              <Textarea
+                {...field}
+                placeholder="What does this flag control?"
+                rows={2}
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      {/* is_active + default_enabled */}
+      <div className="flex gap-6">
+        <FormField
+          control={form.control}
+          name="is_active"
+          render={({ field }) => (
+            <FormItem className="flex flex-row items-center gap-3 space-y-0">
+              <FormControl>
+                <Switch
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                  aria-label="Is active"
+                />
+              </FormControl>
+              <FormLabel className="font-normal">Active</FormLabel>
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name="default_enabled"
+          render={({ field }) => (
+            <FormItem className="flex flex-row items-center gap-3 space-y-0">
+              <FormControl>
+                <Switch
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                  aria-label="Default enabled"
+                />
+              </FormControl>
+              <FormLabel className="font-normal">Default enabled</FormLabel>
+            </FormItem>
+          )}
+        />
+      </div>
+
+      {/* Owner */}
+      <FormField
+        control={form.control}
+        name="owner"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Owner</FormLabel>
+            <FormControl>
+              <Input {...field} placeholder="engineer@ken-e.ai" />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      {/* Expected GA release */}
+      <FormField
+        control={form.control}
+        name="expected_ga_release"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Expected GA release</FormLabel>
+            <FormControl>
+              <Input
+                {...field}
+                value={field.value ?? ""}
+                onChange={(e) => field.onChange(e.target.value || null)}
+                placeholder="Release 2"
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      {/* Bucketing entity */}
+      <FormField
+        control={form.control}
+        name="bucketing_entity"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Bucketing entity</FormLabel>
+            <Select value={field.value} onValueChange={field.onChange}>
+              <FormControl>
+                <SelectTrigger aria-label="Bucketing entity">
+                  <SelectValue />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent>
+                <SelectItem value="account">account</SelectItem>
+                <SelectItem value="organization">organization</SelectItem>
+                <SelectItem value="user">user</SelectItem>
+              </SelectContent>
+            </Select>
+            <FormDescription className="text-xs text-[var(--color-text-tertiary)] mt-1">
+              {BUCKETING_ENTITY_HELP_TEXT}
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      {/* Targeting rules */}
+      <div className="space-y-2">
+        <Label className="text-[var(--text-label-md)] font-medium text-[var(--color-text-primary)]">
+          Targeting rules
+        </Label>
+        <Controller
+          control={form.control}
+          name="targeting_rules"
+          render={({ field }) => (
+            <TargetingRulesEditor
+              value={field.value}
+              onChange={field.onChange}
+            />
+          )}
+        />
+      </div>
+    </>
+  );
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="sm:max-w-lg overflow-y-auto">
@@ -239,160 +403,24 @@ export function FlagEditDrawer(props: FlagEditDrawerProps) {
             onSubmit={form.handleSubmit(onSubmit)}
             className="space-y-5 py-4"
           >
-            {/* Key */}
-            <FormField
-              control={form.control}
-              name="key"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Flag key</FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      placeholder="my_feature_flag"
-                      disabled={mode === "edit"}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            {mode === "edit" ? (
+              <Tabs defaultValue={EDIT_TAB_VALUE}>
+                <TabsList>
+                  <TabsTrigger value={EDIT_TAB_VALUE}>Edit</TabsTrigger>
+                  <TabsTrigger value={AUDIT_TAB_VALUE}>Audit</TabsTrigger>
+                </TabsList>
 
-            {/* Description */}
-            <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Description</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      {...field}
-                      placeholder="What does this flag control?"
-                      rows={2}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                <TabsContent value={EDIT_TAB_VALUE} className="space-y-5">
+                  {formFields}
+                </TabsContent>
 
-            {/* is_active + default_enabled */}
-            <div className="flex gap-6">
-              <FormField
-                control={form.control}
-                name="is_active"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-center gap-3 space-y-0">
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                        aria-label="Is active"
-                      />
-                    </FormControl>
-                    <FormLabel className="font-normal">Active</FormLabel>
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="default_enabled"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-center gap-3 space-y-0">
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                        aria-label="Default enabled"
-                      />
-                    </FormControl>
-                    <FormLabel className="font-normal">
-                      Default enabled
-                    </FormLabel>
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {/* Owner */}
-            <FormField
-              control={form.control}
-              name="owner"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Owner</FormLabel>
-                  <FormControl>
-                    <Input {...field} placeholder="engineer@ken-e.ai" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Expected GA release */}
-            <FormField
-              control={form.control}
-              name="expected_ga_release"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Expected GA release</FormLabel>
-                  <FormControl>
-                    <Input
-                      {...field}
-                      value={field.value ?? ""}
-                      onChange={(e) => field.onChange(e.target.value || null)}
-                      placeholder="Release 2"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Bucketing entity */}
-            <FormField
-              control={form.control}
-              name="bucketing_entity"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Bucketing entity</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger aria-label="Bucketing entity">
-                        <SelectValue />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="account">account</SelectItem>
-                      <SelectItem value="organization">organization</SelectItem>
-                      <SelectItem value="user">user</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormDescription className="text-xs text-[var(--color-text-tertiary)] mt-1">
-                    {BUCKETING_ENTITY_HELP_TEXT}
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Targeting rules */}
-            <div className="space-y-2">
-              <Label className="text-[var(--text-label-md)] font-medium text-[var(--color-text-primary)]">
-                Targeting rules
-              </Label>
-              <Controller
-                control={form.control}
-                name="targeting_rules"
-                render={({ field }) => (
-                  <TargetingRulesEditor
-                    value={field.value}
-                    onChange={field.onChange}
-                  />
-                )}
-              />
-            </div>
+                <TabsContent value={AUDIT_TAB_VALUE}>
+                  <FlagAuditList flagKey={flag!.key} />
+                </TabsContent>
+              </Tabs>
+            ) : (
+              <div className="space-y-5">{formFields}</div>
+            )}
 
             <SheetFooter className="pt-2">
               <Button
