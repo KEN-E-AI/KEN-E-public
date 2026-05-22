@@ -124,7 +124,8 @@ variable "cicd_sa_deployment_required_roles" {
     "roles/iam.serviceAccountUser",
     "roles/aiplatform.user",
     "roles/storage.admin",
-    "roles/datastore.viewer"
+    "roles/datastore.viewer",
+    "roles/secretmanager.secretAccessor"
   ]
 }
 
