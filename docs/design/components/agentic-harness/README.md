@@ -1,7 +1,7 @@
 # Agentic Harness — Product Requirements Document
 
 > **Linear Team:** [KEN-E] Agentic Harness
-> **Last Updated:** 2026-04-20
+> **Last Updated:** 2026-05-22
 > **Status:** Active
 
 ## 1. Overview
@@ -11,6 +11,8 @@ The Agentic Harness is the core agent framework that makes KEN-E work — the ro
 The component owns three architectural pillars. **The review loop framework** (Generator–Critic pattern via ADK `LoopAgent`) wraps every specialist delegation in a verify-before-return iteration cycle, preventing the root agent from relaying unreviewed drafts to the user. **The agent factory** reads Firestore `agent_configs/{config_id}` and `mcp_servers/{server_id}` documents at deploy time and assembles the full hierarchy — `LlmAgent` instances with correct model, instruction, `McpToolset`s, OAuth header providers, curated ≤30-tool rosters per specialist, and auto-generated `dispatch_to_{specialist}()` functions on the root. **Narrow specialists** (the first being Google Analytics) are the domain agents that actually call MCP/SDK tools and run code execution on the user's data; they are the terminal leaves that the review loop wraps and the factory constructs.
 
 After this component's Release 1 projects complete, adding a new specialist is a Firestore config change rather than a code change, every specialist delegation gets a quality gate for free, and every account can customize its agents without affecting other accounts. This platform is what the Skills, Project Tasks, and Knowledge Graph components build on — they all run on agents assembled by the factory, with review loops wrapping their dispatches.
+
+> **[PLANNED] Per-turn dispatch agent (AH-PRD-09).** A successor architecture replaces AH-PRD-02's deploy-time factory with a **runtime resolver**: the deployed root becomes a thin dispatcher whose only tool is `delegate_to_specialist(name, query, acceptance_criteria=None)`, and specialists are resolved per turn from Firestore via a `specialist_runtime` module (TTL + content-hash cache with per-key striped locking). Admin agent edits (instruction / model / temperature / max_output_tokens / tools / new specialists) propagate to the next chat turn without redeploy — restoring Sprint 6 Decision B's intent which AH-PRD-02 silently regressed on. Adds a `McpToolsetPool` with hybrid `McpServerKind` enum (`cloud_run` + `zapier`) for runtime MCP connection reuse. Scheduled for **Release 1**, Phases 0–3 + 5 (the `cloud_run`-only runtime resolver); Phase 4 (Zapier hybrid MCP) deferred to R2 alongside the Integrations component. Phase 5 default-on is gated on Skills' [SK-PRD-02 SandboxPool](../skills/projects/SK-PRD-02-agent-integration.md) shipping. Full design: [`docs/design/per-turn-dispatch-rfc.md`](../../per-turn-dispatch-rfc.md); PRD: [AH-PRD-09](./projects/AH-PRD-09-per-turn-dispatch.md). The §2 / §2.5 wording below continues to describe the **current shipped state** (deploy-time factory); it collapses to the runtime model as AH-PRD-09 phases ship.
 
 ## 2. Architecture
 
@@ -215,7 +217,7 @@ Transitional agents (`google_analytics_agent_v4.py`, `company_news_chatbot/agent
 
 ## 5. Project Index
 
-The component's work is split across **7 project PRDs** under [`projects/`](./projects/). The first three (AH-PRD-01 → AH-PRD-02 → AH-PRD-03) form a strictly serial Release 1 chain because each layer is a prerequisite for the next. AH-PRD-06 (Per-Agent Tool Mapping) layers individual-tool selection onto the agent factory built by AH-PRD-02, replacing today's coarse server-level attachment; PR-A is merged (#472), PR-B is in review (#473), and PR-C wires `default_global` function tools through `hierarchy.py:325` so `create_visualization` reaches every factory-built specialist by default. AH-PRD-07 (Unify Strategy-Agent Construction) is the immediate follow-up — it migrates `marketing_researcher` / `marketing_formatter` onto the AH-PRD-06 contract so picker selections actually shape their runtime tool list (today's `strategy_agent/config_loader.py` strips `tool_ids` / `mcp_servers` before construction). AH-PRD-04 (Data Visualization) and AH-PRD-05 (Multi-Step Workflow Orchestration) both land in Release 3 / Expertise and sit on top of the R1 chain — AH-PRD-04 adds chart-artifact output, AH-PRD-05 adds the multi-step workflow primitive (`build_workflow_pipeline` + `execute_workflow` + approval-via-conversation-turns) deferred from AH-PRD-01 §2. Future per-platform specialist PRDs (Google Ads, Meta Ads, Mailchimp — see §2.6) land as AH-PRD-08+, consuming the pattern established in AH-PRD-03 and automatically inheriting `create_visualization()` via the factory's default function-tool roster (see AH-PRD-04).
+The component's work is split across **9 project PRDs** under [`projects/`](./projects/). The first three (AH-PRD-01 → AH-PRD-02 → AH-PRD-03) form a strictly serial Release 1 chain because each layer is a prerequisite for the next. AH-PRD-06 (Per-Agent Tool Mapping) layers individual-tool selection onto the agent factory built by AH-PRD-02, replacing today's coarse server-level attachment; PR-A is merged (#472), PR-B is in review (#473), and PR-C wires `default_global` function tools through `hierarchy.py:325` so `create_visualization` reaches every factory-built specialist by default. **AH-PRD-07 was superseded by AH-PRD-08** (Hide Strategy-Pipeline Specialists from the Workflows Picker) after a scoping pass confirmed the 8 strategy-pipeline specialists are account-creation-only and never re-invoked from chat — AH-PRD-08 hides them via the existing `visible_in_frontend=False` flag instead of rebuilding the construction path, same user-visible outcome with ~10× less code change. AH-PRD-08 shipped in R1. **AH-PRD-09 (Per-Turn Dispatch Agent)** is the runtime successor to AH-PRD-02 — replaces the deploy-time factory with a per-turn runtime resolver so admin agent edits take effect immediately (restores Sprint 6 Decision B's intent). AH-PRD-09 lands in R1 (Phases 0–3 + 5 — the `cloud_run`-only runtime resolver); its Phase 4 (Zapier hybrid MCP) defers to R2 alongside the Integrations component. AH-PRD-04 (Data Visualization) and AH-PRD-05 (Multi-Step Workflow Orchestration) both land in Release 3 / Expertise and sit on top of the R1 chain — AH-PRD-04 adds chart-artifact output, AH-PRD-05 adds the multi-step workflow primitive (`build_workflow_pipeline` + `execute_workflow` + approval-via-conversation-turns) deferred from AH-PRD-01 §2. Future per-platform specialist PRDs (Google Ads, Meta Ads, Mailchimp — see §2.6) land as AH-PRD-10+, consuming the pattern established in AH-PRD-03 and automatically inheriting `create_visualization()` via the factory's default function-tool roster (see AH-PRD-04).
 
 ### 5.1 Dependency graph
 
@@ -224,14 +226,27 @@ DM-PRD-00 (Migration Foundation) ──┐
                                     │
                                     ▼
 AH-PRD-01 (Review Loop) ──────────► AH-PRD-02 (Agent Factory) ─────► AH-PRD-03 (GA Specialist) ─────► AH-PRD-04 (Data Visualization) ─────► AH-PRD-05 (Multi-Step Workflows)
-                                         │   ▲
-                                         │   │
-                                         │   (soft) DM-PRD-05 (Deletion Sweep Rewrite)
+                                         │   ▲                                ▲
+                                         │   │                                │
+                                         │   (soft) DM-PRD-05                 │
+                                         │                                    │
+                                         ├─► AH-PRD-06 (Per-Agent Tool Mapping) ─────► AH-PRD-07 (Unify Strategy-Agent Construction) [SUPERSEDED]
+                                         │           │
+                                         │           └────────────► AH-PRD-08 (Hide Strategy-Pipeline Specialists) [SHIPPED]
                                          │
-                                         └─► AH-PRD-06 (Per-Agent Tool Mapping) ─────► AH-PRD-07 (Unify Strategy-Agent Construction)
+                                         └─► AH-PRD-09 (Per-Turn Dispatch Agent) [R1, supersedes AH-PRD-02 in runtime path]
+                                                     │       ▲
+                                                     │       │ (soft, Phase 5 gate)
+                                                     │       │
+                                                     │       SK-PRD-02 (SandboxPool)
+                                                     │       │ (soft, Phase 4 only — deferred to R2)
+                                                     │       IN-PRD-01/02/03 (Integrations)
+                                                     ▼
+                                            [collapses AH-PRD-02's deploy-time
+                                             factory into a runtime resolver]
 ```
 
-All R1 Agentic-Harness work shipping together: AH-PRD-01/02/03 form the canonical specialist construction path; AH-PRD-06 layers per-agent tool selection on top; AH-PRD-07 retires the legacy `strategy_agent` loader so picker selections actually take effect for `marketing_researcher` / `marketing_formatter`. AH-PRD-04/05 are R3.
+All R1 Agentic-Harness work shipping together: AH-PRD-01/02/03 form the canonical specialist construction path; AH-PRD-06 layers per-agent tool selection on top; AH-PRD-08 hides the 8 strategy-pipeline specialists from the picker (superseding AH-PRD-07's unification plan); AH-PRD-09 replaces AH-PRD-02's deploy-time factory with a per-turn runtime resolver so admin edits take effect immediately. AH-PRD-04/05 are R3.
 
 ### 5.2 Projects
 
@@ -243,7 +258,9 @@ All R1 Agentic-Harness work shipping together: AH-PRD-01/02/03 form the canonica
 | 04 | [Data Visualization](./projects/AH-PRD-04-data-visualization.md) | Core AI (backend + frontend) | AH-PRD-01, AH-PRD-02, AH-PRD-03 | UI-PRD-01/02, KG / PR / Automations projects | 5–7 days |
 | 05 | [Multi-Step Workflow Orchestration](./projects/AH-PRD-05-multi-step-workflows.md) | Core AI | AH-PRD-01, AH-PRD-02, AH-PRD-03, AH-PRD-04 | KG-PRDs, SK-PRDs, Performance / SAR-E projects | 3–5 days |
 | 06 | [Per-Agent Tool Mapping](./projects/AH-PRD-06-tool-mapping.md) | Core AI (backend + frontend) | AH-PRD-02 | SK-PRD-02 / SK-PRD-04 (shared form rows + ≤30-tool cap) | 5–8 days (PR-A merged + PR-B in review + PR-C pending) |
-| 07 | [Unify Strategy-Agent Construction](./projects/AH-PRD-07-unify-strategy-agent-construction.md) | Core AI | AH-PRD-06 | — | TBD — needs scoping spike (Option A "Replace via factory" vs Option B "Bridge via shim") |
+| 07 | [Unify Strategy-Agent Construction](./projects/AH-PRD-07-unify-strategy-agent-construction.md) | Core AI | AH-PRD-06 | — | **Superseded** — see AH-PRD-08 below. Skeleton retained as record of the analysed alternative; reopen only if strategy-pipeline specialists become runtime-callable. |
+| 08 | [Hide Strategy-Pipeline Specialists from the Workflows Picker](./projects/AH-PRD-08-hide-strategy-pipeline-specialists.md) | Core AI | AH-PRD-06 | — | **Shipped** (R1). Replaces AH-PRD-07. Closes the AH-PRD-06 §2 known-limitation by hiding the 8 strategy-pipeline specialists from the picker via `visible_in_frontend=False`. PRs [#478](https://github.com/KEN-E-AI/KEN-E/pull/478) / [#479](https://github.com/KEN-E-AI/KEN-E/pull/479) / [#480](https://github.com/KEN-E-AI/KEN-E/pull/480). |
+| 09 | [Per-Turn Dispatch Agent](./projects/AH-PRD-09-per-turn-dispatch.md) | Core AI | AH-PRD-01, AH-PRD-02, DM-PRD-00 | SK-PRD-02 (soft — Phase 5 gate; SandboxPool); IN-PRD-01/02/03 (Phase 4 only — deferred to R2) | **R1** — replaces AH-PRD-02's deploy-time factory with a per-turn runtime resolver; admin agent edits propagate to the next chat turn without redeploy; hybrid MCP via `McpServerKind` enum (`cloud_run` + `zapier`) with `McpToolsetPool`. Six phases (Phase 0 Zapier spike → Phase 1 cache-backed instruction → Phase 2 single-dispatch root → Phase 3 MCP pool + hybrid kinds → Phase 4 Zapier-backed Integrations [deferred to R2] → Phase 5 cleanup + rollout). 7–10 eng-weeks; 4–6 calendar weeks with two engineers from Phase 2 onward. Full design: [`docs/design/per-turn-dispatch-rfc.md`](../../per-turn-dispatch-rfc.md). |
 
 ### 5.3 Cross-PRD coordination points
 

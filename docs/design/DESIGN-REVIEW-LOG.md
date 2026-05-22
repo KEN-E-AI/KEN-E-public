@@ -1304,4 +1304,78 @@ Sprint 6 Phase 2 (stability validation stories 1.1.1-3, 1.14.5, 1.1.2-3, 1.1.5-4
 
 ---
 
+## Review 32: AH-PRD-09 Approved — Per-Turn Dispatch Agent + Hybrid MCP (replaces AH-PRD-02's runtime model)
+
+**Date:** 2026-05-22
+**Scope:** Formal approval of [AH-PRD-09 — Per-Turn Dispatch Agent](components/agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md) and the supporting [per-turn dispatch RFC](per-turn-dispatch-rfc.md). Replaces AH-PRD-02's deploy-time factory with a runtime resolver; introduces hybrid MCP via `McpServerKind` (`cloud_run` + `zapier`); coordinates a Skills SandboxPool addition (SK-PRD-02 scope expansion); pulls SK-PRDs 00/01/02 into Release 1.
+**Participants:** Product Owner, Product Manager, Agentic Harness lead, Skills lead, Engineering review
+**Status:** Approved as v2.1 of the RFC; PRD AH-PRD-09 filed; phase 0 (Zapier feasibility spike) scheduled as the immediate next step.
+
+### Why this decision was needed
+
+KEN-E's product requirement is that admin agent edits go live immediately — instructions, model, temperature, max output tokens, tools, and new specialists become callable in chat without an engineer in the loop. **[AH-PRD-02](components/agentic-harness/projects/AH-PRD-02-agent-factory.md) silently regressed this** when it shipped: the root-agent construction path switched from the legacy cache-backed `_make_instruction_provider` to the factory's `_make_factory_instruction_provider` (`app/adk/agents/agent_factory/builder.py:33`), which bakes the instruction text into a closure and never reads `config_cache`. The cache from Sprint 6 Decision B exists in code and is well-tested, but no caller on the live request path reads from it. The PUT endpoint at `api/src/kene_api/routers/agent_configs.py:300-310` already returns `redeploy required` warnings for `model` / `temperature` / `max_output_tokens`, but cannot warn for `instruction` because that was supposed to hot-reload — admins editing `instruction` get silent regression today.
+
+This is recoverable, but not by a small patch: the factory is fundamentally a deploy-time builder, and even fixing the instruction path leaves `model`, `temperature`, `max_output_tokens`, `tools`, and **new specialist creation** as redeploy-bound. AH-PRD-09 ships the architectural fix.
+
+### Decision
+
+1. **Approved: Per-Turn Dispatch Agent (AH-PRD-09).** Deployed root becomes a thin dispatcher whose only tool is `delegate_to_specialist(name, query, acceptance_criteria=None)`. Specialists are resolved per turn from Firestore via a new `specialist_runtime` module (TTL + content-hash cache with per-key striped locking, LRU 256). `_REDEPLOY_REQUIRED_FIELDS` shrinks to the empty set for specialists; `MergedAgentConfig.warnings` marked `deprecated=true`. Admin agent edits propagate to the next chat turn within ~60 s without redeploy.
+
+2. **Approved: Hybrid MCP via `McpServerKind`.** Open enum (`cloud_run` | `zapier`; future kinds welcome) on `mcp_servers/{server_id}.kind`. New `McpToolsetPool` (kind-specific keying, LRU + idle TTL + `aclose()`-on-eviction, 60 s background sweep). Long-tail integrations route through a single shared Zapier MCP connection per account; flagship integrations stay on owned Cloud Run servers. Existing `mcp_servers` docs default to `cloud_run` via migration.
+
+3. **Approved: Six-phase rollout.** Phase 0 Zapier feasibility spike (hard gate for Phase 4) → Phase 1 cache-backed instruction wiring (independent, ships value first) → Phase 2 single-dispatch root + specialist runtime → Phase 3 `McpToolsetPool` + hybrid kinds → Phase 4 Zapier-backed Integrations → Phase 5 cleanup + rollout. Total scope ~7–10 engineering weeks; ~4–6 calendar weeks with two engineers from Phase 2 onward.
+
+4. **Approved: R1/R3 release split with Phase 4 deferred to R2.** AH-PRD-09 lands in Release 1 (Foundation) — **Phases 0–3 + 5 only** (the `cloud_run`-only runtime resolver, per RFC §7.2 no-go-pivot shape). **Phase 4 (Zapier hybrid MCP) deferred to Release 2** alongside the Integrations component — cannot ship in R1 without cascading DM-PRD-07 → PR-PRD-01 → IN-PRDs 01/02/03 into Foundation. The `cloud_run`-only version of AH-PRD-09 is structurally complete and ships the product requirement; Zapier adds the long-tail integration scalability win when Integrations is live.
+
+5. **Approved: SK-PRDs 00/01/02 moved R3 → R1.** AH-PRD-09 Phase 5 default-on is **gated on SK-PRD-02's `SandboxPool` shipping**. Without the pool, AH-PRD-09's per-turn `LlmAgent` rebuild would respawn the sandbox process every turn under the runtime resolver, dominating latency. The Skills runtime substrate (Sandbox Spike → Skills Backend → Agent Factory Skills Integration + SandboxPool) therefore lands in R1 alongside the runtime resolver. Skills authoring UI (SK-PRD-03), agent-builder controls (SK-PRD-04), and predefined-skill seed (SK-PRD-05) stay in R3 / Expertise.
+
+6. **Approved: Skills SandboxPool option (a).** Pool by `(account_id, config_id)` (per-agent isolation; v2 escape valve to loosen to `account_id`-only if SK-PRD-00 cost findings show over-provisioning). Owned by Skills as an SK-PRD-02 scope expansion. Design pattern mirrors AH-PRD-09's `McpToolsetPool` (LRU + idle TTL + `aclose()`-on-eviction + per-key striped locks) for operational consistency. Hard coordination dep: must ship before AH-PRD-09 Phase 5 default-on. Rejected alternative (b): sandboxes pinned to `LlmAgent` instances and ride `agent_cache` reuse — simpler but couples sandbox cold-start to every config edit, a noticeable UX regression when admins iterate.
+
+7. **Resolved (no AH-PRD-09 work needed): Strategy supervisor scope.** The 8 strategy-pipeline specialists (`business_*`, `competitive_*`, `marketing_*`, `brand_*` researcher/formatter pairs) are account-creation-only — invoked exactly once via `create_strategy_docs_supervisor.py` during onboarding, never via the runtime chatbot. [AH-PRD-07](components/agentic-harness/projects/AH-PRD-07-unify-strategy-agent-construction.md) (originally proposed to unify their construction with the factory) was **superseded by [AH-PRD-08](components/agentic-harness/projects/AH-PRD-08-hide-strategy-pipeline-specialists.md)** (shipped R1), which hides them from the chat picker via `visible_in_frontend=False` instead of rebuilding the construction path. AH-PRD-09's runtime resolver does not apply to these specialists; legacy `strategy_agent/config_loader.py` path stays unchanged. Reopen this decision only if a future "Refresh marketing strategy" UX makes them runtime-callable.
+
+8. **Approved: Cross-component contract preservation.** Phase 2 ships **merge-blocker parity tests** for Chat (`SessionTurnAccumulator` token aggregation — CH-PRD-01 contract) and Billing (`extract_billable_tokens(event)` — BL-PRD-02 contract) — inner-Runner dispatch must preserve the event stream both consumers depend on. Phase 5 default-on is **cutover-gated on the MER-E eval suite passing** against the new trace shape (single `delegate_to_specialist` span replacing N `dispatch_to_*` spans; inner-Runner spans nested as L2 children). MER-E coordination plan: owner pairing named by end of Phase 0, contract diff document at start of Phase 2, rollback path defined.
+
+### What this supersedes
+
+| Prior decision / state | Disposition |
+|---|---|
+| AH-PRD-02 deploy-time factory model | **Superseded in the runtime path** by AH-PRD-09. AH-PRD-02 retains its narrative as "what shipped first"; it remains canonical for the deploy-time pieces AH-PRD-09 reuses (Pydantic models, `_make_header_provider`, `build_toolset_for_doc`, the agent-builder UI, the per-account overlay model). The runtime resolver is additive — AH-PRD-02 does not get deleted. Frontmatter supersession note added. |
+| Sprint 6 Decision B (cache-backed instruction) regression | **Restored by Phase 1** of AH-PRD-09. `_make_factory_instruction_provider` rewired to read `config_cache.get_cached_config`; `config_cache.get_cached_config` decorated with `@safe_weave_op(name="load_config_from_firestore")` so MER-E's eval contract returns on every turn. |
+| AH-PRD-07 (Unify Strategy-Agent Construction) Option A / Option B sequencing recommendation | **No-op for AH-PRD-09.** AH-PRD-07 superseded by AH-PRD-08 (per Review 31 era's planner update). Originally framed as a sequencing decision; resolved as "no coordination needed." |
+| RFC §9.2 #8 default recommendation for sandbox lifecycle (option b — pin to `LlmAgent`) | **Reversed to option (a)** during review. Option (b) was the v2-conservative recommendation in the initial RFC draft; the Skills team flipped it to option (a) because sandbox cold-start on every config edit is an unacceptable UX regression. |
+| `MergedAgentConfig.warnings: list[str]` API field | **Marked vestigial** in Phase 2 (always returned empty under the runtime model); scheduled for removal one release after Phase 5 rollout. |
+
+### Documents updated
+
+| File | Change |
+|---|---|
+| `docs/design/per-turn-dispatch-rfc.md` | **New** — full design RFC, drafted as v1 by Agentic Harness, revised to v2 + v2.1 during product/dev review. Captures cross-component contracts (§4.9), cache key shapes (§4.2.1), MER-E coordination plan (§9.1), Skills sandbox decision (§9.2 #8), and AH-PRD-06 PR-C interaction (§9.2 #9). |
+| `docs/design/components/agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md` | **New** — 10-section PRD, ~310 lines. Captures phase-by-phase acceptance criteria (25 total), the Chat / Billing parity-test merge blockers, the SK-PRD-02 SandboxPool hard dep on Phase 5, and Phase 4's R2 deferral. RFC is the canonical design doc; PRD is the implementation contract. |
+| `docs/design/components/agentic-harness/projects/AH-PRD-02-agent-factory.md` | Added "Superseded by AH-PRD-09" frontmatter block; corrected stale `Status: Blocked` header to `Status: Shipped (R1) — superseded in the runtime path by AH-PRD-09`. AH-PRD-02 retains its narrative as "what shipped first." |
+| `docs/design/components/skills/projects/SK-PRD-02-agent-integration.md` | Amended with §4.6 `SandboxPool` design (process-wide pool, `(account_id, config_id)` key, LRU + idle TTL + `aclose()`-on-eviction + per-key striped locks), `_build_code_executor` delegated to the pool, four new acceptance criteria (#11–14), `test_sandbox_pool.py` unit + integration tests, AH-PRD-09 as downstream consumer in §3 + §10. Estimated effort bumped 5–7 → 6–9 days. |
+| `docs/KEN-E-System-Architecture.md` | `[PLANNED]` forward-references added to §1.4 (Key Design Decisions row for per-turn dispatch), §4 (Agent Definitions bullet for AH-PRD-09), §5 (MCP Server Architecture bullet for hybrid kinds + runtime pooling). Per RFC §5, full rewrites ship phase-by-phase as AH-PRD-09 lands. |
+| `docs/design/components/agentic-harness/README.md` | "Last Updated" → 2026-05-22; §1 Overview added `[PLANNED]` callout paragraph; §5 intro updated 7 → 9 PRDs with AH-PRD-08 (was missing) and AH-PRD-09; §5.1 dependency graph redrawn; §5.2 added AH-PRD-08 + AH-PRD-09 rows. |
+| `docs/design/components/skills/README.md` | "Last Updated" → 2026-05-22; §1 Overview mentions SandboxPool + AH-PRD-09 coordination; §3.2 added AH-PRD-09 as downstream consumer; §5 intro added "Release sequencing — R1/R3 split" paragraph; §5.2 SK-PRD-02 row updated with SandboxPool + 6–9 day effort; §5.3 added fifth coordination point (SK-PRD-02 ↔ AH-PRD-09 Phase 5). |
+| `docs/design/components/PROJECT-PLANNER.md` | R1 Foundation row expanded with AH-PRD-09 + SK-PRDs 00/01/02 rationale; R3 row updated (Skills 00–05 → Skills 03–05); new AH-PRD-09 project row added; SK-PRD-00/01/02 release column flipped R3 → R1 with explanatory notes; SK-PRD-02 description extended with SandboxPool and AH-PRD-09 as downstream consumer in the `wave` column. |
+
+### Open follow-ups (filed for tracking)
+
+1. **Phase 0 Zapier feasibility spike** — kick off immediately. Deliverables: `docs/spike-zapier-mcp-feasibility.md` with capability / auth / performance / cost / protocol findings + a go / no-go recommendation. Exit criteria documented in AH-PRD-09 §2 / RFC §7. Hard gate for Phase 4 work.
+2. **MER-E lead pairing** — AH lead + MER-E lead identified by end of Phase 0 and named in the spike report alongside the Zapier go / no-go.
+3. **AH-PRD-06 PR-C sequencing** — schedule to land before or alongside Phase 2 to avoid a merge conflict at `hierarchy.py:325` (per RFC §9.2 #9). PR-C ports the `default_global` function-tool injection into the runtime resolver.
+4. **SK-PRD-02 SandboxPool track** — Skills team to begin work in parallel with AH-PRD-09 Phases 1–3 (SK-PRD-00 + SK-PRD-01 are prerequisites). Hard dep on AH-PRD-09 Phase 5 default-on.
+5. **Phase 4 R2 commitment review** — at the start of R2 planning, re-confirm Phase 4 deferral vs. pulling Integrations sub-PRDs into R2's first wave to unblock the long-tail integration story.
+6. **`MergedAgentConfig.warnings` field removal** — scheduled for one release after Phase 5 rollout (does not block Phase 5).
+7. **Cache invalidation semantics — TTL vs hash invalidation** — RFC §9.2 #2 recommends TTL in v1 with hash invalidation as a fast-follow. Revisit if observed propagation latency causes admin pain.
+
+### Risks acknowledged at approval
+
+- **Zapier vendor risk** — Phase 0 spike is the gate; no-go pivots cleanly to `cloud_run`-only R1 (same architecture, smaller product win).
+- **Cache invalidation correctness** — content-hash invalidation + integration tests covering "write then read" within the cache window. RFC §9.1.
+- **ADK Runner internals under inner-Runner wiring** — ADK version pin in Phases 2–3; Runner contract documented in AH-PRD-09 §4.
+- **MER-E contract drift** — concrete coordination plan in RFC §9.1 (owner pairing, contract diff, dev verification, cutover gate, rollback path). Phase 5 default-on cutover-gated on MER-E eval suite passing.
+- **Chat / Billing event-topology drift** — Phase 2 parity tests as merge blockers; both consumers share `shared/token_accounting.py` per BL-PRD-02 / CH-PRD-01.
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, and documents updated. Decision rationale lives in the Review itself — this log is the canonical record going forward.*

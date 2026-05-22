@@ -1,11 +1,21 @@
 # AH-PRD-02 — Agent Factory
 
-**Status:** Blocked
+**Status:** Shipped (R1) — **superseded in the runtime path by [AH-PRD-09](./AH-PRD-09-per-turn-dispatch.md)** (R1, in flight)
 **Owner team:** Core AI / Agent Platform (backend + frontend)
 **Blocked by:** AH-PRD-01 (dispatch generator imports `build_review_pipeline`), DM-PRD-00 (Shape B convention + `seed_shape_b_fixtures.py` for per-account agent-config overlay path)
 **Parallel with:** AH-PRD-01 is the only hard upstream beyond DM-PRD-00; data-migration projects DM-PRD-01–DM-PRD-04 run on a separate path
 **Blocks:** AH-PRD-03, PR-PRD-02 (planning agent assembled by factory), SK-PRD-02 (skills wire into factory), SK-PRD-04 (agent-builder replaces the disabled rows delivered here), KG-PRD-05 (strategy research agents consume factory dispatch)
 **Estimated effort:** 11 stories across 3 phases (originally Sprint 9). Phases 1–2 ≈ 4–6 days; Phase 3 (UI + API) ≈ 4–5 days. Parallelizable across backend + frontend.
+
+---
+
+> **Superseded by [AH-PRD-09 — Per-Turn Dispatch Agent](./AH-PRD-09-per-turn-dispatch.md) (in flight, R1) + [`docs/design/per-turn-dispatch-rfc.md`](../../../per-turn-dispatch-rfc.md).**
+>
+> AH-PRD-02 shipped the deploy-time factory model: `agent_configs/*` + `mcp_servers/*` read once during `deploy_ken_e.py`, the full specialist hierarchy baked into a Python object tree and shipped to Vertex AI Agent Engine. Every field except `instruction` is frozen at that point, and the cache-backed `instruction` path from Sprint 6 Decision B was **silently regressed** when the root agent switched from `create_ken_e_agent()` to the factory's `_make_factory_instruction_provider` ([`builder.py:33`](../../../../../app/adk/agents/agent_factory/builder.py)). Today every config change — including new agents — requires a redeploy. The product requirement of "admin agent edits go live immediately" is unmet.
+>
+> **AH-PRD-09 ships the runtime successor.** The deployed root becomes a thin dispatcher with one tool (`delegate_to_specialist`); specialists are resolved per turn from Firestore via `specialist_runtime` (TTL + content-hash cache, per-key striped locking). Admin edits to `instruction`, `model`, `temperature`, `max_output_tokens`, `tools`, and new specialist creation propagate to the next chat turn within ~60 s without redeploy. Hybrid MCP via `McpServerKind` enum (`cloud_run` + `zapier`) + `McpToolsetPool` reuses connections across runtime rebuilds. AH-PRD-09 is scheduled for **Release 1** (Phases 0–3 + 5 — the `cloud_run`-only runtime resolver; Phase 4 Zapier deferred to R2 alongside Integrations).
+>
+> **Read AH-PRD-09 for the live architecture.** AH-PRD-02 retains its narrative below as "what shipped first" and remains the canonical reference for the deploy-time pieces that AH-PRD-09 reuses (Pydantic models, `_make_header_provider`, `build_toolset_for_doc`, the agent-builder UI, the per-account overlay model). The runtime resolver is additive — AH-PRD-02 does not get deleted.
 
 ---
 
