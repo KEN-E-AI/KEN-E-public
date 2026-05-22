@@ -45,7 +45,7 @@ The combination — runtime specialist resolution + hybrid MCP — meets the imm
 - **Hot-reloading root-agent settings** (root `model`, root `temperature`, root direct tools beyond `delegate_to_specialist`). Root remains deploy-time-bound; root changes are rare.
 - **Strategy supervisor and its downstream specialists** (`marketing_researcher` / `marketing_formatter` / etc.). Per [AH-PRD-08](./AH-PRD-08-hide-strategy-pipeline-specialists.md), these are account-creation-only and hidden from chat; they continue to use the legacy `strategy_agent/config_loader.py` path unchanged.
 - **Replacing all owned MCP servers with Zapier.** Hybrid by design — GA MCP and future flagships stay on owned infrastructure unless a separate decision moves them.
-- **Multi-channel work** (Slack, Voice). Out of scope per [Architecture §7.3](../../../KEN-E-System-Architecture.md#73-planned-additional-channels).
+- **Multi-channel work** (Slack, Voice). Out of scope per [Architecture §7.3](../../../../KEN-E-System-Architecture.md#73-planned-additional-channels).
 - **Changes to Skills, Project Tasks, or Automations runtime models.** They compose on top of the harness; this PRD affects how the harness assembles specialists, not how upstream features use them. Skills coordinates via SK-PRD-02's `SandboxPool` (a Skills-owned addition, not AH-PRD-09 work).
 - **Removing the agent factory concept.** "Factory" remains the right name; it just runs every turn instead of once at deploy.
 
@@ -62,7 +62,7 @@ The combination — runtime specialist resolution + hybrid MCP — meets the imm
 | **Billing ([BL-PRD-02](../../billing/projects/BL-PRD-02-token-meter-monthly-enforcement.md)) — coordination dep** | `extract_billable_tokens(event)` at `shared/token_accounting.py`. Same parity-test contract as Chat. **Phase 2 parity test is a merge blocker.** | RFC §4.9 |
 | **MER-E (sister repo) — coordination dep** | Trace shape changes from N `dispatch_to_*` spans to a single `delegate_to_specialist` span with nested inner-Runner children. MER-E extractors update before Phase 5. **Cutover gate.** | RFC §9.1 |
 | **[AH-PRD-06](./AH-PRD-06-tool-mapping.md) PR-C** | Wires `default_global` function tools through `hierarchy.py:325`. Phase 3 ports this into the runtime resolver. Schedule PR-C to land before or alongside Phase 2 to avoid merge conflict. | RFC §9.2 #9 |
-| **Feature Flags ([FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-and-evaluation.md))** | `agentic_harness_per_turn_dispatch` flag registered in Phase 5; gates the runtime path during soak and rollout. | `../../feature-flags/README.md` |
+| **Feature Flags ([FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api.md))** | `agentic_harness_per_turn_dispatch` flag registered in Phase 5; gates the runtime path during soak and rollout. | `../../feature-flags/README.md` |
 
 ## 4. Data contract
 
@@ -283,8 +283,8 @@ Pending product / dev review:
 - **Coordination PRDs:** [SK-PRD-02](../../skills/projects/SK-PRD-02-agent-integration.md) (SandboxPool — Phase 5 gate), [CH-PRD-01](../../chat/projects/CH-PRD-01-session-metadata-substrate.md) (token accumulator parity), [BL-PRD-02](../../billing/projects/BL-PRD-02-token-meter-monthly-enforcement.md) (billing meter parity)
 - **Sibling PRDs:** [AH-PRD-06](./AH-PRD-06-tool-mapping.md) (default-global tools), [AH-PRD-08](./AH-PRD-08-hide-strategy-pipeline-specialists.md) (strategy supervisor — out of scope)
 - **Component docs:** [`../README.md`](../README.md), [`../mcp-architecture.md`](../mcp-architecture.md), [`../../integrations/README.md`](../../integrations/README.md) (Phase 4 dep, deferred to R2)
-- **System docs:** [`../../../KEN-E-System-Architecture.md`](../../../KEN-E-System-Architecture.md) §1.4 (decisions), §4 (agent definitions), §5 (MCP)
-- **Tracing:** [`docs/trace-structure-spec.md`](../../../trace-structure-spec.md)
+- **System docs:** [`../../../../KEN-E-System-Architecture.md`](../../../../KEN-E-System-Architecture.md) §1.4 (decisions), §4 (agent definitions), §5 (MCP)
+- **Tracing:** [`docs/trace-structure-spec.md`](../../../../trace-structure-spec.md)
 - **CLAUDE.md rules in scope:** PY-1, PY-2, PY-3, PY-5, PY-7; D-1, D-2, D-5; C-2, C-4, C-7; T-1, T-3, T-4, T-5, T-6, T-8; O-1, O-2
 
 ---

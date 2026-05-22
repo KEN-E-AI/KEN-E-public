@@ -329,7 +329,7 @@ The System Architecture document is the canonical map and is loaded by every sto
 - [`docs/design/components/agentic-harness/projects/AH-PRD-02-agent-factory.md`](components/agentic-harness/projects/AH-PRD-02-agent-factory.md): add frontmatter:
 
   ```
-  > **Superseded by:** [AH-PRD-09 — Per-Turn Dispatch Agent](./AH-PRD-09-per-turn-dispatch.md) and [`docs/design/per-turn-dispatch-rfc.md`](../../../per-turn-dispatch-rfc.md). AH-PRD-02 describes the deploy-time factory as shipped; AH-PRD-09 ships the runtime successor. Read AH-PRD-09 for the live architecture.
+  > **Superseded by:** AH-PRD-09 — Per-Turn Dispatch Agent (`./AH-PRD-09-per-turn-dispatch.md`, sibling of AH-PRD-02) and `docs/design/per-turn-dispatch-rfc.md`. AH-PRD-02 describes the deploy-time factory as shipped; AH-PRD-09 ships the runtime successor. Read AH-PRD-09 for the live architecture.
   ```
 
 - [`docs/design/DESIGN-REVIEW-LOG.md`](DESIGN-REVIEW-LOG.md): new entry documenting the architectural decision (date, scope, decision, consequences). Per CLAUDE.md, structural reorganization of this magnitude warrants a Review entry.
