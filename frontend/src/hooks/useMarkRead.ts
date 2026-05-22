@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import type { RefObject } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { InfiniteData } from "@tanstack/react-query";
 import { markRead, toChatSessionId } from "@/lib/chatApi";
@@ -10,7 +11,7 @@ import type {
 
 type UseMarkReadParams = {
   sessionId: string | null;
-  latestMessageRef: React.RefObject<HTMLElement | null>;
+  latestMessageRef: RefObject<HTMLElement | null>;
 };
 
 export function useMarkRead({
@@ -28,13 +29,14 @@ export function useMarkRead({
     let timerId: ReturnType<typeof setTimeout> | null = null;
 
     const fire = async () => {
-      // Per-session dedup: don't re-fire within 5s for the same session
+      // Per-session dedup: don't re-fire within 5s of the last *successful* fire
       const lastFire = lastFireRef.current.get(sessionId) ?? 0;
       if (Date.now() - lastFire < 5000) return;
-      lastFireRef.current.set(sessionId, Date.now());
 
       try {
         const result = await markRead(toChatSessionId(sessionId));
+        // Stamp only on success so transient errors don't consume the 5s window
+        lastFireRef.current.set(sessionId, Date.now());
         const newLastViewedAt = result.last_viewed_at;
 
         // Optimistically patch last_viewed_at across every ["chat-sessions", ...] cache variant
@@ -90,5 +92,5 @@ export function useMarkRead({
         timerId = null;
       }
     };
-  }, [sessionId, latestMessageRef, queryClient]);
+  }, [sessionId, queryClient]);
 }
