@@ -167,9 +167,11 @@ export const ChatProvider = ({ children }: ChatProviderProps) => {
         setCurrentConversation(conversation);
         setSessionId(conversation.session_id);
 
-        const history = await chatService.getConversationHistory(
+        // chatService.getConversationHistory returns `Promise<unknown>`;
+        // narrow to the messages/events shape the API actually produces.
+        const history = (await chatService.getConversationHistory(
           conversation.session_id,
-        );
+        )) as { messages?: unknown[]; events?: unknown[] } | null;
 
         if (history && (history.messages || history.events)) {
           const events = history.events || history.messages || [];

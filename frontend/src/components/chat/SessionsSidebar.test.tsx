@@ -105,7 +105,11 @@ function renderSidebar(props: Partial<SessionsSidebarProps> = {}) {
 
 beforeEach(() => {
   mockUseChatSessions.mockReturnValue(emptyChatSessions as any);
-  mockUseFeatureFlag.mockReturnValue({ enabled: false, isLoading: false });
+  mockUseFeatureFlag.mockReturnValue({
+    enabled: false,
+    reason: "default" as const,
+    isLoading: false,
+  });
 });
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -218,7 +222,11 @@ describe("SessionsSidebar", () => {
 
   // ── TC-7: Category filter — flag on ────────────────────────────────────────
   test("TC-7: category <select> renders when chat_categories_enabled flag is on", () => {
-    mockUseFeatureFlag.mockReturnValue({ enabled: true, isLoading: false });
+    mockUseFeatureFlag.mockReturnValue({
+      enabled: true,
+      reason: "default" as const,
+      isLoading: false,
+    });
 
     renderSidebar();
 
