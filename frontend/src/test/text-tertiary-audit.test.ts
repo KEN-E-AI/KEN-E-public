@@ -56,6 +56,8 @@ const ALLOWED_FILES = new Set<string>([
   "components/admin/featureFlags/FlagEditDrawer.tsx",
   // admin — feature-flags targeting editor: field labels + slider helper text
   "components/admin/featureFlags/TargetingRulesEditor.tsx",
+  // admin — feature-flags audit list: empty-state copy, row timestamps, diff summary
+  "components/admin/featureFlags/FlagAuditList.tsx",
 
   // chat — timestamps and captions per accessibility-baseline.md §Exemptions.
   // ArtifactBlock and ThinkingBlock are 1:1 ports of docs/figma-export and use
