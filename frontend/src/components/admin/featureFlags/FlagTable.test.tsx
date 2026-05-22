@@ -289,7 +289,7 @@ describe("FlagTable", () => {
       );
     });
 
-    it("calls toast.error and does not call toast.success on mutation error", async () => {
+    it("reverts optimistic cache update and surfaces toast.error on mutation failure", async () => {
       const mutateFn = vi.fn(
         (
           _vars,
@@ -305,8 +305,24 @@ describe("FlagTable", () => {
       );
       mockUseUpdateFlag.mockReturnValue(defaultMutationHook(mutateFn));
 
+      const testClient = new QueryClient({
+        defaultOptions: {
+          queries: { retry: false },
+          mutations: { retry: false },
+        },
+      });
+      testClient.setQueryData(["featureFlags", "list"], [flagBeta]);
+
       const user = userEvent.setup();
-      render(<FlagTable flags={[flagBeta]} />, { wrapper: makeWrapper() });
+      render(<FlagTable flags={[flagBeta]} />, {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <MemoryRouter>
+            <QueryClientProvider client={testClient}>
+              {children}
+            </QueryClientProvider>
+          </MemoryRouter>
+        ),
+      });
 
       await user.click(
         screen.getByRole("switch", {
@@ -314,6 +330,9 @@ describe("FlagTable", () => {
         }),
       );
 
+      expect(
+        testClient.getQueryData<FeatureFlag[]>(["featureFlags", "list"]),
+      ).toEqual([flagBeta]);
       expect(mockToastError).toHaveBeenCalledWith("Server error");
       expect(mockToastSuccess).not.toHaveBeenCalled();
     });

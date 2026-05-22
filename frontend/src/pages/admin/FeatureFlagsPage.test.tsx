@@ -1,10 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter, Routes, Route } from "react-router-dom";
 import FeatureFlagsPage from "./FeatureFlagsPage";
 
 vi.mock("@/lib/featureFlags/hooks", () => ({
   useFeatureFlags: vi.fn(),
+}));
+
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: vi.fn(),
 }));
 
 // Mock the heavy children — their own behavior is covered by their colocated
@@ -47,8 +52,11 @@ vi.mock("@/components/admin/featureFlags/FlagEditDrawer", () => ({
 }));
 
 import { useFeatureFlags } from "@/lib/featureFlags/hooks";
+import { useAuth } from "@/contexts/AuthContext";
+import { SuperAdminGuard } from "@/components/auth/SuperAdminGuard";
 
 const mockUseFeatureFlags = useFeatureFlags as ReturnType<typeof vi.fn>;
+const mockUseAuth = useAuth as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -150,5 +158,66 @@ describe("FeatureFlagsPage", () => {
     const drawer = screen.getByTestId("drawer");
     expect(drawer).toHaveTextContent("mode:edit");
     expect(drawer).toHaveTextContent("flag:row-flag");
+  });
+
+  describe("FeatureFlagsPage — route guard", () => {
+    const guardRoute = (
+      <MemoryRouter initialEntries={["/admin/feature-flags"]}>
+        <Routes>
+          <Route
+            path="/admin/feature-flags"
+            element={
+              <SuperAdminGuard>
+                <FeatureFlagsPage />
+              </SuperAdminGuard>
+            }
+          />
+          <Route path="/" element={<div>home</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    beforeEach(() => {
+      mockUseFeatureFlags.mockReturnValue({
+        isLoading: false,
+        isError: false,
+        data: [],
+      });
+    });
+
+    it("renders the page when isSuperAdmin=true and isSuperAdminLoading=false", () => {
+      mockUseAuth.mockReturnValue({
+        isSuperAdmin: true,
+        isSuperAdminLoading: false,
+      });
+
+      render(guardRoute);
+
+      expect(screen.getByTestId("flag-table")).toBeInTheDocument();
+    });
+
+    it("redirects to '/' when isSuperAdmin=false and isSuperAdminLoading=false", () => {
+      mockUseAuth.mockReturnValue({
+        isSuperAdmin: false,
+        isSuperAdminLoading: false,
+      });
+
+      render(guardRoute);
+
+      expect(screen.getByText("home")).toBeVisible();
+      expect(screen.queryByTestId("flag-table")).not.toBeInTheDocument();
+    });
+
+    it("renders nothing when isSuperAdminLoading=true", () => {
+      mockUseAuth.mockReturnValue({
+        isSuperAdmin: false,
+        isSuperAdminLoading: true,
+      });
+
+      render(guardRoute);
+
+      expect(screen.queryByText("home")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("flag-table")).not.toBeInTheDocument();
+    });
   });
 });
