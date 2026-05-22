@@ -28,7 +28,7 @@ import os
 import time
 import uuid
 from collections.abc import Generator
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 import pytest
@@ -55,8 +55,6 @@ pytestmark = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-_NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 _ADMIN_EMAIL = "admin@ken-e.ai"
 
@@ -344,7 +342,9 @@ class TestSuperAdminCrudHappyPath:
         put_body = resp_put.json()
         assert put_body["description"] == "Updated desc"
         # updated_at must advance (server-stamped)
-        assert put_body["updated_at"] >= body["updated_at"]
+        assert datetime.fromisoformat(put_body["updated_at"]) >= datetime.fromisoformat(
+            body["updated_at"]
+        )
 
         # Verify description written to Firestore.
         doc_after_put = (
@@ -428,9 +428,12 @@ class TestAuditWritten:
     """
 
     def _read_audit_rows(self, emulator_db: Any, flag_key: str) -> list[dict[str, Any]]:
+        from google.cloud import firestore as _fs
+
         docs = (
             emulator_db.collection("feature_flag_audit")
             .where("flag_key", "==", flag_key)
+            .order_by("created_at", direction=_fs.Query.DESCENDING)
             .stream()
         )
         return [doc.to_dict() for doc in docs]
@@ -475,6 +478,11 @@ class TestAuditWritten:
         assert resp_put.status_code == 200
 
         rows = self._read_audit_rows(emulator_db, flag_key)
+        # Assert total row count first so a spurious extra audit row surfaces the root
+        # cause before the filter narrows to the 'update' action (CLAUDE.md T-8).
+        assert len(rows) == 2, (
+            f"Expected 2 audit rows total (1 create + 1 update); got {len(rows)}"
+        )
         update_rows = [r for r in rows if r["action"] == "update"]
         assert len(update_rows) == 1, (
             f"Expected 1 update audit row; got {len(update_rows)} (total rows: {len(rows)})"
@@ -536,9 +544,10 @@ class TestAuditPagination:
         assert resp_create.status_code == 201
 
         for i in range(5):
-            # Sub-millisecond sleep avoids same-timestamp ordering ambiguity
-            # (plan risk mitigation — cheapest deterministic fix per plan §Risks).
-            time.sleep(0.002)
+            # 10 ms sleep guarantees strictly increasing created_at values for the
+            # ordering assertion below (plan risk mitigation — 2 ms is below typical
+            # emulator write latency; 10 ms exceeds any realistic clock resolution).
+            time.sleep(0.01)
             resp_put = client.put(
                 f"/api/v1/admin/feature-flags/{flag_key}",
                 json=_valid_write_payload(key=flag_key, description=f"Update {i}"),
