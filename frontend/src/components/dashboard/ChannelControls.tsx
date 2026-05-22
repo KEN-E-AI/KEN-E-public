@@ -51,9 +51,10 @@ import {
   Mail,
   MessageSquare,
 } from "lucide-react";
+import type { DateRange } from "react-day-picker";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
-import EditObjectivesModal from "./EditObjectivesModal";
+import EditObjectivesModal, { type SampleData } from "./EditObjectivesModal";
 import EditChannelsModal from "./EditChannelsModal";
 import EditTacticsModal from "./EditTacticsModal";
 import "reactflow/dist/style.css";
@@ -429,15 +430,27 @@ const ReactFlowComponent = () => {
     nodeId: string;
   } | null>(null);
 
-  // Modal state
+  // Modal state.
+  //
+  // The `content` field is optional because the channel/tactic branches of
+  // handleViewModal (around L587 / L606) intentionally omit it — those views
+  // render KPI fields rather than free-text content.
+  //
+  // The `id` / `objectiveId` / `channelId` fields are written by handleViewModal
+  // and read by the Edit/Delete buttons in the modal footer (L1583-L1623) to
+  // identify which node the user is acting on. They're optional because the
+  // initial state only has title+content.
   const [modalOpen, setModalOpen] = useState(false);
   const [modalContent, setModalContent] = useState<{
     title: string;
-    content: string;
+    content?: string;
     effectivenessKPI?: string;
     efficiencyKPI?: string;
     nodeType?: string;
     supportingMetrics?: string[];
+    id?: string;
+    objectiveId?: string;
+    channelId?: string;
   }>({ title: "", content: "" });
 
   // Edit Objectives Modal state
@@ -481,21 +494,23 @@ const ReactFlowComponent = () => {
     nodeId: string;
   } | null>(null);
 
-  // Date range state
-  const [pendingDateRange, setPendingDateRange] = useState<{
-    from: Date;
-    to: Date;
-  }>({
+  // Date range state. Typed as react-day-picker's `DateRange` so the Calendar's
+  // `onSelect` callback (which delivers a `DateRange` with optional from/to) can
+  // flow directly into the setter without manual narrowing.
+  const [pendingDateRange, setPendingDateRange] = useState<DateRange>({
     from: new Date(new Date().getFullYear(), 0, 1), // January 1st of current year
     to: new Date(new Date().getFullYear(), 0, 31), // January 31st of current year
   });
-  const [pendingComparisonDateRange, setPendingComparisonDateRange] = useState<{
-    from: Date;
-    to: Date;
-  } | null>(null);
+  const [pendingComparisonDateRange, setPendingComparisonDateRange] =
+    useState<DateRange | undefined>(undefined);
 
-  // Sample data structure - now as state
-  const [sampleData, setSampleData] = useState({
+  // Sample data structure - now as state. Typed as the shared `SampleData`
+  // interface (rather than letting useState infer the deeply-literal shape of
+  // the initial value) so the setter signature is compatible with
+  // EditObjectivesModal's `onSampleDataChange: (data: SampleData) => void` prop
+  // and so iteration over `objective.channels` (Record<string, any>) doesn't
+  // produce `unknown` values in map callbacks.
+  const [sampleData, setSampleData] = useState<SampleData>({
     "1": {
       step_name: "awareness",
       objective:
@@ -727,7 +742,12 @@ const ReactFlowComponent = () => {
     if (!channel || !channel.tactics) {
       return [];
     }
-    return Object.entries(channel.tactics).map(([id, tactic]) => ({
+    // Explicit `[string, any]` annotation: `channel.tactics` arrives as
+    // narrowed-truthy-any, which TS cannot infer a value type from on
+    // Object.entries (it falls back to `unknown`). The sampleData shape
+    // declares channels as `Record<string, any>`, so `any` here is the
+    // intended type, just made explicit for the compiler.
+    return Object.entries(channel.tactics).map(([id, tactic]: [string, any]) => ({
       id,
       name:
         tactic?.name ||
@@ -752,7 +772,7 @@ const ReactFlowComponent = () => {
     if (!channel || !channel.tactics) {
       return [];
     }
-    return Object.entries(channel.tactics).map(([id, tactic]) => ({
+    return Object.entries(channel.tactics).map(([id, tactic]: [string, any]) => ({
       id,
       name:
         tactic?.name ||
