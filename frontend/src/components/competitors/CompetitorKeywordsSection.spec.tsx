@@ -51,6 +51,7 @@ describe("CompetitorKeywordsSection", () => {
         customer_keywords: [],
         competitor_entries: [
           {
+            node_id: "competitor_test_node",
             name: "Acme Corp",
             website: "https://acme.com",
             keywords: ["acme", "competitor"],
@@ -83,7 +84,7 @@ describe("CompetitorKeywordsSection", () => {
       <AuthContext.Provider value={mockAuthContext as any}>
         <QueryClientProvider client={queryClient}>
           <CompetitorKeywordsSection
-            competitorName="Acme Corp"
+            competitorNodeId="competitor_test_node"
             hasEditAccess={true}
             {...props}
           />
@@ -140,6 +141,7 @@ describe("CompetitorKeywordsSection", () => {
           customer_keywords: [],
           competitor_entries: [
             {
+              node_id: "competitor_test_node",
               name: "Acme Corp",
               website: "https://acme.com",
               keywords: [],

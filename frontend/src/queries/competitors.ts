@@ -34,6 +34,13 @@ import type {
   SubstituteProductCreate,
   SubstituteProductUpdate,
 } from "@/services/substituteProductService";
+import type { AccountId } from "@/lib/branded-types";
+
+// TODO: propagate AccountId end-to-end (call sites → hooks → services) and
+// drop this bridge. The runtime values are real account IDs from
+// useAuth().selectedOrgAccount.accountId; this cast just satisfies the
+// compiler without forcing every caller to adopt the branded type yet.
+const asAccountId = (id: string): AccountId => id as AccountId;
 
 // ==================== COMPETITIVE ENVIRONMENT ====================
 
@@ -43,7 +50,7 @@ export function useCompetitiveEnvironment(accountId: string | null) {
     queryFn: async () => {
       if (!accountId) return null;
       try {
-        return await competitiveEnvironmentService.get(accountId);
+        return await competitiveEnvironmentService.get(asAccountId(accountId));
       } catch (error: any) {
         // 404 is expected if no competitive environment exists yet
         if (error.response?.status === 404) return null;
@@ -63,7 +70,7 @@ export function useUpdateCompetitiveEnvironment() {
     }: {
       accountId: string;
       updates: CompetitiveEnvironmentUpdate;
-    }) => competitiveEnvironmentService.update(accountId, updates),
+    }) => competitiveEnvironmentService.update(asAccountId(accountId), updates),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["competitive-environment", variables.accountId],
@@ -81,7 +88,7 @@ export function useCompetitors(
 ) {
   return useQuery({
     queryKey: ["competitors", accountId, skip, limit],
-    queryFn: () => competitorService.list(accountId!, skip, limit),
+    queryFn: () => competitorService.list(asAccountId(accountId!), skip, limit),
     enabled: !!accountId,
   });
 }
@@ -89,7 +96,7 @@ export function useCompetitors(
 export function useCompetitor(accountId: string | null, nodeId: string | null) {
   return useQuery({
     queryKey: ["competitors", accountId, nodeId],
-    queryFn: () => competitorService.get(accountId!, nodeId!),
+    queryFn: () => competitorService.get(asAccountId(accountId!), nodeId!),
     enabled: !!accountId && !!nodeId,
   });
 }
@@ -103,7 +110,7 @@ export function useCreateCompetitor() {
     }: {
       accountId: string;
       competitor: CompetitorCreate;
-    }) => competitorService.create(accountId, competitor),
+    }) => competitorService.create(asAccountId(accountId), competitor),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["competitors", variables.accountId],
@@ -126,7 +133,7 @@ export function useUpdateCompetitor() {
       accountId: string;
       nodeId: string;
       updates: CompetitorUpdate;
-    }) => competitorService.update(accountId, nodeId, updates),
+    }) => competitorService.update(asAccountId(accountId), nodeId, updates),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["competitors", variables.accountId],
@@ -146,7 +153,7 @@ export function useDeleteCompetitor() {
       accountId: string;
       nodeId: string;
       cascade?: boolean;
-    }) => competitorService.delete(accountId, nodeId, cascade),
+    }) => competitorService.delete(asAccountId(accountId), nodeId, cascade),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["competitors", variables.accountId],
@@ -167,7 +174,7 @@ export function useCompetitorTactics(
     queryKey: ["competitor-tactics", accountId, competitorId, skip, limit],
     queryFn: () =>
       competitorTacticService.list(
-        accountId!,
+        asAccountId(accountId!),
         competitorId || undefined,
         skip,
         limit,
@@ -185,7 +192,7 @@ export function useCreateCompetitorTactic() {
     }: {
       accountId: string;
       tactic: CompetitorTacticCreate;
-    }) => competitorTacticService.create(accountId, tactic),
+    }) => competitorTacticService.create(asAccountId(accountId), tactic),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["competitor-tactics", variables.accountId],
@@ -205,7 +212,7 @@ export function useUpdateCompetitorTactic() {
       accountId: string;
       nodeId: string;
       updates: CompetitorTacticUpdate;
-    }) => competitorTacticService.update(accountId, nodeId, updates),
+    }) => competitorTacticService.update(asAccountId(accountId), nodeId, updates),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["competitor-tactics", variables.accountId],
@@ -223,7 +230,7 @@ export function useDeleteCompetitorTactic() {
     }: {
       accountId: string;
       nodeId: string;
-    }) => competitorTacticService.delete(accountId, nodeId),
+    }) => competitorTacticService.delete(asAccountId(accountId), nodeId),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["competitor-tactics", variables.accountId],
@@ -244,7 +251,7 @@ export function useCompetitorStrengths(
     queryKey: ["competitor-strengths", accountId, competitorId, skip, limit],
     queryFn: () =>
       competitorStrengthService.list(
-        accountId!,
+        asAccountId(accountId!),
         competitorId || undefined,
         skip,
         limit,
@@ -262,7 +269,7 @@ export function useCreateCompetitorStrength() {
     }: {
       accountId: string;
       strength: CompetitorStrengthCreate;
-    }) => competitorStrengthService.create(accountId, strength),
+    }) => competitorStrengthService.create(asAccountId(accountId), strength),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["competitor-strengths", variables.accountId],
@@ -282,7 +289,7 @@ export function useUpdateCompetitorStrength() {
       accountId: string;
       nodeId: string;
       updates: CompetitorStrengthUpdate;
-    }) => competitorStrengthService.update(accountId, nodeId, updates),
+    }) => competitorStrengthService.update(asAccountId(accountId), nodeId, updates),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["competitor-strengths", variables.accountId],
@@ -300,7 +307,7 @@ export function useDeleteCompetitorStrength() {
     }: {
       accountId: string;
       nodeId: string;
-    }) => competitorStrengthService.delete(accountId, nodeId),
+    }) => competitorStrengthService.delete(asAccountId(accountId), nodeId),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["competitor-strengths", variables.accountId],
@@ -321,7 +328,7 @@ export function useCompetitorWeaknesses(
     queryKey: ["competitor-weaknesses", accountId, competitorId, skip, limit],
     queryFn: () =>
       competitorWeaknessService.list(
-        accountId!,
+        asAccountId(accountId!),
         competitorId || undefined,
         skip,
         limit,
@@ -339,7 +346,7 @@ export function useCreateCompetitorWeakness() {
     }: {
       accountId: string;
       weakness: CompetitorWeaknessCreate;
-    }) => competitorWeaknessService.create(accountId, weakness),
+    }) => competitorWeaknessService.create(asAccountId(accountId), weakness),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["competitor-weaknesses", variables.accountId],
@@ -359,7 +366,7 @@ export function useUpdateCompetitorWeakness() {
       accountId: string;
       nodeId: string;
       updates: CompetitorWeaknessUpdate;
-    }) => competitorWeaknessService.update(accountId, nodeId, updates),
+    }) => competitorWeaknessService.update(asAccountId(accountId), nodeId, updates),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["competitor-weaknesses", variables.accountId],
@@ -377,7 +384,7 @@ export function useDeleteCompetitorWeakness() {
     }: {
       accountId: string;
       nodeId: string;
-    }) => competitorWeaknessService.delete(accountId, nodeId),
+    }) => competitorWeaknessService.delete(asAccountId(accountId), nodeId),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["competitor-weaknesses", variables.accountId],
@@ -406,7 +413,7 @@ export function useSubstituteProducts(
     ],
     queryFn: () =>
       substituteProductService.list(
-        accountId!,
+        asAccountId(accountId!),
         competitorId || undefined,
         productNodeId || undefined,
         skip,
@@ -425,7 +432,7 @@ export function useCreateSubstituteProduct() {
     }: {
       accountId: string;
       product: SubstituteProductCreate;
-    }) => substituteProductService.create(accountId, product),
+    }) => substituteProductService.create(asAccountId(accountId), product),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["substitute-products", variables.accountId],
@@ -445,7 +452,7 @@ export function useUpdateSubstituteProduct() {
       accountId: string;
       nodeId: string;
       updates: SubstituteProductUpdate;
-    }) => substituteProductService.update(accountId, nodeId, updates),
+    }) => substituteProductService.update(asAccountId(accountId), nodeId, updates),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["substitute-products", variables.accountId],
@@ -463,7 +470,7 @@ export function useDeleteSubstituteProduct() {
     }: {
       accountId: string;
       nodeId: string;
-    }) => substituteProductService.delete(accountId, nodeId),
+    }) => substituteProductService.delete(asAccountId(accountId), nodeId),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["substitute-products", variables.accountId],
@@ -488,7 +495,7 @@ export function useLinkProductToSubstitute() {
       productNodeId: string;
     }) =>
       substituteProductService.linkProduct(
-        accountId,
+        asAccountId(accountId),
         substituteProductId,
         productNodeId,
       ),
@@ -518,7 +525,7 @@ export function useUnlinkProductFromSubstitute() {
       productNodeId: string;
     }) =>
       substituteProductService.unlinkProduct(
-        accountId,
+        asAccountId(accountId),
         substituteProductId,
         productNodeId,
       ),

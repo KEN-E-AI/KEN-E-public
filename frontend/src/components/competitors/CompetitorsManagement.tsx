@@ -145,7 +145,10 @@ import {
   DEFAULT_EDGE_STYLE,
   CARD_HEIGHTS,
 } from "@/components/knowledge-graph";
-import type { ModeConfig } from "@/components/knowledge-graph";
+import type {
+  ModeConfig,
+  KnowledgeGraphItem,
+} from "@/components/knowledge-graph";
 import {
   CompetitorModal,
   DeleteCompetitorDialog,
@@ -184,6 +187,35 @@ const COMPETITOR_MODES: readonly ModeConfig<CompetitorMode>[] = [
   { value: "weaknesses", label: "Weaknesses" },
   { value: "substitute-products", label: "Substitute Products" },
 ] as const;
+
+// CompetitorStrength and CompetitorWeakness expose `display_name`;
+// SubstituteProduct uses `product_name` for the same role. This helper picks
+// the right field via the `in` operator (which narrows the union without a
+// runtime check), so a single render site can label any child entity without
+// the caller needing to know the mode.
+//
+// Named `getChildName` (not `childLabel`) because the component scope already
+// defines a local `childLabel: string` for human-readable labels.
+const getChildName = (
+  child:
+    | CompetitorStrength
+    | CompetitorWeakness
+    | SubstituteProduct
+    | null
+    | undefined,
+): string => {
+  if (!child) return "";
+  return "display_name" in child ? child.display_name : child.product_name;
+};
+
+// Same pattern for grandchildren: Risk and Opportunity expose `display_name`;
+// Product (the linked product in substitute-products mode) uses `product_name`.
+const getGrandchildName = (
+  g: Risk | Opportunity | Product | null | undefined,
+): string => {
+  if (!g) return "";
+  return "display_name" in g ? g.display_name : g.product_name;
+};
 
 export const CompetitorsManagement = ({
   hasEditAccess,
@@ -234,12 +266,16 @@ export const CompetitorsManagement = ({
     CompetitorStrength | CompetitorWeakness | SubstituteProduct | null
   >(null);
 
-  // Grandchild state (risk or opportunity)
+  // Grandchild state. In strengths/weaknesses mode this holds a Risk or
+  // Opportunity; in substitute-products mode it holds a Product (the linked
+  // product that this substitute competes with). The state type reflects all
+  // three runtime shapes — handlers narrow via `mode` or the explicit casts
+  // below.
   const [selectedGrandchildId, setSelectedGrandchildId] = useState<
     string | null
   >(null);
   const [selectedGrandchild, setSelectedGrandchild] = useState<
-    Risk | Opportunity | null
+    Risk | Opportunity | Product | null
   >(null);
 
   // Fetch children based on mode and selected competitor
@@ -1065,11 +1101,14 @@ export const CompetitorsManagement = ({
       node.type === "competitorStrengthNode" ||
       node.type === "competitorWeaknessNode"
     ) {
-      // Just open the side sheet for the already-selected child
+      // Just open the side sheet for the already-selected child.
+      // `node.type` check above guarantees selectedChild is a strength or
+      // weakness here (not a SubstituteProduct), so display_name is present.
       if (selectedChild) {
+        const child = selectedChild as CompetitorStrength | CompetitorWeakness;
         setFormData({
-          display_name: selectedChild.display_name,
-          description: selectedChild.description,
+          display_name: child.display_name,
+          description: child.description,
         });
 
         setContextMenuType("child");
@@ -1263,7 +1302,12 @@ export const CompetitorsManagement = ({
 
     const childData = data || childFormData;
 
-    if (!childData.display_name.trim() || !childData.description.trim()) {
+    // TODO: discriminate on `mode` and validate product_name for
+    // substitute-products instead of casting through display_name.
+    if (
+      !(childData as { display_name: string }).display_name.trim() ||
+      !childData.description.trim()
+    ) {
       toast({
         title: "Validation Error",
         description: "Name and description are required",
@@ -1303,8 +1347,11 @@ export const CompetitorsManagement = ({
         await createSubstituteProductMutation.mutateAsync({
           accountId: selectedOrgAccount.accountId,
           product: {
+            // TODO: drop the display_name fallback once childFormData is
+            // cleared on mode switch (currently it can carry a stale value).
             product_name:
-              subProductData.display_name || subProductData.product_name,
+              (subProductData as { display_name?: string }).display_name ||
+              subProductData.product_name,
             description: subProductData.description,
             competitor_node_id: selectedCompetitor.node_id,
             references: subProductData.references || [],
@@ -2130,11 +2177,19 @@ export const CompetitorsManagement = ({
               }
             >
               <HorizontalScrollList
-                items={children}
+                // TODO: loosen KnowledgeGraphItem (display_name optional +
+                // product_name optional) so SubstituteProduct satisfies the
+                // constraint structurally and this double-cast goes away.
+                items={children as unknown as KnowledgeGraphItem[]}
                 selectedId={selectedChildId}
                 onItemClick={(child) => {
                   setSelectedChildId(child.node_id);
-                  setSelectedChild(child);
+                  setSelectedChild(
+                    child as unknown as
+                      | CompetitorStrength
+                      | CompetitorWeakness
+                      | SubstituteProduct,
+                  );
                   setSelectedGrandchildId(null);
                   setSelectedGrandchild(null);
                   // Don't auto-open side sheet for substitute products
@@ -2147,8 +2202,9 @@ export const CompetitorsManagement = ({
                 renderItem={(child, isSelected) => {
                   const displayName =
                     mode === "substitute-products"
-                      ? (child as SubstituteProduct).product_name
-                      : child.display_name;
+                      ? (child as unknown as SubstituteProduct).product_name
+                      : (child as CompetitorStrength | CompetitorWeakness)
+                          .display_name;
 
                   return (
                     <HorizontalScrollItem
@@ -2255,7 +2311,7 @@ export const CompetitorsManagement = ({
             isOpen={isDeleteChildDialogOpen}
             onClose={() => setIsDeleteChildDialogOpen(false)}
             onConfirm={handleDeleteChild}
-            strengthName={selectedChild?.display_name || ""}
+            strengthName={getChildName(selectedChild)}
           />
         </>
       )}
@@ -2283,7 +2339,7 @@ export const CompetitorsManagement = ({
             isOpen={isDeleteChildDialogOpen}
             onClose={() => setIsDeleteChildDialogOpen(false)}
             onConfirm={handleDeleteChild}
-            weaknessName={selectedChild?.display_name || ""}
+            weaknessName={getChildName(selectedChild)}
           />
         </>
       )}
@@ -2336,14 +2392,14 @@ export const CompetitorsManagement = ({
               await handleCreateGrandchild(data);
             }}
             strengthId={selectedChild?.node_id || ""}
-            strengthName={selectedChild?.display_name || ""}
+            strengthName={getChildName(selectedChild)}
             mode="create"
           />
           <DeleteRiskDialog
             isOpen={isDeleteGrandchildDialogOpen}
             onClose={() => setIsDeleteGrandchildDialogOpen(false)}
             onConfirm={handleDeleteGrandchild}
-            riskName={selectedGrandchild?.display_name || ""}
+            riskName={getGrandchildName(selectedGrandchild)}
           />
         </>
       )}
@@ -2364,14 +2420,14 @@ export const CompetitorsManagement = ({
               await handleCreateGrandchild(data);
             }}
             weaknessId={selectedChild?.node_id || ""}
-            weaknessName={selectedChild?.display_name || ""}
+            weaknessName={getChildName(selectedChild)}
             mode="create"
           />
           <DeleteOpportunityDialog
             isOpen={isDeleteGrandchildDialogOpen}
             onClose={() => setIsDeleteGrandchildDialogOpen(false)}
             onConfirm={handleDeleteGrandchild}
-            opportunityName={selectedGrandchild?.display_name || ""}
+            opportunityName={getGrandchildName(selectedGrandchild)}
           />
         </>
       )}
@@ -2571,7 +2627,6 @@ export const CompetitorsManagement = ({
                   : Star
           }
           isEditing={isEditing}
-          onEdit={() => setIsEditing(true)}
           onSave={
             contextMenuType === "competitor"
               ? handleUpdateCompetitor
@@ -2596,15 +2651,21 @@ export const CompetitorsManagement = ({
                   product_detail_page: subProduct.product_detail_page || "",
                 });
               } else {
+                const child = selectedChild as
+                  | CompetitorStrength
+                  | CompetitorWeakness;
                 setFormData({
-                  display_name: selectedChild.display_name,
-                  description: selectedChild.description,
+                  display_name: child.display_name,
+                  description: child.description,
                 });
               }
             } else if (contextMenuType === "grandchild" && selectedGrandchild) {
+              // Product grandchildren route through the navigate-to-edit
+              // handler, so this branch only sees Risk | Opportunity.
+              const grandchild = selectedGrandchild as Risk | Opportunity;
               setFormData({
-                display_name: selectedGrandchild.display_name,
-                description: selectedGrandchild.description,
+                display_name: grandchild.display_name,
+                description: grandchild.description,
               });
             }
           }}
@@ -2748,8 +2809,8 @@ export const CompetitorsManagement = ({
                     : contextMenuType === "child"
                       ? mode === "substitute-products"
                         ? (selectedChild as SubstituteProduct)?.product_name
-                        : selectedChild?.display_name
-                      : selectedGrandchild?.display_name}
+                        : getChildName(selectedChild)
+                      : getGrandchildName(selectedGrandchild)}
                 </p>
               </div>
               <div>

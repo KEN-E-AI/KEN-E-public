@@ -19,7 +19,12 @@ export interface ValuePropositionCreate {
   display_name: string;
   description: string;
   parent_node_id: string;
-  parent_node_type: "Account" | "ProductCategory" | "Product";
+  parent_node_type:
+    | "Account"
+    | "ProductCategory"
+    | "Product"
+    | "Competitor"
+    | "SubstituteProduct";
   references?: string[];
 }
 
