@@ -4,6 +4,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
 import { AuthContext } from "@/contexts/AuthContext";
 import AccountsManagement from "./AccountsManagement";
+import type { Organization } from "@/data/organizationTypes";
+import type { AuthContextType } from "@/contexts/AuthContext";
 
 // Mock the queries
 vi.mock("@/queries/accounts", () => ({
@@ -81,7 +83,7 @@ const mockAuthContext = {
   setSelectedOrganization: vi.fn(),
   setSelectedAccount: vi.fn(),
   isSuperAdmin: false,
-};
+} as unknown as AuthContextType;
 
 const mockOrgData = {
   organization_id: "test-org",
@@ -91,7 +93,7 @@ const mockOrgData = {
   company_size: "medium",
   agency: false,
   child_organizations: [],
-};
+} as unknown as Organization;
 
 const renderAccountsManagement = (hasAdminAccess = true) => {
   const queryClient = new QueryClient({

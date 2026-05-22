@@ -1,11 +1,11 @@
-import { describe, test, expect, beforeEach, vi } from "vitest";
+import { describe, test, expect, beforeEach, vi, type Mock } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthContext, type AuthContextType } from "@/contexts/AuthContext";
 import AccountSettings from "@/pages/AccountSettings";
-import AccountCreationWizard from "@/components/settings/AccountCreationWizard";
+import { AccountCreationWizard } from "@/components/settings/AccountCreationWizard";
 
 // Mock modules
 vi.mock("@/data/organizationApi", () => ({
@@ -70,6 +70,9 @@ const mockOrgMetadata = {
   },
 };
 
+// Legacy SelectedOrgAccount shape (organization_id / account_id); the current
+// type uses `orgId` / `accountId` (branded). Cast through unknown since the
+// tests only exercise the fields the wizard reads from context.
 const mockSelectedOrgAccount = {
   organization_id: "org-123",
   account_id: "account-456",
@@ -77,9 +80,9 @@ const mockSelectedOrgAccount = {
     organization_name: "Test Organization",
     account_name: "Test Account",
   },
-};
+} as unknown as import("@/contexts/AuthContext").SelectedOrgAccount;
 
-const mockAuthContext: AuthContextType = {
+const mockAuthContext = {
   user: mockUser,
   isAuthenticated: true,
   isLoading: false,
@@ -99,7 +102,7 @@ const mockAuthContext: AuthContextType = {
   getOrganizationData: vi.fn(),
   refetchUser: vi.fn(),
   clearUserData: vi.fn(),
-};
+} as unknown as AuthContextType;
 
 // Test wrapper component
 const TestWrapper = ({ children }: { children: React.ReactNode }) => {
@@ -259,7 +262,9 @@ describe("Account Management Workflow Integration Tests", () => {
       const mockAxios = vi.mocked(await import("axios"));
 
       // Mock API error
-      mockAxios.default.put.mockRejectedValueOnce(new Error("Update failed"));
+      (mockAxios.default.put as unknown as Mock).mockRejectedValueOnce(
+        new Error("Update failed"),
+      );
 
       render(
         <TestWrapper>
@@ -288,7 +293,7 @@ describe("Account Management Workflow Integration Tests", () => {
     test("should render account creation wizard", async () => {
       render(
         <TestWrapper>
-          <AccountCreationWizard />
+          <AccountCreationWizard isOpen={true} onClose={vi.fn()} onComplete={vi.fn()} />
         </TestWrapper>,
       );
 
@@ -307,7 +312,7 @@ describe("Account Management Workflow Integration Tests", () => {
 
       render(
         <TestWrapper>
-          <AccountCreationWizard />
+          <AccountCreationWizard isOpen={true} onClose={vi.fn()} onComplete={vi.fn()} />
         </TestWrapper>,
       );
 
@@ -338,7 +343,7 @@ describe("Account Management Workflow Integration Tests", () => {
 
       render(
         <TestWrapper>
-          <AccountCreationWizard />
+          <AccountCreationWizard isOpen={true} onClose={vi.fn()} onComplete={vi.fn()} />
         </TestWrapper>,
       );
 
@@ -363,11 +368,11 @@ describe("Account Management Workflow Integration Tests", () => {
       mockCreateOrganization.mockResolvedValueOnce({
         organization_id: "new-org-123",
         organization_name: "New Test Organization",
-      });
+      } as unknown as Awaited<ReturnType<typeof mockCreateOrganization>>);
 
       render(
         <TestWrapper>
-          <AccountCreationWizard />
+          <AccountCreationWizard isOpen={true} onClose={vi.fn()} onComplete={vi.fn()} />
         </TestWrapper>,
       );
 
@@ -507,7 +512,7 @@ describe("Account Management Workflow Integration Tests", () => {
             },
           },
         },
-      };
+      } as unknown as AuthContextType;
 
       render(
         <TestWrapper>
@@ -556,7 +561,7 @@ describe("Account Management Workflow Integration Tests", () => {
       const mockAxios = vi.mocked(await import("axios"));
 
       // Mock slow API response
-      mockAxios.default.put.mockImplementation(
+      (mockAxios.default.put as unknown as Mock).mockImplementation(
         () => new Promise((resolve) => setTimeout(resolve, 100)),
       );
 

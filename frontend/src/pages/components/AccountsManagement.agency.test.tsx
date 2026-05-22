@@ -5,6 +5,7 @@ import AccountsManagement from "./AccountsManagement";
 import { AuthContext } from "@/contexts/AuthContext";
 import * as organizationApi from "@/data/organizationApi";
 import type { Organization, Account } from "@/data/organizationTypes";
+import type { AuthContextType } from "@/contexts/AuthContext";
 
 // Mock the organization API
 vi.mock("@/data/organizationApi");
@@ -21,12 +22,18 @@ vi.mock("@/hooks/use-toast", () => ({
   }),
 }));
 
-const mockRegularOrg: Organization = {
+// These fixtures use a legacy `seats`-based shape; the current Organization
+// interface has shifted to `plan_name`/`price`/`features`-style billing and
+// `members_used`/`members_limit`-style team. The runtime tests below only
+// touch `organization_id`, `agency`, and `child_organizations`, so the cast
+// through unknown is acceptable. TODO: regenerate from the current type
+// when the legacy `seats` fixtures are no longer useful for any consumer.
+const mockRegularOrg = {
   organization_id: "regular-org",
   organization_name: "Regular Organization",
   plan: "Growth",
   website: "https://regular.org",
-  agency: false, // Regular organization
+  agency: false,
   child_organizations: [],
   subscription: {
     seats: 100,
@@ -42,14 +49,14 @@ const mockRegularOrg: Organization = {
   team: {
     users: 50,
   },
-};
+} as unknown as Organization;
 
-const mockAgencyOrg: Organization = {
+const mockAgencyOrg = {
   organization_id: "agency-org",
   organization_name: "Agency Organization",
   plan: "Agency",
   website: "https://agency.org",
-  agency: true, // Agency organization
+  agency: true,
   child_organizations: ["child-org-1", "child-org-2"],
   subscription: {
     seats: 500,
@@ -65,7 +72,7 @@ const mockAgencyOrg: Organization = {
   team: {
     users: 250,
   },
-};
+} as unknown as Organization;
 
 const mockAuthContext = {
   user: {
@@ -99,7 +106,7 @@ const mockAuthContext = {
   updateUser: vi.fn(),
   setSelectedOrgAccount: vi.fn(),
   setUser: vi.fn(),
-};
+} as unknown as AuthContextType;
 
 describe("AccountsManagement - Agency Restrictions", () => {
   beforeEach(() => {

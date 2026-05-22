@@ -14,6 +14,32 @@ import {
 } from "@/queries/accounts";
 import { useSyncHolidayActivityLogs } from "@/queries/activities";
 import type { AccountCreationData } from "@/components/settings/AccountCreationWizard";
+import type { Organization } from "@/data/organizationTypes";
+
+// Local factory for AccountCreationData fixtures. The shape grew template_id,
+// marketing_channels, product_integrations, enabled_strategies, etc. after
+// these tests were written; this helper supplies sensible defaults so each
+// test only declares the fields it actually exercises.
+const makeAccountCreationData = (
+  overrides: Partial<AccountCreationData> = {},
+): AccountCreationData => ({
+  account_name: "Test Account",
+  industry: "Technology",
+  websites: [],
+  estimated_annual_ad_budget: null,
+  business_strategy_documents: [],
+  template_id: "",
+  marketing_channels: [],
+  product_integrations: [],
+  enabled_strategies: [],
+  override_product_categories: [],
+  timezone: "America/New_York",
+  data_region: "United States",
+  region: ["US"],
+  objectives: [],
+  kpis: [],
+  ...overrides,
+});
 
 // Mock all dependencies
 vi.mock("@/contexts/AuthContext");
@@ -64,7 +90,7 @@ describe("AccountsManagement Helper Functions", () => {
     website: "https://test.com",
     company_size: "11-50",
     agency: false,
-  };
+  } as unknown as Organization;
 
   let queryClient: QueryClient;
 
@@ -121,11 +147,12 @@ describe("AccountsManagement Helper Functions", () => {
   describe("validateAccountCreation helper function", () => {
     test("should return null for valid data", () => {
       const validData: AccountCreationData = {
+        ...makeAccountCreationData(),
         account_name: "Test Account",
         industry: "Technology",
         timezone: "America/New_York",
         data_region: "United States",
-        region: "US",
+        region: ["US"],
         websites: [],
         estimated_annual_ad_budget: null,
         business_strategy_documents: [],
@@ -152,11 +179,12 @@ describe("AccountsManagement Helper Functions", () => {
 
     test("should return error message for missing required fields", () => {
       const invalidData: AccountCreationData = {
+        ...makeAccountCreationData(),
         account_name: "",
         industry: "",
         timezone: "America/New_York",
         data_region: "United States",
-        region: "US",
+        region: ["US"],
         websites: [],
         estimated_annual_ad_budget: null,
         business_strategy_documents: [],
@@ -175,11 +203,12 @@ describe("AccountsManagement Helper Functions", () => {
     test("should correctly transform wizard data to API format", async () => {
       const user = userEvent.setup();
       const wizardData: AccountCreationData = {
+        ...makeAccountCreationData(),
         account_name: "Test Account",
         industry: "Technology",
         timezone: "America/Los_Angeles",
         data_region: "Europe",
-        region: "FR",
+        region: ["FR"],
         websites: ["https://example.com", "https://test.com"],
         estimated_annual_ad_budget: 100000,
         business_strategy_documents: [],
@@ -193,7 +222,7 @@ describe("AccountsManagement Helper Functions", () => {
         websites: ["https://example.com", "https://test.com"],
         timezone: "America/Los_Angeles",
         dataRegion: "Europe",
-        region: "FR",
+        region: ["FR"],
         estimatedAnnualAdBudget: 100000,
         businessStrategyDocuments: [],
       };
@@ -215,11 +244,12 @@ describe("AccountsManagement Helper Functions", () => {
 
     test("should handle null values correctly", () => {
       const wizardData: AccountCreationData = {
+        ...makeAccountCreationData(),
         account_name: "Test Account",
         industry: "Technology",
         timezone: "America/New_York",
         data_region: "United States",
-        region: "US",
+        region: ["US"],
         websites: null as any,
         estimated_annual_ad_budget: null,
         business_strategy_documents: null as any,
@@ -378,11 +408,12 @@ describe("AccountsManagement Helper Functions", () => {
 
     test("should handle empty arrays and objects", () => {
       const emptyWizardData: AccountCreationData = {
+        ...makeAccountCreationData(),
         account_name: "Test",
         industry: "Technology",
         timezone: "America/New_York",
         data_region: "United States",
-        region: "US",
+        region: ["US"],
         websites: [],
         estimated_annual_ad_budget: null,
         business_strategy_documents: [],

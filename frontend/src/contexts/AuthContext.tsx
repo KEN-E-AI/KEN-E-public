@@ -99,7 +99,7 @@ interface SecuritySetting {
   status?: string;
 }
 
-interface AuthContextType {
+export interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isAuthLoading: boolean;
