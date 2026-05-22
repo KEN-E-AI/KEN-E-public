@@ -9,6 +9,15 @@ export default defineConfig({
   reporter: process.env.CI
     ? [["html", { outputFolder: "test-results/html" }]]
     : "list",
+  snapshotPathTemplate: "{testDir}/__screenshots__/{testFilePath}/{arg}{ext}",
+  expect: {
+    toHaveScreenshot: {
+      maxDiffPixelRatio: 0.01,
+      threshold: 0.2,
+      animations: "disabled",
+      caret: "hide",
+    },
+  },
   use: {
     baseURL: "http://localhost:8080",
     trace: "on-first-retry",

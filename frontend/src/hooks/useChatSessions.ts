@@ -24,7 +24,12 @@ export function useChatSessions({
       query ?? "",
     ] as const,
     queryFn: ({ pageParam }) =>
-      listChatSessions({ cursor: pageParam, category_id: categoryId, query }),
+      listChatSessions({
+        cursor: pageParam,
+        category_id: categoryId,
+        query,
+        account_id: accountId,
+      }),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage: ListChatSessionsResponse) =>
       lastPage.next_cursor,
