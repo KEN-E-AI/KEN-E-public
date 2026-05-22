@@ -60,6 +60,12 @@ const mockUseAuth = useAuth as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Safe default — FeatureFlagsPage itself doesn't call useAuth, but guarding
+  // here prevents undefined from the hook if the page ever gains a direct call.
+  mockUseAuth.mockReturnValue({
+    isSuperAdmin: false,
+    isSuperAdminLoading: false,
+  });
 });
 
 describe("FeatureFlagsPage", () => {
@@ -161,21 +167,27 @@ describe("FeatureFlagsPage", () => {
   });
 
   describe("FeatureFlagsPage — route guard", () => {
-    const guardRoute = (
-      <MemoryRouter initialEntries={["/admin/feature-flags"]}>
-        <Routes>
-          <Route
-            path="/admin/feature-flags"
-            element={
-              <SuperAdminGuard>
-                <FeatureFlagsPage />
-              </SuperAdminGuard>
-            }
-          />
-          <Route path="/" element={<div>home</div>} />
-        </Routes>
-      </MemoryRouter>
-    );
+    // Factory function rather than a const to avoid any shared-element-reference
+    // confusion between tests.
+    function makeGuardRoute() {
+      return (
+        <MemoryRouter initialEntries={["/admin/feature-flags"]}>
+          <Routes>
+            {/* SuperAdminGuard is intentionally NOT mocked — these tests verify
+                the real guard behavior against the mocked useAuth. */}
+            <Route
+              path="/admin/feature-flags"
+              element={
+                <SuperAdminGuard>
+                  <FeatureFlagsPage />
+                </SuperAdminGuard>
+              }
+            />
+            <Route path="/" element={<div>home</div>} />
+          </Routes>
+        </MemoryRouter>
+      );
+    }
 
     beforeEach(() => {
       mockUseFeatureFlags.mockReturnValue({
@@ -191,7 +203,7 @@ describe("FeatureFlagsPage", () => {
         isSuperAdminLoading: false,
       });
 
-      render(guardRoute);
+      render(makeGuardRoute());
 
       expect(screen.getByTestId("flag-table")).toBeInTheDocument();
     });
@@ -202,10 +214,15 @@ describe("FeatureFlagsPage", () => {
         isSuperAdminLoading: false,
       });
 
-      render(guardRoute);
+      render(makeGuardRoute());
 
       expect(screen.getByText("home")).toBeVisible();
       expect(screen.queryByTestId("flag-table")).not.toBeInTheDocument();
+      // Confirm the page heading is absent — guards against a guard that renders
+      // both branches simultaneously.
+      expect(
+        screen.queryByRole("heading", { name: /feature flags/i }),
+      ).not.toBeInTheDocument();
     });
 
     it("renders nothing when isSuperAdminLoading=true", () => {
@@ -214,10 +231,13 @@ describe("FeatureFlagsPage", () => {
         isSuperAdminLoading: true,
       });
 
-      render(guardRoute);
+      render(makeGuardRoute());
 
       expect(screen.queryByText("home")).not.toBeInTheDocument();
       expect(screen.queryByTestId("flag-table")).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("heading", { name: /feature flags/i }),
+      ).not.toBeInTheDocument();
     });
   });
 });

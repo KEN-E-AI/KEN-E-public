@@ -290,6 +290,10 @@ describe("FlagTable", () => {
     });
 
     it("reverts optimistic cache update and surfaces toast.error on mutation failure", async () => {
+      // Capture the optimistic-write state inside the mutateFn so the test
+      // distinguishes "write-then-rollback" from "cache never mutated".
+      let stateAfterOptimisticWrite: FeatureFlag[] | undefined;
+
       const mutateFn = vi.fn(
         (
           _vars,
@@ -298,6 +302,12 @@ describe("FlagTable", () => {
             onSuccess?: () => void;
           },
         ) => {
+          // handleToggleActive sets the optimistic value before calling mutate,
+          // so the cache holds is_active=false at this point (flagBeta was true).
+          stateAfterOptimisticWrite = testClient.getQueryData<FeatureFlag[]>([
+            "featureFlags",
+            "list",
+          ]);
           callbacks.onError?.({
             response: { data: { detail: "Server error" } },
           });
@@ -330,6 +340,9 @@ describe("FlagTable", () => {
         }),
       );
 
+      // Optimistic write flipped is_active to false before the error fired.
+      expect(stateAfterOptimisticWrite?.[0].is_active).toBe(false);
+      // onError restored previousFlags — is_active is back to the original true.
       expect(
         testClient.getQueryData<FeatureFlag[]>(["featureFlags", "list"]),
       ).toEqual([flagBeta]);
