@@ -219,6 +219,12 @@ Allowlists compose with percentage rollout (e.g., "enable for `@ken-e.ai` + 5% o
 
 ### 7.3 Stickiness
 
+Admin-facing help text shown in the `/admin/feature-flags` create/edit drawer's `bucketing_entity` dropdown (kept here so the in-UI prose has a single source of truth, snapshot-tested against this block):
+
+<!-- BUCKETING_ENTITY_HELP_TEXT_START -->
+'account' is correct for most product flags. Choose 'user' only if the feature travels with the person across accounts (e.g., profile settings). 'organization' for org-wide capabilities.
+<!-- BUCKETING_ENTITY_HELP_TEXT_END -->
+
 - Percentage-rollout bucket = `int(sha256(f"{flag_key}:{entity_id}").hexdigest()[:8], 16) % 100`. Deterministic across sessions, devices, and backend/frontend callers.
 - `entity_id` resolves from the flag's `bucketing_entity`:
   - `"account"` → `evaluation_context.account_id`

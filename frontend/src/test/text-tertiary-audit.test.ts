@@ -50,6 +50,12 @@ const ALLOWED_FILES = new Set<string>([
 
   // admin — empty-state secondary message in the Super Admins table
   "components/admin/superAdmins/SuperAdminsTable.tsx",
+  // admin — feature-flags table: row timestamps, secondary metadata, empty-state
+  "components/admin/featureFlags/FlagTable.tsx",
+  // admin — feature-flags create/edit drawer: form-field descriptions
+  "components/admin/featureFlags/FlagEditDrawer.tsx",
+  // admin — feature-flags targeting editor: field labels + slider helper text
+  "components/admin/featureFlags/TargetingRulesEditor.tsx",
 
   // chat — timestamps and captions per accessibility-baseline.md §Exemptions.
   // ArtifactBlock and ThinkingBlock are 1:1 ports of docs/figma-export and use
