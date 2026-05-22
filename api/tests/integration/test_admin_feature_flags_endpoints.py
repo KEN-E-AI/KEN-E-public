@@ -347,9 +347,7 @@ class TestSuperAdminCrudHappyPath:
         )
 
         # Verify description written to Firestore.
-        doc_after_put = (
-            emulator_db.collection("feature_flags").document(flag_key).get()
-        )
+        doc_after_put = emulator_db.collection("feature_flags").document(flag_key).get()
         assert doc_after_put.to_dict()["description"] == "Updated desc"
 
         # --- DELETE /{key} ---
@@ -555,9 +553,7 @@ class TestAuditPagination:
             assert resp_put.status_code == 200
 
         # --- Page 1 ---
-        resp_p1 = client.get(
-            f"/api/v1/admin/feature-flags/{flag_key}/audit?limit=2"
-        )
+        resp_p1 = client.get(f"/api/v1/admin/feature-flags/{flag_key}/audit?limit=2")
         assert resp_p1.status_code == 200
         body_p1 = resp_p1.json()
         assert len(body_p1["entries"]) == 2
@@ -565,9 +561,14 @@ class TestAuditPagination:
         ids_p1 = {e["audit_id"] for e in body_p1["entries"]}
 
         # --- Page 2 ---
+        # Use params= so TestClient (requests) percent-encodes the cursor value.
+        # Embedding the cursor in an f-string URL is unsafe because the cursor format
+        # is "{iso_datetime}_{uuid8}" — the "+" in "+00:00" would be decoded as a
+        # space by the query-string parser, causing the Firestore lookup to fail.
         cursor_1 = body_p1["next_cursor"]
         resp_p2 = client.get(
-            f"/api/v1/admin/feature-flags/{flag_key}/audit?limit=2&cursor={cursor_1}"
+            f"/api/v1/admin/feature-flags/{flag_key}/audit",
+            params={"limit": 2, "cursor": cursor_1},
         )
         assert resp_p2.status_code == 200
         body_p2 = resp_p2.json()
@@ -578,7 +579,8 @@ class TestAuditPagination:
         # --- Page 3 (terminal) ---
         cursor_2 = body_p2["next_cursor"]
         resp_p3 = client.get(
-            f"/api/v1/admin/feature-flags/{flag_key}/audit?limit=2&cursor={cursor_2}"
+            f"/api/v1/admin/feature-flags/{flag_key}/audit",
+            params={"limit": 2, "cursor": cursor_2},
         )
         assert resp_p3.status_code == 200
         body_p3 = resp_p3.json()
