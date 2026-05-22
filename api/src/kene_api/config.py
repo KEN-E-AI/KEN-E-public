@@ -51,5 +51,13 @@ class Settings:
         "ORGANIZATION_CREATION_PERMISSION", "all"
     )
 
+    # Rate-limit bypass for the chat-sidebar load-test user.
+    # When set, requests carrying a Firebase ID token for this UID skip the
+    # per-IP authenticated-request rate limiter so the 1000-VU sidebar load
+    # test (which originates from a single Cloud Build egress IP) is not
+    # throttled by the production 60-req/min ceiling.  Must be empty in
+    # production; set only on staging where the load test runs.
+    load_test_bypass_uid: str = os.getenv("LOAD_TEST_BYPASS_UID", "")
+
 
 settings = Settings()

@@ -119,7 +119,13 @@ class RedisService:
         try:
             json_value = json.dumps(value)
             return self.set(key, json_value, ttl)
-        except (TypeError, json.JSONEncodeError) as e:
+        except (TypeError, ValueError) as e:
+            # json.dumps raises TypeError on non-serializable values and
+            # ValueError on circular references.  The stdlib `json` module
+            # does NOT export a `JSONEncodeError` symbol (only
+            # `JSONDecodeError`), so the previous tuple raised AttributeError
+            # instead of catching the failure — turning a soft cache miss
+            # into an unhandled exception in every caller.
             logger.error(f"Failed to encode JSON for key {key}: {e}")
             return False
 
