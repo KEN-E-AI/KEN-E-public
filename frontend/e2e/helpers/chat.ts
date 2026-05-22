@@ -10,11 +10,11 @@ const FIRESTORE_REST = `${FIRESTORE_BASE}/v1/projects/${PROJECT}/databases/(defa
 function str(v: string) {
   return { stringValue: v };
 }
-function bool(v: boolean) {
-  return { booleanValue: v };
-}
 function nullVal() {
   return { nullValue: "NULL_VALUE" as const };
+}
+function timestamp(v: string) {
+  return { timestampValue: v };
 }
 
 // ─── Chat-session seeding ─────────────────────────────────────────────────────
@@ -22,7 +22,11 @@ function nullVal() {
 export type ChatSessionOverrides = {
   title?: string | null;
   user_id?: string;
-  is_agent_running?: boolean;
+  // is_agent_running is derived on read from last_agent_started_at / last_agent_stopped_at
+  // (no persistent boolean in ChatSessionMetadata). Set last_agent_started_at to a recent
+  // ISO timestamp to make the backend compute is_agent_running=true for this session.
+  last_agent_started_at?: string | null;
+  last_agent_stopped_at?: string | null;
   last_agent_message_at?: string | null;
   last_viewed_at?: string | null;
   last_message_preview?: string | null;
@@ -41,16 +45,18 @@ export async function seedChatSession(
   opts: {
     accountId: string;
     sessionId: string;
+    orgId?: string;
     overrides?: ChatSessionOverrides;
   },
 ): Promise<void> {
-  const { accountId, sessionId, overrides = {} } = opts;
+  const { accountId, sessionId, orgId = "org-test", overrides = {} } = opts;
   const now = new Date().toISOString();
 
   const {
     title = `Session ${sessionId}`,
     user_id = "alice-uid",
-    is_agent_running = false,
+    last_agent_started_at = null,
+    last_agent_stopped_at = null,
     last_agent_message_at = null,
     last_viewed_at = null,
     last_message_preview = null,
@@ -66,25 +72,36 @@ export async function seedChatSession(
     data: {
       fields: {
         session_id: str(sessionId),
-        // user_id, account_id, and deleted_at are required by the backend's
-        // collection-group query (search.py) that filters sessions per user.
+        // user_id, account_id, organization_id, and deleted_at are required by
+        // the backend's collection-group query (search.py) and ChatSessionMetadata
+        // model. Timestamps must use timestampValue so Firestore range filters work.
         user_id: str(user_id),
         account_id: str(accountId),
+        organization_id: str(orgId),
         deleted_at: nullVal(),
         title: title !== null ? str(title) : nullVal(),
         category_id: category_id !== null ? str(category_id) : nullVal(),
         category_name: category_name !== null ? str(category_name) : nullVal(),
         last_message_preview:
           last_message_preview !== null ? str(last_message_preview) : nullVal(),
-        updated_at: str(updated_at),
-        created_at: str(created_at),
-        is_agent_running: bool(is_agent_running),
+        updated_at: timestamp(updated_at),
+        created_at: timestamp(created_at),
+        // is_agent_running is derived on read by the backend from these two timestamps.
+        // Set last_agent_started_at to a recent ISO time (within 10 min) for active sessions.
+        last_agent_started_at:
+          last_agent_started_at !== null
+            ? timestamp(last_agent_started_at)
+            : nullVal(),
+        last_agent_stopped_at:
+          last_agent_stopped_at !== null
+            ? timestamp(last_agent_stopped_at)
+            : nullVal(),
         last_agent_message_at:
           last_agent_message_at !== null
-            ? str(last_agent_message_at)
+            ? timestamp(last_agent_message_at)
             : nullVal(),
         last_viewed_at:
-          last_viewed_at !== null ? str(last_viewed_at) : nullVal(),
+          last_viewed_at !== null ? timestamp(last_viewed_at) : nullVal(),
       },
     },
   });
@@ -104,12 +121,15 @@ export async function seedNChatSessions(
   count: number,
   opts: {
     accountId: string;
+    orgId?: string;
     idPrefix?: string;
     overrides?: (i: number) => ChatSessionOverrides;
   },
 ): Promise<string[]> {
-  const { accountId, idPrefix = "session-", overrides } = opts;
-  const ids: string[] = [];
+  const { accountId, orgId, idPrefix = "session-", overrides } = opts;
+  // Pre-allocate so concurrent pushes within a batch don't produce a
+  // non-deterministic ordering in the returned array.
+  const ids: string[] = new Array(count);
 
   // Fire in batches of 20 to avoid overwhelming the emulator with concurrent
   // HTTP requests, which causes 500s at ~1000 sessions on CI.
@@ -120,9 +140,10 @@ export async function seedNChatSessions(
       Array.from({ length: end - start }, async (_, j) => {
         const i = start + j;
         const sessionId = `${idPrefix}${i}`;
-        ids.push(sessionId);
+        ids[i] = sessionId;
         await seedChatSession(request, {
           accountId,
+          orgId,
           sessionId,
           overrides: overrides ? overrides(i) : undefined,
         });

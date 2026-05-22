@@ -35,8 +35,9 @@ import {
 const ALICE_EMAIL = "alice@ken-e.ai";
 const ALICE_PASSWORD = "password123";
 const ALICE_UID = "alice-uid";
-const ORG_ID = "e2e-org-vr";
-const ACCOUNT_ID = "e2e-account-vr";
+// IDs must match branded-type validators: org_ prefix and acc_ prefix (min 10 chars).
+const ORG_ID = "org_e2e-vr";
+const ACCOUNT_ID = "acc_e2e-vr";
 
 // Fixed past timestamps to keep screenshots stable across runs.
 const T_ACTIVE = "2026-05-22T10:00:00.000Z";
@@ -57,10 +58,14 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.afterEach(async ({ request }) => {
-  await Promise.all([
+  const results = await Promise.allSettled([
     deleteFlag(request, "chat_v2_enabled"),
     cleanupChatSessions(request, ACCOUNT_ID),
   ]);
+  const errors = results
+    .filter((r): r is PromiseRejectedResult => r.status === "rejected")
+    .map((r) => r.reason as Error);
+  if (errors.length > 0) throw new AggregateError(errors, "afterEach cleanup failed");
 });
 
 // ─── Shared setup: sign in, enable chat_v2, seed account + sessions ───────────
@@ -86,11 +91,13 @@ async function setupChatPage({
   await Promise.all([
     seedChatSession(request, {
       accountId: ACCOUNT_ID,
+      orgId: ORG_ID,
       sessionId: "vr-session-active",
       overrides: {
         title: "Campaign Q3 planning",
         last_message_preview: "Running performance analysis…",
-        is_agent_running: true,
+        // last_agent_started_at within 10 min → backend derives is_agent_running=true
+        last_agent_started_at: new Date().toISOString(),
         last_agent_message_at: T_ACTIVE,
         last_viewed_at: null,
         updated_at: T_ACTIVE,
@@ -99,11 +106,11 @@ async function setupChatPage({
     }),
     seedChatSession(request, {
       accountId: ACCOUNT_ID,
+      orgId: ORG_ID,
       sessionId: "vr-session-needs-review",
       overrides: {
         title: "Keyword strategy review",
         last_message_preview: "Here are the top 10 keywords for your campaign.",
-        is_agent_running: false,
         last_agent_message_at: T_AGENT_MSG,
         last_viewed_at: T_LAST_VIEW_OLD,
         updated_at: T_NEEDS_REVIEW,
@@ -112,11 +119,11 @@ async function setupChatPage({
     }),
     seedChatSession(request, {
       accountId: ACCOUNT_ID,
+      orgId: ORG_ID,
       sessionId: "vr-session-idle",
       overrides: {
         title: "Budget allocation ideas",
         last_message_preview: "I reviewed your Q2 budget allocation.",
-        is_agent_running: false,
         last_agent_message_at: T_AGENT_MSG,
         last_viewed_at: T_LAST_VIEW_NEW,
         updated_at: T_IDLE,
@@ -129,7 +136,12 @@ async function setupChatPage({
   await signInAs(page, ALICE_EMAIL, ALICE_PASSWORD);
 
   // Inject the selected org/account into localStorage so the sidebar resolves accountId.
-  await page.evaluate(
+  // addInitScript (not page.evaluate) is used here so the values are written before
+  // ANY page-side JavaScript runs on the next navigation. page.evaluate runs AFTER
+  // React/Firebase initialize, which means onAuthStateChanged can fire and clear
+  // localStorage before the query hook reads it, leaving accountId = null and
+  // disabling the sessions fetch. addInitScript bypasses that race entirely.
+  await page.addInitScript(
     buildSelectedOrgAccountScript({ orgId: ORG_ID, accountId: ACCOUNT_ID }),
   );
 }
@@ -158,11 +170,18 @@ test("sidebar-collapsed", async ({ page, request }) => {
 
   await page.goto("/chat");
 
+  // Wait for the sidebar first (uses 30 s default) so the feature flag has time
+  // to resolve before the 10 s session-item wait starts. Without this, a slow
+  // emulator response after a heavy prior test can starve the flag check.
+  await page.locator('[data-testid="sessions-sidebar"]').waitFor({ state: "visible" });
+
   // Wait for sessions to load first so the collapsed rail shows dots.
+  // 30 s allows TanStack Query's retry cycle (up to 3 retries + 5 s polling)
+  // to recover from a transiently overloaded Firestore emulator.
   await page
     .locator('[data-slot="session-list-item"]')
     .first()
-    .waitFor({ state: "visible", timeout: 10_000 });
+    .waitFor({ state: "visible", timeout: 30_000 });
 
   // Collapse the sidebar.
   await page.click('[aria-label="Collapse sessions sidebar"]');
@@ -180,6 +199,9 @@ test("chat-initial", async ({ page, request }) => {
 
   const chatInterface = page.locator('[data-testid="chat-interface"]');
   await chatInterface.waitFor({ state: "visible" });
+  // Wait for the sidebar (uses 30 s default) so chat_v2_enabled has resolved and
+  // the layout is stable before taking the screenshot.
+  await page.locator('[data-testid="sessions-sidebar"]').waitFor({ state: "visible" });
 
   // Wait for the intro message to be rendered.
   await page.waitForFunction(() =>
@@ -209,6 +231,9 @@ test("chat-user-sending", async ({ page, request }) => {
 
   const chatInterface = page.locator('[data-testid="chat-interface"]');
   await chatInterface.waitFor({ state: "visible" });
+  // Wait for the sidebar to be visible — confirms chat_v2_enabled has loaded and
+  // the new <Chat /> route is stable (prevents remount between fill and click).
+  await page.locator('[data-testid="sessions-sidebar"]').waitFor({ state: "visible" });
 
   // Type and send a message.
   await page.fill(
@@ -253,6 +278,9 @@ test("chat-assistant-reply", async ({ page, request }) => {
 
   const chatInterface = page.locator('[data-testid="chat-interface"]');
   await chatInterface.waitFor({ state: "visible" });
+  // Wait for the sidebar to be visible — confirms chat_v2_enabled has loaded and
+  // the new <Chat /> route is stable (prevents remount between fill and click).
+  await page.locator('[data-testid="sessions-sidebar"]').waitFor({ state: "visible" });
 
   await page.fill(
     '[aria-label="Chat input"]',

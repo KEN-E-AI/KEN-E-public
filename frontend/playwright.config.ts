@@ -36,6 +36,10 @@ export default defineConfig({
     // to the local Firebase emulator, so placeholder Firebase config is
     // sufficient — initializeApp() just needs the shape to be valid.
     command: [
+      // Explicitly override any local .env.development.local or .env.local
+      // that may set VITE_AUTH_BYPASS=true — that bypass breaks signInAs()
+      // because the stub auth object doesn't implement signInWithEmailAndPassword.
+      "VITE_AUTH_BYPASS=false",
       "VITE_API_BASE_URL=http://127.0.0.1:8000",
       "VITE_ENVIRONMENT=development",
       "VITE_USE_AUTH_EMULATOR=true",
