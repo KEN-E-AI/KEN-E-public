@@ -1,6 +1,5 @@
 // NOTE: Class-contract lock only — runtime breakpoint behaviour is not verified by JSDOM.
 import { describe, test, expect, beforeEach, vi } from "vitest";
-import type { Mock } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { AuthContextType } from "@/contexts/AuthContext";
@@ -14,8 +13,6 @@ import {
   resetLayoutBannersForTesting,
 } from "./LayoutC";
 import type { LayoutBannerId } from "./LayoutC";
-import { SessionsSidebar } from "@/components/chat/SessionsSidebar";
-import { useCreateChatSession } from "@/hooks/useCreateChatSession";
 
 // TopNav is mocked here to keep this file focused on LayoutC composition.
 // The TopNav <nav aria-label="Primary navigation"> landmark and its mobile
@@ -31,14 +28,6 @@ vi.mock("./TopNav", async () => {
     TopNav: () => <div data-testid="top-nav" />,
   };
 });
-
-vi.mock("@/components/chat/SessionsSidebar", () => ({
-  SessionsSidebar: vi.fn(() => <div data-testid="sessions-sidebar" />),
-}));
-
-vi.mock("@/hooks/useCreateChatSession", () => ({
-  useCreateChatSession: vi.fn(),
-}));
 
 vi.mock("@/components/chat/ChatInterface", () => ({
   ChatInterface: ({ compact }: { compact?: boolean }) => (
@@ -85,18 +74,12 @@ function renderLayoutC({
 describe("LayoutC", () => {
   beforeEach(() => {
     resetLayoutBannersForTesting();
-    (useCreateChatSession as Mock).mockReturnValue({
-      mutate: vi.fn(),
-      isPending: false,
-    });
-    (SessionsSidebar as Mock).mockClear();
   });
 
   describe("composition", () => {
-    test("renders TopNav, SessionsSidebar, and children at /", () => {
+    test("renders TopNav and children at /", () => {
       renderLayoutC();
       expect(screen.getByTestId("top-nav")).toBeInTheDocument();
-      expect(screen.getByTestId("sessions-sidebar")).toBeInTheDocument();
       expect(screen.getByTestId("page-content")).toBeInTheDocument();
     });
 
@@ -111,17 +94,6 @@ describe("LayoutC", () => {
       // If ExtensionsProvider were missing, useExtensions would warn. The render
       // simply needs to complete without throwing.
       expect(() => renderLayoutC()).not.toThrow();
-    });
-
-    test("SessionsSidebar wrapper carries desktop-only classes (hidden md:flex md:flex-col md:min-h-0 md:h-full)", () => {
-      renderLayoutC({ initialPath: "/performance" });
-      const sidebar = screen.getByTestId("sessions-sidebar");
-      const wrapper = sidebar.parentElement!;
-      expect(wrapper.className).toMatch(/\bhidden\b/);
-      expect(wrapper.className).toMatch(/\bmd:flex\b/);
-      expect(wrapper.className).toMatch(/\bmd:flex-col\b/);
-      expect(wrapper.className).toMatch(/\bmd:min-h-0\b/);
-      expect(wrapper.className).toMatch(/\bmd:h-full\b/);
     });
   });
 
@@ -138,14 +110,6 @@ describe("LayoutC", () => {
       });
       const main = screen.getByRole("main");
       expect(within(main).getByTestId("inner-content")).toBeInTheDocument();
-    });
-
-    test("renders <aside aria-label='Chat sessions'> wrapping SessionsSidebar", () => {
-      renderLayoutC();
-      const aside = screen.getByRole("complementary", {
-        name: /chat sessions/i,
-      });
-      expect(within(aside).getByTestId("sessions-sidebar")).toBeInTheDocument();
     });
 
     test("renders mobile <nav aria-label='Primary navigation (mobile)'>", () => {
@@ -243,22 +207,6 @@ describe("LayoutC", () => {
     });
   });
 
-  describe("Sessions Sidebar visibility", () => {
-    test("does NOT render <aside aria-label='Chat sessions'> at /chat (Chat.tsx owns its own sidebar)", () => {
-      renderLayoutC({ initialPath: "/chat" });
-      expect(
-        screen.queryByRole("complementary", { name: /chat sessions/i }),
-      ).not.toBeInTheDocument();
-    });
-
-    test("renders <aside aria-label='Chat sessions'> at non-chat routes (e.g., /performance)", () => {
-      renderLayoutC({ initialPath: "/performance" });
-      expect(
-        screen.getByRole("complementary", { name: /chat sessions/i }),
-      ).toBeInTheDocument();
-    });
-  });
-
   describe("mobile bottom tab bar", () => {
     test('renders <nav aria-label="Primary navigation (mobile)"> with 7 links', () => {
       renderLayoutC();
@@ -346,37 +294,6 @@ describe("LayoutC", () => {
       const inline = mobileNav.getAttribute("style") ?? "";
       expect(inline).toMatch(/border-top:\s*3px solid transparent/i);
       expect(inline).toMatch(/border-image:\s*var\(--gradient-rainbow\)\s*1/i);
-    });
-  });
-
-  describe("New Session wiring (CH-26)", () => {
-    test("passes onNewSession function and isNewSessionPending=false to SessionsSidebar", () => {
-      renderLayoutC();
-      const props = (SessionsSidebar as Mock).mock.calls[0][0];
-      expect(typeof props.onNewSession).toBe("function");
-      expect(props.isNewSessionPending).toBe(false);
-    });
-
-    test("onNewSession calls mutate with account_id from auth context", () => {
-      const mutate = vi.fn();
-      (useCreateChatSession as Mock).mockReturnValue({
-        mutate,
-        isPending: false,
-      });
-      renderLayoutC();
-      const { onNewSession } = (SessionsSidebar as Mock).mock.calls[0][0];
-      onNewSession();
-      expect(mutate).toHaveBeenCalledWith({ account_id: undefined });
-    });
-
-    test("isNewSessionPending=true disables the SessionsSidebar buttons", () => {
-      (useCreateChatSession as Mock).mockReturnValue({
-        mutate: vi.fn(),
-        isPending: true,
-      });
-      renderLayoutC();
-      const props = (SessionsSidebar as Mock).mock.calls[0][0];
-      expect(props.isNewSessionPending).toBe(true);
     });
   });
 

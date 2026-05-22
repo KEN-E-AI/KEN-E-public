@@ -77,12 +77,18 @@ export function SessionsSidebar({
   const categories = categoriesData ?? [];
 
   // ── Infinite query for sessions ─────────────────────────────────────────────
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isError } =
-    useChatSessions({
-      accountId,
-      categoryId: selectedCategoryId ?? undefined,
-      query: debouncedQuery || undefined,
-    });
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isError,
+    isFetchNextPageError,
+  } = useChatSessions({
+    accountId,
+    categoryId: selectedCategoryId ?? undefined,
+    query: debouncedQuery || undefined,
+  });
 
   const allItems = data?.pages.flatMap((p) => p.items) ?? [];
 
@@ -197,18 +203,16 @@ export function SessionsSidebar({
           })}
         </div>
 
-        {/* Show more chevron at bottom */}
-        <div className="mt-auto">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onToggleCollapse}
-            aria-label="Show more sessions"
-            className="shrink-0"
-          >
-            <ChevronLeft className="size-4 rotate-180" />
-          </Button>
-        </div>
+        {/* Error indicator */}
+        {isError && (
+          <div className="mt-auto pb-2">
+            <div
+              className="size-2.5 rounded-full bg-[#F97066] mx-auto"
+              title="Couldn't load sessions"
+              style={{ boxShadow: "0 0 4px rgba(249, 112, 102, 0.5)" }}
+            />
+          </div>
+        )}
       </div>
     );
   }
@@ -359,6 +363,21 @@ export function SessionsSidebar({
 
           {/* Infinite-scroll sentinel */}
           <div ref={loadMoreRef} aria-hidden="true" />
+
+          {/* fetchNextPage error — shown below the sentinel so it appears at the end of the list */}
+          {isFetchNextPageError && (
+            <div className="text-center py-2">
+              <p className="text-[var(--text-body-sm)] text-[var(--color-text-tertiary)] mb-1">
+                Couldn&apos;t load more sessions
+              </p>
+              <button
+                onClick={() => fetchNextPage()}
+                className="text-[var(--text-body-sm)] text-[var(--color-violet-500)] hover:underline"
+              >
+                Retry
+              </button>
+            </div>
+          )}
         </div>
       </ScrollArea>
     </div>
