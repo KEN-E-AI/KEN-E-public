@@ -9,7 +9,7 @@ export default defineConfig({
   reporter: process.env.CI
     ? [["html", { outputFolder: "test-results/html" }]]
     : "list",
-  snapshotPathTemplate: "{testDir}/__screenshots__/{testFilePath}/{arg}{ext}",
+  snapshotPathTemplate: "{testDir}/__screenshots__/{testFileName}/{arg}{ext}",
   expect: {
     toHaveScreenshot: {
       maxDiffPixelRatio: 0.01,

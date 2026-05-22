@@ -188,6 +188,8 @@ export function SessionsSidebar({
             return (
               <button
                 key={item.session_id}
+                data-slot="session-list-item"
+                data-status={status}
                 onClick={() => onSessionSelect(item.session_id)}
                 className={cn(
                   "size-2.5 rounded-full transition-all hover:scale-125",

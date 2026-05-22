@@ -1,4 +1,4 @@
-import type { Brand } from "@/lib/branded-types";
+import type { Brand, AccountId } from "@/lib/branded-types";
 import api from "@/lib/api";
 import { auth } from "@/lib/firebase";
 
@@ -99,7 +99,7 @@ export type ListChatSessionsRequest = {
   category_id?: ChatCategoryId;
   query?: string;
   limit?: number;
-  account_id?: string | null;
+  account_id?: AccountId | null;
 };
 
 export type ListChatSessionsResponse = {

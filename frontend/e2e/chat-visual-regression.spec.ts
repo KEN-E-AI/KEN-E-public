@@ -195,7 +195,8 @@ test("chat-user-sending", async ({ page, request }) => {
   await setupChatPage({ page, request });
 
   // Block the completions API so the ThinkingBlock stays visible.
-  let unblock: (() => void) | undefined;
+  // Initialize to no-op so calling unblock() after an early throw is safe.
+  let unblock: () => void = () => {};
   const blocked = new Promise<void>((r) => {
     unblock = r;
   });
@@ -226,7 +227,7 @@ test("chat-user-sending", async ({ page, request }) => {
   await expect(chatInterface).toHaveScreenshot("chat-user-sending.png");
 
   // Unblock so the test can complete cleanly.
-  unblock!();
+  unblock();
 });
 
 test("chat-assistant-reply", async ({ page, request }) => {
@@ -241,11 +242,10 @@ test("chat-assistant-reply", async ({ page, request }) => {
         "Cache-Control": "no-cache",
         "Transfer-Encoding": "chunked",
       },
-      body: [
-        "data: Your Q3 campaign for Brand Awareness is outperforming others ",
-        "data: with a 3.2× ROAS, driven by the video ad creative.\n\n",
-        "data: [DONE]\n\n",
-      ].join(""),
+      // Each SSE event MUST end with \n\n. Concatenating without separators
+      // causes the parser in streamChatCompletion to emit the raw "data: ..."
+      // prefix as visible text in the rendered message.
+      body: "data: Your Q3 campaign for Brand Awareness is outperforming others with a 3.2× ROAS, driven by the video ad creative.\n\ndata: [DONE]\n\n",
     });
   });
 

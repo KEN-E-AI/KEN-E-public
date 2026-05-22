@@ -1,4 +1,4 @@
-import type { APIRequestContext, Page } from "@playwright/test";
+import type { APIRequestContext } from "@playwright/test";
 
 const FIRESTORE_BASE = "http://127.0.0.1:8090";
 const PROJECT = "test-project";
@@ -198,18 +198,6 @@ export function buildSelectedOrgAccountScript(opts: {
   `;
 }
 
-/**
- * Wire up the selected org/account into localStorage before the page loads.
- * Call this in `test.use({ storageState: ... })` or directly in beforeEach
- * after `signInAs` returns (storage is not cleared by subsequent navigations).
- */
-export async function setSelectedOrgAccount(
-  page: Page,
-  opts: { orgId: string; accountId: string; role?: string },
-): Promise<void> {
-  await page.evaluate(buildSelectedOrgAccountScript(opts));
-}
-
 // ─── Cleanup ──────────────────────────────────────────────────────────────────
 
 /**
@@ -227,7 +215,9 @@ export async function cleanupChatSessions(
   let pageToken: string | undefined;
 
   do {
-    const url = pageToken ? `${baseUrl}?pageToken=${pageToken}` : baseUrl;
+    const url = pageToken
+      ? `${baseUrl}?pageToken=${encodeURIComponent(pageToken)}`
+      : baseUrl;
     const listResp = await request.get(url, {
       headers: { "Content-Type": "application/json" },
     });
