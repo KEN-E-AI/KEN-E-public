@@ -31,11 +31,17 @@ vi.mock("@/hooks/useOrgStatus", () => ({
   })),
 }));
 
+vi.mock("@/hooks/useMarkRead", () => ({
+  useMarkRead: vi.fn(),
+}));
+
 import { streamChatCompletion } from "@/lib/chatApi";
 import { useOrgStatus } from "@/hooks/useOrgStatus";
+import { useMarkRead } from "@/hooks/useMarkRead";
 
 const mockStreamChatCompletion = vi.mocked(streamChatCompletion);
 const mockUseOrgStatus = vi.mocked(useOrgStatus);
+const mockUseMarkRead = vi.mocked(useMarkRead);
 
 // Helper: build an async generator that yields chunks then completes
 async function* makeStream(
@@ -181,6 +187,48 @@ describe("ChatInterface", () => {
     await act(async () => {
       resolve();
     });
+  });
+
+  // ── TC-MarkRead-1: useMarkRead receives sessionId + populated ref after assistant message ──
+
+  test("TC-MarkRead-1: useMarkRead called with sessionId and populated ref once assistant message renders", async () => {
+    mockStreamChatCompletion.mockReturnValue(makeStream(["Hello"]));
+
+    render(<ChatInterface sessionId="sess_123" />);
+
+    // On first render: sessionId is passed but no non-intro assistant message yet
+    expect(mockUseMarkRead).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "sess_123" }),
+    );
+
+    // Send a message so we get a real assistant reply
+    fireEvent.change(screen.getByRole("textbox", { name: /chat input/i }), {
+      target: { value: "Hi" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    // Wait for the streamed reply to render
+    await waitFor(() => expect(screen.getByText("Hello")).toBeInTheDocument());
+
+    // The latest-assistant-message element should exist in the DOM
+    const latestEl = screen.getByTestId("latest-assistant-message");
+    expect(latestEl).toBeInTheDocument();
+
+    // The most recent call to useMarkRead should have the ref wired to that element
+    const lastCallArgs =
+      mockUseMarkRead.mock.calls[mockUseMarkRead.mock.calls.length - 1][0];
+    expect(lastCallArgs.sessionId).toBe("sess_123");
+    expect(lastCallArgs.latestMessageRef.current).toBe(latestEl);
+  });
+
+  // ── TC-MarkRead-2: sessionId undefined → hook receives null ─────────────
+
+  test("TC-MarkRead-2: useMarkRead called with sessionId: null when sessionId prop is undefined", () => {
+    render(<ChatInterface />);
+
+    expect(mockUseMarkRead).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: null }),
+    );
   });
 
   // ── TC-4: Text-size CustomEvent re-renders messages at new size ──────────

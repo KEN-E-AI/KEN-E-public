@@ -7,6 +7,7 @@ import { ArtifactBlock } from "./ArtifactBlock";
 import { streamChatCompletion } from "@/lib/chatApi";
 import type { ChatMessage } from "@/lib/chatApi";
 import { useOrgStatus } from "@/hooks/useOrgStatus";
+import { useMarkRead } from "@/hooks/useMarkRead";
 import { cn } from "@/lib/utils";
 
 type TextSize = "small" | "medium" | "large";
@@ -60,6 +61,7 @@ export function ChatInterface({
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const handleStopRef = useRef<() => void>(() => {});
+  const latestAssistantRef = useRef<HTMLDivElement | null>(null);
 
   // Cancel any in-flight stream when the component unmounts
   useEffect(() => {
@@ -117,6 +119,11 @@ export function ChatInterface({
 
   const { status: orgStatus } = useOrgStatus();
   const isOrgInactive = orgStatus.startsWith("inactive_");
+
+  useMarkRead({
+    sessionId: sessionId ?? null,
+    latestMessageRef: latestAssistantRef,
+  });
 
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
@@ -228,6 +235,13 @@ export function ChatInterface({
   );
 
   const textSizeClass = TEXT_SIZE_CLASSES[chatTextSize];
+  let lastAssistantIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "assistant" && messages[i].id !== "intro") {
+      lastAssistantIndex = i;
+      break;
+    }
+  }
 
   return (
     <div
@@ -236,9 +250,19 @@ export function ChatInterface({
     >
       <div className="flex-1 min-h-0 overflow-y-auto" ref={scrollRef}>
         <div className="space-y-4 p-6">
-          {messages.map((message) => (
+          {messages.map((message, index) => (
             <div key={message.id} className="flex justify-start">
-              <div className="max-w-[80%] space-y-2">
+              <div
+                className="max-w-[80%] space-y-2"
+                ref={
+                  index === lastAssistantIndex ? latestAssistantRef : undefined
+                }
+                data-testid={
+                  index === lastAssistantIndex
+                    ? "latest-assistant-message"
+                    : undefined
+                }
+              >
                 {message.reasoning && (
                   <ThinkingBlock
                     isThinking={false}
