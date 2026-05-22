@@ -406,8 +406,8 @@ export default function SelectOrganizationPage() {
           resolution.organization?.plan,
         );
         setSelectedOrgAccount({
-          orgId: resolution.organizationId,
-          accountId: selectedAccount,
+          orgId: resolution.organizationId as OrganizationId,
+          accountId: selectedAccount as AccountId,
           metadata,
         });
         setCurrentOrganization(resolution.organizationId as OrganizationId);

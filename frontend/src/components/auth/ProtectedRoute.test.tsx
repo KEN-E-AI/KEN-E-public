@@ -1,4 +1,11 @@
-import { describe, test, expect, vi, beforeEach } from "vitest";
+import {
+  describe,
+  test,
+  expect,
+  vi,
+  beforeEach,
+  type MockedFunction,
+} from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import ProtectedRoute from "./ProtectedRoute";
@@ -13,7 +20,7 @@ vi.mock("@/lib/firebase", () => ({
   authBypassEnabled: false,
 }));
 
-const mockUseAuth = useAuth as vi.MockedFunction<typeof useAuth>;
+const mockUseAuth = useAuth as MockedFunction<typeof useAuth>;
 
 const makeAuthState = (overrides: Partial<ReturnType<typeof useAuth>> = {}) =>
   ({

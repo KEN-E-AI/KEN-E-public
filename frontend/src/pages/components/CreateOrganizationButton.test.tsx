@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import AccountSettings from "../AccountSettings";
-import { AuthContext } from "@/contexts/AuthContext";
+import { AuthContext, type AuthContextType } from "@/contexts/AuthContext";
 
 // Mock the organization API
 vi.mock("@/data/organizationApi", () => ({
@@ -104,7 +104,7 @@ const mockAuthContext = {
   setUser: vi.fn(),
   setSelectedOrganization: vi.fn(),
   setSelectedAccount: vi.fn(),
-};
+} as unknown as AuthContextType;
 
 // Mock navigation
 const mockNavigate = vi.fn();
@@ -181,7 +181,7 @@ describe("Create Organization Button", () => {
           },
         },
       },
-    };
+    } as unknown as AuthContextType;
 
     const queryClient = new QueryClient({
       defaultOptions: {
@@ -222,7 +222,7 @@ describe("Create Organization Button", () => {
           },
         },
       },
-    };
+    } as unknown as AuthContextType;
 
     const queryClient = new QueryClient({
       defaultOptions: {
