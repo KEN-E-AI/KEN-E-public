@@ -8,12 +8,20 @@ import * as path from "node:path";
 import {
   FlagEditDrawer,
   BUCKETING_ENTITY_HELP_TEXT,
+  EDIT_TAB_VALUE,
+  AUDIT_TAB_VALUE,
   targetingRulesSchema,
 } from "./FlagEditDrawer";
 import type { FeatureFlag } from "@/lib/featureFlags/types";
 import { toFlagKey } from "@/lib/featureFlags/types";
 
 // ─── Module mocks ─────────────────────────────────────────────────────────────
+
+vi.mock("./FlagAuditList", () => ({
+  FlagAuditList: ({ flagKey }: { flagKey: string }) => (
+    <div data-testid="flag-audit-list" data-flag-key={flagKey} />
+  ),
+}));
 
 vi.mock("@/contexts/AuthContext", () => ({
   useAuth: vi.fn(() => ({
@@ -411,5 +419,78 @@ describe("FlagEditDrawer — error handling", () => {
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalledWith("Server error");
     });
+  });
+});
+
+describe("FlagEditDrawer — tab presence by mode (AC-Task2)", () => {
+  it("edit mode renders both Edit and Audit tab triggers", () => {
+    renderDrawer({
+      open: true,
+      onOpenChange: vi.fn(),
+      mode: "edit",
+      flag: sampleFlag,
+    });
+    expect(
+      screen.getByRole("tab", {
+        name: new RegExp(`^${EDIT_TAB_VALUE}$`, "i"),
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", {
+        name: new RegExp(`^${AUDIT_TAB_VALUE}$`, "i"),
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("create mode renders no tab triggers", () => {
+    renderDrawer({ open: true, onOpenChange: vi.fn(), mode: "create" });
+    expect(
+      screen.queryByRole("tab", {
+        name: new RegExp(`^${EDIT_TAB_VALUE}$`, "i"),
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", {
+        name: new RegExp(`^${AUDIT_TAB_VALUE}$`, "i"),
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("clicking Audit tab renders FlagAuditList for the flag key", async () => {
+    renderDrawer({
+      open: true,
+      onOpenChange: vi.fn(),
+      mode: "edit",
+      flag: sampleFlag,
+    });
+    await userEvent.click(
+      screen.getByRole("tab", {
+        name: new RegExp(`^${AUDIT_TAB_VALUE}$`, "i"),
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("flag-audit-list")).toBeInTheDocument();
+    });
+    expect(screen.getByTestId("flag-audit-list")).toHaveAttribute(
+      "data-flag-key",
+      sampleFlag.key,
+    );
+  });
+
+  it("edit mode: Edit tab is active by default and form fields are visible", () => {
+    renderDrawer({
+      open: true,
+      onOpenChange: vi.fn(),
+      mode: "edit",
+      flag: sampleFlag,
+    });
+    expect(
+      screen.getByRole("tab", {
+        name: new RegExp(`^${EDIT_TAB_VALUE}$`, "i"),
+      }),
+    ).toHaveAttribute("data-state", "active");
+    expect(
+      screen.getByRole("textbox", { name: /flag key/i }),
+    ).toBeInTheDocument();
   });
 });
