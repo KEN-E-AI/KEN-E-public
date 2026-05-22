@@ -167,31 +167,46 @@ def process_env_file(source_path: Path, dest_path: Path) -> None:
 
 
 def _append_chat_env_vars(env_config: dict, *dest_paths: Path) -> None:
-    """Resolve and append CHAT_INTERNAL_API_URL/AUDIENCE to deployed .env files."""
+    """Resolve and append CHAT_INTERNAL_API_URL/AUDIENCE to deployed .env files.
+
+    Raises:
+        RuntimeError: if chat_internal_api_url is configured but cannot be
+            resolved to a concrete URL — refuses to ship an agent whose
+            internal-OIDC bridge would silently point at a literal sm://
+            reference. See CH-PRD-01.
+    """
     url_ref = env_config.get("chat_internal_api_url", "")
-    audience_ref = env_config.get("chat_internal_api_audience", "")
+    audience_ref = env_config.get("chat_internal_api_audience", "") or url_ref
     if not url_ref:
         logger.warning("chat_internal_api_url not in ENV_CONFIG; skipping")
         return
 
-    chat_url = url_ref
-    chat_audience = audience_ref or url_ref
+    if get_env_or_secret is None:
+        raise RuntimeError(
+            "shared.secrets.get_env_or_secret is unavailable, but "
+            "chat_internal_api_url is configured. Fix the import or remove "
+            "the chat config from ENV_CONFIG before deploying."
+        )
 
-    if get_env_or_secret:
-        try:
-            os.environ.setdefault("CHAT_INTERNAL_API_URL", url_ref)
-            resolved = get_env_or_secret("CHAT_INTERNAL_API_URL")
-            if resolved:
-                chat_url = resolved
-        except Exception as e:
-            logger.warning(f"Failed to resolve CHAT_INTERNAL_API_URL: {e}")
-        try:
-            os.environ.setdefault("CHAT_INTERNAL_API_AUDIENCE", audience_ref or url_ref)
-            resolved = get_env_or_secret("CHAT_INTERNAL_API_AUDIENCE")
-            if resolved:
-                chat_audience = resolved
-        except Exception as e:
-            logger.warning(f"Failed to resolve CHAT_INTERNAL_API_AUDIENCE: {e}")
+    # Overwrite (not setdefault) so a stray shell export cannot mask the
+    # env_config value and silently route resolution to the wrong secret.
+    os.environ["CHAT_INTERNAL_API_URL"] = url_ref
+    os.environ["CHAT_INTERNAL_API_AUDIENCE"] = audience_ref
+    chat_url = get_env_or_secret("CHAT_INTERNAL_API_URL")
+    chat_audience = get_env_or_secret("CHAT_INTERNAL_API_AUDIENCE")
+
+    for label, value in (
+        ("CHAT_INTERNAL_API_URL", chat_url),
+        ("CHAT_INTERNAL_API_AUDIENCE", chat_audience),
+    ):
+        if not value or str(value).startswith("sm://"):
+            raise RuntimeError(
+                f"{label} did not resolve to a concrete URL (got: {value!r}). "
+                "The agent would ship with a broken internal-OIDC bridge. "
+                "Check that the kene-api-url secret exists in the target "
+                "project and that the deployer has "
+                "roles/secretmanager.secretAccessor on it."
+            )
 
     for dest_path in dest_paths:
         if dest_path.exists():
