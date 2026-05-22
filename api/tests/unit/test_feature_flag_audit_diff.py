@@ -72,9 +72,16 @@ class TestComputeFlagDiff:
         assert "updated_at" not in diff
 
         # All other top-level fields must appear as added (before=None).
-        for field in ("key", "description", "default_enabled", "is_active",
-                      "targeting_rules", "bucketing_entity", "owner",
-                      "expected_ga_release"):
+        for field in (
+            "key",
+            "description",
+            "default_enabled",
+            "is_active",
+            "targeting_rules",
+            "bucketing_entity",
+            "owner",
+            "expected_ga_release",
+        ):
             assert field in diff, f"Expected '{field}' in create diff"
             assert diff[field]["before"] is None, (
                 f"create diff[{field!r}]['before'] should be None"
@@ -88,9 +95,16 @@ class TestComputeFlagDiff:
         assert "created_at" not in diff
         assert "updated_at" not in diff
 
-        for field in ("key", "description", "default_enabled", "is_active",
-                      "targeting_rules", "bucketing_entity", "owner",
-                      "expected_ga_release"):
+        for field in (
+            "key",
+            "description",
+            "default_enabled",
+            "is_active",
+            "targeting_rules",
+            "bucketing_entity",
+            "owner",
+            "expected_ga_release",
+        ):
             assert field in diff, f"Expected '{field}' in delete diff"
             assert diff[field]["after"] is None, (
                 f"delete diff[{field!r}]['after'] should be None"
@@ -112,9 +126,7 @@ class TestComputeFlagDiff:
         after = _make_flag(default_enabled=True)
         diff = compute_flag_diff(before, after)
 
-        assert diff == {
-            "default_enabled": {"before": False, "after": True}
-        }
+        assert diff == {"default_enabled": {"before": False, "after": True}}
 
     def test_multi_field_update(self) -> None:
         """Changing two fields returns exactly two diff entries."""
@@ -193,9 +205,7 @@ class TestRecordAuditHappyPath:
     async def test_writes_to_feature_flag_audit_collection(self) -> None:
         """record_audit writes to the 'feature_flag_audit' collection."""
         db = MagicMock()
-        diff: dict[str, Any] = {
-            "description": {"before": "old", "after": "new"}
-        }
+        diff: dict[str, Any] = {"description": {"before": "old", "after": "new"}}
 
         await record_audit(
             db=db,
@@ -226,7 +236,9 @@ class TestRecordAuditHappyPath:
     async def test_audit_id_follows_iso_uuid8_pattern(self) -> None:
         """Audit doc ID matches the {iso_datetime}_{uuid8} format."""
         db = MagicMock()
-        diff: dict[str, Any] = {"owner": {"before": "a@ken-e.ai", "after": "b@ken-e.ai"}}
+        diff: dict[str, Any] = {
+            "owner": {"before": "a@ken-e.ai", "after": "b@ken-e.ai"}
+        }
 
         result = await record_audit(
             db=db,
@@ -259,7 +271,14 @@ class TestRecordAuditHappyPath:
         set_call.assert_called_once()
         written_body: dict[str, Any] = set_call.call_args.args[0]
 
-        expected_keys = {"audit_id", "flag_key", "actor_email", "action", "diff", "created_at"}
+        expected_keys = {
+            "audit_id",
+            "flag_key",
+            "actor_email",
+            "action",
+            "diff",
+            "created_at",
+        }
         assert set(written_body.keys()) == expected_keys, (
             f"Written body keys {set(written_body.keys())} != expected {expected_keys}"
         )
@@ -354,6 +373,7 @@ class TestRecordAuditErrorSwallow:
                 caplog_records.append(record)
 
         from src.kene_api.services import feature_flag_audit as _audit_mod
+
         handler = _CapHandler()
         _audit_mod.logger.addHandler(handler)
         old_level = _audit_mod.logger.level
@@ -381,6 +401,7 @@ class TestRecordAuditErrorSwallow:
         diff: dict[str, Any] = {"is_active": {"before": True, "after": False}}
 
         import logging as _logging
+
         caplog_records: list[_logging.LogRecord] = []
 
         class _CapHandler(_logging.Handler):
@@ -388,6 +409,7 @@ class TestRecordAuditErrorSwallow:
                 caplog_records.append(record)
 
         from src.kene_api.services import feature_flag_audit as _audit_mod
+
         handler = _CapHandler()
         _audit_mod.logger.addHandler(handler)
         _audit_mod.logger.propagate = False
@@ -416,20 +438,30 @@ class TestRecordAuditErrorSwallow:
         assert getattr(record, "error_type", None) == "ValueError"
 
         # PII fields must be absent from the extra dict.
-        for pii_field in ("actor_email", "user_id", "user_email", "organization_id", "account_id"):
+        for pii_field in (
+            "actor_email",
+            "user_id",
+            "user_email",
+            "organization_id",
+            "account_id",
+        ):
             assert not hasattr(record, pii_field), (
                 f"PII field {pii_field!r} found in error log record"
             )
 
 
 class TestRecordAuditNoPII:
-    async def test_no_pii_in_any_log_record_on_success(self, caplog: pytest.LogCaptureFixture) -> None:
+    async def test_no_pii_in_any_log_record_on_success(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """Successful record_audit emits no PII fields in any log record."""
         db = MagicMock()
         diff: dict[str, Any] = {"description": {"before": "old", "after": "new"}}
         pii_values = {"admin@ken-e.ai", "u_12345", "org_abcde", "acc_xyz"}
 
-        with caplog.at_level(logging.DEBUG, logger="src.kene_api.services.feature_flag_audit"):
+        with caplog.at_level(
+            logging.DEBUG, logger="src.kene_api.services.feature_flag_audit"
+        ):
             await record_audit(
                 db=db,
                 flag_key="test_flag",
@@ -455,5 +487,6 @@ class TestAuditAction:
     def test_audit_action_values(self) -> None:
         """AuditAction Literal includes the four expected action values."""
         import typing
+
         args = typing.get_args(AuditAction)
         assert set(args) == {"create", "update", "delete", "toggle_active"}
