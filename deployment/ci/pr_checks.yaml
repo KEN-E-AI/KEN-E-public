@@ -231,6 +231,34 @@ steps:
     env:
       - 'PATH=/usr/local/bin:/usr/bin:~/.local/bin'
 
+  # Frontend TypeScript typecheck gate — enforces CLAUDE.md §6 G-3
+  # (`npm run typecheck` passes for frontend TypeScript).
+  #
+  # Before this gate, pr_checks.yaml had no `tsc` invocation: the only
+  # frontend gates were the a11y vitest suite and the (path-gated)
+  # Playwright E2E suite, so TS errors in frontend/src landed on main
+  # undetected.
+  #
+  # `npm run typecheck` runs `tsc -b` against the project references in
+  # tsconfig.json; tsconfig.app.json includes `["src"]`, so this covers
+  # the whole frontend/src tree.
+  #
+  # Note: tsconfig.app.json runs with `strict: false` and
+  # `noImplicitAny: false` — this gate catches hard type errors but not
+  # the softer ones those flags would surface. Tightening the config is
+  # tracked as a separate follow-up.
+  - name: "node:20-slim"
+    id: frontend-typecheck
+    waitFor: ['-']
+    entrypoint: /bin/bash
+    args:
+      - "-c"
+      - |
+        set -euo pipefail
+        cd frontend
+        npm ci --prefer-offline
+        npm run typecheck
+
   # Run frontend accessibility test suite (axe-core, WCAG contrast, focus-ring audit,
   # keyboard navigation, and reduced-motion smoke tests).
   # Glob patterns let new a11y test files (src/test/*.test.{ts,tsx}) be picked up
