@@ -28,6 +28,12 @@ resource "google_cloudbuild_trigger" "pr_checks" {
   }
 
   filename = "deployment/ci/pr_checks.yaml"
+  # `docs/**` and `*.md` are included so that docs-only PRs still run the
+  # lychee link-integrity gate in tests/unit/test_lychee_config.py. Without
+  # these globs the trigger returns NEUTRAL on docs-only PRs and broken links
+  # land on main undetected (see PR #593 → #595 regression for the precedent).
+  # `cd_pipeline` below intentionally omits docs from its filter — docs
+  # changes do not require a staging redeploy.
   included_files = [
     "app/**",
     "api/**",
@@ -35,6 +41,8 @@ resource "google_cloudbuild_trigger" "pr_checks" {
     "shared/**",
     "tests/**",
     "deployment/**",
+    "docs/**",
+    "*.md",
     "uv.lock",
   ]
   depends_on = [resource.google_project_service.cicd_services, resource.google_project_service.shared_services]
