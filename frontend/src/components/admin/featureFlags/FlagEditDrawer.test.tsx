@@ -8,6 +8,8 @@ import * as path from "node:path";
 import {
   FlagEditDrawer,
   BUCKETING_ENTITY_HELP_TEXT,
+  EDIT_TAB_VALUE,
+  AUDIT_TAB_VALUE,
   targetingRulesSchema,
 } from "./FlagEditDrawer";
 import type { FeatureFlag } from "@/lib/featureFlags/types";
@@ -428,17 +430,29 @@ describe("FlagEditDrawer — tab presence by mode (AC-Task2)", () => {
       mode: "edit",
       flag: sampleFlag,
     });
-    expect(screen.getByRole("tab", { name: /^edit$/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /^audit$/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", {
+        name: new RegExp(`^${EDIT_TAB_VALUE}$`, "i"),
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", {
+        name: new RegExp(`^${AUDIT_TAB_VALUE}$`, "i"),
+      }),
+    ).toBeInTheDocument();
   });
 
   it("create mode renders no tab triggers", () => {
     renderDrawer({ open: true, onOpenChange: vi.fn(), mode: "create" });
     expect(
-      screen.queryByRole("tab", { name: /^edit$/i }),
+      screen.queryByRole("tab", {
+        name: new RegExp(`^${EDIT_TAB_VALUE}$`, "i"),
+      }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("tab", { name: /^audit$/i }),
+      screen.queryByRole("tab", {
+        name: new RegExp(`^${AUDIT_TAB_VALUE}$`, "i"),
+      }),
     ).not.toBeInTheDocument();
   });
 
@@ -449,7 +463,11 @@ describe("FlagEditDrawer — tab presence by mode (AC-Task2)", () => {
       mode: "edit",
       flag: sampleFlag,
     });
-    await userEvent.click(screen.getByRole("tab", { name: /^audit$/i }));
+    await userEvent.click(
+      screen.getByRole("tab", {
+        name: new RegExp(`^${AUDIT_TAB_VALUE}$`, "i"),
+      }),
+    );
     await waitFor(() => {
       expect(screen.getByTestId("flag-audit-list")).toBeInTheDocument();
     });
@@ -466,10 +484,11 @@ describe("FlagEditDrawer — tab presence by mode (AC-Task2)", () => {
       mode: "edit",
       flag: sampleFlag,
     });
-    expect(screen.getByRole("tab", { name: /^edit$/i })).toHaveAttribute(
-      "data-state",
-      "active",
-    );
+    expect(
+      screen.getByRole("tab", {
+        name: new RegExp(`^${EDIT_TAB_VALUE}$`, "i"),
+      }),
+    ).toHaveAttribute("data-state", "active");
     expect(
       screen.getByRole("textbox", { name: /flag key/i }),
     ).toBeInTheDocument();

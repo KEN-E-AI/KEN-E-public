@@ -74,10 +74,11 @@ export function FlagAuditList({ flagKey }: Props) {
       <Alert variant="destructive" className="mt-4">
         <AlertTitle>Failed to load audit log</AlertTitle>
         <AlertDescription>
+          Could not fetch the audit log. Please try again.
           <Button
             variant="outline"
             size="sm"
-            className="mt-2"
+            className="mt-2 block"
             onClick={() => void refetch()}
           >
             Retry
@@ -118,7 +119,7 @@ export function FlagAuditList({ flagKey }: Props) {
             </div>
           </div>
 
-          {Object.keys(entry.diff).length > 0 && (
+          {entry.diff != null && Object.keys(entry.diff).length > 0 && (
             <details className="text-[var(--text-body-xs)]">
               <summary className="cursor-pointer text-[var(--color-text-tertiary)] hover:text-[var(--color-text-secondary)] select-none">
                 Show diff

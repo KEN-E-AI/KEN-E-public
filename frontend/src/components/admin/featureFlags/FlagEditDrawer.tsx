@@ -415,7 +415,7 @@ export function FlagEditDrawer(props: FlagEditDrawerProps) {
                 </TabsContent>
 
                 <TabsContent value={AUDIT_TAB_VALUE}>
-                  <FlagAuditList flagKey={flag!.key} />
+                  {flag && <FlagAuditList flagKey={flag.key} />}
                 </TabsContent>
               </Tabs>
             ) : (

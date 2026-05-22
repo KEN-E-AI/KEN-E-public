@@ -77,7 +77,7 @@ beforeEach(() => {
 });
 
 describe("FlagAuditList — initial fetch and rendering", () => {
-  it("fetches and renders entries newest-first", async () => {
+  it("fetches and renders entries in the order returned by the server", async () => {
     const entry1 = makeEntry({
       audit_id: "a1",
       actor_email: "alice@ken-e.ai",
