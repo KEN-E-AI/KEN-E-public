@@ -42,9 +42,24 @@ class FeatureFlag(BaseModel):
 
 class EvaluationContext(BaseModel):
     user_id: str = Field(min_length=1)
-    user_email: EmailStr
+    # Targeting key — matched against TargetingRules.user_emails / email_domains
+    # by string compare.  Intentionally NOT EmailStr: synthetic users (e.g.
+    # load-test fixtures using .local domains) and any other registered email
+    # value the auth layer accepts must be evaluable here without raising.
+    # `owner` and `actor_email` further down stay EmailStr because they are
+    # admin-set / audited inputs where strict RFC validation is desirable.
+    user_email: str = Field(default="")
     organization_id: str | None = None
     account_id: str | None = None
+
+    @field_validator("user_email")
+    @classmethod
+    def _normalise_email(cls, v: str) -> str:
+        # Strip + lowercase so targeting matches against the already-normalised
+        # TargetingRules.user_emails / email_domains lists (which have the same
+        # _lowercase validator).  Whitespace tolerance preserves the
+        # whitespace-padded test case while loosening RFC strictness.
+        return v.strip().lower()
 
 
 class FlagEvaluation(BaseModel):

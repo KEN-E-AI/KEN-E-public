@@ -55,6 +55,22 @@ async def evaluate_flags(
     mechanism exists in the API yet (FF-PRD-01 Decision 1).  Email-domain /
     email-allowlist targeting and user-bucketed rollouts are fully functional.
     """
+    # FF-6 hardening: this endpoint requires a real email claim.  Reject
+    # empty / whitespace-only emails up front so an unauthenticated identity
+    # cannot resolve to "everyone-default" by accident.  EvaluationContext
+    # itself accepts any string (it's used internally for synthetic users
+    # like the chat-sidebar load-test fixture); the strict gate lives here.
+    if not (user.email or "").strip():
+        logger.warning(
+            "feature_flags_invalid_identity_claim",
+            extra={"user_id": user.user_id},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authenticated user has no valid email claim",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     try:
         ctx = EvaluationContext(
             user_id=user.user_id,
@@ -63,9 +79,8 @@ async def evaluate_flags(
             account_id=None,
         )
     except ValidationError:
-        # The JWT email claim is missing or malformed — treat as unauthenticated
-        # rather than an internal error, since the token does not meet this
-        # endpoint's identity requirements.
+        # Defensive: user_id has min_length=1, so a UserContext with an empty
+        # uid still raises here.  Same 401 response — the token isn't usable.
         logger.warning(
             "feature_flags_invalid_identity_claim",
             extra={"user_id": user.user_id},
