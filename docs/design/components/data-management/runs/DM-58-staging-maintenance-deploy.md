@@ -2,9 +2,19 @@
 
 **Issue:** DM-58 — Schedule staging maintenance window and deploy DM-PRD-00–DM-PRD-05 code (covers AC-1, §4.3 steps 1–2)
 **PRD:** DM-PRD-06 §4.3 — Staging Cutover, steps 1–2
-**Date:** 2026-05-19
+**Date:** 2026-05-19 (template) · 2026-05-23 (PO verification addendum)
 **Branch:** docs/DM-58-staging-maintenance-deploy
-**Executed by:** Dev Team agent (data-management-dev-team)
+**Executed by:** Dev Team agent (data-management-dev-team) — template · PO (operator with staging IAM) — verification
+
+---
+
+## PO Verification Addendum — 2026-05-23
+
+The operator verification (AC-2, AC-3) was run by the PO against `ken-e-staging` on 2026-05-23T10:57Z, after the DM-PRD-06 IAM blocker was cleared (`roles/datastore.owner` granted to `ken-e-api@ken-e-staging` via terraform PR #612, merged to `main` as `ae7d3b99`). Evidence is pasted into the blocks below.
+
+**All three technical ACs are satisfied:** code is deployed + healthy (AC-2), service-account IAM is in place (AC-3), and the deploy pin is amended to current `main` (AC-4).
+
+**The maintenance window is deliberately NOT yet open.** AC-1 (the Slack #engineering announcement, which signals "cutover starting now") is held pending an explicit PO go-ahead to open the window. The migration sequence (DM-59 dry-run → DM-60 confirm-delete → DM-61 checklist) has **not** been started. This run-log records the readiness state; it is not the window-open marker.
 
 ---
 
@@ -12,13 +22,13 @@
 
 | # | Item | Result | Notes |
 |---|------|--------|-------|
-| 1 | Maintenance window scheduled | OPEN | Opened at-will per PO (Q1 answer); recorded below |
-| 2 | Announcement sent | PENDING | PO to confirm #engineering Slack message was sent (see template below) |
-| 3 | Code deployed to staging | PENDING — operator | Standard CD trigger fires on main; operator confirms revision is live |
-| 4 | `/health` endpoint OK | PENDING — operator | Paste output below |
-| 5 | No startup errors in Cloud Run logs | PENDING — operator | Paste output below |
-| 6 | Service-account IAM verified | PENDING — operator | Paste output below |
-| 7 | Deploy commit hash recorded | RECORDED | `ef31ad3deb02795544cf3c3b1141831bee92e12c` — see §Deploy Pin |
+| 1 | Maintenance window scheduled | HELD | Plan recorded below; window NOT yet open — awaiting PO go-ahead |
+| 2 | Announcement sent | HELD (AC-1) | Not sent — opening the window is a deliberate, separate PO action |
+| 3 | Code deployed to staging | ✅ VERIFIED | Live ready revision `kene-api-staging-00336-qkg` (READY); staging CD current |
+| 4 | `/health` endpoint OK | ✅ VERIFIED | `HTTP/2 200`, Firestore/Neo4j/Redis healthy — see evidence |
+| 5 | No startup errors in Cloud Run logs | ✅ VERIFIED | No boot errors; only benign runtime cache-serialization warnings (annotated) |
+| 6 | Service-account IAM verified | ✅ VERIFIED | `datastore.owner` + `storage.admin`/`objectAdmin`; indexes READY |
+| 7 | Deploy commit hash recorded | ✅ AMENDED | Superseded `ef31ad3d` → current `main` HEAD `ae7d3b99` — see §Deploy Pin |
 
 Pre-conditions (both passed per prior issues):
 - DM-56 (Phase 6 dev-environment verification checklist) — Done ✓
@@ -28,13 +38,12 @@ Pre-conditions (both passed per prior issues):
 
 ## Maintenance Window Plan
 
-**Window status:** OPEN  
-**Opened:** 2026-05-19 (at-will per PO Q1 response — agent opens window when work begins)  
-**Expected duration:** ≥ 30 minutes (covers DM-59 dry-run → DM-60 confirm-delete → DM-61 checklist)  
-**Scope of impact:** staging Firestore + GCS for `ken-e-staging`; staging API (`kene-api-staging`) may reject writes during migration steps DM-60 and DM-61  
-**Announcement channel:** Slack #engineering (Q2 PO answer: "No other teams — Slack #engineering broadcast is sufficient")  
-**Announcement sent by:** PO (see template below)  
-**Announcement confirmed timestamp:** _(PO: record ISO 8601 UTC when message was sent)_
+**Window status:** HELD — verified ready, NOT yet open (awaiting explicit PO go-ahead)
+**Expected duration:** ≥ 30 minutes (covers DM-59 dry-run → DM-60 confirm-delete → DM-61 checklist)
+**Scope of impact:** staging Firestore + GCS for `ken-e-staging`; staging API (`kene-api-staging`) may reject writes during migration steps DM-60 and DM-61
+**Announcement channel:** Slack #engineering (Q2 PO answer: "No other teams — Slack #engineering broadcast is sufficient")
+**Announcement sent by:** PO (template below) — **not yet sent**
+**Announcement confirmed timestamp:** _(PO: record ISO 8601 UTC when the message is sent — this is the window-open moment)_
 
 ---
 
@@ -42,7 +51,7 @@ Pre-conditions (both passed per prior issues):
 
 > **[Staging maintenance window open — Data Management Shape B cutover]**
 >
-> **Start time: [INSERT ISO 8601 UTC — e.g. 2026-05-19T14:00:00Z]**
+> **Start time: [INSERT ISO 8601 UTC — e.g. 2026-05-23T14:00:00Z]**
 >
 > The DM-PRD-06 staging cutover is starting now. `ken-e-staging` Firestore + GCS may be briefly inconsistent during the migration sequence (~30–60 min).
 >
@@ -60,32 +69,37 @@ Pre-conditions (both passed per prior issues):
 
 The CD trigger (`google_cloudbuild_trigger.cd_pipeline` in `deployment/terraform/build_triggers.tf`, trigger name `cd-pipeline`) fires on every push to `main`, running `deployment/cd/staging.yaml`. The last `main` merge at window-open is the SUT for the staging migration.
 
-**Commit hash at window-open:**
+**Original pin (2026-05-19) — SUPERSEDED:**
 
 ```
 ef31ad3deb02795544cf3c3b1141831bee92e12c
 Merge pull request #537 from KEN-E-AI/chore/ah-54-ci-colocated-agent-tests
 ```
 
-Source: `git rev-parse HEAD` on `main` at 2026-05-19.
+This 05-19 pin is stale — `main` has advanced through the full DM/CH/FF merge stream since.
 
-**Trigger name:** `cd-pipeline`  
-**Staging YAML:** `deployment/cd/staging.yaml`  
-**Cloud Run service:** `kene-api-staging`  
-**Expected revision label format:** `kene-api-staging-<auto-suffix>` (Cloud Run auto-generates the revision suffix; `staging.yaml` does not pass `--revision-suffix`). Confirm the revision is READY and the URL resolves correctly — do not expect the suffix to embed the commit SHA.  
+**Amended pin (2026-05-23, PO verification):**
+
+```
+ae7d3b9989335b5087f175525e8a8c539790b192
+chore(terraform): grant ken-e-api datastore.owner (staging + prod) — DM-PRD-06 (#612)
+```
+
+Source: `git rev-parse origin/main` at 2026-05-23T10:57Z. Staging CD is current and tracking `main`: the live ready revision is `kene-api-staging-00336-qkg` (created 2026-05-23T10:56Z, READY), which deployed off this `main` stream.
+
+> **Operator note (re-confirm at window-open):** Because the window is HELD, `main` may advance further before the cutover actually runs. The binding deploy pin is whatever `main` HEAD is deployed to `kene-api-staging` **at the moment AC-1's announcement is sent**. Re-run `git rev-parse origin/main` + the Cloud Run revision check below immediately before starting DM-59, and update this box if `ae7d3b99` is no longer HEAD.
+
+**Trigger name:** `cd-pipeline`
+**Staging YAML:** `deployment/cd/staging.yaml`
+**Cloud Run service:** `kene-api-staging`
+**Revision label format:** `kene-api-staging-<auto-suffix>` (Cloud Run auto-generates the suffix; `staging.yaml` does not pass `--revision-suffix`). The suffix does NOT embed the commit SHA — confirm via revision READY state + URL resolution, not the suffix.
 **Staging API URL:** `https://kene-api-staging-391472102753.us-central1.run.app`
-
-> **Operator note:** Confirm the deployed Cloud Run revision name embeds `ef31ad3d` before starting DM-59. If `main` advanced after this commit, the revision will carry a different hash — record that hash in the amendment box below.
-
-**Amendment (if main advanced before deploy):**  
-_(Operator: if a newer commit deployed, record here: `git rev-parse HEAD` output + commit subject)_  
-_(Corrected commit: ______)_
 
 ---
 
 ## Healthcheck Evidence
 
-Commands listed for operator execution. Paste output below each command block.
+Verified by PO on 2026-05-23T10:57Z.
 
 ### 1 — Cloud Run revision check
 
@@ -95,9 +109,13 @@ gcloud run services describe kene-api-staging --region=us-central1 \
   --format='value(status.latestReadyRevisionName,status.url)'
 ```
 
-**Expected:** `kene-api-staging-<commit-sha>` and `https://kene-api-staging-391472102753.us-central1.run.app`
+**Output (2026-05-23T10:57Z):**
 
-_(operator: paste output here)_
+```
+kene-api-staging-00336-qkg	https://kene-api-staging-d3wm5f7uba-uc.a.run.app
+```
+
+Revision `00336-qkg` (created 2026-05-23T10:56Z) is READY and serving traffic. (The `d3wm5f7uba-uc` and `391472102753` URL forms both resolve to the same service.)
 
 ---
 
@@ -107,9 +125,16 @@ _(operator: paste output here)_
 curl -isS https://kene-api-staging-391472102753.us-central1.run.app/health
 ```
 
-**Expected:** First line `HTTP/2 200` followed by JSON body (e.g., `{"status": "ok"}`). `-i` includes the response headers so the status code is visible.
+**Output (2026-05-23T10:57Z):**
 
-_(operator: paste output here)_
+```
+HTTP/2 200
+content-type: application/json
+
+{"status":"healthy","message":"API is running","services":{"neo4j":"healthy","firestore":"healthy","redis":"healthy","mcp":"unavailable"}}
+```
+
+`200`; Firestore + Neo4j + Redis all healthy. (`mcp: unavailable` is the expected steady-state for the API container — the MCP servers run in the agent runtime, not the API service; not a DM-58 concern.)
 
 ---
 
@@ -122,17 +147,20 @@ gcloud logging read \
   --format='value(timestamp,jsonPayload.message)'
 ```
 
-**Expected:** empty output (no errors in the last hour)
+**Output (2026-05-23T10:57Z):** no startup/boot errors. The only ERROR-severity entries are repeated runtime cache-write warnings:
 
-_(operator: paste output here — annotate any known-benign errors inline)_
+```
+2026-05-23T10:31:45Z  Failed to encode JSON for key user_context:<uid>: Object of type DatetimeWithNanoseconds is not JSON serializable
+  … (repeated)
+```
+
+**Annotation — KNOWN-BENIGN, pre-existing:** these are runtime Redis user-context cache-serialization warnings (a `DatetimeWithNanoseconds` value isn't JSON-serialized before caching). They are **not** startup failures — the service boots cleanly and serves `200`. Unrelated to the DM-PRD-06 code or the migration. Flagged separately to the platform owner as a pre-existing app bug; does **not** block DM-58.
 
 ---
 
 ## IAM Verification
 
-Commands listed for operator execution. Paste output below each command block.
-
-> **Note:** The agent VM does not have `gcloud` impersonation on `ken-e-staging` (intentional per DM-PRD-00 §7.4 dev-IAM carve-out). An operator with staging IAM must run these and paste the output before DM-59 starts.
+Verified by PO on 2026-05-23T10:57Z (PO holds staging IAM; the agent-VM carve-out note no longer applies).
 
 ### 1 — Firestore admin on the API SA (required for `recursive_delete` + migration writes)
 
@@ -143,22 +171,42 @@ gcloud projects get-iam-policy ken-e-staging \
   --format='value(bindings.role)'
 ```
 
-**Expected:** `roles/datastore.owner` (required for `recursive_delete` in the `--confirm-delete` migration step — `roles/datastore.user` is insufficient and will cause PERMISSION_DENIED at DM-60)
+**Output (relevant roles):**
 
-_(operator: paste output here)_
+```
+roles/datastore.owner
+roles/datastore.user
+roles/storage.admin
+roles/storage.objectAdmin
+roles/storage.objectViewer
+roles/secretmanager.secretAccessor
+… (aiplatform/firebase/logging/monitoring service roles omitted)
+```
+
+✅ `roles/datastore.owner` is present (codified via terraform PR #612) — `recursive_delete` at DM-60 will not hit PERMISSION_DENIED.
 
 ---
 
-### 2 — GCS bucket access for `kene-docs-staging-*`
+### 2 — GCS bucket access
+
+> **Correction to the original command:** the templated bucket `gs://kene-docs-staging-us-central1` does not exist in `ken-e-staging`. The staging file/document buckets are `ken-e-staging-files-us` and `ken-e-staging-files-eu`. Bucket-level IAM is not set per-bucket — access is granted **project-wide**, which covers every bucket in the project.
 
 ```bash
-gsutil iam get gs://kene-docs-staging-us-central1 2>&1 \
-  | grep -E 'ken-e-api@ken-e-staging|storage\.object(Admin|Creator)'
+gcloud projects get-iam-policy ken-e-staging \
+  --flatten='bindings[].members' \
+  --filter='bindings.members:serviceAccount:ken-e-api@ken-e-staging.iam.gserviceaccount.com' \
+  --format='value(bindings.role)' | grep storage
 ```
 
-**Expected:** at least one matching line showing `serviceAccount:ken-e-api@ken-e-staging.iam.gserviceaccount.com` with `roles/storage.objectAdmin` or `roles/storage.objectCreator`
+**Output:**
 
-_(operator: paste output here)_
+```
+roles/storage.admin
+roles/storage.objectAdmin
+roles/storage.objectViewer
+```
+
+✅ Project-level `roles/storage.admin` + `roles/storage.objectAdmin` grant the API SA full object access across all `ken-e-staging` buckets (incl. `ken-e-staging-files-us`/`-eu`).
 
 ---
 
@@ -171,9 +219,9 @@ gcloud firestore indexes composite list \
   --format='value(name,state)' | grep -v READY
 ```
 
-**Expected:** empty output (every index in READY state — non-empty output flags an index still building)
+**Output:** empty (every composite index on `(default)` is in `READY` state).
 
-_(operator: paste output here)_
+✅ No index still building.
 
 ---
 
@@ -181,22 +229,23 @@ _(operator: paste output here)_
 
 | AC | Criterion | Status |
 |----|-----------|--------|
-| AC-1 | Staging maintenance window scheduled and announced to relevant teams | PENDING — PO confirms Slack #engineering message sent |
-| AC-2 | DM-PRD-00–DM-PRD-05 code deployed to staging; service is up and healthy | PENDING — operator pastes healthcheck evidence above |
-| AC-3 | Service-account IAM verified for migration + deletion operations | PENDING — operator pastes IAM evidence above |
-| AC-4 | Deploy commit hash recorded for DM-61 (issue #6) residue scan | DONE — `ef31ad3deb02795544cf3c3b1141831bee92e12c` |
+| AC-1 | Staging maintenance window scheduled and announced to relevant teams | **HELD** — announcement intentionally not sent; awaiting explicit PO go-ahead to open the window |
+| AC-2 | DM-PRD-00–DM-PRD-05 code deployed to staging; service is up and healthy | ✅ DONE — rev `00336-qkg` READY, `/health` 200, no boot errors |
+| AC-3 | Service-account IAM verified for migration + deletion operations | ✅ DONE — `datastore.owner` + `storage.admin`/`objectAdmin`; indexes READY |
+| AC-4 | Deploy commit hash recorded for DM-61 (issue #6) residue scan | ✅ DONE — amended to `ae7d3b99` (re-confirm at window-open) |
 
 ---
 
 ## Sign-off
 
-This run-log is complete when:
-1. The PO confirms the Slack #engineering announcement was sent (AC-1).
-2. An operator pastes Healthcheck Evidence output (AC-2).
-3. An operator pastes IAM Verification output (AC-3).
-4. AC-4 is already recorded above.
+This run-log captures the **readiness** state. Three of four ACs are satisfied. The remaining step is a deliberate PO decision, not a verification task:
 
-After all four are filled in, the issue moves to Testing Complete and DM-59 (`migrate_to_shape_b.py --all --env=staging --dry-run`) may begin.
+1. **AC-1 (held):** PO opens the window by sending the Slack #engineering announcement and recording the timestamp. **This commits to the migration sequence** (DM-59 dry-run → DM-60 confirm-delete → DM-61 checklist) and is the gate for starting DM-59.
+2. AC-2 ✅ — healthcheck evidence pasted above.
+3. AC-3 ✅ — IAM evidence pasted above.
+4. AC-4 ✅ — pin amended above.
+
+Until the PO chooses to open the window, DM-58 stays in its current state and DM-59 does not begin.
 
 ---
-_Produced by: data-management-dev-team | Workflow: step-2-implementing | Issue: DM-58 | Date: 2026-05-19_
+_Produced by: data-management-dev-team (template) · PO verification 2026-05-23 | Workflow: step-2-implementing → po-operator-verification | Issue: DM-58_
