@@ -10,9 +10,11 @@
 
 ## 1. Context
 
-The KEN-E orchestrator agent today reads account context only at session start: `HierarchicalContextManager` loads a ~5k-token "executive summary" into the system prompt, then the agent is on its own. If the user asks about a topic that wasn't in the executive summary, the agent cannot drill into the KB — it must hallucinate or answer vaguely. Two previously-approved Sprint 7 stories (historical Notion archive: [1.1.6-1](https://www.notion.so/34230fd653028175bccadb3dfd3d581f), [1.1.6-2](https://www.notion.so/34230fd65302816ea2eeeec49aedd90e)) proposed on-demand section loading and per-entity drill-down tools; neither has shipped. This PRD delivers those, plus two new tools needed to support the `Observation` layer (KG-PRD-02) and semantic fallback for fuzzy queries.
+KEN-E specialists today read account context only at session start: `HierarchicalContextManager` loads a ~5k-token "executive summary" into the system prompt, then the specialist is on its own. If the user asks about a topic that wasn't in the executive summary, the specialist cannot drill into the KB — it must hallucinate or answer vaguely. Two previously-approved Sprint 7 stories (historical Notion archive: [1.1.6-1](https://www.notion.so/34230fd653028175bccadb3dfd3d581f), [1.1.6-2](https://www.notion.so/34230fd65302816ea2eeeec49aedd90e)) proposed on-demand section loading and per-entity drill-down tools; neither has shipped. This PRD delivers those, plus two new tools needed to support the `Observation` layer (KG-PRD-02) and semantic fallback for fuzzy queries.
 
-Four complementary retrieval primitives; the orchestrator picks one per user question:
+**Where the tools attach (post-[AH-PRD-09](../../agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md)).** Under AH-PRD-09 Phase 2 the deployed root carries only `delegate_to_specialist` — it has no domain tools. The four KB read tools therefore attach to **specialists**, not the root. To reach every specialist that needs account knowledge without per-config edits, the tools are registered as `default_global: true` function tools in `app/adk/tools/registry/tools.yaml` (mirroring `create_visualization` from AH-PRD-04, `set_todo_list`/`update_todo_list` from CH-PRD-05, and the system-skill default-global mechanism described in SK-PRD-05 §9). [AH-PRD-06](../../agentic-harness/projects/AH-PRD-06-tool-mapping.md) PR-C wires `default_global` entries through the deploy-time factory at `hierarchy.py:325`; [AH-PRD-09](../../agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md) Phase 3 ports the same injection into `specialist_runtime.resolve_agent`. The same YAML row covers both dispatch models.
+
+Four complementary retrieval primitives; the specialist picks one per user question:
 
 | Tool | Retrieval shape | Good for |
 |---|---|---|
@@ -33,7 +35,7 @@ All tools are **read-only**, account-scoped by `tool_context.state["account_id"]
 - `load_document`: generic entity-detail loader that accepts any of the 28 registered node types + `Observation`.
 - `search_kb`: query-embedding via `text-embedding-004`, Neo4j vector index lookup, result snippeting.
 - `list_observations`: paginated observation filter over the Phase 2 layer.
-- Tool registration on the root agent at `app/adk/agents/ken_e_agent.py:244`.
+- Tool registration in `app/adk/tools/registry/tools.yaml` under `function_tools:` with `default_global: true` so every runtime-resolved specialist receives the four tools automatically. AH-PRD-06 PR-C wires the injection through the deploy-time factory; AH-PRD-09 Phase 3 ports it into `specialist_runtime.resolve_agent`. No root-agent tool registration — the post-AH-PRD-09 root carries only `delegate_to_specialist`.
 - Removal of the legacy keyword-detection path (`SECTION_KEYWORDS`, `should_load_section`) in `shared/context_utils.py` once the tools ship, per the Context Management decision (see [Review 4 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-4-context-loading--keyword-detection--agent-driven-loading)).
 - Unit tests per tool + an end-to-end integration test that exercises all four from a single agent invocation.
 
@@ -230,9 +232,14 @@ Output: markdown list grouped by subject, most recent first, with `node_id` hand
 
 ### Tool registration
 
-Register all four tools on the root agent via `FunctionTool` wrapping — same pattern as `search_company_news` at `app/adk/agents/ken_e_agent.py:210-244`. Each tool wrapped with `@safe_weave_op(name="kb.load_context_section")` etc.
+Register all four tools in `app/adk/tools/registry/tools.yaml` under the `function_tools:` section with `default_global: true`. Each `FunctionTool` is wrapped with `@safe_weave_op(name="kb.load_context_section")` etc. The pattern mirrors `create_visualization` (AH-PRD-04), `set_todo_list` / `update_todo_list` (CH-PRD-05), and any system skills (SK-PRD-05) — one YAML row per tool, then both injection points pick them up:
 
-Root instruction additions (small — the tools' docstrings carry most of the guidance):
+1. **Deploy-time factory** (AH-PRD-06 PR-C) — `hierarchy.py:325` calls `ToolRegistry.list_default_global_tools()` and appends the entries to every specialist's `tools=[]` list during `build_agent(...)`.
+2. **Runtime resolver** (AH-PRD-09 Phase 3) — `specialist_runtime.resolve_agent(config)` does the same when constructing the `LlmAgent` per turn.
+
+**No root-agent registration**, no edits to `ken_e_agent.py`. The four tools surface on every specialist that has `tool_ids = None` (the post-AH-PRD-06 default for "no per-tool filtering — include all attached + default_global"). A specialist that wants to exclude KB tools sets its `tool_ids` explicitly per AH-PRD-06's filter semantics.
+
+**Specialist instruction additions** (carried in each consuming specialist's `agent_configs/{name}.instruction`, not on the root):
 
 ```
 ## Knowledge base access
@@ -261,6 +268,8 @@ Fall back to search_kb when the question is fuzzy or cross-domain.
 Use load_document only after you have a node_id.
 ```
 
+Specialist instruction edits are out of scope for this PRD — owning specialists update their own `agent_configs` instruction when they want to advertise KB access (the tools are available to them regardless; the docstring guides the LLM when the instruction is silent).
+
 ## 5. Implementation outline
 
 | Action | File |
@@ -269,7 +278,8 @@ Use load_document only after you have a node_id.
 | Create | `app/adk/agents/shared_tools/kb_read_tools.py` |
 | Create | `app/adk/agents/shared_tools/kb_formatting.py` — markdown renderers shared across tools |
 | Create | `app/adk/agents/shared_tools/kb_cypher.py` — section Cypher queries, centralized for testability |
-| Modify | `app/adk/agents/ken_e_agent.py` — register four new tools in the `tools=[]` list at line 244; small instruction update |
+| Modify | `app/adk/tools/registry/tools.yaml` — add four entries under `function_tools:` with `default_global: true`. AH-PRD-06 PR-C / AH-PRD-09 Phase 3 surface them on every specialist. No edits to `ken_e_agent.py`. |
+| Verify (no code change) | `app/adk/agents/agent_factory/hierarchy.py:325` (AH-PRD-06 PR-C) and `app/adk/agents/agent_factory/specialist_runtime.py` (AH-PRD-09 Phase 3) surface all four tools on every specialist where `tool_ids is None`. Integration assertion in `test_orchestrator_kb_tools.py`. |
 | Modify | `app/adk/agents/utils/context_loader.py` — `load_section()` delegates to `load_context_section` under the hood, or is removed if callers switch to the tool directly |
 | Modify | `app/adk/agents/utils/shared/context_utils.py` — remove `SECTION_KEYWORDS` and `should_load_section()` (dead code per the Context Management decision; see [Review 4 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-4-context-loading--keyword-detection--agent-driven-loading)) |
 | Create | `app/adk/agents/shared_tools/test_kb_read_tools.py` (unit) |
@@ -319,7 +329,7 @@ No HTTP endpoints. Tools are called by the ADK runtime on the agent's behalf.
 
 ## 7. Acceptance criteria
 
-1. Chat turn: user asks "who are our competitors?" → agent calls `load_context_section("competitors")` → response is well-formed markdown covering `CompetitiveEnvironment` + all `Competitor` entities (plus their tactics / strengths / weaknesses / substitutes) for the selected account, < 1 second, within the 10k-token budget.
+1. Chat turn: user asks "who are our competitors?" → root delegates to a specialist via `delegate_to_specialist` → the specialist calls `load_context_section("competitors")` → response is well-formed markdown covering `CompetitiveEnvironment` + all `Competitor` entities (plus their tactics / strengths / weaknesses / substitutes) for the selected account, < 1 second, within the 10k-token budget. (Under AH-PRD-09 Phase 2 the root has no domain tools; KB tools are surfaced on specialists via `default_global: true`.)
 2. Each of the 5 section names returns a valid markdown response against an account with representative data. An unknown section name (including the historical `performance` and `calendar`) returns an error listing the valid options (products, icps, competitors, strategies, brand).
 3. `load_document("Competitor", "competitor_acc_abc_xyz")` returns full properties + 1-hop neighbors (tactics, strengths, weaknesses). Unknown `entity_type` returns a clear error. `entity_id` not found returns a clear error.
 4. `search_kb("usage-based pricing")` against an account that has one matching Observation returns that Observation as the top result with score > 0.7 (qualitative — the exact score depends on the embedding model, but it should clearly lead).
@@ -330,7 +340,7 @@ No HTTP endpoints. Tools are called by the ADK runtime on the agent's behalf.
 9. An LLM that attempts to pass `account_id="otheracc"` as a tool argument gets rejected (unknown kwarg) rather than silently honored.
 10. Each tool call appears as a distinct Weave span with `account_id` attribute and the tool name.
 11. Removing `SECTION_KEYWORDS` / `should_load_section` does not break any existing test.
-12. End-to-end chat (`test_orchestrator_kb_tools.py`): a three-turn conversation exercising all four tools completes without errors and each tool's output surfaces back into the final response.
+12. End-to-end chat (`test_orchestrator_kb_tools.py`): a three-turn conversation exercising all four tools (delegated to a specialist via `delegate_to_specialist`) completes without errors and each tool's output surfaces back into the final response. Assertion also confirms all four tools appear in the resolved specialist's `tools=[]` list via `default_global` injection — none on the root.
 
 ## 8. Test plan
 
