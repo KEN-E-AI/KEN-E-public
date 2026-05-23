@@ -89,7 +89,7 @@ exclude = [".venv"]
 # false positives.  Each entry is either a code identifier, a timezone
 # abbreviation, a library API name, or an intentional spelling variant.
 # See AH-23 for the full categorisation rationale.
-ignore-words-list = "rouge,nd,vew,bu,trough,ist,afterall,pre-empt,datea,preferr,ment,mis,overrideable,noone,coo,devlop,deques"
+ignore-words-list = "rouge,nd,vew,bu,trough,ist,afterall,pre-empt,datea,preferr,ment,mis,overrideable,noone,coo,devlop,deques,hel,couldn"
 
 # Skip generated lockfiles, virtual environments, Jupyter checkpoints, the
 # locust performance-test environment (third-party artifacts with identifiers
