@@ -1,5 +1,5 @@
 /**
- * CH-28 — Visual regression (figma parity) for SessionsSidebar and ChatInterface.
+ * Visual regression (figma parity) for SessionsSidebar and ChatInterface.
  *
  * Five snapshots, taken inside the mcr.microsoft.com/playwright:v1.49.0-jammy
  * Docker image to produce CI-stable baselines:

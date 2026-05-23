@@ -1,5 +1,5 @@
 /**
- * CH-28 — Playwright E2E integration tests for SessionsSidebar.
+ * Playwright E2E integration tests for SessionsSidebar.
  *
  * Five scenarios:
  *   TC-1  sidebar-loads-within-1s    — sidebar renders ≤1 000 ms after navigation
@@ -321,14 +321,15 @@ test("TC-4: 100-session-pagination", async ({ page, request }) => {
 });
 
 // ─── TC-5: Mark-read transition ───────────────────────────────────────────────
-// Exercises the IntersectionObserver-based mark-read mechanism shipped by CH-27:
+// Exercises the IntersectionObserver-based mark-read mechanism:
 // open a needs-review session, receive an assistant reply (via mocked SSE),
 // let the auto-scroll bring the reply into view, wait ≥500 ms for the IO
 // threshold, and assert that POST /mark-read fires and the sidebar dot flips
 // from needs-review to idle.
 //
-// Failure contract: this test fails against the current state (no useMarkRead
-// hook) and passes after CH-27's re-attach fix lands.
+// Regression guard for the IntersectionObserver re-attach behavior: it would
+// fail if the observer stopped re-binding to the latest assistant message node
+// (the defect that caused mark-read never to fire for in-session replies).
 
 test("TC-5: mark-read-transition", async ({ page, request }) => {
   const sessionId = "sb-mark-read-session";
