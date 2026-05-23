@@ -70,7 +70,47 @@ echo "YOUR_PRODUCTION_CLIENT_SECRET" | gcloud secrets create GOOGLE_OAUTH_CLIENT
 
 ---
 
-### 2. Encryption Key
+### 2. KEN-E API URL (`kene-api-url`)
+
+**Purpose:** Internal-OIDC bridge from the deployed Agent Engine back to the KEN-E API for Chat session persistence (CH-PRD-01). Resolved at deploy time by `app/adk/deploy_ken_e.py` (`_append_chat_env_vars`) and baked into `CHAT_INTERNAL_API_URL` / `CHAT_INTERNAL_API_AUDIENCE` in the deployed agent's env. Used as the OIDC token `aud` claim, so the value must be the API's Cloud Run URL (or a custom domain that the API validates).
+
+**Why environment-specific:** Each environment's API runs on its own Cloud Run service.
+
+**Setup Steps:**
+
+#### For Staging (ken-e-staging):
+
+```bash
+# 1. Resolve the staging API Cloud Run URL
+STAGING_API_URL=$(gcloud run services describe kene-api-staging \
+  --project=ken-e-staging --region=us-central1 \
+  --format="value(status.url)")
+
+# 2. Create the secret
+echo -n "$STAGING_API_URL" | gcloud secrets create kene-api-url \
+  --replication-policy=automatic --data-file=- --project=ken-e-staging
+```
+
+#### For Production (ken-e-production):
+
+```bash
+PROD_API_URL=$(gcloud run services describe kene-api-prod \
+  --project=ken-e-production --region=us-central1 \
+  --format="value(status.url)")
+
+echo -n "$PROD_API_URL" | gcloud secrets create kene-api-url \
+  --replication-policy=automatic --data-file=- --project=ken-e-production
+```
+
+#### For Dev (ken-e-dev):
+
+Dev runs the KEN-E API locally at `http://localhost:8000`, not on Cloud Run. Agent Engine cannot reach `localhost`, so `kene-api-url` is **intentionally not set** in `ken-e-dev` — there is no remote endpoint for the deployed agent to bridge back to. As a consequence, a `make backend` against dev currently falls through `_append_chat_env_vars` in `app/adk/deploy_ken_e.py` with the literal `sm://...` ref baked into `CHAT_INTERNAL_API_URL`; the chat side-table writes from a dev-deployed agent will fail, but the agent otherwise deploys.
+
+**Note on the deployer's permissions:** the `sm://` resolution happens locally during `make backend`, not at agent runtime. So whatever identity runs the deploy (your gcloud account locally, or the CICD runner SA in CI) needs `roles/secretmanager.secretAccessor` on `kene-api-url`. The Vertex AI service agent does **not** need access — at runtime the agent reads `CHAT_INTERNAL_API_URL` as a plain env var. The CICD SA's project-level `roles/secretmanager.secretAccessor` grant is wired through `cicd_sa_deployment_required_roles` in `deployment/terraform/variables.tf`.
+
+---
+
+### 3. Encryption Key
 
 **Purpose:** Encrypt OAuth tokens and sensitive credentials in database
 
@@ -125,6 +165,7 @@ These secrets have been created/standardized across all environments and are rea
 | superset-password | Superset dashboard | ✅ | ✅ | ✅ |
 | ken-e-engine-id | KEN-E chat agent | ✅ | ✅ | ✅ |
 | strategy-supervisor-engine-id | Strategy agent | ✅ | ✅ | ✅ |
+| kene-api-url | Chat OIDC bridge target URL | ➖ N/A (localhost) | ✅ | ✅ |
 
 ---
 

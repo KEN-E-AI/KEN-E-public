@@ -75,6 +75,7 @@ import {
   DIAGRAM_LAYOUT,
   DEFAULT_EDGE_STYLE,
 } from "@/components/knowledge-graph";
+import type { KnowledgeGraphItem } from "@/components/knowledge-graph";
 
 interface ProductCategoriesManagementProps {
   hasEditAccess: boolean;
@@ -231,7 +232,10 @@ export const ProductCategoriesManagement = ({
   // Unsaved changes detection
   const originalData =
     contextMenuType === "category" ? selectedCategory : selectedProduct;
-  const hasUnsavedChanges = useUnsavedChanges(
+  // Explicit Record<string, any> to bridge originalData (ProductCategory |
+  // Product) and the narrower FormDataState; the hook only does shallow
+  // key-by-key diffing.
+  const hasUnsavedChanges = useUnsavedChanges<Record<string, any>>(
     originalData,
     formData,
     isEditing,
@@ -1270,24 +1274,32 @@ export const ProductCategoriesManagement = ({
         }
       >
         <HorizontalScrollList
-          items={categories}
+          // Same KnowledgeGraphItem-cast pattern as KnowledgeStrategy.tsx
+          // and CompetitorsManagement.tsx: ProductCategory uses
+          // `product_name`, not `display_name`.
+          items={categories as unknown as KnowledgeGraphItem[]}
           selectedId={selectedCategoryId}
-          onItemClick={handleCategoryClick}
+          onItemClick={
+            handleCategoryClick as unknown as (item: KnowledgeGraphItem) => void
+          }
           isLoading={isLoading}
           emptyMessage="No product categories found."
           emptyMessageWithAction="Click '+' to add one."
           hasEditAccess={hasEditAccess}
-          renderItem={(category, isSelected) => (
-            <HorizontalScrollItem
-              label={category.product_name}
-              sublabel="Product Category"
-              icon={Blocks}
-              bgColor="bg-brand-light-blue bg-opacity-30"
-              iconBgColor="bg-brand-light-blue"
-              isSelected={isSelected}
-              onClick={() => {}}
-            />
-          )}
+          renderItem={(category, isSelected) => {
+            const c = category as unknown as ProductCategory;
+            return (
+              <HorizontalScrollItem
+                label={c.product_name}
+                sublabel="Product Category"
+                icon={Blocks}
+                bgColor="bg-brand-light-blue bg-opacity-30"
+                iconBgColor="bg-brand-light-blue"
+                isSelected={isSelected}
+                onClick={() => {}}
+              />
+            );
+          }}
         />
       </KnowledgeGraphCard>
 

@@ -12,29 +12,40 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Parse a Locust _stats.csv file and validate that the p95 latency is below a threshold.
+"""Parse a Locust _stats.csv file and validate that a percentile latency is below a threshold.
+
+Despite the historical filename, this script gates against any of Locust's reported
+percentile columns (50, 66, 75, 80, 90, 95, 98, 99).  Default percentile is 95 for
+backward compatibility; pass --percentile 90 for the staging gate, which is much
+more stable across runs than p95 because it sits below the Cloud Run cold-start tail
+that dominates p95 at high VU counts with min_instances=0.
 
 Usage:
-    python check_p95_threshold.py <csv_path> [--threshold-ms THRESHOLD] [--endpoint ENDPOINT]
-                                              [--max-failure-ratio RATIO]
+    python check_p95_threshold.py <csv_path>
+        [--threshold-ms THRESHOLD] [--endpoint ENDPOINT]
+        [--max-failure-ratio RATIO] [--percentile P]
 
 Arguments:
     csv_path             Path to the Locust stats CSV file (positional, required)
-    --threshold-ms       p95 latency threshold in milliseconds (default: 100)
+    --threshold-ms       Latency threshold in milliseconds (default: 100)
     --endpoint           Endpoint label to look up in the CSV (default: /api/v1/chat/conversations)
     --max-failure-ratio  Maximum tolerated failure ratio in [0, 1] (default: 0 — any
                          failure fails the gate).  Set to 0.01 in staging to tolerate
                          transient infra blips (gateway 502s during Cloud Run scale-up,
                          etc.) without masking real regressions — a ratio > 1 % still
                          fails.
+    --percentile         Latency percentile to gate on; one of 50, 66, 75, 80, 90, 95,
+                         98, 99 (default: 95).  Use a lower percentile (e.g. 90) when
+                         min_instances=0 makes the upper tail dominated by cold-start
+                         noise rather than steady-state performance.
 
 Exit codes:
-    0  p95 < threshold AND failure_ratio <= max_failure_ratio
-    1  p95 >= threshold OR failure_ratio > max_failure_ratio
+    0  percentile_value < threshold AND failure_ratio <= max_failure_ratio
+    1  percentile_value >= threshold OR failure_ratio > max_failure_ratio
     2  Usage error: endpoint not found in CSV, file not found, or malformed CSV
 
 Example:
-    python check_p95_threshold.py .results/stats.csv --threshold-ms 200 --endpoint /api/v1/chat/conversations
+    python check_p95_threshold.py .results/stats.csv --percentile 90 --threshold-ms 15000
 """
 
 import argparse
@@ -75,12 +86,26 @@ def main() -> None:
             "infra blips (Cloud Run scale-up 502s) without masking real regressions."
         ),
     )
+    parser.add_argument(
+        "--percentile",
+        type=int,
+        default=95,
+        choices=[50, 66, 75, 80, 90, 95, 98, 99],
+        help=(
+            "Latency percentile to gate on (Locust columns are 50/66/75/80/90/95/98/99). "
+            "Default 95 for backward compatibility.  Use 90 in staging where the upper "
+            "tail is dominated by Cloud Run cold-start noise (min_instances=0) rather "
+            "than steady-state performance."
+        ),
+    )
     args = parser.parse_args()
 
     csv_path: str = args.csv_path
     threshold_ms: float = args.threshold_ms
     endpoint: str = args.endpoint
     max_failure_ratio: float = args.max_failure_ratio
+    percentile: int = args.percentile
+    percentile_col = f"{percentile}%"
 
     if not 0.0 <= max_failure_ratio <= 1.0:
         print(f"[ERROR] --max-failure-ratio must be in [0, 1], got {max_failure_ratio}")
@@ -108,7 +133,7 @@ def main() -> None:
         sys.exit(2)
 
     try:
-        p95 = float(matching_row["95%"])
+        latency = float(matching_row[percentile_col])
         failure_count = int(matching_row["Failure Count"])
         request_count = int(matching_row["Request Count"])
     except (KeyError, ValueError) as exc:
@@ -122,24 +147,25 @@ def main() -> None:
         sys.exit(1)
 
     failure_ratio = failure_count / request_count
+    pname = f"p{percentile}"
 
     if failure_ratio > max_failure_ratio:
         print(
             f"[FAIL] {endpoint}: failure_ratio={failure_ratio:.4f} "
             f"({failure_count}/{request_count}) > max_failure_ratio={max_failure_ratio:.4f}"
-            f" (p95={p95:.0f}ms)"
+            f" ({pname}={latency:.0f}ms)"
         )
         sys.exit(1)
 
-    if p95 >= threshold_ms:
+    if latency >= threshold_ms:
         print(
-            f"[FAIL] {endpoint}: p95={p95:.0f}ms >= {threshold_ms:.0f}ms threshold"
+            f"[FAIL] {endpoint}: {pname}={latency:.0f}ms >= {threshold_ms:.0f}ms threshold"
             f" (failure_ratio={failure_ratio:.4f} within tolerance)"
         )
         sys.exit(1)
 
     print(
-        f"[PASS] {endpoint}: p95={p95:.0f}ms < {threshold_ms:.0f}ms threshold,"
+        f"[PASS] {endpoint}: {pname}={latency:.0f}ms < {threshold_ms:.0f}ms threshold,"
         f" failure_ratio={failure_ratio:.4f} ({failure_count}/{request_count})"
     )
     sys.exit(0)

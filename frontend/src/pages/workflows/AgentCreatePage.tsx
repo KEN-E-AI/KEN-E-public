@@ -48,7 +48,7 @@ export const schema = z.object({
     .string()
     .min(10, "Instruction must be at least 10 characters")
     .max(50000, "Instruction must be 50,000 characters or fewer"),
-  model: z.enum(SUPPORTED_MODELS as [string, ...string[]], {
+  model: z.enum(SUPPORTED_MODELS as unknown as [string, ...string[]], {
     errorMap: () => ({ message: "Model is required" }),
   }),
   temperature: z.number().min(0.1).max(0.9).optional(),
@@ -123,7 +123,10 @@ export function AgentCreatePage() {
       // servers" behaviour reserved for pre-PRD configs.
       tool_ids: data.tool_ids ?? [],
     };
-    mutation.mutate(payload, {
+    // The zod-derived payload type marks title/instruction/model as
+    // optional via schema-level shape, but AgentConfigCreate marks them
+    // required. The form validation above ensures they're present.
+    mutation.mutate(payload as Parameters<typeof mutation.mutate>[0], {
       onSuccess: (created) => {
         toast.success("Agent created.");
         navigate(

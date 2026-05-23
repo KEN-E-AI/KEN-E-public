@@ -132,7 +132,9 @@ export const ContextualActionBar = ({
       <Button
         key={action.id}
         variant={action.variant || "outline"}
-        size={action.size || "sm"}
+        size={
+          action.size === "md" ? "default" : action.size || "sm"
+        }
         onClick={() => handleActionClick(action)}
         disabled={action.disabled}
         className={cn("flex items-center gap-2", action.className)}

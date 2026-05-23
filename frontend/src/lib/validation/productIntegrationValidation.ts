@@ -121,15 +121,18 @@ export const suggestComplementaryIntegrations = (
     suggestions.push("google_analytics");
   }
 
-  // If they have e-commerce but no email marketing
+  // PRODUCT_INTEGRATIONS doesn't currently expose "ecommerce" or
+  // "email_marketing" categories — the checks were written for a wider
+  // taxonomy. Cast to `string` so the comparisons compile; the runtime
+  // behavior is unchanged (no integration matches either value today).
   const hasEcommerce = currentIntegrations.some((id) => {
     const integration = PRODUCT_INTEGRATIONS.find((int) => int.id === id);
-    return integration?.category === "ecommerce";
+    return (integration?.category as string) === "ecommerce";
   });
 
   const hasEmailMarketing = currentIntegrations.some((id) => {
     const integration = PRODUCT_INTEGRATIONS.find((int) => int.id === id);
-    return integration?.category === "email_marketing";
+    return (integration?.category as string) === "email_marketing";
   });
 
   if (hasEcommerce && !hasEmailMarketing) {

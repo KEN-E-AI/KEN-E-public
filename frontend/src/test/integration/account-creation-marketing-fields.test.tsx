@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthContext, type AuthContextType } from "@/contexts/AuthContext";
-import AccountCreationWizard from "@/components/settings/AccountCreationWizard";
+import { AccountCreationWizard } from "@/components/settings/AccountCreationWizard";
 import * as organizationApi from "@/data/organizationApi";
 
 // Mock API modules
@@ -45,7 +45,12 @@ const mockOrgMetadata = {
   },
 };
 
-const mockAuthContext: AuthContextType = {
+// Fixture uses a legacy AuthContext shape (selectedOrganization /
+// selectedAccount / hasPermission). The current AuthContextType has
+// `selectedOrgAccount`, `currentOrganizationId`, etc. The cast through
+// unknown is acceptable here: the integration tests below only exercise
+// the wizard flow, not the legacy fields above.
+const mockAuthContext = {
   user: mockUser,
   selectedOrganization: "org-123",
   selectedAccount: null,
@@ -60,7 +65,7 @@ const mockAuthContext: AuthContextType = {
   hasPermission: vi.fn().mockReturnValue(true),
   getAccountPermission: vi.fn().mockReturnValue("admin"),
   getOrganizationPermission: vi.fn().mockReturnValue("admin"),
-};
+} as unknown as AuthContextType;
 
 // Test wrapper component
 const TestWrapper = ({ children }: { children: React.ReactNode }) => {
@@ -116,7 +121,11 @@ describe("Account Creation Integration - Marketing Fields", () => {
     const onComplete = vi.fn();
     render(
       <TestWrapper>
-        <AccountCreationWizard onComplete={onComplete} />
+        <AccountCreationWizard
+          isOpen={true}
+          onClose={vi.fn()}
+          onComplete={onComplete}
+        />
       </TestWrapper>,
     );
 
@@ -316,7 +325,11 @@ describe("Account Creation Integration - Marketing Fields", () => {
 
     render(
       <TestWrapper>
-        <AccountCreationWizard onComplete={onComplete} />
+        <AccountCreationWizard
+          isOpen={true}
+          onClose={vi.fn()}
+          onComplete={onComplete}
+        />
       </TestWrapper>,
     );
 
@@ -371,7 +384,11 @@ describe("Account Creation Integration - Marketing Fields", () => {
 
     render(
       <TestWrapper>
-        <AccountCreationWizard onComplete={onComplete} />
+        <AccountCreationWizard
+          isOpen={true}
+          onClose={vi.fn()}
+          onComplete={onComplete}
+        />
       </TestWrapper>,
     );
 

@@ -16,7 +16,7 @@
     "resolve-secrets": "node scripts/resolve-secrets.js",
     "test": "NODE_OPTIONS=--no-experimental-webstorage vitest --run",
     "format.fix": "prettier --write .",
-    "typecheck": "tsc",
+    "typecheck": "tsc -b",
     "test:e2e": "playwright test"
   },
   "dependencies": {

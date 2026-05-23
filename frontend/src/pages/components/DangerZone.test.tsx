@@ -35,8 +35,8 @@ describe("DangerZone", () => {
     },
   };
 
-  const mockOrgData = {
-    organization_id: "org-123",
+  const mockOrgData: import("@/data/organizationTypes").Organization = {
+    organization_id: "org-123" as import("@/lib/branded-types").OrganizationId,
     organization_name: "Test Organization",
     plan: "Professional",
     website: "https://test.com",
@@ -63,6 +63,7 @@ describe("DangerZone", () => {
       members_limit: 10,
       pending_invitations: 1,
     },
+    accounts: [],
   };
 
   beforeEach(() => {

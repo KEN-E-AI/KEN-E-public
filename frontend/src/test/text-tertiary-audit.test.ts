@@ -293,7 +293,8 @@ describe("text-tertiary usage audit", () => {
   const violations: string[] = [];
 
   for (const file of allFiles) {
-    const rel = relative(FRONTEND_SRC, file).replaceAll("\\", "/");
+    // .replace(/\\/g, ...) keeps ES2020-lib compatibility (no replaceAll).
+    const rel = relative(FRONTEND_SRC, file).replace(/\\/g, "/");
     if (ALLOWED_FILES.has(rel)) continue;
 
     const content = readFileSync(file, "utf-8");

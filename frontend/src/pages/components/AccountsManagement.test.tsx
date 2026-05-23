@@ -10,6 +10,7 @@ import {
   deleteAccount,
   updateAccount,
 } from "@/data/organizationApi";
+import type { Organization } from "@/data/organizationTypes";
 
 // Mock dependencies
 vi.mock("@/contexts/AuthContext");
@@ -78,7 +79,7 @@ describe("AccountsManagement", () => {
       members_limit: 10,
       pending_invitations: 1,
     },
-  };
+  } as unknown as Organization;
 
   const mockAccount = {
     account_id: "acc-123",

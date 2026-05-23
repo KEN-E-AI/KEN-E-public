@@ -18,7 +18,9 @@ const mockUseFeatureFlag = vi.fn(() => ({
   isLoading: false,
 }));
 vi.mock("@/contexts/FeatureFlagsContext", () => ({
-  useFeatureFlag: (key: string) => mockUseFeatureFlag(key),
+  // mockUseFeatureFlag is typed by vi.fn() with 0 args; the key is
+  // ignored because the mock returns the same value for every flag.
+  useFeatureFlag: (_key: string) => mockUseFeatureFlag(),
   FeatureFlagsProvider: ({ children }: { children: React.ReactNode }) =>
     children,
   useFeatureFlagsContext: vi.fn(),

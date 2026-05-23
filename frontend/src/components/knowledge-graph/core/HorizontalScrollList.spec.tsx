@@ -1,22 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { HorizontalScrollList } from "./HorizontalScrollList";
+import type { KnowledgeGraphItem } from "../types";
 
 describe("HorizontalScrollList", () => {
+  // KGI requires display_name/description; the spec only exercises node_id
+  // and the renderItem callback's own access, so cast through unknown.
   const mockItems = [
     { id: "1", name: "Item 1" },
     { id: "2", name: "Item 2" },
     { id: "3", name: "Item 3" },
-  ];
+  ] as unknown as KnowledgeGraphItem[];
 
-  const mockRenderItem = (item: (typeof mockItems)[0], isSelected: boolean) => (
-    <div
-      data-testid={`item-${item.id}`}
-      className={isSelected ? "selected" : ""}
-    >
-      {item.name}
-    </div>
-  );
+  const mockRenderItem = (item: KnowledgeGraphItem, isSelected: boolean) => {
+    const m = item as unknown as { id: string; name: string };
+    return (
+      <div data-testid={`item-${m.id}`} className={isSelected ? "selected" : ""}>
+        {m.name}
+      </div>
+    );
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -70,14 +73,14 @@ describe("HorizontalScrollList", () => {
   });
 
   it("should render custom item components via renderItem", () => {
-    const customRenderItem = (
-      item: (typeof mockItems)[0],
-      isSelected: boolean,
-    ) => (
-      <div data-testid={`custom-${item.id}`} className="custom">
-        Custom: {item.name}
-      </div>
-    );
+    const customRenderItem = (item: KnowledgeGraphItem, _isSelected: boolean) => {
+      const m = item as unknown as { id: string; name: string };
+      return (
+        <div data-testid={`custom-${m.id}`} className="custom">
+          Custom: {m.name}
+        </div>
+      );
+    };
 
     render(
       <HorizontalScrollList
@@ -118,7 +121,8 @@ describe("HorizontalScrollList", () => {
     );
 
     mockItems.forEach((item) => {
-      const element = screen.getByTestId(`item-${item.id}`);
+      const m = item as unknown as { id: string };
+      const element = screen.getByTestId(`item-${m.id}`);
       expect(element.className).not.toContain("selected");
     });
   });

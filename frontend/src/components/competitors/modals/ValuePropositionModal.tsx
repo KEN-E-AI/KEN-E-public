@@ -31,7 +31,7 @@ export interface ValuePropositionModalProps {
   onClose: () => void;
   onSubmit: (data: ValuePropositionCreate) => Promise<void>;
   parentNodeId: string;
-  parentNodeType: "SubstituteProduct" | "Competitor";
+  parentNodeType: ValuePropositionCreate["parent_node_type"];
   parentDisplayName: string;
   initialData?: ValueProposition;
   mode: "create" | "edit";

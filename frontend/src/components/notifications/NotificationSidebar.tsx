@@ -64,7 +64,11 @@ export const NotificationSidebar: React.FC<NotificationSidebarProps> = ({
     try {
       setLoading(true);
       setError(null);
-      const data = await notificationApi.getNotifications(accountId, false);
+      // notificationApi.getNotifications takes only `includeArchived`; the
+      // backend scopes the result to the authenticated user/account on its
+      // own. Earlier call passed accountId as a second arg that the API
+      // signature ignored.
+      const data = await notificationApi.getNotifications(false);
       setNotifications(data);
     } catch (err) {
       console.error("Error fetching notifications:", err);
@@ -85,7 +89,7 @@ export const NotificationSidebar: React.FC<NotificationSidebarProps> = ({
     if (notification.status === "read") return;
 
     try {
-      await notificationApi.markAsRead(notification.id, accountId);
+      await notificationApi.markAsRead(notification.id);
       setNotifications((prev) =>
         prev.map((n) =>
           n.id === notification.id
@@ -106,7 +110,7 @@ export const NotificationSidebar: React.FC<NotificationSidebarProps> = ({
     e.stopPropagation();
 
     try {
-      await notificationApi.archiveNotification(notification.id, accountId);
+      await notificationApi.archiveNotification(notification.id);
       setNotifications((prev) => prev.filter((n) => n.id !== notification.id));
     } catch (err) {
       console.error("Error archiving notification:", err);

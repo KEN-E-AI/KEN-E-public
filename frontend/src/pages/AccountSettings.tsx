@@ -9,7 +9,7 @@ import {
 } from "@/data/organizationApi";
 import { getDefaultPlan } from "@/data/subscriptionPlansApi";
 import { useToast } from "@/hooks/use-toast";
-import type { Organization } from "@/data/organizationTypes";
+import type { Account, Organization } from "@/data/organizationTypes";
 import type { SubscriptionPlanDefinition } from "@/types/subscription";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
@@ -37,7 +37,7 @@ import TeamManagement from "./components/TeamManagement";
 import DangerZone from "./components/DangerZone";
 import { GoogleAnalyticsPropertySelector } from "@/components/integrations/GoogleAnalyticsPropertySelector";
 import { AccountSettingsTabs } from "@/components/settings/AccountSettingsTabs";
-import type { AccountId } from "@/lib/branded-types";
+import type { AccountId, OrganizationId } from "@/lib/branded-types";
 
 // Types
 interface NewOrgFormData {
@@ -479,7 +479,7 @@ const AccountSettings = () => {
       currentOrgId &&
       currentOrgId !== currentOrganizationId
     ) {
-      setCurrentOrganization(currentOrgId);
+      setCurrentOrganization(currentOrgId as OrganizationId);
     }
   }, [
     currentOrgId,
@@ -617,13 +617,18 @@ const AccountSettings = () => {
     organizationId: string,
     organization: Organization,
   ) => {
-    setCurrentOrganization(organizationId);
+    setCurrentOrganization(organizationId as OrganizationId);
 
-    // Also update the selectedOrgAccount to show in the dropdown
-    const firstAccount = organization.accounts?.[0];
+    // Organization.accounts is typed as a slim {account_id, account_name}
+    // pair, but the API returns richer Account-shaped objects. Cast to
+    // Partial<Account> so the safe-fallback reads below type-check.
+    // Same pattern lives in CreateOrganization.tsx; tracked as tech-debt.
+    const firstAccount = organization.accounts?.[0] as
+      | Partial<Account>
+      | undefined;
     setSelectedOrgAccount({
-      orgId: organizationId,
-      accountId: firstAccount?.account_id || "",
+      orgId: organizationId as OrganizationId,
+      accountId: firstAccount?.account_id || ("" as AccountId),
       metadata: {
         organization_name: organization.organization_name,
         account_name: firstAccount?.account_name || "",
@@ -715,7 +720,8 @@ const AccountSettings = () => {
         organization_name: editOrgName,
         company_size: orgData.company_size,
         agency: editAgencyData.agency,
-        child_organizations: editAgencyData.child_organizations,
+        child_organizations:
+          editAgencyData.child_organizations as OrganizationId[],
       });
 
       // Update local orgData with the updated organization from API

@@ -4,7 +4,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { createOrganization } from "@/data/organizationApi";
 import { getDefaultPlan } from "@/data/subscriptionPlansApi";
 import { useToast } from "@/hooks/use-toast";
-import type { Organization } from "@/data/organizationTypes";
+import type { Account, Organization } from "@/data/organizationTypes";
+import type { AccountId, OrganizationId } from "@/lib/branded-types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -131,12 +132,18 @@ export function CreateOrganization() {
     organizationId: string,
     organization: Organization,
   ) => {
-    setCurrentOrganization(organizationId);
+    setCurrentOrganization(organizationId as OrganizationId);
 
-    const firstAccount = organization.accounts?.[0];
+    // Organization.accounts is typed as { account_id, account_name } pairs,
+    // but the API returns richer Account-shaped objects (industry, status,
+    // timezone, etc.). Cast to Partial<Account> so the downstream metadata
+    // build can read the extra fields with the existing safe fallbacks.
+    const firstAccount = organization.accounts?.[0] as
+      | Partial<Account>
+      | undefined;
     setSelectedOrgAccount({
-      orgId: organizationId,
-      accountId: firstAccount?.account_id || "",
+      orgId: organizationId as OrganizationId,
+      accountId: firstAccount?.account_id || ("" as AccountId),
       metadata: {
         organization_name: organization.organization_name,
         account_name: firstAccount?.account_name || "",

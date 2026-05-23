@@ -140,7 +140,7 @@ describe("CompetitorsManagement - Basic Rendering", () => {
       <MemoryRouter>
         <AuthContext.Provider value={mockAuthContext as any}>
           <QueryClientProvider client={queryClient}>
-            <CompetitorsManagement />
+            <CompetitorsManagement hasEditAccess={true} />
           </QueryClientProvider>
         </AuthContext.Provider>
       </MemoryRouter>,

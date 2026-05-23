@@ -15,14 +15,14 @@ describe("BackgroundEffects", () => {
     });
 
     it("renders static gradient and no animated blobs", () => {
-      vi.spyOn(window, "matchMedia").mockImplementation((query: string) => ({
+      vi.spyOn(window, "matchMedia").mockImplementation(((query: string) => ({
         matches: true,
         media: query,
         onchange: null,
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
         dispatchEvent: vi.fn().mockReturnValue(false),
-      }));
+      })) as unknown as (query: string) => MediaQueryList);
 
       render(<BackgroundEffects />);
 
@@ -33,7 +33,7 @@ describe("BackgroundEffects", () => {
     it("swaps blobs for static gradient when change listener fires", () => {
       let capturedHandler: ((e: MediaQueryListEvent) => void) | null = null;
 
-      vi.spyOn(window, "matchMedia").mockImplementation((query: string) => ({
+      vi.spyOn(window, "matchMedia").mockImplementation(((query: string) => ({
         matches: false,
         media: query,
         onchange: null,
@@ -44,7 +44,7 @@ describe("BackgroundEffects", () => {
         ),
         removeEventListener: vi.fn(),
         dispatchEvent: vi.fn().mockReturnValue(false),
-      }));
+      })) as unknown as (query: string) => MediaQueryList);
 
       render(<BackgroundEffects />);
 

@@ -33,6 +33,7 @@ const mockUseAgentConfigsList = useAgentConfigsList as ReturnType<typeof vi.fn>;
 
 const defaultConfig: MergedAgentConfig = {
   config_id: "google_analytics_specialist",
+  title: "Google Analytics Specialist",
   name: null,
   instruction: "You are a GA specialist.",
   model: "gemini-2.5-flash",
@@ -41,6 +42,7 @@ const defaultConfig: MergedAgentConfig = {
   code_execution_enabled: true,
   mcp_servers: ["google_analytics_mcp"],
   skill_ids: [],
+  tool_ids: [],
   sandbox_code_executor_enabled: false,
   response_schema: null,
   available_to_copy: true,
@@ -60,6 +62,7 @@ const customizedConfig: MergedAgentConfig = {
 
 const customAgentConfig: MergedAgentConfig = {
   config_id: "custom_abc123",
+  title: "My Custom Agent",
   name: "My Custom Agent",
   instruction: "Do something special.",
   model: "gemini-2.5-pro",
@@ -68,6 +71,7 @@ const customAgentConfig: MergedAgentConfig = {
   code_execution_enabled: false,
   mcp_servers: [],
   skill_ids: [],
+  tool_ids: [],
   sandbox_code_executor_enabled: false,
   response_schema: null,
   available_to_copy: false,

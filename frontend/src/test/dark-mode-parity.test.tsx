@@ -298,7 +298,7 @@ afterEach(() => {
 describe("dark-mode parity — Authentication (sign-in)", () => {
   beforeEach(() => {
     vi.mocked(useAuth).mockReturnValue(
-      baseAuthValue as ReturnType<typeof useAuth>,
+      baseAuthValue as unknown as ReturnType<typeof useAuth>,
     );
   });
 
@@ -321,7 +321,7 @@ describe("dark-mode parity — Authentication (sign-in)", () => {
 describe("dark-mode parity — Authentication (sign-up)", () => {
   beforeEach(() => {
     vi.mocked(useAuth).mockReturnValue(
-      baseAuthValue as ReturnType<typeof useAuth>,
+      baseAuthValue as unknown as ReturnType<typeof useAuth>,
     );
   });
 
@@ -344,7 +344,7 @@ describe("dark-mode parity — Authentication (sign-up)", () => {
 describe("dark-mode parity — Authentication (email-verification)", () => {
   beforeEach(() => {
     vi.mocked(useAuth).mockReturnValue(
-      baseAuthValue as ReturnType<typeof useAuth>,
+      baseAuthValue as unknown as ReturnType<typeof useAuth>,
     );
   });
 
@@ -419,7 +419,7 @@ describe("dark-mode parity — AcceptInvitation", () => {
     vi.mocked(useAuth).mockReturnValue({
       user: baseAuthValue.user,
       logout: vi.fn(),
-    } as ReturnType<typeof useAuth>);
+    } as unknown as ReturnType<typeof useAuth>);
   });
 
   it.each(themes)(
@@ -444,7 +444,7 @@ describe("dark-mode parity — AcceptInvitation", () => {
 describe("dark-mode parity — AccountSettings", () => {
   beforeEach(() => {
     vi.mocked(useAuth).mockReturnValue(
-      baseAuthValue as ReturnType<typeof useAuth>,
+      baseAuthValue as unknown as ReturnType<typeof useAuth>,
     );
   });
 
@@ -469,7 +469,7 @@ describe("dark-mode parity — UserSettings", () => {
     vi.mocked(useAuth).mockReturnValue({
       user: baseAuthValue.user,
       updateUser: vi.fn(),
-    } as ReturnType<typeof useAuth>);
+    } as unknown as ReturnType<typeof useAuth>);
   });
 
   it.each(themes)(
@@ -498,7 +498,7 @@ describe("dark-mode parity — CreateOrganization", () => {
       setSelectedOrgAccount: vi.fn(),
       orgMetadata: {},
       setOrgMetadata: vi.fn(),
-    } as ReturnType<typeof useAuth>);
+    } as unknown as ReturnType<typeof useAuth>);
   });
 
   it.each(themes)(
@@ -520,7 +520,7 @@ describe("dark-mode parity — CreateOrganization", () => {
 describe("dark-mode parity — Workflows: Agents", () => {
   beforeEach(() => {
     vi.mocked(useAuth).mockReturnValue(
-      baseAuthValue as ReturnType<typeof useAuth>,
+      baseAuthValue as unknown as ReturnType<typeof useAuth>,
     );
   });
 
@@ -545,7 +545,7 @@ describe("dark-mode parity — Workflows: Agents", () => {
 describe("dark-mode parity — Workflows: Automations", () => {
   beforeEach(() => {
     vi.mocked(useAuth).mockReturnValue(
-      baseAuthValue as ReturnType<typeof useAuth>,
+      baseAuthValue as unknown as ReturnType<typeof useAuth>,
     );
   });
 
@@ -570,7 +570,7 @@ describe("dark-mode parity — Workflows: Automations", () => {
 describe("dark-mode parity — Workflows: Skills", () => {
   beforeEach(() => {
     vi.mocked(useAuth).mockReturnValue(
-      baseAuthValue as ReturnType<typeof useAuth>,
+      baseAuthValue as unknown as ReturnType<typeof useAuth>,
     );
   });
 
@@ -595,7 +595,7 @@ describe("dark-mode parity — Workflows: Skills", () => {
 describe("dark-mode parity — Workflows: Agent Create", () => {
   beforeEach(() => {
     vi.mocked(useAuth).mockReturnValue(
-      baseAuthValue as ReturnType<typeof useAuth>,
+      baseAuthValue as unknown as ReturnType<typeof useAuth>,
     );
   });
 
@@ -619,7 +619,7 @@ describe("dark-mode parity — Workflows: Agent Create", () => {
 describe("dark-mode parity — Workflows: Automation Details", () => {
   beforeEach(() => {
     vi.mocked(useAuth).mockReturnValue(
-      baseAuthValue as ReturnType<typeof useAuth>,
+      baseAuthValue as unknown as ReturnType<typeof useAuth>,
     );
   });
 

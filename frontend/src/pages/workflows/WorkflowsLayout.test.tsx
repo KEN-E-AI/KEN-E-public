@@ -82,7 +82,7 @@ describe("WorkflowsLayout", () => {
     );
 
     expect(
-      screen.queryByRole("heading", { name: "Workflows", exact: true }),
+      screen.queryByRole("heading", { name: /^Workflows$/ }),
     ).toBeNull();
     expect(screen.queryByRole("tablist")).toBeNull();
   });

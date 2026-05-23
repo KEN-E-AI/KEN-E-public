@@ -310,7 +310,9 @@ describe("FlagEditDrawer — edit mode", () => {
 
     await waitFor(() => {
       expect(mutate).toHaveBeenCalledOnce();
-      const [{ key, body }] = mutate.mock.calls[0];
+      const [{ key, body }] = mutate.mock.calls[0] as unknown as [
+        { key: string; body: Record<string, unknown> },
+      ];
       expect(key).toBe("test_flag");
       expect(body).toMatchObject({ description: "A test flag" });
     });

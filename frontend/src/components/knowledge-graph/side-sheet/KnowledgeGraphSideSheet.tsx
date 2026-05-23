@@ -20,6 +20,7 @@ interface KnowledgeGraphSideSheetProps {
   onCancel?: () => void;
   onDelete?: () => void;
   deleteButtonLabel?: string;
+  editButtonLabel?: string;
   hasEditAccess?: boolean;
   isSaving?: boolean;
   preventClose?: boolean;
@@ -42,6 +43,7 @@ export function KnowledgeGraphSideSheet({
   onCancel,
   onDelete,
   deleteButtonLabel = "Delete",
+  editButtonLabel = "Edit",
   hasEditAccess = false,
   isSaving = false,
   preventClose = false,
@@ -94,7 +96,7 @@ export function KnowledgeGraphSideSheet({
                 {onEdit && (
                   <Button onClick={onEdit} variant="outline" className="flex-1">
                     <Pencil className="h-4 w-4 mr-2" />
-                    Edit
+                    {editButtonLabel}
                   </Button>
                 )}
                 {onDelete && (

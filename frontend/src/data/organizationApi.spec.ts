@@ -146,7 +146,12 @@ describe("organizationApi", () => {
         json: async () => ({ organization: createdOrg }),
       } as Response);
 
-      const result = await createOrganization(newOrg);
+      // Fixture predates the current subscription/billing/team shape; cast
+      // to the parameter type since createOrganization just forwards the
+      // payload to the API.
+      const result = await createOrganization(
+        newOrg as unknown as Parameters<typeof createOrganization>[0],
+      );
 
       expect(fetch).toHaveBeenCalledWith(
         "http://test-api.com/api/v1/organizations/",
@@ -536,7 +541,7 @@ describe("organizationApi", () => {
         json: async () => {
           throw new Error("Unexpected end of JSON input");
         },
-      } as Response);
+      } as unknown as Response);
 
       await expect(getOrganizations()).rejects.toThrow(
         "Unexpected end of JSON input",

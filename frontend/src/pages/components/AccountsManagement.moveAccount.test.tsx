@@ -5,6 +5,7 @@ import AccountsManagement from "./AccountsManagement";
 import { AuthContext } from "@/contexts/AuthContext";
 import * as organizationApi from "@/data/organizationApi";
 import type { Organization, Account } from "@/data/organizationTypes";
+import type { AuthContextType } from "@/contexts/AuthContext";
 
 // Mock the organization API
 vi.mock("@/data/organizationApi", () => ({
@@ -49,7 +50,7 @@ const mockUser = {
   },
 };
 
-const mockCurrentOrg: Organization = {
+const mockCurrentOrg = {
   organization_id: "current-org",
   organization_name: "Current Organization",
   plan: "Professional",
@@ -73,9 +74,9 @@ const mockCurrentOrg: Organization = {
     tax_id: "123456789",
   },
   team: { members_used: 5, members_limit: 10, pending_invitations: 0 },
-};
+} as unknown as Organization;
 
-const mockAccount: Account = {
+const mockAccount = {
   account_id: "acc-123",
   account_name: "Test Account",
   organization_id: "current-org",
@@ -85,9 +86,9 @@ const mockAccount: Account = {
   timezone: "America/New_York",
   data_region: "",
   region: [],
-};
+} as unknown as Account;
 
-const mockTargetOrgs: Organization[] = [
+const mockTargetOrgs = [
   {
     organization_id: "target-org-1",
     organization_name: "Target Organization 1",
@@ -112,7 +113,7 @@ const mockTargetOrgs: Organization[] = [
     billing: mockCurrentOrg.billing,
     team: mockCurrentOrg.team,
   },
-];
+] as unknown as Organization[];
 
 const mockAuthContext = {
   user: mockUser,
@@ -133,7 +134,7 @@ const mockAuthContext = {
   setUser: vi.fn(),
   setSelectedOrganization: vi.fn(),
   setSelectedAccount: vi.fn(),
-};
+} as unknown as AuthContextType;
 
 const renderAccountsManagement = () => {
   return render(

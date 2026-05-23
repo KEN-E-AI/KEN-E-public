@@ -24,7 +24,7 @@ import {
 } from "@/lib/branded-types";
 import { validateAndCleanAuthState } from "@/utils/authRecovery";
 
-interface User {
+export interface User {
   id: UserId;
   email: string;
   firstName: string;
@@ -99,7 +99,7 @@ interface SecuritySetting {
   status?: string;
 }
 
-interface AuthContextType {
+export interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isAuthLoading: boolean;

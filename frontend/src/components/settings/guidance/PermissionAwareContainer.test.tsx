@@ -7,7 +7,7 @@ import {
 } from "./PermissionAwareContainer";
 import { AuthContext, type AuthContextType } from "@/contexts/AuthContext";
 
-const mockAuthContext: AuthContextType = {
+const mockAuthContext = {
   user: {
     id: "user-123",
     firstName: "John",
@@ -50,7 +50,7 @@ const mockAuthContext: AuthContextType = {
   getOrganizationData: vi.fn(),
   refetchUser: vi.fn(),
   clearUserData: vi.fn(),
-};
+} as unknown as AuthContextType;
 
 const TestWrapper = ({
   children,

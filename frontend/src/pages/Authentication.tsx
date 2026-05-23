@@ -263,6 +263,7 @@ const Authentication = ({ onAuthenticated }: AuthenticationProps) => {
       permissions: {
         organizations: {},
         accounts: {},
+        account_permissions: {},
       },
       preferences: {},
       metadata: {

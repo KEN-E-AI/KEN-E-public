@@ -1,7 +1,7 @@
 # Skills — Product Requirements Document
 
 > **Linear Team:** [KEN-E] Skills
-> **Last Updated:** 2026-04-20
+> **Last Updated:** 2026-05-22
 > **Status:** Active
 
 ## 1. Overview
@@ -10,7 +10,7 @@ The Skills component gives end-users a way to **capture and reuse their domain e
 
 The component spans three architectural pillars — a **storage split** (metadata in Firestore `accounts/{account_id}/skills/{skill_id}`, content in GCS `gs://kene-skills-{env}/accounts/{account_id}/{skill_id}/{version}/…` keyed by `skill_id` so renames don't split version history), **progressive disclosure via `SkillToolset`** (L1 frontmatter hydrated at agent construction, L2 body on activation, L3 references/assets/scripts lazily streamed from GCS), and **gated script execution** (a skill's `scripts/` cannot run unless the owning agent is configured with `sandbox_code_executor_enabled=true`, which attaches `AgentEngineSandboxCodeExecutor` as the agent's `code_executor`). On top of those, a Skills tab under `/workflows/skills` and an Agent Builder skills-picker on `/workflows/agents` close the authoring + attachment loop. KEN-E also ships **system-owned predefined skills** (one placeholder `example-skill` in v1) attached to the root agent via [SK-PRD-05](./projects/SK-PRD-05-predefined-skill-foundation.md).
 
-A developer reading only this section should understand: this component owns the `Skill` / `SkillVersion` data model, the `/api/v1/accounts/{account_id}/skills/*` API, the `kene-skills-{env}` GCS bucket (plus a `-trash` sibling with a 30-day lifecycle), the skill loader that hydrates ADK `Skill` objects with lazy L3 callables, the agent-factory wiring that constructs `SkillToolset` + sandbox `code_executor` from config, the Skills authoring UI, and the agent-builder controls that enforce attach-time validation. It rides on top of [AH-PRD-02](../agentic-harness/projects/AH-PRD-02-agent-factory.md) (Agent Factory) for the two `agent_configs` fields (`skill_ids`, `sandbox_code_executor_enabled`) that turn a config into a skill-bearing agent.
+A developer reading only this section should understand: this component owns the `Skill` / `SkillVersion` data model, the `/api/v1/accounts/{account_id}/skills/*` API, the `kene-skills-{env}` GCS bucket (plus a `-trash` sibling with a 30-day lifecycle), the skill loader that hydrates ADK `Skill` objects with lazy L3 callables, the agent-factory wiring that constructs `SkillToolset` + sandbox `code_executor` from config, the **`SandboxPool` abstraction** (process-wide pool of `AgentEngineSandboxCodeExecutor` instances keyed by `(account_id, config_id)`, mirroring AH-PRD-09's `McpToolsetPool` discipline), the Skills authoring UI, and the agent-builder controls that enforce attach-time validation. It rides on top of [AH-PRD-02](../agentic-harness/projects/AH-PRD-02-agent-factory.md) (Agent Factory) for the two `agent_configs` fields (`skill_ids`, `sandbox_code_executor_enabled`) that turn a config into a skill-bearing agent, and feeds the planned **[AH-PRD-09](../agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md) (Per-Turn Dispatch Agent)** runtime resolver — `SandboxPool` decouples sandbox lifecycle from `agent_cache` rebuild so AH-PRD-09's per-turn specialist rebuild does not respawn the sandbox process every turn.
 
 ## 2. Architecture
 
@@ -162,7 +162,8 @@ Schema source of truth: `api/src/kene_api/models/skill_models.py` (Pydantic), mi
 |-----------|------------|
 | Root / specialist agents (`app/adk/agents/`) | Custom specialist agents built via AH-PRD-02 (Agent Factory) gain skill-aware behavior once SK-PRD-02 ships. Root agent's system-owned skills (future) ride on the same loader and `SkillToolset` hydration path. |
 | Agent Factory forms (`frontend/src/app/pages/workflows/agents/*`) | The Agent Builder UI depends on SK-PRD-03's skill list (via `useSkills()`) to populate the picker and SK-PRD-04 to wire and validate the controls. |
-| MER-E evaluation pipeline | Consumes the three new Weave spans to score skill-triggered sessions. Poisoned or low-quality skills surface in quality metrics. |
+| **[AH-PRD-09](../agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md) (Per-Turn Dispatch Agent)** | **Downstream consumer with a hard coordination dep.** AH-PRD-09's runtime resolver rebuilds `LlmAgent` instances per turn. SK-PRD-02's `SandboxPool` (§4.6 of that PRD) must ship before AH-PRD-09 Phase 5 default-on, otherwise sandbox-attached specialists respawn their sandbox every turn. The pool design intentionally mirrors AH-PRD-09's `McpToolsetPool` discipline (LRU + idle TTL + `aclose()`-on-eviction) for operational consistency. See [`docs/design/per-turn-dispatch-rfc.md`](../../per-turn-dispatch-rfc.md) §4.9 and §9.2 #8. |
+| MER-E evaluation pipeline | Consumes the three new Weave spans to score skill-triggered sessions. Poisoned or low-quality skills surface in quality metrics. The two new `sandbox_pool.*` spans (SK-PRD-02 §4.6) give pool-saturation observability. |
 
 ## 4. Design System References
 
@@ -176,7 +177,9 @@ Schema source of truth: `api/src/kene_api/models/skill_models.py` (Pydantic), mi
 
 ## 5. Project Index
 
-The component's work is split across **6 independently shippable project PRDs** under [`projects/`](./projects/). The split follows team boundaries and a dependency arc that deliberately isolates the sandbox spike: its findings can reshape SK-PRD-02's scope, so it is pulled out as a sprint-0 artifact. SK-PRD-01 publishes the API contract every other sprint stubs against; SK-PRD-02 (only sprint requiring AH-PRD-02) lights up agent-factory wiring; SK-PRD-03 (authoring UI) runs in parallel against the contract; SK-PRD-04 closes the loop with the agent-builder controls + end-to-end test; SK-PRD-05 ships the system-owned-skill scaffolding plus a single `example-skill` placeholder so System Architecture §6's "predefined skills" promise is fulfilled.
+The component's work is split across **6 independently shippable project PRDs** under [`projects/`](./projects/). The split follows team boundaries and a dependency arc that deliberately isolates the sandbox spike: its findings can reshape SK-PRD-02's scope, so it is pulled out as a sprint-0 artifact. SK-PRD-01 publishes the API contract every other sprint stubs against; SK-PRD-02 (only sprint requiring AH-PRD-02) lights up agent-factory wiring **and now also ships `SandboxPool` to coordinate with [AH-PRD-09](../agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md)'s runtime resolver**; SK-PRD-03 (authoring UI) runs in parallel against the contract; SK-PRD-04 closes the loop with the agent-builder controls + end-to-end test; SK-PRD-05 ships the system-owned-skill scaffolding plus a single `example-skill` placeholder so System Architecture §6's "predefined skills" promise is fulfilled.
+
+**Release sequencing — R1 / R3 split (changed in May 2026).** SK-PRDs **00, 01, 02 moved into Release 1 (Foundation)** because AH-PRD-09's Phase 5 default-on is gated on SK-PRD-02's `SandboxPool` shipping — without the pool, AH-PRD-09's per-turn `LlmAgent` rebuild would respawn the sandbox process on every turn. The Skills runtime substrate (Sandbox Spike → Skills Backend → Agent Factory Skills Integration + `SandboxPool`) therefore lands in R1 alongside the runtime resolver. The authoring + builder UX (SK-PRD-03, SK-PRD-04) and predefined-skill seed (SK-PRD-05) stay in R3 / Expertise. See [`PROJECT-PLANNER.md`](../PROJECT-PLANNER.md) Release Strategy and the [per-turn dispatch RFC](../../per-turn-dispatch-rfc.md) §9.2 #8 for rationale.
 
 ### 5.1 Dependency graph
 
@@ -204,19 +207,20 @@ The component's work is split across **6 independently shippable project PRDs** 
 |---|-------------|------------|------------|---------------|------|
 | 00 | [Sandbox Spike](./projects/SK-PRD-00-skills-experiment.md) | Platform + Security | — | AH-PRD-02, SK-PRDs 01, 03 | 3–5 days |
 | 01 | [Skills Backend — Storage, API, Loader](./projects/SK-PRD-01-skills-backend.md) | Backend | DM-PRD-00, DM-PRD-05 | AH-PRD-02, SK-PRDs 00, 03 | 6–8 days |
-| 02 | [Agent Factory — Skills & Sandbox Integration](./projects/SK-PRD-02-agent-integration.md) | Agent Platform | AH-PRD-02, SK-PRD-00, SK-PRD-01 | SK-PRD-03 | 5–7 days |
+| 02 | [Agent Factory — Skills & Sandbox Integration + SandboxPool](./projects/SK-PRD-02-agent-integration.md) | Skills / Agent Platform | AH-PRD-02, SK-PRD-00, SK-PRD-01 | SK-PRD-03 | 6–9 days (5–7 base + 1–2 for `SandboxPool` per [AH-PRD-09](../agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md) coordination) |
 | 03 | [Skills Authoring UI](./projects/SK-PRD-03-authoring-ui.md) | Frontend | SK-PRD-01 (contract) | AH-PRD-02, SK-PRD-02 | 6–8 days |
 | 04 | [Agent Builder Controls + E2E](./projects/SK-PRD-04-agent-builder-controls.md) | Frontend + Backend | AH-PRD-02, SK-PRDs 01, 02, 03 | — | 4–5 days |
 | 05 | [Predefined Skill Foundation](./projects/SK-PRD-05-predefined-skill-foundation.md) | Backend + Agent Platform | AH-PRD-02, SK-PRDs 01, 02 | SK-PRDs 03, 04 | 2–3 days |
 
 ### 5.3 Cross-PRD coordination points
 
-Four touchpoints do not fit cleanly inside one PRD and need an owning team to consciously sync:
+Five touchpoints do not fit cleanly inside one PRD and need an owning team to consciously sync:
 
 - **Agent config schema extensions (SK-PRD-02 ↔ AH-PRD-02 stories 2.2-1, 2.2-8):** AH-PRD-02 ships `skill_ids` and `sandbox_code_executor_enabled` as passive forward-compat placeholders (accepted, stored, pass-through). SK-PRD-02 lights up the factory's constructor wiring; SK-PRD-04 adds the attach-time validation on the API. Loop in the AH-PRD-02 team before either starts.
 - **Agent builder form layout (SK-PRD-04 ↔ AH-PRD-02 stories 2.2-10, 2.2-11):** AH-PRD-02 reserves two disabled rows ("Skills" and "Sandbox code execution") in `AgentEditView` + `AgentCreatePage`. SK-PRD-04 swaps them for interactive controls — coordinate with whoever owns those page components.
-- **Tracing spans (SK-PRD-02 ↔ `docs/trace-structure-spec.md`):** SK-PRD-02 appends three span entries. Extend the spec in the same PR that adds the spans so MER-E ingestion never sees spans without a spec row.
-- **Sandbox spike findings feeding SK-PRD-02 (SK-PRD-00 ↔ SK-PRD-02):** If the spike returns a blocking answer (e.g., network egress cannot be restricted), SK-PRD-02's scope changes: scripts become read-only reference files only. Document the outcome in `DESIGN-REVIEW-LOG.md` and update this README's §7 conventions.
+- **Tracing spans (SK-PRD-02 ↔ `docs/trace-structure-spec.md`):** SK-PRD-02 appends three skill spans + two `sandbox_pool.*` spans (one row each). Extend the spec in the same PR that adds the spans so MER-E ingestion never sees spans without a spec row.
+- **Sandbox spike findings feeding SK-PRD-02 (SK-PRD-00 ↔ SK-PRD-02):** If the spike returns a blocking answer (e.g., network egress cannot be restricted), SK-PRD-02's scope changes: scripts become read-only reference files only. Document the outcome in `DESIGN-REVIEW-LOG.md` and update this README's §7 conventions. SK-PRD-00 also feeds the `SandboxPool` cap (`_MAX_ENTRIES`) and idle-TTL tuning.
+- **SandboxPool coordination (SK-PRD-02 ↔ AH-PRD-09 Phase 5):** SK-PRD-02 introduces a process-wide `SandboxPool` (mirror of AH-PRD-09's `McpToolsetPool`). AH-PRD-09's Phase 5 default-on is **blocked** until SK-PRD-02 ships — under the runtime resolver, an unpooled sandbox would respawn every turn. The pools share a design pattern (LRU + idle TTL + `aclose()`-on-eviction + striped locks); review SK-PRD-02 §4.6 and AH-PRD-09 §4.8 together to keep them consistent.
 
 ### 5.4 Recommended workflow
 

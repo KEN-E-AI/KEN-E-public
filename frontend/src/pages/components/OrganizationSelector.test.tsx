@@ -2,7 +2,7 @@ import { describe, test, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { BrowserRouter } from "react-router-dom";
 import AccountSettings from "../AccountSettings";
-import { AuthContext } from "@/contexts/AuthContext";
+import { AuthContext, type AuthContextType } from "@/contexts/AuthContext";
 
 // Mock the organization API
 vi.mock("@/data/organizationApi", () => ({
@@ -105,25 +105,26 @@ const mockOrgData2 = {
   team: mockOrgData1.team,
 };
 
-const createMockAuthContext = (user: any, orgMetadata: any) => ({
-  user,
-  updateUser: vi.fn(),
-  completeWorkspaceSelection: vi.fn(),
-  currentOrganizationId: "org-1",
-  setCurrentOrganization: vi.fn(),
-  orgMetadata,
-  setOrgMetadata: vi.fn(),
-  accountMetadata: {},
-  setAccountMetadata: vi.fn(),
-  setSelectedOrgAccount: vi.fn(),
-  loading: false,
-  selectedOrganization: mockOrgData1,
-  selectedAccount: null,
-  signOut: vi.fn(),
-  setUser: vi.fn(),
-  setSelectedOrganization: vi.fn(),
-  setSelectedAccount: vi.fn(),
-});
+const createMockAuthContext = (user: any, orgMetadata: any) =>
+  ({
+    user,
+    updateUser: vi.fn(),
+    completeWorkspaceSelection: vi.fn(),
+    currentOrganizationId: "org-1",
+    setCurrentOrganization: vi.fn(),
+    orgMetadata,
+    setOrgMetadata: vi.fn(),
+    accountMetadata: {},
+    setAccountMetadata: vi.fn(),
+    setSelectedOrgAccount: vi.fn(),
+    loading: false,
+    selectedOrganization: mockOrgData1,
+    selectedAccount: null,
+    signOut: vi.fn(),
+    setUser: vi.fn(),
+    setSelectedOrganization: vi.fn(),
+    setSelectedAccount: vi.fn(),
+  }) as unknown as AuthContextType;
 
 const renderAccountSettings = (user: any, orgMetadata: any) => {
   const mockAuthContext = createMockAuthContext(user, orgMetadata);

@@ -1,4 +1,5 @@
-import { describe, test, expect, vi } from "vitest";
+import { describe, test, expect, vi, type Mock } from "vitest";
+import type { AuthContextType } from "@/contexts/AuthContext";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
@@ -62,18 +63,19 @@ vi.mock("@/data/teamApi", () => ({
 
 const mockedApi = vi.mocked(api);
 
-const makeAuthValue = () => ({
-  user: null,
-  login: vi.fn(),
-  signOut: vi.fn(),
-  updateUser: vi.fn(),
-  setNotificationSettings: vi.fn(),
-  setSecuritySettings: vi.fn(),
-  selectedOrganization: null,
-  setSelectedOrganization: vi.fn(),
-  selectedAccount: null,
-  setSelectedAccount: vi.fn(),
-});
+const makeAuthValue = () =>
+  ({
+    user: null,
+    login: vi.fn(),
+    signOut: vi.fn(),
+    updateUser: vi.fn(),
+    setNotificationSettings: vi.fn(),
+    setSecuritySettings: vi.fn(),
+    selectedOrganization: null,
+    setSelectedOrganization: vi.fn(),
+    selectedAccount: null,
+    setSelectedAccount: vi.fn(),
+  }) as unknown as AuthContextType;
 
 const renderAt = (
   path: string,
@@ -148,7 +150,7 @@ describe("Authentication — Sign In view", () => {
       user: firebaseUser,
     } as any);
 
-    mockedApi.get.mockResolvedValueOnce({
+    (mockedApi.get as unknown as Mock).mockResolvedValueOnce({
       data: {
         data: {
           profile: {
@@ -162,10 +164,10 @@ describe("Authentication — Sign In view", () => {
         },
       },
     });
-    mockedApi.post.mockResolvedValueOnce({
+    (mockedApi.post as unknown as Mock).mockResolvedValueOnce({
       data: { documents: [{ data: { emailNotifications: true } }] },
     });
-    mockedApi.post.mockResolvedValueOnce({
+    (mockedApi.post as unknown as Mock).mockResolvedValueOnce({
       data: { documents: [{ data: { twoFactorEnabled: false } }] },
     });
 
@@ -214,11 +216,11 @@ describe("Authentication — Sign In view", () => {
       user: firebaseUser,
     } as any);
 
-    mockedApi.get.mockRejectedValueOnce({
+    (mockedApi.get as unknown as Mock).mockRejectedValueOnce({
       isAxiosError: true,
       response: { status: 404 },
     });
-    mockedApi.post.mockImplementation((url: string) => {
+    (mockedApi.post as unknown as Mock).mockImplementation((url: string) => {
       if (url === "/api/v1/firestore/documents") {
         return Promise.resolve({ data: { success: true } });
       }
@@ -304,7 +306,7 @@ describe("Authentication — Sign In view", () => {
     vi.mocked(signInWithPopup).mockResolvedValueOnce({
       user: firebaseUser,
     } as any);
-    mockedApi.get.mockRejectedValueOnce({
+    (mockedApi.get as unknown as Mock).mockRejectedValueOnce({
       isAxiosError: true,
       response: { status: 500 },
     });
@@ -360,11 +362,11 @@ describe("Authentication — Sign In view", () => {
     vi.mocked(signInWithPopup).mockResolvedValueOnce({
       user: firebaseUser,
     } as any);
-    mockedApi.get.mockRejectedValueOnce({
+    (mockedApi.get as unknown as Mock).mockRejectedValueOnce({
       isAxiosError: true,
       response: { status: 404 },
     });
-    mockedApi.post.mockImplementation((url: string) => {
+    (mockedApi.post as unknown as Mock).mockImplementation((url: string) => {
       if (url === "/api/v1/firestore/documents") {
         return Promise.resolve({ data: { success: true } });
       }
@@ -400,11 +402,11 @@ describe("Authentication — Sign In view", () => {
     vi.mocked(signInWithPopup).mockResolvedValueOnce({
       user: firebaseUser,
     } as any);
-    mockedApi.get.mockRejectedValueOnce({
+    (mockedApi.get as unknown as Mock).mockRejectedValueOnce({
       isAxiosError: true,
       response: { status: 404 },
     });
-    mockedApi.post.mockImplementation((url: string) => {
+    (mockedApi.post as unknown as Mock).mockImplementation((url: string) => {
       if (url === "/api/v1/firestore/documents") {
         return Promise.resolve({ data: { success: true } });
       }
@@ -526,7 +528,7 @@ describe("Authentication — Create Account view", () => {
         emailVerified: false,
       },
     } as any);
-    mockedApi.post.mockResolvedValue({ data: { success: true } });
+    (mockedApi.post as unknown as Mock).mockResolvedValue({ data: { success: true } });
 
     renderAt("/create-account");
 

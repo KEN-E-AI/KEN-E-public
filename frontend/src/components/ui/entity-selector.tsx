@@ -1,5 +1,6 @@
 import { useAuth } from "@/contexts/AuthContext";
 import type { SelectedOrgAccount } from "@/contexts/AuthContext";
+import type { OrganizationId, AccountId } from "@/lib/branded-types";
 import {
   Select,
   SelectContent,
@@ -152,13 +153,24 @@ export const EntitySelector = ({
 
     if (organizationOnly) {
       // For organization-only mode, just set the organization
-      setCurrentOrganization(orgId);
+      setCurrentOrganization(orgId as OrganizationId);
 
-      // Find the first account in the organization, or create a selection without an account
-      const firstAccount = organization.accounts?.[0];
+      // Find the first account in the organization, or create a selection without an account.
+      // Organization.accounts is typed slim; cast to Partial<Account>-shaped
+      // so the extra fields read below type-check. Same pattern as
+      // AccountSettings.tsx / CreateOrganization.tsx (tracked tech-debt).
+      const firstAccount = organization.accounts?.[0] as
+        | (Partial<{
+            account_id: AccountId;
+            account_name: string;
+            industry: string;
+            status: string;
+            timezone: string;
+          }>)
+        | undefined;
       const selection: SelectedOrgAccount = {
-        orgId,
-        accountId: firstAccount?.account_id || "",
+        orgId: orgId as OrganizationId,
+        accountId: firstAccount?.account_id || ("" as AccountId),
         metadata: {
           organization_name: organization.organization_name,
           account_name: firstAccount?.account_name || "",
@@ -186,8 +198,8 @@ export const EntitySelector = ({
       }
 
       const selection: SelectedOrgAccount = {
-        orgId,
-        accountId,
+        orgId: orgId as OrganizationId,
+        accountId: accountId as AccountId,
         metadata: {
           organization_name: organization.organization_name,
           account_name: account.account_name,
@@ -199,7 +211,7 @@ export const EntitySelector = ({
       };
 
       setSelectedOrgAccount(selection);
-      setCurrentOrganization(orgId);
+      setCurrentOrganization(orgId as OrganizationId);
 
       if (onSelectionChange) {
         onSelectionChange(selection);

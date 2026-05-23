@@ -43,15 +43,20 @@ SCRIPT_PATH = str(_THIS_DIR / "check_p95_threshold.py")
 WORKSPACE = str(_THIS_DIR.parent.parent)  # repo root
 
 
-def make_csv_row(name: str, failure_count: int, p95: float) -> str:
+def make_csv_row(
+    name: str,
+    failure_count: int,
+    p95: float,
+    p90: float = 60.0,
+) -> str:
     """Build a minimal valid Locust stats CSV data row.
 
-    Only the Name, Failure Count, and 95% columns are semantically significant
+    Only the Name, Failure Count, and percentile columns are semantically significant
     for the checker; all other fields are filled with plausible placeholder values.
     """
     return (
         f"GET,{name},1000,{failure_count},40,42,10,200,5000,100,0,"
-        f"40,43,44,46,60,{p95},80,90,95,99,200\n"
+        f"40,43,44,46,{p90},{p95},80,90,95,99,200\n"
     )
 
 
@@ -60,6 +65,7 @@ def run_checker(
     endpoint: str = DEFAULT_ENDPOINT,
     threshold_ms: float = 100.0,
     max_failure_ratio: float | None = None,
+    percentile: int | None = None,
 ) -> tuple[int, str, str]:
     """Run check_p95_threshold.py as a subprocess and return (returncode, stdout, stderr)."""
     cmd = [
@@ -73,6 +79,8 @@ def run_checker(
     ]
     if max_failure_ratio is not None:
         cmd.extend(["--max-failure-ratio", str(max_failure_ratio)])
+    if percentile is not None:
+        cmd.extend(["--percentile", str(percentile)])
     result = subprocess.run(
         cmd,
         capture_output=True,
@@ -186,3 +194,57 @@ class TestCheckP95Threshold:
         assert "[PASS]" in stdout
         assert "p95=80ms" in stdout
         assert "90ms threshold" in stdout
+
+    def test_percentile_90_passes_when_p90_below_threshold_even_if_p95_above(
+        self, tmp_path: Path
+    ) -> None:
+        """--percentile 90 gates on p90 only; a runaway p95 (cold-start tail) is
+        ignored.  Staging gate uses this to avoid noisy failures from Cloud Run
+        scale-up at high VU counts."""
+        csv_file = write_csv(
+            tmp_path,
+            [
+                make_csv_row(
+                    DEFAULT_ENDPOINT, failure_count=0, p95=77000.0, p90=5400.0
+                )
+            ],
+        )
+        returncode, stdout, _ = run_checker(
+            csv_file, threshold_ms=15000.0, percentile=90
+        )
+        assert returncode == 0
+        assert "[PASS]" in stdout
+        assert "p90=5400ms" in stdout
+        # The p95 value is never read or surfaced when --percentile 90 is used.
+        assert "p95" not in stdout
+
+    def test_percentile_90_fails_when_p90_above_threshold(
+        self, tmp_path: Path
+    ) -> None:
+        """--percentile 90 with p90=16000ms vs threshold 15000ms should exit 1."""
+        csv_file = write_csv(
+            tmp_path,
+            [
+                make_csv_row(
+                    DEFAULT_ENDPOINT, failure_count=0, p95=20000.0, p90=16000.0
+                )
+            ],
+        )
+        returncode, stdout, _ = run_checker(
+            csv_file, threshold_ms=15000.0, percentile=90
+        )
+        assert returncode == 1
+        assert "[FAIL]" in stdout
+        assert "p90=16000ms" in stdout
+
+    def test_unsupported_percentile_rejected(self, tmp_path: Path) -> None:
+        """--percentile 75 is supported; --percentile 73 is not (argparse choices)."""
+        csv_file = write_csv(
+            tmp_path,
+            [make_csv_row(DEFAULT_ENDPOINT, failure_count=0, p95=50.0)],
+        )
+        returncode, _, stderr = run_checker(
+            csv_file, threshold_ms=100.0, percentile=73
+        )
+        assert returncode == 2
+        assert "invalid choice" in stderr or "argument --percentile" in stderr

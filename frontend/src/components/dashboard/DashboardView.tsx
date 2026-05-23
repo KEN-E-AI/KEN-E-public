@@ -49,6 +49,15 @@ const DashboardView: React.FC<DashboardViewProps> = ({
   return (
     <>
       {/* Dashboard Controls */}
+      {/*
+        `MeasurementStrategyControlsProps` does not declare onEditSteps /
+        funnelSteps / dateRange / setDateRange / comparisonDateRange /
+        setComparisonDateRange. Those six were being passed but the component
+        never consumed them — dead wires that the no-op typecheck script
+        hid. They're stripped here. If/when MeasurementStrategyControls
+        grows those features, re-add the passes AND the prop declarations
+        in the same change.
+      */}
       <MeasurementStrategyControls
         selectedChannel={selectedChannel}
         setSelectedChannel={onChannelChange}
@@ -59,16 +68,10 @@ const DashboardView: React.FC<DashboardViewProps> = ({
           handleTabChange(tab);
           onTabChange(tab);
         }}
-        onEditSteps={() => setEditStepsModalOpen(true)}
-        funnelSteps={funnelSteps}
         channels={currentStepData.channels}
         channelTactics={currentStepData.channelTactics}
         onChannelsChange={handleChannelsChange}
         onChannelTacticsChange={handleChannelTacticsChange}
-        dateRange={dateRange}
-        setDateRange={setDateRange}
-        comparisonDateRange={comparisonDateRange}
-        setComparisonDateRange={setComparisonDateRange}
       />
 
       {/* Main Content Area */}

@@ -22,7 +22,7 @@ interface ObjectiveData {
   channels: Record<string, any>;
 }
 
-interface SampleData {
+export interface SampleData {
   [key: string]: ObjectiveData;
 }
 

@@ -9,23 +9,25 @@ import type { AccountCreationData } from "@/components/settings/AccountCreationW
 
 const createMockFormData = (
   overrides: Partial<AccountCreationData> = {},
-): AccountCreationData => ({
-  account_name: "Test Account",
-  description: "Test Description",
-  industry: "Technology",
-  websites: ["https://example.com"],
-  estimated_annual_ad_budget: 50000,
-  business_strategy_documents: [],
-  template_id: "tech-template",
-  marketing_channels: ["Search Engine Marketing", "Content Marketing"],
-  product_integrations: ["google_analytics"],
-  objectives: ["increase_traffic"],
-  kpis: ["sessions", "conversions"],
-  timezone: "America/New_York",
-  data_region: "US",
-  region: ["US"],
-  ...overrides,
-});
+): AccountCreationData =>
+  ({
+    account_name: "Test Account",
+    industry: "Technology",
+    websites: ["https://example.com"],
+    estimated_annual_ad_budget: 50000,
+    business_strategy_documents: [],
+    template_id: "tech-template",
+    marketing_channels: ["Search Engine Marketing", "Content Marketing"],
+    product_integrations: ["google_analytics"],
+    objectives: ["increase_traffic"],
+    kpis: ["sessions", "conversions"],
+    timezone: "America/New_York",
+    data_region: "US",
+    region: ["US"],
+    enabled_strategies: [],
+    override_product_categories: [],
+    ...overrides,
+  }) as AccountCreationData;
 
 describe("Cross-Step Validation", () => {
   describe("validateCrossStepConsistency", () => {

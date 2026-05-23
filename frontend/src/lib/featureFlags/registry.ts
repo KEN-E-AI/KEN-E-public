@@ -8,13 +8,13 @@ const BASE_FLAGS: FlagKey[] = [
 ] satisfies FlagKey[];
 
 function parseFixtureFlags(): FlagKey[] {
-  const raw = import.meta.env.VITE_FF_E2E_FIXTURE_FLAGS;
+  const raw: string | undefined = import.meta.env.VITE_FF_E2E_FIXTURE_FLAGS;
   if (!raw) return [];
   return raw
     .split(",")
     .map((s: string) => s.trim())
     .filter(Boolean)
-    .reduce<FlagKey[]>((acc, key) => {
+    .reduce<FlagKey[]>((acc: FlagKey[], key: string) => {
       const validated = tryFlagKey(key);
       if (validated !== undefined) {
         if (!acc.includes(validated) && !BASE_FLAGS.includes(validated)) {
