@@ -1,10 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter, Routes, Route } from "react-router-dom";
 import FeatureFlagsPage from "./FeatureFlagsPage";
 
 vi.mock("@/lib/featureFlags/hooks", () => ({
   useFeatureFlags: vi.fn(),
+}));
+
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: vi.fn(),
 }));
 
 // Mock the heavy children — their own behavior is covered by their colocated
@@ -47,11 +52,20 @@ vi.mock("@/components/admin/featureFlags/FlagEditDrawer", () => ({
 }));
 
 import { useFeatureFlags } from "@/lib/featureFlags/hooks";
+import { useAuth } from "@/contexts/AuthContext";
+import { SuperAdminGuard } from "@/components/auth/SuperAdminGuard";
 
 const mockUseFeatureFlags = useFeatureFlags as ReturnType<typeof vi.fn>;
+const mockUseAuth = useAuth as ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Safe default — FeatureFlagsPage itself doesn't call useAuth, but guarding
+  // here prevents undefined from the hook if the page ever gains a direct call.
+  mockUseAuth.mockReturnValue({
+    isSuperAdmin: false,
+    isSuperAdminLoading: false,
+  });
 });
 
 describe("FeatureFlagsPage", () => {
@@ -150,5 +164,80 @@ describe("FeatureFlagsPage", () => {
     const drawer = screen.getByTestId("drawer");
     expect(drawer).toHaveTextContent("mode:edit");
     expect(drawer).toHaveTextContent("flag:row-flag");
+  });
+
+  describe("FeatureFlagsPage — route guard", () => {
+    // Factory function rather than a const to avoid any shared-element-reference
+    // confusion between tests.
+    function makeGuardRoute() {
+      return (
+        <MemoryRouter initialEntries={["/admin/feature-flags"]}>
+          <Routes>
+            {/* SuperAdminGuard is intentionally NOT mocked — these tests verify
+                the real guard behavior against the mocked useAuth. */}
+            <Route
+              path="/admin/feature-flags"
+              element={
+                <SuperAdminGuard>
+                  <FeatureFlagsPage />
+                </SuperAdminGuard>
+              }
+            />
+            <Route path="/" element={<div>home</div>} />
+          </Routes>
+        </MemoryRouter>
+      );
+    }
+
+    beforeEach(() => {
+      mockUseFeatureFlags.mockReturnValue({
+        isLoading: false,
+        isError: false,
+        data: [],
+      });
+    });
+
+    it("renders the page when isSuperAdmin=true and isSuperAdminLoading=false", () => {
+      mockUseAuth.mockReturnValue({
+        isSuperAdmin: true,
+        isSuperAdminLoading: false,
+      });
+
+      render(makeGuardRoute());
+
+      expect(screen.getByTestId("flag-table")).toBeInTheDocument();
+    });
+
+    it("redirects to '/' when isSuperAdmin=false and isSuperAdminLoading=false", () => {
+      mockUseAuth.mockReturnValue({
+        isSuperAdmin: false,
+        isSuperAdminLoading: false,
+      });
+
+      render(makeGuardRoute());
+
+      expect(screen.getByText("home")).toBeVisible();
+      expect(screen.queryByTestId("flag-table")).not.toBeInTheDocument();
+      // Confirm the page heading is absent — guards against a guard that renders
+      // both branches simultaneously.
+      expect(
+        screen.queryByRole("heading", { name: /feature flags/i }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("renders nothing when isSuperAdminLoading=true", () => {
+      mockUseAuth.mockReturnValue({
+        isSuperAdmin: false,
+        isSuperAdminLoading: true,
+      });
+
+      render(makeGuardRoute());
+
+      expect(screen.queryByText("home")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("flag-table")).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("heading", { name: /feature flags/i }),
+      ).not.toBeInTheDocument();
+    });
   });
 });
