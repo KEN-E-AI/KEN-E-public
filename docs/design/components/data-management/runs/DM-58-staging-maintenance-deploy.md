@@ -14,7 +14,9 @@ The operator verification (AC-2, AC-3) was run by the PO against `ken-e-staging`
 
 **All three technical ACs are satisfied:** code is deployed + healthy (AC-2), service-account IAM is in place (AC-3), and the deploy pin is amended to current `main` (AC-4).
 
-**The maintenance window is deliberately NOT yet open.** AC-1 (the Slack #engineering announcement, which signals "cutover starting now") is held pending an explicit PO go-ahead to open the window. The migration sequence (DM-59 dry-run → DM-60 confirm-delete → DM-61 checklist) has **not** been started. This run-log records the readiness state; it is not the window-open marker.
+**AC-1 (announcement) is WAIVED.** The channel the AC names — Slack `#engineering` — **does not exist** in the workspace (`diveteam1.slack.com`; verified 2026-05-23 via channel search — only `#general`, `#artificial-intelligence`, `#random` exist). Combined with the issue's own premise ("No prod users exist, so no user impact") and Ken's Q2 answer ("No other teams"), there is **no audience to announce to** and no staging-dependent workstream to pause. Pinging a non-existent channel is a no-op. Per PO decision (2026-05-23), the announcement step is waived; the Slack-notification responsibility is **handed to Ken** to perform in the appropriate channel (`#general`) if/when a real cutover ever needs broadcasting.
+
+**The migration sequence (DM-59 dry-run → DM-60 confirm-delete → DM-61 checklist) has NOT been started.** With AC-1 waived, the only remaining gate before DM-59 is the PO's explicit go-ahead to begin the cutover. This run-log records the readiness state.
 
 ---
 
@@ -22,8 +24,8 @@ The operator verification (AC-2, AC-3) was run by the PO against `ken-e-staging`
 
 | # | Item | Result | Notes |
 |---|------|--------|-------|
-| 1 | Maintenance window scheduled | HELD | Plan recorded below; window NOT yet open — awaiting PO go-ahead |
-| 2 | Announcement sent | HELD (AC-1) | Not sent — opening the window is a deliberate, separate PO action |
+| 1 | Maintenance window scheduled | HELD | Plan recorded below; window opens on PO go-ahead for the cutover |
+| 2 | Announcement sent | WAIVED (AC-1) | `#engineering` channel does not exist; no prod users / no staging dependents → no audience. Slack notice delegated to Ken (use `#general`) if/when ever needed |
 | 3 | Code deployed to staging | ✅ VERIFIED | Live ready revision `kene-api-staging-00336-qkg` (READY); staging CD current |
 | 4 | `/health` endpoint OK | ✅ VERIFIED | `HTTP/2 200`, Firestore/Neo4j/Redis healthy — see evidence |
 | 5 | No startup errors in Cloud Run logs | ✅ VERIFIED | No boot errors; only benign runtime cache-serialization warnings (annotated) |
@@ -41,14 +43,16 @@ Pre-conditions (both passed per prior issues):
 **Window status:** HELD — verified ready, NOT yet open (awaiting explicit PO go-ahead)
 **Expected duration:** ≥ 30 minutes (covers DM-59 dry-run → DM-60 confirm-delete → DM-61 checklist)
 **Scope of impact:** staging Firestore + GCS for `ken-e-staging`; staging API (`kene-api-staging`) may reject writes during migration steps DM-60 and DM-61
-**Announcement channel:** Slack #engineering (Q2 PO answer: "No other teams — Slack #engineering broadcast is sufficient")
-**Announcement sent by:** PO (template below) — **not yet sent**
-**Announcement confirmed timestamp:** _(PO: record ISO 8601 UTC when the message is sent — this is the window-open moment)_
+**Announcement channel:** ~~Slack #engineering~~ — **channel does not exist** (workspace `diveteam1.slack.com` has only `#general`, `#artificial-intelligence`, `#random`). AC-1 waived (see addendum). If a real broadcast is ever needed, Ken posts to `#general`.
+**Announcement sent by:** N/A — waived
+**Announcement confirmed timestamp:** N/A — waived
 
 ---
 
 ## Announcement Template
 
+> _Retained for reference only — AC-1 is waived (no `#engineering` channel / no audience). If Ken ever needs to broadcast a real cutover, this is the template; post to `#general`._
+>
 > **[Staging maintenance window open — Data Management Shape B cutover]**
 >
 > **Start time: [INSERT ISO 8601 UTC — e.g. 2026-05-23T14:00:00Z]**
@@ -229,7 +233,7 @@ gcloud firestore indexes composite list \
 
 | AC | Criterion | Status |
 |----|-----------|--------|
-| AC-1 | Staging maintenance window scheduled and announced to relevant teams | **HELD** — announcement intentionally not sent; awaiting explicit PO go-ahead to open the window |
+| AC-1 | Staging maintenance window scheduled and announced to relevant teams | ✅ **WAIVED** — `#engineering` channel does not exist; no prod users / no staging dependents → no audience. Slack notice delegated to Ken (`#general`) if/when ever needed |
 | AC-2 | DM-PRD-00–DM-PRD-05 code deployed to staging; service is up and healthy | ✅ DONE — rev `00336-qkg` READY, `/health` 200, no boot errors |
 | AC-3 | Service-account IAM verified for migration + deletion operations | ✅ DONE — `datastore.owner` + `storage.admin`/`objectAdmin`; indexes READY |
 | AC-4 | Deploy commit hash recorded for DM-61 (issue #6) residue scan | ✅ DONE — amended to `ae7d3b99` (re-confirm at window-open) |
@@ -238,14 +242,14 @@ gcloud firestore indexes composite list \
 
 ## Sign-off
 
-This run-log captures the **readiness** state. Three of four ACs are satisfied. The remaining step is a deliberate PO decision, not a verification task:
+This run-log captures the **readiness** state. All four ACs are satisfied (AC-1 waived, AC-2/3/4 verified). DM-58 (staging setup + deploy) is complete; the actual migration is the separate, non-destructive-first sequence below.
 
-1. **AC-1 (held):** PO opens the window by sending the Slack #engineering announcement and recording the timestamp. **This commits to the migration sequence** (DM-59 dry-run → DM-60 confirm-delete → DM-61 checklist) and is the gate for starting DM-59.
+1. **AC-1 ✅ waived** — no `#engineering` channel / no audience; Slack notice handed to Ken if a real broadcast is ever needed.
 2. AC-2 ✅ — healthcheck evidence pasted above.
 3. AC-3 ✅ — IAM evidence pasted above.
-4. AC-4 ✅ — pin amended above.
+4. AC-4 ✅ — pin amended above (re-confirm `git rev-parse origin/main` + the live revision immediately before starting DM-59).
 
-Until the PO chooses to open the window, DM-58 stays in its current state and DM-59 does not begin.
+**Next gate:** DM-59 (`migrate_to_shape_b.py --all --env=staging --dry-run`, non-destructive) begins only on the PO's explicit go-ahead to start the cutover. DM-60 (the destructive `--confirm-delete` / `recursive_delete`) is separately hard-gated on explicit PO go-ahead.
 
 ---
 _Produced by: data-management-dev-team (template) · PO verification 2026-05-23 | Workflow: step-2-implementing → po-operator-verification | Issue: DM-58_
