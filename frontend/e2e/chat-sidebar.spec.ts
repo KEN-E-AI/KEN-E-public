@@ -5,8 +5,8 @@
  *   TC-1  sidebar-loads-within-1s    — sidebar renders ≤1 000 ms after navigation
  *   TC-2  dot-state-rendering        — active=teal, needs-review=coral, idle=empty
  *   TC-3  cross-tab-polling          — status updates propagate via the 5 s poll interval
- *   TC-4  1000-session-pagination    — infinite scroll + heap delta <50 MB
- *   TC-5  mark-read-transition       — needs-review → idle on click (fixme: CH-27)
+ *   TC-4  100-session-pagination     — infinite scroll + heap delta <50 MB
+ *   TC-5  mark-read-transition       — needs-review → idle via IntersectionObserver on latest assistant message
  *
  * Prerequisites (started by deployment/ci/scripts/start_e2e_stack.sh):
  *   - Firestore emulator : 127.0.0.1:8090
@@ -59,7 +59,8 @@ test.afterEach(async ({ request }) => {
   const errors = results
     .filter((r): r is PromiseRejectedResult => r.status === "rejected")
     .map((r) => r.reason as Error);
-  if (errors.length > 0) throw new AggregateError(errors, "afterEach cleanup failed");
+  if (errors.length > 0)
+    throw new AggregateError(errors, "afterEach cleanup failed");
 });
 
 // ─── Shared sign-in + env wiring ──────────────────────────────────────────────
@@ -246,9 +247,9 @@ test("TC-3: cross-tab-polling", async ({ page, request }) => {
   ).toBeVisible({ timeout: 12_000 });
 });
 
-// ─── TC-4: 1000-session pagination + memory ───────────────────────────────────
+// ─── TC-4: 100-session pagination + memory ────────────────────────────────────
 
-test("TC-4: 1000-session-pagination", async ({ page, request }) => {
+test("TC-4: 100-session-pagination", async ({ page, request }) => {
   // 100 sessions give 5 full pages of 20, which is sufficient to exercise the
   // infinite-scroll + sliding-window pagination path. Seeding 1 000 sessions
   // caused the Firestore emulator cleanup to briefly degrade subsequent tests
@@ -320,15 +321,22 @@ test("TC-4: 1000-session-pagination", async ({ page, request }) => {
 });
 
 // ─── TC-5: Mark-read transition ───────────────────────────────────────────────
-// fixme: depends on CH-27 (POST /api/v1/chat/conversations/{id}/mark-read)
-// The mark-read endpoint is not yet wired from the sidebar click handler.
-// Un-fixme and complete when CH-27 ships.
+// Exercises the IntersectionObserver-based mark-read mechanism shipped by CH-27:
+// open a needs-review session, receive an assistant reply (via mocked SSE),
+// let the auto-scroll bring the reply into view, wait ≥500 ms for the IO
+// threshold, and assert that POST /mark-read fires and the sidebar dot flips
+// from needs-review to idle.
+//
+// Failure contract: this test fails against the current state (no useMarkRead
+// hook) and passes after CH-27's re-attach fix lands.
 
-test.fixme("TC-5: mark-read-transition", async ({ page, request }) => {
+test("TC-5: mark-read-transition", async ({ page, request }) => {
+  const sessionId = "sb-mark-read-session";
+
   await seedChatSession(request, {
     accountId: ACCOUNT_ID,
     orgId: ORG_ID,
-    sessionId: "sb-mark-read-session",
+    sessionId,
     overrides: {
       title: "Mark read test session",
       last_agent_message_at: T_AGENT_MSG,
@@ -339,21 +347,62 @@ test.fixme("TC-5: mark-read-transition", async ({ page, request }) => {
   });
 
   await setupAuth({ page, request });
-  await page.goto("/chat");
 
-  // Confirm the session starts as needs-review.
-  const row = page.locator(
-    '[data-slot="session-list-item"][data-status="needs-review"]',
+  // Mock the SSE streaming endpoint so the test doesn't block on real LLM
+  // latency. The mock returns a single chunk that the streamChatCompletion
+  // generator parses into the text "Mocked reply", followed by [DONE].
+  await page.route("**/api/v1/chat/completions", async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+      },
+      body: "data: Mocked reply\n\ndata: [DONE]\n\n",
+    });
+  });
+
+  // Arm the request listener before navigation so no mark-read request can
+  // slip through before the listener is live.
+  const markReadPromise = page.waitForRequest(
+    (req) =>
+      req.url().includes(`/conversations/${sessionId}/mark-read`) &&
+      req.method() === "POST",
+    { timeout: 15_000 },
   );
-  await expect(row).toBeVisible({ timeout: 10_000 });
 
-  // Click the session to open it — this should trigger mark-read.
-  await row.click();
+  await page.goto(`/chat?session=${sessionId}`);
 
-  // The dot should transition to idle once mark-read completes.
+  // Confirm the session is in needs-review state before we interact.
+  await expect(
+    page
+      .locator('[data-slot="session-list-item"][data-status="needs-review"]')
+      .filter({ hasText: "Mark read test session" }),
+  ).toBeVisible({ timeout: 10_000 });
+
+  // Send a message to produce an assistant reply.
+  await page.locator('[aria-label="Chat input"]').fill("Hello");
+  await page.locator('[aria-label="Send message"]').click();
+
+  // Wait for the mocked assistant reply to appear. The chat container
+  // auto-scrolls to the bottom after each message, keeping the latest reply
+  // in the viewport. useMarkRead arms an IntersectionObserver on the latest
+  // assistant message node; once it has been continuously visible for ≥500 ms
+  // the POST /mark-read is dispatched.
+  await expect(page.getByText("Mocked reply")).toBeVisible({
+    timeout: 10_000,
+  });
+  // 600 ms exceeds the 500 ms IO visibility threshold.
+  await page.waitForTimeout(600);
+
+  // Assert that mark-read was dispatched to the backend.
+  await markReadPromise;
+
+  // After mark-read updates last_viewed_at in Firestore, the sessions query
+  // refetches and the sidebar dot must transition to idle.
   await expect(
     page
       .locator('[data-slot="session-list-item"][data-status="idle"]')
       .filter({ hasText: "Mark read test session" }),
-  ).toBeVisible({ timeout: 5_000 });
+  ).toBeVisible({ timeout: 8_000 });
 });

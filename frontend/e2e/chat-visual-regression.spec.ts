@@ -65,7 +65,8 @@ test.afterEach(async ({ request }) => {
   const errors = results
     .filter((r): r is PromiseRejectedResult => r.status === "rejected")
     .map((r) => r.reason as Error);
-  if (errors.length > 0) throw new AggregateError(errors, "afterEach cleanup failed");
+  if (errors.length > 0)
+    throw new AggregateError(errors, "afterEach cleanup failed");
 });
 
 // ─── Shared setup: sign in, enable chat_v2, seed account + sessions ───────────
@@ -173,7 +174,9 @@ test("sidebar-collapsed", async ({ page, request }) => {
   // Wait for the sidebar first (uses 30 s default) so the feature flag has time
   // to resolve before the 10 s session-item wait starts. Without this, a slow
   // emulator response after a heavy prior test can starve the flag check.
-  await page.locator('[data-testid="sessions-sidebar"]').waitFor({ state: "visible" });
+  await page
+    .locator('[data-testid="sessions-sidebar"]')
+    .waitFor({ state: "visible" });
 
   // Wait for sessions to load first so the collapsed rail shows dots.
   // 30 s allows TanStack Query's retry cycle (up to 3 retries + 5 s polling)
@@ -201,7 +204,9 @@ test("chat-initial", async ({ page, request }) => {
   await chatInterface.waitFor({ state: "visible" });
   // Wait for the sidebar (uses 30 s default) so chat_v2_enabled has resolved and
   // the layout is stable before taking the screenshot.
-  await page.locator('[data-testid="sessions-sidebar"]').waitFor({ state: "visible" });
+  await page
+    .locator('[data-testid="sessions-sidebar"]')
+    .waitFor({ state: "visible" });
 
   // Wait for the intro message to be rendered.
   await page.waitForFunction(() =>
@@ -233,7 +238,9 @@ test("chat-user-sending", async ({ page, request }) => {
   await chatInterface.waitFor({ state: "visible" });
   // Wait for the sidebar to be visible — confirms chat_v2_enabled has loaded and
   // the new <Chat /> route is stable (prevents remount between fill and click).
-  await page.locator('[data-testid="sessions-sidebar"]').waitFor({ state: "visible" });
+  await page
+    .locator('[data-testid="sessions-sidebar"]')
+    .waitFor({ state: "visible" });
 
   // Type and send a message.
   await page.fill(
@@ -280,7 +287,9 @@ test("chat-assistant-reply", async ({ page, request }) => {
   await chatInterface.waitFor({ state: "visible" });
   // Wait for the sidebar to be visible — confirms chat_v2_enabled has loaded and
   // the new <Chat /> route is stable (prevents remount between fill and click).
-  await page.locator('[data-testid="sessions-sidebar"]').waitFor({ state: "visible" });
+  await page
+    .locator('[data-testid="sessions-sidebar"]')
+    .waitFor({ state: "visible" });
 
   await page.fill(
     '[aria-label="Chat input"]',
