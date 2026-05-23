@@ -14,7 +14,7 @@ The operator verification (AC-2, AC-3) was run by the PO against `ken-e-staging`
 
 **All three technical ACs are satisfied:** code is deployed + healthy (AC-2), service-account IAM is in place (AC-3), and the deploy pin is amended to current `main` (AC-4).
 
-**AC-1 (announcement) is WAIVED.** The channel the AC names — Slack `#engineering` — **does not exist** in the workspace (`diveteam1.slack.com`; verified 2026-05-23 via channel search — only `#general`, `#artificial-intelligence`, `#random` exist). Combined with the issue's own premise ("No prod users exist, so no user impact") and Ken's Q2 answer ("No other teams"), there is **no audience to announce to** and no staging-dependent workstream to pause. Pinging a non-existent channel is a no-op. Per PO decision (2026-05-23), the announcement step is waived; the Slack-notification responsibility is **handed to Ken** to perform in the appropriate channel (`#general`) if/when a real cutover ever needs broadcasting.
+**AC-1 (announcement) is WAIVED.** The channel the AC names — Slack `#engineering` — **does not exist** in the workspace (`diveteam1.slack.com`; verified 2026-05-23 via channel search — only `#general`, `#artificial-intelligence`, `#random` exist). Combined with the issue's own premise ("No prod users exist, so no user impact") and Ken's Q2 answer ("No other teams"), there is **no audience to announce to** and no staging-dependent workstream to pause. Pinging a non-existent channel is a no-op. Per PO decision (2026-05-23), the announcement step is waived; the Slack-notification responsibility is **handed to Ken** to broadcast in an appropriate venue if/when a real cutover ever needs it — explicitly **not** `#general` (it has a non-technical audience), and the workspace has no dedicated engineering channel.
 
 **The migration sequence (DM-59 dry-run → DM-60 confirm-delete → DM-61 checklist) has NOT been started.** With AC-1 waived, the only remaining gate before DM-59 is the PO's explicit go-ahead to begin the cutover. This run-log records the readiness state.
 
@@ -25,7 +25,7 @@ The operator verification (AC-2, AC-3) was run by the PO against `ken-e-staging`
 | # | Item | Result | Notes |
 |---|------|--------|-------|
 | 1 | Maintenance window scheduled | HELD | Plan recorded below; window opens on PO go-ahead for the cutover |
-| 2 | Announcement sent | WAIVED (AC-1) | `#engineering` channel does not exist; no prod users / no staging dependents → no audience. Slack notice delegated to Ken (use `#general`) if/when ever needed |
+| 2 | Announcement sent | WAIVED (AC-1) | `#engineering` channel does not exist; no prod users / no staging dependents → no audience. Any future Slack notice is Ken's call on venue — **not** `#general` (non-technical audience) |
 | 3 | Code deployed to staging | ✅ VERIFIED | Live ready revision `kene-api-staging-00336-qkg` (READY); staging CD current |
 | 4 | `/health` endpoint OK | ✅ VERIFIED | `HTTP/2 200`, Firestore/Neo4j/Redis healthy — see evidence |
 | 5 | No startup errors in Cloud Run logs | ✅ VERIFIED | No boot errors; only benign runtime cache-serialization warnings (annotated) |
@@ -43,7 +43,7 @@ Pre-conditions (both passed per prior issues):
 **Window status:** HELD — verified ready, NOT yet open (awaiting explicit PO go-ahead)
 **Expected duration:** ≥ 30 minutes (covers DM-59 dry-run → DM-60 confirm-delete → DM-61 checklist)
 **Scope of impact:** staging Firestore + GCS for `ken-e-staging`; staging API (`kene-api-staging`) may reject writes during migration steps DM-60 and DM-61
-**Announcement channel:** ~~Slack #engineering~~ — **channel does not exist** (workspace `diveteam1.slack.com` has only `#general`, `#artificial-intelligence`, `#random`). AC-1 waived (see addendum). If a real broadcast is ever needed, Ken posts to `#general`.
+**Announcement channel:** ~~Slack #engineering~~ — **channel does not exist** (workspace `diveteam1.slack.com` has only `#general`, `#artificial-intelligence`, `#random`, none of which is a dedicated engineering/ops channel). AC-1 waived (see addendum). If a real broadcast is ever needed, Ken chooses an appropriate venue — **not** `#general` (non-technical audience).
 **Announcement sent by:** N/A — waived
 **Announcement confirmed timestamp:** N/A — waived
 
@@ -51,7 +51,7 @@ Pre-conditions (both passed per prior issues):
 
 ## Announcement Template
 
-> _Retained for reference only — AC-1 is waived (no `#engineering` channel / no audience). If Ken ever needs to broadcast a real cutover, this is the template; post to `#general`._
+> _Retained for reference only — AC-1 is waived (no `#engineering` channel / no audience). If Ken ever needs to broadcast a real cutover, this is the template; Ken chooses an appropriate venue (**not** `#general`)._
 >
 > **[Staging maintenance window open — Data Management Shape B cutover]**
 >
@@ -65,7 +65,7 @@ Pre-conditions (both passed per prior issues):
 >
 > **ETA:** Window closes when DM-61 (Phase 6 staging checklist) posts complete results. Will post follow-up in this thread.
 >
-> _(PO: fill in start time before sending; post to #engineering)_
+> _(Ken: fill in start time before sending; choose an appropriate venue — not #general)_
 
 ---
 
@@ -91,7 +91,7 @@ chore(terraform): grant ken-e-api datastore.owner (staging + prod) — DM-PRD-06
 
 Source: `git rev-parse origin/main` at 2026-05-23T10:57Z. Staging CD is current and tracking `main`: the live ready revision is `kene-api-staging-00336-qkg` (created 2026-05-23T10:56Z, READY), which deployed off this `main` stream.
 
-> **Operator note (re-confirm at window-open):** Because the window is HELD, `main` may advance further before the cutover actually runs. The binding deploy pin is whatever `main` HEAD is deployed to `kene-api-staging` **at the moment AC-1's announcement is sent**. Re-run `git rev-parse origin/main` + the Cloud Run revision check below immediately before starting DM-59, and update this box if `ae7d3b99` is no longer HEAD.
+> **Operator note (re-confirm at window-open):** Because the window is HELD, `main` may advance further before the cutover actually runs. The binding deploy pin is whatever `main` HEAD is deployed to `kene-api-staging` **at window-open, immediately before DM-59 starts** (AC-1's announcement is waived, so it is no longer the trigger). Re-run `git rev-parse origin/main` + the Cloud Run revision check below immediately before starting DM-59, and update this box if `ae7d3b99` is no longer HEAD.
 
 **Trigger name:** `cd-pipeline`
 **Staging YAML:** `deployment/cd/staging.yaml`
