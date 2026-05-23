@@ -153,6 +153,7 @@ export function SessionsSidebar({
     return (
       <div
         data-testid="sessions-sidebar"
+        data-slot="sessions-sidebar"
         className="w-16 bg-[var(--color-bg-elevated)] flex flex-col items-center py-4 gap-4 h-full min-h-0"
         style={{ borderRight: "2px dashed var(--color-border-default)" }}
       >
@@ -187,6 +188,8 @@ export function SessionsSidebar({
             return (
               <button
                 key={item.session_id}
+                data-slot="session-list-item"
+                data-status={status}
                 onClick={() => onSessionSelect(item.session_id)}
                 className={cn(
                   "size-2.5 rounded-full transition-all hover:scale-125",
@@ -223,6 +226,7 @@ export function SessionsSidebar({
   return (
     <div
       data-testid="sessions-sidebar"
+      data-slot="sessions-sidebar"
       className="w-96 bg-[var(--color-bg-elevated)] flex flex-col overflow-x-hidden"
       style={{ borderRight: "2px dashed var(--color-border-default)" }}
     >
@@ -318,9 +322,12 @@ export function SessionsSidebar({
           {allItems.map((item) => {
             const isActiveSession =
               currentSessionId !== null && currentSessionId === item.session_id;
+            const sessionStatus = deriveSessionStatus(item);
             return (
               <button
                 key={item.session_id}
+                data-slot="session-list-item"
+                data-status={sessionStatus}
                 onClick={() => onSessionSelect(item.session_id)}
                 className={cn(
                   "w-full text-left p-2 rounded-[var(--radius-md)] border-2 transition-all group block",

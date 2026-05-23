@@ -1,4 +1,4 @@
-import type { Brand } from "@/lib/branded-types";
+import type { Brand, AccountId } from "@/lib/branded-types";
 import api from "@/lib/api";
 import { auth } from "@/lib/firebase";
 
@@ -99,6 +99,7 @@ export type ListChatSessionsRequest = {
   category_id?: ChatCategoryId;
   query?: string;
   limit?: number;
+  account_id?: AccountId | null;
 };
 
 export type ListChatSessionsResponse = {
@@ -153,6 +154,7 @@ export async function listChatSessions(
   if (params.category_id != null) query["category_id"] = params.category_id;
   if (params.query != null) query["query"] = params.query;
   if (params.limit != null) query["limit"] = params.limit;
+  if (params.account_id != null) query["account_id"] = params.account_id;
   const { data } = await api.get<ListChatSessionsResponse>(
     `${CHAT_BASE}/conversations`,
     { params: query },
