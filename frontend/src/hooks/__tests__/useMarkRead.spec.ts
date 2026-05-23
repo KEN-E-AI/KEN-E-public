@@ -21,27 +21,31 @@ import { markRead } from "@/lib/chatApi";
 const mockMarkRead = vi.mocked(markRead);
 
 // ─── IntersectionObserver stub ────────────────────────────────────────────────
-// Mirrors SessionsSidebar.test.tsx pattern
+// Per-element map so that triggerIntersect(el, bool) only fires the callback
+// bound to that specific element — accurately models browser behavior where
+// each observed element has its own observer instance.
 
 type IOCallback = (entries: IntersectionObserverEntry[]) => void;
-let capturedCallback: IOCallback | null = null;
-let capturedElement: Element | null = null;
+const observerMap = new Map<Element, IOCallback>();
 
-function triggerIntersect(isIntersecting: boolean) {
-  capturedCallback?.([
-    { isIntersecting } as unknown as IntersectionObserverEntry,
-  ]);
+function triggerIntersect(el: Element, isIntersecting: boolean) {
+  const cb = observerMap.get(el);
+  cb?.([{ isIntersecting } as unknown as IntersectionObserverEntry]);
 }
 
 const MockIntersectionObserver = vi
   .fn()
   .mockImplementation((cb: IOCallback) => {
-    capturedCallback = cb;
     return {
       observe: vi.fn((el: Element) => {
-        capturedElement = el;
+        observerMap.set(el, cb);
       }),
-      disconnect: vi.fn(),
+      // disconnect() takes no args per spec; identify entries by callback reference
+      disconnect: vi.fn(() => {
+        for (const [key, stored] of observerMap) {
+          if (stored === cb) observerMap.delete(key);
+        }
+      }),
     };
   });
 
@@ -112,8 +116,7 @@ function useTestRef(el: HTMLElement | null) {
 describe("useMarkRead", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    capturedCallback = null;
-    capturedElement = null;
+    observerMap.clear();
     mockMarkRead.mockResolvedValue({ last_viewed_at: LAST_VIEWED_AT });
   });
 
@@ -128,7 +131,11 @@ describe("useMarkRead", () => {
     renderHook(
       () => {
         const ref = useTestRef(el);
-        useMarkRead({ sessionId: null, latestMessageRef: ref });
+        useMarkRead({
+          sessionId: null,
+          latestMessageRef: ref,
+          latestMessageId: "msg_1",
+        });
       },
       { wrapper },
     );
@@ -142,7 +149,11 @@ describe("useMarkRead", () => {
     renderHook(
       () => {
         const ref = useTestRef(null);
-        useMarkRead({ sessionId: SESSION_A, latestMessageRef: ref });
+        useMarkRead({
+          sessionId: SESSION_A,
+          latestMessageRef: ref,
+          latestMessageId: "msg_1",
+        });
       },
       { wrapper },
     );
@@ -158,14 +169,18 @@ describe("useMarkRead", () => {
     renderHook(
       () => {
         const ref = useTestRef(el);
-        useMarkRead({ sessionId: SESSION_A, latestMessageRef: ref });
+        useMarkRead({
+          sessionId: SESSION_A,
+          latestMessageRef: ref,
+          latestMessageId: "msg_1",
+        });
       },
       { wrapper },
     );
 
     // Enter intersection
     act(() => {
-      triggerIntersect(true);
+      triggerIntersect(el, true);
     });
 
     // Not fired yet — timer hasn't elapsed
@@ -187,14 +202,18 @@ describe("useMarkRead", () => {
     renderHook(
       () => {
         const ref = useTestRef(el);
-        useMarkRead({ sessionId: SESSION_A, latestMessageRef: ref });
+        useMarkRead({
+          sessionId: SESSION_A,
+          latestMessageRef: ref,
+          latestMessageId: "msg_1",
+        });
       },
       { wrapper },
     );
 
     // First fire
     act(() => {
-      triggerIntersect(true);
+      triggerIntersect(el, true);
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(500);
@@ -203,13 +222,13 @@ describe("useMarkRead", () => {
 
     // Exit + re-enter within 5s
     act(() => {
-      triggerIntersect(false);
+      triggerIntersect(el, false);
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000);
     }); // only 1s since first fire
     act(() => {
-      triggerIntersect(true);
+      triggerIntersect(el, true);
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(500);
@@ -228,14 +247,18 @@ describe("useMarkRead", () => {
     const { rerender } = renderHook(
       () => {
         const ref = useTestRef(el);
-        useMarkRead({ sessionId, latestMessageRef: ref });
+        useMarkRead({
+          sessionId,
+          latestMessageRef: ref,
+          latestMessageId: "msg_1",
+        });
       },
       { wrapper },
     );
 
     // First fire for SESSION_A
     act(() => {
-      triggerIntersect(true);
+      triggerIntersect(el, true);
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(500);
@@ -244,13 +267,13 @@ describe("useMarkRead", () => {
 
     // Switch to SESSION_B — rerender triggers the effect with the new sessionId
     act(() => {
-      triggerIntersect(false);
+      triggerIntersect(el, false);
     });
     sessionId = SESSION_B;
     rerender();
 
     act(() => {
-      triggerIntersect(true);
+      triggerIntersect(el, true);
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(500);
@@ -268,19 +291,23 @@ describe("useMarkRead", () => {
     renderHook(
       () => {
         const ref = useTestRef(el);
-        useMarkRead({ sessionId: SESSION_A, latestMessageRef: ref });
+        useMarkRead({
+          sessionId: SESSION_A,
+          latestMessageRef: ref,
+          latestMessageId: "msg_1",
+        });
       },
       { wrapper },
     );
 
     act(() => {
-      triggerIntersect(true);
+      triggerIntersect(el, true);
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300);
     }); // only 300ms
     act(() => {
-      triggerIntersect(false);
+      triggerIntersect(el, false);
     }); // exit before 500ms
     await act(async () => {
       await vi.advanceTimersByTimeAsync(500);
@@ -306,13 +333,17 @@ describe("useMarkRead", () => {
     renderHook(
       () => {
         const ref = useTestRef(el);
-        useMarkRead({ sessionId: SESSION_A, latestMessageRef: ref });
+        useMarkRead({
+          sessionId: SESSION_A,
+          latestMessageRef: ref,
+          latestMessageId: "msg_1",
+        });
       },
       { wrapper },
     );
 
     act(() => {
-      triggerIntersect(true);
+      triggerIntersect(el, true);
     });
     // Advance 500ms to fire the setTimeout, then flush the resulting async promise
     await act(async () => {
@@ -355,13 +386,17 @@ describe("useMarkRead", () => {
     renderHook(
       () => {
         const ref = useTestRef(el);
-        useMarkRead({ sessionId: SESSION_A, latestMessageRef: ref });
+        useMarkRead({
+          sessionId: SESSION_A,
+          latestMessageRef: ref,
+          latestMessageId: "msg_1",
+        });
       },
       { wrapper },
     );
 
     act(() => {
-      triggerIntersect(true);
+      triggerIntersect(el, true);
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(500);
@@ -393,13 +428,17 @@ describe("useMarkRead", () => {
     const { unmount } = renderHook(
       () => {
         const ref = useTestRef(el);
-        useMarkRead({ sessionId: SESSION_A, latestMessageRef: ref });
+        useMarkRead({
+          sessionId: SESSION_A,
+          latestMessageRef: ref,
+          latestMessageId: "msg_1",
+        });
       },
       { wrapper },
     );
 
     act(() => {
-      triggerIntersect(true);
+      triggerIntersect(el, true);
     }); // start the 500ms timer
 
     // Unmount before timer fires
@@ -411,5 +450,69 @@ describe("useMarkRead", () => {
     });
 
     expect(mockMarkRead).not.toHaveBeenCalled();
+  });
+
+  // ── AC-10: observer re-arms onto new DOM node when latestMessageId changes ─
+  it("re-arms the observer on the new element when latestMessageId changes (new assistant message)", async () => {
+    vi.useFakeTimers();
+    const el1 = document.createElement("div");
+    const el2 = document.createElement("div");
+    const { wrapper } = createWrapper();
+
+    let currentEl = el1;
+    let currentMsgId = "msg_1";
+
+    const { rerender } = renderHook(
+      () => {
+        const ref = useRef<HTMLElement | null>(currentEl);
+        ref.current = currentEl;
+        useMarkRead({
+          sessionId: SESSION_A,
+          latestMessageRef: ref,
+          latestMessageId: currentMsgId,
+        });
+      },
+      { wrapper },
+    );
+
+    // First fire: el1 becomes visible → markRead fires after 500ms
+    act(() => {
+      triggerIntersect(el1, true);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(mockMarkRead).toHaveBeenCalledTimes(1);
+
+    // Advance past the 5s per-session dedup window so the next fire isn't suppressed
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5001);
+    });
+
+    // New message arrives — ref moves to el2, latestMessageId changes → effect re-runs
+    currentEl = el2;
+    currentMsgId = "msg_2";
+    rerender();
+
+    // el1 should no longer have an active observer (disconnected by effect cleanup)
+    expect(observerMap.has(el1)).toBe(false);
+    // el2 should now be observed
+    expect(observerMap.has(el2)).toBe(true);
+
+    // el2 becomes visible → second markRead should fire
+    act(() => {
+      triggerIntersect(el2, true);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mockMarkRead).toHaveBeenCalledTimes(2);
   });
 });

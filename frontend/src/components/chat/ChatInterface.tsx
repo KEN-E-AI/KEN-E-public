@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Send, Sparkles, Loader2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -120,9 +120,20 @@ export function ChatInterface({
   const { status: orgStatus } = useOrgStatus();
   const isOrgInactive = orgStatus.startsWith("inactive_");
 
+  const lastAssistantIndex = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "assistant" && messages[i].id !== "intro") {
+        return i;
+      }
+    }
+    return -1;
+  }, [messages]);
+
   useMarkRead({
     sessionId: sessionId ?? null,
     latestMessageRef: latestAssistantRef,
+    latestMessageId:
+      lastAssistantIndex >= 0 ? messages[lastAssistantIndex].id : null,
   });
 
   const handleStop = useCallback(() => {
@@ -235,13 +246,6 @@ export function ChatInterface({
   );
 
   const textSizeClass = TEXT_SIZE_CLASSES[chatTextSize];
-  let lastAssistantIndex = -1;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role === "assistant" && messages[i].id !== "intro") {
-      lastAssistantIndex = i;
-      break;
-    }
-  }
 
   return (
     <div

@@ -219,6 +219,7 @@ describe("ChatInterface", () => {
       mockUseMarkRead.mock.calls[mockUseMarkRead.mock.calls.length - 1][0];
     expect(lastCallArgs.sessionId).toBe("sess_123");
     expect(lastCallArgs.latestMessageRef.current).toBe(latestEl);
+    expect(typeof lastCallArgs.latestMessageId).toBe("string");
   });
 
   // ── TC-MarkRead-2: sessionId undefined → hook receives null ─────────────
@@ -227,7 +228,7 @@ describe("ChatInterface", () => {
     render(<ChatInterface />);
 
     expect(mockUseMarkRead).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: null }),
+      expect.objectContaining({ sessionId: null, latestMessageId: null }),
     );
   });
 
