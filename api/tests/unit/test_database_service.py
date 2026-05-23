@@ -39,6 +39,13 @@ class TestNeo4jService:
 
             assert mock_gdb.driver.call_args.kwargs["max_transaction_retry_time"] == 2.0
 
+    def test_default_max_transaction_retry_time_matches_driver_default(self):
+        """Default must stay 30.0s (the Neo4j driver default) so prod/staging/dev
+        keep full retry resilience — only CI/e2e overrides it via the env var."""
+        from src.kene_api.config import settings
+
+        assert settings.neo4j_max_transaction_retry_time == 30.0
+
     @pytest.mark.asyncio
     async def test_execute_write_query_returns_data(self, db_service):
         """Test execute_write_query returns data for CREATE queries with RETURN."""
