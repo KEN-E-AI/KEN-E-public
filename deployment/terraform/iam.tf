@@ -81,3 +81,20 @@ resource "google_service_account_iam_member" "cicd_run_invoker_account_user" {
   member             = "serviceAccount:${resource.google_service_account.cicd_runner_sa.email}"
   depends_on         = [resource.google_project_service.cicd_services, resource.google_project_service.shared_services]
 }
+
+# Runtime Cloud Run API SA (ken-e-api@<env>): grant Datastore Owner.
+# Required for the DM-PRD-06 Shape A->B cutover — the account/user deletion sweep
+# (DM-PRD-05) calls firestore.recursive_delete as this SA, which needs owner-level
+# Firestore permissions; roles/datastore.user is insufficient (PERMISSION_DENIED).
+# Non-authoritative (google_project_iam_member): the SA's other roles
+# (datastore.user, storage.admin, etc.) remain granted out-of-band per the
+# locals.tf note — this resource manages ONLY the owner grant. Staging already
+# had this granted out-of-band; codifying it here makes the grant declarative.
+resource "google_project_iam_member" "api_sa_datastore_owner" {
+  for_each = local.deploy_project_ids
+
+  project    = each.value
+  role       = "roles/datastore.owner"
+  member     = "serviceAccount:ken-e-api@${each.value}.iam.gserviceaccount.com"
+  depends_on = [resource.google_project_service.shared_services]
+}
