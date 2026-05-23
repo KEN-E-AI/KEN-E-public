@@ -21,7 +21,7 @@ Effective throughput was **0.29–0.38 docs/sec** across all non-zero resources 
 
 | Reference | Location | Notes |
 |-----------|----------|-------|
-| DM-60 run-log (Phase A + B results, timing table) | [PR #615](https://github.com/KEN-E-AI/KEN-E/pull/615) · `docs/design/components/data-management/runs/DM-60-staging-migration-execute.md` (branch `docs/DM-60-staging-migration-execute`) | Operator-filled timing data in §Per-resource Timing and §Phase A/B results; PR was OPEN at DM-62 branch-time |
+| DM-60 run-log (Phase A + B results, timing table) | [PR #615](https://github.com/KEN-E-AI/KEN-E/pull/615) · `docs/design/components/data-management/runs/DM-60-staging-migration-execute.md` (branch `docs/DM-60-staging-migration-execute`) | Operator-filled timing data in §Per-resource Timing and §Phase A/B results |
 | DM-59 dry-run baseline counts | DM-59 Linear issue (Done) | Source-collection counts verified before Phase A |
 | DM-60 Linear comment (2026-05-23T12:24:25Z) | DM-60 issue thread | Aggregate confirmation: `(default)` 27 docs (14+3+10); `analytics` 0 |
 
@@ -31,7 +31,7 @@ Effective throughput was **0.29–0.38 docs/sec** across all non-zero resources 
 
 ### 3.1 Per-resource elapsed time
 
-The `migrate_to_shape_b.py` script (invoked via `--all`) does not emit an explicit per-resource elapsed-time line. The logger format at `api/scripts/migrate_to_shape_b.py:54` is:
+The `migrate_to_shape_b.py` script (invoked via `--all`) does not emit an explicit per-resource elapsed-time line. The logger format at `api/scripts/migrate_to_shape_b.py:53` is:
 
 ```python
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -136,7 +136,7 @@ Rows are ordered by Resource (alphabetical), then Phase (A before B), then DB (`
 | strategy_docs | A (copy) | (default) | 10 | ~34 | ~0.29 |
 | strategy_docs | B (delete) | (default) | 10 | ~33 | ~0.30 |
 
-**Peak observed rate:** ~0.38 docs/sec (`alert_configurations` Phase B), equivalent to **~1,365× below the 500 writes/sec PRD ceiling**.
+**Peak observed rate:** ~0.38 docs/sec (`alert_configurations` Phase B), equivalent to **~1,316× below the 500 writes/sec PRD ceiling** (500 ÷ 0.38 ≈ 1,316).
 
 **Throughput driver:** latency was dominated by laptop→`nam5` round-trip serial RPCs, not the 500 writes/sec batch rate limiter. The migration script processes documents sequentially (one Firestore read + one write RPC per doc); no batching was triggered at staging volume.
 
@@ -166,7 +166,7 @@ The `analytics` database will remain a structural no-op for production as well (
 | DM-PRD-06 §5 AC-5 | Same file | "Staging migration timing report is posted (a short comment in the DESIGN-REVIEW-LOG entry, or a separate doc linked from it)" — this file satisfies AC-5 via the "separate doc" path |
 | DM-PRD-06 §7 Risks row 2 | Same file | "Staging migration runs slower than dev (more data) … timing scales with data volume" — §6 above addresses this |
 | DM-60 run-log | `docs/design/components/data-management/runs/DM-60-staging-migration-execute.md` (branch `docs/DM-60-staging-migration-execute`, PR #615 — not yet merged to `main`) | Source of per-resource timing data consumed by this report |
-| DM-63 (Review 16 entry) | DM-63 Linear issue | Consumer of this report — cross-link this file in the DESIGN-REVIEW-LOG Review 16 entry per PRD §5 AC-5 |
+| DM-63 (DESIGN-REVIEW-LOG "migration complete" entry) | DM-63 Linear issue | Consumer of this report — cross-link this file per PRD §5 AC-5. **Note:** DM-PRD-06 §4.4 refers to this as "Review 16" but Review 16 already exists in `DESIGN-REVIEW-LOG.md` (Feature Flags component, 2026-04-20). The next available number at time of writing is **Review 33**. DM-63 should use that number. |
 | DESIGN-REVIEW-LOG Review 15 | [`../../DESIGN-REVIEW-LOG.md`](../../DESIGN-REVIEW-LOG.md) | Original data-model decision that this migration implements |
 
 ---
@@ -180,7 +180,7 @@ The `analytics` database will remain a structural no-op for production as well (
 | Report author | data-management-dev-team (Dev Team agent) |
 | Source data verified | DM-60 run-log §Per-resource Timing + §Phase A/B results |
 | AC-5 satisfied | ✅ — timing report exists, format reusable for future ops, path available for DM-63 cross-link |
-| Downstream consumer | DM-63 (Review 16 DESIGN-REVIEW-LOG entry) — cross-link at: `docs/design/components/data-management/runs/DM-62-staging-migration-timing-report.md` |
+| Downstream consumer | DM-63 (DESIGN-REVIEW-LOG "migration complete" entry, Review 33) — cross-link at: `docs/design/components/data-management/runs/DM-62-staging-migration-timing-report.md` |
 
 ---
 _Produced by: data-management-dev-team | Workflow: step-2-implementing | Issue: DM-62 | 2026-05-23_
