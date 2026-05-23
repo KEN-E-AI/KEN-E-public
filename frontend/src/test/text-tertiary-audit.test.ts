@@ -290,7 +290,7 @@ describe("text-tertiary usage audit", () => {
     expect(allFiles.length).toBeGreaterThan(200);
   });
 
-  const violations: string[] = [];
+  const violations: { file: string; line: number }[] = [];
 
   for (const file of allFiles) {
     // .replace(/\\/g, ...) keeps ES2020-lib compatibility (no replaceAll).
@@ -304,13 +304,54 @@ describe("text-tertiary usage audit", () => {
       if (!lineMatchesTarget(line)) return;
       const prev = idx > 0 ? lines[idx - 1] : "";
       if (lineHasAllowAnnotation(line, prev)) return;
-      violations.push(
-        `${rel}:${idx + 1} — text-tertiary used outside ALLOWED_FILES with no \`${PER_LINE_ANNOTATION}\` annotation`,
-      );
+      violations.push({ file: rel, line: idx + 1 });
     });
   }
 
   it("no text-tertiary in non-allowlisted files (without per-line annotation)", () => {
-    expect(violations, violations.join("\n")).toHaveLength(0);
+    expect(violations, formatViolationReport(violations)).toHaveLength(0);
   });
 });
+
+// Build an actionable failure message that tells the developer (or autonomous
+// agent looping on CI failures) exactly what to paste. Grouped by file so a
+// component with many `text-tertiary` lines yields one allowlist entry, not N.
+function formatViolationReport(
+  violations: { file: string; line: number }[],
+): string {
+  if (violations.length === 0) return "";
+
+  const byFile = new Map<string, number[]>();
+  for (const v of violations) {
+    const arr = byFile.get(v.file) ?? [];
+    arr.push(v.line);
+    byFile.set(v.file, arr);
+  }
+
+  const blocks = Array.from(byFile.entries()).map(([file, lines]) => {
+    const linesStr =
+      lines.length === 1 ? `line ${lines[0]}` : `lines ${lines.join(", ")}`;
+    return [
+      `${file} (${lines.length} occurrence(s) at ${linesStr})`,
+      `  Option A — add to ALLOWED_FILES in frontend/src/test/text-tertiary-audit.test.ts:`,
+      `    "${file}",  // <one-word rationale>`,
+      `  Option B — annotate each offending line in ${file}:`,
+      `    <jsx with text-tertiary>  // ${PER_LINE_ANNOTATION}: <reason>`,
+    ].join("\n");
+  });
+
+  return [
+    "",
+    `text-tertiary usage audit found ${violations.length} violation(s) across ${byFile.size} file(s).`,
+    "",
+    "The --color-text-tertiary token fails AA contrast and is formally exempt — see",
+    "docs/design/components/ui/accessibility-baseline.md §Exemptions. Each new file using",
+    "text-tertiary must either be registered in the allowlist (preferred for files with",
+    "multiple usages) or annotate each occurrence inline.",
+    "",
+    "Fix one of two ways per file:",
+    "",
+    blocks.join("\n\n"),
+    "",
+  ].join("\n");
+}

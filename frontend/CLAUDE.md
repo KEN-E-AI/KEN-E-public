@@ -152,6 +152,10 @@ Dark mode is implemented using:
 - TailwindCSS dark mode classes
 - Theme toggle component (if implemented)
 
+### Accessibility: `text-tertiary` allowlist
+
+`--color-text-tertiary` fails WCAG AA contrast and is formally exempt — usage is limited to decorative/secondary text (timestamps, helper copy, dim icons, disabled states). Any new file under `src/components` or `src/pages` that uses `text-tertiary` (or `text-[var(--color-text-tertiary)]`) must, in the same PR, either be added to `ALLOWED_FILES` in `src/test/text-tertiary-audit.test.ts` with a short rationale tag, or carry `// allow-text-tertiary: <reason>` on each offending line. The audit runs in CI as part of the `frontend-a11y-tests` step; on failure the test prints the exact line to paste. See `docs/design/components/ui/accessibility-baseline.md` §Exemptions for background.
+
 ## UI Component Library
 
 The project includes ~50 pre-built UI components in `src/components/ui/`:
