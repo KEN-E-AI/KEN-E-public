@@ -157,11 +157,13 @@ test("sidebar-expanded", async ({ page, request }) => {
   // Wait for the sidebar to be visible and sessions to load.
   const sidebar = page.locator('[data-testid="sessions-sidebar"]');
   await sidebar.waitFor({ state: "visible" });
-  // Wait for at least one session row to appear.
+  // Wait for at least one session row to appear. 30 s (not 10 s) absorbs the
+  // multi-step render (auth → feature-flag eval → session fetch) on a contended
+  // CI runner with the FF cache disabled; the 10 s budget flaked intermittently.
   await page
     .locator('[data-slot="session-list-item"]')
     .first()
-    .waitFor({ state: "visible", timeout: 10_000 });
+    .waitFor({ state: "visible", timeout: 30_000 });
 
   await expect(sidebar).toHaveScreenshot("sidebar-expanded.png");
 });

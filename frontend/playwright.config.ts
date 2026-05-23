@@ -4,7 +4,12 @@ export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  retries: process.env.CI ? 2 : 0,
+  // 60 s per test (default is 30 s): the chat-page render is multi-step
+  // (auth → feature-flag eval → session fetch → list render) and runs against
+  // a single-worker CI stack with the FF cache disabled, so the default cap
+  // collides with the inner waitFor budgets. Fast specs finish well under this.
+  timeout: 60_000,
   workers: 1,
   reporter: process.env.CI
     ? [["html", { outputFolder: "test-results/html" }]]
