@@ -227,6 +227,7 @@ uv sync --frozen
 FIRESTORE_EMULATOR_HOST="${FIRESTORE_HOST}" \
 FIREBASE_AUTH_EMULATOR_HOST="${AUTH_HOST}" \
 KENE_FF_CACHE_TTL_SECONDS=0 \
+NEO4J_MAX_TRANSACTION_RETRY_TIME=2 \
 GOOGLE_CLOUD_PROJECT_ID="test-project" \
 GOOGLE_CLOUD_PROJECT="test-project" \
   uv run uvicorn src.kene_api.main:app --host 127.0.0.1 --port "${API_PORT}" &
