@@ -29,6 +29,13 @@ class Settings:
     neo4j_username: str = get_env_or_secret("NEO4J_USERNAME", "neo4j")
     neo4j_password: str = get_env_or_secret("NEO4J_PASSWORD", "password")
     neo4j_database: str = os.getenv("NEO4J_DATABASE", "neo4j")
+    # Seconds the driver retries a failed managed transaction before giving up.
+    # Default 30.0 = Neo4j driver default (unchanged for prod/staging/dev). Set
+    # low in CI/e2e (which has no Neo4j) so a transaction against an unreachable
+    # Neo4j fails fast instead of stalling the request with ~30s of backoffs.
+    neo4j_max_transaction_retry_time: float = float(
+        os.getenv("NEO4J_MAX_TRANSACTION_RETRY_TIME", "30.0")
+    )
 
     # Apache Superset settings
     superset_base_url: str = os.getenv("SUPERSET_BASE_URL", "http://localhost:8088")
