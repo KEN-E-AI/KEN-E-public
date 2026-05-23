@@ -108,6 +108,7 @@ describe("useChatSessions", () => {
       cursor: null,
       category_id: undefined,
       query: undefined,
+      account_id: ACCOUNT_ID,
     });
     expect(result.current.data?.pages[0]).toEqual(PAGE_1);
   });
