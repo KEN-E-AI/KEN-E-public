@@ -93,7 +93,8 @@ resource "google_service_account_iam_member" "cicd_run_invoker_account_user" {
 resource "google_project_iam_member" "api_sa_datastore_owner" {
   for_each = local.deploy_project_ids
 
-  project = each.value
-  role    = "roles/datastore.owner"
-  member  = "serviceAccount:ken-e-api@${each.value}.iam.gserviceaccount.com"
+  project    = each.value
+  role       = "roles/datastore.owner"
+  member     = "serviceAccount:ken-e-api@${each.value}.iam.gserviceaccount.com"
+  depends_on = [resource.google_project_service.shared_services]
 }
