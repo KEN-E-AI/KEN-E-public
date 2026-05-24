@@ -5,7 +5,7 @@ description = "Simple company news chatbot using ADK and Vertex AI Search"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "baml-py>=0.207.1",
-    "google-adk>=1.27.4",
+    "google-adk==1.27.5",  # spike-pinned: measurements taken against this exact surface (SK-PRD-00)
     "google-cloud-aiplatform>=1.140.0",
     "google-cloud-firestore>=2.23.0",
     "neo4j>=5.14.0",
