@@ -66,7 +66,7 @@ from typing import Any
 
 
 def _import_adk() -> tuple[Any, ...]:
-    """Return (LlmAgent, AgentEngineSandboxCodeExecutor, Runner, InMemorySessionService, types).
+    """Return (LlmAgent, AgentEngineSandboxCodeExecutor, Runner, InMemorySessionService, InMemoryArtifactService, types).
 
     Raises SystemExit with an actionable message if any import fails so the
     caller sees a clear directive rather than an unhandled traceback.
@@ -93,13 +93,23 @@ def _import_adk() -> tuple[Any, ...]:
             f"Underlying error: {exc}"
         )
 
+    from google.adk.artifacts.in_memory_artifact_service import (
+        InMemoryArtifactService,  # type: ignore[import-untyped]
+    )
     from google.adk.runners import Runner  # type: ignore[import-untyped]
     from google.adk.sessions.in_memory_session_service import (
         InMemorySessionService,  # type: ignore[import-untyped]
     )
     from google.genai import types  # type: ignore[import-untyped]
 
-    return LlmAgent, AgentEngineSandboxCodeExecutor, Runner, InMemorySessionService, types
+    return (
+        LlmAgent,
+        AgentEngineSandboxCodeExecutor,
+        Runner,
+        InMemorySessionService,
+        InMemoryArtifactService,
+        types,
+    )
 
 
 def _validate_script(script_path: Path) -> str:
@@ -134,7 +144,14 @@ async def _run_script(
     One sandbox session per invocation — this harness is intentionally
     single-shot so SK-3 (cost measurement) controls its own call volume.
     """
-    LlmAgent, AgentEngineSandboxCodeExecutor, Runner, InMemorySessionService, types = _import_adk()
+    (
+        LlmAgent,
+        AgentEngineSandboxCodeExecutor,
+        Runner,
+        InMemorySessionService,
+        InMemoryArtifactService,
+        types,
+    ) = _import_adk()
 
     script_content = _validate_script(script_path)
 
@@ -189,6 +206,7 @@ async def _run_script(
         agent=agent,
         app_name="spike_harness",
         session_service=session_service,
+        artifact_service=InMemoryArtifactService(),
     )
 
     user_message = types.Content(
