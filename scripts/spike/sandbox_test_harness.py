@@ -29,7 +29,20 @@ Output format:
   ADK version  : <installed version>
   Sandbox      : <resource name>
   Elapsed (s)  : <float>
-  Exit status  : ok | error
+  Exit status  : ok | error: <reason>
+
+`Exit status` reflects what the harness observed in the ADK event stream, not
+just whether the run completed without an exception:
+
+  ok                                       executor produced a code_execution_result
+  error: agent emitted no executable_code  LLM ignored the instruction or refused
+  error: executor produced no result       code emitted but no result event observed
+  error: executor outcome <OUTCOME_*>      executor ran but reported a non-OK outcome
+  error (<ExceptionType>): ...             runner or executor raised
+
+Downstream SK-PRD-00 issues (Q1-Q5) MUST treat anything other than `ok` as a
+failed measurement — a clean traceback-free run does not imply the sandbox
+actually executed anything.
 """
 
 from __future__ import annotations
@@ -163,17 +176,43 @@ async def _run_script(
         parts=[types.Part(text=f"Execute this Python script:\n```python\n{script_content}\n```")],
     )
 
-    output_parts: list[str] = []
+    # We track three independent signals so the final status reflects what
+    # actually happened, not just whether the run threw:
+    #   - executable_code parts  -> the LLM emitted code
+    #   - code_execution_result  -> the executor returned a result
+    #   - outcome on that result -> the executor reported OUTCOME_OK
+    # A run that completes without ever invoking the executor would otherwise
+    # be reported as `ok`, distorting every SK-PRD-00 Q1-Q5 measurement built
+    # on this harness.
+    llm_text_parts: list[str] = []
+    executor_stdout_parts: list[str] = []
+    executable_code_seen = False
+    code_execution_result_seen = False
+    executor_outcome: str | None = None
     try:
         async for event in runner.run_async(
             user_id="spike_user",
             session_id=session.id,
             new_message=user_message,
         ):
-            if hasattr(event, "content") and event.content:
-                for part in event.content.parts or []:
-                    if hasattr(part, "text") and part.text:
-                        output_parts.append(part.text)
+            if not (hasattr(event, "content") and event.content):
+                continue
+            for part in event.content.parts or []:
+                if getattr(part, "executable_code", None) is not None:
+                    executable_code_seen = True
+                result = getattr(part, "code_execution_result", None)
+                if result is not None:
+                    code_execution_result_seen = True
+                    outcome = getattr(result, "outcome", None)
+                    if outcome is not None:
+                        # outcome may be an enum (.name) or a string.
+                        executor_outcome = getattr(outcome, "name", str(outcome))
+                    output_text = getattr(result, "output", None)
+                    if output_text:
+                        executor_stdout_parts.append(str(output_text))
+                text = getattr(part, "text", None)
+                if text:
+                    llm_text_parts.append(text)
     except Exception as exc:
         return "", (
             f"error ({type(exc).__name__}): agent run failed — {exc}\n"
@@ -182,7 +221,24 @@ async def _run_script(
             f"project '{project}', location '{location}'."
         )
 
-    return "\n".join(output_parts), "ok"
+    # Prefer executor stdout over LLM commentary so Q1-Q5 measurements are not
+    # contaminated by the model paraphrasing the output. Fall back to LLM text
+    # only when the executor produced no captured output (e.g., scripts that
+    # print nothing) so the operator still sees what the agent said.
+    captured_output = (
+        "\n".join(executor_stdout_parts)
+        if executor_stdout_parts
+        else "\n".join(llm_text_parts)
+    )
+
+    if not executable_code_seen:
+        return captured_output, "error: agent emitted no executable_code"
+    if not code_execution_result_seen:
+        return captured_output, "error: executor produced no result"
+    if executor_outcome and executor_outcome not in {"OUTCOME_OK", "OK"}:
+        return captured_output, f"error: executor outcome {executor_outcome}"
+
+    return captured_output, "ok"
 
 
 def _build_parser() -> argparse.ArgumentParser:
