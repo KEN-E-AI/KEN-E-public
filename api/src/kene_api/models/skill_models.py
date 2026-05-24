@@ -33,6 +33,8 @@ __all__ = [
     "SkillOwner",
     "SkillSource",
     "SkillStatus",
+    "SkillValidationError",
+    "SkillValidationResponse",
     "SkillVersion",
     "SkillVisibility",
 ]
@@ -237,3 +239,19 @@ class Skill(BaseModel):
     @classmethod
     def _name_regex(cls, v: str) -> str:
         return _validate_skill_name(v)
+
+
+# ---------------------------------------------------------------------------
+# API response models
+# ---------------------------------------------------------------------------
+
+
+class SkillValidationError(BaseModel):
+    field: str
+    code: str
+    message: str
+
+
+class SkillValidationResponse(BaseModel):
+    valid: bool
+    errors: list[SkillValidationError]

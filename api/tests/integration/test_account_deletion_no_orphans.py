@@ -40,6 +40,7 @@ from src.kene_api.auth.user_context import get_current_user_context
 from src.kene_api.database import get_neo4j_service
 from src.kene_api.firestore import get_firestore_service
 from src.kene_api.main import app
+from src.kene_api.services.skill_storage import get_skill_storage_service
 from src.kene_api.services.storage_service import get_storage_service
 
 # ---------------------------------------------------------------------------
@@ -82,6 +83,8 @@ _ALL_SUBCOLLECTIONS: list[str] = [
     "integrations_audit",
     # CH-PRD-01 — chat session side-table + artifact metadata index
     "chat_sessions",
+    # SK-PRD-01 — skills + versions subcollection
+    "skills",
 ]
 
 
@@ -196,12 +199,17 @@ def _app_overrides(emulator_db: Any) -> Generator[dict[str, Any], None, None]:
     mock_storage = MagicMock()
     mock_storage.delete_account_documents = AsyncMock(return_value=True)
 
+    # --- Mock Skills GCS ---
+    mock_skill_storage = MagicMock()
+    mock_skill_storage.delete_account_prefix = MagicMock(return_value=0)
+
     # --- Wire FirestoreService to use the emulator client ---
     mock_fs_service = MagicMock()
     mock_fs_service.get_client.return_value = emulator_db
 
     app.dependency_overrides[get_neo4j_service] = _get_neo4j
     app.dependency_overrides[get_storage_service] = lambda: mock_storage
+    app.dependency_overrides[get_skill_storage_service] = lambda: mock_skill_storage
     app.dependency_overrides[get_firestore_service] = lambda: mock_fs_service
 
     async def _super_admin() -> UserContext:
@@ -209,11 +217,12 @@ def _app_overrides(emulator_db: Any) -> Generator[dict[str, Any], None, None]:
 
     app.dependency_overrides[get_current_user_context] = _super_admin
 
-    yield {"neo4j": mock_neo4j, "storage": mock_storage}
+    yield {"neo4j": mock_neo4j, "storage": mock_storage, "skill_storage": mock_skill_storage}
 
     for dep in (
         get_neo4j_service,
         get_storage_service,
+        get_skill_storage_service,
         get_firestore_service,
         get_current_user_context,
     ):
@@ -319,6 +328,30 @@ def _seed_dm_prd_07_subcollections(db: Any, account_id: str, run_id: str) -> Non
     )
 
 
+def _seed_skills(db: Any, account_id: str, run_id: str) -> None:
+    """Seed skills + nested versions subcollection (SK-PRD-01 regression guard).
+
+    Verifies recursive_delete descends into accounts/{account_id}/skills/{id}/versions/*.
+    """
+    skill_ref = (
+        db.collection("accounts")
+        .document(account_id)
+        .collection("skills")
+        .document(f"sk_{run_id}")
+    )
+    skill_ref.set(
+        {
+            "skill_id": f"sk_{run_id}",
+            "name": "test-skill",
+            "seeded_for": "SK-18 regression guard",
+        }
+    )
+    # Nested versions subcollection — proves recursive_delete descends two levels deep
+    skill_ref.collection("versions").document("1").set(
+        {"version": 1, "seeded_for": "SK-18 regression guard"}
+    )
+
+
 def _seed_chat_sessions(db: Any, account_id: str, run_id: str) -> None:
     """Seed chat_sessions + nested artifacts subcollection (CH-PRD-01 regression guard).
 
@@ -357,6 +390,7 @@ def _seed_full_account(db: Any, account_id: str, run_id: str) -> None:
     _seed_alert_configurations(db, account_id)
     _seed_dm_prd_07_subcollections(db, account_id, run_id)
     _seed_chat_sessions(db, account_id, run_id)
+    _seed_skills(db, account_id, run_id)
 
 
 # ---------------------------------------------------------------------------
@@ -407,6 +441,7 @@ class TestAccountDeletionNoOrphans:
             "nodes_deleted": 0,
             "relationships_deleted": 0,
             "gcs_documents_deleted": 1,
+            "skills_gcs_blobs_deleted": 0,
             "firestore_account_deleted": True,
             "cleanup_errors": [],
             "data_region": "US",
@@ -508,3 +543,67 @@ class TestAccountDeletionNoOrphans:
                 return _super_admin_user()
 
             app.dependency_overrides[get_current_user_context] = _super_admin
+
+    def test_delete_account_calls_skill_storage_delete_account_prefix(
+        self,
+        emulator_db: Any,
+        account_id: str,
+        run_id: str,
+        client: TestClient,
+        _app_overrides: dict[str, Any],
+    ) -> None:
+        """SK-PRD-01 AC-13: delete_account calls delete_account_prefix with account_id.
+
+        Verifies that the skills GCS bucket is swept during account deletion and
+        that the blob count returned by the helper flows through to the response.
+        """
+        # Configure mock to return 7 blobs deleted (arbitrary non-zero count).
+        _app_overrides["skill_storage"].delete_account_prefix = MagicMock(return_value=7)
+
+        _seed_full_account(emulator_db, account_id, run_id)
+
+        resp = client.delete(f"/api/v1/accounts/{account_id}")
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+
+        # delete_account_prefix called exactly once with this account_id (SK-PRD-01 AC-13)
+        _app_overrides["skill_storage"].delete_account_prefix.assert_called_once_with(
+            account_id
+        )
+        # Blob count surfaces in the response payload (Decision 3 in the plan)
+        assert data["skills_gcs_blobs_deleted"] == 7
+
+    def test_delete_account_continues_when_skill_storage_raises(
+        self,
+        emulator_db: Any,
+        account_id: str,
+        run_id: str,
+        client: TestClient,
+        _app_overrides: dict[str, Any],
+    ) -> None:
+        """Non-fatal GCS failure: account deletion completes even if skill purge raises.
+
+        If delete_account_prefix raises (e.g., GCS unavailable), the endpoint must
+        still return 200 and record the error in cleanup_errors — matching the
+        non-fatal semantics of the legacy storage.delete_account_documents block.
+        """
+        _app_overrides["skill_storage"].delete_account_prefix = MagicMock(
+            side_effect=RuntimeError("GCS unavailable")
+        )
+
+        _seed_full_account(emulator_db, account_id, run_id)
+
+        resp = client.delete(f"/api/v1/accounts/{account_id}")
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+
+        # Account deletion still succeeds
+        assert data["firestore_account_deleted"] is True
+        # Error captured in cleanup_errors with the Skills-GCS prefix
+        assert any(
+            "Skills GCS cleanup failed" in err for err in data["cleanup_errors"]
+        ), f"Expected 'Skills GCS cleanup failed' in cleanup_errors, got: {data['cleanup_errors']}"
+        # Count stays at 0 (no blobs deleted)
+        assert data["skills_gcs_blobs_deleted"] == 0

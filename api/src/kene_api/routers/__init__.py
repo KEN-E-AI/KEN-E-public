@@ -15,4 +15,5 @@ from . import metrics as metrics
 from . import notifications_v2 as notifications_v2
 from . import organizations as organizations
 from . import products as products
+from . import skills as skills
 from . import superset_saved_queries as superset_saved_queries
