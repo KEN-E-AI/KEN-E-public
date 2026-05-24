@@ -14,10 +14,18 @@ One-command reproduction:
         --script scripts/spike/skills/hello.py
 
 Required environment variables (see CLAUDE.md §Key Environment Variables):
-    GOOGLE_CLOUD_PROJECT          GCP project id
-    VERTEX_AI_LOCATION            e.g. us-central1
-    KENE_SPIKE_SANDBOX_RESOURCE_NAME  full Vertex AI sandbox resource name
+    GOOGLE_CLOUD_PROJECT                  GCP project id
+    VERTEX_AI_LOCATION                    e.g. us-central1
+    KENE_SPIKE_AGENT_ENGINE_RESOURCE_NAME Vertex AI Agent Engine resource name
       e.g. projects/<proj>/locations/<loc>/reasoningEngines/<id>
+      The executor lazily creates a sandboxEnvironment on first invocation.
+    KENE_SPIKE_SANDBOX_RESOURCE_NAME      (legacy alias — backward compat only)
+      e.g. projects/<proj>/locations/<loc>/reasoningEngines/<id>/sandboxEnvironments/<sid>
+      Use KENE_SPIKE_AGENT_ENGINE_RESOURCE_NAME for new setups.
+
+The harness routes to the correct ADK constructor kwarg automatically:
+  path contains /sandboxEnvironments/ → sandbox_resource_name=
+  path does NOT contain /sandboxEnvironments/ → agent_engine_resource_name=
 
 CLI overrides are available for all three (--project, --location,
 --sandbox-resource-name) so Q1-Q5 issues can swap configs without forking
@@ -140,10 +148,22 @@ async def _run_script(
     except ImportError:
         pass  # vertexai may not be installed; ADC defaults will be used
 
+    # Route to the correct ADK kwarg based on resource name format.
+    # ADK 1.27.5 __init__ signature:
+    #   sandbox_resource_name:      …/sandboxEnvironments/<id>
+    #   agent_engine_resource_name: …/reasoningEngines/<id>
+    # Passing resource_name= (wrong kwarg) falls through **data and raises
+    # ValueError: Either sandbox_resource_name or agent_engine_resource_name must be set.
     try:
-        sandbox_executor = AgentEngineSandboxCodeExecutor(
-            resource_name=sandbox_resource_name,
-        )
+        if "/sandboxEnvironments/" in sandbox_resource_name:
+            sandbox_executor = AgentEngineSandboxCodeExecutor(
+                sandbox_resource_name=sandbox_resource_name,
+            )
+        else:
+            # reasoningEngines/<id> format — lazily creates a sandboxEnvironment
+            sandbox_executor = AgentEngineSandboxCodeExecutor(
+                agent_engine_resource_name=sandbox_resource_name,
+            )
     except Exception as exc:
         return "", f"error ({type(exc).__name__}): could not construct AgentEngineSandboxCodeExecutor: {exc}"
 
@@ -261,11 +281,15 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--sandbox-resource-name",
-        default=os.environ.get("KENE_SPIKE_SANDBOX_RESOURCE_NAME", ""),
+        default=(
+            (os.environ.get("KENE_SPIKE_AGENT_ENGINE_RESOURCE_NAME") or "").strip()
+            or (os.environ.get("KENE_SPIKE_SANDBOX_RESOURCE_NAME") or "").strip()
+        ),
         metavar="RESOURCE",
         help=(
-            "Full Vertex AI sandbox resource name. "
-            "Defaults to $KENE_SPIKE_SANDBOX_RESOURCE_NAME."
+            "Vertex AI resource name (reasoningEngines/<id> or .../sandboxEnvironments/<sid>). "
+            "Defaults to $KENE_SPIKE_AGENT_ENGINE_RESOURCE_NAME "
+            "(fallback: $KENE_SPIKE_SANDBOX_RESOURCE_NAME)."
         ),
     )
     parser.add_argument(
@@ -300,7 +324,8 @@ def main() -> None:
     if not args.sandbox_resource_name:
         sys.exit(
             "[harness] Sandbox resource name is required. "
-            "Set $KENE_SPIKE_SANDBOX_RESOURCE_NAME or pass --sandbox-resource-name."
+            "Set $KENE_SPIKE_AGENT_ENGINE_RESOURCE_NAME (or legacy $KENE_SPIKE_SANDBOX_RESOURCE_NAME) "
+            "or pass --sandbox-resource-name."
         )
 
     if not args.project:
