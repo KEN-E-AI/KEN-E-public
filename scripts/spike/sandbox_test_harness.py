@@ -1,7 +1,7 @@
 """SK-PRD-00 spike harness — AgentEngineSandboxCodeExecutor evaluation.
 
 Runs an arbitrary Python script through a Vertex AI Agent Engine sandbox so
-SK-PRD-00 Q1–Q5 issues can measure network egress, cost, cross-skill state,
+SK-PRD-00 Q1-Q5 issues can measure network egress, cost, cross-skill state,
 resource limits, and file I/O empirically.
 
 ADK version pinned: google-adk==1.27.5 (spike/agent-engine-sandbox branch).
@@ -20,7 +20,7 @@ Required environment variables (see CLAUDE.md §Key Environment Variables):
       e.g. projects/<proj>/locations/<loc>/reasoningEngines/<id>
 
 CLI overrides are available for all three (--project, --location,
---sandbox-resource-name) so Q1–Q5 issues can swap configs without forking
+--sandbox-resource-name) so Q1-Q5 issues can swap configs without forking
 this module.
 
 Output format:
@@ -40,7 +40,6 @@ import os
 import sys
 import time
 from pathlib import Path
-
 
 # ---------------------------------------------------------------------------
 # ADK import probe — fail fast with a clear message if the package or the
@@ -76,7 +75,9 @@ def _import_adk() -> tuple:
         )
 
     from google.adk.runners import Runner  # type: ignore[import-untyped]
-    from google.adk.sessions.in_memory_session_service import InMemorySessionService  # type: ignore[import-untyped]
+    from google.adk.sessions.in_memory_session_service import (
+        InMemorySessionService,  # type: ignore[import-untyped]
+    )
     from google.genai import types  # type: ignore[import-untyped]
 
     return LlmAgent, AgentEngineSandboxCodeExecutor, Runner, InMemorySessionService, types
@@ -106,7 +107,7 @@ async def _run_script(
         sandbox_executor = AgentEngineSandboxCodeExecutor(
             resource_name=sandbox_resource_name,
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return "", f"error: could not construct AgentEngineSandboxCodeExecutor: {exc}"
 
     agent = LlmAgent(
@@ -150,7 +151,7 @@ async def _run_script(
                 for part in event.content.parts or []:
                     if hasattr(part, "text") and part.text:
                         output_parts.append(part.text)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         # Vertex permission denial or quota exhaustion surface here.
         # Return a clear message rather than a raw traceback.
         return "", (
@@ -243,7 +244,7 @@ def main() -> None:
     if stdout:
         print(stdout)
     print("---")
-    print(f"ADK version  : 1.27.5")
+    print("ADK version  : 1.27.5")
     print(f"Sandbox      : {args.sandbox_resource_name}")
     print(f"Elapsed (s)  : {elapsed:.2f}")
     print(f"Exit status  : {status}")
