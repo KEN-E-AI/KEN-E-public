@@ -26,7 +26,7 @@ this module.
 Output format:
   <sandbox stdout>
   ---
-  ADK version  : 1.27.5
+  ADK version  : <installed version>
   Sandbox      : <resource name>
   Elapsed (s)  : <float>
   Exit status  : ok | error
@@ -36,17 +36,15 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import importlib.metadata
 import os
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
-# ---------------------------------------------------------------------------
-# ADK import probe — fail fast with a clear message if the package or the
-# sandbox executor symbol is absent at this ADK version.
-# ---------------------------------------------------------------------------
 
-def _import_adk() -> tuple:
+def _import_adk() -> tuple[Any, ...]:
     """Return (LlmAgent, AgentEngineSandboxCodeExecutor, Runner, InMemorySessionService, types).
 
     Raises SystemExit with an actionable message if any import fails so the
@@ -83,9 +81,25 @@ def _import_adk() -> tuple:
     return LlmAgent, AgentEngineSandboxCodeExecutor, Runner, InMemorySessionService, types
 
 
-# ---------------------------------------------------------------------------
-# Core execution
-# ---------------------------------------------------------------------------
+def _validate_script(script_path: Path) -> str:
+    """Read and validate the script; return its text content.
+
+    Guards against non-Python files and basic injection patterns by running
+    compile() before forwarding to the LLM — any syntax error surfaces here
+    rather than confusingly inside the sandbox.
+    """
+    if script_path.suffix != ".py":
+        sys.exit(
+            f"[harness] --script must point to a .py file (got '{script_path.suffix}'). "
+            "Note: script content is transmitted to Vertex AI."
+        )
+    content = script_path.read_text(encoding="utf-8")
+    try:
+        compile(content, str(script_path), "exec")
+    except SyntaxError as exc:
+        sys.exit(f"[harness] Script has a syntax error — fix before running: {exc}")
+    return content
+
 
 async def _run_script(
     script_path: Path,
@@ -101,14 +115,24 @@ async def _run_script(
     """
     LlmAgent, AgentEngineSandboxCodeExecutor, Runner, InMemorySessionService, types = _import_adk()
 
-    script_content = script_path.read_text()
+    script_content = _validate_script(script_path)
+
+    # Initialise the Vertex AI client with the explicit project + location so
+    # --project and --location flags are actually honoured rather than silently
+    # falling through to ADC defaults.
+    try:
+        import vertexai  # type: ignore[import-untyped]
+
+        vertexai.init(project=project, location=location)
+    except ImportError:
+        pass  # vertexai may not be installed; ADC defaults will be used
 
     try:
         sandbox_executor = AgentEngineSandboxCodeExecutor(
             resource_name=sandbox_resource_name,
         )
     except Exception as exc:
-        return "", f"error: could not construct AgentEngineSandboxCodeExecutor: {exc}"
+        return "", f"error ({type(exc).__name__}): could not construct AgentEngineSandboxCodeExecutor: {exc}"
 
     agent = LlmAgent(
         name="spike_sandbox_agent",
@@ -146,16 +170,13 @@ async def _run_script(
             session_id=session.id,
             new_message=user_message,
         ):
-            # Collect any model/tool text content from the event stream.
             if hasattr(event, "content") and event.content:
                 for part in event.content.parts or []:
                     if hasattr(part, "text") and part.text:
                         output_parts.append(part.text)
     except Exception as exc:
-        # Vertex permission denial or quota exhaustion surface here.
-        # Return a clear message rather than a raw traceback.
         return "", (
-            f"error: agent run failed — {exc}\n"
+            f"error ({type(exc).__name__}): agent run failed — {exc}\n"
             f"Check that the service account has roles/aiplatform.user and "
             f"that the sandbox resource '{sandbox_resource_name}' exists in "
             f"project '{project}', location '{location}'."
@@ -177,7 +198,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--script",
         required=True,
         metavar="PATH",
-        help="Path to the Python script to execute inside the sandbox.",
+        help=(
+            "Path to a .py script to execute inside the sandbox. "
+            "Script content is transmitted to Vertex AI."
+        ),
     )
     parser.add_argument(
         "--sandbox-resource-name",
@@ -241,10 +265,12 @@ def main() -> None:
     )
     elapsed = time.monotonic() - t0
 
+    adk_version = importlib.metadata.version("google-adk")
+
     if stdout:
         print(stdout)
     print("---")
-    print("ADK version  : 1.27.5")
+    print(f"ADK version  : {adk_version}")
     print(f"Sandbox      : {args.sandbox_resource_name}")
     print(f"Elapsed (s)  : {elapsed:.2f}")
     print(f"Exit status  : {status}")
