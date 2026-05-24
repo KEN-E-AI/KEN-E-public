@@ -34,3 +34,9 @@ suffix_bucket_name_load_test_results = "cicd-load-test-results"
 # DM-PRD-06 data migration is the remaining prerequisite for staging/prod to
 # serve live queries, but indexes are pre-provisioned.
 firestore_index_project_ids = ["ken-e-dev", "ken-e-staging", "ken-e-production"]
+
+# CMEK keys for skills GCS buckets (kene-skills-{env} + kene-skills-{env}-trash).
+# Default is empty map (Google-managed encryption). Populate via a follow-up ops PR
+# once KMS keys are provisioned — no code change required to enable CMEK.
+# Format: { development = "projects/.../keyRings/.../cryptoKeys/...", staging = "...", production = "..." }
+# skills_bucket_kms_key_name = {}
