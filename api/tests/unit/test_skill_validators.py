@@ -14,6 +14,7 @@ PRD reference: docs/design/components/skills/projects/SK-PRD-01-skills-backend.m
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timezone
 
 import pytest
@@ -41,6 +42,7 @@ from src.kene_api.models.skill_models import (
     SkillVersion,
     SkillVisibility,
 )
+from src.kene_api.services.skill_validator import validate_bundle
 
 # Valid 64-char lowercase hex SHA-256 digest used across all test helpers.
 _VALID_CHECKSUM = "a" * 64
@@ -709,3 +711,284 @@ class TestSkillFileEntryRelPath:
                 size_bytes=0,
                 checksum_sha256=_VALID_CHECKSUM,
             )
+
+
+# ---------------------------------------------------------------------------
+# TestValidateBundle — appended by SK-13
+# ---------------------------------------------------------------------------
+# These tests exercise validate_bundle() from skill_validator.py.
+# The existing classes above exercise skill_models.py only; this class does
+# NOT disturb them.
+# ---------------------------------------------------------------------------
+
+
+def _skill_md(name: str = "my-skill", description: str = "Desc.") -> bytes:
+    return f"---\nname: {name}\ndescription: {description}\n---\nBody text.\n".encode()
+
+
+def _file(rel_path: str, size: int) -> tuple[str, bytes]:
+    return (rel_path, b"x" * size)
+
+
+class TestValidateBundle:
+    """validate_bundle() enforces every cap from SK-PRD-01 §4."""
+
+    # ------------------------------------------------------------------
+    # Happy paths
+    # ------------------------------------------------------------------
+
+    def test_minimal_skill_md_only(self) -> None:
+        md = _skill_md()
+        report = validate_bundle(md, [], "my-skill")
+
+        assert report.valid is True
+        assert report.has_scripts is False
+        assert len(report.file_manifest) == 1  # only SKILL.md
+        assert report.file_manifest[0].kind == "skill_md"
+        assert report.issues == []
+
+    def test_skill_md_plus_one_reference(self) -> None:
+        md = _skill_md()
+        report = validate_bundle(md, [_file("references/guide.md", 100)], "my-skill")
+
+        assert report.valid is True
+        assert len(report.file_manifest) == 2
+        assert report.issues == []
+
+    def test_zero_references_valid(self) -> None:
+        report = validate_bundle(_skill_md(), [], "my-skill")
+        assert report.valid is True
+
+    def test_exactly_max_reference_files_valid(self) -> None:
+        refs = [_file(f"references/ref{i}.md", 100) for i in range(MAX_REFERENCE_FILES)]
+        report = validate_bundle(_skill_md(), refs, "my-skill")
+
+        assert report.valid is True
+        assert len(report.file_manifest) == 1 + MAX_REFERENCE_FILES
+
+    def test_50_assets_valid_no_per_dir_cap(self) -> None:
+        assets = [_file(f"assets/img{i}.png", 100) for i in range(50)]
+        report = validate_bundle(_skill_md(), assets, "my-skill")
+
+        assert report.valid is True
+
+    def test_50_scripts_sets_has_scripts_true(self) -> None:
+        scripts = [_file(f"scripts/run{i}.py", 100) for i in range(50)]
+        report = validate_bundle(_skill_md(), scripts, "my-skill")
+
+        assert report.valid is True
+        assert report.has_scripts is True
+
+    def test_outer_name_none_skips_name_check(self) -> None:
+        # PUT path: outer_name is None — no name_mismatch even if names differ.
+        md = _skill_md(name="my-skill")
+        report = validate_bundle(md, [], None)
+
+        assert report.valid is True
+        assert not any(i.code == "name_mismatch" for i in report.issues)
+
+    def test_sha256_digest_correctness(self) -> None:
+        data = b"hello world"
+        expected = hashlib.sha256(data).hexdigest()
+        report = validate_bundle(
+            _skill_md(),
+            [("references/test.txt", data)],
+            "my-skill",
+        )
+
+        assert report.valid is True
+        ref_entry = next(e for e in report.file_manifest if e.kind == "reference")
+        assert ref_entry.checksum_sha256 == expected
+
+    def test_allowed_tools_alias_survives_round_trip(self) -> None:
+        md = b"---\nname: my-skill\ndescription: desc\nallowed-tools: Read Write\n---\nBody.\n"
+        report = validate_bundle(md, [], "my-skill")
+
+        assert report.valid is True
+        assert report.frontmatter is not None
+        assert report.frontmatter.allowed_tools == "Read Write"
+
+    # ------------------------------------------------------------------
+    # Failure: too many reference files
+    # ------------------------------------------------------------------
+
+    def test_21_reference_files_rejected(self) -> None:
+        refs = [_file(f"references/ref{i}.md", 100) for i in range(21)]
+        report = validate_bundle(_skill_md(), refs, "my-skill")
+
+        assert report.valid is False
+        assert any(
+            i.code == "too_many_reference_files" and i.field == "files"
+            for i in report.issues
+        )
+
+    # ------------------------------------------------------------------
+    # Failure: file size
+    # ------------------------------------------------------------------
+
+    def test_file_at_exactly_max_size_valid(self) -> None:
+        report = validate_bundle(
+            _skill_md(),
+            [_file("references/big.md", MAX_REFERENCE_FILE_BYTES)],
+            "my-skill",
+        )
+        assert report.valid is True
+
+    def test_file_one_byte_over_max_rejected(self) -> None:
+        report = validate_bundle(
+            _skill_md(),
+            [_file("references/huge.md", MAX_REFERENCE_FILE_BYTES + 1)],
+            "my-skill",
+        )
+
+        assert report.valid is False
+        assert any(
+            i.code == "file_too_large" and i.field == "files[0]" for i in report.issues
+        )
+
+    def test_zero_size_file_valid(self) -> None:
+        report = validate_bundle(
+            _skill_md(), [_file("references/empty.md", 0)], "my-skill"
+        )
+        assert report.valid is True
+
+    # ------------------------------------------------------------------
+    # Failure: SKILL.md size
+    # ------------------------------------------------------------------
+
+    def test_skill_md_too_large_rejected(self) -> None:
+        large_md = (
+            b"---\nname: my-skill\ndescription: desc\n---\n" + b"x" * MAX_SKILL_MD_BYTES
+        )
+        report = validate_bundle(large_md, [], "my-skill")
+
+        assert report.valid is False
+        assert any(
+            i.code == "skill_md_too_large" and i.field == "skill_md"
+            for i in report.issues
+        )
+
+    # ------------------------------------------------------------------
+    # Failure: total bundle size
+    # ------------------------------------------------------------------
+
+    def test_bundle_just_over_2mb_rejected(self) -> None:
+        # SKILL.md itself is tiny; one script file that pushes the total over 2 MB.
+        big_script = b"x" * (MAX_TOTAL_BUNDLE_BYTES + 1)
+        report = validate_bundle(
+            _skill_md(), [("scripts/big.py", big_script)], "my-skill"
+        )
+
+        assert report.valid is False
+        assert any(
+            i.code == "file_too_large" or i.code == "bundle_too_large"
+            for i in report.issues
+        )
+
+    # ------------------------------------------------------------------
+    # Failure: name mismatch
+    # ------------------------------------------------------------------
+
+    def test_name_mismatch_outer_differs(self) -> None:
+        md = _skill_md(name="pdf-processing")
+        report = validate_bundle(md, [], "PDF-Processing")
+
+        assert report.valid is False
+        assert any(
+            i.code == "name_mismatch" and i.field == "name" for i in report.issues
+        )
+
+    def test_name_match_outer_same_valid(self) -> None:
+        md = _skill_md(name="pdf-processing")
+        report = validate_bundle(md, [], "pdf-processing")
+
+        assert report.valid is True
+
+    # ------------------------------------------------------------------
+    # Failure: unknown file kind
+    # ------------------------------------------------------------------
+
+    def test_unknown_top_level_dir_rejected(self) -> None:
+        report = validate_bundle(
+            _skill_md(),
+            [_file("garbage/foo.txt", 10)],
+            "my-skill",
+        )
+
+        assert report.valid is False
+        assert any(i.code == "unknown_file_kind" for i in report.issues)
+
+    # ------------------------------------------------------------------
+    # Failure: reference path depth
+    # ------------------------------------------------------------------
+
+    def test_reference_2_levels_deep_rejected(self) -> None:
+        report = validate_bundle(
+            _skill_md(),
+            [_file("references/sub/nested.md", 10)],
+            "my-skill",
+        )
+
+        assert report.valid is False
+        assert any(i.code == "reference_path_depth" for i in report.issues)
+
+    def test_reference_1_level_deep_valid(self) -> None:
+        report = validate_bundle(
+            _skill_md(),
+            [_file("references/guide.md", 10)],
+            "my-skill",
+        )
+
+        assert report.valid is True
+
+    # ------------------------------------------------------------------
+    # Failure: path traversal in file rel_path
+    # ------------------------------------------------------------------
+
+    def test_traversal_path_in_file_rejected(self) -> None:
+        report = validate_bundle(
+            _skill_md(),
+            [("../etc/passwd", b"x")],
+            "my-skill",
+        )
+
+        assert report.valid is False
+        assert len(report.issues) > 0
+
+    # ------------------------------------------------------------------
+    # Failure: too many files (DoS guard)
+    # ------------------------------------------------------------------
+
+    def test_exactly_max_bundle_files_valid(self) -> None:
+        # MAX_BUNDLE_FILES assets — should pass (no per-asset cap).
+        assets = [_file(f"assets/img{i}.png", 1) for i in range(MAX_BUNDLE_FILES)]
+        report = validate_bundle(_skill_md(), assets, "my-skill")
+
+        assert report.valid is True
+
+    def test_one_over_max_bundle_files_rejected(self) -> None:
+        assets = [_file(f"assets/img{i}.png", 1) for i in range(MAX_BUNDLE_FILES + 1)]
+        report = validate_bundle(_skill_md(), assets, "my-skill")
+
+        assert report.valid is False
+        assert any(
+            i.code == "too_many_files" and i.field == "files" for i in report.issues
+        )
+
+    # ------------------------------------------------------------------
+    # AC-2: specific error codes for field-level violations
+    # ------------------------------------------------------------------
+
+    def test_uppercase_name_emits_name_regex_code(self) -> None:
+        md = _skill_md(name="Invalid-Name")
+        report = validate_bundle(md, [], "Invalid-Name")
+
+        assert report.valid is False
+        assert any(i.code == "name_regex" for i in report.issues)
+
+    def test_description_too_long_emits_description_length_code(self) -> None:
+        md = f"---\nname: my-skill\ndescription: {'d' * 1025}\n---\nBody.\n".encode()
+        report = validate_bundle(md, [], "my-skill")
+
+        assert report.valid is False
+        assert any(i.code == "description_length" for i in report.issues)
