@@ -45,6 +45,7 @@ merged to main (SK-PRD-00 §7 AC #1).
 from __future__ import annotations
 
 import json
+import re
 import socket
 import sys
 import traceback
@@ -103,7 +104,7 @@ def _probe_dns() -> dict:
             "vector": "dns",
             "target": _DNS_HOST,
             "outcome": "error",
-            "details": traceback.format_exc(limit=3).strip(),
+            "details": traceback.format_exc(limit=3).replace("\n", " ").strip(),
         }
 
 
@@ -116,8 +117,10 @@ def _probe_https() -> dict:
         )
         with urllib.request.urlopen(req, timeout=_PROBE_TIMEOUT) as resp:
             status = resp.status
-            # Read a small slice; we need only the status, not the body.
-            body_preview = resp.read(256).decode("utf-8", errors="replace")
+            # Read a small slice; filter to printable ASCII so attacker-controlled
+            # body content cannot inject control chars or newlines into the staging doc.
+            raw = resp.read(256).decode("utf-8", errors="replace")
+            body_preview = re.sub(r"[^\x20-\x7E]", "?", raw)
         return {
             "vector": "https",
             "target": _HTTPS_URL,
@@ -146,7 +149,7 @@ def _probe_https() -> dict:
             "vector": "https",
             "target": _HTTPS_URL,
             "outcome": "error",
-            "details": traceback.format_exc(limit=3).strip(),
+            "details": traceback.format_exc(limit=3).replace("\n", " ").strip(),
         }
 
 
@@ -167,7 +170,8 @@ def _probe_doh() -> dict:
         )
         with urllib.request.urlopen(req, timeout=_PROBE_TIMEOUT) as resp:
             status = resp.status
-            body_preview = resp.read(256).decode("utf-8", errors="replace")
+            raw = resp.read(256).decode("utf-8", errors="replace")
+            body_preview = re.sub(r"[^\x20-\x7E]", "?", raw)
         return {
             "vector": "doh",
             "target": _DOH_URL,
@@ -195,7 +199,7 @@ def _probe_doh() -> dict:
             "vector": "doh",
             "target": _DOH_URL,
             "outcome": "error",
-            "details": traceback.format_exc(limit=3).strip(),
+            "details": traceback.format_exc(limit=3).replace("\n", " ").strip(),
         }
 
 
@@ -243,7 +247,7 @@ def _probe_tcp_raw() -> dict:
             "vector": "tcp_raw",
             "target": f"{_TCP_HOST}:{_TCP_PORT}",
             "outcome": "error",
-            "details": traceback.format_exc(limit=3).strip(),
+            "details": traceback.format_exc(limit=3).replace("\n", " ").strip(),
         }
 
 
