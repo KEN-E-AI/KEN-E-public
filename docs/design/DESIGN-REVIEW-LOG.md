@@ -1425,7 +1425,7 @@ The Shape A → B multi-tenant data-model migration delivered end-to-end across 
 |------|--------|
 | `docs/design/DESIGN-REVIEW-LOG.md` | This entry (Review 33). |
 | `docs/design/components/data-management/README.md` | Status table — DM-PRD-00 through DM-PRD-06 flipped to Complete (DM-65, landing in lockstep). |
-| `docs/design/components/data-management/multi-tenant-migration-plan.md` | §11 Execution checklist — all checkboxes filled (DM-64, landing in lockstep). |
+| `docs/design/components/data-management/multi-tenant-migration-plan.md` | §11 Execution checklist — all checkboxes to be filled by DM-64 (landing in lockstep). |
 
 ---
 
