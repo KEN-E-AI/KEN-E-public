@@ -96,7 +96,7 @@ def process_env_file(source_path: Path, dest_path: Path) -> None:
         "NEO4J_URI",
         "NEO4J_PASSWORD",
         "WANDB_API_KEY",
-        "OPENAI_API_KEY"
+        "OPENAI_API_KEY",
     ]
 
     failed_secrets = []
@@ -119,12 +119,16 @@ def process_env_file(source_path: Path, dest_path: Path) -> None:
                 if resolved_value:
                     # Debug: Show what we're resolving
                     if key in CRITICAL_SECRETS:
-                        logger.info(f"✅ {key}: {value} → resolved (length: {len(resolved_value)})")
+                        logger.info(
+                            f"✅ {key}: {value} → resolved (length: {len(resolved_value)})"
+                        )
                     processed_lines.append(f"{key}={resolved_value}\n")
                 else:
                     # Check if this is a critical secret
                     if key in CRITICAL_SECRETS:
-                        logger.error(f"❌ CRITICAL: {key}: {value} → NOT resolved (got None)")
+                        logger.error(
+                            f"❌ CRITICAL: {key}: {value} → NOT resolved (got None)"
+                        )
                         failed_secrets.append(key)
                     else:
                         logger.debug(f"⚠️ {key}: {value} → NOT resolved (got None)")
@@ -271,8 +275,7 @@ with tempfile.TemporaryDirectory() as temp_dir:
 
     display_name = f"strategy-supervisor-py{PYTHON_VERSION.replace('.', '')}"
     description = (
-        f"Strategy supervisor with Python {PYTHON_VERSION}, "
-        "split agents, Neo4j, W&B"
+        f"Strategy supervisor with Python {PYTHON_VERSION}, split agents, Neo4j, W&B"
     )
 
     # Resolve existing engine ID from Secret Manager
@@ -289,9 +292,15 @@ with tempfile.TemporaryDirectory() as temp_dir:
     except Exception as e:
         logger.info(f"No existing engine ID in Secret Manager ({e}); will create new")
 
-    deployed_engine = None
-    if existing_engine_id:
-        try:
+    try:
+        if existing_engine_id:
+            logger.info(f"Updating existing engine {existing_engine_id} in place...")
+            # Let an update failure propagate to the handler below (→ sys.exit(1)).
+            # Do NOT fall back to creating a new engine: a transient 500 from
+            # reasoningEngines polling often fires after the update already
+            # succeeded server-side, so a fallback create would orphan a fresh
+            # engine (the secret still points at the original) and accumulate
+            # duplicates that push the API's 500 rate higher.
             existing = reasoning_engines.ReasoningEngine(existing_engine_id)
             deployed_engine = existing.update(
                 reasoning_engine=app,
@@ -302,16 +311,9 @@ with tempfile.TemporaryDirectory() as temp_dir:
                 extra_packages=["agents", "shared", "app"],
             )
             logger.info("✅ Updated existing engine in place")
-        except Exception as update_error:
-            logger.warning(
-                f"Update of {existing_engine_id} failed: {update_error}. "
-                "Falling back to creating a new engine."
-            )
-            deployed_engine = None
-
-    try:
-        if deployed_engine is None:
-            logger.info("Creating new ReasoningEngine...")
+        else:
+            # Bootstrap path: no engine ID in Secret Manager yet (first deploy).
+            logger.info("No existing engine ID found; creating new ReasoningEngine...")
             deployed_engine = reasoning_engines.ReasoningEngine.create(
                 reasoning_engine=app,
                 requirements="requirements.txt",
@@ -320,6 +322,7 @@ with tempfile.TemporaryDirectory() as temp_dir:
                 sys_version=PYTHON_VERSION,
                 extra_packages=["agents", "shared", "app"],
             )
+            logger.info("✅ Created new engine")
 
         logger.info("✅ Deployment successful!")
         logger.info(f"Engine ID: {deployed_engine.resource_name}")

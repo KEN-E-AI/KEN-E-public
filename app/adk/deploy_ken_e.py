@@ -368,30 +368,29 @@ def deploy_ken_e() -> str | None:
             if get_env_or_secret:
                 existing_engine_id = get_env_or_secret("KEN_E_ENGINE_ID")
 
-            deployed_engine = None
             if existing_engine_id:
                 existing_engine_id = existing_engine_id.strip()
                 logger.info(
                     f"Found existing engine: {existing_engine_id}, updating in place..."
                 )
-                try:
-                    deployed_engine = agent_engines.update(
-                        resource_name=existing_engine_id,
-                        agent_engine=app,
-                        requirements="requirements.txt",
-                        display_name=deployment_name,
-                        description="KEN-E chat agent for company news and analytics",
-                        extra_packages=["agents", "shared", "app"],
-                    )
-                    logger.info("✅ Updated existing engine (sessions preserved)")
-                except Exception as update_error:
-                    logger.warning(
-                        f"Failed to update existing engine: {update_error}. "
-                        "Falling back to creating a new engine."
-                    )
-
-            if deployed_engine is None:
-                logger.info("Creating new engine...")
+                # Let an update failure propagate (the outer handler returns None →
+                # exit 1). Do NOT fall back to creating a new engine: a transient
+                # 500 from reasoningEngines polling often fires after the update has
+                # already succeeded server-side, so a fallback create would orphan a
+                # fresh engine (the secret still points at the original) and pile up
+                # duplicates that push the API's 500 rate higher.
+                deployed_engine = agent_engines.update(
+                    resource_name=existing_engine_id,
+                    agent_engine=app,
+                    requirements="requirements.txt",
+                    display_name=deployment_name,
+                    description="KEN-E chat agent for company news and analytics",
+                    extra_packages=["agents", "shared", "app"],
+                )
+                logger.info("✅ Updated existing engine (sessions preserved)")
+            else:
+                # Bootstrap path: no engine ID in Secret Manager yet (first deploy).
+                logger.info("No existing engine ID found; creating new engine...")
                 deployed_engine = agent_engines.create(
                     agent_engine=app,
                     requirements="requirements.txt",
