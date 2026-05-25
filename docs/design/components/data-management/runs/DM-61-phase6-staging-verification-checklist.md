@@ -37,14 +37,14 @@ The §4.2 residue scan in Wave A runs at this SHA (worktree at `ae7d3b99`). DM-6
 | 1 | `make lint` | FAIL (pre-existing) | codespell errors in CH-28 frontend files; not a DM-migration regression |
 | 2 | `pytest api/tests/` | PASS | 2121 passed, 452 skipped (emulator-gated) |
 | 2b | `pytest app/adk/agents/strategy_agent/tests/` | PARTIAL | pre-existing env failures; not DM-migration related — carry-forward from DM-56 |
-| 3 | Account deletion end-to-end | BLOCKED | Firestore emulator unavailable on agent VM — operator Wave B |
-| 4 | User deletion end-to-end | BLOCKED | Same blocker as #3 — operator Wave B |
-| 5 | Cross-account audit query | BLOCKED | Same blocker as #3 — operator Wave B |
+| 3 | Account deletion end-to-end | PASS | PO ran emulator tests locally (part of 7 passed) |
+| 4 | User deletion end-to-end | PASS | PO ran emulator tests locally |
+| 5 | Cross-account audit query | PASS | PO ran emulator tests locally |
 | 6 | Scheduler dry-run | N/A | PR-PRD-06 not shipped |
-| 7 | Index budget < 50 | OPERATOR | Requires `--project=ken-e-staging` — operator Wave B |
-| 8 | No `accounts.*` on org docs | OPERATOR | Requires staging Firestore read — operator Wave B |
-| 9 | No legacy Shape A collections | OPERATOR | Requires staging `:listCollectionIds` — operator Wave B |
-| 10 | Shape C carve-out preserved | OPERATOR | Requires staging Firestore read — operator Wave B |
+| 7 | Index budget < 50 | PASS | 22 < 50 (`ken-e-staging`) |
+| 8 | No `accounts.*` on org docs | PASS | after DM-92 remediation (dead `accounts` list deleted from 3 orgs) |
+| 9 | No legacy Shape A collections | PASS | 0 legacy; 15 root collections |
+| 10 | Shape C carve-out preserved | PASS | `notifications` present; `usage_records` benign-empty |
 | §4.2 | Codebase residue scan | PASS | 0 Category-A production hits; test fixtures + pre-DM-PRD-07 expected; `check_user_subcollections_registry.py` PASS |
 
 ---

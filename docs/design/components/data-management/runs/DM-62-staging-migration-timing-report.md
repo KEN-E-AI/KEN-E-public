@@ -167,7 +167,7 @@ The `analytics` database will remain a structural no-op for production as well (
 | DM-PRD-06 §7 Risks row 2 | Same file | "Staging migration runs slower than dev (more data) … timing scales with data volume" — §6 above addresses this |
 | DM-60 run-log | `docs/design/components/data-management/runs/DM-60-staging-migration-execute.md` (branch `docs/DM-60-staging-migration-execute`, PR #615 — not yet merged to `main`) | Source of per-resource timing data consumed by this report |
 | DM-63 (DESIGN-REVIEW-LOG "migration complete" entry) | DM-63 Linear issue | Consumer of this report — cross-link this file per PRD §5 AC-5. **Note:** DM-PRD-06 §4.4 refers to this as "Review 16" but Review 16 already exists in `DESIGN-REVIEW-LOG.md` (Feature Flags component, 2026-04-20). The next available number at time of writing is **Review 33**. DM-63 should use that number. |
-| DESIGN-REVIEW-LOG Review 15 | [`../../DESIGN-REVIEW-LOG.md`](../../DESIGN-REVIEW-LOG.md) | Original data-model decision that this migration implements |
+| DESIGN-REVIEW-LOG Review 15 | [`../../../DESIGN-REVIEW-LOG.md`](../../../DESIGN-REVIEW-LOG.md) | Original data-model decision that this migration implements |
 
 ---
 
