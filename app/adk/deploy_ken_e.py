@@ -216,6 +216,30 @@ def _append_chat_env_vars(env_config: dict, *dest_paths: Path) -> None:
             logger.info(f"Appended CHAT_INTERNAL_API_URL/AUDIENCE to {dest_path}")
 
 
+def _resolve_existing_engine_id(project_number: str) -> str | None:
+    """Return the canonical KEN-E engine resource name from Secret Manager.
+
+    Returns None only when the secret genuinely does not exist yet (first deploy
+    → the caller creates a new engine). A transient Secret Manager error
+    (PermissionDenied, a 500, a timeout) is re-raised so the deploy aborts rather
+    than being swallowed to None — which would bootstrap a duplicate engine and
+    orphan the canonical one.
+    """
+    from google.api_core import exceptions as gcp_exceptions
+    from google.cloud import secretmanager
+
+    client = secretmanager.SecretManagerServiceClient()
+    name = f"projects/{project_number}/secrets/ken-e-engine-id/versions/latest"
+    try:
+        response = client.access_secret_version(request={"name": name})
+    except gcp_exceptions.NotFound:
+        logger.info(
+            "No ken-e-engine-id secret yet (first deploy); will create a new engine"
+        )
+        return None
+    return response.payload.data.decode("UTF-8").strip() or None
+
+
 def deploy_ken_e() -> str | None:
     """Deploy the KEN-E chat agent to Agent Engine."""
 
@@ -357,16 +381,15 @@ def deploy_ken_e() -> str | None:
         logger.info(f"📦 Deploying {deployment_name}...")
 
         try:
-            # Resolve existing engine ID from Secret Manager using target env's project
+            # Resolve the existing engine ID directly from Secret Manager. Reading
+            # it directly (instead of via get_env_or_secret, which swallows every
+            # error to None) lets us tell a genuine first-deploy (secret absent →
+            # create) apart from a transient Secret Manager error (→ abort): a blip
+            # must never be mistaken for "no engine" and bootstrap a duplicate that
+            # orphans the canonical one.
             target_env = os.getenv("_TARGET_ENV", "dev")
             project_number = ENV_CONFIG[target_env]["project_number"]
-            os.environ.setdefault(
-                "KEN_E_ENGINE_ID", f"sm://{project_number}/ken-e-engine-id"
-            )
-
-            existing_engine_id = None
-            if get_env_or_secret:
-                existing_engine_id = get_env_or_secret("KEN_E_ENGINE_ID")
+            existing_engine_id = _resolve_existing_engine_id(project_number)
 
             if existing_engine_id:
                 existing_engine_id = existing_engine_id.strip()

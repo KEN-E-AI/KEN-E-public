@@ -23,6 +23,7 @@ import tempfile
 from pathlib import Path
 
 import vertexai
+from google.api_core import exceptions as gcp_exceptions
 from google.cloud import secretmanager
 from vertexai.preview import reasoning_engines
 
@@ -289,8 +290,16 @@ with tempfile.TemporaryDirectory() as temp_dir:
         response = sm_client.access_secret_version(request={"name": secret_path})
         existing_engine_id = response.payload.data.decode("UTF-8").strip()
         logger.info(f"Found existing engine in Secret Manager: {existing_engine_id}")
-    except Exception as e:
-        logger.info(f"No existing engine ID in Secret Manager ({e}); will create new")
+    except gcp_exceptions.NotFound:
+        # Genuine first deploy — the secret/version doesn't exist yet → create below.
+        # Any OTHER error (PermissionDenied, a transient 500/timeout) is deliberately
+        # NOT caught: it propagates and aborts the deploy rather than being mistaken
+        # for "no engine", which would bootstrap a duplicate and orphan the canonical
+        # one — the same failure mode the update path was hardened against.
+        logger.info(
+            "No strategy-supervisor-engine-id secret yet (first deploy); "
+            "will create a new engine"
+        )
 
     try:
         if existing_engine_id:
