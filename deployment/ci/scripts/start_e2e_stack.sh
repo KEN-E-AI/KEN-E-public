@@ -230,6 +230,7 @@ KENE_FF_CACHE_TTL_SECONDS=0 \
 NEO4J_MAX_TRANSACTION_RETRY_TIME=2 \
 GOOGLE_CLOUD_PROJECT_ID="test-project" \
 GOOGLE_CLOUD_PROJECT="test-project" \
+API_TEST_BYPASS_TOKEN="e2e-test-bypass-secret" \
   uv run uvicorn src.kene_api.main:app --host 127.0.0.1 --port "${API_PORT}" &
 
 cd ..

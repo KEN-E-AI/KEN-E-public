@@ -81,6 +81,12 @@ async def lifespan(app: FastAPI):
     """Manage application lifespan events."""
     # Startup
     logger.info("Starting up Kene API...")
+
+    # Safety check: the E2E test bypass must never be active in production.
+    if settings.api_test_bypass_token and os.getenv("ENVIRONMENT", "") == "production":
+        raise RuntimeError(
+            "API_TEST_BYPASS_TOKEN must not be set in production. Refusing to start."
+        )
     try:
         await neo4j_service.connect()
         logger.info("Neo4j connection established")

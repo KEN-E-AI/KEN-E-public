@@ -12,6 +12,7 @@ from google.cloud import firestore
 
 from ..auth.dependencies import get_current_user
 from ..auth.models import UserContext
+from ..auth.user_context import check_account_access
 from ..models.strategy_models import (
     StrategyDocument,
     StrategyDocumentRequest,
@@ -38,31 +39,19 @@ async def check_strategy_access(
     user: UserContext,
     required_level: str = "view"
 ) -> UserContext:
+    """Check if user has required access level for strategy documents.
+
+    Delegates account membership to the shared check_account_access helper,
+    then layers the edit-role gate on top when required_level == "edit".
     """
-    Check if user has required access level for strategy documents.
-    
-    Args:
-        account_id: Account ID to check access for
-        user: Current user context
-        required_level: Required permission level (view or edit)
-        
-    Returns:
-        User context if access granted
-        
-    Raises:
-        HTTPException: If access denied
-    """
-    # Super admins always have access
-    if user.is_super_admin:
-        return user
-    
-    # Check account-level permissions
-    if not user.has_account_access(account_id, [required_level] if required_level == "edit" else None):
+    await check_account_access(account_id, user)
+
+    if required_level == "edit" and not user.has_account_access(account_id, ["edit"]):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Insufficient permissions for {required_level} access to account {account_id}"
+            detail=f"Insufficient permissions for edit access to account {account_id}"
         )
-    
+
     return user
 
 
