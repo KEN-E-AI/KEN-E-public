@@ -103,7 +103,9 @@ class OrgAuditRecord(BaseModel):
     field_type: str | None = None  # "list" | "dict" | "other" | None
     account_ids: list[str] = []  # extracted IDs when field is a list/dict of strings
     item_count: int = 0  # total items when field_type is not a plain ID list
-    action: Literal["clean", "found", "deleted", "already_clean", "error"] = "clean"
+    action: Literal[
+        "clean", "found", "would_delete", "deleted", "already_clean", "error"
+    ] = "clean"
     error: str | None = None
 
 
@@ -265,9 +267,9 @@ def run_audit(client: Any, *, dry_run: bool, confirm_delete: bool) -> AuditSumma
             if confirm_delete:
                 record.action = "already_clean"
                 orgs_already_clean += 1
-            # audit-only mode: already clean — no output needed for clean orgs to keep output terse
+                print(record.model_dump_json())
+            # audit-only mode: clean orgs are silent — no output to keep stdout terse
             logger.debug("org %s: no accounts field — clean", org_id)
-            print(record.model_dump_json())
             continue
 
         orgs_with_accounts_field += 1
@@ -286,7 +288,7 @@ def run_audit(client: Any, *, dry_run: bool, confirm_delete: bool) -> AuditSumma
 
         # Delete-pass
         if dry_run:
-            record.action = "found"
+            record.action = "would_delete"
             logger.info("org %s: [DRY RUN] would delete accounts field", org_id)
             print(record.model_dump_json())
             continue
