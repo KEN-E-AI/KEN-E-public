@@ -310,6 +310,38 @@ function_tools:
       - "Chart this data as a bar chart"
       - "Show me a line graph of the trend"
 
+  - name: set_todo_list
+    description: Create or replace a named todo list in the session to track multi-step work across user turns. Sets the is_current flag and normalizes items.
+    category: session
+    default_global: true
+    keywords:
+      - todo
+      - list
+      - task
+      - progress
+      - checklist
+      - plan
+    estimated_tokens: 150
+    examples:
+      - "Create a todo list for the Q3 campaign build"
+      - "Track the steps for this research phase"
+
+  - name: update_todo_list
+    description: Check or uncheck a single item in an existing todo list. Optionally rename the item. Stamps completed_at on check and clears it on uncheck.
+    category: session
+    default_global: true
+    keywords:
+      - todo
+      - list
+      - task
+      - progress
+      - checklist
+      - plan
+    estimated_tokens: 150
+    examples:
+      - "Mark the email-dates step as done"
+      - "Uncheck the LinkedIn ads item"
+
 # ============================================================================
 # Placeholder for future tools (Sprint 3+)
 # ============================================================================

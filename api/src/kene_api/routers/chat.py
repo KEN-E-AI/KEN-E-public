@@ -7,7 +7,7 @@ import json
 import os
 import time
 from collections.abc import AsyncGenerator
-from contextlib import ExitStack
+from contextlib import ExitStack, nullcontext
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
@@ -42,6 +42,7 @@ from ..chat.accumulator import SessionTurnAccumulator
 from ..chat.mark_read_limiter import mark_read_limiter
 from ..chat.side_table import derive_is_agent_running, get_chat_side_table_service
 from ..chat.side_table_handlers import apply_side_table_update
+from ..chat.todos import list_todo_lists
 from ..database import get_neo4j_service
 from ..dependencies import get_firestore_client as _get_firestore_client
 from ..exceptions import ServiceUnavailableError
@@ -51,6 +52,7 @@ from ..models.chat import (
     ChatSessionSidebarItem,
     InternalSideTableUpdateRequest,
     ListChatSessionsResponse,
+    ListTodosResponse,
     MarkReadResponse,
 )
 from ..models.feature_flag_models import EvaluationContext
@@ -172,7 +174,14 @@ async def load_organization_context_from_neo4j(account_id: str) -> str | None:
     except Exception as e:
         import neo4j.exceptions as _neo4j_exc
 
-        if isinstance(e, (_neo4j_exc.ServiceUnavailable, _neo4j_exc.SessionExpired, _neo4j_exc.TransientError)):
+        if isinstance(
+            e,
+            (
+                _neo4j_exc.ServiceUnavailable,
+                _neo4j_exc.SessionExpired,
+                _neo4j_exc.TransientError,
+            ),
+        ):
             logger.error(
                 "Neo4j unreachable while loading organization context",
                 extra=log_context(
@@ -306,8 +315,12 @@ class ConversationInfo(BaseModel):
         ..., description="Number of messages in the conversation"
     )
     preview: str | None = Field(None, description="Preview of last message")
-    last_agent_started_at: datetime | None = Field(None, description="When agent last started")
-    last_agent_stopped_at: datetime | None = Field(None, description="When agent last stopped")
+    last_agent_started_at: datetime | None = Field(
+        None, description="When agent last started"
+    )
+    last_agent_stopped_at: datetime | None = Field(
+        None, description="When agent last stopped"
+    )
     last_viewed_at: datetime | None = Field(None, description="When user last viewed")
 
 
@@ -402,8 +415,12 @@ class AgentEngineClient:
         if self._agent_engine is None and self.agent_engine_id:
             try:
                 print("[AGENT_ENGINE] About to call agent_engines.get()")
-                print(f"[AGENT_ENGINE] agent_engine_id_full: {self.agent_engine_id_full}")
-                print(f"[AGENT_ENGINE] agent_engine_id (numeric): {self.agent_engine_id}")
+                print(
+                    f"[AGENT_ENGINE] agent_engine_id_full: {self.agent_engine_id_full}"
+                )
+                print(
+                    f"[AGENT_ENGINE] agent_engine_id (numeric): {self.agent_engine_id}"
+                )
                 logger.info(
                     f"Attempting to connect to Agent Engine: {self.agent_engine_id_full or self.agent_engine_id}"
                 )
@@ -613,7 +630,10 @@ class AgentEngineClient:
                                 if raw_creds
                                 else None,
                                 "client_id": os.getenv("GOOGLE_OAUTH_CLIENT_ID", ""),
-                                "client_secret": get_env_or_secret("GOOGLE_OAUTH_CLIENT_SECRET") or "",
+                                "client_secret": get_env_or_secret(
+                                    "GOOGLE_OAUTH_CLIENT_SECRET"
+                                )
+                                or "",
                                 "tenant_id": ga_creds["tenant_id"],
                                 "selected_property_ids": property_ids_to_store,
                                 "selected_properties": ga_creds.get(
@@ -782,9 +802,7 @@ class AgentEngineClient:
             self._user_sessions[f"{user_id}:{fallback_session_id}"] = conversation_info
             return fallback_session_id
 
-    async def resolve_pending_session(
-        self, user_id: str, pending_id: str
-    ) -> str:
+    async def resolve_pending_session(self, user_id: str, pending_id: str) -> str:
         """Resolve a pending session ID to a real Vertex AI session ID.
 
         Args:
@@ -1072,9 +1090,7 @@ class AgentEngineClient:
                 loop = asyncio.new_event_loop()
                 try:
                     return loop.run_until_complete(
-                        _ss.list_sessions(
-                            app_name=APP_NAME, user_id=user_id
-                        )
+                        _ss.list_sessions(app_name=APP_NAME, user_id=user_id)
                     )
                 finally:
                     loop.close()
@@ -1128,13 +1144,14 @@ class AgentEngineClient:
                             self._user_sessions[session_key] = redis_data
                             cached_info = redis_data
                     except Exception as e:
-                        logger.warning(f"Failed to load session {session_id} from Redis: {e}")
+                        logger.warning(
+                            f"Failed to load session {session_id} from Redis: {e}"
+                        )
 
                 cached_info = cached_info or {}
 
-                last_updated = (
-                    getattr(session, "update_time", None)
-                    or cached_info.get("last_updated", datetime.now(timezone.utc))
+                last_updated = getattr(session, "update_time", None) or cached_info.get(
+                    "last_updated", datetime.now(timezone.utc)
                 )
                 if isinstance(last_updated, str):
                     last_updated = datetime.fromisoformat(last_updated)
@@ -1275,7 +1292,9 @@ class AgentEngineClient:
                 timezone.utc
             )
 
-    def update_session_preview(self, user_id: str, session_id: str, preview: str) -> dict | None:
+    def update_session_preview(
+        self, user_id: str, session_id: str, preview: str
+    ) -> dict | None:
         """Update the preview for a session and return the session metadata for caching."""
         session_key = f"{user_id}:{session_id}"
         if session_key in self._user_sessions:
@@ -1579,7 +1598,9 @@ class AgentEngineClient:
                                                 and "text" in part
                                             ):
                                                 response_parts.append(part["text"])
-                                            elif isinstance(part, dict) and _is_function_event_part(part):
+                                            elif isinstance(
+                                                part, dict
+                                            ) and _is_function_event_part(part):
                                                 logger.debug(
                                                     "Skipping function_call/function_response part"
                                                 )
@@ -1594,7 +1615,9 @@ class AgentEngineClient:
                                     for part in chunk["parts"]:
                                         if isinstance(part, dict) and "text" in part:
                                             response_parts.append(part["text"])
-                                        elif isinstance(part, dict) and _is_function_event_part(part):
+                                        elif isinstance(
+                                            part, dict
+                                        ) and _is_function_event_part(part):
                                             logger.debug(
                                                 "Skipping function_call/function_response part"
                                             )
@@ -1611,14 +1634,14 @@ class AgentEngineClient:
                                             "Skipping function debug data in non-streaming response"
                                         )
                             elif isinstance(chunk, str):
-                                logger.debug(f"Processing string chunk: {chunk[:50]}...")
+                                logger.debug(
+                                    f"Processing string chunk: {chunk[:50]}..."
+                                )
 
                                 # Skip JSON-format function events (double-quoted keys)
                                 # Agent Engine may return these as JSON strings, not Python dicts
                                 if _is_function_event_json(chunk):
-                                    logger.debug(
-                                        "Skipping JSON function event data"
-                                    )
+                                    logger.debug("Skipping JSON function event data")
                                     continue
 
                                 if chunk.startswith("{'parts'") and "'text':" in chunk:
@@ -1664,7 +1687,9 @@ class AgentEngineClient:
                         full_response = "".join(response_parts).strip()
 
                         # Clean up function_call/function_response data from the final response
-                        if full_response and _contains_function_event_str(full_response):
+                        if full_response and _contains_function_event_str(
+                            full_response
+                        ):
                             logger.debug(
                                 f"Cleaning function data from response (length: {len(full_response)})"
                             )
@@ -1819,7 +1844,6 @@ class AgentEngineClient:
 
                 # Use stream_query with correct parameters for deployed agent
                 if hasattr(self.agent_engine, "stream_query"):
-
                     # Create an async generator that runs the blocking stream_query in a thread
                     import queue
                     import threading
@@ -1882,7 +1906,9 @@ class AgentEngineClient:
                                     for part in content["parts"]:
                                         if isinstance(part, dict) and "text" in part:
                                             yield part["text"]
-                                        elif isinstance(part, dict) and _is_function_event_part(part):
+                                        elif isinstance(
+                                            part, dict
+                                        ) and _is_function_event_part(part):
                                             logger.debug(
                                                 "Skipping function_call/function_response part in stream"
                                             )
@@ -1895,7 +1921,9 @@ class AgentEngineClient:
                                 for part in chunk["parts"]:
                                     if isinstance(part, dict) and "text" in part:
                                         yield part["text"]
-                                    elif isinstance(part, dict) and _is_function_event_part(part):
+                                    elif isinstance(
+                                        part, dict
+                                    ) and _is_function_event_part(part):
                                         logger.debug(
                                             "Skipping function_call/function_response part in stream"
                                         )
@@ -2214,13 +2242,17 @@ async def chat_completion(
         _attrs_cm = None
         if WEAVE_AVAILABLE:
             try:
-                _exit_stack.enter_context(weave.attributes({
-                    "account_id": request.account_id or "unknown",
-                    "session_id": request.session_id or "unknown",
-                    "user_id": user_context.user_id or "unknown",
-                    "environment": os.getenv("ENVIRONMENT", "development"),
-                    "agent": "ken_e_chatbot",
-                }))
+                _exit_stack.enter_context(
+                    weave.attributes(
+                        {
+                            "account_id": request.account_id or "unknown",
+                            "session_id": request.session_id or "unknown",
+                            "user_id": user_context.user_id or "unknown",
+                            "environment": os.getenv("ENVIRONMENT", "development"),
+                            "agent": "ken_e_chatbot",
+                        }
+                    )
+                )
             except Exception:
                 _attrs_cm = None
 
@@ -2243,7 +2275,10 @@ async def chat_completion(
         else:
             # Return single response
             try:
-                response_content, actual_session_id = await agent_client.chat_completion(
+                (
+                    response_content,
+                    actual_session_id,
+                ) = await agent_client.chat_completion(
                     messages=request.messages,
                     user_context=user_context,
                     session_id=request.session_id,
@@ -2276,15 +2311,9 @@ async def chat_completion(
                     logger.debug("Non-stream stop-stamp skipped: %s", _stamp_err)
 
             # Fire post-response writes in background (non-blocking)
-            async def _post_response_writes(
-                uid: str, sid: str, content: str
-            ) -> None:
+            async def _post_response_writes(uid: str, sid: str, content: str) -> None:
                 try:
-                    preview = (
-                        content[:100] + "..."
-                        if len(content) > 100
-                        else content
-                    )
+                    preview = content[:100] + "..." if len(content) > 100 else content
                     session_metadata = agent_client.update_session_preview(
                         uid, sid, preview
                     )
@@ -2299,9 +2328,16 @@ async def chat_completion(
                                     ttl_seconds=SESSION_METADATA_TTL_SECONDS,
                                 )
                         except Exception as _redis_err:
-                            logger.debug("Redis session-preview cache write failed: %s", _redis_err)
+                            logger.debug(
+                                "Redis session-preview cache write failed: %s",
+                                _redis_err,
+                            )
                 except Exception as _preview_err:
-                    logger.debug("Background session preview update failed for %s: %s", sid, _preview_err)
+                    logger.debug(
+                        "Background session preview update failed for %s: %s",
+                        sid,
+                        _preview_err,
+                    )
 
             task = asyncio.create_task(
                 _post_response_writes(
@@ -2543,9 +2579,15 @@ def _metadata_to_sidebar_item(m: ChatSessionMetadata) -> ChatSessionSidebarItem:
     response_model=ListChatSessionsResponse | ConversationListResponse,
 )
 async def list_conversations(
-    cursor: str | None = Query(None, max_length=512, description="Opaque cursor for pagination"),
-    category_id: str | None = Query(None, max_length=100, description="Filter by category ID"),
-    query: str | None = Query(None, max_length=200, description="Full-text search query"),
+    cursor: str | None = Query(
+        None, max_length=512, description="Opaque cursor for pagination"
+    ),
+    category_id: str | None = Query(
+        None, max_length=100, description="Filter by category ID"
+    ),
+    query: str | None = Query(
+        None, max_length=200, description="Full-text search query"
+    ),
     limit: int = Query(20, ge=1, le=100, description="Maximum results to return"),
     account_id: str | None = Query(
         None,
@@ -2658,7 +2700,9 @@ async def update_conversation(
         now = datetime.now(timezone.utc)
         return ConversationInfo(
             session_id=session_id,
-            conversation_name=cached.get("conversation_name", request.conversation_name),
+            conversation_name=cached.get(
+                "conversation_name", request.conversation_name
+            ),
             created_at=cached.get("created_at", now),
             last_updated=cached.get("last_updated", now),
             message_count=cached.get("message_count", 0),
@@ -2763,6 +2807,59 @@ async def get_conversation_history(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get conversation history",
         ) from e
+
+
+@router.get("/conversations/{session_id}/todos", response_model=ListTodosResponse)
+async def get_session_todos(
+    session_id: str = Path(..., max_length=256, pattern=r"^[\w\-]+$"),
+    user_context: UserContext = Depends(get_current_user_context),
+) -> ListTodosResponse:
+    """Return the validated todo lists from session.state["todo_lists"].
+
+    Ownership-gated: returns 404 for any session the authenticated user does
+    not own on the current account (same no-existence-leak contract as
+    mark-read). Never 500s on malformed ADK state — bad entries are dropped
+    and a warning is logged.
+
+    No rate limit (pure read, low cost per PRD §2).
+    """
+    loop = asyncio.get_running_loop()
+    svc = get_chat_side_table_service()
+    user_id = user_context.user_id
+
+    meta = await loop.run_in_executor(
+        None,
+        lambda: svc.find_session_for_user(user_id=user_id, session_id=session_id),
+    )
+    if meta is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found",
+        )
+
+    _weave_cm = nullcontext()
+    if WEAVE_AVAILABLE:
+        try:
+            _weave_cm = weave.attributes(
+                {
+                    "chat_operation": "todos.list",
+                    "session_id": session_id,
+                    "user_id": user_id,
+                    "account_id": meta.account_id,
+                }
+            )
+        except Exception:
+            pass
+
+    with _weave_cm:
+        todo_lists = await list_todo_lists(
+            session_service=agent_client.session_service,
+            app_name=APP_NAME,
+            user_id=user_id,
+            session_id=session_id,
+        )
+
+    return ListTodosResponse(todo_lists=todo_lists)
 
 
 @router.delete("/conversations/{session_id}")

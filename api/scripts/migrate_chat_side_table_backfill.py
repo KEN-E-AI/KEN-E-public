@@ -562,7 +562,21 @@ def main(argv: list[str] | None = None) -> int:
         from google.adk.sessions import VertexAiSessionService  # type: ignore[import]
 
         location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
-        session_service = VertexAiSessionService(project=project_id, location=location)
+        engine_id_full = os.getenv("KEN_E_ENGINE_ID") or os.getenv(
+            "VERTEX_AI_AGENT_ENGINE_ID"
+        )
+        if not engine_id_full:
+            print(
+                "ERROR: KEN_E_ENGINE_ID or VERTEX_AI_AGENT_ENGINE_ID must be set",
+                file=sys.stderr,
+            )
+            return EXIT_RUNTIME_ERROR
+        agent_engine_id = engine_id_full.split("/")[-1]
+        session_service = VertexAiSessionService(
+            project=project_id,
+            location=location,
+            agent_engine_id=agent_engine_id,
+        )
     except ImportError:
         print(
             "ERROR: google-adk package not installed. "

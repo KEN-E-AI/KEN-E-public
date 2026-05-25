@@ -21,6 +21,7 @@ from typing import Any
 
 from google.adk.agents import LlmAgent
 
+import app.adk.tools.todo_list_tools  # noqa: F401  # default_global registration
 from app.adk.agents.agent_factory.builder import build_agent
 
 # _load_and_merge is imported directly (not load_agent_config) so we can inject
