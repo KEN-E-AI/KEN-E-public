@@ -123,13 +123,29 @@ with `AgentEngineSandboxCodeExecutor`'s documented "state persists within a
 session" guarantee — that guarantee applies to the entire session context, not
 per-skill.
 
+**Cross-session surface (standalone probe — Vertex container-pool behavior
+unresolved).** A supplementary OS-process probe (two separate `uv run python`
+invocations sharing a host `/tmp`) confirmed that fs, tmpsub, and
+subprocess-pid vectors also leak across process boundaries when `/tmp` is
+shared. Whether separate `AgentEngineSandboxCodeExecutor` sessions within
+Vertex's container pool reuse the same container's `/tmp` is not confirmed by
+the available live captures — session-level container isolation at the Vertex
+layer could prevent cross-session `/tmp` sharing. This gap is noted in the
+severity rationale below and should be characterised before SK-PRD-02 goes to
+production.
+
 **Severity: Medium.**
 
 Rationale:
-- Scope is limited to skills **within the same specialist agent** — the
-  `SandboxPool (account_id, config_id)` key provides the right isolation
-  boundary. State leaks across skills attached to one specialist but does NOT
-  leak across specialists or accounts.
+- **Confirmed scope**: skills within the same specialist agent and the same
+  `AgentEngineSandboxCodeExecutor` session. The `SandboxPool (account_id,
+  config_id)` key is the designed per-agent isolation boundary.
+- **Unresolved scope**: cross-session `/tmp` sharing within Vertex's container
+  pool. The standalone OS-process probe confirmed fs/tmpsub/subprocess-pid
+  leak when `/tmp` is shared between processes; if Vertex reuses a container
+  across executor sessions, those vectors would leak cross-session. No
+  cross-account or cross-specialist leak was observed or is architecturally
+  possible given `SandboxPool` keying.
 - The sandbox requires `sandbox_code_executor_enabled=true` — an explicit
   admin opt-in per-agent-config (SK-PRD-04 enforces at attach-time). The
   default agent is not affected.
@@ -187,7 +203,15 @@ from this gate.
 **Note on 503 ≠ definitively-a-cap.** `503 UNAVAILABLE` is also returned for
 transient Vertex backend errors. The 5-minute interpretation is the most
 parsimonious explanation given two independent probes hit it within 1 s of
-each other; SK-7 notes this as "best-current-interpretation."
+each other; this is recorded as "best-current-interpretation" in SK-7.
+
+**Note on memory-balloon DoS (uncharacterised).** The `q4_memory_balloon.py`
+probe returned `OUTCOME_OK` with no stdout — the script completed silently or
+was killed without an observable error. Memory-only exhaustion as a DoS vector
+is not characterised by the available live captures; the ~5-min cap is
+confirmed only for CPU-bound and wall-clock-bound workloads. This gap does not
+change the Informational severity (no evidence of an exploitable indefinite
+hold), but SK-7 should document it as unresolved.
 
 **Mitigation (no action required at this gate).** SK-PRD-02 must not retry
 `execute_code` on 503 — that response means the sandbox was forcibly
@@ -219,6 +243,14 @@ every syscall at the user-space kernel boundary. Container escape via kernel
 vulnerabilities is substantially harder than with a stock Linux container. No
 user-authored script can read bundle files from the filesystem (the bundle is
 not mounted) or exfiltrate skill metadata via env vars (none are injected).
+
+**gVisor kernel version monitoring.** The sandbox runs gVisor with kernel
+string `Linux-4.19.0-gvisor`. The gVisor project publishes security advisories
+for container-escape vulnerabilities in its user-space kernel. Vertex AI
+manages the gVisor runtime and issues platform security bulletins when action
+is required. Operators have no independent remediation path — the correct
+response to a gVisor advisory is to monitor Vertex AI platform release notes
+and apply any mandatory runtime updates Vertex prescribes.
 
 **SK-PRD-03 bundle-delivery model change (correctness, not security).**
 Because `scripts/` is not filesystem-mounted inside the sandbox, SK-PRD-03
@@ -297,8 +329,13 @@ share filesystem, environment, and Python module state within a session
 documented "state persists within a session" guarantee.
 
 Isolation boundary: SandboxPool (account_id, config_id) keying prevents
-cross-account or cross-specialist leakage. Scope is limited to skills
-within the same agent config, authored by the same account admin.
+cross-account or cross-specialist leakage. Confirmed scope: skills within the
+same agent config and the same executor session.
+
+Unresolved: a standalone OS-process probe confirmed fs/tmpsub/subprocess-pid
+leak across process boundaries when /tmp is shared. Whether separate Vertex
+executor sessions share the same container /tmp (cross-session surface) is not
+confirmed by live captures. Should be characterised before SK-PRD-02 ships.
 
 Mitigation: SK-PRD-03 authoring-UI warning (already in acceptance criteria).
 No architectural change required.
@@ -307,7 +344,8 @@ No architectural change required.
 
 All findings from direct-mode harness (no LlmAgent, no hallucination surface),
 run 2026-05-25 from a credentialled workstation against spike Agent Engine
-projects/525657242938/locations/us-central1/reasoningEngines/2624457839443181568.
+projects/525657242938/locations/us-central1/
+  reasoningEngines/2624457839443181568.
 SK-33 (Done) validated the harness trustworthiness.
 
 Please acknowledge receipt. If Q3 severity warrants escalation in your view,
@@ -316,6 +354,11 @@ reply with your assessment; we will update the issue accordingly.
 Thanks,
 KEN-E Skills team
 ```
+
+> **AC #2 action for PO:** After sending the email above from `ken@ken-e.ai`,
+> post a comment on Linear issue SK-9 with the sent timestamp and Message-ID:
+> "Email sent to security@ken-e.ai at [ISO-8601 timestamp]. Message-ID:
+> [message-id]." That comment, combined with this document, completes AC #2.
 
 ---
 
