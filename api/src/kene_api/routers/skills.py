@@ -13,12 +13,12 @@ GET    /api/v1/accounts/{account_id}/skills/{skill_id}/resources/{rel_path}  —
 DELETE /api/v1/accounts/{account_id}/skills/{skill_id}                       — soft-archive (SK-19)
 
 Auth:
-  This router ships a placeholder that asserts the caller is a member of
-  ``account_id`` via ``user.has_account_access(account_id)``. The full
-  two-layer check (account-access dependency + owner.account_id assertion)
-  is added in SK-20 (``check_account_access`` helper + 404 isolation).
-  TODO SK-20: replace ``_require_account_membership`` below with the canonical
-  ``check_account_access`` helper once it lands in SK-20.
+  Layer 1 — ``check_account_access`` (router-level dependency): rejects
+  non-members of ``account_id`` with 403 before any handler runs.
+  Layer 2 — handler-side assertion: if a Firestore doc exists at the
+  account's path but ``owner.account_id`` differs (inconsistent document),
+  the handler returns 403 ``owner_mismatch``.  Natural cross-account
+  absence (doc simply not stored at the path) continues to return 404.
 
 Tracing:
   Deferred to SK-21. No Weave spans emitted here.
@@ -51,7 +51,7 @@ from google.cloud import firestore
 from pydantic import BaseModel
 
 from ..auth.models import UserContext
-from ..auth.user_context import get_current_user_context
+from ..auth.user_context import check_account_access, get_current_user_context
 from ..dependencies import get_firestore
 from ..models.skill_models import (
     MAX_BUNDLE_FILES,
@@ -110,26 +110,6 @@ def _decode_cursor(token: str) -> tuple[datetime, str] | None:
         return updated_at, skill_id
     except Exception:
         return None
-
-
-# ---------------------------------------------------------------------------
-# Auth placeholder — replaced by check_account_access in SK-20
-# ---------------------------------------------------------------------------
-
-
-def _require_account_membership(
-    account_id: str,
-    user: UserContext = Depends(get_current_user_context),
-) -> UserContext:
-    """403 if the caller is not a member of ``account_id``.
-
-    TODO SK-20: swap this for the canonical ``check_account_access`` dependency
-    which also adds the owner.account_id == path.account_id assertion (404 on
-    cross-account doc inconsistency) and per-endpoint role gating.
-    """
-    if not user.has_account_access(account_id):
-        raise HTTPException(status_code=403, detail="forbidden")
-    return user
 
 
 # ---------------------------------------------------------------------------
@@ -344,6 +324,7 @@ def _skill_from_dict(d: dict) -> Skill:
 router = APIRouter(
     prefix="/api/v1/accounts/{account_id}/skills",
     tags=["skills"],
+    dependencies=[Depends(check_account_access)],
 )
 
 
@@ -353,7 +334,6 @@ async def validate_skill_bundle(
     account_id: str,
     skill_md: UploadFile = File(...),
     files: list[UploadFile] | None = File(None),
-    _user: UserContext = Depends(_require_account_membership),
 ) -> SkillValidationResponse:
     """Dry-run validation of a skill bundle. Creates no Firestore or GCS state.
 
@@ -397,7 +377,6 @@ async def get_skill_content(
     skill_id: str,
     version: int | None = Query(default=None, ge=1),
     include_archived: bool = Query(default=False),
-    _user: UserContext = Depends(_require_account_membership),
     db: firestore.Client = Depends(get_firestore),
     storage: SkillStorageService = Depends(get_skill_storage_service),
 ) -> Response:
@@ -416,13 +395,15 @@ async def get_skill_content(
             return "skill_not_found", 0
         skill = _skill_from_dict(snap.to_dict())
         if skill.owner.account_id != account_id:
-            return "skill_not_found", 0
+            return "owner_mismatch", 0
         if skill.status == SkillStatus.ARCHIVED and not include_archived:
             return "skill_not_found", 0
         return None, skill.current_version
 
     error, current_version = await asyncio.to_thread(_read)
-    if error is not None:
+    if error == "owner_mismatch":
+        raise HTTPException(status_code=403, detail="owner_mismatch")
+    elif error is not None:
         raise HTTPException(status_code=404, detail=error)
     version_to_read = version if version is not None else current_version
 
@@ -448,7 +429,6 @@ async def get_skill_resource(
     rel_path: str,
     version: int | None = Query(default=None, ge=1),
     include_archived: bool = Query(default=False),
-    _user: UserContext = Depends(_require_account_membership),
     db: firestore.Client = Depends(get_firestore),
     storage: SkillStorageService = Depends(get_skill_storage_service),
 ) -> Response:
@@ -474,13 +454,15 @@ async def get_skill_resource(
             return "skill_not_found", 0
         skill = _skill_from_dict(snap.to_dict())
         if skill.owner.account_id != account_id:
-            return "skill_not_found", 0
+            return "owner_mismatch", 0
         if skill.status == SkillStatus.ARCHIVED and not include_archived:
             return "skill_not_found", 0
         return None, skill.current_version
 
     error, current_version = await asyncio.to_thread(_read)
-    if error is not None:
+    if error == "owner_mismatch":
+        raise HTTPException(status_code=403, detail="owner_mismatch")
+    elif error is not None:
         raise HTTPException(status_code=404, detail=error)
     version_to_read = version if version is not None else current_version
 
@@ -503,7 +485,6 @@ async def get_skill(
     account_id: str,
     skill_id: str,
     include_archived: bool = Query(default=False),
-    _user: UserContext = Depends(_require_account_membership),
     db: firestore.Client = Depends(get_firestore),
 ) -> Skill:
     """Return the Skill metadata document.
@@ -520,13 +501,15 @@ async def get_skill(
             return "skill_not_found", None
         skill = _skill_from_dict(snap.to_dict())
         if skill.owner.account_id != account_id:
-            return "skill_not_found", None
+            return "owner_mismatch", None
         if skill.status == SkillStatus.ARCHIVED and not include_archived:
             return "skill_not_found", None
         return None, skill
 
     error, skill = await asyncio.to_thread(_read)
-    if error is not None:
+    if error == "owner_mismatch":
+        raise HTTPException(status_code=403, detail="owner_mismatch")
+    elif error is not None:
         raise HTTPException(status_code=404, detail=error)
     assert skill is not None
     return skill
@@ -537,7 +520,7 @@ async def get_skill(
 async def delete_skill(
     account_id: str,
     skill_id: str,
-    user: UserContext = Depends(_require_account_membership),
+    user: UserContext = Depends(get_current_user_context),
     db: firestore.Client = Depends(get_firestore),
     storage: SkillStorageService = Depends(get_skill_storage_service),
 ) -> None:
@@ -560,7 +543,7 @@ async def delete_skill(
             return "skill_not_found"
         skill = _skill_from_dict(snap.to_dict())
         if skill.owner.account_id != account_id:
-            return "skill_not_found"
+            return "owner_mismatch"
         if skill.status == SkillStatus.ARCHIVED:
             return "skill_not_found"
         _skill_doc_ref(db, account_id, skill_id).update(
@@ -573,7 +556,9 @@ async def delete_skill(
         return None
 
     error = await asyncio.to_thread(_archive)
-    if error is not None:
+    if error == "owner_mismatch":
+        raise HTTPException(status_code=403, detail="owner_mismatch")
+    elif error is not None:
         raise HTTPException(status_code=404, detail=error)
 
     try:
@@ -594,7 +579,7 @@ async def create_skill(
     skill_md: UploadFile = File(...),
     files: list[UploadFile] = File(default_factory=list),
     name: str = Form(..., max_length=64),
-    user: UserContext = Depends(_require_account_membership),
+    user: UserContext = Depends(get_current_user_context),
     db: firestore.Client = Depends(get_firestore),
     storage: SkillStorageService = Depends(get_skill_storage_service),
 ) -> Skill:
@@ -672,7 +657,6 @@ async def list_skills(
     cursor: str | None = Query(default=None),
     page_size: int = Query(default=50, ge=1, le=100),
     include_archived: bool = Query(default=False),
-    user: UserContext = Depends(_require_account_membership),
     db: firestore.Client = Depends(get_firestore),
 ) -> ListSkillsResponse:
     """List account's skills with cursor pagination.
@@ -753,7 +737,7 @@ async def update_skill(
     files: list[UploadFile] = File(default_factory=list),
     name: str = Form(...),
     commit_message: str | None = Form(default=None, max_length=1000),
-    user: UserContext = Depends(_require_account_membership),
+    user: UserContext = Depends(get_current_user_context),
     db: firestore.Client = Depends(get_firestore),
     storage: SkillStorageService = Depends(get_skill_storage_service),
 ) -> Skill:
@@ -804,7 +788,7 @@ async def update_skill(
 
     # Ownership assertion: path account_id must match stored owner.
     if existing_skill.owner.account_id != account_id:
-        raise HTTPException(status_code=404, detail="skill_not_found")
+        raise HTTPException(status_code=403, detail="owner_mismatch")
 
     # Step 3: name uniqueness for renames.  PRD §7 "name is mutable … subject
     # to the same regex + uniqueness rules."
