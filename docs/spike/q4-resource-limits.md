@@ -162,6 +162,16 @@ lifetime cap, not two independent caps.** SK-PRD-02 should model this as
 "one 5-minute budget per `execute_code` call" rather than "5 min CPU AND
 5 min wall-clock as independent budgets."
 
+> [!NOTE]
+> **503 ≠ definitely-a-cap caveat.** Vertex's `execute_code` API also
+> returns `503 UNAVAILABLE` for transient backend errors (load shedding,
+> region capacity, internal restarts). The 5-minute interpretation is
+> the most parsimonious explanation given two independent probes (CPU
+> and wall-clock) hit it within 1 s of each other, but a third probe run
+> a day later that produces the same elapsed time would be the cleanest
+> confirmation. SK-7 should note this as "best-current-interpretation,"
+> not "validated against a known SLA."
+
 ### Concurrent-sandbox observation — RETRACTED
 
 > An earlier draft of this fragment claimed Vertex had a "low

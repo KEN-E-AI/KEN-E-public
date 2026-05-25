@@ -49,6 +49,7 @@ import re
 import socket
 import sys
 import traceback
+import urllib.error  # explicit import for clarity (URLError caught below)
 import urllib.request
 
 # ---------------------------------------------------------------------------

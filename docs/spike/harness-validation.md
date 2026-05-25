@@ -25,9 +25,11 @@ every probe had hit a credential gap on the Dev Team VM
 The review proposed Path A: have the PO (who holds the right credentials) run
 the four pending probes from their workstation before merge.
 
-The smoke-test prereq in the runbook (`docs/spike/po-probe-runbook.md`) is to
-run `scripts/spike/skills/hello.py` through the harness against the real
-sandbox. That single test surfaced everything below.
+The smoke-test prereq (running `scripts/spike/skills/hello.py` through the
+harness against the real sandbox) is what surfaced everything below.
+The original runbook (`docs/spike/po-probe-runbook.md`) was deleted after
+the Wave 2 captures completed per its own footer ("Delete this file when
+Wave 2 is complete").
 
 All three runs below executed against the same live Agent Engine, with the
 same workstation credentials (`ken@ken-e.ai`, ADC-authenticated, project

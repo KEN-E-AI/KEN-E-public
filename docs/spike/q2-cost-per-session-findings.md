@@ -3,28 +3,27 @@
      Update the placeholder tables with real data once execution unblocks. -->
 
 > [!NOTE]
-> **Live N=30 capture in progress (2026-05-25).** Wave 2.5 harness rework
-> (SK-33) is merged; the orchestrator now runs against a trustworthy
-> direct-mode harness. Timing data (cohort p50/p95, per-session elapsed)
-> will land in this fragment as the re-run completes. **Vertex AI billing
-> export numbers still require the ≥36 h settlement wait** (the §a/§e
-> methodology is unchanged) — those land in a follow-up commit on or
-> after 2026-05-27.
+> **Timing capture complete (2026-05-25); billing reconciliation pending
+> 2026-05-27 settlement (tracked in SK-34).** Wave 2.5 harness rework
+> (SK-33) merged; N=30 cold+warm cohort orchestrator run completed with
+> 60/60 sessions OK. Cohort timing tables in `### Result (table)` below
+> are populated with live data. **Vertex AI billing export still requires
+> the ≥36 h Vertex settlement window** before SKU-level cost numbers are
+> pullable; the Line-item Split, Threshold Check, and billing-derived
+> Implication subsections remain placeholder until then.
 >
-> Two prior orchestrator attempts (the same day, earlier) failed at
-> session 2 of 60 with `[harness] Script not found:
-> .../q2_cost_per_session.py`. Diagnosed as a branch-switching artifact:
-> the orchestrator `subprocess.run`s the harness with a filesystem-relative
-> path, and the main working tree was switched from `spike/...` to
-> `integration/...` between sessions, removing the file from the
-> subprocess's filesystem view. Fixed by running the re-run from a `git
-> worktree` checkout of `spike/agent-engine-sandbox` at
-> `/tmp/kene-spike/`, isolated from the main repo's branch switches.
+> Two prior orchestrator attempts on the same day failed at session 2 of
+> 60 with `[harness] Script not found: .../q2_cost_per_session.py` —
+> diagnosed as a branch-switching artifact (orchestrator
+> subprocess-spawns with filesystem-relative paths; the working tree was
+> switched mid-run). Resolved by running the successful re-run from a
+> `git worktree` of `spike/agent-engine-sandbox` at `/tmp/kene-spike/`,
+> isolated from the main repo's branch switches. Methodology lesson
+> captured in SK-7's Linear description.
 >
-> **Remove this banner only after** (1) the re-run completes with the
-> error rate under threshold AND (2) the billing settlement has produced
-> Vertex AI SKU-level numbers AND (3) every `*[Populate after execution]*`
-> placeholder is replaced with real values.
+> **Remove this banner only after** SK-34 lands the billing reconciliation
+> (Line-item Split, Threshold Check, `_MAX_ENTRIES` recommendation, rate-limit
+> recommendation).
 
 ## Question 2 — Cost per session
 

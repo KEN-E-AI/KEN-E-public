@@ -11,14 +11,12 @@
 > implications are preserved in §"Original research-based implications
 > (pre-capture, now inverted)" for SK-7/SK-8 traceability.
 
-> **Status:** Test section and Mitigation Matrix are complete. The `### Result`
-> section requires PO to run the live sandbox probe from a workstation with
-> `roles/aiplatform.user` on `ken-e-dev` (Dev Team VM has 403 PERMISSION_DENIED
-> — same credential gap as SK-1 AC #4). See "Live execution instructions" below.
->
-> SK-7 will absorb this file verbatim under `## Question 1 — Network egress` in
-> `docs/spike-agent-engine-sandbox-findings.md`. Replace the `[PENDING ...]`
-> markers with observed output before SK-7 begins.
+> **SK-7 absorption note:** This file will be pasted verbatim under
+> `## Question 1 — Network egress` in
+> `docs/spike-agent-engine-sandbox-findings.md`. The `### Result` section
+> below holds the live 2026-05-25 capture; the "Live execution
+> instructions" subsection lower in the file is preserved for
+> reproducibility but is no longer load-bearing (the run has happened).
 
 ---
 
@@ -37,6 +35,17 @@
 | B | `https` | `https://httpbin.org/get` | `urllib.request.urlopen()` — tests full HTTPS stack |
 | C | `doh` | `https://cloudflare-dns.com/dns-query?name=example.com&type=A` | DoH (port 443, `application/dns-json`) — tests whether HTTPS allow-list bypasses a DNS block |
 | D | `tcp_raw` | `1.1.1.1:53` | `socket.create_connection()` — tests unrestricted TCP to non-HTTP port |
+
+> **Follow-up note (PR #636 review).** Vectors B and C use third-party
+> public endpoints (`httpbin.org`, `cloudflare-dns.com`). If those
+> services are down at probe time, the harness would report `blocked`
+> false-positively. The 4/4 BLOCKED result below is consistent with a
+> Vertex network-layer block (all four vectors fail at DNS/routing,
+> including the `1.1.1.1` raw-TCP probe which does NOT route through
+> httpbin), so the live finding holds — but a future re-run for Wave 2.5
+> or a successor probe should swap httpbin for an internal echo endpoint
+> in `ken-e-dev` to remove the dependency. Captured as a methodology
+> follow-up; not load-bearing on this run's findings.
 
 Each probe prints one JSON line: `{"vector": "...", "target": "...", "outcome": "allowed|blocked|partial|error", "details": "..."}` then a summary line.
 
