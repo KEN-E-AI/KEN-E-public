@@ -1732,6 +1732,12 @@ class _SpanRecorder:
         yield
 
     def all_attrs(self) -> dict:
+        """Merge all captured attrs_calls dicts into one.
+
+        Last-write wins if the same key appears in multiple calls. Each request
+        path calls _maybe_weave_attrs exactly once, so key collisions do not
+        occur in the current test suite.
+        """
         merged: dict = {}
         for d in self.attrs_calls:
             merged.update(d)

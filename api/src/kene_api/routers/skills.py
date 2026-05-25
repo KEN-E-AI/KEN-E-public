@@ -38,7 +38,7 @@ import base64
 import json
 import logging
 from collections.abc import Callable
-from contextlib import nullcontext
+from contextlib import AbstractContextManager, nullcontext
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -86,7 +86,7 @@ logger = logging.getLogger(__name__)
 try:
     import weave
 
-    from app.utils.weave_observability import WEAVE_AVAILABLE
+    WEAVE_AVAILABLE = True
 
     def _skills_safe_op(name: str) -> Callable:  # type: ignore[misc]
         def _filter(inputs: dict[str, object]) -> dict[str, object]:
@@ -375,13 +375,13 @@ def _skill_from_dict(d: dict) -> Skill:
 # ---------------------------------------------------------------------------
 
 
-def _maybe_weave_attrs(attrs: dict[str, object]):
+def _maybe_weave_attrs(attrs: dict[str, object]) -> AbstractContextManager[None]:
     """Return ``weave.attributes(attrs)`` when Weave is available, else a no-op context manager."""
     if WEAVE_AVAILABLE and weave is not None:
         try:
             return weave.attributes(attrs)
         except Exception as exc:
-            logger.debug("weave.attributes failed: %s", exc)
+            logger.warning("weave.attributes failed: %s", exc)
     return nullcontext()
 
 
