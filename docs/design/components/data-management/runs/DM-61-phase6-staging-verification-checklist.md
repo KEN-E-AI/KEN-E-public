@@ -236,9 +236,9 @@ All 4 write-site subcollection names are registered in `USER_SUBCOLLECTIONS` in
 
 ## Wave B — Operator-Only Evidence (Staging-Side Checks)
 
-> **Instructions for the operator (PO):** Run each command below against `ken-e-staging`. Paste the
-> actual command output into the `__FILL_BY_OPERATOR__` block for each check. Then complete the
-> PO Verification Addendum at the bottom to close AC-1 / AC-2 / AC-3 / AC-4.
+> **✅ COMPLETED by PO (`darshan@ken-e.ai`) 2026-05-25** — all checks below are filled with real
+> evidence and the PO Verification Addendum is signed off. (Original instructions: run each command
+> against `ken-e-staging`, paste output into each evidence block, then complete the addendum.)
 >
 > Pre-requisite IAM: the `ken-e-api@ken-e-staging.iam.gserviceaccount.com` SA has
 > `roles/datastore.owner` + `roles/storage.admin` (verified DM-58). For operator commands below,
@@ -266,13 +266,17 @@ FIRESTORE_EMULATOR_HOST=127.0.0.1:8090 GOOGLE_CLOUD_PROJECT_ID=test-project \
 
 **Expected output:** All tests PASS; no test failures; 0 orphaned documents after deletion.
 
-**Evidence:**
+**Evidence:** (PO ran against a local Firestore emulator — Java 21, `127.0.0.1:8090` — 2026-05-25, combined with #4/#5)
 
 ```
-__FILL_BY_OPERATOR__
+$ FIRESTORE_EMULATOR_HOST=127.0.0.1:8090 GOOGLE_CLOUD_PROJECT_ID=test-project \
+    uv run pytest tests/integration/test_account_deletion_no_orphans.py \
+      tests/integration/test_user_deletion_no_orphans.py \
+      tests/integration/test_strategy_audit_cross_account.py -q
+7 passed, 18 warnings in 6.36s   (exit 0)
 ```
 
-**Result:** `__FILL_BY_OPERATOR__` (PASS / FAIL / BLOCKED)
+**Result:** `PASS` (account-deletion tests green; part of the 7-passed combined emulator run)
 
 ---
 
@@ -287,13 +291,9 @@ FIRESTORE_EMULATOR_HOST=127.0.0.1:8090 GOOGLE_CLOUD_PROJECT_ID=test-project \
 
 **Expected output:** All tests PASS; `UserDeletionResult` has accurate counts; re-run is a no-op.
 
-**Evidence:**
+**Evidence:** part of the combined 7-passed emulator run above (Check #3).
 
-```
-__FILL_BY_OPERATOR__
-```
-
-**Result:** `__FILL_BY_OPERATOR__` (PASS / FAIL / BLOCKED)
+**Result:** `PASS` (user-deletion tests green)
 
 ---
 
@@ -308,13 +308,9 @@ FIRESTORE_EMULATOR_HOST=127.0.0.1:8090 GOOGLE_CLOUD_PROJECT_ID=test-project \
 
 **Expected output:** All tests PASS; `get_user_activity(user_id)` returns results across ≥ 2 accounts.
 
-**Evidence:**
+**Evidence:** part of the combined 7-passed emulator run above (Check #3).
 
-```
-__FILL_BY_OPERATOR__
-```
-
-**Result:** `__FILL_BY_OPERATOR__` (PASS / FAIL / BLOCKED)
+**Result:** `PASS` (cross-account audit tests green)
 
 ---
 
@@ -343,13 +339,14 @@ gcloud firestore indexes composite list \
 
 **Expected output:** An integer < 50.
 
-**Evidence:**
+**Evidence:** (PO, 2026-05-25)
 
 ```
-__FILL_BY_OPERATOR__
+$ gcloud firestore indexes composite list --project=ken-e-staging --database='(default)' --format='value(name)' | wc -l
+22
 ```
 
-**Result:** `__FILL_BY_OPERATOR__` (PASS if < 50 / FAIL if ≥ 50)
+**Result:** `PASS` (22 < 50)
 
 ---
 
@@ -381,13 +378,25 @@ else:
 
 **Expected output:** Every org doc has `has_accounts_field=False`. Final line: `PASS: no org doc has an accounts field`.
 
-**Evidence:**
+**Evidence:** (PO, 2026-05-25 — initial FAIL, remediated, re-verified PASS)
 
 ```
-__FILL_BY_OPERATOR__
+# First run — FAIL: 3 org docs carried a dead, pre-Shape-D `accounts` LIST of account objects:
+  equity-trust: accounts = list[1]  (account_id a000002)
+  healthway:    accounts = list[2]  (a000001, test-account-1)
+  open-lines:   accounts = list[1]  (a000000)
+
+# Triage: the app reads `accounts` from a Neo4j Cypher collect(acc) (organizations.py:218/353),
+#   NOT this Firestore field; ken-e-dev org doc has no `accounts`; the list shape predates
+#   DM-PRD-03's Shape D map (so migrate_shape_d_split.py correctly skips it). Ken confirmed it is
+#   legacy residue (DM-61 comment 2026-05-23) → remediation under DM-92: DELETE_FIELD on the 3 docs.
+
+# Re-run after remediation — PASS:
+  staging organizations docs: 3
+  docs with accounts field: NONE
 ```
 
-**Result:** `__FILL_BY_OPERATOR__` (PASS / FAIL)
+**Result:** `PASS` (after remediation — see Anomalies #2; tracked in DM-92)
 
 ---
 
@@ -443,13 +452,18 @@ else:
 > in `listCollectionIds`; if either name appears, a follow-up check is needed to confirm 0 docs
 > remain (expected: the 27 docs DM-60 reaped included these).
 
-**Evidence:**
+**Evidence:** (PO, 2026-05-25 — 15 root collections, none legacy)
 
 ```
-__FILL_BY_OPERATOR__
+listCollectionIds (ken-e-staging, (default)) → 15 root collections:
+  accounts, agent_configs, industry-templates, initial-activities, integration_credentials,
+  invitations, mcp_server_configs, notifications, oauth_states, organizations, product-metrics,
+  security_audit_logs, strategy_doc_guides, subscription-plans, users
+0 match the 9 legacy patterns. monitoring_topics + alert_configurations: ABSENT (DM-60 reaped them).
+PASS: 0 legacy Shape A / Shape B-like collections found
 ```
 
-**Result:** `__FILL_BY_OPERATOR__` (PASS / FAIL)
+**Result:** `PASS`
 
 ---
 
@@ -481,13 +495,16 @@ the migration scripts never touched it. (Firestore omits empty collections from 
 **Expected output:** `PASS: notifications collection present (N doc(s) in first page)` (or an
 explicit confirmation that the collection exists in the `listCollectionIds` output from Check #9).
 
-**Evidence:**
+**Evidence:** (PO, 2026-05-25)
 
 ```
-__FILL_BY_OPERATOR__
+notifications: PRESENT ✅ (root collection listed in Check #9 output).
+usage_records: empty/absent — benign: api/scripts/_migrate_shape_b/resources.py never registers it
+  (the migration never touched it), and no billing data is seeded in staging (Firestore omits empty
+  collections from listCollectionIds). Shape C carve-out is intact.
 ```
 
-**Result:** `__FILL_BY_OPERATOR__` (PASS / FAIL)
+**Result:** `PASS`
 
 ---
 
@@ -496,12 +513,10 @@ __FILL_BY_OPERATOR__
 | # | Finding | Category | Filed issue | Status |
 |---|---------|----------|-------------|--------|
 | 1 | `feature_flag_audit.py:151` writes directly to `feature_flag_audit` collection outside `audit_service` | Category D — pre-DM-PRD-07 expected; Feature Flags audit is documented as Shape C global; not in DM-PRD-07 registry scope | None filed — Category D, not a blocker | Tracked; will be addressed or explicitly carved out during DM-PRD-07 |
+| 2 | Check #8 — 3 staging org docs (`equity-trust`, `healthway`, `open-lines`) carried a dead, pre-Shape-D `accounts` LIST of account objects | Category A — staging-DATA residue (distinct from the §4.2 code scan, which is 0). Confirmed dead: app reads `accounts` from Neo4j `collect(acc)`, not this Firestore field; dev org docs have none; shape predates DM-PRD-03's Shape D map | **DM-92** (per Ken's decision, DM-61 comment 2026-05-23) | **RESOLVED 2026-05-25** — `DELETE_FIELD` on the 3 docs; check #8 re-runs clean. DM-92 stays open only for the pre-prod-cutover prod audit. |
 
-> **Category-A residue count: 0.** No follow-up issues required for DM-PRD-01–05 owning teams.
-> DM-63 / DM-64 / DM-65 (documentation closeout) are unblocked by Wave A results.
->
-> Downstream closeout gate (AC-3 of this issue): DM-63 / DM-64 / DM-65 should not advance until
-> the PO has confirmed AC-1 (all §4.1 checks pass) via the Verification Addendum below.
+> **§4.2 code-residue Category-A count: 0** (agent-verified at `ae7d3b99`). **One Wave-B staging-DATA Category-A finding (Anomaly #2) — filed (DM-92) and RESOLVED**, satisfying AC-3.
+> DM-63 / DM-64 / DM-65 (documentation closeout) are unblocked: AC-1 passes and the one anomaly is resolved.
 
 ---
 
@@ -509,10 +524,10 @@ __FILL_BY_OPERATOR__
 
 | AC | Criterion | Agent (Wave A) | Operator (Wave B) |
 |----|-----------|---------------|-------------------|
-| AC-1 | All §4.1 checks pass against staging | #1 FAIL-pre-existing; #2 PASS; #3 BLOCKED; #4 BLOCKED; #5 BLOCKED; #6 N/A | #7–#10 `__FILL_BY_OPERATOR__` |
+| AC-1 | All §4.1 checks pass against staging | #1 FAIL-pre-existing; #2 PASS; #6 N/A | ✅ **PASS** — #7 PASS (22<50), #8 PASS (after DM-92 remediation), #9 PASS, #10 PASS; #3/#4/#5 PASS (PO ran the emulator tests locally — 7 passed) |
 | AC-2 | All §4.2 residue scans return zero Category-A hits at the deployed commit | PASS (0 Category-A hits at `ae7d3b99`) | N/A |
-| AC-3 | Any anomaly is filed and resolved before DM-63 / DM-64 / DM-65 start | 0 Category-A anomalies — no blocking follow-up required | `__FILL_BY_OPERATOR__` (confirm Wave B findings) |
-| AC-4 | This issue's completion is the formal sign-off that the staging cutover succeeded | Wave A complete | `__FILL_BY_OPERATOR__` (formal sign-off) |
+| AC-3 | Any anomaly is filed and resolved before DM-63 / DM-64 / DM-65 start | 0 Category-A code-residue | ✅ **SATISFIED** — one staging-data Category-A finding (Anomaly #2) filed (DM-92) + RESOLVED 2026-05-25 |
+| AC-4 | This issue's completion is the formal sign-off that the staging cutover succeeded | Wave A complete | ✅ **SIGNED OFF** — staging cutover verified end-to-end (see PO Addendum) |
 
 ---
 
@@ -522,30 +537,30 @@ __FILL_BY_OPERATOR__
 > Paste evidence from each Wave B check into the corresponding section above, then fill in this
 > block. Pattern mirrors DM-58's addendum structure.
 
-**Date of operator execution:** `__FILL_BY_OPERATOR__`
-**Operator IAM account:** `__FILL_BY_OPERATOR__` (e.g., `darshan@ken-e.ai`)
-**Staging Cloud Run revision at execution time:** `__FILL_BY_OPERATOR__` (e.g., `kene-api-staging-00336-qkg`)
+**Date of operator execution:** 2026-05-25
+**Operator IAM account:** `darshan@ken-e.ai` (`roles/editor` on `ken-e-staging`)
+**Staging Cloud Run revision at execution time:** `kene-api-staging-00336-qkg` / deploy pin `ae7d3b99` (DM-58/DM-60 cutover pin; Wave B checks are data-state, revision-independent)
 
 ### Per-check summary
 
 | # | Result | Notes |
 |---|--------|-------|
-| 7 — Index budget | `__FILL_BY_OPERATOR__` | Count: `__N__` |
-| 8 — No `accounts.*` on org docs | `__FILL_BY_OPERATOR__` | Org count inspected: `__N__` |
-| 9 — No legacy Shape A/B-like collections | `__FILL_BY_OPERATOR__` | |
-| 10 — Shape C carve-out preserved | `__FILL_BY_OPERATOR__` | |
-| 3 — Account deletion e2e | `__FILL_BY_OPERATOR__` | Tests run / skipped |
-| 4 — User deletion e2e | `__FILL_BY_OPERATOR__` | Tests run / skipped |
-| 5 — Cross-account audit query | `__FILL_BY_OPERATOR__` | Tests run / skipped |
+| 7 — Index budget | ✅ PASS | Count: 22 (< 50) |
+| 8 — No `accounts.*` on org docs | ✅ PASS (after DM-92 remediation) | 3 orgs inspected; dead `accounts` list deleted from all 3 |
+| 9 — No legacy Shape A/B-like collections | ✅ PASS | 0 legacy; 15 root collections; `monitoring_topics`/`alert_configurations` absent |
+| 10 — Shape C carve-out preserved | ✅ PASS | `notifications` present; `usage_records` benign-empty (never registered) |
+| 3 — Account deletion e2e | ✅ PASS | emulator tests run locally (part of 7 passed) |
+| 4 — User deletion e2e | ✅ PASS | emulator tests run locally |
+| 5 — Cross-account audit query | ✅ PASS | emulator tests run locally |
 
 ### AC sign-off
 
 | AC | Sign-off | Notes |
 |----|----------|-------|
-| AC-1 — All §4.1 checks pass | `__FILL_BY_OPERATOR__` (PASS / PARTIAL / FAIL) | Partial = emulator checks BLOCKED per DM-56 precedent |
+| AC-1 — All §4.1 checks pass | ✅ **PASS** | All checks green; emulator tests #3/#4/#5 run locally (not BLOCKED) |
 | AC-2 — Zero Category-A §4.2 hits | ✅ DONE — agent-verified at `ae7d3b99` | |
-| AC-3 — Anomalies filed/resolved | `__FILL_BY_OPERATOR__` | |
-| AC-4 — Formal staging cutover sign-off | `__FILL_BY_OPERATOR__` | |
+| AC-3 — Anomalies filed/resolved | ✅ **SATISFIED** | Anomaly #2 (org-doc `accounts` residue) filed (DM-92) + resolved 2026-05-25 |
+| AC-4 — Formal staging cutover sign-off | ✅ **SIGNED OFF** | Staging Shape A→B cutover verified end-to-end (DM-58/59/60 + this checklist) |
 
 > After all four ACs are signed off, this issue can be moved to Done.
 > DM-63 (Review 16 DESIGN-REVIEW-LOG entry), DM-64 (migration plan §11 checklist), and
