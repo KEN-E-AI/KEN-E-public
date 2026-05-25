@@ -160,10 +160,14 @@ async def _fire_integrations_hook(
         await _on_user_removed(account_id=account_id, user_id=user_id)
         result.integrations_hook_fired += 1
     except Exception as exc:
-        logger.exception(
-            "[user_deletion] on_user_removed failed account_id=%s user_id=%s",
-            account_id,
-            user_id,
+        logger.error(
+            "[user_deletion] on_user_removed failed",
+            extra={
+                "account_id": account_id,
+                "user_id": user_id,
+                "error_type": type(exc).__name__,
+                "error_msg": str(exc),
+            },
         )
         result.errors.append(f"integrations_hook[{account_id}]: {exc}")
 
@@ -183,9 +187,13 @@ async def _delete_members(
             await asyncio.to_thread(ref.delete)
             result.member_rows_deleted += 1
         except Exception as exc:
-            logger.exception(
-                "[user_deletion] failed to delete member row path=%s",
-                ref.path,
+            logger.error(
+                "[user_deletion] failed to delete member row",
+                extra={
+                    "path": ref.path,
+                    "error_type": type(exc).__name__,
+                    "error_msg": str(exc),
+                },
             )
             result.errors.append(f"member_delete[{ref.path}]: {exc}")
 
@@ -206,8 +214,13 @@ async def _purge_user_doc(
         await asyncio.to_thread(db.recursive_delete, user_ref)
         result.user_doc_deleted = True
     except Exception as exc:
-        logger.exception(
-            "[user_deletion] recursive_delete failed for users/%s", user_id
+        logger.error(
+            "[user_deletion] recursive_delete failed",
+            extra={
+                "user_id": user_id,
+                "error_type": type(exc).__name__,
+                "error_msg": str(exc),
+            },
         )
         result.errors.append(f"user_doc_purge: {exc}")
 
@@ -246,8 +259,13 @@ async def _purge_gcs(
             await delete_fn(prefix)
             result.gcs_prefixes_purged += 1
         except Exception as exc:
-            logger.exception(
-                "[user_deletion] GCS prefix purge failed prefix=%s", prefix
+            logger.error(
+                "[user_deletion] GCS prefix purge failed",
+                extra={
+                    "prefix": prefix,
+                    "error_type": type(exc).__name__,
+                    "error_msg": str(exc),
+                },
             )
             result.errors.append(f"gcs_purge[{prefix}]: {exc}")
 
@@ -349,8 +367,13 @@ async def delete_user_data(
             len(account_refs),
         )
     except Exception as exc:
-        logger.exception(
-            "[user_deletion] step 1:discover_members failed user_id=%s", user_id
+        logger.error(
+            "[user_deletion] step 1:discover_members failed",
+            extra={
+                "user_id": user_id,
+                "error_type": type(exc).__name__,
+                "error_msg": str(exc),
+            },
         )
         result.errors.append(f"discover_members: {exc}")
         logger.warning(

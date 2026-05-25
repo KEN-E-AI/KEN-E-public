@@ -149,11 +149,11 @@ async def require_super_admin(
         HTTPException: 403 if the user is not a super admin
     """
     if not user.is_super_admin:
-        logger.warning(
-            "super-admin gate denied user_id=%s email=%r",
-            user.user_id,
-            user.email,
-        )
+        # Log user_id only — email is PII and this gate fires on every denied
+        # attempt (adversarial probes included), so raw emails would accumulate
+        # in Cloud Logging indefinitely. users/{user_id} retains the email for
+        # forensic lookup when one is actually needed.
+        logger.warning("super-admin gate denied user_id=%s", user.user_id)
         raise SuperAdminRequiredError()
 
     return user

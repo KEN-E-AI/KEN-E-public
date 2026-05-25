@@ -460,7 +460,11 @@ class TestAccountDeletionSweep:
 
         app.dependency_overrides[get_current_user_context] = _super_admin
 
-        yield
+        yield {
+            "neo4j": mock_neo4j,
+            "storage": mock_storage,
+            "fs_service": mock_fs_service,
+        }
 
         app.dependency_overrides.clear()
 
@@ -578,3 +582,53 @@ class TestAccountDeletionSweep:
             assert data["firestore_account_deleted"] is True
         finally:
             self._cleanup(emulator_db, account_id, [])
+
+    # ------------------------------------------------------------------
+    # Authorization + graceful-degradation guards
+    # ------------------------------------------------------------------
+
+    def test_delete_account_rejects_non_super_admin(
+        self, client: TestClient, account_id: str
+    ) -> None:
+        """A non-super-admin caller is rejected with 403 before any deletion runs."""
+        non_admin = UserContext(
+            user_id="intruder-uid",
+            email="intruder@external.com",
+            organization_permissions={},
+            account_permissions={},
+        )
+        app.dependency_overrides[get_current_user_context] = lambda: non_admin
+
+        resp = client.delete(f"/api/v1/accounts/{account_id}")
+
+        assert resp.status_code == 403
+
+    def test_recursive_delete_failure_accumulates_in_cleanup_errors(
+        self,
+        client: TestClient,
+        emulator_db,
+        account_id: str,
+        _install_app_overrides: dict,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A recursive_delete failure degrades gracefully instead of failing the request.
+
+        The endpoint catches the Firestore error, records it under cleanup_errors,
+        leaves firestore_account_deleted False, and still runs the Neo4j cascade.
+        """
+
+        def _boom(*_args, **_kwargs):
+            raise RuntimeError("emulator recursive_delete exploded")
+
+        monkeypatch.setattr(emulator_db, "recursive_delete", _boom)
+
+        resp = client.delete(f"/api/v1/accounts/{account_id}")
+
+        assert resp.status_code == 200
+        data = resp.json()["data"]
+        assert data["firestore_account_deleted"] is False
+        assert any(
+            "Firestore recursive delete failed" in e for e in data["cleanup_errors"]
+        ), data["cleanup_errors"]
+        # Neo4j cascade still runs despite the Firestore failure (3 write ops).
+        assert _install_app_overrides["neo4j"].execute_write_operation.await_count == 3

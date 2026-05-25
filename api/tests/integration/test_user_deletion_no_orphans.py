@@ -337,6 +337,16 @@ def _seed_user_doc_and_subcollections(
         {"two_fa_enabled": False, "seeded_for": "DM-54"}
     )
 
+    # Drift guard: seed a sentinel doc into EVERY registered user-scoped
+    # subcollection, driven from USER_SUBCOLLECTIONS itself. Without this, a
+    # future PR that appends a name to the registry without extending the sweep
+    # would still pass the post-deletion residue check — the new subcollection
+    # would be trivially empty because nothing ever seeded it.
+    for subcol_name in USER_SUBCOLLECTIONS:
+        user_ref.collection(subcol_name).document(f"sentinel_{run_id}").set(
+            {"registry_sentinel": True}
+        )
+
 
 def _seed_org_member(
     db: Any,
@@ -633,3 +643,58 @@ class TestUserDeletionNoOrphans:
                 return _super_admin_user()
 
             app.dependency_overrides[get_current_user] = _super_admin
+
+    def test_user_deletion_partial_hook_failure(
+        self,
+        emulator_db: Any,
+        run_id: str,
+        user_id: str,
+        org_acme_id: str,
+        org_widgets_id: str,
+        acc_acme_a_id: str,
+        acc_acme_b_id: str,
+        acc_widgets_main_id: str,
+        client: TestClient,
+        _app_overrides: dict[str, Any],
+    ) -> None:
+        """One of three on_user_removed calls raises; the purge still completes.
+
+        The orchestrator captures the hook failure into result.errors and keeps
+        going — member rows and the user doc are still purged, and the two
+        non-failing hooks still count. This is the most realistic production
+        failure mode: a single account's integration teardown timing out.
+        """
+        _seed_full_fixture(
+            emulator_db,
+            user_id,
+            run_id,
+            org_acme_id,
+            org_widgets_id,
+            acc_acme_a_id,
+            acc_acme_b_id,
+            acc_widgets_main_id,
+        )
+
+        # Middle hook call raises; first and third succeed.
+        mock = _app_overrides["on_user_removed"]
+        mock.side_effect = [None, RuntimeError("integration teardown boom"), None]
+
+        resp = client.delete(f"/api/v1/users/{user_id}")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        # Two hooks succeeded; the failed one is recorded, not counted.
+        assert body["integrations_hook_fired"] == 2, body
+        # The member sweep is independent of the hook step — all 5 rows gone.
+        assert body["member_rows_deleted"] == 5, body
+        assert body["user_doc_deleted"] is True, body
+        # Exactly one structured hook error captured, carrying the raised message.
+        hook_errors = [e for e in body["errors"] if e.startswith("integrations_hook[")]
+        assert len(hook_errors) == 1, body["errors"]
+        assert "integration teardown boom" in hook_errors[0]
+
+        # Root user doc is gone despite the partial hook failure.
+        root = emulator_db.collection("users").document(user_id).get()
+        assert not root.exists, (
+            f"users/{user_id} root doc survived a partial hook failure"
+        )

@@ -159,6 +159,8 @@ async def test_happy_path_all_steps_fire() -> None:
     assert hook_mock.call_count == 3
     # write_audit called exactly once (best-effort audit with org_refs present)
     assert write_audit_mock.call_count == 1
+    # primary-org pick locks the documented org_refs[0] contract (first org seeded)
+    assert write_audit_mock.call_args.kwargs["parent_id"] == "org_acme"
 
 
 # ---------------------------------------------------------------------------
@@ -410,3 +412,102 @@ async def test_hook_raises_error_recorded_deletion_continues() -> None:
     assert result.member_rows_deleted == 1
     # user doc still purged (step 4 is independent)
     assert result.user_doc_deleted is True
+
+
+# ---------------------------------------------------------------------------
+# (i) _purge_gcs with a non-empty USER_GCS_PREFIXES registry
+#
+# USER_GCS_PREFIXES is empty in v1 so the loop body never runs. These tests
+# monkeypatch a registered prefix to exercise the three branches that activate
+# when the first user-scoped GCS prefix lands.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_purge_gcs_success_increments_counter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Registered prefix + storage implementing delete_user_prefix → counted."""
+    actor = _make_actor()
+    monkeypatch.setattr(svc, "USER_GCS_PREFIXES", ["users/{user_id}/avatars/"])
+
+    delete_fn = AsyncMock(return_value=None)
+    storage = MagicMock()
+    storage.delete_user_prefix = delete_fn
+
+    mock_db = MagicMock()
+    mock_db.recursive_delete = MagicMock(return_value=None)
+
+    with (
+        patch.object(svc, "get_firestore_client", return_value=mock_db),
+        patch.object(svc, "get_storage_service", return_value=storage),
+        patch.object(svc, "_on_user_removed", None),
+        patch.object(svc, "_write_audit", None),
+        patch.object(svc, "_resolve_member_rows", return_value=([], [])),
+    ):
+        result = await svc.delete_user_data("u_carol", actor=actor)
+
+    delete_fn.assert_awaited_once_with("users/u_carol/avatars/")
+    assert result.gcs_prefixes_purged == 1
+    assert result.errors == []
+
+
+@pytest.mark.asyncio
+async def test_purge_gcs_method_not_implemented_records_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Registered prefix but storage lacks delete_user_prefix → explicit error, no crash."""
+    actor = _make_actor()
+    monkeypatch.setattr(svc, "USER_GCS_PREFIXES", ["users/{user_id}/avatars/"])
+
+    # spec=[] means getattr(storage, "delete_user_prefix", None) returns None.
+    storage = MagicMock(spec=[])
+
+    mock_db = MagicMock()
+    mock_db.recursive_delete = MagicMock(return_value=None)
+
+    with (
+        patch.object(svc, "get_firestore_client", return_value=mock_db),
+        patch.object(svc, "get_storage_service", return_value=storage),
+        patch.object(svc, "_on_user_removed", None),
+        patch.object(svc, "_write_audit", None),
+        patch.object(svc, "_resolve_member_rows", return_value=([], [])),
+    ):
+        result = await svc.delete_user_data("u_carol", actor=actor)
+
+    assert result.gcs_prefixes_purged == 0
+    assert any(
+        "gcs_purge[users/u_carol/avatars/]" in e and "not implemented" in e
+        for e in result.errors
+    )
+
+
+@pytest.mark.asyncio
+async def test_purge_gcs_delete_raises_records_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """delete_user_prefix raising is captured to result.errors, not propagated."""
+    actor = _make_actor()
+    monkeypatch.setattr(svc, "USER_GCS_PREFIXES", ["users/{user_id}/avatars/"])
+
+    delete_fn = AsyncMock(side_effect=RuntimeError("gcs boom"))
+    storage = MagicMock()
+    storage.delete_user_prefix = delete_fn
+
+    mock_db = MagicMock()
+    mock_db.recursive_delete = MagicMock(return_value=None)
+
+    with (
+        patch.object(svc, "get_firestore_client", return_value=mock_db),
+        patch.object(svc, "get_storage_service", return_value=storage),
+        patch.object(svc, "_on_user_removed", None),
+        patch.object(svc, "_write_audit", None),
+        patch.object(svc, "_resolve_member_rows", return_value=([], [])),
+    ):
+        result = await svc.delete_user_data("u_carol", actor=actor)
+
+    assert result.gcs_prefixes_purged == 0
+    assert any(
+        "gcs_purge[users/u_carol/avatars/]" in e and "gcs boom" in e
+        for e in result.errors
+    )

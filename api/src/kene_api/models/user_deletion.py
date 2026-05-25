@@ -15,9 +15,19 @@ class UserDeletionResult(BaseModel):
     """Summary of a completed user-data purge.
 
     All numeric fields default to 0; ``user_doc_deleted`` defaults to
-    ``False``; ``errors`` defaults to an empty list.  A re-run on an
-    already-purged user returns an instance with all counts at zero and
-    ``user_doc_deleted=False`` — that is the idempotent no-op result.
+    ``False``; ``errors`` defaults to an empty list.
+
+    A re-run on an already-purged user returns an instance with all counts at
+    zero and ``user_doc_deleted=True`` — recursive deletion of a missing
+    document succeeds, so the idempotent no-op still reports the doc as gone.
+
+    Disambiguating zero-counts: a per-step counter staying at 0 does not by
+    itself mean "no work was needed" — the step may have *failed*. Because
+    ``errors`` is a single flat list spanning all steps, consumers MUST match a
+    step's structured error prefix (``discover_members:``,
+    ``integrations_hook[…]:``, ``member_delete[…]:``, ``user_doc_purge:``,
+    ``gcs_purge[…]:``) against its counter to tell "step failed, work
+    unknowable" apart from "step succeeded, nothing to do".
     """
 
     user_id: str
