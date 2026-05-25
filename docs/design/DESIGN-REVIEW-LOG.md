@@ -1388,7 +1388,7 @@ This is recoverable, but not by a small patch: the factory is fundamentally a de
 The Shape A → B multi-tenant data-model migration delivered end-to-end across six projects:
 
 - **DM-PRD-00 (Migration Foundation)** — config-driven `migrate_to_shape_b.py` CLI, `MigrateConfig` registry, shared Firestore indexes (9 new entries), `seed_shape_b_fixtures.py`, and the Shape B convention section appended to `api/CLAUDE.md`.
-- **DM-PRD-01 (Strategy Suite Migration)** — `strategy_docs`, `strategy_audit`, and `strategy_processing_state` moved from `strategy_{resource}_{account_id}/` top-level collections to `accounts/{account_id}/strategy_{resource}/` subcollections. Side-effect fix: the silently-broken `collection_group("strategy_audit")` query at `audit_service.py:189` works.
+- **DM-PRD-01 (Strategy Suite Migration)** — `strategy_docs`, `strategy_audit`, and `strategy_processing_state` moved from `strategy_docs_{account_id}/`, `strategy_audit_{account_id}/`, and `strategy_processing_state_{account_id}/` top-level collections to `accounts/{account_id}/strategy_docs/`, `accounts/{account_id}/strategy_audit/`, and `accounts/{account_id}/strategy_processing_state/` subcollections. Side-effect fix: the silently-broken `collection_group("strategy_audit")` query at `audit_service.py:189` works.
 - **DM-PRD-02 (Analytics Suite Migration)** — `agent_analytics`, `cost_aggregations`, and `performance_profiles` moved to `accounts/{account_id}/` subcollections.
 - **DM-PRD-03 (Shape D Split)** — the nested `accounts.{account_id}.account_settings.*` and `accounts.{account_id}.funnels.*` maps inside `organizations/{org_id}` docs extracted to per-account docs at `accounts/{account_id}`, eliminating the 1 MiB-per-document ceiling risk.
 - **DM-PRD-04 (Shape B-like Collapse)** — `monitoring_topics/{account_id}` and `alert_configurations/{account_id}` (degenerate Shape B-like pattern) collapsed to `accounts/{account_id}/monitoring_topics/default` and `accounts/{account_id}/alert_configurations/default`.
@@ -1400,7 +1400,7 @@ The Shape A → B multi-tenant data-model migration delivered end-to-end across 
 ### Key outcomes
 
 - Data-shape surface area: **four patterns → two** (Shape B account-scoped + Shape C global).
-- **Latent GDPR gap closed** at `routers/accounts.py:968-997` — the old single-collection sweep that orphaned every per-account subcollection on deletion is replaced by `firestore.recursive_delete`, which covers all subcollections transitively (DM-PRD-05).
+- **Latent Firestore orphan / GDPR gap closed for account-scoped subcollections** at `routers/accounts.py:968-997` — the old single-collection sweep that orphaned every per-account Firestore subcollection on deletion is replaced by `firestore.recursive_delete`, which covers the entire `accounts/{account_id}/` subtree transitively (DM-PRD-05). Shape C collections (`notifications`, `usage_records`), GCS blobs, Neo4j data, and third-party integration tokens are handled by their respective sweeps outside this migration.
 - **Silently-broken cross-account audit query fixed** — `collection_group("strategy_audit")` at `audit_service.py:189` was always returning empty under Shape A. Now that `strategy_audit` lives as a subcollection under `accounts/{account_id}/`, the collection-group index fires correctly (DM-PRD-01).
 - **Shape D nested-map risk eliminated** — `organizations/{org_id}` docs no longer hold a growing `accounts.{account_id}.*` nested map that would have hit the 1 MiB Firestore document limit at scale (DM-PRD-03).
 - **Shape B-like degenerate pattern collapsed** — `monitoring_topics` and `alert_configurations` now follow the canonical `accounts/{account_id}/{resource}/default` path, removing the fourth ambiguous pattern (DM-PRD-04).
@@ -1416,7 +1416,7 @@ The Shape A → B multi-tenant data-model migration delivered end-to-end across 
 ### Cross-references
 
 - **Review 15** — [Multi-Tenant Data Model Shape — Firestore Subcollections (Shape B) + GCS Prefix (G1)](#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1): the original decision that defined the target layout and kicked off this workstream.
-- **Migration plan §11 — Execution checklist** — [`docs/design/components/data-management/multi-tenant-migration-plan.md` §11](components/data-management/multi-tenant-migration-plan.md#11-execution-checklist): all checkboxes filled (DM-64 lands in lockstep with this entry).
+- **Migration plan §11 — Execution checklist** — [`docs/design/components/data-management/multi-tenant-migration-plan.md` §11](components/data-management/multi-tenant-migration-plan.md#11-execution-checklist): all checkboxes will be filled once DM-64 lands (in lockstep with this entry).
 - **Staging migration timing report (DM-62)** — [`docs/design/components/data-management/runs/DM-62-staging-migration-timing-report.md`](components/data-management/runs/DM-62-staging-migration-timing-report.md): 27 source docs across 3 resources (`alert_configurations` 14, `monitoring_topics` 3, `strategy_docs` 10) in the `(default)` Firestore DB; effective throughput 0.29–0.38 docs/sec, well below the 500 writes/sec batch ceiling; `analytics` DB was a structural no-op (0 source docs). Full methodology and per-resource breakdown in the report.
 
 ### Documents updated
