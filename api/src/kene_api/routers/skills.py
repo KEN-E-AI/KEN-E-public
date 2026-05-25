@@ -21,7 +21,10 @@ Auth:
   absence (doc simply not stored at the path) continues to return 404.
 
 Tracing:
-  Deferred to SK-21. No Weave spans emitted here.
+  Every endpoint emits one ``api.skills.*`` Weave span via ``_skills_safe_op``.
+  Attributes: ``account_id`` on all spans; ``skill_id`` on per-skill endpoints;
+  ``bundle_bytes`` + ``file_count`` on POST/PUT; ``archived=True`` on DELETE;
+  ``version`` on GET content/resource only when the request pinned one.
 
 PRD reference:
   docs/design/components/skills/projects/SK-PRD-01-skills-backend.md
@@ -34,6 +37,8 @@ import asyncio
 import base64
 import json
 import logging
+from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -77,6 +82,31 @@ from ..services.skill_validator import (
 )
 
 logger = logging.getLogger(__name__)
+
+try:
+    import weave
+
+    WEAVE_AVAILABLE = True
+
+    def _skills_safe_op(name: str) -> Callable:  # type: ignore[misc]
+        def _filter(inputs: dict[str, object]) -> dict[str, object]:
+            return {
+                k: v
+                for k, v in inputs.items()
+                if isinstance(v, (str, int, float, bool, type(None)))
+            }
+
+        return weave.op(name=name, postprocess_inputs=_filter)
+
+except ImportError:
+    WEAVE_AVAILABLE = False
+    weave = None  # type: ignore[assignment]
+
+    def _skills_safe_op(name: str) -> Callable:  # type: ignore[misc]
+        def _identity(fn: Callable) -> Callable:  # type: ignore[misc]
+            return fn
+
+        return _identity
 
 # ---------------------------------------------------------------------------
 # Response model
@@ -159,7 +189,10 @@ def _skill_doc_ref(
     db: firestore.Client, account_id: str, skill_id: str
 ) -> firestore.DocumentReference:
     return (
-        db.collection("accounts").document(account_id).collection("skills").document(skill_id)
+        db.collection("accounts")
+        .document(account_id)
+        .collection("skills")
+        .document(skill_id)
     )
 
 
@@ -176,9 +209,7 @@ def _version_doc_ref(
     )
 
 
-def _check_name_exists(
-    db: firestore.Client, account_id: str, name: str
-) -> bool:
+def _check_name_exists(db: firestore.Client, account_id: str, name: str) -> bool:
     """Return True if a non-archived skill with ``name`` already exists in this account.
 
     A pre-write equality query — adequate for v1's human authoring write rate.
@@ -212,7 +243,9 @@ def _write_skill_and_version(
     the doc is already there).
     """
     skill_ref = _skill_doc_ref(db, account_id, skill.skill_id)
-    version_ref = _version_doc_ref(db, account_id, skill.skill_id, skill.current_version)
+    version_ref = _version_doc_ref(
+        db, account_id, skill.skill_id, skill.current_version
+    )
 
     transaction = db.transaction()
 
@@ -318,6 +351,21 @@ def _skill_from_dict(d: dict) -> Skill:
 
 
 # ---------------------------------------------------------------------------
+# Weave span helpers
+# ---------------------------------------------------------------------------
+
+
+def _maybe_weave_attrs(attrs: dict[str, object]) -> AbstractContextManager[None]:
+    """Return ``weave.attributes(attrs)`` when Weave is available, else a no-op context manager."""
+    if WEAVE_AVAILABLE and weave is not None:
+        try:
+            return weave.attributes(attrs)
+        except Exception as exc:
+            logger.warning("weave.attributes failed: %s", exc)
+    return nullcontext()
+
+
+# ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
 
@@ -341,27 +389,42 @@ async def validate_skill_bundle(
     {"valid": false, "errors": [...]} with field-pointer errors on failure.
     AC-10: validates bundle without writing state.
     """
-    # Guard file count before reading bytes to limit memory allocation.
-    if files and len(files) > MAX_BUNDLE_FILES:
+    raw_files = files or []
+    if len(raw_files) > MAX_BUNDLE_FILES:
         return SkillValidationResponse(
             valid=False,
             errors=[
                 SkillValidationError(
                     field="files",
                     code="too_many_files",
-                    message=f"Bundle contains {len(files)} files; maximum is {MAX_BUNDLE_FILES}.",
+                    message=f"Bundle contains {len(raw_files)} files; maximum is {MAX_BUNDLE_FILES}.",
                 )
             ],
         )
-
     skill_md_bytes = await skill_md.read()
-    files_tuples: list[tuple[str, bytes]] = []
-    if files:
-        for f in files:
-            rel_path = (f.filename or "")[:512]  # bound filename length
-            data = await f.read()
-            files_tuples.append((rel_path, data))
+    files_tuples: list[tuple[str, bytes]] = [
+        ((f.filename or "")[:512], await f.read()) for f in raw_files
+    ]
+    bundle_bytes = len(skill_md_bytes) + sum(len(c) for _, c in files_tuples)
+    with _maybe_weave_attrs(
+        {
+            "account_id": account_id,
+            "bundle_bytes": bundle_bytes,
+            "file_count": len(files_tuples),
+        }
+    ):
+        return await _validate_traced(
+            skill_md_bytes=skill_md_bytes,
+            files_tuples=files_tuples,
+        )
 
+
+@_skills_safe_op(name="api.skills.validate")
+async def _validate_traced(
+    *,
+    skill_md_bytes: bytes,
+    files_tuples: list[tuple[str, bytes]],
+) -> SkillValidationResponse:
     report = validate_bundle(skill_md_bytes, files_tuples, outer_name=None)
     errors = [
         SkillValidationError(field=issue.field, code=issue.code, message=issue.message)
@@ -388,7 +451,30 @@ async def get_skill_content(
 
     AC-4 (content fetched with correct content-type), AC-5 (version pinning).
     """
+    attrs: dict[str, object] = {"account_id": account_id, "skill_id": skill_id}
+    if version is not None:
+        attrs["version"] = version
+    with _maybe_weave_attrs(attrs):
+        return await _get_skill_content_traced(
+            account_id=account_id,
+            skill_id=skill_id,
+            version=version,
+            include_archived=include_archived,
+            db=db,
+            storage=storage,
+        )
 
+
+@_skills_safe_op(name="api.skills.get_content")
+async def _get_skill_content_traced(
+    *,
+    account_id: str,
+    skill_id: str,
+    version: int | None,
+    include_archived: bool,
+    db: firestore.Client,
+    storage: SkillStorageService,
+) -> Response:
     def _read() -> tuple[str | None, int]:
         snap = _skill_doc_ref(db, account_id, skill_id).get()
         if not snap.exists:
@@ -441,6 +527,32 @@ async def get_skill_resource(
 
     AC-4 (path-traversal returns 400; content-type `text/markdown` for `.md`).
     """
+    attrs: dict[str, object] = {"account_id": account_id, "skill_id": skill_id}
+    if version is not None:
+        attrs["version"] = version
+    with _maybe_weave_attrs(attrs):
+        return await _get_skill_resource_traced(
+            account_id=account_id,
+            skill_id=skill_id,
+            rel_path=rel_path,
+            version=version,
+            include_archived=include_archived,
+            db=db,
+            storage=storage,
+        )
+
+
+@_skills_safe_op(name="api.skills.get_resource")
+async def _get_skill_resource_traced(
+    *,
+    account_id: str,
+    skill_id: str,
+    rel_path: str,
+    version: int | None,
+    include_archived: bool,
+    db: firestore.Client,
+    storage: SkillStorageService,
+) -> Response:
     # Syntactic safety check: reject path traversal attempts before any GCS read.
     # Use the canonical form returned by safe_rel_path for the GCS lookup so
     # any harmless redundant dots (references/./style.md) normalise away.
@@ -496,7 +608,23 @@ async def get_skill(
 
     AC-7 (has_scripts round-trips through GET detail).
     """
+    with _maybe_weave_attrs({"account_id": account_id, "skill_id": skill_id}):
+        return await _get_skill_traced(
+            account_id=account_id,
+            skill_id=skill_id,
+            include_archived=include_archived,
+            db=db,
+        )
 
+
+@_skills_safe_op(name="api.skills.get")
+async def _get_skill_traced(
+    *,
+    account_id: str,
+    skill_id: str,
+    include_archived: bool,
+    db: firestore.Client,
+) -> Skill:
     def _read() -> tuple[str | None, Skill | None]:
         snap = _skill_doc_ref(db, account_id, skill_id).get()
         if not snap.exists:
@@ -537,6 +665,27 @@ async def delete_skill(
 
     AC-6 (status="archived"; GCS prefix in trash; list excludes it by default).
     """
+    with _maybe_weave_attrs(
+        {"account_id": account_id, "skill_id": skill_id, "archived": True}
+    ):
+        return await _delete_skill_traced(
+            account_id=account_id,
+            skill_id=skill_id,
+            user=user,
+            db=db,
+            storage=storage,
+        )
+
+
+@_skills_safe_op(name="api.skills.delete")
+async def _delete_skill_traced(
+    *,
+    account_id: str,
+    skill_id: str,
+    user: UserContext,
+    db: firestore.Client,
+    storage: SkillStorageService,
+) -> None:
     now = datetime.now(timezone.utc)
 
     def _archive() -> str | None:
@@ -591,29 +740,63 @@ async def create_skill(
           GCS bundle at ``gs://kene-skills-{env}/accounts/{account_id}/{skill_id}/1/``.
     AC-9: 409 when ``name`` already exists in this account.
     """
-    # Step 1: parse + validate.
     report, skill_md_bytes, files_data = await _parse_and_validate_bundle(
         skill_md, files, outer_name=name
     )
+    bundle_bytes = len(skill_md_bytes) + sum(len(c) for _, c in files_data)
+    skill_id = uuid4().hex
+    with _maybe_weave_attrs(
+        {
+            "account_id": account_id,
+            "bundle_bytes": bundle_bytes,
+            "file_count": len(files_data),
+            "skill_id": skill_id,
+        }
+    ):
+        return await _create_skill_traced(
+            account_id=account_id,
+            report=report,
+            skill_md_bytes=skill_md_bytes,
+            files_data=files_data,
+            skill_id=skill_id,
+            user=user,
+            db=db,
+            storage=storage,
+        )
 
-    # Step 2: name uniqueness.
+
+@_skills_safe_op(name="api.skills.create")
+async def _create_skill_traced(
+    *,
+    account_id: str,
+    report: ValidationReport,
+    skill_md_bytes: bytes,
+    files_data: list[tuple[str, bytes]],
+    skill_id: str,
+    user: UserContext,
+    db: firestore.Client,
+    storage: SkillStorageService,
+) -> Skill:
+    if (
+        report.frontmatter is None
+    ):  # invariant: validate_bundle always sets frontmatter on valid
+        raise HTTPException(status_code=500, detail="internal_error")
+
+    # Step 1: name uniqueness.
     name_taken = await asyncio.to_thread(
-        _check_name_exists, db, account_id, name
+        _check_name_exists, db, account_id, report.frontmatter.name
     )
     if name_taken:
         raise HTTPException(
             status_code=409,
-            detail={"code": "skill_name_conflict", "name": name},
+            detail={"code": "skill_name_conflict", "name": report.frontmatter.name},
         )
 
-    # Step 3: allocate IDs.
-    skill_id = uuid4().hex
+    # Step 2: allocate version + timestamp.
     version = 1
     now = datetime.now(timezone.utc)
 
-    # Step 4: GCS write (before Firestore commit per PRD §9).
-    if report.frontmatter is None:  # invariant: validate_bundle always sets frontmatter on valid
-        raise HTTPException(status_code=500, detail="internal_error")
+    # Step 3: GCS write (before Firestore commit per PRD §9).
     skill_version = await asyncio.to_thread(
         storage.write_bundle,
         account_id=account_id,
@@ -626,7 +809,7 @@ async def create_skill(
         commit_message=None,
     )
 
-    # Step 5: build Skill doc.
+    # Step 4: build Skill doc.
     skill = Skill(
         skill_id=skill_id,
         owner=SkillOwner(account_id=account_id),
@@ -643,7 +826,7 @@ async def create_skill(
         updated_by=user.user_id,
     )
 
-    # Step 6: Firestore transaction — create skill doc + version subdoc.
+    # Step 5: Firestore transaction — create skill doc + version subdoc.
     await asyncio.to_thread(
         _write_skill_and_version, db, skill, skill_version, account_id
     )
@@ -666,7 +849,29 @@ async def list_skills(
     Default excludes archived skills unless ``include_archived=true`` or an
     explicit ``status[]=archived`` is supplied.
     """
+    with _maybe_weave_attrs({"account_id": account_id}):
+        return await _list_skills_traced(
+            account_id=account_id,
+            status=status,
+            has_scripts=has_scripts,
+            cursor=cursor,
+            page_size=page_size,
+            include_archived=include_archived,
+            db=db,
+        )
 
+
+@_skills_safe_op(name="api.skills.list")
+async def _list_skills_traced(
+    *,
+    account_id: str,
+    status: list[str],
+    has_scripts: bool | None,
+    cursor: str | None,
+    page_size: int,
+    include_archived: bool,
+    db: firestore.Client,
+) -> ListSkillsResponse:
     def _run() -> tuple[list[Skill], str | None]:
         coll = db.collection("accounts").document(account_id).collection("skills")
         query: firestore.Query = coll  # type: ignore[assignment]
@@ -678,7 +883,13 @@ async def list_skills(
             if invalid:
                 raise HTTPException(
                     status_code=422,
-                    detail=[{"field": "status", "code": "invalid_status", "message": f"Unknown status value(s): {invalid}"}],
+                    detail=[
+                        {
+                            "field": "status",
+                            "code": "invalid_status",
+                            "message": f"Unknown status value(s): {invalid}",
+                        }
+                    ],
                 )
             query = query.where("status", "in", status)
         elif not include_archived:
@@ -691,9 +902,9 @@ async def list_skills(
             query = query.where("has_scripts", "==", has_scripts)
 
         # Stable ordering by (updated_at DESC, skill_id ASC) for cursor pagination.
-        query = query.order_by("updated_at", direction=firestore.Query.DESCENDING).order_by(
-            "skill_id"
-        )
+        query = query.order_by(
+            "updated_at", direction=firestore.Query.DESCENDING
+        ).order_by("skill_id")
 
         # Cursor.
         decoded = _decode_cursor(cursor) if cursor else None
@@ -708,7 +919,7 @@ async def list_skills(
         rows = list(query.stream())
         has_next = len(rows) > page_size
         if has_next:
-            rows = rows[: page_size]
+            rows = rows[:page_size]
 
         items: list[Skill] = []
         for doc in rows:
@@ -752,15 +963,13 @@ async def update_skill(
     ``current_version`` inside the transaction to detect a concurrent PUT that
     won the race; on conflict the whole pipeline retries up to 3 times.
     """
-    # Step 1: parse + validate.  On PUT, outer_name=None → name taken from frontmatter.
+    # Step 1: parse + validate. outer_name=None → name taken from frontmatter.
     report, skill_md_bytes, files_data = await _parse_and_validate_bundle(
         skill_md, files, outer_name=None
     )
-    if report.frontmatter is None:  # invariant: validate_bundle always sets frontmatter on valid
+    if report.frontmatter is None:  # invariant
         raise HTTPException(status_code=500, detail="internal_error")
-
-    # The name on the form field must still match frontmatter to prevent surprises,
-    # even on PUT (the user may be renaming). Enforce here.
+    # The name on the form field must match frontmatter to prevent surprises.
     if name != report.frontmatter.name:
         raise HTTPException(
             status_code=422,
@@ -775,10 +984,47 @@ async def update_skill(
                 }
             ],
         )
+    bundle_bytes = len(skill_md_bytes) + sum(len(c) for _, c in files_data)
+    with _maybe_weave_attrs(
+        {
+            "account_id": account_id,
+            "skill_id": skill_id,
+            "bundle_bytes": bundle_bytes,
+            "file_count": len(files_data),
+        }
+    ):
+        return await _update_skill_traced(
+            account_id=account_id,
+            skill_id=skill_id,
+            report=report,
+            skill_md_bytes=skill_md_bytes,
+            files_data=files_data,
+            commit_message=commit_message,
+            user=user,
+            db=db,
+            storage=storage,
+        )
+
+
+@_skills_safe_op(name="api.skills.update")
+async def _update_skill_traced(
+    *,
+    account_id: str,
+    skill_id: str,
+    report: ValidationReport,
+    skill_md_bytes: bytes,
+    files_data: list[tuple[str, bytes]],
+    commit_message: str | None,
+    user: UserContext,
+    db: firestore.Client,
+    storage: SkillStorageService,
+) -> Skill:
+    if report.frontmatter is None:  # invariant
+        raise HTTPException(status_code=500, detail="internal_error")
 
     new_name = report.frontmatter.name
 
-    # Step 2: read current skill to get current_version (and 404 if not found).
+    # Step 1: read current skill to get current_version (and 404 if not found).
     def _read_skill() -> dict:
         snap = _skill_doc_ref(db, account_id, skill_id).get()
         if not snap.exists:
@@ -788,12 +1034,11 @@ async def update_skill(
     current_data = await asyncio.to_thread(_read_skill)
     existing_skill = _skill_from_dict(current_data)
 
-    # Ownership assertion: path account_id must match stored owner.
+    # Ownership assertion.
     if existing_skill.owner.account_id != account_id:
         raise HTTPException(status_code=403, detail="owner_mismatch")
 
-    # Step 3: name uniqueness for renames.  PRD §7 "name is mutable … subject
-    # to the same regex + uniqueness rules."
+    # Step 2: name uniqueness for renames.
     if new_name != existing_skill.name:
         name_taken = await asyncio.to_thread(
             _check_name_exists, db, account_id, new_name
@@ -808,7 +1053,7 @@ async def update_skill(
     next_version = expected_version + 1
     now = datetime.now(timezone.utc)
 
-    # Step 4: GCS write first at predicted prefix ``{N+1}/`` (PRD §9).
+    # Step 3: GCS write first at predicted prefix (PRD §9).
     skill_version = await asyncio.to_thread(
         storage.write_bundle,
         account_id=account_id,
@@ -821,7 +1066,7 @@ async def update_skill(
         commit_message=commit_message,
     )
 
-    # Step 5: build the updated Skill for atomic write.
+    # Step 4: build updated Skill.
     updated_skill = Skill(
         skill_id=skill_id,
         owner=existing_skill.owner,
@@ -838,7 +1083,7 @@ async def update_skill(
         updated_by=user.user_id,
     )
 
-    # Step 6: Firestore transaction — retry up to 3 times on concurrent PUT race.
+    # Step 5: Firestore transaction — retry up to 3 times on concurrent PUT race.
     max_retries = 3
     for attempt in range(max_retries):
         success = await asyncio.to_thread(
