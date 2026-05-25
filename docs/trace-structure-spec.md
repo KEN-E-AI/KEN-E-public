@@ -258,6 +258,44 @@ LLM call metadata is auto-captured by ADK's OpenTelemetry GenAI conventions when
 
 **Content capture:** Controlled by `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`. Set to `true` in development and staging for debugging and MER-E evaluation. Set to `false` in production to protect user data privacy — LLM prompts and responses are NOT included in production traces. Span metadata (model, token counts, temperature, duration) is still captured.
 
+### 4.6 REST API Spans (Skills Component)
+
+REST API spans are **not children of any agent span** — they are produced by the FastAPI HTTP tier and are **siblings to L1 orchestrator spans**. MER-E can correlate them with the agent-side `skill.list` / `skill.load` / `skill.load_resource` spans (owned by SK-PRD-02) by matching `account_id`.
+
+Reference: `docs/design/components/skills/projects/SK-PRD-01-skills-backend.md` §7 AC-12.
+
+#### Op Names
+
+| Op Name | HTTP Method | Path |
+|---------|-------------|------|
+| `api.skills.create` | POST | `/api/v1/accounts/{account_id}/skills` |
+| `api.skills.list` | GET | `/api/v1/accounts/{account_id}/skills` |
+| `api.skills.get` | GET | `/api/v1/accounts/{account_id}/skills/{skill_id}` |
+| `api.skills.get_content` | GET | `/api/v1/accounts/{account_id}/skills/{skill_id}/content` |
+| `api.skills.get_resource` | GET | `/api/v1/accounts/{account_id}/skills/{skill_id}/resources/{rel_path}` |
+| `api.skills.update` | PUT | `/api/v1/accounts/{account_id}/skills/{skill_id}` |
+| `api.skills.delete` | DELETE | `/api/v1/accounts/{account_id}/skills/{skill_id}` |
+| `api.skills.validate` | POST | `/api/v1/accounts/{account_id}/skills/validate` |
+
+#### Common Attributes (all 8 spans)
+
+| Attribute | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `account_id` | string | Yes | The account owning the skills collection |
+
+#### Per-Span Attributes
+
+| Op Name | Extra Attributes | Notes |
+|---------|-----------------|-------|
+| `api.skills.create` | `skill_id: str`, `current_version: int`, `bundle_bytes: int`, `file_count: int` | `skill_id` and `current_version` are appended post-allocation via `weave.get_current_call()` |
+| `api.skills.list` | — | No extra attributes beyond `account_id` |
+| `api.skills.get` | `skill_id: str` | |
+| `api.skills.get_content` | `skill_id: str`, `version: int` (when request pins one) | `version` is omitted (not null) when the request did not pin a version |
+| `api.skills.get_resource` | `skill_id: str`, `version: int` (when request pins one) | Same omit-not-null rule as `get_content` |
+| `api.skills.update` | `skill_id: str`, `current_version: int`, `bundle_bytes: int`, `file_count: int` | `current_version` is the new version number after the bump |
+| `api.skills.delete` | `skill_id: str`, `archived: bool` | `archived` is always `True` — it reflects the operation's intent, not the outcome |
+| `api.skills.validate` | `bundle_bytes: int`, `file_count: int` | No `skill_id` — validation creates no state |
+
 ## 5. Context Block Capture Strategy
 
 

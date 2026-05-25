@@ -27,10 +27,11 @@ Note: AC-13 (account-deletion sweep) is owned by SK-18.
 
 from __future__ import annotations
 
+import contextlib
 import io
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -1541,3 +1542,89 @@ class TestHasScriptsRoundTrip(_SkillsRouterBase):
         detail_resp = client.get(BASE_URL + f"/{skill_id}")
         assert detail_resp.status_code == 200
         assert detail_resp.json()["has_scripts"] is True
+
+
+# ---------------------------------------------------------------------------
+# AC-12: Weave tracing span attributes (SK-21)
+# ---------------------------------------------------------------------------
+
+
+class _SpanRecorder:
+    """Captures calls to _maybe_weave_attrs and _maybe_set_weave_attr.
+
+    Used by TestSkillsTracing to assert span attribute correctness without
+    requiring a live Weave connection.
+    """
+
+    def __init__(self) -> None:
+        self.attrs_calls: list[dict] = []
+        self.attr_mutations: list[tuple[str, object]] = []
+
+    @contextlib.contextmanager
+    def capture_weave_attrs(self, attrs: dict):  # type: ignore[override]
+        self.attrs_calls.append(dict(attrs))
+        yield
+
+    def capture_set_attr(self, key: str, value: object) -> None:
+        self.attr_mutations.append((key, value))
+
+    def all_attrs(self) -> dict:
+        """Merge initial attrs + late-bound mutations into one flat dict."""
+        merged: dict = {}
+        for d in self.attrs_calls:
+            merged.update(d)
+        for k, v in self.attr_mutations:
+            merged[k] = v
+        return merged
+
+
+class TestSkillsTracing(_SkillsRouterBase):
+    """AC-12: POST create emits api.skills.create span with expected attributes."""
+
+    @pytest.fixture
+    def span_recorder(self):
+        import src.kene_api.routers.skills as skills_mod
+
+        recorder = _SpanRecorder()
+        with patch.object(skills_mod, "_maybe_weave_attrs", recorder.capture_weave_attrs):
+            with patch.object(skills_mod, "_maybe_set_weave_attr", recorder.capture_set_attr):
+                yield recorder
+
+    def test_post_create_emits_span_with_account_and_bundle_attrs(
+        self, client, fake_db, fake_storage, span_recorder
+    ):
+        """Minimal POST (SKILL.md only) → account_id set, bundle_bytes > 0, file_count == 0."""
+        self._install_user(_member_user())
+        resp = client.post(
+            BASE_URL + "/",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert resp.status_code == 201
+
+        attrs = span_recorder.all_attrs()
+        assert attrs.get("account_id") == ACCOUNT_ID
+        assert isinstance(attrs.get("bundle_bytes"), int)
+        assert attrs["bundle_bytes"] > 0
+        assert attrs.get("file_count") == 0
+        assert "skill_id" in attrs
+
+    def test_post_create_with_extra_files_records_correct_file_count(
+        self, client, fake_db, fake_storage, span_recorder
+    ):
+        """POST with two extra files → file_count == 2."""
+        self._install_user(_member_user())
+        resp = client.post(
+            BASE_URL + "/",
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown")),
+                ("files", ("references/style.md", io.BytesIO(b"# style guide"), "text/markdown")),
+                ("files", ("references/tone.md", io.BytesIO(b"# tone guide"), "text/markdown")),
+            ],
+            data={"name": "seo-checklist"},
+        )
+        assert resp.status_code == 201
+
+        attrs = span_recorder.all_attrs()
+        assert attrs.get("account_id") == ACCOUNT_ID
+        assert attrs.get("file_count") == 2
