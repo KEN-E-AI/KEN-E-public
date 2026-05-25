@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-25
 **Reviewer:** Dev Team (skills-dev-team agent)
-**Gate:** PRD §7.AC-5 pre-merge gate for SK-10 (spike report publish)
+**Gate:** SK-PRD-00 §7.AC-5 — security review must be filed before spike report (SK-10) merges publicly
 **AC #3 status: N/A — no findings at or above High severity**
 
 ---
@@ -134,7 +134,16 @@ layer could prevent cross-session `/tmp` sharing. This gap is noted in the
 severity rationale below and should be characterised before SK-PRD-02 goes to
 production.
 
-**Severity: Medium.**
+**Severity: Medium** *(conditional — see note below).*
+
+**Note on severity conditionality.** This Medium rating assumes Vertex clears
+container `/tmp` between sessions within the same pool bucket — which the
+available live captures do not confirm. If Vertex reuses containers without
+clearing `/tmp`, the cross-session surface would make fs/tmpsub/subprocess-pid
+vectors leak across independent user interactions sharing the same
+`(account_id, config_id)` pool bucket, and the severity would be **High**.
+Confirming Vertex's container-reuse policy before SK-PRD-02 ships is the
+resolution path for this conditionality.
 
 Rationale:
 - **Confirmed scope**: skills within the same specialist agent and the same
@@ -164,8 +173,9 @@ Rationale:
    > "Scripts attached to the same agent share filesystem, environment, and
    > Python module state within a session. Do not write sensitive data to `/tmp`
    > or rely on state isolation between skills attached to the same agent."
-   This warning is an explicit acceptance criterion in the SK-PRD-03 AC list
-   and is the primary user-facing mitigation.
+   This warning must be added as an acceptance criterion to SK-PRD-03's
+   scripts callout AC — the primary user-facing mitigation depends on it
+   being present in that AC list.
 3. **10-skill-per-agent cap (SK-PRD-02):** The cap is justified on token-budget
    grounds and serves as a secondary defence — each additional scripts-bearing
    skill increases the shared state surface.
@@ -203,7 +213,9 @@ from this gate.
 **Note on 503 ≠ definitively-a-cap.** `503 UNAVAILABLE` is also returned for
 transient Vertex backend errors. The 5-minute interpretation is the most
 parsimonious explanation given two independent probes hit it within 1 s of
-each other; this is recorded as "best-current-interpretation" in SK-7.
+each other; this interpretation is documented in
+`docs/spike/q4-resource-limits.md` §Result and will carry forward to the
+consolidated spike findings (SK-10 deliverable).
 
 **Note on memory-balloon DoS (uncharacterised).** The `q4_memory_balloon.py`
 probe returned `OUTCOME_OK` with no stdout — the script completed silently or
@@ -211,7 +223,8 @@ was killed without an observable error. Memory-only exhaustion as a DoS vector
 is not characterised by the available live captures; the ~5-min cap is
 confirmed only for CPU-bound and wall-clock-bound workloads. This gap does not
 change the Informational severity (no evidence of an exploitable indefinite
-hold), but SK-7 should document it as unresolved.
+hold), but SK-10 must document it as unresolved in the consolidated spike
+findings.
 
 **Mitigation (no action required at this gate).** SK-PRD-02 must not retry
 `execute_code` on 503 — that response means the sandbox was forcibly
@@ -286,8 +299,7 @@ no block on SK-10's merge (beyond the email send required by AC #2).
 ```
 To: security@ken-e.ai
 From: ken@ken-e.ai
-Subject: [KEN-E Security Review] SK-PRD-00 Sandbox Spike — Q1–Q5 findings,
-         no escalation required
+Subject: [KEN-E Security Review] SK-PRD-00 Sandbox Spike — Q1–Q5 findings, no escalation required
 
 Hi,
 
@@ -296,8 +308,8 @@ Per our process, we send security findings to this address before merging
 spike documentation publicly.
 
 Summary: no critical or high severity findings. One medium finding (Q3).
-Full report: docs/spike/sk-9-security-review.md on the
-docs/SK-9-security-review branch (linked from Linear issue SK-9).
+Full report: docs/spike/sk-9-security-review.md on main
+(also linked from Linear issue SK-9).
 
 --- FINDINGS TABLE ---
 
@@ -305,8 +317,9 @@ Finding | Severity | Status
 --------|----------|-------
 Q1 Network egress | Informational | Positive: sandbox has no internet
                                     egress by default (4/4 vectors blocked)
-Q3 Cross-skill state (same-session) | Medium | Mitigation in scope:
-                                               authoring-UI warning (SK-PRD-03)
+Q3 Cross-skill state          | Medium | Mitigation in scope:
+  (same-session confirmed;   |        | authoring-UI warning (SK-PRD-03)
+   cross-session unresolved) |        |
 Q4 Resource limits / DoS | Informational | Positive: ~5-min sandbox cap
                                            prevents indefinite occupation
 Q5 File I/O / sandbox surface | Informational | Positive: gVisor + empty
@@ -344,8 +357,7 @@ No architectural change required.
 
 All findings from direct-mode harness (no LlmAgent, no hallucination surface),
 run 2026-05-25 from a credentialled workstation against spike Agent Engine
-projects/525657242938/locations/us-central1/
-  reasoningEngines/2624457839443181568.
+projects/525657242938/locations/us-central1/reasoningEngines/2624457839443181568.
 SK-33 (Done) validated the harness trustworthiness.
 
 Please acknowledge receipt. If Q3 severity warrants escalation in your view,
