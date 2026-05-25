@@ -286,7 +286,29 @@ def run_audit(client: Any, *, dry_run: bool, confirm_delete: bool) -> AuditSumma
             print(record.model_dump_json())
             continue
 
-        # Delete-pass
+        # Delete-pass. Only the dead, pre-Shape-D LIST form is safe to auto-delete.
+        # A dict (the Shape-D account map) or any other shape may be live data the
+        # split migration never moved off the org doc; refuse to touch it and
+        # surface it for a human rather than risk wiping real account settings or
+        # funnels.
+        if record.field_type != "list":
+            record.action = "error"
+            record.error = (
+                f"refusing to auto-delete non-list accounts field "
+                f"(field_type={record.field_type}): not the dead, pre-Shape-D list "
+                f"residue — investigate manually before removing"
+            )
+            orgs_errors += 1
+            logger.error(
+                "org %s: REFUSING delete — accounts field is %s, not the dead list "
+                "residue; manual review required",
+                org_id,
+                record.field_type,
+            )
+            print(record.model_dump_json())
+            continue
+
+        # Delete-pass (dead list residue only)
         if dry_run:
             record.action = "would_delete"
             logger.info("org %s: [DRY RUN] would delete accounts field", org_id)

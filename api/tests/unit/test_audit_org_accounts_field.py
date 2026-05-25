@@ -89,3 +89,90 @@ class TestBuildOrgAuditRecord:
         assert set(record.account_ids) == {"acc_abc", "acc_def"}
         assert record.item_count == 2
         assert record.action == "found"
+
+
+# ---------------------------------------------------------------------------
+# Delete-pass safety — only the dead list shape is auto-deletable
+# ---------------------------------------------------------------------------
+
+
+class _FakeDocRef:
+    def __init__(self, org_id: str, updates_log: list) -> None:
+        self._org_id = org_id
+        self._updates_log = updates_log
+
+    def update(self, fields: dict) -> None:
+        self._updates_log.append((self._org_id, fields))
+
+
+class _FakeCollection:
+    def __init__(self, docs: dict, updates_log: list) -> None:
+        self._docs = docs
+        self._updates_log = updates_log
+
+    def stream(self):
+        for org_id, data in self._docs.items():
+            snap = type(
+                "_Snap",
+                (),
+                {"id": org_id, "to_dict": (lambda self, d=data: d)},
+            )()
+            yield snap
+
+    def document(self, org_id: str) -> _FakeDocRef:
+        return _FakeDocRef(org_id, self._updates_log)
+
+
+class _FakeClient:
+    """Minimal stand-in for google.cloud.firestore.Client used by run_audit."""
+
+    def __init__(self, docs: dict) -> None:
+        self._docs = docs
+        self.updates_log: list = []
+
+    def collection(self, name: str) -> _FakeCollection:
+        assert name == "organizations"
+        return _FakeCollection(self._docs, self.updates_log)
+
+
+class TestDeletePassShapeSafety:
+    def test_delete_pass_removes_list_but_refuses_dict(self) -> None:
+        """Delete-pass deletes the dead list residue but never a Shape-D dict map.
+
+        A dict-shaped accounts field may be live account data that the split
+        migration didn't move off the org doc; the destructive pass must refuse
+        it (recorded as an error) rather than wipe it.
+        """
+        from audit_org_accounts_field import run_audit
+
+        client = _FakeClient(
+            {
+                "org-list": {"accounts": ["a000002"]},  # dead residue → deletable
+                "org-dict": {
+                    "accounts": {"acc_abc": {"funnels": {}}}
+                },  # live map → refuse
+                "org-clean": {"name": "no-accounts-field"},
+            }
+        )
+
+        summary = run_audit(client, dry_run=False, confirm_delete=True)
+
+        # Only the list org's field was deleted; the dict org was left untouched.
+        assert [org for org, _fields in client.updates_log] == ["org-list"]
+        assert summary.orgs_deleted == 1
+        assert summary.orgs_errors == 1  # the refused dict counts as an error
+        assert summary.pass_fail == "FAIL"  # refusal forces a non-zero exit
+
+    def test_dry_run_refuses_dict_without_writing(self) -> None:
+        """Even in dry-run, a dict field is refused and no write is attempted."""
+        from audit_org_accounts_field import run_audit
+
+        client = _FakeClient(
+            {"org-dict": {"accounts": {"acc_abc": {}}}},
+        )
+
+        summary = run_audit(client, dry_run=True, confirm_delete=True)
+
+        assert client.updates_log == []  # dry-run never writes
+        assert summary.orgs_errors == 1
+        assert summary.pass_fail == "FAIL"
