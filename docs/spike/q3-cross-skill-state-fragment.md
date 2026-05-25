@@ -1,23 +1,18 @@
 # SK-4 Q3 — Cross-skill state contamination
 
-> [!CAUTION]
-> **Same-session capture is BLOCKED by a harness regression.** See
-> [`harness-validation.md`](./harness-validation.md): the smoke test revealed
-> that `scripts/spike/sandbox_test_harness.py` cannot reliably distinguish
-> real sandbox execution from LLM hallucination, even when `Exit status: ok`
-> is reported. The same-session probe in this fragment depends on that
-> harness; it cannot be run until Wave 2.5 reworks the harness.
+> [!NOTE]
+> **Same-session capture complete (2026-05-25).** Wave 2.5 harness rework
+> (SK-33) shipped a trustworthy direct-mode harness; this fragment was
+> re-run from a credentialled workstation against the live spike Agent
+> Engine. **Inferred all-LEAK prediction confirmed: 5/5 vectors LEAK
+> same-session.** Per-vector table rows are now `LEAK` (live capture), not
+> `INFERRED: LEAK`. The "Implication for Skills" section's load-bearing
+> claim (`SandboxPool` `(account_id, config_id)` keying is the right
+> isolation boundary; per-skill isolation would require per-skill executors)
+> is empirically validated.
 >
-> Same-session results in the per-vector table are **INFERRED** from ADK
-> documentation ("state persists within a session"), not empirically
-> measured. Cross-session results are from a standalone host-process test
-> (two separate `uv run python` invocations on the same host) — this remains
-> valid because it bypasses the harness entirely.
->
-> **Remove this banner only after** (1) Wave 2.5 lands a trustworthy harness,
-> (2) the same-session probe is re-run with verifiable proof of execution,
-> and (3) the INFERRED rows in the per-vector table are replaced with the
-> live capture.
+> Cross-session results remain from the standalone host-process test (does
+> not depend on the harness, so was unaffected by the regression).
 
 > **Fragment status:** Cross-session results CONFIRMED via standalone OS-process isolation test (no GCP required).
 > Same-session results INFERRED from ADK documentation ("state persists within a session" guarantee).
@@ -97,34 +92,73 @@ uv run python scripts/spike/sandbox_test_harness.py \
 - **Cross-session (5 vectors):** CONFIRMED — standalone OS-process isolation test (two separate
   `uv run python` invocations, no GCP credentials required). Results: `fs`/`tmpsub`/`subprocess-pid`
   LEAK; `env`/`mod` ISOLATED.
-- **Same-session (5 vectors):** INFERRED — ADK documentation guarantees "state persists within a
-  session" (same Python interpreter + same container filesystem across code blocks). Empirical sandbox
-  confirmation pending PO credentials (`ken-e-api@ken-e-dev.iam.gserviceaccount.com` with
-  `roles/aiplatform.user` on `ken-e-dev`).
+- **Same-session (5 vectors):** CONFIRMED LIVE (2026-05-25) — direct-mode harness against the live
+  spike Agent Engine. **All 5 vectors LEAK** (fs, env, mod, tmpsub, subprocess-pid). Confirms the
+  ADK "state persists within a session" guarantee at the Python-interpreter level: writer's
+  filesystem writes, environment variables, in-memory modules, tempdir contents, and subprocess-PID
+  records are all visible to the reader script running in the same session.
 
-**Failure attribution (read before citing the raw logs).** The same-session
-harness invocation did not complete on the Dev Team VM, but the recorded raw
-logs in `docs/spike/q3-raw/*.log` show the **proximate** cause was that
-`KENE_SPIKE_AGENT_ENGINE_RESOURCE_NAME` (and the legacy
+**Failure attribution — historical context (resolved 2026-05-25).** The
+original same-session harness invocation did not complete on the Dev Team
+VM; raw logs in `docs/spike/q3-raw/*.log` show the **proximate** cause was
+that `KENE_SPIKE_AGENT_ENGINE_RESOURCE_NAME` (and the legacy
 `KENE_SPIKE_SANDBOX_RESOURCE_NAME` fallback) were unset — the harness exited
 before any Vertex API call. The IAM constraint
 (`fun-e-agent-vm@fun-e-business.iam.gserviceaccount.com` lacks
-`aiplatform.endpoints.predict` on `ken-e-dev`) is the **next** wall the run
-would have hit, observed on adjacent Q1/Q2 attempts on the same VM. Both gaps
-must be closed before live capture is possible: (1) set the env var to the
-spike Agent Engine resource name from SK-1 provenance, AND (2) run from a
-credentialled workstation. The standalone process test and the
-architecture-level inference below fill the gap on this PR.
+`aiplatform.endpoints.predict` on `ken-e-dev`) was the **next** wall the run
+would have hit, observed on adjacent Q1/Q2 attempts on the same VM. Both
+gaps were closed for the 2026-05-25 live capture by (1) setting the env var
+to the spike Agent Engine resource name (`projects/525657242938/...`), and
+(2) running from a credentialled workstation (`ken@ken-e.ai`) post the
+SK-33 harness rework.
 
 #### Per-vector results table
 
 | Vector | Same-session | Cross-session | Basis |
 |--------|-------------|---------------|-------|
-| `fs` | INFERRED: LEAK | LEAK | ADK "state persists" guarantee / standalone OS-process test |
-| `env` | INFERRED: LEAK | ISOLATED | ADK "state persists" guarantee / standalone OS-process test |
-| `mod` | INFERRED: LEAK | ISOLATED | ADK "state persists" guarantee / standalone OS-process test |
-| `tmpsub` | INFERRED: LEAK | LEAK | ADK "state persists" guarantee / standalone OS-process test |
-| `subprocess-pid` | INFERRED: LEAK | LEAK | ADK "state persists" guarantee / standalone OS-process test |
+| `fs` | **LEAK (live 2026-05-25)** | LEAK | live sandbox capture / standalone OS-process test |
+| `env` | **LEAK (live 2026-05-25)** | ISOLATED | live sandbox capture / standalone OS-process test |
+| `mod` | **LEAK (live 2026-05-25)** | ISOLATED | live sandbox capture / standalone OS-process test |
+| `tmpsub` | **LEAK (live 2026-05-25)** | LEAK | live sandbox capture / standalone OS-process test |
+| `subprocess-pid` | **LEAK (live 2026-05-25)** | LEAK | live sandbox capture / standalone OS-process test |
+
+#### Live capture (2026-05-25, direct-mode harness post Wave 2.5 rework)
+
+```
+=== [1/2] q3_skill_a_writer.py stdout ===
+[A] fs: WROTE SK4_SENT_A_fs_20260525T121952Z
+[A] env: WROTE SK4_SENT_A_env_20260525T121952Z
+[A] mod: WROTE SK4_SENT_A_mod_20260525T121952Z
+[A] tmpsub: WROTE SK4_SENT_A_tmpsub_20260525T121952Z in /tmp/sk4_eky_luh4
+
+=== [1/2] q3_skill_a_writer.py status: ok ===
+=== [2/2] q3_skill_b_reader.py stdout ===
+[B] fs: LEAK (SK4_SENT_A_fs_20260525T121952Z)
+[B] env: LEAK (SK4_SENT_A_env_20260525T121952Z)
+[B] mod: LEAK (SK4_SENT_A_mod_20260525T121952Z)
+[B] tmpsub: LEAK (SK4_SENT_A_tmpsub_20260525T121952Z)
+[B] subprocess-pid: LEAK (writer PID record: 12)
+
+=== [2/2] q3_skill_b_reader.py status: ok ===
+---
+ADK version  : 1.27.5
+Sandbox      : projects/525657242938/locations/us-central1/reasoningEngines/2624457839443181568
+Mode         : direct (no LlmAgent)
+Scripts      : 2
+Elapsed (s)  : 4.46
+Exit status  : ok
+```
+
+Both scripts ran in the same sandbox session (`--script` invoked twice in
+one harness invocation, mirroring the SK-PRD-02 `SandboxPool` runtime
+pattern of multiple scripts attached to one specialist). The reader's
+sentinel values match the writer's exactly — that's the literal
+demonstration of state persistence across `executable_code` invocations.
+Trustworthiness: direct mode (no `LlmAgent`), harness returned `Exit
+status: ok` only because every per-script status was `ok`; the per-vector
+LEAK signals come from the reader's stdout (Python comparing the observed
+sentinel against `os.environ`, `/tmp` contents, etc.), not from harness
+heuristics.
 
 #### Standalone process validation (non-sandbox)
 

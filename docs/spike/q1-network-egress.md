@@ -1,26 +1,15 @@
 # Question 1 — Network egress
 
-> [!CAUTION]
-> **Findings incomplete — live capture is BLOCKED by a harness regression.**
-> See [`harness-validation.md`](./harness-validation.md): the smoke test from
-> a credentialled workstation revealed that
-> `scripts/spike/sandbox_test_harness.py` cannot reliably distinguish real
-> sandbox execution from LLM hallucination, even when `Exit status: ok` is
-> reported. **Do not run the probe below until the harness has been reworked.**
->
-> The "Live execution instructions" later in this file are kept as a reference
-> for the eventual rework but should be treated as not-yet-runnable.
->
-> The `### Implication for Skills` section is derived from research into the
-> ADK surface (no network-egress constructor kwarg, mitigations live at the
-> VPC-SC / PSC-I infrastructure layer), not from live sandbox behaviour. If
-> the eventually-trustworthy live probe contradicts the unrestricted-egress
-> assumption, those implications need revision.
->
-> **Remove this banner only after** (1) Wave 2.5 lands a trustworthy harness,
-> (2) the probe is re-run with verifiable proof of execution, and (3) the live
-> capture is pasted into `### Result` AND the `### Implication for Skills`
-> section is reconfirmed.
+> [!NOTE]
+> **Live capture complete — pre-capture research assumption was inverted.**
+> Live probe from a credentialled workstation (2026-05-25, post Wave 2.5
+> harness rework) returned **4/4 vectors BLOCKED**. The default sandbox has
+> NO internet egress (DNS, HTTPS, DoH, and raw-TCP all fail at the network
+> layer with `gaierror`/`Network is unreachable`). The `### Implication for
+> Skills` section has been rewritten to reflect the inversion — see the
+> dated revision header in that section. The original research-based
+> implications are preserved in §"Original research-based implications
+> (pre-capture, now inverted)" for SK-7/SK-8 traceability.
 
 > **Status:** Test section and Mitigation Matrix are complete. The `### Result`
 > section requires PO to run the live sandbox probe from a workstation with
@@ -122,11 +111,35 @@ SK-7 will then incorporate the captured output into this document before merging
 
 ### Result
 
-> **[PENDING PO EXECUTION]** This section is populated once the PO runs the probe
-> from a workstation with `roles/aiplatform.user` on `ken-e-dev` and pastes the
-> output as a comment on SK-2.
+**Live capture (2026-05-25, direct-mode harness post Wave 2.5 rework):**
 
-**Dev Team VM credential attempt (2026-05-24):**
+```
+=== [1/1] q1_network_egress.py stdout ===
+{"vector": "dns", "target": "example.com", "outcome": "blocked", "details": "gaierror: [Errno -3] Temporary failure in name resolution"}
+{"vector": "https", "target": "https://httpbin.org/get", "outcome": "blocked", "details": "URLError: <urlopen error [Errno -3] Temporary failure in name resolution>"}
+{"vector": "doh", "target": "https://cloudflare-dns.com/dns-query?name=example.com&type=A", "outcome": "blocked", "details": "URLError: <urlopen error [Errno -3] Temporary failure in name resolution>"}
+{"vector": "tcp_raw", "target": "1.1.1.1:53", "outcome": "blocked", "details": "OSError: [Errno 101] Network is unreachable"}
+{"vector": "summary", "allowed": 0, "blocked": 4, "partial": 0, "error": 0}
+
+=== [1/1] q1_network_egress.py status: ok ===
+---
+ADK version  : 1.27.5
+Sandbox      : projects/525657242938/locations/us-central1/reasoningEngines/2624457839443181568
+Mode         : direct (no LlmAgent)
+Scripts      : 1
+Elapsed (s)  : 8.43
+Exit status  : ok
+```
+
+**Trustworthiness:** harness in direct mode (no `LlmAgent` in the loop, so no
+hallucination surface). `Exit status: ok` means the executor returned a
+non-OK-free result; the 4 `blocked` outcomes are real failures observed
+INSIDE the sandbox runtime (Python's standard `gaierror`/`OSError`
+exceptions, not synthetic LLM output). Wall-clock 8.43 s is consistent
+with a real cold-start sandbox creation + script execution.
+
+**Dev Team VM credential attempt (2026-05-24, pre-rework, kept for audit
+traceability):**
 
 ```
 Exit status  : error (ClientError): agent run failed — 403 PERMISSION_DENIED.
@@ -134,24 +147,24 @@ Permission 'aiplatform.endpoints.predict' denied on resource
 '//aiplatform.googleapis.com/projects/ken-e-dev/locations/us-central1/publishers/google/models/gemini-2.0-flash'
 ```
 
-This confirms `fun-e-agent-vm@fun-e-business.iam.gserviceaccount.com` lacks
-`roles/aiplatform.user` on `ken-e-dev`. Matches the risk item in the implementation
-plan and the SK-1 AC #4 pattern.
+This confirms `fun-e-agent-vm@fun-e-business.iam.gserviceaccount.com` lacked
+`roles/aiplatform.user` on `ken-e-dev`. The live capture above was produced
+from a different workstation (`ken@ken-e.ai`) that holds the role.
 
-**Expected baseline capture (to be replaced with actual output):**
+**Per-vector outcome table:**
 
-```
-[PASTE verbatim harness output here — 5 JSON lines + separator + 4-line trailer]
-```
+| Vector | Default sandbox (`ken-e-dev`, no VPC-SC) | VPC-SC perimeter |
+|--------|--|--|
+| dns | **blocked** (`gaierror: [Errno -3] Temporary failure in name resolution`) | untestable — perimeter not configured on `ken-e-dev` |
+| https | **blocked** (`URLError: <urlopen error [Errno -3] Temporary failure in name resolution>`) | untestable |
+| doh | **blocked** (`URLError: <urlopen error [Errno -3] Temporary failure in name resolution>`) | untestable |
+| tcp_raw | **blocked** (`OSError: [Errno 101] Network is unreachable`) | untestable |
 
-**Per-vector outcome table (to be filled from live capture):**
-
-| Vector | Default sandbox | VPC-SC perimeter (if tested) |
-|--------|----------------|------------------------------|
-| dns | [PENDING] | [PENDING or "untestable"] |
-| https | [PENDING] | [PENDING or "untestable"] |
-| doh | [PENDING] | [PENDING or "untestable"] |
-| tcp_raw | [PENDING] | [PENDING or "untestable"] |
+The DNS error (`[Errno -3] Temporary failure in name resolution`) on three
+of the four vectors implies the sandbox container has no DNS resolver
+reachable; the raw-TCP error (`Network is unreachable`) implies the
+container's routing table has no path to the public internet at all. Both
+are consistent with a sandbox that runs with no egress route by default.
 
 ---
 
@@ -189,7 +202,13 @@ per-invocation.
 - No PSC-I or proxy is configured.
 - The sandbox environment is created with `spec={'code_execution_environment': {}}` —
   no network fields populated.
-- **Default assumption: unrestricted internet egress** from within the sandbox.
+- **Empirically observed default: NO internet egress.** The 2026-05-25 live
+  capture against `ken-e-dev` returned `Network is unreachable` for raw-TCP
+  and `gaierror`/`Temporary failure in name resolution` for DNS, HTTPS, and
+  DoH — i.e., the sandbox runtime has no DNS resolver and no routing path to
+  the public internet by default. This contradicts the pre-capture research
+  assumption (preserved in §"Original research-based implications" for
+  audit), and is the load-bearing finding for Q1.
 
 **Where to enable restrictions:**
 1. VPC Service Controls: organisation console → VPC SC → Access Policy → create
@@ -210,10 +229,61 @@ perimeter-level (VPC-SC) or deployment-level (PSC-I). A user with only
 
 ### Implication for Skills
 
-> The implications below are derived from the research-confirmed absence of a
-> per-sandbox egress control knob. They will be revisited once live sandbox
-> captures confirm the expected "unrestricted egress" outcome. If the live probe
-> returns `blocked` for all vectors (unexpected), these implications reverse.
+> **Revised 2026-05-25** based on live capture showing 4/4 vectors `blocked`.
+> The original research-based implications (which assumed unrestricted egress)
+> are preserved below in §"Original research-based implications" for SK-7/SK-8
+> traceability.
+
+1. **SK-PRD-02 `_build_code_executor` config:** The ADK surface still exposes
+   zero egress-restriction constructor kwargs — that part of the research
+   stands. **But the empirical default is "no egress," not "unrestricted
+   egress."** SK-PRD-02 does NOT need to add a "network policy" parameter
+   because the default is already maximally restrictive. The `_build_code_executor`
+   docstring and `SandboxPool._construct` should document this as the observed
+   default with a pointer to this fragment.
+
+2. **SK-PRD-03 authoring-UI copy:** **No egress warning is required** under
+   the `scripts/` uploader. The previously-mandated warning ("Scripts run in
+   a Vertex AI sandbox that has unrestricted internet access by default") is
+   factually wrong against the observed default. If a future operator opens
+   the sandbox to external traffic via VPC-SC perimeter rules or PSC-I + SWP,
+   the warning should be added at that time, gated on a config flag.
+
+3. **SK-PRD-00 §9 open question (HTTP egress + authoring-UI implications):**
+   **Resolved.** Scripts cannot make HTTP calls in the default sandbox — the
+   constraint the §9 question hoped for is already enforced at the Vertex
+   network layer. The Skills README §7 sandbox-gating section should add a
+   note: "Default sandbox runtime has no internet egress. Operators wishing to
+   enable HTTP access for trusted skills must explicitly open the sandbox via
+   VPC-SC or PSC-I + SWP — this is an admin-level action, not a per-skill or
+   per-account knob."
+
+4. **10-skill cap (cross-vector leakage):** Unchanged. The cap is governed by
+   token budget (L1 metadata overhead), not egress risk. Q1's inverted finding
+   removes one input to the cap discussion but does not change the cap.
+
+5. **Security escalation (SK-9):**
+   - Severity: **None / Informational.** The original "High severity, gated on
+     org-admin VPC-SC config" finding is **withdrawn.** Default Vertex sandbox
+     is closed; no escalation to `security@ken-e.ai` is required from Q1
+     findings alone.
+   - Updated action: SK-9 should still flag this finding for the security
+     gate review, but as an _affirming_ data point (the security posture is
+     better than assumed), not an escalation.
+   - No blocker for SK-PRD-02 or SK-PRD-03.
+
+> **Task 5 conditional trigger (resolved):** The trigger fired in the
+> direction OPPOSITE to what the implementation plan anticipated. SK-9 should
+> still be informed of the finding so it can update its threat model.
+
+---
+
+### Original research-based implications (pre-capture, now inverted)
+
+> Preserved verbatim for SK-7/SK-8 traceability. **These are NOT the load-bearing
+> Q1 implications** — see the revised section above. The original implications
+> incorrectly assumed the sandbox default was unrestricted egress; the live
+> probe showed the opposite.
 
 1. **SK-PRD-02 `_build_code_executor` config:** No egress-restriction constructor
    kwargs exist. The `AgentEngineSandboxCodeExecutor` constructor receives only
