@@ -1,5 +1,6 @@
 """User context and authentication utilities."""
 
+import asyncio
 import logging
 import time
 from typing import Any, Optional
@@ -435,6 +436,29 @@ async def get_optional_user_context(
         return None
 
 
+async def check_account_access(
+    account_id: str,
+    user: UserContext = Depends(get_current_user_context),
+) -> UserContext:
+    """FastAPI dependency gating every account-scoped route on membership.
+
+    Non-members receive 403. Returns UserContext so downstream handlers that
+    need it can declare it as a dependency without a second auth round-trip.
+    """
+    if not user.has_account_access(account_id):
+        audit_logger = get_audit_logger()
+        asyncio.create_task(
+            audit_logger.log_access_denied(
+                user_id=user.user_id,
+                resource_type="account",
+                resource_id=account_id,
+                required_permission=None,
+            )
+        )
+        raise HTTPException(status_code=403, detail="forbidden")
+    return user
+
+
 def require_account_access(
     account_id: str,
     required_roles: list[str] | None = None,
@@ -454,9 +478,6 @@ def require_account_access(
     def check_access(user: UserContext) -> None:
         if not user.has_account_access(account_id, required_roles):
             role_msg = f" with role in {required_roles}" if required_roles else ""
-
-            # Log access denied - this is synchronous but we'll log it anyway
-            import asyncio
 
             audit_logger = get_audit_logger()
             asyncio.create_task(
@@ -495,9 +516,6 @@ def require_organization_access(
     def check_access(user: UserContext) -> None:
         if not user.has_organization_access(organization_id, required_roles):
             role_msg = f" with role in {required_roles}" if required_roles else ""
-
-            # Log access denied - this is synchronous but we'll log it anyway
-            import asyncio
 
             audit_logger = get_audit_logger()
             asyncio.create_task(
