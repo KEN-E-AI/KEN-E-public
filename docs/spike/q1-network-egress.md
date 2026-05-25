@@ -1,5 +1,27 @@
 # Question 1 — Network egress
 
+> [!CAUTION]
+> **Findings incomplete — live capture is BLOCKED by a harness regression.**
+> See [`harness-validation.md`](./harness-validation.md): the smoke test from
+> a credentialled workstation revealed that
+> `scripts/spike/sandbox_test_harness.py` cannot reliably distinguish real
+> sandbox execution from LLM hallucination, even when `Exit status: ok` is
+> reported. **Do not run the probe below until the harness has been reworked.**
+>
+> The "Live execution instructions" later in this file are kept as a reference
+> for the eventual rework but should be treated as not-yet-runnable.
+>
+> The `### Implication for Skills` section is derived from research into the
+> ADK surface (no network-egress constructor kwarg, mitigations live at the
+> VPC-SC / PSC-I infrastructure layer), not from live sandbox behaviour. If
+> the eventually-trustworthy live probe contradicts the unrestricted-egress
+> assumption, those implications need revision.
+>
+> **Remove this banner only after** (1) Wave 2.5 lands a trustworthy harness,
+> (2) the probe is re-run with verifiable proof of execution, and (3) the live
+> capture is pasted into `### Result` AND the `### Implication for Skills`
+> section is reconfirmed.
+
 > **Status:** Test section and Mitigation Matrix are complete. The `### Result`
 > section requires PO to run the live sandbox probe from a workstation with
 > `roles/aiplatform.user` on `ken-e-dev` (Dev Team VM has 403 PERMISSION_DENIED

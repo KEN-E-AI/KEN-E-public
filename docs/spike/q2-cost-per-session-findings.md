@@ -2,6 +2,28 @@
      under the "## Question 2 — Cost per session" heading when SK-7 creates that file.
      Update the placeholder tables with real data once execution unblocks. -->
 
+> [!CAUTION]
+> **Findings template only — live capture is BLOCKED by a harness regression.**
+> See [`harness-validation.md`](./harness-validation.md): the smoke test
+> revealed that `scripts/spike/sandbox_test_harness.py` cannot reliably
+> distinguish real sandbox execution from LLM hallucination, even when
+> `Exit status: ok` is reported. The Q2 cost-per-session orchestrator
+> (`scripts/spike/q2_cost_orchestrator.py`, on the spike branch) invokes the
+> harness N=30 times per cohort; every elapsed-time measurement it would
+> produce is suspect.
+>
+> The Vertex AI billing export side of Q2 (the ≥36 h settlement wait + SKU
+> filtering described in §a/§e of the methodology) is unaffected by the
+> harness issue, but it is meaningless without trustworthy session timing
+> data to attribute against.
+>
+> The `### Result (table)` section is entirely placeholder
+> (`*[Populate after execution]*`). **Remove this banner only after**
+> (1) Wave 2.5 lands a trustworthy harness, (2) the N=30 cohort run is
+> re-executed with verifiable proof of execution, (3) the 36 h billing
+> settlement completes, and (4) every `*[Populate after execution]*`
+> placeholder is replaced with real numbers.
+
 ## Question 2 — Cost per session
 
 ### Method
@@ -10,7 +32,7 @@
 **Spike engine:** `projects/PROJECT_NUMBER/locations/us-central1/reasoningEngines/ENGINE_ID`
 **Service account:** `ken-e-api@ken-e-dev.iam.gserviceaccount.com`
 
-**Representative workload** (defined in `q2_methodology.md` §d):
+**Representative workload** (defined in `q2-cost-per-session-methodology.md` §d):
 
 | Step | Operation | Purpose |
 |---|---|---|
@@ -27,7 +49,7 @@
 time-of-day billing artifacts. Cold sessions pass a fresh Agent Engine resource name; warm
 sessions reuse the `sandboxEnvironment` from the corresponding cold session in the block.
 
-**Billing attribution:** Per `q2_methodology.md` §e, billing data was pulled ≥36h after the
+**Billing attribution:** Per `q2-cost-per-session-methodology.md` §e, billing data was pulled ≥36h after the
 last session from the Vertex AI billing export filtered to the spike service account and
 measurement window. If the export did not separately break out `sandboxEnvironment` compute,
 the proportional-by-duration fallback was applied (noted in the table below).

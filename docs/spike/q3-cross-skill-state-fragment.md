@@ -1,12 +1,33 @@
 # SK-4 Q3 — Cross-skill state contamination
 
+> [!CAUTION]
+> **Same-session capture is BLOCKED by a harness regression.** See
+> [`harness-validation.md`](./harness-validation.md): the smoke test revealed
+> that `scripts/spike/sandbox_test_harness.py` cannot reliably distinguish
+> real sandbox execution from LLM hallucination, even when `Exit status: ok`
+> is reported. The same-session probe in this fragment depends on that
+> harness; it cannot be run until Wave 2.5 reworks the harness.
+>
+> Same-session results in the per-vector table are **INFERRED** from ADK
+> documentation ("state persists within a session"), not empirically
+> measured. Cross-session results are from a standalone host-process test
+> (two separate `uv run python` invocations on the same host) — this remains
+> valid because it bypasses the harness entirely.
+>
+> **Remove this banner only after** (1) Wave 2.5 lands a trustworthy harness,
+> (2) the same-session probe is re-run with verifiable proof of execution,
+> and (3) the INFERRED rows in the per-vector table are replaced with the
+> live capture.
+
 > **Fragment status:** Cross-session results CONFIRMED via standalone OS-process isolation test (no GCP required).
 > Same-session results INFERRED from ADK documentation ("state persists within a session" guarantee).
 > PO empirical confirmation pending for same-session (requires `ken-e-api@ken-e-dev.iam.gserviceaccount.com`
 > with `roles/aiplatform.user` on `ken-e-dev` — same credentials used for SK-1 AC#4).
 >
-> Raw logs: `docs/spike/q3-raw/` (same-session/cross-session harness invocations captured; harness
-> exited before `---` block due to IAM constraint on dev VM).
+> Raw logs: `docs/spike/q3-raw/` (same-session/cross-session harness invocations
+> captured on the Dev Team VM; harness exited early because
+> `KENE_SPIKE_AGENT_ENGINE_RESOURCE_NAME` was unset — see the **Failure attribution**
+> note in the `### Result` section).
 
 ---
 
@@ -81,10 +102,19 @@ uv run python scripts/spike/sandbox_test_harness.py \
   confirmation pending PO credentials (`ken-e-api@ken-e-dev.iam.gserviceaccount.com` with
   `roles/aiplatform.user` on `ken-e-dev`).
 
-The same-session harness invocation did not complete on the dev VM (IAM constraint:
-`fun-e-agent-vm@fun-e-business.iam.gserviceaccount.com` lacks `aiplatform.endpoints.predict` on
-`ken-e-dev`). The standalone process test and the architecture-level inference below fill the gap.
-Raw logs are committed to `docs/spike/q3-raw/` with the verbatim harness failure output.
+**Failure attribution (read before citing the raw logs).** The same-session
+harness invocation did not complete on the Dev Team VM, but the recorded raw
+logs in `docs/spike/q3-raw/*.log` show the **proximate** cause was that
+`KENE_SPIKE_AGENT_ENGINE_RESOURCE_NAME` (and the legacy
+`KENE_SPIKE_SANDBOX_RESOURCE_NAME` fallback) were unset — the harness exited
+before any Vertex API call. The IAM constraint
+(`fun-e-agent-vm@fun-e-business.iam.gserviceaccount.com` lacks
+`aiplatform.endpoints.predict` on `ken-e-dev`) is the **next** wall the run
+would have hit, observed on adjacent Q1/Q2 attempts on the same VM. Both gaps
+must be closed before live capture is possible: (1) set the env var to the
+spike Agent Engine resource name from SK-1 provenance, AND (2) run from a
+credentialled workstation. The standalone process test and the
+architecture-level inference below fill the gap on this PR.
 
 #### Per-vector results table
 
