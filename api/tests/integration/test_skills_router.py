@@ -1541,3 +1541,165 @@ class TestHasScriptsRoundTrip(_SkillsRouterBase):
         detail_resp = client.get(BASE_URL + f"/{skill_id}")
         assert detail_resp.status_code == 200
         assert detail_resp.json()["has_scripts"] is True
+
+
+# ---------------------------------------------------------------------------
+# Cross-account isolation (SK-20)
+# ---------------------------------------------------------------------------
+
+
+class TestCrossAccountIsolation(_SkillsRouterBase):
+    """SK-20: two-layer auth — account membership + owner.account_id assertion.
+
+    Natural cross-account (doc absent at path) → 404 (existing behaviour).
+    Inconsistent doc (present at path but owner.account_id != path.account_id) → 403.
+    Non-member of path account → 403 (router-level check_account_access dependency).
+    """
+
+    def test_non_member_blocked_on_all_write_endpoints_returns_403(
+        self, client, fake_db, fake_storage
+    ):
+        """Layer 1: non-member blocked on POST, PUT, DELETE before any storage read."""
+        self._install_user(_no_access_user())
+
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 403
+
+        put_resp = client.put(
+            BASE_URL + "/any-skill-id",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert put_resp.status_code == 403
+
+        del_resp = client.delete(BASE_URL + "/any-skill-id")
+        assert del_resp.status_code == 403
+
+    def test_non_member_blocked_on_all_read_endpoints_returns_403(
+        self, client, fake_db, fake_storage
+    ):
+        """Layer 1: non-member blocked on GET list, GET detail, GET content, GET resource."""
+        self._install_user(_no_access_user())
+
+        assert client.get(BASE_URL + "/").status_code == 403
+        assert client.get(BASE_URL + "/any-id").status_code == 403
+        assert client.get(BASE_URL + "/any-id/content").status_code == 403
+        assert client.get(BASE_URL + "/any-id/resources/ref.md").status_code == 403
+
+    def test_inconsistent_doc_owner_mismatch_get_detail_returns_403(
+        self, client, fake_db, fake_storage
+    ):
+        """Layer 2: doc at B's path but owner.account_id = A → 403 owner_mismatch."""
+        skill_id = "inconsistent-skill-id"
+        fake_db._store[f"accounts/{OTHER_ACCOUNT_ID}/skills/{skill_id}"] = {
+            "skill_id": skill_id,
+            "owner": {"account_id": ACCOUNT_ID, "shared_with_accounts": []},
+            "name": "injected-skill",
+            "description": "inconsistent doc",
+            "current_version": 1,
+            "visibility": "private",
+            "status": "draft",
+            "source": {"type": "authored"},
+            "has_scripts": False,
+            "created_at": "2025-01-01T00:00:00+00:00",
+            "created_by": "uid-a",
+            "updated_at": "2025-01-01T00:00:00+00:00",
+            "updated_by": "uid-a",
+        }
+        other_user = UserContext(
+            user_id="other-uid",
+            email="other@example.com",
+            organization_permissions={},
+            account_permissions={OTHER_ACCOUNT_ID: "admin"},
+        )
+        self._install_user(other_user)
+
+        resp = client.get(OTHER_BASE_URL + f"/{skill_id}")
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "owner_mismatch"
+
+    def test_inconsistent_doc_owner_mismatch_delete_returns_403(
+        self, client, fake_db, fake_storage
+    ):
+        """Layer 2: doc at B's path but owner.account_id = A → 403 on DELETE."""
+        skill_id = "inconsistent-del-id"
+        fake_db._store[f"accounts/{OTHER_ACCOUNT_ID}/skills/{skill_id}"] = {
+            "skill_id": skill_id,
+            "owner": {"account_id": ACCOUNT_ID, "shared_with_accounts": []},
+            "name": "injected-skill-del",
+            "description": "inconsistent doc",
+            "current_version": 1,
+            "visibility": "private",
+            "status": "draft",
+            "source": {"type": "authored"},
+            "has_scripts": False,
+            "created_at": "2025-01-01T00:00:00+00:00",
+            "created_by": "uid-a",
+            "updated_at": "2025-01-01T00:00:00+00:00",
+            "updated_by": "uid-a",
+        }
+        other_user = UserContext(
+            user_id="other-uid",
+            email="other@example.com",
+            organization_permissions={},
+            account_permissions={OTHER_ACCOUNT_ID: "admin"},
+        )
+        self._install_user(other_user)
+
+        resp = client.delete(OTHER_BASE_URL + f"/{skill_id}")
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "owner_mismatch"
+
+    def test_member_of_both_accounts_natural_cross_account_returns_404(
+        self, client, fake_db, fake_storage
+    ):
+        """Natural cross-account (doc absent at B's path) returns 404, not 403.
+
+        Preserves the existing behaviour documented in the Skills README §7.
+        """
+        both_accounts_user = UserContext(
+            user_id="both-uid",
+            email="both@example.com",
+            organization_permissions={},
+            account_permissions={ACCOUNT_ID: "admin", OTHER_ACCOUNT_ID: "admin"},
+        )
+        self._install_user(both_accounts_user)
+
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+
+        # Same skill_id via OTHER_ACCOUNT_ID path → doc absent → 404
+        resp = client.get(OTHER_BASE_URL + f"/{skill_id}")
+        assert resp.status_code == 404
+
+    def test_check_account_access_and_check_strategy_access_agree(self):
+        """Dependency regression: both helpers grant access to members, 403 to non-members."""
+        import asyncio
+
+        from fastapi import HTTPException as FastAPIHTTPException
+
+        from src.kene_api.auth.user_context import check_account_access
+        from src.kene_api.routers.strategy import check_strategy_access
+
+        for user, should_pass in [(_member_user(), True), (_no_access_user(), False)]:
+            if should_pass:
+                result = asyncio.run(check_account_access(ACCOUNT_ID, user))
+                assert result.user_id == user.user_id
+                result2 = asyncio.run(check_strategy_access(ACCOUNT_ID, user, "view"))
+                assert result2.user_id == user.user_id
+            else:
+                with pytest.raises(FastAPIHTTPException) as exc_info:
+                    asyncio.run(check_account_access(ACCOUNT_ID, user))
+                assert exc_info.value.status_code == 403
+                with pytest.raises(FastAPIHTTPException) as exc_info2:
+                    asyncio.run(check_strategy_access(ACCOUNT_ID, user, "view"))
+                assert exc_info2.value.status_code == 403
