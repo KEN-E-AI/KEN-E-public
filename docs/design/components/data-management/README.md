@@ -8,7 +8,7 @@
 
 The Data Management component owns the multi-tenant data model for KEN-E. It defines how account-scoped data is laid out in Firestore and Cloud Storage (GCS) so every downstream component — Strategy, Analytics, Skills, Project Tasks, Automations, Knowledge Graph — writes to a single, consistent, safely-isolated shape. This component owns no public API and no UI; it is a platform-level concern whose outputs are *conventions, migration scripts, and Firestore/GCS indexes* consumed by every other component.
 
-Its initial scope was the **Shape B migration plus the platform substrate that rides on it**: realigning every account-scoped Firestore collection under `accounts/{account_id}/{resource}/…`, splitting the legacy `organizations/{org_id}` nested accounts-map out to per-account docs, keeping GCS on the existing G1 prefix pattern, then layering a unified roles-and-audit substrate on top. Eight project PRDs (DM-PRD-00 through DM-PRD-07) break the work into parallelizable units — DM-PRD-00 was the blocking foundation; DM-PRD-01 through DM-PRD-04 ran in parallel across up to four dev teams; DM-PRD-05 rewrote the deletion sweep (account + user) once all four landed; DM-PRD-06 completed the staging cutover; DM-PRD-07 (after PR-PRD-01 lands) ships the two-tier role model, members storage, member-CRUD API, hybrid migration off the legacy `users.permissions.*` field tree, and the generalized audit substrate that every mutating endpoint in KEN-E writes through. With this migration complete (DM-PRD-00 through DM-PRD-06 shipped and staging cut over), the data-shape surface area across the codebase has dropped from four distinct patterns (Shape A/B/C/D) down to two (Shape B + Shape C) — giving every downstream component a single, unambiguous path contract to rely on.
+Its initial scope was the **Shape B migration plus the platform substrate that rides on it**: realigning every account-scoped Firestore collection under `accounts/{account_id}/{resource}/…`, splitting the legacy `organizations/{org_id}` nested accounts-map out to per-account docs, keeping GCS on the existing G1 prefix pattern, then layering a unified roles-and-audit substrate on top. Nine project PRDs (DM-PRD-00 through DM-PRD-08) break the work into parallelizable units — DM-PRD-00 was the blocking foundation; DM-PRD-01 through DM-PRD-04 ran in parallel across up to four dev teams; DM-PRD-05 rewrote the deletion sweep (account + user) once all four landed; DM-PRD-06 completed the staging cutover; DM-PRD-07 (after PR-PRD-01 lands) ships the two-tier role model, members storage, member-CRUD API, hybrid migration off the legacy `users.permissions.*` field tree, and the generalized audit substrate that every mutating endpoint in KEN-E writes through; DM-PRD-08 cuts the same migration over to production. With the staging cutover complete (DM-PRD-00 through DM-PRD-06 shipped), the data-shape surface area across the codebase has dropped from four distinct patterns (Shape A/B/C/D) down to two (Shape B + Shape C) — giving every downstream component a single, unambiguous path contract to rely on.
 
 KEN-E has no production users today, so this is a **single-cutover migration per environment** — no dual-write, no backwards-compatibility phase, no downtime window tracking. Repeatability across dev → staging → prod matters because the same migration script runs in each environment. The authoritative decision that drives this work is [Review 15 in DESIGN-REVIEW-LOG](../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1) — Multi-Tenant Data Model Shape (Firestore Subcollections + GCS Prefix G1); the step-by-step plan lives in [`./multi-tenant-migration-plan.md`](./multi-tenant-migration-plan.md).
 
@@ -155,7 +155,7 @@ This component publishes no public HTTP API. Its contracts are structural and co
 
 ## 5. Project Index
 
-The component's work is split across **8 project PRDs** under [`projects/`](./projects/). Every PRD is self-contained — a team can pick one up and ship it without reading the others. The blocking relationships below determine how many teams can work in parallel at each phase. DM-PRD-07 was added alongside the Figma-frontend backend alignment: role-based access control and a formal audit-log schema are cross-cutting concerns that belong with Data Management rather than with any single consumer component.
+The component's work is split across **9 project PRDs** under [`projects/`](./projects/). Every PRD is self-contained — a team can pick one up and ship it without reading the others. The blocking relationships below determine how many teams can work in parallel at each phase. DM-PRD-07 was added alongside the Figma-frontend backend alignment: role-based access control and a formal audit-log schema are cross-cutting concerns that belong with Data Management rather than with any single consumer component. DM-PRD-08 was added after DM-PRD-06's staging cutover closed cleanly: the same Shape A residue (and the DM-92 `accounts`-field residue) exists in `ken-e-production` today, so production gets its own one-shot cutover project rather than absorbing the work into the staging-scoped DM-PRD-06.
 
 ### 5.1 Projects
 
@@ -169,6 +169,7 @@ The component's work is split across **8 project PRDs** under [`projects/`](./pr
 | [DM-PRD-05](./projects/DM-PRD-05-deletion-sweep-rewrite.md) | Deletion Sweep Rewrite (Account + User) | Complete | 2–3 d | DM-PRD-01, DM-PRD-02, DM-PRD-03, DM-PRD-04 | DM-PRD-06, DM-PRD-07 |
 | [DM-PRD-06](./projects/DM-PRD-06-verification-and-cutover.md) | Verification & Staging Cutover | Complete | 1 d | DM-PRD-05 | — |
 | [DM-PRD-07](./projects/DM-PRD-07-approval-workflow-and-audit.md) | Roles, Members, Audit Substrate | Blocked | 4–5 d | PR-PRD-01, DM-PRD-05 | PR-PRD-07 |
+| [DM-PRD-08](./projects/DM-PRD-08-production-cutover.md) | Production Cutover | Backlog | 1 d | DM-PRD-06 | — |
 
 ### 5.2 Dependency graph
 
@@ -192,18 +193,23 @@ The component's work is split across **8 project PRDs** under [`projects/`](./pr
                                      ▼
                               ┌──────────────┐
                               │  DM-PRD-06   │  Staging cutover
+                              └──────┬───────┘
+                                     ▼
+                              ┌──────────────┐
+                              │  DM-PRD-08   │  Production cutover
                               └──────────────┘
 ```
 
-DM-PRD-01 through DM-PRD-04 are fully parallelizable after DM-PRD-00 ships. DM-PRD-07 runs in parallel with DM-PRD-06 once its prerequisites (PR-PRD-01 + DM-PRD-05) are in — they touch disjoint code paths.
+DM-PRD-01 through DM-PRD-04 are fully parallelizable after DM-PRD-00 ships. DM-PRD-07 runs in parallel with DM-PRD-06 once its prerequisites (PR-PRD-01 + DM-PRD-05) are in — they touch disjoint code paths. DM-PRD-08 (production cutover) follows DM-PRD-06 (staging cutover) and ships independently of DM-PRD-07.
 
-**Critical path:** DM-PRD-00 → longest of (DM-PRD-01, DM-PRD-02, DM-PRD-03, DM-PRD-04) → DM-PRD-05 → DM-PRD-06 ≈ **8–11 working days** with 3–4 teams active during the middle phase. DM-PRD-07 adds 4–5 days but can overlap DM-PRD-06, so it does not extend the critical path.
+**Critical path:** DM-PRD-00 → longest of (DM-PRD-01, DM-PRD-02, DM-PRD-03, DM-PRD-04) → DM-PRD-05 → DM-PRD-06 → DM-PRD-08 ≈ **9–12 working days** with 3–4 teams active during the middle phase. DM-PRD-07 adds 4–5 days but can overlap DM-PRD-06 and DM-PRD-08, so it does not extend the critical path.
 
 ### 5.3 Recommended workflow
 
 1. **Sprint 1:** One team ships DM-PRD-00 (migration CLI + shared indexes + convention documented in `api/CLAUDE.md`). Other teams review the `MigrateConfig` schema and stub their resources.
 2. **Sprint 2:** DM-PRD-01, DM-PRD-02, DM-PRD-03, DM-PRD-04 run in parallel across up to four teams. Each runs the verification gate (§7.3) independently.
-3. **Sprint 3:** DM-PRD-05 consumes the verified state of DM-PRD-01–DM-PRD-04 and rewrites the deletion sweep. DM-PRD-06 closes out with the staging cutover and the final DESIGN-REVIEW-LOG entry. DM-PRD-07 runs in parallel with DM-PRD-06 once PR-PRD-01 has merged (the role-gate / audit-log helpers it publishes are what unblock PR-PRD-07 and PR-PRD-08 in the Project Tasks component).
+3. **Sprint 3:** DM-PRD-05 consumes the verified state of DM-PRD-01–DM-PRD-04 and rewrites the deletion sweep. DM-PRD-06 closes out the staging cutover with its DESIGN-REVIEW-LOG entry. DM-PRD-07 runs in parallel with DM-PRD-06 once PR-PRD-01 has merged (the role-gate / audit-log helpers it publishes are what unblock PR-PRD-07 and PR-PRD-08 in the Project Tasks component).
+4. **Sprint 4 (or whenever production is ready for the cutover):** DM-PRD-08 ships the production cutover — short maintenance window, pre-cutover GCS export, dry-run + halt-gate + `--confirm-delete`, residue cleanup, Phase 6 verification against prod, timing report, rollback runbook, and DESIGN-REVIEW-LOG entry.
 
 ### 5.4 Parallel feature work (not part of this project set)
 
