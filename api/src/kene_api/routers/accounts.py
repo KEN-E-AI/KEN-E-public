@@ -40,6 +40,7 @@ from ..models.kene_models import (
 )
 from ..services.account_service import create_account_internal
 from ..services.form_parsing_service import parse_account_form_data
+from ..services.skill_storage import SkillStorageService, get_skill_storage_service
 from ..services.storage_service import StorageService, get_storage_service
 
 router = APIRouter(tags=["accounts"])
@@ -904,6 +905,7 @@ async def delete_account(
     db: Neo4jService = Depends(get_neo4j_service),
     firestore: FirestoreService = Depends(get_firestore_service),
     storage: StorageService = Depends(get_storage_service),
+    skill_storage: SkillStorageService = Depends(get_skill_storage_service),
 ) -> SuccessResponse:
     """
     Delete an account and all related entities.
@@ -913,6 +915,7 @@ async def delete_account(
     - All entities with BELONGS_TO relationship to the account
     - All ActivityLog nodes with LOGGED relationship to deleted Activity nodes
     - All business strategy documents from Google Cloud Storage
+    - All skill bundles from the skills GCS bucket (gs://kene-skills-{env}/accounts/{account_id}/…)
     - All Firestore data under accounts/{account_id} (recursive delete)
 
     **Parameters:**
@@ -952,6 +955,7 @@ async def delete_account(
         # Clean up external resources before deleting from Neo4j
         cleanup_results = {
             "gcs_documents_deleted": 0,
+            "skills_gcs_blobs_deleted": 0,
             "firestore_account_deleted": False,
             "cleanup_errors": [],
         }
@@ -970,6 +974,25 @@ async def delete_account(
                 f"Failed to delete GCS documents for account {account_id}: {e}"
             )
             cleanup_results["cleanup_errors"].append(f"GCS cleanup failed: {e}")
+
+        # Delete skill bundles from the skills GCS bucket (SK-PRD-01 AC-13).
+        # Runs in a thread to avoid blocking the event loop, matching the
+        # asyncio.to_thread pattern used for firestore.recursive_delete below.
+        try:
+            skills_blobs_deleted = await asyncio.to_thread(
+                skill_storage.delete_account_prefix, account_id
+            )
+            cleanup_results["skills_gcs_blobs_deleted"] = skills_blobs_deleted
+            logger.info(
+                f"Deleted {skills_blobs_deleted} skill GCS blobs for account {account_id}"
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to delete skill GCS blobs for account {account_id}: {e}"
+            )
+            cleanup_results["cleanup_errors"].append(
+                f"Skills GCS cleanup failed: {e}"
+            )
 
         # Recursively delete all Firestore data under accounts/{account_id}.
         # Covers every Shape B subcollection that exists under the account
@@ -1031,6 +1054,7 @@ async def delete_account(
             f"{total_nodes_deleted} nodes, "
             f"{total_relationships_deleted} relationships, "
             f"GCS documents: {cleanup_results['gcs_documents_deleted']}, "
+            f"Skills GCS blobs: {cleanup_results['skills_gcs_blobs_deleted']}, "
             f"Firestore account deleted: {cleanup_results['firestore_account_deleted']}"
         )
 
@@ -1041,6 +1065,7 @@ async def delete_account(
                 "nodes_deleted": total_nodes_deleted,
                 "relationships_deleted": total_relationships_deleted,
                 "gcs_documents_deleted": cleanup_results["gcs_documents_deleted"],
+                "skills_gcs_blobs_deleted": cleanup_results["skills_gcs_blobs_deleted"],
                 "firestore_account_deleted": cleanup_results[
                     "firestore_account_deleted"
                 ],

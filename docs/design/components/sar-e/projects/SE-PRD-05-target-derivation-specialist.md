@@ -1,8 +1,8 @@
 # SE-PRD-05 — Target Derivation Specialist
 
-**Status:** Blocked — resumes once SE-PRD-03, SE-PRD-04, and AH-PRD-02 ship
+**Status:** Blocked — resumes once SE-PRD-03, SE-PRD-04, AH-PRD-02, and AH-PRD-09 Phase 2 ship
 **Owner team:** SAR-E component team + Agentic Harness liaison (backend)
-**Blocked by:** SE-PRD-03 (`Baseline` reads for the `get_baseline` tool); SE-PRD-04 (`/scenarios` reads for scenario evaluation tooling); AH-PRD-02 (agent factory assembles the `performance_forecasting` specialist from `agent_configs/performance_forecasting` — this PRD is the first factory-built narrow specialist in the SAR-E component)
+**Blocked by:** SE-PRD-03 (`Baseline` reads for the `get_baseline` tool); SE-PRD-04 (`/scenarios` reads for scenario evaluation tooling); AH-PRD-02 (config schema for `agent_configs/performance_forecasting`, including `response_schema` field); **[AH-PRD-09](../../agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md) Phase 2** (runtime resolver `specialist_runtime.resolve_config` + `resolve_agent` build the specialist per turn; `delegate_to_specialist` is how the API and root reach it — no auto-generated `dispatch_to_performance_forecasting()` exists)
 **Blocks:** SE-PRD-06 (analytical queries surface the specialist's methodology-note field); SE-PRD-07 (end-to-end + A/B harness); PE-PRD-03 (Simulations tab's Run → Save-as-Targets flow); PE-PRD-06 (Targets tab drill-down)
 **Estimated effort:** 4 days
 
@@ -45,7 +45,7 @@ This PRD delivers the specialist, the tools it uses, the Target data model, and 
   - `Target { target_id, account_id, kpi_id, period: DateRange, value, baseline_value, derived_by: "specialist" | "user_edit", derivation_context_hash, reasoning: str | None, methodology_note: str | None, created_at, created_by }`
   - `DerivedTarget` — the specialist's structured output per-target: `{kpi_id, objective, period, value, baseline_value, reasoning, methodology_note, derivation_context_hash}`
   - `DerivedTargetsResponse` — the full structured output the specialist returns: `{targets: list[DerivedTarget], overall_confidence: Literal["low", "medium", "high"], methodology_note: str}` (the response-level methodology note is a summary; per-target `methodology_note` is specific)
-- **`/api/v1/sar-e/{account_id}/targets/derive`** (POST) — body `{period_start: date, period_end: date}` (inclusive 12-week window snapped to ISO weeks; defaults to `next_monday` through `next_monday + 12 weeks`). Dispatches the `performance_forecasting` specialist via the agent factory's generated `dispatch_to_performance_forecasting()`. Returns `DerivedTargetsResponse` — the caller (PE-PRD-03) decides whether to persist.
+- **`/api/v1/sar-e/{account_id}/targets/derive`** (POST) — body `{period_start: date, period_end: date}` (inclusive 12-week window snapped to ISO weeks; defaults to `next_monday` through `next_monday + 12 weeks`). Dispatches the `performance_forecasting` specialist via `delegate_to_specialist("performance_forecasting", query, acceptance_criteria=None)` (AH-PRD-09 Phase 2 — `specialist_runtime` resolves the config per turn and constructs the `LlmAgent` with `response_schema=DerivedTargetsResponse`). Returns `DerivedTargetsResponse` — the caller (PE-PRD-03) decides whether to persist.
 - **`/api/v1/sar-e/{account_id}/targets` CRUD**:
   - `GET /targets` — list active targets filtered by `?start_week=…&end_week=…&kpi_id=…`; soft-deleted targets excluded by default; pagination via `limit/offset` (default 48)
   - `GET /targets/{target_id}` — single target with full reasoning + methodology_note (for the Targets tab drill-down, PE-PRD-06)
@@ -84,7 +84,8 @@ This PRD delivers the specialist, the tools it uses, the Target data model, and 
 
 - **SE-PRD-03:** `Baseline` docs at `accounts/{account_id}/baselines/{kpi_id}` (read by `get_baseline` tool); `FunnelStageMapping` + `EffectivenessKPI` (read to validate `kpi_id` / `objective` references in the specialist's output)
 - **SE-PRD-04:** `POST /scenarios` (not wired as a tool in v1 — the specialist's reasoning over planned-vs-baseline does not require running new scenarios; it reads historical pulses + baseline. Revisit if the specialist's accuracy plateaus and scenario evaluation would help — flagged as open question §9)
-- **AH-PRD-02 (Agent Factory):** `agent_configs/performance_forecasting` is a factory-assembled agent; `dispatch_to_performance_forecasting(...)` is generated; `response_schema` validation is ADK's
+- **AH-PRD-02 (Agent Factory):** publishes the `agent_configs/{config_id}` config schema (including the `response_schema` field) and the build-time ToolRegistry catalog.
+- **[AH-PRD-09](../../agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md) Phase 2 (Per-Turn Dispatch):** `specialist_runtime.resolve_config` reads `agent_configs/performance_forecasting` per turn (cached ~60 s); `specialist_runtime.resolve_agent` constructs the `LlmAgent` with the configured `response_schema=DerivedTargetsResponse`; the SAR-E router reaches the specialist via `delegate_to_specialist("performance_forecasting", …)`. No `dispatch_to_performance_forecasting()` is generated. The runtime resolver's strict-JSON-schema validation flow (§5.5) replaces the pre-AH-PRD-09 factory-generated dispatch pattern.
 - **Project Tasks (PR-PRD-07):** Calendar activities with `category in ["holiday", "promotion", "event", "task"]`; read via existing `/plans/*` endpoints in `get_calendar_summary`
 - **Agentic Harness runtime:** Gemini 2.0 Pro via Vertex AI; ADK's `FunctionTool` + `response_schema`; `@safe_weave_op` decorator
 - **DM-PRD-07:** role gating + audit helper reused from SE-PRD-01
@@ -343,7 +344,11 @@ Cache key: `(account_id, context_hash)`. TTL: 10 minutes. Cache stores the valid
 async def dispatch_to_specialist(request: DeriveRequest, ...) -> DerivedTargetsResponse:
     for attempt in range(3):
         try:
-            raw = await dispatch_to_performance_forecasting(context=..., acceptance_criteria=None)
+            raw = await delegate_to_specialist(
+                name="performance_forecasting",
+                query=...,
+                acceptance_criteria=None,
+            )
             parsed = DerivedTargetsResponse.model_validate(json.loads(raw))
             if _methodology_lint_passes(parsed):
                 return parsed
@@ -389,7 +394,7 @@ def _methodology_lint_passes(response: DerivedTargetsResponse) -> bool:
 ## 7. Acceptance criteria
 
 1. **Agent config exists post-deploy.** `agent_configs/performance_forecasting` exists with model=`gemini-2.0-pro`, `response_schema` referring to `DerivedTargetsResponse`, and `visible_in_frontend=false`.
-2. **Factory builds the specialist.** `agent_factory.build_hierarchy()` includes a specialist with dispatch `dispatch_to_performance_forecasting`. The root agent's instruction block lists it.
+2. **Runtime resolves the specialist.** Within ~60 s of the Firestore write, `specialist_runtime.resolve_config("performance_forecasting", account_id)` returns the seeded `MergedAgentConfig`; `specialist_runtime.resolve_agent(config)` constructs an `LlmAgent` with `response_schema=DerivedTargetsResponse`, the four tools (`get_baseline`, `get_calendar_summary`, `get_historical_pulses`, `save_targets`), `temperature=0.2`, and `gemini-2.0-pro`. The runtime `available_specialists_provider` includes `performance_forecasting` in the root's per-turn "Available Specialists" block; the root reaches it via `delegate_to_specialist("performance_forecasting", …)`. No `dispatch_to_performance_forecasting()` is generated.
 3. **Derive happy path.** On an account with 52 weeks of history + a 12-week calendar window containing 2 promotions + 1 holiday, `POST /targets/derive` returns 48 `DerivedTarget`s in ≤30s p95, each with non-empty `reasoning` + `methodology_note`, `overall_confidence` is non-null, no banned phrases appear anywhere in the response.
 4. **Idempotency cache.** Two consecutive `POST /targets/derive` calls with the same context produce the same `DerivedTargetsResponse` and the second returns with `cache_hit: true` without invoking Gemini (asserted via Weave span count).
 5. **Context hash changes on calendar edit.** After the happy-path derivation, adding a new calendar activity → re-derive returns `cache_hit: false` and a possibly-different target set (hash changed).
@@ -465,7 +470,7 @@ def _methodology_lint_passes(response: DerivedTargetsResponse) -> bool:
 | **Cache staleness across baseline retrain.** A retrain changes baselines; in-flight derivations in the cache become stale. | Context hash includes `model_version`; retrain bumps version; old cache entries are naturally unreachable. |
 | **Response-schema retry loops on persistent bad output.** 3 retries * 30s each = 90s max latency under pathological Gemini behavior. | Hard cap at 3 attempts; 502 response with `fallback_available: true` so the caller (PE-PRD-03) can propose baseline-as-target with a warning. |
 | **`get_calendar_summary` payload size on busy accounts.** 500 tasks × full metadata in the prompt would blow past 30k tokens. | Summarize aggressively: per-campaign totals + categorized lists only; individual tasks summarized to ≤200 per call. |
-| **ADK factory compatibility.** AH-PRD-02's factory pattern may not support `response_schema` as declared here. | Confirm at kickoff. If the factory needs an extension point for `response_schema`, this PRD files an issue + the Agentic Harness team plumbs it through.
+| **ADK factory + runtime resolver compatibility.** AH-PRD-02's deploy-time factory and AH-PRD-09 Phase 2's `specialist_runtime.resolve_agent` must both honor the `response_schema` field on `agent_configs/*`. | Confirm at kickoff against both code paths. If either needs an extension point for `response_schema`, this PRD files an issue + the Agentic Harness team plumbs it through. Acceptance criterion #2 verifies the runtime resolver path; AH-PRD-02 §5.2 config-to-constructor mapping verifies the deploy-time path.
 
 ### Open questions
 

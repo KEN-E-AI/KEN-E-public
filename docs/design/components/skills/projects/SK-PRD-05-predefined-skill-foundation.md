@@ -11,7 +11,7 @@
 
 ## 1. Context
 
-KEN-E ships with a small set of **system-owned skills** attached to the root agent and selected specialists, separate from user-authored skills. System Architecture §6 promises this; SK-PRDs 01–04 deliver the user-authored half but never seed any predefined skill.
+KEN-E ships with a small set of **system-owned skills** attached to selected specialists, separate from user-authored skills. System Architecture §6 promises this; SK-PRDs 01–04 deliver the user-authored half but never seed any predefined skill.
 
 This PRD ships exactly **one placeholder predefined skill** (`example-skill`) plus the loader path that lets the agent factory resolve system skill IDs. It exists to:
 
@@ -19,7 +19,9 @@ This PRD ships exactly **one placeholder predefined skill** (`example-skill`) pl
 2. Establish the storage convention (separate Firestore collection + GCS prefix) so future predefined skills are content-only PRs (one SKILL.md, one config update) — no schema, API, or factory change.
 3. Prove the architectural claim in System Architecture §6 ("KEN-E ships with a bundled set of predefined skills").
 
-After this PRD ships, every subsequent predefined skill is purely content — drop a new doc into `system_skills/*` via Terraform and reference its ID in an `agent_configs/*` document.
+After this PRD ships, every subsequent predefined skill is purely content — drop a new doc into `system_skills/*` via Terraform and reference its ID in a specialist's `agent_configs/*` document.
+
+**Where system skills attach (post-AH-PRD-09).** Under [AH-PRD-09](../../agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md) Phase 2, the deployed root agent carries only `delegate_to_specialist` — it has no `SkillToolset` and no `list_skills` tool, so `skill_ids` on the root config has no effect. System skills therefore attach to **specialists**. v1 attaches `example-skill` to `agent_configs/google_analytics_specialist` (the R1 specialist shipped by [AH-PRD-03](../../agentic-harness/projects/AH-PRD-03-google-analytics-specialist.md)) to validate the loader end-to-end against a real specialist. Broader rollout — where every specialist receives one or more system skills automatically — is the work of a follow-up PRD that introduces a `default_global: true` skills mechanism analogous to AH-PRD-06 PR-C's `default_global` function-tool injection. v1 keeps the scope at one specialist + one skill so the validation surface is minimal.
 
 ### What this PRD is NOT
 
@@ -36,7 +38,7 @@ After this PRD ships, every subsequent predefined skill is purely content — dr
 - Extend `skill_loader.load_skill(account_id, skill_id)` to first check `system_skills/{skill_id}`; if found, read content from the global `_system/` GCS prefix; otherwise fall back to the existing per-account path.
 - Extend `_build_skill_toolset` (SK-PRD-02) to accept a mixed list of account-scoped and system skill IDs without code changes — the loader handles the dispatch.
 - Seed exactly one system skill: `example-skill` with a placeholder SKILL.md body.
-- Attach `example-skill`'s ID to one `agent_configs/*` document (default: the root agent `ken_e_agent`) via the existing `skill_ids: list[str]` field.
+- Attach `example-skill`'s ID to **`agent_configs/google_analytics_specialist`** via the existing `skill_ids: list[str]` field. (The root agent is **not** an attachment target — see §1.)
 - Document the system-owned-skill convention in Skills README §7.
 
 ### Out of scope
@@ -50,8 +52,10 @@ After this PRD ships, every subsequent predefined skill is purely content — dr
 ## 3. Dependencies
 
 - **SK-PRD-01** — Skill data model and loader exist; this PRD extends the loader to recognize global IDs.
-- **SK-PRD-02** — Factory's `_build_skill_toolset` consumes `skill_ids` and runs the loader; this PRD seeds an ID into the existing root config and proves the dispatch.
-- **AH-PRD-02** — Root agent and specialist `agent_configs/*` exist with the `skill_ids: list[str]` forward-compat field.
+- **SK-PRD-02** — Factory's `_build_skill_toolset` consumes `skill_ids` and runs the loader; this PRD seeds an ID into a specialist config and proves the dispatch.
+- **AH-PRD-02** — Specialist `agent_configs/*` exist with the `skill_ids: list[str]` forward-compat field; CRUD endpoints accept the field.
+- **[AH-PRD-03](../../agentic-harness/projects/AH-PRD-03-google-analytics-specialist.md)** — Ships `agent_configs/google_analytics_specialist`, the attachment target for `example-skill`. SK-PRD-05's Terraform `skill_ids` mutation lands on top of the doc AH-PRD-03 creates.
+- **[AH-PRD-09](../../agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md) (informational)** — Establishes the post-Phase-2 root model (`delegate_to_specialist`-only). The reason this PRD attaches to a specialist rather than the root.
 
 No frontend dependency. No new external library.
 
@@ -126,8 +130,8 @@ The existing `skill.list` / `skill.load` / `skill.load_resource` spans (SK-PRD-0
 | Modify | `api/src/kene_api/services/skill_loader.py` — add system-skill path resolution; existing per-account path unchanged |
 | Create | `deployment/terraform/system_skills_seed.tf` — Terraform resources that (a) write `gs://kene-skills-{env}/_system/example-skill/1/SKILL.md`, (b) seed Firestore `system_skills/{skill_id}` doc + `versions/1` subcollection doc with the same fields the per-account loader expects |
 | Create | `skills/_system/example-skill/1/SKILL.md` — placeholder content. Frontmatter: `name: example-skill`, `description: "Example placeholder skill demonstrating the predefined-skill mechanism."`, `compatibility: "Any KEN-E agent"`. Body: a one-paragraph note that this is a placeholder skill, removed when real content lands. |
-| Modify | One `agent_configs/*` doc (default: `agent_configs/ken_e_agent`) — add the system skill ID to `skill_ids` |
-| Modify | `app/adk/agents/agent_factory/__init__.py` (`_build_skill_toolset` from SK-PRD-02) — emit `skill_owner_type` Weave attribute. No dispatch change required (loader handles it). |
+| Modify | `agent_configs/google_analytics_specialist` (created by AH-PRD-03) — add `example-skill`'s system ID to `skill_ids` |
+| Modify | `_build_skill_toolset` (SK-PRD-02) — emit `skill_owner_type` Weave attribute. No dispatch change required (loader handles it). Lives in `app/adk/agents/agent_factory/__init__.py` on the deploy-time path and `app/adk/agents/agent_factory/specialist_runtime.py` on the runtime-resolver path (AH-PRD-09 Phase 2); the Weave-attribute change applies in both places. |
 | Modify | `docs/design/components/skills/README.md` §7 Conventions — add the system-owned-skill paragraph |
 | Modify | `docs/trace-structure-spec.md` — extend the three skill spans' attribute tables with `skill_owner_type` |
 | Create | `app/adk/agents/test_system_skills.py` — integration test: factory builds the root agent → `list_skills` returns `example-skill` → end-to-end agent run loads its body |
@@ -142,7 +146,7 @@ No new HTTP endpoints. The user-facing Skills API is unchanged. Loader behavior 
 1. **System skill seeded:** After Terraform apply against a fresh environment, Firestore has a `system_skills/{skill_id}` doc and GCS has `gs://kene-skills-{env}/_system/example-skill/1/SKILL.md`.
 2. **Loader resolves system IDs:** `skill_loader.load_skill(account_id="any", skill_id="<system_id>")` returns an ADK `Skill` whose `frontmatter.name == "example-skill"`. Works for any `account_id` value (system skills are not account-scoped).
 3. **Loader still resolves account IDs:** `skill_loader.load_skill(account_id, skill_id)` for an account-owned skill is unchanged.
-4. **Root agent picks up the skill:** When the factory builds `agent_configs/ken_e_agent`, the resulting agent's `SkillToolset.list_skills` includes `example-skill` with its L1 metadata visible.
+4. **GA Specialist picks up the skill:** When the factory builds `agent_configs/google_analytics_specialist` (deploy-time via `build_hierarchy` or per turn via `specialist_runtime.resolve_agent` under AH-PRD-09), the resulting specialist's `SkillToolset.list_skills` includes `example-skill` with its L1 metadata visible. The root agent does **not** receive a `SkillToolset` — it carries only `delegate_to_specialist`.
 5. **End-user cannot read system skill via the user-facing API:**
    - `GET /api/v1/accounts/{account_id}/skills` does not include system skills.
    - `GET /api/v1/accounts/{account_id}/skills/{system_skill_id}` returns 404.
@@ -173,6 +177,7 @@ No new HTTP endpoints. The user-facing Skills API is unchanged. Loader behavior 
 | `Skill.owner` becoming a discriminated union ripples through every existing callsite | Pick the least-invasive Pydantic idiom at sprint start (union vs. sibling class) and benchmark by counting touched files. Prefer sibling class if union touches > 10 files. |
 | System skill's `version` numbering collides with per-account semantics | `system_skills/{skill_id}/versions/*` mirrors the per-account shape; future system-skill version bumps work the same way. |
 | `example-skill` as placeholder content shows up to real users in tracing | Acceptable for v1 — replace with real predefined skill content in a follow-up content PR before GA of any skill-bearing specialist. |
+| Single-specialist attachment doesn't scale once R5 adds Google Ads / Meta Ads / Mailchimp specialists | v1's one-skill-per-one-specialist scope is the minimum needed to validate the loader path. A follow-up PRD introduces a `default_global: true` skills mechanism (mirroring [AH-PRD-06](../../agentic-harness/projects/AH-PRD-06-tool-mapping.md) PR-C's function-tool injection at `hierarchy.py:325` + the AH-PRD-09 Phase 3 port into `specialist_runtime.resolve_agent`) so a system skill registered with `default_global: true` reaches every runtime-resolved specialist automatically. Out of scope for this PRD; tracked as a successor work item. |
 
 ### Open questions
 

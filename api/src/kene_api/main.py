@@ -58,6 +58,7 @@ from .routers import (
     oauth_integrations,
     organizations,
     products,
+    skills,
     strategy,
     subscription_plans,
     superset_saved_queries,
@@ -292,6 +293,7 @@ app.include_router(
     prefix="/api/v1",
     tags=["monitoring-topics"],
 )
+app.include_router(skills.router)  # Skills router already has its prefix (SK-PRD-01)
 app.include_router(strategy.router)  # Strategy router already has its prefix
 app.include_router(usage.router)  # Usage router already has its prefix
 app.include_router(

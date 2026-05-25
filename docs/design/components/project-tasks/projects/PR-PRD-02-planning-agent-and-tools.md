@@ -1,35 +1,35 @@
 # PRD-2 — Project Planning Agent & Tools
 
-**Status:** Ready for development (after PRD-1 merges **and AH-PRD-02 ships**)
+**Status:** Ready for development (after PRD-1 merges **and AH-PRD-02 + AH-PRD-09 Phase 2 ship**)
 **Owner team:** Agent / ML
-**Blocked by:** PRD-1 (consumes `ProjectPlan` Pydantic schema); **[AH-PRD-02](../../agentic-harness/projects/AH-PRD-02-agent-factory.md) — Agent Factory** (the agent is assembled from config, not hand-written)
+**Blocked by:** PRD-1 (consumes `ProjectPlan` Pydantic schema); **[AH-PRD-02](../../agentic-harness/projects/AH-PRD-02-agent-factory.md) — Agent Factory** (config schema); **[AH-PRD-09](../../agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md) Phase 2** (runtime resolver — `specialist_runtime.resolve_config` reads `agent_configs/project_planning` per turn; `delegate_to_specialist` is how the root reaches the planning specialist)
 **Parallel with:** PRDs 3, 4, 6
 **Estimated effort:** 1–2 days (reduced post-factory; config + tool functions only)
 
-> **Prerequisite — [AH-PRD-02](../../agentic-harness/projects/AH-PRD-02-agent-factory.md) (Agent Factory):** After AH-PRD-02 ships, specialist agents are assembled at deploy time by `agent_factory.build_hierarchy()` reading Firestore `agent_configs/{config_id}` docs. The factory auto-generates `dispatch_to_{specialist}()`, wraps the instruction in `InstructionProvider`, wires the standard Weave tracing callbacks, resolves a fixed ≤30-tool roster from each specialist's `mcp_servers` references + function tools (per [AH-PRD-02 §2.5 / README §2.5](../../agentic-harness/README.md#25-tool-assignment--routing-model) — no per-turn `tool_filter`, no runtime ToolRegistry lookup), and registers the dispatch function as a root-agent tool. **This PRD's scope is therefore narrowed:** write the Firestore config doc + Python tool functions; the factory does everything else. Do NOT hand-write an `LlmAgent`, an `AgentEntry`, or a `dispatch_to_project_planning` handler.
+> **Prerequisites — Agent Factory + Per-Turn Dispatch.** AH-PRD-02 publishes the Firestore `agent_configs/{config_id}` schema (with `description` for description-based routing, `model`, `instruction`, `temperature`, `tools`, `mcp_servers`, `code_execution_enabled`, `skill_ids`, `sandbox_code_executor_enabled`, etc.) and the build-time ToolRegistry catalog. AH-PRD-09 Phase 2 replaces AH-PRD-02's deploy-time factory with a runtime resolver: every turn, `specialist_runtime.resolve_config(name, account_id)` reads the per-account-merged config from Firestore (cached ~60 s) and `specialist_runtime.resolve_agent(config)` constructs the `LlmAgent`. The deployed root carries one tool: `delegate_to_specialist(name, query, acceptance_criteria=None)` — it routes by LLM reasoning over each specialist's `description` rendered into a per-turn "Available Specialists" block. **There is no auto-generated `dispatch_to_project_planning()` anymore**, and the root has **no per-specialist `create_project_plan` tool wrapper** — both are obsolete under AH-PRD-09 Phase 2. **This PRD's scope:** write the Firestore config doc + Python tool functions; the runtime resolver does everything else. Do NOT hand-write an `LlmAgent`, an `AgentEntry`, a `dispatch_to_project_planning` handler, or a `_BASE_INSTRUCTION` edit on `ken_e_agent.py`.
 
 ---
 
 ## 1. Context
 
-When a user asks KEN-E to "create a project plan for an Instagram ad campaign," the root agent (`ken_e_agent`) needs to dispatch the request to a specialist agent that knows how to decompose marketing goals into structured tasks with dependencies, assignees, platforms, and timing — and then persist the result via PRD-1's API.
+When a user asks KEN-E to "create a project plan for an Instagram ad campaign," the root agent dispatches via `delegate_to_specialist("project_planning", query, acceptance_criteria)` to a specialist that knows how to decompose marketing goals into structured tasks with dependencies, assignees, platforms, and timing — and then persists the result via PRD-1's API.
 
-Post-AH-PRD-02, this PRD adds the specialist by authoring its Firestore config doc and tool functions. The Agent Factory takes it from there: instantiating the `LlmAgent`, generating `dispatch_to_project_planning()`, wiring callbacks, and registering the dispatch as a root-agent tool.
+Post-AH-PRD-09 Phase 2, this PRD adds the specialist by authoring its Firestore config doc and tool functions. `specialist_runtime.resolve_config` reads the config per turn; `specialist_runtime.resolve_agent` constructs the `LlmAgent`; `delegate_to_specialist` wraps the specialist in a review pipeline (when criteria present) and invokes it through the inner Runner. Description-based routing (agentic-harness README §2.5) means the root picks this specialist by LLM reasoning over `agent_configs/project_planning.description` — no hand-edited `_BASE_INSTRUCTION` block, no auto-generated `dispatch_to_*` function.
 
 ## 2. Scope
 
 ### In scope
-- Firestore `agent_configs/project_planning` config doc (model, instruction, temperature, tools, factory flags)
+- Firestore `agent_configs/project_planning` config doc (model, instruction, temperature, **a routing-friendly `description`** that lets the root pick this specialist via the per-turn "Available Specialists" block, tools, factory flags)
 - Three Python tool functions: `save_project_plan`, `update_task_status`, `get_project_plan`
-- Tool registration in `tools.yaml` under a new `planning` category — the build-time ToolRegistry catalog the factory consults when assembling the specialist's roster (per AH-PRD-02 §2.5, ToolRegistry is metadata-only at runtime)
-- New CAPABILITY block appended to `_BASE_INSTRUCTION` in `ken_e_agent.py` — the factory auto-registers the dispatch tool, but the root-agent narrative instruction that tells the model *when* to invoke `create_project_plan` is still hand-edited
-- Unit tests for tools + a factory-integration test asserting the agent is assembled correctly from the seeded config
+- Tool registration in `tools.yaml` under a new `planning` category — the build-time ToolRegistry catalog the runtime resolver consults when assembling the specialist's roster (per AH-PRD-02 §2.5 / agentic-harness README §2.5, ToolRegistry is metadata-only at runtime)
+- Unit tests for tools + a runtime-resolution integration test asserting `specialist_runtime.resolve_agent` builds the planning specialist correctly from the seeded config
 
-### Out of scope (handled by the Agent Factory)
+### Out of scope (handled by Agent Factory / Per-Turn Dispatch runtime)
 - Hand-writing an `LlmAgent` or `project_planning_agent.py` file
-- Adding an `AgentEntry` to `registry.py` (factory auto-discovers from Firestore)
-- Writing a `dispatch_to_project_planning` function in `dispatch_handlers.py` (factory auto-generates it with `@safe_weave_op()` tracing)
-- Wiring the standard Weave tracing callbacks (factory does it)
+- Adding an `AgentEntry` to `registry.py` (runtime resolver discovers from Firestore at turn time via `available_specialists_provider`)
+- Writing a `dispatch_to_project_planning` function (does not exist post-AH-PRD-09 Phase 2 — root reaches the specialist via `delegate_to_specialist("project_planning", …)`)
+- Editing `_BASE_INSTRUCTION` on `ken_e_agent.py` to add a CAPABILITY block (the root's per-turn "Available Specialists" block rendered by `specialist_runtime.available_specialists_provider` carries the equivalent guidance, sourced from the config doc's `description`)
+- Wiring the standard Weave tracing callbacks (runtime resolver does it; the dispatch span is `@safe_weave_op(name="delegate_to_specialist")` from AH-PRD-09)
 
 ### Out of scope (handled by other PRDs)
 - The orchestration logic that runs *after* `update_task_status` is called (PRD-4)
@@ -39,12 +39,13 @@ Post-AH-PRD-02, this PRD adds the specialist by authoring its Firestore config d
 ## 3. Dependencies
 
 - **PRD-1:** uses `ProjectPlan` and `PlanTask` Pydantic models for tool input validation; calls `POST /api/v1/plans/{account_id}` and `PATCH /api/v1/plans/{account_id}/{plan_id}/tasks/{task_id}`
-- **[AH-PRD-02](../../agentic-harness/projects/AH-PRD-02-agent-factory.md) — Agent Factory:** provides `agent_factory.build_hierarchy()`, the Firestore `agent_configs/{config_id}` config schema, auto-generated dispatch functions, `InstructionProvider` wrapping, and build-time tool-roster assembly (≤30 tools per specialist, resolved from `mcp_servers` + function tools per [README §2.5](../../agentic-harness/README.md#25-tool-assignment--routing-model)). This PRD assumes all of the above has shipped and is the deploy-time default in `deploy_ken_e.py`.
+- **[AH-PRD-02](../../agentic-harness/projects/AH-PRD-02-agent-factory.md) — Agent Factory:** publishes the Firestore `agent_configs/{config_id}` config schema (including `description` for routing), `InstructionProvider` wrapping, the build-time ToolRegistry catalog, and the ≤30-tool roster discipline (agentic-harness README §2.5).
+- **[AH-PRD-09](../../agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md) Phase 2:** provides `specialist_runtime.resolve_config`, `specialist_runtime.resolve_agent`, `delegate_to_specialist`, and `available_specialists_provider`. This PRD's planning specialist is resolved per-turn under that runtime.
 - **Existing files to study:**
-  - `app/adk/agents/agent_factory/` (the factory itself — config schema, build_hierarchy, dispatch generation) — **read this first**
-  - `app/adk/agents/ken_e_agent.py` (root agent `_BASE_INSTRUCTION` — only the CAPABILITY block is hand-edited here)
-  - Any already-factoryized specialist's Firestore `agent_configs/{config_id}` doc to see the config shape in practice
-  - `app/adk/tools/registry/` (ToolRegistry — the build-time metadata catalog the factory reads to resolve specialist tool rosters; not a runtime filter)
+  - `app/adk/agents/agent_factory/specialist_runtime.py` (AH-PRD-09 Phase 2 — `resolve_config` / `resolve_agent` / `available_specialists_provider`) — **read this first**
+  - `app/adk/agents/agent_factory/` (config schema, header providers, MCP toolset construction)
+  - Any already-shipped specialist's Firestore `agent_configs/{config_id}` doc (e.g., `google_analytics_specialist` from AH-PRD-03) to see the config shape in practice
+  - `app/adk/tools/registry/` (ToolRegistry — the build-time metadata catalog the runtime resolver reads to resolve specialist tool rosters; not a runtime filter)
 - **Coordination:** PRD-4 will call `update_task_status` from its orchestrator, so the tool's response shape must include enough info for the orchestrator to determine what to dispatch next.
 
 ## 4. Data contract
@@ -63,19 +64,22 @@ Post-AH-PRD-02, this PRD adds the specialist by authoring its Firestore config d
 - Input: `plan_id`
 - Output: full `ProjectPlan` dict or `{"status": "error", "error": "not_found"}`
 
-### Dispatch handler return shape
-The factory-generated `dispatch_to_project_planning()` follows the standard shape already established by other factory-built specialists. This PRD does not redefine it; the orchestrator (PRD-4) consumes whatever the factory produces.
+### Dispatch return shape
+Post-AH-PRD-09 Phase 2, the root invokes the planning specialist via `delegate_to_specialist("project_planning", query, acceptance_criteria)`. The standard shape (assistant message string + Weave span chain `delegate_to_specialist → load_config_from_firestore → review loop → specialist + reviewer`) is established by AH-PRD-09 and reused unchanged here. This PRD does not redefine it; PRD-4's orchestrator consumes the specialist's tool-call output (`update_task_status` return) the same way it would under any dispatch model.
 
 ## 5. Implementation outline
 
 | Action | File / target |
 |--------|---------------|
 | Create | `app/adk/agents/project_planning_tools.py` — the three Python tool functions |
-| Create | Firestore `agent_configs/project_planning` config doc (seed via deploy or admin script) |
-| Modify | `app/adk/tools/registry/config/tools.yaml` — add `planning` category with the three tools so the factory picks them up at build time when assembling the planning specialist's roster |
-| Modify | `app/adk/agents/ken_e_agent.py` `_BASE_INSTRUCTION` — append the CAPABILITY block below (factory registers the dispatch tool itself, but the narrative guidance that tells the model *when* to invoke it lives in this instruction) |
+| Create | Firestore `agent_configs/project_planning` config doc (seed via deploy or admin script). The `description` field must be rich enough to drive description-based routing — see §6 |
+| Modify | `app/adk/tools/registry/config/tools.yaml` — add `planning` category with the three tools so the runtime resolver picks them up when assembling the planning specialist's roster |
 | Create | `tests/unit/agents/test_project_planning_tools.py` — tool unit tests |
-| Create | `tests/integration/test_project_planning_factory_build.py` — assert `build_hierarchy()` produces the planning agent with the expected model, tools, callbacks, and dispatch wiring when the Firestore config is seeded |
+| Create | `tests/integration/test_project_planning_runtime_resolution.py` — seed the Firestore config; call `specialist_runtime.resolve_config("project_planning", account_id)` + `specialist_runtime.resolve_agent(config)`; assert the constructed `LlmAgent` carries the expected model, instruction, three tools, and standard callbacks |
+
+**Files NOT modified by this PRD** (owned by AH-PRD-02 / AH-PRD-09):
+- `app/adk/agents/ken_e_agent.py` — deleted by AH-PRD-09 Phase 5 once verified unused; no `_BASE_INSTRUCTION` CAPABILITY block added. Routing guidance lives in the planning config doc's `description` field.
+- `app/adk/agents/utils/dispatch_handlers.py` — no `dispatch_to_project_planning` function exists post-AH-PRD-09 Phase 2. The root reaches the planning specialist via `delegate_to_specialist("project_planning", ...)`.
 
 ### Agent config doc (Firestore `agent_configs/project_planning`)
 Follows the Agent Factory's config schema from AH-PRD-02. Required fields:
@@ -93,16 +97,18 @@ Follows the Agent Factory's config schema from AH-PRD-02. Required fields:
 
 Because this is a config doc in global scope, accounts may override specific fields via `accounts/{account_id}/agent_configs/project_planning` (shallow-merge overlay, AH-PRD-02 story 2.2-8). No work required in this PRD beyond authoring the global doc.
 
-### Root agent instruction (new CAPABILITY block in `_BASE_INSTRUCTION`)
-The factory auto-registers the dispatch function as a root-agent tool, but the narrative that tells the root model when to call it is hand-written in `_BASE_INSTRUCTION`:
+### Routing guidance (in the config doc's `description`)
+Under AH-PRD-09 Phase 2, the root agent picks specialists by LLM reasoning over each specialist's `description` rendered into a per-turn "Available Specialists" block by `specialist_runtime.available_specialists_provider`. No `_BASE_INSTRUCTION` edits are needed. The planning specialist's description should make routing obvious:
+
 ```
-**CAPABILITY N - Project Planning:**
-Use `create_project_plan` for queries about:
-- Creating a project plan, work breakdown, or task list
-- Planning a marketing campaign, product launch, or initiative
-- Organizing work across team members and agents
-- Breaking down complex goals into actionable steps
+description: |
+  Specialist agent for creating and managing project plans. Use for queries
+  about: creating a project plan, work breakdown, or task list; planning a
+  marketing campaign, product launch, or initiative; organizing work across
+  team members and agents; breaking down complex goals into actionable steps.
 ```
+
+Equivalent guidance to the legacy CAPABILITY block, but stored in the config doc rather than hand-edited into a Python file — admin edits propagate to the next chat turn within ~60 s without redeploy (per AH-PRD-09 AC #5).
 
 ## 6. Agent instruction (key behaviors)
 
@@ -116,18 +122,18 @@ The instruction provider must guide the model to:
 7. Call `save_project_plan` to persist
 8. Respond to the user with a confirmation containing a clickable deep link `/calendar?project={plan_id}` (rendered by frontend per PRD-3)
 
-The instruction string is stored on the `agent_configs/project_planning` Firestore doc. At build time the Agent Factory (AH-PRD-02) wraps it in an `InstructionProvider` closure that injects `organization_context` from `tool_context.state` — this PRD does not need to write its own loader or provider.
+The instruction string is stored on the `agent_configs/project_planning` Firestore doc. At specialist-construction time (`specialist_runtime.resolve_agent`, AH-PRD-09 Phase 2) the runtime resolver wraps it in an `InstructionProvider` closure that injects `organization_context` from `tool_context.state` — this PRD does not need to write its own loader or provider.
 
 ## 7. Acceptance criteria
 
-1. With the Firestore config seeded, `agent_factory.build_hierarchy()` produces a `project_planning` agent with the expected model, instruction (wrapped in `InstructionProvider`), temperature, and the three tools bound
-2. The factory auto-generates `dispatch_to_project_planning()` and registers it as a root-agent tool (verified via the factory's existing integration test + a new per-PRD assertion)
-3. Sending a chat message "create a project plan for a new product launch" routes through the auto-generated dispatch (verified via Weave trace)
-4. The agent produces a JSON object that validates against `ProjectPlan.model_validate` (no schema errors)
-5. `save_project_plan` writes a plan to the API and returns the `plan_id`
-6. `update_task_status` writes to the API; the response shape is what PRD-4 expects (even if `newly_unblocked_tasks` is empty in this PRD)
-7. Agent instruction warns the model away from cycles and from non-existent agent assignees
-8. All new unit and integration tests pass
+1. **Runtime resolution:** With the Firestore config seeded, `specialist_runtime.resolve_config("project_planning", account_id)` returns a `MergedAgentConfig` matching the seeded shape, and `specialist_runtime.resolve_agent(config)` constructs an `LlmAgent` with the expected model, instruction (wrapped in `InstructionProvider`), temperature, and the three tools bound.
+2. **Reachable via `delegate_to_specialist`:** Within ~60 s of the Firestore write, the runtime `available_specialists_provider` renders `project_planning` into the root's "Available Specialists" block. The root reaches the planning specialist via `delegate_to_specialist("project_planning", query, acceptance_criteria)`. No `dispatch_to_project_planning()` exists; no per-specialist root tool wrapper exists.
+3. **End-to-end routing:** Sending a chat message "create a project plan for a new product launch" produces a Weave trace with the expected hierarchy: root → `delegate_to_specialist` span → `load_config_from_firestore` → review-loop iterations (if criteria) → planning specialist → tool calls.
+4. The agent produces a JSON object that validates against `ProjectPlan.model_validate` (no schema errors).
+5. `save_project_plan` writes a plan to the API and returns the `plan_id`.
+6. `update_task_status` writes to the API; the response shape is what PRD-4 expects (even if `newly_unblocked_tasks` is empty in this PRD).
+7. Agent instruction warns the model away from cycles and from non-existent agent assignees.
+8. All new unit and integration tests pass.
 
 ## 8. Test plan
 
@@ -135,12 +141,13 @@ The instruction string is stored on the `agent_configs/project_planning` Firesto
 - Each tool: success path, validation failure, API error propagation
 - Instruction content: the config doc's instruction string contains the required keywords ("acceptance criteria", "depends_on", "assignee_name")
 
-**Factory integration tests (new):**
-- Seed the Firestore `agent_configs/project_planning` doc (fixture) and call `agent_factory.build_hierarchy()` — assert the returned hierarchy includes the planning specialist with the expected model, the three tools, the standard Weave tracing callbacks, and an auto-generated `dispatch_to_project_planning()` registered as a root-agent tool
-- Dispatch generation: calling the auto-generated dispatch returns the factory's standard return shape
+**Runtime-resolution integration tests (new):**
+- Seed the Firestore `agent_configs/project_planning` doc (fixture); call `specialist_runtime.resolve_config("project_planning", account_id)` + `specialist_runtime.resolve_agent(config)` — assert the constructed `LlmAgent` carries the expected model, instruction (wrapped in `InstructionProvider`), the three tools, the standard Weave tracing callbacks, and `description` matching the seeded value.
+- `available_specialists_provider(account_id)` includes the planning specialist's name + description in its rendered block within the ~60 s cache TTL after the Firestore write.
+- `delegate_to_specialist("project_planning", query, criteria)` invokes the resolved specialist via the inner Runner, wraps in `build_review_pipeline()` when criteria present, and returns the standard assistant-message + Weave span shape.
 
 **End-to-end** (deferred to PRD-5, smoke test here):
-- chat message → factory-generated dispatch → agent → `save_project_plan` → API → Firestore (mock the API client or use the real one against a test account)
+- chat message → root → `delegate_to_specialist` → resolved planning specialist → `save_project_plan` → API → Firestore (mock the API client or use the real one against a test account).
 
 ## 9. Risks & open questions
 

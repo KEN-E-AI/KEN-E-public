@@ -139,3 +139,9 @@ variable "firestore_index_project_ids" {
     error_message = "At least one project ID is required."
   }
 }
+
+variable "skills_bucket_kms_key_name" {
+  description = "CMEK key name per environment for the kene-skills-{env} and kene-skills-{env}-trash buckets. Map keys must match local.skills_bucket_project_ids (development, staging, production). Default empty map uses Google-managed encryption. Populate via a follow-up ops PR once the KMS keys are provisioned — no code change required to enable CMEK after this hook is in place."
+  type        = map(string)
+  default     = {}
+}

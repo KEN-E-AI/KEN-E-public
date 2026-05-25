@@ -28,7 +28,7 @@ Landing these together closes the two figma status-view surfaces that CH-PRD-04 
 ### In scope
 
 - **`session.state["todo_lists"]` convention** — dict-of-dicts keyed by `list_id`. Each value matches the `TodoList` Pydantic shape (CH-PRD-01). Max 20 lists per session, max 50 items per list (enforced by the tool helpers). Documented in `docs/KEN-E-System-Architecture.md` §3.6.
-- **Two ADK tools** — `set_todo_list(list_id, title, items, is_current=False)` creates/replaces a list; `update_todo_list(list_id, item_id, completed)` flips a single checkbox (optional `text` to rename an item). Registered in the Agent Factory (AH-PRD-02) or hardcoded root if not shipped.
+- **Two ADK tools** — `set_todo_list(list_id, title, items, is_current=False)` creates/replaces a list; `update_todo_list(list_id, item_id, completed)` flips a single checkbox (optional `text` to rename an item). **Registered in `app/adk/tools/registry/tools.yaml` under `function_tools:` with `default_global: true`** so every specialist receives them automatically — AH-PRD-06 PR-C wires the `default_global` injection through the deploy-time factory at `hierarchy.py:325`, and AH-PRD-09 Phase 3 ports the same injection into `specialist_runtime.resolve_agent` so runtime-resolved specialists get them too. The root agent does **not** carry these tools — under AH-PRD-09 Phase 2 the root carries only `delegate_to_specialist`. Specialists are where multi-step work happens, so that's where todo-list manipulation belongs.
 - **`chat/todos.py`** — `list_todo_lists(session_id)` reads `session.state["todo_lists"]` via `VertexAiSessionService.get_session`; server-side Pydantic validation drops malformed entries.
 - **`GET /api/v1/chat/conversations/{id}/todos`** — returns `list[TodoList]` ordered by `is_current=True` first then `created_at DESC`.
 - **`chat/artifacts.py`** — `register_artifact(tool_context, filename, content, created_by_tool) → ChatArtifactIndex` wrapping `context.save_artifact(...)` + writing `ChatArtifactIndex` row to `accounts/{account_id}/chat_sessions/{session_id}/artifacts/{artifact_id}`. Deterministic `artifact_id = sha256(session_id|filename|version)[:32]`. **No `creator` parameter in v1.** When future user-upload UI ships, `created_by_tool=None` signals a user upload.
@@ -65,7 +65,9 @@ Landing these together closes the two figma status-view surfaces that CH-PRD-04 
 | **[CH-PRD-01](./CH-PRD-01-session-metadata-substrate.md)** | `ChatArtifactIndex` shape (no `creator` field), `TodoList` + `TodoItem` shapes, Firestore subcollection registered in DM-PRD-00 registry. | This PRD package |
 | **[CH-PRD-02](./CH-PRD-02-chat-page-shell-and-sidebar.md)** | Page shell mount point; `lib/chatApi.ts` extended. | This PRD package |
 | **[CH-PRD-04](./CH-PRD-04-session-status-view.md)** | `SessionStatusView.tsx` reserves slots for `TodoListsPanel` + `ArtifactsPanel`. The ADK-session orphan scan is the safety net for CH-PRD-04's delete-cleanup task. If CH-PRD-04 hasn't shipped, the endpoints + backend still ship behind a flag. | This PRD package |
-| **[AH-PRD-02](../../agentic-harness/projects/AH-PRD-02-agent-factory.md)** | **Soft.** Agent Factory is where the two todo-list tools are registered. If unshipped, register against the hardcoded root with a TODO. | `../../agentic-harness/README.md` |
+| **[AH-PRD-06](../../agentic-harness/projects/AH-PRD-06-tool-mapping.md) PR-C** | **Hard.** Wires `default_global: true` function tools from `tools.yaml` through the deploy-time factory at `hierarchy.py:325` so every factory-built specialist receives `set_todo_list` + `update_todo_list`. Schedule CH-PRD-05 to land after PR-C is merged. | `../../agentic-harness/README.md` |
+| **[AH-PRD-09](../../agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md) Phase 3** (issue AH-64) | **Hard.** Ports the AH-PRD-06 PR-C `default_global` injection into `specialist_runtime.resolve_agent` so runtime-resolved specialists also receive the two tools. After AH-64 ships, the same `tools.yaml` registration covers both dispatch models. | `../../agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md` §4 |
+| **[AH-PRD-02](../../agentic-harness/projects/AH-PRD-02-agent-factory.md)** | Provides the `agent_configs/*` + `mcp_servers/*` config schema CH-PRD-05's tool registration plugs into. Superseded in the runtime path by AH-PRD-09. | `../../agentic-harness/README.md` |
 | **[BL-PRD-05](../../billing/projects/BL-PRD-05-failure-modes-permissions.md)** (soft) | Rate-limit substrate if needed for future write-side tools. Not required for v1 read endpoints. | `../../billing/README.md` |
 | **ADK `GcsArtifactService`** | Blob storage. The wrapper sits on top. | Google ADK Python |
 | **ADK `VertexAiSessionService`** | `get_session(id).state` read for todo lists; `list_sessions` for the orphan scan. | Google ADK Python |
@@ -180,7 +182,8 @@ Both tools write to `tool_context.state["todo_lists"]` via ADK's state mechanism
 | Modify | `api/src/kene_api/routers/chat.py` — `/todos` + `/artifacts` endpoints |
 | Modify | `api/src/kene_api/chat/side_table.py` — `artifact_count` increment on registration |
 | Create | `app/adk/tools/todo_list_tools.py` — `set_todo_list`, `update_todo_list` `FunctionTool`s |
-| Modify | `app/adk/agents/<factory or root>/__init__.py` — register the two tools on the root agent (via AH-PRD-02 if shipped, hardcoded otherwise) |
+| Modify | `app/adk/tools/registry/tools.yaml` — add `set_todo_list` and `update_todo_list` entries to the `function_tools:` section with `default_global: true` (matches the pattern AH-PRD-06 PR-C establishes for `create_visualization`) |
+| Verify | `app/adk/agents/agent_factory/hierarchy.py:325` (AH-PRD-06 PR-C) and `app/adk/agents/agent_factory/specialist_runtime.py` (AH-PRD-09 Phase 3 / AH-64) surface both tools on every specialist when `tool_ids is None`. Integration test added in §8. |
 | Modify | `app/adk/agents/strategy_agent/artifact_utils.py` — replace raw `save_artifact_to_service` with `chat.artifacts.register_artifact` |
 | Create | `api/scripts/lint/check_artifact_register.py` — CI lint |
 | Modify | `Makefile` or CI config — add `check_artifact_register` to `make lint` |
@@ -345,6 +348,8 @@ async def set_todo_list(
 ```
 
 `update_todo_list` follows the same pattern: reads state, locates the item, flips `completed`, stamps `completed_at`, writes back.
+
+**Tool surfacing.** Both `FunctionTool`s are registered in `app/adk/tools/registry/tools.yaml` under `function_tools:` with `default_global: true`. The deploy-time factory (AH-PRD-06 PR-C, `hierarchy.py:325` → `ToolRegistry.list_default_global_tools()`) and the per-turn runtime resolver (AH-PRD-09 Phase 3 / issue AH-64, `specialist_runtime.resolve_agent`) both consume the same registry entry, so adding the YAML row is the single point of registration regardless of which dispatch model is live. The post-AH-PRD-09 root carries only `delegate_to_specialist`; the two todo-list tools surface on **specialists** (where the agent actually drives multi-step work).
 
 ### 5.5 `TodoListsPanel.tsx` — render spec
 

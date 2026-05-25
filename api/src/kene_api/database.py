@@ -30,6 +30,7 @@ class Neo4jService:
                 max_connection_lifetime=300,  # 5 minutes (reduced from 1 hour to avoid stale connections)
                 max_connection_pool_size=100,  # Increased to handle concurrent page load requests
                 connection_acquisition_timeout=30.0,  # 30 second timeout (reduced from 60s for faster failure)
+                max_transaction_retry_time=settings.neo4j_max_transaction_retry_time,  # bound retry-on-failure (low in CI; default 30s)
                 keep_alive=True,  # Enable keep-alive to detect defunct connections earlier
                 fetch_size=1000,  # Optimize batch fetching
             )

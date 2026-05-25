@@ -62,5 +62,17 @@ locals {
     var.staging_project_id
   ]
 
+  # Skills GCS buckets target all three environments including dev (SK-PRD-01 / SK-12).
+  # Mirrors the `firestore_index_project_ids` precedent (DM-73): a separate map that
+  # includes dev while keeping dev out of `deploy_project_ids` (which would also pull in
+  # CICD SA roles, log sinks, Vertex SA roles, etc.). Dev project ID is hardcoded
+  # (no `dev_project_id` variable exists) — consistent with firestore_index_project_ids
+  # default "ken-e-dev". Keys become the bucket name suffix; see gcs_skills_bucket.tf.
+  skills_bucket_project_ids = {
+    development = "ken-e-dev"
+    staging     = var.staging_project_id
+    production  = var.prod_project_id
+  }
+
 }
 

@@ -17,6 +17,36 @@ class TestNeo4jService:
             return Neo4jService()
 
     @pytest.mark.asyncio
+    async def test_connect_passes_configured_max_transaction_retry_time(self):
+        """The driver is created with max_transaction_retry_time from settings.
+
+        Without an explicit value the Neo4j driver defaults to 30s, so a
+        transaction against an unreachable Neo4j (e.g. CI, which has no Neo4j)
+        retries with escalating backoffs for ~30s and stalls the request. Making
+        it configurable lets the e2e stack bound it to a couple of seconds.
+        """
+        with (
+            patch("src.kene_api.database.AsyncGraphDatabase") as mock_gdb,
+            patch("src.kene_api.database.settings") as mock_settings,
+        ):
+            mock_settings.neo4j_uri = "bolt://localhost:7687"
+            mock_settings.neo4j_username = "neo4j"
+            mock_settings.neo4j_password = "pw"
+            mock_settings.neo4j_max_transaction_retry_time = 2.0
+            mock_gdb.driver.return_value.verify_connectivity = AsyncMock()
+
+            await Neo4jService().connect()
+
+            assert mock_gdb.driver.call_args.kwargs["max_transaction_retry_time"] == 2.0
+
+    def test_default_max_transaction_retry_time_matches_driver_default(self):
+        """Default must stay 30.0s (the Neo4j driver default) so prod/staging/dev
+        keep full retry resilience — only CI/e2e overrides it via the env var."""
+        from src.kene_api.config import settings
+
+        assert settings.neo4j_max_transaction_retry_time == 30.0
+
+    @pytest.mark.asyncio
     async def test_execute_write_query_returns_data(self, db_service):
         """Test execute_write_query returns data for CREATE queries with RETURN."""
         # Mock session and transaction
