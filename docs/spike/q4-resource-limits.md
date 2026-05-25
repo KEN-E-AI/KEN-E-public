@@ -115,17 +115,36 @@ measurement.
 
 #### Wall-clock
 
-*Placeholder — populated when the cumulative wall-clock probe completes.
-Probe sequence: compute-30s, compute-120s, compute-600s, idle-sleep-30s,
-idle-sleep-120s, idle-sleep-600s. The earliest probe whose target
-exceeds the sandbox cap is the threshold; if the script completes the
-full 1500 s budget, no cap was observed in the 0-600 s band.*
+```
+=== [1/1] q4_wall_clock.py status: error (ServerError): execute_code call failed —
+503 UNAVAILABLE. {'error': {'code': 503, 'message': 'The service is currently
+unavailable.', 'status': 'UNAVAILABLE'}}
+---
+ADK version  : 1.27.5
+Sandbox      : projects/525657242938/locations/us-central1/reasoningEngines/2624457839443181568
+Mode         : direct (no LlmAgent)
+Scripts      : 1
+Elapsed (s)  : 303.49
+Exit status  : error (ServerError): execute_code call failed — 503 UNAVAILABLE.
+```
 
-```
-[PENDING — wall-clock probe in flight at the time of this fragment's
-first commit; will be updated in a follow-up commit when the harness
-output finalises]
-```
+**Interpretation.** The cumulative wall-clock probe was killed at
+**303.49 s** — within 1 s of the CPU loop's 304.17 s. Vertex caps both
+compute-bound and wall-clock-bound scripts at the **same ~5-minute
+threshold**, surfaced as `503 UNAVAILABLE` rather than a structured
+outcome enum. Because no stdout was captured (the SIGKILL bypassed
+Python's stdout flush, same as CPU and memory), we cannot determine
+exactly which probe was running when the cap fired. However, the
+elapsed time (303 s) bounds the answer: the script had completed
+`compute-30s` (cumulative 30 s), completed `compute-120s` (cumulative
+150 s), and was midway through `compute-600s` (would have finished at
+750 s) when killed. The idle-sleep probes never ran.
+
+**Implications for the compute-vs-sleep question:** undetermined from
+this probe. The 5-minute cap fired during the compute-bound phase before
+the script reached the idle-sleep portion. A refined probe would
+front-load a short idle-sleep test (~60 s) to determine whether sleep
+time counts equivalently against the same cap.
 
 ---
 
@@ -133,27 +152,41 @@ output finalises]
 
 | Probe | Vertex signal | Observed cap |
 |---|---|---|
-| CPU loop | `503 UNAVAILABLE` after 304 s | ~5 min (300 s) CPU cap |
+| CPU loop | `503 UNAVAILABLE` after 304.17 s | ~5 min (300 s) cap |
 | Memory balloon | `OUTCOME_OK` with no stdout | not measurable via this probe pattern |
-| Wall-clock | [PENDING] | [PENDING] |
+| Wall-clock (compute path) | `503 UNAVAILABLE` after 303.49 s | ~5 min (300 s) cap |
 
-### Concurrent-sandbox observation (incidental finding)
+**The CPU and wall-clock probes returning the same ~300 s threshold
+(within 1 s of each other) is consistent with a single Vertex sandbox
+lifetime cap, not two independent caps.** SK-PRD-02 should model this as
+"one 5-minute budget per `execute_code` call" rather than "5 min CPU AND
+5 min wall-clock as independent budgets."
 
-When this Q4 wall-clock probe ran in parallel with the Q2 cost
-orchestrator's session burst, 59 of 60 Q2 sessions failed immediately
-(elapsed 0.06 s) with `error: no exit status line found`. Only the first
-Q2 session succeeded. The cascade pattern (16.56 s → 3.50 s → 1.41 s →
-0.06 s for the first four sessions, then a flat 0.06 s) suggests the
-spike Agent Engine has a **low concurrent-sandbox cap (1-2)** — Q2's
-attempts to create additional sandboxes while Q1/Q4 wall-clock already
-held one were rejected at sandbox-creation time. This is a load-bearing
-input for SK-PRD-02 `SandboxPool` design: the pool must serialise or
-queue sandbox-creation requests per engine to avoid this failure mode.
+### Concurrent-sandbox observation — RETRACTED
 
-The Q2 capture has been retained at `/tmp/q2_sessions.jsonl` for
-SK-7 / SK-PRD-02 review; the Q2 staging fragment will be updated with a
-clean N=30 re-run once the wall-clock probe finishes and releases its
-sandbox slot.
+> An earlier draft of this fragment claimed Vertex had a "low
+> concurrent-sandbox cap (1-2)" based on a Q2 orchestrator run where
+> 59/60 sessions failed at 0.06 s elapsed. **That finding was incorrect.**
+> The Q2 failure was caused by a branch-switch during orchestrator
+> execution: the orchestrator `subprocess.run`s the harness with a
+> filesystem-relative path to `scripts/spike/skills/q2_cost_per_session.py`,
+> and the main working tree's branch was switched from `spike/...` to
+> `integration/...` between sessions 1 and 2, removing the file from the
+> tree the subprocess saw. Diagnosed via the per-session `raw_stdout` in
+> `/tmp/q2_sessions.jsonl`, which showed
+> `[harness] Script not found: .../q2_cost_per_session.py` for every
+> failed session.
+>
+> A clean Q2 re-run was performed from a `git worktree` checkout of
+> `spike/agent-engine-sandbox` at `/tmp/kene-spike/`, isolated from
+> the main repo's branch switches. See the Q2 staging fragment
+> (`q2-cost-per-session-findings.md`) for those numbers.
+>
+> No empirical evidence for or against a Vertex concurrent-sandbox cap
+> remains; the earlier claim is withdrawn. A future probe specifically
+> designed to test concurrent sandbox creation (multiple
+> `execute_code` calls in flight against the same engine) would resolve
+> this question if it matters for SK-PRD-02 `SandboxPool` design.
 
 ---
 
@@ -164,19 +197,23 @@ sandbox slot.
    lifespan is bounded by this cap (if the script holds CPU). The pool's
    eviction strategy should prefer warm entries that have served short
    invocations recently over entries that have been idle for >5 min.
-2. **SK-PRD-02 `_IDLE_TTL_SECONDS`:** Will be set by the wall-clock
-   probe's idle-sleep results (PENDING). The compute-30s vs idle-sleep-30s
-   comparison will reveal whether Vertex treats sleep time the same as
-   CPU time.
+2. **SK-PRD-02 `_IDLE_TTL_SECONDS`:** The wall-clock cap is ~5 min total
+   per `execute_code` invocation (CPU and wall-clock probes both fired at
+   ~303 s). Whether idle-sleep counts the same as compute remains
+   undetermined from this probe — Vertex killed the script before reaching
+   the idle-sleep probes. A refined probe with a front-loaded idle-sleep
+   would resolve this; captured as an SK-PRD-02 follow-up. For now, treat
+   `_IDLE_TTL_SECONDS` as bounded by the same 5-minute budget — a pooled
+   sandbox cannot be "kept warm" past this point.
 3. **Error-handling: 503 UNAVAILABLE is a kill signal, not a transient.**
    SK-PRD-02 MUST NOT retry `execute_code` on 503 — that response means
    the sandbox was forcibly terminated. Retry would waste quota and
    produce no new information. Treat 503 like any structured
    `OUTCOME_*_LIMIT` enum.
-4. **Concurrent-sandbox cap (1-2 per engine):** SK-PRD-02's `SandboxPool`
-   must serialise sandbox creation per engine resource name. Parallel
-   `execute_code` calls against the same engine will fail fast (0.06 s)
-   when the cap is reached. Pool sizing must respect this.
+4. **Concurrent-sandbox cap — withdrawn.** See the RETRACTED section
+   above; the apparent cap was a branch-switching artifact in the spike's
+   own tooling, not a Vertex behaviour. No SK-PRD-02 implication remains
+   from this thread.
 5. **Memory measurement gap:** SK-PRD-02 cannot rely on Python-level
    `MemoryError` to detect OOM. The sandbox memory enforcer kills the
    process opaquely. If memory cost is a tuning input for the pool,
