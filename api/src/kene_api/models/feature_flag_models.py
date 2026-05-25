@@ -74,6 +74,7 @@ class FlagEvaluation(BaseModel):
         "rollout",
         "default",
         "unknown_flag",
+        "fetch_error",
     ]
 
 

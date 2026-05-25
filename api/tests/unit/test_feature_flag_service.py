@@ -216,9 +216,7 @@ async def test_ttl_zero_same_timestamp_is_cache_hit() -> None:
     # Clock is frozen — both calls occur at the same monotonic timestamp.
     clock = FakeClock(start=42.0)
 
-    with patch(
-        "src.kene_api.services.feature_flag_service.TTL_SECONDS", 0
-    ):
+    with patch("src.kene_api.services.feature_flag_service.TTL_SECONDS", 0):
         svc = FeatureFlagService(db=db, time_provider=clock)
         result1 = await svc.evaluate_batch(["ttl_zero_flag"], _ctx())
         # Do NOT advance the clock — same timestamp as the install.
@@ -272,14 +270,18 @@ async def test_cold_batch_reads_are_parallel() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Case 6 — Transient Firestore error: unknown_flag returned, cache NOT poisoned
+# Case 6 — Transient Firestore error: fetch_error returned, cache NOT poisoned
 # ---------------------------------------------------------------------------
 
 
-async def test_transient_firestore_error_returns_unknown_flag_and_is_not_cached(
+async def test_transient_firestore_error_returns_fetch_error_and_is_not_cached(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """Firestore error → unknown_flag for this batch; next call retries Firestore."""
+    """Firestore transport error → fetch_error for this batch; next call retries.
+
+    fetch_error is distinct from unknown_flag (confirmed-absent) so ops can tell a
+    Firestore blip apart from a flag that simply doesn't exist.
+    """
     db = MagicMock()
     db.collection.return_value.document.return_value.get.side_effect = RuntimeError(
         "Firestore boom"
@@ -294,7 +296,7 @@ async def test_transient_firestore_error_returns_unknown_flag_and_is_not_cached(
 
     assert result == {
         "error_flag": FlagEvaluation(
-            key="error_flag", enabled=False, reason="unknown_flag"
+            key="error_flag", enabled=False, reason="fetch_error"
         )
     }
 
@@ -444,6 +446,179 @@ async def test_warm_cache_read_logs_cache_hit_true(
     info_records = [r for r in caplog.records if r.levelno == logging.INFO]
     assert len(info_records) == 1
     assert info_records[0].__dict__["cache_hit"] is True
+
+
+# ---------------------------------------------------------------------------
+# Case 11 — Malformed config doc: logged as invalid_config, cached None, not refetched
+# ---------------------------------------------------------------------------
+
+
+async def test_malformed_doc_logs_invalid_config_and_caches_none(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A doc that fails Pydantic validation is a permanent problem, not a blip.
+
+    It's logged under a distinct event, cached as None so it isn't re-fetched every
+    request for the TTL window, and reported to consumers as unknown_flag (the
+    distinguishing signal for ops is the log event, not the reason code).
+    """
+    db = MagicMock()
+    doc = MagicMock()
+    doc.exists = True
+    doc.to_dict.return_value = {}  # missing every required field → ValidationError
+    db.collection.return_value.document.return_value.get.return_value = doc
+    clock = FakeClock(start=0.0)
+    svc = FeatureFlagService(db=db, time_provider=clock)
+
+    with caplog.at_level(
+        logging.ERROR, logger="src.kene_api.services.feature_flag_service"
+    ):
+        result = await svc.evaluate_batch(["malformed_flag"], _ctx())
+
+    assert result == {
+        "malformed_flag": FlagEvaluation(
+            key="malformed_flag", enabled=False, reason="unknown_flag"
+        )
+    }
+    assert any("feature_flag_invalid_config" in r.message for r in caplog.records)
+    assert not any("feature_flag_fetch_error" in r.message for r in caplog.records)
+
+    # Cached as None → a second call within TTL does NOT re-read Firestore.
+    clock.advance(1.0)
+    await svc.evaluate_batch(["malformed_flag"], _ctx())
+    get_mock = db.collection.return_value.document.return_value.get
+    assert get_mock.call_count == 1, (
+        f"malformed doc must be cached (not re-fetched); got {get_mock.call_count} reads"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Case 12 — FIFO eviction at the cache ceiling
+# ---------------------------------------------------------------------------
+
+
+def test_fifo_eviction_at_max_cache_entries(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """At MAX_CACHE_ENTRIES, a new key evicts the oldest (with a warning); re-inserting
+    an existing key when full evicts nothing."""
+    from src.kene_api.services.feature_flag_service import MAX_CACHE_ENTRIES
+
+    clock = FakeClock(start=0.0)
+    svc = FeatureFlagService(db=MagicMock(), time_provider=clock)
+
+    for i in range(MAX_CACHE_ENTRIES):
+        svc._install_cache(f"k_{i}", None, clock())
+    assert len(svc._cache) == MAX_CACHE_ENTRIES
+    oldest_key = next(iter(svc._cache))
+
+    # New key when full → oldest evicted, size pinned at the ceiling, new key present,
+    # and a single eviction warning naming the evicted key.
+    with caplog.at_level(
+        logging.WARNING, logger="src.kene_api.services.feature_flag_service"
+    ):
+        svc._install_cache("k_new", None, clock())
+    assert len(svc._cache) == MAX_CACHE_ENTRIES
+    assert oldest_key not in svc._cache
+    assert "k_new" in svc._cache
+    eviction_logs = [
+        r for r in caplog.records if "feature_flag_cache_eviction" in r.message
+    ]
+    assert len(eviction_logs) == 1
+    assert eviction_logs[0].__dict__["evicted_key"] == oldest_key
+
+    # Re-inserting an already-cached, NON-oldest key must evict nothing: an
+    # evict-then-reinsert regression would drop the current oldest and shrink the
+    # cache below the ceiling, so assert both the size and the oldest survive.
+    current_oldest = next(iter(svc._cache))
+    existing_non_oldest = list(svc._cache)[5]
+    svc._install_cache(existing_non_oldest, None, clock())
+    assert len(svc._cache) == MAX_CACHE_ENTRIES
+    assert current_oldest in svc._cache
+    assert existing_non_oldest in svc._cache
+
+
+# ---------------------------------------------------------------------------
+# Case 13 — Exactly one fetch per distinct cold key (no double-scheduling)
+# ---------------------------------------------------------------------------
+
+
+async def test_cold_batch_issues_one_fetch_per_distinct_key() -> None:
+    """20 distinct cold keys → exactly 20 _fetch_flag calls."""
+    fetch_count = [0]
+
+    async def fake_fetch(flag_key: str) -> None:
+        fetch_count[0] += 1
+        return None
+
+    svc = FeatureFlagService(db=MagicMock(), time_provider=FakeClock())
+    keys = [f"cold_{i}" for i in range(20)]
+
+    with patch.object(svc, "_fetch_flag", side_effect=fake_fetch):
+        await svc.evaluate_batch(keys, _ctx())
+
+    assert fetch_count[0] == 20
+
+
+# ---------------------------------------------------------------------------
+# Case 14 — TTL boundary: exactly TTL is still warm (strict <), just past expires
+# ---------------------------------------------------------------------------
+
+
+async def test_ttl_boundary_exact_is_warm_past_is_expired() -> None:
+    """An entry at exactly its expiry instant is still served (strict `<`); a moment
+    later it reloads. Pins the boundary the TTL=0 kill-switch path also depends on."""
+    flag = _make_flag(key="boundary_flag")
+    db = _mock_db_with_flag(flag)
+    clock = FakeClock(start=0.0)
+    svc = FeatureFlagService(db=db, time_provider=clock)
+    get_mock = db.collection.return_value.document.return_value.get
+
+    await svc.evaluate_batch(
+        ["boundary_flag"], _ctx()
+    )  # read 1; expires_at = TTL_SECONDS
+    clock.advance(TTL_SECONDS)  # now == expires_at → strict `<` keeps it warm
+    await svc.evaluate_batch(["boundary_flag"], _ctx())
+    assert get_mock.call_count == 1, "exactly TTL_SECONDS must still be a cache hit"
+
+    clock.advance(0.001)  # now just past expiry
+    await svc.evaluate_batch(["boundary_flag"], _ctx())
+    assert get_mock.call_count == 2, "just past TTL_SECONDS must trigger a reload"
+
+
+# ---------------------------------------------------------------------------
+# Case 15 — Empty batch: no reads, empty dict
+# ---------------------------------------------------------------------------
+
+
+async def test_empty_flag_keys_returns_empty_and_no_reads() -> None:
+    """evaluate_batch([]) returns {} and issues zero Firestore reads."""
+    db = _mock_db_with_flag(None)
+    svc = FeatureFlagService(db=db, time_provider=FakeClock())
+
+    result = await svc.evaluate_batch([], _ctx())
+
+    assert result == {}
+    assert db.collection.return_value.document.return_value.get.call_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Case 16 — Duplicate keys collapse to a single entry + a single read
+# ---------------------------------------------------------------------------
+
+
+async def test_duplicate_keys_collapse_to_single_read() -> None:
+    """A key repeated in flag_keys yields one dict entry and one Firestore read."""
+    flag = _make_flag(key="dup_flag", default_enabled=True)
+    db = _mock_db_with_flag(flag)
+    svc = FeatureFlagService(db=db, time_provider=FakeClock())
+
+    result = await svc.evaluate_batch(["dup_flag", "dup_flag"], _ctx())
+
+    assert result == {
+        "dup_flag": FlagEvaluation(key="dup_flag", enabled=True, reason="default")
+    }
+    assert db.collection.return_value.document.return_value.get.call_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -810,7 +985,9 @@ class TestCacheInvalidationOnWrites:
         # a real evaluation, not an absent-key response masquerading as the same enabled value.
         assert result["inv_create_flag"] == FlagEvaluation(
             key="inv_create_flag", enabled=result_flag.default_enabled, reason="default"
-        ), "evaluate_batch after create_flag must return a real evaluation, not unknown_flag"
+        ), (
+            "evaluate_batch after create_flag must return a real evaluation, not unknown_flag"
+        )
 
     async def test_update_flag_invalidates_cached_pre_update_entry(self) -> None:
         """(b) update_flag removes the cached pre-update entry; re-evaluation returns post-update value."""
@@ -865,7 +1042,11 @@ class TestCacheInvalidationOnWrites:
         # update_flag with record_audit patched to raise — the pop() must still have run.
         request = _make_write_request(key="inv_audit_raise_flag", default_enabled=True)
 
-        with patch(self._AUDIT_PATCH, new_callable=AsyncMock, side_effect=RuntimeError("audit down")):
+        with patch(
+            self._AUDIT_PATCH,
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("audit down"),
+        ):
             with pytest.raises(RuntimeError, match="audit down"):
                 await svc.update_flag("inv_audit_raise_flag", request, "admin@ken-e.ai")
 
@@ -906,7 +1087,9 @@ class TestCacheInvalidationOnWrites:
 
         assert result["inv_delete_flag"] == FlagEvaluation(
             key="inv_delete_flag", enabled=False, reason="unknown_flag"
-        ), "evaluate_batch after delete_flag must return unknown_flag — cache was invalidated"
+        ), (
+            "evaluate_batch after delete_flag must return unknown_flag — cache was invalidated"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -991,22 +1174,32 @@ class TestGetFlagAudit:
         db = self._mock_audit_db(docs)
         svc = FeatureFlagService(db=db, time_provider=FakeClock())
 
-        entries, next_cursor = await svc.get_flag_audit("test_flag", limit=5, cursor=None)
+        entries, next_cursor = await svc.get_flag_audit(
+            "test_flag", limit=5, cursor=None
+        )
 
         assert len(entries) == 3
-        assert [e.audit_id for e in entries] == ["2026-03-01_aaa", "2026-02-01_bbb", "2026-01-01_ccc"]
+        assert [e.audit_id for e in entries] == [
+            "2026-03-01_aaa",
+            "2026-02-01_bbb",
+            "2026-01-01_ccc",
+        ]
         assert next_cursor is None
 
     async def test_limit_plus_one_detection_sets_next_cursor(self) -> None:
         """(b) When 6 docs come back for limit=5, next_cursor = 5th entry's audit_id."""
         docs = [
-            self._make_audit_doc(f"2026-01-0{7 - i}_id{i}", f"2026-01-0{7 - i}T00:00:00+00:00")
+            self._make_audit_doc(
+                f"2026-01-0{7 - i}_id{i}", f"2026-01-0{7 - i}T00:00:00+00:00"
+            )
             for i in range(1, 7)
         ]
         db = self._mock_audit_db(docs)
         svc = FeatureFlagService(db=db, time_provider=FakeClock())
 
-        entries, next_cursor = await svc.get_flag_audit("test_flag", limit=5, cursor=None)
+        entries, next_cursor = await svc.get_flag_audit(
+            "test_flag", limit=5, cursor=None
+        )
 
         assert len(entries) == 5
         assert next_cursor == entries[-1].audit_id
@@ -1014,13 +1207,17 @@ class TestGetFlagAudit:
     async def test_terminal_page_returns_no_cursor(self) -> None:
         """(c) When 3 docs come back for limit=5, next_cursor=None."""
         docs = [
-            self._make_audit_doc(f"2026-01-0{3 - i}_id{i}", f"2026-01-0{3 - i}T00:00:00+00:00")
+            self._make_audit_doc(
+                f"2026-01-0{3 - i}_id{i}", f"2026-01-0{3 - i}T00:00:00+00:00"
+            )
             for i in range(3)
         ]
         db = self._mock_audit_db(docs)
         svc = FeatureFlagService(db=db, time_provider=FakeClock())
 
-        entries, next_cursor = await svc.get_flag_audit("test_flag", limit=5, cursor=None)
+        entries, next_cursor = await svc.get_flag_audit(
+            "test_flag", limit=5, cursor=None
+        )
 
         assert len(entries) == 3
         assert next_cursor is None
@@ -1042,7 +1239,9 @@ class TestGetFlagAudit:
         db = self._mock_audit_db([], cursor_doc=absent_cursor_doc)
         svc = FeatureFlagService(db=db, time_provider=FakeClock())
 
-        entries, next_cursor = await svc.get_flag_audit("test_flag", limit=5, cursor="stale_id")
+        entries, next_cursor = await svc.get_flag_audit(
+            "test_flag", limit=5, cursor="stale_id"
+        )
 
         assert entries == []
         assert next_cursor is None
@@ -1102,14 +1301,16 @@ class TestGetFlagAudit:
             _FailingAuditEntry,
         ):
             docs = [
-                self._make_audit_doc(f"id_{i}", f"2026-01-0{i+1}T00:00:00+00:00")
+                self._make_audit_doc(f"id_{i}", f"2026-01-0{i + 1}T00:00:00+00:00")
                 for i in range(6)
             ]
             db2 = self._mock_audit_db(docs)
             svc2 = FeatureFlagService(db=db2, time_provider=FakeClock())
 
             # Should not raise IndexError even though has_next=True and entries=[].
-            entries, next_cursor = await svc2.get_flag_audit("test_flag", limit=5, cursor=None)
+            entries, next_cursor = await svc2.get_flag_audit(
+                "test_flag", limit=5, cursor=None
+            )
 
         assert entries == []
         assert next_cursor is None

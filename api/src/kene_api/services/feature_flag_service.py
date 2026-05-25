@@ -19,6 +19,7 @@ from functools import lru_cache
 
 from google.api_core import exceptions as gcp_exceptions
 from google.cloud import firestore
+from pydantic import ValidationError
 
 from ..dependencies import get_firestore_client
 from ..models.feature_flag_models import (
@@ -209,13 +210,25 @@ class FeatureFlagService:
         """
         now = self._time_provider()
 
-        # Separate warm (cache hit) from cold (need Firestore) keys.
+        # Separate warm (cache hit) from cold (need Firestore) keys. Dedupe so a
+        # key repeated in flag_keys issues at most one Firestore read. Freshness
+        # uses strict `<` (entry at exactly its expiry instant is still warm) — the
+        # TTL=0 kill-switch path relies on a same-timestamp re-read being a hit.
         cold_keys: list[str] = []
+        seen: set[str] = set()
         for key in flag_keys:
+            if key in seen:
+                continue
+            seen.add(key)
             entry = self._cache.get(key)
             if entry is None or entry.expires_at < now:
                 cold_keys.append(key)
         cold_set: frozenset[str] = frozenset(cold_keys)
+
+        # Cold keys whose read hit a transient error: not cached, and reported as
+        # `fetch_error` so ops can tell a Firestore blip apart from a confirmed
+        # absent flag (`unknown_flag`).
+        fetch_error_keys: set[str] = set()
 
         # Fetch cold keys in parallel; return_exceptions=True so a single
         # Firestore error doesn't abort the whole batch.
@@ -226,7 +239,14 @@ class FeatureFlagService:
             )
             now = self._time_provider()
             for key, result in zip(cold_keys, fetch_results, strict=True):
-                if isinstance(result, BaseException):
+                if isinstance(result, ValidationError):
+                    # Permanently malformed config doc — re-fetching every request
+                    # won't fix it. Cache as None so it isn't hammered for the TTL
+                    # window, and emit a distinct event an operator can alert on,
+                    # separate from a transient transport blip.
+                    logger.error("feature_flag_invalid_config", extra={"flag_key": key})
+                    self._install_cache(key, None, now)
+                elif isinstance(result, BaseException):
                     # BaseException catches asyncio.CancelledError, which is not a
                     # subclass of Exception in Python 3.8+, but can surface here via
                     # gather(return_exceptions=True).  Transient error — log type only
@@ -237,6 +257,7 @@ class FeatureFlagService:
                         "feature_flag_fetch_error",
                         extra={"flag_key": key, "error_type": type(result).__name__},
                     )
+                    fetch_error_keys.add(key)
                 else:
                     # result is FeatureFlag | None; cache both (None = confirmed miss).
                     self._install_cache(key, result, now)
@@ -248,12 +269,19 @@ class FeatureFlagService:
         for key in flag_keys:
             entry = self._cache.get(key)
             if entry is None or entry.expires_at < now:
-                # Still no entry after fetch attempt — was a transient error.
-                evaluations[key] = FlagEvaluation(
-                    key=key, enabled=False, reason="unknown_flag"
-                )
+                # No fresh entry after the fetch attempt: a transient read error
+                # (transient reads aren't cached). Confirmed-absent docs fall to
+                # the elif below as a cached None.
+                if key in fetch_error_keys:
+                    evaluations[key] = FlagEvaluation(
+                        key=key, enabled=False, reason="fetch_error"
+                    )
+                else:
+                    evaluations[key] = FlagEvaluation(
+                        key=key, enabled=False, reason="unknown_flag"
+                    )
             elif entry.flag is None:
-                # Confirmed doc-absent (cached miss).
+                # Confirmed doc-absent, or a malformed doc cached as None.
                 evaluations[key] = FlagEvaluation(
                     key=key, enabled=False, reason="unknown_flag"
                 )
@@ -271,9 +299,15 @@ class FeatureFlagService:
     ) -> None:
         """Write a (possibly None) flag into the cache with FIFO eviction."""
         if len(self._cache) >= MAX_CACHE_ENTRIES and flag_key not in self._cache:
-            # Evict the oldest entry (insertion-ordered dict, O(1)).
+            # Evict the oldest entry (insertion-ordered dict, O(1)). Reaching the
+            # ceiling signals runaway key cardinality (a caller minting new flag
+            # keys at a high rate) — surface it so it doesn't fail silently.
             oldest = next(iter(self._cache))
             del self._cache[oldest]
+            logger.warning(
+                "feature_flag_cache_eviction",
+                extra={"evicted_key": oldest, "cache_size": len(self._cache)},
+            )
         self._cache[flag_key] = _CacheEntry(flag=flag, expires_at=now + TTL_SECONDS)
 
     async def list_flags(self) -> list[FeatureFlag]:
@@ -374,10 +408,9 @@ class FeatureFlagService:
         def _run() -> tuple[list[FeatureFlagAuditEntry], str | None]:
             coll = self._db.collection("feature_flag_audit")
 
-            query = (
-                coll.where(filter=firestore.FieldFilter("flag_key", "==", flag_key))
-                .order_by("created_at", direction=firestore.Query.DESCENDING)
-            )
+            query = coll.where(
+                filter=firestore.FieldFilter("flag_key", "==", flag_key)
+            ).order_by("created_at", direction=firestore.Query.DESCENDING)
 
             if cursor is not None:
                 cursor_doc = coll.document(cursor).get()
@@ -408,7 +441,9 @@ class FeatureFlagService:
 
             # Guard against empty entries when has_next is True (can occur if all
             # page_docs fail Pydantic validation — skipped by the loop above).
-            next_cursor: str | None = entries[-1].audit_id if (has_next and entries) else None
+            next_cursor: str | None = (
+                entries[-1].audit_id if (has_next and entries) else None
+            )
             return entries, next_cursor
 
         return await asyncio.to_thread(_run)

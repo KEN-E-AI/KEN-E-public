@@ -93,6 +93,7 @@ class FlagEvaluation(BaseModel):
     reason: Literal[
         "kill_switch", "email_match", "domain_match",
         "org_match", "account_match", "rollout", "default", "unknown_flag",
+        "fetch_error",  # transient Firestore read error (distinct from confirmed-absent unknown_flag)
     ]
 
 class EvaluateRequest(BaseModel):
