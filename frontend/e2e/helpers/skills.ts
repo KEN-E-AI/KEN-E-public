@@ -39,7 +39,7 @@ export async function seedSkillDoc(
     accountId,
     skillId,
     ownerAccountId = accountId,
-    name = `Test Skill ${skillId}`,
+    name = `test-skill-${skillId}`,
     description = "E2E test skill",
     createdBy = "test-user",
     updatedBy = "test-user",
