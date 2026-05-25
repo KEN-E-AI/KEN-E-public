@@ -287,13 +287,13 @@ Reference: `docs/design/components/skills/projects/SK-PRD-01-skills-backend.md` 
 
 | Op Name | Extra Attributes | Notes |
 |---------|-----------------|-------|
-| `api.skills.create` | `skill_id: str`, `current_version: int`, `bundle_bytes: int`, `file_count: int` | `skill_id` and `current_version` are appended post-allocation via `weave.get_current_call()` |
+| `api.skills.create` | `skill_id: str`, `bundle_bytes: int`, `file_count: int` | `skill_id` is pre-allocated in the route handler before the span is opened; `weave.attributes()` is called there so all attrs land on the correct span |
 | `api.skills.list` | — | No extra attributes beyond `account_id` |
 | `api.skills.get` | `skill_id: str` | |
 | `api.skills.get_content` | `skill_id: str`, `version: int` (when request pins one) | `version` is omitted (not null) when the request did not pin a version |
 | `api.skills.get_resource` | `skill_id: str`, `version: int` (when request pins one) | Same omit-not-null rule as `get_content` |
-| `api.skills.update` | `skill_id: str`, `current_version: int`, `bundle_bytes: int`, `file_count: int` | `current_version` is the new version number after the bump |
-| `api.skills.delete` | `skill_id: str`, `archived: bool` | `archived` is always `True` — it reflects the operation's intent, not the outcome |
+| `api.skills.update` | `skill_id: str`, `bundle_bytes: int`, `file_count: int` | `current_version` is omitted — reading it pre-span would require an extra Firestore round-trip; the post-bump version is not available until inside the Firestore transaction |
+| `api.skills.delete` | `skill_id: str`, `archived: bool` | `archived` is always `True` — it reflects the operation's intent, not the GCS-move outcome |
 | `api.skills.validate` | `bundle_bytes: int`, `file_count: int` | No `skill_id` — validation creates no state |
 
 ## 5. Context Block Capture Strategy
