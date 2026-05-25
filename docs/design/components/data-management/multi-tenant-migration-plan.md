@@ -466,11 +466,11 @@ These are independent of the migration but become easier once Shape B is in plac
 - [x] Decision recorded in [Review 15 of DESIGN-REVIEW-LOG](../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1)
 - [x] Migration plan drafted (this doc)
 - [x] PRD edits landed (Phase 5 — see DESIGN-REVIEW-LOG for date)
-- [ ] Migration script written (`api/scripts/migrate_to_shape_b.py`)
-- [ ] Terraform index file updated (`deployment/firestore.indexes.json` and `.tf` wrapper)
-- [ ] Phase 1 executed in dev
-- [ ] Phase 2 executed in dev
-- [ ] Phase 4 code cleanups landed
-- [ ] Phase 6 verification passed in dev
-- [ ] Staging cutover
-- [ ] Phase 3 (optional — Shape B-like → Shape B)
+- [x] Migration script written (`api/scripts/migrate_to_shape_b.py`) (DM-PRD-00)
+- [x] Terraform index file updated (`deployment/firestore.indexes.json` and `.tf` wrapper) (DM-PRD-00)
+- [x] Phase 1 executed in dev (DM-PRD-01 strategy suite + DM-PRD-02 analytics suite)
+- [x] Phase 2 executed in dev (DM-PRD-03 Shape D split — `api/scripts/migrate_shape_d_split.py`)
+- [x] Phase 4 code cleanups landed (DM-PRD-05 deletion sweep rewrite + audit query fix)
+- [x] Phase 6 verification passed in dev (DM-56)
+- [x] Staging cutover (DM-58 deploy + DM-60 run-log + DM-62 timing report; DM-92 tracks legacy-residue cleanup separately)
+- [x] Phase 3 (optional — Shape B-like → Shape B) (DM-PRD-04 `monitoring_topics` + `alert_configurations`)
