@@ -1,12 +1,16 @@
 """Skills endpoints.
 
-Implements POST, GET list, PUT, and dry-run validate for the Skills component
-(SK-PRD-01 §6).
+Implements POST, GET list, PUT, dry-run validate, GET detail, GET content,
+GET resources, and DELETE for the Skills component (SK-PRD-01 §6).
 
-POST   /api/v1/accounts/{account_id}/skills             — create version 1
-GET    /api/v1/accounts/{account_id}/skills             — paginated list
-PUT    /api/v1/accounts/{account_id}/skills/{skill_id}  — create next immutable version
-POST   /api/v1/accounts/{account_id}/skills/validate    — dry-run validation (SK-16)
+POST   /api/v1/accounts/{account_id}/skills                                  — create version 1
+GET    /api/v1/accounts/{account_id}/skills                                  — paginated list
+PUT    /api/v1/accounts/{account_id}/skills/{skill_id}                       — create next immutable version
+POST   /api/v1/accounts/{account_id}/skills/validate                         — dry-run validation (SK-16)
+GET    /api/v1/accounts/{account_id}/skills/{skill_id}                       — fetch metadata (SK-19)
+GET    /api/v1/accounts/{account_id}/skills/{skill_id}/content               — fetch SKILL.md body (SK-19)
+GET    /api/v1/accounts/{account_id}/skills/{skill_id}/resources/{rel_path}  — fetch L3 file (SK-19)
+DELETE /api/v1/accounts/{account_id}/skills/{skill_id}                       — soft-archive (SK-19)
 
 Auth:
   This router ships a placeholder that asserts the caller is a member of
@@ -33,7 +37,16 @@ import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+)
 from google.cloud import firestore
 from pydantic import BaseModel
 
@@ -51,7 +64,13 @@ from ..models.skill_models import (
     SkillVersion,
     SkillVisibility,
 )
-from ..services.skill_storage import SkillStorageService, get_skill_storage_service
+from ..services.skill_storage import (
+    SkillStorageService,
+    get_skill_storage_service,
+)
+from ..services.skill_storage import (
+    safe_rel_path as _safe_rel_path,
+)
 from ..services.skill_validator import (
     ValidationReport,
     validate_bundle,
@@ -302,6 +321,18 @@ def _skill_update_dict(skill: Skill) -> dict:
     }
 
 
+def _content_type_for(rel_path: str) -> str:
+    """Return the HTTP Content-Type for a resource file based on extension.
+
+    Decision (D-2): `.md` → `text/markdown`; everything else → `text/plain`.
+    Using an explicit map rather than `mimetypes.guess_type` because Python's
+    mimetypes module does not include `.md` reliably across all platforms.
+    """
+    if rel_path.lower().endswith(".md"):
+        return "text/markdown"
+    return "text/plain"
+
+
 def _skill_from_dict(d: dict) -> Skill:
     return Skill.model_validate(d)
 
@@ -357,6 +388,204 @@ async def validate_skill_bundle(
         for issue in report.issues
     ]
     return SkillValidationResponse(valid=report.valid, errors=errors)
+
+
+# --- GET /{skill_id}/content — declared before /{skill_id} to avoid path shadowing ---
+@router.get("/{skill_id}/content")
+async def get_skill_content(
+    account_id: str,
+    skill_id: str,
+    version: int | None = Query(default=None, ge=1),
+    include_archived: bool = Query(default=False),
+    _user: UserContext = Depends(_require_account_membership),
+    db: firestore.Client = Depends(get_firestore),
+    storage: SkillStorageService = Depends(get_skill_storage_service),
+) -> Response:
+    """Return the SKILL.md body bytes for a versioned skill.
+
+    `Content-Type: text/markdown`.  `?version=N` pins to a specific version;
+    omitting uses `current_version`.  Missing version → 404.
+    Archived skills return 404 unless `?include_archived=true`.
+
+    AC-4 (content fetched with correct content-type), AC-5 (version pinning).
+    """
+
+    def _read() -> tuple[str | None, int]:
+        snap = _skill_doc_ref(db, account_id, skill_id).get()
+        if not snap.exists:
+            return "skill_not_found", 0
+        skill = _skill_from_dict(snap.to_dict())
+        if skill.owner.account_id != account_id:
+            return "skill_not_found", 0
+        if skill.status == SkillStatus.ARCHIVED and not include_archived:
+            return "skill_not_found", 0
+        return None, skill.current_version
+
+    error, current_version = await asyncio.to_thread(_read)
+    if error is not None:
+        raise HTTPException(status_code=404, detail=error)
+    version_to_read = version if version is not None else current_version
+
+    try:
+        data = await asyncio.to_thread(
+            storage.read_skill_md, account_id, skill_id, version_to_read
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="version_not_found") from exc
+
+    return Response(
+        content=data,
+        media_type="text/markdown",
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
+
+
+# --- GET /{skill_id}/resources/{rel_path} — declared before /{skill_id} ---
+@router.get("/{skill_id}/resources/{rel_path:path}")
+async def get_skill_resource(
+    account_id: str,
+    skill_id: str,
+    rel_path: str,
+    version: int | None = Query(default=None, ge=1),
+    include_archived: bool = Query(default=False),
+    _user: UserContext = Depends(_require_account_membership),
+    db: firestore.Client = Depends(get_firestore),
+    storage: SkillStorageService = Depends(get_skill_storage_service),
+) -> Response:
+    """Return the bytes for a single L3 resource file (references/assets/scripts).
+
+    Content-type inferred from extension: `.md` → `text/markdown`, otherwise
+    `text/plain`.  Path-traversal attempts return 400 (via `safe_rel_path`).
+    Manifest miss or absent version returns 404.  `?version=N` pins version.
+    Archived skills return 404 unless `?include_archived=true`.
+
+    AC-4 (path-traversal returns 400; content-type `text/markdown` for `.md`).
+    """
+    # Syntactic safety check: reject path traversal attempts before any GCS read.
+    # Use the canonical form returned by safe_rel_path for the GCS lookup so
+    # any harmless redundant dots (references/./style.md) normalise away.
+    safe_path = _safe_rel_path(rel_path)
+    if safe_path is None:
+        raise HTTPException(status_code=400, detail="invalid_rel_path")
+
+    def _read() -> tuple[str | None, int]:
+        snap = _skill_doc_ref(db, account_id, skill_id).get()
+        if not snap.exists:
+            return "skill_not_found", 0
+        skill = _skill_from_dict(snap.to_dict())
+        if skill.owner.account_id != account_id:
+            return "skill_not_found", 0
+        if skill.status == SkillStatus.ARCHIVED and not include_archived:
+            return "skill_not_found", 0
+        return None, skill.current_version
+
+    error, current_version = await asyncio.to_thread(_read)
+    if error is not None:
+        raise HTTPException(status_code=404, detail=error)
+    version_to_read = version if version is not None else current_version
+
+    data = await asyncio.to_thread(
+        storage.read_file, account_id, skill_id, version_to_read, safe_path
+    )
+    if data is None:
+        raise HTTPException(status_code=404, detail="resource_not_found")
+
+    return Response(
+        content=data,
+        media_type=_content_type_for(safe_path),
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
+
+
+# --- GET /{skill_id} — declared after /content and /resources/{path} ---
+@router.get("/{skill_id}", response_model=Skill)
+async def get_skill(
+    account_id: str,
+    skill_id: str,
+    include_archived: bool = Query(default=False),
+    _user: UserContext = Depends(_require_account_membership),
+    db: firestore.Client = Depends(get_firestore),
+) -> Skill:
+    """Return the Skill metadata document.
+
+    Returns 404 for archived skills unless `?include_archived=true`.
+    Returns 404 when the calling account does not own the skill (leaks less than 403).
+
+    AC-7 (has_scripts round-trips through GET detail).
+    """
+
+    def _read() -> tuple[str | None, Skill | None]:
+        snap = _skill_doc_ref(db, account_id, skill_id).get()
+        if not snap.exists:
+            return "skill_not_found", None
+        skill = _skill_from_dict(snap.to_dict())
+        if skill.owner.account_id != account_id:
+            return "skill_not_found", None
+        if skill.status == SkillStatus.ARCHIVED and not include_archived:
+            return "skill_not_found", None
+        return None, skill
+
+    error, skill = await asyncio.to_thread(_read)
+    if error is not None:
+        raise HTTPException(status_code=404, detail=error)
+    assert skill is not None
+    return skill
+
+
+# --- DELETE /{skill_id} — soft-archive ---
+@router.delete("/{skill_id}", status_code=204)
+async def delete_skill(
+    account_id: str,
+    skill_id: str,
+    user: UserContext = Depends(_require_account_membership),
+    db: firestore.Client = Depends(get_firestore),
+    storage: SkillStorageService = Depends(get_skill_storage_service),
+) -> None:
+    """Soft-archive a skill.
+
+    Sets ``status="archived"``, moves the GCS prefix to the trash bucket,
+    and returns 204 No Content.  Does NOT delete the Firestore doc or version
+    subdocs — the metadata is retained for audit purposes.
+
+    Already-archived skills return 404 (Decision D-1: idempotent UX consistent
+    with GET detail's default-archived 404).
+
+    AC-6 (status="archived"; GCS prefix in trash; list excludes it by default).
+    """
+    now = datetime.now(timezone.utc)
+
+    def _archive() -> str | None:
+        snap = _skill_doc_ref(db, account_id, skill_id).get()
+        if not snap.exists:
+            return "skill_not_found"
+        skill = _skill_from_dict(snap.to_dict())
+        if skill.owner.account_id != account_id:
+            return "skill_not_found"
+        if skill.status == SkillStatus.ARCHIVED:
+            return "skill_not_found"
+        _skill_doc_ref(db, account_id, skill_id).update(
+            {
+                "status": SkillStatus.ARCHIVED.value,
+                "updated_at": now.isoformat(),
+                "updated_by": user.user_id,
+            }
+        )
+        return None
+
+    error = await asyncio.to_thread(_archive)
+    if error is not None:
+        raise HTTPException(status_code=404, detail=error)
+
+    try:
+        await asyncio.to_thread(storage.move_to_trash, account_id, skill_id)
+    except Exception:
+        # Firestore is already archived; GCS move failure is non-fatal.
+        # Log for manual follow-up — the trash lifecycle will not run on this prefix
+        # until GCS is moved, but the skill is invisible to users immediately.
+        logger.exception(
+            "skills_delete_gcs_move_failed",
+            extra={"account_id": account_id, "skill_id": skill_id},
+        )
 
 
 @router.post("/", response_model=Skill, status_code=201)

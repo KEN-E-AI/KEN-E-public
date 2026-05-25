@@ -28,6 +28,7 @@ Note: AC-13 (account-deletion sweep) is owned by SK-18.
 from __future__ import annotations
 
 import io
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -339,6 +340,15 @@ class _FakeBlob:
 
     def exists(self) -> bool:
         return self._data is not None
+
+    def rewrite(self, destination: _FakeBlob, *, token: Any = None) -> tuple:
+        """Server-side copy simulation. Returns (None, 0, 0) — done in one pass."""
+        destination._data = self._data
+        destination.cache_control = self.cache_control
+        return (None, 0, 0)
+
+    def delete(self) -> None:
+        self._data = None
 
 
 class _FakeBucket:
@@ -983,3 +993,551 @@ class TestValidateEndpoint:
             files={"skill_md": ("SKILL.md", _make_skill_md(), "text/markdown")},
         )
         assert response.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# GET /{skill_id}: metadata detail (SK-19, AC-7)
+# ---------------------------------------------------------------------------
+
+
+def _seed_skill_doc(
+    fake_db: _FakeFirestoreClient,
+    skill_id: str,
+    *,
+    account_id: str = ACCOUNT_ID,
+    name: str = "seo-checklist",
+    status: str = "draft",
+    current_version: int = 1,
+    has_scripts: bool = False,
+) -> str:
+    """Seed a minimal Skill Firestore doc and return the skill_id."""
+    fake_db._store[f"accounts/{account_id}/skills/{skill_id}"] = {
+        "skill_id": skill_id,
+        "owner": {"account_id": account_id, "shared_with_accounts": []},
+        "name": name,
+        "description": "Test skill.",
+        "current_version": current_version,
+        "visibility": "private",
+        "status": status,
+        "has_scripts": has_scripts,
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "created_by": "user-uid-123",
+        "updated_at": "2026-01-01T00:00:00+00:00",
+        "updated_by": "user-uid-123",
+    }
+    return skill_id
+
+
+class TestGetSkillDetail(_SkillsRouterBase):
+    """GET /{skill_id} returns Skill metadata; 404 for archived by default (SK-19)."""
+
+    def test_get_draft_returns_200(self, client, fake_db, fake_storage):
+        self._install_user(_member_user())
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+
+        resp = client.get(BASE_URL + f"/{skill_id}")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["skill_id"] == skill_id
+        assert body["name"] == "seo-checklist"
+        assert body["status"] == "draft"
+        assert body["current_version"] == 1
+
+    def test_get_archived_default_returns_404(self, client, fake_db, fake_storage):
+        skill_id = _seed_skill_doc(fake_db, "skill-arch-001", status="archived")
+        self._install_user(_member_user())
+        resp = client.get(BASE_URL + f"/{skill_id}")
+        assert resp.status_code == 404
+
+    def test_get_archived_with_flag_returns_200(self, client, fake_db, fake_storage):
+        skill_id = _seed_skill_doc(fake_db, "skill-arch-002", status="archived")
+        self._install_user(_member_user())
+        resp = client.get(BASE_URL + f"/{skill_id}?include_archived=true")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "archived"
+
+    def test_get_nonexistent_returns_404(self, client, fake_db, fake_storage):
+        self._install_user(_member_user())
+        resp = client.get(BASE_URL + "/no-such-skill-id")
+        assert resp.status_code == 404
+
+    def test_get_cross_account_returns_404(self, client, fake_db, fake_storage):
+        """Skill at ACCOUNT_ID is not visible via OTHER_ACCOUNT_ID path."""
+        self._install_user(_member_user())
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+
+        self._install_user(_member_user(OTHER_ACCOUNT_ID))
+        resp = client.get(OTHER_BASE_URL + f"/{skill_id}")
+        assert resp.status_code == 404
+
+    def test_get_non_member_returns_403(self, client, fake_db, fake_storage):
+        self._install_user(_no_access_user())
+        resp = client.get(BASE_URL + "/any-skill-id")
+        assert resp.status_code == 403
+
+    def test_get_unauthenticated_returns_401(self, client, fake_db, fake_storage):
+        resp = client.get(BASE_URL + "/any-skill-id")
+        assert resp.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# GET /{skill_id}/content (SK-19, AC-4, AC-5)
+# ---------------------------------------------------------------------------
+
+
+class TestGetSkillContent(_SkillsRouterBase):
+    """GET /{skill_id}/content returns SKILL.md bytes with text/markdown (SK-19)."""
+
+    def test_get_content_returns_skill_md_bytes(self, client, fake_db, fake_storage):
+        self._install_user(_member_user())
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+
+        resp = client.get(BASE_URL + f"/{skill_id}/content")
+        assert resp.status_code == 200
+        assert "text/markdown" in resp.headers["content-type"]
+        assert resp.content == _VALID_SKILL_MD
+
+    def test_get_content_version_pinning(self, client, fake_db, fake_storage):
+        """`?version=1` returns the v1 bytes even after a v2 PUT."""
+        self._install_user(_member_user())
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+
+        put_resp = client.put(
+            BASE_URL + f"/{skill_id}",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD_V2), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert put_resp.status_code == 200
+        assert put_resp.json()["current_version"] == 2
+
+        resp = client.get(BASE_URL + f"/{skill_id}/content?version=1")
+        assert resp.status_code == 200
+        assert resp.content == _VALID_SKILL_MD
+
+    def test_get_content_missing_version_returns_404(self, client, fake_db, fake_storage):
+        self._install_user(_member_user())
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+
+        resp = client.get(BASE_URL + f"/{skill_id}/content?version=99")
+        assert resp.status_code == 404
+
+    def test_get_content_archived_default_returns_404(self, client, fake_db, fake_storage):
+        skill_id = _seed_skill_doc(fake_db, "skill-content-arch-001", status="archived")
+        self._install_user(_member_user())
+        resp = client.get(BASE_URL + f"/{skill_id}/content")
+        assert resp.status_code == 404
+
+    def test_get_content_cross_account_returns_404(self, client, fake_db, fake_storage):
+        """Skill content cannot be fetched via a different account's path."""
+        self._install_user(_member_user())
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+
+        self._install_user(_member_user(OTHER_ACCOUNT_ID))
+        resp = client.get(OTHER_BASE_URL + f"/{skill_id}/content")
+        assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# GET /{skill_id}/resources/{rel_path} (SK-19, AC-4)
+# ---------------------------------------------------------------------------
+
+
+class TestGetSkillResources(_SkillsRouterBase):
+    """GET /resources/{rel_path}: content-type dispatch and path-traversal rejection (SK-19)."""
+
+    def test_get_resource_md_returns_text_markdown(self, client, fake_db, fake_storage):
+        self._install_user(_member_user())
+        ref_content = b"# Guide content"
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown")),
+                ("files", ("references/guide.md", io.BytesIO(ref_content), "text/markdown")),
+            ],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+
+        resp = client.get(BASE_URL + f"/{skill_id}/resources/references/guide.md")
+        assert resp.status_code == 200
+        assert "text/markdown" in resp.headers["content-type"]
+        assert resp.content == ref_content
+
+    def test_get_resource_non_md_returns_text_plain(self, client, fake_db, fake_storage):
+        self._install_user(_member_user())
+        script_content = b"print('hello')"
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown")),
+                ("files", ("scripts/run.py", io.BytesIO(script_content), "text/x-python")),
+            ],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+
+        resp = client.get(BASE_URL + f"/{skill_id}/resources/scripts/run.py")
+        assert resp.status_code == 200
+        assert "text/plain" in resp.headers["content-type"]
+        assert resp.content == script_content
+
+    def test_get_resource_version_pinning(self, client, fake_db, fake_storage):
+        """`?version=1` returns the v1 resource bytes even after a PUT (v2)."""
+        self._install_user(_member_user())
+        ref_v1 = b"# v1 guide"
+        ref_v2 = b"# v2 guide"
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown")),
+                ("files", ("references/guide.md", io.BytesIO(ref_v1), "text/markdown")),
+            ],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+
+        put_resp = client.put(
+            BASE_URL + f"/{skill_id}",
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD_V2), "text/markdown")),
+                ("files", ("references/guide.md", io.BytesIO(ref_v2), "text/markdown")),
+            ],
+            data={"name": "seo-checklist"},
+        )
+        assert put_resp.status_code == 200
+
+        resp = client.get(BASE_URL + f"/{skill_id}/resources/references/guide.md?version=1")
+        assert resp.status_code == 200
+        assert resp.content == ref_v1
+
+    def test_get_resource_traversal_percent_encoded_returns_400(self, client, fake_db, fake_storage):
+        """AC-4: triple-encoded `%` in the URL survives two decode passes and reaches
+        safe_rel_path as `%`, which rejects it with 400.
+
+        Starlette TestClient applies `unquote` once when building `scope["path"]`,
+        then `PathConvertor.convert` applies `unquote` again when extracting the
+        route parameter.  Two decode passes means:
+          %2525 → (pass 1) %25 → (pass 2) %
+        so `rel_path` contains a bare `%` and safe_rel_path returns None → 400.
+        """
+        self._install_user(_member_user())
+        resp = client.get(BASE_URL + "/any-skill-id/resources/references%2525guide.md")
+        assert resp.status_code == 400
+
+    def test_get_resource_not_in_manifest_returns_404(self, client, fake_db, fake_storage):
+        """Requesting a path that was never uploaded returns 404."""
+        self._install_user(_member_user())
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+
+        resp = client.get(BASE_URL + f"/{skill_id}/resources/references/nonexistent.md")
+        assert resp.status_code == 404
+
+    def test_get_resource_archived_default_returns_404(self, client, fake_db, fake_storage):
+        skill_id = _seed_skill_doc(fake_db, "skill-res-arch-001", status="archived")
+        self._install_user(_member_user())
+        resp = client.get(BASE_URL + f"/{skill_id}/resources/references/guide.md")
+        assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# DELETE /{skill_id}: soft-archive (SK-19, AC-6)
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteSkill(_SkillsRouterBase):
+    """DELETE sets status=archived, moves GCS to trash, returns 204 (SK-19, AC-6)."""
+
+    def test_delete_returns_204(self, client, fake_db, fake_storage):
+        self._install_user(_member_user())
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+
+        resp = client.delete(BASE_URL + f"/{skill_id}")
+        assert resp.status_code == 204
+
+    def test_delete_sets_archived_status_in_firestore(self, client, fake_db, fake_storage):
+        self._install_user(_member_user())
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+
+        client.delete(BASE_URL + f"/{skill_id}")
+
+        doc = fake_db.get_doc(f"accounts/{ACCOUNT_ID}/skills/{skill_id}")
+        assert doc is not None
+        assert doc["status"] == "archived"
+
+    def test_delete_moves_gcs_prefix_to_trash(self, client, fake_db, fake_storage):
+        _svc, gcs = fake_storage
+        self._install_user(_member_user())
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+        primary_key = f"accounts/{ACCOUNT_ID}/{skill_id}/1/SKILL.md"
+
+        primary_bkt = gcs.bucket("kene-skills-test")
+        assert primary_bkt.has_blob(primary_key)
+
+        client.delete(BASE_URL + f"/{skill_id}")
+
+        assert not primary_bkt.has_blob(primary_key)
+        trash_bkt = gcs.bucket("kene-skills-test-trash")
+        assert trash_bkt.has_blob(primary_key)
+
+    def test_delete_removes_skill_from_default_list(self, client, fake_db, fake_storage):
+        self._install_user(_member_user())
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+
+        client.delete(BASE_URL + f"/{skill_id}")
+
+        list_resp = client.get(BASE_URL + "/")
+        names = [i["name"] for i in list_resp.json()["items"]]
+        assert "seo-checklist" not in names
+
+    def test_delete_then_get_detail_returns_404_by_default(self, client, fake_db, fake_storage):
+        self._install_user(_member_user())
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+
+        client.delete(BASE_URL + f"/{skill_id}")
+
+        resp = client.get(BASE_URL + f"/{skill_id}")
+        assert resp.status_code == 404
+
+    def test_delete_then_get_detail_with_include_archived_returns_200(
+        self, client, fake_db, fake_storage
+    ):
+        self._install_user(_member_user())
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+
+        client.delete(BASE_URL + f"/{skill_id}")
+
+        resp = client.get(BASE_URL + f"/{skill_id}?include_archived=true")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "archived"
+
+    def test_delete_twice_returns_404(self, client, fake_db, fake_storage):
+        """D-1: second DELETE on an already-archived skill returns 404."""
+        self._install_user(_member_user())
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+
+        resp1 = client.delete(BASE_URL + f"/{skill_id}")
+        assert resp1.status_code == 204
+
+        resp2 = client.delete(BASE_URL + f"/{skill_id}")
+        assert resp2.status_code == 404
+
+    def test_delete_cross_account_returns_404(self, client, fake_db, fake_storage):
+        """Skill at ACCOUNT_ID cannot be deleted via OTHER_ACCOUNT_ID path."""
+        self._install_user(_member_user())
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+
+        self._install_user(_member_user(OTHER_ACCOUNT_ID))
+        resp = client.delete(OTHER_BASE_URL + f"/{skill_id}")
+        assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Full CRUD round-trip (SK-19)
+# ---------------------------------------------------------------------------
+
+
+class TestCrudRoundTrip(_SkillsRouterBase):
+    """POST → GET list → GET detail → PUT v2 → GET content v1 → DELETE → verify."""
+
+    def test_full_crud_round_trip(self, client, fake_db, fake_storage):
+        self._install_user(_member_user())
+
+        # 1. POST — create v1
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+        assert post_resp.json()["current_version"] == 1
+
+        # 2. GET list — skill appears
+        list_resp = client.get(BASE_URL + "/")
+        assert list_resp.status_code == 200
+        assert "seo-checklist" in [i["name"] for i in list_resp.json()["items"]]
+
+        # 3. GET detail — correct metadata
+        detail_resp = client.get(BASE_URL + f"/{skill_id}")
+        assert detail_resp.status_code == 200
+        assert detail_resp.json()["current_version"] == 1
+
+        # 4. PUT — create v2
+        put_resp = client.put(
+            BASE_URL + f"/{skill_id}",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD_V2), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert put_resp.status_code == 200
+        assert put_resp.json()["current_version"] == 2
+
+        # 5. GET content ?version=1 — returns v1 bytes
+        content_resp = client.get(BASE_URL + f"/{skill_id}/content?version=1")
+        assert content_resp.status_code == 200
+        assert content_resp.content == _VALID_SKILL_MD
+
+        # 6. DELETE — soft-archive
+        del_resp = client.delete(BASE_URL + f"/{skill_id}")
+        assert del_resp.status_code == 204
+
+        # 7. GET list — excluded from default listing
+        list_resp2 = client.get(BASE_URL + "/")
+        assert "seo-checklist" not in [i["name"] for i in list_resp2.json()["items"]]
+
+        # 8. GET list ?include_archived=true — appears
+        list_resp3 = client.get(BASE_URL + "/?include_archived=true")
+        assert "seo-checklist" in [i["name"] for i in list_resp3.json()["items"]]
+
+        # 9. GET detail default — 404
+        assert client.get(BASE_URL + f"/{skill_id}").status_code == 404
+
+        # 10. GET detail ?include_archived=true — 200 with status=archived
+        final_resp = client.get(BASE_URL + f"/{skill_id}?include_archived=true")
+        assert final_resp.status_code == 200
+        assert final_resp.json()["status"] == "archived"
+
+
+# ---------------------------------------------------------------------------
+# AC-6 lifecycle visibility: Terraform config (SK-19)
+# ---------------------------------------------------------------------------
+
+
+class TestLifecycleVisibility:
+    """AC-6: the skills-trash bucket must have a 30-day Delete lifecycle rule in Terraform."""
+
+    def test_trash_bucket_has_30_day_delete_lifecycle_rule(self):
+        tf_path = (
+            Path(__file__).parents[3]
+            / "deployment"
+            / "terraform"
+            / "gcs_skills_bucket.tf"
+        )
+        assert tf_path.exists(), f"Terraform config not found: {tf_path}"
+        contents = tf_path.read_text()
+        assert "age = 30" in contents, "Expected 30-day lifecycle rule in gcs_skills_bucket.tf"
+        assert 'type = "Delete"' in contents, (
+            "Expected Delete action type in gcs_skills_bucket.tf"
+        )
+
+
+# ---------------------------------------------------------------------------
+# AC-7 has_scripts round-trip (SK-19)
+# ---------------------------------------------------------------------------
+
+
+class TestHasScriptsRoundTrip(_SkillsRouterBase):
+    """AC-7: POST with scripts/ file → GET detail returns has_scripts=True."""
+
+    def test_has_scripts_round_trip(self, client, fake_db, fake_storage):
+        self._install_user(_member_user())
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown")),
+                (
+                    "files",
+                    ("scripts/extract.py", io.BytesIO(b"# extraction script"), "text/x-python"),
+                ),
+            ],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        assert post_resp.json()["has_scripts"] is True
+        skill_id = post_resp.json()["skill_id"]
+
+        detail_resp = client.get(BASE_URL + f"/{skill_id}")
+        assert detail_resp.status_code == 200
+        assert detail_resp.json()["has_scripts"] is True
