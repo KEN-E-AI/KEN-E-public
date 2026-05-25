@@ -1,0 +1,11 @@
+# SK-4 Q3 — Cross-session reader run log (invocation B)
+# Captured: 2026-05-24
+# Command:
+#   uv run python scripts/spike/sandbox_test_harness.py \
+#       --script scripts/spike/skills/q3_skill_b_reader.py \
+#     | tee docs/spike/q3-raw/cross-session-b.log
+[harness] Sandbox resource name is required. Set $KENE_SPIKE_AGENT_ENGINE_RESOURCE_NAME (or legacy $KENE_SPIKE_SANDBOX_RESOURCE_NAME) or pass --sandbox-resource-name.
+
+# OUTCOME: Harness exited before "---" summary block.
+# REASON:  KENE_SPIKE_AGENT_ENGINE_RESOURCE_NAME not set on dev VM.
+# STATUS:  INCONCLUSIVE — sandbox not reached on this run.

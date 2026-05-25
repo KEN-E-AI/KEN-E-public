@@ -1,5 +1,5 @@
 google-cloud-aiplatform[adk,agent_engines]
-google-adk>=1.27.4
+google-adk==1.27.5  # TODO(SK-10): unpin to >=1.27.5 after spike branch deletion. Spike-pinned: measurements taken against this exact surface (SK-PRD-00).
 google-cloud-discoveryengine
 google-cloud-firestore
 google-cloud-logging
