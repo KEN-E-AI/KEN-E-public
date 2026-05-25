@@ -1,14 +1,14 @@
 # Data Management — Product Requirements Document
 
 > **Linear Team:** [KEN-E] Data Management
-> **Last Updated:** 2026-04-20
+> **Last Updated:** 2026-05-25
 > **Status:** Active
 
 ## 1. Overview
 
 The Data Management component owns the multi-tenant data model for KEN-E. It defines how account-scoped data is laid out in Firestore and Cloud Storage (GCS) so every downstream component — Strategy, Analytics, Skills, Project Tasks, Automations, Knowledge Graph — writes to a single, consistent, safely-isolated shape. This component owns no public API and no UI; it is a platform-level concern whose outputs are *conventions, migration scripts, and Firestore/GCS indexes* consumed by every other component.
 
-Its immediate scope is the **Shape B migration plus the platform substrate that rides on it**: realigning every account-scoped Firestore collection under `accounts/{account_id}/{resource}/…`, splitting the legacy `organizations/{org_id}` nested accounts-map out to per-account docs, keeping GCS on the existing G1 prefix pattern, then layering a unified roles-and-audit substrate on top. Eight project PRDs (DM-PRD-00 through DM-PRD-07) break the work into parallelizable units — DM-PRD-00 is the blocking foundation; DM-PRD-01 through DM-PRD-04 then run in parallel across up to four dev teams; DM-PRD-05 rewrites the deletion sweep (account + user) once all four land; DM-PRD-06 does the staging cutover; DM-PRD-07 (after PR-PRD-01 lands) ships the two-tier role model, members storage, member-CRUD API, hybrid migration off the legacy `users.permissions.*` field tree, and the generalized audit substrate that every mutating endpoint in KEN-E writes through. Once this migration completes, the data-shape surface area across the codebase drops from four distinct patterns (Shape A/B/C/D) down to two (Shape B + Shape C) — giving every downstream component a single, unambiguous path contract to rely on.
+Its initial scope was the **Shape B migration plus the platform substrate that rides on it**: realigning every account-scoped Firestore collection under `accounts/{account_id}/{resource}/…`, splitting the legacy `organizations/{org_id}` nested accounts-map out to per-account docs, keeping GCS on the existing G1 prefix pattern, then layering a unified roles-and-audit substrate on top. Eight project PRDs (DM-PRD-00 through DM-PRD-07) break the work into parallelizable units — DM-PRD-00 was the blocking foundation; DM-PRD-01 through DM-PRD-04 ran in parallel across up to four dev teams; DM-PRD-05 rewrote the deletion sweep (account + user) once all four landed; DM-PRD-06 completed the staging cutover; DM-PRD-07 (after PR-PRD-01 lands) ships the two-tier role model, members storage, member-CRUD API, hybrid migration off the legacy `users.permissions.*` field tree, and the generalized audit substrate that every mutating endpoint in KEN-E writes through. With this migration complete (DM-PRD-00 through DM-PRD-06 shipped and staging cut over), the data-shape surface area across the codebase has dropped from four distinct patterns (Shape A/B/C/D) down to two (Shape B + Shape C) — giving every downstream component a single, unambiguous path contract to rely on.
 
 KEN-E has no production users today, so this is a **single-cutover migration per environment** — no dual-write, no backwards-compatibility phase, no downtime window tracking. Repeatability across dev → staging → prod matters because the same migration script runs in each environment. The authoritative decision that drives this work is [Review 15 in DESIGN-REVIEW-LOG](../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1) — Multi-Tenant Data Model Shape (Firestore Subcollections + GCS Prefix G1); the step-by-step plan lives in [`./multi-tenant-migration-plan.md`](./multi-tenant-migration-plan.md).
 
@@ -161,13 +161,13 @@ The component's work is split across **8 project PRDs** under [`projects/`](./pr
 
 | ID | Title | Status | Effort | Blocked by | Blocks |
 |---|---|---|---|---|---|
-| [DM-PRD-00](./projects/DM-PRD-00-migration-foundation.md) | Migration Foundation | Ready to start | 2–3 d | — | DM-PRD-01, DM-PRD-02, DM-PRD-03, DM-PRD-04 |
-| [DM-PRD-01](./projects/DM-PRD-01-strategy-suite-migration.md) | Strategy Suite Migration | Blocked | 3–4 d | DM-PRD-00 | DM-PRD-05 |
+| [DM-PRD-00](./projects/DM-PRD-00-migration-foundation.md) | Migration Foundation | Complete | 2–3 d | — | DM-PRD-01, DM-PRD-02, DM-PRD-03, DM-PRD-04 |
+| [DM-PRD-01](./projects/DM-PRD-01-strategy-suite-migration.md) | Strategy Suite Migration | Complete | 3–4 d | DM-PRD-00 | DM-PRD-05 |
 | [DM-PRD-02](./projects/DM-PRD-02-analytics-suite-migration.md) | Analytics Suite Migration | Complete | 2–3 d | DM-PRD-00 | DM-PRD-05 |
-| [DM-PRD-03](./projects/DM-PRD-03-shape-d-split.md) | Shape D Split | Blocked | 3–4 d | DM-PRD-00 | DM-PRD-05 |
-| [DM-PRD-04](./projects/DM-PRD-04-shape-b-like-collapse.md) | Shape B-like Collapse | Blocked | 1–2 d | DM-PRD-00 | DM-PRD-05 |
-| [DM-PRD-05](./projects/DM-PRD-05-deletion-sweep-rewrite.md) | Deletion Sweep Rewrite (Account + User) | Blocked | 2–3 d | DM-PRD-01, DM-PRD-02, DM-PRD-03, DM-PRD-04 | DM-PRD-06, DM-PRD-07 |
-| [DM-PRD-06](./projects/DM-PRD-06-verification-and-cutover.md) | Verification & Staging Cutover | Blocked | 1 d | DM-PRD-05 | — |
+| [DM-PRD-03](./projects/DM-PRD-03-shape-d-split.md) | Shape D Split | Complete | 3–4 d | DM-PRD-00 | DM-PRD-05 |
+| [DM-PRD-04](./projects/DM-PRD-04-shape-b-like-collapse.md) | Shape B-like Collapse | Complete | 1–2 d | DM-PRD-00 | DM-PRD-05 |
+| [DM-PRD-05](./projects/DM-PRD-05-deletion-sweep-rewrite.md) | Deletion Sweep Rewrite (Account + User) | Complete | 2–3 d | DM-PRD-01, DM-PRD-02, DM-PRD-03, DM-PRD-04 | DM-PRD-06, DM-PRD-07 |
+| [DM-PRD-06](./projects/DM-PRD-06-verification-and-cutover.md) | Verification & Staging Cutover | Complete | 1 d | DM-PRD-05 | — |
 | [DM-PRD-07](./projects/DM-PRD-07-approval-workflow-and-audit.md) | Roles, Members, Audit Substrate | Blocked | 4–5 d | PR-PRD-01, DM-PRD-05 | PR-PRD-07 |
 
 ### 5.2 Dependency graph
