@@ -66,5 +66,12 @@ class Settings:
     # production; set only on staging where the load test runs.
     load_test_bypass_uid: str = os.getenv("LOAD_TEST_BYPASS_UID", "")
 
+    # E2E test bypass token — skips Firebase token verification entirely and
+    # synthesises a UserContext from the bearer token value:
+    #   bearer == API_TEST_BYPASS_TOKEN           → non-member (empty account_permissions)
+    #   bearer == API_TEST_BYPASS_TOKEN:{acct_id} → member of {acct_id} with "edit" role
+    # Must be empty in production; set only in the E2E test environment.
+    api_test_bypass_token: str = os.getenv("API_TEST_BYPASS_TOKEN", "")
+
 
 settings = Settings()

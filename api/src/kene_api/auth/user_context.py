@@ -1,6 +1,7 @@
 """User context and authentication utilities."""
 
 import asyncio
+import hmac
 import logging
 import time
 from typing import Any, Optional
@@ -247,6 +248,39 @@ async def _get_user_context_with_limiter(
     This is the actual implementation that accepts a custom rate limiter.
     """
     t_start = time.time()
+
+    # E2E test bypass — only active when API_TEST_BYPASS_TOKEN is non-empty.
+    # Exact match → non-member; "{token}:{account_id}" → member of that account.
+    # Uses hmac.compare_digest to avoid timing side-channels.
+    # This path must never be reachable in production (empty default enforced at
+    # startup in main.py lifespan handler).
+    # NOTE: get_optional_user_context relies on its own `not credentials` guard
+    # running before this function; the bypass here only fires when credentials
+    # are present, so optional-auth callers without a token are unaffected.
+    bypass_token = settings.api_test_bypass_token
+    if bypass_token and credentials:
+        bearer = credentials.credentials
+        if hmac.compare_digest(bearer, bypass_token):
+            return UserContext(
+                user_id="test-bypass-no-member",
+                email="no-member@test.internal",
+                organization_permissions={},
+                account_permissions={},
+                roles=[],
+            )
+        prefix = f"{bypass_token}:"
+        if (
+            len(bearer) > len(prefix)
+            and hmac.compare_digest(bearer[: len(prefix)], prefix)
+        ):
+            account_id_part = bearer[len(prefix) :]
+            return UserContext(
+                user_id=f"test-bypass-{account_id_part}",
+                email=f"member-{account_id_part}@test.internal",
+                organization_permissions={},
+                account_permissions={account_id_part: "edit"},
+                roles=[],
+            )
 
     # Choose which rate limiter to use
     active_limiter = rate_limiter if rate_limiter is not None else token_rate_limiter
