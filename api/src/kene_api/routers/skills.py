@@ -490,7 +490,9 @@ async def get_skill(
     """Return the Skill metadata document.
 
     Returns 404 for archived skills unless `?include_archived=true`.
-    Returns 404 when the calling account does not own the skill (leaks less than 403).
+    Returns 403 when the Firestore doc exists but owner.account_id != path account_id
+    (inconsistent document — two-layer auth Layer 2). Returns 404 when the doc is
+    simply absent at the path (natural cross-account absence).
 
     AC-7 (has_scripts round-trips through GET detail).
     """

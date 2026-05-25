@@ -521,6 +521,15 @@ class TestSkillsRouterAuth(_SkillsRouterBase):
         resp = client.get(BASE_URL + "/")
         assert resp.status_code == 403
 
+    def test_non_member_validate_returns_403(self, client, fake_db, fake_storage):
+        """POST /validate is gated by the router-level check_account_access dependency."""
+        self._install_user(_no_access_user())
+        resp = client.post(
+            BASE_URL + "/validate",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+        )
+        assert resp.status_code == 403
+
 
 # ---------------------------------------------------------------------------
 # POST: create skill (AC-1)
@@ -1654,6 +1663,82 @@ class TestCrossAccountIsolation(_SkillsRouterBase):
         assert resp.status_code == 403
         assert resp.json()["detail"] == "owner_mismatch"
 
+    def _seed_inconsistent_skill(self, fake_db: _FakeFirestoreClient, skill_id: str) -> None:
+        """Plant a skill doc at OTHER_ACCOUNT_ID's path but with owner.account_id = ACCOUNT_ID."""
+        fake_db._store[f"accounts/{OTHER_ACCOUNT_ID}/skills/{skill_id}"] = {
+            "skill_id": skill_id,
+            "owner": {"account_id": ACCOUNT_ID, "shared_with_accounts": []},
+            "name": f"injected-{skill_id}",
+            "description": "inconsistent doc",
+            "current_version": 1,
+            "visibility": "private",
+            "status": "draft",
+            "source": {"type": "authored"},
+            "has_scripts": False,
+            "created_at": "2025-01-01T00:00:00+00:00",
+            "created_by": "uid-a",
+            "updated_at": "2025-01-01T00:00:00+00:00",
+            "updated_by": "uid-a",
+        }
+
+    def test_inconsistent_doc_owner_mismatch_get_content_returns_403(
+        self, client, fake_db, fake_storage
+    ):
+        """Layer 2: doc at B's path but owner.account_id = A → 403 on GET content."""
+        skill_id = "inconsistent-content-id"
+        self._seed_inconsistent_skill(fake_db, skill_id)
+        other_user = UserContext(
+            user_id="other-uid",
+            email="other@example.com",
+            organization_permissions={},
+            account_permissions={OTHER_ACCOUNT_ID: "admin"},
+        )
+        self._install_user(other_user)
+
+        resp = client.get(OTHER_BASE_URL + f"/{skill_id}/content")
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "owner_mismatch"
+
+    def test_inconsistent_doc_owner_mismatch_get_resource_returns_403(
+        self, client, fake_db, fake_storage
+    ):
+        """Layer 2: doc at B's path but owner.account_id = A → 403 on GET resource."""
+        skill_id = "inconsistent-resource-id"
+        self._seed_inconsistent_skill(fake_db, skill_id)
+        other_user = UserContext(
+            user_id="other-uid",
+            email="other@example.com",
+            organization_permissions={},
+            account_permissions={OTHER_ACCOUNT_ID: "admin"},
+        )
+        self._install_user(other_user)
+
+        resp = client.get(OTHER_BASE_URL + f"/{skill_id}/resources/references/guide.md")
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "owner_mismatch"
+
+    def test_inconsistent_doc_owner_mismatch_put_returns_403(
+        self, client, fake_db, fake_storage
+    ):
+        """Layer 2: doc at B's path but owner.account_id = A → 403 on PUT."""
+        skill_id = "inconsistent-put-id"
+        self._seed_inconsistent_skill(fake_db, skill_id)
+        other_user = UserContext(
+            user_id="other-uid",
+            email="other@example.com",
+            organization_permissions={},
+            account_permissions={OTHER_ACCOUNT_ID: "admin"},
+        )
+        self._install_user(other_user)
+
+        resp = client.put(
+            OTHER_BASE_URL + f"/{skill_id}",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "owner_mismatch"
+
     def test_member_of_both_accounts_natural_cross_account_returns_404(
         self, client, fake_db, fake_storage
     ):
@@ -1682,7 +1767,11 @@ class TestCrossAccountIsolation(_SkillsRouterBase):
         assert resp.status_code == 404
 
     def test_check_account_access_and_check_strategy_access_agree(self):
-        """Dependency regression: both helpers grant access to members, 403 to non-members."""
+        """Dependency regression: both helpers grant access to members, 403 to non-members.
+
+        Includes a super-admin user to confirm the super-admin bypass works through
+        check_strategy_access (which delegates membership to check_account_access).
+        """
         import asyncio
 
         from fastapi import HTTPException as FastAPIHTTPException
@@ -1690,6 +1779,14 @@ class TestCrossAccountIsolation(_SkillsRouterBase):
         from src.kene_api.auth.user_context import check_account_access
         from src.kene_api.routers.strategy import check_strategy_access
 
+        super_admin_user = UserContext(
+            user_id="sa-uid",
+            email="admin@ken-e.ai",
+            organization_permissions={},
+            account_permissions={},
+            roles=["super_admin"],
+        )
+        # Membership gate: member passes, non-member gets 403.
         for user, should_pass in [(_member_user(), True), (_no_access_user(), False)]:
             if should_pass:
                 result = asyncio.run(check_account_access(ACCOUNT_ID, user))
@@ -1703,3 +1800,11 @@ class TestCrossAccountIsolation(_SkillsRouterBase):
                 with pytest.raises(FastAPIHTTPException) as exc_info2:
                     asyncio.run(check_strategy_access(ACCOUNT_ID, user, "view"))
                 assert exc_info2.value.status_code == 403
+
+        # Super-admin passes membership and edit-role gate even without explicit account entry.
+        result_sa = asyncio.run(check_account_access(ACCOUNT_ID, super_admin_user))
+        assert result_sa.user_id == super_admin_user.user_id
+        result_sa_view = asyncio.run(check_strategy_access(ACCOUNT_ID, super_admin_user, "view"))
+        assert result_sa_view.user_id == super_admin_user.user_id
+        result_sa_edit = asyncio.run(check_strategy_access(ACCOUNT_ID, super_admin_user, "edit"))
+        assert result_sa_edit.user_id == super_admin_user.user_id

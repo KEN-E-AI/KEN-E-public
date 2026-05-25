@@ -447,13 +447,11 @@ async def check_account_access(
     """
     if not user.has_account_access(account_id):
         audit_logger = get_audit_logger()
-        asyncio.create_task(
-            audit_logger.log_access_denied(
-                user_id=user.user_id,
-                resource_type="account",
-                resource_id=account_id,
-                required_permission=None,
-            )
+        await audit_logger.log_access_denied(
+            user_id=user.user_id,
+            resource_type="account",
+            resource_id=account_id,
+            required_permission=None,
         )
         raise HTTPException(status_code=403, detail="forbidden")
     return user
