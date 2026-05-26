@@ -1,9 +1,9 @@
-"""HTTP endpoint adapters for chat orphan-scan CLI orchestrators.
+"""HTTP endpoint adapters for chat orphan-scan orchestrators.
 
 Thin wrappers that:
 1. Resolve runtime clients (Firestore, GCS, VertexAiSessionService) from
    the existing API singletons / env vars.
-2. Call the scan orchestrators defined in ``api/scripts/``.
+2. Call the scan orchestrators in ``kene_api.chat.{artifact,adk_session}_orphan_scan``.
 3. Return the summary dict unchanged — callers decide how to surface it.
 
 No flag gate: ``chat_v2_enabled`` does NOT guard these maintenance endpoints.
@@ -13,24 +13,14 @@ from __future__ import annotations
 
 import asyncio
 import os
-import sys
-from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException
 
-# Path bootstrap: makes chat_artifact_orphan_scan and
-# chat_adk_session_orphan_scan importable from api/scripts/.
-_SCRIPTS_DIR = Path(__file__).parent.parent.parent.parent / "scripts"
-assert _SCRIPTS_DIR.is_dir(), f"scripts dir not found at expected path: {_SCRIPTS_DIR}"
-if str(_SCRIPTS_DIR) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_DIR))
-
-from chat_adk_session_orphan_scan import scan_for_adk_session_orphans  # noqa: E402
-from chat_artifact_orphan_scan import scan_for_gcs_blob_orphans  # noqa: E402
-
-from ..dependencies import get_firestore_client as _get_firestore_client  # noqa: E402
-from .artifacts import _get_storage_client  # noqa: E402
+from ..dependencies import get_firestore_client as _get_firestore_client
+from .adk_session_orphan_scan import scan_for_adk_session_orphans
+from .artifact_orphan_scan import scan_for_gcs_blob_orphans
+from .artifacts import _get_storage_client
 
 
 async def run_gcs_orphan_scan() -> dict[str, int]:
@@ -64,7 +54,9 @@ async def run_adk_session_orphan_scan(*, dry_run: bool = False) -> dict[str, int
     )
 
     db = _get_firestore_client()
-    project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT")
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID") or os.getenv(
+        "GOOGLE_CLOUD_PROJECT"
+    )
     if not project_id:
         raise HTTPException(
             status_code=500, detail="GOOGLE_CLOUD_PROJECT_ID is not configured"

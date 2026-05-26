@@ -27,8 +27,8 @@ The chat_v2_enabled feature flag does NOT gate this script.
 Cloud Scheduler binding (05:30 UTC daily) is configured by a separate change.
 
 Usage:
-    python chat_artifact_orphan_scan.py [--dry-run] [--account-id ID]
-                                        [--limit N]
+    python -m kene_api.chat.artifact_orphan_scan [--dry-run] [--account-id ID]
+                                                 [--limit N]
 """
 
 from __future__ import annotations
@@ -41,18 +41,7 @@ import re
 import sys
 import time
 from datetime import datetime
-from pathlib import Path
 from typing import Any
-
-# ---------------------------------------------------------------------------
-# Path bootstrap — makes kene_api and shared importable without install
-# ---------------------------------------------------------------------------
-_SCRIPTS_DIR = Path(__file__).parent
-_API_SRC = _SCRIPTS_DIR.parent / "src"
-_REPO_ROOT = _SCRIPTS_DIR.parent.parent
-for _p in (str(_API_SRC), str(_SCRIPTS_DIR), str(_REPO_ROOT)):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
 
 # ---------------------------------------------------------------------------
 # Optional Weave instrumentation
@@ -64,11 +53,13 @@ try:
 except ImportError:
     WEAVE_AVAILABLE = False
 
-from shared.structured_logging import (  # noqa: E402
+from shared.structured_logging import (
     configure_logging,
     get_structured_logger,
     log_context,
 )
+
+from .artifacts import _artifact_id, _resolve_bucket, parse_gcs_path
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -329,9 +320,6 @@ def scan_for_gcs_blob_orphans(
             "errored": int,          # blobs that raised an exception
         }
     """
-    # Deferred import: avoids a circular import at module load time.
-    from kene_api.chat.artifacts import _artifact_id, _resolve_bucket, parse_gcs_path
-
     start_time = time.monotonic()
     summary: dict[str, int] = {
         "scanned_blobs": 0,

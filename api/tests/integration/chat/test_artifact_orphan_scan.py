@@ -1,4 +1,4 @@
-"""Integration tests for chat_artifact_orphan_scan.py.
+"""Integration tests for kene_api.chat.artifact_orphan_scan.
 
 Tests exercise the scan_for_gcs_blob_orphans orchestrator against a real
 Firestore emulator.  GCS I/O is replaced by a lightweight _FakeStorageClient
@@ -13,9 +13,14 @@ from __future__ import annotations
 import os
 import sys
 from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
+
+# Resolve the api/src package so the test runner finds kene_api.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
+
+from kene_api.chat import artifact_orphan_scan as cli
+from kene_api.chat.artifacts import _artifact_id
 
 # ---------------------------------------------------------------------------
 # Skip entire module when emulator is absent
@@ -24,19 +29,6 @@ pytestmark = pytest.mark.skipif(
     not os.getenv("FIRESTORE_EMULATOR_HOST"),
     reason="FIRESTORE_EMULATOR_HOST not set; skipping Firestore integration tests",
 )
-
-# ---------------------------------------------------------------------------
-# Path bootstrap
-# ---------------------------------------------------------------------------
-_SCRIPTS_DIR = Path(__file__).parent.parent.parent.parent / "scripts"
-_API_SRC = _SCRIPTS_DIR.parent / "src"
-_REPO_ROOT = _SCRIPTS_DIR.parent.parent
-for _p in (str(_SCRIPTS_DIR), str(_API_SRC), str(_REPO_ROOT)):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
-
-import chat_artifact_orphan_scan as cli  # noqa: E402
-from kene_api.chat.artifacts import _artifact_id  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Emulator client helpers
