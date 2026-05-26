@@ -540,6 +540,92 @@ class TestIntegrationSmoke:
         assert dispatchers["alpha_agent"].__name__ == "dispatch_to_alpha_agent"
         assert dispatchers["beta_agent"].__name__ == "dispatch_to_beta_agent"
 
+
+# ---------------------------------------------------------------------------
+# TestDelegateToSpecialist — AH-PRD-09 Phase 2 unified dispatch tool
+# ---------------------------------------------------------------------------
+
+_PATCH_SPECIALIST_RUNTIME_RUN = (
+    "app.adk.agents.agent_factory.specialist_runtime.run"
+)
+
+
+class TestDelegateToSpecialist:
+    def test_invalid_name_returns_error_string(self) -> None:
+        from app.adk.agents.agent_factory.dispatch import delegate_to_specialist
+
+        result = delegate_to_specialist("InvalidName", "query")
+
+        assert result.startswith("[DELEGATE ERROR]")
+        assert "InvalidName" in result
+
+    def test_name_starting_with_digit_returns_error_string(self) -> None:
+        from app.adk.agents.agent_factory.dispatch import delegate_to_specialist
+
+        result = delegate_to_specialist("1bad", "query")
+
+        assert result.startswith("[DELEGATE ERROR]")
+
+    def test_valid_name_delegates_to_specialist_runtime(self) -> None:
+        from app.adk.agents.agent_factory.dispatch import delegate_to_specialist
+
+        with patch(_PATCH_SPECIALIST_RUNTIME_RUN, return_value="specialist answer") as mock_run:
+            result = delegate_to_specialist("research_agent", "some query")
+
+        assert result == "specialist answer"
+        mock_run.assert_called_once_with(
+            doc_id="research_agent",
+            query="some query",
+            account_id=None,
+            acceptance_criteria="",
+            tool_context=None,
+        )
+
+    def test_account_id_read_from_tool_context_state(self) -> None:
+        from app.adk.agents.agent_factory.dispatch import delegate_to_specialist
+
+        tool_context = MagicMock()
+        tool_context.state.get.return_value = "acct_123"
+
+        with patch(_PATCH_SPECIALIST_RUNTIME_RUN, return_value="ok") as mock_run:
+            delegate_to_specialist("research_agent", "query", tool_context=tool_context)
+
+        tool_context.state.get.assert_called_once_with("account_id")
+        _, kwargs = mock_run.call_args
+        assert kwargs["account_id"] == "acct_123"
+
+    def test_account_id_none_when_no_tool_context(self) -> None:
+        from app.adk.agents.agent_factory.dispatch import delegate_to_specialist
+
+        with patch(_PATCH_SPECIALIST_RUNTIME_RUN, return_value="ok") as mock_run:
+            delegate_to_specialist("research_agent", "query")
+
+        _, kwargs = mock_run.call_args
+        assert kwargs["account_id"] is None
+
+    def test_acceptance_criteria_forwarded(self) -> None:
+        from app.adk.agents.agent_factory.dispatch import delegate_to_specialist
+
+        with patch(_PATCH_SPECIALIST_RUNTIME_RUN, return_value="ok") as mock_run:
+            delegate_to_specialist(
+                "research_agent", "query", acceptance_criteria="must include sources"
+            )
+
+        _, kwargs = mock_run.call_args
+        assert kwargs["acceptance_criteria"] == "must include sources"
+
+    def test_tool_context_forwarded_to_runtime(self) -> None:
+        from app.adk.agents.agent_factory.dispatch import delegate_to_specialist
+
+        tool_context = MagicMock()
+        tool_context.state.get.return_value = None
+
+        with patch(_PATCH_SPECIALIST_RUNTIME_RUN, return_value="ok") as mock_run:
+            delegate_to_specialist("research_agent", "query", tool_context=tool_context)
+
+        _, kwargs = mock_run.call_args
+        assert kwargs["tool_context"] is tool_context
+
         # --- alpha: review-loop branch ---
         mock_iter = MagicMock()
         mock_iter.iteration, mock_iter.specialist_output, mock_iter.reviewer_output = (

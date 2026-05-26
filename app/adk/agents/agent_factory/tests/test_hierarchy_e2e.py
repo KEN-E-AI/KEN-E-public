@@ -1,16 +1,15 @@
 """Integration tests for app.adk.agents.agent_factory.hierarchy.build_hierarchy().
 
-Exercises the full build_hierarchy() pipeline against an in-memory
-_FakeFirestoreDb (no live GCP). Seeds 1 root config, 2 specialist configs,
-and 3 MCP server configs including one shared between both specialists.
+Per AH-PRD-09 Phase 2, build_hierarchy() builds the root agent only.
+Specialists are resolved per-turn by specialist_runtime; no N+1 Firestore
+read occurs at deploy time.
 
 Test classes:
-  TC-1  TestRootStructure             — root is an LlmAgent named "ken_e" with 2 dispatchers
-  TC-2  TestSpecialistToolAssignments — each specialist gets its own correct toolsets
-  TC-3  TestSharedServerDistinctInstances — shared server yields distinct toolset objects
-  TC-4  TestRootInstructionContent    — rendered instruction contains expected strings
-  TC-5  TestOverlayVariant            — account overlay overrides specialist instruction
-  TC-6  TestStructuralEquivalenceSmoke — 2 specialists → 2 dispatch tools on root
+  TC-1  TestRootOnlyBuild           — root is LlmAgent "ken_e" with single delegate tool
+  TC-2  TestDelegateToSpecialistE2E — tool routes to specialist_runtime.run end-to-end
+  TC-3  TestAccountOverlay          — account_id overlay is forwarded to _load_and_merge
+  TC-4  TestRootInstructionContent  — instruction provider wiring
+  TC-5  TestErrorHandling           — missing root config, bad account_id
 """
 
 from __future__ import annotations
@@ -19,6 +18,7 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from google.adk.agents import LlmAgent
 from google.adk.agents.llm_agent_config import LlmAgentConfig
 
 # ---------------------------------------------------------------------------
@@ -47,17 +47,9 @@ _PATCH_AFTER_TOOL = patch(
     _ADK_AFTER_TOOL,
 )
 
-_PATCH_BUILD_TOOLSET = patch(
-    "app.adk.agents.agent_factory.hierarchy.build_toolset_for_doc",
-)
-
-_PATCH_GET_DEFAULT_REGISTRY = patch(
-    "app.adk.tools.registry.tool_registry.get_default_registry",
-)
-
 
 # ---------------------------------------------------------------------------
-# In-memory Firestore stand-in (copied from test_hierarchy.py)
+# In-memory Firestore stand-in
 # ---------------------------------------------------------------------------
 
 
@@ -113,118 +105,50 @@ class _FakeSnapshot:
 
 
 # ---------------------------------------------------------------------------
-# Canonical fake DB documents for the e2e fixture
+# Canonical fixture documents
 # ---------------------------------------------------------------------------
 
+_ROOT_DOC = {
+    "instruction": "You are KEN-E root.",
+    "model": "gemini-2.0-flash",
+    "description": "Root orchestration agent",
+}
+
 _E2E_DOCS: dict = {
-    ("agent_configs", "ken_e_chatbot"): {
-        "instruction": "You are KEN-E root.",
-        "model": "gemini-2.0-flash",
-        "description": "Root orchestration agent",
-    },
+    ("agent_configs", "ken_e_chatbot"): _ROOT_DOC,
+    # Extra specialist configs present in Firestore — must NOT affect root.tools.
     ("agent_configs", "analytics_specialist"): {
         "instruction": "You are an analytics specialist.",
         "model": "gemini-2.0-flash",
         "description": "Handles Google Analytics queries",
-        "mcp_servers": ["ga_mcp", "shared_viz_mcp"],
-        # AH-40: flat generation fields — exercised by TC-7.
-        "temperature": 0.7,
-        "max_output_tokens": 4096,
+        "mcp_servers": ["ga_mcp"],
     },
     ("agent_configs", "ads_specialist"): {
         "instruction": "You are an ads specialist.",
         "model": "gemini-2.0-flash",
         "description": "Handles Google Ads queries",
-        "mcp_servers": ["ads_mcp", "shared_viz_mcp"],
-        "temperature": 0.2,
-        "max_output_tokens": 2048,
-    },
-    ("mcp_server_configs", "ga_mcp"): {
-        "enabled": True,
-        "connection": {"connection_type": "sse", "url": "https://ga.mcp.example.com"},
-        "auth_type": "ga_oauth",
-    },
-    ("mcp_server_configs", "ads_mcp"): {
-        "enabled": True,
-        "connection": {"connection_type": "sse", "url": "https://ads.mcp.example.com"},
-        "auth_type": "google_ads_oauth",
-    },
-    ("mcp_server_configs", "shared_viz_mcp"): {
-        "enabled": True,
-        "connection": {"connection_type": "sse", "url": "https://viz.mcp.example.com"},
-        # no auth_type — shared server with no header_provider
+        "mcp_servers": ["ads_mcp"],
     },
 }
 
 
-class _FakeRegistry:
-    """Zero-tool registry — every unknown server falls back to count 1."""
-
-    def list_tools(self) -> list:
-        return []
-
-    def list_default_global_tools(self) -> list:
-        """AH-PRD-06 PR-C: empty default global function tool roster.
-
-        Per-test overrides (e.g. the PR-C tests below) attach a non-empty
-        list onto a registry instance via attribute assignment before
-        passing it to ``build_hierarchy``.
-        """
-        return []
-
-
-def _run_build_hierarchy(docs: dict, account_id: str | None = None) -> object:
-    """Call build_hierarchy with the standard set of patches applied.
-
-    Uses side_effect=lambda sid, doc: MagicMock(name=f"toolset_{sid}") so each
-    call produces a distinct MagicMock instance (critical for TC-3).
-    """
+def _run_build_hierarchy(docs: dict, account_id: str | None = None) -> LlmAgent:
+    """Call build_hierarchy with standard callback patches."""
     import app.adk.agents.agent_factory.hierarchy as h
-
-    fake_db = _FakeFirestoreDb(docs)
-    fake_registry = _FakeRegistry()
 
     with (
         _PATCH_BEFORE_AGENT,
         _PATCH_AFTER_AGENT,
         _PATCH_BEFORE_TOOL,
         _PATCH_AFTER_TOOL,
-        _PATCH_BUILD_TOOLSET as mock_build_toolset,
-        _PATCH_GET_DEFAULT_REGISTRY as mock_get_registry,
     ):
-        mock_build_toolset.side_effect = lambda sid, doc: MagicMock(
-            name=f"toolset_{sid}"
-        )
-        mock_get_registry.return_value = fake_registry
-        return h.build_hierarchy(account_id=account_id, db=fake_db)
+        return h.build_hierarchy(account_id=account_id, db=_FakeFirestoreDb(docs))
 
 
 def _make_context(state: dict) -> MagicMock:
     ctx = MagicMock()
     ctx.state = state
     return ctx
-
-
-def _fake_e2e_cache_loader(
-    doc_id: str, project_id: str = "ken-e-dev"
-) -> tuple[Any, dict, dict]:
-    """In-memory loader for config_cache so agent.instruction() doesn't hit Firestore."""
-    instruction_map: dict[str, str] = {
-        "ken_e_chatbot": _E2E_DOCS[("agent_configs", "ken_e_chatbot")]["instruction"],
-        "analytics_specialist": _E2E_DOCS[("agent_configs", "analytics_specialist")][
-            "instruction"
-        ],
-        "ads_specialist": _E2E_DOCS[("agent_configs", "ads_specialist")]["instruction"],
-    }
-    instr = instruction_map.get(doc_id, f"Test instruction for {doc_id}")
-    cfg = LlmAgentConfig(
-        name=doc_id,
-        model="gemini-2.0-flash",
-        instruction=instr,
-        description="",
-        generate_content_config={"temperature": 0.3, "max_output_tokens": 2048},
-    )
-    return cfg, {"version": "test"}, {}
 
 
 @pytest.fixture(autouse=True)
@@ -234,23 +158,35 @@ def _patch_e2e_config_cache_loader():
 
     config_cache.clear_config_cache()
     with patch.object(
-        config_cache, "load_config_from_firestore", side_effect=_fake_e2e_cache_loader
+        config_cache,
+        "load_config_from_firestore",
+        side_effect=lambda doc_id, project_id="ken-e-dev": (
+            LlmAgentConfig(
+                name=doc_id,
+                model="gemini-2.0-flash",
+                instruction=_ROOT_DOC["instruction"],
+                description="",
+                generate_content_config={"temperature": 0.3, "max_output_tokens": 2048},
+            ),
+            {"version": "test"},
+            {},
+        ),
     ):
         yield
     config_cache.clear_config_cache()
 
 
 # ---------------------------------------------------------------------------
-# TC-1: Root structure
+# TC-1: Root-only build
 # ---------------------------------------------------------------------------
 
 
-class TestRootStructure:
-    """TC-1: build_hierarchy() returns an LlmAgent named 'ken_e' with 2 dispatch tools."""
+class TestRootOnlyBuild:
+    """TC-1: build_hierarchy() returns an LlmAgent named 'ken_e' with exactly
+    1 tool (delegate_to_specialist), regardless of how many specialist configs
+    exist in Firestore."""
 
     def test_root_is_llm_agent(self) -> None:
-        from google.adk.agents import LlmAgent
-
         root = _run_build_hierarchy(_E2E_DOCS)
         assert isinstance(root, LlmAgent)
 
@@ -258,1027 +194,306 @@ class TestRootStructure:
         root = _run_build_hierarchy(_E2E_DOCS)
         assert root.name == "ken_e"
 
-    def test_root_tools_has_exactly_two_items(self) -> None:
+    def test_root_has_exactly_one_tool(self) -> None:
+        """Per AH-PRD-09 Phase 2: only delegate_to_specialist is wired at deploy time."""
         root = _run_build_hierarchy(_E2E_DOCS)
-        assert len(root.tools) == 2
+        assert len(root.tools) == 1
 
-    def test_dispatch_function_names_match_specialist_ids(self) -> None:
+    def test_root_tool_is_delegate_to_specialist(self) -> None:
         root = _run_build_hierarchy(_E2E_DOCS)
-        tool_names = {getattr(t, "__name__", None) for t in root.tools}
-        assert "dispatch_to_analytics_specialist" in tool_names
-        assert "dispatch_to_ads_specialist" in tool_names
+        tool_name = getattr(root.tools[0], "__name__", None)
+        assert tool_name == "delegate_to_specialist"
 
+    def test_extra_specialist_configs_do_not_add_tools(self) -> None:
+        """Specialist Firestore docs exist but must NOT produce additional tools."""
+        root = _run_build_hierarchy(_E2E_DOCS)
+        # _E2E_DOCS has 2 specialist configs + root — still only 1 tool.
+        assert len(root.tools) == 1
 
-# ---------------------------------------------------------------------------
-# TC-2: Specialist tool assignments
-# ---------------------------------------------------------------------------
-
-
-class TestSpecialistToolAssignments:
-    """TC-2: Each specialist is built with the correct number of toolsets."""
-
-    def test_analytics_specialist_built_with_two_toolsets(self) -> None:
+    def test_single_firestore_read_for_root_config(self) -> None:
+        """build_hierarchy reads only the root config, not all specialist configs."""
         import app.adk.agents.agent_factory.hierarchy as h
+        from app.adk.agents.agent_factory.config_loader import _load_and_merge
 
-        fake_db = _FakeFirestoreDb(_E2E_DOCS)
-        fake_registry = _FakeRegistry()
+        load_calls: list[str] = []
 
-        # Capture the tools= argument passed to build_agent for each specialist.
-        specialist_tools: dict[str, list] = {}
-        import app.adk.agents.agent_factory.builder as b
-
-        original_build_agent = b.build_agent
-
-        def _capture_build_agent(config, *, name: str, tools=None, **kwargs):
-            agent = original_build_agent(config, name=name, tools=tools, **kwargs)
-            if name != "ken_e":
-                specialist_tools[name] = list(tools or [])
-            return agent
+        def _spy(db: Any, config_id: str, account_id: Any) -> Any:
+            load_calls.append(config_id)
+            return _load_and_merge(db, config_id, account_id)
 
         with (
             _PATCH_BEFORE_AGENT,
             _PATCH_AFTER_AGENT,
             _PATCH_BEFORE_TOOL,
             _PATCH_AFTER_TOOL,
-            _PATCH_BUILD_TOOLSET as mock_build_toolset,
-            _PATCH_GET_DEFAULT_REGISTRY as mock_get_registry,
             patch(
-                "app.adk.agents.agent_factory.hierarchy.build_agent",
-                side_effect=_capture_build_agent,
+                "app.adk.agents.agent_factory.hierarchy._load_and_merge",
+                side_effect=_spy,
             ),
         ):
-            mock_build_toolset.side_effect = lambda sid, doc: MagicMock(
-                name=f"toolset_{sid}"
+            h.build_hierarchy(db=_FakeFirestoreDb(_E2E_DOCS))
+
+        # Only the root config should be loaded.
+        assert load_calls == ["ken_e_chatbot"]
+
+
+# ---------------------------------------------------------------------------
+# TC-2: delegate_to_specialist routes to specialist_runtime.run
+# ---------------------------------------------------------------------------
+
+
+class TestDelegateToSpecialistE2E:
+    """TC-2: When the root agent's delegate_to_specialist tool is called, it
+    delegates to specialist_runtime.run with the correct arguments."""
+
+    def test_delegate_tool_calls_specialist_runtime_run(self) -> None:
+        from app.adk.agents.agent_factory.dispatch import delegate_to_specialist
+
+        tool_context = MagicMock()
+        tool_context.state.get.return_value = "acct_test"
+
+        with patch(
+            "app.adk.agents.agent_factory.specialist_runtime.run",
+            return_value="specialist answer",
+        ) as mock_run:
+            result = delegate_to_specialist(
+                "analytics_specialist", "What is my CTR?", tool_context=tool_context
             )
-            mock_get_registry.return_value = fake_registry
-            h.build_hierarchy(db=fake_db)
 
-        assert "analytics_specialist" in specialist_tools
-        assert len(specialist_tools["analytics_specialist"]) == 2
+        assert result == "specialist answer"
+        mock_run.assert_called_once_with(
+            doc_id="analytics_specialist",
+            query="What is my CTR?",
+            account_id="acct_test",
+            acceptance_criteria="",
+            tool_context=tool_context,
+        )
 
-    def test_ads_specialist_built_with_two_toolsets(self) -> None:
+    def test_delegate_tool_from_root_agent_is_correct_function(self) -> None:
+        """The tool attached to root.tools[0] is delegate_to_specialist."""
+        from app.adk.agents.agent_factory.dispatch import delegate_to_specialist
+
+        root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})
+        # The function object identity must match the exported symbol.
+        assert root.tools[0] is delegate_to_specialist
+
+    def test_delegate_rejects_invalid_specialist_name(self) -> None:
+        """delegate_to_specialist returns an error string for invalid names without
+        hitting specialist_runtime."""
+        from app.adk.agents.agent_factory.dispatch import delegate_to_specialist
+
+        with patch(
+            "app.adk.agents.agent_factory.specialist_runtime.run"
+        ) as mock_run:
+            result = delegate_to_specialist("Invalid Name With Spaces", "query")
+
+        assert "[DELEGATE ERROR]" in result
+        mock_run.assert_not_called()
+
+    def test_delegate_with_acceptance_criteria_forwarded(self) -> None:
+        from app.adk.agents.agent_factory.dispatch import delegate_to_specialist
+
+        tool_context = MagicMock()
+        tool_context.state.get.return_value = "acct_abc"
+
+        with patch(
+            "app.adk.agents.agent_factory.specialist_runtime.run",
+            return_value="reviewed answer",
+        ) as mock_run:
+            delegate_to_specialist(
+                "analytics_specialist",
+                "Summarise GA data",
+                acceptance_criteria="must cite sources",
+                tool_context=tool_context,
+            )
+
+        _, kwargs = mock_run.call_args
+        assert kwargs["acceptance_criteria"] == "must cite sources"
+
+
+# ---------------------------------------------------------------------------
+# TC-3: Account overlay
+# ---------------------------------------------------------------------------
+
+
+class TestAccountOverlay:
+    """TC-3: account_id is forwarded to _load_and_merge; root config picks up
+    account-specific overlays via the existing merge semantics."""
+
+    def test_account_id_forwarded_to_load_and_merge(self) -> None:
         import app.adk.agents.agent_factory.hierarchy as h
+        from app.adk.agents.agent_factory.config_loader import _load_and_merge
 
-        fake_db = _FakeFirestoreDb(_E2E_DOCS)
-        fake_registry = _FakeRegistry()
+        captured_account_ids: list[str | None] = []
 
-        specialist_tools: dict[str, list] = {}
-        import app.adk.agents.agent_factory.builder as b
-
-        original_build_agent = b.build_agent
-
-        def _capture_build_agent(config, *, name: str, tools=None, **kwargs):
-            agent = original_build_agent(config, name=name, tools=tools, **kwargs)
-            if name != "ken_e":
-                specialist_tools[name] = list(tools or [])
-            return agent
+        def _spy(db: Any, config_id: str, account_id: Any) -> Any:
+            captured_account_ids.append(account_id)
+            return _load_and_merge(db, config_id, account_id)
 
         with (
             _PATCH_BEFORE_AGENT,
             _PATCH_AFTER_AGENT,
             _PATCH_BEFORE_TOOL,
             _PATCH_AFTER_TOOL,
-            _PATCH_BUILD_TOOLSET as mock_build_toolset,
-            _PATCH_GET_DEFAULT_REGISTRY as mock_get_registry,
             patch(
-                "app.adk.agents.agent_factory.hierarchy.build_agent",
-                side_effect=_capture_build_agent,
+                "app.adk.agents.agent_factory.hierarchy._load_and_merge",
+                side_effect=_spy,
             ),
         ):
-            mock_build_toolset.side_effect = lambda sid, doc: MagicMock(
-                name=f"toolset_{sid}"
+            h.build_hierarchy(
+                account_id="acc_test",
+                db=_FakeFirestoreDb({("agent_configs", "ken_e_chatbot"): _ROOT_DOC}),
             )
-            mock_get_registry.return_value = fake_registry
-            h.build_hierarchy(db=fake_db)
 
-        assert "ads_specialist" in specialist_tools
-        assert len(specialist_tools["ads_specialist"]) == 2
+        assert "acc_test" in captured_account_ids
 
-    def test_build_toolset_called_once_per_specialist_per_server(self) -> None:
-        """build_toolset_for_doc is called exactly 4 times (2 servers x 2 specialists)."""
+    def test_none_account_id_forwarded_as_none(self) -> None:
         import app.adk.agents.agent_factory.hierarchy as h
+        from app.adk.agents.agent_factory.config_loader import _load_and_merge
 
-        fake_db = _FakeFirestoreDb(_E2E_DOCS)
-        fake_registry = _FakeRegistry()
+        captured_account_ids: list[str | None] = []
+
+        def _spy(db: Any, config_id: str, account_id: Any) -> Any:
+            captured_account_ids.append(account_id)
+            return _load_and_merge(db, config_id, account_id)
 
         with (
             _PATCH_BEFORE_AGENT,
             _PATCH_AFTER_AGENT,
             _PATCH_BEFORE_TOOL,
             _PATCH_AFTER_TOOL,
-            _PATCH_BUILD_TOOLSET as mock_build_toolset,
-            _PATCH_GET_DEFAULT_REGISTRY as mock_get_registry,
+            patch(
+                "app.adk.agents.agent_factory.hierarchy._load_and_merge",
+                side_effect=_spy,
+            ),
         ):
-            mock_build_toolset.side_effect = lambda sid, doc: MagicMock(
-                name=f"toolset_{sid}"
+            h.build_hierarchy(
+                account_id=None,
+                db=_FakeFirestoreDb({("agent_configs", "ken_e_chatbot"): _ROOT_DOC}),
             )
-            mock_get_registry.return_value = fake_registry
-            h.build_hierarchy(db=fake_db)
 
-        # analytics_specialist: ga_mcp + shared_viz_mcp → 2 calls
-        # ads_specialist:       ads_mcp + shared_viz_mcp → 2 calls
-        # total = 4
-        assert mock_build_toolset.call_count == 4
+        assert None in captured_account_ids
 
-    def test_ga_mcp_toolset_assigned_only_to_analytics_specialist(self) -> None:
-        """ga_mcp toolset goes to analytics_specialist, not ads_specialist."""
-        import app.adk.agents.agent_factory.hierarchy as h
-
-        fake_db = _FakeFirestoreDb(_E2E_DOCS)
-        fake_registry = _FakeRegistry()
-
-        # We infer specialist context from call ordering:
-        # analytics_specialist is built before ads_specialist (alphabetical order).
-
-        build_toolset_calls: list[str] = []
-
-        def _side_effect(sid: str, doc: dict) -> MagicMock:
-            build_toolset_calls.append(sid)
-            return MagicMock(name=f"toolset_{sid}")
-
-        with (
-            _PATCH_BEFORE_AGENT,
-            _PATCH_AFTER_AGENT,
-            _PATCH_BEFORE_TOOL,
-            _PATCH_AFTER_TOOL,
-            _PATCH_BUILD_TOOLSET as mock_build_toolset,
-            _PATCH_GET_DEFAULT_REGISTRY as mock_get_registry,
-        ):
-            mock_build_toolset.side_effect = _side_effect
-            mock_get_registry.return_value = fake_registry
-            h.build_hierarchy(db=fake_db)
-
-        # Sorted alphabetically: analytics_specialist before ads_specialist.
-        # analytics_specialist's servers are declared as ["ga_mcp", "shared_viz_mcp"].
-        # ads_specialist's servers are declared as ["ads_mcp", "shared_viz_mcp"].
-        # Actual order depends on iteration over mcp_servers list in each config.
-        assert "ga_mcp" in build_toolset_calls
-        assert "ads_mcp" in build_toolset_calls
-        assert "shared_viz_mcp" in build_toolset_calls
-        # ga_mcp should appear exactly once (only analytics_specialist references it)
-        assert build_toolset_calls.count("ga_mcp") == 1
-        # ads_mcp should appear exactly once (only ads_specialist references it)
-        assert build_toolset_calls.count("ads_mcp") == 1
-        # shared_viz_mcp appears twice (one per specialist)
-        assert build_toolset_calls.count("shared_viz_mcp") == 2
+    def test_account_overlay_root_still_has_one_tool(self) -> None:
+        """With account_id provided, root still only has delegate_to_specialist."""
+        docs = {
+            ("agent_configs", "ken_e_chatbot"): _ROOT_DOC,
+            ("accounts", "acc_xyz", "agent_configs", "ken_e_chatbot"): {
+                "instruction": "CUSTOM root instruction for acc_xyz.",
+                "model": "gemini-2.0-flash",
+                "based_on_version": 1,
+            },
+        }
+        root = _run_build_hierarchy(docs, account_id="acc_xyz")
+        assert len(root.tools) == 1
+        assert getattr(root.tools[0], "__name__", None) == "delegate_to_specialist"
 
 
 # ---------------------------------------------------------------------------
-# TC-3: Shared server produces distinct toolset instances
-# ---------------------------------------------------------------------------
-
-
-class TestSharedServerDistinctInstances:
-    """TC-3: The two shared_viz_mcp toolsets are distinct Python objects."""
-
-    def test_shared_viz_mcp_toolsets_are_not_same_object(self) -> None:
-        import app.adk.agents.agent_factory.hierarchy as h
-
-        fake_db = _FakeFirestoreDb(_E2E_DOCS)
-        fake_registry = _FakeRegistry()
-
-        viz_toolsets: list[MagicMock] = []
-
-        def _side_effect(sid: str, doc: dict) -> MagicMock:
-            ts = MagicMock(name=f"toolset_{sid}")
-            if sid == "shared_viz_mcp":
-                viz_toolsets.append(ts)
-            return ts
-
-        with (
-            _PATCH_BEFORE_AGENT,
-            _PATCH_AFTER_AGENT,
-            _PATCH_BEFORE_TOOL,
-            _PATCH_AFTER_TOOL,
-            _PATCH_BUILD_TOOLSET as mock_build_toolset,
-            _PATCH_GET_DEFAULT_REGISTRY as mock_get_registry,
-        ):
-            mock_build_toolset.side_effect = _side_effect
-            mock_get_registry.return_value = fake_registry
-            h.build_hierarchy(db=fake_db)
-
-        assert len(viz_toolsets) == 2, (
-            "shared_viz_mcp toolset should be built exactly twice (once per specialist)"
-        )
-        assert viz_toolsets[0] is not viz_toolsets[1], (
-            "Each specialist must receive its own independent shared_viz_mcp toolset instance"
-        )
-
-    def test_each_specialist_toolset_is_independent_mock(self) -> None:
-        """All four toolset instances produced are distinct objects."""
-        import app.adk.agents.agent_factory.hierarchy as h
-
-        fake_db = _FakeFirestoreDb(_E2E_DOCS)
-        fake_registry = _FakeRegistry()
-
-        all_toolsets: list[MagicMock] = []
-
-        def _side_effect(sid: str, doc: dict) -> MagicMock:
-            ts = MagicMock(name=f"toolset_{sid}")
-            all_toolsets.append(ts)
-            return ts
-
-        with (
-            _PATCH_BEFORE_AGENT,
-            _PATCH_AFTER_AGENT,
-            _PATCH_BEFORE_TOOL,
-            _PATCH_AFTER_TOOL,
-            _PATCH_BUILD_TOOLSET as mock_build_toolset,
-            _PATCH_GET_DEFAULT_REGISTRY as mock_get_registry,
-        ):
-            mock_build_toolset.side_effect = _side_effect
-            mock_get_registry.return_value = fake_registry
-            h.build_hierarchy(db=fake_db)
-
-        assert len(all_toolsets) == 4
-        # All four objects must be distinct — no aliasing across specialists.
-        ids = [id(ts) for ts in all_toolsets]
-        assert len(set(ids)) == 4, "All four toolset instances must be distinct objects"
-
-
-# ---------------------------------------------------------------------------
-# TC-4: Root instruction contains Available Specialists
+# TC-4: Root instruction content
 # ---------------------------------------------------------------------------
 
 
 class TestRootInstructionContent:
-    """TC-4: Rendered root instruction has required structural content."""
+    """TC-4: The root instruction provider is wired to compose cache-backed
+    base instruction + available_specialists_provider per-turn."""
 
-    def test_rendered_instruction_contains_available_specialists_heading(self) -> None:
-        root = _run_build_hierarchy(_E2E_DOCS)
-        rendered = root.instruction(_make_context({}))
+    def test_instruction_includes_base_root_instruction(self) -> None:
+        root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})
+        canned_block = "## Available Specialists\n\n- None registered."
+
+        with patch(
+            "app.adk.agents.agent_factory.specialist_runtime.available_specialists_provider",
+            return_value=canned_block,
+        ):
+            rendered = root.instruction(_make_context({}))
+
+        assert "You are KEN-E root." in rendered
+
+    def test_instruction_includes_available_specialists_block(self) -> None:
+        root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})
+        canned_block = "## Available Specialists\n\n- **my_agent**: Does things."
+
+        with patch(
+            "app.adk.agents.agent_factory.specialist_runtime.available_specialists_provider",
+            return_value=canned_block,
+        ):
+            rendered = root.instruction(_make_context({}))
+
         assert "## Available Specialists" in rendered
+        assert "my_agent" in rendered
 
-    def test_rendered_instruction_contains_analytics_specialist(self) -> None:
-        root = _run_build_hierarchy(_E2E_DOCS)
-        rendered = root.instruction(_make_context({}))
-        assert "analytics_specialist" in rendered
+    def test_instruction_with_org_context_prepends_context_block(self) -> None:
+        root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})
+        canned_block = "## Available Specialists\n\n- None registered."
 
-    def test_rendered_instruction_contains_ads_specialist(self) -> None:
-        root = _run_build_hierarchy(_E2E_DOCS)
-        rendered = root.instruction(_make_context({}))
-        assert "ads_specialist" in rendered
+        with patch(
+            "app.adk.agents.agent_factory.specialist_runtime.available_specialists_provider",
+            return_value=canned_block,
+        ):
+            rendered = root.instruction(
+                _make_context({"organization_context": "Acme Corp marketing"})
+            )
 
-    def test_rendered_instruction_starts_with_base_instruction(self) -> None:
-        root = _run_build_hierarchy(_E2E_DOCS)
-        rendered = root.instruction(_make_context({}))
-        # When state is empty (no organization_context), the instruction provider
-        # returns the raw combined_instruction without the org context wrapper.
-        assert rendered.startswith("You are KEN-E root.")
-
-    def test_rendered_instruction_with_org_context_state(self) -> None:
-        """When state contains organization_context, the provider prepends it."""
-        root = _run_build_hierarchy(_E2E_DOCS)
-        rendered = root.instruction(_make_context({"organization_context": "OrgXYZ"}))
         assert "[ORGANIZATION CONTEXT]" in rendered
-        assert "OrgXYZ" in rendered
+        assert "Acme Corp marketing" in rendered
         assert "You are KEN-E root." in rendered
 
 
 # ---------------------------------------------------------------------------
-# TC-5: Overlay variant
+# TC-5: Error handling
 # ---------------------------------------------------------------------------
 
 
-class TestOverlayVariant:
-    """TC-5: account_id overlay overrides the analytics_specialist instruction."""
+class TestErrorHandling:
+    """TC-5: Error paths in build_hierarchy."""
 
-    def test_account_overlay_instruction_is_used(self) -> None:
-        import app.adk.agents.agent_factory.hierarchy as h
+    def test_missing_root_config_raises_config_not_found(self) -> None:
+        from app.adk.agents.agent_factory.config_loader import ConfigNotFoundError
 
-        docs_with_overlay = dict(_E2E_DOCS)
-        docs_with_overlay[
-            ("accounts", "acc_xyz", "agent_configs", "analytics_specialist")
-        ] = {
-            "instruction": "You are CUSTOM analytics.",
-            "model": "gemini-2.0-flash",
-        }
+        with pytest.raises(ConfigNotFoundError):
+            _run_build_hierarchy({})
 
-        fake_db = _FakeFirestoreDb(docs_with_overlay)
-        fake_registry = _FakeRegistry()
-
-        specialist_instructions: dict[str, str] = {}
-        import app.adk.agents.agent_factory.builder as b
-
-        original_build_agent = b.build_agent
-
-        def _capture_build_agent(config, *, name: str, tools=None, **kwargs):
-            agent = original_build_agent(config, name=name, tools=tools, **kwargs)
-            if name != "ken_e":
-                # Render the instruction with empty state to inspect the base text.
-                ctx = MagicMock()
-                ctx.state = {}
-                specialist_instructions[name] = agent.instruction(ctx)
-            return agent
-
-        with (
-            _PATCH_BEFORE_AGENT,
-            _PATCH_AFTER_AGENT,
-            _PATCH_BEFORE_TOOL,
-            _PATCH_AFTER_TOOL,
-            _PATCH_BUILD_TOOLSET as mock_build_toolset,
-            _PATCH_GET_DEFAULT_REGISTRY as mock_get_registry,
-            patch(
-                "app.adk.agents.agent_factory.hierarchy.build_agent",
-                side_effect=_capture_build_agent,
-            ),
-        ):
-            mock_build_toolset.side_effect = lambda sid, doc: MagicMock(
-                name=f"toolset_{sid}"
-            )
-            mock_get_registry.return_value = fake_registry
-            h.build_hierarchy(account_id="acc_xyz", db=fake_db)
-
-        assert "analytics_specialist" in specialist_instructions
-        assert (
-            "You are CUSTOM analytics."
-            in specialist_instructions["analytics_specialist"]
-        )
-
-    def test_account_overlay_does_not_affect_ads_specialist(self) -> None:
-        """The ads_specialist keeps its original instruction when only analytics is overridden."""
-        import app.adk.agents.agent_factory.hierarchy as h
-
-        docs_with_overlay = dict(_E2E_DOCS)
-        docs_with_overlay[
-            ("accounts", "acc_xyz", "agent_configs", "analytics_specialist")
-        ] = {
-            "instruction": "You are CUSTOM analytics.",
-            "model": "gemini-2.0-flash",
-        }
-
-        fake_db = _FakeFirestoreDb(docs_with_overlay)
-        fake_registry = _FakeRegistry()
-
-        specialist_instructions: dict[str, str] = {}
-        import app.adk.agents.agent_factory.builder as b
-
-        original_build_agent = b.build_agent
-
-        def _capture_build_agent(config, *, name: str, tools=None, **kwargs):
-            agent = original_build_agent(config, name=name, tools=tools, **kwargs)
-            if name != "ken_e":
-                ctx = MagicMock()
-                ctx.state = {}
-                specialist_instructions[name] = agent.instruction(ctx)
-            return agent
-
-        with (
-            _PATCH_BEFORE_AGENT,
-            _PATCH_AFTER_AGENT,
-            _PATCH_BEFORE_TOOL,
-            _PATCH_AFTER_TOOL,
-            _PATCH_BUILD_TOOLSET as mock_build_toolset,
-            _PATCH_GET_DEFAULT_REGISTRY as mock_get_registry,
-            patch(
-                "app.adk.agents.agent_factory.hierarchy.build_agent",
-                side_effect=_capture_build_agent,
-            ),
-        ):
-            mock_build_toolset.side_effect = lambda sid, doc: MagicMock(
-                name=f"toolset_{sid}"
-            )
-            mock_get_registry.return_value = fake_registry
-            h.build_hierarchy(account_id="acc_xyz", db=fake_db)
-
-        assert "ads_specialist" in specialist_instructions
-        assert "You are an ads specialist." in specialist_instructions["ads_specialist"]
-
-    def test_overlay_root_still_has_two_dispatch_tools(self) -> None:
-        """With account overlay, root still has 2 dispatch tools."""
-        docs_with_overlay = dict(_E2E_DOCS)
-        docs_with_overlay[
-            ("accounts", "acc_xyz", "agent_configs", "analytics_specialist")
-        ] = {
-            "instruction": "You are CUSTOM analytics.",
-            "model": "gemini-2.0-flash",
-        }
-
-        root = _run_build_hierarchy(docs_with_overlay, account_id="acc_xyz")
-        assert len(root.tools) == 2
-
-
-# ---------------------------------------------------------------------------
-# TC-6: Structural-equivalence smoke test (legacy 2-specialist path)
-# ---------------------------------------------------------------------------
-
-
-class TestStructuralEquivalenceSmoke:
-    """TC-6: Exactly 2 specialists → exactly 2 dispatch tools on root (legacy equivalence)."""
-
-    def test_two_specialists_produce_two_dispatch_tools(self) -> None:
-        """Mirrors the legacy hardcoded path that had search_company_news + query_google_analytics."""
-        docs = {
-            ("agent_configs", "ken_e_chatbot"): {
-                "instruction": "You are the KEN-E root assistant.",
-                "model": "gemini-2.0-flash",
-                "description": "Root orchestrator",
-            },
-            ("agent_configs", "search_company_news"): {
-                "instruction": "You search company news.",
-                "model": "gemini-2.0-flash",
-                "description": "Company news specialist.",
-                "mcp_servers": [],
-            },
-            ("agent_configs", "query_google_analytics"): {
-                "instruction": "You query Google Analytics.",
-                "model": "gemini-2.0-flash",
-                "description": "Google Analytics specialist.",
-                "mcp_servers": [],
-            },
-        }
-        root = _run_build_hierarchy(docs)
-
-        assert len(root.tools) == 2
-
-    def test_dispatch_tool_names_for_legacy_specialists(self) -> None:
-        docs = {
-            ("agent_configs", "ken_e_chatbot"): {
-                "instruction": "You are the KEN-E root assistant.",
-                "model": "gemini-2.0-flash",
-                "description": "Root orchestrator",
-            },
-            ("agent_configs", "search_company_news"): {
-                "instruction": "You search company news.",
-                "model": "gemini-2.0-flash",
-                "description": "Company news specialist.",
-                "mcp_servers": [],
-            },
-            ("agent_configs", "query_google_analytics"): {
-                "instruction": "You query Google Analytics.",
-                "model": "gemini-2.0-flash",
-                "description": "Google Analytics specialist.",
-                "mcp_servers": [],
-            },
-        }
-        root = _run_build_hierarchy(docs)
-
-        tool_names = {getattr(t, "__name__", None) for t in root.tools}
-        assert "dispatch_to_search_company_news" in tool_names
-        assert "dispatch_to_query_google_analytics" in tool_names
-
-    def test_root_is_structurally_equivalent_llm_agent(self) -> None:
-        """Root is an LlmAgent named 'ken_e' — same structural identity as legacy path."""
-        from google.adk.agents import LlmAgent
+    def test_only_specialist_configs_no_root_raises_config_not_found(self) -> None:
+        from app.adk.agents.agent_factory.config_loader import ConfigNotFoundError
 
         docs = {
-            ("agent_configs", "ken_e_chatbot"): {
-                "instruction": "You are the KEN-E root assistant.",
+            ("agent_configs", "analytics_specialist"): {
+                "instruction": "You are analytics.",
                 "model": "gemini-2.0-flash",
-                "description": "Root orchestrator",
-            },
-            ("agent_configs", "search_company_news"): {
-                "instruction": "You search company news.",
-                "model": "gemini-2.0-flash",
-                "description": "Company news specialist.",
                 "mcp_servers": [],
-            },
-            ("agent_configs", "query_google_analytics"): {
-                "instruction": "You query Google Analytics.",
-                "model": "gemini-2.0-flash",
-                "description": "Google Analytics specialist.",
-                "mcp_servers": [],
-            },
+            }
         }
-        root = _run_build_hierarchy(docs)
+        with pytest.raises(ConfigNotFoundError):
+            _run_build_hierarchy(docs)
 
-        assert isinstance(root, LlmAgent)
-        assert root.name == "ken_e"
-
-
-# ---------------------------------------------------------------------------
-# TC-7: AH-40 AC-4 — generation config flows from Firestore through
-# build_hierarchy() into the constructed specialist LlmAgents at the
-# hierarchy level (not just the lower-level build_agent factory tests).
-# ---------------------------------------------------------------------------
-
-
-class TestSpecialistGenerationConfigE2E:
-    """TC-7 / AH-40 AC-4: build_hierarchy() applies the seeded ``temperature``
-    and ``max_output_tokens`` to each specialist's SDK ``GenerateContentConfig``.
-
-    The lower-level builder tests in ``test_factory.py`` cover the
-    construction-boundary wiring. This test asserts the same property at
-    the hierarchy level — i.e. against the docs as they would actually be
-    read from Firestore — to close AC-4's literal "end-to-end build of
-    ``agent_factory.build_hierarchy()`` against a fixture Firestore" gap.
-    """
-
-    def _capture_specialists(self, docs: dict) -> dict:
-        """Run build_hierarchy and return a map from specialist name to its
-        constructed LlmAgent."""
-        import app.adk.agents.agent_factory.builder as b
+    def test_invalid_account_id_raises_value_error(self) -> None:
         import app.adk.agents.agent_factory.hierarchy as h
 
-        fake_db = _FakeFirestoreDb(docs)
-        fake_registry = _FakeRegistry()
-        captured: dict[str, object] = {}
-        original_build_agent = b.build_agent
-
-        def _capture(config, *, name: str, tools=None, **kwargs):
-            agent = original_build_agent(config, name=name, tools=tools, **kwargs)
-            captured[name] = agent
-            return agent
-
-        with (
-            _PATCH_BEFORE_AGENT,
-            _PATCH_AFTER_AGENT,
-            _PATCH_BEFORE_TOOL,
-            _PATCH_AFTER_TOOL,
-            _PATCH_BUILD_TOOLSET as mock_build_toolset,
-            _PATCH_GET_DEFAULT_REGISTRY as mock_get_registry,
-            patch(
-                "app.adk.agents.agent_factory.hierarchy.build_agent",
-                side_effect=_capture,
-            ),
-        ):
-            mock_build_toolset.side_effect = lambda sid, doc: MagicMock(
-                name=f"toolset_{sid}"
+        with pytest.raises(ValueError, match="is invalid"):
+            h.build_hierarchy(
+                account_id="../../etc/passwd",
+                db=_FakeFirestoreDb({}),
             )
-            mock_get_registry.return_value = fake_registry
-            h.build_hierarchy(db=fake_db)
 
-        return captured
-
-    def test_analytics_specialist_generation_config_matches_doc(self) -> None:
-        captured = self._capture_specialists(_E2E_DOCS)
-        analytics = captured["analytics_specialist"]
-
-        assert analytics.generate_content_config is not None
-        assert analytics.generate_content_config.temperature == 0.7
-        assert analytics.generate_content_config.max_output_tokens == 4096
-
-    def test_ads_specialist_generation_config_matches_doc(self) -> None:
-        captured = self._capture_specialists(_E2E_DOCS)
-        ads = captured["ads_specialist"]
-
-        assert ads.generate_content_config is not None
-        assert ads.generate_content_config.temperature == 0.2
-        assert ads.generate_content_config.max_output_tokens == 2048
-
-
-# ---------------------------------------------------------------------------
-# TC-AH41: Audit-field wiring — mcp_servers attaches the right toolset, the
-# automatically_available filter excludes hidden defaults, and a regression
-# contrast documents the pre-AH-41 bug where the GA agent had no MCP
-# toolset because mcp_servers was not seeded.
-# ---------------------------------------------------------------------------
-
-
-# Realistic AH-41 fixture: ken_e_chatbot root + GA specialist (with MCP) +
-# news specialist (no MCP, uses Vertex AI Search elsewhere). Matches the
-# decision matrix exactly.
-_AH41_DOCS: dict = {
-    ("agent_configs", "ken_e_chatbot"): {
-        "instruction": "You are KEN-E root.",
-        "model": "gemini-2.5-pro",
-        "description": "Root orchestration agent",
-        "code_execution_enabled": False,
-        "mcp_servers": [],
-        "skill_ids": [],
-        "sandbox_code_executor_enabled": False,
-        "response_schema": None,
-        "available_to_copy": False,
-        "automatically_available": True,
-        "visible_in_frontend": True,
-    },
-    ("agent_configs", "google_analytics_agent"): {
-        "instruction": "You are a Google Analytics assistant.",
-        "model": "gemini-2.5-pro",
-        "description": "GA assistant",
-        "code_execution_enabled": True,
-        "mcp_servers": ["google_analytics_mcp"],
-        "skill_ids": [],
-        "sandbox_code_executor_enabled": False,
-        "response_schema": None,
-        "available_to_copy": True,
-        "automatically_available": True,
-        "visible_in_frontend": True,
-    },
-    ("agent_configs", "company_news_agent"): {
-        "instruction": "You are a company news assistant.",
-        "model": "gemini-2.5-pro",
-        "description": "Company news",
-        "code_execution_enabled": False,
-        "mcp_servers": [],
-        "skill_ids": [],
-        "sandbox_code_executor_enabled": False,
-        "response_schema": None,
-        "available_to_copy": True,
-        "automatically_available": True,
-        "visible_in_frontend": True,
-    },
-    ("mcp_server_configs", "google_analytics_mcp"): {
-        "enabled": True,
-        "connection": {
-            "connection_type": "sse",
-            "url": "https://ga.mcp.example.com",
-        },
-        "auth_type": "ga_oauth",
-    },
-}
-
-
-def _capture_specialists_with_docs(docs: dict) -> tuple[object, dict]:
-    """Run build_hierarchy and capture each specialist LlmAgent by name."""
-    import app.adk.agents.agent_factory.builder as b
-    import app.adk.agents.agent_factory.hierarchy as h
-
-    fake_db = _FakeFirestoreDb(docs)
-    fake_registry = _FakeRegistry()
-    captured: dict[str, object] = {}
-    original_build_agent = b.build_agent
-
-    def _capture(config, *, name: str, tools=None, **kwargs):
-        agent = original_build_agent(config, name=name, tools=tools, **kwargs)
-        if name != "ken_e":
-            captured[name] = agent
-        return agent
-
-    with (
-        _PATCH_BEFORE_AGENT,
-        _PATCH_AFTER_AGENT,
-        _PATCH_BEFORE_TOOL,
-        _PATCH_AFTER_TOOL,
-        _PATCH_BUILD_TOOLSET as mock_build_toolset,
-        _PATCH_GET_DEFAULT_REGISTRY as mock_get_registry,
-        patch(
-            "app.adk.agents.agent_factory.hierarchy.build_agent",
-            side_effect=_capture,
-        ),
-    ):
-        mock_build_toolset.side_effect = lambda sid, doc: MagicMock(
-            name=f"toolset_{sid}"
-        )
-        mock_get_registry.return_value = fake_registry
-        root = h.build_hierarchy(db=fake_db)
-
-    return root, captured
-
-
-class TestAH41AuditFieldsWired:
-    """AC-3 / AC-4: hierarchy build attaches the right tools and flags
-    when the AH-41 matrix is seeded on every doc."""
-
-    def test_ga_specialist_has_mcp_toolset_attached(self) -> None:
-        _, specialists = _capture_specialists_with_docs(_AH41_DOCS)
-        ga = specialists["google_analytics_agent"]
-        assert len(ga.tools) == 1, (
-            "AH-41 AC-4: the GA specialist's mcp_servers list must produce "
-            "exactly one MCP toolset attached at runtime"
-        )
-
-    def test_news_specialist_has_empty_tools_list(self) -> None:
-        _, specialists = _capture_specialists_with_docs(_AH41_DOCS)
-        news = specialists["company_news_agent"]
-        assert news.tools == []
-
-    def test_ga_specialist_has_code_executor(self) -> None:
-        _, specialists = _capture_specialists_with_docs(_AH41_DOCS)
-        ga = specialists["google_analytics_agent"]
-        assert ga.code_executor is not None
-
-    def test_news_specialist_has_no_code_executor(self) -> None:
-        _, specialists = _capture_specialists_with_docs(_AH41_DOCS)
-        news = specialists["company_news_agent"]
-        assert news.code_executor is None
-
-    def test_root_has_dispatch_tools_for_both_specialists(self) -> None:
-        root, _ = _capture_specialists_with_docs(_AH41_DOCS)
-        tool_names = {getattr(t, "__name__", None) for t in root.tools}
-        assert "dispatch_to_google_analytics_agent" in tool_names
-        assert "dispatch_to_company_news_agent" in tool_names
-
-
-class TestAH41AutomaticallyAvailableFilter:
-    """AH-41: a default-status specialist with automatically_available=False
-    is excluded from the hierarchy at Step 4½ of build_hierarchy."""
-
-    def test_specialist_with_automatically_available_false_is_excluded(self) -> None:
-        docs = {k: dict(v) for k, v in _AH41_DOCS.items()}
-        docs[("agent_configs", "company_news_agent")]["automatically_available"] = False
-
-        root, specialists = _capture_specialists_with_docs(docs)
-        assert "company_news_agent" not in specialists
-        tool_names = {getattr(t, "__name__", None) for t in root.tools}
-        assert "dispatch_to_company_news_agent" not in tool_names
-        # GA still present.
-        assert "google_analytics_agent" in specialists
-
-
-class TestAH41RegressionContrastGaMissingMcpServers:
-    """Regression-contrast documenting the pre-AH-41 bug.
-
-    Before AH-41 the GA agent doc had no ``mcp_servers`` field, so it
-    landed on the schema default of ``[]`` and ``hierarchy.py:247``
-    iterated zero items — no MCP toolset attached at runtime.
-
-    This test verifies that an empty ``mcp_servers`` list reproduces the
-    pre-fix state: the specialist is built but has zero tools. AH-41
-    fixes this by seeding ``mcp_servers=["google_analytics_mcp"]``
-    explicitly on the GA doc.
-    """
-
-    def test_ga_specialist_with_empty_mcp_servers_has_no_tools(self) -> None:
-        docs = {k: dict(v) for k, v in _AH41_DOCS.items()}
-        # Reproduce the pre-AH-41 state: mcp_servers absent → defaults to [].
-        docs[("agent_configs", "google_analytics_agent")]["mcp_servers"] = []
-
-        _, specialists = _capture_specialists_with_docs(docs)
-        ga = specialists["google_analytics_agent"]
-        assert ga.tools == [], (
-            "Pre-AH-41 regression case: with mcp_servers=[] the GA "
-            "specialist gets zero toolsets — this is the bug the audit fixes"
-        )
-
-
-class TestAhPrd06ToolIdsThreading:
-    """AH-PRD-06 (review item #3): when an agent_config carries ``tool_ids``,
-    ``build_hierarchy`` must thread the per-server allowlist into
-    ``build_toolset_for_doc`` via the ``allowed_tool_names`` kwarg — not
-    mutate ``toolset.tool_filter`` after the fact. Also: servers with no
-    listed tools should be skipped entirely.
-    """
-
-    def _docs_with_tool_ids(self, tool_ids: list[str]) -> dict:
-        # Clone the base _E2E_DOCS and stamp tool_ids onto analytics_specialist.
-        docs = {k: dict(v) for k, v in _E2E_DOCS.items()}
-        docs[("agent_configs", "analytics_specialist")]["tool_ids"] = tool_ids
-        return docs
-
-    def _run_capturing_build_toolset(self, docs: dict) -> list[tuple]:
-        """Return the list of ``(args, kwargs)`` ``build_toolset_for_doc`` was called with."""
-        import app.adk.agents.agent_factory.hierarchy as h
-
-        fake_db = _FakeFirestoreDb(docs)
-        fake_registry = _FakeRegistry()
-        calls: list[tuple] = []
-
-        def _side_effect(*args, **kwargs):
-            calls.append((args, kwargs))
-            sid = args[0]
-            return MagicMock(name=f"toolset_{sid}")
-
-        with (
-            _PATCH_BEFORE_AGENT,
-            _PATCH_AFTER_AGENT,
-            _PATCH_BEFORE_TOOL,
-            _PATCH_AFTER_TOOL,
-            _PATCH_BUILD_TOOLSET as mock_build_toolset,
-            _PATCH_GET_DEFAULT_REGISTRY as mock_get_registry,
-        ):
-            mock_build_toolset.side_effect = _side_effect
-            mock_get_registry.return_value = fake_registry
-            h.build_hierarchy(db=fake_db)
-
-        return calls
-
-    def test_tool_ids_set_passes_allowed_tool_names_at_construction(self) -> None:
-        """Verifies the kwarg threading: when tool_ids names a tool on ga_mcp,
-        build_toolset_for_doc receives allowed_tool_names=["list_ga_accounts"]
-        for that server. Confirms the kwarg is live, not dead code."""
-        docs = self._docs_with_tool_ids(["ga_mcp.list_ga_accounts"])
-        calls = self._run_capturing_build_toolset(docs)
-
-        ga_calls = [(args, kwargs) for args, kwargs in calls if args[0] == "ga_mcp"]
-        # analytics_specialist references ga_mcp; ads_specialist does not.
-        # analytics has tool_ids set → the call carries the kwarg.
-        analytics_ga_calls = [
-            kwargs for _, kwargs in ga_calls if "allowed_tool_names" in kwargs
-        ]
-        assert len(analytics_ga_calls) == 1
-        assert analytics_ga_calls[0]["allowed_tool_names"] == ["list_ga_accounts"]
-
-    def test_tool_ids_none_omits_kwarg(self) -> None:
-        """Legacy path: when tool_ids is absent, build_toolset_for_doc is
-        called without the allowed_tool_names kwarg, preserving the original
-        two-arg signature."""
-        # _E2E_DOCS has no tool_ids on any spec.
-        calls = self._run_capturing_build_toolset(_E2E_DOCS)
-        # Every call should be (args=(sid, doc), kwargs={}).
-        assert all(kwargs == {} for _, kwargs in calls)
-
-    def test_tool_ids_skips_servers_with_no_match(self) -> None:
-        """A server referenced by mcp_servers but not represented in tool_ids
-        is dropped before the toolset is constructed (no wasted McpToolset
-        instantiation)."""
-        # analytics_specialist references ga_mcp + shared_viz_mcp; tool_ids
-        # only names a ga_mcp tool, so shared_viz_mcp should be skipped on
-        # this specialist (it will still appear on ads_specialist which has
-        # no tool_ids restriction).
-        docs = self._docs_with_tool_ids(["ga_mcp.list_ga_accounts"])
-        calls = self._run_capturing_build_toolset(docs)
-
-        # shared_viz_mcp should only be built once (for ads_specialist),
-        # not twice (it would have been built for analytics in the legacy
-        # path).
-        shared_calls = [c for c in calls if c[0][0] == "shared_viz_mcp"]
-        assert len(shared_calls) == 1
-
-
-class TestAhPrd06PrcDefaultGlobalFunctionTools:
-    """AH-PRD-06 PR-C: ``hierarchy.py`` Step 6c now plumbs every catalogued
-    ``default_global: true`` function tool through ``resolve_specialist_roster``.
-    Until this PR, ``function_tools=[]`` was hardcoded and AH-PRD-04's
-    ``create_visualization`` (and any future default-global tool) would never
-    reach a constructed agent.
-
-    These tests verify the plumbing using a stub FunctionTool — AH-PRD-04
-    will register the real ``create_visualization`` callable when it ships,
-    at which point this wiring picks it up without further change.
-    """
-
-    @staticmethod
-    def _stub_callable() -> str:
-        return "stub-viz"
-
-    def _registry_with_default_global(self, names: list[str]) -> _FakeRegistry:
-        # ``SimpleNamespace`` rather than ``MagicMock`` for the entries —
-        # MagicMock's ``name`` kwarg is reserved for the mock's display name.
-        from types import SimpleNamespace
-
-        registry = _FakeRegistry()
-        registry.list_default_global_tools = lambda: [
-            SimpleNamespace(name=n) for n in names
-        ]
-        return registry
-
-    def _run_capturing_specialist_rosters(
-        self, docs: dict, registry: _FakeRegistry | None = None
-    ) -> dict[str, list]:
-        """Return ``{spec_name: tools_list}`` captured from each roster call.
-
-        Spies on ``resolve_specialist_roster`` via ``wraps=`` — the real
-        function still runs (so the cap check, filtering, and tool list
-        construction match production), but every return value is captured
-        so the test can assert on each specialist's final roster. Spying
-        here (rather than at ``build_agent``) avoids breaking downstream
-        dispatch generation that reads agent attributes.
-        """
-        import app.adk.agents.agent_factory.hierarchy as h
-
-        fake_db = _FakeFirestoreDb(docs)
-        fake_registry = registry or _FakeRegistry()
-        captured: dict[str, list] = {}
-
-        real_resolve = h.resolve_specialist_roster
-
-        def _captured_resolve(spec_name, **kwargs):
-            result = real_resolve(spec_name, **kwargs)
-            captured[spec_name] = result
-            return result
-
-        with (
-            _PATCH_BEFORE_AGENT,
-            _PATCH_AFTER_AGENT,
-            _PATCH_BEFORE_TOOL,
-            _PATCH_AFTER_TOOL,
-            _PATCH_BUILD_TOOLSET as mock_build_toolset,
-            _PATCH_GET_DEFAULT_REGISTRY as mock_get_registry,
-            patch(
-                "app.adk.agents.agent_factory.hierarchy.resolve_specialist_roster",
-                side_effect=_captured_resolve,
-            ),
-        ):
-            mock_build_toolset.side_effect = lambda *args, **kwargs: MagicMock(
-                name=f"toolset_{args[0]}"
-            )
-            mock_get_registry.return_value = fake_registry
-            h.build_hierarchy(db=fake_db)
-
-        return captured
-
-    def setup_method(self) -> None:
-        # Each test runs against a clean process-global function tool
-        # registry; the AH-PRD-06 PR-C registry is shared with production
-        # callers so leakage would cross-contaminate other tests in the run.
-        from app.adk.tools.registry.function_tool_registry import (
-            clear_function_tool_registry,
-        )
-
-        clear_function_tool_registry()
-
-    def teardown_method(self) -> None:
-        from app.adk.tools.registry.function_tool_registry import (
-            clear_function_tool_registry,
-        )
-
-        clear_function_tool_registry()
-
-    def test_registered_default_global_tool_reaches_specialist_with_tool_ids_none(
+    def test_firestore_connection_failure_raises_firestore_connection_error(
         self,
     ) -> None:
-        """Baseline (no tool_ids on the spec): the registered default-global
-        function tool MUST appear in the specialist's final tools list."""
-        from app.adk.tools.registry.function_tool_registry import (
-            register_function_tool,
-        )
+        import app.adk.agents.agent_factory.hierarchy as h
+        from app.adk.agents.agent_factory.config_loader import FirestoreConnectionError
 
-        register_function_tool("stub_viz", self._stub_callable)
-        registry = self._registry_with_default_global(["stub_viz"])
-
-        captured = self._run_capturing_specialist_rosters(_E2E_DOCS, registry)
-
-        # analytics_specialist has no tool_ids → inherits default-global.
-        analytics_tools = captured["analytics_specialist"]
-        from google.adk.tools.function_tool import FunctionTool
-
-        function_tools = [t for t in analytics_tools if isinstance(t, FunctionTool)]
-        assert len(function_tools) == 1, (
-            f"expected exactly one FunctionTool, got {len(function_tools)}: "
-            f"{analytics_tools}"
-        )
-
-    def test_tool_ids_empty_excludes_default_global_function_tools(self) -> None:
-        """When the spec sets ``tool_ids = []`` the roster filter strips
-        every function tool — explicit "no tools" beats default-global."""
-        from google.adk.tools.function_tool import FunctionTool
-
-        from app.adk.tools.registry.function_tool_registry import (
-            register_function_tool,
-        )
-
-        register_function_tool("stub_viz", self._stub_callable)
-        registry = self._registry_with_default_global(["stub_viz"])
-
-        docs = {k: dict(v) for k, v in _E2E_DOCS.items()}
-        docs[("agent_configs", "analytics_specialist")]["tool_ids"] = []
-
-        captured = self._run_capturing_specialist_rosters(docs, registry)
-
-        analytics_tools = captured["analytics_specialist"]
-        function_tools = [t for t in analytics_tools if isinstance(t, FunctionTool)]
-        assert function_tools == []
-
-    def test_tool_ids_listing_function_name_includes_default_global(self) -> None:
-        """When ``tool_ids`` explicitly lists ``function.<name>``, that
-        default-global tool is preserved through the filter."""
-        from google.adk.tools.function_tool import FunctionTool
-
-        from app.adk.tools.registry.function_tool_registry import (
-            register_function_tool,
-        )
-
-        register_function_tool("stub_viz", self._stub_callable)
-        registry = self._registry_with_default_global(["stub_viz"])
-
-        docs = {k: dict(v) for k, v in _E2E_DOCS.items()}
-        docs[("agent_configs", "analytics_specialist")]["tool_ids"] = [
-            "function.stub_viz",
-        ]
-
-        captured = self._run_capturing_specialist_rosters(docs, registry)
-
-        analytics_tools = captured["analytics_specialist"]
-        function_tools = [t for t in analytics_tools if isinstance(t, FunctionTool)]
-        assert len(function_tools) == 1
-
-    def test_tool_ids_listing_other_function_excludes_unlisted_default_global(
-        self,
-    ) -> None:
-        """``tool_ids`` listing only other tools strips default-global function
-        tools whose names aren't in the list. Confirms PR-A's function-tool
-        filter still does the right thing once PR-C plumbs a non-empty list."""
-        from google.adk.tools.function_tool import FunctionTool
-
-        from app.adk.tools.registry.function_tool_registry import (
-            register_function_tool,
-        )
-
-        register_function_tool("stub_viz", self._stub_callable)
-        registry = self._registry_with_default_global(["stub_viz"])
-
-        docs = {k: dict(v) for k, v in _E2E_DOCS.items()}
-        docs[("agent_configs", "analytics_specialist")]["tool_ids"] = [
-            "ga_mcp.list_ga_accounts",  # only an MCP tool, no function.* entries
-        ]
-
-        captured = self._run_capturing_specialist_rosters(docs, registry)
-
-        analytics_tools = captured["analytics_specialist"]
-        function_tools = [t for t in analytics_tools if isinstance(t, FunctionTool)]
-        assert function_tools == []
-
-    def test_empty_registry_matches_pr_a_baseline(self) -> None:
-        """When no callables are registered, behaviour matches the pre-PR-C
-        state: no function tools wired, regardless of catalogue contents.
-        This is today's production behaviour — AH-PRD-04 hasn't shipped, so
-        ``create_visualization`` is catalogued but not registered."""
-        from google.adk.tools.function_tool import FunctionTool
-
-        # Catalogue lists a default-global entry but the registry is empty —
-        # resolve_default_global_tools logs a warning and returns [].
-        registry = self._registry_with_default_global(["create_visualization"])
-
-        captured = self._run_capturing_specialist_rosters(_E2E_DOCS, registry)
-
-        for spec_name, tools in captured.items():
-            if spec_name == "ken_e":
-                continue
-            function_tools = [t for t in tools if isinstance(t, FunctionTool)]
-            assert function_tools == [], (
-                f"{spec_name} unexpectedly got function tools: {function_tools}"
-            )
+        with (
+            _PATCH_BEFORE_AGENT,
+            _PATCH_AFTER_AGENT,
+            _PATCH_BEFORE_TOOL,
+            _PATCH_AFTER_TOOL,
+            patch(
+                "app.adk.agents.agent_factory.hierarchy._build_firestore_client",
+                side_effect=RuntimeError("connection refused"),
+            ),
+        ):
+            with pytest.raises(FirestoreConnectionError):
+                h.build_hierarchy()
 
 
 if __name__ == "__main__":

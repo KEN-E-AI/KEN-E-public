@@ -738,9 +738,11 @@ class TestWarningsOnRedeployRequiredFields:
     these into the SDK GenerateContentConfig at module-import time."""
 
     @pytest.mark.asyncio
-    async def test_model_change_surfaces_redeploy_warning(
+    async def test_model_change_no_redeploy_warning(
         self, admin_user, sample_config_data
     ):
+        """Per AH-PRD-09 Phase 2, the per-turn resolver picks up model changes
+        within the 60 s cache TTL — no redeploy required, warnings always empty."""
         from unittest.mock import AsyncMock
 
         from src.kene_api.routers import agent_configs as router_mod
@@ -770,18 +772,16 @@ class TestWarningsOnRedeployRequiredFields:
         assert hasattr(resp, "warnings"), (
             "update_agent_config must return AgentConfigUpdateResponse (config + warnings)"
         )
-        assert any("redeploy" in w.lower() for w in resp.warnings), (
-            f"Expected redeploy warning for model change; got warnings={resp.warnings}"
+        assert resp.warnings == [], (
+            f"Per AH-PRD-09 Phase 2, warnings must always be empty; got {resp.warnings}"
         )
 
     @pytest.mark.asyncio
-    async def test_temperature_change_surfaces_redeploy_warning(
+    async def test_temperature_change_no_redeploy_warning(
         self, admin_user, sample_config_data
     ):
-        """Temperature is baked into the SDK GenerateContentConfig at ADK
-        Agent construction time; ADK doesn't accept a callable for this
-        field, so changes cannot propagate via the InstructionProvider
-        cache. Must surface a redeploy-required warning."""
+        """Per AH-PRD-09 Phase 2, the per-turn resolver picks up temperature
+        changes within the 60 s cache TTL — no redeploy required, warnings always empty."""
         from unittest.mock import AsyncMock
 
         from src.kene_api.routers import agent_configs as router_mod
@@ -808,8 +808,8 @@ class TestWarningsOnRedeployRequiredFields:
                 db=mock_db,
             )
 
-        assert any("redeploy" in w.lower() for w in resp.warnings), (
-            f"Temperature change MUST trigger redeploy warning; got warnings={resp.warnings}"
+        assert resp.warnings == [], (
+            f"Per AH-PRD-09 Phase 2, warnings must always be empty; got {resp.warnings}"
         )
 
     @pytest.mark.asyncio
@@ -848,13 +848,13 @@ class TestWarningsOnRedeployRequiredFields:
                 db=mock_db,
             )
 
-        assert not any("redeploy" in w.lower() for w in resp.warnings), (
-            f"Instruction change should NOT trigger redeploy warning; "
+        assert resp.warnings == [], (
+            f"Instruction change should NOT trigger any warning; "
             f"got warnings={resp.warnings}"
         )
 
     @pytest.mark.asyncio
-    async def test_max_output_tokens_change_surfaces_redeploy_warning(
+    async def test_max_output_tokens_change_no_redeploy_warning(
         self, admin_user, sample_config_data
     ):
         from unittest.mock import AsyncMock
@@ -883,7 +883,9 @@ class TestWarningsOnRedeployRequiredFields:
                 db=mock_db,
             )
 
-        assert any("redeploy" in w.lower() for w in resp.warnings)
+        assert resp.warnings == [], (
+            f"Per AH-PRD-09 Phase 2, warnings must always be empty; got {resp.warnings}"
+        )
 
 
 class TestAgentConfigHistoryEndpoint:
