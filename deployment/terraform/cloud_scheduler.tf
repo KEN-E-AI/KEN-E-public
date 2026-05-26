@@ -62,8 +62,8 @@ locals {
 resource "google_cloud_scheduler_job" "chat_orphan_scan" {
   for_each = local._orphan_scan_jobs
 
-  name        = "chat-orphan-scan-${each.value.job}"
-  description = "Daily chat orphan-scan: ${each.value.job} (CH-PRD-05)"
+  name        = "chat-orphan-scan-${each.value.env}-${each.value.job}"
+  description = "Daily chat orphan-scan: ${each.value.env}/${each.value.job} (CH-PRD-05)"
   project     = each.value.project
   region      = var.region
 

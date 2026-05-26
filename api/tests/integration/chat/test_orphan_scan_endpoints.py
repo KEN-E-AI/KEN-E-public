@@ -48,6 +48,7 @@ _ADK_SUMMARY_WITH_ERRORS: dict[str, int] = {
 @pytest.fixture(scope="module")
 def client() -> Generator[TestClient, None, None]:
     os.environ.setdefault("CHAT_INTERNAL_OIDC_SKIP", "true")
+    os.environ.setdefault("ENVIRONMENT", "test")
     os.environ.setdefault("GOOGLE_CLOUD_PROJECT_ID", "test-project")
 
     from src.kene_api.dependencies import get_firestore_client

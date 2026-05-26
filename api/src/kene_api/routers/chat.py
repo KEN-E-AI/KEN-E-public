@@ -3180,6 +3180,10 @@ async def orphan_scan_gcs(
     at 04:00 UTC.  Returns the summary dict from
     ``scan_for_gcs_blob_orphans`` with HTTP 200 even when ``errored > 0``.
     """
+    logger.info(
+        "orphan-scan/gcs invoked",
+        extra=log_context(component="chat_orphan_scan", action="gcs_scan_start", extra={"caller": caller}),
+    )
     return await run_gcs_orphan_scan()
 
 
@@ -3195,4 +3199,12 @@ async def orphan_scan_adk_session(
     the summary dict from ``scan_for_adk_session_orphans`` with HTTP 200 even
     when ``errored > 0``.
     """
+    logger.info(
+        "orphan-scan/adk-session invoked",
+        extra=log_context(
+            component="chat_orphan_scan",
+            action="adk_scan_start",
+            extra={"caller": caller, "dry_run": dry_run},
+        ),
+    )
     return await run_adk_session_orphan_scan(dry_run=dry_run)

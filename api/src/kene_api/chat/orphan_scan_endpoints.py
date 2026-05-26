@@ -17,9 +17,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from fastapi import HTTPException
+
 # Path bootstrap: makes chat_artifact_orphan_scan and
 # chat_adk_session_orphan_scan importable from api/scripts/.
 _SCRIPTS_DIR = Path(__file__).parent.parent.parent.parent / "scripts"
+assert _SCRIPTS_DIR.is_dir(), f"scripts dir not found at expected path: {_SCRIPTS_DIR}"
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
@@ -61,7 +64,11 @@ async def run_adk_session_orphan_scan(*, dry_run: bool = False) -> dict[str, int
     )
 
     db = _get_firestore_client()
-    project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-staging")
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT")
+    if not project_id:
+        raise HTTPException(
+            status_code=500, detail="GOOGLE_CLOUD_PROJECT_ID is not configured"
+        )
     vertex_project = os.getenv("VERTEX_AI_PROJECT_ID", project_id)
     vertex_location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
     engine_id_full = os.getenv("KEN_E_ENGINE_ID") or os.getenv(
