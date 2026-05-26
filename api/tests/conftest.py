@@ -17,6 +17,13 @@ def pytest_configure(config):
     Clears the Prometheus REGISTRY to prevent duplicate metric registration errors
     when modules are imported multiple times during test collection.
     """
+    # Mark this process as a test environment before any kene_api module imports.
+    # `verify_internal_oidc_caller` in auth/internal_oidc.py refuses to honour
+    # CHAT_INTERNAL_OIDC_SKIP unless ENVIRONMENT is one of {development,test,local};
+    # without this, the integration tests that rely on the skip get HTTP 500.
+    # setdefault preserves any real value a developer has exported locally.
+    os.environ.setdefault("ENVIRONMENT", "test")
+
     # Unregister all existing collectors to prevent duplicate registration errors
     collectors = list(REGISTRY._collector_to_names.keys())
     for collector in collectors:
