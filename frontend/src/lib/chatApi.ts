@@ -149,6 +149,30 @@ export type ListTodosResponse = {
   todo_lists: TodoListView[];
 };
 
+// ─── Artifact types (CH-PRD-05 §4.3) ─────────────────────────────────────────
+
+export type ChatArtifactIndex = {
+  artifact_id: string;
+  session_id: string;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  version: number;
+  gcs_path: string;
+  created_by_tool: string | null;
+  created_at: string;
+};
+
+export type ListArtifactsResponseItem = {
+  artifact_index: ChatArtifactIndex;
+  signed_url: string;
+  signed_url_expires_at: string;
+};
+
+export type ListArtifactsResponse = {
+  items: ListArtifactsResponseItem[];
+};
+
 // ─── Categories types (CH-PRD-03 §4.1 — list-only stub until CH-PRD-03 ships full CRUD) ──
 
 export type ChatCategory = {
@@ -374,6 +398,18 @@ export async function listTodoLists(
 ): Promise<ListTodosResponse> {
   const { data } = await api.get<ListTodosResponse>(
     `${CHAT_BASE}/conversations/${encodeURIComponent(sessionId)}/todos`,
+  );
+  return data;
+}
+
+/**
+ * GET /api/v1/chat/conversations/{session_id}/artifacts
+ */
+export async function listArtifacts(
+  sessionId: ChatSessionId,
+): Promise<ListArtifactsResponse> {
+  const { data } = await api.get<ListArtifactsResponse>(
+    `${CHAT_BASE}/conversations/${encodeURIComponent(sessionId)}/artifacts`,
   );
   return data;
 }

@@ -8,6 +8,7 @@ import { SessionsSidebar } from "@/components/chat/SessionsSidebar";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCreateChatSession } from "@/hooks/useCreateChatSession";
 import { toChatSessionId } from "@/lib/chatApi";
+import { ArtifactsPanel } from "@/components/chat/ArtifactsPanel";
 import { TodoListsPanel } from "@/components/chat/TodoListsPanel";
 
 type ViewState = "message" | "status";
@@ -118,10 +119,15 @@ export default function Chat() {
           {viewState === "message" ? (
             <ChatInterface sessionId={sessionId ?? undefined} />
           ) : (
-            // TODO: replace this placeholder with the full SessionStatusView once it ships; TodoListsPanel will move into that surface.
-            <TodoListsPanel
-              sessionId={sessionId ? toChatSessionId(sessionId) : null}
-            />
+            // TODO: replace this placeholder with the full SessionStatusView once it ships (CH-PRD-04); ArtifactsPanel and TodoListsPanel will move into that surface.
+            <div className="overflow-y-auto h-full space-y-4 py-2">
+              <ArtifactsPanel
+                sessionId={sessionId ? toChatSessionId(sessionId) : null}
+              />
+              <TodoListsPanel
+                sessionId={sessionId ? toChatSessionId(sessionId) : null}
+              />
+            </div>
           )}
         </div>
       </div>
