@@ -67,7 +67,7 @@ class ChatCategoryDefinition(BaseModel):
     category_id: str
     user_id: str
     name: str                 # 1..64 chars; stripped
-    name_casefold: str           # derived: name.strip().lower()
+    name_casefold: str           # derived: name.strip().casefold()
     created_at: datetime
     updated_at: datetime
 
