@@ -193,8 +193,8 @@ Both tools write to `tool_context.state["todo_lists"]` via ADK's state mechanism
 | Modify | `frontend/src/lib/chatApi.ts` — `listTodoLists`, `listArtifacts` typed wrappers |
 | Modify | `docs/KEN-E-System-Architecture.md` §3.6 — add `todo_lists` row to the session-state table |
 | Modify | `app/CLAUDE.md` (or equivalent ADK docs) — section on the artifact-register convention |
-| Create | `api/scripts/chat_artifact_orphan_scan.py` — daily GCS-blob reconciliation |
-| Create | `api/scripts/chat_adk_session_orphan_scan.py` — daily ADK-session reconciliation (safety net for CH-PRD-04 delete) |
+| Create | `api/src/kene_api/chat/artifact_orphan_scan.py` — daily GCS-blob reconciliation |
+| Create | `api/src/kene_api/chat/adk_session_orphan_scan.py` — daily ADK-session reconciliation (safety net for CH-PRD-04 delete) |
 | Modify | `deployment/terraform/cloud_scheduler.tf` — add both orphan-scan schedules |
 | Create | `api/tests/unit/chat/test_todos_service.py` |
 | Create | `api/tests/unit/chat/test_todos_validation.py` |
@@ -378,7 +378,7 @@ When v2 ships the user-upload UI, a second badge variant ("Uploaded") will be in
 
 ### 5.7 Orphan reconciliation jobs (two)
 
-**GCS blob orphans — `chat_artifact_orphan_scan.py`** (Cloud Run scheduled, daily 04:00 UTC):
+**GCS blob orphans — `kene_api.chat.artifact_orphan_scan`** (Cloud Scheduler → Cloud Run, daily 04:00 UTC):
 
 ```python
 async def scan_for_gcs_blob_orphans():
@@ -407,7 +407,7 @@ async def scan_for_gcs_blob_orphans():
 
 Report-only in v1. Ops reviews the list and manually adopts or deletes.
 
-**ADK-session orphans — `chat_adk_session_orphan_scan.py`** (Cloud Run scheduled, daily 04:30 UTC). **The safety net for CH-PRD-04's delete-cleanup task failures.**
+**ADK-session orphans — `kene_api.chat.adk_session_orphan_scan`** (Cloud Scheduler → Cloud Run, daily 04:30 UTC). **The safety net for CH-PRD-04's delete-cleanup task failures.**
 
 ```python
 async def scan_for_adk_session_orphans():

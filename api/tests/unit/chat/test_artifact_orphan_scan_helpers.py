@@ -1,4 +1,4 @@
-"""Unit tests for pure helpers in chat_artifact_orphan_scan.py.
+"""Unit tests for pure helpers in kene_api.chat.artifact_orphan_scan.
 
 Tests cover _classify_blob, _emit_orphan_alert, _emit_completion_log,
 and the _FIRESTORE_ID_RE constant.  No Firestore, GCS, or network calls
@@ -8,21 +8,9 @@ are made.
 from __future__ import annotations
 
 import logging
-import sys
-from pathlib import Path
 from unittest.mock import MagicMock
 
-# ---------------------------------------------------------------------------
-# Path bootstrap
-# ---------------------------------------------------------------------------
-_SCRIPTS_DIR = Path(__file__).parent.parent.parent.parent / "scripts"
-_API_SRC = _SCRIPTS_DIR.parent / "src"
-_REPO_ROOT = _SCRIPTS_DIR.parent.parent
-for _p in (str(_SCRIPTS_DIR), str(_API_SRC), str(_REPO_ROOT)):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
-
-import chat_artifact_orphan_scan as cli  # noqa: E402
+from kene_api.chat import artifact_orphan_scan as cli
 
 # ---------------------------------------------------------------------------
 # _classify_blob
