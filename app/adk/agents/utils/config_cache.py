@@ -34,6 +34,8 @@ from typing import Any
 
 from google.adk.agents.llm_agent_config import LlmAgentConfig
 
+from app.utils.weave_observability import safe_weave_op
+
 from ..strategy_agent.config_loader import load_config_from_firestore
 
 logger = logging.getLogger(__name__)
@@ -57,12 +59,13 @@ _CacheEntry = tuple[
 
 _cache: dict[str, _CacheEntry] = {}
 # Process-wide lock — held during the Firestore call inside get_cached_config,
-# so a slow refresh for one doc_id blocks reads of every other doc_id. Acceptable
-# today because only ``ken_e_chatbot`` uses this cache; revisit (per-doc-id locks
-# or a striped lock) once a second agent ships.
+# so a slow refresh for one doc_id blocks reads of every other doc_id. The
+# root agent and all default-status specialists share this cache; revisit
+# (per-doc-id locks or a striped lock) if lock contention becomes measurable.
 _cache_lock = threading.Lock()
 
 
+@safe_weave_op(name="load_config_from_firestore")
 def get_cached_config(
     doc_id: str, ttl_seconds: int = 60
 ) -> tuple[LlmAgentConfig, dict[str, Any], dict[str, Any]]:

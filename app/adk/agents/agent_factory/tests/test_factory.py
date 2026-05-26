@@ -796,5 +796,195 @@ class TestEndToEndIntegration:
         assert "Base instruction." in result
 
 
+# ---------------------------------------------------------------------------
+# AH-58: Cache-backed InstructionProvider
+# ---------------------------------------------------------------------------
+
+
+def _make_llm_config(instruction: str):
+    """Return a minimal LlmAgentConfig-like object with .instruction."""
+    cfg = MagicMock()
+    cfg.instruction = instruction
+    return cfg
+
+
+class TestCacheBackedInstructionProvider:
+    """Tests for _make_factory_instruction_provider when config_doc_id is set."""
+
+    def test_cache_doc_id_reads_instruction_from_cache(self) -> None:
+        """When config_doc_id is set the provider must read instruction from the cache."""
+        from app.adk.agents.agent_factory.builder import (
+            _make_factory_instruction_provider,
+        )
+
+        provider = _make_factory_instruction_provider(
+            "deploy-time text",
+            config_doc_id="ken_e_chatbot",
+        )
+        with patch(
+            "app.adk.agents.agent_factory.builder.config_cache.get_cached_config",
+            return_value=(_make_llm_config("cached instruction"), {}, {}),
+        ):
+            result = provider(_make_context({}))
+
+        assert result == "cached instruction"
+
+    def test_cache_doc_id_overrides_deploy_time_instruction(self) -> None:
+        """Cache value takes precedence over the baked instruction_text."""
+        from app.adk.agents.agent_factory.builder import (
+            _make_factory_instruction_provider,
+        )
+
+        provider = _make_factory_instruction_provider(
+            "original",
+            config_doc_id="ken_e_chatbot",
+        )
+        with patch(
+            "app.adk.agents.agent_factory.builder.config_cache.get_cached_config",
+            return_value=(_make_llm_config("updated via admin"), {}, {}),
+        ):
+            result = provider(_make_context({}))
+
+        assert result == "updated via admin"
+        assert "original" not in result
+
+    def test_instruction_suffix_appended_after_base(self) -> None:
+        """instruction_suffix is appended after the base instruction (cache or deploy-time)."""
+        from app.adk.agents.agent_factory.builder import (
+            _make_factory_instruction_provider,
+        )
+
+        provider = _make_factory_instruction_provider(
+            "Base.",
+            instruction_suffix="## Specialists\nFoo, Bar",
+        )
+        result = provider(_make_context({}))
+
+        assert result.startswith("Base.")
+        assert "## Specialists" in result
+        assert "Foo, Bar" in result
+
+    def test_instruction_suffix_appended_after_cached_instruction(self) -> None:
+        """Suffix is appended after the cache-sourced base instruction."""
+        from app.adk.agents.agent_factory.builder import (
+            _make_factory_instruction_provider,
+        )
+
+        provider = _make_factory_instruction_provider(
+            "deploy",
+            config_doc_id="ken_e_chatbot",
+            instruction_suffix="SUFFIX",
+        )
+        with patch(
+            "app.adk.agents.agent_factory.builder.config_cache.get_cached_config",
+            return_value=(_make_llm_config("live"), {}, {}),
+        ):
+            result = provider(_make_context({}))
+
+        assert "live" in result
+        assert "SUFFIX" in result
+        assert result.index("live") < result.index("SUFFIX")
+
+    def test_cache_exception_falls_back_to_deploy_time_instruction(self) -> None:
+        """On cache read failure the provider must use the baked instruction_text."""
+        from app.adk.agents.agent_factory.builder import (
+            _make_factory_instruction_provider,
+        )
+
+        provider = _make_factory_instruction_provider(
+            "fallback text",
+            config_doc_id="ken_e_chatbot",
+        )
+        with patch(
+            "app.adk.agents.agent_factory.builder.config_cache.get_cached_config",
+            side_effect=RuntimeError("Firestore unreachable"),
+        ):
+            result = provider(_make_context({}))
+
+        assert result == "fallback text"
+
+    def test_cache_exception_logs_warning(self, caplog) -> None:
+        """Cache failure must produce a WARNING log."""
+        import logging
+
+        from app.adk.agents.agent_factory.builder import (
+            _make_factory_instruction_provider,
+        )
+
+        provider = _make_factory_instruction_provider(
+            "fallback",
+            config_doc_id="ken_e_chatbot",
+        )
+        with caplog.at_level(
+            logging.WARNING, logger="app.adk.agents.agent_factory.builder"
+        ):
+            with patch(
+                "app.adk.agents.agent_factory.builder.config_cache.get_cached_config",
+                side_effect=RuntimeError("boom"),
+            ):
+                provider(_make_context({}))
+
+        assert any(
+            "ken_e_chatbot" in r.message or "InstructionProvider" in r.message
+            for r in caplog.records
+            if r.levelno >= logging.WARNING
+        ), (
+            f"Expected WARNING mentioning doc_id or InstructionProvider; got {[r.message for r in caplog.records]}"
+        )
+
+    def test_org_context_still_prepended_with_cache_backed_instruction(self) -> None:
+        """[ORGANIZATION CONTEXT] block must still be prepended when cache is active."""
+        from app.adk.agents.agent_factory.builder import (
+            _make_factory_instruction_provider,
+        )
+
+        provider = _make_factory_instruction_provider(
+            "base",
+            config_doc_id="ken_e_chatbot",
+        )
+        with patch(
+            "app.adk.agents.agent_factory.builder.config_cache.get_cached_config",
+            return_value=(_make_llm_config("live instr"), {}, {}),
+        ):
+            result = provider(_make_context({"organization_context": "ACME"}))
+
+        assert result.startswith("[ORGANIZATION CONTEXT]")
+        assert "ACME" in result
+        assert "live instr" in result
+
+    def test_no_config_doc_id_uses_instruction_text_directly(self) -> None:
+        """When config_doc_id is None the deploy-time instruction_text is used unchanged."""
+        from app.adk.agents.agent_factory.builder import (
+            _make_factory_instruction_provider,
+        )
+
+        provider = _make_factory_instruction_provider("static text")
+        result = provider(_make_context({}))
+
+        assert result == "static text"
+
+    def test_backward_compat_positional_first_arg(self) -> None:
+        """Existing callers using _make_factory_instruction_provider('...') must keep working."""
+        from app.adk.agents.agent_factory.builder import (
+            _make_factory_instruction_provider,
+        )
+
+        provider = _make_factory_instruction_provider("Do the task.")
+        assert provider(_make_context({})) == "Do the task."
+
+    def test_empty_suffix_produces_no_trailing_whitespace(self) -> None:
+        """instruction_suffix='' must not add trailing newlines to the output."""
+        from app.adk.agents.agent_factory.builder import (
+            _make_factory_instruction_provider,
+        )
+
+        provider = _make_factory_instruction_provider(
+            "Clean text.", instruction_suffix=""
+        )
+        result = provider(_make_context({}))
+
+        assert result == "Clean text."
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

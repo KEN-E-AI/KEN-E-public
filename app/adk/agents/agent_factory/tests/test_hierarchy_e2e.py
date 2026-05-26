@@ -15,9 +15,11 @@ Test classes:
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from google.adk.agents.llm_agent_config import LlmAgentConfig
 
 # ---------------------------------------------------------------------------
 # Sentinel callback objects — same pattern as test_hierarchy.py
@@ -201,6 +203,41 @@ def _make_context(state: dict) -> MagicMock:
     ctx = MagicMock()
     ctx.state = state
     return ctx
+
+
+def _fake_e2e_cache_loader(
+    doc_id: str, project_id: str = "ken-e-dev"
+) -> tuple[Any, dict, dict]:
+    """In-memory loader for config_cache so agent.instruction() doesn't hit Firestore."""
+    instruction_map: dict[str, str] = {
+        "ken_e_chatbot": _E2E_DOCS[("agent_configs", "ken_e_chatbot")]["instruction"],
+        "analytics_specialist": _E2E_DOCS[("agent_configs", "analytics_specialist")][
+            "instruction"
+        ],
+        "ads_specialist": _E2E_DOCS[("agent_configs", "ads_specialist")]["instruction"],
+    }
+    instr = instruction_map.get(doc_id, f"Test instruction for {doc_id}")
+    cfg = LlmAgentConfig(
+        name=doc_id,
+        model="gemini-2.0-flash",
+        instruction=instr,
+        description="",
+        generate_content_config={"temperature": 0.3, "max_output_tokens": 2048},
+    )
+    return cfg, {"version": "test"}, {}
+
+
+@pytest.fixture(autouse=True)
+def _patch_e2e_config_cache_loader():
+    """Prevent agent.instruction(ctx) calls from hitting real Firestore."""
+    from app.adk.agents.utils import config_cache
+
+    config_cache.clear_config_cache()
+    with patch.object(
+        config_cache, "load_config_from_firestore", side_effect=_fake_e2e_cache_loader
+    ):
+        yield
+    config_cache.clear_config_cache()
 
 
 # ---------------------------------------------------------------------------
