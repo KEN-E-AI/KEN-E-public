@@ -56,7 +56,7 @@ from google.cloud import firestore
 from pydantic import BaseModel
 
 from ..auth.models import UserContext
-from ..auth.user_context import check_account_access, get_current_user_context
+from ..auth.user_context import check_account_access
 from ..dependencies import get_firestore
 from ..models.skill_models import (
     MAX_BUNDLE_FILES,
@@ -89,6 +89,9 @@ try:
     WEAVE_AVAILABLE = True
 
     def _skills_safe_op(name: str) -> Callable:  # type: ignore[misc]
+        # Only scalars pass through to Weave: UploadFile bytes are a PII risk and
+        # ValidationReport/SkillVersion lists are too large to record.  Intentional
+        # span attributes are injected via weave.attributes() / _maybe_weave_attrs().
         def _filter(inputs: dict[str, object]) -> dict[str, object]:
             return {
                 k: v
@@ -650,7 +653,7 @@ async def _get_skill_traced(
 async def delete_skill(
     account_id: str,
     skill_id: str,
-    user: UserContext = Depends(get_current_user_context),
+    user: UserContext = Depends(check_account_access),
     db: firestore.Client = Depends(get_firestore),
     storage: SkillStorageService = Depends(get_skill_storage_service),
 ) -> None:
@@ -730,7 +733,7 @@ async def create_skill(
     skill_md: UploadFile = File(...),
     files: list[UploadFile] = File(default_factory=list),
     name: str = Form(..., max_length=64),
-    user: UserContext = Depends(get_current_user_context),
+    user: UserContext = Depends(check_account_access),
     db: firestore.Client = Depends(get_firestore),
     storage: SkillStorageService = Depends(get_skill_storage_service),
 ) -> Skill:
@@ -950,7 +953,7 @@ async def update_skill(
     files: list[UploadFile] = File(default_factory=list),
     name: str = Form(...),
     commit_message: str | None = Form(default=None, max_length=1000),
-    user: UserContext = Depends(get_current_user_context),
+    user: UserContext = Depends(check_account_access),
     db: firestore.Client = Depends(get_firestore),
     storage: SkillStorageService = Depends(get_skill_storage_service),
 ) -> Skill:
@@ -1006,6 +1009,61 @@ async def update_skill(
         )
 
 
+async def _perform_update_attempt(
+    *,
+    account_id: str,
+    skill_id: str,
+    current_data: dict,
+    report: ValidationReport,
+    skill_md_bytes: bytes,
+    files_data: list[tuple[str, bytes]],
+    commit_message: str | None,
+    user: UserContext,
+    storage: SkillStorageService,
+) -> tuple[Skill, SkillVersion, int]:
+    """Parse the current Firestore doc, write the GCS bundle, and build the updated Skill.
+
+    Called for both the initial attempt and each retry so the per-attempt triple
+    (parse → GCS write → Skill construction) lives in exactly one place.
+    Returns ``(updated_skill, skill_version, expected_version)`` where
+    ``expected_version`` is the version read from ``current_data`` and must be
+    passed to ``_bump_skill_version`` to detect a concurrent PUT.
+    """
+    existing_skill = _skill_from_dict(current_data)
+    new_name = report.frontmatter.name  # type: ignore[union-attr]  # caller asserts not None
+    expected_version = existing_skill.current_version
+    next_version = expected_version + 1
+    now = datetime.now(timezone.utc)
+
+    skill_version = await asyncio.to_thread(
+        storage.write_bundle,
+        account_id=account_id,
+        skill_id=skill_id,
+        version=next_version,
+        skill_md_bytes=skill_md_bytes,
+        files=files_data,
+        frontmatter=report.frontmatter,
+        created_by=user.user_id,
+        commit_message=commit_message,
+    )
+    updated_skill = Skill(
+        skill_id=skill_id,
+        owner=existing_skill.owner,
+        name=new_name,
+        description=report.frontmatter.description,  # type: ignore[union-attr]
+        current_version=next_version,
+        visibility=existing_skill.visibility,
+        status=existing_skill.status,
+        source=existing_skill.source,
+        has_scripts=report.has_scripts,
+        created_at=existing_skill.created_at,
+        created_by=existing_skill.created_by,
+        updated_at=now,
+        updated_by=user.user_id,
+    )
+    return updated_skill, skill_version, expected_version
+
+
 @_skills_safe_op(name="api.skills.update")
 async def _update_skill_traced(
     *,
@@ -1032,14 +1090,15 @@ async def _update_skill_traced(
         return snap.to_dict()
 
     current_data = await asyncio.to_thread(_read_skill)
-    existing_skill = _skill_from_dict(current_data)
 
-    # Ownership assertion.
-    if existing_skill.owner.account_id != account_id:
+    # One-time guard checks (not repeated on retry — ownership and rename uniqueness
+    # are stable for the life of this request).
+    guard_skill = _skill_from_dict(current_data)
+    if guard_skill.owner.account_id != account_id:
         raise HTTPException(status_code=403, detail="owner_mismatch")
 
     # Step 2: name uniqueness for renames.
-    if new_name != existing_skill.name:
+    if new_name != guard_skill.name:
         name_taken = await asyncio.to_thread(
             _check_name_exists, db, account_id, new_name
         )
@@ -1049,43 +1108,21 @@ async def _update_skill_traced(
                 detail={"code": "skill_name_conflict", "name": new_name},
             )
 
-    expected_version = existing_skill.current_version
-    next_version = expected_version + 1
-    now = datetime.now(timezone.utc)
-
-    # Step 3: GCS write first at predicted prefix (PRD §9).
-    skill_version = await asyncio.to_thread(
-        storage.write_bundle,
-        account_id=account_id,
-        skill_id=skill_id,
-        version=next_version,
-        skill_md_bytes=skill_md_bytes,
-        files=files_data,
-        frontmatter=report.frontmatter,
-        created_by=user.user_id,
-        commit_message=commit_message,
-    )
-
-    # Step 4: build updated Skill.
-    updated_skill = Skill(
-        skill_id=skill_id,
-        owner=existing_skill.owner,
-        name=new_name,
-        description=report.frontmatter.description,
-        current_version=next_version,
-        visibility=existing_skill.visibility,
-        status=existing_skill.status,
-        source=existing_skill.source,
-        has_scripts=report.has_scripts,
-        created_at=existing_skill.created_at,
-        created_by=existing_skill.created_by,
-        updated_at=now,
-        updated_by=user.user_id,
-    )
-
-    # Step 5: Firestore transaction — retry up to 3 times on concurrent PUT race.
+    # Steps 3-5: GCS write + Skill build + Firestore transaction, retrying up to 3
+    # times on concurrent PUT race.  All per-attempt logic lives in _perform_update_attempt.
     max_retries = 3
     for attempt in range(max_retries):
+        updated_skill, skill_version, expected_version = await _perform_update_attempt(
+            account_id=account_id,
+            skill_id=skill_id,
+            current_data=current_data,
+            report=report,
+            skill_md_bytes=skill_md_bytes,
+            files_data=files_data,
+            commit_message=commit_message,
+            user=user,
+            storage=storage,
+        )
         success = await asyncio.to_thread(
             _bump_skill_version,
             db,
@@ -1110,37 +1147,6 @@ async def _update_skill_traced(
             },
         )
         current_data = await asyncio.to_thread(_read_skill)
-        existing_skill = _skill_from_dict(current_data)
-        expected_version = existing_skill.current_version
-        next_version = expected_version + 1
-        now = datetime.now(timezone.utc)
-
-        skill_version = await asyncio.to_thread(
-            storage.write_bundle,
-            account_id=account_id,
-            skill_id=skill_id,
-            version=next_version,
-            skill_md_bytes=skill_md_bytes,
-            files=files_data,
-            frontmatter=report.frontmatter,
-            created_by=user.user_id,
-            commit_message=commit_message,
-        )
-        updated_skill = Skill(
-            skill_id=skill_id,
-            owner=existing_skill.owner,
-            name=new_name,
-            description=report.frontmatter.description,
-            current_version=next_version,
-            visibility=existing_skill.visibility,
-            status=existing_skill.status,
-            source=existing_skill.source,
-            has_scripts=report.has_scripts,
-            created_at=existing_skill.created_at,
-            created_by=existing_skill.created_by,
-            updated_at=now,
-            updated_by=user.user_id,
-        )
 
     raise HTTPException(
         status_code=409,

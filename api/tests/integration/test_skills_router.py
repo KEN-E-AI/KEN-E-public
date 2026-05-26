@@ -1934,16 +1934,13 @@ class TestCrossAccountIsolation(_SkillsRouterBase):
         resp = client.get(OTHER_BASE_URL + f"/{skill_id}")
         assert resp.status_code == 404
 
-    def test_check_account_access_and_check_strategy_access_agree(self):
+    async def test_check_account_access_and_check_strategy_access_agree(self):
         """Dependency regression: both helpers grant access to members, 403 to non-members.
 
         Includes a super-admin user to confirm the super-admin bypass works through
         check_strategy_access (which delegates membership to check_account_access).
         """
-        import asyncio
-
         from fastapi import HTTPException as FastAPIHTTPException
-
         from src.kene_api.auth.user_context import check_account_access
         from src.kene_api.routers.strategy import check_strategy_access
 
@@ -1957,24 +1954,24 @@ class TestCrossAccountIsolation(_SkillsRouterBase):
         # Membership gate: member passes, non-member gets 403.
         for user, should_pass in [(_member_user(), True), (_no_access_user(), False)]:
             if should_pass:
-                result = asyncio.run(check_account_access(ACCOUNT_ID, user))
+                result = await check_account_access(ACCOUNT_ID, user)
                 assert result.user_id == user.user_id
-                result2 = asyncio.run(check_strategy_access(ACCOUNT_ID, user, "view"))
+                result2 = await check_strategy_access(ACCOUNT_ID, user, "view")
                 assert result2.user_id == user.user_id
             else:
                 with pytest.raises(FastAPIHTTPException) as exc_info:
-                    asyncio.run(check_account_access(ACCOUNT_ID, user))
+                    await check_account_access(ACCOUNT_ID, user)
                 assert exc_info.value.status_code == 403
                 with pytest.raises(FastAPIHTTPException) as exc_info2:
-                    asyncio.run(check_strategy_access(ACCOUNT_ID, user, "view"))
+                    await check_strategy_access(ACCOUNT_ID, user, "view")
                 assert exc_info2.value.status_code == 403
 
         # Super-admin passes membership and edit-role gate even without explicit account entry.
-        result_sa = asyncio.run(check_account_access(ACCOUNT_ID, super_admin_user))
+        result_sa = await check_account_access(ACCOUNT_ID, super_admin_user)
         assert result_sa.user_id == super_admin_user.user_id
-        result_sa_view = asyncio.run(check_strategy_access(ACCOUNT_ID, super_admin_user, "view"))
+        result_sa_view = await check_strategy_access(ACCOUNT_ID, super_admin_user, "view")
         assert result_sa_view.user_id == super_admin_user.user_id
-        result_sa_edit = asyncio.run(check_strategy_access(ACCOUNT_ID, super_admin_user, "edit"))
+        result_sa_edit = await check_strategy_access(ACCOUNT_ID, super_admin_user, "edit")
         assert result_sa_edit.user_id == super_admin_user.user_id
 
 
