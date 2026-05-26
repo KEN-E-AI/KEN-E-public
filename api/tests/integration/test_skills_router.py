@@ -34,9 +34,13 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from src.kene_api.auth.models import UserContext
-from src.kene_api.auth.user_context import get_current_user_context
+from src.kene_api.auth.user_context import (
+    check_account_access,
+    get_current_user_context,
+)
 from src.kene_api.dependencies import get_firestore
 from src.kene_api.main import app
 from src.kene_api.services.skill_storage import (
@@ -471,10 +475,12 @@ class _SkillsRouterBase:
         return TestClient(app, raise_server_exceptions=False)
 
     def _install_user(self, user: UserContext) -> None:
-        async def _get():
+        async def _check(account_id: str) -> UserContext:
+            if not user.has_account_access(account_id):
+                raise HTTPException(status_code=403, detail="forbidden")
             return user
 
-        app.dependency_overrides[get_current_user_context] = _get
+        app.dependency_overrides[check_account_access] = _check
 
 
 def _fake_transactional_decorator(fn):

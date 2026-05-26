@@ -1013,7 +1013,7 @@ async def _perform_update_attempt(
     *,
     account_id: str,
     skill_id: str,
-    current_data: dict,
+    current_data: dict[str, object],
     report: ValidationReport,
     skill_md_bytes: bytes,
     files_data: list[tuple[str, bytes]],
@@ -1080,6 +1080,8 @@ async def _update_skill_traced(
     if report.frontmatter is None:  # invariant
         raise HTTPException(status_code=500, detail="internal_error")
 
+    # Used only for the one-time rename-uniqueness guard below; _perform_update_attempt
+    # re-reads it from report.frontmatter for the actual Skill construction.
     new_name = report.frontmatter.name
 
     # Step 1: read current skill to get current_version (and 404 if not found).
