@@ -402,7 +402,7 @@ class TestRootInstructionContent:
         canned_block = "## Available Specialists\n\n- None registered."
 
         with patch(
-            "app.adk.agents.agent_factory.hierarchy.available_specialists_provider",
+            "app.adk.agents.agent_factory.specialist_runtime.available_specialists_provider",
             return_value=canned_block,
         ):
             root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})
@@ -414,7 +414,7 @@ class TestRootInstructionContent:
         canned_block = "## Available Specialists\n\n- **my_agent**: Does things."
 
         with patch(
-            "app.adk.agents.agent_factory.hierarchy.available_specialists_provider",
+            "app.adk.agents.agent_factory.specialist_runtime.available_specialists_provider",
             return_value=canned_block,
         ):
             root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})
@@ -427,7 +427,7 @@ class TestRootInstructionContent:
         canned_block = "## Available Specialists\n\n- None registered."
 
         with patch(
-            "app.adk.agents.agent_factory.hierarchy.available_specialists_provider",
+            "app.adk.agents.agent_factory.specialist_runtime.available_specialists_provider",
             return_value=canned_block,
         ):
             root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})

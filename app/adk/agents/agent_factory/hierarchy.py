@@ -27,9 +27,6 @@ from app.adk.agents.agent_factory.config_loader import (
     _load_and_merge,
 )
 from app.adk.agents.agent_factory.dispatch import delegate_to_specialist
-from app.adk.agents.agent_factory.specialist_runtime import (
-    available_specialists_provider,
-)
 from shared.account_id_utils import validate_account_id
 from shared.structured_logging import get_structured_logger
 
@@ -148,6 +145,12 @@ def build_hierarchy(
     # Step 3 — build the root agent. instruction_suffix_provider renders the
     # Available Specialists block per-turn from the TTL-cached Firestore data
     # so admin edits propagate within 60 s without a redeploy.
+    # Lazy import: avoids circular import at module-load time since
+    # agent_factory/__init__.py imports both hierarchy and specialist_runtime,
+    # and specialist_runtime imports config_cache which imports agent_factory.
+    from app.adk.agents.agent_factory.specialist_runtime import (
+        available_specialists_provider,
+    )
     root_agent = build_agent(
         root_config,
         name="ken_e",
