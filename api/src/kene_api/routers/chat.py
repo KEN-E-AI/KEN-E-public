@@ -41,6 +41,10 @@ from ..cache import (
 from ..chat.accumulator import SessionTurnAccumulator
 from ..chat.artifacts import generate_artifact_signed_url, list_artifacts
 from ..chat.mark_read_limiter import mark_read_limiter
+from ..chat.orphan_scan_endpoints import (
+    run_adk_session_orphan_scan,
+    run_gcs_orphan_scan,
+)
 from ..chat.side_table import derive_is_agent_running, get_chat_side_table_service
 from ..chat.side_table_handlers import apply_side_table_update
 from ..chat.todos import list_todo_lists
@@ -3164,3 +3168,31 @@ async def side_table_update(
         delta=body.delta,
         idempotency_key=body.idempotency_key,
     )
+
+
+@internal_router.post("/orphan-scan/gcs")
+async def orphan_scan_gcs(
+    caller: str = Depends(verify_internal_oidc_caller),
+) -> dict:
+    """Run the GCS artifact blob orphan reconciliation scan (CH-PRD-05 AC-11).
+
+    OIDC-authenticated (service-to-service). Invoked by Cloud Scheduler daily
+    at 04:00 UTC.  Returns the summary dict from
+    ``scan_for_gcs_blob_orphans`` with HTTP 200 even when ``errored > 0``.
+    """
+    return await run_gcs_orphan_scan()
+
+
+@internal_router.post("/orphan-scan/adk-session")
+async def orphan_scan_adk_session(
+    dry_run: bool = Query(default=False, description="Log actions without deleting."),
+    caller: str = Depends(verify_internal_oidc_caller),
+) -> dict:
+    """Run the ADK-session orphan reconciliation scan (CH-PRD-05 AC-11).
+
+    OIDC-authenticated (service-to-service). Invoked by Cloud Scheduler daily
+    at 04:30 UTC.  Pass ``?dry_run=true`` to log without deleting.  Returns
+    the summary dict from ``scan_for_adk_session_orphans`` with HTTP 200 even
+    when ``errored > 0``.
+    """
+    return await run_adk_session_orphan_scan(dry_run=dry_run)
