@@ -39,7 +39,12 @@ from ..cache import (
     user_session_ids_key,
 )
 from ..chat.accumulator import SessionTurnAccumulator
+from ..chat.artifacts import generate_artifact_signed_url, list_artifacts
 from ..chat.mark_read_limiter import mark_read_limiter
+from ..chat.orphan_scan_endpoints import (
+    run_adk_session_orphan_scan,
+    run_gcs_orphan_scan,
+)
 from ..chat.side_table import derive_is_agent_running, get_chat_side_table_service
 from ..chat.side_table_handlers import apply_side_table_update
 from ..chat.todos import list_todo_lists
@@ -51,6 +56,8 @@ from ..models.chat import (
     ChatSessionMetadata,
     ChatSessionSidebarItem,
     InternalSideTableUpdateRequest,
+    ListArtifactsResponse,
+    ListArtifactsResponseItem,
     ListChatSessionsResponse,
     ListTodosResponse,
     MarkReadResponse,
@@ -2862,6 +2869,97 @@ async def get_session_todos(
     return ListTodosResponse(todo_lists=todo_lists)
 
 
+@router.get("/conversations/{session_id}/artifacts", response_model=ListArtifactsResponse)
+async def get_session_artifacts(
+    session_id: str = Path(..., max_length=256, pattern=r"^[\w\-]+$"),
+    user_context: UserContext = Depends(get_current_user_context),
+) -> ListArtifactsResponse:
+    """Return artifact metadata with 10-minute signed GCS URLs.
+
+    Reads the Firestore subcollection
+    ``accounts/{account_id}/chat_sessions/{session_id}/artifacts`` ordered by
+    ``created_at DESC``. Each item in the response embeds a fresh V4 signed URL
+    valid for 10 minutes from the time of the request.
+
+    Ownership-gated: returns 404 for any session the authenticated user does
+    not own on the current account (same no-existence-leak contract as
+    mark-read and todos). Tombstoned sessions are treated as not-found
+    automatically by ``find_session_for_user``.
+
+    No rate limit (pure read, low cost per PRD §2).
+
+    On per-row signing failure (malformed ``gcs_path`` or transient GCS error),
+    the row is skipped with a ``chat.artifact.signing_skipped`` warning log
+    rather than failing the whole endpoint. The GCS orphan-scan job catches
+    persistent inconsistencies asynchronously.
+
+    Note: ``chat_v2_enabled`` does not gate this endpoint — per api/CLAUDE.md
+    that flag only disables the internal side-table update path; public chat
+    endpoints are unaffected.
+    """
+    loop = asyncio.get_running_loop()
+    svc = get_chat_side_table_service()
+    user_id = user_context.user_id
+
+    meta = await loop.run_in_executor(
+        None,
+        lambda: svc.find_session_for_user(user_id=user_id, session_id=session_id),
+    )
+    if meta is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Conversation not found",
+        )
+
+    rows = await loop.run_in_executor(
+        None,
+        lambda: list_artifacts(meta.account_id, session_id),
+    )
+
+    _weave_cm: Any = nullcontext()
+    if WEAVE_AVAILABLE:
+        try:
+            _weave_cm = weave.attributes(
+                {
+                    "chat_operation": "artifact.list",
+                    "session_id": session_id,
+                    "user_id": user_id,
+                    "account_id": meta.account_id,
+                }
+            )
+        except Exception:
+            pass
+
+    now = datetime.now(timezone.utc)
+    items: list[ListArtifactsResponseItem] = []
+    dropped_count = 0
+    with _weave_cm:
+        for row in rows:
+            try:
+                signed_url, expires_at = await loop.run_in_executor(
+                    None,
+                    lambda r=row: generate_artifact_signed_url(r, now=now),
+                )
+                items.append(
+                    ListArtifactsResponseItem(
+                        artifact_index=row,
+                        signed_url=signed_url,
+                        signed_url_expires_at=expires_at,
+                    )
+                )
+            except ValueError:
+                dropped_count += 1
+                logger.warning(
+                    "chat.artifact.signing_skipped",
+                    extra={
+                        "artifact_id": row.artifact_id,
+                        "session_id": session_id,
+                    },
+                )
+
+    return ListArtifactsResponse(items=items)
+
+
 @router.delete("/conversations/{session_id}")
 async def delete_conversation(
     session_id: str, user_context: UserContext = Depends(get_current_user_context)
@@ -3070,3 +3168,43 @@ async def side_table_update(
         delta=body.delta,
         idempotency_key=body.idempotency_key,
     )
+
+
+@internal_router.post("/orphan-scan/gcs")
+async def orphan_scan_gcs(
+    caller: str = Depends(verify_internal_oidc_caller),
+) -> dict:
+    """Run the GCS artifact blob orphan reconciliation scan (CH-PRD-05 AC-11).
+
+    OIDC-authenticated (service-to-service). Invoked by Cloud Scheduler daily
+    at 04:00 UTC.  Returns the summary dict from
+    ``scan_for_gcs_blob_orphans`` with HTTP 200 even when ``errored > 0``.
+    """
+    logger.info(
+        "orphan-scan/gcs invoked",
+        extra=log_context(component="chat_orphan_scan", action="gcs_scan_start", extra={"caller": caller}),
+    )
+    return await run_gcs_orphan_scan()
+
+
+@internal_router.post("/orphan-scan/adk-session")
+async def orphan_scan_adk_session(
+    dry_run: bool = Query(default=False, description="Log actions without deleting."),
+    caller: str = Depends(verify_internal_oidc_caller),
+) -> dict:
+    """Run the ADK-session orphan reconciliation scan (CH-PRD-05 AC-11).
+
+    OIDC-authenticated (service-to-service). Invoked by Cloud Scheduler daily
+    at 04:30 UTC.  Pass ``?dry_run=true`` to log without deleting.  Returns
+    the summary dict from ``scan_for_adk_session_orphans`` with HTTP 200 even
+    when ``errored > 0``.
+    """
+    logger.info(
+        "orphan-scan/adk-session invoked",
+        extra=log_context(
+            component="chat_orphan_scan",
+            action="adk_scan_start",
+            extra={"caller": caller, "dry_run": dry_run},
+        ),
+    )
+    return await run_adk_session_orphan_scan(dry_run=dry_run)

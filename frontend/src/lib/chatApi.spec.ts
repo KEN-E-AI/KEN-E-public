@@ -17,6 +17,8 @@ import {
   postChatCompletion,
   streamChatCompletion,
   chatHealth,
+  listTodoLists,
+  listArtifacts,
   toChatSessionId as mkSessionId,
   toChatCategoryId as mkCategoryId,
 } from "./chatApi";
@@ -512,5 +514,91 @@ describe("chatHealth", () => {
     const result = await chatHealth();
     expect(mockApi.get).toHaveBeenCalledWith("/api/v1/chat/health");
     expect(result).toEqual(fixture);
+  });
+});
+
+// ─── listTodoLists ────────────────────────────────────────────────────────────
+
+describe("listTodoLists", () => {
+  it("calls GET /api/v1/chat/conversations/{id}/todos and returns data", async () => {
+    const fixture = {
+      todo_lists: [
+        {
+          list_id: "list_1",
+          title: "Q3 Campaign Tasks",
+          is_current: true,
+          created_at: "2026-05-01T09:00:00Z",
+          items: [
+            {
+              item_id: "item_1",
+              text: "Analyse performance data",
+              completed: true,
+              completed_at: "2026-05-01T10:00:00Z",
+            },
+            {
+              item_id: "item_2",
+              text: "Draft recommendations",
+              completed: false,
+              completed_at: null,
+            },
+          ],
+        },
+      ],
+    };
+    mockApi.get.mockResolvedValueOnce({ data: fixture });
+    const result = await listTodoLists(mkSessionId("session_abc"));
+    expect(mockApi.get).toHaveBeenCalledWith(
+      "/api/v1/chat/conversations/session_abc/todos",
+    );
+    expect(result).toEqual(fixture);
+  });
+
+  it("URL-encodes session IDs that contain special characters (AC-10)", async () => {
+    mockApi.get.mockResolvedValueOnce({ data: { todo_lists: [] } });
+    // A session ID containing a forward-slash must be percent-encoded in the URL path.
+    await listTodoLists("sess/abc" as ReturnType<typeof mkSessionId>);
+    expect(mockApi.get).toHaveBeenCalledWith(
+      "/api/v1/chat/conversations/sess%2Fabc/todos",
+    );
+  });
+});
+
+// ─── listArtifacts ────────────────────────────────────────────────────────────
+
+describe("listArtifacts", () => {
+  it("calls GET /api/v1/chat/conversations/{id}/artifacts and returns data", async () => {
+    const fixture = {
+      items: [
+        {
+          artifact_index: {
+            artifact_id: "artifact_abc123",
+            session_id: "session_abc",
+            filename: "campaign-report.pdf",
+            mime_type: "application/pdf",
+            size_bytes: 204800,
+            version: 0,
+            gcs_path: "gs://bucket/app/user/session/file/0",
+            created_by_tool: "generate_report",
+            created_at: "2026-05-01T09:00:00Z",
+          },
+          signed_url: "https://storage.googleapis.com/bucket/signed?token=abc",
+          signed_url_expires_at: "2026-05-01T10:00:00Z",
+        },
+      ],
+    };
+    mockApi.get.mockResolvedValueOnce({ data: fixture });
+    const result = await listArtifacts(mkSessionId("session_abc"));
+    expect(mockApi.get).toHaveBeenCalledWith(
+      "/api/v1/chat/conversations/session_abc/artifacts",
+    );
+    expect(result).toEqual(fixture);
+  });
+
+  it("URL-encodes session IDs that contain special characters (AC-12)", async () => {
+    mockApi.get.mockResolvedValueOnce({ data: { items: [] } });
+    await listArtifacts("sess/abc" as ReturnType<typeof mkSessionId>);
+    expect(mockApi.get).toHaveBeenCalledWith(
+      "/api/v1/chat/conversations/sess%2Fabc/artifacts",
+    );
   });
 });

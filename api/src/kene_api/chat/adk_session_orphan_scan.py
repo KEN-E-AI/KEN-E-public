@@ -21,8 +21,8 @@ Cloud Scheduler binding (04:30 UTC daily) is configured by a separate scheduler
 change.
 
 Usage:
-    python chat_adk_session_orphan_scan.py [--dry-run] [--account-id ID]
-                                           [--grace-hours N]
+    python -m kene_api.chat.adk_session_orphan_scan [--dry-run] [--account-id ID]
+                                                    [--grace-hours N]
 """
 
 from __future__ import annotations
@@ -36,18 +36,7 @@ import os
 import re
 import sys
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
-
-# ---------------------------------------------------------------------------
-# Path bootstrap — makes kene_api and shared importable without install
-# ---------------------------------------------------------------------------
-_SCRIPTS_DIR = Path(__file__).parent
-_API_SRC = _SCRIPTS_DIR.parent / "src"
-_REPO_ROOT = _SCRIPTS_DIR.parent.parent
-for _p in (str(_API_SRC), str(_SCRIPTS_DIR), str(_REPO_ROOT)):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
 
 # ---------------------------------------------------------------------------
 # Optional Weave instrumentation
@@ -59,14 +48,16 @@ try:
 except ImportError:
     WEAVE_AVAILABLE = False
 
-from shared.structured_logging import (  # noqa: E402
+from shared.structured_logging import (
     configure_logging,
     get_structured_logger,
     log_context,
 )
 
+from .side_table import ChatSessionSideTableService
+
 if TYPE_CHECKING:
-    from kene_api.models.chat import ChatSessionMetadata
+    from ..models.chat import ChatSessionMetadata
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -376,8 +367,6 @@ def scan_for_adk_session_orphans(
             "errored": int,              # sessions that raised an exception
         }
     """
-    from kene_api.chat.side_table import ChatSessionSideTableService
-
     summary: dict[str, int] = {
         "tombstoned_cleaned": 0,
         "tombstoned_in_grace": 0,

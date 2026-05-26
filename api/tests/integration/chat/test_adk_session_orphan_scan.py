@@ -1,4 +1,4 @@
-"""Integration tests for chat_adk_session_orphan_scan.py.
+"""Integration tests for kene_api.chat.adk_session_orphan_scan.
 
 Requires a running Firestore emulator:
 
@@ -16,10 +16,14 @@ from __future__ import annotations
 import os
 import sys
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
+# Resolve the api/src package so the test runner finds kene_api.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
+
+from kene_api.chat import adk_session_orphan_scan as cli
 
 pytestmark = pytest.mark.skipif(
     not os.getenv("FIRESTORE_EMULATOR_HOST"),
@@ -28,18 +32,6 @@ pytestmark = pytest.mark.skipif(
         "Set FIRESTORE_EMULATOR_HOST=127.0.0.1:8090 to run."
     ),
 )
-
-# ---------------------------------------------------------------------------
-# Path bootstrap
-# ---------------------------------------------------------------------------
-_SCRIPTS_DIR = Path(__file__).parent.parent.parent.parent / "scripts"
-_API_SRC = _SCRIPTS_DIR.parent / "src"
-_REPO_ROOT = _SCRIPTS_DIR.parent.parent
-for _p in (str(_SCRIPTS_DIR), str(_API_SRC), str(_REPO_ROOT)):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
-
-import chat_adk_session_orphan_scan as cli  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Constants

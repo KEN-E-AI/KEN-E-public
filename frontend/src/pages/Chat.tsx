@@ -8,6 +8,8 @@ import { SessionsSidebar } from "@/components/chat/SessionsSidebar";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCreateChatSession } from "@/hooks/useCreateChatSession";
 import { toChatSessionId } from "@/lib/chatApi";
+import { ArtifactsPanel } from "@/components/chat/ArtifactsPanel";
+import { TodoListsPanel } from "@/components/chat/TodoListsPanel";
 
 type ViewState = "message" | "status";
 
@@ -95,6 +97,7 @@ export default function Chat() {
         >
           <Button
             variant="outline"
+            aria-label="Toggle view"
             onClick={() =>
               setViewState((v) => (v === "message" ? "status" : "message"))
             }
@@ -117,10 +120,15 @@ export default function Chat() {
           {viewState === "message" ? (
             <ChatInterface sessionId={sessionId ?? undefined} />
           ) : (
-            // CH-PRD-04 SessionStatusView placeholder
-            <p className="text-sm text-[var(--color-text-secondary)] mt-4">
-              Session status — coming soon
-            </p>
+            // TODO: replace this placeholder with the full SessionStatusView once it ships (CH-PRD-04); ArtifactsPanel and TodoListsPanel will move into that surface.
+            <div className="overflow-y-auto h-full space-y-4 py-2">
+              <ArtifactsPanel
+                sessionId={sessionId ? toChatSessionId(sessionId) : null}
+              />
+              <TodoListsPanel
+                sessionId={sessionId ? toChatSessionId(sessionId) : null}
+              />
+            </div>
           )}
         </div>
       </div>

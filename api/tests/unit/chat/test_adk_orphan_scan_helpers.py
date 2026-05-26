@@ -1,4 +1,4 @@
-"""Unit tests for pure helpers in chat_adk_session_orphan_scan.py.
+"""Unit tests for pure helpers in kene_api.chat.adk_session_orphan_scan.
 
 Tests cover _classify_session, _normalize_list_sessions_response,
 _alert_missing_orphan_ops, and _emit_completion_log.  No Firestore, ADK, or
@@ -8,25 +8,18 @@ GCS calls are made.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
-# ---------------------------------------------------------------------------
-# Path bootstrap
-# ---------------------------------------------------------------------------
-_SCRIPTS_DIR = Path(__file__).parent.parent.parent.parent / "scripts"
-_API_SRC = _SCRIPTS_DIR.parent / "src"
-_REPO_ROOT = _SCRIPTS_DIR.parent.parent
-for _p in (str(_SCRIPTS_DIR), str(_API_SRC), str(_REPO_ROOT)):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
+# Resolve the api/src package so the test runner finds kene_api.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
 
-import chat_adk_session_orphan_scan as cli  # noqa: E402
+from kene_api.chat import adk_session_orphan_scan as cli
 
 # ---------------------------------------------------------------------------
 # Shared fixtures

@@ -28,3 +28,4 @@ lint:
 	uv run ruff format . --check --diff
 	uv run mypy .
 	uv run python api/scripts/lint/check_context_window_registry_coverage.py
+	uv run python api/scripts/lint/check_artifact_register.py

@@ -23,16 +23,18 @@ import hashlib
 import logging
 import mimetypes
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import backoff
 from google.api_core.exceptions import (
     AlreadyExists,
     DeadlineExceeded,
+    GoogleAPICallError,
     ServiceUnavailable,
 )
-from google.cloud import firestore
+from google.cloud import firestore, storage
 from google.genai import types as genai_types
 
 from ..dependencies import get_firestore_client
@@ -185,6 +187,144 @@ def _resolve_bucket(artifact_service: Any) -> str:
         return str(artifact_service.bucket_name)
     environment = os.getenv("ENVIRONMENT", "development").lower()
     return f"ken-e-{environment}-files-us"
+
+
+# ---------------------------------------------------------------------------
+# Storage client (module singleton — matches get_firestore_client pattern)
+# ---------------------------------------------------------------------------
+
+
+@lru_cache(maxsize=1)
+def _get_storage_client() -> storage.Client:
+    """Return a module-cached GCS client.
+
+    Matches the ``@lru_cache`` pattern used by ``get_firestore_client`` in
+    ``dependencies.py`` to avoid per-request client construction overhead.
+    """
+    return storage.Client()
+
+
+# ---------------------------------------------------------------------------
+# Artifact read helpers
+# ---------------------------------------------------------------------------
+
+
+_MAX_ARTIFACTS_PER_SESSION = 200
+
+# Buckets this service is authorised to sign URLs for. Validated before every
+# signing call to prevent a tampered Firestore row from issuing signed URLs
+# for buckets outside the system's control.
+_ALLOWED_GCS_BUCKETS: frozenset[str] = frozenset(
+    {
+        "ken-e-production-files-us",
+        "ken-e-staging-files-us",
+        "ken-e-development-files-us",
+        "ken-e-dev-files-us",
+    }
+)
+
+
+def list_artifacts(account_id: str, session_id: str) -> list[ChatArtifactIndex]:
+    """Read artifact metadata rows for a session, ordered by created_at DESC.
+
+    Uses a path-scoped subcollection read (not collection-group) because the
+    caller already holds ``account_id`` from the side-table ownership check,
+    making the full Firestore path available. This avoids relying on the
+    collection-group composite index and is simpler.
+
+    Malformed documents (those that fail ``ChatArtifactIndex`` validation) are
+    dropped with a warning log keyed on ``artifact_id`` rather than raising,
+    matching the ``chat/todos.py`` precedent for agent-authored data.
+
+    Returns:
+        List of ``ChatArtifactIndex`` sorted by ``created_at`` descending
+        (capped at ``_MAX_ARTIFACTS_PER_SESSION`` rows).
+        Returns an empty list for an empty subcollection.
+    """
+    db = get_firestore_client()
+    col_ref = (
+        db.collection(f"accounts/{account_id}/chat_sessions/{session_id}/artifacts")
+        .order_by("created_at", direction=firestore.Query.DESCENDING)
+        .limit(_MAX_ARTIFACTS_PER_SESSION)
+    )
+    docs = col_ref.get()
+    results: list[ChatArtifactIndex] = []
+    for doc in docs:
+        raw = doc.to_dict()
+        if raw is None:
+            continue
+        try:
+            results.append(ChatArtifactIndex(**raw))
+        except Exception:
+            artifact_id = raw.get("artifact_id", doc.id)
+            logger.warning(
+                "chat.artifact.malformed_row",
+                extra={"artifact_id": artifact_id, "session_id": session_id},
+            )
+    return results
+
+
+def generate_artifact_signed_url(
+    index: ChatArtifactIndex,
+    *,
+    now: datetime,
+) -> tuple[str, datetime]:
+    """Generate a V4 signed GCS URL for an artifact (10-minute TTL).
+
+    Args:
+        index: The artifact metadata row from Firestore.
+        now: The current UTC datetime (injected for testability).
+
+    Returns:
+        ``(signed_url, expires_at)`` where ``expires_at = now + 10 min``.
+
+    Raises:
+        ValueError: If ``index.gcs_path`` cannot be parsed or if the GCS
+            signing call raises a ``GoogleAPICallError``. The endpoint layer
+            catches this to implement the drop-with-warning pattern.
+    """
+    parsed = parse_gcs_path(index.gcs_path)
+    if parsed is None:
+        raise ValueError(
+            f"generate_artifact_signed_url: malformed gcs_path {index.gcs_path!r} "
+            f"for artifact_id={index.artifact_id}"
+        )
+
+    # Reconstruct blob name (path within bucket): everything after "gs://{bucket}/"
+    # Format: {app_name}/{user_id}/{session_id}/{filename}/{version}
+    blob_name = (
+        f"{parsed.app_name}/{parsed.user_id}/{parsed.session_id}"
+        f"/{parsed.filename}/{parsed.version}"
+    )
+
+    # Bucket is the second path segment of the GCS URI after "gs://"
+    without_scheme = index.gcs_path[len("gs://"):]
+    bucket_name = without_scheme.split("/", 1)[0]
+
+    if bucket_name not in _ALLOWED_GCS_BUCKETS:
+        raise ValueError(
+            f"generate_artifact_signed_url: bucket {bucket_name!r} is not in the "
+            f"system allowlist for artifact_id={index.artifact_id}"
+        )
+
+    client = _get_storage_client()
+    bucket_obj = client.bucket(bucket_name)
+    blob = bucket_obj.blob(blob_name)
+
+    ttl = timedelta(minutes=10)
+    try:
+        signed_url: str = blob.generate_signed_url(
+            version="v4",
+            expiration=ttl,
+            method="GET",
+        )
+    except GoogleAPICallError as exc:
+        raise ValueError(
+            f"generate_artifact_signed_url: signing failed for artifact_id="
+            f"{index.artifact_id}: {exc}"
+        ) from exc
+
+    return signed_url, now + ttl
 
 
 # ---------------------------------------------------------------------------

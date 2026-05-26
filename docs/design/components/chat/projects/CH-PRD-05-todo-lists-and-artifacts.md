@@ -34,8 +34,8 @@ Landing these together closes the two figma status-view surfaces that CH-PRD-04 
 - **`chat/artifacts.py`** — `register_artifact(tool_context, filename, content, created_by_tool) → ChatArtifactIndex` wrapping `context.save_artifact(...)` + writing `ChatArtifactIndex` row to `accounts/{account_id}/chat_sessions/{session_id}/artifacts/{artifact_id}`. Deterministic `artifact_id = sha256(session_id|filename|version)[:32]`. **No `creator` parameter in v1.** When future user-upload UI ships, `created_by_tool=None` signals a user upload.
 - **`list_artifacts(session_id)`** — reads the Firestore subcollection; signed GCS URLs generated on-demand in the endpoint (10-min TTL for in-app listing; CH-PRD-04's export uses 24-hour TTL separately).
 - **`GET /api/v1/chat/conversations/{id}/artifacts`** — returns `list[ChatArtifactIndex]` + per-row signed URL.
-- **Lint rule** `api/scripts/lint/check_artifact_register.py` — grep-based CI check. Any file outside `api/src/kene_api/chat/artifacts.py` that contains `context.save_artifact(` or `.save_artifact(` with `artifact_service` in scope fails the build. Documented escape hatch via allow-list; initial allow-list is empty except the wrapper itself.
-- **Migration of existing callsite** — `app/adk/agents/strategy_agent/artifact_utils.py` is modified to call the wrapper. Existing uploaded-strategy prefix + naming is preserved.
+- **Lint rule** `api/scripts/lint/check_artifact_register.py` — grep-based CI check. Any file outside the allow-list that contains `context.save_artifact(` or `.save_artifact(` with `artifact_service` in scope fails the build. Documented escape hatch via allow-list; the allow-list contains two entries: the wrapper itself and `app/adk/agents/strategy_agent/artifact_utils.py` (see allow-list rationale below).
+- **`app/adk/agents/strategy_agent/artifact_utils.py` — allow-listed, not migrated (CH-47 decision).** The strategy-agent is a separate ADK app (`app_name=strategy_gen_{account_id}`) using `InMemorySessionService` with no parent `chat_sessions/{session_id}` Firestore row and a different GCS namespace (`accounts/{account_id}/artifacts/`). Its artifact uploads are setup-time inputs that pre-load context for the strategy workflow; they are not user-visible chat outputs and must not surface in the Chat ArtifactsPanel. A naive migration would crash strategy runs (`batch.update` on a non-existent doc raises `NotFound`). PO approved the allow-list resolution (Option A) per CH-47; PRD §9 explicitly sanctions this fallback.
 - **`TodoListsPanel.tsx`** — read-only renderer. Mounts in CH-PRD-04's status view. Caption: "Tracks long tasks to ensure details are preserved during compaction." Collapsible per list; disabled checkboxes; line-through + muted color for completed items; "Current / Previous" distinction via `is_current` flag.
 - **`ArtifactsPanel.tsx`** — read-only renderer. File-type icons (PDF, spreadsheet, image, code, text, generic); filename + file size; **all artifacts render with a "KEN-E" badge showing the `created_by_tool` name on hover** (v1 has no user-upload path). Click → open signed URL in new tab. Mounts in CH-PRD-04's status view.
 - **Tool convention docs** — add a short section to `app/CLAUDE.md`: "Agent tools that save an artifact MUST call `chat.artifacts.register_artifact` — see `api/src/kene_api/chat/artifacts.py`."
@@ -71,7 +71,7 @@ Landing these together closes the two figma status-view surfaces that CH-PRD-04 
 | **[BL-PRD-05](../../billing/projects/BL-PRD-05-failure-modes-permissions.md)** (soft) | Rate-limit substrate if needed for future write-side tools. Not required for v1 read endpoints. | `../../billing/README.md` |
 | **ADK `GcsArtifactService`** | Blob storage. The wrapper sits on top. | Google ADK Python |
 | **ADK `VertexAiSessionService`** | `get_session(id).state` read for todo lists; `list_sessions` for the orphan scan. | Google ADK Python |
-| Existing `app/adk/agents/strategy_agent/artifact_utils.py` | Current raw `save_artifact_to_service` callsite. Migrated to the wrapper in the same PR. | `app/adk/agents/strategy_agent/artifact_utils.py` |
+| Existing `app/adk/agents/strategy_agent/artifact_utils.py` | Setup-time artifact loader for strategy sessions. **Allow-listed, not migrated** (CH-47, PO-approved Option A): runs in a separate ADK app (`app_name=strategy_gen_{account_id}`), uses `InMemorySessionService` with no parent `chat_sessions` row, and writes to a different GCS namespace. Migration would crash strategy runs. | `app/adk/agents/strategy_agent/artifact_utils.py` |
 | **[FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api.md)**, **[FF-PRD-03](../../feature-flags/projects/FF-PRD-03-frontend-sdk-and-e2e.md)** | `chat_v2_enabled` (master). No per-feature flag — todos + artifacts are non-optional once Chat is on. | `../../feature-flags/README.md` |
 
 ## 4. Data contract
@@ -184,7 +184,7 @@ Both tools write to `tool_context.state["todo_lists"]` via ADK's state mechanism
 | Create | `app/adk/tools/todo_list_tools.py` — `set_todo_list`, `update_todo_list` `FunctionTool`s |
 | Modify | `app/adk/tools/registry/tools.yaml` — add `set_todo_list` and `update_todo_list` entries to the `function_tools:` section with `default_global: true` (matches the pattern AH-PRD-06 PR-C establishes for `create_visualization`) |
 | Verify | `app/adk/agents/agent_factory/hierarchy.py:325` (AH-PRD-06 PR-C) and `app/adk/agents/agent_factory/specialist_runtime.py` (AH-PRD-09 Phase 3 / AH-64) surface both tools on every specialist when `tool_ids is None`. Integration test added in §8. |
-| Modify | `app/adk/agents/strategy_agent/artifact_utils.py` — replace raw `save_artifact_to_service` with `chat.artifacts.register_artifact` |
+| No-op | `app/adk/agents/strategy_agent/artifact_utils.py` — **allow-listed, not migrated** (CH-47, PO-approved Option A). No code change required. |
 | Create | `api/scripts/lint/check_artifact_register.py` — CI lint |
 | Modify | `Makefile` or CI config — add `check_artifact_register` to `make lint` |
 | Create | `frontend/src/components/chat/TodoListsPanel.tsx` |
@@ -193,8 +193,8 @@ Both tools write to `tool_context.state["todo_lists"]` via ADK's state mechanism
 | Modify | `frontend/src/lib/chatApi.ts` — `listTodoLists`, `listArtifacts` typed wrappers |
 | Modify | `docs/KEN-E-System-Architecture.md` §3.6 — add `todo_lists` row to the session-state table |
 | Modify | `app/CLAUDE.md` (or equivalent ADK docs) — section on the artifact-register convention |
-| Create | `api/scripts/chat_artifact_orphan_scan.py` — daily GCS-blob reconciliation |
-| Create | `api/scripts/chat_adk_session_orphan_scan.py` — daily ADK-session reconciliation (safety net for CH-PRD-04 delete) |
+| Create | `api/src/kene_api/chat/artifact_orphan_scan.py` — daily GCS-blob reconciliation |
+| Create | `api/src/kene_api/chat/adk_session_orphan_scan.py` — daily ADK-session reconciliation (safety net for CH-PRD-04 delete) |
 | Modify | `deployment/terraform/cloud_scheduler.tf` — add both orphan-scan schedules |
 | Create | `api/tests/unit/chat/test_todos_service.py` |
 | Create | `api/tests/unit/chat/test_todos_validation.py` |
@@ -280,7 +280,10 @@ CI lint: every call to `save_artifact` in the repo must come from
 import re, sys
 from pathlib import Path
 
-ALLOWLIST = {"api/src/kene_api/chat/artifacts.py"}
+ALLOWLIST = {
+    "api/src/kene_api/chat/artifacts.py",                       # the wrapper itself
+    "app/adk/agents/strategy_agent/artifact_utils.py",          # setup-time input loader; not a chat-session tool — see CH-47
+}
 PATTERN = re.compile(r"\b(context|tool_context|artifact_service)\.save_artifact\b")
 
 violations = []
@@ -375,7 +378,7 @@ When v2 ships the user-upload UI, a second badge variant ("Uploaded") will be in
 
 ### 5.7 Orphan reconciliation jobs (two)
 
-**GCS blob orphans — `chat_artifact_orphan_scan.py`** (Cloud Run scheduled, daily 04:00 UTC):
+**GCS blob orphans — `kene_api.chat.artifact_orphan_scan`** (Cloud Scheduler → Cloud Run, daily 04:00 UTC):
 
 ```python
 async def scan_for_gcs_blob_orphans():
@@ -404,7 +407,7 @@ async def scan_for_gcs_blob_orphans():
 
 Report-only in v1. Ops reviews the list and manually adopts or deletes.
 
-**ADK-session orphans — `chat_adk_session_orphan_scan.py`** (Cloud Run scheduled, daily 04:30 UTC). **The safety net for CH-PRD-04's delete-cleanup task failures.**
+**ADK-session orphans — `kene_api.chat.adk_session_orphan_scan`** (Cloud Scheduler → Cloud Run, daily 04:30 UTC). **The safety net for CH-PRD-04's delete-cleanup task failures.**
 
 ```python
 async def scan_for_adk_session_orphans():
@@ -492,7 +495,7 @@ No new write endpoints — todo lists and artifacts are written by agent tools v
 8. **`register_artifact` requires `created_by_tool`** — calling without the arg in v1 raises TypeError. Documents that future user-upload path will pass `None` explicitly.
 9. **Idempotent registration** — calling `register_artifact` with the same `(session_id, filename, version)` twice leaves one metadata row (deterministic `artifact_id` dedups).
 10. **Lint rule blocks raw `save_artifact`** — a test PR adding `context.save_artifact("foo.pdf", part)` in `api/src/kene_api/some_new_file.py` fails `make lint`.
-11. **Existing strategy agent migrated** — `app/adk/agents/strategy_agent/artifact_utils.py` now calls the wrapper; existing strategy flow regression-tested.
+11. **Strategy-agent callsite resolved** — `app/adk/agents/strategy_agent/artifact_utils.py` is allow-listed in `check_artifact_register.py` (not migrated to the wrapper). PO approved Option A (allow-list) in CH-47: strategy artifacts are setup-time inputs in a separate ADK app with no parent `chat_sessions` row; a migration would crash strategy runs. The allow-list entry is explicit and documented. Existing strategy flow behavior is unchanged; no regression test is required for AC-11 beyond verifying `make lint` passes with the 2-entry allow-list.
 12. **`ArtifactsPanel.tsx` renders** — file-type icons correct; **all artifacts render with a "KEN-E" badge** (no Uploaded vs KEN-E distinction in v1); hover tooltip shows tool name; click opens signed URL.
 13. **`artifact_count` increments** — `chat_sessions.artifact_count` advances by 1 for each registration.
 14. **GCS orphan scan** — seed a GCS blob without a metadata row; run scan; Slack alert fires with that blob path.
@@ -527,7 +530,7 @@ No new write endpoints — todo lists and artifacts are written by agent tools v
 - End-to-end todo: agent calls `set_todo_list` via ADK runner → `GET /todos` returns; agent calls `update_todo_list` → updated item reflects.
 - End-to-end artifact: agent calls a tool using `register_artifact` → GCS blob + metadata row exist → `GET /artifacts` returns with signed URL → signed URL downloads the blob.
 - Lint rule regression: add a deliberate violation → `make lint` fails with clear message.
-- Strategy agent migration: existing strategy flow still produces the same artifacts, now with metadata rows.
+- Strategy agent allow-list: with the 2-entry `ALLOWLIST` in `check_artifact_register.py`, confirm `make lint` passes and `strategy_agent/artifact_utils.py` does not trigger a violation. No code migration — see CH-47.
 - GCS orphan scan: seed an orphan; scan fires alert; no data mutation.
 - ADK-session orphan scan:
   - Tombstoned > 1h → cleanup fires.
@@ -566,6 +569,6 @@ No new write endpoints — todo lists and artifacts are written by agent tools v
 - Mounts into: [CH-PRD-04](./CH-PRD-04-session-status-view.md) — `SessionStatusView` reserves the slots; depends on CH-PRD-05's ADK-session orphan scan as safety net
 - Integration: [AH-PRD-02](../../agentic-harness/projects/AH-PRD-02-agent-factory.md) (tool registration)
 - Figma: `docs/figma-export/src/app/components/SessionSettings.tsx` — documents + todo lists sections (user-upload variant not ported in v1)
-- Existing code: `app/adk/agents/strategy_agent/artifact_utils.py` (migrated)
+- Existing code: `app/adk/agents/strategy_agent/artifact_utils.py` (allow-listed, not migrated — see CH-47 for rationale)
 - ADK docs: [`ArtifactService`](https://google.github.io/adk-docs/artifacts/), [`session.state`](https://google.github.io/adk-docs/sessions/state/)
 - CLAUDE.md rules in scope: C-4, C-5, C-7, C-9; PY-1, PY-2, PY-5, PY-7; T-1, T-3, T-4, T-5; G-1

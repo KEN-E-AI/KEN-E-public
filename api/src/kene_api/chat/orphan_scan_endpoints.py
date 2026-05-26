@@ -1,0 +1,83 @@
+"""HTTP endpoint adapters for chat orphan-scan orchestrators.
+
+Thin wrappers that:
+1. Resolve runtime clients (Firestore, GCS, VertexAiSessionService) from
+   the existing API singletons / env vars.
+2. Call the scan orchestrators in ``kene_api.chat.{artifact,adk_session}_orphan_scan``.
+3. Return the summary dict unchanged — callers decide how to surface it.
+
+No flag gate: ``chat_v2_enabled`` does NOT guard these maintenance endpoints.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+from typing import Any
+
+from fastapi import HTTPException
+
+from ..dependencies import get_firestore_client as _get_firestore_client
+from .adk_session_orphan_scan import scan_for_adk_session_orphans
+from .artifact_orphan_scan import scan_for_gcs_blob_orphans
+from .artifacts import _get_storage_client
+
+
+async def run_gcs_orphan_scan() -> dict[str, int]:
+    """Invoke the GCS blob orphan reconciliation scan.
+
+    Runs in a thread executor so the blocking I/O does not stall the
+    FastAPI event loop.  Returns the summary dict from
+    ``scan_for_gcs_blob_orphans`` unchanged; ``errored > 0`` is reflected
+    in the dict but does NOT raise an exception — callers return HTTP 200.
+    """
+    db = _get_firestore_client()
+    storage_client = _get_storage_client()
+    return await asyncio.to_thread(
+        scan_for_gcs_blob_orphans,
+        db,
+        storage_client,
+    )
+
+
+async def run_adk_session_orphan_scan(*, dry_run: bool = False) -> dict[str, int]:
+    """Invoke the ADK-session orphan reconciliation scan.
+
+    Resolves a ``VertexAiSessionService`` from the same env vars used by
+    ``AgentEngineClient`` in the chat router.  GCS client is passed so
+    tombstone cleanup can also remove artifact blobs.
+
+    Returns the summary dict unchanged; ``errored > 0`` does NOT raise.
+    """
+    from google.adk.sessions import (
+        VertexAiSessionService,  # type: ignore[import-untyped]
+    )
+
+    db = _get_firestore_client()
+    project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID") or os.getenv(
+        "GOOGLE_CLOUD_PROJECT"
+    )
+    if not project_id:
+        raise HTTPException(
+            status_code=500, detail="GOOGLE_CLOUD_PROJECT_ID is not configured"
+        )
+    vertex_project = os.getenv("VERTEX_AI_PROJECT_ID", project_id)
+    vertex_location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
+    engine_id_full = os.getenv("KEN_E_ENGINE_ID") or os.getenv(
+        "VERTEX_AI_AGENT_ENGINE_ID", ""
+    )
+    agent_engine_id = engine_id_full.split("/")[-1] if engine_id_full else ""
+    session_service: Any = VertexAiSessionService(
+        project=vertex_project,
+        location=vertex_location,
+        agent_engine_id=agent_engine_id,
+    )
+    storage_client = _get_storage_client()
+
+    return await asyncio.to_thread(
+        scan_for_adk_session_orphans,
+        db,
+        session_service,
+        storage_client,
+        dry_run=dry_run,
+    )
