@@ -14,6 +14,7 @@ from app.adk.agents.agent_factory.roster import (
     MAX_TOOLS_PER_SPECIALIST,
     RosterCapExceededError,
 )
+from app.adk.agents.skill_tool_filter import skill_allowed_tools_before_tool_callback
 from app.adk.agents.utils import config_cache
 from app.adk.security.hooks import adk_before_tool_callback
 from app.adk.tracking.callbacks import (
@@ -271,9 +272,11 @@ def build_agent(
     after_agent_callback: list[Callable] = [weave_after_agent_callback] + (
         additional_after_agent_callbacks or []
     )
-    before_tool_callback: list[Callable] = [adk_before_tool_callback] + (
-        additional_before_tool_callbacks or []
-    )
+    before_tool_callback: list[Callable] = [
+        adk_before_tool_callback,
+        skill_allowed_tools_before_tool_callback,
+        *(additional_before_tool_callbacks or []),
+    ]
     after_tool_callback: list[Callable] = [adk_after_tool_callback] + (
         additional_after_tool_callbacks or []
     )
