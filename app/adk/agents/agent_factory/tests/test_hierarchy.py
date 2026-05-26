@@ -389,7 +389,7 @@ class TestCacheBackedInstruction:
                 ),
             ),
             patch(
-                "app.adk.agents.agent_factory.specialist_runtime.available_specialists_provider",
+                "app.adk.agents.agent_factory.hierarchy.available_specialists_provider",
                 return_value=_canned_suffix,
             ),
         ):
@@ -411,7 +411,7 @@ class TestCacheBackedInstruction:
         with (
             patch.object(config_cache, "load_config_from_firestore") as mock_load,
             patch(
-                "app.adk.agents.agent_factory.specialist_runtime.available_specialists_provider",
+                "app.adk.agents.agent_factory.hierarchy.available_specialists_provider",
                 return_value=_canned_suffix,
             ),
         ):
@@ -481,7 +481,7 @@ class TestCacheBackedInstruction:
                 return_value=(_make_llm_config_mock("base"), {}, {}),
             ) as mock_load,
             patch(
-                "app.adk.agents.agent_factory.specialist_runtime.available_specialists_provider",
+                "app.adk.agents.agent_factory.hierarchy.available_specialists_provider",
                 return_value=_canned_suffix,
             ),
         ):

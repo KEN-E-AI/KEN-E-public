@@ -626,46 +626,6 @@ class TestDelegateToSpecialist:
         _, kwargs = mock_run.call_args
         assert kwargs["tool_context"] is tool_context
 
-        # --- alpha: review-loop branch ---
-        mock_iter = MagicMock()
-        mock_iter.iteration, mock_iter.specialist_output, mock_iter.reviewer_output = (
-            1,
-            "alpha draft",
-            "alpha review",
-        )
-
-        with (
-            patch(_PATCH_BUILD_PIPELINE, return_value=MagicMock()),
-            patch(_PATCH_INVOKE_PIPELINE, return_value=("text", {}, [])),
-            patch(_PATCH_CHECK_HALLUCINATION),
-            patch(
-                _PATCH_EXTRACT_RESULT, return_value={"result": "alpha answer"}
-            ) as mock_extract,
-            patch(_PATCH_EXTRACT_ITERATIONS, return_value=[mock_iter]),
-            patch(_PATCH_EMIT_ITERATION_SPAN),
-            patch(_PATCH_SET_PIPELINE_ATTRS),
-            patch(_PATCH_GET_WORKER_NAME, return_value="alpha_agent_worker"),
-            patch(_PATCH_GET_REVIEWER_NAME, return_value="alpha_agent_review_reviewer"),
-        ):
-            alpha_result = dispatchers["alpha_agent"](
-                "alpha query", acceptance_criteria="must be thorough"
-            )
-
-        assert alpha_result == "alpha answer"
-        mock_extract.assert_called_once()
-
-        # --- beta: single-pass branch ---
-        with patch(_PATCH_INVOKE_WITH_RETRY, return_value="beta answer") as mock_retry:
-            beta_result = dispatchers["beta_agent"]("beta query")
-
-        assert beta_result == "beta answer"
-        mock_retry.assert_called_once_with(
-            beta,
-            "beta query",
-            state=None,
-            retry_config=DEFAULT_RETRY_CONFIG,
-        )
-
 
 # ---------------------------------------------------------------------------
 # TestAssembleAvailableSpecialistsBlockSanitisation

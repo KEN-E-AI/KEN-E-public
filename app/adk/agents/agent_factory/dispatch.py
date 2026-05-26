@@ -54,6 +54,7 @@ from app.adk.agents.utils.review_pipeline_tracing import (
     set_pipeline_attrs,
 )
 from app.utils.weave_observability import safe_weave_op
+from shared.account_id_utils import validate_account_id
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +202,7 @@ def generate_dispatch_functions(
     invalid = [
         name
         for name in specialists
-        if not _VALID_SPECIALIST_NAME_RE.match(name)
+        if not _VALID_SPECIALIST_NAME_RE.fullmatch(name)
     ]
     if invalid:
         raise ValueError(
@@ -282,9 +283,21 @@ def delegate_to_specialist(
             "Names must match ^[a-z][a-z0-9_]{0,63}$."
         )
 
-    account_id: str | None = (
+    _raw_account_id: str | None = (
         tool_context.state.get("account_id") if tool_context is not None else None
     )
+    account_id: str | None
+    if _raw_account_id is not None:
+        try:
+            account_id = validate_account_id(_raw_account_id)
+        except ValueError:
+            logger.warning(
+                "[DELEGATE] Invalid account_id %r in session state; proceeding as global.",
+                _raw_account_id,
+            )
+            account_id = None
+    else:
+        account_id = None
 
     # Lazy import: avoids a circular dependency at module-load time since
     # agent_factory/__init__.py imports both dispatch and specialist_runtime.

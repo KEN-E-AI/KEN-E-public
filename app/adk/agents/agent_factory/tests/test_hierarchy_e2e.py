@@ -399,42 +399,42 @@ class TestRootInstructionContent:
     base instruction + available_specialists_provider per-turn."""
 
     def test_instruction_includes_base_root_instruction(self) -> None:
-        root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})
         canned_block = "## Available Specialists\n\n- None registered."
 
         with patch(
-            "app.adk.agents.agent_factory.specialist_runtime.available_specialists_provider",
+            "app.adk.agents.agent_factory.hierarchy.available_specialists_provider",
             return_value=canned_block,
         ):
-            rendered = root.instruction(_make_context({}))
+            root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})
 
+        rendered = root.instruction(_make_context({}))
         assert "You are KEN-E root." in rendered
 
     def test_instruction_includes_available_specialists_block(self) -> None:
-        root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})
         canned_block = "## Available Specialists\n\n- **my_agent**: Does things."
 
         with patch(
-            "app.adk.agents.agent_factory.specialist_runtime.available_specialists_provider",
+            "app.adk.agents.agent_factory.hierarchy.available_specialists_provider",
             return_value=canned_block,
         ):
-            rendered = root.instruction(_make_context({}))
+            root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})
 
+        rendered = root.instruction(_make_context({}))
         assert "## Available Specialists" in rendered
         assert "my_agent" in rendered
 
     def test_instruction_with_org_context_prepends_context_block(self) -> None:
-        root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})
         canned_block = "## Available Specialists\n\n- None registered."
 
         with patch(
-            "app.adk.agents.agent_factory.specialist_runtime.available_specialists_provider",
+            "app.adk.agents.agent_factory.hierarchy.available_specialists_provider",
             return_value=canned_block,
         ):
-            rendered = root.instruction(
-                _make_context({"organization_context": "Acme Corp marketing"})
-            )
+            root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})
 
+        rendered = root.instruction(
+            _make_context({"organization_context": "Acme Corp marketing"})
+        )
         assert "[ORGANIZATION CONTEXT]" in rendered
         assert "Acme Corp marketing" in rendered
         assert "You are KEN-E root." in rendered

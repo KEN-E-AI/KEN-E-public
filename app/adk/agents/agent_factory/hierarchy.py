@@ -23,12 +23,13 @@ from google.adk.agents import LlmAgent
 import app.adk.tools.todo_list_tools  # noqa: F401  # default_global registration
 from app.adk.agents.agent_factory.builder import build_agent
 from app.adk.agents.agent_factory.config_loader import (
-    ConfigNotFoundError,
     FirestoreConnectionError,
     _load_and_merge,
 )
 from app.adk.agents.agent_factory.dispatch import delegate_to_specialist
-from app.adk.agents.agent_factory.specialist_runtime import available_specialists_provider
+from app.adk.agents.agent_factory.specialist_runtime import (
+    available_specialists_provider,
+)
 from shared.account_id_utils import validate_account_id
 from shared.structured_logging import get_structured_logger
 

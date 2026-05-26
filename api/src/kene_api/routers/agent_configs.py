@@ -298,8 +298,10 @@ def _diff_fields(
     return fields_changed, changes
 
 
+# TODO(AH-Phase-5-cleanup): remove _build_redeploy_warnings and its call site
+# when the warnings field is deleted after Phase 5 rollout.
 def _build_redeploy_warnings(fields_changed: list[str]) -> list[str]:
-    """Surface redeploy-required warnings for fields ADK bakes at construction."""
+    """Always returns []; retained until the warnings field is removed."""
     warnings: list[str] = []
     for field_name in fields_changed:
         if field_name in _REDEPLOY_REQUIRED_FIELDS:
