@@ -1306,35 +1306,105 @@ class TestCacheBackedHierarchyIntegration:
         assert "v1 instruction" not in result
 
     def test_specialist_agent_instruction_uses_config_doc_id(self) -> None:
-        """Each specialist must also have a cache-backed InstructionProvider."""
-        from app.adk.agents.utils import config_cache
+        """Default-status specialist must be built with config_doc_id=<spec_name>."""
+        import app.adk.agents.agent_factory.builder as b
+        import app.adk.agents.agent_factory.hierarchy as h
 
         docs = {
             ("agent_configs", "ken_e_chatbot"): _ROOT_DOC,
             ("agent_configs", "specialist_a"): _SPECIALIST_A_DOC,
         }
         fake_db = _FakeFirestoreDb(docs)
+        fake_registry = _FakeRegistry()
 
-        def loader(doc_id: str, project_id: str = "ken-e-dev"):
-            instructions = {
-                "ken_e_chatbot": "root cached",
-                "specialist_a": "spec_a cached",
-            }
-            return _make_llm_config_mock(instructions[doc_id]), {}, {}
+        captured_calls: list[dict] = []
+        original_build_agent = b.build_agent
 
-        with patch.object(
-            config_cache, "load_config_from_firestore", side_effect=loader
+        def _spy(config, *, name: str, tools=None, **kwargs):
+            captured_calls.append(
+                {"name": name, "config_doc_id": kwargs.get("config_doc_id")}
+            )
+            return original_build_agent(config, name=name, tools=tools, **kwargs)
+
+        with (
+            _PATCH_BEFORE_AGENT,
+            _PATCH_AFTER_AGENT,
+            _PATCH_BEFORE_TOOL,
+            _PATCH_AFTER_TOOL,
+            _PATCH_BUILD_TOOLSET as mock_build_toolset,
+            _PATCH_GET_DEFAULT_REGISTRY as mock_get_registry,
+            patch(
+                "app.adk.agents.agent_factory.hierarchy.build_agent", side_effect=_spy
+            ),
         ):
-            config_cache.clear_config_cache()
-            root_agent = _build_hierarchy_with_patches(fake_db)
+            mock_build_toolset.return_value = MagicMock(name="mock_toolset")
+            mock_get_registry.return_value = fake_registry
+            h.build_hierarchy(db=fake_db)
 
-        # Root agent dispatches to specialists — find specialist_a in sub-agents
-        specialist_agent = next(
-            (a for a in root_agent.sub_agents or [] if a.name == "specialist_a"), None
+        spec_a_call = next(
+            (c for c in captured_calls if c["name"] == "specialist_a"), None
         )
-        if specialist_agent is not None:
-            result = specialist_agent.instruction(_make_context({}))
-            assert "spec_a cached" in result
+        assert spec_a_call is not None, "build_agent was not called for specialist_a"
+        assert spec_a_call["config_doc_id"] == "specialist_a", (
+            f"Expected config_doc_id='specialist_a', got {spec_a_call['config_doc_id']!r}"
+        )
+
+    def test_overlaid_specialist_gets_no_config_doc_id(self) -> None:
+        """Account-overlaid (customized) specialists must NOT receive a config_doc_id;
+        the global-doc cache path would serve the wrong instruction for per-account
+        overlays."""
+        import app.adk.agents.agent_factory.builder as b
+        import app.adk.agents.agent_factory.hierarchy as h
+
+        docs = {
+            ("agent_configs", "ken_e_chatbot"): _ROOT_DOC,
+            ("agent_configs", "specialist_a"): _SPECIALIST_A_DOC,
+            (
+                "accounts",
+                "acc_test",
+                "agent_configs",
+                "specialist_a",
+            ): {
+                "instruction": "Customized for acc_test.",
+                "model": "gemini-2.0-flash",
+                "based_on_version": 1,
+            },
+        }
+        fake_db = _FakeFirestoreDb(docs)
+        fake_registry = _FakeRegistry()
+
+        captured_calls: list[dict] = []
+        original_build_agent = b.build_agent
+
+        def _spy(config, *, name: str, tools=None, **kwargs):
+            captured_calls.append(
+                {"name": name, "config_doc_id": kwargs.get("config_doc_id")}
+            )
+            return original_build_agent(config, name=name, tools=tools, **kwargs)
+
+        with (
+            _PATCH_BEFORE_AGENT,
+            _PATCH_AFTER_AGENT,
+            _PATCH_BEFORE_TOOL,
+            _PATCH_AFTER_TOOL,
+            _PATCH_BUILD_TOOLSET as mock_build_toolset,
+            _PATCH_GET_DEFAULT_REGISTRY as mock_get_registry,
+            patch(
+                "app.adk.agents.agent_factory.hierarchy.build_agent", side_effect=_spy
+            ),
+        ):
+            mock_build_toolset.return_value = MagicMock(name="mock_toolset")
+            mock_get_registry.return_value = fake_registry
+            h.build_hierarchy(db=fake_db, account_id="acc_test")
+
+        spec_a_call = next(
+            (c for c in captured_calls if c["name"] == "specialist_a"), None
+        )
+        assert spec_a_call is not None, "build_agent was not called for specialist_a"
+        assert spec_a_call["config_doc_id"] is None, (
+            f"Overlaid specialist must have config_doc_id=None, "
+            f"got {spec_a_call['config_doc_id']!r}"
+        )
 
     def test_get_cached_config_called_on_each_instruction_invocation(self) -> None:
         """Calling agent.instruction(ctx) N times must invoke get_cached_config N times
@@ -1355,38 +1425,54 @@ class TestCacheBackedHierarchyIntegration:
             root_agent = _build_hierarchy_with_patches(fake_db)
             ctx = _make_context({})
 
-            # First call populates cache (1 load)
+            # First call populates cache (exactly 1 load)
             root_agent.instruction(ctx)
-            assert mock_load.call_count >= 1
+            assert mock_load.call_count == 1
 
-            # Clearing and calling again triggers another load
+            # Clearing and calling again triggers exactly one more load
             config_cache.clear_config_cache()
             root_agent.instruction(ctx)
-            assert mock_load.call_count >= 2
+            assert mock_load.call_count == 2
 
 
 class TestWeaveDecoratorOnConfigCache:
-    """Verify safe_weave_op is wired onto get_cached_config."""
+    """Verify safe_weave_op is wired onto get_cached_config with the correct span name.
 
-    def test_get_cached_config_has_safe_weave_op_decorator(self) -> None:
-        """get_cached_config must carry the @safe_weave_op decorator (AH-58 Task 1).
-        In CI (no WANDB_API_KEY), safe_weave_op is a no-op identity wrapper,
-        but the decorator attribute must be present on the function object."""
-        from app.adk.agents.utils import config_cache
+    safe_weave_op is applied at module import time, so verifying the name argument
+    requires reloading the module under a recording stand-in."""
 
-        fn = config_cache.get_cached_config
-        # safe_weave_op wraps via functools.wraps; the original is accessible
-        # via __wrapped__ when functools.wraps is used.  Alternatively, the
-        # function is still callable and the module attribute resolves correctly.
-        assert callable(fn), "get_cached_config must remain callable after decoration"
+    def test_get_cached_config_decorated_with_correct_span_name(self) -> None:
+        """safe_weave_op must be called with name='load_config_from_firestore' at
+        module load time — confirmed by reloading config_cache under a recording
+        stand-in and inspecting the captured name argument."""
+        import importlib
 
-    def test_get_cached_config_weave_name_annotation(self) -> None:
-        """The Weave op must carry the canonical span name 'load_config_from_firestore'
-        so MER-E's eval contract identifies the span correctly."""
-        from app.utils import weave_observability
+        import app.adk.agents.utils.config_cache as cc_module
 
-        # Verify safe_weave_op is importable and callable (the decorator factory)
-        assert callable(weave_observability.safe_weave_op)
+        captured_names: list[str | None] = []
+
+        def _recording_safe_weave_op(name: str | None = None):
+            captured_names.append(name)
+
+            def _identity(fn):
+                return fn
+
+            return _identity
+
+        with patch(
+            "app.utils.weave_observability.safe_weave_op",
+            new=_recording_safe_weave_op,
+        ):
+            importlib.reload(cc_module)
+
+        try:
+            assert "load_config_from_firestore" in captured_names, (
+                f"safe_weave_op was not called with name='load_config_from_firestore'; "
+                f"captured names: {captured_names}"
+            )
+        finally:
+            # Restore the module to its normal state so subsequent tests work.
+            importlib.reload(cc_module)
 
 
 if __name__ == "__main__":

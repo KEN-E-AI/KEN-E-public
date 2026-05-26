@@ -48,11 +48,13 @@ def _make_factory_instruction_provider(
                 if cfg.instruction:
                     base = cfg.instruction
             except Exception as exc:
+                # Intentionally broad: any cache/Firestore failure must not
+                # crash the turn — fall back to the deploy-time instruction.
                 logger.warning(
                     "InstructionProvider could not load %r from cache (%s); "
                     "falling back to deploy-time instruction",
                     config_doc_id,
-                    exc,
+                    type(exc).__name__,
                 )
 
         full_instruction = (

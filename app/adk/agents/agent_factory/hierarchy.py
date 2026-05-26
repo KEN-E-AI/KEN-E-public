@@ -374,5 +374,5 @@ def build_hierarchy(
     )
     logger.info("Built root agent %r with %d specialist(s).", "ken_e", len(specialists))
 
-    # Step 11 — return.
+    # Step 10 — return.
     return root_agent
