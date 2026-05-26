@@ -24,6 +24,7 @@ from app.adk.agents.agent_factory.config_loader import (
 )
 from app.adk.agents.agent_factory.dispatch import (
     assemble_available_specialists_block,
+    delegate_to_specialist,
     generate_dispatch_functions,
 )
 from app.adk.agents.agent_factory.hierarchy import ROOT_CONFIG_ID, build_hierarchy
@@ -55,6 +56,7 @@ __all__ = [
     "RosterCapExceededError",
     "assemble_available_specialists_block",
     "build_agent",
+    "delegate_to_specialist",
     "build_hierarchy",
     "build_toolset_for_config",
     "build_toolset_for_doc",

@@ -39,7 +39,14 @@ def _make_factory_instruction_provider(
     *,
     config_doc_id: str | None = None,
     instruction_suffix: str = "",
+    instruction_suffix_provider: Callable[[ReadonlyContext], str] | None = None,
 ) -> Callable[[ReadonlyContext], str]:
+    if instruction_suffix and instruction_suffix_provider is not None:
+        raise ValueError(
+            "instruction_suffix and instruction_suffix_provider are mutually exclusive; "
+            "supply at most one."
+        )
+
     def instruction_provider(context: ReadonlyContext) -> str:
         base = instruction_text
         if config_doc_id is not None:
@@ -57,11 +64,19 @@ def _make_factory_instruction_provider(
                     type(exc).__name__,
                 )
 
-        full_instruction = (
-            (base.rstrip() + "\n\n" + instruction_suffix).rstrip()
-            if instruction_suffix
-            else base
-        )
+        if instruction_suffix_provider is not None:
+            dynamic_suffix = instruction_suffix_provider(context)
+            full_instruction = (
+                (base.rstrip() + "\n\n" + dynamic_suffix).rstrip()
+                if dynamic_suffix
+                else base
+            )
+        else:
+            full_instruction = (
+                (base.rstrip() + "\n\n" + instruction_suffix).rstrip()
+                if instruction_suffix
+                else base
+            )
         org_context = context.state.get("organization_context")
         if isinstance(org_context, str) and org_context:
             sanitized = _sanitize_org_context(org_context)
@@ -78,6 +93,7 @@ def build_agent(
     tools: list[Any] | None = None,
     config_doc_id: str | None = None,
     instruction_suffix: str = "",
+    instruction_suffix_provider: Callable[[ReadonlyContext], str] | None = None,
     additional_before_agent_callbacks: list[Callable] | None = None,
     additional_after_agent_callbacks: list[Callable] | None = None,
     additional_before_tool_callbacks: list[Callable] | None = None,
@@ -89,6 +105,7 @@ def build_agent(
         config.instruction,
         config_doc_id=config_doc_id,
         instruction_suffix=instruction_suffix,
+        instruction_suffix_provider=instruction_suffix_provider,
     )
 
     # AH-40: reconstruct the SDK GenerateContentConfig from flat fields at

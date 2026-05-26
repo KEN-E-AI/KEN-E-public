@@ -60,28 +60,28 @@ class AgentConfigUpdateResponse(AgentConfig):
     read top-level fields like ``response.model`` or ``response.metadata``
     keep working. Adding a new optional ``warnings`` list is additive.
 
-    Per Sprint 6 AC-6.25, changes to ``model``, ``temperature`` or
-    ``max_output_tokens`` cannot be picked up by the 60 s hot-reload cache
-    (ADK bakes them in at agent construction) — those changes surface as a
-    redeploy-required warning here so admins don't silently think the
-    change is live.
+    Per AH-PRD-09 Phase 2, the per-turn specialist resolver picks up all
+    config-field changes within the 60 s TTL cache — no field requires a pod
+    restart. ``warnings`` is retained for API backwards-compatibility but will
+    always be empty and is deprecated.
     """
 
     warnings: list[str] = Field(
         default_factory=list,
-        description="Operator warnings (e.g., redeploy required for model change).",
+        deprecated=True,
+        description=(
+            "Deprecated. Always empty since AH-PRD-09 Phase 2 — the per-turn "
+            "resolver picks up all field changes within the 60 s cache TTL. "
+            "Retained for API backwards-compatibility."
+        ),
     )
 
 
-# Fields whose runtime effect requires a pod/agent redeploy. Per Sprint 6
-# Decision B, ONLY ``instruction`` propagates via the 60 s in-process cache
-# because the ADK ``Agent`` constructor only accepts a callable for the
-# ``instruction`` field. ``model``, ``temperature`` and ``max_output_tokens``
-# are baked into the SDK ``GenerateContentConfig`` at construction time, so
-# updates to any of them require a pod restart.
-_REDEPLOY_REQUIRED_FIELDS: frozenset[str] = frozenset(
-    {"model", "temperature", "max_output_tokens"}
-)
+# Per AH-PRD-09 Phase 2, the per-turn specialist resolver picks up any
+# config-field change within the 60 s TTL — no field requires a pod restart.
+# This set is intentionally empty; retained as a declaration point so the
+# downstream warning-generation loop has a stable symbol to iterate over.
+_REDEPLOY_REQUIRED_FIELDS: frozenset[str] = frozenset()
 
 # Storage-internal fields that live on Firestore docs but are not part of
 # the ``MergedAgentConfig`` API contract. They must be stripped before
