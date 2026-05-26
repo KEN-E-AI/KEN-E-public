@@ -988,6 +988,68 @@ class TestPutVersionedUpdate(_SkillsRouterBase):
         codes = [d["code"] for d in detail] if isinstance(detail, list) else []
         assert "name_mismatch" in codes
 
+    def test_put_retries_on_version_race_and_succeeds(
+        self, client, fake_db, fake_storage
+    ):
+        """Concurrent PUT race on first attempt is transparently retried; 200 returned."""
+        self._install_user(_member_user())
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+
+        # First bump call detects a concurrent PUT race (False); second succeeds.
+        with patch(
+            "src.kene_api.routers.skills._bump_skill_version",
+            side_effect=[False, True],
+        ):
+            put_resp = client.put(
+                BASE_URL + f"/{skill_id}",
+                files=[
+                    (
+                        "skill_md",
+                        ("SKILL.md", io.BytesIO(_VALID_SKILL_MD_V2), "text/markdown"),
+                    )
+                ],
+                data={"name": "seo-checklist"},
+            )
+        assert put_resp.status_code == 200
+        assert put_resp.json()["current_version"] == 2
+
+    def test_put_exhausts_retries_returns_409(self, client, fake_db, fake_storage):
+        """Three consecutive version races exhaust max_retries → 409 skill_version_conflict_exhausted."""
+        self._install_user(_member_user())
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+
+        with patch(
+            "src.kene_api.routers.skills._bump_skill_version", return_value=False
+        ):
+            put_resp = client.put(
+                BASE_URL + f"/{skill_id}",
+                files=[
+                    (
+                        "skill_md",
+                        ("SKILL.md", io.BytesIO(_VALID_SKILL_MD_V2), "text/markdown"),
+                    )
+                ],
+                data={"name": "seo-checklist"},
+            )
+        assert put_resp.status_code == 409
+        assert put_resp.json()["detail"] == "skill_version_conflict_exhausted"
+
 
 # ---------------------------------------------------------------------------
 # POST /validate: dry-run validation (AC-10, SK-16)

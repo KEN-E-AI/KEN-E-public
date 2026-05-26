@@ -951,7 +951,7 @@ async def update_skill(
     skill_id: str,
     skill_md: UploadFile = File(...),
     files: list[UploadFile] = File(default_factory=list),
-    name: str = Form(...),
+    name: str = Form(..., max_length=64),
     commit_message: str | None = Form(default=None, max_length=1000),
     user: UserContext = Depends(check_account_access),
     db: firestore.Client = Depends(get_firestore),
@@ -1028,6 +1028,9 @@ async def _perform_update_attempt(
     Returns ``(updated_skill, skill_version, expected_version)`` where
     ``expected_version`` is the version read from ``current_data`` and must be
     passed to ``_bump_skill_version`` to detect a concurrent PUT.
+
+    Not decorated with ``@_skills_safe_op``; the owning Weave span is emitted
+    by the calling ``_update_skill_traced``.
     """
     existing_skill = _skill_from_dict(current_data)
     new_name = report.frontmatter.name  # type: ignore[union-attr]  # caller asserts not None
