@@ -142,7 +142,7 @@ class SandboxPool:
                 executor, _ = entry
                 self._pool.move_to_end(key)
                 self._pool[key] = (executor, now)
-                return executor  # type: ignore[return-value]
+                return executor
 
             executor = await self._construct(account_id=account_id, config_id=config_id)
             self._pool[key] = (executor, now)
@@ -150,7 +150,7 @@ class SandboxPool:
         # Cap enforcement runs outside the stripe lock so that evict() can
         # acquire the stripe lock for the LRU entry without deadlocking.
         await self._evict_if_over_cap()
-        return executor  # type: ignore[return-value]
+        return executor
 
     async def evict(
         self,
