@@ -18,3 +18,16 @@ resource "google_service_account" "cicd_runner_sa" {
   project      = var.cicd_runner_project_id
   depends_on   = [resource.google_project_service.cicd_services, resource.google_project_service.shared_services]
 }
+
+# Chat orphan-scan Cloud Scheduler invoker SA — one per environment (CH-PRD-05 / CH-51).
+# Dedicated SA per env (blast-radius isolation). Cloud Scheduler impersonates this SA
+# to mint the OIDC token for the kene-api Cloud Run target.
+# roles/run.invoker is granted non-authoritatively in cloud_scheduler.tf so that
+# out-of-band grants on the Cloud Run service are not destroyed.
+resource "google_service_account" "chat_orphan_scan_scheduler_sa" {
+  for_each = local.chat_orphan_scan_projects
+
+  account_id   = "chat-orphan-scan-scheduler"
+  display_name = "Chat Orphan Scan Scheduler (${each.key})"
+  project      = each.value
+}

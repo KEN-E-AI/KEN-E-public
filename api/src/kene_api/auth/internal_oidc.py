@@ -32,6 +32,17 @@ def verify_internal_oidc_caller(request: Request) -> str:
     misconfigured (missing audience or allowlist).
     """
     if os.getenv(_SKIP_ENV, "").lower() == "true":
+        env = os.getenv("ENVIRONMENT", "production").lower()
+        if env not in ("development", "test", "local"):
+            logger.error(
+                "CHAT_INTERNAL_OIDC_SKIP=true is set in ENVIRONMENT=%s — "
+                "refusing to skip OIDC verification in non-local environment",
+                env,
+            )
+            raise HTTPException(
+                status_code=500,
+                detail="Server misconfiguration: OIDC skip is not permitted in this environment",
+            )
         logger.warning("OIDC verification skipped (CHAT_INTERNAL_OIDC_SKIP=true)")
         return "oidc-skip@local"
 
