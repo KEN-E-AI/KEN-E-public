@@ -66,8 +66,7 @@ const MOCK_ARTIFACTS = {
         created_by_tool: "generate_report",
         created_at: "2026-05-01T09:00:00Z",
       },
-      signed_url:
-        "https://storage.googleapis.com/bucket/signed?token=e2e-abc",
+      signed_url: "https://storage.googleapis.com/bucket/signed?token=e2e-abc",
       signed_url_expires_at: "2026-05-01T10:00:00Z",
     },
   ],

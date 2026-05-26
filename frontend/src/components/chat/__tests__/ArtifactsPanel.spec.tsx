@@ -212,10 +212,9 @@ describe("ArtifactsPanel", () => {
       isError: false,
       isSuccess: true,
     } as ReturnType<typeof useArtifacts>);
-    const { container } = render(
-      <ArtifactsPanel sessionId={SESSION_ID} />,
-      { wrapper: createWrapper() },
-    );
+    const { container } = render(<ArtifactsPanel sessionId={SESSION_ID} />, {
+      wrapper: createWrapper(),
+    });
     const results = await runAxe(container);
     expect(results).toHaveNoViolations();
   });

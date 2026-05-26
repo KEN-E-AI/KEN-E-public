@@ -1,4 +1,10 @@
-import { FileText, FileSpreadsheet, FileImage, FileCode, Bot } from "lucide-react";
+import {
+  FileText,
+  FileSpreadsheet,
+  FileImage,
+  FileCode,
+  Bot,
+} from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -18,7 +24,8 @@ function mimeToDocType(mime: string): DocType {
   if (mime === "application/pdf") return "pdf";
   if (mime.startsWith("image/")) return "image";
   if (
-    mime === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+    mime ===
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
     mime === "application/vnd.ms-excel" ||
     mime === "text/csv"
   )
