@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import Any
 
@@ -13,12 +14,15 @@ from app.adk.agents.agent_factory.roster import (
     MAX_TOOLS_PER_SPECIALIST,
     RosterCapExceededError,
 )
+from app.adk.agents.utils import config_cache
 from app.adk.security.hooks import adk_before_tool_callback
 from app.adk.tracking.callbacks import (
     adk_after_tool_callback,
     weave_after_agent_callback,
     weave_before_agent_callback,
 )
+
+logger = logging.getLogger(__name__)
 
 _MAX_ORG_CONTEXT_CHARS = 4000
 _ORG_CONTEXT_BLOCKED = ("[END CONTEXT]", "[ORGANIZATION CONTEXT]")
@@ -32,13 +36,35 @@ def _sanitize_org_context(value: str) -> str:
 
 def _make_factory_instruction_provider(
     instruction_text: str,
+    *,
+    config_doc_id: str | None = None,
+    instruction_suffix: str = "",
 ) -> Callable[[ReadonlyContext], str]:
     def instruction_provider(context: ReadonlyContext) -> str:
+        base = instruction_text
+        if config_doc_id is not None:
+            try:
+                cfg, _, _ = config_cache.get_cached_config(config_doc_id)
+                if cfg.instruction:
+                    base = cfg.instruction
+            except Exception as exc:
+                logger.warning(
+                    "InstructionProvider could not load %r from cache (%s); "
+                    "falling back to deploy-time instruction",
+                    config_doc_id,
+                    exc,
+                )
+
+        full_instruction = (
+            (base.rstrip() + "\n\n" + instruction_suffix).rstrip()
+            if instruction_suffix
+            else base
+        )
         org_context = context.state.get("organization_context")
         if isinstance(org_context, str) and org_context:
             sanitized = _sanitize_org_context(org_context)
-            return f"[ORGANIZATION CONTEXT]\n{sanitized}\n[END CONTEXT]\n\n{instruction_text}"
-        return instruction_text
+            return f"[ORGANIZATION CONTEXT]\n{sanitized}\n[END CONTEXT]\n\n{full_instruction}"
+        return full_instruction
 
     return instruction_provider
 
@@ -48,6 +74,8 @@ def build_agent(
     *,
     name: str,
     tools: list[Any] | None = None,
+    config_doc_id: str | None = None,
+    instruction_suffix: str = "",
     additional_before_agent_callbacks: list[Callable] | None = None,
     additional_after_agent_callbacks: list[Callable] | None = None,
     additional_before_tool_callbacks: list[Callable] | None = None,
@@ -55,7 +83,11 @@ def build_agent(
     additional_before_model_callbacks: list[Callable] | None = None,
     additional_after_model_callbacks: list[Callable] | None = None,
 ) -> LlmAgent:
-    instruction = _make_factory_instruction_provider(config.instruction)
+    instruction = _make_factory_instruction_provider(
+        config.instruction,
+        config_doc_id=config_doc_id,
+        instruction_suffix=instruction_suffix,
+    )
 
     # AH-40: reconstruct the SDK GenerateContentConfig from flat fields at
     # the ADK construction boundary. Storage is flat; the nested grouping

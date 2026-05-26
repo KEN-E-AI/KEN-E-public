@@ -341,7 +341,15 @@ def build_hierarchy(
         )
 
         # Step 6d — construct the specialist LlmAgent.
-        specialist = build_agent(spec_config, name=spec_name, tools=tools)
+        # Only enable cache-backed hot-reload for default (non-overlaid) configs.
+        # Overlaid ("customized" / "custom_agent") configs are account-specific and
+        # cannot be served by the global-doc cache without re-reading the overlay path.
+        specialist_doc_id = (
+            spec_name if spec_config.customization_status == "default" else None
+        )
+        specialist = build_agent(
+            spec_config, name=spec_name, tools=tools, config_doc_id=specialist_doc_id
+        )
         specialists[spec_name] = specialist
         logger.info("Built specialist agent %r.", spec_name)
 
@@ -349,20 +357,20 @@ def build_hierarchy(
     # from Step 5, so dispatch tool order is deterministic).
     dispatchers = generate_dispatch_functions(specialists)
 
-    # Step 8 — assemble the root instruction with the Available Specialists block.
+    # Step 8 — assemble the Available Specialists block (static at deploy time;
+    # Phase 2 will make this per-turn via available_specialists_provider).
     specialists_block = assemble_available_specialists_block(specialists)
-    combined_instruction = root_config.instruction.rstrip() + "\n\n" + specialists_block
 
-    # Step 9 — create a modified root config carrying the assembled instruction.
-    root_config_assembled = root_config.model_copy(
-        update={"instruction": combined_instruction}
-    )
-
-    # Step 10 — build the root agent with dispatcher functions as tools.
+    # Step 9 — build the root agent. The instruction is now cache-backed:
+    # on every turn the InstructionProvider reads root_config.instruction from
+    # the TTL cache instead of using the baked string.  instruction_suffix
+    # carries the static specialists block for Phase 1.
     root_agent = build_agent(
-        root_config_assembled,
+        root_config,
         name="ken_e",
         tools=list(dispatchers.values()),
+        config_doc_id=ROOT_CONFIG_ID,
+        instruction_suffix=specialists_block,
     )
     logger.info("Built root agent %r with %d specialist(s).", "ken_e", len(specialists))
 

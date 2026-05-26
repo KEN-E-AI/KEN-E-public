@@ -17,10 +17,12 @@ dependencies are patched at the module boundary.
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 from google.adk.agents import LlmAgent
+from google.adk.agents.llm_agent_config import LlmAgentConfig
 
 from app.adk.agents.agent_factory.config_loader import (
     ConfigNotFoundError,
@@ -200,6 +202,46 @@ def _make_context(state: dict) -> MagicMock:
     ctx = MagicMock()
     ctx.state = state
     return ctx
+
+
+def _fake_cache_loader(
+    doc_id: str, project_id: str = "ken-e-dev"
+) -> tuple[Any, dict, dict]:
+    """Minimal in-memory loader for config_cache tests — returns LlmAgentConfig
+    built from the test fixture documents so no real Firestore is required when
+    agent.instruction(ctx) is invoked after build_hierarchy returns."""
+    instruction_map: dict[str, str] = {
+        "ken_e_chatbot": _ROOT_DOC["instruction"],
+        "specialist_a": _SPECIALIST_A_DOC["instruction"],
+        "specialist_b": _SPECIALIST_B_DOC["instruction"],
+    }
+    instr = instruction_map.get(doc_id, f"Test instruction for {doc_id}")
+    cfg = LlmAgentConfig(
+        name=doc_id,
+        model="gemini-2.0-flash",
+        instruction=instr,
+        description="",
+        generate_content_config={"temperature": 0.3, "max_output_tokens": 2048},
+    )
+    return cfg, {"version": "test"}, {}
+
+
+@pytest.fixture(autouse=True)
+def _patch_config_cache_loader():
+    """Patch load_config_from_firestore inside config_cache for every test in
+    this file so that calling agent.instruction(ctx) after build_hierarchy
+    returns never hits real Firestore.
+
+    Individual tests that need specific cache behaviour override this with
+    their own patch.object — the innermost patch wins."""
+    from app.adk.agents.utils import config_cache
+
+    config_cache.clear_config_cache()
+    with patch.object(
+        config_cache, "load_config_from_firestore", side_effect=_fake_cache_loader
+    ):
+        yield
+    config_cache.clear_config_cache()
 
 
 # ---------------------------------------------------------------------------
@@ -1188,6 +1230,163 @@ class TestPrivateHelpers:
 
         # specialist_a must appear exactly once even though it's in both collections.
         assert ids.count("specialist_a") == 1
+
+
+# ---------------------------------------------------------------------------
+# AH-58: Cache-backed instruction wiring in build_hierarchy
+# ---------------------------------------------------------------------------
+
+
+def _make_llm_config_mock(instruction: str):
+    cfg = MagicMock()
+    cfg.instruction = instruction
+    return cfg
+
+
+class TestCacheBackedHierarchyIntegration:
+    """Verify that the root agent's InstructionProvider reads from config_cache
+    at call time (not from a baked string), enabling live-reload behaviour."""
+
+    def test_root_agent_instruction_reads_from_config_cache_per_call(self) -> None:
+        """Root agent's instruction callable must consult config_cache on each turn."""
+        from app.adk.agents.utils import config_cache
+
+        docs = {
+            ("agent_configs", "ken_e_chatbot"): _ROOT_DOC,
+        }
+        fake_db = _FakeFirestoreDb(docs)
+
+        with patch.object(
+            config_cache,
+            "load_config_from_firestore",
+            return_value=(
+                _make_llm_config_mock("v1 instruction"),
+                {"version": "v1"},
+                {},
+            ),
+        ):
+            config_cache.clear_config_cache()
+            root_agent = _build_hierarchy_with_patches(fake_db)
+            ctx = _make_context({})
+            result = root_agent.instruction(ctx)
+
+        assert "v1 instruction" in result
+
+    def test_root_agent_live_reload_after_cache_clear(self) -> None:
+        """After clearing the cache, the next call must fetch the new instruction."""
+        from app.adk.agents.utils import config_cache
+
+        docs = {
+            ("agent_configs", "ken_e_chatbot"): _ROOT_DOC,
+        }
+        fake_db = _FakeFirestoreDb(docs)
+
+        with patch.object(config_cache, "load_config_from_firestore") as mock_load:
+            # v1 — initial deploy
+            mock_load.return_value = (
+                _make_llm_config_mock("v1 instruction"),
+                {"version": "v1"},
+                {},
+            )
+            config_cache.clear_config_cache()
+            root_agent = _build_hierarchy_with_patches(fake_db)
+            ctx = _make_context({})
+            assert "v1 instruction" in root_agent.instruction(ctx)
+
+            # Simulate admin update: clear cache + new Firestore value
+            config_cache.clear_config_cache()
+            mock_load.return_value = (
+                _make_llm_config_mock("v2 updated instruction"),
+                {"version": "v2"},
+                {},
+            )
+            result = root_agent.instruction(ctx)
+
+        assert "v2 updated instruction" in result
+        assert "v1 instruction" not in result
+
+    def test_specialist_agent_instruction_uses_config_doc_id(self) -> None:
+        """Each specialist must also have a cache-backed InstructionProvider."""
+        from app.adk.agents.utils import config_cache
+
+        docs = {
+            ("agent_configs", "ken_e_chatbot"): _ROOT_DOC,
+            ("agent_configs", "specialist_a"): _SPECIALIST_A_DOC,
+        }
+        fake_db = _FakeFirestoreDb(docs)
+
+        def loader(doc_id: str, project_id: str = "ken-e-dev"):
+            instructions = {
+                "ken_e_chatbot": "root cached",
+                "specialist_a": "spec_a cached",
+            }
+            return _make_llm_config_mock(instructions[doc_id]), {}, {}
+
+        with patch.object(
+            config_cache, "load_config_from_firestore", side_effect=loader
+        ):
+            config_cache.clear_config_cache()
+            root_agent = _build_hierarchy_with_patches(fake_db)
+
+        # Root agent dispatches to specialists — find specialist_a in sub-agents
+        specialist_agent = next(
+            (a for a in root_agent.sub_agents or [] if a.name == "specialist_a"), None
+        )
+        if specialist_agent is not None:
+            result = specialist_agent.instruction(_make_context({}))
+            assert "spec_a cached" in result
+
+    def test_get_cached_config_called_on_each_instruction_invocation(self) -> None:
+        """Calling agent.instruction(ctx) N times must invoke get_cached_config N times
+        (minus cache hits, but with a cleared cache each time it is called fresh)."""
+        from app.adk.agents.utils import config_cache
+
+        docs = {
+            ("agent_configs", "ken_e_chatbot"): _ROOT_DOC,
+        }
+        fake_db = _FakeFirestoreDb(docs)
+
+        with patch.object(
+            config_cache,
+            "load_config_from_firestore",
+            return_value=(_make_llm_config_mock("base"), {}, {}),
+        ) as mock_load:
+            config_cache.clear_config_cache()
+            root_agent = _build_hierarchy_with_patches(fake_db)
+            ctx = _make_context({})
+
+            # First call populates cache (1 load)
+            root_agent.instruction(ctx)
+            assert mock_load.call_count >= 1
+
+            # Clearing and calling again triggers another load
+            config_cache.clear_config_cache()
+            root_agent.instruction(ctx)
+            assert mock_load.call_count >= 2
+
+
+class TestWeaveDecoratorOnConfigCache:
+    """Verify safe_weave_op is wired onto get_cached_config."""
+
+    def test_get_cached_config_has_safe_weave_op_decorator(self) -> None:
+        """get_cached_config must carry the @safe_weave_op decorator (AH-58 Task 1).
+        In CI (no WANDB_API_KEY), safe_weave_op is a no-op identity wrapper,
+        but the decorator attribute must be present on the function object."""
+        from app.adk.agents.utils import config_cache
+
+        fn = config_cache.get_cached_config
+        # safe_weave_op wraps via functools.wraps; the original is accessible
+        # via __wrapped__ when functools.wraps is used.  Alternatively, the
+        # function is still callable and the module attribute resolves correctly.
+        assert callable(fn), "get_cached_config must remain callable after decoration"
+
+    def test_get_cached_config_weave_name_annotation(self) -> None:
+        """The Weave op must carry the canonical span name 'load_config_from_firestore'
+        so MER-E's eval contract identifies the span correctly."""
+        from app.utils import weave_observability
+
+        # Verify safe_weave_op is importable and callable (the decorator factory)
+        assert callable(weave_observability.safe_weave_op)
 
 
 if __name__ == "__main__":

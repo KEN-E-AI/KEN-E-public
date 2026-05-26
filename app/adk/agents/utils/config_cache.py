@@ -34,6 +34,8 @@ from typing import Any
 
 from google.adk.agents.llm_agent_config import LlmAgentConfig
 
+from app.utils.weave_observability import safe_weave_op
+
 from ..strategy_agent.config_loader import load_config_from_firestore
 
 logger = logging.getLogger(__name__)
@@ -63,6 +65,7 @@ _cache: dict[str, _CacheEntry] = {}
 _cache_lock = threading.Lock()
 
 
+@safe_weave_op(name="load_config_from_firestore")
 def get_cached_config(
     doc_id: str, ttl_seconds: int = 60
 ) -> tuple[LlmAgentConfig, dict[str, Any], dict[str, Any]]:
