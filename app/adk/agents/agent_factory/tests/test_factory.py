@@ -22,6 +22,7 @@ _WEAVE_BEFORE = MagicMock(name="weave_before_agent_callback")
 _WEAVE_AFTER = MagicMock(name="weave_after_agent_callback")
 _ADK_BEFORE_TOOL = MagicMock(name="adk_before_tool_callback")
 _ADK_AFTER_TOOL = MagicMock(name="adk_after_tool_callback")
+_SKILL_FILTER = MagicMock(name="skill_allowed_tools_before_tool_callback")
 
 _PATCH_BEFORE_AGENT = patch(
     "app.adk.agents.agent_factory.builder.weave_before_agent_callback",
@@ -38,6 +39,10 @@ _PATCH_BEFORE_TOOL = patch(
 _PATCH_AFTER_TOOL = patch(
     "app.adk.agents.agent_factory.builder.adk_after_tool_callback",
     _ADK_AFTER_TOOL,
+)
+_PATCH_SKILL_FILTER = patch(
+    "app.adk.agents.agent_factory.builder.skill_allowed_tools_before_tool_callback",
+    _SKILL_FILTER,
 )
 
 # ---------------------------------------------------------------------------
@@ -57,10 +62,16 @@ def _make_context(state: dict) -> MagicMock:
 
 
 def _build(config: MergedAgentConfig, **kwargs):
-    """Call build_agent with all four standard callbacks patched."""
+    """Call build_agent with all standard callbacks patched."""
     import app.adk.agents.agent_factory.builder as b
 
-    with _PATCH_BEFORE_AGENT, _PATCH_AFTER_AGENT, _PATCH_BEFORE_TOOL, _PATCH_AFTER_TOOL:
+    with (
+        _PATCH_BEFORE_AGENT,
+        _PATCH_AFTER_AGENT,
+        _PATCH_BEFORE_TOOL,
+        _PATCH_AFTER_TOOL,
+        _PATCH_SKILL_FILTER,
+    ):
         return b.build_agent(config, **kwargs)
 
 
@@ -520,7 +531,7 @@ class TestCallbackChaining:
             additional_before_tool_callbacks=[my_cb],
         )
 
-        assert agent.before_tool_callback == [_ADK_BEFORE_TOOL, my_cb]
+        assert agent.before_tool_callback == [_ADK_BEFORE_TOOL, _SKILL_FILTER, my_cb]
 
     def test_additional_after_tool_callback_appended_after_adk_sentinel(self) -> None:
         my_cb = MagicMock(name="my_after_tool")
