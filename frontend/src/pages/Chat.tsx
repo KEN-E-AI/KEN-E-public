@@ -97,6 +97,7 @@ export default function Chat() {
         >
           <Button
             variant="outline"
+            aria-label="Toggle view"
             onClick={() =>
               setViewState((v) => (v === "message" ? "status" : "message"))
             }

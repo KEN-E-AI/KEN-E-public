@@ -5,6 +5,7 @@ import { auth } from "@/lib/firebase";
 // ─── Branded types ────────────────────────────────────────────────────────────
 
 export type ChatSessionId = Brand<string, "ChatSessionId">;
+export type ChatArtifactId = Brand<string, "ChatArtifactId">;
 
 export const isChatSessionId = (value: string): value is ChatSessionId =>
   value.length > 0;
@@ -152,8 +153,8 @@ export type ListTodosResponse = {
 // ─── Artifact types (CH-PRD-05 §4.3) ─────────────────────────────────────────
 
 export type ChatArtifactIndex = {
-  artifact_id: string;
-  session_id: string;
+  artifact_id: ChatArtifactId;
+  session_id: ChatSessionId;
   filename: string;
   mime_type: string;
   size_bytes: number;

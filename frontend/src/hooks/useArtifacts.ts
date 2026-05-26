@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { ChatSessionId, ListArtifactsResponse } from "@/lib/chatApi";
 import { listArtifacts } from "@/lib/chatApi";
 
-export const ARTIFACTS_QUERY_KEY = "artifacts" as const;
+export const ARTIFACTS_QUERY_KEY = "chat.artifacts" as const;
 
 export function useArtifacts(sessionId: ChatSessionId | null) {
   return useQuery<ListArtifactsResponse>({

@@ -4,7 +4,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import { ArtifactsPanel } from "../ArtifactsPanel";
 import { runAxe } from "@/test/axe";
-import type { ChatSessionId, ListArtifactsResponse } from "@/lib/chatApi";
+import type {
+  ChatSessionId,
+  ChatArtifactId,
+  ListArtifactsResponse,
+} from "@/lib/chatApi";
 
 vi.mock("@/hooks/useArtifacts", () => ({
   useArtifacts: vi.fn(),
@@ -27,8 +31,8 @@ const ARTIFACTS_WITH_ITEMS: ListArtifactsResponse = {
   items: [
     {
       artifact_index: {
-        artifact_id: "artifact_abc123",
-        session_id: "sess_abc",
+        artifact_id: "artifact_abc123" as ChatArtifactId,
+        session_id: "sess_abc" as ChatSessionId,
         filename: "campaign-report.pdf",
         mime_type: "application/pdf",
         size_bytes: 204800,
@@ -42,8 +46,8 @@ const ARTIFACTS_WITH_ITEMS: ListArtifactsResponse = {
     },
     {
       artifact_index: {
-        artifact_id: "artifact_def456",
-        session_id: "sess_abc",
+        artifact_id: "artifact_def456" as ChatArtifactId,
+        session_id: "sess_abc" as ChatSessionId,
         filename: "social-calendar.csv",
         mime_type: "text/csv",
         size_bytes: 1536,
