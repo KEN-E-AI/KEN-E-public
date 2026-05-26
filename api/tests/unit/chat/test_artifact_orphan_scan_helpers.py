@@ -8,7 +8,12 @@ are made.
 from __future__ import annotations
 
 import logging
+import os
+import sys
 from unittest.mock import MagicMock
+
+# Resolve the api/src package so the test runner finds kene_api.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
 
 from kene_api.chat import artifact_orphan_scan as cli
 

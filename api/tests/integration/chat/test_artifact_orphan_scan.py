@@ -11,9 +11,14 @@ Run with:
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Iterator
 
 import pytest
+
+# Resolve the api/src package so the test runner finds kene_api.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
+
 from kene_api.chat import artifact_orphan_scan as cli
 from kene_api.chat.artifacts import _artifact_id
 

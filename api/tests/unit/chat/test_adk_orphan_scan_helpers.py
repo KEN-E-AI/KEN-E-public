@@ -8,11 +8,17 @@ GCS calls are made.
 from __future__ import annotations
 
 import logging
+import os
+import sys
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+
+# Resolve the api/src package so the test runner finds kene_api.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
+
 from kene_api.chat import adk_session_orphan_scan as cli
 
 # ---------------------------------------------------------------------------

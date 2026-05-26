@@ -14,10 +14,15 @@ calls in CI.
 from __future__ import annotations
 
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
+
+# Resolve the api/src package so the test runner finds kene_api.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
+
 from kene_api.chat import adk_session_orphan_scan as cli
 
 pytestmark = pytest.mark.skipif(
