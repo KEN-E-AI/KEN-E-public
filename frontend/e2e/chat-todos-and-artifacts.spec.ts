@@ -166,8 +166,11 @@ test("TC-1: ArtifactsPanel renders artifact rows after switching to status view"
 
   // The mocked artifact filename should be visible.
   await expect(page.getByText("campaign-report.pdf")).toBeVisible();
-  // KEN-E badge should be visible.
-  await expect(page.getByText("KEN-E").first()).toBeVisible();
+  // KEN-E badge should be visible — scoped to the panel to avoid matching the
+  // hidden <title>KEN-E</title> element which is first in DOM order.
+  await expect(
+    page.locator('[data-testid="artifacts-panel"]').getByText("KEN-E"),
+  ).toBeVisible();
 });
 
 // ─── TC-2: TodoListsPanel renders in status view ──────────────────────────────
