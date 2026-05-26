@@ -21,10 +21,13 @@ from src.kene_api.models.chat import ChatCategoryDefinition
 # ---------------------------------------------------------------------------
 
 def _make_db() -> MagicMock:
-    """Return a MagicMock Firestore client with common sub-mocks wired."""
+    """Return a MagicMock Firestore client with .document().create() succeeding by default.
+
+    create_category no longer dedup-queries — collisions surface as AlreadyExists
+    from the .create() call thanks to the deterministic doc id. The .collection
+    chain is still wired so the list_categories tests in this module work.
+    """
     db = MagicMock()
-    # Default dedup query returns no matches (empty list → no collision)
-    db.collection.return_value.where.return_value.limit.return_value.get.return_value = []
     db.document.return_value.create.return_value = None
     return db
 
@@ -136,11 +139,14 @@ class TestCreateCategoryFirestoreWrite:
         svc.create_category("u1", "Demo")
         db.document.return_value.create.assert_called_once()
 
-    def test_dedup_query_scoped_to_user_collection(self) -> None:
+    def test_create_path_does_not_query_the_collection(self) -> None:
+        """The query-then-write dedup path was removed in favour of a
+        deterministic doc id + .create()'s AlreadyExists. create_category
+        must never call .collection(...) — that would re-introduce the race."""
         db = _make_db()
         svc = _make_svc(db)
         svc.create_category("u1", "Demo")
-        db.collection.assert_called_with("users/u1/chat_categories")
+        db.collection.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

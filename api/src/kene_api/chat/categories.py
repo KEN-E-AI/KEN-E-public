@@ -6,10 +6,11 @@ delete_category (CH-32) and assign_category (CH-33) extend this class later.
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timezone
 from functools import lru_cache
-from uuid import uuid4
 
+from google.api_core.exceptions import AlreadyExists
 from google.cloud import firestore
 
 from ..dependencies import get_firestore_client
@@ -37,9 +38,17 @@ def _doc_path(user_id: str, category_id: str) -> str:
     return f"{_collection_path(user_id)}/{category_id}"
 
 
-def _new_category_id() -> str:
-    """Generate a category_id with a human-readable prefix and a 24-hex-char random suffix."""
-    return f"cat_{uuid4().hex[:24]}"
+def _deterministic_category_id(user_id: str, name_casefold: str) -> str:
+    """Derive category_id from (user_id, name_casefold) so concurrent creates collide.
+
+    A random UUID would let two simultaneous create_category() calls with the
+    same (user_id, name_casefold) both succeed at different document paths,
+    producing duplicate rows that violate the casefold-dedup invariant. By
+    deriving the id from the dedup key, both calls converge on the same path —
+    Firestore's atomic .create() then guarantees exactly one winner.
+    """
+    digest = hashlib.sha256(f"{user_id}|{name_casefold}".encode("utf-8")).hexdigest()
+    return f"cat_{digest[:24]}"
 
 
 def _now_utc() -> datetime:
@@ -88,25 +97,7 @@ class ChatCategoryService:
             raise ValueError("Category name must be 64 characters or fewer")
 
         new_casefold = compute_name_casefold(stripped)
-
-        # Dedup: single-collection query scoped to this user.
-        # PRD §4.2: name_casefold equality collision → 409.
-        # No composite index needed for single-collection equality filters;
-        # Firestore auto-indexes single fields.
-        existing_docs = list(
-            self._db.collection(_collection_path(user_id))
-            .where(filter=firestore.FieldFilter("name_casefold", "==", new_casefold))
-            .limit(1)
-            .get()
-        )
-        if existing_docs:
-            existing_id = existing_docs[0].id
-            raise CategoryExistsError(
-                f"A category with name_casefold='{new_casefold}' already exists",
-                existing_id=existing_id,
-            )
-
-        category_id = _new_category_id()
+        category_id = _deterministic_category_id(user_id, new_casefold)
         now = _now_utc()
         definition = ChatCategoryDefinition(
             category_id=category_id,
@@ -116,7 +107,17 @@ class ChatCategoryService:
             created_at=now,
             updated_at=now,
         )
-        self._db.document(_doc_path(user_id, category_id)).create(definition.model_dump())
+        try:
+            self._db.document(_doc_path(user_id, category_id)).create(definition.model_dump())
+        except AlreadyExists as exc:
+            # The deterministic id collided — another row with this user's
+            # name_casefold already exists. Surface it with the colliding id
+            # (which equals what we just tried to write — the path IS the dedup
+            # key, so the existing doc's id is structurally identical).
+            raise CategoryExistsError(
+                f"A category with name_casefold='{new_casefold}' already exists",
+                existing_id=category_id,
+            ) from exc
         return definition
 
     def list_categories(self, user_id: str) -> list[ChatCategoryDefinition]:
