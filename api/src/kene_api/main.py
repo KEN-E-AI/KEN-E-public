@@ -75,6 +75,29 @@ from .routers import (
 
 logger = logging.getLogger(__name__)
 
+# Environments where API_TEST_BYPASS_TOKEN may legally be set. Anything else
+# (including empty / unset / typos like "prod") is rejected — the bypass is a
+# total Firebase-auth bypass, so the guard is fail-closed by design.
+_BYPASS_TOKEN_ALLOWED_ENVIRONMENTS = frozenset({"development", "test", "ci"})
+
+
+def _assert_bypass_token_safe(token: str, environment: str) -> None:
+    """Refuse to start if API_TEST_BYPASS_TOKEN is set outside a safe environment.
+
+    The bypass short-circuits Firebase token verification, audit logging,
+    rate-limiting, and revocation. Production and staging deployments must
+    never run with it enabled; an empty/misspelled ENVIRONMENT also fails
+    closed so a deployment misconfiguration cannot silently turn it on.
+    """
+    if not token:
+        return
+    if environment not in _BYPASS_TOKEN_ALLOWED_ENVIRONMENTS:
+        raise RuntimeError(
+            "API_TEST_BYPASS_TOKEN is set but ENVIRONMENT is "
+            f"{environment!r}; allowed values are "
+            f"{sorted(_BYPASS_TOKEN_ALLOWED_ENVIRONMENTS)}. Refusing to start."
+        )
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -82,11 +105,9 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting up Kene API...")
 
-    # Safety check: the E2E test bypass must never be active in production.
-    if settings.api_test_bypass_token and os.getenv("ENVIRONMENT", "") == "production":
-        raise RuntimeError(
-            "API_TEST_BYPASS_TOKEN must not be set in production. Refusing to start."
-        )
+    _assert_bypass_token_safe(
+        settings.api_test_bypass_token, os.getenv("ENVIRONMENT", "")
+    )
     try:
         await neo4j_service.connect()
         logger.info("Neo4j connection established")
