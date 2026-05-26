@@ -68,6 +68,9 @@ const ALLOWED_FILES = new Set<string>([
   "components/chat/ChatInterface.tsx",
   "components/chat/SessionsSidebar.tsx",
   "components/chat/ThinkingBlock.tsx",
+  // TodoListsPanel — completed-item line-through, progress fraction, and subtitle
+  // caption are decorative/secondary text (figma-export alignment).
+  "components/chat/TodoListsPanel.tsx",
 
   // layout — secondary metadata, breadcrumb separators, inactive-link tertiary state
   "components/layout/AccountSwitcher.tsx",

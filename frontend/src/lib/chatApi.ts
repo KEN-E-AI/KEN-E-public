@@ -128,6 +128,27 @@ export function deriveSessionStatus(
   return "idle";
 }
 
+// ─── Todo lists types ────────────────────────────────────────────────────────
+
+export type TodoItemView = {
+  item_id: string;
+  text: string;
+  completed: boolean;
+  completed_at: string | null;
+};
+
+export type TodoListView = {
+  list_id: string;
+  title: string;
+  is_current: boolean;
+  created_at: string;
+  items: TodoItemView[];
+};
+
+export type ListTodosResponse = {
+  todo_lists: TodoListView[];
+};
+
 // ─── Categories types (CH-PRD-03 §4.1 — list-only stub until CH-PRD-03 ships full CRUD) ──
 
 export type ChatCategory = {
@@ -343,6 +364,18 @@ export async function* streamChatCompletion(
   } finally {
     reader.releaseLock();
   }
+}
+
+/**
+ * GET /api/v1/chat/conversations/{session_id}/todos
+ */
+export async function listTodoLists(
+  sessionId: ChatSessionId,
+): Promise<ListTodosResponse> {
+  const { data } = await api.get<ListTodosResponse>(
+    `${CHAT_BASE}/conversations/${encodeURIComponent(sessionId)}/todos`,
+  );
+  return data;
 }
 
 /**

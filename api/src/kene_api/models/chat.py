@@ -132,8 +132,8 @@ class ChatCategoryDefinition(BaseModel):
 class TodoItem(BaseModel):
     """Single item in an agent-authored todo list (read-only for users)."""
 
-    item_id: str
-    text: str
+    item_id: str = Field(max_length=128)
+    text: str = Field(max_length=1024)
     completed: bool = False
     completed_at: datetime | None = None
 
@@ -144,8 +144,8 @@ class TodoList(BaseModel):
     Read-only from the user's perspective — agent tools own all writes.
     """
 
-    list_id: str
-    title: str
+    list_id: str = Field(max_length=128)
+    title: str = Field(max_length=256)
     is_current: bool = False
     created_at: datetime = Field(default_factory=_now_utc)
     items: list[TodoItem] = Field(default_factory=list)
