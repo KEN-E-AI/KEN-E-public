@@ -25,6 +25,7 @@ locals {
 
   shared_services = [
     "aiplatform.googleapis.com",
+    "cloudscheduler.googleapis.com",
     "run.googleapis.com",
     "discoveryengine.googleapis.com",
     "cloudresourcemanager.googleapis.com",
@@ -72,6 +73,25 @@ locals {
     development = "ken-e-dev"
     staging     = var.staging_project_id
     production  = var.prod_project_id
+  }
+
+  # Chat orphan-scan Cloud Scheduler jobs target all three environments (CH-PRD-05 / CH-51).
+  # Same three-environment pattern as skills_bucket_project_ids — dev is included so
+  # the scheduled maintenance jobs run there too, but dev stays out of deploy_project_ids
+  # (which would also pull in CICD SA grants and log sinks). Keys match the kene-api
+  # Cloud Run service names in locals.kene_api_service_names; see cloud_scheduler.tf.
+  chat_orphan_scan_projects = {
+    development = "ken-e-dev"
+    staging     = var.staging_project_id
+    production  = var.prod_project_id
+  }
+
+  # Cloud Run service names for the kene-api service per environment.
+  # Used by cloud_scheduler.tf to look up the service URL via data source.
+  kene_api_service_names = {
+    development = "kene-api-dev"
+    staging     = "kene-api-staging"
+    production  = "kene-api-prod"
   }
 
 }

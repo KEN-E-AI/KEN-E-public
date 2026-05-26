@@ -68,6 +68,8 @@ const ALLOWED_FILES = new Set<string>([
   "components/chat/ChatInterface.tsx",
   "components/chat/SessionsSidebar.tsx",
   "components/chat/ThinkingBlock.tsx",
+  // ArtifactsPanel — file-size caption and empty-state copy are decorative/secondary text (figma-export alignment).
+  "components/chat/ArtifactsPanel.tsx",
   // TodoListsPanel — completed-item line-through, progress fraction, and subtitle
   // caption are decorative/secondary text (figma-export alignment).
   "components/chat/TodoListsPanel.tsx",

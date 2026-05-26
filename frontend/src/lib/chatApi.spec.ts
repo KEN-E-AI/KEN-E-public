@@ -18,6 +18,7 @@ import {
   streamChatCompletion,
   chatHealth,
   listTodoLists,
+  listArtifacts,
   toChatSessionId as mkSessionId,
   toChatCategoryId as mkCategoryId,
 } from "./chatApi";
@@ -558,6 +559,46 @@ describe("listTodoLists", () => {
     await listTodoLists("sess/abc" as ReturnType<typeof mkSessionId>);
     expect(mockApi.get).toHaveBeenCalledWith(
       "/api/v1/chat/conversations/sess%2Fabc/todos",
+    );
+  });
+});
+
+// ─── listArtifacts ────────────────────────────────────────────────────────────
+
+describe("listArtifacts", () => {
+  it("calls GET /api/v1/chat/conversations/{id}/artifacts and returns data", async () => {
+    const fixture = {
+      items: [
+        {
+          artifact_index: {
+            artifact_id: "artifact_abc123",
+            session_id: "session_abc",
+            filename: "campaign-report.pdf",
+            mime_type: "application/pdf",
+            size_bytes: 204800,
+            version: 0,
+            gcs_path: "gs://bucket/app/user/session/file/0",
+            created_by_tool: "generate_report",
+            created_at: "2026-05-01T09:00:00Z",
+          },
+          signed_url: "https://storage.googleapis.com/bucket/signed?token=abc",
+          signed_url_expires_at: "2026-05-01T10:00:00Z",
+        },
+      ],
+    };
+    mockApi.get.mockResolvedValueOnce({ data: fixture });
+    const result = await listArtifacts(mkSessionId("session_abc"));
+    expect(mockApi.get).toHaveBeenCalledWith(
+      "/api/v1/chat/conversations/session_abc/artifacts",
+    );
+    expect(result).toEqual(fixture);
+  });
+
+  it("URL-encodes session IDs that contain special characters (AC-12)", async () => {
+    mockApi.get.mockResolvedValueOnce({ data: { items: [] } });
+    await listArtifacts("sess/abc" as ReturnType<typeof mkSessionId>);
+    expect(mockApi.get).toHaveBeenCalledWith(
+      "/api/v1/chat/conversations/sess%2Fabc/artifacts",
     );
   });
 });

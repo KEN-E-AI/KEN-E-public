@@ -106,6 +106,7 @@ def _delete_flag(db: Any, key: str) -> None:
 def client() -> Generator[TestClient, None, None]:
     """TestClient wired to the real Firestore emulator (no MagicMock)."""
     os.environ.setdefault("CHAT_INTERNAL_OIDC_SKIP", "true")
+    os.environ.setdefault("ENVIRONMENT", "test")
     os.environ.setdefault("GOOGLE_CLOUD_PROJECT_ID", "test-project")
 
     # Reset any singleton clients that prior tests may have warmed against a
