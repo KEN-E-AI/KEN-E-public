@@ -10,6 +10,8 @@ Phase 2: Curated tool-roster resolution (resolve_specialist_roster,
          MAX_TOOLS_PER_SPECIALIST) (AH-13).
 Phase 2: Dispatch generation + Available Specialists block (AH-14).
 Phase 2: build_hierarchy() — deploy-time entry point (AH-17).
+SK-PRD-02: SandboxPool — process-wide pool of AgentEngineSandboxCodeExecutor instances
+           keyed by (account_id, config_id), with LRU cap + idle TTL + striped locks.
 """
 
 from app.adk.agents.agent_factory.builder import build_agent
@@ -41,6 +43,7 @@ from app.adk.agents.agent_factory.roster import (
     count_specialist_tool_roster,
     resolve_specialist_roster,
 )
+from app.adk.agents.agent_factory.sandbox_pool import SandboxPool
 
 __all__ = [
     "MAX_TOOLS_PER_SPECIALIST",
@@ -53,6 +56,7 @@ __all__ = [
     "MCPSchemaError",
     "MergedAgentConfig",
     "RosterCapExceededError",
+    "SandboxPool",
     "assemble_available_specialists_block",
     "build_agent",
     "build_hierarchy",
