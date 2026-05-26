@@ -348,7 +348,11 @@ def build_hierarchy(
             spec_name if spec_config.customization_status == "default" else None
         )
         specialist = build_agent(
-            spec_config, name=spec_name, tools=tools, config_doc_id=specialist_doc_id
+            spec_config,
+            name=spec_name,
+            account_id=account_id,
+            tools=tools,
+            config_doc_id=specialist_doc_id,
         )
         specialists[spec_name] = specialist
         logger.info("Built specialist agent %r.", spec_name)
@@ -368,6 +372,7 @@ def build_hierarchy(
     root_agent = build_agent(
         root_config,
         name="ken_e",
+        account_id=account_id,
         tools=list(dispatchers.values()),
         config_doc_id=ROOT_CONFIG_ID,
         instruction_suffix=specialists_block,

@@ -39,6 +39,13 @@ _PATCH_AFTER_TOOL = patch(
     "app.adk.agents.agent_factory.builder.adk_after_tool_callback",
     _ADK_AFTER_TOOL,
 )
+# Patch the skill toolset builder so that unit tests that don't specifically
+# test skill-loading behaviour can run without kene_api installed.  Tests that
+# want to exercise skill loading use their own mock via monkeypatch.
+_PATCH_BUILD_SKILL_TOOLSET = patch(
+    "app.adk.agents.agent_factory.builder._build_skill_toolset",
+    return_value=None,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -57,10 +64,17 @@ def _make_context(state: dict) -> MagicMock:
 
 
 def _build(config: MergedAgentConfig, **kwargs):
-    """Call build_agent with all four standard callbacks patched."""
+    """Call build_agent with all four standard callbacks and skill-loader patched."""
     import app.adk.agents.agent_factory.builder as b
 
-    with _PATCH_BEFORE_AGENT, _PATCH_AFTER_AGENT, _PATCH_BEFORE_TOOL, _PATCH_AFTER_TOOL:
+    kwargs.setdefault("account_id", "acc_test")
+    with (
+        _PATCH_BEFORE_AGENT,
+        _PATCH_AFTER_AGENT,
+        _PATCH_BEFORE_TOOL,
+        _PATCH_AFTER_TOOL,
+        _PATCH_BUILD_SKILL_TOOLSET,
+    ):
         return b.build_agent(config, **kwargs)
 
 
