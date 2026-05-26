@@ -17,10 +17,12 @@ dependencies are patched at the module boundary.
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 from google.adk.agents import LlmAgent
+from google.adk.agents.llm_agent_config import LlmAgentConfig
 
 from app.adk.agents.agent_factory.config_loader import (
     ConfigNotFoundError,
@@ -200,6 +202,46 @@ def _make_context(state: dict) -> MagicMock:
     ctx = MagicMock()
     ctx.state = state
     return ctx
+
+
+def _fake_cache_loader(
+    doc_id: str, project_id: str = "ken-e-dev"
+) -> tuple[Any, dict, dict]:
+    """Minimal in-memory loader for config_cache tests — returns LlmAgentConfig
+    built from the test fixture documents so no real Firestore is required when
+    agent.instruction(ctx) is invoked after build_hierarchy returns."""
+    instruction_map: dict[str, str] = {
+        "ken_e_chatbot": _ROOT_DOC["instruction"],
+        "specialist_a": _SPECIALIST_A_DOC["instruction"],
+        "specialist_b": _SPECIALIST_B_DOC["instruction"],
+    }
+    instr = instruction_map.get(doc_id, f"Test instruction for {doc_id}")
+    cfg = LlmAgentConfig(
+        name=doc_id,
+        model="gemini-2.0-flash",
+        instruction=instr,
+        description="",
+        generate_content_config={"temperature": 0.3, "max_output_tokens": 2048},
+    )
+    return cfg, {"version": "test"}, {}
+
+
+@pytest.fixture(autouse=True)
+def _patch_config_cache_loader():
+    """Patch load_config_from_firestore inside config_cache for every test in
+    this file so that calling agent.instruction(ctx) after build_hierarchy
+    returns never hits real Firestore.
+
+    Individual tests that need specific cache behaviour override this with
+    their own patch.object — the innermost patch wins."""
+    from app.adk.agents.utils import config_cache
+
+    config_cache.clear_config_cache()
+    with patch.object(
+        config_cache, "load_config_from_firestore", side_effect=_fake_cache_loader
+    ):
+        yield
+    config_cache.clear_config_cache()
 
 
 # ---------------------------------------------------------------------------
@@ -1188,6 +1230,249 @@ class TestPrivateHelpers:
 
         # specialist_a must appear exactly once even though it's in both collections.
         assert ids.count("specialist_a") == 1
+
+
+# ---------------------------------------------------------------------------
+# AH-58: Cache-backed instruction wiring in build_hierarchy
+# ---------------------------------------------------------------------------
+
+
+def _make_llm_config_mock(instruction: str):
+    cfg = MagicMock()
+    cfg.instruction = instruction
+    return cfg
+
+
+class TestCacheBackedHierarchyIntegration:
+    """Verify that the root agent's InstructionProvider reads from config_cache
+    at call time (not from a baked string), enabling live-reload behaviour."""
+
+    def test_root_agent_instruction_reads_from_config_cache_per_call(self) -> None:
+        """Root agent's instruction callable must consult config_cache on each turn."""
+        from app.adk.agents.utils import config_cache
+
+        docs = {
+            ("agent_configs", "ken_e_chatbot"): _ROOT_DOC,
+        }
+        fake_db = _FakeFirestoreDb(docs)
+
+        with patch.object(
+            config_cache,
+            "load_config_from_firestore",
+            return_value=(
+                _make_llm_config_mock("v1 instruction"),
+                {"version": "v1"},
+                {},
+            ),
+        ):
+            config_cache.clear_config_cache()
+            root_agent = _build_hierarchy_with_patches(fake_db)
+            ctx = _make_context({})
+            result = root_agent.instruction(ctx)
+
+        assert "v1 instruction" in result
+
+    def test_root_agent_live_reload_after_cache_clear(self) -> None:
+        """After clearing the cache, the next call must fetch the new instruction."""
+        from app.adk.agents.utils import config_cache
+
+        docs = {
+            ("agent_configs", "ken_e_chatbot"): _ROOT_DOC,
+        }
+        fake_db = _FakeFirestoreDb(docs)
+
+        with patch.object(config_cache, "load_config_from_firestore") as mock_load:
+            # v1 — initial deploy
+            mock_load.return_value = (
+                _make_llm_config_mock("v1 instruction"),
+                {"version": "v1"},
+                {},
+            )
+            config_cache.clear_config_cache()
+            root_agent = _build_hierarchy_with_patches(fake_db)
+            ctx = _make_context({})
+            assert "v1 instruction" in root_agent.instruction(ctx)
+
+            # Simulate admin update: clear cache + new Firestore value
+            config_cache.clear_config_cache()
+            mock_load.return_value = (
+                _make_llm_config_mock("v2 updated instruction"),
+                {"version": "v2"},
+                {},
+            )
+            result = root_agent.instruction(ctx)
+
+        assert "v2 updated instruction" in result
+        assert "v1 instruction" not in result
+
+    def test_specialist_agent_instruction_uses_config_doc_id(self) -> None:
+        """Default-status specialist must be built with config_doc_id=<spec_name>."""
+        import app.adk.agents.agent_factory.builder as b
+        import app.adk.agents.agent_factory.hierarchy as h
+
+        docs = {
+            ("agent_configs", "ken_e_chatbot"): _ROOT_DOC,
+            ("agent_configs", "specialist_a"): _SPECIALIST_A_DOC,
+        }
+        fake_db = _FakeFirestoreDb(docs)
+        fake_registry = _FakeRegistry()
+
+        captured_calls: list[dict] = []
+        original_build_agent = b.build_agent
+
+        def _spy(config, *, name: str, tools=None, **kwargs):
+            captured_calls.append(
+                {"name": name, "config_doc_id": kwargs.get("config_doc_id")}
+            )
+            return original_build_agent(config, name=name, tools=tools, **kwargs)
+
+        with (
+            _PATCH_BEFORE_AGENT,
+            _PATCH_AFTER_AGENT,
+            _PATCH_BEFORE_TOOL,
+            _PATCH_AFTER_TOOL,
+            _PATCH_BUILD_TOOLSET as mock_build_toolset,
+            _PATCH_GET_DEFAULT_REGISTRY as mock_get_registry,
+            patch(
+                "app.adk.agents.agent_factory.hierarchy.build_agent", side_effect=_spy
+            ),
+        ):
+            mock_build_toolset.return_value = MagicMock(name="mock_toolset")
+            mock_get_registry.return_value = fake_registry
+            h.build_hierarchy(db=fake_db)
+
+        spec_a_call = next(
+            (c for c in captured_calls if c["name"] == "specialist_a"), None
+        )
+        assert spec_a_call is not None, "build_agent was not called for specialist_a"
+        assert spec_a_call["config_doc_id"] == "specialist_a", (
+            f"Expected config_doc_id='specialist_a', got {spec_a_call['config_doc_id']!r}"
+        )
+
+    def test_overlaid_specialist_gets_no_config_doc_id(self) -> None:
+        """Account-overlaid (customized) specialists must NOT receive a config_doc_id;
+        the global-doc cache path would serve the wrong instruction for per-account
+        overlays."""
+        import app.adk.agents.agent_factory.builder as b
+        import app.adk.agents.agent_factory.hierarchy as h
+
+        docs = {
+            ("agent_configs", "ken_e_chatbot"): _ROOT_DOC,
+            ("agent_configs", "specialist_a"): _SPECIALIST_A_DOC,
+            (
+                "accounts",
+                "acc_test",
+                "agent_configs",
+                "specialist_a",
+            ): {
+                "instruction": "Customized for acc_test.",
+                "model": "gemini-2.0-flash",
+                "based_on_version": 1,
+            },
+        }
+        fake_db = _FakeFirestoreDb(docs)
+        fake_registry = _FakeRegistry()
+
+        captured_calls: list[dict] = []
+        original_build_agent = b.build_agent
+
+        def _spy(config, *, name: str, tools=None, **kwargs):
+            captured_calls.append(
+                {"name": name, "config_doc_id": kwargs.get("config_doc_id")}
+            )
+            return original_build_agent(config, name=name, tools=tools, **kwargs)
+
+        with (
+            _PATCH_BEFORE_AGENT,
+            _PATCH_AFTER_AGENT,
+            _PATCH_BEFORE_TOOL,
+            _PATCH_AFTER_TOOL,
+            _PATCH_BUILD_TOOLSET as mock_build_toolset,
+            _PATCH_GET_DEFAULT_REGISTRY as mock_get_registry,
+            patch(
+                "app.adk.agents.agent_factory.hierarchy.build_agent", side_effect=_spy
+            ),
+        ):
+            mock_build_toolset.return_value = MagicMock(name="mock_toolset")
+            mock_get_registry.return_value = fake_registry
+            h.build_hierarchy(db=fake_db, account_id="acc_test")
+
+        spec_a_call = next(
+            (c for c in captured_calls if c["name"] == "specialist_a"), None
+        )
+        assert spec_a_call is not None, "build_agent was not called for specialist_a"
+        assert spec_a_call["config_doc_id"] is None, (
+            f"Overlaid specialist must have config_doc_id=None, "
+            f"got {spec_a_call['config_doc_id']!r}"
+        )
+
+    def test_get_cached_config_called_on_each_instruction_invocation(self) -> None:
+        """Calling agent.instruction(ctx) N times must invoke get_cached_config N times
+        (minus cache hits, but with a cleared cache each time it is called fresh)."""
+        from app.adk.agents.utils import config_cache
+
+        docs = {
+            ("agent_configs", "ken_e_chatbot"): _ROOT_DOC,
+        }
+        fake_db = _FakeFirestoreDb(docs)
+
+        with patch.object(
+            config_cache,
+            "load_config_from_firestore",
+            return_value=(_make_llm_config_mock("base"), {}, {}),
+        ) as mock_load:
+            config_cache.clear_config_cache()
+            root_agent = _build_hierarchy_with_patches(fake_db)
+            ctx = _make_context({})
+
+            # First call populates cache (exactly 1 load)
+            root_agent.instruction(ctx)
+            assert mock_load.call_count == 1
+
+            # Clearing and calling again triggers exactly one more load
+            config_cache.clear_config_cache()
+            root_agent.instruction(ctx)
+            assert mock_load.call_count == 2
+
+
+class TestWeaveDecoratorOnConfigCache:
+    """Verify safe_weave_op is wired onto get_cached_config with the correct span name.
+
+    safe_weave_op is applied at module import time, so verifying the name argument
+    requires reloading the module under a recording stand-in."""
+
+    def test_get_cached_config_decorated_with_correct_span_name(self) -> None:
+        """safe_weave_op must be called with name='load_config_from_firestore' at
+        module load time — confirmed by reloading config_cache under a recording
+        stand-in and inspecting the captured name argument."""
+        import importlib
+
+        import app.adk.agents.utils.config_cache as cc_module
+
+        captured_names: list[str | None] = []
+
+        def _recording_safe_weave_op(name: str | None = None):
+            captured_names.append(name)
+
+            def _identity(fn):
+                return fn
+
+            return _identity
+
+        with patch(
+            "app.utils.weave_observability.safe_weave_op",
+            new=_recording_safe_weave_op,
+        ):
+            importlib.reload(cc_module)
+
+        try:
+            assert "load_config_from_firestore" in captured_names, (
+                f"safe_weave_op was not called with name='load_config_from_firestore'; "
+                f"captured names: {captured_names}"
+            )
+        finally:
+            # Restore the module to its normal state so subsequent tests work.
+            importlib.reload(cc_module)
 
 
 if __name__ == "__main__":
