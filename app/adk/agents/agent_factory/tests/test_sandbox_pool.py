@@ -340,12 +340,13 @@ async def test_concurrent_different_keys_parallel() -> None:
 
     pool._construct = _fake_construct  # type: ignore[method-assign]
 
-    start = asyncio.get_event_loop().time()
+    loop = asyncio.get_running_loop()
+    start = loop.time()
     await asyncio.gather(
         pool.get_or_create(account_id="acc", config_id="x"),
         pool.get_or_create(account_id="acc", config_id="y"),
     )
-    elapsed = asyncio.get_event_loop().time() - start
+    elapsed = loop.time() - start
 
     # If parallel: ~delay; if serial: ~2*delay. Allow 1.8x as the threshold.
     assert elapsed < 1.8 * delay, (
@@ -419,3 +420,56 @@ def test_sandbox_resource_name_format() -> None:
     assert name == (
         "projects/test-project/locations/europe-west1/sandboxes/acc_123/cfg_xyz"
     )
+
+
+# ---------------------------------------------------------------------------
+# Test 15 — _sandbox_resource_name rejects slash in account_id / config_id
+# ---------------------------------------------------------------------------
+
+
+def test_sandbox_resource_name_rejects_slash() -> None:
+    """_sandbox_resource_name raises ValueError if either ID contains '/'."""
+    with pytest.raises(ValueError, match="must not contain '/'"):
+        _sandbox_resource_name("acc/x", "cfg")
+
+    with pytest.raises(ValueError, match="must not contain '/'"):
+        _sandbox_resource_name("acc", "cfg/y")
+
+
+# ---------------------------------------------------------------------------
+# Test 16 — stale_before guard skips entries refreshed between snapshot and lock
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_stale_before_guard_skips_refreshed_entry() -> None:
+    """evict(..., stale_before=cutoff) skips an entry whose last_used was
+    updated after the sweep snapshot was taken — the TOCTOU guard."""
+    pool = SandboxPool()
+    executor = _make_executor()
+
+    async def _fake_construct(**_: Any) -> Any:
+        return executor
+
+    pool._construct = _fake_construct  # type: ignore[method-assign]
+
+    t_stale = 1_000.0
+
+    with patch("app.adk.agents.agent_factory.sandbox_pool.time") as mock_time:
+        mock_time.monotonic.return_value = t_stale
+        await pool.get_or_create(account_id="acc", config_id="cfg")
+
+    key = ("acc", "cfg")
+
+    # Simulate a concurrent hit that refreshed last_used after the snapshot
+    t_fresh = t_stale + pool._IDLE_TTL_SECONDS + 10
+    pool._pool[key] = (executor, t_fresh)
+
+    # The cutoff was computed before the refresh, so the key appeared stale then
+    cutoff = t_stale + pool._IDLE_TTL_SECONDS + 1
+
+    await pool.evict(key, stale_before=cutoff)
+
+    # Entry must NOT have been removed — it was refreshed past the cutoff
+    assert key in pool._pool, "Refreshed entry should not be evicted"
+    executor.aclose.assert_not_called()

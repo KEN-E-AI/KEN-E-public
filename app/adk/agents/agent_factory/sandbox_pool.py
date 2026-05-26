@@ -53,9 +53,16 @@ def _sandbox_resource_name(account_id: str, config_id: str) -> str:
     The slash-separated ``account_id/config_id`` suffix avoids the collision
     that a flat underscore separator would introduce: e.g. ``("acc_x", "y")``
     and ``("acc", "x_y")`` would produce identical names under a flat scheme.
+    Both IDs are validated to be slash-free; a slash in either would make the
+    path ambiguous and produce a malformed GCP resource name.
 
     See ``docs/spike/q1-network-egress.md:188`` and SK-26 for final path format.
     """
+    if "/" in account_id or "/" in config_id:
+        raise ValueError(
+            "account_id and config_id must not contain '/'; "
+            f"got account_id={account_id!r}, config_id={config_id!r}"
+        )
     project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
     location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
     return (
@@ -102,6 +109,9 @@ class SandboxPool:
         # Lazily initialised per-stripe lock map (32 slots).
         self._stripe_locks: dict[int, asyncio.Lock] = {}
         self._sweep_task: asyncio.Task[None] | None = None
+        # Serialises cap-enforcement passes so concurrent misses that both exit
+        # their stripe locks cannot race on next(iter(self._pool)).
+        self._cap_lock: asyncio.Lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
     # Public API
@@ -243,10 +253,21 @@ class SandboxPool:
         )
 
     async def _evict_if_over_cap(self) -> None:
-        """Evict the LRU entry until the pool is at or below ``_MAX_ENTRIES``."""
-        while len(self._pool) > self._MAX_ENTRIES:
-            oldest_key = next(iter(self._pool))
-            await self.evict(oldest_key)
+        """Evict the LRU entry until the pool is at or below ``_MAX_ENTRIES``.
+
+        Held under ``_cap_lock`` to serialise concurrent eviction passes:
+        multiple concurrent ``get_or_create`` misses each insert an entry then
+        race here, and without the lock they could both call
+        ``next(iter(self._pool))`` concurrently while the other is mid-eviction.
+        The ``while`` loop re-checks the cap after each eviction so transiently
+        over-cap states (from concurrent inserts that slip through) are still
+        corrected.  OrderedDict iteration order is oldest-first because evictions
+        call ``del`` and hits call ``move_to_end`` — the LRU invariant.
+        """
+        async with self._cap_lock:
+            while len(self._pool) > self._MAX_ENTRIES:
+                oldest_key = next(iter(self._pool))
+                await self.evict(oldest_key)
 
     async def _sweep_loop(self) -> None:
         """Background coroutine that periodically sweeps idle entries."""
