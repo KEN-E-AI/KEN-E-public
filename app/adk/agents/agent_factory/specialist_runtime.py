@@ -51,6 +51,7 @@ import hashlib
 import logging
 import re
 import threading
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -166,6 +167,36 @@ class _AgentCache:
 
 
 _specialists_cache: _AgentCache = _AgentCache()
+
+
+# ---------------------------------------------------------------------------
+# Rendered "Available Specialists" Markdown block cache
+# ---------------------------------------------------------------------------
+# Caches the rendered block from ``available_specialists_provider`` by
+# ``account_id``.  Without this cache, each invocation re-issues
+# ``list_account_agent_configs`` + N ``resolve_config`` + N ``resolve_agent``
+# calls.  TTL matches ``get_cached_merged_config`` so admin edits propagate on
+# the same horizon as the rest of the cache hierarchy.
+
+_BLOCK_CACHE_TTL: int = 60
+_BlockCacheEntry = tuple[str, float]  # (rendered_block, expires_at_monotonic)
+_block_cache: dict[str, _BlockCacheEntry] = {}
+_block_locks: list[threading.Lock] = [threading.Lock() for _ in range(32)]
+
+
+def _block_lock_for(account_id: str) -> threading.Lock:
+    return _block_locks[hash(account_id) % 32]
+
+
+def _clear_block_cache_for_tests() -> None:
+    """Drop the rendered-block cache.  Acquires all stripes in index order."""
+    for lock in _block_locks:
+        lock.acquire()
+    try:
+        _block_cache.clear()
+    finally:
+        for lock in _block_locks:
+            lock.release()
 
 
 # ---------------------------------------------------------------------------
@@ -492,6 +523,12 @@ def available_specialists_provider(context: ReadonlyContext) -> str:
         )
         return "## Available Specialists\n\n- None registered."
 
+    now = time.monotonic()
+    with _block_lock_for(account_id):
+        cached = _block_cache.get(account_id)
+        if cached is not None and now < cached[1]:
+            return cached[0]
+
     try:
         doc_ids = list_account_agent_configs(account_id)
     except FirestoreConnectionError as exc:
@@ -519,4 +556,7 @@ def available_specialists_provider(context: ReadonlyContext) -> str:
                 exc_info=True,
             )
 
-    return assemble_available_specialists_block(specialists)
+    block = assemble_available_specialists_block(specialists)
+    with _block_lock_for(account_id):
+        _block_cache[account_id] = (block, time.monotonic() + _BLOCK_CACHE_TTL)
+    return block

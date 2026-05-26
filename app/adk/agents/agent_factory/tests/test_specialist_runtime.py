@@ -54,14 +54,16 @@ def _make_llm_agent(name: str = "test_specialist") -> MagicMock:
 
 @pytest.fixture(autouse=True)
 def clear_specialists_cache() -> Any:
-    """Each test starts with a clean agent cache and config cache."""
+    """Each test starts with a clean agent cache, config cache, and block cache."""
     from app.adk.agents.agent_factory import specialist_runtime
     from app.adk.agents.utils.config_cache import clear_config_cache
 
     specialist_runtime._specialists_cache.clear()
+    specialist_runtime._clear_block_cache_for_tests()
     clear_config_cache()
     yield
     specialist_runtime._specialists_cache.clear()
+    specialist_runtime._clear_block_cache_for_tests()
     clear_config_cache()
 
 
@@ -413,6 +415,154 @@ class TestAvailableSpecialistsProvider:
 
         assert "good_spe" in result
         assert "bad_spe" not in result
+
+
+# ---------------------------------------------------------------------------
+# TestAvailableSpecialistsBlockCache
+# ---------------------------------------------------------------------------
+
+
+class TestAvailableSpecialistsBlockCache:
+    """Verify TTL caching of the rendered ``## Available Specialists`` block."""
+
+    def _make_context(self, account_id: str | None) -> MagicMock:
+        ctx = MagicMock()
+        ctx.state = {"account_id": account_id} if account_id else {}
+        return ctx
+
+    def test_repeated_call_within_ttl_skips_list_documents(self) -> None:
+        """Two calls with same account_id should issue only one Firestore list."""
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        cfg = _make_merged_config("v1", visible_in_frontend=True)
+        agent = _make_llm_agent("spe_1")
+        ctx = self._make_context("acct_1")
+        list_mock = MagicMock(return_value=["spe_1"])
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.config_loader.list_account_agent_configs",
+                list_mock,
+            ),
+            patch.object(specialist_runtime, "resolve_config", return_value=cfg),
+            patch.object(specialist_runtime, "resolve_agent", return_value=agent),
+        ):
+            first = specialist_runtime.available_specialists_provider(ctx)
+            second = specialist_runtime.available_specialists_provider(ctx)
+
+        assert first == second
+        assert "spe_1" in first
+        assert list_mock.call_count == 1
+
+    def test_call_after_ttl_expiry_refetches(self, monkeypatch: Any) -> None:
+        """When the TTL elapses, the next call must re-issue the list."""
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        cfg = _make_merged_config("v1", visible_in_frontend=True)
+        agent = _make_llm_agent("spe_1")
+        ctx = self._make_context("acct_1")
+        list_mock = MagicMock(return_value=["spe_1"])
+
+        fake_clock = {"t": 1000.0}
+
+        def fake_monotonic() -> float:
+            return fake_clock["t"]
+
+        monkeypatch.setattr(specialist_runtime.time, "monotonic", fake_monotonic)
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.config_loader.list_account_agent_configs",
+                list_mock,
+            ),
+            patch.object(specialist_runtime, "resolve_config", return_value=cfg),
+            patch.object(specialist_runtime, "resolve_agent", return_value=agent),
+        ):
+            specialist_runtime.available_specialists_provider(ctx)
+            fake_clock["t"] += specialist_runtime._BLOCK_CACHE_TTL + 1
+            specialist_runtime.available_specialists_provider(ctx)
+
+        assert list_mock.call_count == 2
+
+    def test_different_account_ids_cached_independently(self) -> None:
+        """Two different account_ids should each issue their own list call."""
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        cfg = _make_merged_config("v1", visible_in_frontend=True)
+        agent = _make_llm_agent("spe_1")
+        list_mock = MagicMock(return_value=["spe_1"])
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.config_loader.list_account_agent_configs",
+                list_mock,
+            ),
+            patch.object(specialist_runtime, "resolve_config", return_value=cfg),
+            patch.object(specialist_runtime, "resolve_agent", return_value=agent),
+        ):
+            specialist_runtime.available_specialists_provider(self._make_context("acct_1"))
+            specialist_runtime.available_specialists_provider(self._make_context("acct_2"))
+            # Repeats of acct_1 still hit the cache.
+            specialist_runtime.available_specialists_provider(self._make_context("acct_1"))
+
+        assert list_mock.call_count == 2
+
+    def test_firestore_error_not_cached(self) -> None:
+        """A FirestoreConnectionError fallback must not poison the cache."""
+        from app.adk.agents.agent_factory import specialist_runtime
+        from app.adk.agents.agent_factory.config_loader import FirestoreConnectionError
+
+        cfg = _make_merged_config("v1", visible_in_frontend=True)
+        agent = _make_llm_agent("spe_1")
+        ctx = self._make_context("acct_1")
+
+        list_mock = MagicMock(
+            side_effect=[FirestoreConnectionError("down"), ["spe_1"]]
+        )
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.config_loader.list_account_agent_configs",
+                list_mock,
+            ),
+            patch.object(specialist_runtime, "resolve_config", return_value=cfg),
+            patch.object(specialist_runtime, "resolve_agent", return_value=agent),
+        ):
+            first = specialist_runtime.available_specialists_provider(ctx)
+            second = specialist_runtime.available_specialists_provider(ctx)
+
+        assert "None registered" in first
+        assert "spe_1" in second
+        assert list_mock.call_count == 2
+
+    def test_invalid_account_id_not_cached(self) -> None:
+        """Invalid account_id returns fallback without touching or populating the cache."""
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        cfg = _make_merged_config("v1", visible_in_frontend=True)
+        agent = _make_llm_agent("spe_1")
+        list_mock = MagicMock(return_value=["spe_1"])
+
+        bad_ctx = MagicMock()
+        bad_ctx.state = {"account_id": "../../etc/passwd"}
+        good_ctx = self._make_context("acct_1")
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.config_loader.list_account_agent_configs",
+                list_mock,
+            ),
+            patch.object(specialist_runtime, "resolve_config", return_value=cfg),
+            patch.object(specialist_runtime, "resolve_agent", return_value=agent),
+        ):
+            fallback = specialist_runtime.available_specialists_provider(bad_ctx)
+            good = specialist_runtime.available_specialists_provider(good_ctx)
+
+        assert "None registered" in fallback
+        assert "spe_1" in good
+        assert list_mock.call_count == 1
+        # The invalid account_id never made it into the cache.
+        assert "../../etc/passwd" not in specialist_runtime._block_cache
 
 
 # ---------------------------------------------------------------------------
