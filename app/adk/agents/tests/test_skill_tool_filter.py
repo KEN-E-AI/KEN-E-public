@@ -107,6 +107,14 @@ class TestToolNameMatches:
         assert _tool_name_matches("Bash(git:status)", "Bash(*") is True
         assert _tool_name_matches("Write", "Bash(*") is False
 
+    def test_multi_wildcard_logs_warning_and_returns_false(self, caplog) -> None:
+        with caplog.at_level(
+            logging.WARNING, logger="app.adk.agents.skill_tool_filter"
+        ):
+            result = _tool_name_matches("ReadExtra", "R*d*")
+        assert result is False
+        assert any("wildcards" in r.message for r in caplog.records)
+
 
 # ---------------------------------------------------------------------------
 # restrict_tools_for_skill
@@ -236,7 +244,7 @@ class TestSkillAllowedToolsCallback:
         assert any("degrading open" in r.message for r in caplog.records)
 
     @pytest.mark.asyncio
-    async def test_skill_id_missing_from_map_degrades_open(self) -> None:
+    async def test_skill_id_missing_from_map_degrades_open(self, caplog) -> None:
         tool = _tool("Read")
         ctx = _make_context(
             {
@@ -244,10 +252,12 @@ class TestSkillAllowedToolsCallback:
                 "skills_allowed_tools": {},  # no entry for sk_x
             }
         )
-        # Missing entry in map → degrade open (None value = no frontmatter)
-        # An empty dict means sk_x has no entry → we degrade open
-        result = await skill_allowed_tools_before_tool_callback(tool, {}, ctx)
+        with caplog.at_level(
+            logging.WARNING, logger="app.adk.agents.skill_tool_filter"
+        ):
+            result = await skill_allowed_tools_before_tool_callback(tool, {}, ctx)
         assert result is None
+        assert any("degrading open" in r.message for r in caplog.records)
 
     @pytest.mark.asyncio
     async def test_skill_none_value_means_no_restriction(self) -> None:

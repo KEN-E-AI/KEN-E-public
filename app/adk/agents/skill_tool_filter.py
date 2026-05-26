@@ -82,10 +82,22 @@ def _tool_name_matches(tool_name: str, pattern: str) -> bool:
     Returns:
         ``True`` if the tool name matches the pattern.
     """
-    if "*" not in pattern:
+    star_count = pattern.count("*")
+    if star_count == 0:
         return tool_name == pattern
-    # Split on the first (and assumed only) wildcard.
+    if star_count > 1:
+        logger.warning(
+            "skill_filter: pattern %r contains %d wildcards; v1 supports only one '*' — "
+            "treating as no-match to avoid false positives",
+            pattern,
+            star_count,
+        )
+        return False
+    # Split on the single wildcard.
     prefix, _, suffix = pattern.partition("*")
+    # Guard against prefix+suffix overlapping inside a shorter tool name.
+    if len(prefix) + len(suffix) > len(tool_name):
+        return False
     return tool_name.startswith(prefix) and tool_name.endswith(suffix)
 
 
@@ -106,7 +118,7 @@ def restrict_tools_for_skill(
 
     Returns:
         The filtered list of tools.  Order is preserved.  If ``allowed`` is
-        ``None`` the original sequence is returned as-is (no copy).  If
+        ``None`` a new list containing all tools is returned.  If
         ``allowed`` is an empty set, an empty list is returned (explicit
         empty allow-list = block all).
     """
@@ -154,11 +166,15 @@ async def skill_allowed_tools_before_tool_callback(
     if hasattr(tool_context, "state") and hasattr(tool_context.state, "get"):
         state = tool_context.state
 
+    # SECURITY: active_skill_id is written by SK-27 (load_skill tool) and is
+    # therefore LLM-influenced.  A prompt-injection payload could overwrite it
+    # via any state-writing tool in the same turn.  Hardening (immutable
+    # out-of-band snapshot) is tracked as a future SK-27 concern.
     active_skill_id: str | None = state.get("active_skill_id")
     if not active_skill_id:
         return None  # No skill active — unrestricted
 
-    skill_map: dict[str, list[str] | None] | None = state.get("skills_allowed_tools")
+    skill_map = state.get("skills_allowed_tools")
     if skill_map is None:
         logger.warning(
             "skill_filter: active_skill_id=%r but skills_allowed_tools missing from state; "
@@ -167,7 +183,22 @@ async def skill_allowed_tools_before_tool_callback(
         )
         return None
 
-    raw_patterns = skill_map.get(active_skill_id)
+    if not isinstance(skill_map, dict):
+        logger.warning(
+            "skill_filter: skills_allowed_tools is not a dict (%s); degrading open",
+            type(skill_map).__name__,
+        )
+        return None
+
+    if active_skill_id not in skill_map:
+        logger.warning(
+            "skill_filter: active_skill_id=%r not found in skills_allowed_tools map; "
+            "degrading open (SK-22 may not have registered this skill yet)",
+            active_skill_id,
+        )
+        return None
+
+    raw_patterns = skill_map[active_skill_id]
     if raw_patterns is None:
         # Skill has no allowed-tools frontmatter — no restriction
         return None

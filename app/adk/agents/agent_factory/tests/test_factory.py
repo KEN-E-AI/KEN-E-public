@@ -454,6 +454,18 @@ class TestStandardCallbackOrder:
 
         assert agent.before_tool_callback[0] is _ADK_BEFORE_TOOL
 
+    def test_before_tool_callback_second_entry_is_skill_filter(self) -> None:
+        agent = _build(_make_config(), name="cb")
+
+        assert agent.before_tool_callback[1] is _SKILL_FILTER
+
+    def test_before_tool_callback_without_additional_has_exactly_two_entries(
+        self,
+    ) -> None:
+        agent = _build(_make_config(), name="cb")
+
+        assert len(agent.before_tool_callback) == 2
+
     def test_after_tool_callback_starts_with_adk_sentinel(self) -> None:
         agent = _build(_make_config(), name="cb")
 
