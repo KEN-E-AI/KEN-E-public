@@ -50,13 +50,16 @@ def _sandbox_resource_name(account_id: str, config_id: str) -> str:
     is wired to a live executor.  SK-23 tests stub ``_construct`` so this
     value never reaches a real ADK constructor.
 
+    The slash-separated ``account_id/config_id`` suffix avoids the collision
+    that a flat underscore separator would introduce: e.g. ``("acc_x", "y")``
+    and ``("acc", "x_y")`` would produce identical names under a flat scheme.
+
     See ``docs/spike/q1-network-egress.md:188`` and SK-26 for final path format.
     """
     project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
     location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
     return (
-        f"projects/{project_id}/locations/{location}"
-        f"/sandboxes/sb_{account_id}_{config_id}"
+        f"projects/{project_id}/locations/{location}/sandboxes/{account_id}/{config_id}"
     )
 
 
@@ -115,6 +118,11 @@ class SandboxPool:
         On a cache hit the entry is LRU-bumped and its ``last_used`` timestamp
         refreshed.  On a miss a new executor is constructed and the LRU cap is
         enforced.
+
+        ``_evict_if_over_cap`` is called **outside** the stripe lock to avoid a
+        deadlock: if the LRU key hashes to the same stripe as the new key,
+        ``evict`` would try to acquire a lock already held by this coroutine.
+        ``asyncio.Lock`` is not re-entrant, so the coroutine would deadlock.
         """
         key = (account_id, config_id)
         async with self._stripe(key):
@@ -128,21 +136,38 @@ class SandboxPool:
 
             executor = await self._construct(account_id=account_id, config_id=config_id)
             self._pool[key] = (executor, now)
-            self._pool.move_to_end(key)
-            await self._evict_if_over_cap()
-            return executor  # type: ignore[return-value]
 
-    async def evict(self, key: tuple[str, str]) -> None:
+        # Cap enforcement runs outside the stripe lock so that evict() can
+        # acquire the stripe lock for the LRU entry without deadlocking.
+        await self._evict_if_over_cap()
+        return executor  # type: ignore[return-value]
+
+    async def evict(
+        self,
+        key: tuple[str, str],
+        *,
+        stale_before: float | None = None,
+    ) -> None:
         """Remove the entry for ``key`` and close its executor via ``aclose()``.
 
         No-op if the key is not present.  ``aclose()`` failures are caught and
         logged; the entry is removed regardless so the pool remains consistent.
+
+        ``stale_before`` (monotonic timestamp): when provided the entry is only
+        evicted if its ``last_used`` timestamp is strictly less than this value.
+        This closes the TOCTOU window in ``sweep_idle``: the snapshot is taken
+        outside the lock but the timestamp is re-validated inside it, so an
+        entry that was refreshed between the snapshot and the lock acquisition
+        is skipped rather than incorrectly closed.
         """
         async with self._stripe(key):
-            entry = self._pool.pop(key, None)
+            entry = self._pool.get(key)
             if entry is None:
                 return
-            executor, _ = entry
+            executor, last_used = entry
+            if stale_before is not None and last_used >= stale_before:
+                return
+            del self._pool[key]
             try:
                 await executor.aclose()
             except Exception:
@@ -155,12 +180,14 @@ class SandboxPool:
         """Evict entries whose last-used time predates the idle TTL cutoff.
 
         Collects stale keys into a list before iterating so the pool dict is
-        not mutated during traversal.
+        not mutated during traversal.  Passes ``stale_before`` to ``evict``
+        so that entries refreshed between the snapshot and the lock acquisition
+        are not incorrectly closed.
         """
         cutoff = time.monotonic() - self._IDLE_TTL_SECONDS
         stale_keys = [k for k, (_, last) in self._pool.items() if last < cutoff]
         for k in stale_keys:
-            await self.evict(k)
+            await self.evict(k, stale_before=cutoff)
 
     def start(self) -> None:
         """Arm the background idle-sweep task.

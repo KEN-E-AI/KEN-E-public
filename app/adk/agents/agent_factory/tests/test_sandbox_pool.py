@@ -417,5 +417,5 @@ def test_sandbox_resource_name_format() -> None:
         name = _sandbox_resource_name("acc_123", "cfg_xyz")
 
     assert name == (
-        "projects/test-project/locations/europe-west1/sandboxes/sb_acc_123_cfg_xyz"
+        "projects/test-project/locations/europe-west1/sandboxes/acc_123/cfg_xyz"
     )
