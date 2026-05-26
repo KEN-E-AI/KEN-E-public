@@ -129,7 +129,9 @@ class TestFailureHandling:
             clock["now"] = 1100.0  # force re-fetch
             mock_load.side_effect = RuntimeError("Firestore unreachable")
 
-            cfg, meta, ext = config_cache.get_cached_config("ken_e_chatbot", ttl_seconds=60)
+            cfg, meta, ext = config_cache.get_cached_config(
+                "ken_e_chatbot", ttl_seconds=60
+            )
 
         assert cfg.instruction == "v1", "should serve the stale-but-last-good value"
         assert meta["version"] == "v1"
@@ -291,3 +293,118 @@ class TestProjectIdEnvHonored:
         args = mock_load.call_args.args
         project_id = kwargs.get("project_id") or (args[1] if len(args) > 1 else None)
         assert project_id == "ken-e-dev"
+
+
+class TestStripedLocks:
+    """Validate 32-stripe locking semantics added in AH-59.
+
+    Two properties must hold:
+    1. Same-key concurrent cold reads serialize: exactly one Firestore call
+       fires regardless of thread count (single-flight per key).
+    2. Different-key reads on *different* stripes run concurrently: the first
+       key's Firestore call does not block the second key's Firestore call.
+    """
+
+    def test_same_key_concurrent_reads_serialize(self) -> None:
+        """N concurrent cold reads for identical doc_id fire exactly one load."""
+        import time
+
+        from app.adk.agents.utils import config_cache
+
+        load_count = 0
+        start_sem = threading.Event()
+
+        def slow_loader(
+            doc_id: str, project_id: str = "ken-e-dev"
+        ) -> tuple[LlmAgentConfig, dict, dict]:
+            nonlocal load_count
+            time.sleep(0.05)
+            load_count += 1
+            return _make_config("v1"), {"version": "v1"}, {}
+
+        def runner() -> None:
+            start_sem.wait()
+            config_cache.get_cached_config("same_key_doc")
+
+        with patch.object(
+            config_cache, "load_config_from_firestore", side_effect=slow_loader
+        ):
+            threads = [threading.Thread(target=runner) for _ in range(6)]
+            for t in threads:
+                t.start()
+            start_sem.set()
+            for t in threads:
+                t.join(timeout=5)
+
+        assert load_count == 1, (
+            f"Striped lock must provide single-flight for same key; got {load_count} loads"
+        )
+
+    def test_different_stripe_keys_do_not_block_each_other(self) -> None:
+        """Reads on keys that fall into different stripes must not serialize.
+
+        We pick two doc_ids that hash to *different* stripes and verify that
+        two concurrent slow Firestore calls both complete — i.e., one doesn't
+        block the other behind a global lock.  If they ran sequentially the
+        total wall time would be >= 2 * sleep; concurrent execution keeps it
+        under 1.5 * sleep.
+        """
+        import time
+
+        from app.adk.agents.utils import config_cache
+
+        sleep_secs = 0.1
+
+        # Find two keys guaranteed to map to different stripes.
+        stripes = config_cache._LOCK_STRIPES
+        key_a, key_b = None, None
+        for candidate in (f"doc_{i}" for i in range(200)):
+            stripe = hash(candidate) % stripes
+            if key_a is None:
+                key_a = candidate
+                stripe_a = stripe
+            elif stripe != stripe_a:
+                key_b = candidate
+                break
+
+        assert key_a is not None and key_b is not None, (
+            "Could not find two keys on different stripes — increase candidate range"
+        )
+
+        call_times: list[float] = []
+
+        def slow_loader(
+            doc_id: str, project_id: str = "ken-e-dev"
+        ) -> tuple[LlmAgentConfig, dict, dict]:
+            call_times.append(time.monotonic())
+            time.sleep(sleep_secs)
+            return _make_config("v1"), {"version": "v1"}, {}
+
+        results: list[Exception | None] = [None, None]
+
+        def runner(idx: int, doc_id: str) -> None:
+            try:
+                config_cache.get_cached_config(doc_id)
+            except Exception as exc:
+                results[idx] = exc
+
+        with patch.object(
+            config_cache, "load_config_from_firestore", side_effect=slow_loader
+        ):
+            t0 = time.monotonic()
+            threads = [
+                threading.Thread(target=runner, args=(0, key_a)),
+                threading.Thread(target=runner, args=(1, key_b)),
+            ]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=5)
+            elapsed = time.monotonic() - t0
+
+        assert results == [None, None], f"Unexpected errors: {results}"
+        # Concurrent execution: wall time < 1.5 * sleep (not sequential 2 *)
+        assert elapsed < sleep_secs * 1.5, (
+            f"Different-stripe keys appear to have serialized: elapsed={elapsed:.3f}s "
+            f"(expected < {sleep_secs * 1.5:.3f}s for concurrent execution)"
+        )
