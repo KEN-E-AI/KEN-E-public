@@ -49,7 +49,9 @@ import collections
 import copy
 import hashlib
 import logging
+import re
 import threading
+from collections.abc import Callable
 from typing import Any
 
 from google.adk.agents import LlmAgent
@@ -58,6 +60,11 @@ from google.adk.agents.readonly_context import ReadonlyContext
 from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
 from app.adk.agents.utils.config_cache import get_cached_merged_config
 from app.utils.weave_observability import safe_weave_op
+from shared.account_id_utils import validate_account_id
+
+# Firestore document IDs for MCP servers and specialist configs follow the same
+# lowercase-identifier convention as specialist names in dispatch.py.
+_VALID_DOC_ID_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +100,10 @@ class _AgentCache:
     capacity.  Uses a dedicated ``threading.Lock`` — separate from the
     config-cache stripe locks — because agent construction (the critical
     section on miss) is independent of config fetches.
+
+    Single-flight on cache miss: ``get_or_build`` holds the lock across the
+    check-and-populate window so N concurrent cold reads for the same key
+    call *builder* exactly once rather than N times (thundering-herd fix).
     """
 
     def __init__(self, maxsize: int = _AGENT_CACHE_MAX) -> None:
@@ -121,6 +132,28 @@ class _AgentCache:
             elif len(self._store) >= self._maxsize:
                 self._store.popitem(last=False)  # evict LRU
             self._store[key] = agent
+
+    def get_or_build(
+        self,
+        key: tuple[str, str | None, str],
+        builder: Callable[[], LlmAgent],
+    ) -> LlmAgent:
+        """Return the cached agent for *key*, calling *builder* exactly once on miss.
+
+        Holds the lock across the check-and-populate window (double-checked
+        locking is unnecessary here because we never release between the two
+        checks).  Concurrent callers for the same key block until the first
+        build completes, then see the populated entry on their own check.
+        """
+        with self._lock:
+            if key in self._store:
+                self._store.move_to_end(key)
+                return self._store[key]
+            agent = builder()
+            if len(self._store) >= self._maxsize:
+                self._store.popitem(last=False)  # evict LRU
+            self._store[key] = agent
+            return agent
 
     def clear(self) -> None:
         """Drop all cached agents.  Primarily for tests."""
@@ -165,6 +198,13 @@ def _build_specialist(config: MergedAgentConfig, name: str) -> LlmAgent:
 
         for server_id in config.mcp_servers:
             try:
+                if not _VALID_DOC_ID_RE.match(server_id):
+                    logger.error(
+                        "MCP server ID %r for specialist %r fails format validation; skipping",
+                        server_id,
+                        name,
+                    )
+                    continue
                 snap = db.collection(MCP_COLLECTION).document(server_id).get()
                 if not snap.exists:
                     logger.warning(
@@ -255,13 +295,9 @@ def resolve_agent(
     content_hash = _content_hash(config)
     cache_key: tuple[str, str | None, str] = (doc_id, account_id, content_hash)
 
-    agent = _specialists_cache.get(cache_key)
-    if agent is not None:
-        return agent
-
-    agent = _build_specialist(config, doc_id)
-    _specialists_cache.put(cache_key, agent)
-    return agent
+    return _specialists_cache.get_or_build(
+        cache_key, lambda: _build_specialist(config, doc_id)
+    )
 
 
 @safe_weave_op(name="specialist_run")
@@ -447,6 +483,16 @@ def available_specialists_provider(context: ReadonlyContext) -> str:
         return "## Available Specialists\n\n- None registered."
 
     try:
+        account_id = validate_account_id(account_id)
+    except ValueError:
+        logger.warning(
+            "[AVAILABLE-SPECIALISTS] Invalid account_id %r in session state; "
+            "returning empty specialists block.",
+            account_id,
+        )
+        return "## Available Specialists\n\n- None registered."
+
+    try:
         doc_ids = list_account_agent_configs(account_id)
     except FirestoreConnectionError as exc:
         logger.error(
@@ -470,6 +516,7 @@ def available_specialists_provider(context: ReadonlyContext) -> str:
                 doc_id,
                 account_id,
                 exc,
+                exc_info=True,
             )
 
     return assemble_available_specialists_block(specialists)

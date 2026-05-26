@@ -224,25 +224,18 @@ class TestRun:
 
         fake_agent = _make_llm_agent()
 
+        # run() imports invoke_agent_with_retry lazily from agent_retry; patch it there.
+        import app.adk.agents.utils.agent_retry as agent_retry_mod
+
         with (
             patch.object(specialist_runtime, "resolve_agent", return_value=fake_agent),
-            patch(
-                "app.adk.agents.agent_factory.specialist_runtime."
-                "invoke_agent_with_retry"
-                if False  # lazy import — patch the module it's imported from
-                else "app.adk.agents.utils.agent_retry.invoke_agent_with_retry",
-                return_value="single pass result",
-            ),
-        ):
-            # Patch the lazy import inside run()
-            import app.adk.agents.utils.agent_retry as agent_retry_mod
-
-            with patch.object(
+            patch.object(
                 agent_retry_mod,
                 "invoke_agent_with_retry",
                 return_value="single pass result",
-            ) as mock_retry:
-                result = specialist_runtime.run("spe_1", "do something")
+            ) as mock_retry,
+        ):
+            result = specialist_runtime.run("spe_1", "do something")
 
         assert result == "single pass result"
         mock_retry.assert_called_once()
@@ -333,6 +326,17 @@ class TestAvailableSpecialistsProvider:
         from app.adk.agents.agent_factory import specialist_runtime
 
         ctx = self._make_context(None)
+        result = specialist_runtime.available_specialists_provider(ctx)
+
+        assert "## Available Specialists" in result
+        assert "None registered" in result
+
+    def test_returns_empty_block_when_account_id_invalid(self) -> None:
+        """Malformed account_id (e.g. path-traversal attempt) must be rejected."""
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        ctx = MagicMock()
+        ctx.state = {"account_id": "../../etc/passwd"}
         result = specialist_runtime.available_specialists_provider(ctx)
 
         assert "## Available Specialists" in result

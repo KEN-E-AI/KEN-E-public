@@ -408,3 +408,208 @@ class TestStripedLocks:
             f"Different-stripe keys appear to have serialized: elapsed={elapsed:.3f}s "
             f"(expected < {sleep_secs * 1.5:.3f}s for concurrent execution)"
         )
+
+    def test_merged_cache_same_key_concurrent_reads_serialize(self) -> None:
+        """N concurrent cold reads for identical (doc_id, account_id) fire exactly one load."""
+        import time
+
+        from app.adk.agents.utils import config_cache
+
+        load_count = 0
+        start_sem = threading.Event()
+
+        def slow_loader(
+            doc_id: str,
+            account_id: str | None = None,
+            project_id: str = "ken-e-dev",
+        ) -> Any:
+            nonlocal load_count
+            time.sleep(0.05)
+            load_count += 1
+            # Return a minimal MergedAgentConfig-like object
+            from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+
+            return MergedAgentConfig(
+                instruction="v1",
+                model="gemini-2.5-pro",
+                description="desc",
+            )
+
+        def runner() -> None:
+            start_sem.wait()
+            config_cache.get_cached_merged_config("merged_doc", "acct_1")
+
+        with patch.object(config_cache, "load_agent_config", side_effect=slow_loader):
+            threads = [threading.Thread(target=runner) for _ in range(5)]
+            for t in threads:
+                t.start()
+            start_sem.set()
+            for t in threads:
+                t.join(timeout=5)
+
+        assert load_count == 1, (
+            f"Striped lock must provide single-flight for same (doc_id, account_id) key; "
+            f"got {load_count} loads"
+        )
+
+
+class TestMergedConfigCache:
+    """TTL-caching and error-handling for ``get_cached_merged_config``.
+
+    Mirrors ``TestTTLBehavior`` and ``TestFailureHandling`` for the merged
+    ``_merged_cache`` surface added in AH-59.
+    """
+
+    def _make_merged_config(self, instruction: str = "v1") -> Any:
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+
+        return MergedAgentConfig(
+            instruction=instruction,
+            model="gemini-2.5-pro",
+            description="desc",
+        )
+
+    def test_first_call_loads_from_firestore(self) -> None:
+        from app.adk.agents.utils import config_cache
+
+        cfg = self._make_merged_config("v1")
+
+        with patch.object(
+            config_cache, "load_agent_config", return_value=cfg
+        ) as mock_load:
+            result = config_cache.get_cached_merged_config("specialist_1", "acct_1")
+
+        assert mock_load.call_count == 1
+        assert result.instruction == "v1"
+
+    def test_second_call_within_ttl_serves_cached(self) -> None:
+        from app.adk.agents.utils import config_cache
+
+        cfg = self._make_merged_config("v1")
+
+        with patch.object(
+            config_cache, "load_agent_config", return_value=cfg
+        ) as mock_load:
+            config_cache.get_cached_merged_config(
+                "specialist_1", "acct_1", ttl_seconds=60
+            )
+            config_cache.get_cached_merged_config(
+                "specialist_1", "acct_1", ttl_seconds=60
+            )
+
+        assert mock_load.call_count == 1
+
+    def test_call_after_ttl_expiry_refetches(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.adk.agents.utils import config_cache
+
+        clock = {"now": 1000.0}
+        monkeypatch.setattr(config_cache.time, "monotonic", lambda: clock["now"])
+
+        cfg_v1 = self._make_merged_config("v1")
+        cfg_v2 = self._make_merged_config("v2")
+
+        with patch.object(config_cache, "load_agent_config") as mock_load:
+            mock_load.return_value = cfg_v1
+            config_cache.get_cached_merged_config(
+                "specialist_1", "acct_1", ttl_seconds=60
+            )
+
+            clock["now"] = 1059.0  # just before expiry
+            config_cache.get_cached_merged_config(
+                "specialist_1", "acct_1", ttl_seconds=60
+            )
+            assert mock_load.call_count == 1
+
+            clock["now"] = 1061.0  # just past expiry
+            mock_load.return_value = cfg_v2
+            result = config_cache.get_cached_merged_config(
+                "specialist_1", "acct_1", ttl_seconds=60
+            )
+            assert mock_load.call_count == 2
+            assert result.instruction == "v2"
+
+    def test_different_account_ids_cached_independently(self) -> None:
+        from app.adk.agents.utils import config_cache
+
+        def loader(
+            doc_id: str,
+            account_id: str | None = None,
+            project_id: str = "ken-e-dev",
+        ) -> Any:
+            from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+
+            return MergedAgentConfig(
+                instruction=f"{doc_id}_{account_id}_instr",
+                model="gemini-2.5-pro",
+                description="desc",
+            )
+
+        with patch.object(
+            config_cache, "load_agent_config", side_effect=loader
+        ) as mock_load:
+            a = config_cache.get_cached_merged_config("specialist_1", "acct_a")
+            b = config_cache.get_cached_merged_config("specialist_1", "acct_b")
+
+        assert a.instruction == "specialist_1_acct_a_instr"
+        assert b.instruction == "specialist_1_acct_b_instr"
+        assert mock_load.call_count == 2
+
+    def test_firestore_error_with_cached_value_serves_stale(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        from app.adk.agents.utils import config_cache
+
+        clock = {"now": 1000.0}
+        monkeypatch.setattr(config_cache.time, "monotonic", lambda: clock["now"])
+        caplog.set_level(logging.WARNING)
+
+        cfg_v1 = self._make_merged_config("v1")
+
+        with patch.object(config_cache, "load_agent_config") as mock_load:
+            mock_load.return_value = cfg_v1
+            config_cache.get_cached_merged_config(
+                "specialist_1", "acct_1", ttl_seconds=60
+            )
+
+            clock["now"] = 1100.0  # force re-fetch
+            mock_load.side_effect = RuntimeError("Firestore unreachable")
+
+            result = config_cache.get_cached_merged_config(
+                "specialist_1", "acct_1", ttl_seconds=60
+            )
+
+        assert result.instruction == "v1", "should serve the stale-but-last-good value"
+        assert any(
+            "stale" in r.message.lower()
+            for r in caplog.records
+            if r.levelno >= logging.WARNING
+        ), (
+            f"Expected a WARN mentioning 'stale'. Got: {[r.message for r in caplog.records]}"
+        )
+
+    def test_firestore_error_with_no_cached_value_propagates(self) -> None:
+        from app.adk.agents.utils import config_cache
+
+        with patch.object(config_cache, "load_agent_config") as mock_load:
+            mock_load.side_effect = RuntimeError("Firestore unreachable")
+
+            with pytest.raises(RuntimeError, match="Firestore unreachable"):
+                config_cache.get_cached_merged_config("specialist_1", "acct_1")
+
+    def test_none_account_id_loads_global_config(self) -> None:
+        """account_id=None is a valid key (global config without overlay)."""
+        from app.adk.agents.utils import config_cache
+
+        cfg = self._make_merged_config("global")
+
+        with patch.object(
+            config_cache, "load_agent_config", return_value=cfg
+        ) as mock_load:
+            result = config_cache.get_cached_merged_config("specialist_1", None)
+
+        assert result.instruction == "global"
+        assert mock_load.call_args.kwargs.get("account_id") is None
