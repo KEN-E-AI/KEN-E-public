@@ -1,5 +1,7 @@
 """Rate limiting for authentication endpoints."""
 
+import os
+
 from ..rate_limiter import RateLimiter
 
 # Authentication rate limiters
@@ -10,10 +12,13 @@ auth_rate_limiter = RateLimiter(
 )
 
 # Token verification rate limiter
-# Less restrictive since it's used for all authenticated requests
+# Used for all authenticated requests. The rate limiter is currently IP-keyed
+# (see rate_limiter._get_client_id), so environments with many authenticated
+# requests from a single source IP — e2e tests, multi-user NAT — need higher
+# thresholds. Override via env vars; defaults preserve previous behaviour.
 token_rate_limiter = RateLimiter(
-    requests_per_minute=60,  # 60 requests per minute
-    requests_per_hour=1000,  # 1000 requests per hour
+    requests_per_minute=int(os.environ.get("KENE_TOKEN_RATE_LIMIT_PER_MINUTE", "60")),
+    requests_per_hour=int(os.environ.get("KENE_TOKEN_RATE_LIMIT_PER_HOUR", "1000")),
 )
 
 # Password reset rate limiter

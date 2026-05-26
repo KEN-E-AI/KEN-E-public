@@ -173,16 +173,9 @@ test("sidebar-collapsed", async ({ page, request }) => {
 
   await page.goto("/chat");
 
-  // Wait for the sidebar first (uses 30 s default) so the feature flag has time
-  // to resolve before the 10 s session-item wait starts. Without this, a slow
-  // emulator response after a heavy prior test can starve the flag check.
-  await page
-    .locator('[data-testid="sessions-sidebar"]')
-    .waitFor({ state: "visible" });
-
-  // Wait for sessions to load first so the collapsed rail shows dots.
-  // 30 s allows TanStack Query's retry cycle (up to 3 retries + 5 s polling)
-  // to recover from a transiently overloaded Firestore emulator.
+  // A visible session-list-item implies the sidebar is also visible (Playwright
+  // visibility requires parent visibility), so one waitFor covers both. The
+  // 30 s budget absorbs TanStack Query's retry cycle on a slow emulator.
   await page
     .locator('[data-slot="session-list-item"]')
     .first()
