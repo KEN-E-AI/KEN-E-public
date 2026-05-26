@@ -52,7 +52,7 @@ corresponding probe against the spike Agent Engine resource
 | Finding | Source | Security severity | Mitigation | Status |
 |---------|--------|-------------------|-----------|--------|
 | Q1 — Network egress | `docs/spike/q1-network-egress.md` §Result | **Informational** | Default sandbox already blocks all egress (no action required) | Closed — positive finding |
-| Q3 — Cross-skill state (same-session) | `docs/spike/q3-cross-skill-state-fragment.md` §Result | **Medium** | `SandboxPool (account_id, config_id)` keying (SK-PRD-02 §4.6); SK-PRD-03 authoring-UI warning | In scope — SK-PRD-03 AC owns the warning |
+| Q3 — Cross-skill state (same-session) | `docs/spike/q3-cross-skill-state-fragment.md` §Result | **Medium** *(conditional — SK-35 may escalate to High)* | `SandboxPool (account_id, config_id)` keying (SK-PRD-02 §4.6); SK-PRD-03 authoring-UI warning; SK-35 characterises cross-session `/tmp` reuse | In scope — SK-PRD-03 AC owns the warning; **SK-35** owns the cross-session probe |
 | Q4 — Resource limits / DoS | `docs/spike/q4-resource-limits.md` §Result | **Informational** | ~5-min sandbox lifetime cap is a built-in DoS defence (no action required) | Closed — positive finding |
 | Q5 — File I/O / sandbox surface | `docs/spike/q5-file-io.md` §Result | **Informational** | gVisor isolation + empty cwd is more restrictive than assumed; SK-PRD-03 must change bundle-delivery model (inline content, not filesystem) | SK-PRD-03 delivery-model change in scope |
 
@@ -131,7 +131,8 @@ shared. Whether separate `AgentEngineSandboxCodeExecutor` sessions within
 Vertex's container pool reuse the same container's `/tmp` is not confirmed by
 the available live captures — session-level container isolation at the Vertex
 layer could prevent cross-session `/tmp` sharing. This gap is noted in the
-severity rationale below and should be characterised before SK-PRD-02 goes to
+severity rationale below and is tracked in **SK-35** (SK-PRD-02 Wave 2,
+blocked by SK-23 + SK-26) which must complete before SK-PRD-02 ships to
 production.
 
 **Severity: Medium** *(conditional — see note below).*
@@ -142,8 +143,12 @@ available live captures do not confirm. If Vertex reuses containers without
 clearing `/tmp`, the cross-session surface would make fs/tmpsub/subprocess-pid
 vectors leak across independent user interactions sharing the same
 `(account_id, config_id)` pool bucket, and the severity would be **High**.
-Confirming Vertex's container-reuse policy before SK-PRD-02 ships is the
-resolution path for this conditionality.
+The resolution path is **SK-35** (`Characterise Vertex container-pool /tmp
+reuse across executor sessions`) — a live probe that runs through the real
+`SandboxPool` path after SK-23 + SK-26 land, classified as SK-PRD-02 Wave 2,
+gating SK-PRD-02's ship-to-production. SK-35 AC-4 commits to re-sending the
+§"Email packet" finding to `security@ken-e.ai` if the probe escalates Q3 to
+High.
 
 Rationale:
 - **Confirmed scope**: skills within the same specialist agent and the same
@@ -317,9 +322,9 @@ Finding | Severity | Status
 --------|----------|-------
 Q1 Network egress | Informational | Positive: sandbox has no internet
                                     egress by default (4/4 vectors blocked)
-Q3 Cross-skill state          | Medium | Mitigation in scope:
-  (same-session confirmed;   |        | authoring-UI warning (SK-PRD-03)
-   cross-session unresolved) |        |
+Q3 Cross-skill state          | Medium | Mitigation in scope: authoring-UI
+  (same-session confirmed;   |        | warning (SK-PRD-03); cross-session
+   cross-session in SK-35)   |        | characterisation tracked in SK-35
 Q4 Resource limits / DoS | Informational | Positive: ~5-min sandbox cap
                                            prevents indefinite occupation
 Q5 File I/O / sandbox surface | Informational | Positive: gVisor + empty
@@ -348,10 +353,14 @@ same agent config and the same executor session.
 Unresolved: a standalone OS-process probe confirmed fs/tmpsub/subprocess-pid
 leak across process boundaries when /tmp is shared. Whether separate Vertex
 executor sessions share the same container /tmp (cross-session surface) is not
-confirmed by live captures. Should be characterised before SK-PRD-02 ships.
+confirmed by live captures. Tracked in Linear issue SK-35 (SK-PRD-02 Wave 2,
+blocked by SK-23 + SK-26); must complete before SK-PRD-02 ships to production.
+If SK-35 confirms cross-session /tmp reuse, Q3 escalates to High and we will
+re-send this email packet with the corrected severity.
 
-Mitigation: SK-PRD-03 authoring-UI warning (already in acceptance criteria).
-No architectural change required.
+Mitigation: SK-PRD-03 authoring-UI warning (already in acceptance criteria);
+SK-35 adds defence-in-depth /tmp clearing to SandboxPool if the probe confirms
+the leak.
 
 --- METHODOLOGY ---
 
