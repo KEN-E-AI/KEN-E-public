@@ -296,6 +296,10 @@ Reference: `docs/design/components/skills/projects/SK-PRD-01-skills-backend.md` 
 | `api.skills.delete` | `skill_id: str`, `archived: bool` | `archived` is always `True` — it reflects the operation's intent, not the GCS-move outcome |
 | `api.skills.validate` | `bundle_bytes: int`, `file_count: int` | No `skill_id` — validation creates no state |
 
+#### Span Coverage
+
+Spans for `api.skills.create`, `api.skills.update`, and `api.skills.validate` are opened **after** the multipart request body has been parsed. Requests that fail body parsing — for example, an oversized upload or malformed multipart — are rejected by FastAPI/Starlette with HTTP 413 or 422 before the handler emits its span and will therefore **not** appear in MER-E's `api.skills.*` data. MER-E should correlate on successful-request volume (requests that reached the handler), not on total request-attempt volume, when scoring skill API usage.
+
 ## 5. Context Block Capture Strategy
 
 

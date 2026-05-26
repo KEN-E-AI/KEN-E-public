@@ -34,9 +34,13 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from src.kene_api.auth.models import UserContext
-from src.kene_api.auth.user_context import get_current_user_context
+from src.kene_api.auth.user_context import (
+    check_account_access,
+    get_current_user_context,
+)
 from src.kene_api.dependencies import get_firestore
 from src.kene_api.main import app
 from src.kene_api.services.skill_storage import (
@@ -471,10 +475,12 @@ class _SkillsRouterBase:
         return TestClient(app, raise_server_exceptions=False)
 
     def _install_user(self, user: UserContext) -> None:
-        async def _get():
+        async def _check(account_id: str) -> UserContext:
+            if not user.has_account_access(account_id):
+                raise HTTPException(status_code=403, detail="forbidden")
             return user
 
-        app.dependency_overrides[get_current_user_context] = _get
+        app.dependency_overrides[check_account_access] = _check
 
 
 def _fake_transactional_decorator(fn):
@@ -981,6 +987,68 @@ class TestPutVersionedUpdate(_SkillsRouterBase):
         detail = put_resp.json().get("detail", [])
         codes = [d["code"] for d in detail] if isinstance(detail, list) else []
         assert "name_mismatch" in codes
+
+    def test_put_retries_on_version_race_and_succeeds(
+        self, client, fake_db, fake_storage
+    ):
+        """Concurrent PUT race on first attempt is transparently retried; 200 returned."""
+        self._install_user(_member_user())
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+
+        # First bump call detects a concurrent PUT race (False); second succeeds.
+        with patch(
+            "src.kene_api.routers.skills._bump_skill_version",
+            side_effect=[False, True],
+        ):
+            put_resp = client.put(
+                BASE_URL + f"/{skill_id}",
+                files=[
+                    (
+                        "skill_md",
+                        ("SKILL.md", io.BytesIO(_VALID_SKILL_MD_V2), "text/markdown"),
+                    )
+                ],
+                data={"name": "seo-checklist"},
+            )
+        assert put_resp.status_code == 200
+        assert put_resp.json()["current_version"] == 2
+
+    def test_put_exhausts_retries_returns_409(self, client, fake_db, fake_storage):
+        """Three consecutive version races exhaust max_retries → 409 skill_version_conflict_exhausted."""
+        self._install_user(_member_user())
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+
+        with patch(
+            "src.kene_api.routers.skills._bump_skill_version", return_value=False
+        ):
+            put_resp = client.put(
+                BASE_URL + f"/{skill_id}",
+                files=[
+                    (
+                        "skill_md",
+                        ("SKILL.md", io.BytesIO(_VALID_SKILL_MD_V2), "text/markdown"),
+                    )
+                ],
+                data={"name": "seo-checklist"},
+            )
+        assert put_resp.status_code == 409
+        assert put_resp.json()["detail"] == "skill_version_conflict_exhausted"
 
 
 # ---------------------------------------------------------------------------
@@ -1934,16 +2002,13 @@ class TestCrossAccountIsolation(_SkillsRouterBase):
         resp = client.get(OTHER_BASE_URL + f"/{skill_id}")
         assert resp.status_code == 404
 
-    def test_check_account_access_and_check_strategy_access_agree(self):
+    async def test_check_account_access_and_check_strategy_access_agree(self):
         """Dependency regression: both helpers grant access to members, 403 to non-members.
 
         Includes a super-admin user to confirm the super-admin bypass works through
         check_strategy_access (which delegates membership to check_account_access).
         """
-        import asyncio
-
         from fastapi import HTTPException as FastAPIHTTPException
-
         from src.kene_api.auth.user_context import check_account_access
         from src.kene_api.routers.strategy import check_strategy_access
 
@@ -1957,24 +2022,24 @@ class TestCrossAccountIsolation(_SkillsRouterBase):
         # Membership gate: member passes, non-member gets 403.
         for user, should_pass in [(_member_user(), True), (_no_access_user(), False)]:
             if should_pass:
-                result = asyncio.run(check_account_access(ACCOUNT_ID, user))
+                result = await check_account_access(ACCOUNT_ID, user)
                 assert result.user_id == user.user_id
-                result2 = asyncio.run(check_strategy_access(ACCOUNT_ID, user, "view"))
+                result2 = await check_strategy_access(ACCOUNT_ID, user, "view")
                 assert result2.user_id == user.user_id
             else:
                 with pytest.raises(FastAPIHTTPException) as exc_info:
-                    asyncio.run(check_account_access(ACCOUNT_ID, user))
+                    await check_account_access(ACCOUNT_ID, user)
                 assert exc_info.value.status_code == 403
                 with pytest.raises(FastAPIHTTPException) as exc_info2:
-                    asyncio.run(check_strategy_access(ACCOUNT_ID, user, "view"))
+                    await check_strategy_access(ACCOUNT_ID, user, "view")
                 assert exc_info2.value.status_code == 403
 
         # Super-admin passes membership and edit-role gate even without explicit account entry.
-        result_sa = asyncio.run(check_account_access(ACCOUNT_ID, super_admin_user))
+        result_sa = await check_account_access(ACCOUNT_ID, super_admin_user)
         assert result_sa.user_id == super_admin_user.user_id
-        result_sa_view = asyncio.run(check_strategy_access(ACCOUNT_ID, super_admin_user, "view"))
+        result_sa_view = await check_strategy_access(ACCOUNT_ID, super_admin_user, "view")
         assert result_sa_view.user_id == super_admin_user.user_id
-        result_sa_edit = asyncio.run(check_strategy_access(ACCOUNT_ID, super_admin_user, "edit"))
+        result_sa_edit = await check_strategy_access(ACCOUNT_ID, super_admin_user, "edit")
         assert result_sa_edit.user_id == super_admin_user.user_id
 
 
