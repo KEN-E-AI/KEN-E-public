@@ -27,10 +27,11 @@ Note: AC-13 (account-deletion sweep) is owned by SK-18.
 
 from __future__ import annotations
 
+import contextlib
 import io
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -162,7 +163,7 @@ class _FakeCollectionRef:
         for path, data in self._store.items():
             if not path.startswith(prefix):
                 continue
-            remainder = path[len(prefix):]
+            remainder = path[len(prefix) :]
             if remainder and "/" not in remainder:
                 results.append(_FakeDocSnapshot(path, data))
         return results
@@ -222,7 +223,10 @@ class _FakeQuery:
         if isinstance(first_val, dict):
             doc = first_val
         else:
-            doc = {"updated_at": first_val, "skill_id": field_values[0] if field_values else ""}
+            doc = {
+                "updated_at": first_val,
+                "skill_id": field_values[0] if field_values else "",
+            }
         return _FakeQuery(
             self._store,
             self._collection_path,
@@ -238,7 +242,7 @@ class _FakeQuery:
         for path, data in self._store.items():
             if not path.startswith(prefix):
                 continue
-            remainder = path[len(prefix):]
+            remainder = path[len(prefix) :]
             if remainder and "/" not in remainder:
                 docs.append(_FakeDocSnapshot(path, data))
 
@@ -254,7 +258,7 @@ class _FakeQuery:
             after_skill_id = self._start_after_doc.get("skill_id", "")
             for i, d in enumerate(docs):
                 if d.to_dict().get("skill_id") == after_skill_id:
-                    docs = docs[i + 1:]
+                    docs = docs[i + 1 :]
                     break
 
         # Apply limit.
@@ -379,7 +383,11 @@ class _FakeGcsClient:
             bkt = bucket_or_name
         else:
             bkt = self.bucket(bucket_or_name)
-        return [b for name, b in bkt._store.items() if name.startswith(prefix) and b._data is not None]
+        return [
+            b
+            for name, b in bkt._store.items()
+            if name.startswith(prefix) and b._data is not None
+        ]
 
 
 def _make_storage_service() -> tuple[SkillStorageService, _FakeGcsClient]:
@@ -418,8 +426,10 @@ def _multipart_form(
     extra_files: list[tuple[str, bytes, str]] | None = None,
 ) -> dict:
     """Build the multipart form data dict for TestClient."""
-    files_list: list = [("skill_md", ("SKILL.md", io.BytesIO(skill_md_content), "text/markdown"))]
-    for rel_path, content, mime in (extra_files or []):
+    files_list: list = [
+        ("skill_md", ("SKILL.md", io.BytesIO(skill_md_content), "text/markdown"))
+    ]
+    for rel_path, content, mime in extra_files or []:
         files_list.append(("files", (rel_path, io.BytesIO(content), mime)))
     return {"files": files_list, "data": {"name": name}}
 
@@ -437,6 +447,7 @@ class _SkillsRouterBase:
         app.dependency_overrides.clear()
         # Patch @firestore.transactional before each test.
         import google.cloud.firestore as fs_module
+
         original_transactional = fs_module.transactional
         fs_module.transactional = _fake_transactional_decorator
         yield
@@ -462,15 +473,18 @@ class _SkillsRouterBase:
     def _install_user(self, user: UserContext) -> None:
         async def _get():
             return user
+
         app.dependency_overrides[get_current_user_context] = _get
 
 
 def _fake_transactional_decorator(fn):
     """Stand-in for @firestore.transactional: invoke fn(transaction, ...) then commit."""
+
     def _wrapped(transaction, *args, **kwargs):
         result = fn(transaction, *args, **kwargs)
         transaction.commit()
         return result
+
     return _wrapped
 
 
@@ -495,7 +509,9 @@ class TestSkillsRouterAuth(_SkillsRouterBase):
         self._install_user(_no_access_user())
         resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert resp.status_code == 403
@@ -504,7 +520,9 @@ class TestSkillsRouterAuth(_SkillsRouterBase):
         self._install_user(_no_access_user())
         resp = client.put(
             BASE_URL + "/someSkillId",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert resp.status_code == 403
@@ -519,6 +537,15 @@ class TestSkillsRouterAuth(_SkillsRouterBase):
         )
         self._install_user(other_user)
         resp = client.get(BASE_URL + "/")
+        assert resp.status_code == 403
+
+    def test_non_member_validate_returns_403(self, client, fake_db, fake_storage):
+        """POST /validate is gated by the router-level check_account_access dependency."""
+        self._install_user(_no_access_user())
+        resp = client.post(
+            BASE_URL + "/validate",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+        )
         assert resp.status_code == 403
 
 
@@ -538,7 +565,9 @@ class TestPostCreateSkill(_SkillsRouterBase):
 
         resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert resp.status_code == 201
@@ -568,8 +597,14 @@ class TestPostCreateSkill(_SkillsRouterBase):
         resp = client.post(
             BASE_URL + "/",
             files=[
-                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown")),
-                ("files", ("references/guide.md", io.BytesIO(b"# Guide"), "text/markdown")),
+                (
+                    "skill_md",
+                    ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"),
+                ),
+                (
+                    "files",
+                    ("references/guide.md", io.BytesIO(b"# Guide"), "text/markdown"),
+                ),
             ],
             data={"name": "seo-checklist"},
         )
@@ -584,8 +619,14 @@ class TestPostCreateSkill(_SkillsRouterBase):
         resp = client.post(
             BASE_URL + "/",
             files=[
-                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown")),
-                ("files", ("scripts/run.py", io.BytesIO(b"print('hello')"), "text/x-python")),
+                (
+                    "skill_md",
+                    ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"),
+                ),
+                (
+                    "files",
+                    ("scripts/run.py", io.BytesIO(b"print('hello')"), "text/x-python"),
+                ),
             ],
             data={"name": "seo-checklist"},
         )
@@ -607,9 +648,7 @@ class TestPostCreateSkill(_SkillsRouterBase):
         fields = [d["field"] for d in detail] if isinstance(detail, list) else []
         assert any("skill_md" in f for f in fields)
 
-    def test_post_invalid_name_case_returns_422(
-        self, client, fake_db, fake_storage
-    ):
+    def test_post_invalid_name_case_returns_422(self, client, fake_db, fake_storage):
         self._install_user(_member_user())
         bad_md = b"---\nname: UpperCase\ndescription: test\n---\nbody"
         resp = client.post(
@@ -636,7 +675,9 @@ class TestPostNameUniqueness(_SkillsRouterBase):
         url = f"/api/v1/accounts/{account_id}/skills/"
         return client.post(
             url,
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": name},
         )
 
@@ -665,7 +706,9 @@ class TestPostNameUniqueness(_SkillsRouterBase):
         self._install_user(other_user)
         resp_b = client.post(
             OTHER_BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert resp_b.status_code == 201
@@ -684,7 +727,9 @@ class TestPostThenGetList(_SkillsRouterBase):
 
         post_resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert post_resp.status_code == 201
@@ -704,7 +749,9 @@ class TestPostThenGetList(_SkillsRouterBase):
         assert body["items"] == []
         assert body["next_cursor"] is None
 
-    def test_include_archived_false_excludes_archived(self, client, fake_db, fake_storage):
+    def test_include_archived_false_excludes_archived(
+        self, client, fake_db, fake_storage
+    ):
         # Manually seed an archived skill doc.
         skill_id = "archived_skill_id_001"
         fake_db._store[f"accounts/{ACCOUNT_ID}/skills/{skill_id}"] = {
@@ -727,7 +774,9 @@ class TestPostThenGetList(_SkillsRouterBase):
         names = [i["name"] for i in resp.json()["items"]]
         assert "old-skill" not in names
 
-    def test_include_archived_true_includes_archived(self, client, fake_db, fake_storage):
+    def test_include_archived_true_includes_archived(
+        self, client, fake_db, fake_storage
+    ):
         skill_id = "archived_skill_id_002"
         fake_db._store[f"accounts/{ACCOUNT_ID}/skills/{skill_id}"] = {
             "skill_id": skill_id,
@@ -770,7 +819,9 @@ class TestPutVersionedUpdate(_SkillsRouterBase):
         # Create v1.
         post_resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert post_resp.status_code == 201
@@ -779,7 +830,12 @@ class TestPutVersionedUpdate(_SkillsRouterBase):
         # Create v2 via PUT.
         put_resp = client.put(
             BASE_URL + f"/{skill_id}",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD_V2), "text/markdown"))],
+            files=[
+                (
+                    "skill_md",
+                    ("SKILL.md", io.BytesIO(_VALID_SKILL_MD_V2), "text/markdown"),
+                )
+            ],
             data={"name": "seo-checklist"},
         )
         assert put_resp.status_code == 200
@@ -802,7 +858,9 @@ class TestPutVersionedUpdate(_SkillsRouterBase):
         self._install_user(_member_user())
         resp = client.put(
             BASE_URL + "/nonexistent_skill_id",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert resp.status_code == 404
@@ -814,13 +872,17 @@ class TestPutVersionedUpdate(_SkillsRouterBase):
         # Create skill A.
         resp_a = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert resp_a.status_code == 201
 
         # Create skill B.
-        skill_b_md = b"---\nname: blog-outliner\ndescription: Blog outline generator.\n---\nBody"
+        skill_b_md = (
+            b"---\nname: blog-outliner\ndescription: Blog outline generator.\n---\nBody"
+        )
         resp_b = client.post(
             BASE_URL + "/",
             files=[("skill_md", ("SKILL.md", io.BytesIO(skill_b_md), "text/markdown"))],
@@ -843,7 +905,9 @@ class TestPutVersionedUpdate(_SkillsRouterBase):
         # Create v1 first.
         post_resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert post_resp.status_code == 201
@@ -852,7 +916,12 @@ class TestPutVersionedUpdate(_SkillsRouterBase):
         # PUT with bad SKILL.md.
         resp = client.put(
             BASE_URL + f"/{skill_id}",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(b"no frontmatter"), "text/markdown"))],
+            files=[
+                (
+                    "skill_md",
+                    ("SKILL.md", io.BytesIO(b"no frontmatter"), "text/markdown"),
+                )
+            ],
             data={"name": "seo-checklist"},
         )
         assert resp.status_code == 422
@@ -861,7 +930,9 @@ class TestPutVersionedUpdate(_SkillsRouterBase):
         self._install_user(_member_user())
         post_resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert post_resp.status_code == 201
@@ -870,7 +941,12 @@ class TestPutVersionedUpdate(_SkillsRouterBase):
         # PUT with commit_message.
         put_resp = client.put(
             BASE_URL + f"/{skill_id}",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD_V2), "text/markdown"))],
+            files=[
+                (
+                    "skill_md",
+                    ("SKILL.md", io.BytesIO(_VALID_SKILL_MD_V2), "text/markdown"),
+                )
+            ],
             data={"name": "seo-checklist", "commit_message": "Add Open Graph tags"},
         )
         assert put_resp.status_code == 200
@@ -886,7 +962,9 @@ class TestPutVersionedUpdate(_SkillsRouterBase):
         self._install_user(_member_user())
         post_resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert post_resp.status_code == 201
@@ -894,7 +972,9 @@ class TestPutVersionedUpdate(_SkillsRouterBase):
 
         put_resp = client.put(
             BASE_URL + f"/{skill_id}",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "different-name"},  # mismatch
         )
         assert put_resp.status_code == 422
@@ -915,7 +995,9 @@ def _make_skill_md(
     """Return a valid minimal SKILL.md as bytes."""
     import yaml
 
-    frontmatter = yaml.dump({"name": name, "description": description}, default_flow_style=False)
+    frontmatter = yaml.dump(
+        {"name": name, "description": description}, default_flow_style=False
+    )
     return f"---\n{frontmatter}---\n\nSkill body.\n".encode()
 
 
@@ -979,7 +1061,13 @@ class TestValidateEndpoint:
         # Invalid bundle POST
         client.post(
             f"{BASE_URL}/validate",
-            files={"skill_md": ("SKILL.md", _make_skill_md(name="Bad-Name"), "text/markdown")},
+            files={
+                "skill_md": (
+                    "SKILL.md",
+                    _make_skill_md(name="Bad-Name"),
+                    "text/markdown",
+                )
+            },
         )
 
         assert mock_firestore.collection.call_count == 0
@@ -1035,7 +1123,9 @@ class TestGetSkillDetail(_SkillsRouterBase):
         self._install_user(_member_user())
         post_resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert post_resp.status_code == 201
@@ -1072,7 +1162,9 @@ class TestGetSkillDetail(_SkillsRouterBase):
         self._install_user(_member_user())
         post_resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert post_resp.status_code == 201
@@ -1104,7 +1196,9 @@ class TestGetSkillContent(_SkillsRouterBase):
         self._install_user(_member_user())
         post_resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert post_resp.status_code == 201
@@ -1120,7 +1214,9 @@ class TestGetSkillContent(_SkillsRouterBase):
         self._install_user(_member_user())
         post_resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert post_resp.status_code == 201
@@ -1128,7 +1224,12 @@ class TestGetSkillContent(_SkillsRouterBase):
 
         put_resp = client.put(
             BASE_URL + f"/{skill_id}",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD_V2), "text/markdown"))],
+            files=[
+                (
+                    "skill_md",
+                    ("SKILL.md", io.BytesIO(_VALID_SKILL_MD_V2), "text/markdown"),
+                )
+            ],
             data={"name": "seo-checklist"},
         )
         assert put_resp.status_code == 200
@@ -1138,11 +1239,15 @@ class TestGetSkillContent(_SkillsRouterBase):
         assert resp.status_code == 200
         assert resp.content == _VALID_SKILL_MD
 
-    def test_get_content_missing_version_returns_404(self, client, fake_db, fake_storage):
+    def test_get_content_missing_version_returns_404(
+        self, client, fake_db, fake_storage
+    ):
         self._install_user(_member_user())
         post_resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert post_resp.status_code == 201
@@ -1151,7 +1256,9 @@ class TestGetSkillContent(_SkillsRouterBase):
         resp = client.get(BASE_URL + f"/{skill_id}/content?version=99")
         assert resp.status_code == 404
 
-    def test_get_content_archived_default_returns_404(self, client, fake_db, fake_storage):
+    def test_get_content_archived_default_returns_404(
+        self, client, fake_db, fake_storage
+    ):
         skill_id = _seed_skill_doc(fake_db, "skill-content-arch-001", status="archived")
         self._install_user(_member_user())
         resp = client.get(BASE_URL + f"/{skill_id}/content")
@@ -1162,7 +1269,9 @@ class TestGetSkillContent(_SkillsRouterBase):
         self._install_user(_member_user())
         post_resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert post_resp.status_code == 201
@@ -1187,8 +1296,14 @@ class TestGetSkillResources(_SkillsRouterBase):
         post_resp = client.post(
             BASE_URL + "/",
             files=[
-                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown")),
-                ("files", ("references/guide.md", io.BytesIO(ref_content), "text/markdown")),
+                (
+                    "skill_md",
+                    ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"),
+                ),
+                (
+                    "files",
+                    ("references/guide.md", io.BytesIO(ref_content), "text/markdown"),
+                ),
             ],
             data={"name": "seo-checklist"},
         )
@@ -1200,14 +1315,22 @@ class TestGetSkillResources(_SkillsRouterBase):
         assert "text/markdown" in resp.headers["content-type"]
         assert resp.content == ref_content
 
-    def test_get_resource_non_md_returns_text_plain(self, client, fake_db, fake_storage):
+    def test_get_resource_non_md_returns_text_plain(
+        self, client, fake_db, fake_storage
+    ):
         self._install_user(_member_user())
         script_content = b"print('hello')"
         post_resp = client.post(
             BASE_URL + "/",
             files=[
-                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown")),
-                ("files", ("scripts/run.py", io.BytesIO(script_content), "text/x-python")),
+                (
+                    "skill_md",
+                    ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"),
+                ),
+                (
+                    "files",
+                    ("scripts/run.py", io.BytesIO(script_content), "text/x-python"),
+                ),
             ],
             data={"name": "seo-checklist"},
         )
@@ -1227,7 +1350,10 @@ class TestGetSkillResources(_SkillsRouterBase):
         post_resp = client.post(
             BASE_URL + "/",
             files=[
-                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown")),
+                (
+                    "skill_md",
+                    ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"),
+                ),
                 ("files", ("references/guide.md", io.BytesIO(ref_v1), "text/markdown")),
             ],
             data={"name": "seo-checklist"},
@@ -1238,18 +1364,25 @@ class TestGetSkillResources(_SkillsRouterBase):
         put_resp = client.put(
             BASE_URL + f"/{skill_id}",
             files=[
-                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD_V2), "text/markdown")),
+                (
+                    "skill_md",
+                    ("SKILL.md", io.BytesIO(_VALID_SKILL_MD_V2), "text/markdown"),
+                ),
                 ("files", ("references/guide.md", io.BytesIO(ref_v2), "text/markdown")),
             ],
             data={"name": "seo-checklist"},
         )
         assert put_resp.status_code == 200
 
-        resp = client.get(BASE_URL + f"/{skill_id}/resources/references/guide.md?version=1")
+        resp = client.get(
+            BASE_URL + f"/{skill_id}/resources/references/guide.md?version=1"
+        )
         assert resp.status_code == 200
         assert resp.content == ref_v1
 
-    def test_get_resource_traversal_percent_encoded_returns_400(self, client, fake_db, fake_storage):
+    def test_get_resource_traversal_percent_encoded_returns_400(
+        self, client, fake_db, fake_storage
+    ):
         """AC-4: triple-encoded `%` in the URL survives two decode passes and reaches
         safe_rel_path as `%`, which rejects it with 400.
 
@@ -1263,12 +1396,16 @@ class TestGetSkillResources(_SkillsRouterBase):
         resp = client.get(BASE_URL + "/any-skill-id/resources/references%2525guide.md")
         assert resp.status_code == 400
 
-    def test_get_resource_not_in_manifest_returns_404(self, client, fake_db, fake_storage):
+    def test_get_resource_not_in_manifest_returns_404(
+        self, client, fake_db, fake_storage
+    ):
         """Requesting a path that was never uploaded returns 404."""
         self._install_user(_member_user())
         post_resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert post_resp.status_code == 201
@@ -1277,7 +1414,9 @@ class TestGetSkillResources(_SkillsRouterBase):
         resp = client.get(BASE_URL + f"/{skill_id}/resources/references/nonexistent.md")
         assert resp.status_code == 404
 
-    def test_get_resource_archived_default_returns_404(self, client, fake_db, fake_storage):
+    def test_get_resource_archived_default_returns_404(
+        self, client, fake_db, fake_storage
+    ):
         skill_id = _seed_skill_doc(fake_db, "skill-res-arch-001", status="archived")
         self._install_user(_member_user())
         resp = client.get(BASE_URL + f"/{skill_id}/resources/references/guide.md")
@@ -1296,7 +1435,9 @@ class TestDeleteSkill(_SkillsRouterBase):
         self._install_user(_member_user())
         post_resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert post_resp.status_code == 201
@@ -1305,11 +1446,15 @@ class TestDeleteSkill(_SkillsRouterBase):
         resp = client.delete(BASE_URL + f"/{skill_id}")
         assert resp.status_code == 204
 
-    def test_delete_sets_archived_status_in_firestore(self, client, fake_db, fake_storage):
+    def test_delete_sets_archived_status_in_firestore(
+        self, client, fake_db, fake_storage
+    ):
         self._install_user(_member_user())
         post_resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert post_resp.status_code == 201
@@ -1326,7 +1471,9 @@ class TestDeleteSkill(_SkillsRouterBase):
         self._install_user(_member_user())
         post_resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert post_resp.status_code == 201
@@ -1342,11 +1489,15 @@ class TestDeleteSkill(_SkillsRouterBase):
         trash_bkt = gcs.bucket("kene-skills-test-trash")
         assert trash_bkt.has_blob(primary_key)
 
-    def test_delete_removes_skill_from_default_list(self, client, fake_db, fake_storage):
+    def test_delete_removes_skill_from_default_list(
+        self, client, fake_db, fake_storage
+    ):
         self._install_user(_member_user())
         post_resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert post_resp.status_code == 201
@@ -1358,11 +1509,15 @@ class TestDeleteSkill(_SkillsRouterBase):
         names = [i["name"] for i in list_resp.json()["items"]]
         assert "seo-checklist" not in names
 
-    def test_delete_then_get_detail_returns_404_by_default(self, client, fake_db, fake_storage):
+    def test_delete_then_get_detail_returns_404_by_default(
+        self, client, fake_db, fake_storage
+    ):
         self._install_user(_member_user())
         post_resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert post_resp.status_code == 201
@@ -1379,7 +1534,9 @@ class TestDeleteSkill(_SkillsRouterBase):
         self._install_user(_member_user())
         post_resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert post_resp.status_code == 201
@@ -1396,7 +1553,9 @@ class TestDeleteSkill(_SkillsRouterBase):
         self._install_user(_member_user())
         post_resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert post_resp.status_code == 201
@@ -1413,7 +1572,9 @@ class TestDeleteSkill(_SkillsRouterBase):
         self._install_user(_member_user())
         post_resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert post_resp.status_code == 201
@@ -1438,7 +1599,9 @@ class TestCrudRoundTrip(_SkillsRouterBase):
         # 1. POST — create v1
         post_resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert post_resp.status_code == 201
@@ -1458,7 +1621,12 @@ class TestCrudRoundTrip(_SkillsRouterBase):
         # 4. PUT — create v2
         put_resp = client.put(
             BASE_URL + f"/{skill_id}",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD_V2), "text/markdown"))],
+            files=[
+                (
+                    "skill_md",
+                    ("SKILL.md", io.BytesIO(_VALID_SKILL_MD_V2), "text/markdown"),
+                )
+            ],
             data={"name": "seo-checklist"},
         )
         assert put_resp.status_code == 200
@@ -1507,7 +1675,9 @@ class TestLifecycleVisibility:
         )
         assert tf_path.exists(), f"Terraform config not found: {tf_path}"
         contents = tf_path.read_text()
-        assert "age = 30" in contents, "Expected 30-day lifecycle rule in gcs_skills_bucket.tf"
+        assert "age = 30" in contents, (
+            "Expected 30-day lifecycle rule in gcs_skills_bucket.tf"
+        )
         assert 'type = "Delete"' in contents, (
             "Expected Delete action type in gcs_skills_bucket.tf"
         )
@@ -1526,10 +1696,17 @@ class TestHasScriptsRoundTrip(_SkillsRouterBase):
         post_resp = client.post(
             BASE_URL + "/",
             files=[
-                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown")),
+                (
+                    "skill_md",
+                    ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"),
+                ),
                 (
                     "files",
-                    ("scripts/extract.py", io.BytesIO(b"# extraction script"), "text/x-python"),
+                    (
+                        "scripts/extract.py",
+                        io.BytesIO(b"# extraction script"),
+                        "text/x-python",
+                    ),
                 ),
             ],
             data={"name": "seo-checklist"},
@@ -1541,3 +1718,366 @@ class TestHasScriptsRoundTrip(_SkillsRouterBase):
         detail_resp = client.get(BASE_URL + f"/{skill_id}")
         assert detail_resp.status_code == 200
         assert detail_resp.json()["has_scripts"] is True
+
+
+# ---------------------------------------------------------------------------
+# Cross-account isolation (SK-20)
+# ---------------------------------------------------------------------------
+
+
+class TestCrossAccountIsolation(_SkillsRouterBase):
+    """SK-20: two-layer auth — account membership + owner.account_id assertion.
+
+    Natural cross-account (doc absent at path) → 404 (existing behaviour).
+    Inconsistent doc (present at path but owner.account_id != path.account_id) → 403.
+    Non-member of path account → 403 (router-level check_account_access dependency).
+    """
+
+    def test_non_member_blocked_on_all_write_endpoints_returns_403(
+        self, client, fake_db, fake_storage
+    ):
+        """Layer 1: non-member blocked on POST, PUT, DELETE before any storage read."""
+        self._install_user(_no_access_user())
+
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 403
+
+        put_resp = client.put(
+            BASE_URL + "/any-skill-id",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert put_resp.status_code == 403
+
+        del_resp = client.delete(BASE_URL + "/any-skill-id")
+        assert del_resp.status_code == 403
+
+    def test_non_member_blocked_on_all_read_endpoints_returns_403(
+        self, client, fake_db, fake_storage
+    ):
+        """Layer 1: non-member blocked on GET list, GET detail, GET content, GET resource."""
+        self._install_user(_no_access_user())
+
+        assert client.get(BASE_URL + "/").status_code == 403
+        assert client.get(BASE_URL + "/any-id").status_code == 403
+        assert client.get(BASE_URL + "/any-id/content").status_code == 403
+        assert client.get(BASE_URL + "/any-id/resources/ref.md").status_code == 403
+
+    def test_inconsistent_doc_owner_mismatch_get_detail_returns_403(
+        self, client, fake_db, fake_storage
+    ):
+        """Layer 2: doc at B's path but owner.account_id = A → 403 owner_mismatch."""
+        skill_id = "inconsistent-skill-id"
+        fake_db._store[f"accounts/{OTHER_ACCOUNT_ID}/skills/{skill_id}"] = {
+            "skill_id": skill_id,
+            "owner": {"account_id": ACCOUNT_ID, "shared_with_accounts": []},
+            "name": "injected-skill",
+            "description": "inconsistent doc",
+            "current_version": 1,
+            "visibility": "private",
+            "status": "draft",
+            "source": {"type": "authored"},
+            "has_scripts": False,
+            "created_at": "2025-01-01T00:00:00+00:00",
+            "created_by": "uid-a",
+            "updated_at": "2025-01-01T00:00:00+00:00",
+            "updated_by": "uid-a",
+        }
+        other_user = UserContext(
+            user_id="other-uid",
+            email="other@example.com",
+            organization_permissions={},
+            account_permissions={OTHER_ACCOUNT_ID: "admin"},
+        )
+        self._install_user(other_user)
+
+        resp = client.get(OTHER_BASE_URL + f"/{skill_id}")
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "owner_mismatch"
+
+    def test_inconsistent_doc_owner_mismatch_delete_returns_403(
+        self, client, fake_db, fake_storage
+    ):
+        """Layer 2: doc at B's path but owner.account_id = A → 403 on DELETE."""
+        skill_id = "inconsistent-del-id"
+        fake_db._store[f"accounts/{OTHER_ACCOUNT_ID}/skills/{skill_id}"] = {
+            "skill_id": skill_id,
+            "owner": {"account_id": ACCOUNT_ID, "shared_with_accounts": []},
+            "name": "injected-skill-del",
+            "description": "inconsistent doc",
+            "current_version": 1,
+            "visibility": "private",
+            "status": "draft",
+            "source": {"type": "authored"},
+            "has_scripts": False,
+            "created_at": "2025-01-01T00:00:00+00:00",
+            "created_by": "uid-a",
+            "updated_at": "2025-01-01T00:00:00+00:00",
+            "updated_by": "uid-a",
+        }
+        other_user = UserContext(
+            user_id="other-uid",
+            email="other@example.com",
+            organization_permissions={},
+            account_permissions={OTHER_ACCOUNT_ID: "admin"},
+        )
+        self._install_user(other_user)
+
+        resp = client.delete(OTHER_BASE_URL + f"/{skill_id}")
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "owner_mismatch"
+
+    def _seed_inconsistent_skill(self, fake_db: _FakeFirestoreClient, skill_id: str) -> None:
+        """Plant a skill doc at OTHER_ACCOUNT_ID's path but with owner.account_id = ACCOUNT_ID."""
+        fake_db._store[f"accounts/{OTHER_ACCOUNT_ID}/skills/{skill_id}"] = {
+            "skill_id": skill_id,
+            "owner": {"account_id": ACCOUNT_ID, "shared_with_accounts": []},
+            "name": f"injected-{skill_id}",
+            "description": "inconsistent doc",
+            "current_version": 1,
+            "visibility": "private",
+            "status": "draft",
+            "source": {"type": "authored"},
+            "has_scripts": False,
+            "created_at": "2025-01-01T00:00:00+00:00",
+            "created_by": "uid-a",
+            "updated_at": "2025-01-01T00:00:00+00:00",
+            "updated_by": "uid-a",
+        }
+
+    def test_inconsistent_doc_owner_mismatch_get_content_returns_403(
+        self, client, fake_db, fake_storage
+    ):
+        """Layer 2: doc at B's path but owner.account_id = A → 403 on GET content."""
+        skill_id = "inconsistent-content-id"
+        self._seed_inconsistent_skill(fake_db, skill_id)
+        other_user = UserContext(
+            user_id="other-uid",
+            email="other@example.com",
+            organization_permissions={},
+            account_permissions={OTHER_ACCOUNT_ID: "admin"},
+        )
+        self._install_user(other_user)
+
+        resp = client.get(OTHER_BASE_URL + f"/{skill_id}/content")
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "owner_mismatch"
+
+    def test_inconsistent_doc_owner_mismatch_get_resource_returns_403(
+        self, client, fake_db, fake_storage
+    ):
+        """Layer 2: doc at B's path but owner.account_id = A → 403 on GET resource."""
+        skill_id = "inconsistent-resource-id"
+        self._seed_inconsistent_skill(fake_db, skill_id)
+        other_user = UserContext(
+            user_id="other-uid",
+            email="other@example.com",
+            organization_permissions={},
+            account_permissions={OTHER_ACCOUNT_ID: "admin"},
+        )
+        self._install_user(other_user)
+
+        resp = client.get(OTHER_BASE_URL + f"/{skill_id}/resources/references/guide.md")
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "owner_mismatch"
+
+    def test_inconsistent_doc_owner_mismatch_put_returns_403(
+        self, client, fake_db, fake_storage
+    ):
+        """Layer 2: doc at B's path but owner.account_id = A → 403 on PUT."""
+        skill_id = "inconsistent-put-id"
+        self._seed_inconsistent_skill(fake_db, skill_id)
+        other_user = UserContext(
+            user_id="other-uid",
+            email="other@example.com",
+            organization_permissions={},
+            account_permissions={OTHER_ACCOUNT_ID: "admin"},
+        )
+        self._install_user(other_user)
+
+        resp = client.put(
+            OTHER_BASE_URL + f"/{skill_id}",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "owner_mismatch"
+
+    def test_member_of_both_accounts_natural_cross_account_returns_404(
+        self, client, fake_db, fake_storage
+    ):
+        """Natural cross-account (doc absent at B's path) returns 404, not 403.
+
+        Preserves the existing behaviour documented in the Skills README §7.
+        """
+        both_accounts_user = UserContext(
+            user_id="both-uid",
+            email="both@example.com",
+            organization_permissions={},
+            account_permissions={ACCOUNT_ID: "admin", OTHER_ACCOUNT_ID: "admin"},
+        )
+        self._install_user(both_accounts_user)
+
+        post_resp = client.post(
+            BASE_URL + "/",
+            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            data={"name": "seo-checklist"},
+        )
+        assert post_resp.status_code == 201
+        skill_id = post_resp.json()["skill_id"]
+
+        # Same skill_id via OTHER_ACCOUNT_ID path → doc absent → 404
+        resp = client.get(OTHER_BASE_URL + f"/{skill_id}")
+        assert resp.status_code == 404
+
+    def test_check_account_access_and_check_strategy_access_agree(self):
+        """Dependency regression: both helpers grant access to members, 403 to non-members.
+
+        Includes a super-admin user to confirm the super-admin bypass works through
+        check_strategy_access (which delegates membership to check_account_access).
+        """
+        import asyncio
+
+        from fastapi import HTTPException as FastAPIHTTPException
+
+        from src.kene_api.auth.user_context import check_account_access
+        from src.kene_api.routers.strategy import check_strategy_access
+
+        super_admin_user = UserContext(
+            user_id="sa-uid",
+            email="admin@ken-e.ai",
+            organization_permissions={},
+            account_permissions={},
+            roles=["super_admin"],
+        )
+        # Membership gate: member passes, non-member gets 403.
+        for user, should_pass in [(_member_user(), True), (_no_access_user(), False)]:
+            if should_pass:
+                result = asyncio.run(check_account_access(ACCOUNT_ID, user))
+                assert result.user_id == user.user_id
+                result2 = asyncio.run(check_strategy_access(ACCOUNT_ID, user, "view"))
+                assert result2.user_id == user.user_id
+            else:
+                with pytest.raises(FastAPIHTTPException) as exc_info:
+                    asyncio.run(check_account_access(ACCOUNT_ID, user))
+                assert exc_info.value.status_code == 403
+                with pytest.raises(FastAPIHTTPException) as exc_info2:
+                    asyncio.run(check_strategy_access(ACCOUNT_ID, user, "view"))
+                assert exc_info2.value.status_code == 403
+
+        # Super-admin passes membership and edit-role gate even without explicit account entry.
+        result_sa = asyncio.run(check_account_access(ACCOUNT_ID, super_admin_user))
+        assert result_sa.user_id == super_admin_user.user_id
+        result_sa_view = asyncio.run(check_strategy_access(ACCOUNT_ID, super_admin_user, "view"))
+        assert result_sa_view.user_id == super_admin_user.user_id
+        result_sa_edit = asyncio.run(check_strategy_access(ACCOUNT_ID, super_admin_user, "edit"))
+        assert result_sa_edit.user_id == super_admin_user.user_id
+
+
+# ---------------------------------------------------------------------------
+# AC-12: Weave tracing span attributes (SK-21)
+# ---------------------------------------------------------------------------
+
+
+class _SpanRecorder:
+    """Captures calls to _maybe_weave_attrs.
+
+    Used by TestSkillsTracing to assert span attribute correctness without
+    requiring a live Weave connection.
+    """
+
+    def __init__(self) -> None:
+        self.attrs_calls: list[dict] = []
+
+    @contextlib.contextmanager
+    def capture_weave_attrs(self, attrs: dict):  # type: ignore[override]
+        self.attrs_calls.append(dict(attrs))
+        yield
+
+    def all_attrs(self) -> dict:
+        """Merge all captured attrs_calls dicts into one.
+
+        Last-write wins if the same key appears in multiple calls. Each request
+        path calls _maybe_weave_attrs exactly once, so key collisions do not
+        occur in the current test suite.
+        """
+        merged: dict = {}
+        for d in self.attrs_calls:
+            merged.update(d)
+        return merged
+
+
+class TestSkillsTracing(_SkillsRouterBase):
+    """AC-12: POST create emits api.skills.create span with expected attributes."""
+
+    @pytest.fixture
+    def span_recorder(self):
+        import src.kene_api.routers.skills as skills_mod
+
+        recorder = _SpanRecorder()
+        with patch.object(
+            skills_mod, "_maybe_weave_attrs", recorder.capture_weave_attrs
+        ):
+            yield recorder
+
+    def test_post_create_emits_span_with_account_and_bundle_attrs(
+        self, client, fake_db, fake_storage, span_recorder
+    ):
+        """Minimal POST (SKILL.md only) → account_id set, bundle_bytes > 0, file_count == 0."""
+        self._install_user(_member_user())
+        resp = client.post(
+            BASE_URL + "/",
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
+            data={"name": "seo-checklist"},
+        )
+        assert resp.status_code == 201
+
+        attrs = span_recorder.all_attrs()
+        assert attrs.get("account_id") == ACCOUNT_ID
+        assert isinstance(attrs.get("bundle_bytes"), int)
+        assert attrs["bundle_bytes"] > 0
+        assert attrs.get("file_count") == 0
+        assert "skill_id" in attrs
+
+    def test_post_create_with_extra_files_records_correct_file_count(
+        self, client, fake_db, fake_storage, span_recorder
+    ):
+        """POST with two extra files → file_count == 2."""
+        self._install_user(_member_user())
+        resp = client.post(
+            BASE_URL + "/",
+            files=[
+                (
+                    "skill_md",
+                    ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"),
+                ),
+                (
+                    "files",
+                    (
+                        "references/style.md",
+                        io.BytesIO(b"# style guide"),
+                        "text/markdown",
+                    ),
+                ),
+                (
+                    "files",
+                    (
+                        "references/tone.md",
+                        io.BytesIO(b"# tone guide"),
+                        "text/markdown",
+                    ),
+                ),
+            ],
+            data={"name": "seo-checklist"},
+        )
+        assert resp.status_code == 201
+
+        attrs = span_recorder.all_attrs()
+        assert attrs.get("account_id") == ACCOUNT_ID
+        assert attrs.get("file_count") == 2

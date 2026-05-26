@@ -1,5 +1,7 @@
 """User context and authentication utilities."""
 
+import asyncio
+import hmac
 import logging
 import time
 from typing import Any, Optional
@@ -247,6 +249,50 @@ async def _get_user_context_with_limiter(
     """
     t_start = time.time()
 
+    # E2E test bypass — only active when API_TEST_BYPASS_TOKEN is non-empty.
+    # Exact match → non-member; "{token}:{account_id}" → member of that account.
+    # hmac.compare_digest is used for both comparisons to avoid byte-level
+    # timing side-channels on the token value itself. The length check on the
+    # prefix branch is *not* constant-time, so an attacker can distinguish
+    # "right-length-as-prefix" from "different-length" by timing — acceptable
+    # for a non-secret CI-only token, but do not extend this pattern to any
+    # production secret.
+    # This path must never be reachable in production or staging — startup
+    # guard in main.py (_assert_bypass_token_safe) refuses to boot unless
+    # ENVIRONMENT is explicitly in {development, test, ci}.
+    # NOTE: this short-circuits past rate-limiting (_apply_rate_limiting),
+    # token revocation (_check_token_revocation), and audit logging — so
+    # E2E tests cannot catch regressions in those pipelines. Validate
+    # changes to those code paths with dedicated integration tests, not
+    # by relying on E2E coverage.
+    # NOTE: get_optional_user_context relies on its own `not credentials` guard
+    # running before this function; the bypass here only fires when credentials
+    # are present, so optional-auth callers without a token are unaffected.
+    bypass_token = settings.api_test_bypass_token
+    if bypass_token and credentials:
+        bearer = credentials.credentials
+        if hmac.compare_digest(bearer, bypass_token):
+            return UserContext(
+                user_id="test-bypass-no-member",
+                email="no-member@test.internal",
+                organization_permissions={},
+                account_permissions={},
+                roles=[],
+            )
+        prefix = f"{bypass_token}:"
+        if (
+            len(bearer) > len(prefix)
+            and hmac.compare_digest(bearer[: len(prefix)], prefix)
+        ):
+            account_id_part = bearer[len(prefix) :]
+            return UserContext(
+                user_id=f"test-bypass-{account_id_part}",
+                email=f"member-{account_id_part}@test.internal",
+                organization_permissions={},
+                account_permissions={account_id_part: "edit"},
+                roles=[],
+            )
+
     # Choose which rate limiter to use
     active_limiter = rate_limiter if rate_limiter is not None else token_rate_limiter
     # Get client info for audit logging
@@ -435,6 +481,27 @@ async def get_optional_user_context(
         return None
 
 
+async def check_account_access(
+    account_id: str,
+    user: UserContext = Depends(get_current_user_context),
+) -> UserContext:
+    """FastAPI dependency gating every account-scoped route on membership.
+
+    Non-members receive 403. Returns UserContext so downstream handlers that
+    need it can declare it as a dependency without a second auth round-trip.
+    """
+    if not user.has_account_access(account_id):
+        audit_logger = get_audit_logger()
+        await audit_logger.log_access_denied(
+            user_id=user.user_id,
+            resource_type="account",
+            resource_id=account_id,
+            required_permission=None,
+        )
+        raise HTTPException(status_code=403, detail="forbidden")
+    return user
+
+
 def require_account_access(
     account_id: str,
     required_roles: list[str] | None = None,
@@ -454,9 +521,6 @@ def require_account_access(
     def check_access(user: UserContext) -> None:
         if not user.has_account_access(account_id, required_roles):
             role_msg = f" with role in {required_roles}" if required_roles else ""
-
-            # Log access denied - this is synchronous but we'll log it anyway
-            import asyncio
 
             audit_logger = get_audit_logger()
             asyncio.create_task(
@@ -495,9 +559,6 @@ def require_organization_access(
     def check_access(user: UserContext) -> None:
         if not user.has_organization_access(organization_id, required_roles):
             role_msg = f" with role in {required_roles}" if required_roles else ""
-
-            # Log access denied - this is synchronous but we'll log it anyway
-            import asyncio
 
             audit_logger = get_audit_logger()
             asyncio.create_task(

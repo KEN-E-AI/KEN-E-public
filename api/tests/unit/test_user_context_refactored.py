@@ -404,3 +404,116 @@ class TestGetUserContextWithLimiter:
             assert result.email == "admin@ken-e.ai"
             # Rate limiting now applies to super admins too.
             mock_rate_limit.assert_called_once()
+
+
+class TestApiTestBypassToken:
+    """Unit tests for the API_TEST_BYPASS_TOKEN bypass path in _get_user_context_with_limiter."""
+
+    @pytest.fixture
+    def mock_firestore_service(self):
+        return MagicMock()
+
+    @pytest.mark.asyncio
+    async def test_exact_token_returns_non_member(
+        self, mock_request, mock_firestore_service
+    ):
+        """Exact bearer match → non-member UserContext with empty account_permissions."""
+        creds = MagicMock()
+        creds.credentials = "test-bypass-secret"
+
+        with patch(
+            "src.kene_api.auth.user_context.settings"
+        ) as mock_settings:
+            mock_settings.api_test_bypass_token = "test-bypass-secret"
+
+            result = await _get_user_context_with_limiter(
+                mock_request, creds, mock_firestore_service, None
+            )
+
+        assert result.user_id == "test-bypass-no-member"
+        assert result.email == "no-member@test.internal"
+        assert result.account_permissions == {}
+        assert result.organization_permissions == {}
+        assert result.roles == []
+
+    @pytest.mark.asyncio
+    async def test_prefixed_token_returns_member(
+        self, mock_request, mock_firestore_service
+    ):
+        """Bearer == '{token}:{account_id}' → member UserContext for that account."""
+        creds = MagicMock()
+        creds.credentials = "test-bypass-secret:acc-xyz"
+
+        with patch(
+            "src.kene_api.auth.user_context.settings"
+        ) as mock_settings:
+            mock_settings.api_test_bypass_token = "test-bypass-secret"
+
+            result = await _get_user_context_with_limiter(
+                mock_request, creds, mock_firestore_service, None
+            )
+
+        assert result.user_id == "test-bypass-acc-xyz"
+        assert result.email == "member-acc-xyz@test.internal"
+        assert result.account_permissions == {"acc-xyz": "edit"}
+        assert result.organization_permissions == {}
+        assert result.roles == []
+
+    @pytest.mark.asyncio
+    async def test_unrecognized_bearer_falls_through_to_firebase(
+        self, mock_request, mock_credentials, mock_firestore_service
+    ):
+        """Unrecognized bearer value falls through to normal Firebase verification."""
+        # mock_credentials has bearer "test-token-123" which does not match the
+        # bypass token "test-bypass-secret", so the bypass path is not taken.
+        with patch(
+            "src.kene_api.auth.user_context.settings"
+        ) as mock_settings, patch(
+            "src.kene_api.auth.user_context._verify_and_decode_token",
+            new_callable=AsyncMock,
+        ) as mock_verify, patch(
+            "src.kene_api.auth.user_context._apply_rate_limiting",
+            new_callable=AsyncMock,
+        ), patch(
+            "src.kene_api.auth.user_context._check_token_revocation",
+            new_callable=AsyncMock,
+        ), patch(
+            "src.kene_api.auth.cached_user_context.get_cached_user_context_service"
+        ) as mock_cache_factory:
+            mock_settings.api_test_bypass_token = "test-bypass-secret"
+            mock_settings.load_test_bypass_uid = ""
+            mock_verify.return_value = (
+                {"uid": "real-uid", "email": "real@example.com"},
+                "real-uid",
+                "real@example.com",
+            )
+            cache_svc = MagicMock()
+            cache_svc.get_user_context.return_value = None
+            cache_svc.set_user_context = MagicMock()
+            mock_cache_factory.return_value = cache_svc
+
+            mock_firestore_db = MagicMock()
+            mock_doc = MagicMock()
+            mock_doc.exists = True
+            mock_doc.to_dict.return_value = {
+                "uid": "real-uid",
+                "email": "real@example.com",
+                "permissions": {"organizations": {}, "account_permissions": {}},
+                "roles": [],
+            }
+            mock_firestore_db.collection.return_value.document.return_value.get.return_value = (
+                mock_doc
+            )
+            mock_firestore_service.get_client.return_value = mock_firestore_db
+
+            with patch(
+                "src.kene_api.auth.user_context.get_audit_logger"
+            ) as mock_audit:
+                mock_audit.return_value = AsyncMock()
+                result = await _get_user_context_with_limiter(
+                    mock_request, mock_credentials, mock_firestore_service, None
+                )
+
+        # Firebase verify_id_token was called — the bypass was not taken.
+        mock_verify.assert_called_once()
+        assert result.user_id == "real-uid"
