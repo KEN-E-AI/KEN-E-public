@@ -5,6 +5,7 @@ Shape B layout: accounts/{account_id}/chat_sessions/{session_id}
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from typing import Any
@@ -15,6 +16,50 @@ from ..dependencies import get_firestore_client
 from ..models.chat import ChatSessionMetadata
 
 STUCK_THRESHOLD = timedelta(minutes=10)
+
+# Maximum characters (Unicode code points) of latest_summary included in
+# search_text. A 2048-char ASCII summary is 2 KB; even 3-byte CJK at this
+# cap is ~6 KB — well under the 1 MB Firestore field-size limit (CH-PRD-01 §9).
+_SUMMARY_SEARCH_TEXT_CAP = 2048
+
+
+def recompute_search_text(
+    doc: ChatSessionMetadata | Mapping[str, Any],
+    category_name: str | None,
+) -> str:
+    """Compute the denormalised search_text field for a chat session.
+
+    Accepts either a ChatSessionMetadata instance (used by assign_category,
+    which already holds the metadata) or a raw Firestore document dict (used
+    by the transactional bulk-clear path in delete_category, which has only a
+    DocumentSnapshot).
+
+    Formula per CH-PRD-01 §2 step 9:
+        search_text = casefold(title + " " + category_name + " " + latest_summary)
+
+    None-safe: missing/None components are omitted. Summary is capped at
+    _SUMMARY_SEARCH_TEXT_CAP characters to bound Firestore field size.
+    Uses str.casefold() (not str.lower()) for correct Unicode handling
+    (Turkish dotted-i, German ß, etc.).
+
+    Args:
+        doc: Either a ChatSessionMetadata instance or a Firestore document dict
+             (DocumentSnapshot.to_dict()). Both provide 'title' and 'latest_summary'.
+        category_name: Resolved display name of the assigned category, or None
+                       when the session is uncategorized / being unassigned.
+
+    Returns:
+        Casefolded, space-joined string. Empty string when all parts are absent.
+        Never raises.
+    """
+    if isinstance(doc, ChatSessionMetadata):
+        title = doc.title or ""
+        summary = (doc.latest_summary or "")[:_SUMMARY_SEARCH_TEXT_CAP]
+    else:
+        title = str(doc.get("title") or "")
+        summary = str(doc.get("latest_summary") or "")[:_SUMMARY_SEARCH_TEXT_CAP]
+    parts = [p for p in [title, str(category_name or ""), summary] if p]
+    return " ".join(parts).casefold()
 
 
 def derive_is_agent_running(
