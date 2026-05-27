@@ -842,6 +842,159 @@ compliance and is wired into the standard pytest run.
 
 ---
 
+## 15. Skills Component Runtime Spans (SK-PRD-02)
+
+SK-PRD-02 (Agent Factory — Skills & Sandbox Integration) adds five Weave spans emitted
+by the agent-runtime layer and by the process-wide `SandboxPool`.  These spans are
+distinct from the HTTP-tier spans documented in §4.6: §4.6 covers the FastAPI REST
+surface (`api.skills.*`); this section covers agent-side callbacks and pool internals.
+MER-E can correlate both surfaces by matching `account_id` — see §4.6 for the
+cross-correlation guidance.
+
+Reference: `docs/design/components/skills/projects/SK-PRD-02-agent-integration.md`
+§4 (skill span contract) and §4.6 (sandbox_pool span contract).
+
+### 15.1 Span Hierarchy
+
+```
+L1 — root agent invocation
+└── L2 — sub-agent / specialist run
+    ├── skill.list          ← emitted by skill_spans_before_tool_callback when
+    │                          list_skills fires (or by the degraded-path helper
+    │                          when all skills failed to load — see AC-2a)
+    ├── skill.load          ← emitted when load_skill fires
+    │   └── skill.load_resource  ← emitted when load_skill_resource fires;
+    │                               logically scoped to the active skill window
+    │                               (state["active_skill_id"] is set), though not
+    │                               literally nested under a skill.load Weave call
+    │                               — the SkillToolset dispatches it as a sibling
+    │                               tool call in the same turn
+    └── (tool calls, LLM calls, …)
+
+pool internal (no agent-turn parent)
+├── sandbox_pool.get     ← emitted by SandboxPool.get_or_create(); parent is
+│                           whatever Weave call is on the stack when the agent
+│                           factory calls _build_code_executor() — typically the
+│                           build_agent / specialist_runtime.resolve_agent call
+└── sandbox_pool.evict   ← emitted by SandboxPool.evict(); fires during LRU cap
+                            enforcement (called from get_or_create after a miss),
+                            idle-TTL sweep (background task), or direct caller
+                            invocation. LRU-eviction spans appear adjacent to the
+                            sandbox_pool.get that triggered them.
+```
+
+### 15.2 Per-Span Attributes
+
+#### `skill.list`
+
+Emitted by `skill_spans_before_tool_callback` in `app/adk/tracking/skill_spans.py` when
+the `list_skills` tool fires.  Also emitted by `_emit_total_failure_span`
+(`skill_spans.py:109-152`) when the agent sidecar marks a build-time failure — in that
+case `skill_count` is `0`, `skill_ids` is `[]`, and one or both of the failure flags is
+present.
+
+| Attribute | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `account_id` | `str` | Yes | The account whose skills collection was queried |
+| `skill_count` | `int` | Yes | Number of skills whose L1 metadata was loaded at agent construction time. `0` on the degraded failure path. |
+| `skill_ids` | `list[str]` | Yes | Ordered list of `skill_id` UUIDs for every skill in the constructed `SkillToolset`. Empty list on the degraded failure path. |
+| `skill_owner_type` | `enum "account" \| "system"` | Yes | Owner type of the skills returned. Currently always `"account"` — SK-PRD-05 will introduce `"system"` for predefined skills without changing this attribute's presence or position. |
+| `skill_load_total_failure` | `bool` | No | Present and `true` only when every requested skill failed to load at agent construction time (AC-2a). Absent on the happy path. |
+| `skill_load_timeout` | `bool` | No | Present and `true` only when the 30-second sandbox-build worker bridge fired before any skill could load. Absent on the happy path. |
+
+#### `skill.load`
+
+Emitted when the `load_skill` tool fires.  Output-side attribute `instruction_bytes` is
+attached on `finish_call` when the response carries an `instructions` field.
+
+| Attribute | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `account_id` | `str` | Yes | The account owning the skill |
+| `skill_id` | `str` | Yes | UUID of the skill being loaded. Set to `"unknown"` when the name-to-ID resolution in the sidecar fails. |
+| `skill_name` | `str` | Yes | The kebab-case skill name passed by the LLM to `load_skill` (truncated to 256 chars) |
+| `skill_version` | `int` | Yes | The version number of the skill loaded. `0` when version is unavailable from the sidecar. |
+| `skill_owner_type` | `enum "account" \| "system"` | Yes | Owner type of the loaded skill. Currently always `"account"` — see `skill.list` note above. |
+| `instruction_bytes` | `int` | No | Byte length of the SKILL.md instructions returned in the response. Attached on `finish_call`; absent when the response carries no `instructions` field. |
+
+#### `skill.load_resource`
+
+Emitted when the `load_skill_resource` tool fires.  Output-side attribute
+`resource_bytes` is attached on `finish_call`.
+
+| Attribute | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `account_id` | `str` | Yes | The account owning the skill |
+| `skill_id` | `str` | Yes | UUID of the skill that owns the resource. Set to `"unknown"` when resolution fails. |
+| `rel_path` | `str` | Yes | Relative path of the requested resource within the skill bundle (e.g., `references/style-guide.md`). Truncated to 256 chars. |
+| `skill_owner_type` | `enum "account" \| "system"` | Yes | Owner type. Currently always `"account"`. |
+| `resource_bytes` | `int` | No | Byte length of the resource content returned. Attached on `finish_call`; absent when the response carries no content field. |
+
+#### `sandbox_pool.get`
+
+Emitted by `SandboxPool.get_or_create()` in
+`app/adk/agents/agent_factory/sandbox_pool.py`.  Span is emitted **after** any LRU cap
+enforcement so that `pool_size_after` reflects post-eviction pool size on cap-triggering
+misses.  Emission occurs outside the per-key stripe lock to keep the lock window tight.
+
+| Attribute | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `account_id` | `str` | Yes | The account whose sandbox was requested |
+| `config_id` | `str` | Yes | The agent-config document ID (`AgentConfig.name`) used as the pool key |
+| `cache_hit` | `bool` | Yes | `true` when an existing executor was returned from the pool; `false` when a new one was constructed |
+| `pool_size_after` | `int` | Yes | Number of entries in the pool at span-emit time. Sampled outside the lock — concurrent inserts may shift the count by ±1. |
+
+#### `sandbox_pool.evict`
+
+Emitted by `SandboxPool.evict()`.  Fires on LRU cap enforcement (reason `"lru"`), idle
+TTL expiry (reason `"ttl"`), and explicit caller-driven eviction (reason `"manual"`).
+No-op evictions (key not present) still emit this span; `pool_size_after` remains
+accurate.
+
+| Attribute | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `account_id` | `str` | Yes | The account whose sandbox was evicted |
+| `config_id` | `str` | Yes | The agent-config document ID used as the pool key |
+| `reason` | `enum "lru" \| "ttl" \| "manual"` | Yes | Why the entry was evicted: `"lru"` — LRU cap enforcement triggered by a new `get_or_create` miss; `"ttl"` — idle TTL sweep; `"manual"` — direct external call to `evict()` |
+| `pool_size_after` | `int` | Yes | Number of entries remaining in the pool after the eviction |
+
+### 15.3 Relation to §2 Span Hierarchy
+
+The three `skill.*` spans (`skill.list`, `skill.load`, `skill.load_resource`) appear at
+the **L3 tool-call level** inside an L2 sub-agent run — the same level as the existing
+`adk.tool.*` spans.  They are emitted from ADK `before_tool` / `after_tool` callbacks
+rather than from ADK's built-in tool dispatch, so their `op_name` does **not** carry the
+`adk.tool.` prefix.
+
+The `sandbox_pool.*` spans are emitted from pool internals and are not scoped to any
+agent turn.  Their Weave parent is whatever call is on the stack when the agent factory
+invokes `_build_code_executor()` — typically a `build_agent` or
+`specialist_runtime.resolve_agent` call.  MER-E should correlate them with the
+enclosing session by `account_id`, analogous to the HTTP-tier correlation described in
+§4.6.
+
+### 15.4 MER-E Extractor Guidance
+
+1. **Match skill spans by exact `op_name`** — `skill.list`, `skill.load`,
+   `skill.load_resource`.  These names carry **no** `adk.tool.` prefix.  Do not match
+   them with a `startswith("adk.tool.")` filter.
+
+2. **Match pool spans by exact `op_name`** — `sandbox_pool.get`,
+   `sandbox_pool.evict`.
+
+3. **`skill_owner_type` is always present** (value `"account"` in v1) and should be
+   consumed as an enum, not a boolean.  When SK-PRD-05 (Predefined Skill Foundation)
+   ships, the value set widens to `"account" | "system"` with no other change to this
+   section.  Extractors should avoid hard-coding `"account"` as the only valid value.
+
+4. **Failure-mode detection:** A `skill.list` span with `skill_load_total_failure: true`
+   or `skill_load_timeout: true` indicates a degraded session where no skills were
+   available to the agent.  Score these sessions accordingly in quality metrics.
+
+When system-owned skills (SK-PRD-05) ship, the `skill_owner_type` enum gains the
+`"system"` value with no change to the rest of this section.
+
+---
+
 ## 13. Glossary
 
 | Term | Definition |
