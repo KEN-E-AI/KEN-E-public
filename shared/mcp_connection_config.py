@@ -44,8 +44,8 @@ class McpServerKind(StrEnum):
 
 
 __all__ = [
-    "McpServerKind",
     "MCPConnectionParams",
+    "McpServerKind",
     "SseConnectionConfig",
     "StdioConnectionConfig",
 ]
