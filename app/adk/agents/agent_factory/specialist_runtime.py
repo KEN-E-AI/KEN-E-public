@@ -32,7 +32,7 @@ Design notes:
   deletion.
 * Phase 2 (AH-59): ``_build_specialist`` fetches MCP server docs directly from
   Firestore (one ``get()`` per server ID) and calls ``build_toolset_for_doc``.
-  Phase 3 (AH-62) will replace this with ``McpToolsetPool.get(server_id)``.
+  Phase 3 (AH-62): pool-backed checkout via ``McpToolsetPool`` (implemented).
 * ``available_specialists_provider`` filters to ``visible_in_frontend=True``
   configs so strategy-pipeline and other hidden agents are excluded from the
   block shown to the root agent.

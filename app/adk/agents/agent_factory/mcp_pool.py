@@ -10,11 +10,14 @@ Pool characteristics:
   background sweep.
 * 60-second background sweep interval — background task that walks the pool and
   evicts TTL-expired entries (armed via ``start()``; dormant until then).
-* 32-slot striped ``asyncio.Lock`` for per-key single-flight semantics —
+* 32-slot striped ``threading.Lock`` for per-key single-flight semantics —
   concurrent pool lookups for the same key serialise; different keys proceed
-  in parallel.
-* Separate ``_cap_lock`` for LRU cap enforcement — runs outside the stripe lock
-  to prevent same-stripe self-deadlock.
+  in parallel.  ``threading.Lock`` is used (not ``asyncio.Lock``) because the
+  pool is accessed from worker threads via ``asyncio.run()``, each of which
+  creates its own event loop; ``asyncio.Lock`` is not safe across event-loop
+  boundaries.
+* Separate ``_cap_lock`` (``threading.Lock``) for LRU cap enforcement — runs
+  outside the stripe lock to prevent same-stripe self-deadlock.
 * ``aclose()`` on every eviction path — the McpToolset ``aclose()`` closes the
   underlying SSE transport.  Called on LRU eviction, TTL sweep, and manual
   evict.  ``aclose()`` raising is caught and logged so pool integrity is never
@@ -45,6 +48,7 @@ TODOs:
 from __future__ import annotations
 
 import asyncio
+import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable
@@ -91,9 +95,16 @@ class McpToolsetPool:
 
     def __init__(self) -> None:
         self._pool: OrderedDict[tuple[str, ...], tuple[Any, float]] = OrderedDict()
-        self._stripe_locks: dict[int, asyncio.Lock] = {}
+        # Pre-populated list — eliminates lazy-creation race when multiple
+        # asyncio.run() calls from different worker threads access the pool
+        # concurrently. threading.Lock (not asyncio.Lock) provides cross-thread
+        # serialisation; asyncio.Lock is event-loop-bound and unsafe across
+        # threads.
+        self._stripe_locks: list[threading.Lock] = [
+            threading.Lock() for _ in range(_STRIPE_COUNT)
+        ]
         self._sweep_task: asyncio.Task[None] | None = None
-        self._cap_lock: asyncio.Lock = asyncio.Lock()
+        self._cap_lock: threading.Lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Public API
@@ -138,7 +149,9 @@ class McpToolsetPool:
         pool_key = (kind.value, *key)
         stripe = self._stripe(pool_key)
 
-        async with stripe:
+        # threading.Lock — safe across asyncio.run() boundaries in worker threads.
+        # No await inside this block: build_fn is sync, all ops are dict/list.
+        with stripe:
             entry = self._pool.get(pool_key)
             if entry is not None:
                 toolset, _ = entry
@@ -188,29 +201,18 @@ class McpToolsetPool:
         stripe = self._stripe(pool_key)
         toolset_to_close = None
 
-        async with stripe:
+        # threading.Lock — acquire, do dict ops, release; no await inside.
+        with stripe:
             entry = self._pool.get(pool_key)
-            if entry is None:
-                pool_size_after = len(self._pool)
-                async with emit_mcp_pool_span(
-                    "mcp_pool.evict",
-                    {
-                        "pool_key": str(pool_key),
-                        "reason": reason,
-                        "pool_size_after": pool_size_after,
-                    },
-                ):
-                    pass
-                return
+            if entry is not None:
+                _, last_used = entry
+                if stale_before is not None and last_used >= stale_before:
+                    # Entry refreshed after the sweep snapshot — not stale.
+                    return
+                del self._pool[pool_key]
+                toolset_to_close, _ = entry
 
-            _, last_used = entry
-            if stale_before is not None and last_used >= stale_before:
-                # Entry refreshed after the sweep snapshot — not stale.
-                return
-
-            del self._pool[pool_key]
-            toolset_to_close, _ = entry
-
+        # Span and aclose() outside the lock — both can yield to the event loop.
         pool_size_after = len(self._pool)
         async with emit_mcp_pool_span(
             "mcp_pool.evict",
@@ -274,12 +276,9 @@ class McpToolsetPool:
     # Private helpers
     # ------------------------------------------------------------------
 
-    def _stripe(self, key: tuple[str, ...]) -> asyncio.Lock:
-        """Return the stripe lock for *key*, creating it lazily if needed."""
-        slot = hash(key) % _STRIPE_COUNT
-        if slot not in self._stripe_locks:
-            self._stripe_locks[slot] = asyncio.Lock()
-        return self._stripe_locks[slot]
+    def _stripe(self, key: tuple[str, ...]) -> threading.Lock:
+        """Return the pre-populated stripe lock for *key*."""
+        return self._stripe_locks[hash(key) % _STRIPE_COUNT]
 
     async def _evict_if_over_cap(self) -> None:
         """Evict LRU entries until the pool is within ``_MAX_ENTRIES``.
@@ -288,31 +287,35 @@ class McpToolsetPool:
         prevent a same-stripe self-deadlock when the LRU entry and the freshly
         inserted entry share a stripe slot.
 
-        Pool integrity is maintained by deleting the entry from ``_pool``
-        before awaiting ``aclose()``.
+        Pool integrity is maintained by deleting entries from ``_pool`` before
+        awaiting ``aclose()``: the cap lock is released before any I/O so
+        other pool operations are not blocked during close.
         """
-        async with self._cap_lock:
+        to_close: list[tuple[tuple[str, ...], Any, int]] = []
+        with self._cap_lock:
             while len(self._pool) > self._MAX_ENTRIES:
                 lru_key, (toolset, _) = next(iter(self._pool.items()))
                 del self._pool[lru_key]
-                pool_size_after = len(self._pool)
-                async with emit_mcp_pool_span(
-                    "mcp_pool.evict",
-                    {
-                        "pool_key": str(lru_key),
-                        "reason": "lru",
-                        "pool_size_after": pool_size_after,
-                    },
-                ):
-                    pass
-                try:
-                    await toolset.aclose()
-                except Exception:
-                    logger.warning(
-                        "mcp_pool_lru_aclose_failed",
-                        extra={"pool_key": str(lru_key)},
-                        exc_info=True,
-                    )
+                to_close.append((lru_key, toolset, len(self._pool)))
+
+        for lru_key, toolset, pool_size_after in to_close:
+            async with emit_mcp_pool_span(
+                "mcp_pool.evict",
+                {
+                    "pool_key": str(lru_key),
+                    "reason": "lru",
+                    "pool_size_after": pool_size_after,
+                },
+            ):
+                pass
+            try:
+                await toolset.aclose()
+            except Exception:
+                logger.warning(
+                    "mcp_pool_lru_aclose_failed",
+                    extra={"pool_key": str(lru_key)},
+                    exc_info=True,
+                )
 
     async def _sweep_loop(self) -> None:
         """Periodic loop that calls ``sweep_idle()`` every ``_SWEEP_INTERVAL_SECONDS``."""
