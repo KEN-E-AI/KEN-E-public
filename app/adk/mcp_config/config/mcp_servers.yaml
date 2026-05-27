@@ -33,6 +33,7 @@ servers:
         Content-Type: "application/json"
       timeout_seconds: 30
     auth_type: "ga_oauth"
+    kind: cloud_run
     enabled: true
 
   hubspot_mcp:
@@ -55,6 +56,7 @@ servers:
       headers:
         Authorization: "Bearer ${HUBSPOT_API_KEY}"
       timeout_seconds: 30
+    kind: cloud_run
     enabled: false  # Enable when HubSpot integration is ready
 
   meta_ads_mcp:
@@ -77,6 +79,7 @@ servers:
       headers:
         Authorization: "Bearer ${META_ACCESS_TOKEN}"
       timeout_seconds: 45
+    kind: cloud_run
     enabled: false  # Enable when Meta integration is ready
 
   google_ads_mcp:
@@ -99,6 +102,7 @@ servers:
       headers:
         Authorization: "Bearer ${GOOGLE_ADS_TOKEN}"
       timeout_seconds: 30
+    kind: cloud_run
     enabled: false  # Enable when Google Ads integration is ready
 
   slack_mcp:
@@ -121,6 +125,7 @@ servers:
       env:
         SLACK_BOT_TOKEN: "${SLACK_BOT_TOKEN}"
         SLACK_APP_TOKEN: "${SLACK_APP_TOKEN}"
+    kind: cloud_run
     enabled: false  # Enable when Slack integration is configured
 
   notion_mcp:
@@ -141,4 +146,5 @@ servers:
       headers:
         Authorization: "Bearer ${NOTION_API_KEY}"
       timeout_seconds: 30
+    kind: cloud_run
     enabled: false  # Enable when Notion integration is configured

@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from shared.mcp_connection_config import (
     MCPConnectionParams,
+    McpServerKind,
     SseConnectionConfig,
     StdioConnectionConfig,
 )
@@ -36,6 +37,7 @@ __all__ = [
     "MCPConfigLoader",
     "MCPConnectionParams",
     "MCPServerConfig",
+    "McpServerKind",
     "SseConnectionConfig",
     "StdioConnectionConfig",
     "_resolve_env_pattern",
@@ -81,6 +83,10 @@ class MCPServerConfig(BaseModel):
     enabled: bool = Field(True, description="Whether server is enabled")
     auth_type: str | None = Field(
         None, description="Auth type: 'ga_oauth' for per-user OAuth via header_provider"
+    )
+    kind: McpServerKind = Field(
+        default=McpServerKind.cloud_run,
+        description="How the server is hosted/reached (default: cloud_run)",
     )
 
     @model_validator(mode="after")

@@ -25,6 +25,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from shared.mcp_connection_config import (
+    McpServerKind,
     SseConnectionConfig,
     StdioConnectionConfig,
 )
@@ -120,6 +121,11 @@ class MCPServerFirestoreConfig(BaseModel):
         ),
     )
 
+    kind: McpServerKind = Field(
+        default=McpServerKind.cloud_run,
+        description="How the server is hosted/reached (default: cloud_run)",
+    )
+
     enabled: bool = Field(
         default=True, description="Whether this server is wired into agents"
     )
@@ -206,6 +212,9 @@ class MCPServerConfigUpdate(BaseModel):
     auth_type: str | None = Field(
         default=None, description="null or a key in CREDENTIAL_KEYS"
     )
+    kind: McpServerKind | None = Field(
+        default=None, description="How the server is hosted/reached"
+    )
     enabled: bool | None = Field(default=None)
 
     version: str | None = Field(default=None, description="Semver version, e.g. v1.0.1")
@@ -244,6 +253,7 @@ __all__ = [
     "MCPServerConfigUpdate",
     "MCPServerFirestoreConfig",
     "MCPServerMetadata",
+    "McpServerKind",
     # Re-exported from app/ for callers that want a single import surface.
     "SseConnectionConfig",
     "StdioConnectionConfig",

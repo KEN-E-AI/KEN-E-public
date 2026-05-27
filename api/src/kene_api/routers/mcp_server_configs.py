@@ -109,6 +109,7 @@ def _merge_update_into_doc(
         "tool_count",
         "estimated_tokens",
         "keywords",
+        "kind",
         "enabled",
     }
     for key in settable:
@@ -157,6 +158,7 @@ def _diff_mcp_fields(
         "estimated_tokens",
         "keywords",
         "auth_type",
+        "kind",
         "enabled",
         "connection",
     }

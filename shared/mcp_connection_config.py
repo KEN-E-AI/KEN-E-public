@@ -16,9 +16,39 @@ secret-leak fix).
 
 from __future__ import annotations
 
+from enum import auto
 from typing import Literal
 
 from pydantic import BaseModel, Field
+
+try:
+    from enum import StrEnum
+except ImportError:
+    # Python < 3.11 compat — StrEnum shipped in 3.11
+    import enum
+
+    class StrEnum(str, enum.Enum):  # type: ignore[no-redef]
+        pass
+
+
+class McpServerKind(StrEnum):
+    """Identifies how an MCP server is hosted/reached.
+
+    Open enum — adding new members is non-breaking. Existing Firestore docs
+    that lack the ``kind`` field default to ``cloud_run`` (see migration
+    script ``api/scripts/migrate_mcp_servers_add_kind.py``).
+    """
+
+    cloud_run = auto()  # KEN-E-hosted Cloud Run sidecar (default)
+    zapier = auto()  # Zapier-hosted MCP endpoint
+
+
+__all__ = [
+    "McpServerKind",
+    "MCPConnectionParams",
+    "SseConnectionConfig",
+    "StdioConnectionConfig",
+]
 
 
 class MCPConnectionParams(BaseModel):
