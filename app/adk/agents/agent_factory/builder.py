@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import logging
+import asyncio
+import concurrent.futures
 from collections.abc import Callable
 from typing import Any
 
@@ -14,6 +15,8 @@ from app.adk.agents.agent_factory.roster import (
     MAX_TOOLS_PER_SPECIALIST,
     RosterCapExceededError,
 )
+from app.adk.agents.agent_factory.skill_metadata import record_skill_build_metadata
+from app.adk.agents.skill_tool_filter import skill_allowed_tools_before_tool_callback
 from app.adk.agents.utils import config_cache
 from app.adk.security.hooks import adk_before_tool_callback
 from app.adk.tracking.callbacks import (
@@ -21,11 +24,13 @@ from app.adk.tracking.callbacks import (
     weave_after_agent_callback,
     weave_before_agent_callback,
 )
+from shared.structured_logging import get_structured_logger
 
-logger = logging.getLogger(__name__)
+logger = get_structured_logger(__name__)
 
 _MAX_ORG_CONTEXT_CHARS = 4000
 _ORG_CONTEXT_BLOCKED = ("[END CONTEXT]", "[ORGANIZATION CONTEXT]")
+_SKILL_LOAD_TIMEOUT_SECONDS = 30
 
 
 def _sanitize_org_context(value: str) -> str:
@@ -86,10 +91,161 @@ def _make_factory_instruction_provider(
     return instruction_provider
 
 
+async def _build_skill_toolset_async(
+    account_id: str,
+    skill_ids: list[str],
+    *,
+    config_id: str | None,
+) -> Any | None:
+    """Async core: load skill objects and construct a SkillToolset.
+
+    The ``kene_api.services.skill_loader`` import is deferred so the agent
+    module remains collectible in CI environments where ``kene_api`` is not
+    installed (mirrors the lazy-import pattern in ``app/adk/tracking/usage.py``).
+    """
+    # Deferred import — kene_api is not available in the app-adk-tests CI venv.
+    from kene_api.services.skill_loader import (
+        SkillCorruptError,
+        SkillNotFoundError,
+        load_skill,
+    )
+
+    loaded_skills = []
+    for sid in skill_ids:
+        try:
+            skill = await load_skill(account_id, sid)
+            loaded_skills.append(skill)
+        except (SkillNotFoundError, SkillCorruptError) as exc:
+            logger.warning(
+                "skill_load_skipped",
+                extra={
+                    "account_id": account_id,
+                    "config_id": config_id,
+                    "skill_id": sid,
+                    "reason": str(exc),
+                },
+            )
+        except Exception as exc:  # tolerate unexpected loader errors
+            logger.warning(
+                "skill_load_skipped",
+                extra={
+                    "account_id": account_id,
+                    "config_id": config_id,
+                    "skill_id": sid,
+                    "reason": f"{type(exc).__name__}: {exc}",
+                },
+            )
+
+    if not loaded_skills:
+        logger.error(
+            "skill_load_total_failure",
+            extra={
+                "account_id": account_id,
+                "config_id": config_id,
+                "skill_ids": skill_ids,
+            },
+        )
+        return None
+
+    # Deferred import — SkillToolset lives in google.adk.tools.skill_toolset
+    # (not google.adk.skills, which does not re-export it in ADK 1.27.x).
+    from google.adk.tools.skill_toolset import SkillToolset
+
+    try:
+        return SkillToolset(skills=loaded_skills)
+    except ValueError as exc:
+        # Duplicate skill names (stale data) — degrade same as total failure.
+        logger.error(
+            "skill_load_total_failure",
+            extra={
+                "account_id": account_id,
+                "config_id": config_id,
+                "skill_ids": skill_ids,
+                "reason": f"SkillToolset construction failed: {exc}",
+            },
+        )
+        return None
+
+
+def _build_skill_toolset(
+    account_id: str | None,
+    skill_ids: list[str],
+    *,
+    config_id: str | None,
+) -> tuple[Any | None, bool]:
+    """Load skill objects and construct a SkillToolset.
+
+    Returns ``(toolset, timed_out)``:
+
+    * ``toolset`` is ``None`` when ``skill_ids`` is empty, ``account_id`` is
+      ``None``, every skill fails to load, or the load times out.  Single-skill
+      failures are tolerated with a WARNING; total failure emits an ERROR.
+    * ``timed_out`` is ``True`` only when the worker-thread bridge hit
+      ``_SKILL_LOAD_TIMEOUT_SECONDS``.  The caller surfaces this as a separate
+      sidecar marker so ops can distinguish "infra slow" from "every skill
+      genuinely failed" (which has a different remediation path).
+
+    Works from both sync callers (deploy-time ``build_hierarchy()``) and async
+    callers (any future FastAPI / per-turn rebuild path).  When invoked inside
+    a running event loop, the async loader is run on a worker thread that owns
+    a fresh loop — mirrors the pattern in
+    ``app/adk/agents/utils/supervisor_utils.py:181-207`` and
+    ``app/adk/agents/strategy_agent/artifact_utils.py:171-180``.
+    """
+    if not skill_ids:
+        return None, False
+
+    if account_id is None:
+        logger.warning(
+            "skill_toolset_skipped_no_account",
+            extra={"config_id": config_id, "skill_ids": skill_ids},
+        )
+        return None, False
+
+    # asyncio.get_running_loop() raises RuntimeError when no loop is active,
+    # which is the Python 3.12+ canonical way to probe loop state.
+    try:
+        asyncio.get_running_loop()
+        running = True
+    except RuntimeError:
+        running = False
+
+    if not running:
+        toolset = asyncio.run(
+            _build_skill_toolset_async(account_id, skill_ids, config_id=config_id)
+        )
+        return toolset, False
+
+    # A loop is already running — submit asyncio.run on a worker thread so we
+    # don't collide with the caller's loop.  The thread owns its own event loop
+    # for the lifetime of the coroutine, then tears it down.
+    def _runner() -> Any | None:
+        return asyncio.run(
+            _build_skill_toolset_async(account_id, skill_ids, config_id=config_id)
+        )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_runner)
+        try:
+            return future.result(timeout=_SKILL_LOAD_TIMEOUT_SECONDS), False
+        except concurrent.futures.TimeoutError:
+            logger.error(
+                "skill_toolset_load_timeout",
+                extra={
+                    "account_id": account_id,
+                    "config_id": config_id,
+                    "skill_ids": skill_ids,
+                    "timeout_s": _SKILL_LOAD_TIMEOUT_SECONDS,
+                },
+            )
+            return None, True
+
+
 def build_agent(
     config: MergedAgentConfig,
     *,
     name: str,
+    account_id: str | None,
     tools: list[Any] | None = None,
     config_doc_id: str | None = None,
     instruction_suffix: str = "",
@@ -126,6 +282,29 @@ def build_agent(
     # ADK 1.27+ requires output_schema on LlmAgent directly (not via GenerateContentConfig.response_schema)
     output_schema = config.response_schema
 
+    # SK-PRD-02: hydrate a SkillToolset when the config has attached skills.
+    # _build_skill_toolset returns (toolset, timed_out).  toolset is None when
+    # skill_ids is empty, account_id is None, every skill fails to load, or the
+    # load timed out.  timed_out distinguishes the infra-failure case (logged
+    # below as skill_load_timeout on the sidecar) from a genuine total failure.
+    assembled_tools: list[Any] = list(tools or [])
+    skill_load_total_failure = False
+    skill_load_timeout = False
+    if config.skill_ids:
+        skill_toolset, skill_load_timeout = _build_skill_toolset(
+            account_id,
+            config.skill_ids,
+            config_id=config_doc_id,
+        )
+        if skill_toolset is not None:
+            assembled_tools.append(skill_toolset)
+        elif account_id is not None and not skill_load_timeout:
+            # account_id was provided and we didn't time out, yet every skill
+            # failed — genuine total failure.  When account_id is None the skip
+            # is expected (global deploy); when we timed out, that's the
+            # skill_load_timeout marker, not a total failure.
+            skill_load_total_failure = True
+
     # Defensive literal cap — catches gross misuse by direct callers that bypass
     # resolve_specialist_roster.  One McpToolset counts as one item here even
     # though it may resolve to many individual MCP tools at runtime, so this is
@@ -133,9 +312,9 @@ def build_agent(
     # The upstream resolver is the canonical enforcement point; this is defense
     # in depth.  See AH-PRD-02 §4 Specialist tool rosters and agentic-harness
     # README §2.5 for the full rationale.
-    if tools and len(tools) > MAX_TOOLS_PER_SPECIALIST:
+    if assembled_tools and len(assembled_tools) > MAX_TOOLS_PER_SPECIALIST:
         raise RosterCapExceededError(
-            f"Specialist {name!r} was passed {len(tools)} items in tools=, "
+            f"Specialist {name!r} was passed {len(assembled_tools)} items in tools=, "
             f"which exceeds the {MAX_TOOLS_PER_SPECIALIST}-tool cap.  "
             f"Use resolve_specialist_roster() to enforce the cap before construction."
         )
@@ -146,9 +325,11 @@ def build_agent(
     after_agent_callback: list[Callable] = [weave_after_agent_callback] + (
         additional_after_agent_callbacks or []
     )
-    before_tool_callback: list[Callable] = [adk_before_tool_callback] + (
-        additional_before_tool_callbacks or []
-    )
+    before_tool_callback: list[Callable] = [
+        adk_before_tool_callback,
+        skill_allowed_tools_before_tool_callback,
+        *(additional_before_tool_callbacks or []),
+    ]
     after_tool_callback: list[Callable] = [adk_after_tool_callback] + (
         additional_after_tool_callbacks or []
     )
@@ -159,13 +340,13 @@ def build_agent(
         additional_after_model_callbacks or None
     )
 
-    return LlmAgent(
+    agent = LlmAgent(
         name=name,
         model=config.model,
         description=config.description or "",
         instruction=instruction,
         generate_content_config=generate_content_config,
-        tools=tools or [],
+        tools=assembled_tools,
         code_executor=code_executor,
         output_schema=output_schema,
         before_agent_callback=before_agent_callback,
@@ -175,3 +356,18 @@ def build_agent(
         before_model_callback=before_model_callback,
         after_model_callback=after_model_callback,
     )
+
+    # Stash build-time skill outcomes on the sidecar so SK-27 can surface them
+    # as attributes on the skill.list Weave span:
+    #   * skill_load_total_failure  (SK-PRD-02 §7 AC-2a): every requested skill
+    #     failed to load; the agent carries no SkillToolset and list_skills
+    #     never fires.
+    #   * skill_load_timeout: the 30s worker-thread bridge fired before any
+    #     skill loaded.  Separate from total_failure because the remediation
+    #     is different (infra/retry vs. stale skill IDs / config).
+    if skill_load_total_failure:
+        record_skill_build_metadata(agent, skill_load_total_failure=True)
+    if skill_load_timeout:
+        record_skill_build_metadata(agent, skill_load_timeout=True)
+
+    return agent

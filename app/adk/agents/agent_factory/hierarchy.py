@@ -154,6 +154,7 @@ def build_hierarchy(
     root_agent = build_agent(
         root_config,
         name="ken_e",
+        account_id=account_id,
         tools=[delegate_to_specialist],
         config_doc_id=ROOT_CONFIG_ID,
         instruction_suffix_provider=available_specialists_provider,

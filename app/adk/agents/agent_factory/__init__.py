@@ -8,9 +8,12 @@ Phase 2: MCP toolset construction (build_toolset_for_doc, load_all_mcp_toolsets,
 Phase 2: Curated tool-roster resolution (resolve_specialist_roster,
          count_specialist_tool_roster, RosterCapExceededError,
          MAX_TOOLS_PER_SPECIALIST) (AH-13).
+Phase 2: Available Specialists block (AH-14).
 Phase 2 (AH-PRD-09): delegate_to_specialist unified dispatch tool (AH-60);
          root-only build_hierarchy() — 1 Firestore read at deploy time;
          specialists resolved per-turn by specialist_runtime (AH-59).
+SK-PRD-02: SandboxPool — process-wide pool of AgentEngineSandboxCodeExecutor instances
+           keyed by (account_id, config_id), with LRU cap + idle TTL + striped locks.
 """
 
 from app.adk.agents.agent_factory.builder import build_agent
@@ -43,6 +46,11 @@ from app.adk.agents.agent_factory.roster import (
     count_specialist_tool_roster,
     resolve_specialist_roster,
 )
+from app.adk.agents.agent_factory.sandbox_pool import SandboxPool
+from app.adk.agents.agent_factory.skill_metadata import (
+    get_skill_build_metadata,
+    record_skill_build_metadata,
+)
 
 __all__ = [
     "MAX_TOOLS_PER_SPECIALIST",
@@ -55,6 +63,7 @@ __all__ = [
     "MCPSchemaError",
     "MergedAgentConfig",
     "RosterCapExceededError",
+    "SandboxPool",
     "assemble_available_specialists_block",
     "build_agent",
     "build_hierarchy",
@@ -63,9 +72,11 @@ __all__ = [
     "count_specialist_tool_roster",
     "delegate_to_specialist",
     "generate_dispatch_functions",
+    "get_skill_build_metadata",
     "list_account_agent_configs",
     "load_agent_config",
     "load_all_mcp_toolsets",
     "load_toolsets_for_specialist",
+    "record_skill_build_metadata",
     "resolve_specialist_roster",
 ]

@@ -888,7 +888,7 @@ class TestSpecialistRuntimeToolIdsThreading:
         )
         stack, mock_btf, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
         with stack:
-            sr._build_specialist(config, "analytics_specialist")
+            sr._build_specialist(config, "analytics_specialist", None)
 
         ga_calls = [
             kwargs for args, kwargs in mock_btf.call_args_list if args[0] == "ga_mcp"
@@ -909,7 +909,7 @@ class TestSpecialistRuntimeToolIdsThreading:
         )
         stack, mock_btf, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
         with stack:
-            sr._build_specialist(config, "analytics_specialist")
+            sr._build_specialist(config, "analytics_specialist", None)
 
         assert mock_btf.call_count == 1
         assert "allowed_tool_names" not in mock_btf.call_args.kwargs, (
@@ -935,7 +935,7 @@ class TestSpecialistRuntimeToolIdsThreading:
         )
         stack, mock_btf, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
         with stack:
-            sr._build_specialist(config, "analytics_specialist")
+            sr._build_specialist(config, "analytics_specialist", None)
 
         called_servers = [args[0] for args, _ in mock_btf.call_args_list]
         assert called_servers == ["ga_mcp"], (
@@ -982,7 +982,7 @@ class TestSpecialistRuntimeDefaultGlobalTools:
             default_global_tools=[viz_tool]
         )
         with stack:
-            sr._build_specialist(config, "any_specialist")
+            sr._build_specialist(config, "any_specialist", None)
 
         resolved_tools = mock_ba.call_args.kwargs["tools"]
         assert viz_tool in resolved_tools, (
@@ -1001,7 +1001,7 @@ class TestSpecialistRuntimeDefaultGlobalTools:
             default_global_tools=[viz_tool]
         )
         with stack:
-            sr._build_specialist(config, "any_specialist")
+            sr._build_specialist(config, "any_specialist", None)
 
         resolved_tools = mock_ba.call_args.kwargs["tools"]
         assert viz_tool not in resolved_tools, (
@@ -1023,7 +1023,7 @@ class TestSpecialistRuntimeDefaultGlobalTools:
             default_global_tools=[viz_tool, other_tool]
         )
         with stack:
-            sr._build_specialist(config, "any_specialist")
+            sr._build_specialist(config, "any_specialist", None)
 
         resolved_tools = mock_ba.call_args.kwargs["tools"]
         assert viz_tool in resolved_tools
@@ -1045,7 +1045,7 @@ class TestSpecialistRuntimeDefaultGlobalTools:
             default_global_tools=[viz_tool, other_tool]
         )
         with stack:
-            sr._build_specialist(config, "any_specialist")
+            sr._build_specialist(config, "any_specialist", None)
 
         resolved_tools = mock_ba.call_args.kwargs["tools"]
         assert other_tool in resolved_tools
@@ -1087,7 +1087,7 @@ class TestSpecialistRuntimeRosterCap:
             ),
             pytest.raises(RosterCapExceededError, match="test cap exceeded"),
         ):
-            sr._build_specialist(config, "fat_specialist")
+            sr._build_specialist(config, "fat_specialist", None)
 
     def test_roster_cap_within_limit_succeeds(self) -> None:
         """A within-cap roster must produce a successful build with the
@@ -1101,7 +1101,7 @@ class TestSpecialistRuntimeRosterCap:
             default_global_tools=[viz_tool]
         )
         with stack:
-            result = sr._build_specialist(config, "small_specialist")
+            result = sr._build_specialist(config, "small_specialist", None)
 
         # build_agent was called with the resolved tools (function tool only,
         # since no MCP servers were attached). The patched build_agent uses

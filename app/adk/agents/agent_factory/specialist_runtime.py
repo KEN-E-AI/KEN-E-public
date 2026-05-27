@@ -204,7 +204,9 @@ def _clear_block_cache_for_tests() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _build_specialist(config: MergedAgentConfig, name: str) -> LlmAgent:
+def _build_specialist(
+    config: MergedAgentConfig, name: str, account_id: str | None
+) -> LlmAgent:
     """Construct a new ``LlmAgent`` from a ``MergedAgentConfig``.
 
     Mirrors the pre-AH-PRD-09 specialist-build path from ``hierarchy.py`` (now
@@ -346,7 +348,9 @@ def _build_specialist(config: MergedAgentConfig, name: str) -> LlmAgent:
         )
         raise
 
-    return build_agent(config, name=name, tools=tools, config_doc_id=None)
+    return build_agent(
+        config, name=name, account_id=account_id, tools=tools, config_doc_id=None
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -410,7 +414,7 @@ def resolve_agent(
     cache_key: tuple[str, str | None, str] = (doc_id, account_id, content_hash)
 
     return _specialists_cache.get_or_build(
-        cache_key, lambda: _build_specialist(config, doc_id)
+        cache_key, lambda: _build_specialist(config, doc_id, account_id)
     )
 
 
