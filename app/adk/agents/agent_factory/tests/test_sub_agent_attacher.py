@@ -30,6 +30,7 @@ import pytest
 from google.adk.agents import LlmAgent
 
 from app.adk.agents.agent_factory import specialist_runtime as sr
+from app.adk.agents.agent_factory import sub_agent_attacher as saa
 from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
 from app.adk.agents.agent_factory.sub_agent_attacher import (
     attach_account_specialists,
@@ -42,17 +43,19 @@ from app.adk.agents.agent_factory.sub_agent_attacher import (
 
 @pytest.fixture(autouse=True)
 def _clean_caches() -> Any:
-    """Each test starts and ends with empty agent + block + list caches."""
+    """Each test starts and ends with empty agent + block + list + fingerprint caches."""
     from app.adk.agents.utils.config_cache import clear_config_cache
 
     sr._specialists_cache.clear()
     sr._clear_block_cache_for_tests()
     sr._clear_list_cache_for_tests()
+    saa._clear_fingerprint_cache_for_tests()
     clear_config_cache()
     yield
     sr._specialists_cache.clear()
     sr._clear_block_cache_for_tests()
     sr._clear_list_cache_for_tests()
+    saa._clear_fingerprint_cache_for_tests()
     clear_config_cache()
     # root.sub_agents is NOT reset here — each test calls _make_root() for a fresh instance.
 
@@ -75,9 +78,15 @@ def _make_specialist(name: str) -> LlmAgent:
     )
 
 
-def _patched_resolvers(visible: dict[str, LlmAgent]) -> Any:
+def _patched_resolvers(
+    visible: dict[str, LlmAgent], config_suffix: str = ""
+) -> Any:
     """Patch list_account_agent_configs_cached / resolve_config / resolve_agent to
     surface exactly the specialists in *visible* as visible for any account.
+
+    ``config_suffix`` is appended to every config's instruction so callers
+    can produce a distinct content hash between two ``_patched_resolvers``
+    calls (simulating a config edit / content-hash drift).
     """
 
     def _list(_account_id: str) -> list[str]:
@@ -87,7 +96,7 @@ def _patched_resolvers(visible: dict[str, LlmAgent]) -> Any:
         doc_id: str, _account_id: str | None = None, _ttl: int = 60
     ) -> MergedAgentConfig:
         return MergedAgentConfig(
-            instruction=f"{doc_id} instruction",
+            instruction=f"{doc_id} instruction{config_suffix}",
             model="gemini-2.5-pro",
             description=f"{doc_id} description",
             visible_in_frontend=True,
@@ -211,7 +220,8 @@ class TestReconcile:
 
         fresh = _make_specialist("ga_spec")
         assert fresh is not stale
-        with _patched_resolvers({"ga_spec": fresh}):
+        # config_suffix changes the instruction → new content hash → fingerprint miss
+        with _patched_resolvers({"ga_spec": fresh}, config_suffix="_v2"):
             attach_account_specialists(root, "acc_123")
 
         assert root.sub_agents == [fresh]
@@ -556,10 +566,125 @@ class TestBlockCacheInvalidation:
         )
 
         fresh = _make_specialist("ga_spec")
-        with _patched_resolvers({"ga_spec": fresh}):
+        # config_suffix changes the instruction → new content hash → fingerprint miss
+        with _patched_resolvers({"ga_spec": fresh}, config_suffix="_v2"):
             attach_account_specialists(root, "acc_replace")
 
         assert "acc_replace" not in sr._block_cache, (
             "Replacing a specialist instance (content-hash drift) must "
             "invalidate the cached prompt block."
         )
+
+
+# ---------------------------------------------------------------------------
+# Fingerprint short-circuit — AH-76 reviewer hygiene.
+# ---------------------------------------------------------------------------
+
+
+class TestFingerprintShortCircuit:
+    """Verify that ``_attach_locked`` skips ``resolve_agent`` + ``_reconcile``
+    when the visible config set has not changed since the last attach."""
+
+    def test_repeated_attach_same_configs_skips_resolve_agent(self) -> None:
+        """Second attach with identical configs must not call resolve_agent."""
+        root = _make_root()
+        a = _make_specialist("ga_spec")
+
+        resolve_agent_calls: list[str] = []
+
+        def _counting_resolve_agent(
+            doc_id: str, _account_id: str | None = None, _ttl: int = 60
+        ) -> LlmAgent:
+            resolve_agent_calls.append(doc_id)
+            return a
+
+        with _patched_resolvers({"ga_spec": a}):
+            attach_account_specialists(root, "acc_fp")
+
+        resolve_agent_calls.clear()
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher."
+                "list_account_agent_configs_cached",
+                return_value=["ga_spec"],
+            ),
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher.resolve_config",
+                side_effect=lambda doc_id, _acc=None, _ttl=60: MergedAgentConfig(
+                    instruction=f"{doc_id} instruction",
+                    model="gemini-2.5-pro",
+                    description=f"{doc_id} description",
+                    visible_in_frontend=True,
+                ),
+            ),
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher.resolve_agent",
+                side_effect=_counting_resolve_agent,
+            ),
+        ):
+            attach_account_specialists(root, "acc_fp")
+
+        assert resolve_agent_calls == [], (
+            "resolve_agent must not be called when the config fingerprint "
+            "has not changed since the last attach."
+        )
+
+    def test_config_change_triggers_reconcile(self) -> None:
+        """When a config changes (different instruction → different hash),
+        the fingerprint miss must trigger a full reconcile."""
+        root = _make_root()
+        stale = _make_specialist("ga_spec")
+        fresh = _make_specialist("ga_spec")
+
+        with _patched_resolvers({"ga_spec": stale}):
+            attach_account_specialists(root, "acc_fp_change")
+        assert root.sub_agents == [stale]
+
+        # config_suffix changes instruction → new hash → fingerprint miss → reconcile
+        with _patched_resolvers({"ga_spec": fresh}, config_suffix="_v2"):
+            attach_account_specialists(root, "acc_fp_change")
+
+        assert root.sub_agents == [fresh]
+
+    def test_fingerprint_is_per_account(self) -> None:
+        """Fingerprint cache must not bleed between different account_ids."""
+        root_a = _make_root("root_a")
+        root_b = _make_root("root_b")
+        a = _make_specialist("ga_spec")
+
+        resolve_calls: list[tuple[str, str | None]] = []
+
+        def _track_resolve(
+            doc_id: str, account_id: str | None = None, _ttl: int = 60
+        ) -> LlmAgent:
+            resolve_calls.append((doc_id, account_id))
+            return a
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher."
+                "list_account_agent_configs_cached",
+                return_value=["ga_spec"],
+            ),
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher.resolve_config",
+                side_effect=lambda doc_id, _acc=None, _ttl=60: MergedAgentConfig(
+                    instruction=f"{doc_id} instruction",
+                    model="gemini-2.5-pro",
+                    description=f"{doc_id} description",
+                    visible_in_frontend=True,
+                ),
+            ),
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher.resolve_agent",
+                side_effect=_track_resolve,
+            ),
+        ):
+            attach_account_specialists(root_a, "acct_x")
+            attach_account_specialists(root_b, "acct_y")
+
+        # Both accounts are new, so resolve_agent must have been called for both.
+        accounts_seen = {acc for _, acc in resolve_calls}
+        assert "acct_x" in accounts_seen
+        assert "acct_y" in accounts_seen

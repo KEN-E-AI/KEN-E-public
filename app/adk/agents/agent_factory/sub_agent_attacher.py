@@ -57,6 +57,7 @@ from app.adk.agents.agent_factory.config_loader import (
     FirestoreConnectionError,
 )
 from app.adk.agents.agent_factory.specialist_runtime import (
+    _content_hash,
     block_lock_for,
     list_account_agent_configs_cached,
     resolve_agent,
@@ -68,6 +69,16 @@ if TYPE_CHECKING:
     from google.adk.agents.callback_context import CallbackContext
 
 logger = logging.getLogger(__name__)
+
+# Fingerprint cache: maps account_id → frozenset of (doc_id, content_hash)
+# for the last successfully-attached visible specialist set. Allows _attach_locked
+# to skip the full resolve + reconcile pass when no config has changed.
+_fingerprint_cache: dict[str, frozenset[tuple[str, str]]] = {}
+
+
+def _clear_fingerprint_cache_for_tests() -> None:
+    """Drop the fingerprint cache.  For test isolation only."""
+    _fingerprint_cache.clear()
 
 
 def attach_account_specialists(
@@ -136,12 +147,35 @@ def _attach_locked(root_agent: BaseAgent, account_id: str) -> None:
         )
         return
 
-    desired: dict[str, BaseAgent] = {}
+    # Compute a fingerprint of (doc_id, content_hash) for all visible configs.
+    # This is cheap — resolve_config is TTL-cached; the hash is a pure function
+    # of the already-fetched config. If the fingerprint hasn't changed, the
+    # sub_agents list is already in sync and we can skip the full reconcile pass.
+    visible_configs: dict[str, Any] = {}
     for doc_id in doc_ids:
         try:
             config = resolve_config(doc_id, account_id)
             if not config.visible_in_frontend:
                 continue
+            visible_configs[doc_id] = config
+        except Exception as exc:
+            logger.warning(
+                "[ATTACH-SPECIALISTS] Could not resolve config %r (account=%r): %s",
+                doc_id,
+                account_id,
+                exc,
+                exc_info=True,
+            )
+
+    new_fingerprint: frozenset[tuple[str, str]] = frozenset(
+        (doc_id, _content_hash(cfg)) for doc_id, cfg in visible_configs.items()
+    )
+    if _fingerprint_cache.get(account_id) == new_fingerprint:
+        return
+
+    desired: dict[str, BaseAgent] = {}
+    for doc_id, _config in visible_configs.items():
+        try:
             desired[doc_id] = resolve_agent(doc_id, account_id)
         except Exception as exc:
             # Mirror available_specialists_provider's policy: log and drop the
@@ -155,6 +189,7 @@ def _attach_locked(root_agent: BaseAgent, account_id: str) -> None:
             )
 
     changed = _reconcile(root_agent, desired)
+    _fingerprint_cache[account_id] = new_fingerprint
 
     # AH-75 (reviewer feedback): the "Available Specialists" prompt block is
     # cached for ~60 s by ``specialist_runtime._block_cache``. If a specialist
