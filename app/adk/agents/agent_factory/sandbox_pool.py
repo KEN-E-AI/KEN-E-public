@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import os
 import time
 from collections import OrderedDict
@@ -83,6 +84,38 @@ def _sandbox_resource_name(account_id: str, config_id: str) -> str:
 # - pending_evict: True when an LRU/TTL eviction was deferred because
 #   refcount > 0; the deferred evict fires when refcount drops to 0
 _PoolEntry = tuple[Any, float, int, bool]
+
+
+@functools.lru_cache(maxsize=2)
+def _get_vertexai_client(project: str, location: str) -> Any:
+    """Return a cached ``vertexai.Client`` for the given project and location.
+
+    Thread-safety: gRPC channels (which back all Google Cloud Python clients)
+    are documented as thread-safe in the Python gRPC API reference:
+    https://grpc.github.io/grpc/python/grpc.html — "Channels are thread-safe."
+    ``vertexai.Client`` wraps the google-genai SDK client which in turn uses a
+    gRPC channel, so sharing a single instance across concurrent ``_clear_tmp``
+    calls is safe (SK-43 thread-safety verification).
+
+    ``maxsize=2`` covers the typical dev + prod environment in one process.
+    Revisit if the ``client_cache_hit`` rate in MER-E drops below ~95% — that
+    would signal multi-region or multi-project agent configs (SK-43).
+
+    Lazily imports ``vertexai`` so this module remains importable in test
+    environments without a live Vertex AI install — the same pattern used by
+    ``_construct`` and ``_clear_tmp``.
+
+    **Credential rotation note:** the google-auth library handles short-lived
+    token refresh internally, so the cached client remains valid across the
+    standard 1-hour ADC token cycle.  If the service account itself is revoked
+    (e.g., incident-response key rotation), all ``_clear_tmp`` calls will begin
+    returning 401/403 — the process must be recycled (Cloud Run rolling deploy)
+    to pick up new credentials.  ``tmp_clear_failed=True`` in MER-E spans is
+    the alerting path for this condition (SK-43).
+    """
+    import vertexai  # lazy — not required in tests
+
+    return vertexai.Client(project=project, location=location)
 
 
 class SandboxPool:
@@ -616,9 +649,13 @@ class SandboxPool:
         the executor is still returned.
 
         The Vertex SDK call is synchronous, so it runs via ``asyncio.to_thread``
-        to avoid blocking the event loop.  Per-call ``vertexai.Client``
-        construction is intentional for v1 *pending* the verify-thread-safety +
-        cached-client follow-up tracked in SK-43.
+        to avoid blocking the event loop.  Uses ``_get_vertexai_client`` (module-
+        level ``@functools.lru_cache(maxsize=2)``) so the client is constructed
+        once per ``(project, location)`` pair for the lifetime of the Cloud Run
+        instance rather than on every call.  Thread-safety is verified in SK-43:
+        gRPC channels are documented thread-safe (see ``_get_vertexai_client``
+        docstring) so sharing a single cached instance across concurrent
+        ``_clear_tmp`` calls is correct.
 
         Defensive guard: if ``sandbox_resource_name`` is missing or not a
         non-empty string (e.g. unit-test Mock executor, or a future regression
@@ -639,9 +676,7 @@ class SandboxPool:
         project = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
         location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
 
-        import vertexai  # lazy — not required in tests
-
-        client = vertexai.Client(project=project, location=location)
+        client = _get_vertexai_client(project, location)
         await asyncio.wait_for(
             asyncio.to_thread(
                 client.agent_engines.sandboxes.execute_code,

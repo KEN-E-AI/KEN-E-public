@@ -24,13 +24,15 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import sys
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.adk.agents.agent_factory.sandbox_pool import (
     SandboxPool,
+    _get_vertexai_client,
     _sandbox_resource_name,
 )
 
@@ -962,3 +964,91 @@ async def test_deferred_evict_fires_on_release() -> None:
 
     assert close_count == 1, "aclose() must fire exactly once when refcount drops to 0"
     assert key not in pool._pool, "Entry must be removed from pool after deferred evict"
+
+# ===========================================================================
+# SK-43 — _get_vertexai_client caching tests (tests 31-33)
+#
+# The autouse fixture clears the lru_cache before and after each test so no
+# cross-test cache state can leak between them.  Individual tests that call
+# _get_vertexai_client directly also patch sys.modules["vertexai"] to avoid
+# requiring a live Vertex AI install.
+# ===========================================================================
+
+
+@pytest.fixture(autouse=True)
+def _clear_vertexai_client_cache() -> Any:
+    """Clear _get_vertexai_client's lru_cache before and after every test in this
+    module (autouse=True is intentionally file-wide).  The pre-SK-43 tests don't
+    interact with the cache, so the extra clear is a no-op for them; it ensures no
+    SK-43 test can pollute the lru_cache state for any subsequent test."""
+    _get_vertexai_client.cache_clear()
+    yield
+    _get_vertexai_client.cache_clear()
+
+
+# ---------------------------------------------------------------------------
+# Test 31 — _get_vertexai_client caches by (project, location) key
+# ---------------------------------------------------------------------------
+
+
+def test_get_vertexai_client_caches_by_key() -> None:
+    """Two calls with the same (project, location) return the same instance;
+    cache_info().hits == 1 after the second call."""
+    mock_vertexai = MagicMock()
+    with patch.dict(sys.modules, {"vertexai": mock_vertexai}):
+        c1 = _get_vertexai_client("ken-e-dev", "us-central1")
+        c2 = _get_vertexai_client("ken-e-dev", "us-central1")
+        assert c1 is c2, "Same (project, location) key must return the same client instance"
+        assert _get_vertexai_client.cache_info().hits == 1
+
+
+# ---------------------------------------------------------------------------
+# Test 32 — distinct (project, location) pairs produce distinct clients
+# ---------------------------------------------------------------------------
+
+
+def test_get_vertexai_client_distinct_keys_distinct_clients() -> None:
+    """Different (project, location) keys produce distinct client instances;
+    currsize == 2 after two distinct calls."""
+    mock_vertexai = MagicMock()
+    # Return a fresh MagicMock for each call so identity comparison works
+    mock_vertexai.Client.side_effect = [MagicMock(), MagicMock()]
+
+    with patch.dict(sys.modules, {"vertexai": mock_vertexai}):
+        c_dev = _get_vertexai_client("ken-e-dev", "us-central1")
+        c_prod = _get_vertexai_client("ken-e-prod", "us-central1")
+
+    assert c_dev is not c_prod, "Different keys must produce distinct client instances"
+    assert _get_vertexai_client.cache_info().currsize == 2
+
+
+# ---------------------------------------------------------------------------
+# Test 33 — _clear_tmp reuses the cached client across calls
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_clear_tmp_reuses_cached_client() -> None:
+    """Calling _clear_tmp twice results in vertexai.Client constructed exactly once;
+    the second call hits the lru_cache so the constructor is not re-invoked."""
+    pool = SandboxPool()
+
+    class _FakeExecutor:
+        sandbox_resource_name = (
+            "projects/test-proj/locations/us-central1/sandboxes/acc/cfg"
+        )
+
+    mock_vertexai = MagicMock()
+    mock_client = MagicMock()
+    mock_vertexai.Client.return_value = mock_client
+
+    with (
+        patch.dict(sys.modules, {"vertexai": mock_vertexai}),
+        patch("asyncio.wait_for", new=AsyncMock(return_value=None)),
+    ):
+        await pool._clear_tmp(_FakeExecutor())  # type: ignore[arg-type]
+        await pool._clear_tmp(_FakeExecutor())  # type: ignore[arg-type]
+
+    # vertexai.Client must have been called once despite two _clear_tmp calls
+    mock_vertexai.Client.assert_called_once()
+
