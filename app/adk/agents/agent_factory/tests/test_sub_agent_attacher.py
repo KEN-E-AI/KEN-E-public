@@ -777,7 +777,7 @@ class TestSandboxPoolStartWiring:
         try:
             with patch(
                 "app.adk.agents.agent_factory.sub_agent_attacher."
-                "list_account_agent_configs",
+                "list_account_agent_configs_cached",
                 return_value=[],
             ):
                 result = attach_specialists_before_agent_callback(ctx)
@@ -804,7 +804,7 @@ class TestSandboxPoolStartWiring:
         try:
             with patch(
                 "app.adk.agents.agent_factory.sub_agent_attacher."
-                "list_account_agent_configs",
+                "list_account_agent_configs_cached",
                 return_value=[],
             ):
                 result = attach_specialists_before_agent_callback(ctx)
