@@ -44,10 +44,10 @@ _SANDBOX_BUILD_TIMEOUT_SECONDS = 30
 # Tests inject a fresh pool or a MagicMock via the ``sandbox_pool=`` kwarg
 # on ``build_agent`` so the module global is never mutated by test code.
 #
-# TODO(SK-37): nothing calls ``_DEFAULT_SANDBOX_POOL.start()`` today, so the
-# idle-TTL background sweep is dormant in production — only the LRU cap
-# evicts.  SK-37 wires ``start()`` from the runtime entrypoint (FastAPI
-# lifespan or Cloud Run startup) and ``stop()`` from shutdown.
+# start() / stop() are wired by the runtime entrypoints (SK-37):
+#   - FastAPI lifespan in api/src/kene_api/main.py (Cloud Run process)
+#   - attach_specialists_before_agent_callback in sub_agent_attacher.py
+#     (Agent Engine process — no AdkApp startup hook in pinned ADK version)
 _DEFAULT_SANDBOX_POOL: SandboxPool = SandboxPool()
 
 
@@ -342,6 +342,7 @@ def _build_code_executor(
                 extra={"config_id": name},
             )
         else:
+
             def _runner() -> Any:
                 return asyncio.run(
                     _build_code_executor_async(
@@ -412,7 +413,9 @@ def build_agent(
         config,
         account_id=account_id,
         name=name,
-        sandbox_pool=sandbox_pool if sandbox_pool is not None else _DEFAULT_SANDBOX_POOL,
+        sandbox_pool=sandbox_pool
+        if sandbox_pool is not None
+        else _DEFAULT_SANDBOX_POOL,
     )
 
     # ADK 1.27+ requires output_schema on LlmAgent directly (not via GenerateContentConfig.response_schema)
