@@ -241,6 +241,7 @@ def _build_specialist(config: MergedAgentConfig, name: str) -> LlmAgent:
         build_toolset_for_doc,
     )
     from app.adk.agents.agent_factory.roster import (
+        MAX_TOOLS_PER_SPECIALIST,
         RosterCapExceededError,
         per_server_allowed_tools,
         resolve_specialist_roster,
@@ -341,10 +342,7 @@ def _build_specialist(config: MergedAgentConfig, name: str) -> LlmAgent:
         logger.exception(
             "Specialist %r exceeds the %d-tool roster cap; raising.",
             name,
-            # MAX_TOOLS_PER_SPECIALIST is a module-level constant in roster;
-            # log the value the resolver actually enforced rather than
-            # duplicating the import.
-            len(toolsets),
+            MAX_TOOLS_PER_SPECIALIST,
         )
         raise
 

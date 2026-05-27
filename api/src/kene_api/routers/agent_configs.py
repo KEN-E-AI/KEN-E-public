@@ -64,10 +64,13 @@ class AgentConfigUpdateResponse(AgentConfig):
     per-turn resolver picks up every specialist field change within the 60 s
     TTL cache. The root agent (``ken_e_chatbot``) is still built once at
     deploy by ``build_hierarchy()``, so edits to its ``model`` /
-    ``temperature`` / ``max_output_tokens`` / ``tools`` fields surface a
+    ``temperature`` / ``max_output_tokens`` fields surface a
     "redeploy required" warning here and silently no-op in the running
     process until ``make backend`` runs. ``instruction`` on the root is
-    cache-backed and hot-reloads within the 60 s TTL.
+    cache-backed and hot-reloads within the 60 s TTL. ``tools`` on the root
+    is hard-coded to ``[delegate_to_specialist]`` by ``build_hierarchy``
+    and is ignored even after a redeploy — edits to it do not warn here
+    because no warning could be truthful.
     """
 
     warnings: list[str] = Field(
@@ -75,9 +78,10 @@ class AgentConfigUpdateResponse(AgentConfig):
         description=(
             "Empty for specialist edits (the per-turn resolver hot-reloads "
             "all specialist fields within the 60 s TTL). Populated for root "
-            "agent edits to fields that ADK bakes at deploy "
-            "(model / temperature / max_output_tokens / tools); those still "
-            "require a pod redeploy."
+            "agent edits to fields ADK binds at LlmAgent construction "
+            "(model / temperature / max_output_tokens); those still require "
+            "a pod redeploy. ``tools`` is hard-coded on the root and never "
+            "warns."
         ),
     )
 
@@ -90,8 +94,15 @@ _ROOT_CONFIG_ID: str = "ken_e_chatbot"
 # Root-agent fields ADK binds at LlmAgent construction. Edits to these on the
 # root doc require a redeploy; edits to the same fields on any specialist
 # doc hot-reload via specialist_runtime within the 60 s TTL.
+#
+# Note: ``tools`` is intentionally NOT in this set. ``hierarchy.build_hierarchy``
+# hard-codes ``tools=[delegate_to_specialist]`` on the root LlmAgent and never
+# reads ``root_config.tools``, so an admin edit to ``ken_e_chatbot.tools``
+# silently no-ops *forever*, not just until the next ``make backend``. A
+# "redeploy will fix this" warning would be misleading; the right long-term
+# fix is to reject the edit at the API layer (separate ticket).
 _ROOT_REDEPLOY_REQUIRED_FIELDS: frozenset[str] = frozenset(
-    {"model", "temperature", "max_output_tokens", "tools"}
+    {"model", "temperature", "max_output_tokens"}
 )
 
 # Storage-internal fields that live on Firestore docs but are not part of
@@ -309,9 +320,15 @@ def _diff_fields(
     return fields_changed, changes
 
 
-# TODO(AH-Phase-5-cleanup): remove _build_redeploy_warnings and its call site
-# when build_hierarchy() is also driven by the per-turn resolver and the root
-# agent no longer needs deploy-time freezing (AH-PRD-09 Phase 5).
+# This function is the only producer of non-empty PUT warnings under
+# AH-PRD-09 Phase 2 — it fires for root-agent edits to fields ADK binds at
+# LlmAgent construction (``model`` / ``temperature`` / ``max_output_tokens``).
+# It is NOT slated for removal: AH-PRD-09 §2 keeps the root deploy-time-bound,
+# so the warning is the only signal admins get that the edit won't take effect
+# until ``make backend``. If a future PRD makes the root hot-reloadable, both
+# this function and ``AgentConfigUpdateResponse.warnings`` become removable
+# together — until then, the original "Phase 5 cleanup" plan from the
+# AH-PRD-09 §6 design no longer applies post-Finding-#1.
 def _build_redeploy_warnings(
     config_doc_id: str, fields_changed: list[str]
 ) -> list[str]:
