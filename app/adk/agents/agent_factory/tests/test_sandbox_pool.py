@@ -472,7 +472,7 @@ async def test_stale_before_guard_skips_refreshed_entry() -> None:
 
     # Simulate a concurrent hit that refreshed last_used after the snapshot
     t_fresh = t_stale + pool._IDLE_TTL_SECONDS + 10
-    pool._pool[key] = (executor, t_fresh)
+    pool._pool[key] = (executor, t_fresh, 0, False)
 
     # The cutoff was computed before the refresh, so the key appeared stale then
     cutoff = t_stale + pool._IDLE_TTL_SECONDS + 1
@@ -705,8 +705,8 @@ async def test_span_evict_noop_absent_key_emits_span() -> None:
 
 
 @pytest.mark.asyncio
-async def test_tmp_clear_on_cache_miss() -> None:
-    """_clear_tmp is awaited on a cache miss when _CLEAR_TMP_ON_REUSE is True."""
+async def test_tmp_clear_on_lease_0_to_1() -> None:
+    """_clear_tmp is awaited on the 0 → 1 refcount transition (SK-42)."""
     pool = SandboxPool()
     pool._CLEAR_TMP_ON_REUSE = True
     executor = _make_executor()
@@ -717,15 +717,15 @@ async def test_tmp_clear_on_cache_miss() -> None:
     pool._construct = _fake_construct  # type: ignore[method-assign]
     pool._clear_tmp = AsyncMock()  # type: ignore[method-assign]
 
-    result = await pool.get_or_create(account_id="acc", config_id="cfg")
+    async with pool.lease(account_id="acc", config_id="cfg") as result:
+        assert result is executor
 
-    assert result is executor
     pool._clear_tmp.assert_awaited_once_with(executor)
 
 
 @pytest.mark.asyncio
 async def test_tmp_clear_on_cache_hit() -> None:
-    """_clear_tmp is awaited on a cache hit when _CLEAR_TMP_ON_REUSE is True."""
+    """_clear_tmp fires again on the 0 → 1 transition of a second lease (entry reuse)."""
     pool = SandboxPool()
     pool._CLEAR_TMP_ON_REUSE = True
     executor = _make_executor()
@@ -736,20 +736,21 @@ async def test_tmp_clear_on_cache_hit() -> None:
     pool._construct = _fake_construct  # type: ignore[method-assign]
     pool._clear_tmp = AsyncMock()  # type: ignore[method-assign]
 
-    # Prime the cache (miss path — clear_tmp fires here too but we reset)
-    await pool.get_or_create(account_id="acc", config_id="cfg")
+    # First lease: populates cache, fires _clear_tmp at 0→1 transition
+    async with pool.lease(account_id="acc", config_id="cfg"):
+        pass
     pool._clear_tmp.reset_mock()
 
-    # Second call is a cache hit
-    result = await pool.get_or_create(account_id="acc", config_id="cfg")
+    # Second lease: cache hit with refcount 0→1 again — _clear_tmp fires
+    async with pool.lease(account_id="acc", config_id="cfg") as result:
+        assert result is executor
 
-    assert result is executor
     pool._clear_tmp.assert_awaited_once_with(executor)
 
 
 @pytest.mark.asyncio
 async def test_tmp_clear_timeout_returns_executor() -> None:
-    """When _clear_tmp raises (e.g. asyncio.TimeoutError), executor is still returned."""
+    """When _clear_tmp raises (e.g. asyncio.TimeoutError), executor is still yielded."""
     pool = SandboxPool()
     pool._CLEAR_TMP_ON_REUSE = True
     executor = _make_executor()
@@ -764,9 +765,8 @@ async def test_tmp_clear_timeout_returns_executor() -> None:
 
     pool._clear_tmp = _raise_timeout  # type: ignore[method-assign]
 
-    result = await pool.get_or_create(account_id="acc", config_id="cfg")
-
-    assert result is executor
+    async with pool.lease(account_id="acc", config_id="cfg") as result:
+        assert result is executor
 
 
 # ---------------------------------------------------------------------------
@@ -814,7 +814,7 @@ async def test_clear_tmp_guard_warns_on_empty_resource_name(
 
 @pytest.mark.asyncio
 async def test_tmp_clear_failed_set_on_span_when_clear_raises() -> None:
-    """tmp_clear_failed=True is attached to the sandbox_pool.get span when _clear_tmp raises.
+    """tmp_clear_failed=True is attached to the sandbox_pool.lease span when _clear_tmp raises.
 
     The MER-E alert rule depends on this attribute; if the span attrs change shape
     or this value goes missing the security observability degrades silently.
@@ -844,10 +844,121 @@ async def test_tmp_clear_failed_set_on_span_when_clear_raises() -> None:
         "app.adk.agents.agent_factory.sandbox_pool.emit_sandbox_pool_span",
         _fake_emit,
     ):
-        await pool.get_or_create(account_id="acc", config_id="cfg")
+        async with pool.lease(account_id="acc", config_id="cfg"):
+            pass
 
-    get_spans = [a for a in captured_attrs if a["op_name"] == "sandbox_pool.get"]
-    assert len(get_spans) == 1
-    assert get_spans[0]["tmp_clear_failed"] is True, (
+    lease_spans = [a for a in captured_attrs if a["op_name"] == "sandbox_pool.lease"]
+    assert len(lease_spans) == 1
+    assert lease_spans[0]["tmp_clear_failed"] is True, (
         "tmp_clear_failed must be True when _clear_tmp raises — MER-E alerts depend on it"
     )
+
+
+# ===========================================================================
+# Test 29 — SK-42 CLOBBER fix: concurrent leases block _clear_tmp while
+#           another caller is in-flight
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_concurrent_clobber_lease_blocks_clear_during_inflight() -> None:
+    """_clear_tmp never fires while another lease is in-flight (SK-42 CLOBBER fix).
+
+    Two concurrent ``lease()`` callers share the same pool key.  Caller A
+    enters first and holds the lease while caller B acquires.  Because
+    ``refcount`` is already 1 when B acquires (0 → 1 already fired for A),
+    B's lease acquisition is NOT a 0 → 1 transition and therefore does NOT
+    trigger ``_clear_tmp``.  This ensures B cannot destroy A's in-flight
+    /tmp data.
+
+    The test verifies:
+    * ``_clear_tmp`` is invoked exactly once (for the first 0 → 1 transition).
+    * Both callers receive the same executor instance.
+    * Refcount returns to 0 after both leases exit.
+    """
+    pool = SandboxPool()
+    pool._CLEAR_TMP_ON_REUSE = True
+    executor = _make_executor()
+    clear_count = 0
+
+    async def _fake_construct(**_: Any) -> Any:
+        return executor
+
+    async def _count_clear(_executor: Any) -> None:
+        nonlocal clear_count
+        clear_count += 1
+
+    pool._construct = _fake_construct  # type: ignore[method-assign]
+    pool._clear_tmp = _count_clear  # type: ignore[method-assign]
+
+    key = ("acc", "cfg")
+    received: list[Any] = []
+
+    # Caller A acquires the lease and holds it while caller B acquires.
+    # Use an event to synchronise: A signals B after acquiring, then both exit.
+    a_acquired = asyncio.Event()
+    b_acquired = asyncio.Event()
+
+    async def caller_a() -> None:
+        async with pool.lease(account_id="acc", config_id="cfg") as ex:
+            received.append(ex)
+            a_acquired.set()
+            await b_acquired.wait()
+
+    async def caller_b() -> None:
+        await a_acquired.wait()
+        async with pool.lease(account_id="acc", config_id="cfg") as ex:
+            received.append(ex)
+            b_acquired.set()
+
+    await asyncio.gather(caller_a(), caller_b())
+
+    assert clear_count == 1, (
+        f"_clear_tmp should fire exactly once (0→1 transition); fired {clear_count} times"
+    )
+    assert received[0] is executor
+    assert received[1] is executor
+    assert pool._entry_refcount(key) == 0, (
+        "Refcount must be 0 after both leases exit"
+    )
+
+
+@pytest.mark.asyncio
+async def test_deferred_evict_fires_on_release() -> None:
+    """evict() while a lease is active sets pending_evict=True; _release() fires aclose().
+
+    Scenario:
+    1. Acquire a lease (refcount=1).
+    2. Call evict() while the lease is held → pending_evict=True, executor NOT closed.
+    3. Release the lease (refcount→0) → deferred evict fires: aclose() called, entry removed.
+    """
+    pool = SandboxPool()
+    pool._CLEAR_TMP_ON_REUSE = False
+    executor = _make_executor()
+    close_count = 0
+
+    async def _fake_construct(**_: Any) -> Any:
+        return executor
+
+    async def _fake_aclose() -> None:
+        nonlocal close_count
+        close_count += 1
+
+    executor.aclose = _fake_aclose  # type: ignore[attr-defined]
+    pool._construct = _fake_construct  # type: ignore[method-assign]
+
+    key = ("acc_d", "cfg_d")
+    lease_ctx = pool.lease(account_id="acc_d", config_id="cfg_d")
+    await lease_ctx.__aenter__()
+
+    # Lease is held — evict should defer.
+    assert pool._entry_refcount(key) == 1
+    await pool.evict(key)
+    assert pool._entry_refcount(key) == 1, "Entry must stay alive while lease is held"
+    assert close_count == 0, "aclose() must not fire while lease is active"
+
+    # Release the lease → deferred evict must fire.
+    await lease_ctx.__aexit__(None, None, None)
+
+    assert close_count == 1, "aclose() must fire exactly once when refcount drops to 0"
+    assert key not in pool._pool, "Entry must be removed from pool after deferred evict"

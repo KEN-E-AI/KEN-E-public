@@ -11,6 +11,7 @@ from google.adk.code_executors import BuiltInCodeExecutor
 from google.genai.types import GenerateContentConfig
 
 from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+from app.adk.agents.agent_factory.leased_sandbox_executor import LeasedSandboxExecutor
 from app.adk.agents.agent_factory.roster import (
     MAX_TOOLS_PER_SPECIALIST,
     RosterCapExceededError,
@@ -297,16 +298,20 @@ async def _build_code_executor_async(
     account_id: str,
     config_id_for_pool: str,
     sandbox_pool: SandboxPool,
-) -> Any:
-    """Async core: obtain a pooled AgentEngineSandboxCodeExecutor.
+) -> LeasedSandboxExecutor:
+    """Async core: return a LeasedSandboxExecutor for the given pool key.
 
-    Delegates to ``sandbox_pool.get_or_create`` so the sandbox process is
+    Returns a ``LeasedSandboxExecutor`` that wraps ``sandbox_pool.lease()``
+    around every ``execute_code`` call (SK-42 CLOBBER fix).  The underlying
+    pooled ``AgentEngineSandboxCodeExecutor`` is constructed on first use and
     reused across ``LlmAgent`` rebuilds under AH-PRD-09's per-turn resolver.
+
     The pool is keyed by ``(account_id, config_id_for_pool)`` where
     ``config_id_for_pool`` is the stable Firestore doc id (the ``name=`` kwarg
     on ``build_agent``).
     """
-    return await sandbox_pool.get_or_create(
+    return LeasedSandboxExecutor(
+        pool=sandbox_pool,
         account_id=account_id,
         config_id=config_id_for_pool,
     )

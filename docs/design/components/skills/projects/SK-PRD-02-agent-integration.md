@@ -298,12 +298,16 @@ def _sandbox_resource_name(account_id: str, config_id: str) -> str:
 
 **Lifecycle.** The pool is constructed once per Cloud Run instance (`SandboxPool()` singleton in `agent_factory`) and survives across all per-turn `_build_code_executor` calls. The 60 s background sweep keeps memory bounded even when LRU isn't churning. `aclose()` on eviction is mandatory — leaked sandbox processes accumulate on Cloud Run instance recycle. Mirrors AH-PRD-09's `McpToolsetPool` discipline (RFC §4.8).
 
-**Span contract.** Two new Weave spans for pool observability:
+**SK-42 update — `lease()` API and `LeasedSandboxExecutor`.** The v1 implementation shipped `_clear_tmp` on every `get_or_create` call, creating a CLOBBER race when concurrent callers shared a pool entry. SK-42 resolved this by adding a refcount-based `lease()` async context manager: `_clear_tmp` fires only on the 0 → 1 refcount transition (no other caller in-flight). `build_agent` now returns a `LeasedSandboxExecutor` (a `BaseCodeExecutor` subclass) as `LlmAgent.code_executor`; each `execute_code` call enters `pool.lease()`. Pool entry shape grew from `(executor, last_used)` to `(executor, last_used, refcount, pending_evict)`. Deferred eviction: LRU/TTL eviction that finds `refcount > 0` sets `pending_evict=True` without closing; the deferred close fires in `_release` when refcount reaches 0. See Design Review Log Review 37 for the full rationale.
+
+**Span contract.** Four Weave spans for pool observability (SK-42 added `sandbox_pool.lease` and `sandbox_pool.release`):
 
 | Span name | Attributes | When emitted |
 |---|---|---|
-| `sandbox_pool.get` | `account_id`, `config_id`, `cache_hit: bool`, `pool_size_after: int` | Every `get_or_create` call |
-| `sandbox_pool.evict` | `account_id`, `config_id`, `reason: "lru" \| "ttl" \| "manual"`, `pool_size_after: int` | Every `evict` call |
+| `sandbox_pool.get` | `account_id`, `config_id`, `cache_hit: bool`, `pool_size_after: int` | Every `get_or_create` call (diagnostic / test accessor) |
+| `sandbox_pool.lease` | `account_id`, `config_id`, `refcount_after: int`, `cleared_tmp: bool`, `tmp_clear_failed: bool` | Every `execute_code` call (lease entry) |
+| `sandbox_pool.release` | `account_id`, `config_id`, `refcount_after: int`, `triggered_pending_evict: bool` | Every `execute_code` call (lease exit) |
+| `sandbox_pool.evict` | `account_id`, `config_id`, `reason: "lru" \| "ttl" \| "manual"`, `pool_size_after: int`, `deferred: bool` | Every `evict` call |
 
 ### Weave span contract — new spans
 

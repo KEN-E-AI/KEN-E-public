@@ -1578,4 +1578,57 @@ Options (b) (maintain fallback + structured marker) and (c) (add `sandbox_requir
 
 ---
 
+## Review 37 — SK-42: SandboxPool concurrent-clobber fix via refcount-based ExecutorLease API
+
+**Date:** 2026-05-27
+**Scope:** Skills component — SK-42 ([Linear](https://linear.app/ken-e/issue/SK-42)); `SandboxPool` in `app/adk/agents/agent_factory/sandbox_pool.py`, new `LeasedSandboxExecutor` in `app/adk/agents/agent_factory/leased_sandbox_executor.py`, `builder.py` wire-up.
+
+### Summary
+
+The SK-35 LEAK-branch live probe (2026-05-27) confirmed that Vertex reuses container `/tmp` across sessions sharing the same sandbox resource name. The `_clear_tmp` defence-in-depth added in SK-35 closes the LEAK (cross-session read), but opened a symmetric CLOBBER hazard: caller B's `get_or_create` call fires `_clear_tmp` against the shared container while caller A's `execute_code` is still writing to `/tmp`, destroying A's in-flight data. This review captures the decision that resolves the hazard.
+
+### Decision
+
+**Option A — Refcount-based `ExecutorLease` API.** `_clear_tmp` moves from `get_or_create` to the 0 → 1 refcount transition inside a new `lease()` async context manager. `_clear_tmp` fires only when refcount was 0 (no caller in-flight), making concurrent clearing impossible by construction. `get_or_create` is demoted to a diagnostic/test accessor; production callers use `lease()`.
+
+Options B (boundary-only fix) and C (session-scoped executors) were rejected:
+- **(B)** defers clearing to just before `execute_code` but doesn't track concurrent callers — still racy under multi-user concurrency.
+- **(C)** would eliminate sharing entirely but breaks AH-PRD-09's pool-reuse guarantee and multiplies sandbox cold-starts.
+
+### Key design decisions
+
+1. **Pool entry grows from 2-tuple to 4-tuple.** `(executor, last_used)` → `(executor, last_used, refcount, pending_evict)`. Refcount is 0 when idle, incremented in `_acquire`, decremented in `_release`.
+
+2. **Deferred eviction.** LRU/TTL eviction that finds `refcount > 0` sets `pending_evict=True` and removes the entry from LRU ordering (so it no longer counts against the cap) but leaves the executor alive. `_release` performs the deferred `aclose()` when refcount reaches 0.
+
+3. **`LeasedSandboxExecutor` wrapper.** New `BaseCodeExecutor` subclass stored as `LlmAgent.code_executor`. Every `execute_code` call routes through `pool.lease()`. `build_agent` now creates a fresh `LeasedSandboxExecutor` wrapper per turn (lazy construction — pool `_construct` only fires on first `execute_code`).
+
+4. **Two new Weave spans.** `sandbox_pool.lease` (carries `refcount_after`, `cleared_tmp`, `tmp_clear_failed`) and `sandbox_pool.release` (carries `refcount_after`, `triggered_pending_evict`). The `tmp_clear_failed` attribute moves from `sandbox_pool.get` to `sandbox_pool.lease`.
+
+5. **`SandboxPoolSpanName` Literal extended.** `sandbox_pool.lease` and `sandbox_pool.release` added to `app/adk/tracking/sandbox_pool_spans.py`.
+
+### Consequences
+
+- `get_or_create` is preserved for diagnostic use and existing callers but no longer calls `_clear_tmp`.
+- Existing `sandbox_pool.get` spans no longer carry `tmp_clear_failed`. MER-E alert rule migrates to `sandbox_pool.lease where tmp_clear_failed=true`.
+- Integration tests in `test_sandbox_pool_runtime_resolver.py` updated: `code_executor is sentinel` assertions replaced with `isinstance(code_executor, LeasedSandboxExecutor)` + pool-reference checks; new `test_leased_executor_refcount_boundary` test added.
+- The "Operational assumption (v1 concurrency)" section in `docs/spike/sk-prd-02-cross-session-tmp-characterisation.md` is removed per AC-5.
+
+### Documents updated
+
+| File | Change |
+|------|--------|
+| `app/adk/agents/agent_factory/sandbox_pool.py` | Pool entry → 4-tuple; `lease()`, `_acquire()`, `_release()`, `_entry_refcount()` added; `get_or_create` no longer calls `_clear_tmp`; `evict()` deferred-eviction path |
+| `app/adk/agents/agent_factory/leased_sandbox_executor.py` | New file — `BaseCodeExecutor` subclass that routes `execute_code` through `pool.lease()` |
+| `app/adk/agents/agent_factory/builder.py` | `_build_code_executor_async` returns `LeasedSandboxExecutor`; import added |
+| `app/adk/tracking/sandbox_pool_spans.py` | `SandboxPoolSpanName` Literal extended with `sandbox_pool.lease` and `sandbox_pool.release` |
+| `app/adk/agents/agent_factory/tests/test_sandbox_pool.py` | Migrated `test_tmp_clear_*` to use `lease()`; added `test_concurrent_clobber_lease_blocks_clear_during_inflight` |
+| `tests/integration/test_sandbox_pool_runtime_resolver.py` | Updated assertions; added `test_leased_executor_refcount_boundary` |
+| `docs/spike/sk-prd-02-cross-session-tmp-characterisation.md` | Removed "Operational assumption (v1 concurrency)" section (AC-5) |
+| `docs/design/components/skills/projects/SK-PRD-02-agent-integration.md` | §4.6 updated with `lease()` API, `LeasedSandboxExecutor`, span contract |
+| `docs/trace-structure-spec.md` | §15 — added `sandbox_pool.lease` and `sandbox_pool.release` span definitions |
+| `docs/design/DESIGN-REVIEW-LOG.md` | This entry (Review 37) |
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, and documents updated. Decision rationale lives in the Review itself — this log is the canonical record going forward.*

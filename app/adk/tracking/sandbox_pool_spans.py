@@ -45,7 +45,12 @@ try:
 except ImportError:  # pragma: no cover
     pass
 
-SandboxPoolSpanName = Literal["sandbox_pool.get", "sandbox_pool.evict"]
+SandboxPoolSpanName = Literal[
+    "sandbox_pool.get",
+    "sandbox_pool.evict",
+    "sandbox_pool.lease",
+    "sandbox_pool.release",
+]
 
 
 @contextlib.asynccontextmanager

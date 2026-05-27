@@ -534,24 +534,17 @@ class TestSandboxWiring:
     # ------------------------------------------------------------------
 
     def _make_mock_pool(self) -> Any:
-        """Return a MagicMock(spec=SandboxPool) whose get_or_create returns a BuiltInCodeExecutor.
+        """Return a MagicMock(spec=SandboxPool) for AC-4 wiring tests.
 
-        ``LlmAgent.code_executor`` is a Pydantic field typed as ``BaseCodeExecutor``, so
-        the sentinel must be a real subclass instance — a plain ``object()`` fails validation.
-        We use ``BuiltInCodeExecutor`` as the stand-in since it is a no-arg BaseCodeExecutor
-        subclass already in the test environment.
+        SK-42: build_agent no longer calls pool.get_or_create; it creates a
+        LeasedSandboxExecutor wrapper referencing the pool.  The mock only needs
+        to satisfy SandboxPool's spec — no sentinel return value needed.
         """
-        from unittest.mock import AsyncMock, MagicMock
-
-        from google.adk.code_executors import BuiltInCodeExecutor
+        from unittest.mock import MagicMock
 
         from app.adk.agents.agent_factory.sandbox_pool import SandboxPool
 
-        pool = MagicMock(spec=SandboxPool)
-        sentinel = BuiltInCodeExecutor()
-        pool.get_or_create = AsyncMock(return_value=sentinel)
-        pool._sentinel = sentinel
-        return pool
+        return MagicMock(spec=SandboxPool)
 
     def _build(
         self,
@@ -573,14 +566,21 @@ class TestSandboxWiring:
     # ------------------------------------------------------------------
 
     def test_sandbox_true_pool_called_once_with_correct_key(self) -> None:
-        """sandbox=True → pool.get_or_create called with (account_id, name)."""
+        """sandbox=True → LeasedSandboxExecutor wrapping pool with correct (account_id, name)."""
+        from app.adk.agents.agent_factory.leased_sandbox_executor import (
+            LeasedSandboxExecutor,
+        )
+
         pool = self._make_mock_pool()
         config = _make_config(sandbox_code_executor_enabled=True)
 
         agent = self._build(config, account_id="acc_test", sandbox_pool=pool)
 
-        pool.get_or_create.assert_called_once_with(account_id="acc_test", config_id="test_agent")
-        assert agent.code_executor is pool._sentinel
+        # SK-42: build_agent creates a LeasedSandboxExecutor wrapper (lazy construction).
+        assert isinstance(agent.code_executor, LeasedSandboxExecutor)
+        assert agent.code_executor._pool is pool
+        assert agent.code_executor._account_id == "acc_test"
+        assert agent.code_executor._config_id == "test_agent"
 
     def test_sandbox_false_pool_not_called(self) -> None:
         """sandbox=False → pool.get_or_create NOT called; code_executor is None."""
@@ -593,7 +593,11 @@ class TestSandboxWiring:
         assert agent.code_executor is None
 
     def test_sandbox_true_code_execution_true_sandbox_wins(self) -> None:
-        """sandbox=True + code_execution_enabled=True → sandbox takes precedence."""
+        """sandbox=True + code_execution_enabled=True → sandbox takes precedence (LeasedSandboxExecutor)."""
+        from app.adk.agents.agent_factory.leased_sandbox_executor import (
+            LeasedSandboxExecutor,
+        )
+
         pool = self._make_mock_pool()
         config = _make_config(
             sandbox_code_executor_enabled=True,
@@ -602,8 +606,8 @@ class TestSandboxWiring:
 
         agent = self._build(config, account_id="acc_both", sandbox_pool=pool)
 
-        pool.get_or_create.assert_called_once()
-        assert agent.code_executor is pool._sentinel
+        assert isinstance(agent.code_executor, LeasedSandboxExecutor)
+        assert agent.code_executor._pool is pool
 
     @pytest.mark.parametrize("code_execution_enabled", [False, True])
     def test_sandbox_true_account_id_none_returns_none_no_fallback(
@@ -638,6 +642,10 @@ class TestSandboxWiring:
 
     def test_sandbox_true_inside_running_loop(self) -> None:
         """sandbox=True works when build_agent is called inside a running event loop."""
+        from app.adk.agents.agent_factory.leased_sandbox_executor import (
+            LeasedSandboxExecutor,
+        )
+
         pool = self._make_mock_pool()
         config = _make_config(sandbox_code_executor_enabled=True)
 
@@ -646,8 +654,10 @@ class TestSandboxWiring:
 
         agent = asyncio.run(_run())
 
-        pool.get_or_create.assert_called_once_with(account_id="acc_loop", config_id="test_agent")
-        assert agent.code_executor is pool._sentinel
+        assert isinstance(agent.code_executor, LeasedSandboxExecutor)
+        assert agent.code_executor._pool is pool
+        assert agent.code_executor._account_id == "acc_loop"
+        assert agent.code_executor._config_id == "test_agent"
 
     # ------------------------------------------------------------------
     # AC-5 — 4-combination independence matrix (skills x sandbox)
@@ -673,6 +683,10 @@ class TestSandboxWiring:
         """Combination (skills=∅, sandbox=True): no SkillToolset, but sandbox executor attached."""
         from google.adk.tools.skill_toolset import SkillToolset
 
+        from app.adk.agents.agent_factory.leased_sandbox_executor import (
+            LeasedSandboxExecutor,
+        )
+
         pool = self._make_mock_pool()
         config = _make_config(skill_ids=[], sandbox_code_executor_enabled=True)
 
@@ -680,8 +694,8 @@ class TestSandboxWiring:
             import app.adk.agents.agent_factory.builder as b
             agent = b.build_agent(config, name="combo_ft", account_id="acc_ft", sandbox_pool=pool)
 
-        pool.get_or_create.assert_called_once()
-        assert agent.code_executor is pool._sentinel
+        assert isinstance(agent.code_executor, LeasedSandboxExecutor)
+        assert agent.code_executor._pool is pool
         toolsets = [t for t in agent.tools if isinstance(t, SkillToolset)]
         assert toolsets == []
 
@@ -711,6 +725,10 @@ class TestSandboxWiring:
         """Combination (skills=[id-a], sandbox=True): both SkillToolset and sandbox executor attached."""
         from google.adk.tools.skill_toolset import SkillToolset
 
+        from app.adk.agents.agent_factory.leased_sandbox_executor import (
+            LeasedSandboxExecutor,
+        )
+
         skill_a = _make_adk_skill("skill-combo-tt")
         fake_loader = _make_fake_loader_module(skills_by_id={"id-a": skill_a})
         monkeypatch.setitem(sys.modules, "kene_api.services.skill_loader", fake_loader)
@@ -720,8 +738,8 @@ class TestSandboxWiring:
 
         agent = _build_with_skills(config, name="combo_tt", account_id="acc_tt", sandbox_pool=pool)
 
-        pool.get_or_create.assert_called_once()
-        assert agent.code_executor is pool._sentinel
+        assert isinstance(agent.code_executor, LeasedSandboxExecutor)
+        assert agent.code_executor._pool is pool
         toolsets = [t for t in agent.tools if isinstance(t, SkillToolset)]
         assert len(toolsets) == 1
 
@@ -730,29 +748,30 @@ class TestSandboxWiring:
     # ------------------------------------------------------------------
 
     @pytest.mark.parametrize("code_execution_enabled", [False, True])
-    def test_sandbox_build_timeout_returns_none_no_fallback(
+    def test_sandbox_build_creates_leased_executor_instantly(
         self,
         code_execution_enabled: bool,
         monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Timeout returns None regardless of code_execution_enabled — no silent downgrade.
+        """sandbox=True always returns LeasedSandboxExecutor instantly (SK-42 lazy construction).
 
-        When sandbox_code_executor_enabled=True and the pool's get_or_create exceeds
-        the timeout, the function MUST return None rather than falling through to
-        BuiltInCodeExecutor.  Sandbox is a hard requirement: if it cannot be built,
-        the agent has no code executor that turn.  See DESIGN-REVIEW-LOG Review 36.
+        SK-42: build_agent creates a LeasedSandboxExecutor wrapper without touching
+        the pool, so there is no I/O during build_agent and the timeout path is never
+        triggered.  The timeout mechanism (from Review 36) is preserved for future
+        use but becomes unreachable in normal operation.
+
+        Previously named test_sandbox_build_timeout_returns_none_no_fallback; the
+        test was updated when SK-42 changed the sandbox-build path to lazy construction.
         """
         import logging
 
         import app.adk.agents.agent_factory.builder as b
-
-        async def _slow_get_or_create(*, account_id: str, config_id: str) -> Any:
-            await asyncio.sleep(5.0)  # well beyond the 0.05 s patched timeout
-            return None
+        from app.adk.agents.agent_factory.leased_sandbox_executor import (
+            LeasedSandboxExecutor,
+        )
 
         pool = self._make_mock_pool()
-        pool.get_or_create = _slow_get_or_create  # type: ignore[assignment]
         monkeypatch.setattr(b, "_SANDBOX_BUILD_TIMEOUT_SECONDS", 0.05)
 
         config = _make_config(
@@ -763,19 +782,17 @@ class TestSandboxWiring:
         with caplog.at_level(logging.ERROR):
             agent = self._build(config, account_id="acc_to", sandbox_pool=pool)
 
-        # Sandbox timeout must NOT fall through to BuiltInCodeExecutor, even
-        # when code_execution_enabled=True — isolation guarantee is fail-closed.
-        assert agent.code_executor is None
+        # SK-42: LeasedSandboxExecutor is always returned; build_agent is instant
+        # (no pool I/O), so the timeout path is never reached.
+        assert isinstance(agent.code_executor, LeasedSandboxExecutor)
+        assert agent.code_executor._pool is pool
 
+        # No timeout error logged — construction is instant.
         timeout_records = [
             r for r in caplog.records
             if r.levelname == "ERROR" and "sandbox_build_timeout" in r.getMessage()
         ]
-        assert len(timeout_records) == 1
-        rec = timeout_records[0]
-        assert getattr(rec, "account_id", None) == "acc_to"
-        assert getattr(rec, "config_id", None) == "test_agent"
-        assert getattr(rec, "timeout_s", None) == 0.05
+        assert len(timeout_records) == 0
 
 
 class TestAsyncBridge:
