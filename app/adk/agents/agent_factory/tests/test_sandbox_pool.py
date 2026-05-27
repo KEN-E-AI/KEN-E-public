@@ -920,9 +920,7 @@ async def test_concurrent_clobber_lease_blocks_clear_during_inflight() -> None:
     )
     assert received[0] is executor
     assert received[1] is executor
-    assert pool._entry_refcount(key) == 0, (
-        "Refcount must be 0 after both leases exit"
-    )
+    assert pool._entry_refcount(key) == 0, "Refcount must be 0 after both leases exit"
 
 
 @pytest.mark.asyncio
@@ -965,6 +963,7 @@ async def test_deferred_evict_fires_on_release() -> None:
     assert close_count == 1, "aclose() must fire exactly once when refcount drops to 0"
     assert key not in pool._pool, "Entry must be removed from pool after deferred evict"
 
+
 # ===========================================================================
 # SK-43 — _get_vertexai_client caching tests (tests 31-33)
 #
@@ -998,7 +997,9 @@ def test_get_vertexai_client_caches_by_key() -> None:
     with patch.dict(sys.modules, {"vertexai": mock_vertexai}):
         c1 = _get_vertexai_client("ken-e-dev", "us-central1")
         c2 = _get_vertexai_client("ken-e-dev", "us-central1")
-        assert c1 is c2, "Same (project, location) key must return the same client instance"
+        assert c1 is c2, (
+            "Same (project, location) key must return the same client instance"
+        )
         assert _get_vertexai_client.cache_info().hits == 1
 
 
@@ -1051,4 +1052,3 @@ async def test_clear_tmp_reuses_cached_client() -> None:
 
     # vertexai.Client must have been called once despite two _clear_tmp calls
     mock_vertexai.Client.assert_called_once()
-

@@ -302,7 +302,8 @@ def test_repeated_build_agent_reuses_pooled_sandbox() -> None:
         "Every LeasedSandboxExecutor must reference the shared SandboxPool"
     )
     assert all(
-        a.code_executor._account_id == "acc_x" and a.code_executor._config_id == "spec_a"
+        a.code_executor._account_id == "acc_x"
+        and a.code_executor._config_id == "spec_a"
         for a in agents
     ), "All wrappers must target the (acc_x, spec_a) pool key"
     # Pool is still empty: _construct is lazy — it fires on first execute_code, not build_agent.
@@ -400,8 +401,14 @@ def test_different_config_ids_construct_independently() -> None:
     ), "All spec_b agents must carry a LeasedSandboxExecutor for the spec_b key"
 
     # Different config_ids → different pool keys (key isolation, not identity).
-    key_a = (agents_a[0].code_executor._account_id, agents_a[0].code_executor._config_id)
-    key_b = (agents_b[0].code_executor._account_id, agents_b[0].code_executor._config_id)
+    key_a = (
+        agents_a[0].code_executor._account_id,
+        agents_a[0].code_executor._config_id,
+    )
+    key_b = (
+        agents_b[0].code_executor._account_id,
+        agents_b[0].code_executor._config_id,
+    )
     assert key_a != key_b, (
         "Different config_ids must map to different pool keys — "
         "pool is keyed by (account_id, config_id)"
@@ -462,7 +469,9 @@ async def test_leased_executor_refcount_boundary() -> None:
 
     # Second call: reuses pool entry — no additional _construct.
     await agent.code_executor.execute_code(MagicMock(), MagicMock())
-    assert construct_count[0] == 1, "_construct must not be called again on second execute_code"
+    assert construct_count[0] == 1, (
+        "_construct must not be called again on second execute_code"
+    )
 
     assert key in pool._pool, "Pool should have the entry after execute_code"
     assert refcount_during == [1, 1], (

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Test switching between US and JP regions."""
 
-
 import requests
 
 

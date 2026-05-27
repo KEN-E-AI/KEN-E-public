@@ -722,4 +722,6 @@ class SandboxPool:
             try:
                 await self.sweep_idle()
             except Exception:
-                logger.exception("SandboxPool._sweep_loop: sweep_idle() raised unexpectedly")
+                logger.exception(
+                    "SandboxPool._sweep_loop: sweep_idle() raised unexpectedly"
+                )

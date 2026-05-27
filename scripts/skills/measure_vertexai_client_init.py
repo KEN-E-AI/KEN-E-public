@@ -59,9 +59,11 @@ def _measure_cached(project: str, location: str, n: int) -> list[float]:
     The first call pays the construction cost; subsequent calls are pure
     Python dict lookups.
     """
+
     @functools.lru_cache(maxsize=1)
     def _cached_client(proj: str, loc: str) -> object:
         import vertexai
+
         return vertexai.Client(project=proj, location=loc)
 
     latencies: list[float] = []
@@ -86,7 +88,9 @@ def _dry_run() -> None:
     print("|------|------|-----|-----|")
     print("| Uncached (100 calls) | _pending_ | _pending_ | _pending_ |")
     print("| Cached (100 calls) | _pending_ | _pending_ | _pending_ |")
-    print("\n_Run without --dry-run on a credentialled workstation to capture real numbers._")
+    print(
+        "\n_Run without --dry-run on a credentialled workstation to capture real numbers._"
+    )
 
 
 def main() -> None:
@@ -117,7 +121,9 @@ def main() -> None:
         return
 
     if args.n < 20:
-        parser.error("--n must be >= 20: statistics.quantiles requires at least 20 data points to compute p95")
+        parser.error(
+            "--n must be >= 20: statistics.quantiles requires at least 20 data points to compute p95"
+        )
 
     project = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
     location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
@@ -141,9 +147,7 @@ def main() -> None:
             f"subsequent calls (cache lookup) mean = {rest_mean:.4f} ms"
         )
 
-    print(
-        "\n_Post this table as a comment on Linear SK-43 to satisfy AC-3._"
-    )
+    print("\n_Post this table as a comment on Linear SK-43 to satisfy AC-3._")
 
 
 if __name__ == "__main__":

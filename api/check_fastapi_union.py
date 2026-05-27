@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Test if we can make FastAPI accept both JSON and FormData."""
 
-
 from fastapi import FastAPI, File, Form, UploadFile
 from pydantic import BaseModel
 

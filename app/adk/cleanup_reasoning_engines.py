@@ -4,7 +4,6 @@ Clean up old reasoning engines in staging environment.
 Keeps only the specified engines and deletes all others.
 """
 
-
 from google.cloud import aiplatform
 
 # Initialize Vertex AI

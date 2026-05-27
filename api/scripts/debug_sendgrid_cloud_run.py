@@ -63,9 +63,7 @@ def test_secret_manager_access():
             if secret_value.startswith("SG."):
                 logger.info("  ✓ Secret has valid SendGrid format")
             else:
-                logger.warning(
-                    "  ⚠ Secret doesn't start with 'SG.' - might be invalid"
-                )
+                logger.warning("  ⚠ Secret doesn't start with 'SG.' - might be invalid")
 
         except Exception as e:
             logger.error(f"  ✗ Failed to retrieve secret: {e}")

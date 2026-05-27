@@ -8,7 +8,6 @@ Following ADK constraint workaround: Agents with output_schema cannot use tools.
 Configurations are now loaded from Firestore for easy iteration without redeployment.
 """
 
-
 from .brand_models import BrandGuidelines
 from .config_loader import create_agent_from_firestore_config
 
