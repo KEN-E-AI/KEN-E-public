@@ -1558,9 +1558,8 @@ Options (b) (maintain fallback + structured marker) and (c) (add `sandbox_requir
 
 ### Rationale
 
-1. **Symmetry with the existing `account_id is None` skip path.** When `sandbox_code_executor_enabled=True` but `account_id is None`, the function already returns `None` (pool keying requires a real account scope) rather than falling through to `BuiltInCodeExecutor`. The timeout branch should be consistent — both "sandbox unavailable" failure modes refuse to substitute a less-isolated executor.
-2. **Security intent.** The attach-time validation in SK-PRD-04 rejects scripts-bearing skills on non-sandbox agents because isolation is a hard guarantee at the API boundary. The runtime contract must match: if the sandbox cannot be built, the LLM cannot execute code that turn.
-3. **Ops signal is already sufficient.** The existing `sandbox_build_timeout` ERROR log carries `account_id`, `config_id`, and `timeout_s`. Under option (a) there is no degradation to surface — the agent has no executor, which the trace already reflects.
+1. **Security intent of the sandbox flag.** The attach-time validation in SK-PRD-04 rejects scripts-bearing skills on non-sandbox agents because isolation is a hard guarantee at the API boundary. The runtime contract must match: if the sandbox cannot be built, the LLM cannot execute code that turn. Note: the `account_id is None` branch currently still falls through to `BuiltInCodeExecutor` when `code_execution_enabled=True` — that is a pre-existing inconsistency not addressed by this issue (the pool cannot be keyed without a real account scope, so the failure mode is different in character; a follow-up issue should evaluate whether it should also fail closed).
+2. **Ops signal is already sufficient.** The existing `sandbox_build_timeout` ERROR log carries `account_id`, `config_id`, and `timeout_s`. Under option (a) there is no degradation to surface — the agent has no executor, which the trace already reflects.
 
 ### Consequences
 

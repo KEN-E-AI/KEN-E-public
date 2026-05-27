@@ -738,7 +738,7 @@ class TestSandboxWiring:
         import app.adk.agents.agent_factory.builder as b
 
         async def _slow_get_or_create(*, account_id: str, config_id: str) -> Any:
-            await asyncio.sleep(5.0)
+            await asyncio.sleep(5.0)  # well beyond the 0.05 s patched timeout
             return None
 
         pool = self._make_mock_pool()
@@ -764,6 +764,7 @@ class TestSandboxWiring:
         assert len(timeout_records) == 1
         rec = timeout_records[0]
         assert getattr(rec, "account_id", None) == "acc_to"
+        assert getattr(rec, "config_id", None) == "test_agent"
         assert getattr(rec, "timeout_s", None) == 0.05
 
 
