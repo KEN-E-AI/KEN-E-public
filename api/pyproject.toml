@@ -28,7 +28,7 @@ dependencies = [
     "jinja2>=3.1.2",
     "firebase-admin>=6.1.0",
     "redis>=5.0.0",
-    "google-adk>=1.27.4",
+    "google-adk==1.27.5",  # TODO(SK-10): unpin to >=1.27.5 after spike branch deletion. Aligned with root pyproject.toml pin (SK-32).
     "weave>=0.51.0,<0.51.57",  # pinned: polyfile-weave breaks Agent Engine (see docs/spike-otel-pydantic-findings.md)
     "gql<4",  # pinned: gql 4.0 breaks weave 0.51.x (wandb/weave#5288)
     "wandb>=0.21.1",
