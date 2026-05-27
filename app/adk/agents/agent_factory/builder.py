@@ -26,6 +26,7 @@ from app.adk.tracking.callbacks import (
     weave_before_agent_callback,
 )
 from app.adk.tracking.skill_spans import (
+    assert_skill_tool_names_match,
     skill_spans_after_tool_callback,
     skill_spans_before_agent_callback,
     skill_spans_before_tool_callback,
@@ -44,10 +45,10 @@ _SANDBOX_BUILD_TIMEOUT_SECONDS = 30
 # Tests inject a fresh pool or a MagicMock via the ``sandbox_pool=`` kwarg
 # on ``build_agent`` so the module global is never mutated by test code.
 #
-# TODO(SK-37): nothing calls ``_DEFAULT_SANDBOX_POOL.start()`` today, so the
-# idle-TTL background sweep is dormant in production — only the LRU cap
-# evicts.  SK-37 wires ``start()`` from the runtime entrypoint (FastAPI
-# lifespan or Cloud Run startup) and ``stop()`` from shutdown.
+# start() / stop() are wired by the runtime entrypoints (SK-37):
+#   - FastAPI lifespan in api/src/kene_api/main.py (Cloud Run process)
+#   - attach_specialists_before_agent_callback in sub_agent_attacher.py
+#     (Agent Engine process — no AdkApp startup hook in pinned ADK version)
 _DEFAULT_SANDBOX_POOL: SandboxPool = SandboxPool()
 
 
@@ -188,7 +189,7 @@ async def _build_skill_toolset_async(
     }
 
     try:
-        return SkillToolset(skills=loaded_skills), skill_name_index
+        toolset = SkillToolset(skills=loaded_skills)
     except ValueError as exc:
         # Duplicate skill names (stale data) — degrade same as total failure.
         logger.error(
@@ -201,6 +202,13 @@ async def _build_skill_toolset_async(
             },
         )
         return None, {}
+
+    # Verify SkillToolset's auto-generated tool names match our hardcoded
+    # constants in skill_spans.py.  RuntimeError propagates to the caller —
+    # a rename is a build-time programmer error, not a degrade-open scenario.
+    # The module-level flag amortises this to a single introspection per process.
+    assert_skill_tool_names_match(toolset)
+    return toolset, skill_name_index
 
 
 def _build_skill_toolset(
@@ -322,8 +330,15 @@ def _build_code_executor(
       or ``None``).
 
     When ``account_id is None`` and sandbox is requested, skips the sandbox
-    (pool keying requires a real account scope) and falls through, emitting a
-    WARNING.  Mirrors ``skill_toolset_skipped_no_account`` semantics.
+    (pool keying requires a real account scope), emits a WARNING, and falls
+    through to the ``code_execution_enabled`` resolution below — unlike the
+    timeout path, which returns ``None`` unconditionally.  This asymmetry is
+    a pre-existing inconsistency tracked for a follow-up issue.
+
+    On sandbox-build timeout the function returns ``None`` regardless of
+    ``code_execution_enabled`` — requesting sandbox is treated as a hard
+    requirement, not a soft preference; the agent has no code executor that
+    turn.  See DESIGN-REVIEW-LOG Review 36 for the decision rationale.
 
     **Always** routes through a ThreadPoolExecutor — including the no-loop
     case where ``_build_skill_toolset`` would call ``asyncio.run`` directly.
@@ -342,6 +357,7 @@ def _build_code_executor(
                 extra={"config_id": name},
             )
         else:
+
             def _runner() -> Any:
                 return asyncio.run(
                     _build_code_executor_async(
@@ -364,7 +380,7 @@ def _build_code_executor(
                             "timeout_s": _SANDBOX_BUILD_TIMEOUT_SECONDS,
                         },
                     )
-                    # Fall through to the built-in / None resolution below.
+                    return None
 
     return BuiltInCodeExecutor() if config.code_execution_enabled else None
 
@@ -412,7 +428,9 @@ def build_agent(
         config,
         account_id=account_id,
         name=name,
-        sandbox_pool=sandbox_pool if sandbox_pool is not None else _DEFAULT_SANDBOX_POOL,
+        sandbox_pool=sandbox_pool
+        if sandbox_pool is not None
+        else _DEFAULT_SANDBOX_POOL,
     )
 
     # ADK 1.27+ requires output_schema on LlmAgent directly (not via GenerateContentConfig.response_schema)

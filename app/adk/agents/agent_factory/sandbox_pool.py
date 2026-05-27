@@ -102,6 +102,24 @@ class SandboxPool:
     _MAX_ENTRIES: int = 64
     _IDLE_TTL_SECONDS: int = 900
     _SWEEP_INTERVAL_SECONDS: int = 60
+    # SK-35 LEAK-branch defence-in-depth: live probe (2026-05-27, 50/50 LEAK)
+    # confirmed Vertex reuses container /tmp across executor sessions sharing
+    # the same sandbox resource name.  Flag enabled to clear /tmp on every
+    # get_or_create return path.  See
+    # docs/spike/sk-prd-02-cross-session-tmp-characterisation.md for findings.
+    _CLEAR_TMP_ON_REUSE: bool = True
+    _TMP_CLEAR_TIMEOUT_SECONDS: int = 5
+
+    _PURGE_TMP_SCRIPT: str = (
+        "import os as _os, shutil as _shutil\n"
+        "for _e in _os.listdir('/tmp'):\n"
+        "    _p = '/tmp/' + _e\n"
+        "    try:\n"
+        "        (_shutil.rmtree(_p, ignore_errors=True)\n"
+        "         if _os.path.isdir(_p) else _os.unlink(_p))\n"
+        "    except OSError:\n"
+        "        pass\n"
+    )
 
     def __init__(self) -> None:
         # OrderedDict maintains insertion/access order for LRU tracking.
@@ -151,7 +169,9 @@ class SandboxPool:
                 self._pool[key] = (executor, now)
                 cache_hit = True
             else:
-                executor = await self._construct(account_id=account_id, config_id=config_id)
+                executor = await self._construct(
+                    account_id=account_id, config_id=config_id
+                )
                 self._pool[key] = (executor, now)
                 cache_hit = False
 
@@ -159,6 +179,22 @@ class SandboxPool:
         # acquire the stripe lock for the LRU entry without deadlocking.
         if not cache_hit:
             await self._evict_if_over_cap()
+
+        # Run defence-in-depth /tmp clearing (SK-35) before emitting the span so
+        # tmp_clear_failed reflects the actual outcome on this call.  MER-E
+        # alerts on count(sandbox_pool.get where tmp_clear_failed=true) — a
+        # silent failure here means the cross-session LEAK mitigation degraded
+        # for this caller (see SK-9 §Q3 High disposition).
+        tmp_clear_failed = False
+        if self._CLEAR_TMP_ON_REUSE:
+            try:
+                await self._clear_tmp(executor)
+            except Exception:
+                tmp_clear_failed = True
+                logger.warning(
+                    "SandboxPool._clear_tmp failed; returning executor uncleared",
+                    extra={"account_id": account_id, "config_id": config_id},
+                )
 
         # pool_size_after is sampled outside the lock; concurrent inserts can
         # shift it by ±1 between eviction and the snapshot.
@@ -169,6 +205,7 @@ class SandboxPool:
                 "config_id": config_id,
                 "cache_hit": cache_hit,
                 "pool_size_after": len(self._pool),
+                "tmp_clear_failed": tmp_clear_failed,
             },
         ):
             pass
@@ -299,6 +336,68 @@ class SandboxPool:
 
         return AgentEngineSandboxCodeExecutor(
             sandbox_resource_name=_sandbox_resource_name(account_id, config_id),
+        )
+
+    async def _clear_tmp(self, executor: AgentEngineSandboxCodeExecutor) -> None:
+        """Purge /tmp inside the sandbox container (SK-35 LEAK-branch defence-in-depth).
+
+        Called on every ``get_or_create`` return path when
+        ``_CLEAR_TMP_ON_REUSE`` is ``True``.  Best-effort: ``asyncio.TimeoutError``
+        and any other exception propagate to the caller, which catches and logs
+        them so the executor is still returned.
+
+        The Vertex SDK call is synchronous, so it runs via ``asyncio.to_thread``
+        to avoid blocking the event loop.  Per-call ``vertexai.Client`` construction
+        is intentional for v1 *pending* the verify-thread-safety + cached-client
+        follow-up tracked in [SK-43](https://linear.app/ken-e/issue/SK-43); under
+        AH-PRD-09 per-turn dispatch the per-call init becomes load-bearing and SK-43
+        must land before SK-PRD-02 takes broad production traffic.
+
+        **Concurrency assumption (SK-35 v1 — tracked for redesign in
+        [SK-42](https://linear.app/ken-e/issue/SK-42)).**  This clear runs against
+        the pool's single executor instance for ``(account_id, config_id)``,
+        outside the stripe lock.  Because the pool keys per-agent-config rather
+        than per-session, multiple callers (e.g. two users on the same account
+        using the same agent) can share the same pool entry.  If caller A is
+        mid-``execute_code`` when caller B's ``get_or_create`` triggers
+        ``_clear_tmp``, B's purge can destroy A's in-flight ``/tmp`` data on the
+        same Vertex container.  v1 assumes callers serialise their use of a
+        pooled executor (current ADK single-tool dispatch makes this true within
+        one turn) and accepts the cross-user race as a known limitation; SK-42
+        replaces the assumption with a refcount-based ``ExecutorLease`` API.
+
+        Defensive guard: if ``sandbox_resource_name`` is missing or not a
+        non-empty string (e.g. unit-test Mock executor, or a future regression
+        in ``_sandbox_resource_name``), log a WARNING and return without
+        issuing a network call.  Production executors always carry a real
+        resource name, so a WARNING in prod indicates a real bug — the silent
+        return prevents a crash but the log surface is required so the
+        regression is not invisible.
+        """
+        resource_name = getattr(executor, "sandbox_resource_name", "")
+        if not isinstance(resource_name, str) or not resource_name:
+            logger.warning(
+                "SandboxPool._clear_tmp skipped: missing or non-string sandbox_resource_name",
+                extra={
+                    "resource_name_type": type(resource_name).__name__,
+                    "resource_name_empty": not resource_name,
+                },
+            )
+            return
+
+        project = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
+        location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
+
+        import vertexai  # lazy — not required in tests
+
+        client = vertexai.Client(project=project, location=location)
+        await asyncio.wait_for(
+            asyncio.to_thread(
+                client.agent_engines.sandboxes.execute_code,
+                name=resource_name,
+                input_data={"code": self._PURGE_TMP_SCRIPT},
+            ),
+            timeout=self._TMP_CLEAR_TIMEOUT_SECONDS,
         )
 
     async def _evict_if_over_cap(self) -> None:

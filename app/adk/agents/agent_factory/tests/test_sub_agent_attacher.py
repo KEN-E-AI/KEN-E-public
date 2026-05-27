@@ -34,6 +34,7 @@ from app.adk.agents.agent_factory import sub_agent_attacher as saa
 from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
 from app.adk.agents.agent_factory.sub_agent_attacher import (
     attach_account_specialists,
+    attach_specialists_before_agent_callback,
 )
 
 # ---------------------------------------------------------------------------
@@ -738,3 +739,77 @@ class TestFingerprintShortCircuit:
             "suppressed the retry."
         )
         assert call_count[0] == 2
+
+
+# ---------------------------------------------------------------------------
+# SandboxPool.start() wiring in before_agent_callback — SK-37
+# ---------------------------------------------------------------------------
+
+
+class TestSandboxPoolStartWiring:
+    """attach_specialists_before_agent_callback must call
+    _DEFAULT_SANDBOX_POOL.start() exactly once per invocation (SK-37).
+
+    start() is idempotent in production but the callback always attempts the
+    call so that the first turn inside the Agent Engine process arms the sweep.
+    """
+
+    def _make_callback_context(self, account_id: str | None = "acc_123") -> Any:
+        """Minimal stub of CallbackContext used by the callback."""
+        from unittest.mock import MagicMock
+
+        ctx = MagicMock()
+        ctx.state.get.return_value = account_id
+        ctx._invocation_context.agent = _make_root()
+        return ctx
+
+    def test_start_called_once_per_callback_fire(self) -> None:
+        """start() is invoked on every callback fire (idempotent per SK-37 design)."""
+        from unittest.mock import MagicMock, patch
+
+        pool = MagicMock()
+        ctx = self._make_callback_context()
+
+        import app.adk.agents.agent_factory.builder as _builder
+
+        original = _builder._DEFAULT_SANDBOX_POOL
+        _builder._DEFAULT_SANDBOX_POOL = pool
+        try:
+            with patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher."
+                "list_account_agent_configs_cached",
+                return_value=[],
+            ):
+                result = attach_specialists_before_agent_callback(ctx)
+        finally:
+            _builder._DEFAULT_SANDBOX_POOL = original
+
+        pool.start.assert_called_once()
+        assert result is None  # callback must return None so the turn proceeds
+
+    def test_start_exception_swallowed_callback_returns_none(self) -> None:
+        """A RuntimeError from start() must be swallowed; the callback still
+        returns None so the turn is not blocked (defensive try/except in SK-37
+        wiring mirrors the surrounding attach_account_specialists pattern)."""
+        from unittest.mock import MagicMock
+
+        pool = MagicMock()
+        pool.start.side_effect = RuntimeError("no loop")
+        ctx = self._make_callback_context()
+
+        import app.adk.agents.agent_factory.builder as _builder
+
+        original = _builder._DEFAULT_SANDBOX_POOL
+        _builder._DEFAULT_SANDBOX_POOL = pool
+        try:
+            with patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher."
+                "list_account_agent_configs_cached",
+                return_value=[],
+            ):
+                result = attach_specialists_before_agent_callback(ctx)
+        finally:
+            _builder._DEFAULT_SANDBOX_POOL = original
+
+        # Exception swallowed; callback returned None.
+        assert result is None

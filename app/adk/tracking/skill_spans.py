@@ -8,11 +8,13 @@ Three callbacks complete SkillToolset observability:
 
   skill_spans_before_tool_callback — opens a Weave child span for
       list_skills / load_skill / load_skill_resource; stores the in-flight
-      call + resolved skill_id in a ContextVar.
+      call + resolved skill_id in the per-call registry keyed by
+      tool_context.function_call_id.
 
-  skill_spans_after_tool_callback — closes the span; adds response-derived
-      output attrs (instruction_bytes, resource_bytes); sets
-      state["active_skill_id"] on a successful load_skill invocation.
+  skill_spans_after_tool_callback — closes the span for the matching
+      function_call_id; adds response-derived output attrs
+      (instruction_bytes, resource_bytes); sets state["active_skill_id"] on a
+      successful load_skill invocation.
 
 All three degrade open: any exception is caught, logged at WARNING, and the
 callback returns None so the agent continues unaffected.
@@ -48,6 +50,62 @@ logger = get_structured_logger(__name__)
 
 _SKILL_TOOL_NAMES = frozenset({"list_skills", "load_skill", "load_skill_resource"})
 
+# Set to True after the first successful assert_skill_tool_names_match call.
+# Module-level boolean writes are idempotent under CPython's GIL; concurrent
+# builds may both run the check, but correctness is not affected.
+_skill_tool_names_verified: bool = False
+
+
+def assert_skill_tool_names_match(toolset: Any) -> None:
+    """Verify that the constructed SkillToolset exposes the three expected tool names.
+
+    Call once per process after a successful SkillToolset construction.  The
+    module-level flag short-circuits subsequent calls to O(1).
+
+    Outcomes:
+      - Match → sets ``_skill_tool_names_verified = True`` and returns.
+      - Mismatch → raises ``RuntimeError`` naming both the expected and actual
+        sets so the operator knows exactly which constants and branches to update
+        (``app/adk/tracking/skill_spans.py`` and any callers).
+      - Introspection failure (``toolset.tools`` missing / wrong shape) → logs
+        ERROR and returns without raising; flag stays ``False`` so the next build
+        retries.  Matches the degrade-open contract already applied to the
+        before/after callbacks in this module.
+
+    Args:
+        toolset: A successfully constructed ``SkillToolset`` instance.  Typed
+            ``Any`` to avoid a top-level ADK import — mirrors the lazy-import
+            pattern used for ``_weave_get_client`` / ``_weave_call_context``.
+    """
+    global _skill_tool_names_verified
+    if _skill_tool_names_verified:
+        return
+    try:
+        actual = frozenset(t.name for t in toolset.tools)
+    except Exception as exc:
+        logger.error(
+            "skill_tool_names_check_failed",
+            extra={
+                "reason": (
+                    f"{type(exc).__name__}: Could not introspect toolset.tools — "
+                    "SkillToolset API may have changed. "
+                    "Expected: " + str(sorted(_SKILL_TOOL_NAMES))
+                )
+            },
+            exc_info=True,
+        )
+        return
+    if actual != _SKILL_TOOL_NAMES:
+        raise RuntimeError(
+            "ADK SkillToolset tool names do not match the hardcoded constants. "
+            "Update _SKILL_TOOL_NAMES in app/adk/tracking/skill_spans.py and all "
+            "tool.name == '...' branches in the same file.\n"
+            f"  expected: {sorted(_SKILL_TOOL_NAMES)}\n"
+            f"  actual:   {sorted(actual)}"
+        )
+    _skill_tool_names_verified = True
+
+
 # Maximum character length for LLM-supplied string values written to Weave
 # span attributes/inputs.  Guards against data-volume abuse.
 _MAX_SPAN_STRING = 256
@@ -57,14 +115,15 @@ _MAX_SPAN_STRING = 256
 # system/account owner type; the span schema does not change here.
 _DEFAULT_SKILL_OWNER_TYPE: Literal["account", "system"] = "account"
 
-# Tracks the in-flight Weave call and resolved metadata between
-# before_tool and after_tool for a single skill tool invocation.
-# Shape: {"call": WeaveCall, "skill_id": str | None}
-# CONSTRAINT: safe only under ADK's current single-tool-at-a-time dispatch
-# model.  If ADK ever parallel-dispatches tools within a single agent turn,
-# each concurrent invocation would need its own context snapshot.
-_current_skill_ctx: contextvars.ContextVar[dict[str, Any] | None] = (
-    contextvars.ContextVar("_current_skill_ctx", default=None)
+# Per-call registry: maps function_call_id → {"call": WeaveCall, "skill_id": str | None}
+# Stored inside a ContextVar[dict] so each asyncio task (agent turn) has its
+# own isolated copy while before_tool and after_tool within the same task can
+# share entries.  Keyed by ADK's function_call_id, which is stable across the
+# before/after pair for any dispatch model — parallel, nested, or serial.
+# When function_call_id is None (fallback for future ADK changes), a sentinel
+# key "_single_slot" replicates the old single-slot behaviour with a WARNING.
+_skill_ctx_registry: contextvars.ContextVar[dict[str, dict[str, Any]] | None] = (
+    contextvars.ContextVar("_skill_ctx_registry", default=None)
 )
 
 
@@ -236,7 +295,8 @@ async def skill_spans_before_tool_callback(
 
     No-ops for tools outside _SKILL_TOOL_NAMES.  Span attributes are built
     from session state (account_id) and the agent sidecar (skill_name_index).
-    The created call is stored in _current_skill_ctx for after_tool to close.
+    The created call is stored in _skill_ctx_registry keyed by
+    tool_context.function_call_id so concurrent invocations remain isolated.
 
     Returns None — never blocks tool execution.
     """
@@ -313,7 +373,19 @@ async def skill_spans_before_tool_callback(
             )
 
         if call is not None:
-            _current_skill_ctx.set({"call": call, "skill_id": resolved_skill_id})
+            call_id: str | None = getattr(tool_context, "function_call_id", None)
+            if call_id is None:
+                logger.warning(
+                    "skill_spans: tool_context.function_call_id is None; "
+                    "falling back to single-slot registry key — "
+                    "concurrent skill-tool dispatch may corrupt span pairing",
+                    extra={"tool_name": tool.name},
+                )
+                call_id = "_single_slot"
+
+            existing = _skill_ctx_registry.get() or {}
+            updated = {**existing, call_id: {"call": call, "skill_id": resolved_skill_id}}
+            _skill_ctx_registry.set(updated)
     except Exception:
         logger.warning(
             "skill_spans_before_tool_callback failed (non-blocking)", exc_info=True
@@ -329,6 +401,9 @@ async def skill_spans_after_tool_callback(
 ) -> dict[str, Any] | None:
     """Close the Weave span opened by skill_spans_before_tool_callback.
 
+    Looks up the in-flight call by tool_context.function_call_id in the
+    per-call registry, pops the entry, and closes that exact call.
+
     Also:
     - load_skill success (no "error" key in response): sets
       state["active_skill_id"] = skill_id so the SK-24 filter applies the
@@ -341,12 +416,22 @@ async def skill_spans_after_tool_callback(
     if tool.name not in _SKILL_TOOL_NAMES:
         return None
 
-    ctx = _current_skill_ctx.get(None)
-    if ctx is None:
+    call_id: str | None = getattr(tool_context, "function_call_id", None)
+    if call_id is None:
+        logger.warning(
+            "skill_spans: tool_context.function_call_id is None in after_tool; "
+            "falling back to single-slot registry key",
+            extra={"tool_name": tool.name},
+        )
+        call_id = "_single_slot"
+
+    registry = _skill_ctx_registry.get() or {}
+    entry = registry.get(call_id)
+    if entry is None:
         return None
 
-    call = ctx.get("call")
-    skill_id: str | None = ctx.get("skill_id")
+    call = entry.get("call")
+    skill_id: str | None = entry.get("skill_id")
 
     try:
         state: Any = {}
@@ -392,6 +477,9 @@ async def skill_spans_after_tool_callback(
             except Exception:
                 pass
     finally:
-        _current_skill_ctx.set(None)
+        # Pop the entry from the registry copy-on-write style.
+        current = _skill_ctx_registry.get() or {}
+        updated = {k: v for k, v in current.items() if k != call_id}
+        _skill_ctx_registry.set(updated)
 
     return None
