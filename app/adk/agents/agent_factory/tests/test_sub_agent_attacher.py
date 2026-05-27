@@ -688,3 +688,53 @@ class TestFingerprintShortCircuit:
         accounts_seen = {acc for _, acc in resolve_calls}
         assert "acct_x" in accounts_seen
         assert "acct_y" in accounts_seen
+
+    def test_transient_resolve_agent_failure_is_retried_next_turn(self) -> None:
+        """If resolve_agent fails transiently the failed specialist must NOT be
+        included in the stored fingerprint, so the next turn retries it."""
+        root = _make_root()
+        a = _make_specialist("ga_spec")
+
+        call_count: list[int] = [0]
+
+        def _fail_first_call(
+            doc_id: str, _acc: str | None = None, _ttl: int = 60
+        ) -> LlmAgent:
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise RuntimeError("transient error")
+            return a
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher."
+                "list_account_agent_configs_cached",
+                return_value=["ga_spec"],
+            ),
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher.resolve_config",
+                side_effect=lambda doc_id, _acc=None, _ttl=60: MergedAgentConfig(
+                    instruction=f"{doc_id} instruction",
+                    model="gemini-2.5-pro",
+                    description=f"{doc_id} description",
+                    visible_in_frontend=True,
+                ),
+            ),
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher.resolve_agent",
+                side_effect=_fail_first_call,
+            ),
+        ):
+            # Turn 1: resolve_agent fails → specialist not attached, fingerprint NOT committed
+            attach_account_specialists(root, "acc_transient")
+            assert root.sub_agents == []
+
+            # Turn 2: resolve_agent succeeds → specialist attached
+            attach_account_specialists(root, "acc_transient")
+
+        assert root.sub_agents == [a], (
+            "The specialist must be attached on the second turn when the "
+            "transient error clears — the fingerprint cache must not have "
+            "suppressed the retry."
+        )
+        assert call_count[0] == 2

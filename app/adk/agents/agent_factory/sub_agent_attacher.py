@@ -55,6 +55,7 @@ from google.genai import types
 
 from app.adk.agents.agent_factory.config_loader import (
     FirestoreConnectionError,
+    MergedAgentConfig,
 )
 from app.adk.agents.agent_factory.specialist_runtime import (
     _content_hash,
@@ -151,7 +152,12 @@ def _attach_locked(root_agent: BaseAgent, account_id: str) -> None:
     # This is cheap — resolve_config is TTL-cached; the hash is a pure function
     # of the already-fetched config. If the fingerprint hasn't changed, the
     # sub_agents list is already in sync and we can skip the full reconcile pass.
-    visible_configs: dict[str, Any] = {}
+    #
+    # _fingerprint_cache is accessed here while the caller holds
+    # block_lock_for(account_id), which serialises all reads and writes for a
+    # given account_id. Concurrent access for *different* accounts is safe via
+    # CPython's GIL-protected dict operations.
+    visible_configs: dict[str, MergedAgentConfig] = {}
     for doc_id in doc_ids:
         try:
             config = resolve_config(doc_id, account_id)
@@ -188,8 +194,22 @@ def _attach_locked(root_agent: BaseAgent, account_id: str) -> None:
                 exc_info=True,
             )
 
-    changed = _reconcile(root_agent, desired)
-    _fingerprint_cache[account_id] = new_fingerprint
+    try:
+        changed = _reconcile(root_agent, desired)
+    except Exception:
+        # Do not commit the fingerprint — an incomplete reconcile must be
+        # retried on the next turn rather than silently treated as settled.
+        logger.exception(
+            "[ATTACH-SPECIALISTS] _reconcile raised unexpectedly (account=%r); "
+            "fingerprint NOT committed.",
+            account_id,
+        )
+        return
+    # Only store the fingerprint for specialists that were successfully resolved
+    # so a transient resolve_agent failure does not permanently suppress retry.
+    _fingerprint_cache[account_id] = frozenset(
+        (doc_id, _content_hash(visible_configs[doc_id])) for doc_id in desired
+    )
 
     # AH-75 (reviewer feedback): the "Available Specialists" prompt block is
     # cached for ~60 s by ``specialist_runtime._block_cache``. If a specialist

@@ -240,10 +240,10 @@ def list_account_agent_configs_cached(account_id: str) -> list[str]:
     with lock:
         entry = _list_cache.get(account_id)
         if entry is not None and now < entry[1]:
-            return entry[0]
-        doc_ids = list_account_agent_configs(account_id)
+            return list(entry[0])  # defensive copy — callers must not mutate the cache
+        doc_ids = list(list_account_agent_configs(account_id))
         _list_cache[account_id] = (doc_ids, now + _LIST_CACHE_TTL)
-        return doc_ids
+        return list(doc_ids)
 
 
 def _clear_list_cache_for_tests() -> None:
