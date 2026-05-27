@@ -1,7 +1,9 @@
 """Unit tests for app.adk.tracking.sandbox_pool_spans.emit_sandbox_pool_span.
 
 Coverage:
-(a) No-op when Weave client is unavailable.
+(a) No-op when Weave client is unavailable — two paths:
+    (a1) _weave_get_client is None (Weave not installed).
+    (a2) get_client() returns None (Weave installed but not initialised).
 (b) create_call / finish_call invoked with correct op + attributes.
 (c) Exception in the wrapped block does not prevent finish_call.
 (d) Helper never raises even if Weave itself raises during create_call or
@@ -14,6 +16,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.adk.tracking.sandbox_pool_spans import emit_sandbox_pool_span
+
 _GET_CLIENT_PATH = "app.adk.tracking.sandbox_pool_spans._weave_get_client"
 
 _ATTRS = {
@@ -25,21 +29,39 @@ _ATTRS = {
 
 
 # ---------------------------------------------------------------------------
-# (a) No-op when client is unavailable
+# (a1) No-op when _weave_get_client is None (Weave not installed)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_noop_when_client_none() -> None:
-    """Helper silently yields and emits nothing when get_client() returns None."""
-    with patch(_GET_CLIENT_PATH, return_value=None):
-        executed = False
-        from app.adk.tracking.sandbox_pool_spans import emit_sandbox_pool_span
-
+async def test_noop_when_weave_not_installed() -> None:
+    """Helper silently yields and emits nothing when _weave_get_client is None
+    (i.e. Weave is not installed in the environment)."""
+    executed = False
+    with patch(_GET_CLIENT_PATH, new=None):
         async with emit_sandbox_pool_span("sandbox_pool.get", _ATTRS):
             executed = True
 
     assert executed, "Wrapped block should still execute"
+
+
+# ---------------------------------------------------------------------------
+# (a2) No-op when get_client() returns None (Weave installed, not initialised)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_noop_when_get_client_returns_none() -> None:
+    """Helper silently yields and emits nothing when get_client() returns None
+    (i.e. Weave is installed but not initialised)."""
+    mock_get_client = MagicMock(return_value=None)
+    executed = False
+    with patch(_GET_CLIENT_PATH, new=mock_get_client):
+        async with emit_sandbox_pool_span("sandbox_pool.get", _ATTRS):
+            executed = True
+
+    assert executed, "Wrapped block should still execute"
+    mock_get_client.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -56,8 +78,6 @@ async def test_creates_and_finishes_call() -> None:
     mock_client.create_call.return_value = mock_call
 
     with patch(_GET_CLIENT_PATH, return_value=mock_client):
-        from app.adk.tracking.sandbox_pool_spans import emit_sandbox_pool_span
-
         async with emit_sandbox_pool_span("sandbox_pool.get", _ATTRS):
             pass
 
@@ -65,6 +85,7 @@ async def test_creates_and_finishes_call() -> None:
         op="sandbox_pool.get",
         inputs=_ATTRS,
         attributes=_ATTRS,
+        use_stack=True,
     )
     mock_client.finish_call.assert_called_once_with(mock_call, output=_ATTRS)
 
@@ -83,8 +104,6 @@ async def test_finish_call_called_even_on_exception() -> None:
     mock_client.create_call.return_value = mock_call
 
     with patch(_GET_CLIENT_PATH, return_value=mock_client):
-        from app.adk.tracking.sandbox_pool_spans import emit_sandbox_pool_span
-
         with pytest.raises(ValueError, match="boom"):
             async with emit_sandbox_pool_span("sandbox_pool.evict", _ATTRS):
                 raise ValueError("boom")
@@ -103,8 +122,6 @@ async def test_noop_when_create_call_raises() -> None:
     wrapped block still runs, and finish_call is NOT called (no call object)."""
     mock_client = MagicMock()
     mock_client.create_call.side_effect = RuntimeError("Weave is down")
-
-    from app.adk.tracking.sandbox_pool_spans import emit_sandbox_pool_span
 
     executed = False
     with patch(_GET_CLIENT_PATH, return_value=mock_client):
@@ -128,8 +145,6 @@ async def test_noop_when_finish_call_raises() -> None:
     mock_client = MagicMock()
     mock_client.create_call.return_value = mock_call
     mock_client.finish_call.side_effect = RuntimeError("finish failed")
-
-    from app.adk.tracking.sandbox_pool_spans import emit_sandbox_pool_span
 
     with patch(_GET_CLIENT_PATH, return_value=mock_client):
         # Must not raise

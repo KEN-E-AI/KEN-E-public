@@ -160,6 +160,8 @@ class SandboxPool:
         if not cache_hit:
             await self._evict_if_over_cap()
 
+        # pool_size_after is sampled outside the lock; concurrent inserts can
+        # shift it by ±1 between eviction and the snapshot.
         async with emit_sandbox_pool_span(
             "sandbox_pool.get",
             {

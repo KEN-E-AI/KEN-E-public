@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import AsyncGenerator, Callable
-from typing import Any
+from typing import Any, Literal
 
 from shared.structured_logging import get_structured_logger
 
@@ -43,10 +43,12 @@ try:
 except ImportError:  # pragma: no cover
     pass
 
+SandboxPoolSpanName = Literal["sandbox_pool.get", "sandbox_pool.evict"]
+
 
 @contextlib.asynccontextmanager
 async def emit_sandbox_pool_span(
-    name: str,
+    name: SandboxPoolSpanName,
     attrs: dict[str, Any],
 ) -> AsyncGenerator[None, None]:
     """Async context manager that emits a named Weave span for a pool event.
@@ -56,10 +58,12 @@ async def emit_sandbox_pool_span(
     unavailable or if the client raises during call creation.
 
     Args:
-        name: Span operation name, e.g. ``"sandbox_pool.get"``.
+        name: Span operation name — ``"sandbox_pool.get"`` or
+            ``"sandbox_pool.evict"``.
         attrs: Attributes dict forwarded to ``client.create_call``.
     """
     call = None
+    client = None
     get_client = _weave_get_client
     try:
         if get_client is None:
@@ -73,6 +77,7 @@ async def emit_sandbox_pool_span(
             op=name,
             inputs=attrs,
             attributes=attrs,
+            use_stack=True,
         )
     except Exception:
         logger.warning(
@@ -86,10 +91,8 @@ async def emit_sandbox_pool_span(
         yield
     finally:
         try:
-            if get_client is not None and call is not None:
-                finish_client = get_client()
-                if finish_client is not None:
-                    finish_client.finish_call(call, output=attrs)
+            if client is not None and call is not None:
+                client.finish_call(call, output=attrs)
         except Exception:
             logger.warning(
                 "emit_sandbox_pool_span: failed to finish Weave call",
