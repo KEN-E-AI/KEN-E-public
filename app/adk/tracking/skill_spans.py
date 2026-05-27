@@ -21,13 +21,23 @@ callback returns None so the agent continues unaffected.
 from __future__ import annotations
 
 import contextvars
-from typing import TYPE_CHECKING, Any
-
-from weave.trace.api import get_client as _weave_get_client
-from weave.trace.context import call_context as _weave_call_context
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Literal
 
 from app.adk.agents.skill_tool_filter import parse_allowed_tools
 from shared.structured_logging import get_structured_logger
+
+# Lazy import guard — mirrors app/adk/tracking/sandbox_pool_spans.py.  builder.py
+# imports the skill_spans_* callbacks at module top, so a Weave import failure
+# would cascade into the entire agent factory becoming unimportable.  Both
+# bindings fall back to ``None`` and every call site checks before use.
+_weave_get_client: Callable[[], Any] | None = None
+_weave_call_context: Any | None = None
+try:
+    from weave.trace.api import get_client as _weave_get_client
+    from weave.trace.context import call_context as _weave_call_context
+except ImportError:  # pragma: no cover
+    pass
 
 if TYPE_CHECKING:
     from google.adk.agents.callback_context import CallbackContext
@@ -41,6 +51,11 @@ _SKILL_TOOL_NAMES = frozenset({"list_skills", "load_skill", "load_skill_resource
 # Maximum character length for LLM-supplied string values written to Weave
 # span attributes/inputs.  Guards against data-volume abuse.
 _MAX_SPAN_STRING = 256
+
+# SK-PRD-05 forward-compat: every v1 skill is account-owned.  SK-PRD-05 will
+# replace this constant with a per-skill lookup once the loader surfaces a
+# system/account owner type; the span schema does not change here.
+_DEFAULT_SKILL_OWNER_TYPE: Literal["account", "system"] = "account"
 
 # Tracks the in-flight Weave call and resolved metadata between
 # before_tool and after_tool for a single skill tool invocation.
@@ -104,6 +119,8 @@ def _emit_total_failure_span(
     fire (no SkillToolset was attached).  Emits at most once per session turn —
     the caller sets state["_skill_failure_span_emitted"] after this returns.
     """
+    if _weave_get_client is None:
+        return
     client = _weave_get_client()
     if not client:
         return
@@ -111,6 +128,7 @@ def _emit_total_failure_span(
         "account_id": account_id,
         "skill_count": 0,
         "skill_ids": [],
+        "skill_owner_type": _DEFAULT_SKILL_OWNER_TYPE,
     }
     if skill_load_total_failure:
         attrs["skill_load_total_failure"] = True
@@ -127,10 +145,11 @@ def _emit_total_failure_span(
     try:
         client.finish_call(call, output={"status": "degraded"})
     finally:
-        try:
-            _weave_call_context.pop_call(call.id)
-        except Exception:
-            pass
+        if _weave_call_context is not None:
+            try:
+                _weave_call_context.pop_call(call.id)
+            except Exception:
+                pass
 
 
 def skill_spans_before_agent_callback(
@@ -236,6 +255,8 @@ async def skill_spans_before_tool_callback(
 
         skill_name_index = _get_skill_name_index(tool_context)
 
+        if _weave_get_client is None:
+            return None
         client = _weave_get_client()
         if not client:
             return None
@@ -252,6 +273,7 @@ async def skill_spans_before_tool_callback(
                     "account_id": account_id,
                     "skill_count": len(skill_ids),
                     "skill_ids": skill_ids,
+                    "skill_owner_type": _DEFAULT_SKILL_OWNER_TYPE,
                 },
                 use_stack=True,
             )
@@ -268,6 +290,7 @@ async def skill_spans_before_tool_callback(
                     "skill_id": resolved_skill_id or "unknown",
                     "skill_name": skill_name,
                     "skill_version": entry.get("version", 0),
+                    "skill_owner_type": _DEFAULT_SKILL_OWNER_TYPE,
                 },
                 use_stack=True,
             )
@@ -284,6 +307,7 @@ async def skill_spans_before_tool_callback(
                     "account_id": account_id,
                     "skill_id": resolved_skill_id or "unknown",
                     "rel_path": rel_path,
+                    "skill_owner_type": _DEFAULT_SKILL_OWNER_TYPE,
                 },
                 use_stack=True,
             )
@@ -353,16 +377,16 @@ async def skill_spans_after_tool_callback(
             if content and isinstance(content, str):
                 output["resource_bytes"] = len(content.encode("utf-8"))
 
-        client = _weave_get_client()
+        client = _weave_get_client() if _weave_get_client is not None else None
         if client and call is not None:
             client.finish_call(call, output=output or {"status": "completed"})
-        if call is not None:
+        if call is not None and _weave_call_context is not None:
             _weave_call_context.pop_call(call.id)
     except Exception:
         logger.warning(
             "skill_spans_after_tool_callback failed (non-blocking)", exc_info=True
         )
-        if call is not None:
+        if call is not None and _weave_call_context is not None:
             try:
                 _weave_call_context.pop_call(call.id)
             except Exception:

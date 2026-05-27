@@ -43,6 +43,12 @@ _SANDBOX_BUILD_TIMEOUT_SECONDS = 30
 # ``_specialists_cache`` singleton pattern in specialist_runtime.py:169.
 # Tests inject a fresh pool or a MagicMock via the ``sandbox_pool=`` kwarg
 # on ``build_agent`` so the module global is never mutated by test code.
+#
+# TODO(SK-PRD-02 follow-up): nothing calls ``_DEFAULT_SANDBOX_POOL.start()``
+# today, so the idle-TTL background sweep is dormant in production — only
+# the LRU cap evicts.  Wire ``start()`` from the runtime entrypoint (FastAPI
+# lifespan or Cloud Run startup) and ``stop()`` from shutdown; tracked as a
+# Linear follow-up.
 _DEFAULT_SANDBOX_POOL: SandboxPool = SandboxPool()
 
 

@@ -155,6 +155,7 @@ class TestBeforeAgentCallback:
         assert attrs["account_id"] == "acc_1"
         assert attrs["skill_count"] == 0
         assert attrs["skill_ids"] == []
+        assert attrs["skill_owner_type"] == "account"
         assert attrs.get("skill_load_total_failure") is True
         mock_client.finish_call.assert_called_once_with(
             mock_call, output={"status": "degraded"}
@@ -197,6 +198,7 @@ class TestBeforeAgentCallback:
         attrs = mock_client.create_call.call_args.kwargs["attributes"]
         assert attrs.get("skill_load_timeout") is True
         assert attrs["skill_count"] == 0
+        assert attrs["skill_owner_type"] == "account"
         mock_client.finish_call.assert_called_once_with(
             mock_call, output={"status": "degraded"}
         )
@@ -278,6 +280,7 @@ class TestBeforeToolCallback:
         assert create_kwargs.kwargs["attributes"]["account_id"] == "acc_t"
         assert create_kwargs.kwargs["attributes"]["skill_count"] == 2
         assert set(create_kwargs.kwargs["attributes"]["skill_ids"]) == {"sk_a", "sk_b"}
+        assert create_kwargs.kwargs["attributes"]["skill_owner_type"] == "account"
         saved = _current_skill_ctx.get(None)
         assert saved is not None
         assert saved["call"] is mock_call
@@ -313,6 +316,7 @@ class TestBeforeToolCallback:
         assert attrs["skill_id"] == "sk_seo"
         assert attrs["skill_name"] == "seo-checklist"
         assert attrs["skill_version"] == 2
+        assert attrs["skill_owner_type"] == "account"
         saved = _current_skill_ctx.get(None)
         assert saved["skill_id"] == "sk_seo"
 
@@ -343,6 +347,7 @@ class TestBeforeToolCallback:
         attrs = mock_client.create_call.call_args.kwargs["attributes"]
         assert attrs["skill_id"] == "sk_r"
         assert attrs["rel_path"] == "data/template.md"
+        assert attrs["skill_owner_type"] == "account"
 
     @pytest.mark.asyncio
     async def test_noop_when_client_is_none(self):
