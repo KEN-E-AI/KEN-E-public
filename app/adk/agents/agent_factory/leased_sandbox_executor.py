@@ -41,7 +41,7 @@ try:
 
     _BASE: type = _BaseCodeExecutor
 except ImportError:  # pragma: no cover — only in test environments
-    _BASE = object  # type: ignore[assignment]
+    _BASE = object
 
 
 class LeasedSandboxExecutor(_BASE):  # type: ignore[misc]
