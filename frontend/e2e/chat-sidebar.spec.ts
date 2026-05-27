@@ -298,15 +298,21 @@ test("TC-4: 100-session-pagination", async ({ page, request }) => {
     await page.waitForTimeout(1_200);
   }
 
-  // useChatSessions uses maxPages:1 (sliding window) — only one page is retained at
-  // a time, so row count stays at ~20. Verify pagination actually advanced by
-  // waiting for a session beyond the initial page (indices 0–19) to appear.
-  // With 100 sessions (0–99), "Bulk session 20" is unambiguous: it cannot match
-  // indices 0–19 (none start with "20"), and indices 200–209 don't exist.
+  // useChatSessions uses maxPages:1 (sliding window) — only one page is retained
+  // at a time, so row count stays at ~20 and the *specific* visible page depends
+  // on how many of the 5 scrolls successfully triggered a fetch. Pinning a
+  // single index (e.g. "Bulk session 20") races the sliding window: after 2+
+  // successful paginations that row is already discarded. Instead, wait for
+  // *any* row with index ≥ 20 to appear: `[2-9]\d` covers 20–99 (the valid
+  // indices in this 100-session test) and `\d{3,}` is defensive for larger
+  // seeds. The pattern cannot match indices 0–19 — `[2-9]\d` requires the
+  // first digit to be 2–9 and `\d{3,}` requires 3+ digits — so if pagination
+  // never advanced, the visible rows (0–19) won't match and the assertion
+  // correctly fails.
   await expect(
     page
       .locator('[data-slot="session-list-item"]')
-      .filter({ hasText: "Bulk session 20" }),
+      .filter({ hasText: /Bulk session ([2-9]\d|\d{3,})/ }),
   ).toBeVisible({ timeout: 10_000 });
 
   // Heap delta check (Chromium only).
