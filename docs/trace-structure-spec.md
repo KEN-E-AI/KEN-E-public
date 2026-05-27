@@ -872,15 +872,25 @@ L1 — root agent invocation
     └── (tool calls, LLM calls, …)
 
 pool internal (no agent-turn parent)
-├── sandbox_pool.get     ← emitted by SandboxPool.get_or_create(); parent is
-│                           whatever Weave call is on the stack when the agent
-│                           factory calls _build_code_executor() — typically the
-│                           build_agent / specialist_runtime.resolve_agent call
+├── sandbox_pool.get     ← emitted by SandboxPool.get_or_create() (diagnostic /
+│                           test accessor); parent is whatever Weave call is on
+│                           the stack when the factory calls _build_code_executor()
+├── sandbox_pool.lease   ← emitted by SandboxPool.lease().__aenter__(); fires on
+│                           every execute_code call via LeasedSandboxExecutor.
+│                           Carries refcount_after, cleared_tmp, tmp_clear_failed.
+│                           tmp_clear_failed is on this span (not sandbox_pool.get)
+│                           because _clear_tmp now fires only at the 0→1 refcount
+│                           transition inside lease() (SK-42 CLOBBER fix).
+├── sandbox_pool.release ← emitted by SandboxPool.lease().__aexit__(); fires after
+│                           each execute_code call completes. Carries refcount_after
+│                           and triggered_pending_evict (True when a deferred
+│                           eviction fired because refcount reached 0).
 └── sandbox_pool.evict   ← emitted by SandboxPool.evict(); fires during LRU cap
-                            enforcement (called from get_or_create after a miss),
-                            idle-TTL sweep (background task), or direct caller
-                            invocation. LRU-eviction spans appear adjacent to the
-                            sandbox_pool.get that triggered them.
+                            enforcement (after a miss), idle-TTL sweep (background
+                            task), or direct caller invocation. LRU-eviction spans
+                            appear adjacent to the sandbox_pool.get that triggered
+                            them. Carries deferred=True when eviction was deferred
+                            because refcount > 0 at eviction time.
 ```
 
 ### 15.2 Per-Span Attributes
@@ -932,11 +942,15 @@ Emitted when the `load_skill_resource` tool fires.  Output-side attribute
 #### `sandbox_pool.get`
 
 Emitted by `SandboxPool.get_or_create()` in
-`app/adk/agents/agent_factory/sandbox_pool.py`.  Span is emitted **after** any LRU cap
-enforcement **and after the SK-35 `_clear_tmp` defence-in-depth step** so that
-`pool_size_after` reflects post-eviction pool size and `tmp_clear_failed` reflects the
-actual outcome of the clear on this call.  Emission occurs outside the per-key stripe
-lock to keep the lock window tight.
+`app/adk/agents/agent_factory/sandbox_pool.py`.  This method is now a **diagnostic /
+test accessor** — production callers use `lease()`.  Span is emitted after any LRU cap
+enforcement.  Emission occurs outside the per-key stripe lock to keep the lock window
+tight.
+
+> **SK-42 note:** `tmp_clear_failed` was removed from this span when `_clear_tmp` moved
+> to the 0 → 1 refcount transition inside `lease()`.  MER-E alert rules that match
+> `sandbox_pool.get where tmp_clear_failed=true` should migrate to
+> `sandbox_pool.lease where tmp_clear_failed=true`.
 
 | Attribute | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -944,7 +958,34 @@ lock to keep the lock window tight.
 | `config_id` | `str` | Yes | The agent-config document ID (`AgentConfig.name`) used as the pool key |
 | `cache_hit` | `bool` | Yes | `true` when an existing executor was returned from the pool; `false` when a new one was constructed |
 | `pool_size_after` | `int` | Yes | Number of entries in the pool at span-emit time. Sampled outside the lock — concurrent inserts may shift the count by ±1. |
-| `tmp_clear_failed` | `bool` | Yes | `true` if `SandboxPool._clear_tmp` raised on this call (SK-35 defence-in-depth degraded — cross-session `/tmp` data may not have been purged before the executor was returned). `false` on the happy path **and** when `_CLEAR_TMP_ON_REUSE` is disabled (no clear attempted). MER-E should alert on `count(sandbox_pool.get where tmp_clear_failed=true) > 0` over a 5-minute window because a failed clear is a security-relevant event (see SK-9 §Q3 High disposition). |
+
+#### `sandbox_pool.lease`
+
+Emitted by `SandboxPool.lease().__aenter__()` in
+`app/adk/agents/agent_factory/sandbox_pool.py`.  Fires on every `execute_code` call
+routed through `LeasedSandboxExecutor` (SK-42).  Emission occurs after construction /
+any `_clear_tmp` call and before yielding the executor to the caller.
+
+| Attribute | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `account_id` | `str` | Yes | The account whose sandbox was leased |
+| `config_id` | `str` | Yes | The agent-config document ID used as the pool key |
+| `refcount_after` | `int` | Yes | Refcount after this lease was acquired. `1` means this caller is the only active lease; `>1` means concurrent `execute_code` calls are in-flight on the same sandbox. |
+| `cleared_tmp` | `bool` | Yes | `true` if `_clear_tmp` was called and succeeded on this lease acquisition (only possible on the 0 → 1 transition when `_CLEAR_TMP_ON_REUSE=True`). |
+| `tmp_clear_failed` | `bool` | Yes | `true` if `_clear_tmp` raised on this lease acquisition (SK-35 defence-in-depth degraded — cross-session `/tmp` data may not have been purged). MER-E should alert on `count(sandbox_pool.lease where tmp_clear_failed=true) > 0` over a 5-minute window (see SK-9 §Q3 High disposition). |
+
+#### `sandbox_pool.release`
+
+Emitted by `SandboxPool.lease().__aexit__()` in
+`app/adk/agents/agent_factory/sandbox_pool.py`.  Fires after every `execute_code` call
+completes (or raises).  Emission occurs after the refcount is decremented.
+
+| Attribute | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `account_id` | `str` | Yes | The account whose sandbox was released |
+| `config_id` | `str` | Yes | The agent-config document ID used as the pool key |
+| `refcount_after` | `int` | Yes | Refcount after this lease was released. `0` means no active callers; the entry is idle and eligible for TTL eviction. |
+| `triggered_pending_evict` | `bool` | Yes | `true` if this release triggered a deferred eviction (`pending_evict=True` was set while `refcount > 0` and refcount just reached 0). When `true`, `aclose()` was called and the pool entry was removed. |
 
 #### `sandbox_pool.evict`
 
@@ -957,8 +998,9 @@ accurate.
 |-----------|------|----------|-------------|
 | `account_id` | `str` | Yes | The account whose sandbox was evicted |
 | `config_id` | `str` | Yes | The agent-config document ID used as the pool key |
-| `reason` | `enum "lru" \| "ttl" \| "manual"` | Yes | Why the entry was evicted: `"lru"` — LRU cap enforcement triggered by a new `get_or_create` miss; `"ttl"` — idle TTL sweep; `"manual"` — direct external call to `evict()` |
+| `reason` | `enum "lru" \| "ttl" \| "manual"` | Yes | Why the entry was evicted: `"lru"` — LRU cap enforcement; `"ttl"` — idle TTL sweep; `"manual"` — direct external call to `evict()` |
 | `pool_size_after` | `int` | Yes | Number of entries remaining in the pool after the eviction |
+| `deferred` | `bool` | Yes | `true` when eviction was deferred because `refcount > 0` at eviction time. The executor is kept alive; the actual `aclose()` fires when the last lease holder releases (reflected in a `sandbox_pool.release` span with `triggered_pending_evict=true`). |
 
 ### 15.3 Relation to §2 Span Hierarchy
 
@@ -969,11 +1011,12 @@ rather than from ADK's built-in tool dispatch, so their `op_name` does **not** c
 `adk.tool.` prefix.
 
 The `sandbox_pool.*` spans are emitted from pool internals and are not scoped to any
-agent turn.  Their Weave parent is whatever call is on the stack when the agent factory
-invokes `_build_code_executor()` — typically a `build_agent` or
-`specialist_runtime.resolve_agent` call.  MER-E should correlate them with the
-enclosing session by `account_id`, analogous to the HTTP-tier correlation described in
-§4.6.
+agent turn.  `sandbox_pool.get` and `sandbox_pool.evict` fire during `build_agent` /
+`specialist_runtime.resolve_agent`.  `sandbox_pool.lease` and `sandbox_pool.release`
+fire on every `execute_code` call via `LeasedSandboxExecutor`; their Weave parent is
+whatever agent-turn call is on the stack at that moment.  MER-E should correlate all
+pool spans with the enclosing session by `account_id`, analogous to the HTTP-tier
+correlation described in §4.6.
 
 ### 15.4 MER-E Extractor Guidance
 
@@ -982,7 +1025,9 @@ enclosing session by `account_id`, analogous to the HTTP-tier correlation descri
    them with a `startswith("adk.tool.")` filter.
 
 2. **Match pool spans by exact `op_name`** — `sandbox_pool.get`,
-   `sandbox_pool.evict`.
+   `sandbox_pool.lease`, `sandbox_pool.release`, `sandbox_pool.evict`.
+   Alert on `sandbox_pool.lease where tmp_clear_failed=true` (SK-35 defence-in-depth
+   degraded); the attribute moved from `sandbox_pool.get` in SK-42.
 
 3. **`skill_owner_type` is always present** (value `"account"` in v1) and should be
    consumed as an enum, not a boolean.  When SK-PRD-05 (Predefined Skill Foundation)

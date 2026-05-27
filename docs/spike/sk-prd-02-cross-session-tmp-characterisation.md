@@ -233,38 +233,6 @@ clearing significantly more expensive, `_TMP_CLEAR_TIMEOUT_SECONDS` can be tuned
 
 ---
 
-## Operational assumption (v1 concurrency)
-
-`SandboxPool` keys by `(account_id, config_id)` per SK-PRD-02 §4.6 — not by session.
-Multiple callers (e.g. two users on the same account using the same agent_config, or
-a future ADK that adds parallel tool dispatch) can therefore share the same pool
-entry.  `_clear_tmp` runs on every `get_or_create` return path against the pool's
-single executor instance, outside the stripe lock, and the Vertex container behind
-`sandboxEnvironments/<sid>` is shared across all concurrent `execute_code` calls.
-
-The implication is a symmetric inverse of the leak this mitigation closes:
-
-* The LEAK (closed by `_clear_tmp`): caller B can *read* `/tmp` contents written by
-  a previous caller A from a prior session.
-* The CLOBBER (new hazard, v1 accepted): caller A is mid-`execute_code` writing
-  working files to `/tmp` when caller B's `get_or_create` triggers `_clear_tmp`,
-  destroying A's in-flight data.
-
-**v1 ships with the explicit assumption that callers serialise their use of a
-pooled executor.**  This is true under current ADK (single-turn-single-tool
-dispatch) within one user's chat session.  It is *not* true for cross-user
-same-config concurrency, which the pool's keying scheme permits.
-
-**Resolution path:** [SK-42](https://linear.app/ken-e/issue/SK-42) replaces this
-assumption with a refcount-based `ExecutorLease` API so concurrent callers can
-share the executor without `_clear_tmp` racing against in-flight work.  SK-42 is
-prioritised **before SK-PRD-02 takes broad production traffic** (the assumption is
-acceptable for the controlled-rollout phase but breaks under multi-user
-concurrency at scale).  AC-5 of SK-42 removes this section once the lease API
-ships.
-
----
-
 ## Mitigation decision
 
 **Decision: Add defence-in-depth /tmp clearing to SandboxPool.get_or_create.**

@@ -756,20 +756,22 @@ class TestSkillIdsAndSandbox:
         assert agent.name == "skills"
 
     def test_sandbox_code_executor_enabled_builds_agent_without_error(self) -> None:
-        from unittest.mock import AsyncMock, MagicMock
+        from unittest.mock import MagicMock
 
-        from google.adk.code_executors import BuiltInCodeExecutor
-
+        from app.adk.agents.agent_factory.leased_sandbox_executor import (
+            LeasedSandboxExecutor,
+        )
         from app.adk.agents.agent_factory.sandbox_pool import SandboxPool
 
         mock_pool = MagicMock(spec=SandboxPool)
-        mock_pool.get_or_create = AsyncMock(return_value=BuiltInCodeExecutor())
 
         config = _make_config(sandbox_code_executor_enabled=True)
         agent = _build(config, name="sandbox", sandbox_pool=mock_pool)
 
         assert agent is not None
-        assert agent.code_executor is mock_pool.get_or_create.return_value
+        # SK-42: build_agent returns a LeasedSandboxExecutor wrapper (lazy construction).
+        assert isinstance(agent.code_executor, LeasedSandboxExecutor)
+        assert agent.code_executor._pool is mock_pool
 
     def test_skill_ids_not_surfaced_as_llm_agent_attribute(self) -> None:
         config = _make_config(skill_ids=["s1"])

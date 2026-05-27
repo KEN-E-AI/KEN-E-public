@@ -26,9 +26,11 @@ install — matching the pattern in ``agent_factory/mcp.py:372``.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import time
 from collections import OrderedDict
+from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any, Literal
 
 from app.adk.tracking.sandbox_pool_spans import emit_sandbox_pool_span
@@ -71,6 +73,18 @@ def _sandbox_resource_name(account_id: str, config_id: str) -> str:
     )
 
 
+# ---------------------------------------------------------------------------
+# Pool entry tuple shape
+# ---------------------------------------------------------------------------
+# Entry shape: (executor, last_used_monotonic_time, refcount, pending_evict)
+# - executor: the AgentEngineSandboxCodeExecutor instance
+# - last_used: monotonic timestamp updated on every get_or_create / lease hit
+# - refcount: number of active ExecutorLease holders; 0 means no in-flight use
+# - pending_evict: True when an LRU/TTL eviction was deferred because
+#   refcount > 0; the deferred evict fires when refcount drops to 0
+_PoolEntry = tuple[Any, float, int, bool]
+
+
 class SandboxPool:
     """Process-wide pool of ``AgentEngineSandboxCodeExecutor`` instances.
 
@@ -87,16 +101,31 @@ class SandboxPool:
     Concurrency
     -----------
     A 32-slot striped ``asyncio.Lock`` map provides per-key single-flight
-    semantics: concurrent ``get_or_create`` calls for the **same** key all wait
+    semantics: concurrent ``lease()`` calls for the **same** key all wait
     on the same lock and receive the single constructed executor; concurrent
     calls for **different** keys that hash to different stripes do not
     serialise.
+
+    ``_clear_tmp`` fires only on the **0 → 1 refcount transition** inside
+    ``lease().__aenter__``, not on every ``get_or_create`` call.  This
+    eliminates the SK-42 CLOBBER hazard: the clear runs only when no caller
+    is currently holding the executor, so it can never destroy in-flight
+    ``/tmp`` data belonging to another caller.
 
     Cleanup
     -------
     ``aclose()`` is invoked on every executor before its reference is dropped.
     Failures in ``aclose()`` are caught, logged, and swallowed — pool
     integrity takes priority over retention of a possibly-broken executor.
+
+    Eviction with active lease
+    --------------------------
+    LRU and TTL eviction paths that encounter ``refcount > 0`` mark the entry
+    as ``pending_evict=True`` and leave the executor alive for in-flight
+    callers.  The entry remains in the pool dict (still counts against the cap)
+    but ``_evict_if_over_cap`` skips ``pending_evict=True`` entries when
+    choosing the LRU candidate.  When refcount drops to 0 in ``_release``,
+    the deferred eviction fires (``aclose()`` + pool removal).
     """
 
     _MAX_ENTRIES: int = 64
@@ -104,8 +133,8 @@ class SandboxPool:
     _SWEEP_INTERVAL_SECONDS: int = 60
     # SK-35 LEAK-branch defence-in-depth: live probe (2026-05-27, 50/50 LEAK)
     # confirmed Vertex reuses container /tmp across executor sessions sharing
-    # the same sandbox resource name.  Flag enabled to clear /tmp on every
-    # get_or_create return path.  See
+    # the same sandbox resource name.  Flag enabled to clear /tmp on the
+    # 0 → 1 refcount transition inside lease().__aenter__.  See
     # docs/spike/sk-prd-02-cross-session-tmp-characterisation.md for findings.
     _CLEAR_TMP_ON_REUSE: bool = True
     _TMP_CLEAR_TIMEOUT_SECONDS: int = 5
@@ -123,18 +152,106 @@ class SandboxPool:
 
     def __init__(self) -> None:
         # OrderedDict maintains insertion/access order for LRU tracking.
-        # Entry shape: (executor, last_used_monotonic_time)
-        self._pool: OrderedDict[tuple[str, str], tuple[Any, float]] = OrderedDict()
+        # Entry shape: (executor, last_used_monotonic_time, refcount, pending_evict)
+        self._pool: OrderedDict[tuple[str, str], _PoolEntry] = OrderedDict()
         # Lazily initialised per-stripe lock map (32 slots).
         self._stripe_locks: dict[int, asyncio.Lock] = {}
         self._sweep_task: asyncio.Task[None] | None = None
         # Serialises cap-enforcement passes so concurrent misses that both exit
         # their stripe locks cannot race on next(iter(self._pool)).
         self._cap_lock: asyncio.Lock = asyncio.Lock()
+        # Per-key asyncio.Events set by lease() after _clear_tmp() completes.
+        # A concurrent caller that arrives while refcount is 0→1 and the clear
+        # is in flight waits on this event before acquiring the executor.
+        # Registered inside the stripe lock in _acquire(); deleted + set in
+        # lease()'s finally block once the clear finishes (or fails).
+        self._clearing: dict[tuple[str, str], asyncio.Event] = {}
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    @contextlib.asynccontextmanager
+    async def lease(
+        self,
+        *,
+        account_id: str,
+        config_id: str,
+    ) -> AsyncGenerator[AgentEngineSandboxCodeExecutor, None]:
+        """Async context manager that leases a pooled executor for one use.
+
+        Usage::
+
+            async with pool.lease(account_id=..., config_id=...) as executor:
+                await executor.execute_code(...)
+
+        **Concurrency contract (SK-42):** ``_clear_tmp`` fires only on the
+        0 → 1 refcount transition — i.e., only when this is the first active
+        lease holder and no other caller's ``execute_code`` is in flight.
+        Concurrent callers that arrive while ``refcount ≥ 1`` share the
+        executor without triggering a clear, so no in-flight ``/tmp`` data
+        is destroyed.
+
+        **Exception safety:** ``__aexit__`` is guaranteed by Python's
+        ``async with`` protocol regardless of whether the body raises.
+        The refcount is always decremented and the deferred-evict path is
+        always checked on exit.
+
+        Emits a ``sandbox_pool.lease`` Weave span on entry (after
+        construction and any clearing) and a ``sandbox_pool.release`` span
+        on exit.
+        """
+        key = (account_id, config_id)
+        executor, _zero_to_one, clearing_event = await self._acquire(key)
+
+        cleared_tmp = False
+        tmp_clear_failed = False
+        if clearing_event is not None:
+            # We are the 0→1 transition holder responsible for clearing /tmp.
+            # Finish the clear and then unblock any concurrent callers that
+            # are waiting on the clearing event before receiving the executor.
+            try:
+                await self._clear_tmp(executor)
+                cleared_tmp = True
+            except Exception:
+                tmp_clear_failed = True
+                logger.warning(
+                    "SandboxPool._clear_tmp failed; returning executor uncleared",
+                    extra={"account_id": account_id, "config_id": config_id},
+                )
+            finally:
+                # Delete before set so waiting callers see no event on retry.
+                del self._clearing[key]
+                clearing_event.set()
+
+        refcount_after = self._entry_refcount(key)
+        async with emit_sandbox_pool_span(
+            "sandbox_pool.lease",
+            {
+                "account_id": account_id,
+                "config_id": config_id,
+                "refcount_after": refcount_after,
+                "cleared_tmp": cleared_tmp,
+                "tmp_clear_failed": tmp_clear_failed,
+            },
+        ):
+            pass
+
+        try:
+            yield executor
+        finally:
+            triggered_evict = await self._release(key)
+            release_refcount = self._entry_refcount(key)
+            async with emit_sandbox_pool_span(
+                "sandbox_pool.release",
+                {
+                    "account_id": account_id,
+                    "config_id": config_id,
+                    "refcount_after": release_refcount,
+                    "triggered_pending_evict": triggered_evict,
+                },
+            ):
+                pass
 
     async def get_or_create(
         self,
@@ -144,14 +261,13 @@ class SandboxPool:
     ) -> AgentEngineSandboxCodeExecutor:
         """Return a pooled executor for ``(account_id, config_id)``.
 
+        **Diagnostic / test-only accessor.** Production callers MUST use
+        ``lease()`` instead — only ``lease()`` tracks refcount and runs
+        ``_clear_tmp`` at the correct 0 → 1 boundary (SK-42).
+
         On a cache hit the entry is LRU-bumped and its ``last_used`` timestamp
         refreshed.  On a miss a new executor is constructed and the LRU cap is
         enforced.
-
-        ``_evict_if_over_cap`` is called **outside** the stripe lock to avoid a
-        deadlock: if the LRU key hashes to the same stripe as the new key,
-        ``evict`` would try to acquire a lock already held by this coroutine.
-        ``asyncio.Lock`` is not re-entrant, so the coroutine would deadlock.
 
         A ``sandbox_pool.get`` Weave span is emitted after cap enforcement so
         that ``pool_size_after`` reflects post-eviction size for cap-triggering
@@ -164,37 +280,21 @@ class SandboxPool:
             entry = self._pool.get(key)
             now = time.monotonic()
             if entry is not None:
-                executor, _ = entry
+                executor, _, refcount, pending_evict = entry
                 self._pool.move_to_end(key)
-                self._pool[key] = (executor, now)
+                self._pool[key] = (executor, now, refcount, pending_evict)
                 cache_hit = True
             else:
                 executor = await self._construct(
                     account_id=account_id, config_id=config_id
                 )
-                self._pool[key] = (executor, now)
+                self._pool[key] = (executor, now, 0, False)
                 cache_hit = False
 
         # Cap enforcement runs outside the stripe lock so that evict() can
         # acquire the stripe lock for the LRU entry without deadlocking.
         if not cache_hit:
             await self._evict_if_over_cap()
-
-        # Run defence-in-depth /tmp clearing (SK-35) before emitting the span so
-        # tmp_clear_failed reflects the actual outcome on this call.  MER-E
-        # alerts on count(sandbox_pool.get where tmp_clear_failed=true) — a
-        # silent failure here means the cross-session LEAK mitigation degraded
-        # for this caller (see SK-9 §Q3 High disposition).
-        tmp_clear_failed = False
-        if self._CLEAR_TMP_ON_REUSE:
-            try:
-                await self._clear_tmp(executor)
-            except Exception:
-                tmp_clear_failed = True
-                logger.warning(
-                    "SandboxPool._clear_tmp failed; returning executor uncleared",
-                    extra={"account_id": account_id, "config_id": config_id},
-                )
 
         # pool_size_after is sampled outside the lock; concurrent inserts can
         # shift it by ±1 between eviction and the snapshot.
@@ -205,7 +305,6 @@ class SandboxPool:
                 "config_id": config_id,
                 "cache_hit": cache_hit,
                 "pool_size_after": len(self._pool),
-                "tmp_clear_failed": tmp_clear_failed,
             },
         ):
             pass
@@ -231,6 +330,12 @@ class SandboxPool:
         entry that was refreshed between the snapshot and the lock acquisition
         is skipped rather than incorrectly closed.
 
+        **Active-lease deferral (SK-42):** if the entry's ``refcount > 0``
+        the eviction is deferred — ``pending_evict`` is set to ``True`` and
+        the executor is NOT closed.  The entry remains in the pool dict
+        (``_evict_if_over_cap`` skips it when choosing the LRU candidate) so
+        that ``_release`` can find and close it when refcount drops to 0.
+
         ``reason`` is forwarded to the ``sandbox_pool.evict`` Weave span so
         MER-E can distinguish LRU-cap, TTL-sweep, and direct-caller evictions.
         Internal callers pass ``reason=\"lru\"`` or ``reason=\"ttl\"``; external
@@ -240,6 +345,7 @@ class SandboxPool:
         inside, emitted after release) to keep the lock window tight.
         """
         account_id, config_id = key
+        deferred = False
         async with self._stripe(key):
             entry = self._pool.get(key)
             if entry is None:
@@ -247,9 +353,25 @@ class SandboxPool:
                 # pool_size_after is still useful signal (TTL-vs-refresh races).
                 pool_size_after = len(self._pool)
             else:
-                executor, last_used = entry
+                executor, last_used, refcount, _pending_evict = entry
                 if stale_before is not None and last_used >= stale_before:
                     pool_size_after = len(self._pool)
+                elif refcount > 0:
+                    # Active lease — defer eviction; mark pending_evict and keep
+                    # executor alive.  Entry stays in the pool dict so _release
+                    # can find it; _evict_if_over_cap skips pending_evict entries
+                    # when choosing the next LRU candidate.
+                    self._pool[key] = (executor, last_used, refcount, True)
+                    pool_size_after = len(self._pool)
+                    deferred = True
+                    logger.info(
+                        "SandboxPool eviction deferred: active lease in progress",
+                        extra={
+                            "key": key,
+                            "refcount": refcount,
+                            "reason": reason,
+                        },
+                    )
                 else:
                     del self._pool[key]
                     pool_size_after = len(self._pool)
@@ -268,6 +390,7 @@ class SandboxPool:
                 "config_id": config_id,
                 "reason": reason,
                 "pool_size_after": pool_size_after,
+                "deferred": deferred,
             },
         ):
             pass
@@ -281,7 +404,7 @@ class SandboxPool:
         are not incorrectly closed.
         """
         cutoff = time.monotonic() - self._IDLE_TTL_SECONDS
-        stale_keys = [k for k, (_, last) in self._pool.items() if last < cutoff]
+        stale_keys = [k for k, (_, last, _, _) in self._pool.items() if last < cutoff]
         for k in stale_keys:
             await self.evict(k, stale_before=cutoff, reason="ttl")
 
@@ -306,6 +429,21 @@ class SandboxPool:
         self._sweep_task = None
 
     # ------------------------------------------------------------------
+    # Test helpers
+    # ------------------------------------------------------------------
+
+    def _entry_refcount(self, key: tuple[str, str]) -> int:
+        """Return the current refcount for ``key``, or 0 if absent.
+
+        Exposed for unit tests only — production callers should not need this.
+        """
+        entry = self._pool.get(key)
+        if entry is None:
+            return 0
+        _, _, refcount, _ = entry
+        return refcount
+
+    # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
@@ -313,6 +451,132 @@ class SandboxPool:
         """Return the per-key stripe lock (lazily initialised)."""
         idx = hash(key) % 32
         return self._stripe_locks.setdefault(idx, asyncio.Lock())
+
+    async def _acquire(
+        self, key: tuple[str, str]
+    ) -> tuple[AgentEngineSandboxCodeExecutor, bool, asyncio.Event | None]:
+        """Increment refcount for ``key``, constructing on miss.
+
+        Returns ``(executor, zero_to_one, clearing_event)`` where:
+        - ``zero_to_one`` is True when this call transitioned refcount 0 → 1.
+        - ``clearing_event`` is a non-None asyncio.Event that the caller MUST
+          set (after ``_clear_tmp`` completes) when ``zero_to_one`` is True and
+          ``_CLEAR_TMP_ON_REUSE`` is set.  Concurrent callers that see the event
+          in ``self._clearing`` wait for it before receiving the executor, closing
+          the window where a second caller could receive the executor while the
+          first caller's ``_clear_tmp`` is still running.
+
+        Called by ``lease().__aenter__``.  Runs under the stripe lock to
+        preserve single-flight construction semantics and atomic refcount bump.
+        The clearing event is registered *inside* the stripe lock so no
+        concurrent caller can increment refcount (and receive the executor)
+        before the event is visible to them.
+
+        Cap enforcement fires outside the lock (same as ``get_or_create``) to
+        avoid a deadlock when the LRU key hashes to the same stripe.
+        """
+        account_id, config_id = key
+        cache_miss: bool = False
+        zero_to_one: bool = False
+        clearing_event_out: asyncio.Event | None = None
+        executor: Any
+
+        while True:
+            # Wait for any in-progress _clear_tmp on this key before acquiring
+            # the stripe lock.  The event is registered inside the lock in a
+            # previous _acquire() call, so it is always visible here.
+            pending = self._clearing.get(key)
+            if pending is not None:
+                await pending.wait()
+                continue  # re-check: a new clear might have started immediately
+
+            to_wait: asyncio.Event | None = None
+            async with self._stripe(key):
+                # Double-check inside the lock: another coroutine may have
+                # registered a clearing event between our outer check above and
+                # acquiring the lock.
+                pending_inner = self._clearing.get(key)
+                if pending_inner is not None:
+                    # Can't await inside the lock; save and break out.
+                    to_wait = pending_inner
+                else:
+                    entry = self._pool.get(key)
+                    now = time.monotonic()
+                    if entry is not None:
+                        executor, _, refcount, pending_evict = entry
+                        new_refcount = refcount + 1
+                        zero_to_one = refcount == 0
+                        self._pool.move_to_end(key)
+                        self._pool[key] = (executor, now, new_refcount, pending_evict)
+                        cache_miss = False
+                        if zero_to_one and self._CLEAR_TMP_ON_REUSE:
+                            # Register event inside the lock so concurrent
+                            # callers always see it before incrementing refcount.
+                            clearing_event_out = asyncio.Event()
+                            self._clearing[key] = clearing_event_out
+                    else:
+                        executor = await self._construct(
+                            account_id=account_id, config_id=config_id
+                        )
+                        self._pool[key] = (executor, now, 1, False)
+                        zero_to_one = True
+                        cache_miss = True
+                        if self._CLEAR_TMP_ON_REUSE:
+                            clearing_event_out = asyncio.Event()
+                            self._clearing[key] = clearing_event_out
+
+            if to_wait is not None:
+                await to_wait.wait()
+                continue  # retry after in-lock-detected clear completes
+
+            break
+
+        if cache_miss:
+            await self._evict_if_over_cap()
+
+        return executor, zero_to_one, clearing_event_out
+
+    async def _release(self, key: tuple[str, str]) -> bool:
+        """Decrement refcount for ``key`` and fire deferred eviction on 0.
+
+        Returns ``True`` if a deferred eviction was triggered.
+
+        Called by ``lease().__aexit__``.  Runs under the stripe lock to
+        atomically decrement the refcount and check ``pending_evict``.
+        If ``pending_evict=True`` and ``refcount`` just dropped to 0,
+        performs the deferred ``aclose()`` and removes the entry.
+        """
+        triggered = False
+        async with self._stripe(key):
+            entry = self._pool.get(key)
+            if entry is None:
+                # Entry was already removed (e.g. manual evict raced with release).
+                return False
+            executor, last_used, refcount, pending_evict = entry
+            if refcount == 0:
+                # Invariant violation: _release called more times than _acquire.
+                # Log and skip rather than silently clamping so MER-E can alert.
+                logger.error(
+                    "SandboxPool._release: refcount underflow for key %s — double release?",
+                    key,
+                )
+                return False
+            new_refcount = refcount - 1
+            if new_refcount == 0 and pending_evict:
+                # Deferred eviction: close executor and remove entry now.
+                del self._pool[key]
+                triggered = True
+                try:
+                    await executor.aclose()
+                except Exception:
+                    logger.exception(
+                        "SandboxPool deferred-evict aclose() failed",
+                        extra={"key": key},
+                    )
+            else:
+                self._pool[key] = (executor, last_used, new_refcount, pending_evict)
+
+        return triggered
 
     async def _construct(
         self,
@@ -341,38 +605,25 @@ class SandboxPool:
     async def _clear_tmp(self, executor: AgentEngineSandboxCodeExecutor) -> None:
         """Purge /tmp inside the sandbox container (SK-35 LEAK-branch defence-in-depth).
 
-        Called on every ``get_or_create`` return path when
-        ``_CLEAR_TMP_ON_REUSE`` is ``True``.  Best-effort: ``asyncio.TimeoutError``
-        and any other exception propagate to the caller, which catches and logs
-        them so the executor is still returned.
+        Called on the 0 → 1 refcount transition inside ``lease().__aenter__``
+        when ``_CLEAR_TMP_ON_REUSE`` is ``True``.  Only fires when no other
+        caller holds the executor (refcount was 0 before this lease acquired
+        it), so it never races with in-flight ``execute_code`` calls from
+        concurrent leaseholders (SK-42).
+
+        Best-effort: ``asyncio.TimeoutError`` and any other exception propagate
+        to the caller (``lease().__aenter__``), which catches and logs them so
+        the executor is still returned.
 
         The Vertex SDK call is synchronous, so it runs via ``asyncio.to_thread``
-        to avoid blocking the event loop.  Per-call ``vertexai.Client`` construction
-        is intentional for v1 *pending* the verify-thread-safety + cached-client
-        follow-up tracked in [SK-43](https://linear.app/ken-e/issue/SK-43); under
-        AH-PRD-09 per-turn dispatch the per-call init becomes load-bearing and SK-43
-        must land before SK-PRD-02 takes broad production traffic.
-
-        **Concurrency assumption (SK-35 v1 — tracked for redesign in
-        [SK-42](https://linear.app/ken-e/issue/SK-42)).**  This clear runs against
-        the pool's single executor instance for ``(account_id, config_id)``,
-        outside the stripe lock.  Because the pool keys per-agent-config rather
-        than per-session, multiple callers (e.g. two users on the same account
-        using the same agent) can share the same pool entry.  If caller A is
-        mid-``execute_code`` when caller B's ``get_or_create`` triggers
-        ``_clear_tmp``, B's purge can destroy A's in-flight ``/tmp`` data on the
-        same Vertex container.  v1 assumes callers serialise their use of a
-        pooled executor (current ADK single-tool dispatch makes this true within
-        one turn) and accepts the cross-user race as a known limitation; SK-42
-        replaces the assumption with a refcount-based ``ExecutorLease`` API.
+        to avoid blocking the event loop.  Per-call ``vertexai.Client``
+        construction is intentional for v1 *pending* the verify-thread-safety +
+        cached-client follow-up tracked in SK-43.
 
         Defensive guard: if ``sandbox_resource_name`` is missing or not a
         non-empty string (e.g. unit-test Mock executor, or a future regression
         in ``_sandbox_resource_name``), log a WARNING and return without
-        issuing a network call.  Production executors always carry a real
-        resource name, so a WARNING in prod indicates a real bug — the silent
-        return prevents a crash but the log surface is required so the
-        regression is not invisible.
+        issuing a network call.
         """
         resource_name = getattr(executor, "sandbox_resource_name", "")
         if not isinstance(resource_name, str) or not resource_name:
@@ -404,21 +655,36 @@ class SandboxPool:
         """Evict the LRU entry until the pool is at or below ``_MAX_ENTRIES``.
 
         Held under ``_cap_lock`` to serialise concurrent eviction passes:
-        multiple concurrent ``get_or_create`` misses each insert an entry then
-        race here, and without the lock they could both call
+        multiple concurrent ``lease()`` / ``get_or_create`` misses each insert
+        an entry then race here, and without the lock they could both call
         ``next(iter(self._pool))`` concurrently while the other is mid-eviction.
         The ``while`` loop re-checks the cap after each eviction so transiently
         over-cap states (from concurrent inserts that slip through) are still
         corrected.  OrderedDict iteration order is oldest-first because evictions
         call ``del`` and hits call ``move_to_end`` — the LRU invariant.
+
+        Entries with ``pending_evict=True`` are already deferred and have been
+        conceptually removed from the LRU ordering; they are skipped here so
+        the pool does not double-evict them.
         """
         async with self._cap_lock:
             while len(self._pool) > self._MAX_ENTRIES:
-                oldest_key = next(iter(self._pool))
+                # Find oldest non-deferred entry to evict.
+                oldest_key: tuple[str, str] | None = None
+                for k, (_, _, _, pending) in self._pool.items():
+                    if not pending:
+                        oldest_key = k
+                        break
+                if oldest_key is None:
+                    # All entries are pending_evict — nothing safe to close now.
+                    break
                 await self.evict(oldest_key, reason="lru")
 
     async def _sweep_loop(self) -> None:
         """Background coroutine that periodically sweeps idle entries."""
         while True:
             await asyncio.sleep(self._SWEEP_INTERVAL_SECONDS)
-            await self.sweep_idle()
+            try:
+                await self.sweep_idle()
+            except Exception:
+                logger.exception("SandboxPool._sweep_loop: sweep_idle() raised unexpectedly")
