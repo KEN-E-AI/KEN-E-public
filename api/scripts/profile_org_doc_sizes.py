@@ -315,7 +315,9 @@ def main() -> int:
                     )
                 )
             except Exception as exc:
-                logger.warning("Skipping org %s due to processing error: %s", org_id, exc)
+                logger.warning(
+                    "Skipping org %s due to processing error: %s", org_id, exc
+                )
     except Exception as exc:
         logger.exception("Unexpected error while streaming org documents: %s", exc)
         return EXIT_RUNTIME_ERROR

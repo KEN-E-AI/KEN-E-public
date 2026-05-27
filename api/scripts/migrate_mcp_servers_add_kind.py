@@ -104,7 +104,9 @@ def backfill(
         doc: dict[str, Any] = snapshot.to_dict() or {}
 
         if not _needs_kind_backfill(doc):
-            logger.debug("Server %r already has kind=%r — no change", server_id, doc.get("kind"))
+            logger.debug(
+                "Server %r already has kind=%r — no change", server_id, doc.get("kind")
+            )
             counts["unchanged"] += 1
             continue
 

@@ -958,12 +958,16 @@ class TestWarningsOnRedeployRequiredFields:
         resp = await self._run_root_update(
             admin_user,
             sample_config_data,
-            update=AgentConfigUpdate(model="gemini-2.5-pro", updated_by="admin@ken-e.ai"),
+            update=AgentConfigUpdate(
+                model="gemini-2.5-pro", updated_by="admin@ken-e.ai"
+            ),
             pre_overrides={"model": "gemini-2.5-flash"},
             post_overrides={"model": "gemini-2.5-pro"},
         )
 
-        assert len(resp.warnings) == 1, f"Expected exactly one warning, got {resp.warnings}"
+        assert len(resp.warnings) == 1, (
+            f"Expected exactly one warning, got {resp.warnings}"
+        )
         msg = resp.warnings[0]
         assert "'model'" in msg, f"Warning must reference the model field: {msg!r}"
         assert "redeploy" in msg.lower(), f"Warning must mention redeploy: {msg!r}"
@@ -981,7 +985,9 @@ class TestWarningsOnRedeployRequiredFields:
             post_overrides={"temperature": 0.5},
         )
 
-        assert len(resp.warnings) == 1, f"Expected exactly one warning, got {resp.warnings}"
+        assert len(resp.warnings) == 1, (
+            f"Expected exactly one warning, got {resp.warnings}"
+        )
         assert "'temperature'" in resp.warnings[0]
         assert "redeploy" in resp.warnings[0].lower()
 
@@ -994,11 +1000,15 @@ class TestWarningsOnRedeployRequiredFields:
         resp = await self._run_root_update(
             admin_user,
             sample_config_data,
-            update=AgentConfigUpdate(max_output_tokens=5000, updated_by="admin@ken-e.ai"),
+            update=AgentConfigUpdate(
+                max_output_tokens=5000, updated_by="admin@ken-e.ai"
+            ),
             post_overrides={"max_output_tokens": 5000},
         )
 
-        assert len(resp.warnings) == 1, f"Expected exactly one warning, got {resp.warnings}"
+        assert len(resp.warnings) == 1, (
+            f"Expected exactly one warning, got {resp.warnings}"
+        )
         assert "'max_output_tokens'" in resp.warnings[0]
         assert "redeploy" in resp.warnings[0].lower()
 

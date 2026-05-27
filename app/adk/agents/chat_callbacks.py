@@ -128,7 +128,10 @@ def _post_side_table_update_sync(
                 resp.status_code,
                 session_id,
                 resp.text[:200],
-                extra={"error_id": "CHAT_SIDE_TABLE_CLIENT_ERROR", "session_id": session_id},
+                extra={
+                    "error_id": "CHAT_SIDE_TABLE_CLIENT_ERROR",
+                    "session_id": session_id,
+                },
             )
         elif resp.status_code >= 500:
             logger.error(
@@ -136,13 +139,19 @@ def _post_side_table_update_sync(
                 resp.status_code,
                 session_id,
                 resp.text[:200],
-                extra={"error_id": "CHAT_SIDE_TABLE_SERVER_ERROR", "session_id": session_id},
+                extra={
+                    "error_id": "CHAT_SIDE_TABLE_SERVER_ERROR",
+                    "session_id": session_id,
+                },
             )
     except Exception as exc:
         logger.warning(
             "Side-table update failed (non-blocking): %s",
             exc,
-            extra={"error_id": "CHAT_SIDE_TABLE_NETWORK_ERROR", "session_id": session_id},
+            extra={
+                "error_id": "CHAT_SIDE_TABLE_NETWORK_ERROR",
+                "session_id": session_id,
+            },
         )
 
 
@@ -253,7 +262,9 @@ def chat_before_agent_callback(
 
         invocation_id = getattr(invocation_context, "invocation_id", None)
         if invocation_id is None:
-            logger.warning("chat_before_agent_callback: invocation_id is None; idempotency key will be non-stable")
+            logger.warning(
+                "chat_before_agent_callback: invocation_id is None; idempotency key will be non-stable"
+            )
             invocation_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc)
         now_sentinel = _isoformat_sentinel(now)
@@ -268,7 +279,9 @@ def chat_before_agent_callback(
             idempotency_key=f"{session_id}:before-agent:{invocation_id}",
         )
     except Exception:
-        logger.warning("chat_before_agent_callback failed (non-blocking)", exc_info=True)
+        logger.warning(
+            "chat_before_agent_callback failed (non-blocking)", exc_info=True
+        )
     return None
 
 
@@ -344,14 +357,18 @@ def _extract_session_id(invocation_context: Any) -> str:
 def _extract_state(callback_context: Any) -> dict[str, Any]:
     """Safely extract the session state dict from a callback context."""
     try:
-        if hasattr(callback_context, "state") and hasattr(callback_context.state, "get"):
+        if hasattr(callback_context, "state") and hasattr(
+            callback_context.state, "get"
+        ):
             return callback_context.state  # type: ignore[return-value]
     except Exception:
         pass
     return {}
 
 
-def _gather_turn_events(invocation_context: Any, invocation_id: str | None) -> list[Any]:
+def _gather_turn_events(
+    invocation_context: Any, invocation_id: str | None
+) -> list[Any]:
     """Return events belonging to this invocation from session.events."""
     try:
         session = getattr(invocation_context, "session", None)
@@ -359,8 +376,7 @@ def _gather_turn_events(invocation_context: Any, invocation_id: str | None) -> l
             return []
         all_events = getattr(session, "events", None) or []
         return [
-            e for e in all_events
-            if getattr(e, "invocation_id", None) == invocation_id
+            e for e in all_events if getattr(e, "invocation_id", None) == invocation_id
         ]
     except Exception as exc:
         logger.debug("Could not gather turn events: %s", exc)

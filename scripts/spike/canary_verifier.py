@@ -22,7 +22,12 @@ import hashlib
 import time
 
 _BIG_INT_EXPECTED: int = 2**73 - 1
-_REQUIRED_FIELDS: tuple[str, ...] = ("time_ns", "urandom_hex", "sha256_proof", "big_int_check")
+_REQUIRED_FIELDS: tuple[str, ...] = (
+    "time_ns",
+    "urandom_hex",
+    "sha256_proof",
+    "big_int_check",
+)
 _MAX_STALENESS_NS: int = 24 * 60 * 60 * 10**9  # 24 hours in nanoseconds
 
 
@@ -53,7 +58,10 @@ def verify_canary(stdout: str) -> tuple[bool, str]:
 
     urandom_hex = fields["urandom_hex"]
     if len(urandom_hex) != 64 or not _is_hex(urandom_hex):
-        return False, f"invalid_field: urandom_hex must be 64 hex chars, got {len(urandom_hex)}"
+        return (
+            False,
+            f"invalid_field: urandom_hex must be 64 hex chars, got {len(urandom_hex)}",
+        )
 
     try:
         rand_bytes = bytes.fromhex(urandom_hex)
@@ -64,7 +72,10 @@ def verify_canary(stdout: str) -> tuple[bool, str]:
     expected_digest = hashlib.sha256(payload).hexdigest()
     observed_digest = fields["sha256_proof"]
     if observed_digest != expected_digest:
-        return False, f"sha256_mismatch: expected={expected_digest[:16]}…, got={observed_digest[:16]}…"
+        return (
+            False,
+            f"sha256_mismatch: expected={expected_digest[:16]}…, got={observed_digest[:16]}…",
+        )
 
     try:
         big_int = int(fields["big_int_check"])

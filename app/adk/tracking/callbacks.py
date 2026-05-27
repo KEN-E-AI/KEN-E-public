@@ -96,9 +96,7 @@ def _get_chatbot_config_metadata() -> dict[str, Any]:
             _CHATBOT_CONFIG_CACHE["data"] = data
             _CHATBOT_CONFIG_CACHE["loaded"] = True
             return data
-        logger.warning(
-            f"ken_e_chatbot config returned empty/error: {data}; will retry"
-        )
+        logger.warning(f"ken_e_chatbot config returned empty/error: {data}; will retry")
         return data or {}
     except Exception as e:
         logger.warning(f"Failed to load ken_e_chatbot config metadata: {e}")
@@ -319,11 +317,15 @@ async def adk_after_model_callback(
             if text and not getattr(part, "function_call", None):
                 reasoning_parts.append(text)
 
-    if reasoning_parts and hasattr(callback_context, "state") and hasattr(
-        callback_context.state, "__setitem__"
+    if (
+        reasoning_parts
+        and hasattr(callback_context, "state")
+        and hasattr(callback_context.state, "__setitem__")
     ):
         reasoning_text = "\n".join(reasoning_parts)
-        callback_context.state["_last_reasoning"] = reasoning_text[:_MAX_REASONING_LENGTH]
+        callback_context.state["_last_reasoning"] = reasoning_text[
+            :_MAX_REASONING_LENGTH
+        ]
 
     # Strip thought parts from the response so they don't leak into the chat
     if has_thought_parts:
@@ -338,9 +340,7 @@ async def adk_after_model_callback(
 _MAX_OUTPUT_BYTES = 100 * 1024  # 100KB
 
 
-def truncate_large_output(
-    output: Any, max_bytes: int = _MAX_OUTPUT_BYTES
-) -> Any:
+def truncate_large_output(output: Any, max_bytes: int = _MAX_OUTPUT_BYTES) -> Any:
     """Truncate tool output if it exceeds max_bytes.
 
     Returns the original output if within limits, or a truncation marker dict
@@ -354,7 +354,9 @@ def truncate_large_output(
         Original output or {_truncated: True, size_bytes: N, preview: "..."}
     """
     try:
-        serialized = json.dumps(output) if isinstance(output, (dict, list)) else str(output)
+        serialized = (
+            json.dumps(output) if isinstance(output, (dict, list)) else str(output)
+        )
         size = len(serialized.encode("utf-8"))
         if size <= max_bytes:
             return output
@@ -463,7 +465,9 @@ async def adk_after_tool_callback(
     except Exception as e:
         logger.warning(f"Usage tracking failed (non-blocking): {e}")
     finally:
-        if hasattr(tool_context, "state") and hasattr(tool_context.state, "__setitem__"):
+        if hasattr(tool_context, "state") and hasattr(
+            tool_context.state, "__setitem__"
+        ):
             # Append current tool to previous_tool_calls for the next tool call
             previous = tool_context.state.get("_previous_tool_calls", [])
             previous.append(tool.name)

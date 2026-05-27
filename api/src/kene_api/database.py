@@ -109,7 +109,7 @@ class Neo4jService:
                     # Debug logging for account queries
                     if "Account" in query and data:
                         logger.info(
-                            f"[DEBUG Neo4j] Query contains 'Account', checking data structure"
+                            "[DEBUG Neo4j] Query contains 'Account', checking data structure"
                         )
                         for i, record in enumerate(data[:1]):  # Just log first record
                             if "acc" in record:

@@ -52,9 +52,7 @@ def _now() -> datetime:
 
 def _seed_session(db: Any, *, account_id: str, session_id: str, user_id: str) -> None:
     """Write a minimal chat_sessions side-table row for an isolation test."""
-    db.document(
-        f"accounts/{account_id}/chat_sessions/{session_id}"
-    ).set(
+    db.document(f"accounts/{account_id}/chat_sessions/{session_id}").set(
         {
             "session_id": session_id,
             "user_id": user_id,
@@ -154,9 +152,7 @@ class TestAssignCategoryHappyPath:
         svc_a, _ = services
         svc_a.assign_category(_USER_A, _SESSION_A, category_ids["a"])
 
-        doc = db.document(
-            f"accounts/{_ACCOUNT_A}/chat_sessions/{_SESSION_A}"
-        ).get()
+        doc = db.document(f"accounts/{_ACCOUNT_A}/chat_sessions/{_SESSION_A}").get()
         assert doc.exists
         data = doc.to_dict()
         assert data["category_id"] == category_ids["a"]
@@ -168,9 +164,7 @@ class TestAssignCategoryHappyPath:
         svc_a, _ = services
         svc_a.assign_category(_USER_A, _SESSION_A, category_ids["a"])
 
-        doc = db.document(
-            f"accounts/{_ACCOUNT_A}/chat_sessions/{_SESSION_A}"
-        ).get()
+        doc = db.document(f"accounts/{_ACCOUNT_A}/chat_sessions/{_SESSION_A}").get()
         search_text = doc.to_dict()["search_text"]
         assert "isolation test session" in search_text
 
@@ -181,9 +175,7 @@ class TestAssignCategoryHappyPath:
         svc_a, _ = services
         svc_a.assign_category(_USER_A, _SESSION_A, category_ids["a"])
 
-        doc = db.document(
-            f"accounts/{_ACCOUNT_A}/chat_sessions/{_SESSION_A}"
-        ).get()
+        doc = db.document(f"accounts/{_ACCOUNT_A}/chat_sessions/{_SESSION_A}").get()
         search_text = doc.to_dict()["search_text"]
         assert "alpha category" in search_text
 
@@ -199,9 +191,7 @@ class TestAssignCategoryUnassign:
         # Now unassign
         svc_a.assign_category(_USER_A, _SESSION_A, None)
 
-        doc = db.document(
-            f"accounts/{_ACCOUNT_A}/chat_sessions/{_SESSION_A}"
-        ).get()
+        doc = db.document(f"accounts/{_ACCOUNT_A}/chat_sessions/{_SESSION_A}").get()
         assert doc.to_dict()["category_id"] is None
 
     def test_unassign_excludes_category_name_from_search_text(
@@ -212,9 +202,7 @@ class TestAssignCategoryUnassign:
         svc_a.assign_category(_USER_A, _SESSION_A, category_ids["a"])
         svc_a.assign_category(_USER_A, _SESSION_A, None)
 
-        doc = db.document(
-            f"accounts/{_ACCOUNT_A}/chat_sessions/{_SESSION_A}"
-        ).get()
+        doc = db.document(f"accounts/{_ACCOUNT_A}/chat_sessions/{_SESSION_A}").get()
         search_text = doc.to_dict()["search_text"]
         assert "alpha category" not in search_text
         # title is still in search_text

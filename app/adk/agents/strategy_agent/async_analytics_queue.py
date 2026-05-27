@@ -5,14 +5,13 @@ preventing blocking of agent execution while maintaining data integrity.
 """
 
 import atexit
-import json
 import logging
 import queue
 import threading
 import time
 from collections import deque
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from uuid import uuid4
 
 from google.cloud import firestore
@@ -38,7 +37,7 @@ class AsyncAnalyticsQueue:
     def __init__(
         self,
         account_id: str,
-        project_id: Optional[str] = None,
+        project_id: str | None = None,
         queue_size: int = DEFAULT_QUEUE_SIZE,
         batch_size: int = DEFAULT_BATCH_SIZE,
         flush_interval: float = DEFAULT_FLUSH_INTERVAL,
@@ -155,7 +154,7 @@ class AsyncAnalyticsQueue:
         if batch:
             self._flush_batch(batch)
 
-    def _flush_batch(self, batch: List[Dict[str, Any]]):
+    def _flush_batch(self, batch: list[dict[str, Any]]):
         """Flush a batch of events to Firestore.
 
         Args:
@@ -194,7 +193,7 @@ class AsyncAnalyticsQueue:
                 self.queue_metrics["events_failed"] += len(batch)
 
     def track_event(
-        self, event_type: str, data: Dict[str, Any], priority: bool = False
+        self, event_type: str, data: dict[str, Any], priority: bool = False
     ) -> bool:
         """Queue an analytics event for processing.
 
@@ -245,8 +244,8 @@ class AsyncAnalyticsQueue:
         model: str,
         execution_time: float,
         success: bool = True,
-        error_message: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        error_message: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> bool:
         """Track agent execution metrics asynchronously.
 
@@ -295,7 +294,7 @@ class AsyncAnalyticsQueue:
         if temp_batch:
             self._flush_batch(temp_batch)
 
-    def get_queue_status(self) -> Dict[str, Any]:
+    def get_queue_status(self) -> dict[str, Any]:
         """Get current queue status and metrics.
 
         Returns:
@@ -369,7 +368,7 @@ class AsyncAnalyticsAdapter:
     This allows gradual migration from sync to async analytics.
     """
 
-    def __init__(self, account_id: str, project_id: Optional[str] = None):
+    def __init__(self, account_id: str, project_id: str | None = None):
         """Initialize adapter with async queue."""
         self.queue = AsyncAnalyticsQueue(
             account_id=account_id, project_id=project_id, enable_background_worker=True
@@ -393,9 +392,9 @@ class AsyncAnalyticsAdapter:
         model: str,
         execution_time: float,
         success: bool = True,
-        error_message: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+        error_message: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Track agent execution (compatible with AnalyticsService).
 
         Returns metrics dict for compatibility, but processing is async.
@@ -455,7 +454,7 @@ class AsyncAnalyticsAdapter:
             "success": success,
         }
 
-    def get_execution_summary(self) -> Dict[str, Any]:
+    def get_execution_summary(self) -> dict[str, Any]:
         """Get execution summary (compatible with AnalyticsService)."""
         return {
             "execution_id": self.execution_id,
@@ -470,7 +469,7 @@ class AsyncAnalyticsAdapter:
         """Stub for compatibility - cleanup happens server-side."""
         logger.info(f"Cleanup requested for {retention_days} days retention")
 
-    def aggregate_daily_costs(self, date: Optional[datetime] = None) -> Dict[str, Any]:
+    def aggregate_daily_costs(self, date: datetime | None = None) -> dict[str, Any]:
         """Stub for compatibility - aggregation happens server-side."""
         return {"message": "Aggregation happens asynchronously"}
 

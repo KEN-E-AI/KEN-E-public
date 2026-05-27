@@ -104,7 +104,9 @@ class TestEnglishCaseCollision:
 
 
 class TestTurkishDottedICollision:
-    def test_capital_i_with_dot_above_casefolds_to_small_i_plus_combining_dot(self) -> None:
+    def test_capital_i_with_dot_above_casefolds_to_small_i_plus_combining_dot(
+        self,
+    ) -> None:
         """Python 3 invariant: 'İ'.casefold() == 'i̇' (i + COMBINING DOT ABOVE U+0307)."""
         capital_i_with_dot = "İ"  # İ — LATIN CAPITAL LETTER I WITH DOT ABOVE
         assert capital_i_with_dot.casefold() == "i̇", (
@@ -166,7 +168,9 @@ class TestStripAndDedupInteraction:
             svc.create_category("u1", "  Q3 Campaigns  ")
         # The expected_id helper applies the same strip+casefold pipeline.
         assert exc_info.value.existing_id == _expected_id("u1", "Q3 Campaigns")
-        assert _expected_id("u1", "  Q3 Campaigns  ") == _expected_id("u1", "q3 campaigns")
+        assert _expected_id("u1", "  Q3 Campaigns  ") == _expected_id(
+            "u1", "q3 campaigns"
+        )
 
 
 # ---------------------------------------------------------------------------

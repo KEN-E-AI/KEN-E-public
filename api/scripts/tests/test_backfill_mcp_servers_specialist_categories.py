@@ -119,10 +119,21 @@ class TestDeriveCategories:
 class TestBackfill:
     def test_already_has_categories_is_unchanged(self) -> None:
         db = FakeBackfillDb(
-            {"srv": {"specialist_categories": ["google_analytics"], "category": "google_analytics"}}
+            {
+                "srv": {
+                    "specialist_categories": ["google_analytics"],
+                    "category": "google_analytics",
+                }
+            }
         )
         counts = backfill("proj", dry_run=False, db=db)
-        assert counts == {"patched": 0, "would_patch": 0, "skipped": 0, "unchanged": 1, "errors": 0}
+        assert counts == {
+            "patched": 0,
+            "would_patch": 0,
+            "skipped": 0,
+            "unchanged": 1,
+            "errors": 0,
+        }
         db.collection("mcp_server_configs").document("srv").update.assert_not_called()
 
     def test_missing_categories_with_category_field_is_patched(self) -> None:
@@ -130,9 +141,9 @@ class TestBackfill:
         counts = backfill("proj", dry_run=False, db=db)
         assert counts["patched"] == 1
         assert counts["unchanged"] == 0
-        db.collection("mcp_server_configs").document("srv").update.assert_called_once_with(
-            {"specialist_categories": ["google_ads"]}
-        )
+        db.collection("mcp_server_configs").document(
+            "srv"
+        ).update.assert_called_once_with({"specialist_categories": ["google_ads"]})
 
     def test_dry_run_increments_would_patch_not_patched(self) -> None:
         db = FakeBackfillDb({"srv": {"category": "google_analytics"}})
@@ -156,7 +167,13 @@ class TestBackfill:
             }
         )
         counts = backfill("proj", dry_run=False, db=db)
-        assert counts == {"patched": 0, "would_patch": 0, "skipped": 0, "unchanged": 2, "errors": 0}
+        assert counts == {
+            "patched": 0,
+            "would_patch": 0,
+            "skipped": 0,
+            "unchanged": 2,
+            "errors": 0,
+        }
 
     def test_mixed_collection(self) -> None:
         """Collection with already-migrated, backfillable, and un-backfillable docs."""

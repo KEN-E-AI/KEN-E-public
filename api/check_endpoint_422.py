@@ -2,6 +2,7 @@
 """Test to diagnose the 422 error."""
 
 import json
+
 import requests
 
 # Test without auth to see the endpoint structure
@@ -12,12 +13,14 @@ print("=== Checking OpenAPI Schema ===")
 openapi_response = requests.get("http://localhost:8000/openapi.json")
 if openapi_response.status_code == 200:
     openapi = openapi_response.json()
-    accounts_post = openapi.get("paths", {}).get("/api/v1/accounts/", {}).get("post", {})
+    accounts_post = (
+        openapi.get("paths", {}).get("/api/v1/accounts/", {}).get("post", {})
+    )
     if accounts_post:
         print("POST /api/v1/accounts/ request body:")
         request_body = accounts_post.get("requestBody", {})
         print(json.dumps(request_body, indent=2))
-        
+
         # Get the schema details
         if "content" in request_body:
             for content_type, content in request_body["content"].items():

@@ -2,26 +2,29 @@
 """Test account creation with file upload."""
 
 import json
-import requests
 import sys
+
+import requests
 
 # Get auth token (you'll need to provide this)
 if len(sys.argv) > 1:
     token = sys.argv[1]
 else:
     print("Usage: python check_account_creation_with_file.py <auth_token>")
-    print("Get auth token from browser DevTools > Network tab > Request Headers > Authorization")
+    print(
+        "Get auth token from browser DevTools > Network tab > Request Headers > Authorization"
+    )
     sys.exit(1)
 
 # Create test form data
 form_data = {
     "account_name": "Test Account with File",
     "organization_id": "healthway",  # Use an existing org
-    "industry": "Technology", 
+    "industry": "Technology",
     "status": "Active",
     "websites": json.dumps(["https://example.com"]),
     "timezone": "America/New_York",
-    "data_region": "US"
+    "data_region": "US",
 }
 
 # Create a test PDF file
@@ -31,12 +34,14 @@ with open("/tmp/test_strategy.pdf", "wb") as f:
     f.write(b"%%EOF\n")
 
 files = {
-    "files": ("test_strategy.pdf", open("/tmp/test_strategy.pdf", "rb"), "application/pdf")
+    "files": (
+        "test_strategy.pdf",
+        open("/tmp/test_strategy.pdf", "rb"),
+        "application/pdf",
+    )
 }
 
-headers = {
-    "Authorization": f"Bearer {token}"
-}
+headers = {"Authorization": f"Bearer {token}"}
 
 print("Testing account creation with file upload...")
 print(f"Form data: {form_data}")
@@ -45,7 +50,7 @@ response = requests.post(
     "http://localhost:8000/api/v1/accounts/",
     data=form_data,
     files=files,
-    headers=headers
+    headers=headers,
 )
 
 print(f"\nStatus: {response.status_code}")

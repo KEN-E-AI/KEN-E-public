@@ -63,7 +63,9 @@ async def list_flags(
 async def get_flag_audit(
     key: FlagKeyStr,
     limit: int = Query(50, ge=1, le=50, description="Max audit entries per page"),
-    cursor: str | None = Query(None, description="audit_id of the last entry from the prior page"),
+    cursor: str | None = Query(
+        None, description="audit_id of the last entry from the prior page"
+    ),
     _admin: UserContext = Depends(require_super_admin),
     service: FeatureFlagService = Depends(get_feature_flag_service),
 ) -> FlagAuditResponse:

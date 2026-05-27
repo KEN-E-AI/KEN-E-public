@@ -25,7 +25,7 @@ _EXPORT_TO_REGISTRY = {
     "news_only_agent": "news",
     "google_analytics_agent_v4": "google_analytics",
     "create_strategy_docs_supervisor": "strategy",
-    "root_agent": "root_agent",          # alias -> ken_e
+    "root_agent": "root_agent",  # alias -> ken_e
     "multi_agent_root": "multi_agent_root",  # alias -> strategy
 }
 

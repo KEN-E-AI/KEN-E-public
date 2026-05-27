@@ -25,29 +25,40 @@ def _env(**overrides: str) -> dict[str, str]:
     return base
 
 
-def _id_info(email: str = "svc@project.iam.gserviceaccount.com", verified: bool = True) -> dict:
+def _id_info(
+    email: str = "svc@project.iam.gserviceaccount.com", verified: bool = True
+) -> dict:
     return {"email": email, "email_verified": verified}
 
 
 class TestSkipMode:
     def test_skip_returns_fixed_email(self) -> None:
-        with patch.dict(os.environ, {"CHAT_INTERNAL_OIDC_SKIP": "true", "ENVIRONMENT": "test"}):
+        with patch.dict(
+            os.environ, {"CHAT_INTERNAL_OIDC_SKIP": "true", "ENVIRONMENT": "test"}
+        ):
             result = verify_internal_oidc_caller(_make_request())
         assert result == "oidc-skip@local"
 
     def test_skip_case_insensitive(self) -> None:
-        with patch.dict(os.environ, {"CHAT_INTERNAL_OIDC_SKIP": "TRUE", "ENVIRONMENT": "development"}):
+        with patch.dict(
+            os.environ,
+            {"CHAT_INTERNAL_OIDC_SKIP": "TRUE", "ENVIRONMENT": "development"},
+        ):
             result = verify_internal_oidc_caller(_make_request())
         assert result == "oidc-skip@local"
 
     def test_skip_blocked_in_staging(self) -> None:
-        with patch.dict(os.environ, {"CHAT_INTERNAL_OIDC_SKIP": "true", "ENVIRONMENT": "staging"}):
+        with patch.dict(
+            os.environ, {"CHAT_INTERNAL_OIDC_SKIP": "true", "ENVIRONMENT": "staging"}
+        ):
             with pytest.raises(HTTPException) as exc_info:
                 verify_internal_oidc_caller(_make_request())
         assert exc_info.value.status_code == 500
 
     def test_skip_blocked_in_production(self) -> None:
-        with patch.dict(os.environ, {"CHAT_INTERNAL_OIDC_SKIP": "true", "ENVIRONMENT": "production"}):
+        with patch.dict(
+            os.environ, {"CHAT_INTERNAL_OIDC_SKIP": "true", "ENVIRONMENT": "production"}
+        ):
             with pytest.raises(HTTPException) as exc_info:
                 verify_internal_oidc_caller(_make_request())
         assert exc_info.value.status_code == 500

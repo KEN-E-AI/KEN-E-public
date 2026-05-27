@@ -15,12 +15,13 @@ Usage:
 
 import argparse
 import asyncio
-import weave
 from typing import Any
+
+import weave
 from strategy_agent.evaluations.env_loader import load_env
 from strategy_agent.evaluations.scorers.product_portfolio_scorers import (
-    ProductCategoryLengthScorer,
     ProductCategoryDescriptionScorer,
+    ProductCategoryLengthScorer,
 )
 
 
@@ -45,7 +46,7 @@ class ProductPortfolioModel(weave.Model):
         Returns:
             dict with description key that scorers expect
         """
-        return {'description': str(category_description)}
+        return {"description": str(category_description)}
 
 
 async def run_product_portfolio_eval(dataset_name: str, eval_name: str):
@@ -69,7 +70,7 @@ async def run_product_portfolio_eval(dataset_name: str, eval_name: str):
     # Preprocessing
     def preprocess_model_input(row):
         """Extract category_description from dataset row"""
-        return {'category_description': row.get('category_description', '')}
+        return {"category_description": row.get("category_description", "")}
 
     # Use local scorer implementations
     print("\nInitializing scorers:")
@@ -79,8 +80,8 @@ async def run_product_portfolio_eval(dataset_name: str, eval_name: str):
         ProductCategoryDescriptionScorer(),
     ]
 
-    print(f"  ✓ ProductCategoryLengthScorer")
-    print(f"  ✓ ProductCategoryDescriptionScorer")
+    print("  ✓ ProductCategoryLengthScorer")
+    print("  ✓ ProductCategoryDescriptionScorer")
     print(f"\nScorers ready: {len(scorers)}")
 
     # Create evaluation
@@ -88,7 +89,7 @@ async def run_product_portfolio_eval(dataset_name: str, eval_name: str):
         dataset=dataset,
         scorers=scorers,
         preprocess_model_input=preprocess_model_input,
-        name=eval_name
+        name=eval_name,
     )
 
     # Run
@@ -97,8 +98,8 @@ async def run_product_portfolio_eval(dataset_name: str, eval_name: str):
     try:
         results = await evaluation.evaluate(model)
 
-        print(f"\nEvaluation complete!")
-        print(f"View results at: https://wandb.ai/ken-e/ken-e-strategy-agent/weave")
+        print("\nEvaluation complete!")
+        print("View results at: https://wandb.ai/ken-e/ken-e-strategy-agent/weave")
 
         return results
 
@@ -108,23 +109,22 @@ async def run_product_portfolio_eval(dataset_name: str, eval_name: str):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Run product portfolio evaluation')
+    parser = argparse.ArgumentParser(description="Run product portfolio evaluation")
     parser.add_argument(
-        '--dataset',
+        "--dataset",
         type=str,
-        default='dataset_product_portfolio_exploded_v0:v0',
-        help='Weave dataset name (exploded product portfolio dataset)'
+        default="dataset_product_portfolio_exploded_v0:v0",
+        help="Weave dataset name (exploded product portfolio dataset)",
     )
     parser.add_argument(
-        '--eval_name',
+        "--eval_name",
         type=str,
         required=True,
-        help='Evaluation name (e.g., product_portfolio_category_eval)'
+        help="Evaluation name (e.g., product_portfolio_category_eval)",
     )
 
     args = parser.parse_args()
 
-    asyncio.run(run_product_portfolio_eval(
-        dataset_name=args.dataset,
-        eval_name=args.eval_name
-    ))
+    asyncio.run(
+        run_product_portfolio_eval(dataset_name=args.dataset, eval_name=args.eval_name)
+    )

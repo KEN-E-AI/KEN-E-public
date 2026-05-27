@@ -899,7 +899,7 @@ async def _fetch_bigquery_holidays(
         logger.error(f"Error querying BigQuery: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Error querying holiday activities from BigQuery: {str(e)}",
+            detail=f"Error querying holiday activities from BigQuery: {e!s}",
         )
 
 
@@ -1235,7 +1235,7 @@ async def sync_holiday_activity_logs(
     except Exception as e:
         logger.error(f"Sync failed for account {account_id}: {e}")
         raise HTTPException(
-            status_code=500, detail=f"Error syncing holiday activity logs: {str(e)}"
+            status_code=500, detail=f"Error syncing holiday activity logs: {e!s}"
         ) from e
 
 

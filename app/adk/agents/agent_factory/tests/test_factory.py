@@ -565,7 +565,11 @@ class TestCallbackChaining:
             additional_before_agent_callbacks=[my_cb],
         )
 
-        assert agent.before_agent_callback == [_WEAVE_BEFORE, _SK_SPANS_BEFORE_AGENT, my_cb]
+        assert agent.before_agent_callback == [
+            _WEAVE_BEFORE,
+            _SK_SPANS_BEFORE_AGENT,
+            my_cb,
+        ]
 
     def test_additional_before_tool_callback_appended_after_adk_sentinel(self) -> None:
         # SK-27: skill_spans_before_tool_callback sits between the skill filter
@@ -578,7 +582,10 @@ class TestCallbackChaining:
         )
 
         assert agent.before_tool_callback == [
-            _ADK_BEFORE_TOOL, _SKILL_FILTER, _SK_SPANS_BEFORE_TOOL, my_cb
+            _ADK_BEFORE_TOOL,
+            _SKILL_FILTER,
+            _SK_SPANS_BEFORE_TOOL,
+            my_cb,
         ]
 
     def test_additional_after_tool_callback_appended_after_adk_sentinel(self) -> None:
@@ -591,7 +598,11 @@ class TestCallbackChaining:
             additional_after_tool_callbacks=[my_cb],
         )
 
-        assert agent.after_tool_callback == [_ADK_AFTER_TOOL, _SK_SPANS_AFTER_TOOL, my_cb]
+        assert agent.after_tool_callback == [
+            _ADK_AFTER_TOOL,
+            _SK_SPANS_AFTER_TOOL,
+            my_cb,
+        ]
 
     def test_multiple_additional_callbacks_preserve_order(self) -> None:
         cb_a = MagicMock(name="cb_a")

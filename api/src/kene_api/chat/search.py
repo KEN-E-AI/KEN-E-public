@@ -63,7 +63,9 @@ def list_sessions(
                 if cursor_doc.exists:
                     q = q.start_after(cursor_doc)
             else:
-                logger.debug("cursor path rejected (unexpected prefix): %s", ref_path[:80])
+                logger.debug(
+                    "cursor path rejected (unexpected prefix): %s", ref_path[:80]
+                )
         except Exception as exc:
             logger.debug("Ignoring malformed pagination cursor: %s", exc)
 
@@ -103,7 +105,9 @@ def encode_cursor(doc_snapshot: Any) -> str:
     if data and "updated_at" in data:
         updated_at = data["updated_at"]
 
-    raw = f"{doc_snapshot.reference.path}|{updated_at.isoformat() if updated_at else ''}"
+    raw = (
+        f"{doc_snapshot.reference.path}|{updated_at.isoformat() if updated_at else ''}"
+    )
     return base64.urlsafe_b64encode(raw.encode()).decode()
 
 

@@ -2869,7 +2869,9 @@ async def get_session_todos(
     return ListTodosResponse(todo_lists=todo_lists)
 
 
-@router.get("/conversations/{session_id}/artifacts", response_model=ListArtifactsResponse)
+@router.get(
+    "/conversations/{session_id}/artifacts", response_model=ListArtifactsResponse
+)
 async def get_session_artifacts(
     session_id: str = Path(..., max_length=256, pattern=r"^[\w\-]+$"),
     user_context: UserContext = Depends(get_current_user_context),
@@ -3182,7 +3184,11 @@ async def orphan_scan_gcs(
     """
     logger.info(
         "orphan-scan/gcs invoked",
-        extra=log_context(component="chat_orphan_scan", action="gcs_scan_start", extra={"caller": caller}),
+        extra=log_context(
+            component="chat_orphan_scan",
+            action="gcs_scan_start",
+            extra={"caller": caller},
+        ),
     )
     return await run_gcs_orphan_scan()
 

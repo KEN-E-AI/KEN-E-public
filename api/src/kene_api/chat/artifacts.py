@@ -298,7 +298,7 @@ def generate_artifact_signed_url(
     )
 
     # Bucket is the second path segment of the GCS URI after "gs://"
-    without_scheme = index.gcs_path[len("gs://"):]
+    without_scheme = index.gcs_path[len("gs://") :]
     bucket_name = without_scheme.split("/", 1)[0]
 
     if bucket_name not in _ALLOWED_GCS_BUCKETS:

@@ -13,7 +13,7 @@ import time
 import uuid
 from concurrent.futures import as_completed
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any
 
 # Import weave for tracing
 import weave  # noqa: E402
@@ -592,16 +592,18 @@ def _execute_single_strategy(
                 )
             )
 
-        with weave.attributes({
-            "output_category": _research_category,
-            "agent_id": researcher_doc_id or strategy_name,
-            "agent_version": researcher_meta.get("version", DEFAULT_VERSION),
-            "experiment_id": researcher_meta.get("experiment_id", "baseline"),
-            "variant_name": researcher_meta.get("variant_name", "baseline"),
-            "model_used": researcher_meta.get("model", "unknown"),
-            "step_type": f"{strategy_name}_research",
-            "context_agent_goal": f"Research {strategy_name.replace('_', ' ')} for {strategy_context.company_name}",
-        }):
+        with weave.attributes(
+            {
+                "output_category": _research_category,
+                "agent_id": researcher_doc_id or strategy_name,
+                "agent_version": researcher_meta.get("version", DEFAULT_VERSION),
+                "experiment_id": researcher_meta.get("experiment_id", "baseline"),
+                "variant_name": researcher_meta.get("variant_name", "baseline"),
+                "model_used": researcher_meta.get("model", "unknown"),
+                "step_type": f"{strategy_name}_research",
+                "context_agent_goal": f"Research {strategy_name.replace('_', ' ')} for {strategy_context.company_name}",
+            }
+        ):
             events = run_research()
 
         # Extract research text and grounding metadata (source URLs)
@@ -684,16 +686,18 @@ def _execute_single_strategy(
                 custom_instructions=firestore_instructions,
             )
 
-        with weave.attributes({
-            "output_category": _report_category,
-            "agent_id": formatter_doc_id or strategy_name,
-            "agent_version": formatter_meta.get("version", DEFAULT_VERSION),
-            "experiment_id": formatter_meta.get("experiment_id", "baseline"),
-            "variant_name": formatter_meta.get("variant_name", "baseline"),
-            "model_used": formatter_meta.get("model", "unknown"),
-            "step_type": f"{strategy_name}_format",
-            "context_agent_goal": f"Format {strategy_name.replace('_', ' ')} for {strategy_context.company_name}",
-        }):
+        with weave.attributes(
+            {
+                "output_category": _report_category,
+                "agent_id": formatter_doc_id or strategy_name,
+                "agent_version": formatter_meta.get("version", DEFAULT_VERSION),
+                "experiment_id": formatter_meta.get("experiment_id", "baseline"),
+                "variant_name": formatter_meta.get("variant_name", "baseline"),
+                "model_used": formatter_meta.get("model", "unknown"),
+                "step_type": f"{strategy_name}_format",
+                "context_agent_goal": f"Format {strategy_name.replace('_', ' ')} for {strategy_context.company_name}",
+            }
+        ):
             openai_dict = run_openai_formatter()
         formatted_data = strategy_config["model_class"](**openai_dict)
         used_openai = True
@@ -959,10 +963,14 @@ def _execute_strategy_generation_body(
         from .config_loader import get_current_config_metadata
 
         all_doc_ids = [
-            "business_researcher", "business_formatter",
-            "competitive_researcher", "competitive_formatter",
-            "marketing_researcher", "marketing_formatter",
-            "brand_researcher", "brand_formatter",
+            "business_researcher",
+            "business_formatter",
+            "competitive_researcher",
+            "competitive_formatter",
+            "marketing_researcher",
+            "marketing_formatter",
+            "brand_researcher",
+            "brand_formatter",
         ]
         for doc_id in all_doc_ids:
             agent_metadata_cache[doc_id] = get_current_config_metadata(doc_id)
@@ -1224,11 +1232,11 @@ def _execute_strategy_generation_impl(
     user_id: str,
     execution_id: str,
     annual_ad_budget: float = 0.0,
-    project_id: Optional[str] = None,
-    uploaded_documents: Optional[List[str]] = None,
+    project_id: str | None = None,
+    uploaded_documents: list[str] | None = None,
     enable_analytics: bool = True,
-    enabled_strategies: Optional[List[str]] = None,
-    override_product_categories: Optional[List[str]] = None,
+    enabled_strategies: list[str] | None = None,
+    override_product_categories: list[str] | None = None,
     dry_run: bool = False,
 ) -> str:
     """
@@ -1603,11 +1611,11 @@ def execute_strategy_generation(
     account_id: str,
     user_id: str,
     annual_ad_budget: float = 0.0,
-    project_id: Optional[str] = None,
-    uploaded_documents: Optional[List[str]] = None,
+    project_id: str | None = None,
+    uploaded_documents: list[str] | None = None,
     enable_analytics: bool = True,
-    enabled_strategies: Optional[List[str]] = None,
-    override_product_categories: Optional[List[str]] = None,
+    enabled_strategies: list[str] | None = None,
+    override_product_categories: list[str] | None = None,
     dry_run: bool = False,
 ) -> str:
     """ADK tool entry point for strategy generation.

@@ -143,7 +143,9 @@ def main() -> None:
     # Avoid ZeroDivisionError: a run with 0 requests is a separate, more serious
     # failure mode (auth never resolved, target down, etc.) — surface it explicitly.
     if request_count == 0:
-        print(f"[FAIL] {endpoint}: 0 requests recorded — load test did not exercise the endpoint")
+        print(
+            f"[FAIL] {endpoint}: 0 requests recorded — load test did not exercise the endpoint"
+        )
         sys.exit(1)
 
     failure_ratio = failure_count / request_count

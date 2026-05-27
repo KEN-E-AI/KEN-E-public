@@ -60,9 +60,7 @@ def _seed_sessions(db: Any, count: int, *, category_id: str = _CATEGORY_ID) -> N
     now = datetime.now(timezone.utc)
     batch = db.batch()
     for i in range(count):
-        ref = db.document(
-            f"accounts/{_ACCOUNT_ID}/chat_sessions/sess_bulk_{i:04d}"
-        )
+        ref = db.document(f"accounts/{_ACCOUNT_ID}/chat_sessions/sess_bulk_{i:04d}")
         batch.set(
             ref,
             {
@@ -110,9 +108,7 @@ def _count_sessions_with_category(db: Any, *, category_id: str = _CATEGORY_ID) -
 
 
 def _count_all_sessions(db: Any) -> int:
-    return len(
-        list(db.collection(f"accounts/{_ACCOUNT_ID}/chat_sessions").get())
-    )
+    return len(list(db.collection(f"accounts/{_ACCOUNT_ID}/chat_sessions").get()))
 
 
 # ---------------------------------------------------------------------------
@@ -164,9 +160,7 @@ class TestDeleteCategory401Sessions:
         svc = _make_service(db)
         svc.delete_category(_USER_ID, _CATEGORY_ID)
 
-        cat_snap = db.document(
-            f"users/{_USER_ID}/chat_categories/{_CATEGORY_ID}"
-        ).get()
+        cat_snap = db.document(f"users/{_USER_ID}/chat_categories/{_CATEGORY_ID}").get()
         assert not cat_snap.exists
 
     def test_session_docs_still_exist_with_null_category(self) -> None:
@@ -218,9 +212,7 @@ class TestDeleteCategory800Sessions:
         svc = _make_service(db)
         svc.delete_category(_USER_ID, _CATEGORY_ID)
 
-        cat_snap = db.document(
-            f"users/{_USER_ID}/chat_categories/{_CATEGORY_ID}"
-        ).get()
+        cat_snap = db.document(f"users/{_USER_ID}/chat_categories/{_CATEGORY_ID}").get()
         assert not cat_snap.exists
 
 

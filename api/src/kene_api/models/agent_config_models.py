@@ -399,12 +399,16 @@ class AgentConfigCreate(BaseModel):
         max_length=100,
         description="Human name (e.g. 'Dave'). Optional.",
     )
-    instruction: str = Field(..., min_length=10, max_length=50000, description="Agent instruction/prompt")
+    instruction: str = Field(
+        ..., min_length=10, max_length=50000, description="Agent instruction/prompt"
+    )
     model: str = Field(..., description="Model identifier")
 
     description: str | None = Field(None, min_length=10, max_length=1000)
     temperature: float | None = Field(None, ge=0.0, le=1.0)
-    skill_ids: list[Annotated[str, Field(max_length=50)]] = Field(default_factory=list, max_length=20)
+    skill_ids: list[Annotated[str, Field(max_length=50)]] = Field(
+        default_factory=list, max_length=20
+    )
     tool_ids: list[Annotated[str, Field(max_length=80)]] | None = Field(
         default=None,
         max_length=MAX_TOOLS_PER_SPECIALIST,
@@ -420,8 +424,12 @@ class AgentConfigCreate(BaseModel):
     @classmethod
     def validate_model_exists(cls, v: str) -> str:
         if v not in SUPPORTED_MODELS:
-            gemini_models = sorted(m for m in SUPPORTED_MODELS if m.startswith("gemini"))
-            openai_models = sorted(m for m in SUPPORTED_MODELS if not m.startswith("gemini"))
+            gemini_models = sorted(
+                m for m in SUPPORTED_MODELS if m.startswith("gemini")
+            )
+            openai_models = sorted(
+                m for m in SUPPORTED_MODELS if not m.startswith("gemini")
+            )
             raise ValueError(
                 f"Model '{v}' is not supported.\n"
                 f"Supported Gemini models: {', '.join(gemini_models)}\n"
@@ -450,7 +458,9 @@ class AgentConfigOverlayUpdate(BaseModel):
     description: str | None = Field(None, min_length=10, max_length=1000)
     temperature: float | None = Field(None, ge=0.0, le=1.0)
     max_output_tokens: int | None = Field(None, ge=100, le=65535)
-    skill_ids: list[Annotated[str, Field(max_length=50)]] | None = Field(None, max_length=20)
+    skill_ids: list[Annotated[str, Field(max_length=50)]] | None = Field(
+        None, max_length=20
+    )
     tool_ids: list[Annotated[str, Field(max_length=80)]] | None = Field(
         default=None,
         max_length=MAX_TOOLS_PER_SPECIALIST,
@@ -469,8 +479,12 @@ class AgentConfigOverlayUpdate(BaseModel):
         if v is None:
             return v
         if v not in SUPPORTED_MODELS:
-            gemini_models = sorted(m for m in SUPPORTED_MODELS if m.startswith("gemini"))
-            openai_models = sorted(m for m in SUPPORTED_MODELS if not m.startswith("gemini"))
+            gemini_models = sorted(
+                m for m in SUPPORTED_MODELS if m.startswith("gemini")
+            )
+            openai_models = sorted(
+                m for m in SUPPORTED_MODELS if not m.startswith("gemini")
+            )
             raise ValueError(
                 f"Model '{v}' is not supported.\n"
                 f"Supported Gemini models: {', '.join(gemini_models)}\n"

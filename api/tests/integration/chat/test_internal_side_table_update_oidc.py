@@ -179,9 +179,7 @@ class TestSideTableUpdateOIDC:
 
         # Verify the delta was applied to the side-table doc.
         db = _emulator_client()
-        snap = db.document(
-            f"accounts/{_ACCOUNT_ID}/chat_sessions/{_SESSION_ID}"
-        ).get()
+        snap = db.document(f"accounts/{_ACCOUNT_ID}/chat_sessions/{_SESSION_ID}").get()
         assert snap.exists
         assert snap.to_dict()["message_count"] == 1
 
@@ -207,9 +205,7 @@ class TestSideTableUpdateOIDC:
 
         # message_count must not have advanced past 1.
         db = _emulator_client()
-        snap = db.document(
-            f"accounts/{_ACCOUNT_ID}/chat_sessions/{_SESSION_ID}"
-        ).get()
+        snap = db.document(f"accounts/{_ACCOUNT_ID}/chat_sessions/{_SESSION_ID}").get()
         assert snap.to_dict()["message_count"] == 1
 
     def test_missing_auth_returns_401(

@@ -69,9 +69,7 @@ class TestParseAndValidateBundle:
     async def test_name_mismatch_raises_422_with_name_field(self) -> None:
         skill_md = _FakeUploadFile("SKILL.md", _VALID_SKILL_MD)
         with pytest.raises(HTTPException) as exc_info:
-            await _parse_and_validate_bundle(
-                skill_md, [], outer_name="different-name"
-            )
+            await _parse_and_validate_bundle(skill_md, [], outer_name="different-name")
         exc = exc_info.value
         assert exc.status_code == 422
         fields = {item["field"] for item in exc.detail}
@@ -124,7 +122,9 @@ class TestParseAndValidateBundle:
     @pytest.mark.asyncio
     async def test_valid_bundle_with_reference_file(self) -> None:
         skill_md = _FakeUploadFile("SKILL.md", _VALID_SKILL_MD)
-        ref = _FakeUploadFile("references/guide.md", b"# Guide\nSome reference content.")
+        ref = _FakeUploadFile(
+            "references/guide.md", b"# Guide\nSome reference content."
+        )
         report, _, files_data = await _parse_and_validate_bundle(
             skill_md, [ref], outer_name="test-skill"
         )

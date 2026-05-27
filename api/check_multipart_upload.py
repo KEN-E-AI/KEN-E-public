@@ -2,7 +2,6 @@
 """Test script for multipart file upload to accounts endpoint."""
 
 import json
-import requests
 from pathlib import Path
 
 # Create a test PDF file
@@ -21,18 +20,16 @@ form_data = {
     "status": "Active",
     "websites": json.dumps(["https://example.com"]),
     "timezone": "America/New_York",
-    "data_region": "US"
+    "data_region": "US",
 }
 
 # Prepare the file
-files = {
-    "files": ("test_strategy.pdf", open(test_pdf_path, "rb"), "application/pdf")
-}
+files = {"files": ("test_strategy.pdf", open(test_pdf_path, "rb"), "application/pdf")}
 
 # Make the request
 print("Testing multipart upload to /api/v1/accounts/")
 print(f"Form data: {form_data}")
-print(f"Files: test_strategy.pdf")
+print("Files: test_strategy.pdf")
 
 # Note: You'll need to add authentication headers in a real test
 # For now, this shows the structure is correct

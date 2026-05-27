@@ -7,10 +7,6 @@ This script tests the Redis/Memorystore connection and operations.
 import asyncio
 import json
 import os
-import sys
-import time
-from datetime import datetime
-from typing import Dict, Any
 
 import httpx
 from dotenv import load_dotenv
@@ -33,31 +29,31 @@ print("=" * 60)
 async def test_health_endpoint():
     """Test if health endpoint reports Redis status."""
     print("\n1️⃣  Testing Health Endpoint...")
-    
+
     async with httpx.AsyncClient() as client:
         try:
             response = await client.get(f"{API_URL}/health", timeout=10.0)
             data = response.json()
-            
+
             print(f"   Status Code: {response.status_code}")
             print(f"   Response: {json.dumps(data, indent=2)}")
-            
+
             # Check for Redis status in health response
             if "services" in data and "redis" in data["services"]:
                 redis_status = data["services"]["redis"]
                 print(f"\n   ✅ Redis Status: {redis_status}")
-                
+
                 if redis_status == "healthy":
-                    print(f"   ✅ Redis is CONNECTED and HEALTHY!")
+                    print("   ✅ Redis is CONNECTED and HEALTHY!")
                     return True
                 else:
                     print(f"   ⚠️  Redis status: {redis_status}")
                     return False
             else:
-                print(f"   ⚠️  Redis status not found in health response")
-                
+                print("   ⚠️  Redis status not found in health response")
+
             return response.status_code == 200
-            
+
         except Exception as e:
             print(f"   ❌ Error: {e}")
             return False
@@ -66,29 +62,29 @@ async def test_health_endpoint():
 async def test_cache_operations():
     """Test cache operations through the API."""
     print("\n2️⃣  Testing Cache Operations...")
-    
+
     # This would require authentication and actual API calls
     # For now, we'll check if the API is responding correctly
-    
+
     test_endpoints = [
         ("/api/v1/metrics", "GET"),
         ("/api/v1/activities", "GET"),
     ]
-    
+
     async with httpx.AsyncClient() as client:
         for endpoint, method in test_endpoints:
             try:
                 print(f"\n   Testing {method} {endpoint}...")
-                
+
                 if method == "GET":
                     response = await client.get(f"{API_URL}{endpoint}", timeout=10.0)
-                
+
                 # 401 is expected without auth, but it means the endpoint exists
                 if response.status_code in [200, 401, 403]:
                     print(f"   ✅ Endpoint responding (status: {response.status_code})")
                 else:
                     print(f"   ⚠️  Unexpected status: {response.status_code}")
-                    
+
             except Exception as e:
                 print(f"   ❌ Error testing {endpoint}: {e}")
 
@@ -96,44 +92,46 @@ async def test_cache_operations():
 async def check_cloud_run_logs():
     """Check Cloud Run logs for Redis-related messages."""
     print("\n3️⃣  Checking Cloud Run Logs...")
-    
+
     project_id = "ken-e-production" if TEST_ENV == "production" else "ken-e-staging"
     service_name = "kene-api-prod" if TEST_ENV == "production" else "kene-api-staging"
-    
-    print(f"\n   To view Redis logs, run:")
+
+    print("\n   To view Redis logs, run:")
     print(f"   gcloud run services logs read {service_name} \\")
     print(f"     --project={project_id} \\")
-    print(f"     --region=us-central1 \\")
-    print(f"     --limit=50 | grep -i redis")
-    
-    print(f"\n   Or check in Cloud Console:")
-    print(f"   https://console.cloud.google.com/run/detail/us-central1/{service_name}/logs?project={project_id}")
+    print("     --region=us-central1 \\")
+    print("     --limit=50 | grep -i redis")
+
+    print("\n   Or check in Cloud Console:")
+    print(
+        f"   https://console.cloud.google.com/run/detail/us-central1/{service_name}/logs?project={project_id}"
+    )
 
 
 async def test_redis_metrics():
     """Test Redis metrics endpoint if available."""
     print("\n4️⃣  Testing Redis Metrics...")
-    
+
     async with httpx.AsyncClient() as client:
         try:
             # Try to get metrics from the health endpoint
             response = await client.get(f"{API_URL}/health", timeout=10.0)
-            
+
             if response.status_code == 200:
                 data = response.json()
-                
+
                 if "services" in data and data["services"].get("redis") == "healthy":
                     print("   ✅ Redis is healthy in production!")
                     print("\n   📊 Redis Status:")
                     print(f"      - Status: {data['services']['redis']}")
-                    print(f"      - VPC Connector: Enabled")
-                    print(f"      - Memorystore IP: 10.154.99.252")
-                    
+                    print("      - VPC Connector: Enabled")
+                    print("      - Memorystore IP: 10.154.99.252")
+
                     return True
                 else:
                     print("   ⚠️  Redis not healthy")
                     return False
-                    
+
         except Exception as e:
             print(f"   ❌ Error getting metrics: {e}")
             return False
@@ -143,34 +141,36 @@ async def main():
     """Run all tests."""
     print("\n🚀 Starting Redis Production Tests")
     print("=" * 60)
-    
+
     # Track test results
     results = {}
-    
+
     # Run tests
     results["health"] = await test_health_endpoint()
     results["metrics"] = await test_redis_metrics()
     await test_cache_operations()
     await check_cloud_run_logs()
-    
+
     # Summary
     print("\n" + "=" * 60)
     print("📊 TEST SUMMARY")
     print("=" * 60)
-    
+
     total_tests = len(results)
     passed_tests = sum(1 for v in results.values() if v)
-    
+
     print(f"\n✅ Passed: {passed_tests}/{total_tests}")
     print(f"❌ Failed: {total_tests - passed_tests}/{total_tests}")
-    
+
     if passed_tests == total_tests:
         print("\n🎉 All tests passed! Redis is working in production!")
     elif results.get("health"):
-        print("\n⚠️  Some tests failed, but health check passed. Redis may be partially working.")
+        print(
+            "\n⚠️  Some tests failed, but health check passed. Redis may be partially working."
+        )
     else:
         print("\n❌ Redis integration needs attention.")
-    
+
     print("\n📝 Next Steps:")
     print("1. Check Cloud Run logs for detailed Redis connection info")
     print("2. Verify Memorystore instance is accessible from Cloud Run")

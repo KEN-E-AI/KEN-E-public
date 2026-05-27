@@ -68,7 +68,9 @@ class AgentEngineMCPHealth(BaseModel):
 class MCPHealthResponse(BaseModel):
     """Health status of MCP servers."""
 
-    overall_status: str = Field(..., description="Overall health: healthy, degraded, unhealthy")
+    overall_status: str = Field(
+        ..., description="Overall health: healthy, degraded, unhealthy"
+    )
     total_servers: int
     healthy_count: int
     degraded_count: int
@@ -316,7 +318,9 @@ async def unload_mcp_server(
     manager = _get_mcp_manager()
 
     if not manager.is_loaded(server_name):
-        raise HTTPException(status_code=404, detail=f"Server '{server_name}' is not loaded")
+        raise HTTPException(
+            status_code=404, detail=f"Server '{server_name}' is not loaded"
+        )
 
     await manager.unload_server(server_name)
     return {"status": "unloaded", "server_name": server_name}
@@ -336,10 +340,16 @@ class AccountToolUsageResponse(BaseModel):
     success_count: int = Field(..., description="Successful executions")
     failure_count: int = Field(..., description="Failed executions")
     success_rate: float = Field(..., description="Success rate (0.0-1.0)")
-    avg_duration_ms: float | None = Field(None, description="Average execution duration in ms")
+    avg_duration_ms: float | None = Field(
+        None, description="Average execution duration in ms"
+    )
     total_tokens: int = Field(..., description="Total tokens consumed")
-    by_tool: dict[str, ToolBreakdownResponse] = Field(..., description="Breakdown by tool name")
-    by_user: dict[str, UserBreakdownResponse] = Field(..., description="Breakdown by user")
+    by_tool: dict[str, ToolBreakdownResponse] = Field(
+        ..., description="Breakdown by tool name"
+    )
+    by_user: dict[str, UserBreakdownResponse] = Field(
+        ..., description="Breakdown by user"
+    )
     by_status: dict[str, int] = Field(..., description="Call counts by status")
 
 
@@ -375,7 +385,9 @@ async def get_tool_usage(
     """
     # Permission check
     if not user.is_super_admin and not user.has_account_access(account_id, ["edit"]):
-        raise HTTPException(status_code=403, detail="Admin access required for account usage")
+        raise HTTPException(
+            status_code=403, detail="Admin access required for account usage"
+        )
 
     tracker = _get_usage_tracker()
 
@@ -505,7 +517,9 @@ async def get_recoverable_sessions(
             RecoverableSessionInfo(
                 session_id=s.session_id,
                 conversation_name=s.conversation_name,
-                last_updated=s.last_updated.isoformat() if hasattr(s.last_updated, "isoformat") else str(s.last_updated),
+                last_updated=s.last_updated.isoformat()
+                if hasattr(s.last_updated, "isoformat")
+                else str(s.last_updated),
                 message_count=s.message_count,
                 preview=s.preview,
             )
@@ -531,8 +545,12 @@ class Sprint3StatusResponse(BaseModel):
     tool_usage_pending: ToolUsagePendingResponse = Field(
         ..., description="Pending usage events"
     )
-    session_status: SessionStatusResponse = Field(..., description="Session management status")
-    features_enabled: dict[str, bool] = Field(..., description="Sprint 3 features status")
+    session_status: SessionStatusResponse = Field(
+        ..., description="Session management status"
+    )
+    features_enabled: dict[str, bool] = Field(
+        ..., description="Sprint 3 features status"
+    )
 
 
 @router.get("/admin/dashboard", response_model=Sprint3StatusResponse)

@@ -282,8 +282,8 @@ def _iter_users(
     for user_doc in users_ref.stream():
         user_data = user_doc.to_dict() or {}
         if account_id is not None:
-            account_permissions = (
-                user_data.get("permissions", {}).get("account_permissions", {})
+            account_permissions = user_data.get("permissions", {}).get(
+                "account_permissions", {}
             )
             if account_id not in account_permissions:
                 continue
@@ -360,7 +360,9 @@ def run_backfill(
     else:
         users = list(_iter_users(db, account_id))
 
-    logger.info("Starting back-fill: users_to_process=%d dry_run=%s", len(users), dry_run)
+    logger.info(
+        "Starting back-fill: users_to_process=%d dry_run=%s", len(users), dry_run
+    )
 
     for uid, _user_data in users:
         logger.debug("Listing sessions for user_id=%s", uid)
@@ -384,7 +386,9 @@ def run_backfill(
                 session_account_id = state.get("account_id")
 
                 if not session_account_id:
-                    logger.warning("%s: missing state.account_id — skipping", log_prefix)
+                    logger.warning(
+                        "%s: missing state.account_id — skipping", log_prefix
+                    )
                     skipped_account_mismatch += 1
                     continue
 
@@ -419,14 +423,14 @@ def run_backfill(
                     errored += 1
                     continue
 
-                doc_path = (
-                    f"accounts/{dest_account_id}/chat_sessions/{raw_session_id}"
-                )
+                doc_path = f"accounts/{dest_account_id}/chat_sessions/{raw_session_id}"
 
                 # Idempotency: skip if the row already exists.
                 existing_doc = db.document(doc_path).get()
                 if existing_doc.exists:
-                    logger.debug("%s: side-table row already exists — skipping", log_prefix)
+                    logger.debug(
+                        "%s: side-table row already exists — skipping", log_prefix
+                    )
                     already_present += 1
                     continue
 

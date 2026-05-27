@@ -25,6 +25,7 @@ from src.kene_api.models.chat import ChatSessionMetadata, MarkReadResponse
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_user_context(user_id: str = "user_1") -> UserContext:
     return UserContext(
         user_id=user_id,
@@ -59,6 +60,7 @@ def _make_meta(
 # MarkReadResponse model
 # ---------------------------------------------------------------------------
 
+
 class TestMarkReadResponse:
     def test_contains_last_viewed_at(self) -> None:
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -75,6 +77,7 @@ class TestMarkReadResponse:
 # ---------------------------------------------------------------------------
 # Endpoint unit tests via mock injection
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def fresh_limiter() -> MarkReadRateLimiter:
@@ -106,7 +109,9 @@ class TestMarkConversationRead:
 
         async def _call() -> MarkReadResponse:
             with (
-                patch.object(chat_module, "get_chat_side_table_service", return_value=fake_svc),
+                patch.object(
+                    chat_module, "get_chat_side_table_service", return_value=fake_svc
+                ),
                 patch.object(chat_module, "mark_read_limiter", _limiter),
             ):
                 from src.kene_api.routers.chat import mark_conversation_read
@@ -152,7 +157,9 @@ class TestMarkConversationRead:
 
         async def _call() -> None:
             with (
-                patch.object(chat_module, "get_chat_side_table_service", return_value=fake_svc),
+                patch.object(
+                    chat_module, "get_chat_side_table_service", return_value=fake_svc
+                ),
                 patch.object(chat_module, "mark_read_limiter", _limiter),
             ):
                 from src.kene_api.routers.chat import mark_conversation_read
@@ -191,7 +198,9 @@ class TestMarkConversationRead:
 
         async def _call() -> None:
             with (
-                patch.object(chat_module, "get_chat_side_table_service", return_value=fake_svc),
+                patch.object(
+                    chat_module, "get_chat_side_table_service", return_value=fake_svc
+                ),
                 patch.object(chat_module, "mark_read_limiter", _limiter),
             ):
                 from src.kene_api.routers.chat import mark_conversation_read
@@ -205,7 +214,11 @@ class TestMarkConversationRead:
 
         fake_svc.update_from_delta.assert_called_once()
         call_args = fake_svc.update_from_delta.call_args
-        delta = call_args.kwargs.get("delta") or call_args[1].get("delta") or call_args[0][2]
+        delta = (
+            call_args.kwargs.get("delta")
+            or call_args[1].get("delta")
+            or call_args[0][2]
+        )
         assert "last_viewed_at" in delta
         assert "updated_at" in delta
 

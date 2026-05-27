@@ -120,6 +120,4 @@ class ChatSidebarUser(HttpUser):
                     response.status_code,
                     response.text,
                 )
-                response.failure(
-                    f"Unexpected status code: {response.status_code}"
-                )
+                response.failure(f"Unexpected status code: {response.status_code}")

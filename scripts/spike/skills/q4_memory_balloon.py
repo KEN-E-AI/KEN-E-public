@@ -32,7 +32,7 @@ while True:
     except MemoryError:
         print(
             f"q4_memory_balloon: MemoryError — peak before exception was "
-            f"{cumulative_bytes / (1024*1024):.0f} MiB"
+            f"{cumulative_bytes / (1024 * 1024):.0f} MiB"
         )
         sys.stdout.flush()
         break

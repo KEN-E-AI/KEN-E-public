@@ -30,11 +30,23 @@ _T0 = datetime(2026, 1, 1, tzinfo=timezone.utc)
         # running-stuck: started, no stop, beyond threshold
         pytest.param(_T0, None, timedelta(minutes=11), False, id="running_stuck"),
         # stopped normally (stopped_at > started_at)
-        pytest.param(_T0, _T0 + timedelta(minutes=5), timedelta(minutes=6), False, id="stopped_after_start"),
+        pytest.param(
+            _T0,
+            _T0 + timedelta(minutes=5),
+            timedelta(minutes=6),
+            False,
+            id="stopped_after_start",
+        ),
         # stopped_at == started_at (edge: stopped_at >= started_at)
         pytest.param(_T0, _T0, timedelta(minutes=1), False, id="stopped_at_eq_started"),
         # running fresh after a prior turn's stop (started_at > stopped_at)
-        pytest.param(_T0, _T0 - timedelta(minutes=1), timedelta(minutes=1), True, id="running_fresh_after_prior_stop"),
+        pytest.param(
+            _T0,
+            _T0 - timedelta(minutes=1),
+            timedelta(minutes=1),
+            True,
+            id="running_fresh_after_prior_stop",
+        ),
     ],
 )
 def test_derive_is_agent_running_states(
@@ -49,12 +61,15 @@ def test_derive_is_agent_running_states(
 
 def test_custom_threshold_overrides_default() -> None:
     """Custom threshold of 1 minute causes a 2-minute-old turn to appear stuck."""
-    assert derive_is_agent_running(
-        _T0,
-        None,
-        now=_T0 + timedelta(minutes=2),
-        threshold=timedelta(minutes=1),
-    ) is False
+    assert (
+        derive_is_agent_running(
+            _T0,
+            None,
+            now=_T0 + timedelta(minutes=2),
+            threshold=timedelta(minutes=1),
+        )
+        is False
+    )
 
 
 def test_default_now_does_not_raise() -> None:

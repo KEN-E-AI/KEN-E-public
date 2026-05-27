@@ -77,7 +77,7 @@ class _FakeCollectionRef:
         for full_path, data in self._store.items():
             if not full_path.startswith(prefix):
                 continue
-            rel = full_path[len(prefix):]
+            rel = full_path[len(prefix) :]
             if "/" in rel:  # skip subcollection documents
                 continue
             snap = _FakeDocSnapshot(data)
@@ -143,7 +143,9 @@ def _fake_session(
 # ---------------------------------------------------------------------------
 
 
-def _run_cli(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+def _run_cli(
+    *args: str, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     script = str(SCRIPTS_DIR / "migrate_chat_side_table_backfill.py")
     return subprocess.run(
         [sys.executable, script, *args],
@@ -445,7 +447,9 @@ class TestRunBackfill:
         )
         return db
 
-    def test_dry_run_logs_but_does_not_write(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_dry_run_logs_but_does_not_write(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         db = self._make_db()
         session = _fake_session("sess_001", account_id="acc_A")
         monkeypatch.setattr(
@@ -483,7 +487,9 @@ class TestRunBackfill:
         assert summary["created"] == 1
         assert "accounts/acc_A/chat_sessions/sess_001" in db._store
 
-    def test_idempotency_skips_existing_row(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_idempotency_skips_existing_row(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         db = self._make_db()
         # Pre-seed the side-table row
         db.seed("accounts/acc_A/chat_sessions/sess_001", {"session_id": "sess_001"})
@@ -503,7 +509,9 @@ class TestRunBackfill:
         assert summary["already_present"] == 1
         assert summary["created"] == 0
 
-    def test_account_mismatch_skips_session(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_account_mismatch_skips_session(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         """Session whose state.account_id != --account-id filter is skipped."""
         db = self._make_db()
         db.seed("accounts/acc_B", {"organization_id": "org_B"})

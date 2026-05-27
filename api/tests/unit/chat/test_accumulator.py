@@ -86,7 +86,9 @@ def _make_final_text_event(text: str) -> SimpleNamespace:
     )
 
 
-def _make_compaction_event(summary: str = "summary", total_token_count: int = 0) -> SimpleNamespace:
+def _make_compaction_event(
+    summary: str = "summary", total_token_count: int = 0
+) -> SimpleNamespace:
     return SimpleNamespace(
         usage_metadata=SimpleNamespace(total_token_count=total_token_count),
         type="compaction_summary",
@@ -147,14 +149,20 @@ class TestTokenAggregation:
 
     def test_multiple_events_accumulate(self) -> None:
         a = SessionTurnAccumulator()
-        a.add_event(_make_token_event(prompt=1250, candidates=380, cached=200))  # input=1050, output=380
-        a.add_event(_make_token_event(prompt=500, candidates=100, cached=0))     # input=500, output=100
+        a.add_event(
+            _make_token_event(prompt=1250, candidates=380, cached=200)
+        )  # input=1050, output=380
+        a.add_event(
+            _make_token_event(prompt=500, candidates=100, cached=0)
+        )  # input=500, output=100
         assert a._input == 1550
         assert a._output == 480
 
     def test_missing_usage_metadata_no_raise(self) -> None:
         a = SessionTurnAccumulator()
-        event = SimpleNamespace(usage_metadata=None, type=None, author=None, is_final_text=False, text="")
+        event = SimpleNamespace(
+            usage_metadata=None, type=None, author=None, is_final_text=False, text=""
+        )
         a.add_event(event)  # must not raise
         assert a._input == 0
         assert a._output == 0
@@ -225,7 +233,9 @@ class TestMessageCount:
 class TestCompactionSummary:
     def test_compaction_event_sets_summary(self) -> None:
         a = SessionTurnAccumulator()
-        a.add_event(_make_compaction_event(summary="A rich summary.", total_token_count=1000))
+        a.add_event(
+            _make_compaction_event(summary="A rich summary.", total_token_count=1000)
+        )
         assert a.latest_summary == "A rich summary."
 
     def test_compaction_event_sets_compaction_count_delta(self) -> None:
@@ -323,7 +333,9 @@ class TestBuildDeltaNormal:
 
     def test_increment_values_correct(self) -> None:
         a = SessionTurnAccumulator()
-        a.add_event(_make_token_event(prompt=1250, candidates=380, cached=200))  # input=1050, output=380
+        a.add_event(
+            _make_token_event(prompt=1250, candidates=380, cached=200)
+        )  # input=1050, output=380
         a.add_event(_make_tool_call_event())
         a.add_event(_make_author_event("user"))
         a.add_event(_make_author_event("model"))
@@ -337,7 +349,9 @@ class TestBuildDeltaNormal:
     def test_current_context_tokens_is_increment_on_normal_turn(self) -> None:
         """No compaction → current_context_tokens = Increment(turn_tokens)."""
         a = SessionTurnAccumulator()
-        a.add_event(_make_token_event(prompt=1250, candidates=380, cached=200))  # input=1050, output=380
+        a.add_event(
+            _make_token_event(prompt=1250, candidates=380, cached=200)
+        )  # input=1050, output=380
         delta = a.build_delta()
         cct = delta["current_context_tokens"]
         assert isinstance(cct, Increment)
@@ -387,7 +401,9 @@ class TestBuildDeltaNormal:
 class TestBuildDeltaCompaction:
     def test_compaction_keys_present(self) -> None:
         a = SessionTurnAccumulator()
-        a.add_event(_make_compaction_event(summary="Compact summary", total_token_count=800))
+        a.add_event(
+            _make_compaction_event(summary="Compact summary", total_token_count=800)
+        )
         delta = a.build_delta()
         assert "latest_summary" in delta
         assert "summary_updated_at" in delta
@@ -443,7 +459,9 @@ class TestBuildDeltaCompaction:
 class TestComputePostCompactionWindowTokens:
     def test_canonical_fixture_returns_4400(self) -> None:
         """AC-10 canonical fixture: compaction=1200, 10 retained events."""
-        compaction_ev = SimpleNamespace(usage_metadata=SimpleNamespace(total_token_count=1200))
+        compaction_ev = SimpleNamespace(
+            usage_metadata=SimpleNamespace(total_token_count=1200)
+        )
         retained = [
             SimpleNamespace(usage_metadata=SimpleNamespace(total_token_count=t))
             for t in [800, 600, 500, 400, 300, 200, 100, 100, 100, 100]
@@ -452,7 +470,9 @@ class TestComputePostCompactionWindowTokens:
         assert result == 4400
 
     def test_empty_retained_window(self) -> None:
-        compaction_ev = SimpleNamespace(usage_metadata=SimpleNamespace(total_token_count=500))
+        compaction_ev = SimpleNamespace(
+            usage_metadata=SimpleNamespace(total_token_count=500)
+        )
         assert compute_post_compaction_window_tokens(compaction_ev, []) == 500
 
     def test_missing_usage_metadata_contributes_zero(self) -> None:
@@ -461,7 +481,9 @@ class TestComputePostCompactionWindowTokens:
         assert compute_post_compaction_window_tokens(compaction_ev, retained) == 0
 
     def test_partial_missing_usage_metadata(self) -> None:
-        compaction_ev = SimpleNamespace(usage_metadata=SimpleNamespace(total_token_count=100))
+        compaction_ev = SimpleNamespace(
+            usage_metadata=SimpleNamespace(total_token_count=100)
+        )
         retained = [
             SimpleNamespace(usage_metadata=None),
             SimpleNamespace(usage_metadata=SimpleNamespace(total_token_count=200)),
@@ -469,7 +491,9 @@ class TestComputePostCompactionWindowTokens:
         assert compute_post_compaction_window_tokens(compaction_ev, retained) == 300
 
     def test_missing_total_token_count_field(self) -> None:
-        compaction_ev = SimpleNamespace(usage_metadata=SimpleNamespace())  # no total_token_count
+        compaction_ev = SimpleNamespace(
+            usage_metadata=SimpleNamespace()
+        )  # no total_token_count
         result = compute_post_compaction_window_tokens(compaction_ev, [])
         assert result == 0
 
@@ -551,15 +575,17 @@ class TestAddStreamChunk:
     def test_extra_usage_keys_tolerated(self) -> None:
         """Agent Engine includes total_token_count and detail lists — must not break."""
         a = SessionTurnAccumulator()
-        a.add_stream_chunk({
-            "invocation_id": "inv-z",
-            "usage_metadata": {
-                "prompt_token_count": 100,
-                "candidates_token_count": 50,
-                "total_token_count": 150,
-                "prompt_tokens_details": [{"modality": "TEXT", "token_count": 100}],
-            },
-        })
+        a.add_stream_chunk(
+            {
+                "invocation_id": "inv-z",
+                "usage_metadata": {
+                    "prompt_token_count": 100,
+                    "candidates_token_count": 50,
+                    "total_token_count": 150,
+                    "prompt_tokens_details": [{"modality": "TEXT", "token_count": 100}],
+                },
+            }
+        )
         assert a._input == 100
         assert a._output == 50
 
@@ -591,7 +617,9 @@ class TestBuildStreamDelta:
 
     def test_token_increment_values(self) -> None:
         a = SessionTurnAccumulator()
-        a.add_stream_chunk(_stream_chunk(prompt=1250, candidates=380, cached=200, thoughts=20))
+        a.add_stream_chunk(
+            _stream_chunk(prompt=1250, candidates=380, cached=200, thoughts=20)
+        )
         delta = a.build_stream_delta()
         assert delta["input_tokens_total"].value == 1050
         assert delta["output_tokens_total"].value == 380

@@ -40,7 +40,7 @@ def check_account_permission(user_context: UserContext, account_id: str) -> bool
 
 
 async def test_google_analytics_connection(
-    credentials: dict[str, Any]
+    credentials: dict[str, Any],
 ) -> IntegrationTestResponse:
     """Test Google Analytics connection with provided credentials."""
     try:

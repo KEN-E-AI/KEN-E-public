@@ -29,6 +29,7 @@ import sys
 # helpers
 # ---------------------------------------------------------------------------
 
+
 def _classify(exc: Exception) -> str:
     name = type(exc).__name__
     if name in {"FileNotFoundError", "IsADirectoryError"}:
@@ -54,9 +55,11 @@ def _err(exc: Exception) -> dict:
 # Block A — runtime_characterization
 # ---------------------------------------------------------------------------
 
+
 def _block_runtime() -> dict:
     try:
         import pwd as _pwd
+
         username = _pwd.getpwuid(os.getuid()).pw_name
     except Exception:
         try:
@@ -93,6 +96,7 @@ def _block_runtime() -> dict:
 # Block B — open_read
 # ---------------------------------------------------------------------------
 
+
 def _block_open_read() -> dict:
     try:
         with open("scripts/extract.py", encoding="utf-8") as fh:
@@ -105,6 +109,7 @@ def _block_open_read() -> dict:
 # ---------------------------------------------------------------------------
 # Block C — pathlib_iterdir
 # ---------------------------------------------------------------------------
+
 
 def _block_pathlib_iterdir() -> dict:
     try:
@@ -149,6 +154,7 @@ def _block_env_bundle_keys() -> dict:
 # Block E — exec_run
 # ---------------------------------------------------------------------------
 
+
 def _block_exec_run() -> dict:
     try:
         with open("scripts/extract.py", encoding="utf-8") as fh:
@@ -178,7 +184,9 @@ _ALT_PATHS = [
 def _build_alt_paths() -> list[str]:
     paths = list(_ALT_PATHS)
     try:
-        paths.append(str(pathlib.Path.home() / "skills/q5_skill_bundle/scripts/extract.py"))
+        paths.append(
+            str(pathlib.Path.home() / "skills/q5_skill_bundle/scripts/extract.py")
+        )
     except Exception:
         pass
     try:
@@ -198,7 +206,11 @@ def _block_alt_paths() -> dict:
                 is_file = os.path.isfile(path_str)
                 results[path_str] = {"exists": exists, "is_file": is_file}
             except Exception as exc:
-                results[path_str] = {"exists": None, "is_file": None, "error": f"{type(exc).__name__}: {exc}"}
+                results[path_str] = {
+                    "exists": None,
+                    "is_file": None,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
         return _ok(results)
     except Exception as exc:
         return _err(exc)
@@ -207,6 +219,7 @@ def _block_alt_paths() -> dict:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     output = {

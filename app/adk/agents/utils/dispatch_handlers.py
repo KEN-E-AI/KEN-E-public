@@ -56,6 +56,7 @@ def dispatch_to_company_news(
     from shared.context_utils import inject_organization_context
 
     from ..registry import get_registry
+
     news_agent = get_registry().get("news")
 
     try:
@@ -65,21 +66,27 @@ def dispatch_to_company_news(
 
         # Extract account_id from session state
         account_id = None
-        if tool_context and hasattr(tool_context, 'state'):
+        if tool_context and hasattr(tool_context, "state"):
             account_id = tool_context.state.get("account_id")
-            logger.info(f"[NEWS-DISPATCH] Retrieved account_id from session state: {account_id}")
+            logger.info(
+                f"[NEWS-DISPATCH] Retrieved account_id from session state: {account_id}"
+            )
         elif tenant_context:
             account_id = tenant_context.get("account_id")
-            logger.info(f"[NEWS-DISPATCH] Retrieved account_id from tenant_context: {account_id}")
+            logger.info(
+                f"[NEWS-DISPATCH] Retrieved account_id from tenant_context: {account_id}"
+            )
 
         # Inject pre-loaded organization context from session state
         # Context is loaded in API layer (which has Neo4j access) and stored in session state
         org_context = None
-        if tool_context and hasattr(tool_context, 'state'):
+        if tool_context and hasattr(tool_context, "state"):
             org_context = tool_context.state.get("organization_context")
             if org_context:
                 query = inject_organization_context(query, org_context)
-                logger.info(f"[NEWS-DISPATCH] ✅ Injected org context from session state, new query length: {len(query)}")
+                logger.info(
+                    f"[NEWS-DISPATCH] ✅ Injected org context from session state, new query length: {len(query)}"
+                )
             else:
                 logger.info("[NEWS-DISPATCH] No org context in session state")
         else:
@@ -104,9 +111,13 @@ def dispatch_to_company_news(
             outcome = extract_pipeline_result(final_state, "news_review")
             worker_name = get_worker_name(news_agent)
             reviewer_name = get_reviewer_name("news_review")
-            iterations = extract_iterations(events, worker_name, reviewer_name, "news_review")
+            iterations = extract_iterations(
+                events, worker_name, reviewer_name, "news_review"
+            )
             for it in iterations:
-                emit_iteration_span(it.iteration, it.specialist_output, it.reviewer_output)
+                emit_iteration_span(
+                    it.iteration, it.specialist_output, it.reviewer_output
+                )
             set_pipeline_attrs(criteria, final_state, "news_review", len(iterations))
             return {
                 **outcome,
@@ -117,7 +128,9 @@ def dispatch_to_company_news(
             }
 
         logger.info("🔄 Routing company news query to specialized agent...")
-        result = invoke_agent_with_retry(news_agent, query, retry_config=FAST_RETRY_CONFIG)
+        result = invoke_agent_with_retry(
+            news_agent, query, retry_config=FAST_RETRY_CONFIG
+        )
 
         return {
             "status": "success",
@@ -166,6 +179,7 @@ def dispatch_to_google_analytics(
     )
 
     from ..registry import get_registry
+
     google_analytics_agent_v4 = get_registry().get("google_analytics")
 
     try:
@@ -175,7 +189,7 @@ def dispatch_to_google_analytics(
         ga_credentials = None
         tenant_id = None
 
-        if tool_context and hasattr(tool_context, 'state'):
+        if tool_context and hasattr(tool_context, "state"):
             account_id = tool_context.state.get("account_id")
             ga_credentials = tool_context.state.get("ga_credentials")
             if ga_credentials:
@@ -192,22 +206,28 @@ def dispatch_to_google_analytics(
                 elif selected_property_ids:
                     query = f"[Available Property IDs: {', '.join(selected_property_ids)}] {query}"
             else:
-                logger.info(f"No GA credentials in session state for account: {account_id}")
+                logger.info(
+                    f"No GA credentials in session state for account: {account_id}"
+                )
         elif tenant_context:
             account_id = tenant_context.get("account_id")
             tenant_id = tenant_context.get("tenant_id")
 
         # Inject organization context from session state
-        if tool_context and hasattr(tool_context, 'state'):
+        if tool_context and hasattr(tool_context, "state"):
             org_context = tool_context.state.get("organization_context")
             if org_context:
                 query = inject_organization_context(query, org_context)
-                logger.info(f"Injected organization context, new query length: {len(query)}")
+                logger.info(
+                    f"Injected organization context, new query length: {len(query)}"
+                )
 
             campaign_context = tool_context.state.get("campaign_context")
             if campaign_context:
                 query = inject_campaign_context(query, campaign_context)
-                logger.info(f"Injected campaign context, new query length: {len(query)}")
+                logger.info(
+                    f"Injected campaign context, new query length: {len(query)}"
+                )
 
         initial_state: dict[str, Any] | None = None
         if ga_credentials:
@@ -234,9 +254,13 @@ def dispatch_to_google_analytics(
             outcome = extract_pipeline_result(final_state, "ga_review")
             worker_name = get_worker_name(google_analytics_agent_v4)
             reviewer_name = get_reviewer_name("ga_review")
-            iterations = extract_iterations(events, worker_name, reviewer_name, "ga_review")
+            iterations = extract_iterations(
+                events, worker_name, reviewer_name, "ga_review"
+            )
             for it in iterations:
-                emit_iteration_span(it.iteration, it.specialist_output, it.reviewer_output)
+                emit_iteration_span(
+                    it.iteration, it.specialist_output, it.reviewer_output
+                )
             set_pipeline_attrs(criteria, final_state, "ga_review", len(iterations))
             return {
                 **outcome,
@@ -248,7 +272,10 @@ def dispatch_to_google_analytics(
             }
 
         result = invoke_agent_with_retry(
-            google_analytics_agent_v4, query, state=initial_state, retry_config=DEFAULT_RETRY_CONFIG
+            google_analytics_agent_v4,
+            query,
+            state=initial_state,
+            retry_config=DEFAULT_RETRY_CONFIG,
         )
 
         return {
@@ -354,7 +381,9 @@ def dispatch_to_strategy(
 
         # Invoke the strategy generation function directly
         # Note: Using direct function call to avoid nested agent invocation issues
-        logger.info("[SUPERVISOR] Invoking strategy generation with timeout monitoring...")
+        logger.info(
+            "[SUPERVISOR] Invoking strategy generation with timeout monitoring..."
+        )
         start_time = time.time()
 
         result = execute_strategy_generation(

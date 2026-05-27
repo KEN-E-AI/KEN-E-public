@@ -109,7 +109,9 @@ def backfill(
         doc: dict[str, Any] = snapshot.to_dict() or {}
 
         if not _needs_backfill(doc):
-            logger.debug("Server %r already has specialist_categories — no change", server_id)
+            logger.debug(
+                "Server %r already has specialist_categories — no change", server_id
+            )
             counts["unchanged"] += 1
             continue
 

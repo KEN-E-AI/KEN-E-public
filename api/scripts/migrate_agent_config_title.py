@@ -132,8 +132,10 @@ def compute_patch(
     # a config_id (e.g., already a human name like "Dave"), we still derive
     # a title from the config_id to avoid stamping "Dave" into the title slot.
     if not current_title:
-        if isinstance(current_name, str) and current_name and _looks_like_snake_case_id(
-            current_name
+        if (
+            isinstance(current_name, str)
+            and current_name
+            and _looks_like_snake_case_id(current_name)
         ):
             patch["title"] = _title_case_from_identifier(current_name)
         else:
@@ -197,7 +199,9 @@ def _migrate_collection(
                 ),
             }
             review_out.write(json.dumps(record) + "\n")
-            logger.info("Flagged for manual review: %s (name=%r)", full_path, doc.get("name"))
+            logger.info(
+                "Flagged for manual review: %s (name=%r)", full_path, doc.get("name")
+            )
             counts["flagged_for_review"] += 1
             continue
 
@@ -357,7 +361,9 @@ def main() -> int:
     logger.info("Manual review out: %s", args.manual_review_out or "<auto-classify>")
     logger.info("-" * 60)
 
-    review_handle = open(args.manual_review_out, "w") if args.manual_review_out else None
+    review_handle = (
+        open(args.manual_review_out, "w") if args.manual_review_out else None
+    )
     try:
         counts = migrate(
             project_id=args.project_id,

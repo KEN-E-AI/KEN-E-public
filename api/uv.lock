@@ -1382,7 +1382,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115.12" },
     { name = "firebase-admin", specifier = ">=6.1.0" },
-    { name = "google-adk", specifier = ">=1.27.4" },
+    { name = "google-adk", specifier = "==1.27.5" },
     { name = "google-cloud-aiplatform", specifier = ">=1.140.0" },
     { name = "google-cloud-bigquery", specifier = ">=3.40.0" },
     { name = "google-cloud-firestore", specifier = ">=2.23.0" },

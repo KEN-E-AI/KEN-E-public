@@ -42,7 +42,9 @@ class TurnDelta(BaseModel):
     # Aliases align with the Firestore / wire field names.
     input_tokens_increment: int = Field(default=0, ge=0, alias="input_tokens_total")
     output_tokens_increment: int = Field(default=0, ge=0, alias="output_tokens_total")
-    reasoning_tokens_increment: int = Field(default=0, ge=0, alias="reasoning_tokens_total")
+    reasoning_tokens_increment: int = Field(
+        default=0, ge=0, alias="reasoning_tokens_total"
+    )
     tool_call_count: int = Field(default=0, ge=0)
     message_count: int = Field(default=0, ge=0)
     current_context_tokens: int = Field(default=0, ge=0)
@@ -73,7 +75,9 @@ class TurnDelta(BaseModel):
         if isinstance(v, dict) and set(v.keys()) == {"_isoformat"}:
             dt = datetime.fromisoformat(v["_isoformat"])
             if dt.tzinfo is None:
-                raise ValueError("_isoformat datetime must include timezone (e.g. +00:00 or Z)")
+                raise ValueError(
+                    "_isoformat datetime must include timezone (e.g. +00:00 or Z)"
+                )
             return dt
         return v
 
@@ -109,7 +113,9 @@ class TurnDelta(BaseModel):
         return {"_isoformat": dt.isoformat()}
 
     @field_serializer("summary_updated_at", when_used="json")
-    def _serialize_optional_datetime(self, dt: datetime | None) -> dict[str, str] | None:
+    def _serialize_optional_datetime(
+        self, dt: datetime | None
+    ) -> dict[str, str] | None:
         if dt is None:
             return None
         return {"_isoformat": dt.isoformat()}
@@ -154,7 +160,9 @@ class TurnDelta(BaseModel):
             "last_agent_message_at": self.last_agent_message_at,
             "input_tokens_total": firestore.Increment(self.input_tokens_increment),
             "output_tokens_total": firestore.Increment(self.output_tokens_increment),
-            "reasoning_tokens_total": firestore.Increment(self.reasoning_tokens_increment),
+            "reasoning_tokens_total": firestore.Increment(
+                self.reasoning_tokens_increment
+            ),
             "tool_call_count": firestore.Increment(self.tool_call_count),
             "message_count": firestore.Increment(self.message_count),
             "current_context_tokens": firestore.Increment(self.current_context_tokens),

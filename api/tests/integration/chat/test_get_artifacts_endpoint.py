@@ -31,7 +31,9 @@ _SESSION_ID = "sess_ch45_real_001"
 _USER_ID = "user_ch45_test"
 _ORG_ID = "org_ch45_test"
 _NOW = datetime(2026, 5, 1, 12, 0, 0, tzinfo=timezone.utc)
-_GCS_PATH = "gs://ken-e-dev-files-us/ken_e_chatbot/user_01/sess_ch45_real_001/report.pdf/0"
+_GCS_PATH = (
+    "gs://ken-e-dev-files-us/ken_e_chatbot/user_01/sess_ch45_real_001/report.pdf/0"
+)
 
 
 def _emulator_client() -> Any:
@@ -92,7 +94,9 @@ def _seed_artifact(
     ).set(doc)
 
 
-def _make_mock_storage_client(fake_url: str = "https://storage.googleapis.com/signed") -> MagicMock:
+def _make_mock_storage_client(
+    fake_url: str = "https://storage.googleapis.com/signed",
+) -> MagicMock:
     mock_blob = MagicMock()
     mock_blob.generate_signed_url.return_value = fake_url
     mock_bucket = MagicMock()

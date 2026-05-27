@@ -151,7 +151,9 @@ def _run_one_session(
         "session_start_iso": session_start,
         "session_end_iso": session_end,
         "elapsed_orchestrator_ms": round(elapsed_ms, 2),
-        "elapsed_harness_ms": round(elapsed_harness_ms, 2) if elapsed_harness_ms is not None else None,
+        "elapsed_harness_ms": round(elapsed_harness_ms, 2)
+        if elapsed_harness_ms is not None
+        else None,
         "exit_status": exit_status,
         "in_sandbox_record": in_sandbox_record,
         "raw_stdout": raw_stdout,
@@ -187,7 +189,7 @@ def _print_summary(records: list[dict]) -> None:
         mean = statistics.mean(elapsed_values) if elapsed_values else float("nan")
         print(
             f"  Cohort: {cohort:5s}  n={n}  ok={ok}  "
-            f"p50={p50/1000:.2f}s  p95={p95/1000:.2f}s  mean={mean/1000:.2f}s"
+            f"p50={p50 / 1000:.2f}s  p95={p95 / 1000:.2f}s  mean={mean / 1000:.2f}s"
         )
     print(f"  Total sessions: {len(records)}")
     print()
@@ -336,9 +338,7 @@ def main() -> None:
         f"[q2-orchestrator] Starting {len(schedule)} sessions "
         f"(n={n}, cohorts={cohorts}, blocks={n_blocks})"
     )
-    print(
-        f"[q2-orchestrator] Engine: {args.engine_resource_name}"
-    )
+    print(f"[q2-orchestrator] Engine: {args.engine_resource_name}")
     print(f"[q2-orchestrator] Output: {out_path}")
 
     records: list[dict] = []
@@ -363,7 +363,7 @@ def main() -> None:
             status_indicator = "✓" if partial["exit_status"] == "ok" else "✗"
             print(
                 f"         {status_indicator} status={partial['exit_status']}  "
-                f"elapsed={partial['elapsed_orchestrator_ms']/1000:.2f}s"
+                f"elapsed={partial['elapsed_orchestrator_ms'] / 1000:.2f}s"
             )
 
     _print_summary(records)

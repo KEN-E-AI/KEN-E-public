@@ -3,6 +3,7 @@
 Pre-mocks neo4j at process start, before any app package __init__.py is
 imported by pytest during collection.
 """
+
 from __future__ import annotations
 
 import os

@@ -101,7 +101,10 @@ class TestSeedFlags:
 
         # Every call must use the canonical actor email.
         for call in svc.create_flag.call_args_list:
-            assert call.kwargs.get("actor_email") == _ACTOR_EMAIL or call.args[1] == _ACTOR_EMAIL
+            assert (
+                call.kwargs.get("actor_email") == _ACTOR_EMAIL
+                or call.args[1] == _ACTOR_EMAIL
+            )
 
     def test_idempotent_on_duplicate(self) -> None:
         """Second run catches DuplicateFeatureFlagError and records 'already_exists'."""

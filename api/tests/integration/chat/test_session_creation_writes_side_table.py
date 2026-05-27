@@ -55,15 +55,19 @@ class TestSideTableWriteOnSessionCreation:
             return_value=[{"organization_id": _ORG_ID}]
         )
 
-        with patch(
-            "src.kene_api.routers.chat.get_neo4j_service",
-            new=AsyncMock(return_value=mock_neo4j),
-        ), patch(
-            "src.kene_api.routers.chat.get_chat_side_table_service",
-            return_value=svc,
-        ), patch(
-            "src.kene_api.routers.chat._get_agent_model_id",
-            return_value="gemini-2.5-pro",
+        with (
+            patch(
+                "src.kene_api.routers.chat.get_neo4j_service",
+                new=AsyncMock(return_value=mock_neo4j),
+            ),
+            patch(
+                "src.kene_api.routers.chat.get_chat_side_table_service",
+                return_value=svc,
+            ),
+            patch(
+                "src.kene_api.routers.chat._get_agent_model_id",
+                return_value="gemini-2.5-pro",
+            ),
         ):
             org_id = await _get_organization_id_for_account(_ACCOUNT_ID)
             model_id = _get_agent_model_id()

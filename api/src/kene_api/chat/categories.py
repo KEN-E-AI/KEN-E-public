@@ -144,7 +144,9 @@ class ChatCategoryService:
         """
         stripped = name.strip()
         if not stripped:
-            raise ValueError("Category name must not be empty after stripping whitespace")
+            raise ValueError(
+                "Category name must not be empty after stripping whitespace"
+            )
         if len(stripped) > 64:
             raise ValueError("Category name must be 64 characters or fewer")
 
@@ -160,7 +162,9 @@ class ChatCategoryService:
             updated_at=now,
         )
         try:
-            self._db.document(_doc_path(user_id, category_id)).create(definition.model_dump())
+            self._db.document(_doc_path(user_id, category_id)).create(
+                definition.model_dump()
+            )
         except AlreadyExists as exc:
             # The deterministic id collided — another row with this user's
             # name_casefold already exists. Surface it with the colliding id

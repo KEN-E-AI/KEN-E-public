@@ -61,7 +61,11 @@ class _MockEvent:
         self.author = author
         self._fn_calls = fn_calls or []
         self._is_final = is_final
-        self.content = _MockContent(parts=[_MockPart(text=t) for t in (parts or [])]) if parts else None
+        self.content = (
+            _MockContent(parts=[_MockPart(text=t) for t in (parts or [])])
+            if parts
+            else None
+        )
         self.usage_metadata = usage
 
     def get_function_calls(self) -> list[Any]:
@@ -165,7 +169,9 @@ class TestBuildTurnDelta:
         now = self._now()
         wire = _build_turn_delta([], now).to_wire_dict()
         for key in ("last_agent_stopped_at", "updated_at", "last_agent_message_at"):
-            assert set(wire[key].keys()) == {"_isoformat"}, f"{key} missing _isoformat sentinel"
+            assert set(wire[key].keys()) == {"_isoformat"}, (
+                f"{key} missing _isoformat sentinel"
+            )
             assert datetime.fromisoformat(wire[key]["_isoformat"]) == now
 
 
@@ -202,7 +208,9 @@ class _MockState:
 
 @dataclass
 class _MockCallbackContext:
-    _invocation_context: _MockInvocationContext = field(default_factory=_MockInvocationContext)
+    _invocation_context: _MockInvocationContext = field(
+        default_factory=_MockInvocationContext
+    )
     state: _MockState = field(default_factory=_MockState)
 
 
@@ -215,7 +223,9 @@ def _make_callback_context(
 ) -> _MockCallbackContext:
     agent = _MockAgent(parent_agent=parent_agent)
     session = _MockSession(id=session_id)
-    inv_ctx = _MockInvocationContext(agent=agent, session=session, invocation_id=invocation_id)
+    inv_ctx = _MockInvocationContext(
+        agent=agent, session=session, invocation_id=invocation_id
+    )
     state = _MockState(_data={"account_id": account_id})
     return _MockCallbackContext(_invocation_context=inv_ctx, state=state)
 
@@ -223,28 +233,36 @@ def _make_callback_context(
 class TestRootOnlyGuard:
     def test_before_callback_skips_sub_agent(self) -> None:
         ctx = _make_callback_context(parent_agent=_MockAgent())
-        with patch("app.adk.agents.chat_callbacks._post_side_table_update") as mock_post:
+        with patch(
+            "app.adk.agents.chat_callbacks._post_side_table_update"
+        ) as mock_post:
             result = chat_before_agent_callback(ctx)
         assert result is None
         mock_post.assert_not_called()
 
     def test_after_callback_skips_sub_agent(self) -> None:
         ctx = _make_callback_context(parent_agent=_MockAgent())
-        with patch("app.adk.agents.chat_callbacks._post_side_table_update") as mock_post:
+        with patch(
+            "app.adk.agents.chat_callbacks._post_side_table_update"
+        ) as mock_post:
             result = chat_after_agent_callback(ctx)
         assert result is None
         mock_post.assert_not_called()
 
     def test_before_callback_fires_for_root_agent(self) -> None:
         ctx = _make_callback_context(parent_agent=None)
-        with patch("app.adk.agents.chat_callbacks._post_side_table_update") as mock_post:
+        with patch(
+            "app.adk.agents.chat_callbacks._post_side_table_update"
+        ) as mock_post:
             result = chat_before_agent_callback(ctx)
         assert result is None
         mock_post.assert_called_once()
 
     def test_after_callback_fires_for_root_agent(self) -> None:
         ctx = _make_callback_context(parent_agent=None)
-        with patch("app.adk.agents.chat_callbacks._post_side_table_update") as mock_post:
+        with patch(
+            "app.adk.agents.chat_callbacks._post_side_table_update"
+        ) as mock_post:
             result = chat_after_agent_callback(ctx)
         assert result is None
         mock_post.assert_called_once()
@@ -253,13 +271,17 @@ class TestRootOnlyGuard:
 class TestPendingSessionGuard:
     def test_before_callback_skips_pending_session(self) -> None:
         ctx = _make_callback_context(session_id="pending_abc123")
-        with patch("app.adk.agents.chat_callbacks._post_side_table_update") as mock_post:
+        with patch(
+            "app.adk.agents.chat_callbacks._post_side_table_update"
+        ) as mock_post:
             chat_before_agent_callback(ctx)
         mock_post.assert_not_called()
 
     def test_after_callback_skips_pending_session(self) -> None:
         ctx = _make_callback_context(session_id="pending_abc123")
-        with patch("app.adk.agents.chat_callbacks._post_side_table_update") as mock_post:
+        with patch(
+            "app.adk.agents.chat_callbacks._post_side_table_update"
+        ) as mock_post:
             chat_after_agent_callback(ctx)
         mock_post.assert_not_called()
 
@@ -342,10 +364,13 @@ class TestNestedSpecialistSequence:
         # rather than on a StopIteration inside the callback.
         mock_dt.now.side_effect = [self._T0, self._T1, self._T1, self._T1]
 
-        with patch(
-            "app.adk.agents.chat_callbacks._post_side_table_update",
-            side_effect=lambda **kw: posted.append(kw),
-        ), patch("app.adk.agents.chat_callbacks.datetime", mock_dt):
+        with (
+            patch(
+                "app.adk.agents.chat_callbacks._post_side_table_update",
+                side_effect=lambda **kw: posted.append(kw),
+            ),
+            patch("app.adk.agents.chat_callbacks.datetime", mock_dt),
+        ):
             assert chat_before_agent_callback(root) is None
             assert len(posted) == 1, "root before-callback must post exactly once"
 

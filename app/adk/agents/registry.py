@@ -129,50 +129,58 @@ class AgentRegistry:
 _registry = AgentRegistry()
 
 # Register all known agents
-_registry.register(AgentEntry(
-    name="ken_e",
-    module_path=".ken_e_agent",
-    attr_name="ken_e_agent",
-    description="Frontend-facing chat agent for company news and analytics",
-    capabilities=["chat", "marketing", "news", "analytics"],
-    config_doc_id="ken_e_chatbot",
-))
+_registry.register(
+    AgentEntry(
+        name="ken_e",
+        module_path=".ken_e_agent",
+        attr_name="ken_e_agent",
+        description="Frontend-facing chat agent for company news and analytics",
+        capabilities=["chat", "marketing", "news", "analytics"],
+        config_doc_id="ken_e_chatbot",
+    )
+)
 
-_registry.register(AgentEntry(
-    name="news",
-    module_path=".company_news_chatbot.agent",
-    attr_name="root_agent",
-    description="Specialized agent for company news and financial data",
-    capabilities=["news", "financial"],
-    config_doc_id="company_news_agent",
-))
+_registry.register(
+    AgentEntry(
+        name="news",
+        module_path=".company_news_chatbot.agent",
+        attr_name="root_agent",
+        description="Specialized agent for company news and financial data",
+        capabilities=["news", "financial"],
+        config_doc_id="company_news_agent",
+    )
+)
 
-_registry.register(AgentEntry(
-    name="google_analytics",
-    module_path=".google_analytics_agent_v4",
-    attr_name="google_analytics_agent_v4",
-    description="Specialized agent for Google Analytics queries",
-    capabilities=["analytics", "ga4"],
-    config_doc_id="google_analytics_agent",
-))
+_registry.register(
+    AgentEntry(
+        name="google_analytics",
+        module_path=".google_analytics_agent_v4",
+        attr_name="google_analytics_agent_v4",
+        description="Specialized agent for Google Analytics queries",
+        capabilities=["analytics", "ga4"],
+        config_doc_id="google_analytics_agent",
+    )
+)
 
-_registry.register(AgentEntry(
-    name="strategy",
-    module_path=".create_strategy_docs_supervisor",
-    attr_name="create_strategy_docs_supervisor",
-    description="Supervisor agent for strategy document generation",
-    capabilities=["strategy", "documents"],
-    sub_config_doc_ids=[
-        "business_researcher",
-        "business_formatter",
-        "competitive_researcher",
-        "competitive_formatter",
-        "marketing_researcher",
-        "marketing_formatter",
-        "brand_researcher",
-        "brand_formatter",
-    ],
-))
+_registry.register(
+    AgentEntry(
+        name="strategy",
+        module_path=".create_strategy_docs_supervisor",
+        attr_name="create_strategy_docs_supervisor",
+        description="Supervisor agent for strategy document generation",
+        capabilities=["strategy", "documents"],
+        sub_config_doc_ids=[
+            "business_researcher",
+            "business_formatter",
+            "competitive_researcher",
+            "competitive_formatter",
+            "marketing_researcher",
+            "marketing_formatter",
+            "brand_researcher",
+            "brand_formatter",
+        ],
+    )
+)
 
 # Backward-compatible aliases
 _registry.alias("root_agent", "ken_e")

@@ -146,7 +146,9 @@ def create_main_agent(config_doc_id: str = "company_news_agent"):
     """
     # Load configuration from Firestore with fallback to hardcoded values
     try:
-        from app.adk.agents.strategy_agent.config_loader import load_config_from_firestore
+        from app.adk.agents.strategy_agent.config_loader import (
+            load_config_from_firestore,
+        )
 
         config, metadata, _ = load_config_from_firestore(config_doc_id)
         model = config.model

@@ -38,6 +38,7 @@ class _FakeSnapshot:
 class _FakeDoc:
     def __init__(self, snapshot: _FakeSnapshot) -> None:
         self.id = snapshot.id
+
         # Side-effect writes patch back into the snapshot so a second stream()
         # call sees the updated state — required for the idempotency test.
         def _write_back(patch: dict[str, Any]) -> None:
@@ -83,7 +84,10 @@ class TestMissingFlags:
         "doc, expected",
         [
             # All three flags absent entirely
-            ({}, ["available_to_copy", "automatically_available", "visible_in_frontend"]),
+            (
+                {},
+                ["available_to_copy", "automatically_available", "visible_in_frontend"],
+            ),
             # One flag explicitly None, others are present bools
             (
                 {
@@ -153,7 +157,9 @@ class TestMigrate:
         assert counts["unchanged"] == 0
         assert counts["errors"] == 0
         assert counts["would_patch"] == 0
-        db.collection("agent_configs").document("agent1").update.assert_called_once_with(
+        db.collection("agent_configs").document(
+            "agent1"
+        ).update.assert_called_once_with(
             {
                 "available_to_copy": True,
                 "automatically_available": True,
@@ -179,20 +185,25 @@ class TestMigrate:
         # _FakeDoc.update side-effect wrote the patch back into the snapshot,
         # so the second stream() call returns a doc with all three flags set.
         counts_second = migrate("proj", dry_run=False, db=db)
-        assert counts_second == {"patched": 0, "would_patch": 0, "unchanged": 1, "errors": 0}
+        assert counts_second == {
+            "patched": 0,
+            "would_patch": 0,
+            "unchanged": 1,
+            "errors": 0,
+        }
         # update was called exactly once total (first run only).
         assert db.collection("agent_configs").document("agent1").update.call_count == 1
 
     def test_partial_migration_patches_only_missing_keys(self) -> None:
         """Doc has available_to_copy=False (a valid bool) but missing the other two."""
-        db = FakeMigrateDb(
-            {"agent1": {"available_to_copy": False}}
-        )
+        db = FakeMigrateDb({"agent1": {"available_to_copy": False}})
         counts = migrate("proj", dry_run=False, db=db)
         assert counts["patched"] == 1
         assert counts["unchanged"] == 0
         # Only the two missing flags should be in the patch; False is preserved
-        db.collection("agent_configs").document("agent1").update.assert_called_once_with(
+        db.collection("agent_configs").document(
+            "agent1"
+        ).update.assert_called_once_with(
             {
                 "automatically_available": True,
                 "visible_in_frontend": True,

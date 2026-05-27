@@ -59,4 +59,6 @@ probe("idle-sleep-30s", 30, compute=False)
 probe("idle-sleep-120s", 120, compute=False)
 probe("idle-sleep-600s", 600, compute=False)
 
-print("q4_wall_clock: all probes completed -- no wall-clock cap observed in 0-600s band")
+print(
+    "q4_wall_clock: all probes completed -- no wall-clock cap observed in 0-600s band"
+)

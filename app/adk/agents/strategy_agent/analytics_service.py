@@ -13,6 +13,7 @@ from google.cloud import firestore
 from google.cloud.firestore_v1 import FieldFilter
 
 from shared.account_id_utils import validate_account_id
+
 from .retry_utils import with_batch_retry, with_read_retry, with_write_retry
 
 logger = logging.getLogger(__name__)

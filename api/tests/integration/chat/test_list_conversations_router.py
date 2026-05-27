@@ -183,9 +183,9 @@ def _reset_emulator_state() -> Generator[None, None, None]:
     yield
 
     # Purge all docs seeded by this module
-    for doc in db.collection_group("chat_sessions").where(
-        "user_id", "==", _USER_ID
-    ).stream():
+    for doc in (
+        db.collection_group("chat_sessions").where("user_id", "==", _USER_ID).stream()
+    ):
         doc.reference.delete()
     _delete_flag(db, "chat_v2_enabled")
     _clear_caches()
@@ -231,9 +231,7 @@ class TestThirtyDayWindow:
         ids = [c["session_id"] for c in resp.json()["items"]]
         assert stale_id not in ids
 
-    def test_recent_included_stale_excluded_together(
-        self, client: TestClient
-    ) -> None:
+    def test_recent_included_stale_excluded_together(self, client: TestClient) -> None:
         db = _emulator_client()
         recent_id = f"{_PREFIX}_w_mix_recent"
         stale_id = f"{_PREFIX}_w_mix_stale"
@@ -273,9 +271,7 @@ class TestDeletedExclusion:
 
 
 class TestCategoryFilter:
-    def test_category_filter_narrows_to_matching_rows(
-        self, client: TestClient
-    ) -> None:
+    def test_category_filter_narrows_to_matching_rows(self, client: TestClient) -> None:
         db = _emulator_client()
         cat_x_id = f"{_PREFIX}_cat_x"
         cat_y_id = f"{_PREFIX}_cat_y"
@@ -323,14 +319,10 @@ class TestCaseInsensitiveSearch:
         assert match_id in ids
         assert no_match_id not in ids
 
-    def test_search_text_partial_substring_matches(
-        self, client: TestClient
-    ) -> None:
+    def test_search_text_partial_substring_matches(self, client: TestClient) -> None:
         db = _emulator_client()
         match_id = f"{_PREFIX}_srch_partial"
-        _seed_session(
-            db, match_id, updated_at=_NOW, search_text="competitive analysis"
-        )
+        _seed_session(db, match_id, updated_at=_NOW, search_text="competitive analysis")
 
         resp = _get_conversations(client, query="petitive")
         assert resp.status_code == 200

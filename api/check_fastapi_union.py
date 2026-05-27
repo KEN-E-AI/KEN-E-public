@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Test if we can make FastAPI accept both JSON and FormData."""
 
-from fastapi import FastAPI, Form, File, UploadFile, Body
-from typing import Optional, Union
+
+from fastapi import FastAPI, File, Form, UploadFile
 from pydantic import BaseModel
-import uvicorn
 
 app = FastAPI()
+
 
 class AccountData(BaseModel):
     account_name: str
@@ -16,9 +16,11 @@ class AccountData(BaseModel):
     websites: list[str]
     timezone: str
 
+
 @app.post("/test-json")
 async def test_json(data: AccountData):
     return {"type": "json", "data": data.dict()}
+
 
 @app.post("/test-form")
 async def test_form(
@@ -28,9 +30,10 @@ async def test_form(
     status: str = Form(...),
     websites: str = Form(...),
     timezone: str = Form(...),
-    files: Optional[list[UploadFile]] = File(None)
+    files: list[UploadFile] | None = File(None),
 ):
     return {"type": "form", "account_name": account_name}
+
 
 # This won't work - FastAPI doesn't allow mixing Body and Form
 # @app.post("/test-both")

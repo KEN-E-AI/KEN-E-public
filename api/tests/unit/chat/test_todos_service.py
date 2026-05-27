@@ -22,7 +22,9 @@ def _make_session(state: dict) -> MagicMock:
     return sess
 
 
-def _make_service(session: MagicMock | None = None, *, raises: Exception | None = None) -> MagicMock:
+def _make_service(
+    session: MagicMock | None = None, *, raises: Exception | None = None
+) -> MagicMock:
     svc = MagicMock()
     if raises is not None:
         svc.get_session = AsyncMock(side_effect=raises)

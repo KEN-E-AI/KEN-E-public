@@ -149,9 +149,7 @@ class TestAdkSessionOrphanScanEndpoint:
     def test_missing_auth_returns_401(self, client: TestClient) -> None:
         saved = os.environ.pop("CHAT_INTERNAL_OIDC_SKIP", None)
         try:
-            response = client.post(
-                "/api/v1/internal/chat/orphan-scan/adk-session"
-            )
+            response = client.post("/api/v1/internal/chat/orphan-scan/adk-session")
         finally:
             if saved is not None:
                 os.environ["CHAT_INTERNAL_OIDC_SKIP"] = saved
