@@ -16,13 +16,17 @@ Two keys are read from ``tool_context.state`` by
     no skill is currently active and the callback is a no-op.
 
 ``skills_allowed_tools``: ``dict[str, list[str] | None]``
-    Populated by SK-22 (SkillToolset construction) at agent-build time.
-    Maps each attached skill's ``skill_id`` to the pre-parsed token list
-    produced by ``parse_allowed_tools``, or ``None`` when the skill carries
-    no ``allowed-tools`` frontmatter (= no restriction).
+    Populated at turn-start by SK-27 when ``load_skill`` activates a skill —
+    ``session.state`` is per-turn, so this map is also per-turn.  Maps the
+    active skill's ``skill_id`` to the pre-parsed token list produced by
+    ``parse_allowed_tools``, or ``None`` when the skill carries no
+    ``allowed-tools`` frontmatter (= no restriction).
 
-These keys are written by the producers (SK-22, SK-27); this module only
-*reads* them.  SK-30's integration test exercises the full round-trip.
+Both keys are written by SK-27 (this PR's SK-22 only hydrates the
+``SkillToolset`` itself); this module only *reads* them.  Until SK-27
+ships, the callback degrades open on every invocation — the filter is
+inert by design until its producer lands.  SK-30's integration test
+will exercise the full round-trip.
 
 Glob support (v1)
 -----------------
@@ -178,7 +182,7 @@ async def skill_allowed_tools_before_tool_callback(
     if skill_map is None:
         logger.warning(
             "skill_filter: active_skill_id=%r but skills_allowed_tools missing from state; "
-            "degrading open (SK-22 may not yet be wired)",
+            "degrading open (SK-27 producer not yet wired)",
             active_skill_id,
         )
         return None
@@ -193,7 +197,7 @@ async def skill_allowed_tools_before_tool_callback(
     if active_skill_id not in skill_map:
         logger.warning(
             "skill_filter: active_skill_id=%r not found in skills_allowed_tools map; "
-            "degrading open (SK-22 may not have registered this skill yet)",
+            "degrading open (SK-27 producer has not yet activated this skill)",
             active_skill_id,
         )
         return None

@@ -45,7 +45,7 @@ _PATCH_AFTER_TOOL = patch(
 # want to exercise skill loading use their own mock via monkeypatch.
 _PATCH_BUILD_SKILL_TOOLSET = patch(
     "app.adk.agents.agent_factory.builder._build_skill_toolset",
-    return_value=None,
+    return_value=(None, False),
 )
 _PATCH_SKILL_FILTER = patch(
     "app.adk.agents.agent_factory.builder.skill_allowed_tools_before_tool_callback",

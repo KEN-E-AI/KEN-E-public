@@ -172,12 +172,18 @@ def _build_skill_toolset(
     skill_ids: list[str],
     *,
     config_id: str | None,
-) -> Any | None:
+) -> tuple[Any | None, bool]:
     """Load skill objects and construct a SkillToolset.
 
-    Returns ``None`` when ``skill_ids`` is empty, ``account_id`` is ``None``,
-    or every skill fails to load.  Single-skill failures are tolerated with a
-    WARNING; total failure emits an ERROR.
+    Returns ``(toolset, timed_out)``:
+
+    * ``toolset`` is ``None`` when ``skill_ids`` is empty, ``account_id`` is
+      ``None``, every skill fails to load, or the load times out.  Single-skill
+      failures are tolerated with a WARNING; total failure emits an ERROR.
+    * ``timed_out`` is ``True`` only when the worker-thread bridge hit
+      ``_SKILL_LOAD_TIMEOUT_SECONDS``.  The caller surfaces this as a separate
+      sidecar marker so ops can distinguish "infra slow" from "every skill
+      genuinely failed" (which has a different remediation path).
 
     Works from both sync callers (deploy-time ``build_hierarchy()``) and async
     callers (any future FastAPI / per-turn rebuild path).  When invoked inside
@@ -187,14 +193,14 @@ def _build_skill_toolset(
     ``app/adk/agents/strategy_agent/artifact_utils.py:171-180``.
     """
     if not skill_ids:
-        return None
+        return None, False
 
     if account_id is None:
         logger.warning(
             "skill_toolset_skipped_no_account",
             extra={"config_id": config_id, "skill_ids": skill_ids},
         )
-        return None
+        return None, False
 
     # asyncio.get_running_loop() raises RuntimeError when no loop is active,
     # which is the Python 3.12+ canonical way to probe loop state.
@@ -205,9 +211,10 @@ def _build_skill_toolset(
         running = False
 
     if not running:
-        return asyncio.run(
+        toolset = asyncio.run(
             _build_skill_toolset_async(account_id, skill_ids, config_id=config_id)
         )
+        return toolset, False
 
     # A loop is already running — submit asyncio.run on a worker thread so we
     # don't collide with the caller's loop.  The thread owns its own event loop
@@ -220,7 +227,7 @@ def _build_skill_toolset(
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(_runner)
         try:
-            return future.result(timeout=_SKILL_LOAD_TIMEOUT_SECONDS)
+            return future.result(timeout=_SKILL_LOAD_TIMEOUT_SECONDS), False
         except concurrent.futures.TimeoutError:
             logger.error(
                 "skill_toolset_load_timeout",
@@ -231,7 +238,7 @@ def _build_skill_toolset(
                     "timeout_s": _SKILL_LOAD_TIMEOUT_SECONDS,
                 },
             )
-            return None
+            return None, True
 
 
 def build_agent(
@@ -276,22 +283,26 @@ def build_agent(
     output_schema = config.response_schema
 
     # SK-PRD-02: hydrate a SkillToolset when the config has attached skills.
-    # _build_skill_toolset returns None when skill_ids is empty, account_id is
-    # None, or every skill fails to load (total-failure ERROR is logged then).
+    # _build_skill_toolset returns (toolset, timed_out).  toolset is None when
+    # skill_ids is empty, account_id is None, every skill fails to load, or the
+    # load timed out.  timed_out distinguishes the infra-failure case (logged
+    # below as skill_load_timeout on the sidecar) from a genuine total failure.
     assembled_tools: list[Any] = list(tools or [])
     skill_load_total_failure = False
+    skill_load_timeout = False
     if config.skill_ids:
-        skill_toolset = _build_skill_toolset(
+        skill_toolset, skill_load_timeout = _build_skill_toolset(
             account_id,
             config.skill_ids,
             config_id=config_doc_id,
         )
         if skill_toolset is not None:
             assembled_tools.append(skill_toolset)
-        elif account_id is not None:
-            # account_id was provided but every skill failed — genuine failure.
-            # When account_id is None, the skip is expected (global deploy) and
-            # is NOT treated as a total failure.
+        elif account_id is not None and not skill_load_timeout:
+            # account_id was provided and we didn't time out, yet every skill
+            # failed — genuine total failure.  When account_id is None the skip
+            # is expected (global deploy); when we timed out, that's the
+            # skill_load_timeout marker, not a total failure.
             skill_load_total_failure = True
 
     # Defensive literal cap — catches gross misuse by direct callers that bypass
@@ -346,11 +357,17 @@ def build_agent(
         after_model_callback=after_model_callback,
     )
 
+    # Stash build-time skill outcomes on the sidecar so SK-27 can surface them
+    # as attributes on the skill.list Weave span:
+    #   * skill_load_total_failure  (SK-PRD-02 §7 AC-2a): every requested skill
+    #     failed to load; the agent carries no SkillToolset and list_skills
+    #     never fires.
+    #   * skill_load_timeout: the 30s worker-thread bridge fired before any
+    #     skill loaded.  Separate from total_failure because the remediation
+    #     is different (infra/retry vs. stale skill IDs / config).
     if skill_load_total_failure:
-        # SK-PRD-02 §7 AC-2a: when every requested skill failed to load, the
-        # agent carries no SkillToolset (and list_skills never fires).  Stash
-        # the flag on the sidecar so SK-27 can surface it as a
-        # skill_load_total_failure=true attribute on the skill.list Weave span.
         record_skill_build_metadata(agent, skill_load_total_failure=True)
+    if skill_load_timeout:
+        record_skill_build_metadata(agent, skill_load_timeout=True)
 
     return agent

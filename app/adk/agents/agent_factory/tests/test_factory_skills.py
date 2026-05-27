@@ -631,3 +631,13 @@ class TestAsyncBridge:
         rec = timeout_records[0]
         assert getattr(rec, "account_id", None) == "acc_to"
         assert getattr(rec, "timeout_s", None) == 0.05
+
+        # Sidecar surfaces the timeout to SK-27 so ops can distinguish "infra
+        # slow" from skill_load_total_failure (which has different remediation).
+        from app.adk.agents.agent_factory.skill_metadata import (
+            get_skill_build_metadata,
+        )
+        metadata = get_skill_build_metadata(agent)
+        assert metadata.get("skill_load_timeout") is True
+        # Timeout is NOT a total failure — those two markers are exclusive.
+        assert "skill_load_total_failure" not in metadata
