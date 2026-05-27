@@ -1,14 +1,20 @@
-"""Hierarchy builder for the KEN-E agent factory (AH-PRD-09 Phase 2).
+"""Hierarchy builder for the KEN-E agent factory (AH-PRD-09 Phase 2 + AH-75).
 
 `build_hierarchy()` is the deploy-time entry point that builds the root agent
 from Firestore configuration. Specialist agents are resolved per-turn by
 ``specialist_runtime`` rather than baked into the deploy artifact, reducing
 deploy-time Firestore reads from N+1 to 1.
 
+AH-75 (Approach 1) replaced the ``delegate_to_specialist`` function tool with
+ADK's native ``transfer_to_agent`` + dynamically-managed ``sub_agents``. The
+root carries no specialist-dispatch tool; a ``before_agent_callback`` wires
+each turn's visible specialists into ``root.sub_agents`` before the LLM is
+invoked, so ``transfer_to_agent(agent_name=<doc_id>)`` resolves natively.
+
   config_loader   (AH-10) — loads + merges the root MergedAgentConfig document
   builder         (AH-15) — constructs LlmAgent with standard ADK callbacks
-  dispatch        (AH-14/AH-60) — delegate_to_specialist unified dispatch tool
   specialist_runtime (AH-59) — available_specialists_provider per-turn provider
+  sub_agent_attacher (AH-75) — runtime sub_agents sync via before_agent_callback
 
 Deploy-time only: call once in ``deploy_ken_e.py``.
 """
@@ -26,7 +32,6 @@ from app.adk.agents.agent_factory.config_loader import (
     FirestoreConnectionError,
     _load_and_merge,
 )
-from app.adk.agents.agent_factory.dispatch import delegate_to_specialist
 from shared.account_id_utils import validate_account_id
 from shared.structured_logging import get_structured_logger
 
@@ -95,10 +100,14 @@ def build_hierarchy(
 ) -> LlmAgent:
     """Build the KEN-E root agent from Firestore configuration.
 
-    Per AH-PRD-09 Phase 2, the root agent carries a single
-    ``delegate_to_specialist`` tool; specialist agents are resolved per-turn by
-    ``specialist_runtime`` rather than baked into the deploy artifact. This
-    reduces deploy-time Firestore reads from N+1 to 1.
+    Per AH-PRD-09 + AH-75, the root agent carries **no** specialist-dispatch
+    tool. Specialist agents are resolved per-turn by ``specialist_runtime`` and
+    attached to ``root.sub_agents`` by ``attach_specialists_before_agent_callback``
+    so ADK's built-in ``transfer_to_agent`` finds them via ``root.find_agent``.
+    This preserves the AH-PRD-09 wins (Firestore-resolved-per-turn, ≤60s
+    admin-edit propagation, no redeploy) while routing specialist events
+    through ADK's native transfer mechanism so they propagate to the outer
+    Runner's event stream (and to Chat + Billing consumers).
 
     Args:
         account_id: When provided, per-account overlay documents are merged on
@@ -112,9 +121,10 @@ def build_hierarchy(
             When ``None`` a real client is created from ``project_id`` / env.
 
     Returns:
-        Root ``LlmAgent`` (name ``"ken_e"``) with ``delegate_to_specialist`` as
-        its sole specialist-dispatch tool and the per-turn Available Specialists
-        block wired via ``instruction_suffix_provider``.
+        Root ``LlmAgent`` (name ``"ken_e"``) with no specialist-dispatch tool;
+        the per-turn Available Specialists block is wired via
+        ``instruction_suffix_provider`` and the sub_agents list is populated
+        per turn by ``attach_specialists_before_agent_callback``.
 
     Raises:
         ValueError: When ``account_id`` does not match the required format.
@@ -142,22 +152,36 @@ def build_hierarchy(
     root_config = _load_and_merge(db, ROOT_CONFIG_ID, account_id)
     logger.info("Loaded root agent config %r.", ROOT_CONFIG_ID)
 
-    # Step 3 — build the root agent. instruction_suffix_provider renders the
-    # Available Specialists block per-turn from the TTL-cached Firestore data
-    # so admin edits propagate within 60 s without a redeploy.
+    # Step 3 — build the root agent.
+    #
+    # * instruction_suffix_provider renders the Available Specialists block
+    #   per-turn from the TTL-cached Firestore data so admin edits propagate
+    #   within 60 s without a redeploy.
+    # * additional_before_agent_callbacks wires the same per-turn data into
+    #   root.sub_agents via attach_specialists_before_agent_callback. The
+    #   "Available Specialists" block and the transfer-target set stay in
+    #   sync because both walk the same list_account_agent_configs +
+    #   resolve_config(visible_in_frontend) pipeline.
+    #
     # Lazy import: avoids circular import at module-load time since
     # agent_factory/__init__.py imports both hierarchy and specialist_runtime,
     # and specialist_runtime imports config_cache which imports agent_factory.
     from app.adk.agents.agent_factory.specialist_runtime import (
         available_specialists_provider,
     )
+    from app.adk.agents.agent_factory.sub_agent_attacher import (
+        attach_specialists_before_agent_callback,
+    )
     root_agent = build_agent(
         root_config,
         name="ken_e",
         account_id=account_id,
-        tools=[delegate_to_specialist],
+        tools=[],
         config_doc_id=ROOT_CONFIG_ID,
         instruction_suffix_provider=available_specialists_provider,
+        additional_before_agent_callbacks=[
+            attach_specialists_before_agent_callback,
+        ],
     )
     logger.info("Built root agent %r.", "ken_e")
 

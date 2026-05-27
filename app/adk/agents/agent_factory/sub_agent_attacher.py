@@ -48,9 +48,10 @@ sub_agents reconcile stay in sync without distributed coordination.
 """
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from google.adk.agents import BaseAgent
+from google.genai import types
 
 from app.adk.agents.agent_factory.config_loader import (
     FirestoreConnectionError,
@@ -62,6 +63,9 @@ from app.adk.agents.agent_factory.specialist_runtime import (
     resolve_config,
 )
 from shared.account_id_utils import validate_account_id
+
+if TYPE_CHECKING:
+    from google.adk.agents.callback_context import CallbackContext
 
 logger = logging.getLogger(__name__)
 
@@ -233,3 +237,40 @@ def _has_sub_agents_attr(obj: Any) -> bool:
     """True iff *obj* exposes a mutable ``sub_agents`` list-like attribute."""
     sub_agents = getattr(obj, "sub_agents", None)
     return isinstance(sub_agents, list)
+
+
+# ---------------------------------------------------------------------------
+# ADK before_agent_callback bridge
+# ---------------------------------------------------------------------------
+
+
+def attach_specialists_before_agent_callback(
+    callback_context: "CallbackContext",
+) -> "types.Content | None":
+    """Root ``before_agent_callback`` that syncs ``sub_agents`` per turn.
+
+    Designed to be passed to :func:`build_agent` via
+    ``additional_before_agent_callbacks=[attach_specialists_before_agent_callback]``.
+
+    Reads ``account_id`` from ``callback_context.state`` and calls
+    :func:`attach_account_specialists` against the root agent (resolved
+    from ``callback_context._invocation_context.agent``, which is the
+    agent whose callback fired — i.e. the root, since this callback is
+    only attached to the root).
+
+    Always returns ``None`` so the agent proceeds normally. Errors are
+    swallowed (the underlying :func:`attach_account_specialists` already
+    logs + degrades on every failure mode) so an attach failure cannot
+    block the turn.
+    """
+    try:
+        account_id = callback_context.state.get("account_id")
+        root_agent = callback_context._invocation_context.agent
+        attach_account_specialists(root_agent, account_id)
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.exception(
+            "[ATTACH-SPECIALISTS] before_agent_callback raised unexpectedly; "
+            "specialists for this turn may be stale. %s",
+            exc,
+        )
+    return None

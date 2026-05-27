@@ -1,22 +1,22 @@
-"""Per-turn specialist resolver for the per-dispatch-agent surface (AH-PRD-09).
+"""Per-turn specialist resolver for the per-dispatch-agent surface
+(AH-PRD-09 + AH-75).
 
 Replaces the deploy-time factory model (AH-PRD-02) with a per-turn resolution
 path: specialists are resolved from Firestore on each turn (TTL-cached) rather
 than baked into the deployed agent artifact.
 
-Four public entry points:
+Three public entry points:
 
 * ``resolve_config`` — TTL-cached ``MergedAgentConfig`` fetch via
   ``get_cached_merged_config``.
-* ``resolve_agent`` — LRU-cached ``LlmAgent`` keyed by
-  ``(doc_id, account_id, content_hash)``.  Content-hash invalidation means any
-  field change to the Firestore config drops the stale ``LlmAgent`` and triggers
-  a rebuild on next access.
-* ``run`` — dispatch a query to a resolved specialist.  Mirrors
-  ``_build_dispatch`` from ``dispatch.py``: review pipeline when
-  ``acceptance_criteria`` is non-empty, single-pass via
-  ``invoke_agent_with_retry`` otherwise.  Never re-raises — returns an error
-  string so the root agent receives graceful degradation.
+* ``resolve_agent`` — LRU-cached specialist ``BaseAgent`` keyed by
+  ``(doc_id, account_id, content_hash)``.  Returns either a raw
+  ``LlmAgent`` or a review-pipeline-wrapped ``LoopAgent`` (when
+  ``config.default_acceptance_criteria`` is set) — both share the same
+  ``.name == doc_id`` contract so ADK's ``transfer_to_agent`` resolves
+  to either form through ``root.find_agent``. Content-hash invalidation
+  means any field change to the Firestore config drops the stale agent
+  and triggers a rebuild on next access.
 * ``available_specialists_provider`` — ``InstructionProvider``-compatible
   callable ``(ReadonlyContext) -> str``; returns the "## Available Specialists"
   Markdown block for injection into the root agent's system prompt.
@@ -27,7 +27,7 @@ Design notes:
   config-cache stripe lock: config reads and agent construction are independent
   critical sections.
 * Content hash: ``sha256(MergedAgentConfig.model_dump_json().encode()).hexdigest()``.
-  Any field change produces a new hash; the stale ``LlmAgent`` entry is evicted
+  Any field change produces a new hash; the stale agent entry is evicted
   on next LRU access via natural ``OrderedDict`` displacement rather than explicit
   deletion.
 * Phase 2 (AH-59): ``_build_specialist`` fetches MCP server docs directly from
@@ -36,6 +36,10 @@ Design notes:
 * ``available_specialists_provider`` filters to ``visible_in_frontend=True``
   configs so strategy-pipeline and other hidden agents are excluded from the
   block shown to the root agent.
+* AH-75: dispatch happens via ADK's native ``transfer_to_agent``; runtime
+  attachment of resolved specialists to ``root.sub_agents`` lives in
+  ``sub_agent_attacher`` (a sibling module), invoked from the root agent's
+  ``before_agent_callback``.
 """
 
 # NOTE: do NOT add `from __future__ import annotations` here. Dispatch closures
@@ -46,7 +50,6 @@ Design notes:
 # full ADK/cloudpickle rationale (verified during AH-17 smoke testing).
 
 import collections
-import copy
 import hashlib
 import logging
 import re
@@ -60,7 +63,6 @@ from google.adk.agents.readonly_context import ReadonlyContext
 
 from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
 from app.adk.agents.utils.config_cache import get_cached_merged_config
-from app.utils.weave_observability import safe_weave_op
 from shared.account_id_utils import validate_account_id
 
 # Firestore document IDs for MCP servers and specialist configs follow the same
@@ -151,30 +153,15 @@ class _AgentCache:
         checks).  Concurrent callers for the same key block until the first
         build completes, then see the populated entry on their own check.
         """
-        agent, _ = self.get_or_build_with_hit(key, builder)
-        return agent
-
-    def get_or_build_with_hit(
-        self,
-        key: tuple[str, str | None, str],
-        builder: Callable[[], BaseAgent],
-    ) -> tuple[BaseAgent, bool]:
-        """Same as :meth:`get_or_build` but also returns whether the entry was cached.
-
-        Returns:
-            ``(agent, cache_hit)`` where ``cache_hit`` is ``True`` when the
-            agent was already in the LRU store and ``False`` when a fresh
-            build was triggered.
-        """
         with self._lock:
             if key in self._store:
                 self._store.move_to_end(key)
-                return self._store[key], True
+                return self._store[key]
             agent = builder()
             if len(self._store) >= self._maxsize:
                 self._store.popitem(last=False)  # evict LRU
             self._store[key] = agent
-            return agent, False
+            return agent
 
     def clear(self) -> None:
         """Drop all cached agents.  Primarily for tests."""
@@ -495,179 +482,6 @@ def resolve_agent(
     return _specialists_cache.get_or_build(
         cache_key, lambda: _build_specialist(config, doc_id, account_id)
     )
-
-
-def resolve_agent_with_hit(
-    doc_id: str,
-    account_id: str | None = None,
-    ttl_seconds: int = 60,
-) -> tuple[BaseAgent, bool]:
-    """Same as :func:`resolve_agent` but also reports whether the agent was cached.
-
-    Intended for callers that want to emit a ``cache_hit`` observability attribute
-    (e.g. ``delegate_to_specialist`` writes it onto the Weave span summary via
-    ``set_delegate_attrs``).
-
-    Returns:
-        ``(agent, cache_hit)`` — ``cache_hit`` is ``True`` when the agent was
-        served from the LRU cache; ``False`` when a fresh build was triggered.
-
-    Raises:
-        Any exception that :func:`resolve_config` or :func:`_build_specialist`
-        raises.
-    """
-    config = resolve_config(doc_id, account_id, ttl_seconds)
-    content_hash = _content_hash(config)
-    cache_key: tuple[str, str | None, str] = (doc_id, account_id, content_hash)
-    return _specialists_cache.get_or_build_with_hit(
-        cache_key, lambda: _build_specialist(config, doc_id, account_id)
-    )
-
-
-@safe_weave_op(name="specialist_run")
-def run(
-    doc_id: str,
-    query: str,
-    *,
-    account_id: str | None = None,
-    acceptance_criteria: str = "",
-    tool_context: Any | None = None,
-    ttl_seconds: int = 60,
-) -> str:
-    """Resolve and run a specialist, returning the response string.
-
-    Mirrors ``_build_dispatch`` from ``dispatch.py``:
-
-    * When *acceptance_criteria* is non-empty (after sanitisation and the
-      ``MAX_CRITERIA_CHARS`` cap), runs the full review-loop pipeline via
-      ``build_review_pipeline`` + ``invoke_pipeline``, emits per-iteration
-      Weave spans, and returns the ``result`` string from the pipeline outcome.
-    * When *acceptance_criteria* is empty, delegates directly to
-      ``invoke_agent_with_retry`` using ``DEFAULT_RETRY_CONFIG``.
-
-    Never re-raises — logs the error and returns an error string so the root
-    agent receives graceful degradation instead of an unhandled exception.
-
-    Args:
-        doc_id: Specialist Firestore document ID.
-        query: The query to send to the specialist.
-        account_id: Per-account overlay key.
-        acceptance_criteria: Optional review-loop acceptance criteria.
-        tool_context: Optional ADK ``ToolContext`` from the calling tool.
-            When provided, its state is snapshotted and forwarded as the
-            initial pipeline state.
-        ttl_seconds: TTL for the underlying config and agent caches.
-
-    Returns:
-        The specialist's response string, or an error sentinel string on failure.
-    """
-    from app.adk.agents.utils.agent_retry import (
-        DEFAULT_RETRY_CONFIG,
-        invoke_agent_with_retry,
-    )
-    from app.adk.agents.utils.criteria_utils import (
-        MAX_CRITERIA_CHARS,
-        sanitise_criteria,
-    )
-    from app.adk.agents.utils.review_pipeline import (
-        _check_hallucinated_approval,
-        build_review_pipeline,
-        extract_iterations,
-        extract_pipeline_result,
-        get_reviewer_name,
-        get_worker_name,
-    )
-    from app.adk.agents.utils.review_pipeline_tracing import (
-        emit_iteration_span,
-        set_pipeline_attrs,
-    )
-    from app.adk.agents.utils.supervisor_utils import invoke_pipeline
-
-    try:
-        specialist = resolve_agent(doc_id, account_id, ttl_seconds)
-    except Exception as exc:
-        logger.error(
-            "[SPECIALIST-RUN] Failed to resolve specialist %r: %s",
-            doc_id,
-            exc,
-            exc_info=True,
-        )
-        return f"Error: specialist {doc_id!r} unavailable"
-
-    initial_state: dict[str, Any] | None = (
-        copy.deepcopy(tool_context.state.to_dict())
-        if tool_context is not None
-        else None
-    )
-
-    output_key_prefix = f"{doc_id}_review"
-
-    criteria = acceptance_criteria.strip()
-    if len(criteria) > MAX_CRITERIA_CHARS:
-        logger.warning(
-            "[SPECIALIST-RUN] acceptance_criteria truncated from %d to %d chars",
-            len(criteria),
-            MAX_CRITERIA_CHARS,
-        )
-        criteria = criteria[:MAX_CRITERIA_CHARS]
-    criteria = sanitise_criteria(criteria)
-
-    try:
-        if criteria:
-            logger.info(
-                "[SPECIALIST-RUN] Building review pipeline for %r (criteria length=%d).",
-                doc_id,
-                len(criteria),
-            )
-            pipeline = build_review_pipeline(
-                specialist=specialist,
-                acceptance_criteria=criteria,
-                output_key_prefix=output_key_prefix,
-            )
-            _text, final_state, events = invoke_pipeline(
-                pipeline, query, state=initial_state
-            )
-            _check_hallucinated_approval(events, output_key_prefix)
-            outcome = extract_pipeline_result(final_state, output_key_prefix)
-            worker_name = get_worker_name(specialist)
-            reviewer_name = get_reviewer_name(output_key_prefix)
-            iterations = extract_iterations(
-                events, worker_name, reviewer_name, output_key_prefix
-            )
-            for it in iterations:
-                emit_iteration_span(
-                    it.iteration, it.specialist_output, it.reviewer_output
-                )
-            set_pipeline_attrs(
-                criteria, final_state, output_key_prefix, len(iterations)
-            )
-            if not outcome.get("approved"):
-                logger.warning(
-                    "[SPECIALIST-RUN] Review loop exhausted iterations for %r without approval; "
-                    "returning last draft.",
-                    doc_id,
-                )
-            return outcome["result"]
-
-        logger.info(
-            "[SPECIALIST-RUN] Single-pass dispatch for %r (no acceptance_criteria).",
-            doc_id,
-        )
-        return invoke_agent_with_retry(
-            specialist,
-            query,
-            state=initial_state,
-            retry_config=DEFAULT_RETRY_CONFIG,
-        )
-
-    except Exception as exc:
-        logger.error(
-            "[SPECIALIST-RUN] Error running specialist %r: %s",
-            doc_id,
-            exc,
-            exc_info=True,
-        )
-        return f"Error dispatching to {doc_id}: specialist unavailable"
 
 
 def available_specialists_provider(context: ReadonlyContext) -> str:

@@ -182,9 +182,10 @@ def _patch_e2e_config_cache_loader():
 
 
 class TestRootOnlyBuild:
-    """TC-1: build_hierarchy() returns an LlmAgent named 'ken_e' with exactly
-    1 tool (delegate_to_specialist), regardless of how many specialist configs
-    exist in Firestore."""
+    """TC-1: build_hierarchy() returns an LlmAgent named 'ken_e' with no
+    specialist-dispatch tool (AH-75 replaced delegate_to_specialist with
+    ADK's native transfer_to_agent + dynamically-attached sub_agents),
+    regardless of how many specialist configs exist in Firestore."""
 
     def test_root_is_llm_agent(self) -> None:
         root = _run_build_hierarchy(_E2E_DOCS)
@@ -194,21 +195,27 @@ class TestRootOnlyBuild:
         root = _run_build_hierarchy(_E2E_DOCS)
         assert root.name == "ken_e"
 
-    def test_root_has_exactly_one_tool(self) -> None:
-        """Per AH-PRD-09 Phase 2: only delegate_to_specialist is wired at deploy time."""
+    def test_root_has_no_specialist_dispatch_tool(self) -> None:
+        """AH-75: root carries no specialist-dispatch tool. Specialists are
+        reached via transfer_to_agent + per-turn sub_agents attachment."""
         root = _run_build_hierarchy(_E2E_DOCS)
-        assert len(root.tools) == 1
+        assert root.tools == []
 
-    def test_root_tool_is_delegate_to_specialist(self) -> None:
+    def test_root_has_attach_specialists_before_agent_callback(self) -> None:
+        """The runtime sub_agents-sync callback must be wired so per-turn
+        attachment runs before the LLM is invoked."""
+        from app.adk.agents.agent_factory.sub_agent_attacher import (
+            attach_specialists_before_agent_callback,
+        )
         root = _run_build_hierarchy(_E2E_DOCS)
-        tool_name = getattr(root.tools[0], "__name__", None)
-        assert tool_name == "delegate_to_specialist"
+        callbacks = root.before_agent_callback or []
+        assert attach_specialists_before_agent_callback in callbacks
 
     def test_extra_specialist_configs_do_not_add_tools(self) -> None:
-        """Specialist Firestore docs exist but must NOT produce additional tools."""
+        """Specialist Firestore docs exist but must NOT add tools to the root."""
         root = _run_build_hierarchy(_E2E_DOCS)
-        # _E2E_DOCS has 2 specialist configs + root — still only 1 tool.
-        assert len(root.tools) == 1
+        # _E2E_DOCS has 2 specialist configs + root — root still has 0 tools.
+        assert root.tools == []
 
     def test_single_firestore_read_for_root_config(self) -> None:
         """build_hierarchy reads only the root config, not all specialist configs."""
@@ -238,77 +245,16 @@ class TestRootOnlyBuild:
 
 
 # ---------------------------------------------------------------------------
-# TC-2: delegate_to_specialist routes to specialist_runtime.run
+# TC-2 was TestDelegateToSpecialistE2E in pre-AH-75 code — the function-tool
+# dispatch path. AH-75 (Approach 1) replaced delegate_to_specialist with ADK's
+# native transfer_to_agent + dynamically-attached sub_agents. The equivalent
+# coverage now lives in:
+#   * test_sub_agent_attacher.py — per-turn sub_agents sync mechanics
+#   * test_specialist_runtime.py::TestSpecialistRuntimeReviewWrap — review-
+#     pipeline opt-in via config.default_acceptance_criteria
+#   * test_chat_billing_parity.py — transfer_to_agent end-to-end event
+#     propagation under both Mode A and Mode B (no xfail after AH-75)
 # ---------------------------------------------------------------------------
-
-
-class TestDelegateToSpecialistE2E:
-    """TC-2: When the root agent's delegate_to_specialist tool is called, it
-    delegates to specialist_runtime.run with the correct arguments."""
-
-    def test_delegate_tool_calls_specialist_runtime_run(self) -> None:
-        from app.adk.agents.agent_factory.dispatch import delegate_to_specialist
-
-        tool_context = MagicMock()
-        tool_context.state.get.return_value = "acct_test"
-
-        with patch(
-            "app.adk.agents.agent_factory.specialist_runtime.run",
-            return_value="specialist answer",
-        ) as mock_run:
-            result = delegate_to_specialist(
-                "analytics_specialist", "What is my CTR?", tool_context=tool_context
-            )
-
-        assert result == "specialist answer"
-        mock_run.assert_called_once_with(
-            doc_id="analytics_specialist",
-            query="What is my CTR?",
-            account_id="acct_test",
-            acceptance_criteria="",
-            tool_context=tool_context,
-        )
-
-    def test_delegate_tool_from_root_agent_is_correct_function(self) -> None:
-        """The tool attached to root.tools[0] is delegate_to_specialist."""
-        from app.adk.agents.agent_factory.dispatch import delegate_to_specialist
-
-        root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})
-        # The function object identity must match the exported symbol.
-        assert root.tools[0] is delegate_to_specialist
-
-    def test_delegate_rejects_invalid_specialist_name(self) -> None:
-        """delegate_to_specialist returns an error string for invalid names without
-        hitting specialist_runtime."""
-        from app.adk.agents.agent_factory.dispatch import delegate_to_specialist
-
-        with patch(
-            "app.adk.agents.agent_factory.specialist_runtime.run"
-        ) as mock_run:
-            result = delegate_to_specialist("Invalid Name With Spaces", "query")
-
-        assert "[DELEGATE ERROR]" in result
-        mock_run.assert_not_called()
-
-    def test_delegate_with_acceptance_criteria_forwarded(self) -> None:
-        from app.adk.agents.agent_factory.dispatch import delegate_to_specialist
-
-        tool_context = MagicMock()
-        tool_context.state.get.return_value = "acct_abc"
-
-        with patch(
-            "app.adk.agents.agent_factory.specialist_runtime.run",
-            return_value="reviewed answer",
-        ) as mock_run:
-            delegate_to_specialist(
-                "analytics_specialist",
-                "Summarise GA data",
-                acceptance_criteria="must cite sources",
-                tool_context=tool_context,
-            )
-
-        _, kwargs = mock_run.call_args
-        assert kwargs["acceptance_criteria"] == "must cite sources"
 
 
 # ---------------------------------------------------------------------------
@@ -374,8 +320,9 @@ class TestAccountOverlay:
 
         assert None in captured_account_ids
 
-    def test_account_overlay_root_still_has_one_tool(self) -> None:
-        """With account_id provided, root still only has delegate_to_specialist."""
+    def test_account_overlay_root_still_has_no_dispatch_tool(self) -> None:
+        """With account_id provided, root still has no specialist-dispatch tool
+        (AH-75 — sub_agents are populated per-turn by the before_agent_callback)."""
         docs = {
             ("agent_configs", "ken_e_chatbot"): _ROOT_DOC,
             ("accounts", "acc_xyz", "agent_configs", "ken_e_chatbot"): {
@@ -385,8 +332,7 @@ class TestAccountOverlay:
             },
         }
         root = _run_build_hierarchy(docs, account_id="acc_xyz")
-        assert len(root.tools) == 1
-        assert getattr(root.tools[0], "__name__", None) == "delegate_to_specialist"
+        assert root.tools == []
 
 
 # ---------------------------------------------------------------------------

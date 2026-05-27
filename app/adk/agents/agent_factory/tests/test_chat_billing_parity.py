@@ -7,37 +7,27 @@ CANONICAL FIXTURE (from api/tests/unit/chat/test_token_accounting_parity.py):
   cached_content_token_count=  200
   → input=1050, output=380, reasoning=0, total_billable=1430
 
-CONTRACT UNDER TEST:
-  ADK event propagation from inner Runner (delegate_to_specialist / specialist_runtime.run)
-  to outer Runner must be preserved so that:
+CONTRACT UNDER TEST (AH-PRD-09 §7 ACs #9 and #10):
+  ADK event propagation from a specialist invocation to the outer Runner must
+  be preserved so that:
   - Chat's SessionTurnAccumulator.add_event() sees the same per-event usage_metadata
   - Billing's extract_billable_tokens(event).total_billable sums to the same total
+  ...regardless of whether the specialist is reached via a deploy-time sub_agents
+  declaration (Mode A) or a per-turn runtime attachment (Mode B / AH-75).
 
-MERGE-BLOCKER SEMANTICS:
-  If this file fails, Phase 2 (delegate_to_specialist + specialist_runtime) cannot merge.
-  Mode B may currently fail (specialist events trapped in inner Runner without propagation).
-  That failure IS the merge-blocker contract — see AH-PRD-09 §7 ACs #9 and #10.
+AH-75: Mode B is satisfied by ADK's native transfer_to_agent + sub_agents populated
+by attach_specialists_before_agent_callback. Both modes route through ADK's built-in
+transfer mechanism, so specialist LLM-response events (carrying usage_metadata)
+appear in the outer Runner's event stream natively.
 
-STATUS (PR #697):
-  Investigation against the pinned ADK source established that the gap is structural,
-  not a localized fix in specialist_runtime.run(): ADK does not natively forward a
-  function tool's internal events to the outer Runner's stream (FunctionTool collapses
-  to a single return, AgentTool discards inner events, __build_response_event has no
-  usage_metadata hook, EventActions has no "emit extra events" field, and transfer
-  detection requires function_response.name == 'transfer_to_agent' literally).
-
-  Chosen approach: drop delegate_to_specialist as a function tool and switch the root
-  to ADK's native transfer_to_agent + dynamically-managed sub_agents. Tracked in
-  AH-75 (https://linear.app/ken-e/issue/AH-75) — blocks AH-PRD-09 Phase 5 default-on.
-
-  The two parametrized parity tests below are marked xfail(strict=True) until AH-75
-  lands. strict=True keeps the contract teeth: when AH-75 removes the xfail markers,
-  pytest will fail if the tests ever regress.
+Prior history (PR #697): the parity assertions were marked xfail(strict=True)
+because the AH-PRD-09 Phase 2 delegate_to_specialist function-tool dispatch could
+not forward inner-Runner events. AH-75 (this PR) removes the function tool;
+xfail markers are dropped and the test must pass.
 """
 
 from __future__ import annotations
 
-import hashlib
 import os
 import sys
 from typing import Any
@@ -125,32 +115,30 @@ class _RouterStubLlm(BaseLlm):
         yield LlmResponse(content=content, turn_complete=False)
 
 
-class _DelegateStubLlm(BaseLlm):
-    """Mode B root: first turn calls delegate_to_specialist, second yields final text."""
+class _TransferToSpecialistStubLlm(BaseLlm):
+    """Mode B root (AH-75): emits transfer_to_agent(agent_name='test_specialist').
 
-    model: str = "delegate_stub"
-    call_count: int = 0
+    Under the AH-75 dispatch model, the root LLM picks a specialist from the
+    Available Specialists block and uses ADK's native transfer_to_agent — there
+    is no delegate_to_specialist function tool to call.
+    """
+
+    model: str = "transfer_to_specialist_stub"
 
     @classmethod
     def supported_models(cls) -> list[str]:
-        return ["delegate_stub"]
+        return ["transfer_to_specialist_stub"]
 
     async def generate_content_async(  # type: ignore[override]
         self,
         llm_request: Any,
         stream: bool = False,
     ):
-        self.call_count += 1
-        if self.call_count == 1:
-            func_call = FunctionCall(
-                name="delegate_to_specialist",
-                args={"name": "test_specialist", "query": "hello"},
-            )
-            content = Content(role="model", parts=[Part(function_call=func_call)])
-            yield LlmResponse(content=content, turn_complete=False)
-        else:
-            content = Content(role="model", parts=[Part.from_text(text="Done!")])
-            yield LlmResponse(content=content, turn_complete=True)
+        func_call = FunctionCall(
+            name="transfer_to_agent", args={"agent_name": "test_specialist"}
+        )
+        content = Content(role="model", parts=[Part(function_call=func_call)])
+        yield LlmResponse(content=content, turn_complete=False)
 
 
 # ---------------------------------------------------------------------------
@@ -212,36 +200,44 @@ async def _capture_mode_b_events(
     specialist: LlmAgent,
     query: str = "hello",
 ) -> list[Any]:
-    """Run Mode B (delegate_to_specialist) outer Runner and return all events.
+    """Run Mode B (AH-75: per-turn runtime attachment via transfer_to_agent)
+    outer Runner and return all events.
 
-    Primes the specialist cache so delegate_to_specialist can resolve the
-    specialist without a Firestore call, and patches resolve_config to return
-    the test MergedAgentConfig so resolve_agent's content-hash lookup succeeds.
+    Wires the production attach_specialists_before_agent_callback onto the
+    root, then mocks the three resolver functions it calls so the test
+    specialist is the sole "visible" entry. The callback adds the specialist
+    to root.sub_agents during the before-agent step; the stub LLM emits
+    transfer_to_agent(agent_name='test_specialist'); ADK's built-in transfer
+    mechanism resolves to the attached specialist and runs it. The
+    specialist's LLM-response event (with usage_metadata) appears in the
+    outer Runner's stream natively — no inner-Runner needed.
     """
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
 
-    from app.adk.agents.agent_factory.dispatch import delegate_to_specialist
+    from app.adk.agents.agent_factory import sub_agent_attacher as attacher
 
     test_config = MergedAgentConfig(
         instruction="Test specialist",
         model="canonical_stub",
         description="Test specialist for parity tests",
     )
-    content_hash = hashlib.sha256(test_config.model_dump_json().encode()).hexdigest()
-    cache_key: tuple[str, str | None, str] = ("test_specialist", None, content_hash)
-    sr._specialists_cache.put(cache_key, specialist)
 
     root = LlmAgent(
         name="root_agent",
-        model=_DelegateStubLlm(),
-        instruction="Delegate queries.",
-        tools=[delegate_to_specialist],
+        model=_TransferToSpecialistStubLlm(),
+        instruction="Route queries.",
+        tools=[],
+        before_agent_callback=[attacher.attach_specialists_before_agent_callback],
     )
 
     session_service = InMemorySessionService()
+    # Pre-seed account_id in session state so the attacher callback finds it
+    # and resolves the test specialist for this account.
     session = await session_service.create_session(
-        app_name="parity_test_b", user_id="test_user"
+        app_name="parity_test_b",
+        user_id="test_user",
+        state={"account_id": "test_account"},
     )
     runner = Runner(
         agent=root,
@@ -249,7 +245,17 @@ async def _capture_mode_b_events(
         session_service=session_service,
     )
     events: list[Any] = []
-    with patch.object(sr, "resolve_config", return_value=test_config):
+    # Patch the three resolver entry points the attacher calls, scoped to the
+    # sub_agent_attacher module since that's where they're imported.
+    with (
+        patch.object(
+            attacher,
+            "list_account_agent_configs",
+            return_value=["test_specialist"],
+        ),
+        patch.object(attacher, "resolve_config", return_value=test_config),
+        patch.object(attacher, "resolve_agent", return_value=specialist),
+    ):
         async for event in runner.run_async(
             user_id=session.user_id,
             session_id=session.id,
@@ -331,21 +337,14 @@ class TestCaptureHarness:
 
 class TestChatParity:
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "AH-75: ADK lacks native tool→outer-stream event forwarding; "
-            "deferred to the transfer_to_agent dispatch refactor. "
-            "See module docstring + https://linear.app/ken-e/issue/AH-75."
-        ),
-    )
     @pytest.mark.parametrize("trial", range(10))
     async def test_session_turn_accumulator_delta_matches(self, trial: int) -> None:
         """AC-9 (AH-PRD-09): accumulator deltas must match between Mode A and Mode B.
 
-        MERGE BLOCKER: This test currently fails for Mode B because specialist
-        events are trapped in the inner Runner. It will pass once inner-Runner
-        events are propagated to the outer stream.
+        AH-75: now passes because both modes route through ADK's native
+        transfer_to_agent — specialist events appear in the outer Runner's
+        stream regardless of whether sub_agents was set at deploy (Mode A) or
+        attached per-turn by attach_specialists_before_agent_callback (Mode B).
         """
         specialist_a = _make_deterministic_specialist()
         specialist_b = _make_deterministic_specialist("test_specialist")
@@ -402,21 +401,12 @@ class TestChatParity:
 
 class TestBillingParity:
     @pytest.mark.asyncio
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "AH-75: ADK lacks native tool→outer-stream event forwarding; "
-            "deferred to the transfer_to_agent dispatch refactor. "
-            "See module docstring + https://linear.app/ken-e/issue/AH-75."
-        ),
-    )
     @pytest.mark.parametrize("trial", range(10))
     async def test_billable_token_totals_match(self, trial: int) -> None:
         """AC-10 (AH-PRD-09): total billable tokens must equal 1430 for both modes.
 
-        MERGE BLOCKER: This test currently fails for Mode B because specialist
-        events are trapped in the inner Runner. It will pass once inner-Runner
-        events are propagated to the outer stream.
+        AH-75: now passes via native transfer_to_agent event propagation (see
+        TestChatParity for the full propagation rationale).
         """
         specialist_a = _make_deterministic_specialist()
         specialist_b = _make_deterministic_specialist("test_specialist")

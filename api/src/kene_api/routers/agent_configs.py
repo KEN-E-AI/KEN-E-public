@@ -60,17 +60,19 @@ class AgentConfigUpdateResponse(AgentConfig):
     read top-level fields like ``response.model`` or ``response.metadata``
     keep working. Adding a new optional ``warnings`` list is additive.
 
-    Per AH-PRD-09 Phase 2, ``warnings`` is empty for specialist edits — the
-    per-turn resolver picks up every specialist field change within the 60 s
-    TTL cache. The root agent (``ken_e_chatbot``) is still built once at
-    deploy by ``build_hierarchy()``, so edits to its ``model`` /
-    ``temperature`` / ``max_output_tokens`` fields surface a
+    Per AH-PRD-09 Phase 2 + AH-75, ``warnings`` is empty for specialist
+    edits — the per-turn resolver picks up every specialist field change
+    within the 60 s TTL cache. The root agent (``ken_e_chatbot``) is still
+    built once at deploy by ``build_hierarchy()``, so edits to its
+    ``model`` / ``temperature`` / ``max_output_tokens`` fields surface a
     "redeploy required" warning here and silently no-op in the running
     process until ``make backend`` runs. ``instruction`` on the root is
     cache-backed and hot-reloads within the 60 s TTL. ``tools`` on the root
-    is hard-coded to ``[delegate_to_specialist]`` by ``build_hierarchy``
-    and is ignored even after a redeploy — edits to it do not warn here
-    because no warning could be truthful.
+    is hard-coded to ``[]`` by ``build_hierarchy`` (AH-75 replaced the
+    ``delegate_to_specialist`` tool with ADK's native ``transfer_to_agent``
+    + dynamically-attached ``sub_agents``), so edits to root ``tools`` are
+    ignored even after a redeploy — they do not warn here because no
+    warning could be truthful.
     """
 
     warnings: list[str] = Field(
@@ -96,11 +98,13 @@ _ROOT_CONFIG_ID: str = "ken_e_chatbot"
 # doc hot-reload via specialist_runtime within the 60 s TTL.
 #
 # Note: ``tools`` is intentionally NOT in this set. ``hierarchy.build_hierarchy``
-# hard-codes ``tools=[delegate_to_specialist]`` on the root LlmAgent and never
-# reads ``root_config.tools``, so an admin edit to ``ken_e_chatbot.tools``
-# silently no-ops *forever*, not just until the next ``make backend``. A
-# "redeploy will fix this" warning would be misleading; the right long-term
-# fix is to reject the edit at the API layer (separate ticket).
+# hard-codes ``tools=[]`` on the root LlmAgent (AH-75: specialists are reached
+# via ADK's transfer_to_agent + dynamically-attached sub_agents, not via a
+# function tool), and never reads ``root_config.tools``, so an admin edit to
+# ``ken_e_chatbot.tools`` silently no-ops *forever*, not just until the next
+# ``make backend``. A "redeploy will fix this" warning would be misleading;
+# the right long-term fix is to reject the edit at the API layer (separate
+# ticket).
 _ROOT_REDEPLOY_REQUIRED_FIELDS: frozenset[str] = frozenset(
     {"model", "temperature", "max_output_tokens"}
 )
