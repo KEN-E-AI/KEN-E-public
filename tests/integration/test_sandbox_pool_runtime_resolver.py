@@ -136,7 +136,7 @@ _SPAN_PATH = "app.adk.agents.agent_factory.sandbox_pool.emit_sandbox_pool_span"
 
 # Number of simulated per-turn rebuilds.  Large enough to distinguish
 # "constructed once" from "constructed per call"; matches the concurrent-fanout
-# count (asyncio.gather × 10) in test_sandbox_pool.py.
+# count (asyncio.gather x 10) in test_sandbox_pool.py.
 _N_REBUILDS = 10
 
 # ---------------------------------------------------------------------------
