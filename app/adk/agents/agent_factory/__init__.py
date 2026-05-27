@@ -17,6 +17,10 @@ Phase 2 (AH-PRD-09 + AH-75): root-only build_hierarchy() — 1 Firestore read at
          the outer Runner's event stream natively.
 SK-PRD-02: SandboxPool — process-wide pool of AgentEngineSandboxCodeExecutor instances
            keyed by (account_id, config_id), with LRU cap + idle TTL + striped locks.
+AH-PRD-09 Phase 3 (AH-62): McpToolsetPool — process-wide pool of ADK McpToolset
+           instances keyed by (kind, server_id, account_id, creds_hash) for cloud_run,
+           with LRU cap + idle TTL + striped locks.  Prevents SSE connection leaks
+           from per-turn specialist rebuilds.
 """
 
 from app.adk.agents.agent_factory.builder import build_agent
@@ -42,6 +46,7 @@ from app.adk.agents.agent_factory.mcp import (
     load_all_mcp_toolsets,
     load_toolsets_for_specialist,
 )
+from app.adk.agents.agent_factory.mcp_pool import McpServerKind, McpToolsetPool
 from app.adk.agents.agent_factory.roster import (
     MAX_TOOLS_PER_SPECIALIST,
     RosterCapExceededError,
@@ -67,6 +72,8 @@ __all__ = [
     "FirestoreConnectionError",
     "MCPFactoryError",
     "MCPSchemaError",
+    "McpServerKind",
+    "McpToolsetPool",
     "MergedAgentConfig",
     "RosterCapExceededError",
     "SandboxPool",

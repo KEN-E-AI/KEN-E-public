@@ -23,11 +23,14 @@ Test surface:
 from __future__ import annotations
 
 import threading
+from collections.abc import Mapping
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
 import pytest
 from google.adk.agents import LlmAgent
+from google.adk.sessions.state import State
 
 from app.adk.agents.agent_factory import specialist_runtime as sr
 from app.adk.agents.agent_factory import sub_agent_attacher as saa
@@ -79,9 +82,7 @@ def _make_specialist(name: str) -> LlmAgent:
     )
 
 
-def _patched_resolvers(
-    visible: dict[str, LlmAgent], config_suffix: str = ""
-) -> Any:
+def _patched_resolvers(visible: dict[str, LlmAgent], config_suffix: str = "") -> Any:
     """Patch list_account_agent_configs_cached / resolve_config / resolve_agent to
     surface exactly the specialists in *visible* as visible for any account.
 
@@ -104,7 +105,10 @@ def _patched_resolvers(
         )
 
     def _resolve_agent(
-        doc_id: str, _account_id: str | None = None, _ttl: int = 60
+        doc_id: str,
+        _account_id: str | None = None,
+        _ttl: int = 60,
+        session_state: Mapping[str, Any] | None = None,
     ) -> LlmAgent:
         return visible[doc_id]
 
@@ -250,7 +254,10 @@ class TestReconcile:
             )
 
         def _resolve_agent(
-            doc_id: str, _account_id: str | None = None, _ttl: int = 60
+            doc_id: str,
+            _account_id: str | None = None,
+            _ttl: int = 60,
+            session_state: Mapping[str, Any] | None = None,
         ) -> LlmAgent:
             return {"ga_spec": a, "hidden_spec": b}[doc_id]
 
@@ -298,7 +305,10 @@ class TestResilience:
             )
 
         def _resolve_agent(
-            doc_id: str, _account_id: str | None = None, _ttl: int = 60
+            doc_id: str,
+            _account_id: str | None = None,
+            _ttl: int = 60,
+            session_state: Mapping[str, Any] | None = None,
         ) -> LlmAgent:
             if doc_id == "broken_spec":
                 raise RuntimeError("MCP unreachable")
@@ -393,7 +403,10 @@ class TestConcurrentAttach:
         import time
 
         def _resolve_agent(
-            doc_id: str, _account_id: str | None = None, _ttl: int = 60
+            doc_id: str,
+            _account_id: str | None = None,
+            _ttl: int = 60,
+            session_state: Mapping[str, Any] | None = None,
         ) -> LlmAgent:
             time.sleep(0.005)
             return {"ga_spec": a, "strategy_spec": b}[doc_id]
@@ -594,7 +607,10 @@ class TestFingerprintShortCircuit:
         resolve_agent_calls: list[str] = []
 
         def _counting_resolve_agent(
-            doc_id: str, _account_id: str | None = None, _ttl: int = 60
+            doc_id: str,
+            _account_id: str | None = None,
+            _ttl: int = 60,
+            session_state: Mapping[str, Any] | None = None,
         ) -> LlmAgent:
             resolve_agent_calls.append(doc_id)
             return a
@@ -657,7 +673,10 @@ class TestFingerprintShortCircuit:
         resolve_calls: list[tuple[str, str | None]] = []
 
         def _track_resolve(
-            doc_id: str, account_id: str | None = None, _ttl: int = 60
+            doc_id: str,
+            account_id: str | None = None,
+            _ttl: int = 60,
+            session_state: Mapping[str, Any] | None = None,
         ) -> LlmAgent:
             resolve_calls.append((doc_id, account_id))
             return a
@@ -699,7 +718,10 @@ class TestFingerprintShortCircuit:
         call_count: list[int] = [0]
 
         def _fail_first_call(
-            doc_id: str, _acc: str | None = None, _ttl: int = 60
+            doc_id: str,
+            _acc: str | None = None,
+            _ttl: int = 60,
+            session_state: Mapping[str, Any] | None = None,
         ) -> LlmAgent:
             call_count[0] += 1
             if call_count[0] == 1:
@@ -813,3 +835,103 @@ class TestSandboxPoolStartWiring:
 
         # Exception swallowed; callback returned None.
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# Before-agent callback bridge — regression coverage for AH-62 (PR #721)
+#
+# The callback at attach_specialists_before_agent_callback wraps the attach
+# in a broad ``except Exception`` so a failure cannot block the turn. That
+# defence-in-depth catch previously masked a real bug: ``dict(state)`` on
+# ADK's ``State`` raises ``KeyError: 0`` because ``State`` exposes
+# ``__getitem__`` but no ``keys()`` / ``__iter__``. The callback silently
+# no-op'd and no specialist was attached, surfacing only downstream as
+# ``ValueError: Tool 'transfer_to_agent' not found``.
+#
+# These tests drive the callback with a *real* ADK ``State`` (not a Mock,
+# not a plain dict) so any future regression that breaks the state→dict
+# conversion fails this file loudly rather than silently degrading.
+# ---------------------------------------------------------------------------
+
+
+class TestBeforeAgentCallback:
+    def test_real_adk_state_attaches_specialist_end_to_end(self) -> None:
+        root = _make_root()
+        a = _make_specialist("ga_spec")
+        state = State(value={"account_id": "acc_regression"}, delta={})
+        ctx = SimpleNamespace(
+            state=state,
+            _invocation_context=SimpleNamespace(agent=root),
+        )
+
+        with _patched_resolvers({"ga_spec": a}):
+            result = attach_specialists_before_agent_callback(ctx)  # type: ignore[arg-type]
+
+        assert result is None
+        assert root.sub_agents == [a], (
+            "The before_agent_callback must attach the specialist when "
+            "given a real ADK State — a silent no-op (e.g. from the broad "
+            "except swallowing a state-conversion crash) is a regression."
+        )
+
+    def test_session_state_is_forwarded_to_resolve_agent(self) -> None:
+        root = _make_root()
+        a = _make_specialist("ga_spec")
+        state = State(
+            value={"account_id": "acc_regression", "mcp_creds_x": "v"},
+            delta={"mcp_creds_y": "w"},
+        )
+        ctx = SimpleNamespace(
+            state=state,
+            _invocation_context=SimpleNamespace(agent=root),
+        )
+        seen_session_states: list[Mapping[str, Any] | None] = []
+
+        def _capturing_resolve_agent(
+            doc_id: str,
+            _account_id: str | None = None,
+            _ttl: int = 60,
+            session_state: Mapping[str, Any] | None = None,
+        ) -> LlmAgent:
+            seen_session_states.append(session_state)
+            return a
+
+        def _list(_account_id: str) -> list[str]:
+            return ["ga_spec"]
+
+        def _resolve_config(
+            doc_id: str, _account_id: str | None = None, _ttl: int = 60
+        ) -> MergedAgentConfig:
+            return MergedAgentConfig(
+                instruction=f"{doc_id} instruction",
+                model="gemini-2.5-pro",
+                description=f"{doc_id} description",
+                visible_in_frontend=True,
+            )
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher."
+                "list_account_agent_configs_cached",
+                side_effect=_list,
+            ),
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher.resolve_config",
+                side_effect=_resolve_config,
+            ),
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher.resolve_agent",
+                side_effect=_capturing_resolve_agent,
+            ),
+        ):
+            attach_specialists_before_agent_callback(ctx)  # type: ignore[arg-type]
+
+        assert seen_session_states, (
+            "resolve_agent was never called — the callback silently no-op'd."
+        )
+        forwarded = seen_session_states[0]
+        assert forwarded is not None
+        # Both _value and _delta keys must be present (mirrors State.to_dict()).
+        assert forwarded.get("account_id") == "acc_regression"
+        assert forwarded.get("mcp_creds_x") == "v"
+        assert forwarded.get("mcp_creds_y") == "w"

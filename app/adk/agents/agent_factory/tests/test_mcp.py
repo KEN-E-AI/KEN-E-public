@@ -1392,5 +1392,111 @@ class TestPublicExports:
         assert issubclass(MCPFactoryError, Exception)
 
 
+# ---------------------------------------------------------------------------
+# Tests: build_toolset_for_doc kind dispatch (AH-62 Phase 3 — Task 3)
+# ---------------------------------------------------------------------------
+
+
+class TestBuildToolsetForDocKindDispatch:
+    """Tests for the 'kind' field dispatch added in AH-62.
+
+    Verifies that:
+    - kind absent or kind='cloud_run' → existing SSE/stdio path proceeds.
+    - kind='zapier' → NotImplementedError with Phase 4 message.
+    - kind='unknown_kind' → MCPSchemaError naming the server_id.
+    """
+
+    def _sse_doc_with_kind(self, kind: str | None) -> dict:
+        doc = dict(_GA_DOC)
+        if kind is None:
+            doc.pop("kind", None)
+        else:
+            doc["kind"] = kind
+        return doc
+
+    # --- kind absent → defaults to cloud_run (existing path) ---
+
+    def test_kind_absent_proceeds_as_cloud_run(self) -> None:
+        """Doc with no 'kind' field defaults to cloud_run and proceeds normally."""
+        from app.adk.agents.agent_factory.mcp import build_toolset_for_doc
+
+        doc = self._sse_doc_with_kind(None)
+        fake_conn_params = MagicMock()
+        MockToolset = MagicMock(name="McpToolsetCls")
+        MockToolset.return_value = MagicMock()
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.mcp._build_connection_params",
+                return_value=fake_conn_params,
+            ),
+            patch.dict(
+                "sys.modules",
+                {
+                    "google.adk.tools.mcp_tool.mcp_toolset": MagicMock(
+                        McpToolset=MockToolset
+                    )
+                },
+            ),
+        ):
+            result = build_toolset_for_doc("ga_mcp", doc)
+
+        assert result is MockToolset.return_value
+
+    # --- kind='cloud_run' → existing path proceeds ---
+
+    def test_kind_cloud_run_proceeds_normally(self) -> None:
+        """Doc with kind='cloud_run' proceeds through the existing build path."""
+        from app.adk.agents.agent_factory.mcp import build_toolset_for_doc
+
+        doc = self._sse_doc_with_kind("cloud_run")
+        fake_conn_params = MagicMock()
+        MockToolset = MagicMock(name="McpToolsetCls")
+        MockToolset.return_value = MagicMock()
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.mcp._build_connection_params",
+                return_value=fake_conn_params,
+            ),
+            patch.dict(
+                "sys.modules",
+                {
+                    "google.adk.tools.mcp_tool.mcp_toolset": MagicMock(
+                        McpToolset=MockToolset
+                    )
+                },
+            ),
+        ):
+            result = build_toolset_for_doc("ga_mcp", doc)
+
+        assert result is MockToolset.return_value
+
+    # --- kind='zapier' → NotImplementedError ---
+
+    def test_kind_zapier_raises_not_implemented(self) -> None:
+        """kind='zapier' raises NotImplementedError with a Phase 4 message."""
+        from app.adk.agents.agent_factory.mcp import build_toolset_for_doc
+
+        doc = self._sse_doc_with_kind("zapier")
+
+        with pytest.raises(NotImplementedError, match="Phase 4"):
+            build_toolset_for_doc("zapier_server", doc)
+
+    # --- kind='unknown_kind' → MCPSchemaError ---
+
+    def test_kind_unknown_raises_mcp_schema_error(self) -> None:
+        """An unrecognised kind value raises MCPSchemaError naming the server_id."""
+        from app.adk.agents.agent_factory.mcp import (
+            MCPSchemaError,
+            build_toolset_for_doc,
+        )
+
+        doc = self._sse_doc_with_kind("grpc_stream")
+
+        with pytest.raises(MCPSchemaError, match="zapier_compat"):
+            build_toolset_for_doc("zapier_compat", doc)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
