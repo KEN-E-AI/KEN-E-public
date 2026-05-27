@@ -34,6 +34,7 @@ import asyncio
 import sys
 import types
 import uuid
+from collections.abc import AsyncGenerator
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -79,9 +80,9 @@ class _FakeSkillLlm(BaseLlm):
     def supported_models(cls) -> list[str]:
         return [r"^fake-skill-.*"]
 
-    async def generate_content_async(  # type: ignore[override]
+    async def generate_content_async(
         self, llm_request: object, stream: bool = False
-    ):
+    ) -> AsyncGenerator[LlmResponse, None]:
         if _skill_response_queue:
             yield _skill_response_queue.pop(0)
         else:
@@ -124,7 +125,7 @@ def _text_response(text: str) -> LlmResponse:
 
 
 @pytest.fixture(autouse=True)
-def _clear_skill_queue() -> None:  # type: ignore[return]
+def _clear_skill_queue() -> None:
     _skill_response_queue.clear()
     yield
     _skill_response_queue.clear()
