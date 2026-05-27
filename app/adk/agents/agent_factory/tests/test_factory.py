@@ -740,6 +740,7 @@ class TestSkillIdsAndSandbox:
         agent = _build(config, name="sandbox", sandbox_pool=mock_pool)
 
         assert agent is not None
+        assert agent.code_executor is mock_pool.get_or_create.return_value
 
     def test_skill_ids_not_surfaced_as_llm_agent_attribute(self) -> None:
         config = _make_config(skill_ids=["s1"])

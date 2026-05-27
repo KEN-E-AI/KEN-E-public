@@ -722,6 +722,42 @@ class TestSandboxWiring:
         toolsets = [t for t in agent.tools if isinstance(t, SkillToolset)]
         assert len(toolsets) == 1
 
+    # ------------------------------------------------------------------
+    # AC-4 — timeout enforcement
+    # ------------------------------------------------------------------
+
+    def test_sandbox_build_timeout_logs_and_falls_through(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Timeout in the worker-thread path logs sandbox_build_timeout ERROR and falls through."""
+        import logging
+
+        import app.adk.agents.agent_factory.builder as b
+
+        async def _slow_get_or_create(*, account_id: str, config_id: str) -> Any:
+            await asyncio.sleep(5.0)
+            return None
+
+        pool = self._make_mock_pool()
+        pool.get_or_create = _slow_get_or_create  # type: ignore[assignment]
+        monkeypatch.setattr(b, "_SANDBOX_BUILD_TIMEOUT_SECONDS", 0.05)
+
+        config = _make_config(sandbox_code_executor_enabled=True, code_execution_enabled=False)
+
+        with caplog.at_level(logging.ERROR):
+            agent = self._build(config, account_id="acc_to", sandbox_pool=pool)
+
+        assert agent.code_executor is None
+
+        timeout_records = [
+            r for r in caplog.records
+            if r.levelname == "ERROR" and "sandbox_build_timeout" in r.getMessage()
+        ]
+        assert len(timeout_records) == 1
+        rec = timeout_records[0]
+        assert getattr(rec, "account_id", None) == "acc_to"
+        assert getattr(rec, "timeout_s", None) == 0.05
+
 
 class TestAsyncBridge:
     """build_agent must work when called from inside a running event loop.

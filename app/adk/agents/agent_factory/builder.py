@@ -250,7 +250,6 @@ def _build_skill_toolset(
 
 
 async def _build_code_executor_async(
-    config: MergedAgentConfig,
     *,
     account_id: str,
     config_id_for_pool: str,
@@ -302,26 +301,9 @@ def _build_code_executor(
                 extra={"config_id": name},
             )
         else:
-            try:
-                asyncio.get_running_loop()
-                running = True
-            except RuntimeError:
-                running = False
-
-            if not running:
-                return asyncio.run(
-                    _build_code_executor_async(
-                        config,
-                        account_id=account_id,
-                        config_id_for_pool=name,
-                        sandbox_pool=sandbox_pool,
-                    )
-                )
-
             def _runner() -> Any:
                 return asyncio.run(
                     _build_code_executor_async(
-                        config,
                         account_id=account_id,
                         config_id_for_pool=name,
                         sandbox_pool=sandbox_pool,
