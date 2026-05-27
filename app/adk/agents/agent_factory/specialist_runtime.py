@@ -207,6 +207,57 @@ def _clear_block_cache_for_tests() -> None:
 
 
 # ---------------------------------------------------------------------------
+# list_account_agent_configs TTL cache
+# ---------------------------------------------------------------------------
+# Caches the raw ``list_account_agent_configs`` result by ``account_id`` so
+# that ``available_specialists_provider`` and ``_attach_locked`` share one
+# Firestore list call per TTL window rather than issuing independent calls.
+
+_LIST_CACHE_TTL: int = 60
+_ListCacheEntry = tuple[list[str], float]  # (doc_ids, expires_at_monotonic)
+_list_cache: dict[str, _ListCacheEntry] = {}
+_list_locks: list[threading.Lock] = [threading.Lock() for _ in range(32)]
+
+
+def _list_lock_for(account_id: str) -> threading.Lock:
+    return _list_locks[hash(account_id) % 32]
+
+
+def list_account_agent_configs_cached(account_id: str) -> list[str]:
+    """Return ``list_account_agent_configs(account_id)`` with TTL caching.
+
+    Shares one Firestore list call between ``available_specialists_provider``
+    and the ``sub_agent_attacher`` within the same TTL window.  The stripe
+    lock is separate from ``block_lock_for`` so the two caches can be
+    populated/invalidated independently.
+    """
+    from app.adk.agents.agent_factory.config_loader import (
+        list_account_agent_configs,
+    )
+
+    now = time.monotonic()
+    lock = _list_lock_for(account_id)
+    with lock:
+        entry = _list_cache.get(account_id)
+        if entry is not None and now < entry[1]:
+            return entry[0]
+        doc_ids = list_account_agent_configs(account_id)
+        _list_cache[account_id] = (doc_ids, now + _LIST_CACHE_TTL)
+        return doc_ids
+
+
+def _clear_list_cache_for_tests() -> None:
+    """Drop the list cache.  Acquires all stripes in index order."""
+    for lock in _list_locks:
+        lock.acquire()
+    try:
+        _list_cache.clear()
+    finally:
+        for lock in _list_locks:
+            lock.release()
+
+
+# ---------------------------------------------------------------------------
 # Specialist construction (Phase 2 — direct Firestore MCP fetch)
 # ---------------------------------------------------------------------------
 
@@ -525,7 +576,6 @@ def available_specialists_provider(context: ReadonlyContext) -> str:
     """
     from app.adk.agents.agent_factory.config_loader import (
         FirestoreConnectionError,
-        list_account_agent_configs,
     )
     from app.adk.agents.agent_factory.dispatch import (
         assemble_available_specialists_block,
@@ -557,7 +607,7 @@ def available_specialists_provider(context: ReadonlyContext) -> str:
             return cached[0]
 
     try:
-        doc_ids = list_account_agent_configs(account_id)
+        doc_ids = list_account_agent_configs_cached(account_id)
     except FirestoreConnectionError as exc:
         logger.error(
             "[AVAILABLE-SPECIALISTS] Failed to list configs (account=%r): %s",

@@ -54,16 +54,18 @@ def _make_llm_agent(name: str = "test_specialist") -> MagicMock:
 
 @pytest.fixture(autouse=True)
 def clear_specialists_cache() -> Any:
-    """Each test starts with a clean agent cache, config cache, and block cache."""
+    """Each test starts with a clean agent cache, config cache, block cache, and list cache."""
     from app.adk.agents.agent_factory import specialist_runtime
     from app.adk.agents.utils.config_cache import clear_config_cache
 
     specialist_runtime._specialists_cache.clear()
     specialist_runtime._clear_block_cache_for_tests()
+    specialist_runtime._clear_list_cache_for_tests()
     clear_config_cache()
     yield
     specialist_runtime._specialists_cache.clear()
     specialist_runtime._clear_block_cache_for_tests()
+    specialist_runtime._clear_list_cache_for_tests()
     clear_config_cache()
 
 
@@ -331,6 +333,106 @@ class TestAvailableSpecialistsProvider:
 
         assert "good_spe" in result
         assert "bad_spe" not in result
+
+
+# ---------------------------------------------------------------------------
+# TestListCache
+# ---------------------------------------------------------------------------
+
+
+class TestListCache:
+    """Verify TTL caching of ``list_account_agent_configs_cached``."""
+
+    def test_second_call_within_ttl_skips_firestore(self) -> None:
+        """Two calls within TTL should issue only one underlying list call."""
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        list_mock = MagicMock(return_value=["spe_1", "spe_2"])
+
+        with patch(
+            "app.adk.agents.agent_factory.config_loader.list_account_agent_configs",
+            list_mock,
+        ):
+            first = specialist_runtime.list_account_agent_configs_cached("acct_1")
+            second = specialist_runtime.list_account_agent_configs_cached("acct_1")
+
+        assert first == ["spe_1", "spe_2"]
+        assert first == second
+        assert list_mock.call_count == 1
+
+    def test_call_after_ttl_expiry_refetches(self, monkeypatch: Any) -> None:
+        """After TTL elapses the next call must re-issue the underlying list."""
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        list_mock = MagicMock(return_value=["spe_1"])
+        fake_clock = {"t": 1000.0}
+
+        def fake_monotonic() -> float:
+            return fake_clock["t"]
+
+        monkeypatch.setattr(specialist_runtime.time, "monotonic", fake_monotonic)
+
+        with patch(
+            "app.adk.agents.agent_factory.config_loader.list_account_agent_configs",
+            list_mock,
+        ):
+            specialist_runtime.list_account_agent_configs_cached("acct_1")
+            fake_clock["t"] += specialist_runtime._LIST_CACHE_TTL + 1
+            specialist_runtime.list_account_agent_configs_cached("acct_1")
+
+        assert list_mock.call_count == 2
+
+    def test_different_accounts_cached_independently(self) -> None:
+        """Two different account_ids must each issue their own underlying list call."""
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        list_mock = MagicMock(side_effect=[["spe_a"], ["spe_b"]])
+
+        with patch(
+            "app.adk.agents.agent_factory.config_loader.list_account_agent_configs",
+            list_mock,
+        ):
+            r1 = specialist_runtime.list_account_agent_configs_cached("acct_1")
+            r2 = specialist_runtime.list_account_agent_configs_cached("acct_2")
+            # Repeat of acct_1 must hit the cache.
+            r1b = specialist_runtime.list_account_agent_configs_cached("acct_1")
+
+        assert r1 == ["spe_a"]
+        assert r2 == ["spe_b"]
+        assert r1b == ["spe_a"]
+        assert list_mock.call_count == 2
+
+    def test_available_specialists_provider_and_attach_share_one_list_call(
+        self,
+    ) -> None:
+        """``available_specialists_provider`` and ``_attach_locked`` should share
+        the cached list result within the same TTL window."""
+        from unittest.mock import MagicMock, patch
+
+        from google.adk.agents import LlmAgent
+
+        from app.adk.agents.agent_factory import specialist_runtime, sub_agent_attacher
+
+        cfg = _make_merged_config("v1", visible_in_frontend=True)
+        agent = _make_llm_agent("spe_1")
+        ctx = MagicMock()
+        ctx.state = {"account_id": "acct_shared"}
+        list_mock = MagicMock(return_value=["spe_1"])
+
+        root = LlmAgent(name="root", model="gemini-2.5-pro", instruction="root")
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.config_loader.list_account_agent_configs",
+                list_mock,
+            ),
+            patch.object(specialist_runtime, "resolve_config", return_value=cfg),
+            patch.object(specialist_runtime, "resolve_agent", return_value=agent),
+        ):
+            specialist_runtime.available_specialists_provider(ctx)
+            sub_agent_attacher.attach_account_specialists(root, "acct_shared")
+
+        assert list_mock.call_count == 1
 
 
 # ---------------------------------------------------------------------------

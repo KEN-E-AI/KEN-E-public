@@ -55,10 +55,10 @@ from google.genai import types
 
 from app.adk.agents.agent_factory.config_loader import (
     FirestoreConnectionError,
-    list_account_agent_configs,
 )
 from app.adk.agents.agent_factory.specialist_runtime import (
     block_lock_for,
+    list_account_agent_configs_cached,
     resolve_agent,
     resolve_config,
 )
@@ -127,7 +127,7 @@ def _attach_locked(root_agent: BaseAgent, account_id: str) -> None:
     Caller holds the per-account stripe lock.
     """
     try:
-        doc_ids = list_account_agent_configs(account_id)
+        doc_ids = list_account_agent_configs_cached(account_id)
     except FirestoreConnectionError as exc:
         logger.error(
             "[ATTACH-SPECIALISTS] Failed to list configs (account=%r): %s",

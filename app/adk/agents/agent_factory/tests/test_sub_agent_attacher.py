@@ -12,7 +12,7 @@ Test surface:
 * Parent-agent invariant — first attach sets ``parent_agent``; subsequent
   attaches don't churn it.
 * Reconcile drop — sub_agents whose name disappears from
-  ``list_account_agent_configs`` are removed and have their
+  ``list_account_agent_configs_cached`` are removed and have their
   ``parent_agent`` cleared.
 * Concurrent attach — N threads calling attach for the same account
   serialise on the stripe lock and produce a single attached entry per
@@ -42,15 +42,17 @@ from app.adk.agents.agent_factory.sub_agent_attacher import (
 
 @pytest.fixture(autouse=True)
 def _clean_caches() -> Any:
-    """Each test starts and ends with empty agent + block caches."""
+    """Each test starts and ends with empty agent + block + list caches."""
     from app.adk.agents.utils.config_cache import clear_config_cache
 
     sr._specialists_cache.clear()
     sr._clear_block_cache_for_tests()
+    sr._clear_list_cache_for_tests()
     clear_config_cache()
     yield
     sr._specialists_cache.clear()
     sr._clear_block_cache_for_tests()
+    sr._clear_list_cache_for_tests()
     clear_config_cache()
     # root.sub_agents is NOT reset here — each test calls _make_root() for a fresh instance.
 
@@ -74,7 +76,7 @@ def _make_specialist(name: str) -> LlmAgent:
 
 
 def _patched_resolvers(visible: dict[str, LlmAgent]) -> Any:
-    """Patch list_account_agent_configs / resolve_config / resolve_agent to
+    """Patch list_account_agent_configs_cached / resolve_config / resolve_agent to
     surface exactly the specialists in *visible* as visible for any account.
     """
 
@@ -102,7 +104,7 @@ def _patched_resolvers(visible: dict[str, LlmAgent]) -> Any:
     stack.enter_context(
         patch(
             "app.adk.agents.agent_factory.sub_agent_attacher."
-            "list_account_agent_configs",
+            "list_account_agent_configs_cached",
             side_effect=_list,
         )
     )
@@ -244,7 +246,7 @@ class TestReconcile:
         with (
             patch(
                 "app.adk.agents.agent_factory.sub_agent_attacher."
-                "list_account_agent_configs",
+                "list_account_agent_configs_cached",
                 side_effect=_list,
             ),
             patch(
@@ -294,7 +296,7 @@ class TestResilience:
         with (
             patch(
                 "app.adk.agents.agent_factory.sub_agent_attacher."
-                "list_account_agent_configs",
+                "list_account_agent_configs_cached",
                 side_effect=_list,
             ),
             patch(
@@ -345,7 +347,7 @@ class TestResilience:
 
         with patch(
             "app.adk.agents.agent_factory.sub_agent_attacher."
-            "list_account_agent_configs",
+            "list_account_agent_configs_cached",
             side_effect=FirestoreConnectionError("down"),
         ):
             attach_account_specialists(root, "acc_123")
@@ -400,7 +402,7 @@ class TestConcurrentAttach:
         with (
             patch(
                 "app.adk.agents.agent_factory.sub_agent_attacher."
-                "list_account_agent_configs",
+                "list_account_agent_configs_cached",
                 side_effect=_list,
             ),
             patch(

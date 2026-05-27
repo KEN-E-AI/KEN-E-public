@@ -261,7 +261,7 @@ async def _capture_mode_b_events(
     with (
         patch.object(
             attacher,
-            "list_account_agent_configs",
+            "list_account_agent_configs_cached",
             return_value=["test_specialist"],
         ),
         patch.object(attacher, "resolve_config", return_value=test_config),
@@ -513,7 +513,7 @@ class TestMultiTurnRouting:
         with (
             patch.object(
                 attacher,
-                "list_account_agent_configs",
+                "list_account_agent_configs_cached",
                 return_value=["test_specialist"],
             ),
             patch.object(attacher, "resolve_config", return_value=test_config),
