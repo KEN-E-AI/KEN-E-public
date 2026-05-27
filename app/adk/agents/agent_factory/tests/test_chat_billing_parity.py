@@ -278,6 +278,11 @@ class TestCaptureHarness:
         specialist = _make_deterministic_specialist()
         events = await _capture_mode_a_events(specialist)
         assert len(events) >= 1, "Mode A outer Runner must yield at least one event"
+        billable_events = [e for e in events if getattr(e, "usage_metadata", None) is not None]
+        assert len(billable_events) >= 1, (
+            "Mode A must include at least one event with usage_metadata (specialist events "
+            "must be present in outer stream for token accounting to work)"
+        )
 
     @pytest.mark.asyncio
     async def test_mode_b_events_non_empty(self) -> None:
