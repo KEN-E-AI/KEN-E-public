@@ -945,6 +945,7 @@ lock to keep the lock window tight.
 | `cache_hit` | `bool` | Yes | `true` when an existing executor was returned from the pool; `false` when a new one was constructed |
 | `pool_size_after` | `int` | Yes | Number of entries in the pool at span-emit time. Sampled outside the lock — concurrent inserts may shift the count by ±1. |
 | `tmp_clear_failed` | `bool` | Yes | `true` if `SandboxPool._clear_tmp` raised on this call (SK-35 defence-in-depth degraded — cross-session `/tmp` data may not have been purged before the executor was returned). `false` on the happy path **and** when `_CLEAR_TMP_ON_REUSE` is disabled (no clear attempted). MER-E should alert on `count(sandbox_pool.get where tmp_clear_failed=true) > 0` over a 5-minute window because a failed clear is a security-relevant event (see SK-9 §Q3 High disposition). |
+| `client_cache_hit` | `bool` | Yes | `true` when the `vertexai.Client` used by `_clear_tmp` was served from the module-level `lru_cache(maxsize=2)` (i.e., the client was already constructed for this `(project, location)` pair). `false` on the first call to `_clear_tmp` for a given pair (cache miss), when `_CLEAR_TMP_ON_REUSE` is disabled (no clear attempted), or when the defensive guard short-circuited before reaching the client (missing/empty `sandbox_resource_name`). A sustained rate below ~95% may indicate multi-region or multi-project agent configs — revisit `maxsize` in that case (SK-43). |
 
 #### `sandbox_pool.evict`
 

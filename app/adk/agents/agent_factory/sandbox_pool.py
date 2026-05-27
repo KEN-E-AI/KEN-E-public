@@ -26,6 +26,7 @@ install — matching the pattern in ``agent_factory/mcp.py:372``.
 from __future__ import annotations
 
 import asyncio
+import functools
 import os
 import time
 from collections import OrderedDict
@@ -69,6 +70,38 @@ def _sandbox_resource_name(account_id: str, config_id: str) -> str:
     return (
         f"projects/{project_id}/locations/{location}/sandboxes/{account_id}/{config_id}"
     )
+
+
+@functools.lru_cache(maxsize=2)
+def _get_vertexai_client(project: str, location: str) -> Any:
+    """Return a cached ``vertexai.Client`` for the given project and location.
+
+    Thread-safety: gRPC channels (which back all Google Cloud Python clients)
+    are documented as thread-safe in the Python gRPC API reference:
+    https://grpc.github.io/grpc/python/grpc.html — "Channels are thread-safe."
+    ``vertexai.Client`` wraps the google-genai SDK client which in turn uses a
+    gRPC channel, so sharing a single instance across concurrent ``_clear_tmp``
+    calls is safe (SK-43 thread-safety verification).
+
+    ``maxsize=2`` covers the typical dev + prod environment in one process.
+    Revisit if the ``client_cache_hit`` rate in MER-E drops below ~95% — that
+    would signal multi-region or multi-project agent configs (SK-43).
+
+    Lazily imports ``vertexai`` so this module remains importable in test
+    environments without a live Vertex AI install — the same pattern used by
+    ``_construct`` and ``_clear_tmp``.
+
+    **Credential rotation note:** the google-auth library handles short-lived
+    token refresh internally, so the cached client remains valid across the
+    standard 1-hour ADC token cycle.  If the service account itself is revoked
+    (e.g., incident-response key rotation), all ``_clear_tmp`` calls will begin
+    returning 401/403 — the process must be recycled (Cloud Run rolling deploy)
+    to pick up new credentials.  ``tmp_clear_failed=True`` in MER-E spans is
+    the alerting path for this condition (SK-43).
+    """
+    import vertexai  # lazy — not required in tests
+
+    return vertexai.Client(project=project, location=location)
 
 
 class SandboxPool:
@@ -185,6 +218,16 @@ class SandboxPool:
         # alerts on count(sandbox_pool.get where tmp_clear_failed=true) — a
         # silent failure here means the cross-session LEAK mitigation degraded
         # for this caller (see SK-9 §Q3 High disposition).
+        #
+        # SK-43: snapshot cache_info().hits around the _clear_tmp call so the
+        # client_cache_hit span attribute reflects whether _get_vertexai_client
+        # served this call from its lru_cache.  False when the flag is off
+        # (consistent schema; MER-E can alert on missing booleans more easily
+        # than on absent attrs).  The hit counter is process-global; under high
+        # concurrency a hit from a concurrent _clear_tmp call could be credited
+        # to this span — client_cache_hit is best-effort observability, not a
+        # control-flow gate, so this race is acceptable.
+        pre_hits = _get_vertexai_client.cache_info().hits if self._CLEAR_TMP_ON_REUSE else 0
         tmp_clear_failed = False
         if self._CLEAR_TMP_ON_REUSE:
             try:
@@ -196,6 +239,10 @@ class SandboxPool:
                     extra={"account_id": account_id, "config_id": config_id},
                 )
 
+        client_cache_hit = False
+        if self._CLEAR_TMP_ON_REUSE:
+            client_cache_hit = _get_vertexai_client.cache_info().hits > pre_hits
+
         # pool_size_after is sampled outside the lock; concurrent inserts can
         # shift it by ±1 between eviction and the snapshot.
         async with emit_sandbox_pool_span(
@@ -206,6 +253,7 @@ class SandboxPool:
                 "cache_hit": cache_hit,
                 "pool_size_after": len(self._pool),
                 "tmp_clear_failed": tmp_clear_failed,
+                "client_cache_hit": client_cache_hit,
             },
         ):
             pass
@@ -347,11 +395,13 @@ class SandboxPool:
         them so the executor is still returned.
 
         The Vertex SDK call is synchronous, so it runs via ``asyncio.to_thread``
-        to avoid blocking the event loop.  Per-call ``vertexai.Client`` construction
-        is intentional for v1 *pending* the verify-thread-safety + cached-client
-        follow-up tracked in [SK-43](https://linear.app/ken-e/issue/SK-43); under
-        AH-PRD-09 per-turn dispatch the per-call init becomes load-bearing and SK-43
-        must land before SK-PRD-02 takes broad production traffic.
+        to avoid blocking the event loop.  Uses ``_get_vertexai_client`` (module-
+        level ``@functools.lru_cache(maxsize=2)``) so the client is constructed
+        once per ``(project, location)`` pair for the lifetime of the Cloud Run
+        instance rather than on every call.  Thread-safety is verified in SK-43:
+        gRPC channels are documented thread-safe (see ``_get_vertexai_client``
+        docstring) so sharing a single cached instance across concurrent
+        ``_clear_tmp`` calls is correct.
 
         **Concurrency assumption (SK-35 v1 — tracked for redesign in
         [SK-42](https://linear.app/ken-e/issue/SK-42)).**  This clear runs against
@@ -388,9 +438,7 @@ class SandboxPool:
         project = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
         location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
 
-        import vertexai  # lazy — not required in tests
-
-        client = vertexai.Client(project=project, location=location)
+        client = _get_vertexai_client(project, location)
         await asyncio.wait_for(
             asyncio.to_thread(
                 client.agent_engines.sandboxes.execute_code,

@@ -24,13 +24,15 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import sys
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.adk.agents.agent_factory.sandbox_pool import (
     SandboxPool,
+    _get_vertexai_client,
     _sandbox_resource_name,
 )
 
@@ -851,3 +853,159 @@ async def test_tmp_clear_failed_set_on_span_when_clear_raises() -> None:
     assert get_spans[0]["tmp_clear_failed"] is True, (
         "tmp_clear_failed must be True when _clear_tmp raises — MER-E alerts depend on it"
     )
+    assert "client_cache_hit" in get_spans[0], (
+        "client_cache_hit must be present in sandbox_pool.get span — schema must not regress"
+    )
+
+
+# ===========================================================================
+# SK-43 — _get_vertexai_client caching tests (tests 29-32)
+#
+# The autouse fixture clears the lru_cache before and after each test so no
+# cross-test cache state can leak between them.  Individual tests that call
+# _get_vertexai_client directly also patch sys.modules["vertexai"] to avoid
+# requiring a live Vertex AI install.
+# ===========================================================================
+
+
+@pytest.fixture(autouse=True)
+def _clear_vertexai_client_cache() -> Any:
+    """Clear _get_vertexai_client's lru_cache before and after every test in this
+    module (autouse=True is intentionally file-wide).  The pre-SK-43 tests don't
+    interact with the cache, so the extra clear is a no-op for them; it ensures no
+    SK-43 test can pollute the lru_cache state for any subsequent test."""
+    _get_vertexai_client.cache_clear()
+    yield
+    _get_vertexai_client.cache_clear()
+
+
+# ---------------------------------------------------------------------------
+# Test 29 — _get_vertexai_client caches by (project, location) key
+# ---------------------------------------------------------------------------
+
+
+def test_get_vertexai_client_caches_by_key() -> None:
+    """Two calls with the same (project, location) return the same instance;
+    cache_info().hits == 1 after the second call."""
+    mock_vertexai = MagicMock()
+    with patch.dict(sys.modules, {"vertexai": mock_vertexai}):
+        c1 = _get_vertexai_client("ken-e-dev", "us-central1")
+        c2 = _get_vertexai_client("ken-e-dev", "us-central1")
+        assert c1 is c2, "Same (project, location) key must return the same client instance"
+        assert _get_vertexai_client.cache_info().hits == 1
+
+
+# ---------------------------------------------------------------------------
+# Test 30 — distinct (project, location) pairs produce distinct clients
+# ---------------------------------------------------------------------------
+
+
+def test_get_vertexai_client_distinct_keys_distinct_clients() -> None:
+    """Different (project, location) keys produce distinct client instances;
+    currsize == 2 after two distinct calls."""
+    mock_vertexai = MagicMock()
+    # Return a fresh MagicMock for each call so identity comparison works
+    mock_vertexai.Client.side_effect = [MagicMock(), MagicMock()]
+
+    with patch.dict(sys.modules, {"vertexai": mock_vertexai}):
+        c_dev = _get_vertexai_client("ken-e-dev", "us-central1")
+        c_prod = _get_vertexai_client("ken-e-prod", "us-central1")
+
+    assert c_dev is not c_prod, "Different keys must produce distinct client instances"
+    assert _get_vertexai_client.cache_info().currsize == 2
+
+
+# ---------------------------------------------------------------------------
+# Test 31 — _clear_tmp reuses the cached client across calls
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_clear_tmp_reuses_cached_client() -> None:
+    """Calling _clear_tmp twice results in vertexai.Client constructed exactly once;
+    the second call hits the lru_cache so the constructor is not re-invoked."""
+    pool = SandboxPool()
+
+    class _FakeExecutor:
+        sandbox_resource_name = (
+            "projects/test-proj/locations/us-central1/sandboxes/acc/cfg"
+        )
+
+    mock_vertexai = MagicMock()
+    mock_client = MagicMock()
+    mock_vertexai.Client.return_value = mock_client
+
+    with (
+        patch.dict(sys.modules, {"vertexai": mock_vertexai}),
+        patch("asyncio.wait_for", new=AsyncMock(return_value=None)),
+    ):
+        await pool._clear_tmp(_FakeExecutor())  # type: ignore[arg-type]
+        await pool._clear_tmp(_FakeExecutor())  # type: ignore[arg-type]
+
+    # vertexai.Client must have been called once despite two _clear_tmp calls
+    mock_vertexai.Client.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Test 32 — client_cache_hit span attribute: True on second pool hit, False when flag off
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_client_cache_hit_span_attribute() -> None:
+    """client_cache_hit is False when _CLEAR_TMP_ON_REUSE is off, False on the first
+    pool hit (vertexai client cache miss), and True on the second pool hit (cache hit)."""
+    # Part 1 — flag off: attribute is always False regardless of pool cache state
+    pool_off = SandboxPool()
+    pool_off._CLEAR_TMP_ON_REUSE = False
+    executor_off = _make_executor()
+
+    async def _fake_construct_off(**_: Any) -> Any:
+        return executor_off
+
+    pool_off._construct = _fake_construct_off  # type: ignore[method-assign]
+
+    recorded_off, pt_off = _make_span_recorder()
+    with patch(_SPAN_PATH, pt_off):
+        await pool_off.get_or_create(account_id="acc", config_id="cfg")
+
+    off_span = next(a for n, a in recorded_off if n == "sandbox_pool.get")
+    assert off_span["client_cache_hit"] is False
+
+    # Part 2 — flag on: first call → vertexai.Client miss → False;
+    #                    second call → vertexai.Client hit → True
+    pool_on = SandboxPool()
+    pool_on._CLEAR_TMP_ON_REUSE = True
+
+    class _FakeExecutorWithName:
+        sandbox_resource_name = (
+            "projects/test-proj/locations/us-central1/sandboxes/acc/cfg"
+        )
+
+    mock_vertexai = MagicMock()
+    mock_vertexai.Client.return_value = MagicMock()
+
+    async def _fake_construct_on(**_: Any) -> Any:
+        return _FakeExecutorWithName()
+
+    pool_on._construct = _fake_construct_on  # type: ignore[method-assign]
+
+    with (
+        patch.dict(sys.modules, {"vertexai": mock_vertexai}),
+        patch("asyncio.wait_for", new=AsyncMock(return_value=None)),
+    ):
+        # First call: pool miss → construct; vertexai.Client cache miss → False
+        recorded_first, pt_first = _make_span_recorder()
+        with patch(_SPAN_PATH, pt_first):
+            await pool_on.get_or_create(account_id="acc", config_id="cfg")
+
+        first_span = next(a for n, a in recorded_first if n == "sandbox_pool.get")
+        assert first_span["client_cache_hit"] is False
+
+        # Second call: pool hit; vertexai.Client cache hit → True
+        recorded_second, pt_second = _make_span_recorder()
+        with patch(_SPAN_PATH, pt_second):
+            await pool_on.get_or_create(account_id="acc", config_id="cfg")
+
+    second_span = next(a for n, a in recorded_second if n == "sandbox_pool.get")
+    assert second_span["client_cache_hit"] is True
