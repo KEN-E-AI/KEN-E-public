@@ -1,0 +1,43 @@
+{
+  "trace_id": "delegate_to_specialist_ah_prd_09_sample",
+  "description": "Canonical post-AH-PRD-09 trace for a delegate_to_specialist call. Used by MER-E extractor validation and fixture conformance tests. See docs/trace-structure-spec.md §14 for the authoritative spec.",
+  "spans": [
+    {
+      "name": "delegate_to_specialist",
+      "summary": {
+        "specialist_name": "business_researcher",
+        "cache_hit": false
+      },
+      "children": [
+        {
+          "name": "specialist_run",
+          "summary": {
+            "acceptance_criteria": "Provide three distinct market opportunities with supporting evidence.",
+            "exit_reason": "approved",
+            "total_iterations": 1,
+            "output_key_prefix": "business_researcher_review"
+          },
+          "children": [
+            {
+              "name": "review_loop_iteration",
+              "summary": {
+                "iteration": 1,
+                "specialist_output": "Market opportunity analysis: (1) Emerging LATAM mid-market, (2) SMB automation tooling, (3) Vertical SaaS consolidation.",
+                "reviewer_output": ""
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "account_id": "acc_sample_ah_prd_09",
+    "session_id": "sess_00000000000000000000000001",
+    "environment": "staging",
+    "rollout_percentage": 100,
+    "feature_flags": {
+      "agentic_harness_per_turn_dispatch": true
+    }
+  }
+}

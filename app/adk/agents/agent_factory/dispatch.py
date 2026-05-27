@@ -51,6 +51,7 @@ from app.adk.agents.utils.review_pipeline import (
 )
 from app.adk.agents.utils.review_pipeline_tracing import (
     emit_iteration_span,
+    set_delegate_attrs,
     set_pipeline_attrs,
 )
 from app.utils.weave_observability import safe_weave_op
@@ -291,9 +292,10 @@ def delegate_to_specialist(
         try:
             account_id = validate_account_id(_raw_account_id)
         except ValueError:
+            _safe_id = repr(_raw_account_id)[:120]
             logger.warning(
-                "[DELEGATE] Invalid account_id %r in session state; rejecting dispatch.",
-                _raw_account_id,
+                "[DELEGATE] Invalid account_id %s in session state; rejecting dispatch.",
+                _safe_id,
             )
             return (
                 "[DELEGATE ERROR] Invalid account_id in session state. "
@@ -304,12 +306,32 @@ def delegate_to_specialist(
 
     # Lazy import: avoids a circular dependency at module-load time since
     # agent_factory/__init__.py imports both dispatch and specialist_runtime.
-    from app.adk.agents.agent_factory.specialist_runtime import run as _specialist_run
+    from app.adk.agents.agent_factory.specialist_runtime import (
+        resolve_agent_with_hit as _resolve_agent_with_hit,
+    )
+    from app.adk.agents.agent_factory.specialist_runtime import (
+        run as _specialist_run,
+    )
 
-    return _specialist_run(
+    # Resolve the agent first to observe the LRU cache hit/miss flag.
+    # The config and agent are cached, so the second resolution inside run()
+    # costs only a dict lookup.
+    cache_hit: bool = False
+    try:
+        _, cache_hit = _resolve_agent_with_hit(name, account_id)
+    except Exception as _pre_resolve_exc:
+        logger.warning(
+            "[DELEGATE] pre-resolution for cache_hit on %r raised: %s; defaulting to False.",
+            name,
+            _pre_resolve_exc,
+        )  # cache_hit stays False; run() will surface the error if persistent
+
+    result = _specialist_run(
         doc_id=name,
         query=query,
         account_id=account_id,
         acceptance_criteria=acceptance_criteria,
         tool_context=tool_context,
     )
+    set_delegate_attrs(specialist_name=name, cache_hit=cache_hit)
+    return result

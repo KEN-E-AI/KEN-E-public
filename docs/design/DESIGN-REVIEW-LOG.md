@@ -1429,4 +1429,58 @@ The Shape A → B multi-tenant data-model migration delivered end-to-end across 
 
 ---
 
+## Review 34 — AH-PRD-09 Trace Shape Change: delegate_to_specialist Span
+
+**Date:** 2026-05-27
+**Scope:** Agentic Harness — AH-67 (Phase 5, MER-E coordination + eval suite cutover gate)
+
+### Summary
+
+AH-PRD-09 (Per-Turn Dispatch Agent) changes the Weave trace shape observed by MER-E.
+Previously, the deploy-time agent factory (AH-PRD-02) emitted N distinct
+`dispatch_to_<specialist_name>` spans — one per registered specialist function called
+in a turn.  The per-turn dispatch model emits a single `delegate_to_specialist` span
+with a `specialist_run` child, regardless of which specialist is invoked.
+
+This review entry captures the contract change and the decisions made in AH-67.
+
+### Key decisions
+
+1. **`specialist_name` and `cache_hit` on the outer span** — attributes are written to
+   `delegate_to_specialist` (not `specialist_run`) so MER-E extractors can read them
+   without drilling into sub-spans.  Follows the `set_pipeline_attrs` pattern in
+   `review_pipeline_tracing.py`.
+
+2. **`mcp_pool_hit` deferred to AH-62** — the attribute is documented and a `TODO(AH-62)`
+   placeholder is in `set_delegate_attrs`, but the value is not yet written.  The fixture
+   asserts its absence so MER-E tooling doesn't prematurely depend on it.
+
+3. **`resolve_agent_with_hit` pre-resolution approach** — `delegate_to_specialist` calls
+   `resolve_agent_with_hit` before calling `run` to observe the LRU cache hit/miss flag
+   without changing `run`'s return signature.  The double-resolution cost is one
+   TTL-cached dict lookup (negligible).
+
+4. **Cutover gate** — Phase 5 default-on flip is gated on MER-E written sign-off that
+   their eval suite passes against the new trace shape.  The canonical fixture at
+   `app/adk/tracking/tests/fixtures/delegate_to_specialist_trace.json` is the validation
+   target.
+
+### Consequences
+
+- MER-E extractors that match `span["name"].startswith("dispatch_to_")` will stop
+  firing after the Phase 5 flag flip.  Must be updated before the flip.
+- `acceptance_criteria`, `exit_reason`, `total_iterations`, `output_key_prefix`
+  attributes move from `dispatch_to_<specialist>` to `specialist_run` (one level deeper).
+- The `review_loop_iteration` grandchild depth increases from 2 to 3.
+
+### Documents updated
+
+| File | Change |
+|------|--------|
+| `docs/trace-structure-spec.md` | Added §14 (AH-PRD-09 Per-Turn Dispatch) + §3.1 table row for `delegate_to_specialist` |
+| `docs/design/DESIGN-REVIEW-LOG.md` | This entry (Review 34) |
+| `docs/design/components/agentic-harness/projects/AH-PRD-09-trace-contract-diff.md` | New contract diff doc for MER-E extractor authors |
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, and documents updated. Decision rationale lives in the Review itself — this log is the canonical record going forward.*

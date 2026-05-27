@@ -86,6 +86,7 @@ ADK uses dot-notation span names. MER-E's current `ToolCallExtractor` uses colon
 | Tool | `adk.tool.<tool_name>` | `tool:<tool_name>` | Match via `attributes.type == "tool"` or `adk.tool.` prefix |
 | LLM | `generate_content` / `chat.completions` | `llm:<model_name>` | Exclude via known LLM op_name patterns |
 | Formatter | `<subagent>_format` | Not matched | Identified by `_format` suffix in op_name |
+| Per-turn dispatch (AH-PRD-09) | `delegate_to_specialist` | Not previously present | Match `op_name == "delegate_to_specialist"` exactly; replaces `dispatch_to_*` pattern — see §14 |
 
 ### Identification Strategy
 
@@ -753,6 +754,93 @@ Below is a simplified example of a compliant trace for a business strategy agent
   ]
 }
 ```
+
+## 14. AH-PRD-09 Per-Turn Dispatch
+
+AH-PRD-09 (Per-Turn Dispatch Agent) introduces a single unified `delegate_to_specialist`
+entry-point tool.  This section documents the trace shape change it produces and the
+attributes MER-E extractors should consume.
+
+### 14.1 Span Hierarchy
+
+```
+KEN-E root agent invocation
+└── LLM call(s)
+└── delegate_to_specialist                ← single entry point (one per specialist call in turn)
+    └── specialist_run                    ← per-call child
+        ├── load_config_from_firestore    ← present on cache miss; absent on cache hit
+        └── review_loop_iteration (0..N)  ← present when acceptance_criteria is non-empty
+```
+
+Compare to the pre-AH-PRD-09 shape, where each specialist produced its own
+`dispatch_to_<specialist_name>` span at the same level.
+
+### 14.2 Per-Span Attributes
+
+#### `delegate_to_specialist`
+
+| Attribute | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `specialist_name` | `str` | Yes | Firestore `doc_id` of the resolved specialist |
+| `cache_hit` | `bool` | Yes | `true` when the `LlmAgent` was served from the LRU cache; `false` on a fresh build |
+| `mcp_pool_hit` | `bool` | No (future) | MCP connection-pool hit — populated by AH-62; absent in this release |
+
+Written by `set_delegate_attrs()` in `app/adk/agents/utils/review_pipeline_tracing.py`.
+
+#### `specialist_run`
+
+| Attribute | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `acceptance_criteria` | `str` | Yes | Review-loop criteria forwarded from caller; empty string for single-pass mode |
+| `exit_reason` | `str` | Yes | `"approved"` or `"max_iterations"` |
+| `total_iterations` | `int` | Yes | Number of complete review iterations; `0` for single-pass |
+| `output_key_prefix` | `str` | Yes | Pipeline key prefix (e.g. `"{doc_id}_review"`) |
+
+These attributes existed under `dispatch_to_<specialist>` pre-AH-PRD-09; they now
+appear one level deeper, under `specialist_run`.
+
+#### `review_loop_iteration`
+
+Unchanged from pre-AH-PRD-09.  See §7 for the existing extractor guidance.
+
+### 14.3 Relation to §2 Span Hierarchy
+
+The `delegate_to_specialist` span is emitted at the **L2** position (sub-agent
+delegation level) in the hierarchy described in §2.  `specialist_run` is its L3
+child; `review_loop_iteration` is L4.
+
+### 14.4 MER-E Extractor Guidance
+
+Before the Phase 5 flag flip (`agentic_harness_per_turn_dispatch` default-on):
+
+1. **Stop matching `dispatch_to_*` span names** — update any extractor query of the form
+   `span["name"].startswith("dispatch_to_")` to `span["name"] == "delegate_to_specialist"`.
+
+2. **Read `specialist_name` from the outer span** (`delegate_to_specialist.summary`),
+   not from the span name itself.
+
+3. **Read review-loop attributes from `specialist_run`** (one level deeper than before):
+   `acceptance_criteria`, `exit_reason`, `total_iterations`, `output_key_prefix`.
+
+4. **`cache_hit` is a new attribute** — include it in any cache-efficiency metrics or
+   latency attribution analysis.
+
+5. **Validate against the canonical fixture** at
+   `app/adk/tracking/tests/fixtures/delegate_to_specialist_trace.json` and run
+   `app/adk/tracking/tests/test_delegate_to_specialist_fixture.py` before the cutover.
+
+### 14.5 Fixture Pointer
+
+```
+app/adk/tracking/tests/fixtures/delegate_to_specialist_trace.json
+```
+
+The fixture includes all required attributes for `delegate_to_specialist`,
+`specialist_run`, and `review_loop_iteration`.  The conformance test suite at
+`app/adk/tracking/tests/test_delegate_to_specialist_fixture.py` asserts schema
+compliance and is wired into the standard pytest run.
+
+---
 
 ## 13. Glossary
 
