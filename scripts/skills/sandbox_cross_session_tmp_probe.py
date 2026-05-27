@@ -65,6 +65,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import datetime
+import json
 import os
 import sys
 import time
@@ -249,10 +250,26 @@ def _execute_in_sandbox(client: Any, sandbox_name: str, code: str) -> tuple[str,
     stdout_parts: list[str] = []
     stderr_parts: list[str] = []
     for out in outputs:
-        if hasattr(out, "code_execution_result"):
+        # vertexai 1.134.0 / ADK 1.27.5 shape:
+        # Chunk(data=bytes_json, mime_type='application/json') with
+        # {"exit_status_int": int, "msg_out": str, "msg_err": str}.
+        if (
+            hasattr(out, "data")
+            and hasattr(out, "mime_type")
+            and out.mime_type == "application/json"
+        ):
+            try:
+                payload = json.loads(out.data)
+            except (ValueError, TypeError):
+                continue
+            if payload.get("msg_out"):
+                stdout_parts.append(payload["msg_out"].rstrip("\n"))
+            if payload.get("msg_err"):
+                stderr_parts.append(payload["msg_err"])
+        # Legacy shapes — kept for forward/back compat across SDK versions.
+        elif hasattr(out, "code_execution_result"):
             r = out.code_execution_result
             if hasattr(r, "output") and r.output:
-                # Strip trailing newline consistent with harness behaviour
                 stdout_parts.append(r.output.rstrip("\n"))
         elif hasattr(out, "text"):
             if "stderr" in str(type(out)).lower():

@@ -102,10 +102,12 @@ class SandboxPool:
     _MAX_ENTRIES: int = 64
     _IDLE_TTL_SECONDS: int = 900
     _SWEEP_INTERVAL_SECONDS: int = 60
-    # SK-35 LEAK-branch defence-in-depth: set True after live probe confirms
-    # Vertex reuses container /tmp across executor sessions.  Inactive by
-    # default (CLEAN branch) — no latency cost until probe result is known.
-    _CLEAR_TMP_ON_REUSE: bool = False
+    # SK-35 LEAK-branch defence-in-depth: live probe (2026-05-27, 50/50 LEAK)
+    # confirmed Vertex reuses container /tmp across executor sessions sharing
+    # the same sandbox resource name.  Flag enabled to clear /tmp on every
+    # get_or_create return path.  See
+    # docs/spike/sk-prd-02-cross-session-tmp-characterisation.md for findings.
+    _CLEAR_TMP_ON_REUSE: bool = True
     _TMP_CLEAR_TIMEOUT_SECONDS: int = 5
 
     _PURGE_TMP_SCRIPT: str = (
@@ -338,9 +340,19 @@ class SandboxPool:
 
         The Vertex SDK call is synchronous, so it runs via ``asyncio.to_thread``
         to avoid blocking the event loop.  Creating a fresh ``vertexai.Client``
-        per call avoids threading issues with a shared client instance.
+        per call avoids threading issues with a shared client instance; a
+        per-call-pooled client is tracked as a follow-up (see SK-PRD-02 Wave 4
+        backlog — client-init optimisation).
+
+        Defensive guard: if ``sandbox_resource_name`` is missing or not a
+        non-empty string (e.g. unit-test Mock executor), return immediately
+        without issuing a network call.  Production executors always carry a
+        real resource name; this short-circuit only fires in test contexts.
         """
-        resource_name: str = getattr(executor, "sandbox_resource_name", "")
+        resource_name = getattr(executor, "sandbox_resource_name", "")
+        if not isinstance(resource_name, str) or not resource_name:
+            return
+
         project = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
         location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
 
