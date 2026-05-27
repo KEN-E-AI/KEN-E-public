@@ -45,7 +45,7 @@ No new code is produced here. The work is **export, deploy, cut over, clean up r
 - DM-PRD-00–05 code already shipped to production via normal CD pipeline (or will be by issue #2's deploy step).
 - Production GCP project `ken-e-production` with Firestore (`(default)` + `analytics` databases) provisioned.
 - Production service account with appropriate IAM for running migration (Firestore read/write + delete), taking GCS exports (`roles/datastore.importExportAdmin`), and writing to `gs://ken-e-production-backups/`.
-- DM-92's `cleanup_old_accounts_field` script (PR #641) merged and available on the deployed prod revision.
+- DM-92's `audit_org_accounts_field.py` script (PR #641) merged and available on the deployed prod revision.
 
 ## 4. Verification & execution checklist
 
@@ -58,26 +58,41 @@ No new code is produced here. The work is **export, deploy, cut over, clean up r
 
 ### 4.2 Cutover window
 
-1. **Deploy.** Confirm the deployed revision on `kene-api-production` includes the merged DM-PRD-00–05 code (specifically: `migrate_to_shape_b.py`, the `_migrate_shape_b/` module, `cleanup_old_accounts_field.py`, and the Shape B routers).
+1. **Deploy.** Confirm the deployed revision on `kene-api-prod` (the Cloud Run service name per `deployment/terraform/locals.tf:94`) includes the merged DM-PRD-00–05 code (specifically: `migrate_to_shape_b.py`, the `_migrate_shape_b/` module, `audit_org_accounts_field.py`, and the Shape B routers).
 2. **Pre-cutover GCS export** (belt-and-suspenders backup):
    ```bash
    gcloud firestore export gs://ken-e-production-backups/pre-shape-b-cutover-$(date +%Y-%m-%d)/ \
      --project=ken-e-production --database='(default)'
    ```
    Wait for the operation to complete. Record the operation ID in the run log.
-3. **Dry-run.**
+3. **Dry-run.** Run once per Firestore database. `migrate_to_shape_b.py` has no `--env` flag — it reads `GOOGLE_CLOUD_PROJECT_ID` and operates on one DB per invocation (pattern confirmed by the DM-60 staging run-log).
    ```bash
-   python api/scripts/migrate_to_shape_b.py --all --env=production --dry-run
+   GOOGLE_CLOUD_PROJECT_ID=ken-e-production FIRESTORE_DATABASE_ID="(default)" \
+     python api/scripts/migrate_to_shape_b.py --all --dry-run
+
+   GOOGLE_CLOUD_PROJECT_ID=ken-e-production FIRESTORE_DATABASE_ID="analytics" \
+     python api/scripts/migrate_to_shape_b.py --all --dry-run
    ```
-   Inspect per-resource counts; confirm against the pre-cutover inventory.
+   Inspect per-resource counts; confirm against the pre-cutover inventory. (Staging's `analytics` DB was a structural no-op per DM-60 — same expected for prod, but run it to verify.)
 4. **Halt-gate (PO go/no-go).** Operator presents dry-run counts to PO. PO either authorises `--confirm-delete` or aborts (no destructive action taken; source data untouched).
-5. **Phase A (copy + verify) + Phase B (delete).**
+5. **Phase A (copy + verify) + Phase B (delete).** Same dual-database pattern as step 3.
    ```bash
-   python api/scripts/migrate_to_shape_b.py --all --env=production --confirm-delete
+   GOOGLE_CLOUD_PROJECT_ID=ken-e-production FIRESTORE_DATABASE_ID="(default)" \
+     python api/scripts/migrate_to_shape_b.py --all --confirm-delete
+
+   GOOGLE_CLOUD_PROJECT_ID=ken-e-production FIRESTORE_DATABASE_ID="analytics" \
+     python api/scripts/migrate_to_shape_b.py --all --confirm-delete
    ```
    Capture per-resource elapsed time during the run.
 6. **Residue cleanup.**
-   - Run `cleanup_old_accounts_field` against the three orgs `equity-trust`, `healthway`, `open-lines` (dry-run first, then real).
+   - Run `audit_org_accounts_field.py` (DM-92's PR #641 deliverable) project-wide. The script audits or deletes the dead `accounts` field across every org doc in `ken-e-production` — there is no per-org flag, and orgs without the field are idempotently skipped (`already_clean`). Preview with `--confirm-delete --dry-run`, then re-run without `--dry-run`.
+     ```bash
+     GOOGLE_CLOUD_PROJECT_ID=ken-e-production \
+       python api/scripts/audit_org_accounts_field.py --env=production --confirm-delete --dry-run
+
+     GOOGLE_CLOUD_PROJECT_ID=ken-e-production \
+       python api/scripts/audit_org_accounts_field.py --env=production --confirm-delete
+     ```
    - Delete the orphan `strategy_docs_<test_account_id>` placeholder collection.
 
 ### 4.3 Phase 6 verification against production
@@ -121,7 +136,7 @@ Detailed runbook lives at `deployment/runbooks/shape-b-migration-rollback.md` (a
 
 1. **Rollback runbook exists** at `deployment/runbooks/shape-b-migration-rollback.md` and is referenced from the cutover-window issue.
 2. **Pre-cutover GCS export captured** at `gs://ken-e-production-backups/pre-shape-b-cutover-<YYYY-MM-DD>/` with the operation ID recorded; restore-from-export procedure is documented in the runbook.
-3. **Deploy verified** — current `kene-api-production` revision includes the merged DM-PRD-00–05 code (`migrate_to_shape_b.py`, `_migrate_shape_b/`, `cleanup_old_accounts_field.py`, and the Shape B routers).
+3. **Deploy verified** — current `kene-api-prod` revision includes the merged DM-PRD-00–05 code (`migrate_to_shape_b.py`, `_migrate_shape_b/`, `audit_org_accounts_field.py`, and the Shape B routers).
 4. **Dry-run executed and inspected** — per-resource counts captured and reconciled against the pre-cutover inventory; halt-gate documented with PO go/no-go.
 5. **Production migration executes successfully across all registered resources** — Phase A + Phase B both exit 0; per-resource counts match (source = destination), source collections deleted; post-cutover dry-run reports zero source remaining.
 6. **Phase 6 verification checklist (§4.3) passes** against `ken-e-production` — every checkbox green.
@@ -145,7 +160,7 @@ A "red-light" test: if any of §4.3's checks fail after the migration runs, **do
 | `accounts`-field cleanup script behaves differently in prod than staging (e.g., new field shape) | Dry-run mode runs first; PO reviews diff before applying |
 | Orphan `strategy_docs_<test_account_id>` collection turns out to be referenced by code somewhere (unlikely — it's a literal-string artifact) | Codebase grep for the literal string `<test_account_id>` runs as part of §4.3; zero hits expected |
 | Firestore PITR window (~7 days) expires before a data issue surfaces | The pre-cutover GCS export (AC-2) is the long-term backup; no time-bound on import-from-export |
-| Operator runs `--confirm-delete` against staging by mistake while authenticated for prod | `--env=production` is the only path that touches prod; staging would use `--env=staging`. Halt-gate also requires PO confirmation between dry-run and real run |
+| Operator runs `--confirm-delete` against staging by mistake while authenticated for prod | `migrate_to_shape_b.py` reads `GOOGLE_CLOUD_PROJECT_ID` (no `--env` flag) — operator must export `GOOGLE_CLOUD_PROJECT_ID=ken-e-production` explicitly before each invocation. `audit_org_accounts_field.py` separately requires `--env=production` to match `GOOGLE_CLOUD_PROJECT_ID` (exits 2 on mismatch). Halt-gate also requires PO confirmation between dry-run and real run |
 
 ### Open questions
 
@@ -158,6 +173,6 @@ A "red-light" test: if any of §4.3's checks fail after the migration runs, **do
 - Upstream: [DM-PRD-06](./DM-PRD-06-verification-and-cutover.md)
 - Related: [DM-92](https://linear.app/ken-e/issue/DM-92/delete-dead-accounts-field-from-staging-org-docs-audit-prod-for-same) — staging `accounts`-residue cleanup; this PRD picks up the deferred prod-side audit
 - Migration script: `api/scripts/migrate_to_shape_b.py` + `api/scripts/_migrate_shape_b/resources.py`
-- Residue cleanup script: `api/scripts/cleanup_old_accounts_field.py`
+- Residue cleanup script: `api/scripts/audit_org_accounts_field.py` (PR #641)
 - Decision: [Review 15 in DESIGN-REVIEW-LOG](../../../DESIGN-REVIEW-LOG.md#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1) — Multi-Tenant Data Model Shape
 - CLAUDE.md rules in scope: (none — no code; documentation, ops, and verification only)
