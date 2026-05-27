@@ -283,33 +283,24 @@ async def skill_spans_after_tool_callback(
         output: dict[str, Any] = {}
 
         if tool.name == "load_skill":
-            if isinstance(tool_response, dict):
-                instructions = tool_response.get("instructions") or tool_response.get(
-                    "instruction", ""
-                )
-            else:
-                instructions = str(tool_response) if tool_response else ""
+            instructions = tool_response.get("instructions") or tool_response.get(
+                "instruction", ""
+            )
             if instructions and isinstance(instructions, str):
                 output["instruction_bytes"] = len(instructions.encode("utf-8"))
             # Set active_skill_id only on success (no error key present).
-            response_has_error = (
-                isinstance(tool_response, dict) and tool_response.get("error")
-            )
-            if not response_has_error and skill_id:
+            if not tool_response.get("error") and skill_id:
                 try:
                     state["active_skill_id"] = skill_id
                 except Exception:
                     pass
 
         elif tool.name == "load_skill_resource":
-            if isinstance(tool_response, dict):
-                content = (
-                    tool_response.get("content")
-                    or tool_response.get("resource_content", "")
-                    or tool_response.get("resource", "")
-                )
-            else:
-                content = str(tool_response) if tool_response else ""
+            content = (
+                tool_response.get("content")
+                or tool_response.get("resource_content", "")
+                or tool_response.get("resource", "")
+            )
             if content and isinstance(content, str):
                 output["resource_bytes"] = len(content.encode("utf-8"))
 

@@ -101,7 +101,7 @@ async def _build_skill_toolset_async(
     skill_ids: list[str],
     *,
     config_id: str | None,
-) -> Any | None:
+) -> tuple[Any | None, dict]:
     """Async core: load skill objects and construct a SkillToolset.
 
     The ``kene_api.services.skill_loader`` import is deferred so the agent
