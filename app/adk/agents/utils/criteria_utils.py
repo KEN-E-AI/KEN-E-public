@@ -7,16 +7,28 @@ duplicating the regex or the 2000-character cap constant.
 
 from __future__ import annotations
 
+import logging
 import re
+
+logger = logging.getLogger(__name__)
 
 # Hard cap on acceptance_criteria length before sanitisation.
 # Matches the upstream guard applied by all dispatch handlers.
 MAX_CRITERIA_CHARS: int = 2000
 
-# Allow only printable ASCII minus control characters (no angle brackets,
-# backtick, or curly braces that could be misread as template variables or
-# HTML by the LLM).
-_UNSAFE_CRITERIA_RE: re.Pattern[str] = re.compile(r"[^\w\s.,;:()\-'\"!?%@&=+/#*]")
+# Allow only explicit printable ASCII word characters plus common punctuation.
+# Uses [A-Za-z0-9_] instead of \w so Unicode word characters (Cyrillic,
+# Greek, etc.) that are visually similar to ASCII (confusables) are stripped
+# rather than silently permitted into LLM system prompts.
+# Strips: any char not in the explicit allow-list, which includes —
+#   * Unicode confusables (e.g. Cyrillic small letter "a", U+0430)
+#   * Cf-class invisible formatting chars (ZWSP U+200B, ZWNJ U+200C, ZWJ U+200D)
+#   * BOM (U+FEFF)
+#   * Bidi override marks (U+202A-U+202E)
+#   * Any other non-ASCII character
+_UNSAFE_CRITERIA_RE: re.Pattern[str] = re.compile(
+    r"[^A-Za-z0-9_\s.,;:()\-'\"!?%@&=+/#*]"
+)
 
 
 def sanitise_criteria(raw: str) -> str:
@@ -27,10 +39,22 @@ def sanitise_criteria(raw: str) -> str:
     response cannot redirect sub-agent behaviour via structural injection.
     The MAX_CRITERIA_CHARS hard cap upstream bounds the total length.
 
+    This function is intentionally ASCII-conservative: only explicit ASCII
+    printable characters are permitted. Non-ASCII Unicode word characters
+    (including Cyrillic/Greek confusables) are stripped and logged at WARNING
+    level so operators can detect unexpected non-ASCII input.
+
     Args:
         raw: The raw acceptance_criteria string from the caller.
 
     Returns:
         The sanitised string with unsafe characters removed.
     """
-    return _UNSAFE_CRITERIA_RE.sub("", raw)
+    sanitised = _UNSAFE_CRITERIA_RE.sub("", raw)
+    stripped_count = len(raw) - len(sanitised)
+    if stripped_count > 0:
+        logger.warning(
+            "[SANITISE-CRITERIA] %d unsafe character(s) stripped from input",
+            stripped_count,
+        )
+    return sanitised
