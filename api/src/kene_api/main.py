@@ -181,6 +181,20 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to start MCP health monitor: {e}")
 
+    # Arm the SandboxPool idle-TTL background sweep (SK-37).
+    # start() is idempotent — safe to call even if the pool was already armed
+    # (e.g. by the Agent Engine before_agent_callback path on the same instance).
+    # The API process does not call build_agent today, but the wiring follows
+    # SK-PRD-02 §4.6 "Cloud Run instance" lifecycle contract and is
+    # forward-compatible with any future API-side per-turn dispatch port.
+    try:
+        from app.adk.agents.agent_factory.builder import _DEFAULT_SANDBOX_POOL
+
+        _DEFAULT_SANDBOX_POOL.start()
+        logger.info("SandboxPool sweep started")
+    except Exception as e:
+        logger.warning("Failed to start SandboxPool sweep: %s", e)
+
     yield
 
     # Shutdown
@@ -205,6 +219,17 @@ async def lifespan(app: FastAPI):
         logger.info("MCP health monitor stopped")
     except Exception as e:
         logger.warning(f"Failed to stop MCP health monitor: {e}")
+
+    # Stop the SandboxPool sweep and await cancellation (SK-37).
+    # Ensures the background task is cancelled cleanly on SIGTERM so there are
+    # no "un-awaited task" warnings at process teardown.
+    try:
+        from app.adk.agents.agent_factory.builder import _DEFAULT_SANDBOX_POOL
+
+        await _DEFAULT_SANDBOX_POOL.stop()
+        logger.info("SandboxPool sweep stopped")
+    except Exception as e:
+        logger.warning("Failed to stop SandboxPool sweep: %s", e)
 
     await neo4j_service.close()
     logger.info("Neo4j connection closed")

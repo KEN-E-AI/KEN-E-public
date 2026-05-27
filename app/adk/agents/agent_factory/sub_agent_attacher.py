@@ -343,6 +343,24 @@ def attach_specialists_before_agent_callback(
     logs + degrades on every failure mode) so an attach failure cannot
     block the turn.
     """
+    # Arm the SandboxPool sweep on first turn inside the Agent Engine process
+    # (SK-37). start() is idempotent (sandbox_pool.py: ``if self._sweep_task is
+    # None or self._sweep_task.done()``), so the per-turn call costs one branch
+    # check after the first invocation. The callback fires in ADK's async Runner
+    # context, so asyncio.create_task inside start() resolves to the active loop.
+    # No ADK-exposed AdkApp startup hook exists in the pinned version; this
+    # callback is the closest guaranteed-to-fire async entrypoint on the Agent
+    # Engine surface.
+    try:
+        from app.adk.agents.agent_factory.builder import _DEFAULT_SANDBOX_POOL
+
+        _DEFAULT_SANDBOX_POOL.start()
+    except Exception as exc:
+        logger.warning(
+            "[ATTACH-SPECIALISTS] SandboxPool.start() raised; sweep may be dormant: %s",
+            exc,
+        )
+
     try:
         account_id = callback_context.state.get("account_id")
         # ADK-version dependency: ``CallbackContext._invocation_context`` is a
