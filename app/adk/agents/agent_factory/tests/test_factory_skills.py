@@ -533,6 +533,196 @@ class TestDuplicateSkillNameDegrades:
         assert error_msgs
 
 
+class TestSandboxWiring:
+    """AC-4, AC-5: SandboxPool delegation and independence matrix for sandbox x skills."""
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _make_mock_pool(self) -> Any:
+        """Return a MagicMock(spec=SandboxPool) whose get_or_create returns a BuiltInCodeExecutor.
+
+        ``LlmAgent.code_executor`` is a Pydantic field typed as ``BaseCodeExecutor``, so
+        the sentinel must be a real subclass instance — a plain ``object()`` fails validation.
+        We use ``BuiltInCodeExecutor`` as the stand-in since it is a no-arg BaseCodeExecutor
+        subclass already in the test environment.
+        """
+        from unittest.mock import AsyncMock, MagicMock
+
+        from google.adk.code_executors import BuiltInCodeExecutor
+
+        from app.adk.agents.agent_factory.sandbox_pool import SandboxPool
+
+        pool = MagicMock(spec=SandboxPool)
+        sentinel = BuiltInCodeExecutor()
+        pool.get_or_create = AsyncMock(return_value=sentinel)
+        pool._sentinel = sentinel
+        return pool
+
+    def _build(
+        self,
+        config: MergedAgentConfig,
+        *,
+        account_id: str | None,
+        sandbox_pool: Any,
+        monkeypatch: pytest.MonkeyPatch | None = None,
+    ) -> Any:
+        import app.adk.agents.agent_factory.builder as b
+
+        kw: dict[str, Any] = {"account_id": account_id, "sandbox_pool": sandbox_pool}
+
+        with _PATCH_BEFORE_AGENT, _PATCH_AFTER_AGENT, _PATCH_BEFORE_TOOL, _PATCH_AFTER_TOOL:
+            return b.build_agent(config, name="test_agent", **kw)
+
+    # ------------------------------------------------------------------
+    # AC-4 — sandbox wiring
+    # ------------------------------------------------------------------
+
+    def test_sandbox_true_pool_called_once_with_correct_key(self) -> None:
+        """sandbox=True → pool.get_or_create called with (account_id, name)."""
+        pool = self._make_mock_pool()
+        config = _make_config(sandbox_code_executor_enabled=True)
+
+        agent = self._build(config, account_id="acc_test", sandbox_pool=pool)
+
+        pool.get_or_create.assert_called_once_with(account_id="acc_test", config_id="test_agent")
+        assert agent.code_executor is pool._sentinel
+
+    def test_sandbox_false_pool_not_called(self) -> None:
+        """sandbox=False → pool.get_or_create NOT called; code_executor is None."""
+        pool = self._make_mock_pool()
+        config = _make_config(sandbox_code_executor_enabled=False, code_execution_enabled=False)
+
+        agent = self._build(config, account_id="acc_test", sandbox_pool=pool)
+
+        pool.get_or_create.assert_not_called()
+        assert agent.code_executor is None
+
+    def test_sandbox_true_code_execution_true_sandbox_wins(self) -> None:
+        """sandbox=True + code_execution_enabled=True → sandbox takes precedence."""
+        pool = self._make_mock_pool()
+        config = _make_config(
+            sandbox_code_executor_enabled=True,
+            code_execution_enabled=True,
+        )
+
+        agent = self._build(config, account_id="acc_both", sandbox_pool=pool)
+
+        pool.get_or_create.assert_called_once()
+        assert agent.code_executor is pool._sentinel
+
+    def test_sandbox_true_account_id_none_pool_not_called(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """sandbox=True + account_id=None → pool NOT called; WARNING emitted; falls through."""
+        import logging
+
+        pool = self._make_mock_pool()
+        config = _make_config(sandbox_code_executor_enabled=True, code_execution_enabled=False)
+
+        with caplog.at_level(logging.WARNING):
+            agent = self._build(config, account_id=None, sandbox_pool=pool)
+
+        pool.get_or_create.assert_not_called()
+        assert agent.code_executor is None
+
+        warn_records = [
+            r for r in caplog.records
+            if r.levelname == "WARNING" and "sandbox_skipped_no_account" in r.getMessage()
+        ]
+        assert len(warn_records) == 1
+
+    def test_sandbox_true_inside_running_loop(self) -> None:
+        """sandbox=True works when build_agent is called inside a running event loop."""
+        pool = self._make_mock_pool()
+        config = _make_config(sandbox_code_executor_enabled=True)
+
+        async def _run() -> Any:
+            return self._build(config, account_id="acc_loop", sandbox_pool=pool)
+
+        agent = asyncio.run(_run())
+
+        pool.get_or_create.assert_called_once_with(account_id="acc_loop", config_id="test_agent")
+        assert agent.code_executor is pool._sentinel
+
+    # ------------------------------------------------------------------
+    # AC-5 — 4-combination independence matrix (skills x sandbox)
+    # ------------------------------------------------------------------
+
+    def test_independence_skills_empty_sandbox_false(self) -> None:
+        """Combination (skills=∅, sandbox=False): no SkillToolset, no sandbox executor."""
+        from google.adk.tools.skill_toolset import SkillToolset
+
+        pool = self._make_mock_pool()
+        config = _make_config(skill_ids=[], sandbox_code_executor_enabled=False)
+
+        with _PATCH_BEFORE_AGENT, _PATCH_AFTER_AGENT, _PATCH_BEFORE_TOOL, _PATCH_AFTER_TOOL:
+            import app.adk.agents.agent_factory.builder as b
+            agent = b.build_agent(config, name="combo_ff", account_id="acc_ff", sandbox_pool=pool)
+
+        pool.get_or_create.assert_not_called()
+        assert agent.code_executor is None
+        toolsets = [t for t in agent.tools if isinstance(t, SkillToolset)]
+        assert toolsets == []
+
+    def test_independence_skills_empty_sandbox_true(self) -> None:
+        """Combination (skills=∅, sandbox=True): no SkillToolset, but sandbox executor attached."""
+        from google.adk.tools.skill_toolset import SkillToolset
+
+        pool = self._make_mock_pool()
+        config = _make_config(skill_ids=[], sandbox_code_executor_enabled=True)
+
+        with _PATCH_BEFORE_AGENT, _PATCH_AFTER_AGENT, _PATCH_BEFORE_TOOL, _PATCH_AFTER_TOOL:
+            import app.adk.agents.agent_factory.builder as b
+            agent = b.build_agent(config, name="combo_ft", account_id="acc_ft", sandbox_pool=pool)
+
+        pool.get_or_create.assert_called_once()
+        assert agent.code_executor is pool._sentinel
+        toolsets = [t for t in agent.tools if isinstance(t, SkillToolset)]
+        assert toolsets == []
+
+    def test_independence_skills_nonempty_sandbox_false(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Combination (skills=[id-a], sandbox=False): SkillToolset attached, no sandbox executor."""
+        from google.adk.tools.skill_toolset import SkillToolset
+
+        skill_a = _make_adk_skill("skill-combo-tf")
+        fake_loader = _make_fake_loader_module(skills_by_id={"id-a": skill_a})
+        monkeypatch.setitem(sys.modules, "kene_api.services.skill_loader", fake_loader)
+
+        pool = self._make_mock_pool()
+        config = _make_config(skill_ids=["id-a"], sandbox_code_executor_enabled=False)
+
+        agent = _build_with_skills(config, name="combo_tf", account_id="acc_tf", sandbox_pool=pool)
+
+        pool.get_or_create.assert_not_called()
+        assert agent.code_executor is None
+        toolsets = [t for t in agent.tools if isinstance(t, SkillToolset)]
+        assert len(toolsets) == 1
+
+    def test_independence_skills_nonempty_sandbox_true(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Combination (skills=[id-a], sandbox=True): both SkillToolset and sandbox executor attached."""
+        from google.adk.tools.skill_toolset import SkillToolset
+
+        skill_a = _make_adk_skill("skill-combo-tt")
+        fake_loader = _make_fake_loader_module(skills_by_id={"id-a": skill_a})
+        monkeypatch.setitem(sys.modules, "kene_api.services.skill_loader", fake_loader)
+
+        pool = self._make_mock_pool()
+        config = _make_config(skill_ids=["id-a"], sandbox_code_executor_enabled=True)
+
+        agent = _build_with_skills(config, name="combo_tt", account_id="acc_tt", sandbox_pool=pool)
+
+        pool.get_or_create.assert_called_once()
+        assert agent.code_executor is pool._sentinel
+        toolsets = [t for t in agent.tools if isinstance(t, SkillToolset)]
+        assert len(toolsets) == 1
+
+
 class TestAsyncBridge:
     """build_agent must work when called from inside a running event loop.
 

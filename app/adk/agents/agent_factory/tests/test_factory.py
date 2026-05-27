@@ -727,8 +727,17 @@ class TestSkillIdsAndSandbox:
         assert agent.name == "skills"
 
     def test_sandbox_code_executor_enabled_builds_agent_without_error(self) -> None:
+        from unittest.mock import AsyncMock, MagicMock
+
+        from google.adk.code_executors import BuiltInCodeExecutor
+
+        from app.adk.agents.agent_factory.sandbox_pool import SandboxPool
+
+        mock_pool = MagicMock(spec=SandboxPool)
+        mock_pool.get_or_create = AsyncMock(return_value=BuiltInCodeExecutor())
+
         config = _make_config(sandbox_code_executor_enabled=True)
-        agent = _build(config, name="sandbox")
+        agent = _build(config, name="sandbox", sandbox_pool=mock_pool)
 
         assert agent is not None
 

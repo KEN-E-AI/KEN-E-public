@@ -15,6 +15,7 @@ from app.adk.agents.agent_factory.roster import (
     MAX_TOOLS_PER_SPECIALIST,
     RosterCapExceededError,
 )
+from app.adk.agents.agent_factory.sandbox_pool import SandboxPool
 from app.adk.agents.agent_factory.skill_metadata import record_skill_build_metadata
 from app.adk.agents.skill_tool_filter import skill_allowed_tools_before_tool_callback
 from app.adk.agents.utils import config_cache
@@ -31,6 +32,13 @@ logger = get_structured_logger(__name__)
 _MAX_ORG_CONTEXT_CHARS = 4000
 _ORG_CONTEXT_BLOCKED = ("[END CONTEXT]", "[ORGANIZATION CONTEXT]")
 _SKILL_LOAD_TIMEOUT_SECONDS = 30
+_SANDBOX_BUILD_TIMEOUT_SECONDS = 30
+
+# Process-wide singleton — one pool per Cloud Run instance. Mirrors the
+# ``_specialists_cache`` singleton pattern in specialist_runtime.py:169.
+# Tests inject a fresh pool or a MagicMock via the ``sandbox_pool=`` kwarg
+# on ``build_agent`` so the module global is never mutated by test code.
+_DEFAULT_SANDBOX_POOL: SandboxPool = SandboxPool()
 
 
 def _sanitize_org_context(value: str) -> str:
@@ -241,6 +249,103 @@ def _build_skill_toolset(
             return None, True
 
 
+async def _build_code_executor_async(
+    config: MergedAgentConfig,
+    *,
+    account_id: str,
+    config_id_for_pool: str,
+    sandbox_pool: SandboxPool,
+) -> Any:
+    """Async core: obtain a pooled AgentEngineSandboxCodeExecutor.
+
+    Delegates to ``sandbox_pool.get_or_create`` so the sandbox process is
+    reused across ``LlmAgent`` rebuilds under AH-PRD-09's per-turn resolver.
+    The pool is keyed by ``(account_id, config_id_for_pool)`` where
+    ``config_id_for_pool`` is the stable Firestore doc id (the ``name=`` kwarg
+    on ``build_agent``).
+    """
+    return await sandbox_pool.get_or_create(
+        account_id=account_id,
+        config_id=config_id_for_pool,
+    )
+
+
+def _build_code_executor(
+    config: MergedAgentConfig,
+    *,
+    account_id: str | None,
+    name: str,
+    sandbox_pool: SandboxPool,
+) -> Any:
+    """Resolve the code executor for this agent using sandbox > built-in > None precedence.
+
+    * ``sandbox_code_executor_enabled=True`` → obtain a pooled
+      ``AgentEngineSandboxCodeExecutor`` from ``sandbox_pool``.  This wins
+      over ``code_execution_enabled`` when both are True — AC-4 requires the
+      sandbox specifically and ``LlmAgent.code_executor`` is a single field.
+    * ``sandbox_code_executor_enabled=False`` (or absent) → fall through to
+      the existing ``code_execution_enabled`` rule (``BuiltInCodeExecutor()``
+      or ``None``).
+
+    When ``account_id is None`` and sandbox is requested, skips the sandbox
+    (pool keying requires a real account scope) and falls through, emitting a
+    WARNING.  Mirrors ``skill_toolset_skipped_no_account`` semantics.
+
+    Uses the same asyncio.get_running_loop / worker-thread bridge as
+    ``_build_skill_toolset`` so the sync ``build_agent`` call-path works from
+    both sync and async callers.
+    """
+    if config.sandbox_code_executor_enabled:
+        if account_id is None:
+            logger.warning(
+                "sandbox_skipped_no_account",
+                extra={"config_id": name},
+            )
+        else:
+            try:
+                asyncio.get_running_loop()
+                running = True
+            except RuntimeError:
+                running = False
+
+            if not running:
+                return asyncio.run(
+                    _build_code_executor_async(
+                        config,
+                        account_id=account_id,
+                        config_id_for_pool=name,
+                        sandbox_pool=sandbox_pool,
+                    )
+                )
+
+            def _runner() -> Any:
+                return asyncio.run(
+                    _build_code_executor_async(
+                        config,
+                        account_id=account_id,
+                        config_id_for_pool=name,
+                        sandbox_pool=sandbox_pool,
+                    )
+                )
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(_runner)
+                try:
+                    return future.result(timeout=_SANDBOX_BUILD_TIMEOUT_SECONDS)
+                except concurrent.futures.TimeoutError:
+                    logger.error(
+                        "sandbox_build_timeout",
+                        extra={
+                            "account_id": account_id,
+                            "config_id": name,
+                            "timeout_s": _SANDBOX_BUILD_TIMEOUT_SECONDS,
+                        },
+                    )
+                    # Fall through to the built-in / None resolution below.
+
+    return BuiltInCodeExecutor() if config.code_execution_enabled else None
+
+
 def build_agent(
     config: MergedAgentConfig,
     *,
@@ -250,6 +355,7 @@ def build_agent(
     config_doc_id: str | None = None,
     instruction_suffix: str = "",
     instruction_suffix_provider: Callable[[ReadonlyContext], str] | None = None,
+    sandbox_pool: SandboxPool | None = None,
     additional_before_agent_callbacks: list[Callable] | None = None,
     additional_after_agent_callbacks: list[Callable] | None = None,
     additional_before_tool_callbacks: list[Callable] | None = None,
@@ -276,8 +382,15 @@ def build_agent(
         GenerateContentConfig(**gcc_kwargs) if gcc_kwargs else None
     )
 
-    # ADK 1.27+ requires code_executor on LlmAgent directly (not via GenerateContentConfig.tools)
-    code_executor = BuiltInCodeExecutor() if config.code_execution_enabled else None
+    # ADK 1.27+ requires code_executor on LlmAgent directly (not via GenerateContentConfig.tools).
+    # SK-PRD-02: delegate to SandboxPool when sandbox_code_executor_enabled is set;
+    # sandbox takes precedence over BuiltInCodeExecutor when both flags are true.
+    code_executor = _build_code_executor(
+        config,
+        account_id=account_id,
+        name=name,
+        sandbox_pool=sandbox_pool if sandbox_pool is not None else _DEFAULT_SANDBOX_POOL,
+    )
 
     # ADK 1.27+ requires output_schema on LlmAgent directly (not via GenerateContentConfig.response_schema)
     output_schema = config.response_schema
