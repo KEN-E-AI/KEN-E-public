@@ -102,10 +102,12 @@ class SandboxPool:
     _MAX_ENTRIES: int = 64
     _IDLE_TTL_SECONDS: int = 900
     _SWEEP_INTERVAL_SECONDS: int = 60
-    # SK-35 LEAK-branch defence-in-depth: set True after live probe confirms
-    # Vertex reuses container /tmp across executor sessions.  Inactive by
-    # default (CLEAN branch) — no latency cost until probe result is known.
-    _CLEAR_TMP_ON_REUSE: bool = False
+    # SK-35 LEAK-branch defence-in-depth: live probe (2026-05-27, 50/50 LEAK)
+    # confirmed Vertex reuses container /tmp across executor sessions sharing
+    # the same sandbox resource name.  Flag enabled to clear /tmp on every
+    # get_or_create return path.  See
+    # docs/spike/sk-prd-02-cross-session-tmp-characterisation.md for findings.
+    _CLEAR_TMP_ON_REUSE: bool = True
     _TMP_CLEAR_TIMEOUT_SECONDS: int = 5
 
     _PURGE_TMP_SCRIPT: str = (
@@ -178,6 +180,22 @@ class SandboxPool:
         if not cache_hit:
             await self._evict_if_over_cap()
 
+        # Run defence-in-depth /tmp clearing (SK-35) before emitting the span so
+        # tmp_clear_failed reflects the actual outcome on this call.  MER-E
+        # alerts on count(sandbox_pool.get where tmp_clear_failed=true) — a
+        # silent failure here means the cross-session LEAK mitigation degraded
+        # for this caller (see SK-9 §Q3 High disposition).
+        tmp_clear_failed = False
+        if self._CLEAR_TMP_ON_REUSE:
+            try:
+                await self._clear_tmp(executor)
+            except Exception:
+                tmp_clear_failed = True
+                logger.warning(
+                    "SandboxPool._clear_tmp failed; returning executor uncleared",
+                    extra={"account_id": account_id, "config_id": config_id},
+                )
+
         # pool_size_after is sampled outside the lock; concurrent inserts can
         # shift it by ±1 between eviction and the snapshot.
         async with emit_sandbox_pool_span(
@@ -187,18 +205,10 @@ class SandboxPool:
                 "config_id": config_id,
                 "cache_hit": cache_hit,
                 "pool_size_after": len(self._pool),
+                "tmp_clear_failed": tmp_clear_failed,
             },
         ):
             pass
-
-        if self._CLEAR_TMP_ON_REUSE:
-            try:
-                await self._clear_tmp(executor)
-            except Exception:
-                logger.warning(
-                    "SandboxPool._clear_tmp failed; returning executor uncleared",
-                    extra={"account_id": account_id, "config_id": config_id},
-                )
 
         return executor
 
@@ -337,10 +347,44 @@ class SandboxPool:
         them so the executor is still returned.
 
         The Vertex SDK call is synchronous, so it runs via ``asyncio.to_thread``
-        to avoid blocking the event loop.  Creating a fresh ``vertexai.Client``
-        per call avoids threading issues with a shared client instance.
+        to avoid blocking the event loop.  Per-call ``vertexai.Client`` construction
+        is intentional for v1 *pending* the verify-thread-safety + cached-client
+        follow-up tracked in [SK-43](https://linear.app/ken-e/issue/SK-43); under
+        AH-PRD-09 per-turn dispatch the per-call init becomes load-bearing and SK-43
+        must land before SK-PRD-02 takes broad production traffic.
+
+        **Concurrency assumption (SK-35 v1 — tracked for redesign in
+        [SK-42](https://linear.app/ken-e/issue/SK-42)).**  This clear runs against
+        the pool's single executor instance for ``(account_id, config_id)``,
+        outside the stripe lock.  Because the pool keys per-agent-config rather
+        than per-session, multiple callers (e.g. two users on the same account
+        using the same agent) can share the same pool entry.  If caller A is
+        mid-``execute_code`` when caller B's ``get_or_create`` triggers
+        ``_clear_tmp``, B's purge can destroy A's in-flight ``/tmp`` data on the
+        same Vertex container.  v1 assumes callers serialise their use of a
+        pooled executor (current ADK single-tool dispatch makes this true within
+        one turn) and accepts the cross-user race as a known limitation; SK-42
+        replaces the assumption with a refcount-based ``ExecutorLease`` API.
+
+        Defensive guard: if ``sandbox_resource_name`` is missing or not a
+        non-empty string (e.g. unit-test Mock executor, or a future regression
+        in ``_sandbox_resource_name``), log a WARNING and return without
+        issuing a network call.  Production executors always carry a real
+        resource name, so a WARNING in prod indicates a real bug — the silent
+        return prevents a crash but the log surface is required so the
+        regression is not invisible.
         """
-        resource_name: str = getattr(executor, "sandbox_resource_name", "")
+        resource_name = getattr(executor, "sandbox_resource_name", "")
+        if not isinstance(resource_name, str) or not resource_name:
+            logger.warning(
+                "SandboxPool._clear_tmp skipped: missing or non-string sandbox_resource_name",
+                extra={
+                    "resource_name_type": type(resource_name).__name__,
+                    "resource_name_empty": not resource_name,
+                },
+            )
+            return
+
         project = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
         location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
 
