@@ -54,6 +54,23 @@ def test_typical_criteria_unchanged() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Non-ASCII whitespace — U+00A0 NO-BREAK SPACE and U+3000 IDEOGRAPHIC SPACE
+# must be stripped; only explicit ASCII whitespace ([ \t\n\r\f\v]) is allowed.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "name,char",
+    [
+        ("NO-BREAK SPACE U+00A0", chr(0x00A0)),
+        ("IDEOGRAPHIC SPACE U+3000", chr(0x3000)),
+    ],
+)
+def test_non_ascii_whitespace_stripped(name: str, char: str) -> None:
+    assert sanitise_criteria(f"hello{char}world") == "helloworld", f"{name} not stripped"
+
+
+# ---------------------------------------------------------------------------
 # Zero-width / Cf-class characters — already stripped by old regex, confirmed
 # as regression guard.
 # ---------------------------------------------------------------------------

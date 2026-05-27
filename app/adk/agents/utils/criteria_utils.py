@@ -20,14 +20,18 @@ MAX_CRITERIA_CHARS: int = 2000
 # Uses [A-Za-z0-9_] instead of \w so Unicode word characters (Cyrillic,
 # Greek, etc.) that are visually similar to ASCII (confusables) are stripped
 # rather than silently permitted into LLM system prompts.
+# Uses [ \t\n\r\f\v] instead of \s so non-ASCII whitespace (U+00A0 NO-BREAK
+# SPACE, U+3000 IDEOGRAPHIC SPACE, etc.) is also stripped — Python's \s is
+# Unicode-aware and would otherwise let those through.
 # Strips: any char not in the explicit allow-list, which includes —
 #   * Unicode confusables (e.g. Cyrillic small letter "a", U+0430)
+#   * Non-ASCII whitespace (U+00A0 NO-BREAK SPACE, U+3000 IDEOGRAPHIC SPACE, etc.)
 #   * Cf-class invisible formatting chars (ZWSP U+200B, ZWNJ U+200C, ZWJ U+200D)
 #   * BOM (U+FEFF)
 #   * Bidi override marks (U+202A-U+202E)
 #   * Any other non-ASCII character
 _UNSAFE_CRITERIA_RE: re.Pattern[str] = re.compile(
-    r"[^A-Za-z0-9_\s.,;:()\-'\"!?%@&=+/#*]"
+    r"[^A-Za-z0-9_ \t\n\r\f\v.,;:()\-'\"!?%@&=+/#*]"
 )
 
 
