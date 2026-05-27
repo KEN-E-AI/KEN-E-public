@@ -24,6 +24,11 @@ from app.adk.tracking.callbacks import (
     weave_after_agent_callback,
     weave_before_agent_callback,
 )
+from app.adk.tracking.skill_spans import (
+    skill_spans_after_tool_callback,
+    skill_spans_before_agent_callback,
+    skill_spans_before_tool_callback,
+)
 from shared.structured_logging import get_structured_logger
 
 logger = get_structured_logger(__name__)
@@ -344,20 +349,25 @@ def build_agent(
             f"Use resolve_specialist_roster() to enforce the cap before construction."
         )
 
-    before_agent_callback: list[Callable] = [weave_before_agent_callback] + (
-        additional_before_agent_callbacks or []
-    )
+    before_agent_callback: list[Callable] = [
+        weave_before_agent_callback,
+        skill_spans_before_agent_callback,
+        *(additional_before_agent_callbacks or []),
+    ]
     after_agent_callback: list[Callable] = [weave_after_agent_callback] + (
         additional_after_agent_callbacks or []
     )
     before_tool_callback: list[Callable] = [
         adk_before_tool_callback,
         skill_allowed_tools_before_tool_callback,
+        skill_spans_before_tool_callback,
         *(additional_before_tool_callbacks or []),
     ]
-    after_tool_callback: list[Callable] = [adk_after_tool_callback] + (
-        additional_after_tool_callbacks or []
-    )
+    after_tool_callback: list[Callable] = [
+        adk_after_tool_callback,
+        skill_spans_after_tool_callback,
+        *(additional_after_tool_callbacks or []),
+    ]
     before_model_callback: list[Callable] | None = (
         additional_before_model_callbacks or None
     )
