@@ -375,7 +375,10 @@ def attach_specialists_before_agent_callback(
 
     try:
         account_id = callback_context.state.get("account_id")
-        session_state: Mapping[str, Any] = dict(callback_context.state)
+        # NOTE: must use ``state.to_dict()`` — ADK's ``State`` exposes
+        # ``__getitem__`` but no ``keys()`` / ``__iter__``, so ``dict(state)``
+        # falls back to integer indexing and raises ``KeyError: 0``.
+        session_state: Mapping[str, Any] = callback_context.state.to_dict()
         # ADK-version dependency: ``CallbackContext._invocation_context`` is a
         # private attribute and could be renamed in a future ADK release. We
         # use it here because there is no public accessor for the executing
