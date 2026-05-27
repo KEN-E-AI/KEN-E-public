@@ -317,10 +317,6 @@ async def skill_spans_before_tool_callback(
             )
 
         if call is not None:
-            # Resolve the per-call key from ADK's function_call_id.  If it is
-            # absent (possible under future ADK changes), fall back to a single
-            # sentinel key with a WARNING — this replicates the old single-slot
-            # behaviour and remains correct as long as dispatch is serialised.
             call_id: str | None = getattr(tool_context, "function_call_id", None)
             if call_id is None:
                 logger.warning(
@@ -331,8 +327,6 @@ async def skill_spans_before_tool_callback(
                 )
                 call_id = "_single_slot"
 
-            # Copy-on-write: ContextVar may hold None on first access; we must
-            # replace the dict with a new one to preserve per-task isolation.
             existing = _skill_ctx_registry.get() or {}
             updated = {**existing, call_id: {"call": call, "skill_id": resolved_skill_id}}
             _skill_ctx_registry.set(updated)
@@ -366,9 +360,13 @@ async def skill_spans_after_tool_callback(
     if tool.name not in _SKILL_TOOL_NAMES:
         return None
 
-    # Resolve the same key used in before_tool to locate this invocation's entry.
     call_id: str | None = getattr(tool_context, "function_call_id", None)
     if call_id is None:
+        logger.warning(
+            "skill_spans: tool_context.function_call_id is None in after_tool; "
+            "falling back to single-slot registry key",
+            extra={"tool_name": tool.name},
+        )
         call_id = "_single_slot"
 
     registry = _skill_ctx_registry.get() or {}

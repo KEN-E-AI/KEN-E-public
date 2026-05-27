@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -546,9 +547,14 @@ class TestAfterToolCallback:
 class TestConcurrentDispatchAndFallback:
     """Regression tests added by SK-38.
 
-    Verify that the per-call-ID registry correctly isolates concurrent
-    before_tool / after_tool pairs, and that the fallback path fires (with a
-    WARNING) when function_call_id is None.
+    Verify that the per-call-ID registry correctly isolates interleaved
+    before_tool / after_tool pairs within the same asyncio task, and that the
+    fallback path fires (with a WARNING) when function_call_id is None.
+
+    Note: the interleaved test runs sequentially within a single asyncio task.
+    True cross-task concurrency is already isolated by ContextVar's per-task
+    copy semantics; the bug scenario is intra-task interleaving (before_A →
+    before_B → after_A → after_B), which the registry correctly handles.
     """
 
     def _make_tool_ctx_with_id(
@@ -650,11 +656,10 @@ class TestConcurrentDispatchAndFallback:
     async def test_fallback_to_single_slot_when_function_call_id_is_none(self, caplog):
         """When function_call_id is None, falls back to _single_slot key with a WARNING.
 
-        The single-slot fallback replicates old behaviour and remains correct
-        as long as dispatch is serialised (the expected case on ADK 1.27.5).
+        Both before_tool and after_tool emit the WARNING.  The single-slot
+        fallback replicates old behaviour and remains correct as long as
+        dispatch is serialised (the expected case on ADK 1.27.5).
         """
-        import logging
-
         ctx = self._make_tool_ctx_with_id(call_id=None)
         mock_call = MagicMock(id="fallback-call-1")
         mock_client = MagicMock()
@@ -671,6 +676,7 @@ class TestConcurrentDispatchAndFallback:
                     return_value={"skill_name_index": skill_name_index},
                 ),
                 patch(_GET_CLIENT_PATH, return_value=mock_client),
+                patch(_CALL_CTX_PATH),
             ):
                 await skill_spans_before_tool_callback(
                     tool=_FakeTool("load_skill"),
@@ -678,29 +684,25 @@ class TestConcurrentDispatchAndFallback:
                     tool_context=ctx,
                 )
 
-        # A WARNING must have been emitted about the missing function_call_id.
-        assert any(
-            "function_call_id is None" in record.message
+                # The entry is stored under the sentinel key after before_tool.
+                registry = _skill_ctx_registry.get()
+                assert "_single_slot" in registry
+                assert registry["_single_slot"]["call"] is mock_call
+
+                await skill_spans_after_tool_callback(
+                    tool=_FakeTool("load_skill"),
+                    args={"name": "my-skill"},
+                    tool_context=ctx,
+                    tool_response={"instructions": "fallback instructions"},
+                )
+
+        # Both before_tool and after_tool must have emitted the WARNING.
+        warning_messages = [
+            record.message
             for record in caplog.records
-            if record.levelname == "WARNING"
-        )
-
-        # The entry is stored under the sentinel key.
-        registry = _skill_ctx_registry.get()
-        assert "_single_slot" in registry
-        assert registry["_single_slot"]["call"] is mock_call
-
-        # after_tool with the same None function_call_id closes the correct span.
-        with (
-            patch(_GET_CLIENT_PATH, return_value=mock_client),
-            patch(_CALL_CTX_PATH),
-        ):
-            await skill_spans_after_tool_callback(
-                tool=_FakeTool("load_skill"),
-                args={"name": "my-skill"},
-                tool_context=ctx,
-                tool_response={"instructions": "fallback instructions"},
-            )
+            if record.levelname == "WARNING" and "function_call_id is None" in record.message
+        ]
+        assert len(warning_messages) == 2
 
         mock_client.finish_call.assert_called_once()
         assert not (_skill_ctx_registry.get() or {})
