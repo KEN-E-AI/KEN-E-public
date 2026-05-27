@@ -329,16 +329,12 @@ def _build_code_executor(
       the existing ``code_execution_enabled`` rule (``BuiltInCodeExecutor()``
       or ``None``).
 
-    When ``account_id is None`` and sandbox is requested, skips the sandbox
-    (pool keying requires a real account scope), emits a WARNING, and falls
-    through to the ``code_execution_enabled`` resolution below — unlike the
-    timeout path, which returns ``None`` unconditionally.  This asymmetry is
-    a pre-existing inconsistency tracked for a follow-up issue.
-
-    On sandbox-build timeout the function returns ``None`` regardless of
-    ``code_execution_enabled`` — requesting sandbox is treated as a hard
+    Both ``account_id is None`` and sandbox-build timeout return ``None``
+    regardless of ``code_execution_enabled`` — requesting sandbox is a hard
     requirement, not a soft preference; the agent has no code executor that
-    turn.  See DESIGN-REVIEW-LOG Review 36 for the decision rationale.
+    turn.  When ``account_id is None`` the pool cannot be keyed, so a WARNING
+    is emitted before the ``None`` return so operators retain the signal.
+    See DESIGN-REVIEW-LOG Review 36 for the fail-closed rationale.
 
     **Always** routes through a ThreadPoolExecutor — including the no-loop
     case where ``_build_skill_toolset`` would call ``asyncio.run`` directly.
@@ -356,31 +352,31 @@ def _build_code_executor(
                 "sandbox_skipped_no_account",
                 extra={"config_id": name},
             )
-        else:
+            return None
 
-            def _runner() -> Any:
-                return asyncio.run(
-                    _build_code_executor_async(
-                        account_id=account_id,
-                        config_id_for_pool=name,
-                        sandbox_pool=sandbox_pool,
-                    )
+        def _runner() -> Any:
+            return asyncio.run(
+                _build_code_executor_async(
+                    account_id=account_id,
+                    config_id_for_pool=name,
+                    sandbox_pool=sandbox_pool,
                 )
+            )
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(_runner)
-                try:
-                    return future.result(timeout=_SANDBOX_BUILD_TIMEOUT_SECONDS)
-                except concurrent.futures.TimeoutError:
-                    logger.error(
-                        "sandbox_build_timeout",
-                        extra={
-                            "account_id": account_id,
-                            "config_id": name,
-                            "timeout_s": _SANDBOX_BUILD_TIMEOUT_SECONDS,
-                        },
-                    )
-                    return None
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_runner)
+            try:
+                return future.result(timeout=_SANDBOX_BUILD_TIMEOUT_SECONDS)
+            except concurrent.futures.TimeoutError:
+                logger.error(
+                    "sandbox_build_timeout",
+                    extra={
+                        "account_id": account_id,
+                        "config_id": name,
+                        "timeout_s": _SANDBOX_BUILD_TIMEOUT_SECONDS,
+                    },
+                )
+                return None
 
     return BuiltInCodeExecutor() if config.code_execution_enabled else None
 

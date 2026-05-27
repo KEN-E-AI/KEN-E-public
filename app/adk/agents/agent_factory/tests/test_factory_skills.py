@@ -605,14 +605,24 @@ class TestSandboxWiring:
         pool.get_or_create.assert_called_once()
         assert agent.code_executor is pool._sentinel
 
-    def test_sandbox_true_account_id_none_pool_not_called(
-        self, caplog: pytest.LogCaptureFixture
+    @pytest.mark.parametrize("code_execution_enabled", [False, True])
+    def test_sandbox_true_account_id_none_returns_none_no_fallback(
+        self, code_execution_enabled: bool, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """sandbox=True + account_id=None → pool NOT called; WARNING emitted; falls through."""
+        """sandbox=True + account_id=None → None regardless of code_execution_enabled.
+
+        When sandbox_code_executor_enabled=True and account_id is None, the function
+        MUST return None rather than falling through to BuiltInCodeExecutor.  Sandbox
+        is a hard requirement: if it cannot be keyed, the agent has no code executor
+        that turn.  Mirrors test_sandbox_build_timeout_returns_none_no_fallback.
+        """
         import logging
 
         pool = self._make_mock_pool()
-        config = _make_config(sandbox_code_executor_enabled=True, code_execution_enabled=False)
+        config = _make_config(
+            sandbox_code_executor_enabled=True,
+            code_execution_enabled=code_execution_enabled,
+        )
 
         with caplog.at_level(logging.WARNING):
             agent = self._build(config, account_id=None, sandbox_pool=pool)
