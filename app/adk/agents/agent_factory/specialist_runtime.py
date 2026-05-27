@@ -456,7 +456,7 @@ def resolve_agent_with_hit(
     content_hash = _content_hash(config)
     cache_key: tuple[str, str | None, str] = (doc_id, account_id, content_hash)
     return _specialists_cache.get_or_build_with_hit(
-        cache_key, lambda: _build_specialist(config, doc_id)
+        cache_key, lambda: _build_specialist(config, doc_id, account_id)
     )
 
 
