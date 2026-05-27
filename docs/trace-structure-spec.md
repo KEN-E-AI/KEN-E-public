@@ -933,8 +933,10 @@ Emitted when the `load_skill_resource` tool fires.  Output-side attribute
 
 Emitted by `SandboxPool.get_or_create()` in
 `app/adk/agents/agent_factory/sandbox_pool.py`.  Span is emitted **after** any LRU cap
-enforcement so that `pool_size_after` reflects post-eviction pool size on cap-triggering
-misses.  Emission occurs outside the per-key stripe lock to keep the lock window tight.
+enforcement **and after the SK-35 `_clear_tmp` defence-in-depth step** so that
+`pool_size_after` reflects post-eviction pool size and `tmp_clear_failed` reflects the
+actual outcome of the clear on this call.  Emission occurs outside the per-key stripe
+lock to keep the lock window tight.
 
 | Attribute | Type | Required | Description |
 |-----------|------|----------|-------------|
@@ -942,6 +944,7 @@ misses.  Emission occurs outside the per-key stripe lock to keep the lock window
 | `config_id` | `str` | Yes | The agent-config document ID (`AgentConfig.name`) used as the pool key |
 | `cache_hit` | `bool` | Yes | `true` when an existing executor was returned from the pool; `false` when a new one was constructed |
 | `pool_size_after` | `int` | Yes | Number of entries in the pool at span-emit time. Sampled outside the lock — concurrent inserts may shift the count by ±1. |
+| `tmp_clear_failed` | `bool` | Yes | `true` if `SandboxPool._clear_tmp` raised on this call (SK-35 defence-in-depth degraded — cross-session `/tmp` data may not have been purged before the executor was returned). `false` on the happy path **and** when `_CLEAR_TMP_ON_REUSE` is disabled (no clear attempted). MER-E should alert on `count(sandbox_pool.get where tmp_clear_failed=true) > 0` over a 5-minute window because a failed clear is a security-relevant event (see SK-9 §Q3 High disposition). |
 
 #### `sandbox_pool.evict`
 

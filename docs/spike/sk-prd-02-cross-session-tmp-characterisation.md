@@ -224,11 +224,44 @@ leak was observed or is architecturally possible given the keying scheme.
 entries before returning the executor to the caller, providing defence-in-depth
 regardless of Vertex container-pool behaviour.
 
-**Residual risk:** best-effort clearing (timeout = 5 s; failure is logged but the
-executor is still returned). If a future Vertex platform change makes clearing
-significantly more expensive, `_TMP_CLEAR_TIMEOUT_SECONDS` can be tuned; the
-`sandbox_pool.get` Weave span latency measurement (`pool_size_after`) will surface
-any regression.
+**Residual risk:** best-effort clearing (timeout = 5 s; failure is logged at WARNING
+and surfaced as `tmp_clear_failed=true` on the `sandbox_pool.get` Weave span; the
+executor is still returned to preserve pool integrity). MER-E alerts on
+`count(sandbox_pool.get where tmp_clear_failed=true) > 0` over a 5-minute window to
+catch degraded mitigation in production.  If a future Vertex platform change makes
+clearing significantly more expensive, `_TMP_CLEAR_TIMEOUT_SECONDS` can be tuned.
+
+---
+
+## Operational assumption (v1 concurrency)
+
+`SandboxPool` keys by `(account_id, config_id)` per SK-PRD-02 §4.6 — not by session.
+Multiple callers (e.g. two users on the same account using the same agent_config, or
+a future ADK that adds parallel tool dispatch) can therefore share the same pool
+entry.  `_clear_tmp` runs on every `get_or_create` return path against the pool's
+single executor instance, outside the stripe lock, and the Vertex container behind
+`sandboxEnvironments/<sid>` is shared across all concurrent `execute_code` calls.
+
+The implication is a symmetric inverse of the leak this mitigation closes:
+
+* The LEAK (closed by `_clear_tmp`): caller B can *read* `/tmp` contents written by
+  a previous caller A from a prior session.
+* The CLOBBER (new hazard, v1 accepted): caller A is mid-`execute_code` writing
+  working files to `/tmp` when caller B's `get_or_create` triggers `_clear_tmp`,
+  destroying A's in-flight data.
+
+**v1 ships with the explicit assumption that callers serialise their use of a
+pooled executor.**  This is true under current ADK (single-turn-single-tool
+dispatch) within one user's chat session.  It is *not* true for cross-user
+same-config concurrency, which the pool's keying scheme permits.
+
+**Resolution path:** [SK-42](https://linear.app/ken-e/issue/SK-42) replaces this
+assumption with a refcount-based `ExecutorLease` API so concurrent callers can
+share the executor without `_clear_tmp` racing against in-flight work.  SK-42 is
+prioritised **before SK-PRD-02 takes broad production traffic** (the assumption is
+acceptable for the controlled-rollout phase but breaks under multi-user
+concurrency at scale).  AC-5 of SK-42 removes this section once the lease API
+ships.
 
 ---
 
@@ -259,12 +292,22 @@ Changes applied in this PR:
 Observed `execute_code` round-trip on the same sandbox averaged ~1.2 s (range
 1.0 – 2.4 s); `_clear_tmp` issues one `execute_code` call per `get_or_create`,
 so first-order expectation is roughly +1 s on every pool hit / miss. The
-`sandbox_pool.get` Weave span has `pool_size_after` and (implicitly via parent-span
-duration) the latency for downstream MER-E monitoring. If this overhead proves
-unacceptable under AH-PRD-09 per-turn dispatch, mitigations are (a) cache the
-`vertexai.Client` instance to amortise client init (separately tracked — see the
-follow-up issue referenced in PR-720's reviewer concern #2), and (b) lower
-`_TMP_CLEAR_TIMEOUT_SECONDS`.
+`sandbox_pool.get` Weave span carries `pool_size_after` and `tmp_clear_failed` and
+the span duration captures end-to-end latency for downstream MER-E monitoring.
+
+Two known optimisations are tracked as follow-ups, **both prioritised before
+SK-PRD-02 takes broad production traffic**:
+
+* [SK-43](https://linear.app/ken-e/issue/SK-43) — cache the `vertexai.Client`
+  instance to amortise client init across calls.  PR #720 reviewer concern #2 first
+  flagged this; the v1 docstring's "fresh client per call avoids threading issues"
+  rationale is treated as unverified and SK-43 owns the verification + caching.
+* `_TMP_CLEAR_TIMEOUT_SECONDS` tuning — currently 5 s; lower if Vertex round-trip
+  improves and we want to bound worst-case `_clear_tmp` overhead more tightly.
+
+Under AH-PRD-09 per-turn dispatch, the per-call latency is load-bearing because
+every chat turn that uses a sandbox-enabled specialist pays this overhead.  SK-43
+should close most of the gap.
 
 **PO action:** Re-send the updated security email packet to `security@ken-e.ai`
 (SK-9 AC-4). Post the sent timestamp + Message-ID on Linear SK-9 as a comment.

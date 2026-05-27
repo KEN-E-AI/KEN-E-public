@@ -22,6 +22,7 @@ Coverage map
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -334,6 +335,12 @@ async def test_concurrent_same_key_single_flight() -> None:
 async def test_concurrent_different_keys_parallel() -> None:
     """Two get_or_create calls for different keys run in parallel, not serially."""
     pool = SandboxPool()
+    # This test only measures stripe-lock-induced serialisation.  Disable
+    # _clear_tmp explicitly so its logger.warning() guard path (active for Mock
+    # executors when _CLEAR_TMP_ON_REUSE=True, the post-SK-35 class default)
+    # does not contribute to the timing budget — keeps the 1.8x threshold
+    # stable on loaded test runners.
+    pool._CLEAR_TMP_ON_REUSE = False
     delay = 0.05
 
     async def _fake_construct(**_: Any) -> Any:
@@ -760,3 +767,87 @@ async def test_tmp_clear_timeout_returns_executor() -> None:
     result = await pool.get_or_create(account_id="acc", config_id="cfg")
 
     assert result is executor
+
+
+# ---------------------------------------------------------------------------
+# Tests 26-28 — PR #722 review concerns: defensive guard + tmp_clear_failed span
+# ---------------------------------------------------------------------------
+# These cover the WARN-on-guard behaviour from concern #2 and the
+# tmp_clear_failed span attribute from concern #4.  See PR #722 description.
+
+
+@pytest.mark.asyncio
+async def test_clear_tmp_guard_warns_on_missing_resource_name(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """_clear_tmp logs a WARNING and short-circuits when sandbox_resource_name is missing."""
+    pool = SandboxPool()
+
+    class _ExecutorMissingAttr:
+        pass
+
+    with caplog.at_level("WARNING", logger="app.adk.agents.agent_factory.sandbox_pool"):
+        await pool._clear_tmp(_ExecutorMissingAttr())  # type: ignore[arg-type]
+
+    assert any(
+        "SandboxPool._clear_tmp skipped" in record.message for record in caplog.records
+    ), "guard should log a WARNING when sandbox_resource_name is absent"
+
+
+@pytest.mark.asyncio
+async def test_clear_tmp_guard_warns_on_empty_resource_name(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """_clear_tmp logs a WARNING and short-circuits when sandbox_resource_name is ""."""
+    pool = SandboxPool()
+
+    class _ExecutorEmptyName:
+        sandbox_resource_name = ""
+
+    with caplog.at_level("WARNING", logger="app.adk.agents.agent_factory.sandbox_pool"):
+        await pool._clear_tmp(_ExecutorEmptyName())  # type: ignore[arg-type]
+
+    assert any(
+        "SandboxPool._clear_tmp skipped" in record.message for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
+async def test_tmp_clear_failed_set_on_span_when_clear_raises() -> None:
+    """tmp_clear_failed=True is attached to the sandbox_pool.get span when _clear_tmp raises.
+
+    The MER-E alert rule depends on this attribute; if the span attrs change shape
+    or this value goes missing the security observability degrades silently.
+    """
+    pool = SandboxPool()
+    pool._CLEAR_TMP_ON_REUSE = True
+    executor = _make_executor()
+
+    async def _fake_construct(**_: Any) -> Any:
+        return executor
+
+    pool._construct = _fake_construct  # type: ignore[method-assign]
+
+    async def _raise(_executor: Any) -> None:
+        raise RuntimeError("simulated clear failure")
+
+    pool._clear_tmp = _raise  # type: ignore[method-assign]
+
+    captured_attrs: list[dict[str, Any]] = []
+
+    @contextlib.asynccontextmanager
+    async def _fake_emit(op_name: str, attrs: dict[str, Any]):
+        captured_attrs.append({"op_name": op_name, **attrs})
+        yield
+
+    with patch(
+        "app.adk.agents.agent_factory.sandbox_pool.emit_sandbox_pool_span",
+        _fake_emit,
+    ):
+        await pool.get_or_create(account_id="acc", config_id="cfg")
+
+    get_spans = [a for a in captured_attrs if a["op_name"] == "sandbox_pool.get"]
+    assert len(get_spans) == 1
+    assert get_spans[0]["tmp_clear_failed"] is True, (
+        "tmp_clear_failed must be True when _clear_tmp raises — MER-E alerts depend on it"
+    )
