@@ -6,7 +6,6 @@ import os
 from typing import Any, Optional
 
 import redis
-from prometheus_client import REGISTRY, Counter
 from redis.exceptions import ConnectionError, TimeoutError
 
 logger = logging.getLogger(__name__)
@@ -18,16 +17,37 @@ logger = logging.getLogger(__name__)
 # Timestamp into account_permissions, killing the user_context cache for the
 # load-test user and pushing chat-sidebar p90 over the 15 s CD gate).  Alert
 # on rate(redis_set_json_failures_total{reason="encode"}) > 0 sustained.
+#
+# prometheus_client is an api/ dependency, not a repo-root one: the
+# stability-harness redis_ttl_fixture imports this module from the repo-root
+# uv environment where prometheus_client is not installed.  Fall back to a
+# no-op counter in that case so the module still imports cleanly — the
+# counter is alerting scaffolding, not load-bearing logic.
 try:
-    redis_set_json_failures_total = Counter(
-        "redis_set_json_failures_total",
-        "Redis set_json failures by cache key prefix and failure reason",
-        ["key_prefix", "reason"],
-    )
-except ValueError:
-    redis_set_json_failures_total = REGISTRY._names_to_collectors[
-        "redis_set_json_failures_total"
-    ]
+    from prometheus_client import REGISTRY, Counter
+
+    try:
+        redis_set_json_failures_total: Any = Counter(
+            "redis_set_json_failures_total",
+            "Redis set_json failures by cache key prefix and failure reason",
+            ["key_prefix", "reason"],
+        )
+    except ValueError:
+        redis_set_json_failures_total = REGISTRY._names_to_collectors[
+            "redis_set_json_failures_total"
+        ]
+except ImportError:
+
+    class _NoOpCounter:
+        """Stand-in when prometheus_client is unavailable (root harness)."""
+
+        def labels(self, **_kwargs: Any) -> "_NoOpCounter":
+            return self
+
+        def inc(self, _amount: float = 1) -> None:
+            return None
+
+    redis_set_json_failures_total = _NoOpCounter()
 
 
 def _key_prefix(key: str) -> str:
