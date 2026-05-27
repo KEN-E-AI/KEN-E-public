@@ -1538,4 +1538,45 @@ PR #697 itself landed (commit `cc62f949`) with the parity tests marked `xfail(st
 
 ---
 
+## Review 36 — SK-39: Sandbox-build timeout fails closed (no silent BuiltInCodeExecutor fallback)
+
+**Date:** 2026-05-27
+**Scope:** Skills component — SK-39 ([Linear](https://linear.app/ken-e/issue/SK-39)); `_build_code_executor` in `app/adk/agents/agent_factory/builder.py`.
+
+### Summary
+
+PR-701 review-2 (Yellow item #4) surfaced that `_build_code_executor` silently downgraded to `BuiltInCodeExecutor` when `sandbox_code_executor_enabled=True` and the pool's `get_or_create` timed out after 30 s. If the same agent config had `code_execution_enabled=True`, the agent ran with the less-isolated built-in executor rather than the requested sandbox — a security regression the caller never saw, only logs did. This review captures the decision to close that failure mode.
+
+### Decision
+
+**Option (a) — Strict isolation.** On `sandbox_build_timeout`, return `None` regardless of `code_execution_enabled`. The agent has no code executor that turn. Sandbox-enabled is treated as a hard requirement: "the user asked for an isolated sandbox" means sandbox-or-nothing, not sandbox-or-built-in.
+
+Options (b) (maintain fallback + structured marker) and (c) (add `sandbox_required: bool` config field) were rejected:
+
+- **(b)** adds a "degraded" signal but leaves the isolation regression in place; the issue title pre-commits to "should not silently downgrade."
+- **(c)** expands `MergedAgentConfig` with a fourth code-executor flag to express a preference already encodable by clearing `sandbox_code_executor_enabled`, and requires a Firestore migration for every existing agent config. No concrete call site needs the soft-fallback semantic.
+
+### Rationale
+
+1. **Symmetry with the existing `account_id is None` skip path.** When `sandbox_code_executor_enabled=True` but `account_id is None`, the function already returns `None` (pool keying requires a real account scope) rather than falling through to `BuiltInCodeExecutor`. The timeout branch should be consistent — both "sandbox unavailable" failure modes refuse to substitute a less-isolated executor.
+2. **Security intent.** The attach-time validation in SK-PRD-04 rejects scripts-bearing skills on non-sandbox agents because isolation is a hard guarantee at the API boundary. The runtime contract must match: if the sandbox cannot be built, the LLM cannot execute code that turn.
+3. **Ops signal is already sufficient.** The existing `sandbox_build_timeout` ERROR log carries `account_id`, `config_id`, and `timeout_s`. Under option (a) there is no degradation to surface — the agent has no executor, which the trace already reflects.
+
+### Consequences
+
+- `_build_code_executor` returns `None` on timeout regardless of `code_execution_enabled`. Production configs that relied on the silent fallback (sandbox requested, timeout frequent, built-in working in practice) will lose their code executor after this change. Per AC-4's contract, such configs were already in a violation state; ops can re-enable the previous behaviour by clearing `sandbox_code_executor_enabled` on the config.
+- AC-4 in SK-PRD-02 §7 is updated to explicitly document the timeout-path behaviour.
+- A future PRD that needs soft-sandbox semantics (prefer sandbox, accept built-in if unavailable) can add `sandbox_required: bool` to `MergedAgentConfig` with an explicit Firestore migration; that is out of scope for this issue.
+
+### Documents updated
+
+| File | Change |
+|------|--------|
+| `app/adk/agents/agent_factory/builder.py` | `_build_code_executor`: replaced fall-through comment with `return None`; updated docstring |
+| `app/adk/agents/agent_factory/tests/test_factory_skills.py` | Renamed `test_sandbox_build_timeout_logs_and_falls_through` → `test_sandbox_build_timeout_returns_none_no_fallback`; parametrised over `code_execution_enabled=False/True` |
+| `docs/design/components/skills/projects/SK-PRD-02-agent-integration.md` | §4 Sandbox code executor — added timeout failure-mode paragraph; §7 AC-4 — added timeout-path clause |
+| `docs/design/DESIGN-REVIEW-LOG.md` | This entry (Review 36) |
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, and documents updated. Decision rationale lives in the Review itself — this log is the canonical record going forward.*
