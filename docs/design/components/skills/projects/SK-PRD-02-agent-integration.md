@@ -171,6 +171,8 @@ async def _build_code_executor(
 
 The factory no longer constructs `AgentEngineSandboxCodeExecutor` directly — that's the pool's job (§4.6). `_sandbox_resource_name_for(config)` moves into `SandboxPool` as an internal detail; callers see only the pooled executor.
 
+**Timeout failure mode (fail-closed).** If `sandbox_pool.get_or_create` exceeds `_SANDBOX_BUILD_TIMEOUT_SECONDS` (30 s), `_build_code_executor` returns `None` regardless of `code_execution_enabled` — a sandbox request is a hard requirement, not a soft preference. The agent has no code executor that turn rather than silently downgrading to `BuiltInCodeExecutor`. See [DESIGN-REVIEW-LOG Review 36](../../../DESIGN-REVIEW-LOG.md#review-36--sk-39-sandbox-build-timeout-fails-closed-no-silent-builtincodexecutor-fallback) for rationale. AC-4 documents the full contract.
+
 ### 4.6 SandboxPool
 
 `SandboxPool` is a process-wide pool of `AgentEngineSandboxCodeExecutor` instances keyed by `(account_id, config_id)`. It exists because [AH-PRD-09](../../../per-turn-dispatch-rfc.md)'s runtime resolver rebuilds the `LlmAgent` every turn; without pooling, every turn would respawn the sandbox process, paying the cold-start cost on each chat message.
@@ -356,7 +358,7 @@ No new HTTP endpoints. The observable contract change is:
    - sets `skill_load_total_failure=true` as an attribute on the agent's `skill.list` Weave span so MER-E can score sessions as degraded,
    - constructs the agent with **no** `SkillToolset` (rather than an empty one — the LLM should not see `list_skills` returning nothing).
 3. **Empty skill list:** Given `skill_ids=[]`, no `SkillToolset` is attached. The agent's tools are unchanged from a no-skills config.
-4. **Sandbox wiring:** Given `sandbox_code_executor_enabled=true`, the constructed `LlmAgent.code_executor` is an `AgentEngineSandboxCodeExecutor` instance. Given `false` or absent, `code_executor` is `None` or unchanged from pre-Sprint-9 default.
+4. **Sandbox wiring:** Given `sandbox_code_executor_enabled=true`, the constructed `LlmAgent.code_executor` is an `AgentEngineSandboxCodeExecutor` instance. Given `false` or absent, `code_executor` is `None` or unchanged from pre-Sprint-9 default. **Timeout path:** if pool construction exceeds `_SANDBOX_BUILD_TIMEOUT_SECONDS`, `_build_code_executor` returns `None` regardless of `code_execution_enabled` — a sandbox request is a hard requirement; the agent has no code executor that turn (no silent fallback to `BuiltInCodeExecutor`).
 5. **Sandbox decoupled from skills:** Setting `sandbox_code_executor_enabled=true` with `skill_ids=[]` works (sandbox available without skills). Setting `skill_ids=["with_scripts"]` with `sandbox_code_executor_enabled=false` does NOT attempt to execute scripts — the scripts are present in `load_skill_resource` response but the agent has no runtime to run them. (Attach-time rejection is Sprint 2.6-D's job.)
 6. **allowed-tools restriction:** Given skill X with frontmatter `allowed-tools: "Read"`, when X is the active skill, the agent's `before_tool_callback` filters the tool set to just `Read`. When X is not the active skill, all of the agent's tools are visible.
 7. **allowed-tools can never expand:** Given a skill with `allowed-tools: "NonexistentTool"`, the restriction never adds `NonexistentTool` to the agent's toolset — the filtered set is empty.

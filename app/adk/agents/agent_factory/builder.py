@@ -322,8 +322,15 @@ def _build_code_executor(
       or ``None``).
 
     When ``account_id is None`` and sandbox is requested, skips the sandbox
-    (pool keying requires a real account scope) and falls through, emitting a
-    WARNING.  Mirrors ``skill_toolset_skipped_no_account`` semantics.
+    (pool keying requires a real account scope), emits a WARNING, and falls
+    through to the ``code_execution_enabled`` resolution below — unlike the
+    timeout path, which returns ``None`` unconditionally.  This asymmetry is
+    a pre-existing inconsistency tracked for a follow-up issue.
+
+    On sandbox-build timeout the function returns ``None`` regardless of
+    ``code_execution_enabled`` — requesting sandbox is treated as a hard
+    requirement, not a soft preference; the agent has no code executor that
+    turn.  See DESIGN-REVIEW-LOG Review 36 for the decision rationale.
 
     **Always** routes through a ThreadPoolExecutor — including the no-loop
     case where ``_build_skill_toolset`` would call ``asyncio.run`` directly.
@@ -364,7 +371,7 @@ def _build_code_executor(
                             "timeout_s": _SANDBOX_BUILD_TIMEOUT_SECONDS,
                         },
                     )
-                    # Fall through to the built-in / None resolution below.
+                    return None
 
     return BuiltInCodeExecutor() if config.code_execution_enabled else None
 
