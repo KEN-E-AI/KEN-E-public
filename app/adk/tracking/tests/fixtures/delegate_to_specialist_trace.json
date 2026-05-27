@@ -32,6 +32,8 @@
     }
   ],
   "metadata": {
+    "agent_id": "ken_e_chatbot",
+    "agent_version": "v1.0.0",
     "account_id": "acc_sample_ah_prd_09",
     "session_id": "sess_00000000000000000000000001",
     "environment": "staging",
