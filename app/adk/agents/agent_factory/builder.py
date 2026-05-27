@@ -26,6 +26,7 @@ from app.adk.tracking.callbacks import (
     weave_before_agent_callback,
 )
 from app.adk.tracking.skill_spans import (
+    assert_skill_tool_names_match,
     skill_spans_after_tool_callback,
     skill_spans_before_agent_callback,
     skill_spans_before_tool_callback,
@@ -188,7 +189,7 @@ async def _build_skill_toolset_async(
     }
 
     try:
-        return SkillToolset(skills=loaded_skills), skill_name_index
+        toolset = SkillToolset(skills=loaded_skills)
     except ValueError as exc:
         # Duplicate skill names (stale data) — degrade same as total failure.
         logger.error(
@@ -201,6 +202,13 @@ async def _build_skill_toolset_async(
             },
         )
         return None, {}
+
+    # Verify SkillToolset's auto-generated tool names match our hardcoded
+    # constants in skill_spans.py.  RuntimeError propagates to the caller —
+    # a rename is a build-time programmer error, not a degrade-open scenario.
+    # The module-level flag amortises this to a single introspection per process.
+    assert_skill_tool_names_match(toolset)
+    return toolset, skill_name_index
 
 
 def _build_skill_toolset(
