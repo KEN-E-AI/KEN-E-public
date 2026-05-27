@@ -102,6 +102,22 @@ class SandboxPool:
     _MAX_ENTRIES: int = 64
     _IDLE_TTL_SECONDS: int = 900
     _SWEEP_INTERVAL_SECONDS: int = 60
+    # SK-35 LEAK-branch defence-in-depth: set True after live probe confirms
+    # Vertex reuses container /tmp across executor sessions.  Inactive by
+    # default (CLEAN branch) — no latency cost until probe result is known.
+    _CLEAR_TMP_ON_REUSE: bool = False
+    _TMP_CLEAR_TIMEOUT_SECONDS: int = 5
+
+    _PURGE_TMP_SCRIPT: str = (
+        "import os as _os, shutil as _shutil\n"
+        "for _e in _os.listdir('/tmp'):\n"
+        "    _p = '/tmp/' + _e\n"
+        "    try:\n"
+        "        (_shutil.rmtree(_p, ignore_errors=True)\n"
+        "         if _os.path.isdir(_p) else _os.unlink(_p))\n"
+        "    except OSError:\n"
+        "        pass\n"
+    )
 
     def __init__(self) -> None:
         # OrderedDict maintains insertion/access order for LRU tracking.
@@ -151,7 +167,9 @@ class SandboxPool:
                 self._pool[key] = (executor, now)
                 cache_hit = True
             else:
-                executor = await self._construct(account_id=account_id, config_id=config_id)
+                executor = await self._construct(
+                    account_id=account_id, config_id=config_id
+                )
                 self._pool[key] = (executor, now)
                 cache_hit = False
 
@@ -172,6 +190,15 @@ class SandboxPool:
             },
         ):
             pass
+
+        if self._CLEAR_TMP_ON_REUSE:
+            try:
+                await self._clear_tmp(executor)
+            except Exception:
+                logger.warning(
+                    "SandboxPool._clear_tmp failed; returning executor uncleared",
+                    extra={"account_id": account_id, "config_id": config_id},
+                )
 
         return executor
 
@@ -299,6 +326,34 @@ class SandboxPool:
 
         return AgentEngineSandboxCodeExecutor(
             sandbox_resource_name=_sandbox_resource_name(account_id, config_id),
+        )
+
+    async def _clear_tmp(self, executor: AgentEngineSandboxCodeExecutor) -> None:
+        """Purge /tmp inside the sandbox container (SK-35 LEAK-branch defence-in-depth).
+
+        Called on every ``get_or_create`` return path when
+        ``_CLEAR_TMP_ON_REUSE`` is ``True``.  Best-effort: ``asyncio.TimeoutError``
+        and any other exception propagate to the caller, which catches and logs
+        them so the executor is still returned.
+
+        The Vertex SDK call is synchronous, so it runs via ``asyncio.to_thread``
+        to avoid blocking the event loop.  Creating a fresh ``vertexai.Client``
+        per call avoids threading issues with a shared client instance.
+        """
+        resource_name: str = getattr(executor, "sandbox_resource_name", "")
+        project = os.getenv("GOOGLE_CLOUD_PROJECT_ID", "ken-e-dev")
+        location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
+
+        import vertexai  # lazy — not required in tests
+
+        client = vertexai.Client(project=project, location=location)
+        await asyncio.wait_for(
+            asyncio.to_thread(
+                client.agent_engines.sandboxes.execute_code,
+                name=resource_name,
+                input_data={"code": self._PURGE_TMP_SCRIPT},
+            ),
+            timeout=self._TMP_CLEAR_TIMEOUT_SECONDS,
         )
 
     async def _evict_if_over_cap(self) -> None:

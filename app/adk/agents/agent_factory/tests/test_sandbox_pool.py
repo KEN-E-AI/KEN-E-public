@@ -686,3 +686,77 @@ async def test_span_evict_noop_absent_key_emits_span() -> None:
     assert attrs["account_id"] == "nonexistent"
     assert attrs["config_id"] == "key"
     assert attrs["pool_size_after"] == 0
+
+
+# ===========================================================================
+# Tests 23-25 — SK-35 LEAK-branch: _clear_tmp called on hit/miss/timeout
+#
+# ``_CLEAR_TMP_ON_REUSE`` is set True on the pool instance (class default is
+# False) and ``_clear_tmp`` is replaced with an AsyncMock so no real Vertex
+# call is made.
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_tmp_clear_on_cache_miss() -> None:
+    """_clear_tmp is awaited on a cache miss when _CLEAR_TMP_ON_REUSE is True."""
+    pool = SandboxPool()
+    pool._CLEAR_TMP_ON_REUSE = True
+    executor = _make_executor()
+
+    async def _fake_construct(**_: Any) -> Any:
+        return executor
+
+    pool._construct = _fake_construct  # type: ignore[method-assign]
+    pool._clear_tmp = AsyncMock()  # type: ignore[method-assign]
+
+    result = await pool.get_or_create(account_id="acc", config_id="cfg")
+
+    assert result is executor
+    pool._clear_tmp.assert_awaited_once_with(executor)
+
+
+@pytest.mark.asyncio
+async def test_tmp_clear_on_cache_hit() -> None:
+    """_clear_tmp is awaited on a cache hit when _CLEAR_TMP_ON_REUSE is True."""
+    pool = SandboxPool()
+    pool._CLEAR_TMP_ON_REUSE = True
+    executor = _make_executor()
+
+    async def _fake_construct(**_: Any) -> Any:
+        return executor
+
+    pool._construct = _fake_construct  # type: ignore[method-assign]
+    pool._clear_tmp = AsyncMock()  # type: ignore[method-assign]
+
+    # Prime the cache (miss path — clear_tmp fires here too but we reset)
+    await pool.get_or_create(account_id="acc", config_id="cfg")
+    pool._clear_tmp.reset_mock()
+
+    # Second call is a cache hit
+    result = await pool.get_or_create(account_id="acc", config_id="cfg")
+
+    assert result is executor
+    pool._clear_tmp.assert_awaited_once_with(executor)
+
+
+@pytest.mark.asyncio
+async def test_tmp_clear_timeout_returns_executor() -> None:
+    """When _clear_tmp raises (e.g. asyncio.TimeoutError), executor is still returned."""
+    pool = SandboxPool()
+    pool._CLEAR_TMP_ON_REUSE = True
+    executor = _make_executor()
+
+    async def _fake_construct(**_: Any) -> Any:
+        return executor
+
+    pool._construct = _fake_construct  # type: ignore[method-assign]
+
+    async def _raise_timeout(_executor: Any) -> None:
+        raise asyncio.TimeoutError("simulated _clear_tmp timeout")
+
+    pool._clear_tmp = _raise_timeout  # type: ignore[method-assign]
+
+    result = await pool.get_or_create(account_id="acc", config_id="cfg")
+
+    assert result is executor
