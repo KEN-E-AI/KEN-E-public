@@ -146,7 +146,10 @@ class _FakeWeaveClient(WeaveClient):
     """
 
     def __init__(self) -> None:
-        self._anonymous_ops: dict = {}
+        # Intentionally skips WeaveClient.__init__() — no trace-server
+        # connection wanted in tests.  Only _anonymous_ops is needed so
+        # create_call can be called without AttributeError.
+        self._anonymous_ops: dict[str, Any] = {}
 
     def create_call(
         self,
@@ -260,15 +263,20 @@ def test_agent_skill_tool_calls_emit_spans(
     )
 
     # ── 2. Inject fake kene_api.services.skill_loader into sys.modules ───────
+    # All three entries use monkeypatch.setitem so teardown is symmetric —
+    # monkeypatch restores the previous value (or removes the key if it was
+    # absent) after the test, preventing permanent sys.modules pollution.
     loader_mod = _make_fake_loader_module({"seo-checklist-id": seo_skill})
-    if "kene_api" not in sys.modules:
-        monkeypatch.setitem(
-            sys.modules, "kene_api", types.ModuleType("kene_api")
-        )
-    if "kene_api.services" not in sys.modules:
-        monkeypatch.setitem(
-            sys.modules, "kene_api.services", types.ModuleType("kene_api.services")
-        )
+    monkeypatch.setitem(
+        sys.modules,
+        "kene_api",
+        sys.modules.get("kene_api", types.ModuleType("kene_api")),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "kene_api.services",
+        sys.modules.get("kene_api.services", types.ModuleType("kene_api.services")),
+    )
     monkeypatch.setitem(sys.modules, "kene_api.services.skill_loader", loader_mod)
 
     # ── 3. Build the agent via the factory ───────────────────────────────────
@@ -341,6 +349,8 @@ def test_agent_skill_tool_calls_emit_spans(
     assert load_span["account_id"] == "acc_test_skills"
     assert load_span["skill_id"] == "seo-checklist-id"
     assert load_span["skill_name"] == "seo-checklist"
+    # skill_version is always 0 in v1 — a placeholder until SK-29/SK-PRD-05
+    # plumbs the resolved version from the loader API.
     assert load_span["skill_version"] == 0
     assert load_span["skill_owner_type"] == "account"
 

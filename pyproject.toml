@@ -120,8 +120,7 @@ testpaths = ["tests/unit", "tests/integration"]
 norecursedirs = [".*", "build", "dist", "node_modules", ".venv", ".terraform", "scripts"]
 addopts = "--ignore=tests/unit/test_audit_service.py --ignore=tests/unit/test_strategy_access_control.py --ignore=tests/unit/test_strategy_v3_models.py"
 markers = [
-    "llm: tests that require a live Gemini endpoint or a deterministic LLM stand-in; opt-in via -m llm",
-    "integration: harness tests that require a live API + ADC; skipped unless HARNESS_API_ENABLED=1",
+    "llm: tests that exercise LLM tooling paths; uses deterministic fakes in CI, opt-in for live-Gemini tests via -m llm",
 ]
 
 [tool.hatch.build.targets.wheel]
