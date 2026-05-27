@@ -8,6 +8,7 @@ import yaml
 from app.adk.mcp_config.config import (
     MCPConfigLoader,
     MCPServerConfig,
+    McpServerKind,
     SseConnectionConfig,
     StdioConnectionConfig,
     _resolve_env_pattern,
@@ -142,6 +143,7 @@ class TestMCPServerConfig:
         assert config.enabled is True
         assert config.tool_count == 0
         assert config.estimated_tokens == 1000
+        assert config.kind == McpServerKind.cloud_run
 
     def test_sse_server_config(self):
         """Test creating a server config with SSE connection."""
@@ -159,6 +161,7 @@ class TestMCPServerConfig:
         assert config.tool_count == 12
         assert config.estimated_tokens == 1800
         assert config.keywords == ["analytics", "data"]
+        assert config.kind == McpServerKind.cloud_run
 
     def test_sse_empty_url_raises(self):
         """Test that SSE config without URL raises validation error."""
@@ -284,6 +287,49 @@ class TestMCPConfigLoader:
 
         assert len(analytics) == 1
         assert analytics[0].name == "analytics_server"
+
+    def test_yaml_kind_field_round_trips(self, tmp_path):
+        """YAML loader preserves kind=cloud_run when present."""
+        config_content = {
+            "servers": {
+                "srv": {
+                    "description": "Test",
+                    "category": "test",
+                    "kind": "cloud_run",
+                    "connection": {"connection_type": "stdio", "command": "test"},
+                    "enabled": True,
+                }
+            }
+        }
+        config_file = tmp_path / "mcp_servers.yaml"
+        with open(config_file, "w") as f:
+            yaml.dump(config_content, f)
+
+        loader = MCPConfigLoader(config_path=config_file)
+        configs = loader.load()
+
+        assert configs["srv"].kind == McpServerKind.cloud_run
+
+    def test_yaml_kind_field_defaults_to_cloud_run(self, tmp_path):
+        """YAML loader defaults kind to cloud_run when the field is absent."""
+        config_content = {
+            "servers": {
+                "srv": {
+                    "description": "Test",
+                    "category": "test",
+                    "connection": {"connection_type": "stdio", "command": "test"},
+                    "enabled": True,
+                }
+            }
+        }
+        config_file = tmp_path / "mcp_servers.yaml"
+        with open(config_file, "w") as f:
+            yaml.dump(config_content, f)
+
+        loader = MCPConfigLoader(config_path=config_file)
+        configs = loader.load()
+
+        assert configs["srv"].kind == McpServerKind.cloud_run
 
     def test_invalid_config_is_skipped(self, tmp_path, caplog):
         """Test that invalid configs are skipped with error logging."""

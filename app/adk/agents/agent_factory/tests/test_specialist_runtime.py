@@ -54,16 +54,18 @@ def _make_llm_agent(name: str = "test_specialist") -> MagicMock:
 
 @pytest.fixture(autouse=True)
 def clear_specialists_cache() -> Any:
-    """Each test starts with a clean agent cache, config cache, and block cache."""
+    """Each test starts with a clean agent cache, config cache, block cache, and list cache."""
     from app.adk.agents.agent_factory import specialist_runtime
     from app.adk.agents.utils.config_cache import clear_config_cache
 
     specialist_runtime._specialists_cache.clear()
     specialist_runtime._clear_block_cache_for_tests()
+    specialist_runtime._clear_list_cache_for_tests()
     clear_config_cache()
     yield
     specialist_runtime._specialists_cache.clear()
     specialist_runtime._clear_block_cache_for_tests()
+    specialist_runtime._clear_list_cache_for_tests()
     clear_config_cache()
 
 
@@ -331,6 +333,106 @@ class TestAvailableSpecialistsProvider:
 
         assert "good_spe" in result
         assert "bad_spe" not in result
+
+
+# ---------------------------------------------------------------------------
+# TestListCache
+# ---------------------------------------------------------------------------
+
+
+class TestListCache:
+    """Verify TTL caching of ``list_account_agent_configs_cached``."""
+
+    def test_second_call_within_ttl_skips_firestore(self) -> None:
+        """Two calls within TTL should issue only one underlying list call."""
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        list_mock = MagicMock(return_value=["spe_1", "spe_2"])
+
+        with patch(
+            "app.adk.agents.agent_factory.config_loader.list_account_agent_configs",
+            list_mock,
+        ):
+            first = specialist_runtime.list_account_agent_configs_cached("acct_1")
+            second = specialist_runtime.list_account_agent_configs_cached("acct_1")
+
+        assert first == ["spe_1", "spe_2"]
+        assert first == second
+        assert list_mock.call_count == 1
+
+    def test_call_after_ttl_expiry_refetches(self, monkeypatch: Any) -> None:
+        """After TTL elapses the next call must re-issue the underlying list."""
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        list_mock = MagicMock(return_value=["spe_1"])
+        fake_clock = {"t": 1000.0}
+
+        def fake_monotonic() -> float:
+            return fake_clock["t"]
+
+        monkeypatch.setattr(specialist_runtime.time, "monotonic", fake_monotonic)
+
+        with patch(
+            "app.adk.agents.agent_factory.config_loader.list_account_agent_configs",
+            list_mock,
+        ):
+            specialist_runtime.list_account_agent_configs_cached("acct_1")
+            fake_clock["t"] += specialist_runtime._LIST_CACHE_TTL + 1
+            specialist_runtime.list_account_agent_configs_cached("acct_1")
+
+        assert list_mock.call_count == 2
+
+    def test_different_accounts_cached_independently(self) -> None:
+        """Two different account_ids must each issue their own underlying list call."""
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        list_mock = MagicMock(side_effect=[["spe_a"], ["spe_b"]])
+
+        with patch(
+            "app.adk.agents.agent_factory.config_loader.list_account_agent_configs",
+            list_mock,
+        ):
+            r1 = specialist_runtime.list_account_agent_configs_cached("acct_1")
+            r2 = specialist_runtime.list_account_agent_configs_cached("acct_2")
+            # Repeat of acct_1 must hit the cache.
+            r1b = specialist_runtime.list_account_agent_configs_cached("acct_1")
+
+        assert r1 == ["spe_a"]
+        assert r2 == ["spe_b"]
+        assert r1b == ["spe_a"]
+        assert list_mock.call_count == 2
+
+    def test_available_specialists_provider_and_attach_share_one_list_call(
+        self,
+    ) -> None:
+        """``available_specialists_provider`` and ``_attach_locked`` should share
+        the cached list result within the same TTL window."""
+        from unittest.mock import MagicMock, patch
+
+        from google.adk.agents import LlmAgent
+
+        from app.adk.agents.agent_factory import specialist_runtime, sub_agent_attacher
+
+        cfg = _make_merged_config("v1", visible_in_frontend=True)
+        agent = _make_llm_agent("spe_1")
+        ctx = MagicMock()
+        ctx.state = {"account_id": "acct_shared"}
+        list_mock = MagicMock(return_value=["spe_1"])
+
+        root = LlmAgent(name="root", model="gemini-2.5-pro", instruction="root")
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.config_loader.list_account_agent_configs",
+                list_mock,
+            ),
+            patch.object(specialist_runtime, "resolve_config", return_value=cfg),
+            patch.object(specialist_runtime, "resolve_agent", return_value=agent),
+        ):
+            specialist_runtime.available_specialists_provider(ctx)
+            sub_agent_attacher.attach_account_specialists(root, "acct_shared")
+
+        assert list_mock.call_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -725,12 +827,28 @@ def _patch_specialist_runtime_externals(
     *,
     fake_db: _FakeFirestoreDb | None = None,
     default_global_tools: list[Any] | None = None,
+    mock_resolver: bool = True,
 ) -> Any:
     """Build an ``ExitStack`` patching every external dep of ``_build_specialist``.
 
     All targets patch the *source* module path (e.g. ``...mcp.build_toolset_for_doc``)
     rather than ``specialist_runtime.*`` because ``_build_specialist`` re-imports
     each symbol via local ``from … import …`` inside the function body.
+
+    Args:
+        fake_db: In-memory Firestore stand-in.  When ``None``, an empty
+            ``_FakeFirestoreDb`` is used (no MCP server docs — all server
+            lookups return ``exists=False``).
+        default_global_tools: Pre-built list of stub ``FunctionTool``s to
+            return from the mocked ``resolve_default_global_tools`` call.
+            Ignored when ``mock_resolver=False``.
+        mock_resolver: When ``True`` (default) the
+            ``resolve_default_global_tools`` and ``get_default_registry``
+            symbols are patched so tests control the default_global set
+            directly.  Set to ``False`` to exercise the *real*
+            ``function_tool_registry`` path — callers are then responsible
+            for pre-populating ``_REGISTRY`` via ``register_function_tool``
+            and cleaning up via ``clear_function_tool_registry``.
 
     Returns ``(stack, mock_build_toolset, mock_build_agent)`` so callers can
     inspect captured call args / kwargs after entering the stack.
@@ -757,18 +875,19 @@ def _patch_specialist_runtime_externals(
             ),
         )
     )
-    stack.enter_context(
-        _patch(
-            "app.adk.tools.registry.function_tool_registry.resolve_default_global_tools",
-            return_value=default_global_tools or [],
+    if mock_resolver:
+        stack.enter_context(
+            _patch(
+                "app.adk.tools.registry.function_tool_registry.resolve_default_global_tools",
+                return_value=default_global_tools or [],
+            )
         )
-    )
-    stack.enter_context(
-        _patch(
-            "app.adk.tools.registry.tool_registry.get_default_registry",
-            return_value=MagicMock(name="fake_registry"),
+        stack.enter_context(
+            _patch(
+                "app.adk.tools.registry.tool_registry.get_default_registry",
+                return_value=MagicMock(name="fake_registry"),
+            )
         )
-    )
     mock_ba = stack.enter_context(
         _patch(
             "app.adk.agents.agent_factory.builder.build_agent",
@@ -971,6 +1090,132 @@ class TestSpecialistRuntimeDefaultGlobalTools:
         assert other_tool in resolved_tools
         assert viz_tool not in resolved_tools
 
+    def test_all_three_current_default_global_tools_reach_ga_specialist(self) -> None:
+        """AH-PRD-09 Phase 3 AC #14 — every ``default_global: true`` function
+        tool reaches every runtime-resolved specialist without per-specialist
+        config edits.
+
+        The current set of ``default_global`` tools is:
+          * ``create_visualization`` (AH-PRD-04 / AH-PRD-06 PR-C)
+          * ``set_todo_list`` (CH-PRD-05)
+          * ``update_todo_list`` (CH-PRD-05)
+
+        This test uses a GA-specialist config (``mcp_servers=["google_analytics_mcp"]``,
+        ``tool_ids=None``) to mirror the real production setup. Every tool is
+        asserted **by name** — a count-only or wildcard assertion would fail to
+        catch a regression that drops one tool while keeping the others.
+        """
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+
+        viz_tool = _stub_function_tool("create_visualization")
+        set_todo_tool = _stub_function_tool("set_todo_list")
+        update_todo_tool = _stub_function_tool("update_todo_list")
+
+        # Simulate a GA specialist with all three default_global tools injected.
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "google_analytics_mcp"): _enabled_mcp_doc()}
+        )
+        config = _make_specialist_config(
+            mcp_servers=["google_analytics_mcp"], tool_ids=None
+        )
+        stack, _, mock_ba = _patch_specialist_runtime_externals(
+            fake_db=fake_db,
+            default_global_tools=[viz_tool, set_todo_tool, update_todo_tool],
+        )
+        with stack:
+            sr._build_specialist(config, "google_analytics_specialist", None)
+
+        resolved_tools = mock_ba.call_args.kwargs["tools"]
+        tool_names = {
+            getattr(t, "name", None) or getattr(t, "__name__", None)
+            for t in resolved_tools
+        }
+
+        assert "create_visualization" in tool_names, (
+            f"create_visualization must reach the GA specialist; got {tool_names!r}"
+        )
+        assert "set_todo_list" in tool_names, (
+            f"set_todo_list must reach the GA specialist; got {tool_names!r}"
+        )
+        assert "update_todo_list" in tool_names, (
+            f"update_todo_list must reach the GA specialist; got {tool_names!r}"
+        )
+
+    def test_default_global_tools_reach_specialist_via_real_registry(self) -> None:
+        """Integration-level check: exercise the *real* ``function_tool_registry``
+        rather than the mocked resolver path, so a regression in the
+        catalogue→callable resolution chain is caught here independently of
+        the mock-based tests above.
+
+        Uses ``mock_resolver=False`` to bypass the
+        ``resolve_default_global_tools`` patch, then pre-populates the real
+        ``_REGISTRY`` with stub callables for each of the three current
+        ``default_global`` tools.  ``get_default_registry()`` is NOT mocked so
+        the real ``ToolRegistry`` (loaded from ``tools.yaml``) drives
+        ``list_default_global_tools()``.
+
+        AH-PRD-09 Phase 3 / AH-64 task 3.
+        """
+        import functools
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.tools.registry.function_tool_registry import (
+            clear_function_tool_registry,
+            register_function_tool,
+        )
+
+        # Stub callables that stand in for the real tool implementations.
+        def _make_stub(tool_name: str) -> Any:
+            @functools.wraps(lambda **kw: f"{tool_name} stub result")
+            def stub(**kwargs: Any) -> str:
+                return f"{tool_name} stub result"
+
+            stub.__name__ = tool_name
+            return stub
+
+        clear_function_tool_registry()
+        try:
+            register_function_tool(
+                "create_visualization", _make_stub("create_visualization")
+            )
+            register_function_tool("set_todo_list", _make_stub("set_todo_list"))
+            register_function_tool("update_todo_list", _make_stub("update_todo_list"))
+
+            fake_db = _FakeFirestoreDb(
+                {("mcp_server_configs", "google_analytics_mcp"): _enabled_mcp_doc()}
+            )
+            config = _make_specialist_config(
+                mcp_servers=["google_analytics_mcp"], tool_ids=None
+            )
+            # mock_resolver=False → real function_tool_registry is used;
+            # only Firestore, MCP toolset construction, and build_agent are stubbed.
+            stack, _, mock_ba = _patch_specialist_runtime_externals(
+                fake_db=fake_db, mock_resolver=False
+            )
+            with stack:
+                sr._build_specialist(config, "google_analytics_specialist", None)
+
+            resolved_tools = mock_ba.call_args.kwargs["tools"]
+            tool_names = {
+                getattr(t, "name", None) or getattr(t, "__name__", None)
+                for t in resolved_tools
+            }
+
+            assert "create_visualization" in tool_names, (
+                f"create_visualization must reach specialist via real registry; "
+                f"got {tool_names!r}"
+            )
+            assert "set_todo_list" in tool_names, (
+                f"set_todo_list must reach specialist via real registry; "
+                f"got {tool_names!r}"
+            )
+            assert "update_todo_list" in tool_names, (
+                f"update_todo_list must reach specialist via real registry; "
+                f"got {tool_names!r}"
+            )
+        finally:
+            clear_function_tool_registry()
+
 
 # ---------------------------------------------------------------------------
 # TestSpecialistRuntimeRosterCap — AH-PRD-02 §2.5 ≤30-tool cap enforcement
@@ -1051,6 +1296,92 @@ class TestSpecialistRuntimeRosterCap:
             pytest.raises(RosterCapExceededError, match="31 > 30"),
         ):
             sr.resolve_agent("fat_specialist", account_id=None)
+
+    def test_default_global_tools_count_against_roster_cap(self) -> None:
+        """The ≤30-tool budget includes ``default_global`` function tools, not
+        just MCP tools.  A specialist with 28 MCP-catalogued tools + 3
+        default_global function tools (31 total) must trigger
+        ``RosterCapExceededError``.
+
+        AH-64 documents that this is a stricter check than the old deploy-time
+        factory's literal ``len(tools) > MAX_…`` guard (which counted each
+        ``McpToolset`` as one item regardless of how many tools it exposed).
+        """
+        from unittest.mock import patch as _patch
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.roster import RosterCapExceededError
+        from shared.agent_tool_limits import MAX_TOOLS_PER_SPECIALIST
+
+        viz_tool = _stub_function_tool("create_visualization")
+        set_todo_tool = _stub_function_tool("set_todo_list")
+        update_todo_tool = _stub_function_tool("update_todo_list")
+
+        # 28 MCP tools + 3 default_global function tools = 31 > MAX (30).
+        mcp_tool_count = (
+            MAX_TOOLS_PER_SPECIALIST
+            - len([viz_tool, set_todo_tool, update_todo_tool])
+            + 1
+        )
+
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "huge_mcp"): _enabled_mcp_doc()}
+        )
+        config = _make_specialist_config(mcp_servers=["huge_mcp"], tool_ids=None)
+
+        stack, _, _ = _patch_specialist_runtime_externals(
+            fake_db=fake_db,
+            default_global_tools=[viz_tool, set_todo_tool, update_todo_tool],
+        )
+        with (
+            stack,
+            _patch(
+                "app.adk.agents.agent_factory.roster._tool_count_for_server",
+                return_value=mcp_tool_count,
+            ),
+            pytest.raises(RosterCapExceededError),
+        ):
+            sr._build_specialist(config, "fat_specialist", None)
+
+    def test_default_global_tools_within_cap_when_mcp_count_fits(self) -> None:
+        """Inverse of the stress test: a specialist with 27 MCP-catalogued
+        tools + 3 default_global function tools = 30 (exactly at cap) must
+        succeed.  Confirms the off-by-one boundary is correct.
+        """
+        from unittest.mock import patch as _patch
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from shared.agent_tool_limits import MAX_TOOLS_PER_SPECIALIST
+
+        viz_tool = _stub_function_tool("create_visualization")
+        set_todo_tool = _stub_function_tool("set_todo_list")
+        update_todo_tool = _stub_function_tool("update_todo_list")
+
+        # Exactly at cap: 27 MCP + 3 default_global = 30.
+        mcp_tool_count = MAX_TOOLS_PER_SPECIALIST - len(
+            [viz_tool, set_todo_tool, update_todo_tool]
+        )
+
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "large_mcp"): _enabled_mcp_doc()}
+        )
+        config = _make_specialist_config(mcp_servers=["large_mcp"], tool_ids=None)
+
+        stack, _, mock_ba = _patch_specialist_runtime_externals(
+            fake_db=fake_db,
+            default_global_tools=[viz_tool, set_todo_tool, update_todo_tool],
+        )
+        with (
+            stack,
+            _patch(
+                "app.adk.agents.agent_factory.roster._tool_count_for_server",
+                return_value=mcp_tool_count,
+            ),
+        ):
+            sr._build_specialist(config, "at_cap_specialist", None)
+
+        # Build succeeded — no exception; build_agent was called once.
+        assert mock_ba.call_count == 1
 
 
 # ---------------------------------------------------------------------------

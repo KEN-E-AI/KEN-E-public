@@ -45,7 +45,7 @@ _SERVER_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,63}$")
 # description, keywords, specialist_categories, metadata etc. don't force a
 # reconnect — the McpToolset binding keeps working unchanged.
 _RELOAD_TRIGGER_FIELDS: frozenset[str] = frozenset(
-    {"connection", "auth_type", "enabled"}
+    {"connection", "auth_type", "enabled", "kind"}
 )
 
 
@@ -109,6 +109,7 @@ def _merge_update_into_doc(
         "tool_count",
         "estimated_tokens",
         "keywords",
+        "kind",
         "enabled",
     }
     for key in settable:
@@ -157,6 +158,7 @@ def _diff_mcp_fields(
         "estimated_tokens",
         "keywords",
         "auth_type",
+        "kind",
         "enabled",
         "connection",
     }
