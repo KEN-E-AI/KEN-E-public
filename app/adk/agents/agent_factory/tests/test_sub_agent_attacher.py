@@ -35,7 +35,6 @@ from app.adk.agents.agent_factory.sub_agent_attacher import (
     attach_account_specialists,
 )
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -81,8 +80,9 @@ def _patched_resolvers(visible: dict[str, LlmAgent]) -> Any:
     def _list(_account_id: str) -> list[str]:
         return list(visible.keys())
 
-    def _resolve_config(doc_id: str, _account_id: str | None = None,
-                        _ttl: int = 60) -> MergedAgentConfig:
+    def _resolve_config(
+        doc_id: str, _account_id: str | None = None, _ttl: int = 60
+    ) -> MergedAgentConfig:
         return MergedAgentConfig(
             instruction=f"{doc_id} instruction",
             model="gemini-2.5-pro",
@@ -90,8 +90,9 @@ def _patched_resolvers(visible: dict[str, LlmAgent]) -> Any:
             visible_in_frontend=True,
         )
 
-    def _resolve_agent(doc_id: str, _account_id: str | None = None,
-                       _ttl: int = 60) -> LlmAgent:
+    def _resolve_agent(
+        doc_id: str, _account_id: str | None = None, _ttl: int = 60
+    ) -> LlmAgent:
         return visible[doc_id]
 
     from contextlib import ExitStack
@@ -224,8 +225,9 @@ class TestReconcile:
         def _list(_account_id: str) -> list[str]:
             return ["ga_spec", "hidden_spec"]
 
-        def _resolve_config(doc_id: str, _account_id: str | None = None,
-                            _ttl: int = 60) -> MergedAgentConfig:
+        def _resolve_config(
+            doc_id: str, _account_id: str | None = None, _ttl: int = 60
+        ) -> MergedAgentConfig:
             return MergedAgentConfig(
                 instruction=f"{doc_id}.",
                 model="gemini-2.5-pro",
@@ -233,8 +235,9 @@ class TestReconcile:
                 visible_in_frontend=(doc_id != "hidden_spec"),
             )
 
-        def _resolve_agent(doc_id: str, _account_id: str | None = None,
-                           _ttl: int = 60) -> LlmAgent:
+        def _resolve_agent(
+            doc_id: str, _account_id: str | None = None, _ttl: int = 60
+        ) -> LlmAgent:
             return {"ga_spec": a, "hidden_spec": b}[doc_id]
 
         with (
@@ -271,16 +274,18 @@ class TestResilience:
         def _list(_account_id: str) -> list[str]:
             return ["ga_spec", "broken_spec"]
 
-        def _resolve_config(doc_id: str, _account_id: str | None = None,
-                            _ttl: int = 60) -> MergedAgentConfig:
+        def _resolve_config(
+            doc_id: str, _account_id: str | None = None, _ttl: int = 60
+        ) -> MergedAgentConfig:
             return MergedAgentConfig(
                 instruction=f"{doc_id}.",
                 model="gemini-2.5-pro",
                 description=f"{doc_id} desc",
             )
 
-        def _resolve_agent(doc_id: str, _account_id: str | None = None,
-                           _ttl: int = 60) -> LlmAgent:
+        def _resolve_agent(
+            doc_id: str, _account_id: str | None = None, _ttl: int = 60
+        ) -> LlmAgent:
             if doc_id == "broken_spec":
                 raise RuntimeError("MCP unreachable")
             return a
@@ -373,13 +378,15 @@ class TestConcurrentAttach:
         # Inject a tiny delay inside the resolver to widen the race window.
         import time
 
-        def _resolve_agent(doc_id: str, _account_id: str | None = None,
-                           _ttl: int = 60) -> LlmAgent:
+        def _resolve_agent(
+            doc_id: str, _account_id: str | None = None, _ttl: int = 60
+        ) -> LlmAgent:
             time.sleep(0.005)
             return {"ga_spec": a, "strategy_spec": b}[doc_id]
 
-        def _resolve_config(doc_id: str, _account_id: str | None = None,
-                            _ttl: int = 60) -> MergedAgentConfig:
+        def _resolve_config(
+            doc_id: str, _account_id: str | None = None, _ttl: int = 60
+        ) -> MergedAgentConfig:
             return MergedAgentConfig(
                 instruction=f"{doc_id}.",
                 model="gemini-2.5-pro",

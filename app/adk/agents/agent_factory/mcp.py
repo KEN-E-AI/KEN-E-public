@@ -255,9 +255,7 @@ def _build_connection_params(server_id: str, connection: dict[str, Any]) -> Any:
         expanded_headers: dict[str, str] | None = None
         if raw_headers:
             expanded_headers = {
-                k: _expand_env_placeholders(
-                    v, server_id, f"connection.headers.{k}"
-                )
+                k: _expand_env_placeholders(v, server_id, f"connection.headers.{k}")
                 for k, v in raw_headers.items()
             }
 
@@ -486,9 +484,7 @@ def load_all_mcp_toolsets(
                 "Failed to build toolset for MCP server %r: %s", server_id, exc
             )
 
-    logger.info(
-        "Loaded %d MCP toolsets from %r", len(toolsets), MCP_COLLECTION
-    )
+    logger.info("Loaded %d MCP toolsets from %r", len(toolsets), MCP_COLLECTION)
     return toolsets
 
 

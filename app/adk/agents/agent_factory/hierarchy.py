@@ -172,6 +172,7 @@ def build_hierarchy(
     from app.adk.agents.agent_factory.sub_agent_attacher import (
         attach_specialists_before_agent_callback,
     )
+
     root_agent = build_agent(
         root_config,
         name="ken_e",

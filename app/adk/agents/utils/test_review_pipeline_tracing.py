@@ -115,7 +115,9 @@ class TestEmitIterationSpanExceptionIsolation:
     def test_inner_exception_does_not_propagate(self):
         """If _emit_iteration_span_inner raises, emit_iteration_span swallows the exception."""
         if not WEAVE_AVAILABLE:
-            pytest.skip("Weave not available; exception-isolation path is not exercised")
+            pytest.skip(
+                "Weave not available; exception-isolation path is not exercised"
+            )
 
         with patch.object(
             _tracing,

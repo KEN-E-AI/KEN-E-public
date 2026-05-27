@@ -92,6 +92,7 @@ def emit_iteration_span(
 
 
 if WEAVE_AVAILABLE and _weave is not None:
+
     @_weave.op(name="review_loop_iteration")
     def _emit_iteration_span_inner(
         iteration: int,
@@ -110,6 +111,7 @@ if WEAVE_AVAILABLE and _weave is not None:
                 exc,
             )
 else:
+
     def _emit_iteration_span_inner(  # type: ignore[misc]
         iteration: int,
         specialist_output: str,

@@ -100,7 +100,9 @@ def _build_dispatch(name: str, specialist: LlmAgent) -> Callable:
         tool_context: ToolContext | None = None,
     ) -> str:
         initial_state: dict[str, Any] | None = (
-            copy.deepcopy(tool_context.state.to_dict()) if tool_context is not None else None
+            copy.deepcopy(tool_context.state.to_dict())
+            if tool_context is not None
+            else None
         )
 
         criteria = acceptance_criteria.strip()
@@ -129,6 +131,7 @@ def _build_dispatch(name: str, specialist: LlmAgent) -> Callable:
                 from app.adk.agents.utils.supervisor_utils import (
                     invoke_pipeline,
                 )
+
                 _text, final_state, events = invoke_pipeline(
                     pipeline, query, state=initial_state
                 )
@@ -199,9 +202,7 @@ def generate_dispatch_functions(
             validation regex.
     """
     invalid = [
-        name
-        for name in specialists
-        if not _VALID_SPECIALIST_NAME_RE.fullmatch(name)
+        name for name in specialists if not _VALID_SPECIALIST_NAME_RE.fullmatch(name)
     ]
     if invalid:
         raise ValueError(

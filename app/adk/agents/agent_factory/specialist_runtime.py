@@ -58,7 +58,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from google.adk.agents import BaseAgent, LlmAgent
+from google.adk.agents import BaseAgent
 from google.adk.agents.readonly_context import ReadonlyContext
 
 from app.adk.agents.agent_factory.config_loader import MergedAgentConfig

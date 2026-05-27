@@ -207,6 +207,7 @@ class TestRootOnlyBuild:
         from app.adk.agents.agent_factory.sub_agent_attacher import (
             attach_specialists_before_agent_callback,
         )
+
         root = _run_build_hierarchy(_E2E_DOCS)
         callbacks = root.before_agent_callback or []
         assert attach_specialists_before_agent_callback in callbacks

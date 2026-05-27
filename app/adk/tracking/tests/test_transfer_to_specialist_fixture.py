@@ -26,9 +26,7 @@ import pytest
 
 from app.adk.tracking.compliance import validate_trace_compliance
 
-_FIXTURE_PATH = (
-    Path(__file__).parent / "fixtures" / "transfer_to_specialist_trace.json"
-)
+_FIXTURE_PATH = Path(__file__).parent / "fixtures" / "transfer_to_specialist_trace.json"
 
 
 @pytest.fixture(scope="module")
@@ -87,9 +85,7 @@ class TestFixtureTopLevel:
             f"{[i.message for i in result.issues]}"
         )
 
-    def test_transfer_to_agent_dispatch_flag_is_true(
-        self, fixture_data: dict
-    ) -> None:
+    def test_transfer_to_agent_dispatch_flag_is_true(self, fixture_data: dict) -> None:
         """AH-75: the fixture must represent a transfer_to_agent dispatch run."""
         flags = fixture_data["metadata"].get("feature_flags", {})
         assert flags.get("agentic_harness_transfer_to_agent_dispatch") is True, (
@@ -97,9 +93,7 @@ class TestFixtureTopLevel:
             "(agentic_harness_transfer_to_agent_dispatch: true)"
         )
 
-    def test_no_delegate_to_specialist_span_anywhere(
-        self, fixture_data: dict
-    ) -> None:
+    def test_no_delegate_to_specialist_span_anywhere(self, fixture_data: dict) -> None:
         """AH-75: the delegate_to_specialist function tool was removed. No span
         anywhere in the tree should carry that name."""
 
@@ -136,8 +130,7 @@ class TestRootAgentSpan:
         # Accept either summary.agent_kind == "root" or a top-level span
         # named "ken_e" — both are unambiguous signals.
         is_root = (
-            summary.get("agent_kind") == "root"
-            or root_span.get("name") == "ken_e"
+            summary.get("agent_kind") == "root" or root_span.get("name") == "ken_e"
         )
         assert is_root, (
             f"Top-level span must identify the root agent (got "
@@ -231,10 +224,7 @@ class TestSpecialistSubAgentSpan:
         spec_name = summary["specialist_name"]
         children = specialist_span.get("children", [])
         worker = [c for c in children if c.get("name") == f"{spec_name}_worker"]
-        reviewer = [
-            c for c in children
-            if c.get("name", "").endswith("_reviewer")
-        ]
+        reviewer = [c for c in children if c.get("name", "").endswith("_reviewer")]
         assert worker, f"LoopAgent specialist must have a {spec_name}_worker child"
         assert reviewer, "LoopAgent specialist must have a *_reviewer child"
 
@@ -255,7 +245,8 @@ class TestIterationSubSpans:
             pytest.skip("specialist is not review-wrapped (no iteration sub-spans)")
         spec_name = specialist["summary"]["specialist_name"]
         matched = [
-            c for c in specialist.get("children", [])
+            c
+            for c in specialist.get("children", [])
             if c.get("name") == f"{spec_name}_worker"
         ]
         assert matched, f"Worker span not found for specialist {spec_name!r}"
@@ -270,7 +261,8 @@ class TestIterationSubSpans:
         if specialist.get("summary", {}).get("agent_kind") != "loop_pipeline":
             pytest.skip("specialist is not review-wrapped (no iteration sub-spans)")
         matched = [
-            c for c in specialist.get("children", [])
+            c
+            for c in specialist.get("children", [])
             if c.get("name", "").endswith("_reviewer")
         ]
         assert matched, "Reviewer span not found"

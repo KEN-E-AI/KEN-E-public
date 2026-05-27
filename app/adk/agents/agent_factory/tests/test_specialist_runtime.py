@@ -416,10 +416,16 @@ class TestAvailableSpecialistsBlockCache:
             patch.object(specialist_runtime, "resolve_config", return_value=cfg),
             patch.object(specialist_runtime, "resolve_agent", return_value=agent),
         ):
-            specialist_runtime.available_specialists_provider(self._make_context("acct_1"))
-            specialist_runtime.available_specialists_provider(self._make_context("acct_2"))
+            specialist_runtime.available_specialists_provider(
+                self._make_context("acct_1")
+            )
+            specialist_runtime.available_specialists_provider(
+                self._make_context("acct_2")
+            )
             # Repeats of acct_1 still hit the cache.
-            specialist_runtime.available_specialists_provider(self._make_context("acct_1"))
+            specialist_runtime.available_specialists_provider(
+                self._make_context("acct_1")
+            )
 
         assert list_mock.call_count == 2
 
@@ -432,9 +438,7 @@ class TestAvailableSpecialistsBlockCache:
         agent = _make_llm_agent("spe_1")
         ctx = self._make_context("acct_1")
 
-        list_mock = MagicMock(
-            side_effect=[FirestoreConnectionError("down"), ["spe_1"]]
-        )
+        list_mock = MagicMock(side_effect=[FirestoreConnectionError("down"), ["spe_1"]])
 
         with (
             patch(
@@ -997,9 +1001,7 @@ class TestSpecialistRuntimeRosterCap:
             stack,
             _patch(
                 "app.adk.agents.agent_factory.roster.resolve_specialist_roster",
-                side_effect=RosterCapExceededError(
-                    "test cap exceeded: 31 tools > 30"
-                ),
+                side_effect=RosterCapExceededError("test cap exceeded: 31 tools > 30"),
             ),
             pytest.raises(RosterCapExceededError, match="test cap exceeded"),
         ):

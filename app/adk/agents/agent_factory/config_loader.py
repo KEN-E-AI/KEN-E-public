@@ -227,9 +227,7 @@ def _build_config(
     try:
         config = MergedAgentConfig.model_validate(doc_dict)
     except ValidationError as e:
-        raise ConfigValidationError(
-            f"Config validation failed: {e}"
-        ) from e
+        raise ConfigValidationError(f"Config validation failed: {e}") from e
 
     config.based_on_version = based_on_version
     config.customization_status = status

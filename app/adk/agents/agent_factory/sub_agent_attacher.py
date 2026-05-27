@@ -95,8 +95,7 @@ def attach_account_specialists(
     """
     if not _has_sub_agents_attr(root_agent):
         logger.error(
-            "[ATTACH-SPECIALISTS] root_agent %r has no sub_agents attribute; "
-            "skipping.",
+            "[ATTACH-SPECIALISTS] root_agent %r has no sub_agents attribute; skipping.",
             getattr(root_agent, "name", "<unnamed>"),
         )
         return
@@ -148,8 +147,7 @@ def _attach_locked(root_agent: BaseAgent, account_id: str) -> None:
             # Mirror available_specialists_provider's policy: log and drop the
             # offender so the prompt block and the sub_agents set agree.
             logger.warning(
-                "[ATTACH-SPECIALISTS] Could not resolve specialist %r "
-                "(account=%r): %s",
+                "[ATTACH-SPECIALISTS] Could not resolve specialist %r (account=%r): %s",
                 doc_id,
                 account_id,
                 exc,
@@ -159,9 +157,7 @@ def _attach_locked(root_agent: BaseAgent, account_id: str) -> None:
     _reconcile(root_agent, desired)
 
 
-def _reconcile(
-    root_agent: BaseAgent, desired: dict[str, BaseAgent]
-) -> None:
+def _reconcile(root_agent: BaseAgent, desired: dict[str, BaseAgent]) -> None:
     """Mutate ``root_agent.sub_agents`` to match ``desired`` (keyed by name).
 
     Removes entries whose name is absent from *desired* OR whose current

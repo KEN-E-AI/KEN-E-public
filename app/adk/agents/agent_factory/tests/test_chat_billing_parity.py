@@ -45,7 +45,10 @@ from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
 from shared.token_accounting import extract_billable_tokens
 
 # Resolve api/src so kene_api is importable without installing the api package.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "api", "src"))
+sys.path.insert(
+    0,
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "api", "src"),
+)
 
 from kene_api.chat.accumulator import SessionTurnAccumulator
 
@@ -300,7 +303,9 @@ class TestCaptureHarness:
         specialist = _make_deterministic_specialist()
         events = await _capture_mode_a_events(specialist)
         assert len(events) >= 1, "Mode A outer Runner must yield at least one event"
-        billable_events = [e for e in events if getattr(e, "usage_metadata", None) is not None]
+        billable_events = [
+            e for e in events if getattr(e, "usage_metadata", None) is not None
+        ]
         assert len(billable_events) >= 1, (
             "Mode A must include at least one event with usage_metadata (specialist events "
             "must be present in outer stream for token accounting to work)"

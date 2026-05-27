@@ -815,7 +815,9 @@ def _load_merged(
 @account_router.get("/", response_model=list[MergedAgentConfig])
 async def list_account_agent_configs(
     account_id: str,
-    visible_in_frontend: bool = Query(False, description="Filter to visible_in_frontend=true"),
+    visible_in_frontend: bool = Query(
+        False, description="Filter to visible_in_frontend=true"
+    ),
     user: UserContext = Depends(get_current_user_context),
     db: firestore.Client = Depends(get_firestore),
 ) -> list[MergedAgentConfig]:
@@ -831,7 +833,9 @@ async def list_account_agent_configs(
         raise HTTPException(status_code=403, detail="Access denied to this account")
 
     try:
-        global_docs = {doc.id: doc.to_dict() for doc in db.collection("agent_configs").stream()}
+        global_docs = {
+            doc.id: doc.to_dict() for doc in db.collection("agent_configs").stream()
+        }
         account_docs = {
             doc.id: doc.to_dict()
             for doc in db.collection("accounts")
@@ -851,7 +855,9 @@ async def list_account_agent_configs(
         results: list[MergedAgentConfig] = []
         for cid in sorted(config_ids):
             try:
-                merged = _merge_from_data(cid, global_docs.get(cid), account_docs.get(cid))
+                merged = _merge_from_data(
+                    cid, global_docs.get(cid), account_docs.get(cid)
+                )
             except ValidationError as exc:
                 logger.warning(
                     f"Skipping malformed agent config '{cid}' for account "
@@ -868,7 +874,9 @@ async def list_account_agent_configs(
 
     except Exception as e:
         logger.error(f"Failed to list agent configs for account {account_id}: {e!s}")
-        raise HTTPException(status_code=500, detail="Failed to list agent configurations") from e
+        raise HTTPException(
+            status_code=500, detail="Failed to list agent configurations"
+        ) from e
 
 
 @account_router.get("/{config_id}", response_model=MergedAgentConfig)
@@ -885,8 +893,12 @@ async def get_account_agent_config(
     try:
         merged = _load_merged(db, account_id, config_id)
     except Exception as e:
-        logger.error(f"Failed to load agent config {config_id} for account {account_id}: {e!s}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve agent configuration") from e
+        logger.error(
+            f"Failed to load agent config {config_id} for account {account_id}: {e!s}"
+        )
+        raise HTTPException(
+            status_code=500, detail="Failed to retrieve agent configuration"
+        ) from e
 
     if merged is None:
         raise HTTPException(status_code=404, detail="Agent configuration not found")
@@ -947,10 +959,14 @@ async def create_account_agent_config(
             .document(custom_id)
             .set(doc_data)
         )
-        logger.info(f"User {user.email} created custom agent {custom_id} for account {account_id}")
+        logger.info(
+            f"User {user.email} created custom agent {custom_id} for account {account_id}"
+        )
     except Exception as e:
         logger.error(f"Failed to create custom agent for account {account_id}: {e!s}")
-        raise HTTPException(status_code=500, detail="Failed to create agent configuration") from e
+        raise HTTPException(
+            status_code=500, detail="Failed to create agent configuration"
+        ) from e
 
     merged = _load_merged(db, account_id, custom_id)
     if merged is None:
@@ -1034,7 +1050,9 @@ async def upsert_account_agent_config_overlay(
         logger.error(
             f"Failed to upsert overlay for {config_id} / account {account_id}: {e!s}"
         )
-        raise HTTPException(status_code=500, detail="Failed to update agent configuration") from e
+        raise HTTPException(
+            status_code=500, detail="Failed to update agent configuration"
+        ) from e
 
     merged = _load_merged(db, account_id, config_id)
     if merged is None:
@@ -1072,7 +1090,9 @@ async def delete_account_agent_config(
 
         if config_id.startswith("custom_"):
             if not overlay_doc.exists:
-                raise HTTPException(status_code=404, detail="Custom agent configuration not found")
+                raise HTTPException(
+                    status_code=404, detail="Custom agent configuration not found"
+                )
             overlay_ref.delete()
             logger.info(
                 f"User {user.email} deleted custom agent {config_id} from account {account_id}"
@@ -1090,4 +1110,6 @@ async def delete_account_agent_config(
         logger.error(
             f"Failed to delete overlay for {config_id} / account {account_id}: {e!s}"
         )
-        raise HTTPException(status_code=500, detail="Failed to delete agent configuration") from e
+        raise HTTPException(
+            status_code=500, detail="Failed to delete agent configuration"
+        ) from e
