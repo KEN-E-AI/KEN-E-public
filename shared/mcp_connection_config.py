@@ -16,19 +16,10 @@ secret-leak fix).
 
 from __future__ import annotations
 
-from enum import auto
+from enum import StrEnum, auto
 from typing import Literal
 
 from pydantic import BaseModel, Field
-
-try:
-    from enum import StrEnum
-except ImportError:
-    # Python < 3.11 compat — StrEnum shipped in 3.11
-    import enum
-
-    class StrEnum(str, enum.Enum):  # type: ignore[no-redef]
-        pass
 
 
 class McpServerKind(StrEnum):

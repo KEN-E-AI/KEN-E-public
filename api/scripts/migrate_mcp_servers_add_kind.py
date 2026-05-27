@@ -39,6 +39,11 @@ logger = logging.getLogger(__name__)
 COLLECTION = "mcp_server_configs"
 DEFAULT_KIND = "cloud_run"
 
+# Known valid kind values. Any Firestore doc with a kind outside this set is
+# treated as needing a backfill — it was likely corrupted by a manual edit and
+# would cause a Pydantic ValidationError at runtime otherwise.
+_VALID_KINDS = {"cloud_run", "zapier"}
+
 
 # ---------------------------------------------------------------------------
 # Pure helpers (testable without Firestore)
@@ -46,11 +51,18 @@ DEFAULT_KIND = "cloud_run"
 
 
 def _needs_kind_backfill(doc: dict[str, Any]) -> bool:
-    """Return True when the doc is missing or has an empty/None ``kind``."""
+    """Return True when the doc is missing, has an empty/None ``kind``, or has an unrecognised value."""
     kind = doc.get("kind")
     if kind is None:
         return True
     if isinstance(kind, str) and not kind.strip():
+        return True
+    if isinstance(kind, str) and kind.strip() not in _VALID_KINDS:
+        logger.warning(
+            "Unrecognised kind value %r — will overwrite with %r",
+            kind,
+            DEFAULT_KIND,
+        )
         return True
     return False
 
@@ -152,12 +164,13 @@ def main() -> int:
     parser.add_argument(
         "--log-level",
         default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         help="Logging level (default: INFO)",
     )
 
     args = parser.parse_args()
     logging.basicConfig(
-        level=getattr(logging, args.log_level.upper(), logging.INFO),
+        level=getattr(logging, args.log_level),
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 

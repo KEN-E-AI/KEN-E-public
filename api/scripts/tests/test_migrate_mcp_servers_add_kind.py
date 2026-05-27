@@ -13,6 +13,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from api.scripts.migrate_mcp_servers_add_kind import (
+    _VALID_KINDS,
     _needs_kind_backfill,
     backfill,
 )
@@ -77,10 +78,17 @@ class TestNeedsKindBackfill:
             ({"kind": "   "}, True),              # whitespace-only
             ({"kind": "cloud_run"}, False),       # already set
             ({"kind": "zapier"}, False),          # non-default but valid
+            ({"kind": "CloudRun"}, True),         # wrong case — not in _VALID_KINDS
+            ({"kind": "invalid"}, True),          # unknown value
         ],
     )
     def test_parametrized(self, doc: dict[str, Any], expected: bool) -> None:
         assert _needs_kind_backfill(doc) is expected
+
+    def test_valid_kinds_set_covers_enum_members(self) -> None:
+        """_VALID_KINDS must stay in sync with McpServerKind members."""
+        # If a new enum member is added without updating _VALID_KINDS, this test fails.
+        assert _VALID_KINDS == {"cloud_run", "zapier"}
 
 
 # ---------------------------------------------------------------------------
