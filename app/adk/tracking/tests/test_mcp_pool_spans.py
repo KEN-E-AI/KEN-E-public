@@ -7,13 +7,11 @@ No live Weave install required — the Weave client is stubbed via
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from app.adk.tracking.mcp_pool_spans import emit_mcp_pool_span
-
 
 # ---------------------------------------------------------------------------
 # Test 1 — module imports without Weave installed
@@ -112,7 +110,10 @@ async def test_finish_call_on_body_raise() -> None:
     fake_call_ctx = MagicMock()
 
     with pytest.raises(ValueError, match="boom"):
-        with patch(_GET_CLIENT_PATH, lambda: client), patch(_CALL_CTX_PATH, fake_call_ctx):
+        with (
+            patch(_GET_CLIENT_PATH, lambda: client),
+            patch(_CALL_CTX_PATH, fake_call_ctx),
+        ):
             async with emit_mcp_pool_span("mcp_pool.evict", {"reason": "ttl"}):
                 raise ValueError("boom")
 
@@ -208,7 +209,10 @@ async def test_span_name_forwarded_as_op() -> None:
 
     for span_name in ("mcp_pool.get", "mcp_pool.evict"):
         client.create_call.reset_mock()
-        with patch(_GET_CLIENT_PATH, lambda: client), patch(_CALL_CTX_PATH, fake_call_ctx):
+        with (
+            patch(_GET_CLIENT_PATH, lambda: client),
+            patch(_CALL_CTX_PATH, fake_call_ctx),
+        ):
             async with emit_mcp_pool_span(span_name, {}):  # type: ignore[arg-type]
                 pass
 

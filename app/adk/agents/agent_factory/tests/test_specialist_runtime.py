@@ -1565,8 +1565,8 @@ class TestBuildSpecialistMcpPoolIntegration:
         config = _make_specialist_config(mcp_servers=["ga_mcp", "ads_mcp"])
         fake_db = _FakeFirestoreDb(
             {
-                "ga_mcp": {"name": "ga_mcp", "enabled": True, "connection": {"connection_type": "sse", "url": "https://ga.example.com", "timeout_seconds": 30}},
-                "ads_mcp": {"name": "ads_mcp", "enabled": True, "connection": {"connection_type": "sse", "url": "https://ads.example.com", "timeout_seconds": 30}},
+                ("mcp_server_configs", "ga_mcp"): _enabled_mcp_doc(),
+                ("mcp_server_configs", "ads_mcp"): _enabled_mcp_doc(),
             }
         )
         fresh_pool = McpToolsetPool()
@@ -1585,7 +1585,7 @@ class TestBuildSpecialistMcpPoolIntegration:
 
         config = _make_specialist_config(mcp_servers=["ga_mcp"])
         fake_db = _FakeFirestoreDb(
-            {"ga_mcp": {"name": "ga_mcp", "enabled": True, "connection": {"connection_type": "sse", "url": "https://ga.example.com", "timeout_seconds": 30}}}
+            {("mcp_server_configs", "ga_mcp"): _enabled_mcp_doc()}
         )
         fresh_pool = McpToolsetPool()
         stack, mock_btf, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
@@ -1594,7 +1594,9 @@ class TestBuildSpecialistMcpPoolIntegration:
             assert mock_btf.call_count == 1
 
             sr._build_specialist(config, "spec", "acc1", mcp_pool=fresh_pool)
-            assert mock_btf.call_count == 1, "build_toolset_for_doc must NOT be called on pool hit"
+            assert mock_btf.call_count == 1, (
+                "build_toolset_for_doc must NOT be called on pool hit"
+            )
 
     def test_different_creds_hash_produces_new_pool_entry(self) -> None:
         """Different session-state creds for the same server produce distinct pool entries."""
@@ -1603,16 +1605,30 @@ class TestBuildSpecialistMcpPoolIntegration:
 
         config = _make_specialist_config(mcp_servers=["ga_mcp"])
         fake_db = _FakeFirestoreDb(
-            {"ga_mcp": {"name": "ga_mcp", "enabled": True, "connection": {"connection_type": "sse", "url": "https://ga.example.com", "timeout_seconds": 30}}}
+            {("mcp_server_configs", "ga_mcp"): _enabled_mcp_doc()}
         )
         fresh_pool = McpToolsetPool()
         stack, mock_btf, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
         with stack:
-            sr._build_specialist(config, "spec", "acc1", session_state={"mcp_creds_ga_mcp": {"token": "tok1"}}, mcp_pool=fresh_pool)
+            sr._build_specialist(
+                config,
+                "spec",
+                "acc1",
+                session_state={"mcp_creds_ga_mcp": {"token": "tok1"}},
+                mcp_pool=fresh_pool,
+            )
             assert mock_btf.call_count == 1
 
-            sr._build_specialist(config, "spec", "acc1", session_state={"mcp_creds_ga_mcp": {"token": "tok2"}}, mcp_pool=fresh_pool)
-            assert mock_btf.call_count == 2, "Different creds should produce a new pool entry"
+            sr._build_specialist(
+                config,
+                "spec",
+                "acc1",
+                session_state={"mcp_creds_ga_mcp": {"token": "tok2"}},
+                mcp_pool=fresh_pool,
+            )
+            assert mock_btf.call_count == 2, (
+                "Different creds should produce a new pool entry"
+            )
 
     def test_pool_checkout_timeout_skips_server(self) -> None:
         """Pool checkout timeout logs a warning and skips the server (no hard failure)."""
@@ -1624,12 +1640,15 @@ class TestBuildSpecialistMcpPoolIntegration:
 
         config = _make_specialist_config(mcp_servers=["slow_mcp"])
         fake_db = _FakeFirestoreDb(
-            {"slow_mcp": {"name": "slow_mcp", "enabled": True, "connection": {"connection_type": "sse", "url": "https://slow.example.com", "timeout_seconds": 30}}}
+            {("mcp_server_configs", "slow_mcp"): _enabled_mcp_doc()}
         )
         fresh_pool = McpToolsetPool()
-        stack, mock_btf, mock_ba = _patch_specialist_runtime_externals(fake_db=fake_db)
+        stack, _mock_btf, mock_ba = _patch_specialist_runtime_externals(fake_db=fake_db)
         with stack:
-            with _patch("concurrent.futures.Future.result", side_effect=concurrent.futures.TimeoutError):
+            with _patch(
+                "concurrent.futures.Future.result",
+                side_effect=concurrent.futures.TimeoutError,
+            ):
                 sr._build_specialist(config, "spec", "acc1", mcp_pool=fresh_pool)
 
         mock_ba.assert_called_once()
@@ -1641,14 +1660,16 @@ class TestBuildSpecialistMcpPoolIntegration:
 
         config = _make_specialist_config(mcp_servers=["ga_mcp"])
         fake_db = _FakeFirestoreDb(
-            {"ga_mcp": {"name": "ga_mcp", "enabled": True, "connection": {"connection_type": "sse", "url": "https://ga.example.com", "timeout_seconds": 30}}}
+            {("mcp_server_configs", "ga_mcp"): _enabled_mcp_doc()}
         )
         injected_pool = McpToolsetPool()
-        stack, mock_btf, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
+        stack, _mock_btf, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
         with stack:
             sr._build_specialist(config, "spec", "acc1", mcp_pool=injected_pool)
 
-        assert len(injected_pool._pool) == 1, "Injected pool should have received the toolset entry"
+        assert len(injected_pool._pool) == 1, (
+            "Injected pool should have received the toolset entry"
+        )
 
     def test_session_state_none_uses_empty_creds(self) -> None:
         """session_state=None and session_state={} produce identical pool keys."""
@@ -1657,15 +1678,21 @@ class TestBuildSpecialistMcpPoolIntegration:
 
         config = _make_specialist_config(mcp_servers=["ga_mcp"])
         fake_db = _FakeFirestoreDb(
-            {"ga_mcp": {"name": "ga_mcp", "enabled": True, "connection": {"connection_type": "sse", "url": "https://ga.example.com", "timeout_seconds": 30}}}
+            {("mcp_server_configs", "ga_mcp"): _enabled_mcp_doc()}
         )
         pool_a = McpToolsetPool()
         pool_b = McpToolsetPool()
-        stack, mock_btf, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
+        stack, _mock_btf, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
         with stack:
-            sr._build_specialist(config, "spec", "acc1", session_state=None, mcp_pool=pool_a)
-            sr._build_specialist(config, "spec", "acc1", session_state={}, mcp_pool=pool_b)
+            sr._build_specialist(
+                config, "spec", "acc1", session_state=None, mcp_pool=pool_a
+            )
+            sr._build_specialist(
+                config, "spec", "acc1", session_state={}, mcp_pool=pool_b
+            )
 
         key_a = next(iter(pool_a._pool.keys()))
         key_b = next(iter(pool_b._pool.keys()))
-        assert key_a == key_b, "None and {} session_state must produce identical pool keys"
+        assert key_a == key_b, (
+            "None and {} session_state must produce identical pool keys"
+        )

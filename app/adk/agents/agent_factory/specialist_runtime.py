@@ -58,8 +58,8 @@ import logging
 import re
 import threading
 import time
-from collections.abc import Callable
-from typing import Any, Mapping
+from collections.abc import Callable, Mapping
+from typing import Any
 
 from google.adk.agents import BaseAgent
 from google.adk.agents.readonly_context import ReadonlyContext
@@ -394,7 +394,9 @@ def _build_specialist(
             pool_key = (server_id, account_id or "", creds_hash)
 
             allowed_for_server: list[str] | None = (
-                per_server_allowed[server_id] if per_server_allowed is not None else None
+                per_server_allowed[server_id]
+                if per_server_allowed is not None
+                else None
             )
 
             def _make_build_fn(
@@ -416,7 +418,11 @@ def _build_specialist(
                             f"MCP server {sid!r} is not enabled; "
                             f"skipping for specialist {specialist_name!r}"
                         )
-                    return build_toolset_for_doc(sid, doc, allowed_tool_names=allowed_names)
+                    if allowed_names is not None:
+                        return build_toolset_for_doc(
+                            sid, doc, allowed_tool_names=allowed_names
+                        )
+                    return build_toolset_for_doc(sid, doc)
 
                 return _build_fn
 
@@ -635,7 +641,9 @@ def resolve_agent(
 
     return _specialists_cache.get_or_build(
         cache_key,
-        lambda: _build_specialist(config, doc_id, account_id, session_state=session_state),
+        lambda: _build_specialist(
+            config, doc_id, account_id, session_state=session_state
+        ),
     )
 
 

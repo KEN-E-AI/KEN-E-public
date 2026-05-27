@@ -51,6 +51,7 @@ from collections.abc import Callable
 from enum import Enum
 from typing import Any
 
+from app.adk.tracking.mcp_pool_spans import emit_mcp_pool_span
 from shared.structured_logging import get_structured_logger
 
 logger = get_structured_logger(__name__)
@@ -134,7 +135,7 @@ class McpToolsetPool:
                 "zapier MCP kind is reserved for Phase 4 / R2 (AH-PRD-09)"
             )
 
-        pool_key = (kind.value,) + key
+        pool_key = (kind.value, *key)
         stripe = self._stripe(pool_key)
 
         async with stripe:
@@ -150,8 +151,6 @@ class McpToolsetPool:
                 cache_hit = False
 
         pool_size_after = len(self._pool)
-        from app.adk.tracking.mcp_pool_spans import emit_mcp_pool_span
-
         async with emit_mcp_pool_span(
             "mcp_pool.get",
             {
@@ -193,8 +192,6 @@ class McpToolsetPool:
             entry = self._pool.get(pool_key)
             if entry is None:
                 pool_size_after = len(self._pool)
-                from app.adk.tracking.mcp_pool_spans import emit_mcp_pool_span
-
                 async with emit_mcp_pool_span(
                     "mcp_pool.evict",
                     {
@@ -215,8 +212,6 @@ class McpToolsetPool:
             toolset_to_close, _ = entry
 
         pool_size_after = len(self._pool)
-        from app.adk.tracking.mcp_pool_spans import emit_mcp_pool_span
-
         async with emit_mcp_pool_span(
             "mcp_pool.evict",
             {
@@ -248,9 +243,7 @@ class McpToolsetPool:
         now = time.monotonic()
         cutoff = now - self._IDLE_TTL_SECONDS
         stale_keys = [
-            k
-            for k, (_, last_used) in list(self._pool.items())
-            if last_used < cutoff
+            k for k, (_, last_used) in list(self._pool.items()) if last_used < cutoff
         ]
         for pool_key in stale_keys:
             await self.evict(pool_key, stale_before=cutoff, reason="ttl")
@@ -303,8 +296,6 @@ class McpToolsetPool:
                 lru_key, (toolset, _) = next(iter(self._pool.items()))
                 del self._pool[lru_key]
                 pool_size_after = len(self._pool)
-                from app.adk.tracking.mcp_pool_spans import emit_mcp_pool_span
-
                 async with emit_mcp_pool_span(
                     "mcp_pool.evict",
                     {

@@ -166,7 +166,9 @@ async def test_lru_bump_on_hit() -> None:
     )
 
     remaining = list(pool._pool.keys())
-    assert ("cloud_run", "srv", "acc", "k1") not in remaining, "k1 should have been evicted"
+    assert ("cloud_run", "srv", "acc", "k1") not in remaining, (
+        "k1 should have been evicted"
+    )
     assert ("cloud_run", "srv", "acc", "k0") in remaining, "k0 should still be present"
 
 
@@ -376,7 +378,6 @@ async def test_concurrent_same_key_single_flight() -> None:
 async def test_concurrent_different_keys_parallel() -> None:
     """Two get_or_create calls for different keys run in parallel, not serially."""
     pool = McpToolsetPool()
-    delay = 0.05
 
     # Simulate a slow synchronous build to test parallelism.
     # We use asyncio.sleep injected via side_effect to simulate I/O latency
@@ -393,8 +394,6 @@ async def test_concurrent_different_keys_parallel() -> None:
         return _make_toolset()
 
     # Keys that hash to different stripes — any two different keys should work
-    loop = asyncio.get_running_loop()
-    start = loop.time()
     await asyncio.gather(
         pool.get_or_create(
             kind=McpServerKind.CLOUD_RUN,
@@ -407,8 +406,6 @@ async def test_concurrent_different_keys_parallel() -> None:
             build_fn=_build_fn,
         ),
     )
-    elapsed = loop.time() - start
-
     # Both builds should complete quickly (no artificial delay); just verify
     # two distinct toolsets were built.
     assert len(build_events) == 2

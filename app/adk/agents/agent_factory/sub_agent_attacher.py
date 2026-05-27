@@ -48,7 +48,8 @@ sub_agents reconcile stay in sync without distributed coordination.
 """
 
 import logging
-from typing import TYPE_CHECKING, Any, Mapping
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 
 from google.adk.agents import BaseAgent
 from google.genai import types
@@ -191,7 +192,9 @@ def _attach_locked(
     desired: dict[str, BaseAgent] = {}
     for doc_id, _config in visible_configs.items():
         try:
-            desired[doc_id] = resolve_agent(doc_id, account_id, session_state=session_state)
+            desired[doc_id] = resolve_agent(
+                doc_id, account_id, session_state=session_state
+            )
         except Exception as exc:
             # Mirror available_specialists_provider's policy: log and drop the
             # offender so the prompt block and the sub_agents set agree.

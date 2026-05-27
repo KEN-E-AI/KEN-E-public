@@ -16,14 +16,12 @@ nightly stress-test job.
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.adk.agents.agent_factory.mcp_pool import McpServerKind, McpToolsetPool
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -83,7 +81,7 @@ async def test_no_sse_leak_under_1hour_simulated_traffic() -> None:
             account_id = "stress_account"
             creds_hash = f"creds_{turn // 100}"  # creds rotate every 100 turns
             key = (server_id, account_id, creds_hash)
-            pool_key = ("cloud_run",) + key
+            pool_key = ("cloud_run", *key)
 
             def _build_fn(_pk: tuple[str, ...] = pool_key) -> Any:
                 t = _make_toolset()
