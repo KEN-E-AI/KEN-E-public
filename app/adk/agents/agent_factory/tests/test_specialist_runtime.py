@@ -334,6 +334,125 @@ class TestAvailableSpecialistsProvider:
         assert "good_spe" in result
         assert "bad_spe" not in result
 
+    # -----------------------------------------------------------------------
+    # Regression coverage for AH-62 (PR #721) — provider/callback parity
+    #
+    # ``available_specialists_provider`` and
+    # ``attach_specialists_before_agent_callback`` both extract
+    # ``session_state`` from their respective context objects. ADK gives them
+    # different state types:
+    #
+    # * ``CallbackContext.state`` returns ADK's ``State`` (no ``keys()`` /
+    #   ``__iter__``; ``dict(state)`` raises ``KeyError: 0``).
+    # * ``ReadonlyContext.state`` returns ``MappingProxyType`` over
+    #   ``session.state`` today, which ``dict()`` casts cleanly.
+    #
+    # The provider previously used ``dict(context.state)``; it works for the
+    # current ``MappingProxyType`` shape but silently breaks if a future ADK
+    # release aligns the two contexts on ``State``. The
+    # ``hasattr(state, "to_dict")`` guard in the provider matches the fix
+    # already shipped in ``sub_agent_attacher.py:362`` so a future ADK shape
+    # change cannot silently degrade the specialists block.
+    # -----------------------------------------------------------------------
+
+    def test_real_adk_state_session_state_forwarded(self) -> None:
+        """When ``ReadonlyContext.state`` is an ADK ``State`` (forward-compat
+        shape), the provider must extract session state via ``to_dict()`` and
+        forward it to ``resolve_agent``. A regression here (e.g. reintroducing
+        ``dict(state)``) would crash with ``KeyError: 0``."""
+        from types import SimpleNamespace
+
+        from google.adk.sessions.state import State
+
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        good_cfg = _make_merged_config("good", visible_in_frontend=True)
+        good_agent = _make_llm_agent("good_spe")
+        state = State(
+            value={"account_id": "acct_1", "mcp_creds_x": "v1"},
+            delta={"mcp_creds_y": "v2"},
+        )
+        ctx = SimpleNamespace(state=state)
+        seen_session_states: list[Any] = []
+
+        def _capturing_resolve_agent(
+            doc_id: str,
+            _account_id: str | None = None,
+            _ttl: int = 60,
+            session_state: Any = None,
+        ) -> Any:
+            seen_session_states.append(session_state)
+            return good_agent
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.config_loader.list_account_agent_configs",
+                return_value=["good_spe"],
+            ),
+            patch.object(specialist_runtime, "resolve_config", return_value=good_cfg),
+            patch.object(
+                specialist_runtime,
+                "resolve_agent",
+                side_effect=_capturing_resolve_agent,
+            ),
+        ):
+            result = specialist_runtime.available_specialists_provider(ctx)  # type: ignore[arg-type]
+
+        assert "good_spe" in result, (
+            "Provider produced an empty block — likely a state→dict crash "
+            "swallowed upstream. Did dict(state) regress for ADK State?"
+        )
+        assert seen_session_states, "resolve_agent was never called"
+        forwarded = seen_session_states[0]
+        assert forwarded is not None
+        assert forwarded.get("account_id") == "acct_1"
+        assert forwarded.get("mcp_creds_x") == "v1"
+        assert forwarded.get("mcp_creds_y") == "v2"
+
+    def test_mappingproxy_state_session_state_forwarded(self) -> None:
+        """Today's ADK shape — ``ReadonlyContext.state`` returns
+        ``MappingProxyType`` over ``session.state``. The provider must extract
+        session state via the ``dict()`` fallback branch and forward it."""
+        from types import MappingProxyType, SimpleNamespace
+
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        good_cfg = _make_merged_config("good", visible_in_frontend=True)
+        good_agent = _make_llm_agent("good_spe")
+        proxy = MappingProxyType(
+            {"account_id": "acct_1", "mcp_creds_x": "v1"}
+        )
+        ctx = SimpleNamespace(state=proxy)
+        seen_session_states: list[Any] = []
+
+        def _capturing_resolve_agent(
+            doc_id: str,
+            _account_id: str | None = None,
+            _ttl: int = 60,
+            session_state: Any = None,
+        ) -> Any:
+            seen_session_states.append(session_state)
+            return good_agent
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.config_loader.list_account_agent_configs",
+                return_value=["good_spe"],
+            ),
+            patch.object(specialist_runtime, "resolve_config", return_value=good_cfg),
+            patch.object(
+                specialist_runtime,
+                "resolve_agent",
+                side_effect=_capturing_resolve_agent,
+            ),
+        ):
+            result = specialist_runtime.available_specialists_provider(ctx)  # type: ignore[arg-type]
+
+        assert "good_spe" in result
+        forwarded = seen_session_states[0]
+        assert forwarded.get("account_id") == "acct_1"
+        assert forwarded.get("mcp_creds_x") == "v1"
+
 
 # ---------------------------------------------------------------------------
 # TestListCache
@@ -1695,4 +1814,43 @@ class TestBuildSpecialistMcpPoolIntegration:
         key_b = next(iter(pool_b._pool.keys()))
         assert key_a == key_b, (
             "None and {} session_state must produce identical pool keys"
+        )
+
+    def test_non_json_serialisable_creds_do_not_crash_build(self) -> None:
+        """AH-62 follow-up: ``mcp_creds_*`` values that are not natively
+        JSON-serialisable (datetime, bytes, set, ...) must coerce via
+        ``default=str`` rather than aborting the entire specialist build
+        with ``TypeError``. The creds substrate is owned by upstream auth
+        flows the pool does not control; defensive coercion keeps the pool
+        from being a hard failure mode for chat dispatch."""
+        import datetime as _dt
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+
+        config = _make_specialist_config(mcp_servers=["ga_mcp"])
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "ga_mcp"): _enabled_mcp_doc()}
+        )
+        fresh_pool = McpToolsetPool()
+        stack, _mock_btf, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
+
+        nasty_creds = {
+            "expires_at": _dt.datetime(2026, 1, 1, 0, 0, 0),
+            "binary_blob": b"\x00\x01\x02",
+            "scopes": {"read", "write"},  # set — not JSON-serialisable
+        }
+        with stack:
+            # Must not raise.
+            sr._build_specialist(
+                config,
+                "spec",
+                "acc1",
+                session_state={"mcp_creds_ga_mcp": nasty_creds},
+                mcp_pool=fresh_pool,
+            )
+
+        assert len(fresh_pool._pool) == 1, (
+            "Build aborted before reaching the pool — defensive coercion "
+            "regressed."
         )

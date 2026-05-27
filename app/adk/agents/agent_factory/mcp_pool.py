@@ -60,6 +60,15 @@ from shared.structured_logging import get_structured_logger
 
 logger = get_structured_logger(__name__)
 
+# 32 stripe slots — same count as ``SandboxPool``. Sized for single-flight
+# correctness, not for build parallelism: ``build_fn`` runs while the stripe
+# lock is held (see ``get_or_create``), so two distinct keys that hash to the
+# same slot serialise their entire builds. Build time is bounded by the
+# ``_MCP_POOL_CHECKOUT_TIMEOUT_SECONDS`` timeout in ``specialist_runtime`` (30 s).
+# With 128 max entries spread over 32 slots, expected collision depth is ~4;
+# the AC #12 p95 cold-start budget assumes a warm pool, so this trade-off only
+# bites on first-build-into-a-colliding-stripe. Revisit with a per-key Future
+# pattern if cold-start tail latency becomes a problem in production.
 _STRIPE_COUNT: int = 32
 
 
@@ -163,6 +172,13 @@ class McpToolsetPool:
                 self._pool[pool_key] = (toolset, time.monotonic())
                 cache_hit = False
 
+        # ``len(self._pool)`` is read after releasing the stripe lock —
+        # deliberate, not a race: ``len()`` on a dict is GIL-atomic, and
+        # snapshotting the size for the Weave span outside the critical
+        # section keeps the (potentially I/O-bound) span emission off the
+        # single-flight path. The reported value may be one entry stale if a
+        # concurrent eviction runs between these two lines; that's acceptable
+        # for an observability counter and not worth widening the lock for.
         pool_size_after = len(self._pool)
         async with emit_mcp_pool_span(
             "mcp_pool.get",
@@ -290,6 +306,17 @@ class McpToolsetPool:
         Pool integrity is maintained by deleting entries from ``_pool`` before
         awaiting ``aclose()``: the cap lock is released before any I/O so
         other pool operations are not blocked during close.
+
+        Locking note: ``_pool`` is guarded by two distinct locks — the per-key
+        stripe locks (for single-flight ``get_or_create`` / ``evict``) and the
+        process-wide ``_cap_lock`` (for LRU cap enforcement here). They cover
+        disjoint critical sections, not the same one: stripe locks serialise
+        operations on a particular key; ``_cap_lock`` serialises the
+        "pop_lru → release → aclose" sweep across all keys. Raw dict mutations
+        (``del``, iteration of ``items()``) are GIL-atomic, so the two locks do
+        not race for ``OrderedDict`` integrity — they coordinate higher-level
+        semantics. Consolidating them into one lock would re-introduce the
+        same-stripe self-deadlock this function is designed to avoid.
         """
         to_close: list[tuple[tuple[str, ...], Any, int]] = []
         with self._cap_lock:

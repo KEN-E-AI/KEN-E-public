@@ -386,10 +386,17 @@ def _build_specialist(
             # Phase 3 (AH-62): pool-backed checkout.
             # Compute creds_hash from session state so that credential rotation
             # produces a new pool key and forces a fresh SSE connection.
+            # ``default=str`` coerces non-JSON-serialisable values (datetime,
+            # bytes, set, custom objects) to a string representation rather
+            # than aborting the entire specialist build with TypeError. The
+            # creds substrate (``mcp_creds_*`` session-state keys) is written
+            # by upstream auth flows the pool does not own; defensive coercion
+            # keeps a hostile or future-extended payload from being a hard
+            # failure mode for chat dispatch.
             cred_key = f"mcp_creds_{server_id}"
             creds_dict = (session_state or {}).get(cred_key, {})
             creds_hash = hashlib.sha256(
-                json.dumps(creds_dict, sort_keys=True).encode()
+                json.dumps(creds_dict, sort_keys=True, default=str).encode()
             ).hexdigest()
             pool_key = (server_id, account_id or "", creds_hash)
 
@@ -676,7 +683,23 @@ def available_specialists_provider(context: ReadonlyContext) -> str:
     account_id: str | None = context.state.get("account_id")
     # Phase 3 (AH-62): capture session state once so it can be threaded into
     # resolve_agent → _build_specialist for creds-hash key computation.
-    session_state: Mapping[str, Any] = dict(context.state)
+    #
+    # ADK-version dependency: ``ReadonlyContext.state`` currently returns a
+    # ``MappingProxyType`` over ``session.state`` (readonly_context.py), which
+    # ``dict()`` casts cleanly. ``CallbackContext.state`` returns ADK's
+    # ``State`` object instead, which has ``__getitem__`` but no ``keys()`` /
+    # ``__iter__``; ``dict(state)`` on that raises ``KeyError: 0``. The
+    # ``attach_specialists_before_agent_callback`` bridge uses
+    # ``state.to_dict()`` for exactly this reason — see
+    # ``sub_agent_attacher.py``. We mirror that defence here so a future ADK
+    # release that aligns ``ReadonlyContext.state`` with ``CallbackContext.state``
+    # (or any other shape exposing ``to_dict()``) does not silently break the
+    # specialists block. Regression coverage:
+    # ``test_real_adk_state_session_state_forwarded`` below.
+    state = context.state
+    session_state: Mapping[str, Any] = (
+        state.to_dict() if hasattr(state, "to_dict") else dict(state)
+    )
 
     if not account_id:
         logger.warning(
