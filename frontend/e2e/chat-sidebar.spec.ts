@@ -312,7 +312,8 @@ test("TC-4: 100-session-pagination", async ({ page, request }) => {
   await expect(
     page
       .locator('[data-slot="session-list-item"]')
-      .filter({ hasText: /Bulk session ([2-9]\d|\d{3,})/ }),
+      .filter({ hasText: /Bulk session ([2-9]\d|\d{3,})/ })
+      .first(),
   ).toBeVisible({ timeout: 10_000 });
 
   // Heap delta check (Chromium only).
