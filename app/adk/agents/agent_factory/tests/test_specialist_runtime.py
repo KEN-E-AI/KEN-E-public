@@ -721,3 +721,415 @@ class TestAgentCache:
 
         cache.put(("d2", None, "h2"), _make_llm_agent())
         assert len(cache) == 2
+
+
+# ---------------------------------------------------------------------------
+# Helpers for _build_specialist regression tests (AH-PRD-06 + roster cap +
+# default_global) — restored from the deleted hierarchy.py e2e tests.
+# ---------------------------------------------------------------------------
+
+
+def _make_specialist_config(
+    *,
+    mcp_servers: list[str] | None = None,
+    tool_ids: list[str] | None = None,
+) -> Any:
+    """Return a MergedAgentConfig wired for ``_build_specialist`` tests."""
+    from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+
+    return MergedAgentConfig(
+        instruction="Test instruction",
+        model="gemini-2.5-pro",
+        description="Test specialist",
+        mcp_servers=mcp_servers or [],
+        tool_ids=tool_ids,
+    )
+
+
+class _FakeFirestoreDb:
+    """Minimal in-memory Firestore stand-in for ``_build_firestore_client``.
+
+    Keyed by ``(collection_name, doc_id)``. Mirrors the surface
+    ``_build_specialist`` exercises:
+    ``db.collection(name).document(id).get()`` returns a snapshot with
+    ``exists: bool`` and ``to_dict() -> dict``.
+    """
+
+    def __init__(self, docs: dict[tuple[str, str], dict[str, Any]]) -> None:
+        self._docs = docs
+
+    def collection(self, name: str) -> Any:
+        return _FakeCollection(self._docs, name)
+
+
+class _FakeCollection:
+    def __init__(
+        self, docs: dict[tuple[str, str], dict[str, Any]], collection_name: str
+    ) -> None:
+        self._docs = docs
+        self._collection_name = collection_name
+
+    def document(self, doc_id: str) -> Any:
+        return _FakeDocRef(self._docs, self._collection_name, doc_id)
+
+
+class _FakeDocRef:
+    def __init__(
+        self,
+        docs: dict[tuple[str, str], dict[str, Any]],
+        collection_name: str,
+        doc_id: str,
+    ) -> None:
+        self._docs = docs
+        self._collection_name = collection_name
+        self._doc_id = doc_id
+
+    def get(self) -> Any:
+        key = (self._collection_name, self._doc_id)
+        if key in self._docs:
+            return MagicMock(exists=True, to_dict=lambda: self._docs[key])
+        return MagicMock(exists=False, to_dict=lambda: None)
+
+
+def _enabled_mcp_doc() -> dict[str, Any]:
+    """A minimal ``mcp_server_configs`` doc that passes the ``enabled`` gate.
+
+    The doc shape doesn't have to match the full schema — we patch
+    ``build_toolset_for_doc`` to bypass actual MCP construction; only the
+    ``enabled`` flag affects ``_build_specialist`` control flow.
+    """
+    return {"enabled": True}
+
+
+def _patch_specialist_runtime_externals(
+    *,
+    fake_db: _FakeFirestoreDb | None = None,
+    default_global_tools: list[Any] | None = None,
+) -> Any:
+    """Build an ``ExitStack`` patching every external dep of ``_build_specialist``.
+
+    All targets patch the *source* module path (e.g. ``...mcp.build_toolset_for_doc``)
+    rather than ``specialist_runtime.*`` because ``_build_specialist`` re-imports
+    each symbol via local ``from … import …`` inside the function body.
+
+    Returns ``(stack, mock_build_toolset, mock_build_agent)`` so callers can
+    inspect captured call args / kwargs after entering the stack.
+    """
+    from contextlib import ExitStack
+    from unittest.mock import patch as _patch
+
+    stack = ExitStack()
+
+    if fake_db is None:
+        fake_db = _FakeFirestoreDb({})
+
+    stack.enter_context(
+        _patch(
+            "app.adk.agents.agent_factory.mcp._build_firestore_client",
+            return_value=fake_db,
+        )
+    )
+    mock_btf = stack.enter_context(
+        _patch(
+            "app.adk.agents.agent_factory.mcp.build_toolset_for_doc",
+            side_effect=lambda server_id, _doc, **_kw: MagicMock(
+                name=f"toolset_{server_id}"
+            ),
+        )
+    )
+    stack.enter_context(
+        _patch(
+            "app.adk.tools.registry.function_tool_registry.resolve_default_global_tools",
+            return_value=default_global_tools or [],
+        )
+    )
+    stack.enter_context(
+        _patch(
+            "app.adk.tools.registry.tool_registry.get_default_registry",
+            return_value=MagicMock(name="fake_registry"),
+        )
+    )
+    mock_ba = stack.enter_context(
+        _patch(
+            "app.adk.agents.agent_factory.builder.build_agent",
+            side_effect=lambda config, *, name, tools=None, **_kw: MagicMock(
+                name=f"llmagent_{name}", tools=tools or []
+            ),
+        )
+    )
+
+    return stack, mock_btf, mock_ba
+
+
+# ---------------------------------------------------------------------------
+# TestSpecialistRuntimeToolIdsThreading — AH-PRD-06 MCP allowlist
+# ---------------------------------------------------------------------------
+
+
+class TestSpecialistRuntimeToolIdsThreading:
+    """``_build_specialist`` must thread ``tool_ids`` into ``build_toolset_for_doc``
+    via the ``allowed_tool_names`` kwarg, mirroring the pre-AH-PRD-09
+    ``hierarchy.py`` path. Servers with no ``tool_ids`` match must be skipped
+    entirely (no Firestore read, no toolset construction).
+
+    Migrated from ``main:tests/test_hierarchy_e2e.py::TestAhPrd06ToolIdsThreading``
+    after AH-60 moved specialist construction into ``specialist_runtime``.
+    """
+
+    def test_tool_ids_set_passes_allowed_tool_names_at_construction(self) -> None:
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+
+        config = _make_specialist_config(
+            mcp_servers=["ga_mcp"],
+            tool_ids=["ga_mcp.list_ga_accounts"],
+        )
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "ga_mcp"): _enabled_mcp_doc()}
+        )
+        stack, mock_btf, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
+        with stack:
+            sr._build_specialist(config, "analytics_specialist", None)
+
+        ga_calls = [
+            kwargs for args, kwargs in mock_btf.call_args_list if args[0] == "ga_mcp"
+        ]
+        assert len(ga_calls) == 1, f"Expected one ga_mcp call, got {ga_calls!r}"
+        assert ga_calls[0].get("allowed_tool_names") == ["list_ga_accounts"], (
+            f"tool_ids must thread into allowed_tool_names; got {ga_calls[0]!r}"
+        )
+
+    def test_tool_ids_none_omits_allowed_tool_names_kwarg(self) -> None:
+        """Legacy path: ``tool_ids=None`` preserves the two-arg signature so
+        the ``McpToolset`` receives every tool the server exposes."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+
+        config = _make_specialist_config(mcp_servers=["ga_mcp"], tool_ids=None)
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "ga_mcp"): _enabled_mcp_doc()}
+        )
+        stack, mock_btf, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
+        with stack:
+            sr._build_specialist(config, "analytics_specialist", None)
+
+        assert mock_btf.call_count == 1
+        assert "allowed_tool_names" not in mock_btf.call_args.kwargs, (
+            f"tool_ids=None must omit the kwarg; got {mock_btf.call_args!r}"
+        )
+
+    def test_tool_ids_skips_servers_with_no_match(self) -> None:
+        """A server in ``mcp_servers`` that is not represented in ``tool_ids``
+        must be dropped before any Firestore fetch or toolset construction —
+        no point paying the connection cost for a toolset whose tools are
+        all filtered out downstream."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+
+        config = _make_specialist_config(
+            mcp_servers=["ga_mcp", "shared_viz_mcp"],
+            tool_ids=["ga_mcp.list_ga_accounts"],  # no shared_viz_mcp.* entry
+        )
+        fake_db = _FakeFirestoreDb(
+            {
+                ("mcp_server_configs", "ga_mcp"): _enabled_mcp_doc(),
+                ("mcp_server_configs", "shared_viz_mcp"): _enabled_mcp_doc(),
+            }
+        )
+        stack, mock_btf, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
+        with stack:
+            sr._build_specialist(config, "analytics_specialist", None)
+
+        called_servers = [args[0] for args, _ in mock_btf.call_args_list]
+        assert called_servers == ["ga_mcp"], (
+            f"shared_viz_mcp must be skipped (no tool_ids match); got {called_servers!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestSpecialistRuntimeDefaultGlobalTools — AH-PRD-06 PR-C
+# ---------------------------------------------------------------------------
+
+
+def _stub_function_tool(name: str) -> Any:
+    """Return an object whose ``.name`` attribute matches ``name``.
+
+    ``resolve_specialist_roster._filter_function_tools_by_ids`` reads
+    ``getattr(tool, "name", None) or getattr(tool, "__name__", None)`` and
+    keeps the tool when ``f"function.{name}"`` is in the allowlist.
+    """
+    tool = MagicMock(spec=["name"])
+    tool.name = name
+    return tool
+
+
+class TestSpecialistRuntimeDefaultGlobalTools:
+    """``_build_specialist`` must include every catalogued
+    ``default_global: true`` function tool on every specialist (e.g.
+    ``create_visualization`` from AH-PRD-04). When ``tool_ids`` is set, the
+    same per-spec filter from ``resolve_specialist_roster`` applies.
+
+    Migrated from ``main:tests/test_hierarchy_e2e.py::TestAhPrd06PrcDefaultGlobalFunctionTools``
+    after AH-60 moved specialist construction into ``specialist_runtime``.
+    """
+
+    def test_default_global_tools_reach_specialist_when_tool_ids_none(self) -> None:
+        """Legacy path: ``tool_ids=None`` keeps every default_global function
+        tool alongside every MCP toolset."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+
+        viz_tool = _stub_function_tool("create_visualization")
+        config = _make_specialist_config(mcp_servers=[], tool_ids=None)
+
+        stack, _, mock_ba = _patch_specialist_runtime_externals(
+            default_global_tools=[viz_tool]
+        )
+        with stack:
+            sr._build_specialist(config, "any_specialist", None)
+
+        resolved_tools = mock_ba.call_args.kwargs["tools"]
+        assert viz_tool in resolved_tools, (
+            f"default_global tool must reach build_agent; got tools={resolved_tools!r}"
+        )
+
+    def test_default_global_tools_excluded_when_tool_ids_empty(self) -> None:
+        """``tool_ids=[]`` is the "no tools" sentinel — both MCP and
+        default_global function tools must be filtered out."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+
+        viz_tool = _stub_function_tool("create_visualization")
+        config = _make_specialist_config(mcp_servers=[], tool_ids=[])
+
+        stack, _, mock_ba = _patch_specialist_runtime_externals(
+            default_global_tools=[viz_tool]
+        )
+        with stack:
+            sr._build_specialist(config, "any_specialist", None)
+
+        resolved_tools = mock_ba.call_args.kwargs["tools"]
+        assert viz_tool not in resolved_tools, (
+            f"tool_ids=[] must exclude default_global; got tools={resolved_tools!r}"
+        )
+
+    def test_default_global_tool_included_when_named_in_tool_ids(self) -> None:
+        """``tool_ids=["function.create_visualization"]`` keeps that tool and
+        only that tool."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+
+        viz_tool = _stub_function_tool("create_visualization")
+        other_tool = _stub_function_tool("send_email")
+        config = _make_specialist_config(
+            mcp_servers=[], tool_ids=["function.create_visualization"]
+        )
+
+        stack, _, mock_ba = _patch_specialist_runtime_externals(
+            default_global_tools=[viz_tool, other_tool]
+        )
+        with stack:
+            sr._build_specialist(config, "any_specialist", None)
+
+        resolved_tools = mock_ba.call_args.kwargs["tools"]
+        assert viz_tool in resolved_tools
+        assert other_tool not in resolved_tools
+
+    def test_default_global_tool_excluded_when_other_function_named(self) -> None:
+        """``tool_ids=["function.send_email"]`` keeps send_email and drops
+        create_visualization — the filter is per-function-name, not "all
+        default_global pass through"."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+
+        viz_tool = _stub_function_tool("create_visualization")
+        other_tool = _stub_function_tool("send_email")
+        config = _make_specialist_config(
+            mcp_servers=[], tool_ids=["function.send_email"]
+        )
+
+        stack, _, mock_ba = _patch_specialist_runtime_externals(
+            default_global_tools=[viz_tool, other_tool]
+        )
+        with stack:
+            sr._build_specialist(config, "any_specialist", None)
+
+        resolved_tools = mock_ba.call_args.kwargs["tools"]
+        assert other_tool in resolved_tools
+        assert viz_tool not in resolved_tools
+
+
+# ---------------------------------------------------------------------------
+# TestSpecialistRuntimeRosterCap — AH-PRD-02 §2.5 ≤30-tool cap enforcement
+# ---------------------------------------------------------------------------
+
+
+class TestSpecialistRuntimeRosterCap:
+    """``_build_specialist`` must enforce the ≤30-tool roster cap by calling
+    ``resolve_specialist_roster``. The literal ``len(tools) > MAX_…`` check
+    inside ``builder.build_agent`` counts each ``McpToolset`` as 1 item, so
+    a single MCP server exposing 80 tools would slip past it; the logical
+    cap is enforced upstream in ``resolve_specialist_roster``.
+    """
+
+    def test_roster_cap_exceeded_propagates(self) -> None:
+        """When ``resolve_specialist_roster`` raises ``RosterCapExceededError``,
+        ``_build_specialist`` must let it propagate so the dispatch surface
+        can surface a clear error (mirrors deploy-time behaviour)."""
+        from unittest.mock import patch as _patch
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.roster import RosterCapExceededError
+
+        config = _make_specialist_config(mcp_servers=[], tool_ids=None)
+
+        stack, _, _ = _patch_specialist_runtime_externals()
+        with (
+            stack,
+            _patch(
+                "app.adk.agents.agent_factory.roster.resolve_specialist_roster",
+                side_effect=RosterCapExceededError(
+                    "test cap exceeded: 31 tools > 30"
+                ),
+            ),
+            pytest.raises(RosterCapExceededError, match="test cap exceeded"),
+        ):
+            sr._build_specialist(config, "fat_specialist", None)
+
+    def test_roster_cap_within_limit_succeeds(self) -> None:
+        """A within-cap roster must produce a successful build with the
+        resolved tools forwarded to ``build_agent``."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+
+        viz_tool = _stub_function_tool("create_visualization")
+        config = _make_specialist_config(mcp_servers=[], tool_ids=None)
+
+        stack, _, mock_ba = _patch_specialist_runtime_externals(
+            default_global_tools=[viz_tool]
+        )
+        with stack:
+            result = sr._build_specialist(config, "small_specialist", None)
+
+        # build_agent was called with the resolved tools (function tool only,
+        # since no MCP servers were attached). The patched build_agent uses
+        # ``side_effect`` to mint a fresh MagicMock per call, so verify the
+        # returned object is the mock instance with the expected name.
+        assert mock_ba.call_count == 1
+        assert result._extract_mock_name() == "llmagent_small_specialist"
+        assert viz_tool in mock_ba.call_args.kwargs["tools"]
+
+    def test_roster_cap_error_propagates_through_resolve_agent(self) -> None:
+        """When ``resolve_agent`` triggers a cache miss and ``_build_specialist``
+        raises ``RosterCapExceededError``, the error must surface at the
+        ``resolve_agent`` boundary so callers (``run`` →
+        ``delegate_to_specialist``) can render a graceful error."""
+        from unittest.mock import patch as _patch
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.roster import RosterCapExceededError
+
+        cfg = _make_specialist_config(mcp_servers=[], tool_ids=None)
+
+        with (
+            _patch.object(sr, "resolve_config", return_value=cfg),
+            _patch.object(
+                sr,
+                "_build_specialist",
+                side_effect=RosterCapExceededError("31 > 30"),
+            ),
+            pytest.raises(RosterCapExceededError, match="31 > 30"),
+        ):
+            sr.resolve_agent("fat_specialist", account_id=None)

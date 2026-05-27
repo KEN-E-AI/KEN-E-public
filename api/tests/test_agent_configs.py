@@ -733,14 +733,27 @@ class TestAuditWriteOnUpdate:
 
 
 class TestWarningsOnRedeployRequiredFields:
-    """Changes to model / temperature / max_output_tokens surface a
-    redeploy-required warning (AC-6.25) because ADK Agent constructor bakes
-    these into the SDK GenerateContentConfig at module-import time."""
+    """Redeploy warning behavior split by config type after AH-PRD-09 Phase 2:
+
+    * **Specialists** — the per-turn ``specialist_runtime`` resolver hot-reloads
+      every field within the 60 s TTL, so PUT responses for specialist edits
+      ALWAYS return ``warnings == []``. Verified by the four
+      ``test_*_no_redeploy_warning`` tests below.
+    * **Root agent** (``ken_e_chatbot``) — still built once at deploy by
+      ``build_hierarchy()``; ``model`` / ``temperature`` / ``max_output_tokens`` /
+      ``tools`` edits silently no-op in the running process until
+      ``make backend`` runs, so the PUT response surfaces a "redeploy
+      required" warning. ``instruction`` on the root is cache-backed
+      (AH-PRD-09 Phase 1) and does NOT warn. Verified by the four
+      ``test_root_*`` tests below.
+    """
 
     @pytest.mark.asyncio
-    async def test_model_change_surfaces_redeploy_warning(
+    async def test_model_change_no_redeploy_warning(
         self, admin_user, sample_config_data
     ):
+        """Per AH-PRD-09 Phase 2, the per-turn resolver picks up model changes
+        within the 60 s cache TTL — no redeploy required, warnings always empty."""
         from unittest.mock import AsyncMock
 
         from src.kene_api.routers import agent_configs as router_mod
@@ -770,18 +783,16 @@ class TestWarningsOnRedeployRequiredFields:
         assert hasattr(resp, "warnings"), (
             "update_agent_config must return AgentConfigUpdateResponse (config + warnings)"
         )
-        assert any("redeploy" in w.lower() for w in resp.warnings), (
-            f"Expected redeploy warning for model change; got warnings={resp.warnings}"
+        assert resp.warnings == [], (
+            f"Per AH-PRD-09 Phase 2, warnings must always be empty; got {resp.warnings}"
         )
 
     @pytest.mark.asyncio
-    async def test_temperature_change_surfaces_redeploy_warning(
+    async def test_temperature_change_no_redeploy_warning(
         self, admin_user, sample_config_data
     ):
-        """Temperature is baked into the SDK GenerateContentConfig at ADK
-        Agent construction time; ADK doesn't accept a callable for this
-        field, so changes cannot propagate via the InstructionProvider
-        cache. Must surface a redeploy-required warning."""
+        """Per AH-PRD-09 Phase 2, the per-turn resolver picks up temperature
+        changes within the 60 s cache TTL — no redeploy required, warnings always empty."""
         from unittest.mock import AsyncMock
 
         from src.kene_api.routers import agent_configs as router_mod
@@ -808,8 +819,8 @@ class TestWarningsOnRedeployRequiredFields:
                 db=mock_db,
             )
 
-        assert any("redeploy" in w.lower() for w in resp.warnings), (
-            f"Temperature change MUST trigger redeploy warning; got warnings={resp.warnings}"
+        assert resp.warnings == [], (
+            f"Per AH-PRD-09 Phase 2, warnings must always be empty; got {resp.warnings}"
         )
 
     @pytest.mark.asyncio
@@ -848,13 +859,13 @@ class TestWarningsOnRedeployRequiredFields:
                 db=mock_db,
             )
 
-        assert not any("redeploy" in w.lower() for w in resp.warnings), (
-            f"Instruction change should NOT trigger redeploy warning; "
+        assert resp.warnings == [], (
+            f"Instruction change should NOT trigger any warning; "
             f"got warnings={resp.warnings}"
         )
 
     @pytest.mark.asyncio
-    async def test_max_output_tokens_change_surfaces_redeploy_warning(
+    async def test_max_output_tokens_change_no_redeploy_warning(
         self, admin_user, sample_config_data
     ):
         from unittest.mock import AsyncMock
@@ -883,7 +894,173 @@ class TestWarningsOnRedeployRequiredFields:
                 db=mock_db,
             )
 
-        assert any("redeploy" in w.lower() for w in resp.warnings)
+        assert resp.warnings == [], (
+            f"Per AH-PRD-09 Phase 2, warnings must always be empty; got {resp.warnings}"
+        )
+
+    # ------------------------------------------------------------------
+    # Root-agent (``ken_e_chatbot``) redeploy warnings — AH-PRD-09 Phase 2
+    # ------------------------------------------------------------------
+    #
+    # The root LlmAgent is still constructed once at deploy by
+    # ``build_hierarchy()`` and shipped to Agent Engine; ADK binds ``model``
+    # / ``temperature`` / ``max_output_tokens`` / ``tools`` at construction.
+    # PUTs against ``ken_e_chatbot`` for those fields must surface a warning
+    # so admins know the change will silently no-op until
+    # ``make backend`` runs.
+
+    async def _run_root_update(
+        self,
+        admin_user,
+        sample_config_data,
+        *,
+        update: AgentConfigUpdate,
+        pre_overrides: dict | None = None,
+        post_overrides: dict,
+    ):
+        """Drive ``update_agent_config('ken_e_chatbot', ...)`` and return the response."""
+        from unittest.mock import AsyncMock
+
+        from src.kene_api.routers import agent_configs as router_mod
+
+        pre = dict(sample_config_data)
+        if pre_overrides:
+            pre.update(pre_overrides)
+        pre["metadata"] = {**pre["metadata"], "version": "v1.0.0"}
+
+        post = dict(pre)
+        post.update(post_overrides)
+        post["metadata"] = {**pre["metadata"], "version": "v1.0.1"}
+
+        mock_db = MagicMock()
+        doc_ref = MagicMock()
+        doc_ref.get.side_effect = [
+            MagicMock(exists=True, to_dict=lambda: pre),
+            MagicMock(exists=True, to_dict=lambda: post),
+        ]
+        mock_db.collection.return_value.document.return_value = doc_ref
+
+        with patch.object(router_mod, "log_config_action", AsyncMock(return_value="a")):
+            return await router_mod.update_agent_config(
+                "ken_e_chatbot",
+                update,
+                user=admin_user,
+                db=mock_db,
+            )
+
+    @pytest.mark.asyncio
+    async def test_root_model_change_returns_redeploy_warning(
+        self, admin_user, sample_config_data
+    ):
+        """Editing the root agent's ``model`` field must surface a redeploy
+        warning — the root LlmAgent's model is bound at construction by ADK
+        and silently no-ops in the running pod until ``make backend`` runs."""
+        resp = await self._run_root_update(
+            admin_user,
+            sample_config_data,
+            update=AgentConfigUpdate(model="gemini-2.5-pro", updated_by="admin@ken-e.ai"),
+            pre_overrides={"model": "gemini-2.5-flash"},
+            post_overrides={"model": "gemini-2.5-pro"},
+        )
+
+        assert len(resp.warnings) == 1, f"Expected exactly one warning, got {resp.warnings}"
+        msg = resp.warnings[0]
+        assert "'model'" in msg, f"Warning must reference the model field: {msg!r}"
+        assert "redeploy" in msg.lower(), f"Warning must mention redeploy: {msg!r}"
+
+    @pytest.mark.asyncio
+    async def test_root_temperature_change_returns_redeploy_warning(
+        self, admin_user, sample_config_data
+    ):
+        """Editing the root agent's ``temperature`` — baked into
+        ``GenerateContentConfig`` at construction — must warn."""
+        resp = await self._run_root_update(
+            admin_user,
+            sample_config_data,
+            update=AgentConfigUpdate(temperature=0.5, updated_by="admin@ken-e.ai"),
+            post_overrides={"temperature": 0.5},
+        )
+
+        assert len(resp.warnings) == 1, f"Expected exactly one warning, got {resp.warnings}"
+        assert "'temperature'" in resp.warnings[0]
+        assert "redeploy" in resp.warnings[0].lower()
+
+    @pytest.mark.asyncio
+    async def test_root_max_output_tokens_change_returns_redeploy_warning(
+        self, admin_user, sample_config_data
+    ):
+        """Editing the root agent's ``max_output_tokens`` — baked into
+        ``GenerateContentConfig`` at construction — must warn."""
+        resp = await self._run_root_update(
+            admin_user,
+            sample_config_data,
+            update=AgentConfigUpdate(max_output_tokens=5000, updated_by="admin@ken-e.ai"),
+            post_overrides={"max_output_tokens": 5000},
+        )
+
+        assert len(resp.warnings) == 1, f"Expected exactly one warning, got {resp.warnings}"
+        assert "'max_output_tokens'" in resp.warnings[0]
+        assert "redeploy" in resp.warnings[0].lower()
+
+    @pytest.mark.asyncio
+    async def test_root_instruction_change_returns_no_warning(
+        self, admin_user, sample_config_data
+    ):
+        """The root agent's ``instruction`` is cache-backed via the
+        ``InstructionProvider`` closure (AH-PRD-09 Phase 1), so it
+        hot-reloads within the 60 s TTL — no warning, even on the root."""
+        resp = await self._run_root_update(
+            admin_user,
+            sample_config_data,
+            update=AgentConfigUpdate(
+                instruction="New instruction text for the root agent",
+                updated_by="admin@ken-e.ai",
+            ),
+            pre_overrides={"instruction": "Old root instruction"},
+            post_overrides={"instruction": "New instruction text for the root agent"},
+        )
+
+        assert resp.warnings == [], (
+            f"Root instruction is cache-backed and must not warn; got {resp.warnings}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_specialist_model_change_returns_no_warning_regression_guard(
+        self, admin_user, sample_config_data
+    ):
+        """Regression guard: a specialist (non-root) ``model`` edit must still
+        return ``warnings == []`` after the warning function gained
+        ``config_doc_id``. Mirrors ``test_model_change_no_redeploy_warning``
+        but kept as an explicit guard against the warning gate inverting."""
+        from unittest.mock import AsyncMock
+
+        from src.kene_api.routers import agent_configs as router_mod
+
+        pre = dict(sample_config_data)
+        pre["model"] = "gemini-2.5-flash"
+        pre["metadata"] = {**pre["metadata"], "version": "v1.0.0"}
+        post = {**pre, "model": "gemini-2.5-pro"}
+        post["metadata"] = {**pre["metadata"], "version": "v1.0.1"}
+
+        mock_db = MagicMock()
+        doc_ref = MagicMock()
+        doc_ref.get.side_effect = [
+            MagicMock(exists=True, to_dict=lambda: pre),
+            MagicMock(exists=True, to_dict=lambda: post),
+        ]
+        mock_db.collection.return_value.document.return_value = doc_ref
+
+        with patch.object(router_mod, "log_config_action", AsyncMock(return_value="a")):
+            resp = await router_mod.update_agent_config(
+                "business_researcher",
+                AgentConfigUpdate(model="gemini-2.5-pro", updated_by="admin@ken-e.ai"),
+                user=admin_user,
+                db=mock_db,
+            )
+
+        assert resp.warnings == [], (
+            f"Specialist model edit must not warn (only root does); got {resp.warnings}"
+        )
 
 
 class TestAgentConfigHistoryEndpoint:

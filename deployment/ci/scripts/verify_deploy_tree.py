@@ -177,7 +177,6 @@ def main() -> int:
                     patch("app.adk.agents.agent_factory.builder.weave_after_agent_callback", _mock_weave_after),
                     patch("app.adk.agents.agent_factory.builder.adk_before_tool_callback", _mock_before_tool),
                     patch("app.adk.agents.agent_factory.builder.adk_after_tool_callback", _mock_after_tool),
-                    patch("app.adk.agents.agent_factory.hierarchy.build_toolset_for_doc", side_effect=lambda sid, doc: MagicMock(name=f"toolset_{sid}")),
                     patch("app.adk.tools.registry.tool_registry.get_default_registry", return_value=_mock_registry),
                 ):
                     root_agent = build_hierarchy(db=fake_db)

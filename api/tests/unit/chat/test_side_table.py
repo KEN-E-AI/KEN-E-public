@@ -5,7 +5,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
-from src.kene_api.chat.side_table import ChatSessionSideTableService, _doc_path
+from src.kene_api.chat.side_table import (
+    ChatSessionSideTableService,
+    _doc_path,
+    recompute_search_text,
+)
+from src.kene_api.models.chat import ChatSessionMetadata
 
 
 def _make_db() -> MagicMock:
@@ -249,3 +254,114 @@ class TestFindSessionForUser:
         result = svc.find_session_for_user(user_id="user_1", session_id="sess_1")
 
         assert result is None
+
+
+# ---------------------------------------------------------------------------
+# recompute_search_text — pure-function unit tests
+# ---------------------------------------------------------------------------
+
+
+def _make_metadata(
+    *,
+    title: str | None = None,
+    latest_summary: str | None = None,
+    session_id: str = "sess_1",
+    user_id: str = "user_1",
+    account_id: str = "acc_1",
+    organization_id: str = "org_1",
+    model_id: str = "gemini-2.5-flash",
+) -> ChatSessionMetadata:
+    return ChatSessionMetadata(
+        session_id=session_id,
+        user_id=user_id,
+        account_id=account_id,
+        organization_id=organization_id,
+        model_id=model_id,
+        title=title,
+        latest_summary=latest_summary,
+    )
+
+
+class TestRecomputeSearchText:
+    def test_all_none_returns_empty_string(self) -> None:
+        meta = _make_metadata(title=None, latest_summary=None)
+        result = recompute_search_text(meta, category_name=None)
+        assert result == ""
+
+    def test_title_only_returns_casefolded_title(self) -> None:
+        meta = _make_metadata(title="Q3 Campaigns")
+        result = recompute_search_text(meta, category_name=None)
+        assert result == "q3 campaigns"
+
+    def test_title_and_category_casefolded_with_space(self) -> None:
+        meta = _make_metadata(title="Strategy Build")
+        result = recompute_search_text(meta, category_name="Paid Media")
+        assert result == "strategy build paid media"
+
+    def test_title_category_and_summary_all_included(self) -> None:
+        meta = _make_metadata(title="T", latest_summary="Sum")
+        result = recompute_search_text(meta, category_name="Cat")
+        assert result == "t cat sum"
+
+    def test_category_none_excludes_category(self) -> None:
+        meta = _make_metadata(title="Title", latest_summary="Summary")
+        result = recompute_search_text(meta, category_name=None)
+        assert result == "title summary"
+
+    def test_uses_casefold_not_lower_german_ss(self) -> None:
+        # German ß: casefold → "ss", lower → "ß" (no change on some platforms)
+        meta = _make_metadata(title="Straße")
+        result = recompute_search_text(meta, category_name=None)
+        assert result == "strasse"
+
+    def test_uses_casefold_not_lower_turkish_dotted_i(self) -> None:
+        # str.casefold() folds İ (U+0130) to "i̇"; lower() leaves it unchanged
+        meta = _make_metadata(title="İstanbul")
+        result = recompute_search_text(meta, category_name=None)
+        assert result == "İstanbul".casefold()
+
+    def test_summary_truncated_to_2048_chars_before_concat(self) -> None:
+        long_summary = "x" * 4096
+        meta = _make_metadata(title="T", latest_summary=long_summary)
+        result = recompute_search_text(meta, category_name=None)
+        # "t " prefix + 2048 x's
+        assert result == "t " + "x" * 2048
+
+    def test_idempotent_pure_function_no_side_effects(self) -> None:
+        meta = _make_metadata(title="Hello", latest_summary="World")
+        r1 = recompute_search_text(meta, category_name="Cat")
+        r2 = recompute_search_text(meta, category_name="Cat")
+        assert r1 == r2
+
+    def test_empty_title_excluded_from_result(self) -> None:
+        # title="" is falsy — should not contribute a leading space
+        meta = _make_metadata(title="", latest_summary=None)
+        result = recompute_search_text(meta, category_name=None)
+        assert result == ""
+
+    def test_empty_category_excluded_from_result(self) -> None:
+        meta = _make_metadata(title="Title")
+        result = recompute_search_text(meta, category_name="")
+        assert result == "title"
+
+    def test_raw_dict_all_fields_present(self) -> None:
+        result = recompute_search_text(
+            {"title": "Q3 Plan", "latest_summary": "draft summary"},
+            "Campaign",
+        )
+        assert result == "q3 plan campaign draft summary"
+
+    def test_raw_dict_none_category_and_missing_summary(self) -> None:
+        result = recompute_search_text({"title": "Foo"}, None)
+        assert result == "foo"
+
+    def test_raw_dict_all_empty_returns_empty_string(self) -> None:
+        result = recompute_search_text({}, None)
+        assert result == ""
+
+    def test_raw_dict_order_is_title_category_summary(self) -> None:
+        result = recompute_search_text(
+            {"title": "TITLE", "latest_summary": "SUMMARY"},
+            "CATEGORY",
+        )
+        assert result == "title category summary"
