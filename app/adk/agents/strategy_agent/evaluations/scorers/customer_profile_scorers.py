@@ -7,10 +7,11 @@ Scorers for evaluating ideal customer profile narrative quality.
 import json
 import logging
 import os
-from pydantic import BaseModel
+
 import vertexai
-from vertexai.generative_models import GenerationConfig, GenerativeModel
 import weave
+from pydantic import BaseModel
+from vertexai.generative_models import GenerationConfig, GenerativeModel
 
 logger = logging.getLogger(__name__)
 
@@ -37,15 +38,15 @@ class CustomerProfileLengthScorer(weave.Scorer):
             dict with score (1 if in range, 0 otherwise)
         """
         try:
-            narrative = output.get('narrative', '')
+            narrative = output.get("narrative", "")
             char_count = len(narrative)
             score = 1 if 2000 <= char_count <= 6000 else 0
 
-            return {'score': score, 'char_count': char_count}
+            return {"score": score, "char_count": char_count}
 
         except Exception as e:
             logger.error(f"Error in customer profile length scorer: {e}")
-            return {'score': 0, 'error': str(e)}
+            return {"score": 0, "error": str(e)}
 
 
 class CustomerProfilePainPointsScorer(weave.Scorer):
@@ -63,17 +64,17 @@ class CustomerProfilePainPointsScorer(weave.Scorer):
             dict with score (1 for yes, 0 for no) and reasoning
         """
         try:
-            narrative = output.get('narrative', '')
+            narrative = output.get("narrative", "")
 
             if not narrative:
-                return {'score': 0, 'reasoning': 'Empty or missing narrative'}
+                return {"score": 0, "reasoning": "Empty or missing narrative"}
 
             vertexai.init(
-                project=os.getenv('GOOGLE_CLOUD_PROJECT', 'ken-e-dev'),
-                location=os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1'),
+                project=os.getenv("GOOGLE_CLOUD_PROJECT", "ken-e-dev"),
+                location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
             )
 
-            model = GenerativeModel('gemini-2.5-pro')
+            model = GenerativeModel("gemini-2.5-pro")
 
             prompt = f"""You are evaluating a customer profile narrative.
 
@@ -106,16 +107,18 @@ Provide your assessment as JSON with:
                 response_schema=ScorerAssessment.model_json_schema(),
             )
 
-            response = model.generate_content(prompt, generation_config=generation_config)
+            response = model.generate_content(
+                prompt, generation_config=generation_config
+            )
             assessment = json.loads(response.text)
 
-            score = 1 if assessment['passes'] == 'yes' else 0
+            score = 1 if assessment["passes"] == "yes" else 0
 
-            return {'score': score, 'reasoning': assessment['reasoning']}
+            return {"score": score, "reasoning": assessment["reasoning"]}
 
         except Exception as e:
             logger.error(f"Error in pain points scorer: {e}")
-            return {'score': 0, 'error': str(e)}
+            return {"score": 0, "error": str(e)}
 
 
 class CustomerProfileMotivationsScorer(weave.Scorer):
@@ -133,17 +136,17 @@ class CustomerProfileMotivationsScorer(weave.Scorer):
             dict with score (1 for yes, 0 for no) and reasoning
         """
         try:
-            narrative = output.get('narrative', '')
+            narrative = output.get("narrative", "")
 
             if not narrative:
-                return {'score': 0, 'reasoning': 'Empty or missing narrative'}
+                return {"score": 0, "reasoning": "Empty or missing narrative"}
 
             vertexai.init(
-                project=os.getenv('GOOGLE_CLOUD_PROJECT', 'ken-e-dev'),
-                location=os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1'),
+                project=os.getenv("GOOGLE_CLOUD_PROJECT", "ken-e-dev"),
+                location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
             )
 
-            model = GenerativeModel('gemini-2.5-pro')
+            model = GenerativeModel("gemini-2.5-pro")
 
             prompt = f"""You are evaluating a customer profile narrative.
 
@@ -175,16 +178,18 @@ Provide your assessment as JSON with:
                 response_schema=ScorerAssessment.model_json_schema(),
             )
 
-            response = model.generate_content(prompt, generation_config=generation_config)
+            response = model.generate_content(
+                prompt, generation_config=generation_config
+            )
             assessment = json.loads(response.text)
 
-            score = 1 if assessment['passes'] == 'yes' else 0
+            score = 1 if assessment["passes"] == "yes" else 0
 
-            return {'score': score, 'reasoning': assessment['reasoning']}
+            return {"score": score, "reasoning": assessment["reasoning"]}
 
         except Exception as e:
             logger.error(f"Error in motivations scorer: {e}")
-            return {'score': 0, 'error': str(e)}
+            return {"score": 0, "error": str(e)}
 
 
 class CustomerProfileChannelsScorer(weave.Scorer):
@@ -202,17 +207,17 @@ class CustomerProfileChannelsScorer(weave.Scorer):
             dict with score (1 for yes, 0 for no) and reasoning
         """
         try:
-            narrative = output.get('narrative', '')
+            narrative = output.get("narrative", "")
 
             if not narrative:
-                return {'score': 0, 'reasoning': 'Empty or missing narrative'}
+                return {"score": 0, "reasoning": "Empty or missing narrative"}
 
             vertexai.init(
-                project=os.getenv('GOOGLE_CLOUD_PROJECT', 'ken-e-dev'),
-                location=os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1'),
+                project=os.getenv("GOOGLE_CLOUD_PROJECT", "ken-e-dev"),
+                location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
             )
 
-            model = GenerativeModel('gemini-2.5-pro')
+            model = GenerativeModel("gemini-2.5-pro")
 
             prompt = f"""You are evaluating a customer profile narrative.
 
@@ -244,16 +249,18 @@ Provide your assessment as JSON with:
                 response_schema=ScorerAssessment.model_json_schema(),
             )
 
-            response = model.generate_content(prompt, generation_config=generation_config)
+            response = model.generate_content(
+                prompt, generation_config=generation_config
+            )
             assessment = json.loads(response.text)
 
-            score = 1 if assessment['passes'] == 'yes' else 0
+            score = 1 if assessment["passes"] == "yes" else 0
 
-            return {'score': score, 'reasoning': assessment['reasoning']}
+            return {"score": score, "reasoning": assessment["reasoning"]}
 
         except Exception as e:
             logger.error(f"Error in channels scorer: {e}")
-            return {'score': 0, 'error': str(e)}
+            return {"score": 0, "error": str(e)}
 
 
 class CustomerProfileDemographicsScorer(weave.Scorer):
@@ -271,17 +278,17 @@ class CustomerProfileDemographicsScorer(weave.Scorer):
             dict with score (1 for yes, 0 for no) and reasoning
         """
         try:
-            narrative = output.get('narrative', '')
+            narrative = output.get("narrative", "")
 
             if not narrative:
-                return {'score': 0, 'reasoning': 'Empty or missing narrative'}
+                return {"score": 0, "reasoning": "Empty or missing narrative"}
 
             vertexai.init(
-                project=os.getenv('GOOGLE_CLOUD_PROJECT', 'ken-e-dev'),
-                location=os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1'),
+                project=os.getenv("GOOGLE_CLOUD_PROJECT", "ken-e-dev"),
+                location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
             )
 
-            model = GenerativeModel('gemini-2.5-pro')
+            model = GenerativeModel("gemini-2.5-pro")
 
             prompt = f"""You are evaluating a customer profile narrative.
 
@@ -314,16 +321,18 @@ Provide your assessment as JSON with:
                 response_schema=ScorerAssessment.model_json_schema(),
             )
 
-            response = model.generate_content(prompt, generation_config=generation_config)
+            response = model.generate_content(
+                prompt, generation_config=generation_config
+            )
             assessment = json.loads(response.text)
 
-            score = 1 if assessment['passes'] == 'yes' else 0
+            score = 1 if assessment["passes"] == "yes" else 0
 
-            return {'score': score, 'reasoning': assessment['reasoning']}
+            return {"score": score, "reasoning": assessment["reasoning"]}
 
         except Exception as e:
             logger.error(f"Error in demographics scorer: {e}")
-            return {'score': 0, 'error': str(e)}
+            return {"score": 0, "error": str(e)}
 
 
 class CustomerProfilePsychographicsScorer(weave.Scorer):
@@ -341,17 +350,17 @@ class CustomerProfilePsychographicsScorer(weave.Scorer):
             dict with score (1 for yes, 0 for no) and reasoning
         """
         try:
-            narrative = output.get('narrative', '')
+            narrative = output.get("narrative", "")
 
             if not narrative:
-                return {'score': 0, 'reasoning': 'Empty or missing narrative'}
+                return {"score": 0, "reasoning": "Empty or missing narrative"}
 
             vertexai.init(
-                project=os.getenv('GOOGLE_CLOUD_PROJECT', 'ken-e-dev'),
-                location=os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1'),
+                project=os.getenv("GOOGLE_CLOUD_PROJECT", "ken-e-dev"),
+                location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
             )
 
-            model = GenerativeModel('gemini-2.5-pro')
+            model = GenerativeModel("gemini-2.5-pro")
 
             prompt = f"""You are evaluating a customer profile narrative.
 
@@ -384,16 +393,18 @@ Provide your assessment as JSON with:
                 response_schema=ScorerAssessment.model_json_schema(),
             )
 
-            response = model.generate_content(prompt, generation_config=generation_config)
+            response = model.generate_content(
+                prompt, generation_config=generation_config
+            )
             assessment = json.loads(response.text)
 
-            score = 1 if assessment['passes'] == 'yes' else 0
+            score = 1 if assessment["passes"] == "yes" else 0
 
-            return {'score': score, 'reasoning': assessment['reasoning']}
+            return {"score": score, "reasoning": assessment["reasoning"]}
 
         except Exception as e:
             logger.error(f"Error in psychographics scorer: {e}")
-            return {'score': 0, 'error': str(e)}
+            return {"score": 0, "error": str(e)}
 
 
 class CustomerProfileCompleteThoughtsScorer(weave.Scorer):
@@ -411,17 +422,17 @@ class CustomerProfileCompleteThoughtsScorer(weave.Scorer):
             dict with score (1 for yes, 0 for no) and reasoning
         """
         try:
-            narrative = output.get('narrative', '')
+            narrative = output.get("narrative", "")
 
             if not narrative:
-                return {'score': 0, 'reasoning': 'Empty or missing narrative'}
+                return {"score": 0, "reasoning": "Empty or missing narrative"}
 
             vertexai.init(
-                project=os.getenv('GOOGLE_CLOUD_PROJECT', 'ken-e-dev'),
-                location=os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1'),
+                project=os.getenv("GOOGLE_CLOUD_PROJECT", "ken-e-dev"),
+                location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
             )
 
-            model = GenerativeModel('gemini-2.5-pro')
+            model = GenerativeModel("gemini-2.5-pro")
 
             prompt = f"""You are evaluating a customer profile narrative.
 
@@ -453,13 +464,15 @@ Provide your assessment as JSON with:
                 response_schema=ScorerAssessment.model_json_schema(),
             )
 
-            response = model.generate_content(prompt, generation_config=generation_config)
+            response = model.generate_content(
+                prompt, generation_config=generation_config
+            )
             assessment = json.loads(response.text)
 
-            score = 1 if assessment['passes'] == 'yes' else 0
+            score = 1 if assessment["passes"] == "yes" else 0
 
-            return {'score': score, 'reasoning': assessment['reasoning']}
+            return {"score": score, "reasoning": assessment["reasoning"]}
 
         except Exception as e:
             logger.error(f"Error in complete thoughts scorer: {e}")
-            return {'score': 0, 'error': str(e)}
+            return {"score": 0, "error": str(e)}

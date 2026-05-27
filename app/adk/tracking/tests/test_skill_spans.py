@@ -434,7 +434,9 @@ class TestAfterToolCallback:
     async def test_finishes_list_skills_span(self):
         ctx = self._make_tool_ctx()
         mock_call = MagicMock(id="list-finish-1")
-        _skill_ctx_registry.set({ctx.function_call_id: {"call": mock_call, "skill_id": None}})
+        _skill_ctx_registry.set(
+            {ctx.function_call_id: {"call": mock_call, "skill_id": None}}
+        )
 
         mock_client = MagicMock()
         with (
@@ -457,7 +459,9 @@ class TestAfterToolCallback:
     async def test_load_skill_sets_active_skill_id_on_success(self):
         ctx = self._make_tool_ctx()
         mock_call = MagicMock(id="load-finish-1")
-        _skill_ctx_registry.set({ctx.function_call_id: {"call": mock_call, "skill_id": "sk_loaded"}})
+        _skill_ctx_registry.set(
+            {ctx.function_call_id: {"call": mock_call, "skill_id": "sk_loaded"}}
+        )
 
         mock_client = MagicMock()
         instructions = "# My Skill\nDo stuff."
@@ -480,7 +484,9 @@ class TestAfterToolCallback:
     async def test_load_skill_does_not_set_active_skill_id_on_error(self):
         ctx = self._make_tool_ctx()
         mock_call = MagicMock(id="load-err-1")
-        _skill_ctx_registry.set({ctx.function_call_id: {"call": mock_call, "skill_id": "sk_should_not_set"}})
+        _skill_ctx_registry.set(
+            {ctx.function_call_id: {"call": mock_call, "skill_id": "sk_should_not_set"}}
+        )
 
         mock_client = MagicMock()
         with (
@@ -500,7 +506,9 @@ class TestAfterToolCallback:
     async def test_load_skill_resource_records_resource_bytes(self):
         ctx = self._make_tool_ctx()
         mock_call = MagicMock(id="res-finish-1")
-        _skill_ctx_registry.set({ctx.function_call_id: {"call": mock_call, "skill_id": "sk_res"}})
+        _skill_ctx_registry.set(
+            {ctx.function_call_id: {"call": mock_call, "skill_id": "sk_res"}}
+        )
 
         mock_client = MagicMock()
         content = "# Template\nThis is the resource content."
@@ -522,7 +530,9 @@ class TestAfterToolCallback:
     async def test_clears_registry_entry_on_exception(self):
         ctx = self._make_tool_ctx()
         mock_call = MagicMock(id="ex-call-1")
-        _skill_ctx_registry.set({ctx.function_call_id: {"call": mock_call, "skill_id": "sk_x"}})
+        _skill_ctx_registry.set(
+            {ctx.function_call_id: {"call": mock_call, "skill_id": "sk_x"}}
+        )
 
         mock_client = MagicMock()
         mock_client.finish_call.side_effect = RuntimeError("weave down")
@@ -669,7 +679,9 @@ class TestConcurrentDispatchAndFallback:
     ) -> _FakeToolContext:
         state = _SimpleState({"account_id": account_id})
         ic = _FakeIC(agent=MagicMock())
-        return _FakeToolContext(state=state, _invocation_context=ic, function_call_id=call_id)
+        return _FakeToolContext(
+            state=state, _invocation_context=ic, function_call_id=call_id
+        )
 
     @pytest.mark.asyncio
     async def test_interleaved_before_after_pairs_no_cross_contamination(self):
@@ -807,7 +819,8 @@ class TestConcurrentDispatchAndFallback:
         warning_messages = [
             record.message
             for record in caplog.records
-            if record.levelname == "WARNING" and "function_call_id is None" in record.message
+            if record.levelname == "WARNING"
+            and "function_call_id is None" in record.message
         ]
         assert len(warning_messages) == 2
 

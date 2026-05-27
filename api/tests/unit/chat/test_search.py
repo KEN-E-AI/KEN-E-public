@@ -59,7 +59,9 @@ class TestListSessions:
         for d in docs:
             snap = MagicMock()
             snap.to_dict.return_value = d
-            snap.reference.path = f"accounts/{d['account_id']}/chat_sessions/{d['session_id']}"
+            snap.reference.path = (
+                f"accounts/{d['account_id']}/chat_sessions/{d['session_id']}"
+            )
             snapshots.append(snap)
 
         # Chain all the query method calls
@@ -79,7 +81,6 @@ class TestListSessions:
         account_id: str = "acc_1",
         search_text: str = "",
     ) -> dict:
-
         return {
             "session_id": session_id,
             "user_id": user_id,
@@ -99,7 +100,9 @@ class TestListSessions:
         ]
         db = self._make_db(docs)
 
-        results, _next_cursor = list_sessions(db=db, user_id="user_1", account_id="acc_1")
+        results, _next_cursor = list_sessions(
+            db=db, user_id="user_1", account_id="acc_1"
+        )
 
         assert len(results) == 1
         assert results[0].session_id == "s1"
@@ -121,7 +124,9 @@ class TestListSessions:
     def test_empty_results_when_no_match(self) -> None:
         db = self._make_db([])
 
-        results, next_cursor = list_sessions(db=db, user_id="user_1", account_id="acc_1")
+        results, next_cursor = list_sessions(
+            db=db, user_id="user_1", account_id="acc_1"
+        )
 
         assert results == []
         assert next_cursor is None

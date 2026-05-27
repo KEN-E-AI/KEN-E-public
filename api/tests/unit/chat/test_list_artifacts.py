@@ -138,9 +138,7 @@ class TestListArtifacts:
         with patch("src.kene_api.chat.artifacts.get_firestore_client", return_value=db):
             list_artifacts(_ACCOUNT_ID, _SESSION_ID)
 
-        expected_path = (
-            f"accounts/{_ACCOUNT_ID}/chat_sessions/{_SESSION_ID}/artifacts"
-        )
+        expected_path = f"accounts/{_ACCOUNT_ID}/chat_sessions/{_SESSION_ID}/artifacts"
         db.collection.assert_called_once_with(expected_path)
 
 

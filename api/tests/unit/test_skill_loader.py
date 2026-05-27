@@ -230,7 +230,9 @@ async def test_lazy_reference_get_streams_from_gcs_on_demand() -> None:
     db = _make_db(version_data=version_data)
     svc = _make_storage()
 
-    skill = await load_skill("acc-abc", "sk-123", firestore_client=db, storage_service=svc)
+    skill = await load_skill(
+        "acc-abc", "sk-123", firestore_client=db, storage_service=svc
+    )
 
     assert svc.read_file.call_count == 0
 
@@ -260,7 +262,9 @@ async def test_lazy_asset_get_streams_from_gcs_on_demand() -> None:
     db = _make_db(version_data=version_data)
     svc = _make_storage()
 
-    skill = await load_skill("acc-abc", "sk-123", firestore_client=db, storage_service=svc)
+    skill = await load_skill(
+        "acc-abc", "sk-123", firestore_client=db, storage_service=svc
+    )
     assert svc.read_file.call_count == 0
 
     result = skill.resources.get_asset("schema.json")
@@ -284,7 +288,9 @@ async def test_lazy_script_get_returns_Script_wrapper() -> None:
     db = _make_db(version_data=version_data)
     svc = _make_storage()
 
-    skill = await load_skill("acc-abc", "sk-123", firestore_client=db, storage_service=svc)
+    skill = await load_skill(
+        "acc-abc", "sk-123", firestore_client=db, storage_service=svc
+    )
 
     result = skill.resources.get_script("extract.py")
     assert isinstance(result, Script)
@@ -319,7 +325,9 @@ async def test_resources_keys_list_does_not_touch_gcs() -> None:
     db = _make_db(version_data=version_data)
     svc = _make_storage()
 
-    skill = await load_skill("acc-abc", "sk-123", firestore_client=db, storage_service=svc)
+    skill = await load_skill(
+        "acc-abc", "sk-123", firestore_client=db, storage_service=svc
+    )
 
     # All list/keys/iter/contains operations — zero GCS reads.
     assert skill.resources.list_references() == ["guide.md"]
@@ -337,7 +345,9 @@ async def test_lazy_resource_missing_path_returns_None() -> None:
     db = _make_db()
     svc = _make_storage()
 
-    skill = await load_skill("acc-abc", "sk-123", firestore_client=db, storage_service=svc)
+    skill = await load_skill(
+        "acc-abc", "sk-123", firestore_client=db, storage_service=svc
+    )
 
     result = skill.resources.get_reference("not-in-manifest.md")
     assert result is None
@@ -361,7 +371,9 @@ async def test_load_skill_frontmatter_matches_stored() -> None:
     db = _make_db(version_data=version_data)
     svc = _make_storage()
 
-    skill = await load_skill("acc-abc", "sk-123", firestore_client=db, storage_service=svc)
+    skill = await load_skill(
+        "acc-abc", "sk-123", firestore_client=db, storage_service=svc
+    )
 
     assert skill.frontmatter.name == "seo-checklist"
     assert skill.frontmatter.description == "An SEO checklist skill"
@@ -377,7 +389,9 @@ async def test_load_skill_instructions_is_body_after_frontmatter() -> None:
     db = _make_db()
     svc = _make_storage(skill_md_content=skill_md)
 
-    skill = await load_skill("acc-abc", "sk-123", firestore_client=db, storage_service=svc)
+    skill = await load_skill(
+        "acc-abc", "sk-123", firestore_client=db, storage_service=svc
+    )
 
     assert skill.instructions == "Hello body."
 
@@ -390,10 +404,14 @@ async def test_load_skill_resolves_current_version_when_version_none(
     call_tracker: list = []
     skill_data = _make_skill_doc(current_version=3)
     version_data = _make_version_doc(version=3)
-    db = _make_db(skill_data=skill_data, version_data=version_data, call_tracker=call_tracker)
+    db = _make_db(
+        skill_data=skill_data, version_data=version_data, call_tracker=call_tracker
+    )
     svc = _make_storage()
 
-    skill = await load_skill("acc-abc", "sk-123", firestore_client=db, storage_service=svc)
+    skill = await load_skill(
+        "acc-abc", "sk-123", firestore_client=db, storage_service=svc
+    )
 
     # Verify the version doc read targeted path with "versions" and "3"
     version_gets = [
@@ -439,7 +457,9 @@ async def test_load_skill_missing_skill_doc_raises_SkillNotFoundError() -> None:
     svc = _make_storage()
 
     with pytest.raises(SkillNotFoundError, match="skill_id"):
-        await load_skill("acc-abc", "sk-missing", firestore_client=db, storage_service=svc)
+        await load_skill(
+            "acc-abc", "sk-missing", firestore_client=db, storage_service=svc
+        )
 
 
 @pytest.mark.asyncio
@@ -480,7 +500,9 @@ async def test_load_skill_does_not_walk_versions_subcollection() -> None:
 async def test_load_skill_malformed_skill_md_raises_SkillCorruptError() -> None:
     """load_skill raises SkillCorruptError when SKILL.md has no frontmatter delimiter."""
     db = _make_db()
-    svc = _make_storage(skill_md_content=b"This is just a body without any frontmatter.")
+    svc = _make_storage(
+        skill_md_content=b"This is just a body without any frontmatter."
+    )
 
     with pytest.raises(SkillCorruptError, match="malformed"):
         await load_skill("acc-abc", "sk-123", firestore_client=db, storage_service=svc)
@@ -491,7 +513,9 @@ async def test_load_skill_invalid_current_version_raises_SkillCorruptError() -> 
     """load_skill raises SkillCorruptError when skill doc has invalid current_version."""
     skill_data = _make_skill_doc()
     skill_data["current_version"] = None  # simulate corrupt Firestore doc
-    db = _make_db(skill_data=skill_data, version_data=_make_version_doc(), use_defaults=False)
+    db = _make_db(
+        skill_data=skill_data, version_data=_make_version_doc(), use_defaults=False
+    )
     svc = _make_storage()
 
     with pytest.raises(SkillCorruptError, match="current_version"):

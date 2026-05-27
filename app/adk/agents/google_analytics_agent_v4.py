@@ -142,7 +142,9 @@ OAuth credentials are handled automatically via headers. You do NOT need to pass
 - If a property_id is provided in the context, use it without asking again"""
 
 
-def create_google_analytics_agent(config_doc_id: str = "google_analytics_agent") -> Agent:
+def create_google_analytics_agent(
+    config_doc_id: str = "google_analytics_agent",
+) -> Agent:
     """Create a Google Analytics agent using McpToolset with header-based OAuth.
 
     Args:

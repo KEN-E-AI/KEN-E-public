@@ -251,7 +251,9 @@ def _get_or_create_auth_user(email: str, dry_run: bool) -> str | None:
 
     try:
         user = fb_auth.get_user_by_email(email)
-        logger.info("Firebase Auth user already exists: uid=%s email=%s", user.uid, email)
+        logger.info(
+            "Firebase Auth user already exists: uid=%s email=%s", user.uid, email
+        )
         return user.uid
     except fb_auth.UserNotFoundError:
         pass
@@ -495,14 +497,14 @@ def _cleanup(db: Any, uid: str | None) -> dict[str, int]:
     # not a subcollection doc.  Uses the dot-path field-delete shape.
     if uid:
         from google.cloud import firestore as gcf
+
         field_target = (
             f"users/{uid} field permissions.account_permissions.{LOAD_TEST_ACCOUNT_ID}"
         )
         try:
             db.collection("users").document(uid).update(
                 {
-                    f"permissions.account_permissions.{LOAD_TEST_ACCOUNT_ID}":
-                        gcf.DELETE_FIELD,
+                    f"permissions.account_permissions.{LOAD_TEST_ACCOUNT_ID}": gcf.DELETE_FIELD,
                 }
             )
             deleted += 1
@@ -621,9 +623,7 @@ def main(argv: list[str] | None = None) -> int:
     # ------------------------------------------------------------------
     if args.cleanup:
         uid = _resolve_uid_for_cleanup(db, project_id)
-        print(
-            f"Cleaning up load-test fixtures for account {LOAD_TEST_ACCOUNT_ID!r}..."
-        )
+        print(f"Cleaning up load-test fixtures for account {LOAD_TEST_ACCOUNT_ID!r}...")
         cleanup_summary = _cleanup(db, uid)
         print()
         print(json.dumps(cleanup_summary))

@@ -21,7 +21,8 @@ class SWOTItem(BaseModel):
         description="A unique identifier for the item (e.g., 'strength-brand-reputation', 'risk-new-competitor')",
     )
     display_name: str = Field(
-        ..., description="A short, human-readable name (e.g., 'Strength of Brand Reputation')"
+        ...,
+        description="A short, human-readable name (e.g., 'Strength of Brand Reputation')",
     )
     description: str = Field(
         ..., description="A clear and concise description of the SWOT item"
@@ -113,8 +114,8 @@ class ProductCategory(BaseModel):
     """A category of products offered by the company."""
 
     id: str = Field(
-        ..., 
-        description="A unique identifier for the product category (e.g., 'category-shoes')."
+        ...,
+        description="A unique identifier for the product category (e.g., 'category-shoes').",
     )
     category_name: str = Field(
         ...,

@@ -168,13 +168,9 @@ class UsageTracker:
                 from google.cloud import firestore as fs
 
                 credentials, project = auth_default()
-                self._client = fs.Client(
-                    project=project, credentials=credentials
-                )
+                self._client = fs.Client(project=project, credentials=credentials)
             except Exception as e:
-                logger.warning(
-                    f"Firestore unavailable, using in-memory storage: {e}"
-                )
+                logger.warning(f"Firestore unavailable, using in-memory storage: {e}")
                 self._use_firestore = False
         return self._client
 
@@ -465,12 +461,21 @@ class UsageTracker:
                 total_duration += dur
                 duration_count += 1
 
-            tokens = (event.get("input_tokens") or 0) + (event.get("output_tokens") or 0)
+            tokens = (event.get("input_tokens") or 0) + (
+                event.get("output_tokens") or 0
+            )
             total_tokens += tokens
 
             tool = event.get("tool_name", "unknown")
             ts = tool_stats.setdefault(
-                tool, {"calls": 0, "success": 0, "failure": 0, "dur_total": 0, "dur_count": 0}
+                tool,
+                {
+                    "calls": 0,
+                    "success": 0,
+                    "failure": 0,
+                    "dur_total": 0,
+                    "dur_count": 0,
+                },
             )
             ts["calls"] += 1
             ts["success" if is_success else "failure"] += 1
@@ -489,7 +494,9 @@ class UsageTracker:
                 success=s["success"],
                 failure=s["failure"],
                 success_rate=s["success"] / s["calls"] if s["calls"] > 0 else 0.0,
-                avg_duration_ms=s["dur_total"] / s["dur_count"] if s["dur_count"] > 0 else None,
+                avg_duration_ms=s["dur_total"] / s["dur_count"]
+                if s["dur_count"] > 0
+                else None,
             )
             for name, s in tool_stats.items()
         }

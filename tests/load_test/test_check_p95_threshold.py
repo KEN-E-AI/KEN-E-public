@@ -203,11 +203,7 @@ class TestCheckP95Threshold:
         scale-up at high VU counts."""
         csv_file = write_csv(
             tmp_path,
-            [
-                make_csv_row(
-                    DEFAULT_ENDPOINT, failure_count=0, p95=77000.0, p90=5400.0
-                )
-            ],
+            [make_csv_row(DEFAULT_ENDPOINT, failure_count=0, p95=77000.0, p90=5400.0)],
         )
         returncode, stdout, _ = run_checker(
             csv_file, threshold_ms=15000.0, percentile=90
@@ -218,17 +214,11 @@ class TestCheckP95Threshold:
         # The p95 value is never read or surfaced when --percentile 90 is used.
         assert "p95" not in stdout
 
-    def test_percentile_90_fails_when_p90_above_threshold(
-        self, tmp_path: Path
-    ) -> None:
+    def test_percentile_90_fails_when_p90_above_threshold(self, tmp_path: Path) -> None:
         """--percentile 90 with p90=16000ms vs threshold 15000ms should exit 1."""
         csv_file = write_csv(
             tmp_path,
-            [
-                make_csv_row(
-                    DEFAULT_ENDPOINT, failure_count=0, p95=20000.0, p90=16000.0
-                )
-            ],
+            [make_csv_row(DEFAULT_ENDPOINT, failure_count=0, p95=20000.0, p90=16000.0)],
         )
         returncode, stdout, _ = run_checker(
             csv_file, threshold_ms=15000.0, percentile=90
@@ -243,8 +233,6 @@ class TestCheckP95Threshold:
             tmp_path,
             [make_csv_row(DEFAULT_ENDPOINT, failure_count=0, p95=50.0)],
         )
-        returncode, _, stderr = run_checker(
-            csv_file, threshold_ms=100.0, percentile=73
-        )
+        returncode, _, stderr = run_checker(csv_file, threshold_ms=100.0, percentile=73)
         assert returncode == 2
         assert "invalid choice" in stderr or "argument --percentile" in stderr

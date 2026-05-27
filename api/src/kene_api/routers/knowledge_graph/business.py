@@ -195,7 +195,8 @@ async def list_products(
     account_id: str,
     category_node_id: str | None = Query(None, description="Filter by category"),
     substitute_product_node_id: str | None = Query(
-        None, description="Filter by substitute product (MAY_BE_SUBSTITUTED_FOR relationship)"
+        None,
+        description="Filter by substitute product (MAY_BE_SUBSTITUTED_FOR relationship)",
     ),
     skip: int = Query(0, ge=0, description="Number of items to skip for pagination"),
     limit: int | None = Query(
@@ -217,7 +218,7 @@ async def list_products(
     if category_node_id and substitute_product_node_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot filter by both category_node_id and substitute_product_node_id"
+            detail="Cannot filter by both category_node_id and substitute_product_node_id",
         )
 
     try:
@@ -774,13 +775,19 @@ async def list_opportunities(
 
             # Safety check: ensure node_id is always present
             if "node_id" not in response_data:
-                logger.error(f"Opportunity node missing both node_id and opportunity_id fields. Keys: {list(o.keys())}")
-                raise ValueError("Opportunity node must have either node_id or opportunity_id field")
+                logger.error(
+                    f"Opportunity node missing both node_id and opportunity_id fields. Keys: {list(o.keys())}"
+                )
+                raise ValueError(
+                    "Opportunity node must have either node_id or opportunity_id field"
+                )
 
             # Remove internal fields before creating response
             response_data.pop("parent_node_id", None)
             response_data.pop("parent_node_type", None)
-            response_data.pop("opportunity_id", None)  # Remove legacy field after migration
+            response_data.pop(
+                "opportunity_id", None
+            )  # Remove legacy field after migration
 
             opportunities.append(OpportunityResponse(**response_data))
 

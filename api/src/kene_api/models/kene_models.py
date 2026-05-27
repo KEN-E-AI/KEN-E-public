@@ -970,7 +970,7 @@ class Account(BaseModel):
     )
     setup_status: str | None = Field(
         default="pending",
-        description="Setup status for strategy generation (pending, processing, ready)"
+        description="Setup status for strategy generation (pending, processing, ready)",
     )
     setup_started_at: datetime | None = Field(
         default=None, description="When strategy generation started"

@@ -8,9 +8,7 @@ improves agent performance by reducing latency from ~50-100ms to ~1ms per analyt
 """
 
 import logging
-import os
-import time
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from shared.token_utils import TokenEstimator
 
@@ -23,12 +21,12 @@ logger = logging.getLogger(__name__)
 
 
 def initialize_analytics_services(
-    account_id: str, project_id: Optional[str], enable_analytics: bool = True
-) -> Tuple[
-    Optional[AnalyticsService],
-    Optional[PerformanceProfiler],
-    Optional[AlertManager],
-    Optional[OptimizationAnalyzer],
+    account_id: str, project_id: str | None, enable_analytics: bool = True
+) -> tuple[
+    AnalyticsService | None,
+    PerformanceProfiler | None,
+    AlertManager | None,
+    OptimizationAnalyzer | None,
 ]:
     """Initialize all analytics services for strategy generation.
 
@@ -72,11 +70,11 @@ def initialize_analytics_services(
 
 
 def check_token_limits_before_execution(
-    alert_manager: Optional[AlertManager],
+    alert_manager: AlertManager | None,
     execution_input: str,
-    performance_profiler: Optional[PerformanceProfiler] = None,
-    main_operation: Optional[Any] = None,
-) -> Optional[str]:
+    performance_profiler: PerformanceProfiler | None = None,
+    main_operation: Any | None = None,
+) -> str | None:
     """Check token limits and circuit breaker before execution.
 
     Args:
@@ -125,10 +123,10 @@ def check_token_limits_before_execution(
 
 
 def report_execution_summary(
-    analytics_service: Optional[AnalyticsService],
-    performance_profiler: Optional[PerformanceProfiler],
-    optimization_analyzer: Optional[OptimizationAnalyzer],
-    main_operation: Optional[Any],
+    analytics_service: AnalyticsService | None,
+    performance_profiler: PerformanceProfiler | None,
+    optimization_analyzer: OptimizationAnalyzer | None,
+    main_operation: Any | None,
     execution_time: float,
     documents_generated: int,
 ) -> None:

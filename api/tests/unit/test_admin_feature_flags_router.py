@@ -309,10 +309,16 @@ class TestGetFlagAudit:
     # Case 1: super-admin happy path — non-null next_cursor
     # ------------------------------------------------------------------
 
-    def test_super_admin_gets_entries_with_next_cursor(self, client: TestClient) -> None:
+    def test_super_admin_gets_entries_with_next_cursor(
+        self, client: TestClient
+    ) -> None:
         """200 response with entries list and non-null next_cursor."""
-        entry1 = _make_audit_entry(audit_id="id_newer", created_at="2026-03-01T00:00:00+00:00")
-        entry2 = _make_audit_entry(audit_id="id_older", created_at="2026-02-01T00:00:00+00:00")
+        entry1 = _make_audit_entry(
+            audit_id="id_newer", created_at="2026-03-01T00:00:00+00:00"
+        )
+        entry2 = _make_audit_entry(
+            audit_id="id_older", created_at="2026-02-01T00:00:00+00:00"
+        )
         stub = _stub_service_with_audit_pages([([entry1, entry2], "id_older")])
 
         async def _admin() -> UserContext:

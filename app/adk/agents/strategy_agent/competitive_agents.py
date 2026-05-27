@@ -8,9 +8,6 @@ Following ADK constraint workaround: Agents with output_schema cannot use tools.
 Configurations are now loaded from Firestore for easy iteration without redeployment.
 """
 
-import google.adk as adk
-from google.adk.tools import AgentTool
-from google.genai.types import GenerateContentConfig
 
 from .competitive_models import CompetitiveAnalysis
 from .config_loader import create_agent_from_firestore_config

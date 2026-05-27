@@ -111,7 +111,9 @@ _FAKE_DOCS: dict = {
 
 
 def main() -> int:
-    repo_root = Path(__file__).resolve().parent.parent.parent.parent  # deployment/ci/scripts/ → repo root
+    repo_root = (
+        Path(__file__).resolve().parent.parent.parent.parent
+    )  # deployment/ci/scripts/ → repo root
 
     # ------------------------------------------------------------------
     # Check 1: assemble_deploy_tree() runs without error
@@ -150,6 +152,7 @@ def main() -> int:
 
             try:
                 from agents.agent_factory import build_hierarchy
+
                 logger.info("PASS Check 2: build_hierarchy imported from packaged tree")
             except ImportError as exc:
                 logger.error("FAIL Check 2: import failed: %s", exc)
@@ -173,15 +176,32 @@ def main() -> int:
 
             try:
                 with (
-                    patch("app.adk.agents.agent_factory.builder.weave_before_agent_callback", _mock_weave_before),
-                    patch("app.adk.agents.agent_factory.builder.weave_after_agent_callback", _mock_weave_after),
-                    patch("app.adk.agents.agent_factory.builder.adk_before_tool_callback", _mock_before_tool),
-                    patch("app.adk.agents.agent_factory.builder.adk_after_tool_callback", _mock_after_tool),
-                    patch("app.adk.tools.registry.tool_registry.get_default_registry", return_value=_mock_registry),
+                    patch(
+                        "app.adk.agents.agent_factory.builder.weave_before_agent_callback",
+                        _mock_weave_before,
+                    ),
+                    patch(
+                        "app.adk.agents.agent_factory.builder.weave_after_agent_callback",
+                        _mock_weave_after,
+                    ),
+                    patch(
+                        "app.adk.agents.agent_factory.builder.adk_before_tool_callback",
+                        _mock_before_tool,
+                    ),
+                    patch(
+                        "app.adk.agents.agent_factory.builder.adk_after_tool_callback",
+                        _mock_after_tool,
+                    ),
+                    patch(
+                        "app.adk.tools.registry.tool_registry.get_default_registry",
+                        return_value=_mock_registry,
+                    ),
                 ):
                     root_agent = build_hierarchy(db=fake_db)
             except Exception as exc:
-                logger.error("FAIL Check 3: build_hierarchy raised: %s", exc, exc_info=True)
+                logger.error(
+                    "FAIL Check 3: build_hierarchy raised: %s", exc, exc_info=True
+                )
                 return 1
 
             import cloudpickle
@@ -196,14 +216,22 @@ def main() -> int:
                     assert hints, f"get_type_hints returned empty dict for {fn}"
                     ft = FunctionTool(restored)
                     decl = ft._get_declaration()
-                    assert decl is not None, f"_get_declaration() returned None for {fn}"
-                    assert decl.parameters is not None, f"declaration.parameters is None for {fn}"
-                    logger.info("  PASS cloudpickle round-trip: %s", getattr(fn, "__name__", fn))
+                    assert decl is not None, (
+                        f"_get_declaration() returned None for {fn}"
+                    )
+                    assert decl.parameters is not None, (
+                        f"declaration.parameters is None for {fn}"
+                    )
+                    logger.info(
+                        "  PASS cloudpickle round-trip: %s", getattr(fn, "__name__", fn)
+                    )
                 except Exception as exc:
                     logger.error("FAIL Check 3 for %s: %s", fn, exc, exc_info=True)
                     return 1
 
-            logger.info("PASS Check 3: all dispatch functions survive cloudpickle round-trip")
+            logger.info(
+                "PASS Check 3: all dispatch functions survive cloudpickle round-trip"
+            )
         finally:
             sys.path = original_path
 

@@ -170,8 +170,14 @@ def get_id_token() -> str:
     """
     global _cached_id_token, _token_expiry
 
-    if _cached_id_token is not None and time.time() < _token_expiry - _TOKEN_REFRESH_BUFFER_SECONDS:
-        logger.debug("Returning cached Firebase ID token (%.0fs remaining)", _token_expiry - time.time())
+    if (
+        _cached_id_token is not None
+        and time.time() < _token_expiry - _TOKEN_REFRESH_BUFFER_SECONDS
+    ):
+        logger.debug(
+            "Returning cached Firebase ID token (%.0fs remaining)",
+            _token_expiry - time.time(),
+        )
         return _cached_id_token
 
     api_key = os.environ.get("FIREBASE_WEB_API_KEY")
@@ -182,9 +188,7 @@ def get_id_token() -> str:
 
     uid = os.environ.get("CHAT_LOADTEST_UID")
     if not uid:
-        raise RuntimeError(
-            "Required environment variable CHAT_LOADTEST_UID is not set"
-        )
+        raise RuntimeError("Required environment variable CHAT_LOADTEST_UID is not set")
 
     _ensure_firebase()
 
@@ -196,7 +200,8 @@ def get_id_token() -> str:
     _cached_id_token = id_token
     _token_expiry = time.time() + expires_in
     logger.info(
-        "Fetched and cached new Firebase ID token for load-test user (expires_in=%ds)", expires_in
+        "Fetched and cached new Firebase ID token for load-test user (expires_in=%ds)",
+        expires_in,
     )
 
     return _cached_id_token

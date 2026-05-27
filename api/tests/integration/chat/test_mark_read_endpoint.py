@@ -66,7 +66,9 @@ def _seed_session(
     db.document(f"accounts/{account_id}/chat_sessions/{session_id}").set(doc)
 
 
-def _read_session(db: Any, account_id: str = _ACCOUNT_ID, session_id: str = _SESSION_ID) -> Any:
+def _read_session(
+    db: Any, account_id: str = _ACCOUNT_ID, session_id: str = _SESSION_ID
+) -> Any:
     snap = db.document(f"accounts/{account_id}/chat_sessions/{session_id}").get()
     return snap.to_dict() if snap.exists else None
 
@@ -77,9 +79,7 @@ class TestMarkReadEndpointIntegration:
     def setup_method(self) -> None:
         self.db = _emulator_client()
         # Delete any stale doc from a previous run.
-        self.db.document(
-            f"accounts/{_ACCOUNT_ID}/chat_sessions/{_SESSION_ID}"
-        ).delete()
+        self.db.document(f"accounts/{_ACCOUNT_ID}/chat_sessions/{_SESSION_ID}").delete()
 
     def _run_handler(
         self,
@@ -105,7 +105,9 @@ class TestMarkReadEndpointIntegration:
 
         async def _call() -> Any:
             with (
-                patch.object(chat_module, "get_chat_side_table_service", return_value=svc),
+                patch.object(
+                    chat_module, "get_chat_side_table_service", return_value=svc
+                ),
                 patch.object(chat_module, "mark_read_limiter", limiter),
             ):
                 from src.kene_api.routers.chat import mark_conversation_read
@@ -161,7 +163,9 @@ class TestMarkReadEndpointIntegration:
             call_count[0] += 1
             original_update(self, **kwargs)
 
-        with patch.object(ChatSessionSideTableService, "update_from_delta", _counting_update):
+        with patch.object(
+            ChatSessionSideTableService, "update_from_delta", _counting_update
+        ):
             resp = self._run_handler()
 
         assert resp.last_viewed_at == recent
@@ -182,9 +186,9 @@ class TestMarkReadEndpointIntegration:
 
         _seed_session(self.db)
         # Tombstone it.
-        self.db.document(
-            f"accounts/{_ACCOUNT_ID}/chat_sessions/{_SESSION_ID}"
-        ).update({"deleted_at": datetime.now(timezone.utc)})
+        self.db.document(f"accounts/{_ACCOUNT_ID}/chat_sessions/{_SESSION_ID}").update(
+            {"deleted_at": datetime.now(timezone.utc)}
+        )
 
         with pytest.raises(HTTPException) as exc_info:
             self._run_handler()

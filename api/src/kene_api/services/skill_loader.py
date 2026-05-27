@@ -280,7 +280,9 @@ async def load_skill(
     _validate_storage_id(skill_id, "skill_id")
 
     db = firestore_client if firestore_client is not None else get_firestore_client()
-    svc = storage_service if storage_service is not None else get_skill_storage_service()
+    svc = (
+        storage_service if storage_service is not None else get_skill_storage_service()
+    )
 
     skill_data = await _get_skill_doc(db, account_id, skill_id)
     if skill_data is None:

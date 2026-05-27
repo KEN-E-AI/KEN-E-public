@@ -63,14 +63,20 @@ def compute_flag_diff(
         return {}
 
     before_dict: dict[str, Any] = (
-        {k: v for k, v in before.model_dump(mode="json").items()
-         if k not in _EXCLUDED_FIELDS}
+        {
+            k: v
+            for k, v in before.model_dump(mode="json").items()
+            if k not in _EXCLUDED_FIELDS
+        }
         if before is not None
         else {}
     )
     after_dict: dict[str, Any] = (
-        {k: v for k, v in after.model_dump(mode="json").items()
-         if k not in _EXCLUDED_FIELDS}
+        {
+            k: v
+            for k, v in after.model_dump(mode="json").items()
+            if k not in _EXCLUDED_FIELDS
+        }
         if after is not None
         else {}
     )

@@ -4,7 +4,7 @@ import logging
 import os
 import threading
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Path
 
@@ -13,9 +13,7 @@ from ..auth.user_context import get_current_user_context
 from ..firestore import FirestoreService, get_firestore_service
 from ..models.kene_models import (
     IndustryTemplate,
-    IndustryTemplateDefaults,
     IndustryTemplateListResponse,
-    IndustryTemplateSettings,
 )
 
 router = APIRouter()
@@ -41,7 +39,7 @@ class ThreadSafeTemplateCache:
         self._hit_count = 0
         self._miss_count = 0
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         """Get value from cache if exists and not expired."""
         with self._lock:
             if key in self._cache:
@@ -81,7 +79,7 @@ class ThreadSafeTemplateCache:
             # Add or update
             self._cache[key] = (value, datetime.now(timezone.utc))
 
-    def invalidate(self, key: Optional[str] = None) -> None:
+    def invalidate(self, key: str | None = None) -> None:
         """Invalidate specific key or entire cache."""
         with self._lock:
             if key:
@@ -120,7 +118,7 @@ def _parse_template_data(template_dict: dict[str, Any]) -> IndustryTemplate:
 
     The Pydantic model now handles both snake_case and camelCase field names
     via aliases, so we can pass the raw Firestore data directly.
-    
+
     Note: recommendedSettings, defaultSettings, and name fields have been
     deprecated and removed from Firestore.
     """
@@ -179,7 +177,7 @@ async def _fetch_all_templates(
 
 async def _fetch_template_by_industry(
     industry: str, firestore_service: FirestoreService
-) -> Optional[IndustryTemplate]:
+) -> IndustryTemplate | None:
     """
     Fetch a specific template by industry with caching.
     Uses dependency injection for FirestoreService.
@@ -479,7 +477,7 @@ async def get_cache_stats(
 
 @router.post("/industry-templates/cache/clear")
 async def clear_cache(
-    pattern: Optional[str] = None,
+    pattern: str | None = None,
     user: UserContext = Depends(get_current_user_context),
 ) -> dict[str, str]:
     """

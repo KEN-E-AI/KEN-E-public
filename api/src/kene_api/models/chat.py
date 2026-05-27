@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
+
 from shared.turn_delta import TurnDelta
 
 

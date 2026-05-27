@@ -3195,9 +3195,13 @@ class GraphSyncService:
             category_dict = dict(record)
             # Convert DateTime objects to ISO strings
             if category_dict.get("created_time"):
-                category_dict["created_time"] = category_dict["created_time"].isoformat()
+                category_dict["created_time"] = category_dict[
+                    "created_time"
+                ].isoformat()
             if category_dict.get("last_modified"):
-                category_dict["last_modified"] = category_dict["last_modified"].isoformat()
+                category_dict["last_modified"] = category_dict[
+                    "last_modified"
+                ].isoformat()
             # Ensure account_id is set
             if not category_dict.get("account_id"):
                 category_dict["account_id"] = account_id
@@ -3254,7 +3258,9 @@ class GraphSyncService:
             if profile_dict.get("last_modified") and hasattr(
                 profile_dict["last_modified"], "isoformat"
             ):
-                profile_dict["last_modified"] = profile_dict["last_modified"].isoformat()
+                profile_dict["last_modified"] = profile_dict[
+                    "last_modified"
+                ].isoformat()
             if not profile_dict.get("account_id"):
                 profile_dict["account_id"] = account_id
             profiles.append(profile_dict)

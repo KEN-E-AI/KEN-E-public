@@ -1,6 +1,5 @@
 """Cached notification repository implementation."""
 
-import json
 import time
 from typing import Any
 

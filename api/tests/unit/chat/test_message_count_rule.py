@@ -41,7 +41,17 @@ class TestMessageCountRule:
         Expected delta = 5 (three 'model' events + two 'user' events).
         """
         a = SessionTurnAccumulator()
-        sequence = ["user", "model", "system", "tool", "user", "model", "tool", "system", "model"]
+        sequence = [
+            "user",
+            "model",
+            "system",
+            "tool",
+            "user",
+            "model",
+            "tool",
+            "system",
+            "model",
+        ]
         for author in sequence:
             a.add_event(_author_event(author))
         delta = a.build_delta()

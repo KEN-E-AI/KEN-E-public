@@ -565,7 +565,12 @@ class TestSandboxWiring:
 
         kw: dict[str, Any] = {"account_id": account_id, "sandbox_pool": sandbox_pool}
 
-        with _PATCH_BEFORE_AGENT, _PATCH_AFTER_AGENT, _PATCH_BEFORE_TOOL, _PATCH_AFTER_TOOL:
+        with (
+            _PATCH_BEFORE_AGENT,
+            _PATCH_AFTER_AGENT,
+            _PATCH_BEFORE_TOOL,
+            _PATCH_AFTER_TOOL,
+        ):
             return b.build_agent(config, name="test_agent", **kw)
 
     # ------------------------------------------------------------------
@@ -579,13 +584,17 @@ class TestSandboxWiring:
 
         agent = self._build(config, account_id="acc_test", sandbox_pool=pool)
 
-        pool.get_or_create.assert_called_once_with(account_id="acc_test", config_id="test_agent")
+        pool.get_or_create.assert_called_once_with(
+            account_id="acc_test", config_id="test_agent"
+        )
         assert agent.code_executor is pool._sentinel
 
     def test_sandbox_false_pool_not_called(self) -> None:
         """sandbox=False → pool.get_or_create NOT called; code_executor is None."""
         pool = self._make_mock_pool()
-        config = _make_config(sandbox_code_executor_enabled=False, code_execution_enabled=False)
+        config = _make_config(
+            sandbox_code_executor_enabled=False, code_execution_enabled=False
+        )
 
         agent = self._build(config, account_id="acc_test", sandbox_pool=pool)
 
@@ -612,7 +621,9 @@ class TestSandboxWiring:
         import logging
 
         pool = self._make_mock_pool()
-        config = _make_config(sandbox_code_executor_enabled=True, code_execution_enabled=False)
+        config = _make_config(
+            sandbox_code_executor_enabled=True, code_execution_enabled=False
+        )
 
         with caplog.at_level(logging.WARNING):
             agent = self._build(config, account_id=None, sandbox_pool=pool)
@@ -621,8 +632,10 @@ class TestSandboxWiring:
         assert agent.code_executor is None
 
         warn_records = [
-            r for r in caplog.records
-            if r.levelname == "WARNING" and "sandbox_skipped_no_account" in r.getMessage()
+            r
+            for r in caplog.records
+            if r.levelname == "WARNING"
+            and "sandbox_skipped_no_account" in r.getMessage()
         ]
         assert len(warn_records) == 1
 
@@ -636,7 +649,9 @@ class TestSandboxWiring:
 
         agent = asyncio.run(_run())
 
-        pool.get_or_create.assert_called_once_with(account_id="acc_loop", config_id="test_agent")
+        pool.get_or_create.assert_called_once_with(
+            account_id="acc_loop", config_id="test_agent"
+        )
         assert agent.code_executor is pool._sentinel
 
     # ------------------------------------------------------------------
@@ -650,9 +665,17 @@ class TestSandboxWiring:
         pool = self._make_mock_pool()
         config = _make_config(skill_ids=[], sandbox_code_executor_enabled=False)
 
-        with _PATCH_BEFORE_AGENT, _PATCH_AFTER_AGENT, _PATCH_BEFORE_TOOL, _PATCH_AFTER_TOOL:
+        with (
+            _PATCH_BEFORE_AGENT,
+            _PATCH_AFTER_AGENT,
+            _PATCH_BEFORE_TOOL,
+            _PATCH_AFTER_TOOL,
+        ):
             import app.adk.agents.agent_factory.builder as b
-            agent = b.build_agent(config, name="combo_ff", account_id="acc_ff", sandbox_pool=pool)
+
+            agent = b.build_agent(
+                config, name="combo_ff", account_id="acc_ff", sandbox_pool=pool
+            )
 
         pool.get_or_create.assert_not_called()
         assert agent.code_executor is None
@@ -666,9 +689,17 @@ class TestSandboxWiring:
         pool = self._make_mock_pool()
         config = _make_config(skill_ids=[], sandbox_code_executor_enabled=True)
 
-        with _PATCH_BEFORE_AGENT, _PATCH_AFTER_AGENT, _PATCH_BEFORE_TOOL, _PATCH_AFTER_TOOL:
+        with (
+            _PATCH_BEFORE_AGENT,
+            _PATCH_AFTER_AGENT,
+            _PATCH_BEFORE_TOOL,
+            _PATCH_AFTER_TOOL,
+        ):
             import app.adk.agents.agent_factory.builder as b
-            agent = b.build_agent(config, name="combo_ft", account_id="acc_ft", sandbox_pool=pool)
+
+            agent = b.build_agent(
+                config, name="combo_ft", account_id="acc_ft", sandbox_pool=pool
+            )
 
         pool.get_or_create.assert_called_once()
         assert agent.code_executor is pool._sentinel
@@ -688,7 +719,9 @@ class TestSandboxWiring:
         pool = self._make_mock_pool()
         config = _make_config(skill_ids=["id-a"], sandbox_code_executor_enabled=False)
 
-        agent = _build_with_skills(config, name="combo_tf", account_id="acc_tf", sandbox_pool=pool)
+        agent = _build_with_skills(
+            config, name="combo_tf", account_id="acc_tf", sandbox_pool=pool
+        )
 
         pool.get_or_create.assert_not_called()
         assert agent.code_executor is None
@@ -708,7 +741,9 @@ class TestSandboxWiring:
         pool = self._make_mock_pool()
         config = _make_config(skill_ids=["id-a"], sandbox_code_executor_enabled=True)
 
-        agent = _build_with_skills(config, name="combo_tt", account_id="acc_tt", sandbox_pool=pool)
+        agent = _build_with_skills(
+            config, name="combo_tt", account_id="acc_tt", sandbox_pool=pool
+        )
 
         pool.get_or_create.assert_called_once()
         assert agent.code_executor is pool._sentinel
@@ -758,7 +793,8 @@ class TestSandboxWiring:
         assert agent.code_executor is None
 
         timeout_records = [
-            r for r in caplog.records
+            r
+            for r in caplog.records
             if r.levelname == "ERROR" and "sandbox_build_timeout" in r.getMessage()
         ]
         assert len(timeout_records) == 1
@@ -878,7 +914,9 @@ class TestAsyncBridge:
 class TestSkillNameIndex:
     """SK-27: skill_name_index sidecar records skill metadata for span callbacks."""
 
-    def _make_skill_with_tools(self, name: str, allowed_tools: str | None = None) -> Any:
+    def _make_skill_with_tools(
+        self, name: str, allowed_tools: str | None = None
+    ) -> Any:
         from google.adk.skills import models
 
         return models.Skill(
@@ -989,7 +1027,12 @@ class TestSkillNameIndex:
 
     def test_skill_name_index_not_recorded_for_empty_skill_ids(self) -> None:
         config = _make_config(skill_ids=[])
-        with _PATCH_BEFORE_AGENT, _PATCH_AFTER_AGENT, _PATCH_BEFORE_TOOL, _PATCH_AFTER_TOOL:
+        with (
+            _PATCH_BEFORE_AGENT,
+            _PATCH_AFTER_AGENT,
+            _PATCH_BEFORE_TOOL,
+            _PATCH_AFTER_TOOL,
+        ):
             import app.adk.agents.agent_factory.builder as b
 
             agent = b.build_agent(config, name="index_empty", account_id="acc_ei")

@@ -170,10 +170,12 @@ class ValuePropositionCreate(BaseModel):
         default_factory=list, description="Source URLs or references"
     )
     parent_node_id: str = Field(
-        ..., description="Parent node ID (Product, ProductCategory, Account, SubstituteProduct, or Competitor)"
+        ...,
+        description="Parent node ID (Product, ProductCategory, Account, SubstituteProduct, or Competitor)",
     )
     parent_node_type: str = Field(
-        ..., description="Type of parent: Product, ProductCategory, Account, SubstituteProduct, or Competitor"
+        ...,
+        description="Type of parent: Product, ProductCategory, Account, SubstituteProduct, or Competitor",
     )
 
 
@@ -213,7 +215,13 @@ class ValuePropositionResponse(NodeBase):
         """
         if v is not None:
             # Validate it's a known parent type
-            valid_parent_types = {"Product", "ProductCategory", "Account", "SubstituteProduct", "Competitor"}
+            valid_parent_types = {
+                "Product",
+                "ProductCategory",
+                "Account",
+                "SubstituteProduct",
+                "Competitor",
+            }
             if v not in valid_parent_types:
                 raise ValueError(
                     f"parent_node_type must be one of {valid_parent_types}, got: {v}"
@@ -496,7 +504,9 @@ class RiskResponse(NodeBase):
     description: str
     references: list[str]
     weakness_node_id: str | None = None  # For business SWOT risks
-    strength_node_id: str | None = None  # For competitive risks (from CompetitorStrength)
+    strength_node_id: str | None = (
+        None  # For competitive risks (from CompetitorStrength)
+    )
 
 
 class RiskListResponse(BaseModel):

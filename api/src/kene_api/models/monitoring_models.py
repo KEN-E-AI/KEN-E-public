@@ -78,7 +78,8 @@ class CompetitorEntry(BaseModel):
     """Competitor monitoring entry."""
 
     node_id: str | None = Field(
-        None, description="Competitor node_id (immutable). Migrating from legacy 'name' field."
+        None,
+        description="Competitor node_id (immutable). Migrating from legacy 'name' field.",
     )
     name: str | None = Field(
         None, description="DEPRECATED: Legacy field. Use node_id instead."
@@ -120,7 +121,8 @@ class CustomerProfileEntry(BaseModel):
     """Customer profile monitoring entry."""
 
     node_id: str | None = Field(
-        None, description="Customer profile node_id (immutable). Migrating from legacy 'name' field."
+        None,
+        description="Customer profile node_id (immutable). Migrating from legacy 'name' field.",
     )
     name: str | None = Field(
         None, description="DEPRECATED: Legacy field. Use node_id instead."
@@ -275,7 +277,8 @@ class UpdateCustomerProfileRequest(BaseRequest):
     """Request to update an existing customer profile entry."""
 
     customer_profile_index: int = Field(
-        ..., description="Index of the customer profile in the customer_profile_entries array"
+        ...,
+        description="Index of the customer profile in the customer_profile_entries array",
     )
     node_id: str | None = Field(None, description="Updated customer profile node_id")
     keywords: list[str] | None = Field(

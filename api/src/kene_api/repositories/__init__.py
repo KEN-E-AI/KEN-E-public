@@ -8,8 +8,8 @@ from .notification_repository import (
 )
 
 __all__ = [
-    "NotificationRepository",
+    "CachedNotificationRepository",
     "FirestoreNotificationRepository",
     "InMemoryNotificationRepository",
-    "CachedNotificationRepository",
+    "NotificationRepository",
 ]

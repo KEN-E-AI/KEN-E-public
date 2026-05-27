@@ -79,9 +79,7 @@ def _make_specialist(name: str) -> LlmAgent:
     )
 
 
-def _patched_resolvers(
-    visible: dict[str, LlmAgent], config_suffix: str = ""
-) -> Any:
+def _patched_resolvers(visible: dict[str, LlmAgent], config_suffix: str = "") -> Any:
     """Patch list_account_agent_configs_cached / resolve_config / resolve_agent to
     surface exactly the specialists in *visible* as visible for any account.
 

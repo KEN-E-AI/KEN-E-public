@@ -25,6 +25,7 @@ db = firestore.Client()
 
 class UsageRecord(BaseModel):
     """Individual usage record."""
+
     timestamp: datetime = Field(..., description="When the usage occurred")
     agent: str = Field(..., description="Agent that generated the usage")
     operation: str = Field(..., description="Operation performed")
@@ -41,18 +42,22 @@ class UsageRecord(BaseModel):
 
 class UsageSummary(BaseModel):
     """Usage summary for a period."""
+
     period_start: datetime = Field(..., description="Start of period")
     period_end: datetime = Field(..., description="End of period")
     total_tokens: int = Field(..., description="Total tokens in period")
     total_cost: float = Field(..., description="Total cost in period")
     by_agent: dict[str, dict[str, Any]] = Field(..., description="Breakdown by agent")
     by_model: dict[str, dict[str, Any]] = Field(..., description="Breakdown by model")
-    by_operation: dict[str, dict[str, Any]] = Field(..., description="Breakdown by operation")
+    by_operation: dict[str, dict[str, Any]] = Field(
+        ..., description="Breakdown by operation"
+    )
     record_count: int = Field(..., description="Number of records in period")
 
 
 class UserCostResponse(BaseModel):
     """Response for user cost query."""
+
     user_id: str = Field(..., description="User ID")
     email: str = Field(..., description="User email")
     summary: UsageSummary = Field(..., description="Usage summary")
@@ -61,6 +66,7 @@ class UserCostResponse(BaseModel):
 
 class AccountCostResponse(BaseModel):
     """Response for account cost query."""
+
     account_id: str = Field(..., description="Account ID")
     summary: UsageSummary = Field(..., description="Usage summary")
     by_user: dict[str, dict[str, Any]] = Field(..., description="Breakdown by user")
@@ -68,9 +74,7 @@ class AccountCostResponse(BaseModel):
 
 
 async def check_cost_access(
-    user: UserContext,
-    account_id: str | None = None,
-    target_user_id: str | None = None
+    user: UserContext, account_id: str | None = None, target_user_id: str | None = None
 ) -> bool:
     """
     Check if user has access to view cost data.
@@ -101,7 +105,7 @@ async def get_user_costs(
     date_from: datetime | None = Query(None, description="Start date"),
     date_to: datetime | None = Query(None, description="End date"),
     limit: int = Query(10, description="Number of recent records to return"),
-    user: UserContext = Depends(get_current_user)
+    user: UserContext = Depends(get_current_user),
 ) -> UserCostResponse:
     """
     Get usage costs for a specific user.
@@ -111,7 +115,7 @@ async def get_user_costs(
     if not await check_cost_access(user, target_user_id=user_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Insufficient permissions to view user costs"
+            detail="Insufficient permissions to view user costs",
         )
 
     try:
@@ -147,14 +151,14 @@ async def get_user_costs(
             user_id=user_id,
             email=user_email,
             summary=summary,
-            recent_records=recent_records
+            recent_records=recent_records,
         )
 
     except Exception as e:
         logger.error(f"Error retrieving user costs: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve user costs"
+            detail="Failed to retrieve user costs",
         ) from e
 
 
@@ -164,7 +168,7 @@ async def get_account_costs(
     date_from: datetime | None = Query(None, description="Start date"),
     date_to: datetime | None = Query(None, description="End date"),
     limit: int = Query(10, description="Number of recent records to return"),
-    user: UserContext = Depends(get_current_user)
+    user: UserContext = Depends(get_current_user),
 ) -> AccountCostResponse:
     """
     Get usage costs for an account.
@@ -174,7 +178,7 @@ async def get_account_costs(
     if not await check_cost_access(user, account_id=account_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required to view account costs"
+            detail="Admin access required to view account costs",
         )
 
     try:
@@ -208,7 +212,7 @@ async def get_account_costs(
                 by_user[user_id] = {
                     "total_tokens": 0,
                     "total_cost": 0.0,
-                    "record_count": 0
+                    "record_count": 0,
                 }
             by_user[user_id]["total_tokens"] += record.total_tokens
             by_user[user_id]["total_cost"] += record.total_cost
@@ -221,21 +225,20 @@ async def get_account_costs(
             account_id=account_id,
             summary=summary,
             by_user=by_user,
-            recent_records=recent_records
+            recent_records=recent_records,
         )
 
     except Exception as e:
         logger.error(f"Error retrieving account costs: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve account costs"
+            detail="Failed to retrieve account costs",
         ) from e
 
 
 @router.post("/record")
 async def record_usage(
-    usage_record: UsageRecord,
-    user: UserContext = Depends(get_current_user)
+    usage_record: UsageRecord, user: UserContext = Depends(get_current_user)
 ) -> dict[str, Any]:
     """
     Record usage data (internal endpoint).
@@ -246,7 +249,7 @@ async def record_usage(
     if not user.is_super_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only service accounts can record usage"
+            detail="Only service accounts can record usage",
         )
 
     try:
@@ -266,7 +269,7 @@ async def record_usage(
         logger.error(f"Error recording usage: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to record usage"
+            detail="Failed to record usage",
         ) from e
 
 
@@ -274,7 +277,7 @@ async def record_usage(
 async def get_usage_summary(
     date_from: datetime | None = Query(None, description="Start date"),
     date_to: datetime | None = Query(None, description="End date"),
-    user: UserContext = Depends(get_current_user)
+    user: UserContext = Depends(get_current_user),
 ) -> dict[str, Any]:
     """
     Get overall usage summary.
@@ -283,7 +286,7 @@ async def get_usage_summary(
     if not user.is_super_admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only administrators can view overall usage"
+            detail="Only administrators can view overall usage",
         )
 
     try:
@@ -316,7 +319,7 @@ async def get_usage_summary(
                 by_account[account_id] = {
                     "total_tokens": 0,
                     "total_cost": 0.0,
-                    "record_count": 0
+                    "record_count": 0,
                 }
             by_account[account_id]["total_tokens"] += record.get("total_tokens", 0)
             by_account[account_id]["total_cost"] += record.get("total_cost", 0.0)
@@ -329,21 +332,21 @@ async def get_usage_summary(
             "total_cost": total_cost,
             "record_count": record_count,
             "by_account": by_account,
-            "average_cost_per_record": total_cost / record_count if record_count > 0 else 0
+            "average_cost_per_record": total_cost / record_count
+            if record_count > 0
+            else 0,
         }
 
     except Exception as e:
         logger.error(f"Error retrieving usage summary: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve usage summary"
+            detail="Failed to retrieve usage summary",
         ) from e
 
 
 def calculate_usage_summary(
-    records: list[UsageRecord],
-    date_from: datetime,
-    date_to: datetime
+    records: list[UsageRecord], date_from: datetime, date_to: datetime
 ) -> UsageSummary:
     """Calculate usage summary from records."""
     total_tokens = 0
@@ -385,12 +388,13 @@ def calculate_usage_summary(
         by_agent=by_agent,
         by_model=by_model,
         by_operation=by_operation,
-        record_count=len(records)
+        record_count=len(records),
     )
 
 
 class ToolUsageResponse(BaseModel):
     """Response model for tool usage aggregation."""
+
     period_start: datetime = Field(..., description="Start of period")
     period_end: datetime = Field(..., description="End of period")
     total_calls: int = Field(..., description="Total tool calls")
@@ -399,8 +403,12 @@ class ToolUsageResponse(BaseModel):
     success_rate: float = Field(..., description="Success rate (0-1)")
     avg_duration_ms: float | None = Field(None, description="Average duration in ms")
     total_tokens: int = Field(..., description="Total tokens used")
-    by_tool: dict[str, ToolBreakdownResponse] = Field(..., description="Breakdown by tool")
-    by_user: dict[str, UserBreakdownResponse] = Field(..., description="Breakdown by user")
+    by_tool: dict[str, ToolBreakdownResponse] = Field(
+        ..., description="Breakdown by tool"
+    )
+    by_user: dict[str, UserBreakdownResponse] = Field(
+        ..., description="Breakdown by user"
+    )
     by_status: dict[str, int] = Field(..., description="Calls by status")
 
 

@@ -99,7 +99,12 @@ def migrate(
         db = firestore.Client(project=project_id)
 
     collection = db.collection(COLLECTION)
-    counts: dict[str, int] = {"patched": 0, "would_patch": 0, "unchanged": 0, "errors": 0}
+    counts: dict[str, int] = {
+        "patched": 0,
+        "would_patch": 0,
+        "unchanged": 0,
+        "errors": 0,
+    }
     failed_ids: list[str] = []
 
     for snapshot in collection.stream():

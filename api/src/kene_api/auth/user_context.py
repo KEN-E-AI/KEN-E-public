@@ -4,7 +4,7 @@ import asyncio
 import hmac
 import logging
 import time
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -34,7 +34,7 @@ async def _apply_rate_limiting(
     request: Request,
     rate_limiter: RateLimiter,
     audit_logger: AuditLogger,
-    client_ip: Optional[str],
+    client_ip: str | None,
 ) -> None:
     """Apply rate limiting and log if exceeded.
 
@@ -61,8 +61,8 @@ async def _apply_rate_limiting(
 async def _verify_and_decode_token(
     credentials: HTTPAuthorizationCredentials,
     audit_logger: AuditLogger,
-    client_ip: Optional[str],
-    user_agent: Optional[str],
+    client_ip: str | None,
+    user_agent: str | None,
     rate_limiter: RateLimiter,
     request: Request,
 ) -> tuple[dict[str, Any], str, str]:
@@ -119,8 +119,8 @@ async def _check_token_revocation(
     decoded_token: dict[str, Any],
     user_id: str,
     audit_logger: AuditLogger,
-    client_ip: Optional[str],
-    user_agent: Optional[str],
+    client_ip: str | None,
+    user_agent: str | None,
 ) -> None:
     """Check if token has been revoked.
 
@@ -161,8 +161,8 @@ async def _get_or_create_user_document(
     user_id: str,
     email: str,
     audit_logger: AuditLogger,
-    client_ip: Optional[str],
-    user_agent: Optional[str],
+    client_ip: str | None,
+    user_agent: str | None,
 ) -> dict[str, Any]:
     """Get or create user document in Firestore.
 
@@ -241,7 +241,7 @@ async def _get_user_context_with_limiter(
     request: Request,
     credentials: HTTPAuthorizationCredentials,
     firestore_service: FirestoreService,
-    rate_limiter: Optional[RateLimiter] = None,
+    rate_limiter: RateLimiter | None = None,
 ) -> UserContext:
     """Internal function to get user context with custom rate limiter.
 
@@ -280,9 +280,8 @@ async def _get_user_context_with_limiter(
                 roles=[],
             )
         prefix = f"{bypass_token}:"
-        if (
-            len(bearer) > len(prefix)
-            and hmac.compare_digest(bearer[: len(prefix)], prefix)
+        if len(bearer) > len(prefix) and hmac.compare_digest(
+            bearer[: len(prefix)], prefix
         ):
             account_id_part = bearer[len(prefix) :]
             return UserContext(
@@ -353,9 +352,7 @@ async def _get_user_context_with_limiter(
                 ),
             )
         else:
-            await _apply_rate_limiting(
-                request, active_limiter, audit_logger, client_ip
-            )
+            await _apply_rate_limiting(request, active_limiter, audit_logger, client_ip)
 
         # Check if token is revoked
         await _check_token_revocation(
@@ -371,7 +368,7 @@ async def _get_user_context_with_limiter(
     from .cached_user_context import get_cached_user_context_service
 
     cached_user_service = get_cached_user_context_service()
-    logger.debug(f"Got cached service, calling get_user_context")
+    logger.debug("Got cached service, calling get_user_context")
     cached_context = cached_user_service.get_user_context(user_id)
     if cached_context:
         logger.info(
@@ -457,7 +454,7 @@ async def get_current_user_context(
 
 async def get_optional_user_context(
     request: Request,
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     firestore_service: FirestoreService = Depends(get_firestore_service),
 ) -> UserContext | None:
     """Get optional user context from Firebase auth token.

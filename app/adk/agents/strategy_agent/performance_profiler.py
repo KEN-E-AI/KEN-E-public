@@ -52,16 +52,18 @@ import logging
 import threading
 import time
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 from uuid import uuid4
 
 from google.cloud import firestore
 from google.cloud.firestore_v1 import FieldFilter
 
 from shared.account_id_utils import validate_account_id
-from .retry_utils import with_write_retry, with_read_retry, with_batch_retry
+
+from .retry_utils import with_read_retry, with_write_retry
 
 logger = logging.getLogger(__name__)
 
@@ -73,21 +75,21 @@ class PerformanceMetrics:
     agent_name: str
     operation: str
     start_time: float
-    end_time: Optional[float] = None
-    duration: Optional[float] = None
+    end_time: float | None = None
+    duration: float | None = None
     success: bool = True
-    error: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    child_operations: List["PerformanceMetrics"] = field(default_factory=list)
+    error: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    child_operations: list["PerformanceMetrics"] = field(default_factory=list)
 
-    def complete(self, success: bool = True, error: Optional[str] = None):
+    def complete(self, success: bool = True, error: str | None = None):
         """Mark operation as complete."""
         self.end_time = time.time()
         self.duration = self.end_time - self.start_time
         self.success = success
         self.error = error
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for storage."""
         return {
             "agent_name": self.agent_name,
@@ -105,7 +107,7 @@ class PerformanceMetrics:
 class PerformanceProfiler:
     """Service for profiling agent performance and identifying bottlenecks."""
 
-    def __init__(self, account_id: str, project_id: Optional[str] = None):
+    def __init__(self, account_id: str, project_id: str | None = None):
         """Initialize Performance Profiler.
 
         Args:
@@ -120,8 +122,8 @@ class PerformanceProfiler:
         self._thread_local = threading.local()
 
         # Global metrics storage
-        self.metrics: Dict[str, PerformanceMetrics] = {}
-        self.operation_stack: List[PerformanceMetrics] = []
+        self.metrics: dict[str, PerformanceMetrics] = {}
+        self.operation_stack: list[PerformanceMetrics] = []
 
         # Initialize Firestore client for analytics database
         self._init_firestore_client()
@@ -147,14 +149,14 @@ class PerformanceProfiler:
             self.analytics_db = None
 
     @property
-    def current_stack(self) -> List[PerformanceMetrics]:
+    def current_stack(self) -> list[PerformanceMetrics]:
         """Get thread-local operation stack."""
         if not hasattr(self._thread_local, "stack"):
             self._thread_local.stack = []
         return self._thread_local.stack
 
     def start_operation(
-        self, agent_name: str, operation: str, metadata: Optional[Dict[str, Any]] = None
+        self, agent_name: str, operation: str, metadata: dict[str, Any] | None = None
     ) -> PerformanceMetrics:
         """Start tracking a new operation.
 
@@ -194,7 +196,7 @@ class PerformanceProfiler:
         self,
         metrics: PerformanceMetrics,
         success: bool = True,
-        error: Optional[str] = None,
+        error: str | None = None,
     ):
         """End tracking for an operation.
 
@@ -300,7 +302,7 @@ class PerformanceProfiler:
     @with_read_retry(operation_name="get_bottlenecks")
     def get_bottlenecks(
         self, time_window_hours: int = 24, limit: int = 10
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Identify bottlenecks in recent executions.
 
         Args:
@@ -350,7 +352,7 @@ class PerformanceProfiler:
             return []
 
     @with_read_retry(operation_name="get_performance_summary")
-    def get_performance_summary(self) -> Dict[str, Any]:
+    def get_performance_summary(self) -> dict[str, Any]:
         """Get performance summary for current execution.
 
         Returns:
@@ -401,7 +403,7 @@ class PerformanceProfiler:
 
         return summary
 
-    def analyze_execution_path(self) -> Dict[str, Any]:
+    def analyze_execution_path(self) -> dict[str, Any]:
         """Analyze the execution path to identify optimization opportunities.
 
         Returns:

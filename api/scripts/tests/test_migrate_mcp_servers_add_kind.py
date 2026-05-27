@@ -72,14 +72,14 @@ class TestNeedsKindBackfill:
     @pytest.mark.parametrize(
         "doc, expected",
         [
-            ({}, True),                           # missing key
-            ({"kind": None}, True),               # explicit None
-            ({"kind": ""}, True),                 # empty string
-            ({"kind": "   "}, True),              # whitespace-only
-            ({"kind": "cloud_run"}, False),       # already set
-            ({"kind": "zapier"}, False),          # non-default but valid
-            ({"kind": "CloudRun"}, True),         # wrong case — not in _VALID_KINDS
-            ({"kind": "invalid"}, True),          # unknown value
+            ({}, True),  # missing key
+            ({"kind": None}, True),  # explicit None
+            ({"kind": ""}, True),  # empty string
+            ({"kind": "   "}, True),  # whitespace-only
+            ({"kind": "cloud_run"}, False),  # already set
+            ({"kind": "zapier"}, False),  # non-default but valid
+            ({"kind": "CloudRun"}, True),  # wrong case — not in _VALID_KINDS
+            ({"kind": "invalid"}, True),  # unknown value
         ],
     )
     def test_parametrized(self, doc: dict[str, Any], expected: bool) -> None:
@@ -108,17 +108,17 @@ class TestBackfill:
         counts = backfill("proj", dry_run=False, db=db)
         assert counts["patched"] == 1
         assert counts["unchanged"] == 0
-        db.collection("mcp_server_configs").document("srv").update.assert_called_once_with(
-            {"kind": "cloud_run"}
-        )
+        db.collection("mcp_server_configs").document(
+            "srv"
+        ).update.assert_called_once_with({"kind": "cloud_run"})
 
     def test_none_kind_is_patched(self) -> None:
         db = FakeMigrateDb({"srv": {"kind": None}})
         counts = backfill("proj", dry_run=False, db=db)
         assert counts["patched"] == 1
-        db.collection("mcp_server_configs").document("srv").update.assert_called_once_with(
-            {"kind": "cloud_run"}
-        )
+        db.collection("mcp_server_configs").document(
+            "srv"
+        ).update.assert_called_once_with({"kind": "cloud_run"})
 
     def test_empty_string_kind_is_patched(self) -> None:
         db = FakeMigrateDb({"srv": {"kind": ""}})

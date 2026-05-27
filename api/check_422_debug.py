@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Debug the 422 error by making a test request."""
 
-import requests
 import json
+
+import requests
 
 # Test what the actual validation error is
 url = "http://localhost:8000/api/v1/accounts/"
@@ -10,7 +11,7 @@ url = "http://localhost:8000/api/v1/accounts/"
 # Simulate what the frontend is sending (likely still with Content-Type: application/json)
 headers = {
     "Content-Type": "application/json",  # This is what the old frontend code sends
-    "Authorization": "Bearer dummy"  # Dummy token to get past auth
+    "Authorization": "Bearer dummy",  # Dummy token to get past auth
 }
 
 data = {
@@ -19,7 +20,7 @@ data = {
     "industry": "Tech",
     "status": "Active",
     "websites": ["https://example.com"],
-    "timezone": "UTC"
+    "timezone": "UTC",
 }
 
 print("Testing with JSON content type (old frontend behavior):")
@@ -28,18 +29,18 @@ print(f"Status: {response.status_code}")
 if response.status_code == 422:
     print("Validation error details:")
     print(json.dumps(response.json(), indent=2))
-    
-print("\n" + "="*50 + "\n")
+
+print("\n" + "=" * 50 + "\n")
 
 # Now test with form data (what it should be)
 print("Testing with multipart/form-data (new expected behavior):")
 form_data = {
     "account_name": "Test",
-    "organization_id": "test", 
+    "organization_id": "test",
     "industry": "Tech",
     "status": "Active",
     "websites": json.dumps(["https://example.com"]),
-    "timezone": "UTC"
+    "timezone": "UTC",
 }
 
 response2 = requests.post(url, data=form_data)

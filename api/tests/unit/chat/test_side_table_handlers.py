@@ -6,11 +6,12 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import google.api_core.exceptions
-from shared.turn_delta import TurnDelta
 from src.kene_api.chat.side_table_handlers import (
     _sha256_hex,
     apply_side_table_update,
 )
+
+from shared.turn_delta import TurnDelta
 
 _NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
 
@@ -38,7 +39,9 @@ class TestSha256Hex:
 
 
 class TestApplySideTableUpdate:
-    def _make_db(self, create_raises: bool = False, expire_at_future: bool = True) -> MagicMock:
+    def _make_db(
+        self, create_raises: bool = False, expire_at_future: bool = True
+    ) -> MagicMock:
         """Build a mock Firestore client.
 
         create_raises=True simulates AlreadyExists (duplicate key).
@@ -48,14 +51,18 @@ class TestApplySideTableUpdate:
         idem_ref = MagicMock()
 
         if create_raises:
-            idem_ref.create.side_effect = google.api_core.exceptions.AlreadyExists("duplicate")
+            idem_ref.create.side_effect = google.api_core.exceptions.AlreadyExists(
+                "duplicate"
+            )
             now = datetime.now(timezone.utc)
             stored_snap = MagicMock()
             stored_snap.exists = True
             stored_snap.to_dict.return_value = {
                 "applied_at": now - timedelta(hours=1),
                 "expires_at": (
-                    now + timedelta(hours=1) if expire_at_future else now - timedelta(hours=1)
+                    now + timedelta(hours=1)
+                    if expire_at_future
+                    else now - timedelta(hours=1)
                 ),
             }
             idem_ref.get.return_value = stored_snap
@@ -221,10 +228,15 @@ class TestApplySideTableUpdateStopStamp:
         account_id = "acc_ac8_dup"
 
         mock_idem_ref = MagicMock()
-        mock_idem_ref.create.side_effect = google.api_core.exceptions.AlreadyExists("exists")
+        mock_idem_ref.create.side_effect = google.api_core.exceptions.AlreadyExists(
+            "exists"
+        )
         stored_doc = MagicMock()
         stored_doc.exists = True
-        stored_doc.to_dict.return_value = {"applied_at": now, "expires_at": expires_future}
+        stored_doc.to_dict.return_value = {
+            "applied_at": now,
+            "expires_at": expires_future,
+        }
         mock_idem_ref.get.return_value = stored_doc
 
         mock_db = MagicMock()

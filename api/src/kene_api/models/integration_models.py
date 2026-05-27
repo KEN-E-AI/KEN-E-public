@@ -73,9 +73,7 @@ class IntegrationTestResponse(BaseModel):
 
     success: bool = Field(..., description="Whether the test was successful")
     message: str = Field(..., description="Test result message")
-    details: dict[str, Any] | None = Field(
-        None, description="Additional test details"
-    )
+    details: dict[str, Any] | None = Field(None, description="Additional test details")
 
 
 class IntegrationStatusResponse(BaseModel):
@@ -91,7 +89,9 @@ class IntegrationStatusResponse(BaseModel):
     )
     error_message: str | None = Field(None, description="Error message if any")
     user_email: str | None = Field(None, description="Email of connected user")
-    property_count: int | None = Field(None, description="Number of Google Analytics properties selected")
+    property_count: int | None = Field(
+        None, description="Number of Google Analytics properties selected"
+    )
 
 
 class IntegrationConfig(BaseModel):
@@ -99,7 +99,5 @@ class IntegrationConfig(BaseModel):
 
     integration_type: IntegrationType = Field(..., description="Type of integration")
     status: IntegrationStatus = Field(..., description="Current status")
-    configured_at: datetime | None = Field(
-        None, description="When configured"
-    )
+    configured_at: datetime | None = Field(None, description="When configured")
     configured_by: str | None = Field(None, description="User who configured it")

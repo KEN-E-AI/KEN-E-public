@@ -6,7 +6,6 @@ about OAuth flows, performance, and system health.
 """
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import PlainTextResponse
@@ -24,7 +23,7 @@ router = APIRouter(prefix="/api/monitoring", tags=["monitoring"])
 async def get_prometheus_metrics() -> str:
     """
     Expose metrics in Prometheus format.
-    
+
     This endpoint can be scraped by Prometheus to collect metrics about:
     - OAuth authorization attempts and success rates
     - Token refresh success/failure rates
@@ -32,29 +31,29 @@ async def get_prometheus_metrics() -> str:
     - Encryption operation performance
     - Active OAuth sessions
     - Token expiration monitoring
-    
+
     In production, this endpoint should be protected or exposed on a separate internal port.
-    
+
     Returns:
         Prometheus formatted metrics as plain text.
     """
     # Log access for security auditing
     logger.info("[METRICS] Prometheus metrics endpoint accessed")
-    
+
     try:
         # Generate metrics in Prometheus format
         metrics_output = generate_latest(REGISTRY)
-        
+
         # Convert bytes to string if needed
         if isinstance(metrics_output, bytes):
-            return metrics_output.decode('utf-8')
+            return metrics_output.decode("utf-8")
         return metrics_output
-    
+
     except Exception as e:
         logger.error(f"[METRICS] Error generating Prometheus metrics: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to generate metrics"
+            detail="Failed to generate metrics",
         )
 
 
@@ -62,7 +61,7 @@ async def get_prometheus_metrics() -> str:
 async def monitoring_health() -> str:
     """
     Health check for monitoring service.
-    
+
     Returns:
         Simple OK response to indicate monitoring service is running.
     """
@@ -75,22 +74,15 @@ async def get_oauth_statistics(
 ) -> dict:
     """
     Get human-readable OAuth statistics.
-    
+
     This endpoint provides a JSON summary of OAuth metrics for dashboards
     and debugging purposes.
-    
+
     Returns:
         JSON object with OAuth statistics and metrics.
     """
     # Import metrics to get current values
-    from ..metrics.oauth_metrics import (
-        oauth_auth_attempts,
-        oauth_auth_success,
-        oauth_callback_errors,
-        token_refresh_success,
-        token_refresh_failures,
-    )
-    
+
     try:
         # Collect current metric values
         # Note: This is a simplified version. In production, you'd want to
@@ -121,14 +113,14 @@ async def get_oauth_statistics(
                 "token_refresh_failure_alert": "Configure in Prometheus/Grafana",
                 "encryption_performance_alert": "Configure in Prometheus/Grafana",
             },
-            "info": "Use /api/monitoring/metrics endpoint for Prometheus scraping"
+            "info": "Use /api/monitoring/metrics endpoint for Prometheus scraping",
         }
-        
+
         return stats
-        
+
     except Exception as e:
         logger.error(f"[METRICS] Error generating OAuth statistics: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to generate OAuth statistics"
+            detail="Failed to generate OAuth statistics",
         )

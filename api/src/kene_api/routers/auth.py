@@ -1,14 +1,13 @@
 """Authentication-related endpoints."""
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from ..auth import UserContext
-from ..auth.user_context import get_current_user_context
 from ..auth.token_revocation import get_token_revocation_service
+from ..auth.user_context import get_current_user_context
 from ..config import settings
 from ..rate_limiter import recaptcha_rate_limiter
 from ..recaptcha import recaptcha_service
@@ -99,8 +98,8 @@ async def get_recaptcha_site_key() -> RecaptchaSiteKeyResponse:
 class RevokeTokenRequest(BaseModel):
     """Request to revoke a token."""
 
-    token_id: Optional[str] = None
-    reason: Optional[str] = None
+    token_id: str | None = None
+    reason: str | None = None
     revoke_all: bool = False
 
 

@@ -210,9 +210,7 @@ async def get_competitor_dependent_counts(
 async def delete_competitor(
     account_id: str,
     node_id: str,
-    cascade: bool = Query(
-        False, description="Cascade delete all dependent entities"
-    ),
+    cascade: bool = Query(False, description="Cascade delete all dependent entities"),
     service: GraphSyncService = Depends(get_graph_sync_service),
     firestore: FirestoreService = Depends(get_firestore_service),
     user: UserContext = Depends(get_current_user),
@@ -827,12 +825,19 @@ async def list_substitute_products(
             MATCH (p)-[:MAY_BE_SUBSTITUTED_FOR]->(sub:SubstituteProduct)
             RETURN count(sub) as total
             """
-            params = {"account_id": account_id, "product_node_id": product_node_id, "skip": skip}
+            params = {
+                "account_id": account_id,
+                "product_node_id": product_node_id,
+                "skip": skip,
+            }
             if limit:
                 query += " LIMIT $limit"
                 params["limit"] = limit
 
-            total_result = await service.neo4j.execute_query(count_query, {"account_id": account_id, "product_node_id": product_node_id})
+            total_result = await service.neo4j.execute_query(
+                count_query,
+                {"account_id": account_id, "product_node_id": product_node_id},
+            )
             total_count = total_result[0]["total"] if total_result else 0
 
             results = await service.neo4j.execute_query(query, params)
@@ -882,7 +887,9 @@ async def list_substitute_products(
                     query += " LIMIT $limit"
                     params["limit"] = limit
 
-                total_result = await service.neo4j.execute_query(count_query, {"account_id": account_id})
+                total_result = await service.neo4j.execute_query(
+                    count_query, {"account_id": account_id}
+                )
                 total_count = total_result[0]["total"] if total_result else 0
 
                 results = await service.neo4j.execute_query(query, params)

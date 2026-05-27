@@ -371,7 +371,11 @@ def _write_diff_sidecar(expected: str, observed: str) -> str:
             tofile="observed (executed)",
         )
     )
-    diff_text = "".join(diff_lines) if diff_lines else "(no diff output — strings equal by splitlines but differ by bytes)\n"
+    diff_text = (
+        "".join(diff_lines)
+        if diff_lines
+        else "(no diff output — strings equal by splitlines but differ by bytes)\n"
+    )
     fd, diff_path = tempfile.mkstemp(prefix="harness_tampered_", suffix=".diff")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -456,7 +460,11 @@ async def _run_one_message(
 
     user_message = types.Content(
         role="user",
-        parts=[types.Part(text=f"Execute this Python script:\n```python\n{script_content}\n```")],
+        parts=[
+            types.Part(
+                text=f"Execute this Python script:\n```python\n{script_content}\n```"
+            )
+        ],
     )
 
     llm_text_parts: list[str] = []
@@ -482,7 +490,9 @@ async def _run_one_message(
                     # _check_script_tampering always fires when ec was present
                     # (an ec with no code is guaranteed ≠ any real script).
                     code_text = getattr(ec, "code", None)
-                    captured_code_parts.append(str(code_text) if code_text is not None else "")
+                    captured_code_parts.append(
+                        str(code_text) if code_text is not None else ""
+                    )
                 result = getattr(part, "code_execution_result", None)
                 if result is not None:
                     code_execution_result_seen = True
@@ -717,7 +727,9 @@ async def _run_direct_scripts(
         import vertexai  # type: ignore[import-untyped]
         from vertexai import types as vertex_types  # type: ignore[import-untyped]
     except ImportError as exc:
-        error_status = f"error (ImportError): vertexai SDK not found — run `uv sync` first: {exc}"
+        error_status = (
+            f"error (ImportError): vertexai SDK not found — run `uv sync` first: {exc}"
+        )
         return [("", error_status)] * len(script_paths), error_status
 
     try:
@@ -786,7 +798,11 @@ async def _run_direct_scripts(
                 # (which may arrive via msg_err, not msg_out) are not silently
                 # discarded. TC-1 / TC-3 failure signals may appear in stderr.
                 if stderr:
-                    stdout = (stdout + f"\n[stderr] {stderr}") if stdout else f"[stderr] {stderr}"
+                    stdout = (
+                        (stdout + f"\n[stderr] {stderr}")
+                        if stdout
+                        else f"[stderr] {stderr}"
+                    )
                 status = "ok"
         except Exception as exc:
             stdout = ""
@@ -868,7 +884,10 @@ def _run_local_scripts_with_limits(
                 timeout=wall_clock_timeout_s,
                 preexec_fn=_preexec_fn,
                 # Strip GCP credentials and API tokens; probe scripts only need PATH.
-                env={"PATH": os.environ.get("PATH", ""), "HOME": os.environ.get("HOME", "")},
+                env={
+                    "PATH": os.environ.get("PATH", ""),
+                    "HOME": os.environ.get("HOME", ""),
+                },
             )
             stdout_text = proc.stdout or ""
             stderr_text = (proc.stderr or "").strip()
@@ -901,15 +920,14 @@ def _run_local_scripts_with_limits(
             # TimeoutExpired.stdout may be bytes even when text=True is set (CPython
             # implementation detail — partial output is not always decoded on timeout).
             raw = exc.stdout or b""
-            stdout_text = raw.decode(errors="replace") if isinstance(raw, bytes) else raw
+            stdout_text = (
+                raw.decode(errors="replace") if isinstance(raw, bytes) else raw
+            )
             status = (
-                f"error: local executor — wall-clock timeout "
-                f"({wall_clock_timeout_s}s)"
+                f"error: local executor — wall-clock timeout ({wall_clock_timeout_s}s)"
             )
         except Exception as exc:
-            status = (
-                f"error ({type(exc).__name__}): local execution failed — {exc}"
-            )
+            status = f"error ({type(exc).__name__}): local execution failed — {exc}"
 
         results.append((stdout_text, status))
         aggregate_status = _worst_status(aggregate_status, status)
@@ -946,10 +964,14 @@ def _build_parser() -> argparse.ArgumentParser:
     # /sandboxEnvironments/ wins over KENE_SPIKE_AGENT_ENGINE_RESOURCE_NAME so
     # the harness can skip sandbox creation (aiplatform.sandboxEnvironments.create)
     # when a pre-provisioned sandbox is available.
-    _engine_name = (os.environ.get("KENE_SPIKE_AGENT_ENGINE_RESOURCE_NAME") or "").strip()
+    _engine_name = (
+        os.environ.get("KENE_SPIKE_AGENT_ENGINE_RESOURCE_NAME") or ""
+    ).strip()
     _sandbox_env = (os.environ.get("KENE_SPIKE_SANDBOX_RESOURCE_NAME") or "").strip()
     _default_resource = (
-        _sandbox_env if "/sandboxEnvironments/" in _sandbox_env else _engine_name or _sandbox_env
+        _sandbox_env
+        if "/sandboxEnvironments/" in _sandbox_env
+        else _engine_name or _sandbox_env
     )
     parser.add_argument(
         "--sandbox-resource-name",

@@ -4,19 +4,16 @@ This module provides real-time alerting capabilities for token usage,
 with configurable thresholds and multiple notification channels.
 """
 
-import json
 import logging
-import os
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from uuid import uuid4
 
 from google.cloud import firestore
 from google.cloud.firestore_v1 import FieldFilter
 
 from shared.account_id_utils import validate_account_id
-from shared.token_utils import TokenEstimator
 
 from .retry_utils import with_read_retry, with_write_retry
 
@@ -56,8 +53,8 @@ class AlertThreshold:
         self,
         percentage: float,
         severity: AlertSeverity,
-        channels: List[AlertChannel],
-        message_template: Optional[str] = None,
+        channels: list[AlertChannel],
+        message_template: str | None = None,
     ):
         """Initialize alert threshold.
 
@@ -101,7 +98,7 @@ class AlertManager:
         ),
     ]
 
-    def __init__(self, account_id: str, project_id: Optional[str] = None):
+    def __init__(self, account_id: str, project_id: str | None = None):
         """Initialize Alert Manager.
 
         Args:
@@ -118,7 +115,7 @@ class AlertManager:
         self.config = self._load_configuration()
 
         # Track triggered alerts to avoid duplicates
-        self.triggered_alerts: Dict[str, datetime] = {}
+        self.triggered_alerts: dict[str, datetime] = {}
 
         # Circuit breaker state
         self.circuit_breaker_open = False
@@ -133,7 +130,7 @@ class AlertManager:
             logger.error(f"Failed to initialize Firestore client: {e}")
             self.db = None
 
-    def _load_configuration(self) -> Dict[str, Any]:
+    def _load_configuration(self) -> dict[str, Any]:
         """Load alert configuration from Firestore.
 
         Returns:
@@ -164,7 +161,7 @@ class AlertManager:
             logger.error(f"Failed to load alert configuration: {e}")
             return self._get_default_config()
 
-    def _get_default_config(self) -> Dict[str, Any]:
+    def _get_default_config(self) -> dict[str, Any]:
         """Get default alert configuration.
 
         Returns:
@@ -190,7 +187,7 @@ class AlertManager:
             "circuit_breaker_threshold": 100,
         }
 
-    def _save_configuration(self, config: Dict[str, Any]):
+    def _save_configuration(self, config: dict[str, Any]):
         """Save alert configuration to Firestore.
 
         Args:
@@ -211,9 +208,9 @@ class AlertManager:
         self,
         current_tokens: int,
         max_tokens: int,
-        context: Optional[str] = None,
-        agent_name: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        context: str | None = None,
+        agent_name: str | None = None,
+    ) -> list[dict[str, Any]]:
         """Check token usage against alert thresholds.
 
         Args:
@@ -259,9 +256,9 @@ class AlertManager:
         percentage: float,
         current_tokens: int,
         max_tokens: int,
-        context: Optional[str],
-        agent_name: Optional[str],
-    ) -> Optional[Dict[str, Any]]:
+        context: str | None,
+        agent_name: str | None,
+    ) -> dict[str, Any] | None:
         """Check if circuit breaker should be triggered.
 
         Args:
@@ -307,8 +304,8 @@ class AlertManager:
     def _should_trigger_alert(
         self,
         percentage: float,
-        threshold_config: Dict[str, Any],
-        context: Optional[str],
+        threshold_config: dict[str, Any],
+        context: str | None,
     ) -> bool:
         """Check if alert should be triggered based on threshold and cooldown.
 
@@ -331,7 +328,7 @@ class AlertManager:
 
         return True
 
-    def _is_in_cooldown(self, threshold_pct: float, context: Optional[str]) -> bool:
+    def _is_in_cooldown(self, threshold_pct: float, context: str | None) -> bool:
         """Check if alert is in cooldown period.
 
         Args:
@@ -354,13 +351,13 @@ class AlertManager:
 
     def _create_and_send_threshold_alert(
         self,
-        threshold_config: Dict[str, Any],
+        threshold_config: dict[str, Any],
         percentage: float,
         current_tokens: int,
         max_tokens: int,
-        context: Optional[str],
-        agent_name: Optional[str],
-    ) -> Dict[str, Any]:
+        context: str | None,
+        agent_name: str | None,
+    ) -> dict[str, Any]:
         """Create and send alert for threshold breach.
 
         Args:
@@ -397,10 +394,10 @@ class AlertManager:
         percentage: float,
         current_tokens: int,
         max_tokens: int,
-        message: Optional[str],
-        context: Optional[str],
-        agent_name: Optional[str],
-    ) -> Dict[str, Any]:
+        message: str | None,
+        context: str | None,
+        agent_name: str | None,
+    ) -> dict[str, Any]:
         """Create alert dictionary.
 
         Args:
@@ -434,7 +431,7 @@ class AlertManager:
 
         return alert
 
-    def _send_alert(self, alert: Dict[str, Any], channels: List[AlertChannel]):
+    def _send_alert(self, alert: dict[str, Any], channels: list[AlertChannel]):
         """Send alert through specified channels.
 
         Args:
@@ -454,7 +451,7 @@ class AlertManager:
             except Exception as e:
                 logger.error(f"Failed to send alert via {channel.value}: {e}")
 
-    def _send_logging_alert(self, alert: Dict[str, Any]):
+    def _send_logging_alert(self, alert: dict[str, Any]):
         """Send alert via logging.
 
         Args:
@@ -473,7 +470,7 @@ class AlertManager:
             logger.info(f"[ALERT] {message}")
 
     @with_write_retry(operation_name="send_firestore_alert")
-    def _send_firestore_alert(self, alert: Dict[str, Any]):
+    def _send_firestore_alert(self, alert: dict[str, Any]):
         """Store alert in Firestore.
 
         Args:
@@ -490,7 +487,7 @@ class AlertManager:
         except Exception as e:
             logger.error(f"Failed to store alert in Firestore: {e}")
 
-    def _send_email_alert(self, alert: Dict[str, Any]):
+    def _send_email_alert(self, alert: dict[str, Any]):
         """Send alert via email.
 
         This is a stub implementation that serves as an extension point for email
@@ -552,7 +549,7 @@ class AlertManager:
         # TODO: Implement actual email sending based on your infrastructure
         # See examples in the docstring above
 
-    def _send_webhook_alert(self, alert: Dict[str, Any]):
+    def _send_webhook_alert(self, alert: dict[str, Any]):
         """Send alert via webhook.
 
         Args:
@@ -596,9 +593,9 @@ class AlertManager:
 
     def update_configuration(
         self,
-        thresholds: Optional[List[Dict[str, Any]]] = None,
-        notification_channels: Optional[Dict[str, Any]] = None,
-        enabled: Optional[bool] = None,
+        thresholds: list[dict[str, Any]] | None = None,
+        notification_channels: dict[str, Any] | None = None,
+        enabled: bool | None = None,
     ):
         """Update alert configuration.
 
@@ -619,7 +616,7 @@ class AlertManager:
         self._save_configuration(self.config)
         logger.info(f"Updated alert configuration for account {self.account_id}")
 
-    def load(self) -> Dict[str, Any]:
+    def load(self) -> dict[str, Any]:
         """Load alert configuration from Firestore.
 
         Returns:
@@ -628,7 +625,7 @@ class AlertManager:
         self.config = self._load_configuration()
         return self.config
 
-    def save(self, config: Dict[str, Any]) -> None:
+    def save(self, config: dict[str, Any]) -> None:
         """Save alert configuration to Firestore.
 
         Args:
@@ -638,8 +635,8 @@ class AlertManager:
 
     @with_read_retry(operation_name="get_recent_alerts")
     def get_recent_alerts(
-        self, hours: int = 24, severity_filter: Optional[AlertSeverity] = None
-    ) -> List[Dict[str, Any]]:
+        self, hours: int = 24, severity_filter: AlertSeverity | None = None
+    ) -> list[dict[str, Any]]:
         """Get recent alerts from Firestore.
 
         Args:

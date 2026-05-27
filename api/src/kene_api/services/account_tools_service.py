@@ -74,9 +74,7 @@ def _resolve_tools_yaml_path() -> Path:
             return path
         # Env var was set but points at nothing — fail loudly rather than
         # silently fall through to the walk-up.
-        raise FileNotFoundError(
-            f"{_TOOLS_YAML_ENV_VAR}={override!r} does not exist"
-        )
+        raise FileNotFoundError(f"{_TOOLS_YAML_ENV_VAR}={override!r} does not exist")
 
     here = Path(__file__).resolve()
     for ancestor in (here, *here.parents):
@@ -125,7 +123,9 @@ def _parse_catalogue(path: Path) -> dict[str, list[dict[str, Any]]]:
     consistent with the rest of the service's tolerance for partial inputs.
     """
     if not path.exists():
-        logger.warning("Tool catalogue not found at %s; returning empty inventory", path)
+        logger.warning(
+            "Tool catalogue not found at %s; returning empty inventory", path
+        )
         return {"tools": [], "function_tools": []}
     with open(path) as f:
         raw = yaml.safe_load(f) or {}
@@ -193,9 +193,7 @@ def _connected_integrations_for_account(
                 .get()
             )
         except Exception as exc:
-            logger.warning(
-                "Failed to read integration_credentials/%s: %s", doc_id, exc
-            )
+            logger.warning("Failed to read integration_credentials/%s: %s", doc_id, exc)
             continue
         if doc.exists:
             connected.add(integration_type)

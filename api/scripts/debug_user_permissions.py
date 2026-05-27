@@ -32,7 +32,7 @@ if user_doc.exists:
     user_data = user_doc.to_dict()
     print(f"User ID: {user_id}")
     print(f"Email: {user_data.get('email', 'N/A')}")
-    print(f"\nPermissions structure:")
+    print("\nPermissions structure:")
     print(json.dumps(user_data.get("permissions", {}), indent=2))
     print(f"\nFull user data keys: {list(user_data.keys())}")
 else:

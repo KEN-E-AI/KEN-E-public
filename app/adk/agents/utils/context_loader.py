@@ -56,8 +56,14 @@ class HierarchicalContextManager:
     """
 
     AVAILABLE_SECTIONS: ClassVar[list[str]] = [
-        "products", "icps", "competitors", "campaigns",
-        "strategies", "brand", "performance", "calendar"
+        "products",
+        "icps",
+        "competitors",
+        "campaigns",
+        "strategies",
+        "brand",
+        "performance",
+        "calendar",
     ]
 
     MAX_EXECUTIVE_TOKENS: ClassVar[int] = 5_000
@@ -352,9 +358,7 @@ def _fetch_context_from_neo4j(account_id: str) -> dict | None:
 
     try:
         connection = Neo4jConnection()
-        result = connection.execute_query(
-            ORG_CONTEXT_QUERY, {"account_id": account_id}
-        )
+        result = connection.execute_query(ORG_CONTEXT_QUERY, {"account_id": account_id})
         connection.close()
 
         context = extract_context_from_result(result)
@@ -613,5 +617,3 @@ def _get_mock_campaigns(account_id: str) -> list[dict[str, Any]]:
             },
         },
     ]
-
-

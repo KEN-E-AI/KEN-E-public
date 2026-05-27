@@ -1082,7 +1082,10 @@ class TestExtractPipelineResult:
 
     def test_approved_branch(self):
         """Empty feedback → approved."""
-        state = {"ga_review_draft": "The traffic increased 12%.", "ga_review_feedback": ""}
+        state = {
+            "ga_review_draft": "The traffic increased 12%.",
+            "ga_review_feedback": "",
+        }
         result = extract_pipeline_result(state, "ga_review")
         assert result == {"result": "The traffic increased 12%.", "approved": True}
         assert "warning" not in result
@@ -1429,6 +1432,7 @@ class TestHallucinatedApprovalDetection:
     def test_approval_text_without_escalate_logs_warning(self, caplog):
         """'approved' in text + no escalate → warning logged."""
         import logging
+
         event = _make_reviewer_event("news_review", "All criteria are approved.")
 
         with patch.object(_rp, "_emit_hallucination_span"):
@@ -1488,7 +1492,9 @@ class TestHallucinatedApprovalDetection:
 
     def test_conditional_exit_loop_mention_does_not_trigger(self):
         """Reasoning about exit_loop ('would call', not declared) is not a hallucination."""
-        event = _make_reviewer_event("p", "I would call exit_loop but the draft needs work.")
+        event = _make_reviewer_event(
+            "p", "I would call exit_loop but the draft needs work."
+        )
 
         with patch.object(_rp, "_emit_hallucination_span") as mock_span:
             _check_hallucinated_approval([event], "p")

@@ -33,34 +33,33 @@ async def test_neo4j_connection():
     neo4j_username = os.getenv("NEO4J_USERNAME", "neo4j")
     neo4j_password = os.getenv("NEO4J_PASSWORD", "password")
     neo4j_database = os.getenv("NEO4J_DATABASE", "neo4j")
-    
+
     print(f"\n🔍 Testing Neo4j connectivity in {environment} environment")
     print(f"   URI: {neo4j_uri}")
     print(f"   Username: {neo4j_username}")
     print(f"   Database: {neo4j_database}")
     print(f"   Password: {'*' * len(neo4j_password) if neo4j_password else 'Not set'}")
-    
+
     driver = None
     try:
         # Create driver
         print("\n📡 Creating Neo4j driver...")
         driver = AsyncGraphDatabase.driver(
-            neo4j_uri,
-            auth=(neo4j_username, neo4j_password)
+            neo4j_uri, auth=(neo4j_username, neo4j_password)
         )
-        
+
         # Verify connectivity
         print("🔗 Verifying connectivity...")
         await driver.verify_connectivity()
         print("✅ Successfully connected to Neo4j!")
-        
+
         # Test a simple query
         print("\n🔍 Testing database access...")
         async with driver.session(database=neo4j_database) as session:
             result = await session.run("RETURN 'Hello Neo4j' as message")
             record = await result.single()
             print(f"✅ Query successful: {record['message']}")
-        
+
         # Check if Organization node label exists
         print("\n🔍 Checking Organization nodes...")
         async with driver.session(database=neo4j_database) as session:
@@ -70,9 +69,9 @@ async def test_neo4j_connection():
                 LIMIT 1
             """)
             record = await result.single()
-            org_count = record['count']
+            org_count = record["count"]
             print(f"✅ Found {org_count} Organization nodes")
-        
+
         # Test create query (without actually creating)
         print("\n🔍 Testing CREATE query syntax...")
         test_query = """
@@ -90,30 +89,33 @@ async def test_neo4j_connection():
         })
         RETURN org
         """
-        
+
         # Just validate the query syntax without executing
         async with driver.session(database=neo4j_database) as session:
             try:
                 # Use EXPLAIN to validate query without executing
                 explain_query = f"EXPLAIN {test_query}"
-                await session.run(explain_query, {
-                    "organization_id": "test_id",
-                    "organization_name": "Test Org",
-                    "plan": "Free",
-                    "website": "",
-                    "company_size": "",
-                    "agency": False,
-                    "child_organizations": [],
-                    "subscription": "{}",
-                    "billing": "{}",
-                    "team": "{}"
-                })
+                await session.run(
+                    explain_query,
+                    {
+                        "organization_id": "test_id",
+                        "organization_name": "Test Org",
+                        "plan": "Free",
+                        "website": "",
+                        "company_size": "",
+                        "agency": False,
+                        "child_organizations": [],
+                        "subscription": "{}",
+                        "billing": "{}",
+                        "team": "{}",
+                    },
+                )
                 print("✅ CREATE query syntax is valid")
             except Exception as e:
                 print(f"❌ CREATE query validation failed: {e}")
-        
+
         return True
-        
+
     except Neo4jError as e:
         print(f"\n❌ Neo4j Error: {e}")
         print(f"   Error code: {e.code}")
@@ -131,20 +133,24 @@ async def test_neo4j_connection():
 async def check_api_health():
     """Check the API health endpoint."""
     import aiohttp
-    
+
     api_base_url = os.getenv("API_BASE_URL", "http://localhost:8000")
     health_url = f"{api_base_url}/health"
-    
+
     print(f"\n🔍 Checking API health at {health_url}")
-    
+
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(health_url) as response:
                 if response.status == 200:
                     data = await response.json()
                     print(f"✅ API Status: {data.get('status', 'unknown')}")
-                    print(f"   Neo4j: {data.get('services', {}).get('neo4j', 'unknown')}")
-                    print(f"   Firestore: {data.get('services', {}).get('firestore', 'unknown')}")
+                    print(
+                        f"   Neo4j: {data.get('services', {}).get('neo4j', 'unknown')}"
+                    )
+                    print(
+                        f"   Firestore: {data.get('services', {}).get('firestore', 'unknown')}"
+                    )
                 else:
                     print(f"❌ API returned status {response.status}")
                     text = await response.text()
@@ -158,18 +164,18 @@ async def main():
     print("=" * 60)
     print("Neo4j Connectivity Diagnostic Tool")
     print("=" * 60)
-    
+
     # Test Neo4j connection
     neo4j_ok = await test_neo4j_connection()
-    
+
     # Check API health
     await check_api_health()
-    
+
     # Summary
     print("\n" + "=" * 60)
     print("SUMMARY")
     print("=" * 60)
-    
+
     if neo4j_ok:
         print("✅ Neo4j connection is working properly")
         print("\n💡 If you're still getting 503 errors, check:")

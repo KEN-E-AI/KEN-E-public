@@ -10,11 +10,11 @@ Downloaded from W&B Weave and adapted for local use.
 import json
 import logging
 import os
-from pydantic import BaseModel
-import vertexai
-from vertexai.generative_models import GenerationConfig, GenerativeModel
-import weave
 
+import vertexai
+import weave
+from pydantic import BaseModel
+from vertexai.generative_models import GenerationConfig, GenerativeModel
 
 logger = logging.getLogger(__name__)
 
@@ -52,18 +52,18 @@ class CompanyOverviewLengthScorer(weave.Scorer):
         """
         try:
             # Extract company_overview_summary from model output
-            company_overview_summary = output.get('company_overview_summary', '')
+            company_overview_summary = output.get("company_overview_summary", "")
 
             char_count = len(company_overview_summary)
             score = 1 if 800 <= char_count <= 4000 else 0
 
             return {
-                'score': score,
-                'char_count': char_count,
+                "score": score,
+                "char_count": char_count,
             }
         except Exception as e:
             logger.error(f"Error in length scorer: {e}")
-            return {'score': 0, 'error': str(e)}
+            return {"score": 0, "error": str(e)}
 
 
 class ProductServiceDescriptionScorer(weave.Scorer):
@@ -82,24 +82,24 @@ class ProductServiceDescriptionScorer(weave.Scorer):
         """
         try:
             # Extract company_overview_summary from model output
-            company_overview_summary = output.get('company_overview_summary', '')
+            company_overview_summary = output.get("company_overview_summary", "")
 
             # Skip if empty
             if not company_overview_summary:
                 return {
-                    'score': 0,
-                    'assessment': 'no',
-                    'reasoning': 'Empty or missing summary',
+                    "score": 0,
+                    "assessment": "no",
+                    "reasoning": "Empty or missing summary",
                 }
 
             # Initialize Vertex AI (uses ADC automatically)
             vertexai.init(
-                project=os.getenv('GOOGLE_CLOUD_PROJECT', 'ken-e-dev'),
-                location=os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1'),
+                project=os.getenv("GOOGLE_CLOUD_PROJECT", "ken-e-dev"),
+                location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
             )
 
             # Configure Gemini via Vertex AI
-            model = GenerativeModel('gemini-2.5-pro')
+            model = GenerativeModel("gemini-2.5-pro")
 
             prompt = f"""You are evaluating a company overview summary.
 
@@ -135,20 +135,22 @@ Provide your assessment as JSON with:
                 response_schema=ProductServiceAssessment.model_json_schema(),
             )
 
-            response = model.generate_content(prompt, generation_config=generation_config)
+            response = model.generate_content(
+                prompt, generation_config=generation_config
+            )
             assessment = json.loads(response.text)
 
             # Convert yes/no to 1/0
-            score = 1 if assessment['describes_product_or_service'] == 'yes' else 0
+            score = 1 if assessment["describes_product_or_service"] == "yes" else 0
 
             return {
-                'score': score,
-                'reasoning': assessment['reasoning'],
+                "score": score,
+                "reasoning": assessment["reasoning"],
             }
 
         except Exception as e:
             logger.error(f"Error in LLM judge scorer: {e}")
-            return {'score': 0, 'error': str(e)}
+            return {"score": 0, "error": str(e)}
 
 
 class FoundingDateScorer(weave.Scorer):
@@ -166,17 +168,17 @@ class FoundingDateScorer(weave.Scorer):
             dict with score (1 for yes, 0 for no) and reasoning
         """
         try:
-            company_overview_summary = output.get('company_overview_summary', '')
+            company_overview_summary = output.get("company_overview_summary", "")
 
             if not company_overview_summary:
-                return {'score': 0, 'reasoning': 'Empty or missing summary'}
+                return {"score": 0, "reasoning": "Empty or missing summary"}
 
             vertexai.init(
-                project=os.getenv('GOOGLE_CLOUD_PROJECT', 'ken-e-dev'),
-                location=os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1'),
+                project=os.getenv("GOOGLE_CLOUD_PROJECT", "ken-e-dev"),
+                location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
             )
 
-            model = GenerativeModel('gemini-2.5-pro')
+            model = GenerativeModel("gemini-2.5-pro")
 
             prompt = f"""You are evaluating a company overview summary.
 
@@ -205,16 +207,18 @@ Provide your assessment as JSON with:
                 response_schema=ScorerAssessment.model_json_schema(),
             )
 
-            response = model.generate_content(prompt, generation_config=generation_config)
+            response = model.generate_content(
+                prompt, generation_config=generation_config
+            )
             assessment = json.loads(response.text)
 
-            score = 1 if assessment['passes'] == 'yes' else 0
+            score = 1 if assessment["passes"] == "yes" else 0
 
-            return {'score': score, 'reasoning': assessment['reasoning']}
+            return {"score": score, "reasoning": assessment["reasoning"]}
 
         except Exception as e:
             logger.error(f"Error in founding date scorer: {e}")
-            return {'score': 0, 'error': str(e)}
+            return {"score": 0, "error": str(e)}
 
 
 class MissionStatementScorer(weave.Scorer):
@@ -232,17 +236,17 @@ class MissionStatementScorer(weave.Scorer):
             dict with score (1 for yes, 0 for no) and reasoning
         """
         try:
-            company_overview_summary = output.get('company_overview_summary', '')
+            company_overview_summary = output.get("company_overview_summary", "")
 
             if not company_overview_summary:
-                return {'score': 0, 'reasoning': 'Empty or missing summary'}
+                return {"score": 0, "reasoning": "Empty or missing summary"}
 
             vertexai.init(
-                project=os.getenv('GOOGLE_CLOUD_PROJECT', 'ken-e-dev'),
-                location=os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1'),
+                project=os.getenv("GOOGLE_CLOUD_PROJECT", "ken-e-dev"),
+                location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
             )
 
-            model = GenerativeModel('gemini-2.5-pro')
+            model = GenerativeModel("gemini-2.5-pro")
 
             prompt = f"""You are evaluating a company overview summary.
 
@@ -270,16 +274,18 @@ Provide your assessment as JSON with:
                 response_schema=ScorerAssessment.model_json_schema(),
             )
 
-            response = model.generate_content(prompt, generation_config=generation_config)
+            response = model.generate_content(
+                prompt, generation_config=generation_config
+            )
             assessment = json.loads(response.text)
 
-            score = 1 if assessment['passes'] == 'yes' else 0
+            score = 1 if assessment["passes"] == "yes" else 0
 
-            return {'score': score, 'reasoning': assessment['reasoning']}
+            return {"score": score, "reasoning": assessment["reasoning"]}
 
         except Exception as e:
             logger.error(f"Error in mission statement scorer: {e}")
-            return {'score': 0, 'error': str(e)}
+            return {"score": 0, "error": str(e)}
 
 
 class BrandIdentityScorer(weave.Scorer):
@@ -297,17 +303,17 @@ class BrandIdentityScorer(weave.Scorer):
             dict with score (1 for yes, 0 for no) and reasoning
         """
         try:
-            company_overview_summary = output.get('company_overview_summary', '')
+            company_overview_summary = output.get("company_overview_summary", "")
 
             if not company_overview_summary:
-                return {'score': 0, 'reasoning': 'Empty or missing summary'}
+                return {"score": 0, "reasoning": "Empty or missing summary"}
 
             vertexai.init(
-                project=os.getenv('GOOGLE_CLOUD_PROJECT', 'ken-e-dev'),
-                location=os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1'),
+                project=os.getenv("GOOGLE_CLOUD_PROJECT", "ken-e-dev"),
+                location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
             )
 
-            model = GenerativeModel('gemini-2.5-pro')
+            model = GenerativeModel("gemini-2.5-pro")
 
             prompt = f"""You are evaluating a company overview summary.
 
@@ -344,16 +350,18 @@ Provide your assessment as JSON with:
                 response_schema=ScorerAssessment.model_json_schema(),
             )
 
-            response = model.generate_content(prompt, generation_config=generation_config)
+            response = model.generate_content(
+                prompt, generation_config=generation_config
+            )
             assessment = json.loads(response.text)
 
-            score = 1 if assessment['passes'] == 'yes' else 0
+            score = 1 if assessment["passes"] == "yes" else 0
 
-            return {'score': score, 'reasoning': assessment['reasoning']}
+            return {"score": score, "reasoning": assessment["reasoning"]}
 
         except Exception as e:
             logger.error(f"Error in brand identity scorer: {e}")
-            return {'score': 0, 'error': str(e)}
+            return {"score": 0, "error": str(e)}
 
 
 class TargetCustomerScorer(weave.Scorer):
@@ -371,17 +379,17 @@ class TargetCustomerScorer(weave.Scorer):
             dict with score (1 for yes, 0 for no) and reasoning
         """
         try:
-            company_overview_summary = output.get('company_overview_summary', '')
+            company_overview_summary = output.get("company_overview_summary", "")
 
             if not company_overview_summary:
-                return {'score': 0, 'reasoning': 'Empty or missing summary'}
+                return {"score": 0, "reasoning": "Empty or missing summary"}
 
             vertexai.init(
-                project=os.getenv('GOOGLE_CLOUD_PROJECT', 'ken-e-dev'),
-                location=os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1'),
+                project=os.getenv("GOOGLE_CLOUD_PROJECT", "ken-e-dev"),
+                location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
             )
 
-            model = GenerativeModel('gemini-2.5-pro')
+            model = GenerativeModel("gemini-2.5-pro")
 
             prompt = f"""You are evaluating a company overview summary.
 
@@ -417,16 +425,18 @@ Provide your assessment as JSON with:
                 response_schema=ScorerAssessment.model_json_schema(),
             )
 
-            response = model.generate_content(prompt, generation_config=generation_config)
+            response = model.generate_content(
+                prompt, generation_config=generation_config
+            )
             assessment = json.loads(response.text)
 
-            score = 1 if assessment['passes'] == 'yes' else 0
+            score = 1 if assessment["passes"] == "yes" else 0
 
-            return {'score': score, 'reasoning': assessment['reasoning']}
+            return {"score": score, "reasoning": assessment["reasoning"]}
 
         except Exception as e:
             logger.error(f"Error in target customer scorer: {e}")
-            return {'score': 0, 'error': str(e)}
+            return {"score": 0, "error": str(e)}
 
 
 class CompleteThoughtsScorer(weave.Scorer):
@@ -444,17 +454,17 @@ class CompleteThoughtsScorer(weave.Scorer):
             dict with score (1 for yes, 0 for no) and reasoning
         """
         try:
-            company_overview_summary = output.get('company_overview_summary', '')
+            company_overview_summary = output.get("company_overview_summary", "")
 
             if not company_overview_summary:
-                return {'score': 0, 'reasoning': 'Empty or missing summary'}
+                return {"score": 0, "reasoning": "Empty or missing summary"}
 
             vertexai.init(
-                project=os.getenv('GOOGLE_CLOUD_PROJECT', 'ken-e-dev'),
-                location=os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1'),
+                project=os.getenv("GOOGLE_CLOUD_PROJECT", "ken-e-dev"),
+                location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
             )
 
-            model = GenerativeModel('gemini-2.5-pro')
+            model = GenerativeModel("gemini-2.5-pro")
 
             prompt = f"""You are evaluating a company overview summary.
 
@@ -486,13 +496,15 @@ Provide your assessment as JSON with:
                 response_schema=ScorerAssessment.model_json_schema(),
             )
 
-            response = model.generate_content(prompt, generation_config=generation_config)
+            response = model.generate_content(
+                prompt, generation_config=generation_config
+            )
             assessment = json.loads(response.text)
 
-            score = 1 if assessment['passes'] == 'yes' else 0
+            score = 1 if assessment["passes"] == "yes" else 0
 
-            return {'score': score, 'reasoning': assessment['reasoning']}
+            return {"score": score, "reasoning": assessment["reasoning"]}
 
         except Exception as e:
             logger.error(f"Error in complete thoughts scorer: {e}")
-            return {'score': 0, 'error': str(e)}
+            return {"score": 0, "error": str(e)}

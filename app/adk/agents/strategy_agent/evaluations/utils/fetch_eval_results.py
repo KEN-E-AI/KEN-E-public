@@ -6,6 +6,7 @@ Usage:
 """
 
 import argparse
+
 import weave
 from strategy_agent.env_loader import load_env
 
@@ -23,10 +24,10 @@ def fetch_evaluation_results(eval_call_id: str) -> None:
     # Get the evaluation call
     call = client.get_call(eval_call_id)
 
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print(f"Evaluation: {call.op_name}")
     print(f"Call ID: {eval_call_id}")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
 
     # Get output/results
     output = call.output
@@ -49,7 +50,7 @@ def fetch_evaluation_results(eval_call_id: str) -> None:
         print(f"\n{child.op_name}:")
         if child.output:
             print(f"  Output: {child.output}")
-        if hasattr(child, 'summary') and child.summary:
+        if hasattr(child, "summary") and child.summary:
             print(f"  Summary: {child.summary}")
 
 
@@ -66,18 +67,21 @@ def list_recent_evaluations(limit: int = 10) -> None:
     # Get calls for Evaluation operations using the correct API
     calls_iter = client.get_calls()
 
-    print(f"\n{'='*80}")
+    print(f"\n{'=' * 80}")
     print(f"Recent Evaluations (last {limit})")
-    print(f"{'='*80}\n")
+    print(f"{'=' * 80}\n")
 
     count = 0
     for call in calls_iter:
         # Filter for evaluation-related calls
-        if 'eval' in call.op_name.lower() or call.op_name == 'weave:///Evaluation/evaluate':
+        if (
+            "eval" in call.op_name.lower()
+            or call.op_name == "weave:///Evaluation/evaluate"
+        ):
             print(f"Name: {call.op_name}")
             print(f"Call ID: {call.id}")
             print(f"Started: {call.started_at}")
-            if hasattr(call, 'display_name') and call.display_name:
+            if hasattr(call, "display_name") and call.display_name:
                 print(f"Display Name: {call.display_name}")
             print("-" * 80)
 
@@ -88,34 +92,33 @@ def list_recent_evaluations(limit: int = 10) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description='Fetch and analyze evaluation results from W&B Weave'
+        description="Fetch and analyze evaluation results from W&B Weave"
     )
 
-    subparsers = parser.add_subparsers(dest='command', help='Command to run')
+    subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
     # Fetch specific evaluation
-    fetch_parser = subparsers.add_parser('fetch', help='Fetch specific evaluation results')
+    fetch_parser = subparsers.add_parser(
+        "fetch", help="Fetch specific evaluation results"
+    )
     fetch_parser.add_argument(
-        '--eval_call_id',
+        "--eval_call_id",
         type=str,
         required=True,
-        help='Call ID of the evaluation to fetch'
+        help="Call ID of the evaluation to fetch",
     )
 
     # List recent evaluations
-    list_parser = subparsers.add_parser('list', help='List recent evaluations')
+    list_parser = subparsers.add_parser("list", help="List recent evaluations")
     list_parser.add_argument(
-        '--limit',
-        type=int,
-        default=10,
-        help='Number of recent evaluations to list'
+        "--limit", type=int, default=10, help="Number of recent evaluations to list"
     )
 
     args = parser.parse_args()
 
-    if args.command == 'fetch':
+    if args.command == "fetch":
         fetch_evaluation_results(args.eval_call_id)
-    elif args.command == 'list':
+    elif args.command == "list":
         list_recent_evaluations(args.limit)
     else:
         parser.print_help()

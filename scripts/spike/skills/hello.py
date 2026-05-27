@@ -12,6 +12,7 @@ arbitrary-precision integer — are impossible for an LLM to fake accurately:
   * big_int_check must equal 9444732965739290427391 (2**73 - 1); the common
     LLM hallucination is 9223372036854775807 (2**63 - 1 / INT64_MAX).
 """
+
 import hashlib
 import os
 import time
@@ -24,4 +25,4 @@ _digest = hashlib.sha256(_payload).hexdigest()
 print(f"time_ns={_ns}")
 print(f"urandom_hex={_rand.hex()}")
 print(f"sha256_proof={_digest}")
-print(f"big_int_check={2 ** 73 - 1}")
+print(f"big_int_check={2**73 - 1}")

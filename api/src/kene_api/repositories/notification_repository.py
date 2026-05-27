@@ -7,7 +7,6 @@ from typing import Any
 from ..models.kene_models import (
     Notification,
     NotificationStatus,
-    NotificationWithStatus,
     UserNotificationPreferences,
 )
 

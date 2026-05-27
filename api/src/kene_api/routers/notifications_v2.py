@@ -4,17 +4,14 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from google.cloud import firestore
 
 from ..auth import UserContext
 from ..auth.user_context import get_current_user_context
 from ..database import get_neo4j_service
 from ..firestore import get_firestore_service
 from ..models.kene_models import (
-    ACCOUNT_ID_DESCRIPTION,
     CreateNotificationRequest,
     CreateNotificationResponse,
-    NotificationStatus,
     NotificationWithStatus,
     SuccessResponse,
     UpdateNotificationStatusRequest,

@@ -47,7 +47,9 @@ if _sk4_mod is not None:
     if isinstance(_mod_val, str) and _mod_val.startswith("SK4_SENT_A_mod_"):
         print(f"[B] mod: LEAK ({_mod_val})")
     else:
-        print(f"[B] mod: ISOLATED (module present but sentinel not recognised: {_mod_val!r})")
+        print(
+            f"[B] mod: ISOLATED (module present but sentinel not recognised: {_mod_val!r})"
+        )
 else:
     print("[B] mod: ISOLATED")
 

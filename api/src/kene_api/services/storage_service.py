@@ -159,30 +159,36 @@ class StorageService:
 
                 # Determine correct content type
                 content_type = file.content_type
-                
+
                 # Fix common content type issues
                 if file.filename:
-                    file_ext = file.filename.lower().split('.')[-1] if '.' in file.filename else ''
-                    
+                    file_ext = (
+                        file.filename.lower().split(".")[-1]
+                        if "." in file.filename
+                        else ""
+                    )
+
                     # Map file extensions to correct content types
                     content_type_map = {
-                        'pdf': 'application/pdf',
-                        'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                        'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-                        'txt': 'text/plain',
-                        'png': 'image/png',
-                        'jpg': 'image/jpeg',
-                        'jpeg': 'image/jpeg'
+                        "pdf": "application/pdf",
+                        "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                        "txt": "text/plain",
+                        "png": "image/png",
+                        "jpg": "image/jpeg",
+                        "jpeg": "image/jpeg",
                     }
-                    
+
                     # Override content type based on file extension if it's wrong
                     if file_ext in content_type_map:
                         correct_content_type = content_type_map[file_ext]
                         if content_type != correct_content_type:
-                            logger.debug(f"Correcting content type for {file.filename} from {content_type} to {correct_content_type}")
+                            logger.debug(
+                                f"Correcting content type for {file.filename} from {content_type} to {correct_content_type}"
+                            )
                             content_type = correct_content_type
-                
+
                 # Set content type on blob
                 if content_type:
                     blob.content_type = content_type
@@ -343,14 +349,15 @@ class StorageService:
 
             # Check if placeholder already exists
             if placeholder_blob.exists():
-                logger.debug(f"Account folder for {account_id} already exists in {bucket_name}")
+                logger.debug(
+                    f"Account folder for {account_id} already exists in {bucket_name}"
+                )
                 return True
 
             # Create placeholder file with minimal content
             placeholder_content = f"Account folder created for {account_id}\nCreated at: {datetime.now().isoformat()}"
             placeholder_blob.upload_from_string(
-                placeholder_content,
-                content_type="text/plain"
+                placeholder_content, content_type="text/plain"
             )
 
             logger.info(

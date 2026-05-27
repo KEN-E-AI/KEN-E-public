@@ -260,14 +260,16 @@ def main() -> None:
 
     if self_test:
         print(
-            json.dumps({
-                "vector": "meta",
-                "context": "self-test",
-                "note": (
-                    "Running outside sandbox — results reflect host VM reachability, "
-                    "NOT sandbox egress policy.  Do not cite these as Q1 evidence."
-                ),
-            }),
+            json.dumps(
+                {
+                    "vector": "meta",
+                    "context": "self-test",
+                    "note": (
+                        "Running outside sandbox — results reflect host VM reachability, "
+                        "NOT sandbox egress policy.  Do not cite these as Q1 evidence."
+                    ),
+                }
+            ),
             flush=True,
         )
 

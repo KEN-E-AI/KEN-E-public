@@ -15,7 +15,6 @@ from google.cloud import firestore
 
 # from google.cloud import kms  # TODO: Install when implementing KMS
 # from google.cloud.kms import KeyManagementServiceClient
-
 from ..metrics.oauth_metrics import measure_encryption_operation
 
 logger = logging.getLogger(__name__)
@@ -33,6 +32,7 @@ class EncryptionService:
         if USE_LOCAL_ENCRYPTION:
             # For local development, use a fixed key (should be in env vars in production)
             from shared.secrets import get_env_or_secret
+
             encryption_key = get_env_or_secret("ENCRYPTION_KEY")
             if not encryption_key:
                 # Generate a new key for development
@@ -275,9 +275,7 @@ class IntegrationCredentialsService:
             logger.error(f"Failed to update credentials: {e}")
             raise
 
-    async def delete_credentials(
-        self, account_id: str, integration_type: str
-    ) -> None:
+    async def delete_credentials(self, account_id: str, integration_type: str) -> None:
         """
         Delete credentials for an integration.
 

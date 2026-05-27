@@ -80,7 +80,7 @@ CHAT_FLAGS_TO_REGISTER: list[FeatureFlagWriteRequest] = [
 # deliberate choice rather than silently skipping the enumeration.
 CHAT_FLAGS_SCOPED_OUT_OF_V1: frozenset[str] = frozenset(
     {
-        "chat_manual_compaction_enabled",   # Compact-now deferred beyond v1
+        "chat_manual_compaction_enabled",  # Compact-now deferred beyond v1
         "chat_permissions_and_tools_ui_enabled",  # Permissions Approved card not rendered in v1
     }
 )

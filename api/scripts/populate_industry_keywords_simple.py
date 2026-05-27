@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Simple script to populate industry keywords in Firestore."""
 
-from datetime import datetime
-from google.cloud import firestore
 import os
+from datetime import datetime
+
 from dotenv import load_dotenv
+from google.cloud import firestore
 
 # Load environment variables
 load_dotenv()
@@ -18,220 +19,426 @@ industry_keywords_data = [
         "doc_id": "agriculture_forestry_fishing_and_hunting",
         "industry": "Agriculture, Forestry, Fishing and Hunting",
         "keywords": [
-            "agriculture", "farming", "forestry", "fishing", "hunting",
-            "crops", "livestock", "harvest", "agricultural", "farm",
-            "ranching", "aquaculture", "timber", "logging", "nursery",
-            "greenhouse", "organic farming", "sustainable agriculture"
-        ]
+            "agriculture",
+            "farming",
+            "forestry",
+            "fishing",
+            "hunting",
+            "crops",
+            "livestock",
+            "harvest",
+            "agricultural",
+            "farm",
+            "ranching",
+            "aquaculture",
+            "timber",
+            "logging",
+            "nursery",
+            "greenhouse",
+            "organic farming",
+            "sustainable agriculture",
+        ],
     },
     {
         "doc_id": "utilities",
         "industry": "Utilities",
         "keywords": [
-            "utilities", "electricity", "power generation", "natural gas",
-            "water supply", "sewage", "waste management", "energy",
-            "power grid", "renewable energy", "solar power", "wind power",
-            "hydroelectric", "nuclear power", "utility services"
-        ]
+            "utilities",
+            "electricity",
+            "power generation",
+            "natural gas",
+            "water supply",
+            "sewage",
+            "waste management",
+            "energy",
+            "power grid",
+            "renewable energy",
+            "solar power",
+            "wind power",
+            "hydroelectric",
+            "nuclear power",
+            "utility services",
+        ],
     },
     {
         "doc_id": "construction",
         "industry": "Construction",
         "keywords": [
-            "construction", "building", "contractor", "renovation",
-            "infrastructure", "residential construction", "commercial construction",
-            "civil engineering", "demolition", "excavation", "concrete",
-            "steel construction", "green building", "construction management"
-        ]
+            "construction",
+            "building",
+            "contractor",
+            "renovation",
+            "infrastructure",
+            "residential construction",
+            "commercial construction",
+            "civil engineering",
+            "demolition",
+            "excavation",
+            "concrete",
+            "steel construction",
+            "green building",
+            "construction management",
+        ],
     },
     {
         "doc_id": "manufacturing",
         "industry": "Manufacturing",
         "keywords": [
-            "manufacturing", "production", "factory", "assembly",
-            "industrial", "fabrication", "supply chain", "lean manufacturing",
-            "quality control", "automation", "robotics", "3d printing",
-            "mass production", "custom manufacturing", "industrial design"
-        ]
+            "manufacturing",
+            "production",
+            "factory",
+            "assembly",
+            "industrial",
+            "fabrication",
+            "supply chain",
+            "lean manufacturing",
+            "quality control",
+            "automation",
+            "robotics",
+            "3d printing",
+            "mass production",
+            "custom manufacturing",
+            "industrial design",
+        ],
     },
     {
         "doc_id": "wholesale_trade_b2b",
         "industry": "Wholesale Trade [B2B]",
         "keywords": [
-            "wholesale", "b2b", "distribution", "wholesale trade",
-            "business to business", "bulk sales", "trade", "distributor",
-            "supply chain", "merchant wholesaler", "wholesale distribution",
-            "trade shows", "wholesale market", "b2b commerce"
-        ]
+            "wholesale",
+            "b2b",
+            "distribution",
+            "wholesale trade",
+            "business to business",
+            "bulk sales",
+            "trade",
+            "distributor",
+            "supply chain",
+            "merchant wholesaler",
+            "wholesale distribution",
+            "trade shows",
+            "wholesale market",
+            "b2b commerce",
+        ],
     },
     {
         "doc_id": "retail_trade",
         "industry": "Retail Trade",
         "keywords": [
-            "retail", "ecommerce", "shopping", "consumer", "merchandise",
-            "store", "sales", "online retail", "brick and mortar",
-            "customer experience", "point of sale", "inventory management",
-            "retail technology", "omnichannel", "direct to consumer"
-        ]
+            "retail",
+            "ecommerce",
+            "shopping",
+            "consumer",
+            "merchandise",
+            "store",
+            "sales",
+            "online retail",
+            "brick and mortar",
+            "customer experience",
+            "point of sale",
+            "inventory management",
+            "retail technology",
+            "omnichannel",
+            "direct to consumer",
+        ],
     },
     {
         "doc_id": "transportation_and_warehousing",
         "industry": "Transportation and Warehousing",
         "keywords": [
-            "transportation", "logistics", "shipping", "freight",
-            "warehousing", "supply chain", "trucking", "rail transport",
-            "air cargo", "maritime shipping", "last mile delivery",
-            "fleet management", "cold chain", "distribution center"
-        ]
+            "transportation",
+            "logistics",
+            "shipping",
+            "freight",
+            "warehousing",
+            "supply chain",
+            "trucking",
+            "rail transport",
+            "air cargo",
+            "maritime shipping",
+            "last mile delivery",
+            "fleet management",
+            "cold chain",
+            "distribution center",
+        ],
     },
     {
         "doc_id": "information",
         "industry": "Information",
         "keywords": [
-            "information", "media", "publishing", "broadcasting",
-            "telecommunications", "data processing", "streaming",
-            "digital media", "news media", "content creation",
-            "information technology", "telecom", "5g", "broadband"
-        ]
+            "information",
+            "media",
+            "publishing",
+            "broadcasting",
+            "telecommunications",
+            "data processing",
+            "streaming",
+            "digital media",
+            "news media",
+            "content creation",
+            "information technology",
+            "telecom",
+            "5g",
+            "broadband",
+        ],
     },
     {
         "doc_id": "finance_and_insurance",
         "industry": "Finance and Insurance",
         "keywords": [
-            "finance", "banking", "insurance", "investment",
-            "financial services", "fintech", "capital markets",
-            "wealth management", "credit", "loans", "mortgage",
-            "cryptocurrency", "blockchain", "insurtech", "risk management"
-        ]
+            "finance",
+            "banking",
+            "insurance",
+            "investment",
+            "financial services",
+            "fintech",
+            "capital markets",
+            "wealth management",
+            "credit",
+            "loans",
+            "mortgage",
+            "cryptocurrency",
+            "blockchain",
+            "insurtech",
+            "risk management",
+        ],
     },
     {
         "doc_id": "real_estate_and_rental_and_leasing",
         "industry": "Real Estate and Rental and Leasing",
         "keywords": [
-            "real estate", "property", "rental", "leasing",
-            "commercial real estate", "residential real estate",
-            "property management", "real estate investment", "reit",
-            "vacation rental", "equipment leasing", "proptech",
-            "real estate development", "property technology"
-        ]
+            "real estate",
+            "property",
+            "rental",
+            "leasing",
+            "commercial real estate",
+            "residential real estate",
+            "property management",
+            "real estate investment",
+            "reit",
+            "vacation rental",
+            "equipment leasing",
+            "proptech",
+            "real estate development",
+            "property technology",
+        ],
     },
     {
         "doc_id": "professional_scientific_and_technical_services",
         "industry": "Professional, Scientific, and Technical Services",
         "keywords": [
-            "consulting", "professional services", "technical services",
-            "engineering", "research", "development", "r&d",
-            "management consulting", "it consulting", "legal services",
-            "accounting", "architecture", "scientific research",
-            "technical consulting", "design services"
-        ]
+            "consulting",
+            "professional services",
+            "technical services",
+            "engineering",
+            "research",
+            "development",
+            "r&d",
+            "management consulting",
+            "it consulting",
+            "legal services",
+            "accounting",
+            "architecture",
+            "scientific research",
+            "technical consulting",
+            "design services",
+        ],
     },
     {
         "doc_id": "management_of_companies_and_enterprises",
         "industry": "Management of Companies and Enterprises",
         "keywords": [
-            "management", "corporate", "headquarters", "holding company",
-            "enterprise management", "corporate management", "business management",
-            "executive management", "strategic planning", "corporate strategy",
-            "mergers and acquisitions", "corporate governance", "portfolio management"
-        ]
+            "management",
+            "corporate",
+            "headquarters",
+            "holding company",
+            "enterprise management",
+            "corporate management",
+            "business management",
+            "executive management",
+            "strategic planning",
+            "corporate strategy",
+            "mergers and acquisitions",
+            "corporate governance",
+            "portfolio management",
+        ],
     },
     {
         "doc_id": "administrative_and_support_and_waste_management_and_remediation_services",
         "industry": "Administrative and Support and Waste Management and Remediation Services",
         "keywords": [
-            "administrative services", "support services", "waste management",
-            "remediation", "staffing", "cleaning services", "security services",
-            "call center", "business support", "facilities management",
-            "document management", "payroll services", "temp agency",
-            "environmental remediation", "recycling"
-        ]
+            "administrative services",
+            "support services",
+            "waste management",
+            "remediation",
+            "staffing",
+            "cleaning services",
+            "security services",
+            "call center",
+            "business support",
+            "facilities management",
+            "document management",
+            "payroll services",
+            "temp agency",
+            "environmental remediation",
+            "recycling",
+        ],
     },
     {
         "doc_id": "educational_services",
         "industry": "Educational Services",
         "keywords": [
-            "education", "schools", "university", "college", "training",
-            "e-learning", "online education", "k-12", "higher education",
-            "vocational training", "professional development", "edtech",
-            "curriculum", "distance learning", "educational technology"
-        ]
+            "education",
+            "schools",
+            "university",
+            "college",
+            "training",
+            "e-learning",
+            "online education",
+            "k-12",
+            "higher education",
+            "vocational training",
+            "professional development",
+            "edtech",
+            "curriculum",
+            "distance learning",
+            "educational technology",
+        ],
     },
     {
         "doc_id": "health_care_and_social_assistance",
         "industry": "Health Care and Social Assistance",
         "keywords": [
-            "healthcare", "medical", "hospital", "patient care",
-            "telemedicine", "health services", "clinical", "nursing",
-            "mental health", "social services", "eldercare", "childcare",
-            "health technology", "medical devices", "pharmaceuticals"
-        ]
+            "healthcare",
+            "medical",
+            "hospital",
+            "patient care",
+            "telemedicine",
+            "health services",
+            "clinical",
+            "nursing",
+            "mental health",
+            "social services",
+            "eldercare",
+            "childcare",
+            "health technology",
+            "medical devices",
+            "pharmaceuticals",
+        ],
     },
     {
         "doc_id": "arts_entertainment_and_recreation",
         "industry": "Arts, Entertainment, and Recreation",
         "keywords": [
-            "arts", "entertainment", "recreation", "sports", "gaming",
-            "music", "theater", "film", "television", "streaming entertainment",
-            "live events", "amusement parks", "fitness", "leisure",
-            "cultural events", "entertainment technology"
-        ]
+            "arts",
+            "entertainment",
+            "recreation",
+            "sports",
+            "gaming",
+            "music",
+            "theater",
+            "film",
+            "television",
+            "streaming entertainment",
+            "live events",
+            "amusement parks",
+            "fitness",
+            "leisure",
+            "cultural events",
+            "entertainment technology",
+        ],
     },
     {
         "doc_id": "accommodation_and_food_services",
         "industry": "Accommodation and Food Services",
         "keywords": [
-            "hospitality", "hotel", "restaurant", "food service",
-            "accommodation", "lodging", "catering", "tourism",
-            "travel", "quick service restaurant", "fine dining",
-            "food delivery", "hospitality technology", "vacation",
-            "bed and breakfast", "resort"
-        ]
+            "hospitality",
+            "hotel",
+            "restaurant",
+            "food service",
+            "accommodation",
+            "lodging",
+            "catering",
+            "tourism",
+            "travel",
+            "quick service restaurant",
+            "fine dining",
+            "food delivery",
+            "hospitality technology",
+            "vacation",
+            "bed and breakfast",
+            "resort",
+        ],
     },
     {
         "doc_id": "other_services_except_public_administration",
         "industry": "Other Services (except Public Administration)",
         "keywords": [
-            "services", "repair services", "maintenance", "personal services",
-            "laundry", "dry cleaning", "automotive repair", "beauty services",
-            "salon", "spa", "pet services", "funeral services",
-            "religious organizations", "civic organizations", "trade associations"
-        ]
+            "services",
+            "repair services",
+            "maintenance",
+            "personal services",
+            "laundry",
+            "dry cleaning",
+            "automotive repair",
+            "beauty services",
+            "salon",
+            "spa",
+            "pet services",
+            "funeral services",
+            "religious organizations",
+            "civic organizations",
+            "trade associations",
+        ],
     },
     {
         "doc_id": "public_administration",
         "industry": "Public Administration",
         "keywords": [
-            "government", "public administration", "federal government",
-            "state government", "local government", "municipal",
-            "public policy", "government services", "public sector",
-            "regulatory", "legislation", "public safety", "emergency services",
-            "government technology", "civic tech"
-        ]
-    }
+            "government",
+            "public administration",
+            "federal government",
+            "state government",
+            "local government",
+            "municipal",
+            "public policy",
+            "government services",
+            "public sector",
+            "regulatory",
+            "legislation",
+            "public safety",
+            "emergency services",
+            "government technology",
+            "civic tech",
+        ],
+    },
 ]
+
 
 def main():
     print("Populating industry keywords in Firestore...")
     print(f"Project ID: {os.getenv('GOOGLE_CLOUD_PROJECT_ID')}")
     print(f"Total industries: {len(industry_keywords_data)}")
     print("-" * 50)
-    
+
     for data in industry_keywords_data:
         try:
             doc_ref = db.collection("industry_keywords").document(data["doc_id"])
-            doc_ref.set({
-                "industry": data["industry"],
-                "keywords": data["keywords"],
-                "updated_by": "system",
-                "updated_at": datetime.utcnow().isoformat()
-            })
+            doc_ref.set(
+                {
+                    "industry": data["industry"],
+                    "keywords": data["keywords"],
+                    "updated_by": "system",
+                    "updated_at": datetime.utcnow().isoformat(),
+                }
+            )
             print(f"✓ {data['industry']} ({len(data['keywords'])} keywords)")
         except Exception as e:
-            print(f"✗ Error with {data['industry']}: {str(e)}")
-    
+            print(f"✗ Error with {data['industry']}: {e!s}")
+
     print("-" * 50)
     print("Done!")
+
 
 if __name__ == "__main__":
     main()
