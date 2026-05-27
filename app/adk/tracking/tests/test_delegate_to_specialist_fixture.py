@@ -11,6 +11,7 @@ valid target for validation tooling before updating extractor queries.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -85,6 +86,10 @@ class TestDelegateToSpecialistSpan:
         )
         assert isinstance(summary["specialist_name"], str)
         assert summary["specialist_name"]
+        assert re.fullmatch(r"^[a-z][a-z0-9_]{0,63}$", summary["specialist_name"]), (
+            f"specialist_name {summary['specialist_name']!r} must match "
+            "^[a-z][a-z0-9_]{0,63}$ (the dispatch validation regex)"
+        )
 
     def test_summary_has_cache_hit(self, delegate_span: dict) -> None:
         summary = delegate_span.get("summary", {})

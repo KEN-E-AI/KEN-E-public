@@ -292,9 +292,10 @@ def delegate_to_specialist(
         try:
             account_id = validate_account_id(_raw_account_id)
         except ValueError:
+            _safe_id = repr(_raw_account_id)[:120]
             logger.warning(
-                "[DELEGATE] Invalid account_id %r in session state; proceeding as global.",
-                _raw_account_id,
+                "[DELEGATE] Invalid account_id %s in session state; proceeding as global.",
+                _safe_id,
             )
             account_id = None
     else:
@@ -315,8 +316,12 @@ def delegate_to_specialist(
     cache_hit: bool = False
     try:
         _, cache_hit = _resolve_agent_with_hit(name, account_id)
-    except Exception:
-        pass  # cache_hit stays False; run() will surface the error if persistent
+    except Exception as _pre_resolve_exc:
+        logger.warning(
+            "[DELEGATE] pre-resolution for cache_hit on %r raised: %s; defaulting to False.",
+            name,
+            _pre_resolve_exc,
+        )  # cache_hit stays False; run() will surface the error if persistent
 
     result = _specialist_run(
         doc_id=name,

@@ -33,7 +33,7 @@
   ],
   "metadata": {
     "account_id": "acc_sample_ah_prd_09",
-    "session_id": "ah_prd_09_acc_sample_abc123",
+    "session_id": "sess_00000000000000000000000001",
     "environment": "staging",
     "rollout_percentage": 100,
     "feature_flags": {
