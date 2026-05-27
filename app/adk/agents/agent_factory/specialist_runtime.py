@@ -207,6 +207,26 @@ def _clear_block_cache_for_tests() -> None:
 def _build_specialist(config: MergedAgentConfig, name: str) -> LlmAgent:
     """Construct a new ``LlmAgent`` from a ``MergedAgentConfig``.
 
+    Mirrors the pre-AH-PRD-09 specialist-build path from ``hierarchy.py`` (now
+    deleted from the deploy-time loop) so the per-turn resolver preserves
+    every shipped behaviour:
+
+    * **AH-PRD-06 `tool_ids` MCP allowlist** — ``per_server_allowed_tools``
+      derives the per-server bare-name list and threads it through
+      ``build_toolset_for_doc(..., allowed_tool_names=...)`` so each
+      ``McpToolset`` is constructed with ADK's native ``tool_filter`` rather
+      than mutating ``tool_filter`` after the fact. Servers with no listed
+      tools are skipped entirely so we don't pay the connection cost.
+    * **AH-PRD-06 PR-C `default_global` function tools** —
+      ``resolve_default_global_tools(get_default_registry())`` is resolved
+      once and appended to every specialist's roster (e.g.
+      ``create_visualization``). Filtered per-spec by
+      ``resolve_specialist_roster`` when ``tool_ids`` is set.
+    * **AH-PRD-02 §2.5 ≤30-tool roster cap** — ``resolve_specialist_roster``
+      counts MCP tools individually (not toolsets-as-1 like the literal cap
+      in ``builder.build_agent``) and raises ``RosterCapExceededError`` when
+      a specialist would exceed the cap.
+
     Phase 2 (AH-59): fetches each MCP server document individually from
     Firestore and calls ``build_toolset_for_doc``.
     Phase 3 (AH-62): replace the per-server Firestore ``get()`` calls with
@@ -220,6 +240,24 @@ def _build_specialist(config: MergedAgentConfig, name: str) -> LlmAgent:
         _resolve_project_id,
         build_toolset_for_doc,
     )
+    from app.adk.agents.agent_factory.roster import (
+        MAX_TOOLS_PER_SPECIALIST,
+        RosterCapExceededError,
+        per_server_allowed_tools,
+        resolve_specialist_roster,
+    )
+    from app.adk.tools.registry.function_tool_registry import (
+        resolve_default_global_tools,
+    )
+    from app.adk.tools.registry.tool_registry import get_default_registry
+
+    # AH-PRD-06: when ``tool_ids`` is set, derive the per-server allowlist
+    # used both to skip irrelevant servers below and to pass
+    # ``allowed_tool_names=`` into ``build_toolset_for_doc``. ``None``
+    # signals legacy behaviour (every tool from every attached server).
+    per_server_allowed: dict[str, list[str]] | None = per_server_allowed_tools(
+        config.tool_ids
+    )
 
     toolsets: dict[str, Any] = {}
 
@@ -232,6 +270,18 @@ def _build_specialist(config: MergedAgentConfig, name: str) -> LlmAgent:
                 if not _VALID_DOC_ID_RE.match(server_id):
                     logger.error(
                         "MCP server ID %r for specialist %r fails format validation; skipping",
+                        server_id,
+                        name,
+                    )
+                    continue
+                # AH-PRD-06: skip servers with no tool_ids match — no point
+                # paying the Firestore + connection cost for a toolset whose
+                # tools are all filtered out downstream.
+                if per_server_allowed is not None and not per_server_allowed.get(
+                    server_id
+                ):
+                    logger.debug(
+                        "MCP server %r has no tool_ids match for specialist %r; skipping.",
                         server_id,
                         name,
                     )
@@ -253,7 +303,14 @@ def _build_specialist(config: MergedAgentConfig, name: str) -> LlmAgent:
                         name,
                     )
                     continue
-                toolsets[server_id] = build_toolset_for_doc(server_id, doc)
+                if per_server_allowed is None:
+                    toolsets[server_id] = build_toolset_for_doc(server_id, doc)
+                else:
+                    toolsets[server_id] = build_toolset_for_doc(
+                        server_id,
+                        doc,
+                        allowed_tool_names=per_server_allowed[server_id],
+                    )
             except (MCPSchemaError, ValueError) as exc:
                 logger.error(
                     "Failed to build toolset for MCP server %r (specialist %r): %s",
@@ -262,7 +319,33 @@ def _build_specialist(config: MergedAgentConfig, name: str) -> LlmAgent:
                     exc,
                 )
 
-    tools = list(toolsets.values())
+    # AH-PRD-06 PR-C: resolve ``default_global: true`` function tools (e.g.
+    # ``create_visualization`` from AH-PRD-04) once per specialist build.
+    # Filtered per-spec by ``resolve_specialist_roster`` when ``tool_ids``
+    # is non-None; included verbatim otherwise.
+    default_global_function_tools = resolve_default_global_tools(get_default_registry())
+
+    # AH-PRD-02 §2.5: enforce the ≤30-tool logical cap and apply the
+    # ``tool_ids`` filter to the assembled tool list. Raises
+    # ``RosterCapExceededError`` (which propagates through ``resolve_agent``
+    # / ``run``) when a specialist would exceed the cap — the deploy-time
+    # path raised at deploy; here it raises on first dispatch.
+    try:
+        tools = resolve_specialist_roster(
+            name,
+            mcp_toolsets=toolsets,
+            function_tools=default_global_function_tools,
+            mcp_server_ids=list(toolsets.keys()),
+            tool_ids=config.tool_ids,
+        )
+    except RosterCapExceededError:
+        logger.exception(
+            "Specialist %r exceeds the %d-tool roster cap; raising.",
+            name,
+            MAX_TOOLS_PER_SPECIALIST,
+        )
+        raise
+
     return build_agent(config, name=name, tools=tools, config_doc_id=None)
 
 
