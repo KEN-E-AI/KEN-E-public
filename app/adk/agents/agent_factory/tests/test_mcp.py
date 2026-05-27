@@ -1432,7 +1432,11 @@ class TestBuildToolsetForDocKindDispatch:
             ),
             patch.dict(
                 "sys.modules",
-                {"google.adk.tools.mcp_tool.mcp_toolset": MagicMock(McpToolset=MockToolset)},
+                {
+                    "google.adk.tools.mcp_tool.mcp_toolset": MagicMock(
+                        McpToolset=MockToolset
+                    )
+                },
             ),
         ):
             result = build_toolset_for_doc("ga_mcp", doc)
@@ -1457,7 +1461,11 @@ class TestBuildToolsetForDocKindDispatch:
             ),
             patch.dict(
                 "sys.modules",
-                {"google.adk.tools.mcp_tool.mcp_toolset": MagicMock(McpToolset=MockToolset)},
+                {
+                    "google.adk.tools.mcp_tool.mcp_toolset": MagicMock(
+                        McpToolset=MockToolset
+                    )
+                },
             ),
         ):
             result = build_toolset_for_doc("ga_mcp", doc)
@@ -1479,7 +1487,10 @@ class TestBuildToolsetForDocKindDispatch:
 
     def test_kind_unknown_raises_mcp_schema_error(self) -> None:
         """An unrecognised kind value raises MCPSchemaError naming the server_id."""
-        from app.adk.agents.agent_factory.mcp import MCPSchemaError, build_toolset_for_doc
+        from app.adk.agents.agent_factory.mcp import (
+            MCPSchemaError,
+            build_toolset_for_doc,
+        )
 
         doc = self._sse_doc_with_kind("grpc_stream")
 
