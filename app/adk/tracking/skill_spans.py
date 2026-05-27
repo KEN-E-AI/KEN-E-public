@@ -26,7 +26,6 @@ from typing import TYPE_CHECKING, Any
 from weave.trace.api import get_client as _weave_get_client
 from weave.trace.context import call_context as _weave_call_context
 
-from app.adk.agents.agent_factory.skill_metadata import get_skill_build_metadata
 from app.adk.agents.skill_tool_filter import parse_allowed_tools
 from shared.structured_logging import get_structured_logger
 
@@ -39,9 +38,16 @@ logger = get_structured_logger(__name__)
 
 _SKILL_TOOL_NAMES = frozenset({"list_skills", "load_skill", "load_skill_resource"})
 
+# Maximum character length for LLM-supplied string values written to Weave
+# span attributes/inputs.  Guards against data-volume abuse.
+_MAX_SPAN_STRING = 256
+
 # Tracks the in-flight Weave call and resolved metadata between
 # before_tool and after_tool for a single skill tool invocation.
 # Shape: {"call": WeaveCall, "skill_id": str | None}
+# CONSTRAINT: safe only under ADK's current single-tool-at-a-time dispatch
+# model.  If ADK ever parallel-dispatches tools within a single agent turn,
+# each concurrent invocation would need its own context snapshot.
 _current_skill_ctx: contextvars.ContextVar[dict[str, Any] | None] = (
     contextvars.ContextVar("_current_skill_ctx", default=None)
 )
@@ -54,6 +60,12 @@ def _get_skill_name_index(context: Any) -> dict[str, dict]:
         if ic is not None:
             agent = getattr(ic, "agent", None)
             if agent is not None:
+                # Deferred import — avoids circular dependency through
+                # app.adk.agents.agent_factory.__init__ → builder → skill_spans.
+                from app.adk.agents.agent_factory.skill_metadata import (
+                    get_skill_build_metadata,
+                )
+
                 return get_skill_build_metadata(agent).get("skill_name_index", {})
     except Exception:
         pass
@@ -67,35 +79,58 @@ def _get_agent_meta(context: Any) -> dict[str, Any]:
         if ic is not None:
             agent = getattr(ic, "agent", None)
             if agent is not None:
+                # Deferred import — avoids circular dependency through
+                # app.adk.agents.agent_factory.__init__ → builder → skill_spans.
+                from app.adk.agents.agent_factory.skill_metadata import (
+                    get_skill_build_metadata,
+                )
+
                 return get_skill_build_metadata(agent)
     except Exception:
         pass
     return {}
 
 
-def _emit_total_failure_span(account_id: str) -> None:
+def _emit_total_failure_span(
+    account_id: str,
+    *,
+    skill_load_total_failure: bool = False,
+    skill_load_timeout: bool = False,
+) -> None:
     """Open and immediately close a skill.list span flagged as degraded (AC-2a).
 
-    Called from skill_spans_before_agent_callback when the sidecar marks
-    skill_load_total_failure so MER-E can score the session as degraded even
-    though list_skills will never fire (no SkillToolset was attached).
+    Called when the sidecar marks skill_load_total_failure or skill_load_timeout
+    so MER-E can score the session as degraded even though list_skills will never
+    fire (no SkillToolset was attached).  Emits at most once per session turn —
+    the caller sets state["_skill_failure_span_emitted"] after this returns.
     """
     client = _weave_get_client()
     if not client:
         return
+    attrs: dict[str, Any] = {
+        "account_id": account_id,
+        "skill_count": 0,
+        "skill_ids": [],
+    }
+    if skill_load_total_failure:
+        attrs["skill_load_total_failure"] = True
+    if skill_load_timeout:
+        attrs["skill_load_timeout"] = True
     call = client.create_call(
         op="skill.list",
         inputs={},
-        attributes={
-            "account_id": account_id,
-            "skill_count": 0,
-            "skill_ids": [],
-            "skill_load_total_failure": True,
-        },
+        attributes=attrs,
         use_stack=True,
     )
-    client.finish_call(call, output={"status": "degraded"})
-    _weave_call_context.pop_call(call.id)
+    if call is None:
+        return
+    try:
+        client.finish_call(call, output={"status": "degraded"})
+    finally:
+        try:
+            _weave_call_context.pop_call(call.id)
+        except Exception:
+            pass
 
 
 def skill_spans_before_agent_callback(
@@ -139,17 +174,31 @@ def skill_spans_before_agent_callback(
             except Exception:
                 pass
 
-        if meta.get("skill_load_total_failure"):
+        _total_failure = meta.get("skill_load_total_failure")
+        _load_timeout = meta.get("skill_load_timeout")
+        # Emit at most once per session — re-emitting on every turn would
+        # produce N spans per session and make MER-E scoring noisy.
+        if (_total_failure or _load_timeout) and not state.get(
+            "_skill_failure_span_emitted"
+        ):
             account_id = "unknown"
             try:
                 account_id = str(state.get("account_id") or "unknown")
             except Exception:
                 pass
             try:
-                _emit_total_failure_span(account_id)
+                _emit_total_failure_span(
+                    account_id,
+                    skill_load_total_failure=bool(_total_failure),
+                    skill_load_timeout=bool(_load_timeout),
+                )
+                try:
+                    state["_skill_failure_span_emitted"] = True
+                except Exception:
+                    pass
             except Exception:
                 logger.warning(
-                    "skill_spans: failed to emit total-failure skill.list span",
+                    "skill_spans: failed to emit failure skill.list span",
                     exc_info=True,
                 )
     except Exception:
@@ -208,7 +257,7 @@ async def skill_spans_before_tool_callback(
             )
 
         elif tool.name == "load_skill":
-            skill_name = str(args.get("name", ""))
+            skill_name = str(args.get("name", ""))[:_MAX_SPAN_STRING]
             entry = skill_name_index.get(skill_name, {})
             resolved_skill_id = entry.get("skill_id")
             call = client.create_call(
@@ -224,8 +273,8 @@ async def skill_spans_before_tool_callback(
             )
 
         elif tool.name == "load_skill_resource":
-            skill_name = str(args.get("skill_name", ""))
-            rel_path = str(args.get("path", ""))
+            skill_name = str(args.get("skill_name", ""))[:_MAX_SPAN_STRING]
+            rel_path = str(args.get("path", ""))[:_MAX_SPAN_STRING]
             entry = skill_name_index.get(skill_name, {})
             resolved_skill_id = entry.get("skill_id")
             call = client.create_call(

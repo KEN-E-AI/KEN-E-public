@@ -254,8 +254,10 @@ def _build_skill_toolset(
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(_runner)
         try:
-            result = future.result(timeout=_SKILL_LOAD_TIMEOUT_SECONDS)
-            return result[0], result[1], False
+            toolset, skill_name_index = future.result(
+                timeout=_SKILL_LOAD_TIMEOUT_SECONDS
+            )
+            return toolset, skill_name_index, False
         except concurrent.futures.TimeoutError:
             logger.error(
                 "skill_toolset_load_timeout",

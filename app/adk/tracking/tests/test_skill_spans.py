@@ -96,7 +96,7 @@ class TestBeforeAgentCallback:
         }
         ctx, _agent, _ = self._make_ctx()
         with patch(
-            "app.adk.tracking.skill_spans.get_skill_build_metadata",
+            "app.adk.agents.agent_factory.skill_metadata.get_skill_build_metadata",
             return_value={"skill_name_index": skill_name_index},
         ):
             result = skill_spans_before_agent_callback(ctx)
@@ -117,7 +117,7 @@ class TestBeforeAgentCallback:
         }
         ctx, _, _ = self._make_ctx()
         with patch(
-            "app.adk.tracking.skill_spans.get_skill_build_metadata",
+            "app.adk.agents.agent_factory.skill_metadata.get_skill_build_metadata",
             return_value={"skill_name_index": skill_name_index},
         ):
             skill_spans_before_agent_callback(ctx)
@@ -128,7 +128,7 @@ class TestBeforeAgentCallback:
         ctx, _, _ = self._make_ctx()
         ctx.state["active_skill_id"] = "stale_id"
         with patch(
-            "app.adk.tracking.skill_spans.get_skill_build_metadata",
+            "app.adk.agents.agent_factory.skill_metadata.get_skill_build_metadata",
             return_value={},
         ):
             skill_spans_before_agent_callback(ctx)
@@ -143,7 +143,7 @@ class TestBeforeAgentCallback:
 
         with (
             patch(
-                "app.adk.tracking.skill_spans.get_skill_build_metadata",
+                "app.adk.agents.agent_factory.skill_metadata.get_skill_build_metadata",
                 return_value={"skill_load_total_failure": True},
             ),
             patch(_GET_CLIENT_PATH, return_value=mock_client),
@@ -151,17 +151,11 @@ class TestBeforeAgentCallback:
         ):
             skill_spans_before_agent_callback(ctx)
 
-        mock_client.create_call.assert_called_once_with(
-            op="skill.list",
-            inputs={},
-            attributes={
-                "account_id": "acc_1",
-                "skill_count": 0,
-                "skill_ids": [],
-                "skill_load_total_failure": True,
-            },
-            use_stack=True,
-        )
+        attrs = mock_client.create_call.call_args.kwargs["attributes"]
+        assert attrs["account_id"] == "acc_1"
+        assert attrs["skill_count"] == 0
+        assert attrs["skill_ids"] == []
+        assert attrs.get("skill_load_total_failure") is True
         mock_client.finish_call.assert_called_once_with(
             mock_call, output={"status": "degraded"}
         )
@@ -177,12 +171,54 @@ class TestBeforeAgentCallback:
     def test_degrades_open_on_exception(self):
         ctx, _, _ = self._make_ctx()
         with patch(
-            "app.adk.tracking.skill_spans.get_skill_build_metadata",
+            "app.adk.agents.agent_factory.skill_metadata.get_skill_build_metadata",
             side_effect=RuntimeError("boom"),
         ):
             result = skill_spans_before_agent_callback(ctx)
 
         assert result is None
+
+    def test_emits_timeout_span_when_skill_load_timeout_flagged(self):
+        ctx, _, _ = self._make_ctx()
+        mock_call = MagicMock(id="timeout-call-1")
+        mock_client = MagicMock()
+        mock_client.create_call.return_value = mock_call
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.skill_metadata.get_skill_build_metadata",
+                return_value={"skill_load_timeout": True},
+            ),
+            patch(_GET_CLIENT_PATH, return_value=mock_client),
+            patch(_CALL_CTX_PATH),
+        ):
+            skill_spans_before_agent_callback(ctx)
+
+        attrs = mock_client.create_call.call_args.kwargs["attributes"]
+        assert attrs.get("skill_load_timeout") is True
+        assert attrs["skill_count"] == 0
+        mock_client.finish_call.assert_called_once_with(
+            mock_call, output={"status": "degraded"}
+        )
+
+    def test_failure_span_emitted_only_once_across_turns(self):
+        """_skill_failure_span_emitted guard prevents re-emission on turn 2+."""
+        ctx, _, _ = self._make_ctx()
+        mock_client = MagicMock()
+        mock_client.create_call.return_value = MagicMock(id="once-call-1")
+
+        meta_patch = patch(
+            "app.adk.agents.agent_factory.skill_metadata.get_skill_build_metadata",
+            return_value={"skill_load_total_failure": True},
+        )
+        client_patch = patch(_GET_CLIENT_PATH, return_value=mock_client)
+        call_ctx_patch = patch(_CALL_CTX_PATH)
+
+        with meta_patch, client_patch, call_ctx_patch:
+            skill_spans_before_agent_callback(ctx)  # turn 1 — should emit
+            skill_spans_before_agent_callback(ctx)  # turn 2 — should NOT re-emit
+
+        assert mock_client.create_call.call_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -225,7 +261,7 @@ class TestBeforeToolCallback:
         }
         with (
             patch(
-                "app.adk.tracking.skill_spans.get_skill_build_metadata",
+                "app.adk.agents.agent_factory.skill_metadata.get_skill_build_metadata",
                 return_value={"skill_name_index": skill_name_index},
             ),
             patch(_GET_CLIENT_PATH, return_value=mock_client),
@@ -261,7 +297,7 @@ class TestBeforeToolCallback:
         }
         with (
             patch(
-                "app.adk.tracking.skill_spans.get_skill_build_metadata",
+                "app.adk.agents.agent_factory.skill_metadata.get_skill_build_metadata",
                 return_value={"skill_name_index": skill_name_index},
             ),
             patch(_GET_CLIENT_PATH, return_value=mock_client),
@@ -291,7 +327,7 @@ class TestBeforeToolCallback:
         }
         with (
             patch(
-                "app.adk.tracking.skill_spans.get_skill_build_metadata",
+                "app.adk.agents.agent_factory.skill_metadata.get_skill_build_metadata",
                 return_value={"skill_name_index": skill_name_index},
             ),
             patch(_GET_CLIENT_PATH, return_value=mock_client),
@@ -303,8 +339,9 @@ class TestBeforeToolCallback:
             )
 
         assert result is None
+        assert mock_client.create_call.call_args.kwargs["op"] == "skill.load_resource"
         attrs = mock_client.create_call.call_args.kwargs["attributes"]
-        assert attrs["op"] if False else attrs["skill_id"] == "sk_r"
+        assert attrs["skill_id"] == "sk_r"
         assert attrs["rel_path"] == "data/template.md"
 
     @pytest.mark.asyncio
@@ -312,7 +349,7 @@ class TestBeforeToolCallback:
         ctx, _ = self._make_tool_ctx()
         with (
             patch(
-                "app.adk.tracking.skill_spans.get_skill_build_metadata",
+                "app.adk.agents.agent_factory.skill_metadata.get_skill_build_metadata",
                 return_value={},
             ),
             patch(_GET_CLIENT_PATH, return_value=None),
@@ -329,7 +366,7 @@ class TestBeforeToolCallback:
     async def test_degrades_open_on_exception(self):
         ctx, _ = self._make_tool_ctx()
         with patch(
-            "app.adk.tracking.skill_spans.get_skill_build_metadata",
+            "app.adk.agents.agent_factory.skill_metadata.get_skill_build_metadata",
             side_effect=RuntimeError("sidecar broken"),
         ):
             result = await skill_spans_before_tool_callback(
