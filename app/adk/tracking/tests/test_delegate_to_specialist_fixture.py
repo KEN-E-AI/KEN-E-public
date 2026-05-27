@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+from app.adk.tracking.compliance import validate_trace_compliance
+
 _FIXTURE_PATH = (
     Path(__file__).parent / "fixtures" / "delegate_to_specialist_trace.json"
 )
@@ -52,8 +54,30 @@ class TestFixtureTopLevel:
 
     def test_metadata_has_required_fields(self, fixture_data: dict) -> None:
         meta = fixture_data["metadata"]
-        for field in ("account_id", "session_id", "environment", "rollout_percentage"):
+        for field in (
+            "agent_id",
+            "agent_version",
+            "account_id",
+            "session_id",
+            "environment",
+            "rollout_percentage",
+        ):
             assert field in meta, f"metadata missing required field: {field}"
+
+    def test_metadata_passes_validate_trace_compliance(
+        self, fixture_data: dict
+    ) -> None:
+        # Delegate to the same validator that the trace-compliance-check CI
+        # step runs so this conformance test cannot drift from the CI gate's
+        # requirements (any field added to REQUIRED_FIELDS in compliance.py is
+        # automatically enforced here).
+        result = validate_trace_compliance(
+            fixture_data["metadata"], trace_id=fixture_data.get("trace_id")
+        )
+        assert result.is_compliant, (
+            f"Fixture metadata is not compliant per validate_trace_compliance: "
+            f"{[i.message for i in result.issues]}"
+        )
 
     def test_per_turn_dispatch_flag_is_true(self, fixture_data: dict) -> None:
         flags = fixture_data["metadata"].get("feature_flags", {})
