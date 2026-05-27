@@ -641,3 +641,127 @@ class TestAsyncBridge:
         assert metadata.get("skill_load_timeout") is True
         # Timeout is NOT a total failure — those two markers are exclusive.
         assert "skill_load_total_failure" not in metadata
+
+
+class TestSkillNameIndex:
+    """SK-27: skill_name_index sidecar records skill metadata for span callbacks."""
+
+    def _make_skill_with_tools(self, name: str, allowed_tools: str | None = None) -> Any:
+        from google.adk.skills import models
+
+        return models.Skill(
+            frontmatter=models.Frontmatter(
+                name=name,
+                description=f"Skill {name}",
+                allowed_tools=allowed_tools,
+            ),
+            instructions=f"# {name}\nDo things.",
+        )
+
+    def test_skill_name_index_recorded_for_two_skills(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        skill_a = _make_adk_skill("alpha")
+        skill_b = _make_adk_skill("beta")
+        fake_loader = _make_fake_loader_module(
+            skills_by_id={"id-alpha": skill_a, "id-beta": skill_b}
+        )
+        monkeypatch.setitem(sys.modules, "kene_api.services.skill_loader", fake_loader)
+
+        config = _make_config(skill_ids=["id-alpha", "id-beta"])
+        agent = _build_with_skills(config, name="index_two", account_id="acc_idx")
+
+        from app.adk.agents.agent_factory.skill_metadata import get_skill_build_metadata
+
+        meta = get_skill_build_metadata(agent)
+        idx = meta.get("skill_name_index", {})
+
+        assert set(idx.keys()) == {"alpha", "beta"}
+        assert idx["alpha"]["skill_id"] == "id-alpha"
+        assert idx["beta"]["skill_id"] == "id-beta"
+
+    def test_skill_name_index_contains_required_fields(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        skill = _make_adk_skill("my-skill")
+        fake_loader = _make_fake_loader_module(skills_by_id={"id-ms": skill})
+        monkeypatch.setitem(sys.modules, "kene_api.services.skill_loader", fake_loader)
+
+        config = _make_config(skill_ids=["id-ms"])
+        agent = _build_with_skills(config, name="index_fields", account_id="acc_f")
+
+        from app.adk.agents.agent_factory.skill_metadata import get_skill_build_metadata
+
+        meta = get_skill_build_metadata(agent)
+        entry = meta["skill_name_index"]["my-skill"]
+
+        assert entry["skill_id"] == "id-ms"
+        assert "version" in entry
+        assert "allowed_tools" in entry
+
+    def test_skill_name_index_propagates_allowed_tools(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        skill = self._make_skill_with_tools("restricted", allowed_tools="Read Write")
+        fake_loader = _make_fake_loader_module(skills_by_id={"id-r": skill})
+        monkeypatch.setitem(sys.modules, "kene_api.services.skill_loader", fake_loader)
+
+        config = _make_config(skill_ids=["id-r"])
+        agent = _build_with_skills(config, name="index_at", account_id="acc_at")
+
+        from app.adk.agents.agent_factory.skill_metadata import get_skill_build_metadata
+
+        meta = get_skill_build_metadata(agent)
+        entry = meta["skill_name_index"]["restricted"]
+        assert entry["allowed_tools"] == "Read Write"
+
+    def test_skill_name_index_excludes_failed_skills(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        skill_ok = _make_adk_skill("ok-skill")
+        fake_loader = _make_fake_loader_module(
+            skills_by_id={"id-ok": skill_ok},
+            raise_for_ids={"id-bad": _SkillNotFoundError},
+        )
+        monkeypatch.setitem(sys.modules, "kene_api.services.skill_loader", fake_loader)
+
+        config = _make_config(skill_ids=["id-ok", "id-bad"])
+        agent = _build_with_skills(config, name="index_partial", account_id="acc_p")
+
+        from app.adk.agents.agent_factory.skill_metadata import get_skill_build_metadata
+
+        meta = get_skill_build_metadata(agent)
+        idx = meta.get("skill_name_index", {})
+
+        assert "ok-skill" in idx
+        # No entry for the failed skill id
+        for entry in idx.values():
+            assert entry["skill_id"] != "id-bad"
+
+    def test_skill_name_index_empty_when_all_skills_fail(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        fake_loader = _make_fake_loader_module(
+            raise_for_ids={"id-x": _SkillNotFoundError}
+        )
+        monkeypatch.setitem(sys.modules, "kene_api.services.skill_loader", fake_loader)
+
+        config = _make_config(skill_ids=["id-x"])
+        agent = _build_with_skills(config, name="index_total_fail", account_id="acc_tf")
+
+        from app.adk.agents.agent_factory.skill_metadata import get_skill_build_metadata
+
+        meta = get_skill_build_metadata(agent)
+        # skill_name_index absent or empty on total failure
+        assert not meta.get("skill_name_index")
+
+    def test_skill_name_index_not_recorded_for_empty_skill_ids(self) -> None:
+        config = _make_config(skill_ids=[])
+        with _PATCH_BEFORE_AGENT, _PATCH_AFTER_AGENT, _PATCH_BEFORE_TOOL, _PATCH_AFTER_TOOL:
+            import app.adk.agents.agent_factory.builder as b
+
+            agent = b.build_agent(config, name="index_empty", account_id="acc_ei")
+
+        from app.adk.agents.agent_factory.skill_metadata import get_skill_build_metadata
+
+        assert "skill_name_index" not in get_skill_build_metadata(agent)
