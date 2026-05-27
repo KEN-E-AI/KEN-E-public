@@ -146,15 +146,30 @@ class _AgentCache:
         checks).  Concurrent callers for the same key block until the first
         build completes, then see the populated entry on their own check.
         """
+        agent, _ = self.get_or_build_with_hit(key, builder)
+        return agent
+
+    def get_or_build_with_hit(
+        self,
+        key: tuple[str, str | None, str],
+        builder: Callable[[], LlmAgent],
+    ) -> tuple[LlmAgent, bool]:
+        """Same as :meth:`get_or_build` but also returns whether the entry was cached.
+
+        Returns:
+            ``(agent, cache_hit)`` where ``cache_hit`` is ``True`` when the
+            ``LlmAgent`` was already in the LRU store and ``False`` when a fresh
+            build was triggered.
+        """
         with self._lock:
             if key in self._store:
                 self._store.move_to_end(key)
-                return self._store[key]
+                return self._store[key], True
             agent = builder()
             if len(self._store) >= self._maxsize:
                 self._store.popitem(last=False)  # evict LRU
             self._store[key] = agent
-            return agent
+            return agent, False
 
     def clear(self) -> None:
         """Drop all cached agents.  Primarily for tests."""
@@ -410,6 +425,33 @@ def resolve_agent(
     cache_key: tuple[str, str | None, str] = (doc_id, account_id, content_hash)
 
     return _specialists_cache.get_or_build(
+        cache_key, lambda: _build_specialist(config, doc_id)
+    )
+
+
+def resolve_agent_with_hit(
+    doc_id: str,
+    account_id: str | None = None,
+    ttl_seconds: int = 60,
+) -> tuple[LlmAgent, bool]:
+    """Same as :func:`resolve_agent` but also reports whether the agent was cached.
+
+    Intended for callers that want to emit a ``cache_hit`` observability attribute
+    (e.g. ``delegate_to_specialist`` writes it onto the Weave span summary via
+    ``set_delegate_attrs``).
+
+    Returns:
+        ``(agent, cache_hit)`` — ``cache_hit`` is ``True`` when the ``LlmAgent``
+        was served from the LRU cache; ``False`` when a fresh build was triggered.
+
+    Raises:
+        Any exception that :func:`resolve_config` or :func:`_build_specialist`
+        raises.
+    """
+    config = resolve_config(doc_id, account_id, ttl_seconds)
+    content_hash = _content_hash(config)
+    cache_key: tuple[str, str | None, str] = (doc_id, account_id, content_hash)
+    return _specialists_cache.get_or_build_with_hit(
         cache_key, lambda: _build_specialist(config, doc_id)
     )
 

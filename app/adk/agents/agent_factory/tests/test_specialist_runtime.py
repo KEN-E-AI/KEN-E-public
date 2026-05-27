@@ -216,6 +216,138 @@ class TestResolveAgent:
 
 
 # ---------------------------------------------------------------------------
+# TestResolveAgentWithHit
+# ---------------------------------------------------------------------------
+
+
+class TestResolveAgentWithHit:
+    def test_miss_returns_agent_and_false(self) -> None:
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        cfg = _make_merged_config("v1")
+        fake_agent = _make_llm_agent()
+
+        with (
+            patch.object(specialist_runtime, "resolve_config", return_value=cfg),
+            patch.object(
+                specialist_runtime, "_build_specialist", return_value=fake_agent
+            ) as mock_build,
+        ):
+            agent, hit = specialist_runtime.resolve_agent_with_hit("spe_1")
+
+        mock_build.assert_called_once()
+        assert agent is fake_agent
+        assert hit is False
+
+    def test_hit_returns_agent_and_true(self) -> None:
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        cfg = _make_merged_config("v1")
+        fake_agent = _make_llm_agent()
+
+        with (
+            patch.object(specialist_runtime, "resolve_config", return_value=cfg),
+            patch.object(
+                specialist_runtime, "_build_specialist", return_value=fake_agent
+            ) as mock_build,
+        ):
+            specialist_runtime.resolve_agent_with_hit("spe_1")  # populate cache
+            agent2, hit2 = specialist_runtime.resolve_agent_with_hit("spe_1")
+
+        assert mock_build.call_count == 1  # built only once
+        assert agent2 is fake_agent
+        assert hit2 is True
+
+    def test_content_hash_change_is_a_miss(self) -> None:
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        cfg_v1 = _make_merged_config("v1")
+        cfg_v2 = _make_merged_config("v2")
+        agent_v1 = _make_llm_agent("agent_v1")
+        agent_v2 = _make_llm_agent("agent_v2")
+
+        with (
+            patch.object(
+                specialist_runtime,
+                "resolve_config",
+                side_effect=[cfg_v1, cfg_v2],
+            ),
+            patch.object(
+                specialist_runtime,
+                "_build_specialist",
+                side_effect=[agent_v1, agent_v2],
+            ),
+        ):
+            _, hit1 = specialist_runtime.resolve_agent_with_hit("spe_1")
+            _, hit2 = specialist_runtime.resolve_agent_with_hit("spe_1")
+
+        assert hit1 is False
+        assert hit2 is False  # different content_hash → different cache key → miss
+
+    def test_returns_same_agent_as_resolve_agent_on_hit(self) -> None:
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        cfg = _make_merged_config("v1")
+        fake_agent = _make_llm_agent()
+
+        with (
+            patch.object(specialist_runtime, "resolve_config", return_value=cfg),
+            patch.object(specialist_runtime, "_build_specialist", return_value=fake_agent),
+        ):
+            resolve_result = specialist_runtime.resolve_agent("spe_1")
+            with_hit_result, hit = specialist_runtime.resolve_agent_with_hit("spe_1")
+
+        assert with_hit_result is resolve_result
+        assert hit is True  # cache was warmed by resolve_agent above
+
+
+# ---------------------------------------------------------------------------
+# TestAgentCacheGetOrBuildWithHit
+# ---------------------------------------------------------------------------
+
+
+class TestAgentCacheGetOrBuildWithHit:
+    def test_miss_builds_and_returns_false(self) -> None:
+        from app.adk.agents.agent_factory.specialist_runtime import _AgentCache
+
+        cache: _AgentCache = _AgentCache(maxsize=4)
+        fake_agent = _make_llm_agent()
+        key = ("doc", None, "hash1")
+
+        agent, hit = cache.get_or_build_with_hit(key, lambda: fake_agent)
+
+        assert agent is fake_agent
+        assert hit is False
+        assert len(cache) == 1
+
+    def test_hit_returns_cached_agent_and_true(self) -> None:
+        from app.adk.agents.agent_factory.specialist_runtime import _AgentCache
+
+        cache: _AgentCache = _AgentCache(maxsize=4)
+        fake_agent = _make_llm_agent()
+        key = ("doc", None, "hash1")
+
+        cache.get_or_build_with_hit(key, lambda: fake_agent)
+        agent2, hit2 = cache.get_or_build_with_hit(key, lambda: _make_llm_agent())
+
+        assert agent2 is fake_agent
+        assert hit2 is True
+
+    def test_miss_consistent_with_get_or_build(self) -> None:
+        from app.adk.agents.agent_factory.specialist_runtime import _AgentCache
+
+        cache: _AgentCache = _AgentCache(maxsize=4)
+        fake_agent = _make_llm_agent()
+        key = ("doc", None, "hash1")
+
+        plain = cache.get_or_build(key, lambda: fake_agent)
+        with_hit, hit = cache.get_or_build_with_hit(key, lambda: _make_llm_agent())
+
+        assert plain is with_hit
+        assert hit is True
+
+
+# ---------------------------------------------------------------------------
 # TestRun
 # ---------------------------------------------------------------------------
 
