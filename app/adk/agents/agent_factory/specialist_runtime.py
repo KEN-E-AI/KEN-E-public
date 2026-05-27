@@ -191,7 +191,7 @@ _block_cache: dict[str, _BlockCacheEntry] = {}
 _block_locks: list[threading.Lock] = [threading.Lock() for _ in range(32)]
 
 
-def _block_lock_for(account_id: str) -> threading.Lock:
+def block_lock_for(account_id: str) -> threading.Lock:
     return _block_locks[hash(account_id) % 32]
 
 
@@ -551,7 +551,7 @@ def available_specialists_provider(context: ReadonlyContext) -> str:
         return "## Available Specialists\n\n- None registered."
 
     now = time.monotonic()
-    with _block_lock_for(account_id):
+    with block_lock_for(account_id):
         cached = _block_cache.get(account_id)
         if cached is not None and now < cached[1]:
             return cached[0]
@@ -584,6 +584,6 @@ def available_specialists_provider(context: ReadonlyContext) -> str:
             )
 
     block = assemble_available_specialists_block(specialists)
-    with _block_lock_for(account_id):
+    with block_lock_for(account_id):
         _block_cache[account_id] = (block, time.monotonic() + _BLOCK_CACHE_TTL)
     return block

@@ -37,7 +37,7 @@ Behaviour:
   one process), clear and re-set.
 
 * Concurrency: wraps the work in the existing per-account stripe lock
-  from ``specialist_runtime`` (:func:`_block_lock_for`). Concurrent turns
+  from ``specialist_runtime`` (:func:`block_lock_for`). Concurrent turns
   for the same account serialise; turns for different accounts do not
   contend.
 
@@ -58,7 +58,7 @@ from app.adk.agents.agent_factory.config_loader import (
     list_account_agent_configs,
 )
 from app.adk.agents.agent_factory.specialist_runtime import (
-    _block_lock_for,
+    block_lock_for,
     resolve_agent,
     resolve_config,
 )
@@ -117,7 +117,7 @@ def attach_account_specialists(
         )
         return
 
-    with _block_lock_for(validated_account_id):
+    with block_lock_for(validated_account_id):
         _attach_locked(root_agent, validated_account_id)
 
 

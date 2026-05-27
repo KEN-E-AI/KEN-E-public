@@ -52,6 +52,7 @@ def _clean_caches() -> Any:
     sr._specialists_cache.clear()
     sr._clear_block_cache_for_tests()
     clear_config_cache()
+    # root.sub_agents is NOT reset here — each test calls _make_root() for a fresh instance.
 
 
 def _make_root(name: str = "ken_e") -> LlmAgent:
