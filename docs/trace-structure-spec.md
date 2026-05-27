@@ -859,16 +859,16 @@ Reference: `docs/design/components/skills/projects/SK-PRD-02-agent-integration.m
 ```
 L1 — root agent invocation
 └── L2 — sub-agent / specialist run
-    ├── skill.list          ← emitted by skill_spans_before_tool_callback when
-    │                          list_skills fires (or by the degraded-path helper
-    │                          when all skills failed to load — see AC-2a)
-    ├── skill.load          ← emitted when load_skill fires
-    │   └── skill.load_resource  ← emitted when load_skill_resource fires;
-    │                               logically scoped to the active skill window
-    │                               (state["active_skill_id"] is set), though not
-    │                               literally nested under a skill.load Weave call
-    │                               — the SkillToolset dispatches it as a sibling
-    │                               tool call in the same turn
+    ├── skill.list           ← emitted by skill_spans_before_tool_callback when
+    │                           list_skills fires (or by the degraded-path helper
+    │                           when all skills failed to load — see AC-2a)
+    ├── skill.load           ← emitted when load_skill fires
+    ├── skill.load_resource  ← sibling of skill.load (not a child); the
+    │                           SkillToolset dispatches it as a separate tool call
+    │                           in the same turn. `state["active_skill_id"]` is set
+    │                           by a prior load_skill success, so it is logically
+    │                           scoped to the active skill window even though the
+    │                           Weave call graph is flat at this level.
     └── (tool calls, LLM calls, …)
 
 pool internal (no agent-turn parent)
@@ -989,9 +989,6 @@ enclosing session by `account_id`, analogous to the HTTP-tier correlation descri
 4. **Failure-mode detection:** A `skill.list` span with `skill_load_total_failure: true`
    or `skill_load_timeout: true` indicates a degraded session where no skills were
    available to the agent.  Score these sessions accordingly in quality metrics.
-
-When system-owned skills (SK-PRD-05) ship, the `skill_owner_type` enum gains the
-`"system"` value with no change to the rest of this section.
 
 ---
 
