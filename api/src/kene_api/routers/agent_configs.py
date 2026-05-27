@@ -60,28 +60,39 @@ class AgentConfigUpdateResponse(AgentConfig):
     read top-level fields like ``response.model`` or ``response.metadata``
     keep working. Adding a new optional ``warnings`` list is additive.
 
-    Per AH-PRD-09 Phase 2, the per-turn specialist resolver picks up all
-    config-field changes within the 60 s TTL cache — no field requires a pod
-    restart. ``warnings`` is retained for API backwards-compatibility but will
-    always be empty and is deprecated.
+    Per AH-PRD-09 Phase 2, ``warnings`` is empty for specialist edits — the
+    per-turn resolver picks up every specialist field change within the 60 s
+    TTL cache. The root agent (``ken_e_chatbot``) is still built once at
+    deploy by ``build_hierarchy()``, so edits to its ``model`` /
+    ``temperature`` / ``max_output_tokens`` / ``tools`` fields surface a
+    "redeploy required" warning here and silently no-op in the running
+    process until ``make backend`` runs. ``instruction`` on the root is
+    cache-backed and hot-reloads within the 60 s TTL.
     """
 
     warnings: list[str] = Field(
         default_factory=list,
-        deprecated=True,
         description=(
-            "Deprecated. Always empty since AH-PRD-09 Phase 2 — the per-turn "
-            "resolver picks up all field changes within the 60 s cache TTL. "
-            "Retained for API backwards-compatibility."
+            "Empty for specialist edits (the per-turn resolver hot-reloads "
+            "all specialist fields within the 60 s TTL). Populated for root "
+            "agent edits to fields that ADK bakes at deploy "
+            "(model / temperature / max_output_tokens / tools); those still "
+            "require a pod redeploy."
         ),
     )
 
 
-# Per AH-PRD-09 Phase 2, the per-turn specialist resolver picks up any
-# config-field change within the 60 s TTL — no field requires a pod restart.
-# This set is intentionally empty; retained as a declaration point so the
-# downstream warning-generation loop has a stable symbol to iterate over.
-_REDEPLOY_REQUIRED_FIELDS: frozenset[str] = frozenset()
+# Root agent doc id — still built once at deploy by build_hierarchy(); its
+# non-instruction LlmAgent fields are frozen Python state in the deployed
+# artifact (see AH-PRD-09 §4.5 What still requires a redeploy).
+_ROOT_CONFIG_ID: str = "ken_e_chatbot"
+
+# Root-agent fields ADK binds at LlmAgent construction. Edits to these on the
+# root doc require a redeploy; edits to the same fields on any specialist
+# doc hot-reload via specialist_runtime within the 60 s TTL.
+_ROOT_REDEPLOY_REQUIRED_FIELDS: frozenset[str] = frozenset(
+    {"model", "temperature", "max_output_tokens", "tools"}
+)
 
 # Storage-internal fields that live on Firestore docs but are not part of
 # the ``MergedAgentConfig`` API contract. They must be stripped before
@@ -299,18 +310,30 @@ def _diff_fields(
 
 
 # TODO(AH-Phase-5-cleanup): remove _build_redeploy_warnings and its call site
-# when the warnings field is deleted after Phase 5 rollout.
-def _build_redeploy_warnings(fields_changed: list[str]) -> list[str]:
-    """Always returns []; retained until the warnings field is removed."""
-    warnings: list[str] = []
-    for field_name in fields_changed:
-        if field_name in _REDEPLOY_REQUIRED_FIELDS:
-            warnings.append(
-                f"Change to '{field_name}' requires a pod/agent redeploy to take "
-                f"effect. The 60 s hot-reload cache only covers instruction and "
-                f"temperature."
-            )
-    return warnings
+# when build_hierarchy() is also driven by the per-turn resolver and the root
+# agent no longer needs deploy-time freezing (AH-PRD-09 Phase 5).
+def _build_redeploy_warnings(
+    config_doc_id: str, fields_changed: list[str]
+) -> list[str]:
+    """Surface "redeploy required" warnings for root-agent fields ADK bakes at deploy.
+
+    Per AH-PRD-09 Phase 2 the per-turn resolver hot-reloads every specialist
+    field within the 60 s TTL, so specialist edits never warn. The root agent
+    (``ken_e_chatbot``) is still built once at deploy by ``build_hierarchy()``,
+    so model / temperature / max_output_tokens / tools edits to it silently
+    no-op until the next ``make backend`` and must surface a warning here.
+    ``instruction`` on the root is cache-backed (AH-PRD-09 Phase 1) and is
+    intentionally not in ``_ROOT_REDEPLOY_REQUIRED_FIELDS``.
+    """
+    if config_doc_id != _ROOT_CONFIG_ID:
+        return []
+    return [
+        f"Change to '{f}' on the root agent requires a redeploy to take "
+        f"effect. Specialist edits hot-reload within the 60 s TTL; the root "
+        f"agent is still built once at deploy by build_hierarchy()."
+        for f in fields_changed
+        if f in _ROOT_REDEPLOY_REQUIRED_FIELDS
+    ]
 
 
 @router.get("/", response_model=list[str])
@@ -584,8 +607,8 @@ async def update_agent_config(
             changes=changes,
         )
 
-        # Redeploy warnings (Sprint 6 AC-6.25)
-        warnings = _build_redeploy_warnings(fields_changed)
+        # Redeploy warnings (Sprint 6 AC-6.25; scoped to root in AH-PRD-09 Phase 2)
+        warnings = _build_redeploy_warnings(config_id, fields_changed)
 
         logger.info(
             f"User {user.email} updated config {config_id} to version {new_version}"
