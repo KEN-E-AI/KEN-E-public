@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 from collections.abc import Callable
 from typing import Any
 
@@ -14,6 +15,7 @@ from app.adk.agents.agent_factory.roster import (
     MAX_TOOLS_PER_SPECIALIST,
     RosterCapExceededError,
 )
+from app.adk.agents.agent_factory.skill_metadata import record_skill_build_metadata
 from app.adk.agents.skill_tool_filter import skill_allowed_tools_before_tool_callback
 from app.adk.agents.utils import config_cache
 from app.adk.security.hooks import adk_before_tool_callback
@@ -28,6 +30,7 @@ logger = get_structured_logger(__name__)
 
 _MAX_ORG_CONTEXT_CHARS = 4000
 _ORG_CONTEXT_BLOCKED = ("[END CONTEXT]", "[ORGANIZATION CONTEXT]")
+_SKILL_LOAD_TIMEOUT_SECONDS = 30
 
 
 def _sanitize_org_context(value: str) -> str:
@@ -161,10 +164,12 @@ def _build_skill_toolset(
     or every skill fails to load.  Single-skill failures are tolerated with a
     WARNING; total failure emits an ERROR.
 
-    Runs the async loader via ``asyncio.run()``.  This is safe for the
-    deploy-time ``build_hierarchy()`` path where no event loop is running.
-    SK-26 / AH-PRD-09 will make ``build_agent`` async when per-turn
-    reconstruction requires it.
+    Works from both sync callers (deploy-time ``build_hierarchy()``) and async
+    callers (any future FastAPI / per-turn rebuild path).  When invoked inside
+    a running event loop, the async loader is run on a worker thread that owns
+    a fresh loop — mirrors the pattern in
+    ``app/adk/agents/utils/supervisor_utils.py:181-207`` and
+    ``app/adk/agents/strategy_agent/artifact_utils.py:171-180``.
     """
     if not skill_ids:
         return None
@@ -176,22 +181,42 @@ def _build_skill_toolset(
         )
         return None
 
-    # Guard against callers that already hold a running event loop (e.g. async
-    # tests, FastAPI startup hooks).  asyncio.run() raises RuntimeError in that
-    # case; detect it early and degrade gracefully so the agent still builds.
+    # asyncio.get_running_loop() raises RuntimeError when no loop is active,
+    # which is the Python 3.12+ canonical way to probe loop state.
     try:
         asyncio.get_running_loop()
-        logger.error(
-            "skill_toolset_skipped_event_loop_conflict",
-            extra={"config_id": config_id, "skill_ids": skill_ids},
-        )
-        return None
+        running = True
     except RuntimeError:
-        pass  # No running loop — safe to call asyncio.run()
+        running = False
 
-    return asyncio.run(
-        _build_skill_toolset_async(account_id, skill_ids, config_id=config_id)
-    )
+    if not running:
+        return asyncio.run(
+            _build_skill_toolset_async(account_id, skill_ids, config_id=config_id)
+        )
+
+    # A loop is already running — submit asyncio.run on a worker thread so we
+    # don't collide with the caller's loop.  The thread owns its own event loop
+    # for the lifetime of the coroutine, then tears it down.
+    def _runner() -> Any | None:
+        return asyncio.run(
+            _build_skill_toolset_async(account_id, skill_ids, config_id=config_id)
+        )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(_runner)
+        try:
+            return future.result(timeout=_SKILL_LOAD_TIMEOUT_SECONDS)
+        except concurrent.futures.TimeoutError:
+            logger.error(
+                "skill_toolset_load_timeout",
+                extra={
+                    "account_id": account_id,
+                    "config_id": config_id,
+                    "skill_ids": skill_ids,
+                    "timeout_s": _SKILL_LOAD_TIMEOUT_SECONDS,
+                },
+            )
+            return None
 
 
 def build_agent(
@@ -305,11 +330,10 @@ def build_agent(
     )
 
     if skill_load_total_failure:
-        # Hand-off marker for SK-27 (skill.* Weave spans): when every
-        # requested skill failed to load, the agent carries no SkillToolset
-        # and no list_skills tool will ever fire.  SK-27 can read this flag
-        # to emit skill_load_total_failure=true on a synthetic span.
-        # TODO(SK-27): remove this bypass once SK-27 adds span instrumentation.
-        object.__setattr__(agent, "_kene_skill_load_total_failure", True)
+        # SK-PRD-02 §7 AC-2a: when every requested skill failed to load, the
+        # agent carries no SkillToolset (and list_skills never fires).  Stash
+        # the flag on the sidecar so SK-27 can surface it as a
+        # skill_load_total_failure=true attribute on the skill.list Weave span.
+        record_skill_build_metadata(agent, skill_load_total_failure=True)
 
     return agent

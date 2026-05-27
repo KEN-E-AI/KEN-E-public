@@ -44,6 +44,10 @@ from app.adk.agents.agent_factory.roster import (
     resolve_specialist_roster,
 )
 from app.adk.agents.agent_factory.sandbox_pool import SandboxPool
+from app.adk.agents.agent_factory.skill_metadata import (
+    get_skill_build_metadata,
+    record_skill_build_metadata,
+)
 
 __all__ = [
     "MAX_TOOLS_PER_SPECIALIST",
@@ -64,9 +68,11 @@ __all__ = [
     "build_toolset_for_doc",
     "count_specialist_tool_roster",
     "generate_dispatch_functions",
+    "get_skill_build_metadata",
     "list_account_agent_configs",
     "load_agent_config",
     "load_all_mcp_toolsets",
     "load_toolsets_for_specialist",
+    "record_skill_build_metadata",
     "resolve_specialist_roster",
 ]

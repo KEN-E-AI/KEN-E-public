@@ -16,12 +16,14 @@ no ``skill.list`` span ever exists.  This issue satisfies the actionable part
 of AC-2a by:
   1. Emitting a structured ERROR log ``skill_load_total_failure`` with
      ``account_id``, ``config_id``, and ``skill_ids`` (observable by ops).
-  2. Setting ``agent._kene_skill_load_total_failure = True`` on the constructed
-     ``LlmAgent`` so SK-27 can read the flag when it adds span instrumentation.
+  2. Recording ``skill_load_total_failure=True`` on the
+     ``skill_metadata`` sidecar (``WeakKeyDictionary`` keyed by the
+     ``LlmAgent``) so SK-27 can read the flag when it adds span instrumentation.
 """
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import types
 from typing import Any
@@ -331,7 +333,10 @@ class TestAC2aAllSkillsFail:
         config = _make_config(skill_ids=["id-only"])
         agent = _build_with_skills(config, name="marker", account_id="acc_m")
 
-        assert getattr(agent, "_kene_skill_load_total_failure", False) is True
+        from app.adk.agents.agent_factory.skill_metadata import (
+            get_skill_build_metadata,
+        )
+        assert get_skill_build_metadata(agent).get("skill_load_total_failure") is True
 
     def test_no_failure_marker_when_skills_load_ok(
         self, monkeypatch: pytest.MonkeyPatch
@@ -346,7 +351,10 @@ class TestAC2aAllSkillsFail:
         config = _make_config(skill_ids=["id-ok"])
         agent = _build_with_skills(config, name="no_marker", account_id="acc_nm")
 
-        assert not getattr(agent, "_kene_skill_load_total_failure", False)
+        from app.adk.agents.agent_factory.skill_metadata import (
+            get_skill_build_metadata,
+        )
+        assert not get_skill_build_metadata(agent).get("skill_load_total_failure")
 
     def test_error_log_includes_account_config_and_skill_ids(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
@@ -413,7 +421,10 @@ class TestAC3EmptySkillList:
             import app.adk.agents.agent_factory.builder as b
             agent = b.build_agent(config, name="no_skills_marker", account_id="acc_nm2")
 
-        assert not hasattr(agent, "_kene_skill_load_total_failure")
+        from app.adk.agents.agent_factory.skill_metadata import (
+            get_skill_build_metadata,
+        )
+        assert get_skill_build_metadata(agent) == {}
 
     def test_empty_skill_ids_does_not_import_kene_api(
         self, monkeypatch: pytest.MonkeyPatch
@@ -465,8 +476,11 @@ class TestAccountIdNone:
         toolsets = [t for t in agent.tools if isinstance(t, SkillToolset)]
         assert toolsets == []
 
-        # Not treated as total failure — no _kene_skill_load_total_failure marker
-        assert not getattr(agent, "_kene_skill_load_total_failure", False)
+        # Not treated as total failure — sidecar carries no failure marker
+        from app.adk.agents.agent_factory.skill_metadata import (
+            get_skill_build_metadata,
+        )
+        assert not get_skill_build_metadata(agent).get("skill_load_total_failure")
 
         # A WARNING (not ERROR) should have been emitted
         warn_records = [
@@ -504,8 +518,11 @@ class TestDuplicateSkillNameDegrades:
         toolsets = [t for t in agent.tools if isinstance(t, SkillToolset)]
         assert toolsets == []
 
-        # Total failure marker set
-        assert getattr(agent, "_kene_skill_load_total_failure", False) is True
+        # Total failure marker set on sidecar
+        from app.adk.agents.agent_factory.skill_metadata import (
+            get_skill_build_metadata,
+        )
+        assert get_skill_build_metadata(agent).get("skill_load_total_failure") is True
 
         # ERROR log emitted
         error_msgs = [
@@ -514,3 +531,103 @@ class TestDuplicateSkillNameDegrades:
             if r.levelname == "ERROR" and "skill_load_total_failure" in r.getMessage()
         ]
         assert error_msgs
+
+
+class TestAsyncBridge:
+    """build_agent must work when called from inside a running event loop.
+
+    The original PR-#687 implementation degraded silently to ``None`` and
+    logged ``skill_toolset_skipped_event_loop_conflict``.  The fix routes the
+    async loader through a worker thread so callers in async contexts (future
+    AH-PRD-09 per-turn rebuild, FastAPI handlers, async tests) still get
+    skills loaded.
+    """
+
+    def test_build_agent_inside_running_loop_loads_skills(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from google.adk.tools.skill_toolset import SkillToolset
+
+        skill = _make_adk_skill("skill-async")
+        fake_loader = _make_fake_loader_module(skills_by_id={"id-a": skill})
+        monkeypatch.setitem(
+            sys.modules, "kene_api.services.skill_loader", fake_loader
+        )
+
+        config = _make_config(skill_ids=["id-a"])
+
+        async def _run() -> Any:
+            return _build_with_skills(config, name="in_loop", account_id="acc_loop")
+
+        agent = asyncio.run(_run())
+
+        toolsets = [t for t in agent.tools if isinstance(t, SkillToolset)]
+        assert len(toolsets) == 1
+        assert "skill-async" in toolsets[0]._skills
+
+    def test_build_agent_inside_running_loop_no_event_loop_conflict_log(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """The retired 'skill_toolset_skipped_event_loop_conflict' key must no longer fire."""
+        import logging
+
+        skill = _make_adk_skill("skill-async-ok")
+        fake_loader = _make_fake_loader_module(skills_by_id={"id-a": skill})
+        monkeypatch.setitem(
+            sys.modules, "kene_api.services.skill_loader", fake_loader
+        )
+
+        config = _make_config(skill_ids=["id-a"])
+
+        async def _run() -> Any:
+            return _build_with_skills(config, name="in_loop2", account_id="acc_loop2")
+
+        with caplog.at_level(logging.ERROR):
+            asyncio.run(_run())
+
+        conflict_records = [
+            r for r in caplog.records
+            if "skill_toolset_skipped_event_loop_conflict" in r.getMessage()
+        ]
+        assert conflict_records == [], (
+            "Retired log key should not fire; bridge should route via worker thread"
+        )
+
+    def test_skill_toolset_load_timeout_logs_and_returns_none(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Timeout in the worker-thread path logs an ERROR and yields no SkillToolset."""
+        import logging
+
+        from google.adk.tools.skill_toolset import SkillToolset
+
+        import app.adk.agents.agent_factory.builder as b
+
+        async def _slow_async(
+            account_id: str, skill_ids: list[str], *, config_id: str | None
+        ) -> Any:
+            await asyncio.sleep(5.0)
+            return None
+
+        monkeypatch.setattr(b, "_build_skill_toolset_async", _slow_async)
+        monkeypatch.setattr(b, "_SKILL_LOAD_TIMEOUT_SECONDS", 0.05)
+
+        config = _make_config(skill_ids=["id-slow"])
+
+        async def _run() -> Any:
+            return _build_with_skills(config, name="timeout", account_id="acc_to")
+
+        with caplog.at_level(logging.ERROR):
+            agent = asyncio.run(_run())
+
+        toolsets = [t for t in agent.tools if isinstance(t, SkillToolset)]
+        assert toolsets == []
+
+        timeout_records = [
+            r for r in caplog.records
+            if "skill_toolset_load_timeout" in r.getMessage()
+        ]
+        assert len(timeout_records) == 1
+        rec = timeout_records[0]
+        assert getattr(rec, "account_id", None) == "acc_to"
+        assert getattr(rec, "timeout_s", None) == 0.05
