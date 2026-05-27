@@ -325,6 +325,11 @@ def _build_code_executor(
     (pool keying requires a real account scope) and falls through, emitting a
     WARNING.  Mirrors ``skill_toolset_skipped_no_account`` semantics.
 
+    On sandbox-build timeout the function returns ``None`` regardless of
+    ``code_execution_enabled`` — requesting sandbox is treated as a hard
+    requirement, not a soft preference; the agent has no code executor that
+    turn.  See DESIGN-REVIEW-LOG Review 36 for the decision rationale.
+
     **Always** routes through a ThreadPoolExecutor — including the no-loop
     case where ``_build_skill_toolset`` would call ``asyncio.run`` directly.
     The reason is timeout enforcement: ``future.result(timeout=…)`` gives us
@@ -364,7 +369,7 @@ def _build_code_executor(
                             "timeout_s": _SANDBOX_BUILD_TIMEOUT_SECONDS,
                         },
                     )
-                    # Fall through to the built-in / None resolution below.
+                    return None
 
     return BuiltInCodeExecutor() if config.code_execution_enabled else None
 

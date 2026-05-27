@@ -719,10 +719,20 @@ class TestSandboxWiring:
     # AC-4 — timeout enforcement
     # ------------------------------------------------------------------
 
-    def test_sandbox_build_timeout_logs_and_falls_through(
-        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    @pytest.mark.parametrize("code_execution_enabled", [False, True])
+    def test_sandbox_build_timeout_returns_none_no_fallback(
+        self,
+        code_execution_enabled: bool,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Timeout in the worker-thread path logs sandbox_build_timeout ERROR and falls through."""
+        """Timeout returns None regardless of code_execution_enabled — no silent downgrade.
+
+        When sandbox_code_executor_enabled=True and the pool's get_or_create exceeds
+        the timeout, the function MUST return None rather than falling through to
+        BuiltInCodeExecutor.  Sandbox is a hard requirement: if it cannot be built,
+        the agent has no code executor that turn.  See DESIGN-REVIEW-LOG Review 36.
+        """
         import logging
 
         import app.adk.agents.agent_factory.builder as b
@@ -735,11 +745,16 @@ class TestSandboxWiring:
         pool.get_or_create = _slow_get_or_create  # type: ignore[assignment]
         monkeypatch.setattr(b, "_SANDBOX_BUILD_TIMEOUT_SECONDS", 0.05)
 
-        config = _make_config(sandbox_code_executor_enabled=True, code_execution_enabled=False)
+        config = _make_config(
+            sandbox_code_executor_enabled=True,
+            code_execution_enabled=code_execution_enabled,
+        )
 
         with caplog.at_level(logging.ERROR):
             agent = self._build(config, account_id="acc_to", sandbox_pool=pool)
 
+        # Sandbox timeout must NOT fall through to BuiltInCodeExecutor, even
+        # when code_execution_enabled=True — isolation guarantee is fail-closed.
         assert agent.code_executor is None
 
         timeout_records = [
