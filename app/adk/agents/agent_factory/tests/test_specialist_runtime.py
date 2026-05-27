@@ -1265,3 +1265,146 @@ class TestSpecialistRuntimeRosterCap:
             pytest.raises(RosterCapExceededError, match="31 > 30"),
         ):
             sr.resolve_agent("fat_specialist", account_id=None)
+
+
+# ---------------------------------------------------------------------------
+# TestSpecialistRuntimeReviewWrap — AH-75 / AH-PRD-09: review-pipeline opt-in
+# moves from per-call dispatch arg to a property of the specialist's Firestore
+# config (``default_acceptance_criteria``). When set, ``_build_specialist``
+# wraps the constructed ``LlmAgent`` in ``build_review_pipeline`` and renames
+# the resulting ``LoopAgent`` to the specialist's doc_id so
+# ``transfer_to_agent(agent_name=<doc_id>)`` resolves to the wrapped pipeline.
+# ---------------------------------------------------------------------------
+
+
+class TestSpecialistRuntimeReviewWrap:
+    def test_no_criteria_returns_unwrapped_llmagent(self) -> None:
+        """When ``default_acceptance_criteria`` is unset, the returned agent is the
+        raw ``LlmAgent`` from ``build_agent`` — no review-pipeline construction."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+
+        config = _make_specialist_config(mcp_servers=[], tool_ids=None)
+        # Sanity: helper builds a config with default_acceptance_criteria=None.
+        assert config.default_acceptance_criteria is None
+
+        stack, _mock_btf, mock_ba = _patch_specialist_runtime_externals()
+        with stack:
+            from unittest.mock import patch as _patch
+
+            with _patch(
+                "app.adk.agents.utils.review_pipeline.build_review_pipeline"
+            ) as mock_build_pipeline:
+                result = sr._build_specialist(config, "plain_spec", None)
+
+        # Wrap NOT applied.
+        mock_build_pipeline.assert_not_called()
+        # Returned agent is the build_agent output (raw LlmAgent mock).
+        assert mock_ba.call_count == 1
+        assert result._extract_mock_name() == "llmagent_plain_spec"
+
+    def test_criteria_set_wraps_in_review_pipeline_renamed_to_doc_id(self) -> None:
+        """When ``default_acceptance_criteria`` is set, ``_build_specialist`` calls
+        ``build_review_pipeline`` with the sanitised criteria and renames the
+        returned LoopAgent to the specialist's doc_id so ADK's
+        ``transfer_to_agent(agent_name=<doc_id>)`` finds it via
+        ``root.find_agent``."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+
+        config = MergedAgentConfig(
+            instruction="Strategy specialist.",
+            model="gemini-2.5-pro",
+            description="Strategy specialist description.",
+            default_acceptance_criteria="Cite at least 3 sources.",
+        )
+
+        # Build a custom externals stack so build_agent returns a mock whose
+        # ``.description`` actually reflects the config (the default helper's
+        # side_effect leaves .description as an auto-generated child MagicMock,
+        # which masks the carry-over assertion below).
+        from contextlib import ExitStack
+        from unittest.mock import patch as _patch
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.mcp._build_firestore_client",
+                    return_value=_FakeFirestoreDb({}),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.tools.registry.function_tool_registry.resolve_default_global_tools",
+                    return_value=[],
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.tools.registry.tool_registry.get_default_registry",
+                    return_value=MagicMock(name="fake_registry"),
+                )
+            )
+
+            def _make_specialist_mock(_config: Any, *, name: str, **_kw: Any) -> Any:
+                m = MagicMock(name=f"llmagent_{name}")
+                m.name = name  # explicit, not the MagicMock auto-name
+                m.description = _config.description
+                return m
+
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.build_agent",
+                    side_effect=_make_specialist_mock,
+                )
+            )
+
+            # MagicMock LoopAgent stand-in. The production build_review_pipeline
+            # returns a LoopAgent named ``f"{output_key_prefix}_loop"``; the
+            # _build_specialist body assigns .name = doc_id post-construction.
+            fake_pipeline = MagicMock(name="loopagent")
+            fake_pipeline.name = "strategy_review_loop"  # production default
+            fake_pipeline.description = ""
+
+            mock_build_pipeline = stack.enter_context(
+                _patch(
+                    "app.adk.agents.utils.review_pipeline.build_review_pipeline",
+                    return_value=fake_pipeline,
+                )
+            )
+            result = sr._build_specialist(config, "strategy", None)
+
+        # Pipeline construction called with sanitised criteria + correct prefix.
+        mock_build_pipeline.assert_called_once()
+        call_kwargs = mock_build_pipeline.call_args.kwargs
+        assert call_kwargs["acceptance_criteria"] == "Cite at least 3 sources."
+        assert call_kwargs["output_key_prefix"] == "strategy_review"
+        # The returned agent IS the pipeline (not the inner specialist).
+        assert result is fake_pipeline
+        # Renamed to the doc_id so find_agent resolves transfer_to_agent.
+        assert result.name == "strategy"
+        # Description carried across from the inner specialist.
+        assert result.description == "Strategy specialist description."
+
+    def test_blank_criteria_treated_as_no_criteria(self) -> None:
+        """Whitespace-only ``default_acceptance_criteria`` does NOT trigger wrap —
+        keeps the contract that empty config means single-pass dispatch."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+
+        config = MergedAgentConfig(
+            instruction="Test instruction.",
+            model="gemini-2.5-pro",
+            description="Test specialist",
+            default_acceptance_criteria="   \n\t  ",  # whitespace-only
+        )
+
+        stack, _mock_btf, _mock_ba = _patch_specialist_runtime_externals()
+        with stack:
+            from unittest.mock import patch as _patch
+
+            with _patch(
+                "app.adk.agents.utils.review_pipeline.build_review_pipeline"
+            ) as mock_build_pipeline:
+                sr._build_specialist(config, "whitespace_spec", None)
+
+        mock_build_pipeline.assert_not_called()

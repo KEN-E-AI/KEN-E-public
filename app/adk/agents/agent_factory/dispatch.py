@@ -30,7 +30,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from google.adk.agents import LlmAgent
+from google.adk.agents import BaseAgent, LlmAgent
 from google.adk.tools import ToolContext
 
 from app.adk.agents.utils.agent_retry import (
@@ -215,7 +215,7 @@ def generate_dispatch_functions(
 
 
 def assemble_available_specialists_block(
-    specialists: dict[str, LlmAgent],
+    specialists: dict[str, BaseAgent],
 ) -> str:
     """Build a Markdown block listing every registered specialist.
 
@@ -229,7 +229,9 @@ def assemble_available_specialists_block(
     single ``"- None registered."`` line.
 
     Args:
-        specialists: Mapping of specialist name -> ``LlmAgent``.
+        specialists: Mapping of specialist name -> ``BaseAgent``. Accepts
+            ``LlmAgent`` for plain specialists or ``LoopAgent`` for
+            review-pipeline-wrapped specialists (AH-75 / AH-PRD-09).
 
     Returns:
         A Markdown-formatted string ready for injection into a router agent's

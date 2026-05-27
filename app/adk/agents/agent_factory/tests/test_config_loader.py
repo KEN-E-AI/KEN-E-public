@@ -250,6 +250,7 @@ class TestConfigLoader:
         assert result.skill_ids == []
         assert result.sandbox_code_executor_enabled is False
         assert result.response_schema is None
+        assert result.default_acceptance_criteria is None
 
     @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
     @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
@@ -696,6 +697,34 @@ class TestConfigLoader:
         assert result.available_to_copy is False
         assert result.automatically_available is False
         assert result.visible_in_frontend is False
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_default_acceptance_criteria_round_trips(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """AH-75: review-pipeline opt-in lives on the specialist config.
+
+        ``default_acceptance_criteria`` defaults to ``None`` (single-pass
+        dispatch); when set, the resolver wraps the specialist in
+        ``build_review_pipeline`` at content-hash build time so the same
+        criteria apply to every dispatch.
+        """
+        from app.adk.agents.agent_factory.config_loader import load_agent_config
+
+        doc_with_criteria = {
+            "instruction": "Strategy specialist.",
+            "model": "gemini-2.5-pro",
+            "default_acceptance_criteria": "Cite ≥3 sources; structured output.",
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=doc_with_criteria)
+
+        result = load_agent_config("test_agent")
+
+        assert result.default_acceptance_criteria == (
+            "Cite ≥3 sources; structured output."
+        )
 
 
 if __name__ == "__main__":

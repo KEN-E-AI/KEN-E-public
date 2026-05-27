@@ -55,7 +55,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from google.adk.agents import LlmAgent
+from google.adk.agents import BaseAgent, LlmAgent
 from google.adk.agents.readonly_context import ReadonlyContext
 
 from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
@@ -94,13 +94,18 @@ def _content_hash(config: MergedAgentConfig) -> str:
 
 
 class _AgentCache:
-    """Thread-safe LRU cache for resolved ``LlmAgent`` objects.
+    """Thread-safe LRU cache for resolved specialist ``BaseAgent`` objects.
 
     Keyed by ``(doc_id, account_id | None, content_hash)``.  Capped at
     ``maxsize`` entries; the least-recently-used entry is evicted when at
     capacity.  Uses a dedicated ``threading.Lock`` — separate from the
     config-cache stripe locks — because agent construction (the critical
     section on miss) is independent of config fetches.
+
+    Entries are typed as ``BaseAgent`` rather than ``LlmAgent`` because
+    ``_build_specialist`` may wrap the constructed ``LlmAgent`` in a
+    ``build_review_pipeline`` ``LoopAgent`` when the config specifies a
+    ``default_acceptance_criteria`` (AH-75 / AH-PRD-09 review-config).
 
     Single-flight on cache miss: ``get_or_build`` holds the lock across the
     check-and-populate window so N concurrent cold reads for the same key
@@ -109,12 +114,12 @@ class _AgentCache:
 
     def __init__(self, maxsize: int = _AGENT_CACHE_MAX) -> None:
         self._maxsize = maxsize
-        self._store: collections.OrderedDict[tuple[str, str | None, str], LlmAgent] = (
+        self._store: collections.OrderedDict[tuple[str, str | None, str], BaseAgent] = (
             collections.OrderedDict()
         )
         self._lock = threading.Lock()
 
-    def get(self, key: tuple[str, str | None, str]) -> LlmAgent | None:
+    def get(self, key: tuple[str, str | None, str]) -> BaseAgent | None:
         """Return the cached agent for *key*, or ``None`` on miss.
 
         Promotes *key* to the MRU end on hit.
@@ -125,7 +130,7 @@ class _AgentCache:
             self._store.move_to_end(key)
             return self._store[key]
 
-    def put(self, key: tuple[str, str | None, str], agent: LlmAgent) -> None:
+    def put(self, key: tuple[str, str | None, str], agent: BaseAgent) -> None:
         """Insert or update *key* → *agent*, evicting the LRU entry if at capacity."""
         with self._lock:
             if key in self._store:
@@ -137,8 +142,8 @@ class _AgentCache:
     def get_or_build(
         self,
         key: tuple[str, str | None, str],
-        builder: Callable[[], LlmAgent],
-    ) -> LlmAgent:
+        builder: Callable[[], BaseAgent],
+    ) -> BaseAgent:
         """Return the cached agent for *key*, calling *builder* exactly once on miss.
 
         Holds the lock across the check-and-populate window (double-checked
@@ -152,13 +157,13 @@ class _AgentCache:
     def get_or_build_with_hit(
         self,
         key: tuple[str, str | None, str],
-        builder: Callable[[], LlmAgent],
-    ) -> tuple[LlmAgent, bool]:
+        builder: Callable[[], BaseAgent],
+    ) -> tuple[BaseAgent, bool]:
         """Same as :meth:`get_or_build` but also returns whether the entry was cached.
 
         Returns:
             ``(agent, cache_hit)`` where ``cache_hit`` is ``True`` when the
-            ``LlmAgent`` was already in the LRU store and ``False`` when a fresh
+            agent was already in the LRU store and ``False`` when a fresh
             build was triggered.
         """
         with self._lock:
@@ -221,8 +226,17 @@ def _clear_block_cache_for_tests() -> None:
 
 def _build_specialist(
     config: MergedAgentConfig, name: str, account_id: str | None
-) -> LlmAgent:
-    """Construct a new ``LlmAgent`` from a ``MergedAgentConfig``.
+) -> BaseAgent:
+    """Construct a specialist ``BaseAgent`` from a ``MergedAgentConfig``.
+
+    Returns an ``LlmAgent`` for single-pass dispatch. When
+    ``config.default_acceptance_criteria`` is set (AH-75 / AH-PRD-09), wraps
+    that ``LlmAgent`` in ``build_review_pipeline`` and returns the resulting
+    ``LoopAgent`` instead — the wrap is decided at content-hash build time
+    so review-config edits propagate through the resolver's existing
+    invalidation path. The wrapped pipeline is renamed back to *name* so
+    ADK's ``transfer_to_agent`` (which looks up sub-agents by name) finds
+    it under the same identifier as the unwrapped specialist.
 
     Mirrors the pre-AH-PRD-09 specialist-build path from ``hierarchy.py`` (now
     deleted from the deploy-time loop) so the per-turn resolver preserves
@@ -363,9 +377,53 @@ def _build_specialist(
         )
         raise
 
-    return build_agent(
+    specialist = build_agent(
         config, name=name, account_id=account_id, tools=tools, config_doc_id=None
     )
+
+    # AH-75 / AH-PRD-09: review-pipeline opt-in lives on the specialist's
+    # Firestore config, not on the per-call dispatch surface. When set, wrap
+    # the constructed LlmAgent in build_review_pipeline so every dispatch to
+    # this specialist runs the worker/reviewer loop. The cache key
+    # (doc_id, account_id, content_hash) already covers this — content_hash
+    # incorporates default_acceptance_criteria via model_dump_json.
+    criteria = (config.default_acceptance_criteria or "").strip()
+    if not criteria:
+        return specialist
+
+    from app.adk.agents.utils.criteria_utils import (
+        MAX_CRITERIA_CHARS,
+        sanitise_criteria,
+    )
+    from app.adk.agents.utils.review_pipeline import build_review_pipeline
+
+    if len(criteria) > MAX_CRITERIA_CHARS:
+        logger.warning(
+            "[BUILD-SPECIALIST] default_acceptance_criteria for %r truncated "
+            "from %d to %d chars",
+            name,
+            len(criteria),
+            MAX_CRITERIA_CHARS,
+        )
+        criteria = criteria[:MAX_CRITERIA_CHARS]
+    criteria = sanitise_criteria(criteria)
+
+    pipeline = build_review_pipeline(
+        specialist=specialist,
+        acceptance_criteria=criteria,
+        output_key_prefix=f"{name}_review",
+    )
+
+    # Rename the LoopAgent to the specialist's doc_id so ADK's
+    # transfer_to_agent (which calls root.find_agent(name)) locates the
+    # wrapped pipeline under the same identifier the LLM sees in the
+    # Available Specialists block. BaseAgent fields are mutable;
+    # parent_agent / sub_agents are managed by the sub_agent_attacher.
+    pipeline.name = name
+    # Carry the specialist's description across so available_specialists_provider
+    # surfaces the same user-facing string whether or not review is enabled.
+    pipeline.description = specialist.description
+    return pipeline
 
 
 # ---------------------------------------------------------------------------
@@ -402,15 +460,21 @@ def resolve_agent(
     doc_id: str,
     account_id: str | None = None,
     ttl_seconds: int = 60,
-) -> LlmAgent:
-    """Return a cached ``LlmAgent`` for ``(doc_id, account_id)``.
+) -> BaseAgent:
+    """Return a cached specialist ``BaseAgent`` for ``(doc_id, account_id)``.
 
     Fetches the ``MergedAgentConfig``, computes a content-hash, and returns
-    the cached ``LlmAgent`` if one exists with the same
+    the cached agent if one exists with the same
     ``(doc_id, account_id, content_hash)``.  On hash mismatch (config changed
-    since last build), a new ``LlmAgent`` is constructed and inserted into the
-    LRU cache; the stale entry is evicted naturally when the cache reaches
+    since last build), a new agent is constructed and inserted into the LRU
+    cache; the stale entry is evicted naturally when the cache reaches
     capacity.
+
+    Returns an ``LlmAgent`` for plain specialists or a ``LoopAgent``
+    (review pipeline) when ``config.default_acceptance_criteria`` is set
+    (AH-75 / AH-PRD-09). The returned agent's ``.name`` matches *doc_id*
+    in both cases so ADK's ``transfer_to_agent`` finds it under one
+    identifier.
 
     Args:
         doc_id: Firestore document ID in the ``agent_configs`` collection.
@@ -418,7 +482,7 @@ def resolve_agent(
         ttl_seconds: TTL for the underlying config cache.
 
     Returns:
-        A ready-to-use ``LlmAgent`` with tools wired according to the config.
+        A ready-to-use ``BaseAgent`` with tools wired according to the config.
 
     Raises:
         Any exception that :func:`resolve_config` or :func:`_build_specialist`
@@ -437,7 +501,7 @@ def resolve_agent_with_hit(
     doc_id: str,
     account_id: str | None = None,
     ttl_seconds: int = 60,
-) -> tuple[LlmAgent, bool]:
+) -> tuple[BaseAgent, bool]:
     """Same as :func:`resolve_agent` but also reports whether the agent was cached.
 
     Intended for callers that want to emit a ``cache_hit`` observability attribute
@@ -445,8 +509,8 @@ def resolve_agent_with_hit(
     ``set_delegate_attrs``).
 
     Returns:
-        ``(agent, cache_hit)`` — ``cache_hit`` is ``True`` when the ``LlmAgent``
-        was served from the LRU cache; ``False`` when a fresh build was triggered.
+        ``(agent, cache_hit)`` — ``cache_hit`` is ``True`` when the agent was
+        served from the LRU cache; ``False`` when a fresh build was triggered.
 
     Raises:
         Any exception that :func:`resolve_config` or :func:`_build_specialist`
@@ -668,7 +732,7 @@ def available_specialists_provider(context: ReadonlyContext) -> str:
         )
         return "## Available Specialists\n\n- None registered."
 
-    specialists: dict[str, LlmAgent] = {}
+    specialists: dict[str, BaseAgent] = {}
     for doc_id in doc_ids:
         try:
             config = resolve_config(doc_id, account_id)
