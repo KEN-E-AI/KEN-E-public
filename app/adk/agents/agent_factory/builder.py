@@ -110,11 +110,13 @@ async def _build_skill_toolset_async(
         load_skill,
     )
 
-    loaded_skills = []
+    # loaded_pairs preserves insertion order; errors are skipped.
+    # Tracking (sid, skill) together lets us build the name→skill_id index later.
+    loaded_pairs: list[tuple[str, Any]] = []
     for sid in skill_ids:
         try:
             skill = await load_skill(account_id, sid)
-            loaded_skills.append(skill)
+            loaded_pairs.append((sid, skill))
         except (SkillNotFoundError, SkillCorruptError) as exc:
             logger.warning(
                 "skill_load_skipped",
@@ -136,7 +138,7 @@ async def _build_skill_toolset_async(
                 },
             )
 
-    if not loaded_skills:
+    if not loaded_pairs:
         logger.error(
             "skill_load_total_failure",
             extra={
@@ -145,14 +147,30 @@ async def _build_skill_toolset_async(
                 "skill_ids": skill_ids,
             },
         )
-        return None
+        return None, {}
+
+    loaded_skills = [skill for _, skill in loaded_pairs]
 
     # Deferred import — SkillToolset lives in google.adk.tools.skill_toolset
     # (not google.adk.skills, which does not re-export it in ADK 1.27.x).
     from google.adk.tools.skill_toolset import SkillToolset
 
+    # Build name → {skill_id, version, allowed_tools} index consumed by SK-27
+    # (skill_spans.py callbacks) for span attrs and skills_allowed_tools seeding.
+    # `version=0` is a v1 placeholder: load_skill() resolves current_version
+    # internally but the ADK Skill type does not surface it.  SK-29 / SK-PRD-05
+    # will plumb the resolved version once the loader API exposes it.
+    skill_name_index: dict[str, dict] = {
+        skill.frontmatter.name: {
+            "skill_id": sid,
+            "version": 0,
+            "allowed_tools": skill.frontmatter.allowed_tools,
+        }
+        for sid, skill in loaded_pairs
+    }
+
     try:
-        return SkillToolset(skills=loaded_skills)
+        return SkillToolset(skills=loaded_skills), skill_name_index
     except ValueError as exc:
         # Duplicate skill names (stale data) — degrade same as total failure.
         logger.error(
@@ -164,7 +182,7 @@ async def _build_skill_toolset_async(
                 "reason": f"SkillToolset construction failed: {exc}",
             },
         )
-        return None
+        return None, {}
 
 
 def _build_skill_toolset(
@@ -172,14 +190,18 @@ def _build_skill_toolset(
     skill_ids: list[str],
     *,
     config_id: str | None,
-) -> tuple[Any | None, bool]:
+) -> tuple[Any | None, dict, bool]:
     """Load skill objects and construct a SkillToolset.
 
-    Returns ``(toolset, timed_out)``:
+    Returns ``(toolset, skill_name_index, timed_out)``:
 
     * ``toolset`` is ``None`` when ``skill_ids`` is empty, ``account_id`` is
       ``None``, every skill fails to load, or the load times out.  Single-skill
       failures are tolerated with a WARNING; total failure emits an ERROR.
+    * ``skill_name_index`` maps ``skill.frontmatter.name`` →
+      ``{skill_id, version, allowed_tools}`` for all loaded skills.  Empty when
+      no skills loaded or when the toolset is ``None``.  Consumed by SK-27
+      (``skill_spans.py``) to resolve span attrs at callback time.
     * ``timed_out`` is ``True`` only when the worker-thread bridge hit
       ``_SKILL_LOAD_TIMEOUT_SECONDS``.  The caller surfaces this as a separate
       sidecar marker so ops can distinguish "infra slow" from "every skill
@@ -193,14 +215,14 @@ def _build_skill_toolset(
     ``app/adk/agents/strategy_agent/artifact_utils.py:171-180``.
     """
     if not skill_ids:
-        return None, False
+        return None, {}, False
 
     if account_id is None:
         logger.warning(
             "skill_toolset_skipped_no_account",
             extra={"config_id": config_id, "skill_ids": skill_ids},
         )
-        return None, False
+        return None, {}, False
 
     # asyncio.get_running_loop() raises RuntimeError when no loop is active,
     # which is the Python 3.12+ canonical way to probe loop state.
@@ -211,15 +233,15 @@ def _build_skill_toolset(
         running = False
 
     if not running:
-        toolset = asyncio.run(
+        toolset, skill_name_index = asyncio.run(
             _build_skill_toolset_async(account_id, skill_ids, config_id=config_id)
         )
-        return toolset, False
+        return toolset, skill_name_index, False
 
     # A loop is already running — submit asyncio.run on a worker thread so we
     # don't collide with the caller's loop.  The thread owns its own event loop
     # for the lifetime of the coroutine, then tears it down.
-    def _runner() -> Any | None:
+    def _runner() -> tuple[Any | None, dict]:
         return asyncio.run(
             _build_skill_toolset_async(account_id, skill_ids, config_id=config_id)
         )
@@ -227,7 +249,8 @@ def _build_skill_toolset(
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(_runner)
         try:
-            return future.result(timeout=_SKILL_LOAD_TIMEOUT_SECONDS), False
+            result = future.result(timeout=_SKILL_LOAD_TIMEOUT_SECONDS)
+            return result[0], result[1], False
         except concurrent.futures.TimeoutError:
             logger.error(
                 "skill_toolset_load_timeout",
@@ -238,7 +261,7 @@ def _build_skill_toolset(
                     "timeout_s": _SKILL_LOAD_TIMEOUT_SECONDS,
                 },
             )
-            return None, True
+            return None, {}, True
 
 
 def build_agent(
@@ -283,15 +306,17 @@ def build_agent(
     output_schema = config.response_schema
 
     # SK-PRD-02: hydrate a SkillToolset when the config has attached skills.
-    # _build_skill_toolset returns (toolset, timed_out).  toolset is None when
-    # skill_ids is empty, account_id is None, every skill fails to load, or the
-    # load timed out.  timed_out distinguishes the infra-failure case (logged
-    # below as skill_load_timeout on the sidecar) from a genuine total failure.
+    # _build_skill_toolset returns (toolset, skill_name_index, timed_out).
+    # toolset is None when skill_ids is empty, account_id is None, every skill
+    # fails to load, or the load timed out.  timed_out distinguishes the
+    # infra-failure case (logged below as skill_load_timeout on the sidecar)
+    # from a genuine total failure.
     assembled_tools: list[Any] = list(tools or [])
     skill_load_total_failure = False
     skill_load_timeout = False
+    skill_name_index: dict[str, Any] = {}
     if config.skill_ids:
-        skill_toolset, skill_load_timeout = _build_skill_toolset(
+        skill_toolset, skill_name_index, skill_load_timeout = _build_skill_toolset(
             account_id,
             config.skill_ids,
             config_id=config_doc_id,
@@ -365,9 +390,15 @@ def build_agent(
     #   * skill_load_timeout: the 30s worker-thread bridge fired before any
     #     skill loaded.  Separate from total_failure because the remediation
     #     is different (infra/retry vs. stale skill IDs / config).
+    #   * skill_name_index: maps frontmatter name → {skill_id, version,
+    #     allowed_tools} for all successfully loaded skills.  Consumed by
+    #     SK-27 (skill_spans.py) to resolve span attrs and seed
+    #     state["skills_allowed_tools"] at turn start.
     if skill_load_total_failure:
         record_skill_build_metadata(agent, skill_load_total_failure=True)
     if skill_load_timeout:
         record_skill_build_metadata(agent, skill_load_timeout=True)
+    if skill_name_index:
+        record_skill_build_metadata(agent, skill_name_index=skill_name_index)
 
     return agent
