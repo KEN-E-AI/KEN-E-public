@@ -192,6 +192,7 @@ _block_locks: list[threading.Lock] = [threading.Lock() for _ in range(32)]
 
 
 def block_lock_for(account_id: str) -> threading.Lock:
+    """Return the stripe lock for *account_id*. Caller must pre-validate via ``validate_account_id``."""
     return _block_locks[hash(account_id) % 32]
 
 
