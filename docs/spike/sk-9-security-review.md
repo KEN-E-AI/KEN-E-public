@@ -53,6 +53,17 @@ corresponding probe against the spike Agent Engine resource
 |---------|--------|-------------------|-----------|--------|
 | Q1 — Network egress | `docs/spike/q1-network-egress.md` §Result | **Informational** | Default sandbox already blocks all egress (no action required) | Closed — positive finding |
 | Q3 — Cross-skill state (same-session) | `docs/spike/q3-cross-skill-state-fragment.md` §Result | **Medium** *(conditional — SK-35 may escalate to High)* | `SandboxPool (account_id, config_id)` keying (SK-PRD-02 §4.6); SK-PRD-03 authoring-UI warning; SK-35 characterises cross-session `/tmp` reuse | In scope — SK-PRD-03 AC owns the warning; **SK-35** owns the cross-session probe |
+
+<!-- SK-35 SELECT POST-RUN — replace the Q3 row above with ONE branch.
+     Probe outcome: docs/spike/sk-prd-02-cross-session-tmp-characterisation.md
+
+LEAK BRANCH (any trial returned LEAK — enable _CLEAR_TMP_ON_REUSE = True in sandbox_pool.py):
+| Q3 — Cross-skill state (same + cross-session) | `docs/spike/q3-cross-skill-state-fragment.md` §Result; `docs/spike/sk-prd-02-cross-session-tmp-characterisation.md` | **High** (confirmed — SK-35 cross-session LEAK) | `SandboxPool (account_id, config_id)` keying; SK-PRD-03 authoring-UI warning; `SandboxPool._clear_tmp` defence-in-depth (`_CLEAR_TMP_ON_REUSE = True`, SK-35) | In scope — SK-PRD-03 AC owns the warning; SK-35 mitigation active |
+
+CLEAN BRANCH (all trials returned CLEAN):
+| Q3 — Cross-skill state (same-session) | `docs/spike/q3-cross-skill-state-fragment.md` §Result; `docs/spike/sk-prd-02-cross-session-tmp-characterisation.md` | **Medium** | `SandboxPool (account_id, config_id)` keying (SK-PRD-02 §4.6); SK-PRD-03 authoring-UI warning | In scope — SK-PRD-03 AC owns the warning; SK-35 confirmed CLEAN |
+-->
+
 | Q4 — Resource limits / DoS | `docs/spike/q4-resource-limits.md` §Result | **Informational** | ~5-min sandbox lifetime cap is a built-in DoS defence (no action required) | Closed — positive finding |
 | Q5 — File I/O / sandbox surface | `docs/spike/q5-file-io.md` §Result | **Informational** | gVisor isolation + empty cwd is more restrictive than assumed; SK-PRD-03 must change bundle-delivery model (inline content, not filesystem) | SK-PRD-03 delivery-model change in scope |
 
@@ -137,6 +148,17 @@ production.
 
 **Severity: Medium** *(conditional — see note below).*
 
+<!-- SK-35 SELECT POST-RUN — replace the severity line above with ONE branch, then delete
+     this comment and the "Note on severity conditionality" paragraph that follows.
+
+LEAK BRANCH: **Severity: High** (SK-35 live probe confirmed cross-session /tmp LEAK —
+see `docs/spike/sk-prd-02-cross-session-tmp-characterisation.md` §Severity classification).
+
+CLEAN BRANCH: **Severity: Medium** (SK-35 live probe confirmed Vertex clears /tmp
+cross-session; conditional qualifier dropped —
+see `docs/spike/sk-prd-02-cross-session-tmp-characterisation.md` §Severity classification).
+-->
+
 **Note on severity conditionality.** This Medium rating assumes Vertex clears
 container `/tmp` between sessions within the same pool bucket — which the
 available live captures do not confirm. If Vertex reuses containers without
@@ -149,6 +171,9 @@ reuse across executor sessions`) — a live probe that runs through the real
 gating SK-PRD-02's ship-to-production. SK-35 AC-4 commits to re-sending the
 §"Email packet" finding to `security@ken-e.ai` if the probe escalates Q3 to
 High.
+
+Live probe results and the selected severity branch are recorded in
+`docs/spike/sk-prd-02-cross-session-tmp-characterisation.md`.
 
 Rationale:
 - **Confirmed scope**: skills within the same specialist agent and the same
@@ -297,6 +322,32 @@ severe enough to block the whole feature" does not apply. No pause, no
 accept-with-mitigation decision requiring Skills + Security lead sign-off, and
 no block on SK-10's merge (beyond the email send required by AC #2).
 
+<!-- SK-35 SELECT POST-RUN (LEAK BRANCH ONLY) — if SK-35 confirms LEAK, replace the
+     AC #3 block above with:
+
+## AC #3 disposition
+
+**Q3 escalated to High — AC #3 accept-with-mitigation.**
+
+SK-35 (`docs/spike/sk-prd-02-cross-session-tmp-characterisation.md`) confirmed that
+Vertex reuses container `/tmp` across executor sessions.  Q3 severity is revised from
+Medium (conditional) to **High**.  The SK-PRD-00 §9 risk row "discovered security issue
+is severe enough to block the whole feature" now applies and requires an
+accept-with-mitigation decision:
+
+* **Mitigation shipped:** `SandboxPool._clear_tmp` defence-in-depth (`_CLEAR_TMP_ON_REUSE = True`
+  in `app/adk/agents/agent_factory/sandbox_pool.py`, landed in this PR).
+* **Residual risk:** best-effort clearing (5 s timeout, logged on failure); does not
+  eliminate the window between executor return and pool re-entry.
+* **Sign-off required:** Skills lead + Security lead must acknowledge the residual risk
+  before SK-PRD-02 ships to production.
+* **PO action:** Re-send the §"Email packet" to `security@ken-e.ai` with the updated
+  Q3 severity (SK-9 AC-4).  Post sent timestamp + Message-ID on Linear SK-9.
+
+If SK-35 confirms CLEAN, this block is not needed — leave the existing N/A disposition.
+-->
+
+
 ---
 
 ## Email packet (for delivery to security@ken-e.ai)
@@ -361,6 +412,32 @@ re-send this email packet with the corrected severity.
 Mitigation: SK-PRD-03 authoring-UI warning (already in acceptance criteria);
 SK-35 adds defence-in-depth /tmp clearing to SandboxPool if the probe confirms
 the leak.
+
+<!-- SK-35 SELECT POST-RUN (LEAK BRANCH ONLY) — if SK-35 confirms LEAK, replace the
+     "--- Q3 DETAIL (MEDIUM) ---" block above with the following and re-send this email:
+
+--- Q3 DETAIL (HIGH — UPDATED) ---
+
+UPDATE: SK-35 live probe (docs/spike/sk-prd-02-cross-session-tmp-characterisation.md)
+confirmed that Vertex reuses the container /tmp between executor sessions sharing the
+same (account_id, config_id) pool bucket. Q3 severity is revised to HIGH.
+
+Scripts from two different skills attached to the same specialist agent share
+filesystem, environment, and Python module state within a session (5/5 state vectors
+LEAK same-session). Additionally, fs, tmpsub, and subprocess-pid vectors LEAK
+cross-session — surviving SandboxPool evict + re-create cycles when Vertex reuses
+the container.
+
+Isolation boundary: SandboxPool (account_id, config_id) keying prevents cross-account
+or cross-specialist leakage. No cross-account or cross-specialist surface confirmed.
+
+Mitigation (shipped): SandboxPool._clear_tmp defence-in-depth purges /tmp on every
+get_or_create return path (enabled via _CLEAR_TMP_ON_REUSE = True).  Residual risk:
+best-effort 5-second timeout; SK-PRD-03 authoring-UI warning remains required.
+
+If SK-35 confirms CLEAN, no email re-send is required — leave the Q3 DETAIL block above unchanged.
+-->
+
 
 --- METHODOLOGY ---
 
