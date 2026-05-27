@@ -1,10 +1,15 @@
 """Unit tests for Redis client."""
 
 import json
+from datetime import datetime, timezone
 from unittest import mock
 
 import pytest
-from src.kene_api.redis_client import RedisService
+from src.kene_api.redis_client import (
+    RedisService,
+    _key_prefix,
+    redis_set_json_failures_total,
+)
 
 
 class TestRedisService:
@@ -149,3 +154,44 @@ class TestRedisService:
         assert result is True
         expected_json = json.dumps(test_data)
         mock_client.setex.assert_called_once_with("test_key", 300, expected_json)
+
+    def test_set_json_with_unserializable_value_returns_false_and_increments_counter(
+        self, redis_service
+    ):
+        """Regression: a non-JSON-serializable value (e.g. a Firestore Timestamp
+        smuggled into account_permissions) must not raise — it must log,
+        increment redis_set_json_failures_total, and return False.
+
+        This was the load-test bug: the seed wrote a nested
+        {role, granted_at: datetime} dict into account_permissions; every
+        cache write failed silently and every authed request fell through
+        to Firestore, blowing the chat-sidebar p90 gate.
+        """
+        mock_client = mock.Mock()
+        redis_service.client = mock_client
+
+        unserializable = {"granted_at": datetime.now(timezone.utc)}
+        labels = redis_set_json_failures_total.labels(
+            key_prefix="user_context", reason="encode"
+        )
+        before = labels._value.get()
+
+        result = redis_service.set_json("user_context:abc123", unserializable)
+
+        assert result is False
+        mock_client.setex.assert_not_called()
+        mock_client.set.assert_not_called()
+        assert labels._value.get() == before + 1
+
+
+class TestKeyPrefix:
+    """Tests for the cache-key prefix label helper."""
+
+    def test_colon_delimited_key_returns_prefix(self):
+        assert _key_prefix("user_context:abc123") == "user_context"
+
+    def test_empty_prefix_with_leading_colon(self):
+        assert _key_prefix(":bare") == ""
+
+    def test_key_without_colon_falls_back_to_unknown(self):
+        assert _key_prefix("rawkey") == "unknown"

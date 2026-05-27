@@ -356,15 +356,22 @@ def _seed_account_doc(
 def _seed_user_permissions(
     db: Any,
     uid: str,
-    now: datetime,
     dry_run: bool,
 ) -> None:
-    """Grant the load-test user member access to acc_load_test.
+    """Grant the load-test user edit access to acc_load_test.
 
     Writes a nested field on the user document — matches the schema in
     `routers/admin.py` (super-admin seed) and `firestore.py` (which uses the
     dot-path `permissions.account_permissions.<accountId>` as an update field
     path, not a Firestore document path).
+
+    The leaf value must be the literal string "edit" or "view" — `UserContext`
+    treats `account_permissions` as `dict[str, str]` and `CachedUserContextService`
+    JSON-encodes that dict on every cache write. A nested `{role, granted_at}`
+    map silently broke Redis caching during the CH-24 sidebar load test for
+    weeks because `granted_at` is a Firestore Timestamp and json.dumps raised
+    on it — every request fell through to Firestore on auth, blowing the p90
+    gate. Keep this value as a string.
 
     Target: users/{uid} doc, field permissions.account_permissions.acc_load_test
     """
@@ -380,10 +387,7 @@ def _seed_user_permissions(
             "uid": uid,
             "permissions": {
                 "account_permissions": {
-                    LOAD_TEST_ACCOUNT_ID: {
-                        "role": "member",
-                        "granted_at": now,
-                    },
+                    LOAD_TEST_ACCOUNT_ID: "edit",
                 },
             },
         },
@@ -663,7 +667,7 @@ def main(argv: list[str] | None = None) -> int:
     _seed_account_doc(db, now, dry_run=args.dry_run)
 
     # 3. User permissions
-    _seed_user_permissions(db, effective_uid, now, dry_run=args.dry_run)
+    _seed_user_permissions(db, effective_uid, dry_run=args.dry_run)
 
     # 4. Session documents
     session_summary = _seed_sessions(db, effective_uid, now, dry_run=args.dry_run)
