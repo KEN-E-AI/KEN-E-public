@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -609,7 +610,6 @@ class TestAssertSkillToolNamesMatch:
 
     def test_introspection_failure_logs_error_and_does_not_raise(self, caplog: Any):
         """AttributeError on .tools → ERROR log; no raise; flag stays False."""
-        import logging
 
         class _BadToolset:
             @property
@@ -622,7 +622,8 @@ class TestAssertSkillToolNamesMatch:
         assert skill_spans._skill_tool_names_verified is False
         error_records = [r for r in caplog.records if r.levelno == logging.ERROR]
         assert len(error_records) == 1
-        assert "skill_tool_names_check_failed" in error_records[0].message
+        # Use getMessage() for compatibility with both stdlib and structlog adapters.
+        assert "skill_tool_names_check_failed" in error_records[0].getMessage()
 
     def test_introspection_failure_retries_on_next_call(self):
         """Flag stays False after an introspection failure → next build retries."""

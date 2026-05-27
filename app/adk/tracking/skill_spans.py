@@ -72,22 +72,22 @@ def assert_skill_tool_names_match(toolset: Any) -> None:
 
     Args:
         toolset: A successfully constructed ``SkillToolset`` instance.  Typed
-            ``Any`` to avoid a top-level ADK import — mirrors the ``Any`` usage
-            at lines 71-106 above.
+            ``Any`` to avoid a top-level ADK import — mirrors the lazy-import
+            pattern used for ``_weave_get_client`` / ``_weave_call_context``.
     """
     global _skill_tool_names_verified
     if _skill_tool_names_verified:
         return
     try:
         actual = frozenset(t.name for t in toolset.tools)
-    except Exception:
+    except Exception as exc:
         logger.error(
             "skill_tool_names_check_failed",
             extra={
                 "reason": (
-                    "Could not introspect toolset.tools — SkillToolset API may have "
-                    "changed. The _SKILL_TOOL_NAMES frozenset is unverified for this "
-                    "process. Expected: " + str(sorted(_SKILL_TOOL_NAMES))
+                    f"{type(exc).__name__}: Could not introspect toolset.tools — "
+                    "SkillToolset API may have changed. "
+                    "Expected: " + str(sorted(_SKILL_TOOL_NAMES))
                 )
             },
             exc_info=True,
