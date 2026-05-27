@@ -24,7 +24,6 @@ from .review_pipeline_tracing import (
     WEAVE_AVAILABLE,
     _truncate_output,
     emit_iteration_span,
-    set_delegate_attrs,
     set_pipeline_attrs,
 )
 
@@ -116,7 +115,9 @@ class TestEmitIterationSpanExceptionIsolation:
     def test_inner_exception_does_not_propagate(self):
         """If _emit_iteration_span_inner raises, emit_iteration_span swallows the exception."""
         if not WEAVE_AVAILABLE:
-            pytest.skip("Weave not available; exception-isolation path is not exercised")
+            pytest.skip(
+                "Weave not available; exception-isolation path is not exercised"
+            )
 
         with patch.object(
             _tracing,
@@ -281,111 +282,9 @@ class TestSetPipelineAttrsExceptionIsolation:
             set_pipeline_attrs("crit", {}, "p", 1)  # must not raise
 
 
-# ── set_delegate_attrs — no-op when WEAVE_AVAILABLE=False ────────────────────
-
-
-class TestSetDelegateAttrsNoWeave:
-    """set_delegate_attrs is a no-op when WEAVE_AVAILABLE=False."""
-
-    def test_returns_none_when_weave_unavailable(self):
-        with patch.object(_tracing, "WEAVE_AVAILABLE", False):
-            result = set_delegate_attrs("business_researcher", False)
-        assert result is None
-
-    def test_does_not_raise_when_weave_unavailable(self):
-        with patch.object(_tracing, "WEAVE_AVAILABLE", False):
-            set_delegate_attrs("research_agent", True)  # must not raise
-
-
-# ── set_delegate_attrs — summary writes ──────────────────────────────────────
-
-
-class TestSetDelegateAttrsSummaryWrites:
-    """specialist_name and cache_hit are written to call.summary."""
-
-    def _call_and_capture_summary(
-        self,
-        specialist_name: str,
-        cache_hit: bool,
-    ) -> dict:
-        summary: dict = {}
-        mock_call = MagicMock()
-        mock_call.summary = summary
-        mock_weave = MagicMock()
-        mock_weave.get_current_call.return_value = mock_call
-
-        with (
-            patch.object(_tracing, "WEAVE_AVAILABLE", True),
-            patch.object(_tracing, "_weave", mock_weave),
-        ):
-            set_delegate_attrs(specialist_name, cache_hit)
-
-        return summary
-
-    def test_specialist_name_written(self):
-        summary = self._call_and_capture_summary("business_researcher", False)
-        assert summary["specialist_name"] == "business_researcher"
-
-    def test_cache_hit_true_written(self):
-        summary = self._call_and_capture_summary("research_agent", True)
-        assert summary["cache_hit"] is True
-
-    def test_cache_hit_false_written(self):
-        summary = self._call_and_capture_summary("research_agent", False)
-        assert summary["cache_hit"] is False
-
-    def test_mcp_pool_hit_absent(self):
-        """mcp_pool_hit must not appear in summary until AH-62 lands."""
-        summary = self._call_and_capture_summary("research_agent", False)
-        assert "mcp_pool_hit" not in summary
-
-    def test_exactly_two_attributes_written(self):
-        """Only specialist_name and cache_hit are written; nothing else."""
-        summary = self._call_and_capture_summary("research_agent", True)
-        assert set(summary.keys()) == {"specialist_name", "cache_hit"}
-
-
-# ── set_delegate_attrs — exception isolation ─────────────────────────────────
-
-
-class TestSetDelegateAttrsExceptionIsolation:
-    """Weave exceptions inside set_delegate_attrs must not propagate to the caller."""
-
-    def test_get_current_call_exception_does_not_propagate(self):
-        mock_weave = MagicMock()
-        mock_weave.get_current_call.side_effect = RuntimeError("Weave unavailable")
-
-        with (
-            patch.object(_tracing, "WEAVE_AVAILABLE", True),
-            patch.object(_tracing, "_weave", mock_weave),
-        ):
-            set_delegate_attrs("specialist", False)  # must not raise
-
-    def test_summary_write_exception_does_not_propagate(self):
-        """If writing to call.summary raises, the exception is swallowed."""
-        mock_call = MagicMock()
-
-        def _raise_on_summary_access(*args, **kwargs):
-            raise RuntimeError("summary broken")
-
-        type(mock_call).summary = property(_raise_on_summary_access)
-
-        mock_weave = MagicMock()
-        mock_weave.get_current_call.return_value = mock_call
-
-        with (
-            patch.object(_tracing, "WEAVE_AVAILABLE", True),
-            patch.object(_tracing, "_weave", mock_weave),
-        ):
-            set_delegate_attrs("specialist", True)  # must not raise
-
-    def test_no_call_returned_does_not_raise(self):
-        """When get_current_call() returns None, set_delegate_attrs is a no-op."""
-        mock_weave = MagicMock()
-        mock_weave.get_current_call.return_value = None
-
-        with (
-            patch.object(_tracing, "WEAVE_AVAILABLE", True),
-            patch.object(_tracing, "_weave", mock_weave),
-        ):
-            set_delegate_attrs("specialist", False)  # must not raise
+# ── set_delegate_attrs tests deleted in AH-75 ────────────────────────────────
+# set_delegate_attrs wrote AH-67's delegate_to_specialist span attributes
+# (specialist_name, cache_hit). Approach 1 deletes the delegate_to_specialist
+# function tool entirely — there is no delegate-span to attach attributes to.
+# MER-E now extracts per-specialist metrics from the native transfer_to_agent
+# sub-agent span tree, which mirrors the deploy-time AH-PRD-02 trace shape.

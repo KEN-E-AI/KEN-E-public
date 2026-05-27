@@ -174,9 +174,7 @@ class TestAC1SkillWiring:
         fake_loader = _make_fake_loader_module(
             skills_by_id={"id-a": skill_a, "id-b": skill_b}
         )
-        monkeypatch.setitem(
-            sys.modules, "kene_api.services.skill_loader", fake_loader
-        )
+        monkeypatch.setitem(sys.modules, "kene_api.services.skill_loader", fake_loader)
 
         config = _make_config(skill_ids=["id-a", "id-b"])
         agent = _build_with_skills(config, name="two_skills", account_id="acc_x")
@@ -225,9 +223,7 @@ class TestAC2MissingSkillTolerance:
             skills_by_id={"id-good": skill_a},
             raise_for_ids={"id-bad": _SkillNotFoundError},
         )
-        monkeypatch.setitem(
-            sys.modules, "kene_api.services.skill_loader", fake_loader
-        )
+        monkeypatch.setitem(sys.modules, "kene_api.services.skill_loader", fake_loader)
 
         config = _make_config(skill_ids=["id-good", "id-bad"])
 
@@ -244,7 +240,8 @@ class TestAC2MissingSkillTolerance:
 
         # A WARNING log was emitted for the failed skill
         skipped_records = [
-            r for r in caplog.records
+            r
+            for r in caplog.records
             if r.levelname == "WARNING" and "skill_load_skipped" in r.getMessage()
         ]
         assert len(skipped_records) == 1
@@ -263,9 +260,7 @@ class TestAC2MissingSkillTolerance:
             skills_by_id={"id-ok": skill_ok},
             raise_for_ids={"id-corrupt": _SkillCorruptError},
         )
-        monkeypatch.setitem(
-            sys.modules, "kene_api.services.skill_loader", fake_loader
-        )
+        monkeypatch.setitem(sys.modules, "kene_api.services.skill_loader", fake_loader)
 
         config = _make_config(skill_ids=["id-ok", "id-corrupt"])
 
@@ -293,9 +288,7 @@ class TestAC2aAllSkillsFail:
                 "id-b": _SkillNotFoundError,
             }
         )
-        monkeypatch.setitem(
-            sys.modules, "kene_api.services.skill_loader", fake_loader
-        )
+        monkeypatch.setitem(sys.modules, "kene_api.services.skill_loader", fake_loader)
 
         config = _make_config(skill_ids=["id-a", "id-b"])
 
@@ -311,7 +304,8 @@ class TestAC2aAllSkillsFail:
 
         # Exactly one ERROR-level total-failure log
         error_records = [
-            r for r in caplog.records
+            r
+            for r in caplog.records
             if r.levelname == "ERROR" and "skill_load_total_failure" in r.getMessage()
         ]
         assert len(error_records) == 1
@@ -320,15 +314,11 @@ class TestAC2aAllSkillsFail:
         assert getattr(rec, "account_id", None) == "acc_fail"
         assert set(getattr(rec, "skill_ids", [])) == {"id-a", "id-b"}
 
-    def test_failure_marker_set_on_agent(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_failure_marker_set_on_agent(self, monkeypatch: pytest.MonkeyPatch) -> None:
         fake_loader = _make_fake_loader_module(
             raise_for_ids={"id-only": _SkillNotFoundError}
         )
-        monkeypatch.setitem(
-            sys.modules, "kene_api.services.skill_loader", fake_loader
-        )
+        monkeypatch.setitem(sys.modules, "kene_api.services.skill_loader", fake_loader)
 
         config = _make_config(skill_ids=["id-only"])
         agent = _build_with_skills(config, name="marker", account_id="acc_m")
@@ -336,6 +326,7 @@ class TestAC2aAllSkillsFail:
         from app.adk.agents.agent_factory.skill_metadata import (
             get_skill_build_metadata,
         )
+
         assert get_skill_build_metadata(agent).get("skill_load_total_failure") is True
 
     def test_no_failure_marker_when_skills_load_ok(
@@ -344,9 +335,7 @@ class TestAC2aAllSkillsFail:
         fake_loader = _make_fake_loader_module(
             skills_by_id={"id-ok": _make_adk_skill("skill-ok")}
         )
-        monkeypatch.setitem(
-            sys.modules, "kene_api.services.skill_loader", fake_loader
-        )
+        monkeypatch.setitem(sys.modules, "kene_api.services.skill_loader", fake_loader)
 
         config = _make_config(skill_ids=["id-ok"])
         agent = _build_with_skills(config, name="no_marker", account_id="acc_nm")
@@ -354,6 +343,7 @@ class TestAC2aAllSkillsFail:
         from app.adk.agents.agent_factory.skill_metadata import (
             get_skill_build_metadata,
         )
+
         assert not get_skill_build_metadata(agent).get("skill_load_total_failure")
 
     def test_error_log_includes_account_config_and_skill_ids(
@@ -364,9 +354,7 @@ class TestAC2aAllSkillsFail:
         fake_loader = _make_fake_loader_module(
             raise_for_ids={"sk-1": _SkillNotFoundError, "sk-2": _SkillCorruptError}
         )
-        monkeypatch.setitem(
-            sys.modules, "kene_api.services.skill_loader", fake_loader
-        )
+        monkeypatch.setitem(sys.modules, "kene_api.services.skill_loader", fake_loader)
 
         config = _make_config(skill_ids=["sk-1", "sk-2"])
 
@@ -379,7 +367,8 @@ class TestAC2aAllSkillsFail:
             )
 
         error_records = [
-            r for r in caplog.records
+            r
+            for r in caplog.records
             if r.levelname == "ERROR" and "skill_load_total_failure" in r.getMessage()
         ]
         assert error_records, "Expected at least one ERROR log"
@@ -405,6 +394,7 @@ class TestAC3EmptySkillList:
             _PATCH_AFTER_TOOL,
         ):
             import app.adk.agents.agent_factory.builder as b
+
             agent = b.build_agent(config, name="no_skills", account_id="acc_empty")
 
         toolsets = [t for t in agent.tools if isinstance(t, SkillToolset)]
@@ -419,11 +409,13 @@ class TestAC3EmptySkillList:
             _PATCH_AFTER_TOOL,
         ):
             import app.adk.agents.agent_factory.builder as b
+
             agent = b.build_agent(config, name="no_skills_marker", account_id="acc_nm2")
 
         from app.adk.agents.agent_factory.skill_metadata import (
             get_skill_build_metadata,
         )
+
         assert get_skill_build_metadata(agent) == {}
 
     def test_empty_skill_ids_does_not_import_kene_api(
@@ -443,6 +435,7 @@ class TestAC3EmptySkillList:
             _PATCH_AFTER_TOOL,
         ):
             import app.adk.agents.agent_factory.builder as b
+
             # Should succeed without kene_api installed
             agent = b.build_agent(config, name="no_import", account_id="acc_ni")
 
@@ -463,9 +456,7 @@ class TestAccountIdNone:
         fake_loader = _make_fake_loader_module(
             skills_by_id={"id-x": _make_adk_skill("skill-x")}
         )
-        monkeypatch.setitem(
-            sys.modules, "kene_api.services.skill_loader", fake_loader
-        )
+        monkeypatch.setitem(sys.modules, "kene_api.services.skill_loader", fake_loader)
 
         config = _make_config(skill_ids=["id-x"])
 
@@ -480,12 +471,15 @@ class TestAccountIdNone:
         from app.adk.agents.agent_factory.skill_metadata import (
             get_skill_build_metadata,
         )
+
         assert not get_skill_build_metadata(agent).get("skill_load_total_failure")
 
         # A WARNING (not ERROR) should have been emitted
         warn_records = [
-            r for r in caplog.records
-            if r.levelname == "WARNING" and "skill_toolset_skipped_no_account" in r.getMessage()
+            r
+            for r in caplog.records
+            if r.levelname == "WARNING"
+            and "skill_toolset_skipped_no_account" in r.getMessage()
         ]
         assert len(warn_records) == 1
 
@@ -505,9 +499,7 @@ class TestDuplicateSkillNameDegrades:
         fake_loader = _make_fake_loader_module(
             skills_by_id={"id-1": skill_dup, "id-2": skill_dup}
         )
-        monkeypatch.setitem(
-            sys.modules, "kene_api.services.skill_loader", fake_loader
-        )
+        monkeypatch.setitem(sys.modules, "kene_api.services.skill_loader", fake_loader)
 
         config = _make_config(skill_ids=["id-1", "id-2"])
 
@@ -522,6 +514,7 @@ class TestDuplicateSkillNameDegrades:
         from app.adk.agents.agent_factory.skill_metadata import (
             get_skill_build_metadata,
         )
+
         assert get_skill_build_metadata(agent).get("skill_load_total_failure") is True
 
         # ERROR log emitted
@@ -550,9 +543,7 @@ class TestAsyncBridge:
 
         skill = _make_adk_skill("skill-async")
         fake_loader = _make_fake_loader_module(skills_by_id={"id-a": skill})
-        monkeypatch.setitem(
-            sys.modules, "kene_api.services.skill_loader", fake_loader
-        )
+        monkeypatch.setitem(sys.modules, "kene_api.services.skill_loader", fake_loader)
 
         config = _make_config(skill_ids=["id-a"])
 
@@ -573,9 +564,7 @@ class TestAsyncBridge:
 
         skill = _make_adk_skill("skill-async-ok")
         fake_loader = _make_fake_loader_module(skills_by_id={"id-a": skill})
-        monkeypatch.setitem(
-            sys.modules, "kene_api.services.skill_loader", fake_loader
-        )
+        monkeypatch.setitem(sys.modules, "kene_api.services.skill_loader", fake_loader)
 
         config = _make_config(skill_ids=["id-a"])
 
@@ -586,7 +575,8 @@ class TestAsyncBridge:
             asyncio.run(_run())
 
         conflict_records = [
-            r for r in caplog.records
+            r
+            for r in caplog.records
             if "skill_toolset_skipped_event_loop_conflict" in r.getMessage()
         ]
         assert conflict_records == [], (
@@ -624,8 +614,7 @@ class TestAsyncBridge:
         assert toolsets == []
 
         timeout_records = [
-            r for r in caplog.records
-            if "skill_toolset_load_timeout" in r.getMessage()
+            r for r in caplog.records if "skill_toolset_load_timeout" in r.getMessage()
         ]
         assert len(timeout_records) == 1
         rec = timeout_records[0]
@@ -637,6 +626,7 @@ class TestAsyncBridge:
         from app.adk.agents.agent_factory.skill_metadata import (
             get_skill_build_metadata,
         )
+
         metadata = get_skill_build_metadata(agent)
         assert metadata.get("skill_load_timeout") is True
         # Timeout is NOT a total failure — those two markers are exclusive.

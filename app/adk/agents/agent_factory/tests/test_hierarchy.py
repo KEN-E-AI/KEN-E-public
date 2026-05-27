@@ -181,20 +181,14 @@ class TestRootAgentConstruction:
 
         assert isinstance(root, LlmAgent)
 
-    def test_root_agent_has_exactly_one_tool(self) -> None:
-        """Per AH-PRD-09 Phase 2, root carries only delegate_to_specialist."""
+    def test_root_agent_has_no_specialist_dispatch_tool(self) -> None:
+        """AH-75: root carries no specialist-dispatch tool. Specialists are
+        reached via ADK's native transfer_to_agent + sub_agents populated
+        per-turn by attach_specialists_before_agent_callback."""
         docs = {("agent_configs", "ken_e_chatbot"): _ROOT_DOC}
         root = _build_hierarchy_with_patches(_FakeFirestoreDb(docs))
 
-        assert len(root.tools) == 1
-
-    def test_root_agent_tool_is_delegate_to_specialist(self) -> None:
-        """The single root tool must be delegate_to_specialist by name."""
-        docs = {("agent_configs", "ken_e_chatbot"): _ROOT_DOC}
-        root = _build_hierarchy_with_patches(_FakeFirestoreDb(docs))
-
-        tool_name = getattr(root.tools[0], "__name__", None)
-        assert tool_name == "delegate_to_specialist"
+        assert root.tools == []
 
     def test_root_agent_tool_count_unchanged_with_extra_configs(self) -> None:
         """Extra specialist configs in Firestore must not add tools to the root
@@ -212,8 +206,8 @@ class TestRootAgentConstruction:
         }
         root = _build_hierarchy_with_patches(_FakeFirestoreDb(docs))
 
-        # Still only 1 tool regardless of how many specialist configs exist.
-        assert len(root.tools) == 1
+        # Still 0 tools regardless of how many specialist configs exist.
+        assert root.tools == []
 
     def test_root_agent_instruction_suffix_provider_wired(self) -> None:
         """build_hierarchy must pass instruction_suffix_provider=available_specialists_provider

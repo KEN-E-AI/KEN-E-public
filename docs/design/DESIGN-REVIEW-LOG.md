@@ -1483,4 +1483,59 @@ This review entry captures the contract change and the decisions made in AH-67.
 
 ---
 
+## Review 35 — AH-75: AH-PRD-09 dispatch surface refactor (Approach 1 — `transfer_to_agent` + runtime `sub_agents`)
+
+**Date:** 2026-05-27
+**Scope:** Agentic Harness — AH-75 ([Linear](https://linear.app/ken-e/issue/AH-75)); supersedes the dispatch-surface plan in AH-PRD-09 Phase 2 and the trace-shape direction in Review 34 (AH-67).
+
+### Summary
+
+PR #697 review surfaced that AH-PRD-09 §7 ACs #9 and #10 (Chat per-turn token accumulator parity and Billing token-meter parity) are **structurally unimplementable** in pinned ADK as originally planned. The PR header described the fix as a localized event-forwarding change inside `specialist_runtime.run()`; verification against the ADK source showed the gap is architectural, not local. AH-75 swaps the dispatch surface to ADK's native `transfer_to_agent` + runtime-managed `sub_agents`, which makes inner-event propagation a first-class ADK behaviour.
+
+PR #697 itself landed (commit `cc62f949`) with the parity tests marked `xfail(strict=True)` and a pointer to AH-75. This review captures the design decision that resolved them for real.
+
+### ADK-source evidence that drove Approach 1
+
+| Mechanism | What it does | Why it doesn't satisfy the parity contract |
+|---|---|---|
+| `FunctionTool.run_async` (`function_tool.py:160`) | Returns a single value | Collapses inner-Runner output to one `function_response` event; no way to emit additional events |
+| `AgentTool.run_async` (`agent_tool.py:190+`) | Runs an inner Runner, captures `state_delta` + `last_content` | Inner events are explicitly discarded by ADK's own "agent-as-tool" wrapper |
+| `__build_response_event` (`functions.py:1114`) | Constructs the function_response Event | Sets no `usage_metadata`; no `after_tool_callback` hook to set it |
+| `EventActions` (`event_actions.py`) | Fields: `state_delta`, `transfer_to_agent`, `escalate`, `compaction`, etc. | No "emit extra events" field |
+| `transfer_to_agent` flow (`llm_agent.py:805–818`) | Detects `function_response.name == 'transfer_to_agent'` and transfers to a sub-agent via `root.find_agent` | **The only ADK-native channel that propagates sub-agent events to the outer Runner's stream.** Requires the agent to be reachable via `root.sub_agents` |
+
+### Key decisions
+
+1. **Drop `delegate_to_specialist` as a function tool.** It cannot forward inner events; no callback or hook exists to bridge the gap. Function-tool tests, the AH-67 `set_delegate_attrs` Weave-span helper, and the AH-67 trace fixture's `delegate_to_specialist`-shaped JSON are all retired with it.
+
+2. **Use ADK's native `transfer_to_agent`.** Root carries `tools=[]`. The LLM picks a specialist by name from the (unchanged) "Available Specialists" prompt block and emits `transfer_to_agent(agent_name=...)`. ADK's `__get_transfer_to_agent_or_none` resolves it via `root.find_agent`. Specialist LLM-response events appear in the outer Runner's stream natively — Chat and Billing token accounting work with zero changes on their side.
+
+3. **Runtime-manage `root.sub_agents`.** A new `before_agent_callback` (`attach_specialists_before_agent_callback` in `app/adk/agents/agent_factory/sub_agent_attacher.py`) reads `account_id` from session state and idempotently syncs `root.sub_agents` against the visible-specialist set via the existing `resolve_config` + `resolve_agent` pipeline. The AH-PRD-09 product wins (Firestore-resolved-per-turn, ≤60 s admin-edit propagation, no redeploy) come from the resolver, not the dispatch surface — so they're preserved unchanged.
+
+4. **`parent_agent` invariant managed manually.** `BaseAgent.__set_parent_agent_for_sub_agents` (`base_agent.py:611`) enforces single-parenting only at construction. Post-construction mutation is supported but the invariant is the attacher's responsibility; the implementation tolerates re-parenting (only triggered by test fixtures with multiple roots) and clears the pointer on eviction.
+
+5. **`acceptance_criteria` becomes config-driven.** `transfer_to_agent(agent_name=...)` has only the one arg, with no slot for per-call criteria. PO-confirmed simplification: add `MergedAgentConfig.default_acceptance_criteria: str | None`; when set, `_build_specialist` wraps the resolved `LlmAgent` in `build_review_pipeline` at content-hash build time, renames the resulting `LoopAgent` back to the specialist's doc_id (so `transfer_to_agent` resolves it), and carries the description across. Per-call review-on/off control is dropped. Three alternatives considered and rejected — two specialist variants per agent (doubles the prompt surface), criteria-as-marker-in-query (brittle), two-step state-write-then-transfer (latency + state-leak risk).
+
+6. **Trace shape returns to the legacy AH-PRD-02 form.** No `delegate_to_specialist` span anywhere. The trace tree is root → `transfer_to_agent` action → specialist sub-agent → (if review-wrapped) worker + reviewer iterations. AH-67's trace-contract diff is superseded; MER-E's older extractors (which already supported this shape under AH-PRD-02) work with no changes. The AH-67 fixture file is renamed `delegate_to_specialist_trace.json` → `transfer_to_specialist_trace.json` and its conformance test is rewritten for the new shape. MER-E coordination simplified: the new shape is easier than what AH-67 had to negotiate.
+
+7. **Risk register update.** AH-PRD-09 §11 risk "ADK Runner internals" is retired — Approach 1 uses ADK's most-supported path. The mitigation note about "pin ADK version in Phases 2–3" is preserved (still good hygiene) but the underlying load-bearing concern is gone.
+
+### Consequences
+
+- 1208 / 1209 tests pass on `app/adk` (one skip); both parity tests pass 10/10 trials each without xfail. Net diff: −722 lines of code (more deleted than added — function-tool plumbing + its tests gone).
+- The `MergedAgentConfig` Firestore schema gains an optional `default_acceptance_criteria` field. Backwards-compatible (defaults to `None`); existing docs validate unchanged.
+- AH-PRD-09 Phase 5 default-on flip is no longer blocked on AH-75 — Approach 1 IS the dispatch surface; there is no separate flag to flip.
+- Documents updated: AH-PRD-09 PRD §4.1 + new §4.6 (this approach); this entry (Review 35); `app/adk/tracking/tests/fixtures/transfer_to_specialist_trace.json` (replaces the AH-67 fixture); `app/adk/tracking/tests/test_transfer_to_specialist_fixture.py` (replaces the AH-67 conformance test). RFC (`per-turn-dispatch-rfc.md`) and `trace-structure-spec.md` are NOT updated — RFCs are frozen at decision time by convention, and the trace spec's canonical reference is now the new fixture file.
+
+### Documents updated
+
+| File | Change |
+|------|--------|
+| `docs/design/components/agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md` | §4.1 — replace symbol table with the AH-75 surface; §4.5 — note ADK-native propagation; §4.6 — new section capturing the ADK-source evidence + decision |
+| `docs/design/DESIGN-REVIEW-LOG.md` | This entry (Review 35) |
+| `app/adk/tracking/tests/fixtures/transfer_to_specialist_trace.json` | Renamed + rewritten for the transfer_to_agent shape |
+| `app/adk/tracking/tests/test_transfer_to_specialist_fixture.py` | Renamed + rewritten — adds an explicit assertion that no `delegate_to_specialist` span appears anywhere in the tree |
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, and documents updated. Decision rationale lives in the Review itself — this log is the canonical record going forward.*

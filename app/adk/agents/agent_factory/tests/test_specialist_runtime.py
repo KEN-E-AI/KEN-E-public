@@ -216,233 +216,17 @@ class TestResolveAgent:
 
 
 # ---------------------------------------------------------------------------
-# TestResolveAgentWithHit
+# TestResolveAgentWithHit, TestAgentCacheGetOrBuildWithHit, and TestRun were
+# deleted in AH-75. Background:
+#   - resolve_agent_with_hit + the cache.get_or_build_with_hit variant existed
+#     to back delegate_to_specialist's cache_hit observability attribute.
+#     Approach 1 removes delegate_to_specialist entirely; review-pipeline
+#     wrap-on-criteria still rides on the same content-hash invalidation
+#     covered by TestResolveAgent + TestSpecialistRuntimeReviewWrap.
+#   - TestRun targeted specialist_runtime.run(), which was the runtime side
+#     of the deleted function-tool dispatch. Inner-Runner pipeline coverage
+#     stays via TestSpecialistRuntimeReviewWrap + test_review_pipeline.py.
 # ---------------------------------------------------------------------------
-
-
-class TestResolveAgentWithHit:
-    def test_miss_returns_agent_and_false(self) -> None:
-        from app.adk.agents.agent_factory import specialist_runtime
-
-        cfg = _make_merged_config("v1")
-        fake_agent = _make_llm_agent()
-
-        with (
-            patch.object(specialist_runtime, "resolve_config", return_value=cfg),
-            patch.object(
-                specialist_runtime, "_build_specialist", return_value=fake_agent
-            ) as mock_build,
-        ):
-            agent, hit = specialist_runtime.resolve_agent_with_hit("spe_1")
-
-        mock_build.assert_called_once()
-        assert agent is fake_agent
-        assert hit is False
-
-    def test_hit_returns_agent_and_true(self) -> None:
-        from app.adk.agents.agent_factory import specialist_runtime
-
-        cfg = _make_merged_config("v1")
-        fake_agent = _make_llm_agent()
-
-        with (
-            patch.object(specialist_runtime, "resolve_config", return_value=cfg),
-            patch.object(
-                specialist_runtime, "_build_specialist", return_value=fake_agent
-            ) as mock_build,
-        ):
-            specialist_runtime.resolve_agent_with_hit("spe_1")  # populate cache
-            agent2, hit2 = specialist_runtime.resolve_agent_with_hit("spe_1")
-
-        assert mock_build.call_count == 1  # built only once
-        assert agent2 is fake_agent
-        assert hit2 is True
-
-    def test_content_hash_change_is_a_miss(self) -> None:
-        from app.adk.agents.agent_factory import specialist_runtime
-
-        cfg_v1 = _make_merged_config("v1")
-        cfg_v2 = _make_merged_config("v2")
-        agent_v1 = _make_llm_agent("agent_v1")
-        agent_v2 = _make_llm_agent("agent_v2")
-
-        with (
-            patch.object(
-                specialist_runtime,
-                "resolve_config",
-                side_effect=[cfg_v1, cfg_v2],
-            ),
-            patch.object(
-                specialist_runtime,
-                "_build_specialist",
-                side_effect=[agent_v1, agent_v2],
-            ),
-        ):
-            _, hit1 = specialist_runtime.resolve_agent_with_hit("spe_1")
-            _, hit2 = specialist_runtime.resolve_agent_with_hit("spe_1")
-
-        assert hit1 is False
-        assert hit2 is False  # different content_hash → different cache key → miss
-
-    def test_returns_same_agent_as_resolve_agent_on_hit(self) -> None:
-        from app.adk.agents.agent_factory import specialist_runtime
-
-        cfg = _make_merged_config("v1")
-        fake_agent = _make_llm_agent()
-
-        with (
-            patch.object(specialist_runtime, "resolve_config", return_value=cfg),
-            patch.object(specialist_runtime, "_build_specialist", return_value=fake_agent),
-        ):
-            resolve_result = specialist_runtime.resolve_agent("spe_1")
-            with_hit_result, hit = specialist_runtime.resolve_agent_with_hit("spe_1")
-
-        assert with_hit_result is resolve_result
-        assert hit is True  # cache was warmed by resolve_agent above
-
-
-# ---------------------------------------------------------------------------
-# TestAgentCacheGetOrBuildWithHit
-# ---------------------------------------------------------------------------
-
-
-class TestAgentCacheGetOrBuildWithHit:
-    def test_miss_builds_and_returns_false(self) -> None:
-        from app.adk.agents.agent_factory.specialist_runtime import _AgentCache
-
-        cache: _AgentCache = _AgentCache(maxsize=4)
-        fake_agent = _make_llm_agent()
-        key = ("doc", None, "hash1")
-
-        agent, hit = cache.get_or_build_with_hit(key, lambda: fake_agent)
-
-        assert agent is fake_agent
-        assert hit is False
-        assert len(cache) == 1
-
-    def test_hit_returns_cached_agent_and_true(self) -> None:
-        from app.adk.agents.agent_factory.specialist_runtime import _AgentCache
-
-        cache: _AgentCache = _AgentCache(maxsize=4)
-        fake_agent = _make_llm_agent()
-        key = ("doc", None, "hash1")
-
-        cache.get_or_build_with_hit(key, lambda: fake_agent)
-        agent2, hit2 = cache.get_or_build_with_hit(key, lambda: _make_llm_agent())
-
-        assert agent2 is fake_agent
-        assert hit2 is True
-
-    def test_miss_consistent_with_get_or_build(self) -> None:
-        from app.adk.agents.agent_factory.specialist_runtime import _AgentCache
-
-        cache: _AgentCache = _AgentCache(maxsize=4)
-        fake_agent = _make_llm_agent()
-        key = ("doc", None, "hash1")
-
-        plain = cache.get_or_build(key, lambda: fake_agent)
-        with_hit, hit = cache.get_or_build_with_hit(key, lambda: _make_llm_agent())
-
-        assert plain is with_hit
-        assert hit is True
-
-
-# ---------------------------------------------------------------------------
-# TestRun
-# ---------------------------------------------------------------------------
-
-
-class TestRun:
-    def test_single_pass_when_no_criteria(self) -> None:
-        from app.adk.agents.agent_factory import specialist_runtime
-
-        fake_agent = _make_llm_agent()
-
-        # run() imports invoke_agent_with_retry lazily from agent_retry; patch it there.
-        import app.adk.agents.utils.agent_retry as agent_retry_mod
-
-        with (
-            patch.object(specialist_runtime, "resolve_agent", return_value=fake_agent),
-            patch.object(
-                agent_retry_mod,
-                "invoke_agent_with_retry",
-                return_value="single pass result",
-            ) as mock_retry,
-        ):
-            result = specialist_runtime.run("spe_1", "do something")
-
-        assert result == "single pass result"
-        mock_retry.assert_called_once()
-
-    def test_review_pipeline_when_criteria_present(self) -> None:
-        from app.adk.agents.agent_factory import specialist_runtime
-
-        fake_agent = _make_llm_agent()
-        fake_pipeline = MagicMock()
-        fake_outcome = {"approved": True, "result": "pipeline result"}
-        fake_final_state = {"spe_1_review_outcome": fake_outcome}
-
-        with patch.object(specialist_runtime, "resolve_agent", return_value=fake_agent):
-            with patch(
-                "app.adk.agents.utils.review_pipeline.build_review_pipeline",
-                return_value=fake_pipeline,
-            ):
-                with patch(
-                    "app.adk.agents.utils.supervisor_utils.invoke_pipeline",
-                    return_value=("text", fake_final_state, []),
-                ):
-                    with patch(
-                        "app.adk.agents.utils.review_pipeline._check_hallucinated_approval"
-                    ):
-                        with patch(
-                            "app.adk.agents.utils.review_pipeline.extract_pipeline_result",
-                            return_value=fake_outcome,
-                        ):
-                            with patch(
-                                "app.adk.agents.utils.review_pipeline.extract_iterations",
-                                return_value=[],
-                            ):
-                                with patch(
-                                    "app.adk.agents.utils.review_pipeline_tracing.set_pipeline_attrs"
-                                ):
-                                    result = specialist_runtime.run(
-                                        "spe_1",
-                                        "do something",
-                                        acceptance_criteria="must be accurate",
-                                    )
-
-        assert result == "pipeline result"
-
-    def test_resolve_failure_returns_error_string(self) -> None:
-        from app.adk.agents.agent_factory import specialist_runtime
-
-        with patch.object(
-            specialist_runtime,
-            "resolve_agent",
-            side_effect=RuntimeError("Firestore down"),
-        ):
-            result = specialist_runtime.run("broken_spe", "query")
-
-        assert "broken_spe" in result
-        assert "unavailable" in result.lower()
-
-    def test_dispatch_failure_returns_error_string(self) -> None:
-        from app.adk.agents.agent_factory import specialist_runtime
-
-        fake_agent = _make_llm_agent()
-
-        with patch.object(specialist_runtime, "resolve_agent", return_value=fake_agent):
-            import app.adk.agents.utils.agent_retry as agent_retry_mod
-
-            with patch.object(
-                agent_retry_mod,
-                "invoke_agent_with_retry",
-                side_effect=RuntimeError("agent crashed"),
-            ):
-                result = specialist_runtime.run("spe_1", "query")
-
-        assert "spe_1" in result
-        assert "unavailable" in result.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -632,10 +416,16 @@ class TestAvailableSpecialistsBlockCache:
             patch.object(specialist_runtime, "resolve_config", return_value=cfg),
             patch.object(specialist_runtime, "resolve_agent", return_value=agent),
         ):
-            specialist_runtime.available_specialists_provider(self._make_context("acct_1"))
-            specialist_runtime.available_specialists_provider(self._make_context("acct_2"))
+            specialist_runtime.available_specialists_provider(
+                self._make_context("acct_1")
+            )
+            specialist_runtime.available_specialists_provider(
+                self._make_context("acct_2")
+            )
             # Repeats of acct_1 still hit the cache.
-            specialist_runtime.available_specialists_provider(self._make_context("acct_1"))
+            specialist_runtime.available_specialists_provider(
+                self._make_context("acct_1")
+            )
 
         assert list_mock.call_count == 2
 
@@ -648,9 +438,7 @@ class TestAvailableSpecialistsBlockCache:
         agent = _make_llm_agent("spe_1")
         ctx = self._make_context("acct_1")
 
-        list_mock = MagicMock(
-            side_effect=[FirestoreConnectionError("down"), ["spe_1"]]
-        )
+        list_mock = MagicMock(side_effect=[FirestoreConnectionError("down"), ["spe_1"]])
 
         with (
             patch(
@@ -1213,9 +1001,7 @@ class TestSpecialistRuntimeRosterCap:
             stack,
             _patch(
                 "app.adk.agents.agent_factory.roster.resolve_specialist_roster",
-                side_effect=RosterCapExceededError(
-                    "test cap exceeded: 31 tools > 30"
-                ),
+                side_effect=RosterCapExceededError("test cap exceeded: 31 tools > 30"),
             ),
             pytest.raises(RosterCapExceededError, match="test cap exceeded"),
         ):
@@ -1265,3 +1051,146 @@ class TestSpecialistRuntimeRosterCap:
             pytest.raises(RosterCapExceededError, match="31 > 30"),
         ):
             sr.resolve_agent("fat_specialist", account_id=None)
+
+
+# ---------------------------------------------------------------------------
+# TestSpecialistRuntimeReviewWrap — AH-75 / AH-PRD-09: review-pipeline opt-in
+# moves from per-call dispatch arg to a property of the specialist's Firestore
+# config (``default_acceptance_criteria``). When set, ``_build_specialist``
+# wraps the constructed ``LlmAgent`` in ``build_review_pipeline`` and renames
+# the resulting ``LoopAgent`` to the specialist's doc_id so
+# ``transfer_to_agent(agent_name=<doc_id>)`` resolves to the wrapped pipeline.
+# ---------------------------------------------------------------------------
+
+
+class TestSpecialistRuntimeReviewWrap:
+    def test_no_criteria_returns_unwrapped_llmagent(self) -> None:
+        """When ``default_acceptance_criteria`` is unset, the returned agent is the
+        raw ``LlmAgent`` from ``build_agent`` — no review-pipeline construction."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+
+        config = _make_specialist_config(mcp_servers=[], tool_ids=None)
+        # Sanity: helper builds a config with default_acceptance_criteria=None.
+        assert config.default_acceptance_criteria is None
+
+        stack, _mock_btf, mock_ba = _patch_specialist_runtime_externals()
+        with stack:
+            from unittest.mock import patch as _patch
+
+            with _patch(
+                "app.adk.agents.utils.review_pipeline.build_review_pipeline"
+            ) as mock_build_pipeline:
+                result = sr._build_specialist(config, "plain_spec", None)
+
+        # Wrap NOT applied.
+        mock_build_pipeline.assert_not_called()
+        # Returned agent is the build_agent output (raw LlmAgent mock).
+        assert mock_ba.call_count == 1
+        assert result._extract_mock_name() == "llmagent_plain_spec"
+
+    def test_criteria_set_wraps_in_review_pipeline_renamed_to_doc_id(self) -> None:
+        """When ``default_acceptance_criteria`` is set, ``_build_specialist`` calls
+        ``build_review_pipeline`` with the sanitised criteria and renames the
+        returned LoopAgent to the specialist's doc_id so ADK's
+        ``transfer_to_agent(agent_name=<doc_id>)`` finds it via
+        ``root.find_agent``."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+
+        config = MergedAgentConfig(
+            instruction="Strategy specialist.",
+            model="gemini-2.5-pro",
+            description="Strategy specialist description.",
+            default_acceptance_criteria="Cite at least 3 sources.",
+        )
+
+        # Build a custom externals stack so build_agent returns a mock whose
+        # ``.description`` actually reflects the config (the default helper's
+        # side_effect leaves .description as an auto-generated child MagicMock,
+        # which masks the carry-over assertion below).
+        from contextlib import ExitStack
+        from unittest.mock import patch as _patch
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.mcp._build_firestore_client",
+                    return_value=_FakeFirestoreDb({}),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.tools.registry.function_tool_registry.resolve_default_global_tools",
+                    return_value=[],
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.tools.registry.tool_registry.get_default_registry",
+                    return_value=MagicMock(name="fake_registry"),
+                )
+            )
+
+            def _make_specialist_mock(_config: Any, *, name: str, **_kw: Any) -> Any:
+                m = MagicMock(name=f"llmagent_{name}")
+                m.name = name  # explicit, not the MagicMock auto-name
+                m.description = _config.description
+                return m
+
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.build_agent",
+                    side_effect=_make_specialist_mock,
+                )
+            )
+
+            # MagicMock LoopAgent stand-in. The production build_review_pipeline
+            # returns a LoopAgent named ``f"{output_key_prefix}_loop"``; the
+            # _build_specialist body assigns .name = doc_id post-construction.
+            fake_pipeline = MagicMock(name="loopagent")
+            fake_pipeline.name = "strategy_review_loop"  # production default
+            fake_pipeline.description = ""
+
+            mock_build_pipeline = stack.enter_context(
+                _patch(
+                    "app.adk.agents.utils.review_pipeline.build_review_pipeline",
+                    return_value=fake_pipeline,
+                )
+            )
+            result = sr._build_specialist(config, "strategy", None)
+
+        # Pipeline construction called with sanitised criteria + correct prefix.
+        mock_build_pipeline.assert_called_once()
+        call_kwargs = mock_build_pipeline.call_args.kwargs
+        assert call_kwargs["acceptance_criteria"] == "Cite at least 3 sources."
+        assert call_kwargs["output_key_prefix"] == "strategy_review"
+        # The returned agent IS the pipeline (not the inner specialist).
+        assert result is fake_pipeline
+        # Renamed to the doc_id so find_agent resolves transfer_to_agent.
+        assert result.name == "strategy"
+        # Description carried across from the inner specialist.
+        assert result.description == "Strategy specialist description."
+
+    def test_blank_criteria_treated_as_no_criteria(self) -> None:
+        """Whitespace-only ``default_acceptance_criteria`` does NOT trigger wrap —
+        keeps the contract that empty config means single-pass dispatch."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+
+        config = MergedAgentConfig(
+            instruction="Test instruction.",
+            model="gemini-2.5-pro",
+            description="Test specialist",
+            default_acceptance_criteria="   \n\t  ",  # whitespace-only
+        )
+
+        stack, _mock_btf, _mock_ba = _patch_specialist_runtime_externals()
+        with stack:
+            from unittest.mock import patch as _patch
+
+            with _patch(
+                "app.adk.agents.utils.review_pipeline.build_review_pipeline"
+            ) as mock_build_pipeline:
+                sr._build_specialist(config, "whitespace_spec", None)
+
+        mock_build_pipeline.assert_not_called()

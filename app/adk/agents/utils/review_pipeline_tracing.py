@@ -92,6 +92,7 @@ def emit_iteration_span(
 
 
 if WEAVE_AVAILABLE and _weave is not None:
+
     @_weave.op(name="review_loop_iteration")
     def _emit_iteration_span_inner(
         iteration: int,
@@ -110,6 +111,7 @@ if WEAVE_AVAILABLE and _weave is not None:
                 exc,
             )
 else:
+
     def _emit_iteration_span_inner(  # type: ignore[misc]
         iteration: int,
         specialist_output: str,
@@ -160,39 +162,4 @@ def set_pipeline_attrs(
     except Exception as exc:
         logger.warning(
             "set_pipeline_attrs: summary write failed — tracing data lost: %s", exc
-        )
-
-
-def set_delegate_attrs(specialist_name: str, cache_hit: bool) -> None:
-    """Write AH-PRD-09 §7 AC#22 delegate-span attributes onto the surrounding
-    ``delegate_to_specialist`` span's summary via ``weave.get_current_call()``.
-
-    Must be called from inside ``delegate_to_specialist`` (a ``@safe_weave_op``
-    -decorated function) so that the current call is the dispatch span.
-
-    Attributes written:
-    - ``specialist_name``: Firestore doc_id of the resolved specialist.
-    - ``cache_hit``: whether the LRU cache served the LlmAgent (``True``) or a
-      fresh build was triggered (``False``).
-    - ``mcp_pool_hit``: placeholder for AH-62; not written by this release.
-
-    When ``WEAVE_AVAILABLE`` is False or Weave is not initialized, this is a
-    no-op.  All exceptions are caught and logged so a tracing failure never
-    propagates to the caller.
-
-    Args:
-        specialist_name: Specialist Firestore document ID.
-        cache_hit: Whether the LlmAgent was served from the LRU cache.
-    """
-    if not WEAVE_AVAILABLE or _weave is None:
-        return
-    try:
-        call = _weave.get_current_call()
-        if call and hasattr(call, "summary"):
-            call.summary["specialist_name"] = specialist_name
-            call.summary["cache_hit"] = cache_hit
-            # TODO(AH-62): set mcp_pool_hit once MCP connection pooling lands
-    except Exception as exc:
-        logger.warning(
-            "set_delegate_attrs: summary write failed — tracing data lost: %s", exc
         )

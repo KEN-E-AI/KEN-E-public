@@ -53,6 +53,11 @@ class MergedAgentConfig(BaseModel):
     sandbox_code_executor_enabled: bool = False
     response_schema: dict | None = None
 
+    # AH-75 / AH-PRD-09 — review pipeline is a property of the specialist's
+    # config, not of the per-call dispatch. When set, the resolver wraps the
+    # built LlmAgent in build_review_pipeline at content-hash build time.
+    default_acceptance_criteria: str | None = None
+
     # Phase 3 (AH-18 / PRD §4) — Global config flags
     available_to_copy: bool = True
     automatically_available: bool = True
@@ -222,9 +227,7 @@ def _build_config(
     try:
         config = MergedAgentConfig.model_validate(doc_dict)
     except ValidationError as e:
-        raise ConfigValidationError(
-            f"Config validation failed: {e}"
-        ) from e
+        raise ConfigValidationError(f"Config validation failed: {e}") from e
 
     config.based_on_version = based_on_version
     config.customization_status = status

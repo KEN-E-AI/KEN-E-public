@@ -77,7 +77,9 @@ def _make_header_provider(
         raw_token = creds.get("access_token", "")
         if isinstance(raw_token, str) and raw_token:
             if _UNSAFE_HEADER_CHARS.search(raw_token):
-                raise ValueError("access_token contains illegal header characters (CRLF)")
+                raise ValueError(
+                    "access_token contains illegal header characters (CRLF)"
+                )
             headers["Authorization"] = f"Bearer {raw_token}"
 
         raw_tenant = creds.get("tenant_id", "")

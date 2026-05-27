@@ -70,15 +70,20 @@ The combination — runtime specialist resolution + hybrid MCP — meets the imm
 
 ### 4.1 New abstractions
 
+> **AH-75 update (Approach 1).** The function-tool dispatch surface (`delegate_to_specialist` + `specialist_runtime.run`) was replaced with ADK's native `transfer_to_agent` + runtime-managed `sub_agents`. The resolver (`resolve_config` / `resolve_agent`) is unchanged; only the dispatch surface changed. See [§4.6 Dispatch surface — AH-75](#46-dispatch-surface--ah-75-approach-1) below for the rationale and the ADK-source evidence that drove the change.
+
 | Symbol | Location | Responsibility |
 |---|---|---|
-| `delegate_to_specialist(name, query, acceptance_criteria=None)` | `app/adk/agents/agent_factory/dispatch.py` | The single root tool. Replaces all `dispatch_to_<specialist>()` callables. Validates `name`, calls `specialist_runtime.run(...)`, returns the assistant message. `@safe_weave_op(name="delegate_to_specialist")` for tracing. |
-| `specialist_runtime.run(name, query, criteria, context)` | `app/adk/agents/agent_factory/specialist_runtime.py` | Orchestrates resolve → build → run for one dispatch. Emits the `load_config_from_firestore` Weave span. |
-| `specialist_runtime.resolve_config(name, account_id)` | (same module) | Returns a `MergedAgentConfig` for `(name, account_id)`. Cached by `config_cache` with TTL + content-hash. Per-account overlay merge moved to runtime. |
-| `specialist_runtime.resolve_agent(config)` | (same module) | Returns an `LlmAgent` constructed from `config`. Cached by `(name, account_id, content_hash)`. |
-| `available_specialists_provider(account_id) -> str` | (same module) | Renders the "Available Specialists" block from current Firestore state per turn. Called by the root's instruction provider. |
+| `attach_specialists_before_agent_callback` | `app/adk/agents/agent_factory/sub_agent_attacher.py` | ADK `before_agent_callback` wired onto the root. Reads `account_id` from session state and calls `attach_account_specialists` so `root.sub_agents` reflects the visible specialists for the current turn. (AH-75) |
+| `attach_account_specialists(root_agent, account_id)` | (same module) | Idempotent runtime sync of `root.sub_agents`: appends specialists missing from the list, drops entries whose name is no longer visible or whose instance changed (content-hash drift), manages the `parent_agent` invariant manually since `BaseAgent.__set_parent_agent_for_sub_agents` only runs at construction. Wraps work in the existing `_block_lock_for(account_id)` stripe lock so concurrent turns serialise per-account. (AH-75) |
+| `specialist_runtime.resolve_config(name, account_id)` | `app/adk/agents/agent_factory/specialist_runtime.py` | Returns a `MergedAgentConfig` for `(name, account_id)`. Cached by `config_cache` with TTL + content-hash. Per-account overlay merge moved to runtime. |
+| `specialist_runtime.resolve_agent(config)` | (same module) | Returns a specialist `BaseAgent` constructed from `config` — either a raw `LlmAgent`, or a `LoopAgent` (review-pipeline-wrapped, renamed back to the specialist doc_id so `transfer_to_agent` resolves it) when `config.default_acceptance_criteria` is set. Cached by `(name, account_id, content_hash)`. |
+| `MergedAgentConfig.default_acceptance_criteria` | `app/adk/agents/agent_factory/config_loader.py` | Optional config field that opts the specialist into a review pipeline at build time. Replaces the per-call `acceptance_criteria` argument from the deleted `delegate_to_specialist`. (AH-75) |
+| `available_specialists_provider(account_id) -> str` | `app/adk/agents/agent_factory/specialist_runtime.py` | Renders the "Available Specialists" block from current Firestore state per turn. Called by the root's instruction provider. |
 | `McpServerKind` | `app/adk/agents/agent_factory/mcp.py` | Open enum: `cloud_run`, `zapier`, and future kinds. Persisted as `mcp_servers/{server_id}.kind`. |
 | `McpToolsetPool` | `app/adk/agents/agent_factory/mcp_pool.py` | Process-wide pool of `McpToolset` instances; kind-specific keying; LRU + idle TTL + `aclose()`-on-eviction. |
+
+> **Deleted in AH-75 (preserved here for traceability):** `delegate_to_specialist` (function tool), `specialist_runtime.run` (inner-Runner dispatch), `specialist_runtime.resolve_agent_with_hit` (cache_hit observable that backed the deleted Weave span), `review_pipeline_tracing.set_delegate_attrs` (the Weave-span attribute writer for the deleted span). None of these can be ADK-natively made to forward inner-Runner events to the outer Runner's stream — see §4.6 for the source-line evidence.
 
 ### 4.2 Cache key shapes
 
@@ -111,6 +116,35 @@ All caches use per-key striped locking (`hash(key) % 32`). See [RFC §4.2.1](../
 ### 4.5 Cross-component contracts preserved
 
 See [RFC §4.9](../../../per-turn-dispatch-rfc.md#49-cross-component-contracts-preserved) for the full contract table covering Chat, Billing, MER-E, Project Tasks, Skills, and strategy-supervisor agents. Each has a Phase 2 acceptance criterion that verifies it before flag flip.
+
+> **AH-75 update.** The Chat token-accumulator + Billing token-meter contracts (§7 ACs #9 and #10) are now satisfied via ADK's native transfer-to-agent event propagation rather than via a custom inner-Runner-to-outer-stream forwarding mechanism. Specialist LLM-response events (carrying `usage_metadata`) appear in the outer Runner's stream natively. The MER-E trace contract is also simplified: no `delegate_to_specialist` span; the trace shape mirrors the legacy AH-PRD-02 form (root → sub-agent), which MER-E's older extractors already supported. See `app/adk/tracking/tests/fixtures/transfer_to_specialist_trace.json` for the canonical post-AH-75 fixture.
+
+### 4.6 Dispatch surface — AH-75 (Approach 1)
+
+The PR #697 review uncovered that the originally-planned inner-Runner event propagation (Phase 2 §7 ACs #9, #10) is **structurally impossible** in pinned ADK without modifying ADK itself. Verified against the source:
+
+- `FunctionTool.run_async` (`function_tool.py:160`) collapses to a single return value.
+- `AgentTool.run_async` (`agent_tool.py:190+`) iterates an inner Runner internally and discards everything except `state_delta` and the last content — ADK's own "agent-as-tool" pattern explicitly does **not** propagate events.
+- `__build_response_event` (`functions.py:1114`) constructs the function_response Event without `usage_metadata`; no `after_tool_callback` hook can set it.
+- `EventActions` has no "emit extra events" field.
+- The only ADK-native mechanism for sub-agent events appearing in the outer stream is `transfer_to_agent` (`llm_agent.py:805–818`), and ADK's transfer-detection logic literally requires `function_response.name == 'transfer_to_agent'`.
+
+**AH-75 (Approach 1)** drops `delegate_to_specialist` as a function tool and switches the root to ADK's native `transfer_to_agent` + a runtime-managed `sub_agents` list. The AH-PRD-09 wins (Firestore-resolved-per-turn, ≤60 s admin-edit propagation, no redeploy) come from the resolver (`specialist_runtime.resolve_config` + `resolve_agent`), not the dispatch surface — the resolver stays; only the surface changes.
+
+Concrete shape change:
+
+| Aspect | Pre-AH-75 (PR #697 baseline) | Post-AH-75 |
+|---|---|---|
+| Root tool list | `[delegate_to_specialist]` | `[]` |
+| Root `before_agent_callback` | (none specific to dispatch) | `+ attach_specialists_before_agent_callback` |
+| How specialists are reachable | LLM calls `delegate_to_specialist(name=...)` as a function tool → `specialist_runtime.run` spins up an inner Runner | LLM calls ADK's built-in `transfer_to_agent(agent_name=...)` → ADK looks up `root.find_agent(name)`, finds the specialist attached by the before-agent callback, transfers control natively |
+| Acceptance criteria | Per-call `acceptance_criteria` arg | Config-driven via `MergedAgentConfig.default_acceptance_criteria` — `resolve_agent` wraps the LlmAgent in a `LoopAgent` review pipeline at build time when set. The per-call override was a PO-confirmed simplification (see [DESIGN-REVIEW-LOG]). |
+| Trace shape | `delegate_to_specialist` span (AH-67) | Same as legacy AH-PRD-02: root → `transfer_to_agent` action → specialist sub-agent → (if wrapped) worker + reviewer iteration spans |
+| Inner-event propagation | **Broken** (PR #697 sentinel xfail) | **Native** (ADK's `transfer_to_agent` flow) |
+
+The Chat / Billing parity tests at `app/adk/agents/agent_factory/tests/test_chat_billing_parity.py` (10 trials each, 20 total) pass under both Mode A (deploy-time `sub_agents=[specialist]`) and Mode B (runtime-attached `sub_agents` via `attach_specialists_before_agent_callback`) — confirming the contract is preserved across both dispatch shapes.
+
+> **PRD evolution note.** §4.1 above was rewritten to reflect the new abstractions. §4.5 (cross-component contracts) is unchanged in intent but satisfied via a different mechanism. §7 Phase 2 ACs #9 and #10 are now satisfied via `transfer_to_agent` rather than via the function-tool dispatch. §11 Risk "ADK Runner internals" is retired — we now use ADK's most-supported path, not a custom one.
 
 ## 5. Implementation outline
 

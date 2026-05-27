@@ -1,0 +1,61 @@
+{
+  "trace_id": "transfer_to_specialist_ah_75_sample",
+  "description": "Canonical post-AH-75 trace for a transfer_to_agent dispatch to a review-pipeline-wrapped specialist. Used by MER-E extractor validation and fixture conformance tests. See docs/trace-structure-spec.md and docs/design/components/agentic-harness/projects/AH-PRD-09-trace-contract-diff.md for the authoritative spec.",
+  "spans": [
+    {
+      "name": "ken_e",
+      "summary": {
+        "agent_name": "ken_e",
+        "agent_kind": "root"
+      },
+      "children": [
+        {
+          "name": "transfer_to_agent",
+          "summary": {
+            "agent_name": "business_researcher"
+          }
+        },
+        {
+          "name": "business_researcher",
+          "summary": {
+            "specialist_name": "business_researcher",
+            "agent_kind": "loop_pipeline",
+            "default_acceptance_criteria": "Provide three distinct market opportunities with supporting evidence.",
+            "exit_reason": "approved",
+            "total_iterations": 1,
+            "output_key_prefix": "business_researcher_review"
+          },
+          "children": [
+            {
+              "name": "business_researcher_worker",
+              "summary": {
+                "iteration": 1,
+                "specialist_output": "Market opportunity analysis: (1) Emerging LATAM mid-market, (2) SMB automation tooling, (3) Vertical SaaS consolidation."
+              }
+            },
+            {
+              "name": "business_researcher_review_reviewer",
+              "summary": {
+                "iteration": 1,
+                "reviewer_output": "",
+                "exit_loop_called": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "agent_id": "ken_e_chatbot",
+    "agent_version": "v1.0.0",
+    "account_id": "acc_sample_ah_75",
+    "session_id": "sess_00000000000000000000000001",
+    "environment": "staging",
+    "rollout_percentage": 100,
+    "feature_flags": {
+      "agentic_harness_per_turn_dispatch": true,
+      "agentic_harness_transfer_to_agent_dispatch": true
+    }
+  }
+}
