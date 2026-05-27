@@ -971,6 +971,57 @@ class TestSpecialistRuntimeDefaultGlobalTools:
         assert other_tool in resolved_tools
         assert viz_tool not in resolved_tools
 
+    def test_all_three_current_default_global_tools_reach_ga_specialist(self) -> None:
+        """AH-PRD-09 Phase 3 AC #14 — every ``default_global: true`` function
+        tool reaches every runtime-resolved specialist without per-specialist
+        config edits.
+
+        The current set of ``default_global`` tools is:
+          * ``create_visualization`` (AH-PRD-04 / AH-PRD-06 PR-C)
+          * ``set_todo_list`` (CH-PRD-05)
+          * ``update_todo_list`` (CH-PRD-05)
+
+        This test uses a GA-specialist config (``mcp_servers=["google_analytics_mcp"]``,
+        ``tool_ids=None``) to mirror the real production setup. Every tool is
+        asserted **by name** — a count-only or wildcard assertion would fail to
+        catch a regression that drops one tool while keeping the others.
+        """
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+
+        viz_tool = _stub_function_tool("create_visualization")
+        set_todo_tool = _stub_function_tool("set_todo_list")
+        update_todo_tool = _stub_function_tool("update_todo_list")
+
+        # Simulate a GA specialist with all three default_global tools injected.
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "google_analytics_mcp"): _enabled_mcp_doc()}
+        )
+        config = _make_specialist_config(
+            mcp_servers=["google_analytics_mcp"], tool_ids=None
+        )
+        stack, _, mock_ba = _patch_specialist_runtime_externals(
+            fake_db=fake_db,
+            default_global_tools=[viz_tool, set_todo_tool, update_todo_tool],
+        )
+        with stack:
+            sr._build_specialist(config, "google_analytics_specialist", None)
+
+        resolved_tools = mock_ba.call_args.kwargs["tools"]
+        tool_names = {
+            getattr(t, "name", None) or getattr(t, "__name__", None)
+            for t in resolved_tools
+        }
+
+        assert "create_visualization" in tool_names, (
+            f"create_visualization must reach the GA specialist; got {tool_names!r}"
+        )
+        assert "set_todo_list" in tool_names, (
+            f"set_todo_list must reach the GA specialist; got {tool_names!r}"
+        )
+        assert "update_todo_list" in tool_names, (
+            f"update_todo_list must reach the GA specialist; got {tool_names!r}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # TestSpecialistRuntimeRosterCap — AH-PRD-02 §2.5 ≤30-tool cap enforcement
