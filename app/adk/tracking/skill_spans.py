@@ -48,6 +48,62 @@ logger = get_structured_logger(__name__)
 
 _SKILL_TOOL_NAMES = frozenset({"list_skills", "load_skill", "load_skill_resource"})
 
+# Set to True after the first successful assert_skill_tool_names_match call.
+# Module-level boolean writes are idempotent under CPython's GIL; concurrent
+# builds may both run the check, but correctness is not affected.
+_skill_tool_names_verified: bool = False
+
+
+def assert_skill_tool_names_match(toolset: Any) -> None:
+    """Verify that the constructed SkillToolset exposes the three expected tool names.
+
+    Call once per process after a successful SkillToolset construction.  The
+    module-level flag short-circuits subsequent calls to O(1).
+
+    Outcomes:
+      - Match → sets ``_skill_tool_names_verified = True`` and returns.
+      - Mismatch → raises ``RuntimeError`` naming both the expected and actual
+        sets so the operator knows exactly which constants and branches to update
+        (``app/adk/tracking/skill_spans.py`` and any callers).
+      - Introspection failure (``toolset.tools`` missing / wrong shape) → logs
+        ERROR and returns without raising; flag stays ``False`` so the next build
+        retries.  Matches the degrade-open contract already applied to the
+        before/after callbacks in this module.
+
+    Args:
+        toolset: A successfully constructed ``SkillToolset`` instance.  Typed
+            ``Any`` to avoid a top-level ADK import — mirrors the lazy-import
+            pattern used for ``_weave_get_client`` / ``_weave_call_context``.
+    """
+    global _skill_tool_names_verified
+    if _skill_tool_names_verified:
+        return
+    try:
+        actual = frozenset(t.name for t in toolset.tools)
+    except Exception as exc:
+        logger.error(
+            "skill_tool_names_check_failed",
+            extra={
+                "reason": (
+                    f"{type(exc).__name__}: Could not introspect toolset.tools — "
+                    "SkillToolset API may have changed. "
+                    "Expected: " + str(sorted(_SKILL_TOOL_NAMES))
+                )
+            },
+            exc_info=True,
+        )
+        return
+    if actual != _SKILL_TOOL_NAMES:
+        raise RuntimeError(
+            "ADK SkillToolset tool names do not match the hardcoded constants. "
+            "Update _SKILL_TOOL_NAMES in app/adk/tracking/skill_spans.py and all "
+            "tool.name == '...' branches in the same file.\n"
+            f"  expected: {sorted(_SKILL_TOOL_NAMES)}\n"
+            f"  actual:   {sorted(actual)}"
+        )
+    _skill_tool_names_verified = True
+
+
 # Maximum character length for LLM-supplied string values written to Weave
 # span attributes/inputs.  Guards against data-volume abuse.
 _MAX_SPAN_STRING = 256

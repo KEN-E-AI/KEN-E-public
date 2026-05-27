@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+import app.adk.tracking.skill_spans as skill_spans
 from app.adk.tracking.skill_spans import (
     _current_skill_ctx,
+    assert_skill_tool_names_match,
     skill_spans_after_tool_callback,
     skill_spans_before_agent_callback,
     skill_spans_before_tool_callback,
@@ -532,3 +535,108 @@ class TestAfterToolCallback:
 
         assert result is None
         assert _current_skill_ctx.get(None) is None
+
+
+# ---------------------------------------------------------------------------
+# assert_skill_tool_names_match
+# ---------------------------------------------------------------------------
+
+
+class TestAssertSkillToolNamesMatch:
+    """Tests for assert_skill_tool_names_match (SK-40)."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_verified_flag(self):
+        """Reset the module-level verified flag before and after each test."""
+        skill_spans._skill_tool_names_verified = False
+        yield
+        skill_spans._skill_tool_names_verified = False
+
+    def _make_toolset(self, *names: str) -> Any:
+        """Return a fake toolset whose .tools is a list of _FakeTool(name)."""
+        tool_list = [_FakeTool(n) for n in names]
+
+        class _FakeToolset:
+            tools: list = tool_list
+
+        return _FakeToolset()
+
+    def test_happy_path_no_raise_and_flag_set(self):
+        """Exact match of the three expected names → no raise; flag flips True."""
+        ts = self._make_toolset("list_skills", "load_skill", "load_skill_resource")
+        assert_skill_tool_names_match(ts)
+        assert skill_spans._skill_tool_names_verified is True
+
+    def test_cached_after_first_success(self):
+        """Second call with a broken toolset is skipped when flag is already True."""
+        ts = self._make_toolset("list_skills", "load_skill", "load_skill_resource")
+        assert_skill_tool_names_match(ts)
+        assert skill_spans._skill_tool_names_verified is True
+
+        # Construct a toolset whose .tools access raises — if the flag is not
+        # short-circuiting, this would either log an error or raise RuntimeError.
+        class _BrokenToolset:
+            @property
+            def tools(self) -> list:
+                raise AttributeError("tools removed in ADK 2.0")
+
+        assert_skill_tool_names_match(_BrokenToolset())  # must not raise
+        assert skill_spans._skill_tool_names_verified is True
+
+    def test_rename_detected_raises_runtime_error(self):
+        """A renamed tool (list_skills → skills_list) must raise RuntimeError."""
+        ts = self._make_toolset("skills_list", "load_skill", "load_skill_resource")
+        with pytest.raises(RuntimeError) as exc_info:
+            assert_skill_tool_names_match(ts)
+        msg = exc_info.value.args[0]
+        assert "skills_list" in msg
+        assert "list_skills" in msg
+
+    def test_missing_tool_raises_runtime_error(self):
+        """Toolset missing one tool → raises RuntimeError naming the absent tool."""
+        ts = self._make_toolset("list_skills", "load_skill")
+        with pytest.raises(RuntimeError) as exc_info:
+            assert_skill_tool_names_match(ts)
+        assert "load_skill_resource" in exc_info.value.args[0]
+
+    def test_extra_tool_raises_runtime_error(self):
+        """Four tools instead of three → raises RuntimeError naming the extra."""
+        ts = self._make_toolset(
+            "list_skills", "load_skill", "load_skill_resource", "bonus_tool"
+        )
+        with pytest.raises(RuntimeError) as exc_info:
+            assert_skill_tool_names_match(ts)
+        assert "bonus_tool" in exc_info.value.args[0]
+
+    def test_introspection_failure_logs_error_and_does_not_raise(self, caplog: Any):
+        """AttributeError on .tools → ERROR log; no raise; flag stays False."""
+
+        class _BadToolset:
+            @property
+            def tools(self) -> list:
+                raise AttributeError("no tools here")
+
+        with caplog.at_level(logging.ERROR, logger="app.adk.tracking.skill_spans"):
+            assert_skill_tool_names_match(_BadToolset())
+
+        assert skill_spans._skill_tool_names_verified is False
+        error_records = [r for r in caplog.records if r.levelno == logging.ERROR]
+        assert len(error_records) == 1
+        # Use getMessage() for compatibility with both stdlib and structlog adapters.
+        assert "skill_tool_names_check_failed" in error_records[0].getMessage()
+
+    def test_introspection_failure_retries_on_next_call(self):
+        """Flag stays False after an introspection failure → next build retries."""
+
+        class _BadToolset:
+            @property
+            def tools(self) -> list:
+                raise AttributeError("still broken")
+
+        assert_skill_tool_names_match(_BadToolset())
+        assert skill_spans._skill_tool_names_verified is False
+
+        # Now supply a correct toolset — it should pass normally.
+        good_ts = self._make_toolset("list_skills", "load_skill", "load_skill_resource")
+        assert_skill_tool_names_match(good_ts)
+        assert skill_spans._skill_tool_names_verified is True
