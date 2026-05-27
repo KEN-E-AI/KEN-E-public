@@ -29,8 +29,9 @@ import asyncio
 import os
 import time
 from collections import OrderedDict
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
+from app.adk.tracking.sandbox_pool_spans import emit_sandbox_pool_span
 from shared.structured_logging import get_structured_logger
 
 if TYPE_CHECKING:
@@ -133,8 +134,14 @@ class SandboxPool:
         deadlock: if the LRU key hashes to the same stripe as the new key,
         ``evict`` would try to acquire a lock already held by this coroutine.
         ``asyncio.Lock`` is not re-entrant, so the coroutine would deadlock.
+
+        A ``sandbox_pool.get`` Weave span is emitted after cap enforcement so
+        that ``pool_size_after`` reflects post-eviction size for cap-triggering
+        misses.  Span emission occurs outside the stripe lock to keep the lock
+        window tight.
         """
         key = (account_id, config_id)
+        cache_hit: bool
         async with self._stripe(key):
             entry = self._pool.get(key)
             now = time.monotonic()
@@ -142,14 +149,30 @@ class SandboxPool:
                 executor, _ = entry
                 self._pool.move_to_end(key)
                 self._pool[key] = (executor, now)
-                return executor
-
-            executor = await self._construct(account_id=account_id, config_id=config_id)
-            self._pool[key] = (executor, now)
+                cache_hit = True
+            else:
+                executor = await self._construct(account_id=account_id, config_id=config_id)
+                self._pool[key] = (executor, now)
+                cache_hit = False
 
         # Cap enforcement runs outside the stripe lock so that evict() can
         # acquire the stripe lock for the LRU entry without deadlocking.
-        await self._evict_if_over_cap()
+        if not cache_hit:
+            await self._evict_if_over_cap()
+
+        # pool_size_after is sampled outside the lock; concurrent inserts can
+        # shift it by ±1 between eviction and the snapshot.
+        async with emit_sandbox_pool_span(
+            "sandbox_pool.get",
+            {
+                "account_id": account_id,
+                "config_id": config_id,
+                "cache_hit": cache_hit,
+                "pool_size_after": len(self._pool),
+            },
+        ):
+            pass
+
         return executor
 
     async def evict(
@@ -157,6 +180,7 @@ class SandboxPool:
         key: tuple[str, str],
         *,
         stale_before: float | None = None,
+        reason: Literal["lru", "ttl", "manual"] = "manual",
     ) -> None:
         """Remove the entry for ``key`` and close its executor via ``aclose()``.
 
@@ -169,22 +193,47 @@ class SandboxPool:
         outside the lock but the timestamp is re-validated inside it, so an
         entry that was refreshed between the snapshot and the lock acquisition
         is skipped rather than incorrectly closed.
+
+        ``reason`` is forwarded to the ``sandbox_pool.evict`` Weave span so
+        MER-E can distinguish LRU-cap, TTL-sweep, and direct-caller evictions.
+        Internal callers pass ``reason=\"lru\"`` or ``reason=\"ttl\"``; external
+        callers receive the default ``\"manual\"``.
+
+        Span emission occurs outside the stripe lock (attrs are snapshotted
+        inside, emitted after release) to keep the lock window tight.
         """
+        account_id, config_id = key
         async with self._stripe(key):
             entry = self._pool.get(key)
             if entry is None:
-                return
-            executor, last_used = entry
-            if stale_before is not None and last_used >= stale_before:
-                return
-            del self._pool[key]
-            try:
-                await executor.aclose()
-            except Exception:
-                logger.exception(
-                    "SandboxPool eviction aclose() failed",
-                    extra={"key": key},
-                )
+                # No-op evictions still emit a span per the PRD — truthful
+                # pool_size_after is still useful signal (TTL-vs-refresh races).
+                pool_size_after = len(self._pool)
+            else:
+                executor, last_used = entry
+                if stale_before is not None and last_used >= stale_before:
+                    pool_size_after = len(self._pool)
+                else:
+                    del self._pool[key]
+                    pool_size_after = len(self._pool)
+                    try:
+                        await executor.aclose()
+                    except Exception:
+                        logger.exception(
+                            "SandboxPool eviction aclose() failed",
+                            extra={"key": key},
+                        )
+
+        async with emit_sandbox_pool_span(
+            "sandbox_pool.evict",
+            {
+                "account_id": account_id,
+                "config_id": config_id,
+                "reason": reason,
+                "pool_size_after": pool_size_after,
+            },
+        ):
+            pass
 
     async def sweep_idle(self) -> None:
         """Evict entries whose last-used time predates the idle TTL cutoff.
@@ -197,7 +246,7 @@ class SandboxPool:
         cutoff = time.monotonic() - self._IDLE_TTL_SECONDS
         stale_keys = [k for k, (_, last) in self._pool.items() if last < cutoff]
         for k in stale_keys:
-            await self.evict(k, stale_before=cutoff)
+            await self.evict(k, stale_before=cutoff, reason="ttl")
 
     def start(self) -> None:
         """Arm the background idle-sweep task.
@@ -267,7 +316,7 @@ class SandboxPool:
         async with self._cap_lock:
             while len(self._pool) > self._MAX_ENTRIES:
                 oldest_key = next(iter(self._pool))
-                await self.evict(oldest_key)
+                await self.evict(oldest_key, reason="lru")
 
     async def _sweep_loop(self) -> None:
         """Background coroutine that periodically sweeps idle entries."""

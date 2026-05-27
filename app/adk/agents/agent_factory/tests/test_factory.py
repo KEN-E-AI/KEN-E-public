@@ -23,6 +23,9 @@ _WEAVE_AFTER = MagicMock(name="weave_after_agent_callback")
 _ADK_BEFORE_TOOL = MagicMock(name="adk_before_tool_callback")
 _ADK_AFTER_TOOL = MagicMock(name="adk_after_tool_callback")
 _SKILL_FILTER = MagicMock(name="skill_allowed_tools_before_tool_callback")
+_SK_SPANS_BEFORE_AGENT = MagicMock(name="skill_spans_before_agent_callback")
+_SK_SPANS_BEFORE_TOOL = MagicMock(name="skill_spans_before_tool_callback")
+_SK_SPANS_AFTER_TOOL = MagicMock(name="skill_spans_after_tool_callback")
 
 _PATCH_BEFORE_AGENT = patch(
     "app.adk.agents.agent_factory.builder.weave_before_agent_callback",
@@ -43,13 +46,26 @@ _PATCH_AFTER_TOOL = patch(
 # Patch the skill toolset builder so that unit tests that don't specifically
 # test skill-loading behaviour can run without kene_api installed.  Tests that
 # want to exercise skill loading use their own mock via monkeypatch.
+# Returns (toolset, skill_name_index, timed_out) — the SK-27 extended triple.
 _PATCH_BUILD_SKILL_TOOLSET = patch(
     "app.adk.agents.agent_factory.builder._build_skill_toolset",
-    return_value=(None, False),
+    return_value=(None, {}, False),
 )
 _PATCH_SKILL_FILTER = patch(
     "app.adk.agents.agent_factory.builder.skill_allowed_tools_before_tool_callback",
     _SKILL_FILTER,
+)
+_PATCH_SK_SPANS_BEFORE_AGENT = patch(
+    "app.adk.agents.agent_factory.builder.skill_spans_before_agent_callback",
+    _SK_SPANS_BEFORE_AGENT,
+)
+_PATCH_SK_SPANS_BEFORE_TOOL = patch(
+    "app.adk.agents.agent_factory.builder.skill_spans_before_tool_callback",
+    _SK_SPANS_BEFORE_TOOL,
+)
+_PATCH_SK_SPANS_AFTER_TOOL = patch(
+    "app.adk.agents.agent_factory.builder.skill_spans_after_tool_callback",
+    _SK_SPANS_AFTER_TOOL,
 )
 
 # ---------------------------------------------------------------------------
@@ -80,6 +96,9 @@ def _build(config: MergedAgentConfig, **kwargs):
         _PATCH_AFTER_TOOL,
         _PATCH_BUILD_SKILL_TOOLSET,
         _PATCH_SKILL_FILTER,
+        _PATCH_SK_SPANS_BEFORE_AGENT,
+        _PATCH_SK_SPANS_BEFORE_TOOL,
+        _PATCH_SK_SPANS_AFTER_TOOL,
     ):
         return b.build_agent(config, **kwargs)
 
@@ -468,12 +487,14 @@ class TestStandardCallbackOrder:
 
         assert agent.before_tool_callback[1] is _SKILL_FILTER
 
-    def test_before_tool_callback_without_additional_has_exactly_two_entries(
+    def test_before_tool_callback_without_additional_has_exactly_three_entries(
         self,
     ) -> None:
+        # SK-27: skill_spans_before_tool_callback added as third entry after
+        # adk_before_tool_callback and skill_allowed_tools_before_tool_callback.
         agent = _build(_make_config(), name="cb")
 
-        assert len(agent.before_tool_callback) == 2
+        assert len(agent.before_tool_callback) == 3
 
     def test_after_tool_callback_starts_with_adk_sentinel(self) -> None:
         agent = _build(_make_config(), name="cb")
@@ -535,6 +556,8 @@ class TestCallbackChaining:
     def test_additional_before_agent_callback_appended_after_weave_sentinel(
         self,
     ) -> None:
+        # SK-27: skill_spans_before_agent_callback sits between the weave
+        # sentinel and any additional callbacks.
         my_cb = MagicMock(name="my_before_agent")
         agent = _build(
             _make_config(),
@@ -542,9 +565,11 @@ class TestCallbackChaining:
             additional_before_agent_callbacks=[my_cb],
         )
 
-        assert agent.before_agent_callback == [_WEAVE_BEFORE, my_cb]
+        assert agent.before_agent_callback == [_WEAVE_BEFORE, _SK_SPANS_BEFORE_AGENT, my_cb]
 
     def test_additional_before_tool_callback_appended_after_adk_sentinel(self) -> None:
+        # SK-27: skill_spans_before_tool_callback sits between the skill filter
+        # and any additional callbacks.
         my_cb = MagicMock(name="my_before_tool")
         agent = _build(
             _make_config(),
@@ -552,9 +577,13 @@ class TestCallbackChaining:
             additional_before_tool_callbacks=[my_cb],
         )
 
-        assert agent.before_tool_callback == [_ADK_BEFORE_TOOL, _SKILL_FILTER, my_cb]
+        assert agent.before_tool_callback == [
+            _ADK_BEFORE_TOOL, _SKILL_FILTER, _SK_SPANS_BEFORE_TOOL, my_cb
+        ]
 
     def test_additional_after_tool_callback_appended_after_adk_sentinel(self) -> None:
+        # SK-27: skill_spans_after_tool_callback sits between adk_after_tool
+        # and any additional callbacks.
         my_cb = MagicMock(name="my_after_tool")
         agent = _build(
             _make_config(),
@@ -562,7 +591,7 @@ class TestCallbackChaining:
             additional_after_tool_callbacks=[my_cb],
         )
 
-        assert agent.after_tool_callback == [_ADK_AFTER_TOOL, my_cb]
+        assert agent.after_tool_callback == [_ADK_AFTER_TOOL, _SK_SPANS_AFTER_TOOL, my_cb]
 
     def test_multiple_additional_callbacks_preserve_order(self) -> None:
         cb_a = MagicMock(name="cb_a")
@@ -727,10 +756,20 @@ class TestSkillIdsAndSandbox:
         assert agent.name == "skills"
 
     def test_sandbox_code_executor_enabled_builds_agent_without_error(self) -> None:
+        from unittest.mock import AsyncMock, MagicMock
+
+        from google.adk.code_executors import BuiltInCodeExecutor
+
+        from app.adk.agents.agent_factory.sandbox_pool import SandboxPool
+
+        mock_pool = MagicMock(spec=SandboxPool)
+        mock_pool.get_or_create = AsyncMock(return_value=BuiltInCodeExecutor())
+
         config = _make_config(sandbox_code_executor_enabled=True)
-        agent = _build(config, name="sandbox")
+        agent = _build(config, name="sandbox", sandbox_pool=mock_pool)
 
         assert agent is not None
+        assert agent.code_executor is mock_pool.get_or_create.return_value
 
     def test_skill_ids_not_surfaced_as_llm_agent_attribute(self) -> None:
         config = _make_config(skill_ids=["s1"])
