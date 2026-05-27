@@ -14,7 +14,9 @@ Coverage map
 * AC-14 — SandboxPool concurrent safety: same-key single-flight via
   ``asyncio.gather`` x 10; different-key calls do not serialise (tests 9, 10).
 * Edge cases: unknown-key evict no-op, start/stop lifecycle, start idempotency,
-  resource name format (tests 11-14).
+  resource name format (tests 11-14, 15, 16).
+* AC-8 — Weave span content (tests 17-22): cache_hit, pool_size_after,
+  reason correctness for each eviction path; no-op evict still emits a span.
 """
 
 from __future__ import annotations
@@ -473,3 +475,214 @@ async def test_stale_before_guard_skips_refreshed_entry() -> None:
     # Entry must NOT have been removed — it was refreshed past the cutoff
     assert key in pool._pool, "Refreshed entry should not be evicted"
     executor.aclose.assert_not_called()
+
+
+# ===========================================================================
+# AC-8 — Weave span-content assertions (tests 17-22)
+#
+# ``emit_sandbox_pool_span`` is patched to a recording async context manager so
+# tests can inspect (name, attrs) tuples without requiring a live Weave install.
+# ===========================================================================
+
+_SPAN_PATH = "app.adk.agents.agent_factory.sandbox_pool.emit_sandbox_pool_span"
+
+
+def _make_span_recorder() -> tuple[list[tuple[str, dict]], object]:
+    """Return (recorded_spans list, AsyncContextManager patch target).
+
+    Each emitted span is appended as ``(name, attrs)`` to *recorded_spans*.
+    """
+    recorded: list[tuple[str, dict]] = []
+
+    import contextlib
+
+    @contextlib.asynccontextmanager
+    async def _recording_span(name: str, attrs: dict) -> Any:
+        recorded.append((name, dict(attrs)))
+        yield
+
+    return recorded, _recording_span
+
+
+# ---------------------------------------------------------------------------
+# Test 17 — cache miss emits sandbox_pool.get with cache_hit=False
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_span_get_cache_miss() -> None:
+    """A cache miss emits sandbox_pool.get with cache_hit=False and pool_size_after=1."""
+    pool = SandboxPool()
+    executor = _make_executor()
+
+    async def _fake_construct(**_: Any) -> Any:
+        return executor
+
+    pool._construct = _fake_construct  # type: ignore[method-assign]
+
+    recorded, patch_target = _make_span_recorder()
+    with patch(_SPAN_PATH, patch_target):
+        await pool.get_or_create(account_id="acc", config_id="cfg")
+
+    get_spans = [(n, a) for n, a in recorded if n == "sandbox_pool.get"]
+    assert len(get_spans) == 1
+    _, attrs = get_spans[0]
+    assert attrs["account_id"] == "acc"
+    assert attrs["config_id"] == "cfg"
+    assert attrs["cache_hit"] is False
+    assert attrs["pool_size_after"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Test 18 — cache hit emits sandbox_pool.get with cache_hit=True
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_span_get_cache_hit() -> None:
+    """A cache hit emits sandbox_pool.get with cache_hit=True."""
+    pool = SandboxPool()
+    executor = _make_executor()
+
+    async def _fake_construct(**_: Any) -> Any:
+        return executor
+
+    pool._construct = _fake_construct  # type: ignore[method-assign]
+
+    # Prime the pool with one call (span recorded but ignored)
+    _recorded_first, pt_first = _make_span_recorder()
+    with patch(_SPAN_PATH, pt_first):
+        await pool.get_or_create(account_id="acc", config_id="cfg")
+
+    # Second call — should be a cache hit
+    recorded, patch_target = _make_span_recorder()
+    with patch(_SPAN_PATH, patch_target):
+        await pool.get_or_create(account_id="acc", config_id="cfg")
+
+    get_spans = [(n, a) for n, a in recorded if n == "sandbox_pool.get"]
+    assert len(get_spans) == 1
+    _, attrs = get_spans[0]
+    assert attrs["cache_hit"] is True
+    assert attrs["pool_size_after"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Test 19 — LRU-triggered eviction emits sandbox_pool.evict with reason="lru"
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_span_evict_lru_reason() -> None:
+    """LRU eviction (via _evict_if_over_cap) emits sandbox_pool.evict with reason='lru'."""
+    pool = SandboxPool()
+    pool._MAX_ENTRIES = 1  # type: ignore[assignment]
+
+    call_n = 0
+
+    async def _fake_construct(*, account_id: str, config_id: str) -> Any:
+        nonlocal call_n
+        call_n += 1
+        return _make_executor()
+
+    pool._construct = _fake_construct  # type: ignore[method-assign]
+
+    recorded, patch_target = _make_span_recorder()
+    with patch(_SPAN_PATH, patch_target):
+        await pool.get_or_create(account_id="acc", config_id="k0")
+        await pool.get_or_create(account_id="acc", config_id="k1")  # triggers LRU evict
+
+    evict_spans = [(n, a) for n, a in recorded if n == "sandbox_pool.evict"]
+    assert len(evict_spans) >= 1
+    lru_spans = [(n, a) for n, a in evict_spans if a["reason"] == "lru"]
+    assert lru_spans, "Expected at least one sandbox_pool.evict span with reason='lru'"
+
+
+# ---------------------------------------------------------------------------
+# Test 20 — TTL sweep emits sandbox_pool.evict with reason="ttl"
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_span_evict_ttl_reason() -> None:
+    """TTL sweep (via sweep_idle) emits sandbox_pool.evict with reason='ttl'."""
+    pool = SandboxPool()
+    executor = _make_executor()
+
+    async def _fake_construct(**_: Any) -> Any:
+        return executor
+
+    pool._construct = _fake_construct  # type: ignore[method-assign]
+
+    t_start = 1_000.0
+    with patch("app.adk.agents.agent_factory.sandbox_pool.time") as mock_time:
+        mock_time.monotonic.return_value = t_start
+        _recorded_first, pt_first = _make_span_recorder()
+        with patch(_SPAN_PATH, pt_first):
+            await pool.get_or_create(account_id="acc", config_id="cfg")
+
+        mock_time.monotonic.return_value = t_start + pool._IDLE_TTL_SECONDS + 1
+
+        recorded, patch_target = _make_span_recorder()
+        with patch(_SPAN_PATH, patch_target):
+            await pool.sweep_idle()
+
+    evict_spans = [(n, a) for n, a in recorded if n == "sandbox_pool.evict"]
+    assert len(evict_spans) == 1
+    _, attrs = evict_spans[0]
+    assert attrs["reason"] == "ttl"
+
+
+# ---------------------------------------------------------------------------
+# Test 21 — direct evict() call uses reason="manual" by default
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_span_evict_manual_reason() -> None:
+    """Direct pool.evict(key) emits sandbox_pool.evict with reason='manual'."""
+    pool = SandboxPool()
+    executor = _make_executor()
+
+    async def _fake_construct(**_: Any) -> Any:
+        return executor
+
+    pool._construct = _fake_construct  # type: ignore[method-assign]
+
+    _recorded_first, pt_first = _make_span_recorder()
+    with patch(_SPAN_PATH, pt_first):
+        await pool.get_or_create(account_id="acc", config_id="cfg")
+
+    recorded, patch_target = _make_span_recorder()
+    with patch(_SPAN_PATH, patch_target):
+        await pool.evict(("acc", "cfg"))
+
+    evict_spans = [(n, a) for n, a in recorded if n == "sandbox_pool.evict"]
+    assert len(evict_spans) == 1
+    _, attrs = evict_spans[0]
+    assert attrs["reason"] == "manual"
+    assert attrs["account_id"] == "acc"
+    assert attrs["config_id"] == "cfg"
+    assert attrs["pool_size_after"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Test 22 — no-op evict on absent key still emits a span with unchanged size
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_span_evict_noop_absent_key_emits_span() -> None:
+    """Calling evict() on a key not in the pool still emits a sandbox_pool.evict
+    span with pool_size_after reflecting the unchanged pool size (0)."""
+    pool = SandboxPool()
+
+    recorded, patch_target = _make_span_recorder()
+    with patch(_SPAN_PATH, patch_target):
+        await pool.evict(("nonexistent", "key"))
+
+    evict_spans = [(n, a) for n, a in recorded if n == "sandbox_pool.evict"]
+    assert len(evict_spans) == 1
+    _, attrs = evict_spans[0]
+    assert attrs["account_id"] == "nonexistent"
+    assert attrs["config_id"] == "key"
+    assert attrs["pool_size_after"] == 0
