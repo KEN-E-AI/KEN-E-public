@@ -279,7 +279,7 @@ def delegate_to_specialist(
     """
     if not _VALID_SPECIALIST_NAME_RE.fullmatch(name):
         return (
-            f"[DELEGATE ERROR] Invalid specialist name {name!r}. "
+            "[DELEGATE ERROR] Invalid specialist name. "
             "Names must match ^[a-z][a-z0-9_]{0,63}$."
         )
 

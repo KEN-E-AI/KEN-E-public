@@ -557,7 +557,7 @@ class TestDelegateToSpecialist:
         result = delegate_to_specialist("InvalidName", "query")
 
         assert result.startswith("[DELEGATE ERROR]")
-        assert "InvalidName" in result
+        assert "InvalidName" not in result
 
     def test_name_starting_with_digit_returns_error_string(self) -> None:
         from app.adk.agents.agent_factory.dispatch import delegate_to_specialist
