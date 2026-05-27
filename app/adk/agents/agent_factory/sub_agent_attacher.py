@@ -154,10 +154,27 @@ def _attach_locked(root_agent: BaseAgent, account_id: str) -> None:
                 exc_info=True,
             )
 
-    _reconcile(root_agent, desired)
+    changed = _reconcile(root_agent, desired)
+
+    # AH-75 (reviewer feedback): the "Available Specialists" prompt block is
+    # cached for ~60 s by ``specialist_runtime._block_cache``. If a specialist
+    # is dropped or replaced here mid-TTL, the cached block would still list
+    # the stale name, the LLM could emit ``transfer_to_agent(agent_name=<stale>)``,
+    # and ADK's ``find_agent`` would fail. Invalidate the cached block on any
+    # change so the next instruction-provider call re-renders against the
+    # current visible set. We hold the per-account stripe lock at the caller
+    # (``attach_account_specialists``) — same lock that guards block-cache
+    # writes — so this mutation is safe.
+    if changed:
+        # Imported here to avoid pulling specialist_runtime's full module into
+        # the import graph at module load (this module is already imported by
+        # hierarchy.py at the deploy-time top of the graph).
+        from app.adk.agents.agent_factory.specialist_runtime import _block_cache
+
+        _block_cache.pop(account_id, None)
 
 
-def _reconcile(root_agent: BaseAgent, desired: dict[str, BaseAgent]) -> None:
+def _reconcile(root_agent: BaseAgent, desired: dict[str, BaseAgent]) -> bool:
     """Mutate ``root_agent.sub_agents`` to match ``desired`` (keyed by name).
 
     Removes entries whose name is absent from *desired* OR whose current
@@ -165,9 +182,17 @@ def _reconcile(root_agent: BaseAgent, desired: dict[str, BaseAgent]) -> None:
     fresh agent). Adds entries that are missing. Existing entries that
     match by identity are left alone — same agent, same parent pointer,
     no work.
+
+    Returns:
+        ``True`` if ``root_agent.sub_agents`` was mutated (an entry was
+        dropped, replaced, or added); ``False`` if the reconcile pass was a
+        no-op (every desired entry was already present with the same
+        identity). Callers use the flag to decide whether downstream caches
+        keyed on the sub_agents set need invalidation.
     """
     existing: list[BaseAgent] = list(root_agent.sub_agents)
     desired_by_name = dict(desired)
+    changed = False
 
     keep: list[BaseAgent] = []
     for sub in existing:
@@ -184,18 +209,22 @@ def _reconcile(root_agent: BaseAgent, desired: dict[str, BaseAgent]) -> None:
             # Name no longer visible: drop. Clear parent pointer so a future
             # attach to the same name can succeed if the specialist returns.
             _clear_parent(sub, root_agent)
+            changed = True
         else:
             # Name still visible but a fresh instance has replaced it
             # (content_hash drift on a config edit). Drop the stale, keep the
             # desired below.
             _clear_parent(sub, root_agent)
+            changed = True
 
     # Add anything still in desired_by_name (either net-new or replaced).
     for new_sub in desired_by_name.values():
         _set_parent(new_sub, root_agent)
         keep.append(new_sub)
+        changed = True
 
     root_agent.sub_agents = keep
+    return changed
 
 
 def _set_parent(sub: BaseAgent, root_agent: BaseAgent) -> None:
@@ -261,6 +290,14 @@ def attach_specialists_before_agent_callback(
     """
     try:
         account_id = callback_context.state.get("account_id")
+        # ADK-version dependency: ``CallbackContext._invocation_context`` is a
+        # private attribute and could be renamed in a future ADK release. We
+        # use it here because there is no public accessor for the executing
+        # agent on CallbackContext as of the version pinned by KEN-E. If ADK
+        # later exposes a public ``callback_context.agent``, switch to it.
+        # This callback is only attached to the root agent (see
+        # hierarchy.build_hierarchy), so the agent on the invocation context
+        # IS the root.
         root_agent = callback_context._invocation_context.agent
         attach_account_specialists(root_agent, account_id)
     except Exception as exc:  # pragma: no cover — defensive

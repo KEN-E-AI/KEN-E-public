@@ -429,3 +429,134 @@ class TestConcurrentAttach:
         assert len(root.sub_agents) == 2
         assert a.parent_agent is root
         assert b.parent_agent is root
+
+
+# ---------------------------------------------------------------------------
+# Re-parenting branch — AH-75 reviewer feedback.
+# ---------------------------------------------------------------------------
+
+
+class TestReparenting:
+    def test_attaching_to_a_different_root_moves_parent_agent(self) -> None:
+        """The third branch of ``_set_parent``: when a specialist is attached
+        to root_a and then attached to root_b in the same process (only
+        possible in test fixtures since production has one root per process),
+        ``parent_agent`` must move to root_b.
+        """
+        root_a = _make_root("root_a")
+        root_b = _make_root("root_b")
+        specialist = _make_specialist("ga_spec")
+
+        with _patched_resolvers({"ga_spec": specialist}):
+            attach_account_specialists(root_a, "acc_first")
+        assert specialist.parent_agent is root_a
+        assert specialist in root_a.sub_agents
+
+        # Now attach the same specialist instance under a second root.
+        with _patched_resolvers({"ga_spec": specialist}):
+            attach_account_specialists(root_b, "acc_second")
+
+        # Parent pointer moved to root_b; root_b sees it in its sub_agents.
+        assert specialist.parent_agent is root_b
+        assert specialist in root_b.sub_agents
+        # root_a still references the specialist (sub_agents lists are
+        # per-root), but parent_agent has moved — re-attaching to root_a
+        # later would re-set the pointer.
+        assert specialist in root_a.sub_agents
+
+
+# ---------------------------------------------------------------------------
+# Block-cache invalidation — AH-75 reviewer feedback.
+#
+# The "Available Specialists" prompt block is cached for ~60 s by
+# specialist_runtime._block_cache. If the attacher drops or replaces a
+# sub_agent mid-TTL, the cached block would still list the stale name and
+# the LLM could emit transfer_to_agent(agent_name=<stale>), causing a
+# find_agent failure. The attacher must invalidate the cached block on any
+# reconcile change so the next instruction-provider call re-renders.
+# ---------------------------------------------------------------------------
+
+
+class TestBlockCacheInvalidation:
+    def test_drop_invalidates_block_cache(self) -> None:
+        """Dropping a specialist (no longer visible) must invalidate the
+        cached prompt block so the next render reflects the new visible set.
+        """
+        import time
+
+        root = _make_root()
+        a = _make_specialist("ga_spec")
+        retired = _make_specialist("retired_spec")
+
+        with _patched_resolvers({"ga_spec": a, "retired_spec": retired}):
+            attach_account_specialists(root, "acc_block")
+
+        # Pre-seed the block cache with a sentinel value as if a previous
+        # instruction render had cached the block listing both specialists.
+        sr._block_cache["acc_block"] = (
+            "## Available Specialists\n\n- **ga_spec**: ...\n- **retired_spec**: ...",
+            time.monotonic() + 60,
+        )
+
+        # Now reconcile to drop retired_spec. The drop must invalidate the
+        # cache.
+        with _patched_resolvers({"ga_spec": a}):
+            attach_account_specialists(root, "acc_block")
+
+        assert "acc_block" not in sr._block_cache, (
+            "Dropping a specialist must invalidate the cached prompt block "
+            "for the same account (prevents the LLM from emitting "
+            "transfer_to_agent for a no-longer-attached specialist)."
+        )
+
+    def test_noop_attach_does_not_invalidate_block_cache(self) -> None:
+        """A reconcile that makes no changes (every desired entry already
+        present with the same identity) must NOT invalidate the cache —
+        that would defeat the cache's purpose."""
+        import time
+
+        root = _make_root()
+        a = _make_specialist("ga_spec")
+
+        with _patched_resolvers({"ga_spec": a}):
+            attach_account_specialists(root, "acc_noop")
+
+        sentinel_block = "## Available Specialists\n\n- **ga_spec**: ..."
+        sentinel_expiry = time.monotonic() + 60
+        sr._block_cache["acc_noop"] = (sentinel_block, sentinel_expiry)
+
+        # Re-attach with identical visible set — should be a no-op.
+        with _patched_resolvers({"ga_spec": a}):
+            attach_account_specialists(root, "acc_noop")
+
+        cached = sr._block_cache.get("acc_noop")
+        assert cached is not None, "No-op attach must preserve the cache"
+        assert cached[0] == sentinel_block
+
+    def test_replace_invalidates_block_cache(self) -> None:
+        """Content-hash drift replaces the specialist's cached LlmAgent.
+        Since the prompt block reads the agent's description, a content
+        edit might change the description shown in the block. Invalidate
+        on replace so the next render picks up the new description.
+        """
+        import time
+
+        root = _make_root()
+        stale = _make_specialist("ga_spec")
+
+        with _patched_resolvers({"ga_spec": stale}):
+            attach_account_specialists(root, "acc_replace")
+
+        sr._block_cache["acc_replace"] = (
+            "stale block",
+            time.monotonic() + 60,
+        )
+
+        fresh = _make_specialist("ga_spec")
+        with _patched_resolvers({"ga_spec": fresh}):
+            attach_account_specialists(root, "acc_replace")
+
+        assert "acc_replace" not in sr._block_cache, (
+            "Replacing a specialist instance (content-hash drift) must "
+            "invalidate the cached prompt block."
+        )

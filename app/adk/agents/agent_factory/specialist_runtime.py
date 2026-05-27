@@ -368,6 +368,26 @@ def _build_specialist(
         config, name=name, account_id=account_id, tools=tools, config_doc_id=None
     )
 
+    # AH-75: prevent multi-turn "stuck on specialist" routing. ADK's Runner
+    # picks the agent for each new user turn via ``_find_agent_to_run``
+    # (runners.py), which resumes the last non-user agent if
+    # ``_is_transferable_across_agent_tree`` returns True. That helper walks
+    # ``parent_agent`` upward looking for any agent with
+    # ``disallow_transfer_to_parent=True``; with the default (False) on both
+    # the specialist and the root, every user turn after the first stays
+    # with the specialist instead of returning to the root for re-routing.
+    # Setting the flag on the specialist short-circuits the walk so each new
+    # user message returns to the root.
+    #
+    # The wrapped path (LoopAgent below) bottoms out the walk naturally
+    # because ``LoopAgent`` does not expose ``disallow_transfer_to_parent``
+    # — but we set the flag here BEFORE wrapping anyway so the worker
+    # ``LlmAgent`` inside the LoopAgent inherits it (build_review_pipeline
+    # propagates the specialist's full field set to the worker). The flag
+    # has no other effect: AH-75 specialists never call transfer_to_agent
+    # themselves, so disabling parent-transfer is safe.
+    specialist.disallow_transfer_to_parent = True
+
     # AH-75 / AH-PRD-09: review-pipeline opt-in lives on the specialist's
     # Firestore config, not on the per-call dispatch surface. When set, wrap
     # the constructed LlmAgent in build_review_pipeline so every dispatch to

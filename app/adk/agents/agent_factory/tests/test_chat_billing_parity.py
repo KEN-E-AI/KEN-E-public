@@ -150,11 +150,19 @@ class _TransferToSpecialistStubLlm(BaseLlm):
 
 
 def _make_deterministic_specialist(name: str = "canonical_stub_agent") -> LlmAgent:
-    """Return an LlmAgent backed by _CanonicalStubLlm."""
+    """Return an LlmAgent backed by _CanonicalStubLlm.
+
+    Sets ``disallow_transfer_to_parent=True`` to mirror production: AH-75's
+    ``_build_specialist`` sets this flag on every resolved specialist so
+    ADK's ``_find_agent_to_run`` returns to the root for each new user turn
+    instead of staying with the last-invoked specialist. See the
+    ``TestMultiTurnRouting`` regression guard below for why this matters.
+    """
     return LlmAgent(
         name=name,
         model=_CanonicalStubLlm(),
         instruction="Test specialist",
+        disallow_transfer_to_parent=True,
     )
 
 
@@ -430,4 +438,109 @@ class TestBillingParity:
             f"[trial={trial}] Mode B total billable = {total_b}, expected {_EXPECTED_TOTAL_BILLABLE}. "
             "MERGE BLOCKER: inner-Runner events not propagated to outer stream. "
             "Specialist billable tokens are trapped in the inner Runner and lost."
+        )
+
+
+# ---------------------------------------------------------------------------
+# TestMultiTurnRouting — AH-75 regression guard.
+#
+# Reviewer concern (PR #703): after transfer_to_agent + specialist response,
+# does turn N+1 from the user return to root, or stay with the specialist?
+#
+# ADK answer (invocation_context.py): yes, control returns to root. ADK's
+# ``_get_subagent_to_resume`` calls ``_get_events(current_invocation=True)``
+# which filters events by ``event.invocation_id == ctx.invocation_id``. Each
+# new user message starts a NEW invocation with a new invocation_id, so the
+# lookup only sees the current turn's events — not previous turns' transfer
+# history. Root handles every new user message fresh.
+#
+# This test pins that behavior. If a future ADK version widens the resume
+# scope to cross-invocation history, this test surfaces it as a hard failure
+# before users encounter "stuck on specialist" symptoms.
+# ---------------------------------------------------------------------------
+
+
+class TestMultiTurnRouting:
+    @pytest.mark.asyncio
+    async def test_second_user_turn_returns_to_root(self) -> None:
+        """After turn 1's transfer_to_agent + specialist response, a new user
+        message on turn 2 must invoke the root agent (not the specialist)."""
+        from google.adk.runners import Runner
+        from google.adk.sessions import InMemorySessionService
+
+        from app.adk.agents.agent_factory import sub_agent_attacher as attacher
+
+        specialist = _make_deterministic_specialist("test_specialist")
+        test_config = MergedAgentConfig(
+            instruction="Test specialist",
+            model="canonical_stub",
+            description="Test specialist for multi-turn routing test",
+        )
+
+        root = LlmAgent(
+            name="root_agent",
+            model=_TransferToSpecialistStubLlm(),
+            instruction="Route queries.",
+            tools=[],
+            before_agent_callback=[attacher.attach_specialists_before_agent_callback],
+        )
+
+        session_service = InMemorySessionService()
+        session = await session_service.create_session(
+            app_name="multi_turn_routing",
+            user_id="test_user",
+            state={"account_id": "test_account"},
+        )
+        runner = Runner(
+            agent=root,
+            app_name="multi_turn_routing",
+            session_service=session_service,
+        )
+
+        async def _run_turn(message: str) -> list[Any]:
+            captured: list[Any] = []
+            async for event in runner.run_async(
+                user_id=session.user_id,
+                session_id=session.id,
+                new_message=genai_types.Content(
+                    role="user",
+                    parts=[genai_types.Part.from_text(text=message)],
+                ),
+            ):
+                captured.append(event)
+            return captured
+
+        with (
+            patch.object(
+                attacher,
+                "list_account_agent_configs",
+                return_value=["test_specialist"],
+            ),
+            patch.object(attacher, "resolve_config", return_value=test_config),
+            patch.object(attacher, "resolve_agent", return_value=specialist),
+        ):
+            turn1 = await _run_turn("hello")
+            turn2 = await _run_turn("follow-up question")
+
+        # Sanity: turn 1 reached the specialist (transfer worked).
+        turn1_authors = [getattr(e, "author", None) for e in turn1]
+        assert "root_agent" in turn1_authors, (
+            f"Turn 1 must include a root_agent event; got authors {turn1_authors}"
+        )
+        assert "test_specialist" in turn1_authors, (
+            f"Turn 1 must reach the specialist via transfer_to_agent; "
+            f"got authors {turn1_authors}"
+        )
+
+        # Core assertion: turn 2 must hit root_agent. If ADK's resume logic
+        # ever drifted to cross-invocation event scoping, turn 2 would skip
+        # the root and go straight to the specialist — this assertion catches
+        # that regression before it ships.
+        turn2_authors = [getattr(e, "author", None) for e in turn2]
+        assert "root_agent" in turn2_authors, (
+            f"Turn 2 must invoke root_agent (ADK's per-invocation event "
+            f"scoping should return control to root for every new user "
+            f"message). Got authors {turn2_authors} — if this fails, "
+            f"investigate ADK's _get_subagent_to_resume + "
+            f"_get_events(current_invocation=True) behavior."
         )
