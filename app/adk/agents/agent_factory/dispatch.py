@@ -279,7 +279,7 @@ def delegate_to_specialist(
     """
     if not _VALID_SPECIALIST_NAME_RE.fullmatch(name):
         return (
-            f"[DELEGATE ERROR] Invalid specialist name {name!r}. "
+            "[DELEGATE ERROR] Invalid specialist name. "
             "Names must match ^[a-z][a-z0-9_]{0,63}$."
         )
 
@@ -292,10 +292,13 @@ def delegate_to_specialist(
             account_id = validate_account_id(_raw_account_id)
         except ValueError:
             logger.warning(
-                "[DELEGATE] Invalid account_id %r in session state; proceeding as global.",
+                "[DELEGATE] Invalid account_id %r in session state; rejecting dispatch.",
                 _raw_account_id,
             )
-            account_id = None
+            return (
+                "[DELEGATE ERROR] Invalid account_id in session state. "
+                "The dispatch was refused as a tenant-isolation safeguard."
+            )
     else:
         account_id = None
 

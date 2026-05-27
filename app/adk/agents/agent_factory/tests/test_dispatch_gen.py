@@ -557,7 +557,7 @@ class TestDelegateToSpecialist:
         result = delegate_to_specialist("InvalidName", "query")
 
         assert result.startswith("[DELEGATE ERROR]")
-        assert "InvalidName" in result
+        assert "InvalidName" not in result
 
     def test_name_starting_with_digit_returns_error_string(self) -> None:
         from app.adk.agents.agent_factory.dispatch import delegate_to_specialist
@@ -625,6 +625,36 @@ class TestDelegateToSpecialist:
 
         _, kwargs = mock_run.call_args
         assert kwargs["tool_context"] is tool_context
+
+    def test_malformed_account_id_returns_error_string_and_does_not_dispatch(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """AH-74 Item 1: malformed account_id must hard-deny, not fall through to global."""
+        import logging
+
+        from app.adk.agents.agent_factory.dispatch import delegate_to_specialist
+
+        tool_context = MagicMock()
+        # Return a value that validate_account_id will reject (not a valid account id).
+        tool_context.state.get.return_value = "not-a-valid-account-id!@#"
+
+        with (
+            patch(_PATCH_SPECIALIST_RUNTIME_RUN, return_value="ok") as mock_run,
+            patch(
+                "app.adk.agents.agent_factory.dispatch.validate_account_id",
+                side_effect=ValueError("invalid"),
+            ),
+            caplog.at_level(logging.WARNING, logger="app.adk.agents.agent_factory.dispatch"),
+        ):
+            result = delegate_to_specialist(
+                "research_agent", "query", tool_context=tool_context
+            )
+
+        assert result.startswith("[DELEGATE ERROR]")
+        assert "account_id" in result
+        assert "tenant-isolation" in result
+        mock_run.assert_not_called()
+        assert any("rejecting dispatch" in r.message for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------
