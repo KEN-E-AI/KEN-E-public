@@ -48,7 +48,7 @@ sub_agents reconcile stay in sync without distributed coordination.
 """
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Mapping
 
 from google.adk.agents import BaseAgent
 from google.genai import types
@@ -85,6 +85,7 @@ def _clear_fingerprint_cache_for_tests() -> None:
 def attach_account_specialists(
     root_agent: BaseAgent,
     account_id: str | None,
+    session_state: Mapping[str, Any] | None = None,
 ) -> None:
     """Synchronise ``root_agent.sub_agents`` with the visible specialists for
     ``account_id``.
@@ -104,6 +105,10 @@ def attach_account_specialists(
         account_id: Per-account overlay key. ``None`` (no account in
             session state) is treated as "no visible specialists" and
             simply runs a reconcile pass that drops any stale entries.
+        session_state: Current ADK session state mapping.  Forwarded to
+            ``resolve_agent`` → ``_build_specialist`` for Phase 3 (AH-62)
+            creds-hash key computation.  ``None`` is treated as an empty
+            mapping.
     """
     if not _has_sub_agents_attr(root_agent):
         logger.error(
@@ -130,10 +135,14 @@ def attach_account_specialists(
         return
 
     with block_lock_for(validated_account_id):
-        _attach_locked(root_agent, validated_account_id)
+        _attach_locked(root_agent, validated_account_id, session_state=session_state)
 
 
-def _attach_locked(root_agent: BaseAgent, account_id: str) -> None:
+def _attach_locked(
+    root_agent: BaseAgent,
+    account_id: str,
+    session_state: Mapping[str, Any] | None = None,
+) -> None:
     """Critical section of :func:`attach_account_specialists`.
 
     Caller holds the per-account stripe lock.
@@ -182,7 +191,7 @@ def _attach_locked(root_agent: BaseAgent, account_id: str) -> None:
     desired: dict[str, BaseAgent] = {}
     for doc_id, _config in visible_configs.items():
         try:
-            desired[doc_id] = resolve_agent(doc_id, account_id)
+            desired[doc_id] = resolve_agent(doc_id, account_id, session_state=session_state)
         except Exception as exc:
             # Mirror available_specialists_provider's policy: log and drop the
             # offender so the prompt block and the sub_agents set agree.
@@ -363,6 +372,7 @@ def attach_specialists_before_agent_callback(
 
     try:
         account_id = callback_context.state.get("account_id")
+        session_state: Mapping[str, Any] = dict(callback_context.state)
         # ADK-version dependency: ``CallbackContext._invocation_context`` is a
         # private attribute and could be renamed in a future ADK release. We
         # use it here because there is no public accessor for the executing
@@ -372,7 +382,7 @@ def attach_specialists_before_agent_callback(
         # hierarchy.build_hierarchy), so the agent on the invocation context
         # IS the root.
         root_agent = callback_context._invocation_context.agent
-        attach_account_specialists(root_agent, account_id)
+        attach_account_specialists(root_agent, account_id, session_state=session_state)
     except Exception as exc:  # pragma: no cover — defensive
         logger.exception(
             "[ATTACH-SPECIALISTS] before_agent_callback raised unexpectedly; "
