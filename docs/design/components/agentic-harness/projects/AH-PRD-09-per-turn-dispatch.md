@@ -233,7 +233,7 @@ ACs are organized by phase. Each phase merges only when its criteria are met.
 
 12. Pool keeps p95 specialist cold-start ≤ 200 ms across kinds.
 13. **No SSE connection leak after a 1-hour sustained-load stress test** — specialists rebuilt > 1000 times across many `(account_id, server_id)` keys, MCP pool entries evicted, Cloud Run instance recycled — open SSE session count returns to baseline. **Merge blocker.**
-14. **`default_global` function tools (`create_visualization`)** reach every runtime-resolved specialist without per-specialist config edits.
+14. **`default_global` function tools (`create_visualization`)** reach every runtime-resolved specialist without per-specialist config edits. _Implemented in `specialist_runtime._build_specialist` (`app/adk/agents/agent_factory/specialist_runtime.py:340–358`); test coverage in `test_specialist_runtime.py::TestSpecialistRuntimeDefaultGlobalTools` and `TestSpecialistRuntimeRosterCap` (AH-64). The current default_global set is `create_visualization`, `set_todo_list`, and `update_todo_list`. `create_visualization` callable registration is owned by AH-PRD-04 — until that ships, production traces will log a "no callable registered" warning for `create_visualization` and skip it, per `function_tool_registry.resolve_default_global_tools` design._
 15. Pool eviction (LRU and TTL) calls `McpToolset.aclose()` before dropping the reference. Unit test asserts cleanup hook invoked.
 16. No regression on existing GA MCP traffic.
 

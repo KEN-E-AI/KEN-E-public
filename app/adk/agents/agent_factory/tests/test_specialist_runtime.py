@@ -725,12 +725,28 @@ def _patch_specialist_runtime_externals(
     *,
     fake_db: _FakeFirestoreDb | None = None,
     default_global_tools: list[Any] | None = None,
+    mock_resolver: bool = True,
 ) -> Any:
     """Build an ``ExitStack`` patching every external dep of ``_build_specialist``.
 
     All targets patch the *source* module path (e.g. ``...mcp.build_toolset_for_doc``)
     rather than ``specialist_runtime.*`` because ``_build_specialist`` re-imports
     each symbol via local ``from … import …`` inside the function body.
+
+    Args:
+        fake_db: In-memory Firestore stand-in.  When ``None``, an empty
+            ``_FakeFirestoreDb`` is used (no MCP server docs — all server
+            lookups return ``exists=False``).
+        default_global_tools: Pre-built list of stub ``FunctionTool``s to
+            return from the mocked ``resolve_default_global_tools`` call.
+            Ignored when ``mock_resolver=False``.
+        mock_resolver: When ``True`` (default) the
+            ``resolve_default_global_tools`` and ``get_default_registry``
+            symbols are patched so tests control the default_global set
+            directly.  Set to ``False`` to exercise the *real*
+            ``function_tool_registry`` path — callers are then responsible
+            for pre-populating ``_REGISTRY`` via ``register_function_tool``
+            and cleaning up via ``clear_function_tool_registry``.
 
     Returns ``(stack, mock_build_toolset, mock_build_agent)`` so callers can
     inspect captured call args / kwargs after entering the stack.
@@ -757,18 +773,19 @@ def _patch_specialist_runtime_externals(
             ),
         )
     )
-    stack.enter_context(
-        _patch(
-            "app.adk.tools.registry.function_tool_registry.resolve_default_global_tools",
-            return_value=default_global_tools or [],
+    if mock_resolver:
+        stack.enter_context(
+            _patch(
+                "app.adk.tools.registry.function_tool_registry.resolve_default_global_tools",
+                return_value=default_global_tools or [],
+            )
         )
-    )
-    stack.enter_context(
-        _patch(
-            "app.adk.tools.registry.tool_registry.get_default_registry",
-            return_value=MagicMock(name="fake_registry"),
+        stack.enter_context(
+            _patch(
+                "app.adk.tools.registry.tool_registry.get_default_registry",
+                return_value=MagicMock(name="fake_registry"),
+            )
         )
-    )
     mock_ba = stack.enter_context(
         _patch(
             "app.adk.agents.agent_factory.builder.build_agent",
@@ -1022,6 +1039,81 @@ class TestSpecialistRuntimeDefaultGlobalTools:
             f"update_todo_list must reach the GA specialist; got {tool_names!r}"
         )
 
+    def test_default_global_tools_reach_specialist_via_real_registry(self) -> None:
+        """Integration-level check: exercise the *real* ``function_tool_registry``
+        rather than the mocked resolver path, so a regression in the
+        catalogue→callable resolution chain is caught here independently of
+        the mock-based tests above.
+
+        Uses ``mock_resolver=False`` to bypass the
+        ``resolve_default_global_tools`` patch, then pre-populates the real
+        ``_REGISTRY`` with stub callables for each of the three current
+        ``default_global`` tools.  ``get_default_registry()`` is NOT mocked so
+        the real ``ToolRegistry`` (loaded from ``tools.yaml``) drives
+        ``list_default_global_tools()``.
+
+        AH-PRD-09 Phase 3 / AH-64 task 3.
+        """
+        import functools
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.tools.registry.function_tool_registry import (
+            clear_function_tool_registry,
+            register_function_tool,
+        )
+
+        # Stub callables that stand in for the real tool implementations.
+        def _make_stub(tool_name: str) -> Any:
+            @functools.wraps(lambda **kw: f"{tool_name} stub result")
+            def stub(**kwargs: Any) -> str:
+                return f"{tool_name} stub result"
+
+            stub.__name__ = tool_name
+            return stub
+
+        clear_function_tool_registry()
+        try:
+            register_function_tool(
+                "create_visualization", _make_stub("create_visualization")
+            )
+            register_function_tool("set_todo_list", _make_stub("set_todo_list"))
+            register_function_tool("update_todo_list", _make_stub("update_todo_list"))
+
+            fake_db = _FakeFirestoreDb(
+                {("mcp_server_configs", "google_analytics_mcp"): _enabled_mcp_doc()}
+            )
+            config = _make_specialist_config(
+                mcp_servers=["google_analytics_mcp"], tool_ids=None
+            )
+            # mock_resolver=False → real function_tool_registry is used;
+            # only Firestore, MCP toolset construction, and build_agent are stubbed.
+            stack, _, mock_ba = _patch_specialist_runtime_externals(
+                fake_db=fake_db, mock_resolver=False
+            )
+            with stack:
+                sr._build_specialist(config, "google_analytics_specialist", None)
+
+            resolved_tools = mock_ba.call_args.kwargs["tools"]
+            tool_names = {
+                getattr(t, "name", None) or getattr(t, "__name__", None)
+                for t in resolved_tools
+            }
+
+            assert "create_visualization" in tool_names, (
+                f"create_visualization must reach specialist via real registry; "
+                f"got {tool_names!r}"
+            )
+            assert "set_todo_list" in tool_names, (
+                f"set_todo_list must reach specialist via real registry; "
+                f"got {tool_names!r}"
+            )
+            assert "update_todo_list" in tool_names, (
+                f"update_todo_list must reach specialist via real registry; "
+                f"got {tool_names!r}"
+            )
+        finally:
+            clear_function_tool_registry()
+
 
 # ---------------------------------------------------------------------------
 # TestSpecialistRuntimeRosterCap — AH-PRD-02 §2.5 ≤30-tool cap enforcement
@@ -1102,6 +1194,92 @@ class TestSpecialistRuntimeRosterCap:
             pytest.raises(RosterCapExceededError, match="31 > 30"),
         ):
             sr.resolve_agent("fat_specialist", account_id=None)
+
+    def test_default_global_tools_count_against_roster_cap(self) -> None:
+        """The ≤30-tool budget includes ``default_global`` function tools, not
+        just MCP tools.  A specialist with 28 MCP-catalogued tools + 3
+        default_global function tools (31 total) must trigger
+        ``RosterCapExceededError``.
+
+        AH-64 documents that this is a stricter check than the old deploy-time
+        factory's literal ``len(tools) > MAX_…`` guard (which counted each
+        ``McpToolset`` as one item regardless of how many tools it exposed).
+        """
+        from unittest.mock import patch as _patch
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.roster import RosterCapExceededError
+        from shared.agent_tool_limits import MAX_TOOLS_PER_SPECIALIST
+
+        viz_tool = _stub_function_tool("create_visualization")
+        set_todo_tool = _stub_function_tool("set_todo_list")
+        update_todo_tool = _stub_function_tool("update_todo_list")
+
+        # 28 MCP tools + 3 default_global function tools = 31 > MAX (30).
+        mcp_tool_count = (
+            MAX_TOOLS_PER_SPECIALIST
+            - len([viz_tool, set_todo_tool, update_todo_tool])
+            + 1
+        )
+
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "huge_mcp"): _enabled_mcp_doc()}
+        )
+        config = _make_specialist_config(mcp_servers=["huge_mcp"], tool_ids=None)
+
+        stack, _, _ = _patch_specialist_runtime_externals(
+            fake_db=fake_db,
+            default_global_tools=[viz_tool, set_todo_tool, update_todo_tool],
+        )
+        with (
+            stack,
+            _patch(
+                "app.adk.agents.agent_factory.roster._tool_count_for_server",
+                return_value=mcp_tool_count,
+            ),
+            pytest.raises(RosterCapExceededError),
+        ):
+            sr._build_specialist(config, "fat_specialist", None)
+
+    def test_default_global_tools_within_cap_when_mcp_count_fits(self) -> None:
+        """Inverse of the stress test: a specialist with 27 MCP-catalogued
+        tools + 3 default_global function tools = 30 (exactly at cap) must
+        succeed.  Confirms the off-by-one boundary is correct.
+        """
+        from unittest.mock import patch as _patch
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from shared.agent_tool_limits import MAX_TOOLS_PER_SPECIALIST
+
+        viz_tool = _stub_function_tool("create_visualization")
+        set_todo_tool = _stub_function_tool("set_todo_list")
+        update_todo_tool = _stub_function_tool("update_todo_list")
+
+        # Exactly at cap: 27 MCP + 3 default_global = 30.
+        mcp_tool_count = MAX_TOOLS_PER_SPECIALIST - len(
+            [viz_tool, set_todo_tool, update_todo_tool]
+        )
+
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "large_mcp"): _enabled_mcp_doc()}
+        )
+        config = _make_specialist_config(mcp_servers=["large_mcp"], tool_ids=None)
+
+        stack, _, mock_ba = _patch_specialist_runtime_externals(
+            fake_db=fake_db,
+            default_global_tools=[viz_tool, set_todo_tool, update_todo_tool],
+        )
+        with (
+            stack,
+            _patch(
+                "app.adk.agents.agent_factory.roster._tool_count_for_server",
+                return_value=mcp_tool_count,
+            ),
+        ):
+            sr._build_specialist(config, "at_cap_specialist", None)
+
+        # Build succeeded — no exception; build_agent was called once.
+        assert mock_ba.call_count == 1
 
 
 # ---------------------------------------------------------------------------
