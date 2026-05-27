@@ -100,10 +100,11 @@ class TestSandboxPoolLifespanDefensiveBranch:
                     resp = client.get("/health")
                     assert resp.status_code in (200, 503)  # up or degraded, not crash
 
-        # The warning must be logged.
-        assert any("SandboxPool" in r.message for r in caplog.records), (
-            "Expected a WARNING log mentioning SandboxPool when start() raises"
-        )
+        # The warning must be logged at WARNING level.
+        assert any(
+            "SandboxPool" in r.message and r.levelno == logging.WARNING
+            for r in caplog.records
+        ), "Expected a WARNING log mentioning SandboxPool when start() raises"
 
     def test_stop_exception_is_swallowed_shutdown_completes(
         self, caplog: pytest.LogCaptureFixture
@@ -118,6 +119,7 @@ class TestSandboxPoolLifespanDefensiveBranch:
                 with TestClient(app):
                     pass  # enter / exit triggers both startup and shutdown
 
-        assert any("SandboxPool" in r.message for r in caplog.records), (
-            "Expected a WARNING log mentioning SandboxPool when stop() raises"
-        )
+        assert any(
+            "SandboxPool" in r.message and r.levelno == logging.WARNING
+            for r in caplog.records
+        ), "Expected a WARNING log mentioning SandboxPool when stop() raises"

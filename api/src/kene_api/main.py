@@ -193,7 +193,7 @@ async def lifespan(app: FastAPI):
         _DEFAULT_SANDBOX_POOL.start()
         logger.info("SandboxPool sweep started")
     except Exception as e:
-        logger.warning(f"Failed to start SandboxPool sweep: {e}")
+        logger.warning("Failed to start SandboxPool sweep: %s", e)
 
     yield
 
@@ -229,7 +229,7 @@ async def lifespan(app: FastAPI):
         await _DEFAULT_SANDBOX_POOL.stop()
         logger.info("SandboxPool sweep stopped")
     except Exception as e:
-        logger.warning(f"Failed to stop SandboxPool sweep: {e}")
+        logger.warning("Failed to stop SandboxPool sweep: %s", e)
 
     await neo4j_service.close()
     logger.info("Neo4j connection closed")

@@ -592,37 +592,19 @@ class TestSandboxPoolStartWiring:
         pool = MagicMock()
         ctx = self._make_callback_context()
 
-        with (
-            patch(
-                "app.adk.agents.agent_factory.sub_agent_attacher._DEFAULT_SANDBOX_POOL",
-                pool,
-                create=True,
-            ),
-            patch(
+        import app.adk.agents.agent_factory.builder as _builder
+
+        original = _builder._DEFAULT_SANDBOX_POOL
+        _builder._DEFAULT_SANDBOX_POOL = pool
+        try:
+            with patch(
                 "app.adk.agents.agent_factory.sub_agent_attacher."
                 "list_account_agent_configs",
                 return_value=[],
-            ),
-        ):
-            # Patch the deferred import inside the callback to point at our mock.
-            with patch.dict(
-                "sys.modules",
-                {
-                    "app.adk.agents.agent_factory.builder": type(
-                        "FakeBuilder", (), {"_DEFAULT_SANDBOX_POOL": pool}
-                    )()
-                },
             ):
-                # The callback does a deferred import, so we patch the actual
-                # attribute on the builder module directly.
-                import app.adk.agents.agent_factory.builder as _builder
-
-                original = _builder._DEFAULT_SANDBOX_POOL
-                _builder._DEFAULT_SANDBOX_POOL = pool
-                try:
-                    result = attach_specialists_before_agent_callback(ctx)
-                finally:
-                    _builder._DEFAULT_SANDBOX_POOL = original
+                result = attach_specialists_before_agent_callback(ctx)
+        finally:
+            _builder._DEFAULT_SANDBOX_POOL = original
 
         pool.start.assert_called_once()
         assert result is None  # callback must return None so the turn proceeds
