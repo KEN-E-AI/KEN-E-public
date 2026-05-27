@@ -238,15 +238,24 @@ steps:
       - |
         set -euo pipefail
         # Staging gate — intentionally looser than the CH-PRD-02 100 ms product
-        # target.  Staging runs on a single small Cloud Run instance with
-        # min_instances=0; 1000 polling VUs surface real cold-start tail
+        # target.  Staging runs on a small (1 vCPU / 1 GiB) Cloud Run service
+        # with min_instances=1, maxScale=20, containerConcurrency=80; 1000
+        # polling VUs still surface scale-up + Firestore-cold-cache tail
         # latency that dominates p95 non-deterministically across runs (build
         # b7f69874 p95=13s, build c2d97134 p95=77s, same code).  Gate on p90
-        # instead, which sits below the cold-start tail and is consistent
+        # instead, which sits below the scale-up tail and is consistent
         # across runs (5.4s yesterday, 7.6s the day before, well under 15s).
         # The 1 % failure ratio still tolerates Cloud Run scale-up 502s.
-        # See follow-up: bring staging to min_instances=1 + tighten gate
-        # toward the product target.
+        #
+        # WATCH: if p90 starts creeping back toward the gate, check
+        # rate(redis_set_json_failures_total{key_prefix="user_context"}) on
+        # the staging service — a non-zero rate means a user_context cache
+        # write is failing schema validation (the load-test seed wrote a
+        # nested {role, granted_at} map there in May 2026 and bypassed the
+        # cache entirely until commit fixing the seed shape).
+        #
+        # See follow-up: tighten gate toward the product target as staging
+        # capacity allows.
         uv run python tests/load_test/check_p95_threshold.py \
           tests/load_test/.results/chat_sidebar_stats.csv \
           --percentile 90 \

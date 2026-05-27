@@ -6,9 +6,38 @@ import os
 from typing import Any, Optional
 
 import redis
+from prometheus_client import REGISTRY, Counter
 from redis.exceptions import ConnectionError, TimeoutError
 
 logger = logging.getLogger(__name__)
+
+
+# A serialize failure means the JSON cache write silently fell back to "no
+# cache" for every subsequent request keyed on the same prefix — a soft outage
+# that previously went unnoticed for weeks (load-test seed wrote a Firestore
+# Timestamp into account_permissions, killing the user_context cache for the
+# load-test user and pushing chat-sidebar p90 over the 15 s CD gate).  Alert
+# on rate(redis_set_json_failures_total{reason="encode"}) > 0 sustained.
+try:
+    redis_set_json_failures_total = Counter(
+        "redis_set_json_failures_total",
+        "Redis set_json failures by cache key prefix and failure reason",
+        ["key_prefix", "reason"],
+    )
+except ValueError:
+    redis_set_json_failures_total = REGISTRY._names_to_collectors[
+        "redis_set_json_failures_total"
+    ]
+
+
+def _key_prefix(key: str) -> str:
+    """Return the `prefix` of a colon-delimited cache key for metric labeling.
+
+    Bounds Prometheus label cardinality — user_context:<uid> collapses to
+    "user_context".  Keys without a colon are labeled "unknown".
+    """
+    head, sep, _ = key.partition(":")
+    return head if sep else "unknown"
 
 
 class RedisService:
@@ -126,6 +155,9 @@ class RedisService:
             # `JSONDecodeError`), so the previous tuple raised AttributeError
             # instead of catching the failure — turning a soft cache miss
             # into an unhandled exception in every caller.
+            redis_set_json_failures_total.labels(
+                key_prefix=_key_prefix(key), reason="encode"
+            ).inc()
             logger.error(f"Failed to encode JSON for key {key}: {e}")
             return False
 
