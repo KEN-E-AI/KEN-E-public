@@ -523,7 +523,7 @@ async def test_stale_before_guard_skips_refreshed_entry() -> None:
 
 _SPAN_PATH = "app.adk.agents.agent_factory.mcp_pool.emit_mcp_pool_span"
 
-# Re-use the recording helper pattern from test_sandbox_pool.py
+# Reuse the recording helper pattern from test_sandbox_pool.py
 
 
 def _make_span_recorder() -> tuple[list[tuple[str, dict]], object]:
