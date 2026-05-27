@@ -44,11 +44,10 @@ _SANDBOX_BUILD_TIMEOUT_SECONDS = 30
 # Tests inject a fresh pool or a MagicMock via the ``sandbox_pool=`` kwarg
 # on ``build_agent`` so the module global is never mutated by test code.
 #
-# TODO(SK-PRD-02 follow-up): nothing calls ``_DEFAULT_SANDBOX_POOL.start()``
-# today, so the idle-TTL background sweep is dormant in production — only
-# the LRU cap evicts.  Wire ``start()`` from the runtime entrypoint (FastAPI
-# lifespan or Cloud Run startup) and ``stop()`` from shutdown; tracked as a
-# Linear follow-up.
+# TODO(SK-37): nothing calls ``_DEFAULT_SANDBOX_POOL.start()`` today, so the
+# idle-TTL background sweep is dormant in production — only the LRU cap
+# evicts.  SK-37 wires ``start()`` from the runtime entrypoint (FastAPI
+# lifespan or Cloud Run startup) and ``stop()`` from shutdown.
 _DEFAULT_SANDBOX_POOL: SandboxPool = SandboxPool()
 
 
@@ -326,9 +325,15 @@ def _build_code_executor(
     (pool keying requires a real account scope) and falls through, emitting a
     WARNING.  Mirrors ``skill_toolset_skipped_no_account`` semantics.
 
-    Uses the same asyncio.get_running_loop / worker-thread bridge as
-    ``_build_skill_toolset`` so the sync ``build_agent`` call-path works from
-    both sync and async callers.
+    **Always** routes through a ThreadPoolExecutor — including the no-loop
+    case where ``_build_skill_toolset`` would call ``asyncio.run`` directly.
+    The reason is timeout enforcement: ``future.result(timeout=…)`` gives us
+    a wall-clock bound on the sandbox construction regardless of caller
+    context, whereas a bare ``asyncio.run`` provides no timeout.  The cost is
+    one short-lived thread per sync invocation; the benefit is that a
+    misbehaving sandbox build cannot hang the agent factory.  Skill-toolset
+    loading can tolerate the no-timeout path because individual skill loads
+    are cheap; sandbox construction calls into Vertex AI and is not.
     """
     if config.sandbox_code_executor_enabled:
         if account_id is None:

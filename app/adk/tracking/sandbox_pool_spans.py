@@ -38,8 +38,10 @@ logger = get_structured_logger(__name__)
 # or ADK install.  The explicit Optional annotation ensures mypy does not
 # narrow the type to non-None even when the import succeeds.
 _weave_get_client: Callable[[], Any] | None = None
+_weave_call_context: Any | None = None
 try:
     from weave.trace.api import get_client as _weave_get_client
+    from weave.trace.context import call_context as _weave_call_context
 except ImportError:  # pragma: no cover
     pass
 
@@ -98,3 +100,12 @@ async def emit_sandbox_pool_span(
                 "emit_sandbox_pool_span: failed to finish Weave call",
                 exc_info=True,
             )
+        # Defensive pop — Weave's finish_call pops on the happy path
+        # (weave_client.py finish_call) but skips it on early-return paths
+        # (tracing disabled, placeholder calls).  Mirrors skill_spans.py and
+        # callbacks.py to keep the project-wide pop_call convention.
+        if call is not None and _weave_call_context is not None:
+            try:
+                _weave_call_context.pop_call(call.id)
+            except Exception:
+                pass
