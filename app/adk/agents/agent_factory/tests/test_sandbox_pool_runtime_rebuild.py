@@ -148,7 +148,11 @@ def _build_with_pool(
         _PATCH_SK_SPANS_AFTER_TOOL,
     ):
         return b.build_agent(
-            config, name=name, account_id=account_id, sandbox_pool=pool, config_doc_id=name
+            config,
+            name=name,
+            account_id=account_id,
+            sandbox_pool=pool,
+            config_doc_id=name,
         )
 
 

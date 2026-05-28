@@ -396,7 +396,12 @@ class TestAC3EmptySkillList:
         ):
             import app.adk.agents.agent_factory.builder as b
 
-            agent = b.build_agent(config, name="no_skills", account_id="acc_empty", config_doc_id="no_skills")
+            agent = b.build_agent(
+                config,
+                name="no_skills",
+                account_id="acc_empty",
+                config_doc_id="no_skills",
+            )
 
         toolsets = [t for t in agent.tools if isinstance(t, SkillToolset)]
         assert toolsets == []
@@ -411,7 +416,12 @@ class TestAC3EmptySkillList:
         ):
             import app.adk.agents.agent_factory.builder as b
 
-            agent = b.build_agent(config, name="no_skills_marker", account_id="acc_nm2", config_doc_id="no_skills_marker")
+            agent = b.build_agent(
+                config,
+                name="no_skills_marker",
+                account_id="acc_nm2",
+                config_doc_id="no_skills_marker",
+            )
 
         from app.adk.agents.agent_factory.skill_metadata import (
             get_skill_build_metadata,
@@ -438,7 +448,9 @@ class TestAC3EmptySkillList:
             import app.adk.agents.agent_factory.builder as b
 
             # Should succeed without kene_api installed
-            agent = b.build_agent(config, name="no_import", account_id="acc_ni", config_doc_id="no_import")
+            agent = b.build_agent(
+                config, name="no_import", account_id="acc_ni", config_doc_id="no_import"
+            )
 
         assert agent is not None
 
@@ -689,7 +701,11 @@ class TestSandboxWiring:
             import app.adk.agents.agent_factory.builder as b
 
             agent = b.build_agent(
-                config, name="combo_ff", account_id="acc_ff", sandbox_pool=pool, config_doc_id="combo_ff"
+                config,
+                name="combo_ff",
+                account_id="acc_ff",
+                sandbox_pool=pool,
+                config_doc_id="combo_ff",
             )
 
         pool.get_or_create.assert_not_called()
@@ -717,7 +733,11 @@ class TestSandboxWiring:
             import app.adk.agents.agent_factory.builder as b
 
             agent = b.build_agent(
-                config, name="combo_ft", account_id="acc_ft", sandbox_pool=pool, config_doc_id="combo_ft"
+                config,
+                name="combo_ft",
+                account_id="acc_ft",
+                sandbox_pool=pool,
+                config_doc_id="combo_ft",
             )
 
         assert isinstance(agent.code_executor, LeasedSandboxExecutor)
@@ -1115,7 +1135,12 @@ class TestSkillNameIndex:
         ):
             import app.adk.agents.agent_factory.builder as b
 
-            agent = b.build_agent(config, name="index_empty", account_id="acc_ei", config_doc_id="index_empty")
+            agent = b.build_agent(
+                config,
+                name="index_empty",
+                account_id="acc_ei",
+                config_doc_id="index_empty",
+            )
 
         from app.adk.agents.agent_factory.skill_metadata import get_skill_build_metadata
 
