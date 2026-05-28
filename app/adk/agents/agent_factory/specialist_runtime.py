@@ -32,7 +32,7 @@ Design notes:
   deletion.
 * Phase 2 (AH-59): ``_build_specialist`` fetches MCP server docs directly from
   Firestore (one ``get()`` per server ID) and calls ``build_toolset_for_doc``.
-  Phase 3 (AH-62) will replace this with ``McpToolsetPool.get(server_id)``.
+  Phase 3 (AH-62): pool-backed checkout via ``McpToolsetPool`` (implemented).
 * ``available_specialists_provider`` filters to ``visible_in_frontend=True``
   configs so strategy-pipeline and other hidden agents are excluded from the
   block shown to the root agent.
@@ -49,19 +49,23 @@ Design notes:
 # matches the pattern in dispatch.py. See the dispatch.py header comment for the
 # full ADK/cloudpickle rationale (verified during AH-17 smoke testing).
 
+import asyncio
 import collections
+import concurrent.futures
 import hashlib
+import json
 import logging
 import re
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from google.adk.agents import BaseAgent
 from google.adk.agents.readonly_context import ReadonlyContext
 
 from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+from app.adk.agents.agent_factory.mcp_pool import McpServerKind, McpToolsetPool
 from app.adk.agents.utils.config_cache import get_cached_merged_config
 from shared.account_id_utils import validate_account_id
 
@@ -73,6 +77,22 @@ logger = logging.getLogger(__name__)
 
 # LRU capacity for the agent object cache.
 _AGENT_CACHE_MAX: int = 256
+
+# Timeout for checking out a single MCP toolset from the pool.  Mirrors the
+# SandboxPool build timeout in builder.py.  On timeout the server is skipped
+# for this specialist build (per-server skip, not a hard failure).
+_MCP_POOL_CHECKOUT_TIMEOUT_SECONDS: int = 30
+
+# Process-wide singleton — one pool per Cloud Run instance.  Mirrors the
+# ``_DEFAULT_SANDBOX_POOL`` singleton pattern in builder.py:51.
+# Tests inject a fresh pool or MagicMock via the ``mcp_pool=`` kwarg on
+# ``_build_specialist`` so the module global is never mutated by test code.
+#
+# TODO(SK-37): nothing calls ``_DEFAULT_MCP_POOL.start()`` today, so the
+# idle-TTL background sweep is dormant in production — only the LRU cap evicts.
+# SK-37 wires ``start()`` / ``stop()`` from the runtime entrypoint (FastAPI
+# lifespan or Cloud Run startup).
+_DEFAULT_MCP_POOL: McpToolsetPool = McpToolsetPool()
 
 
 # ---------------------------------------------------------------------------
@@ -264,7 +284,11 @@ def _clear_list_cache_for_tests() -> None:
 
 
 def _build_specialist(
-    config: MergedAgentConfig, name: str, account_id: str | None
+    config: MergedAgentConfig,
+    name: str,
+    account_id: str | None,
+    session_state: Mapping[str, Any] | None = None,
+    mcp_pool: McpToolsetPool | None = None,
 ) -> BaseAgent:
     """Construct a specialist ``BaseAgent`` from a ``MergedAgentConfig``.
 
@@ -299,8 +323,11 @@ def _build_specialist(
 
     Phase 2 (AH-59): fetches each MCP server document individually from
     Firestore and calls ``build_toolset_for_doc``.
-    Phase 3 (AH-62): replace the per-server Firestore ``get()`` calls with
-    ``McpToolsetPool.get(server_id)`` to reuse already-connected sessions.
+    Phase 3 (AH-62): pool-backed path — checkout from ``McpToolsetPool`` via
+    a ``asyncio.run`` + ``ThreadPoolExecutor`` bridge (same pattern as the
+    sandbox pool in ``builder.py:344-368``).  The ``build_fn`` closure does the
+    Firestore fetch + ``build_toolset_for_doc`` on a pool miss.  On timeout
+    (30 s) the server is skipped for this specialist build (per-server skip).
     """
     from app.adk.agents.agent_factory.builder import build_agent
     from app.adk.agents.agent_factory.mcp import (
@@ -321,6 +348,8 @@ def _build_specialist(
     )
     from app.adk.tools.registry.tool_registry import get_default_registry
 
+    pool = mcp_pool if mcp_pool is not None else _DEFAULT_MCP_POOL
+
     # AH-PRD-06: when ``tool_ids`` is set, derive the per-server allowlist
     # used both to skip irrelevant servers below and to pass
     # ``allowed_tool_names=`` into ``build_toolset_for_doc``. ``None``
@@ -336,58 +365,119 @@ def _build_specialist(
         db = _build_firestore_client(project_id)
 
         for server_id in config.mcp_servers:
-            try:
-                if not _VALID_DOC_ID_RE.match(server_id):
-                    logger.error(
-                        "MCP server ID %r for specialist %r fails format validation; skipping",
-                        server_id,
-                        name,
-                    )
-                    continue
-                # AH-PRD-06: skip servers with no tool_ids match — no point
-                # paying the Firestore + connection cost for a toolset whose
-                # tools are all filtered out downstream.
-                if per_server_allowed is not None and not per_server_allowed.get(
-                    server_id
-                ):
-                    logger.debug(
-                        "MCP server %r has no tool_ids match for specialist %r; skipping.",
-                        server_id,
-                        name,
-                    )
-                    continue
-                snap = db.collection(MCP_COLLECTION).document(server_id).get()
-                if not snap.exists:
-                    logger.warning(
-                        "MCP server doc %r not found in %r; skipping for specialist %r",
-                        server_id,
-                        MCP_COLLECTION,
-                        name,
-                    )
-                    continue
-                doc = snap.to_dict() or {}
-                if doc.get("enabled") is not True:
-                    logger.warning(
-                        "MCP server %r is not enabled; skipping for specialist %r",
-                        server_id,
-                        name,
-                    )
-                    continue
-                if per_server_allowed is None:
-                    toolsets[server_id] = build_toolset_for_doc(server_id, doc)
-                else:
-                    toolsets[server_id] = build_toolset_for_doc(
-                        server_id,
-                        doc,
-                        allowed_tool_names=per_server_allowed[server_id],
-                    )
-            except (MCPSchemaError, ValueError) as exc:
+            if not _VALID_DOC_ID_RE.match(server_id):
                 logger.error(
-                    "Failed to build toolset for MCP server %r (specialist %r): %s",
+                    "MCP server ID %r for specialist %r fails format validation; skipping",
                     server_id,
                     name,
-                    exc,
                 )
+                continue
+            # AH-PRD-06: skip servers with no tool_ids match — no point
+            # paying the Firestore + connection cost for a toolset whose
+            # tools are all filtered out downstream.
+            if per_server_allowed is not None and not per_server_allowed.get(server_id):
+                logger.debug(
+                    "MCP server %r has no tool_ids match for specialist %r; skipping.",
+                    server_id,
+                    name,
+                )
+                continue
+
+            # Phase 3 (AH-62): pool-backed checkout.
+            # Compute creds_hash from session state so that credential rotation
+            # produces a new pool key and forces a fresh SSE connection.
+            # ``default=str`` coerces non-JSON-serialisable values (datetime,
+            # bytes, set, custom objects) to a string representation rather
+            # than aborting the entire specialist build with TypeError. The
+            # creds substrate (``mcp_creds_*`` session-state keys) is written
+            # by upstream auth flows the pool does not own; defensive coercion
+            # keeps a hostile or future-extended payload from being a hard
+            # failure mode for chat dispatch.
+            cred_key = f"mcp_creds_{server_id}"
+            creds_dict = (session_state or {}).get(cred_key, {})
+            creds_hash = hashlib.sha256(
+                json.dumps(creds_dict, sort_keys=True, default=str).encode()
+            ).hexdigest()
+            pool_key = (server_id, account_id or "", creds_hash)
+
+            allowed_for_server: list[str] | None = (
+                per_server_allowed[server_id]
+                if per_server_allowed is not None
+                else None
+            )
+
+            def _make_build_fn(
+                sid: str,
+                db_: Any,
+                allowed_names: list[str] | None,
+                specialist_name: str,
+            ) -> Callable[[], Any]:
+                def _build_fn() -> Any:
+                    snap = db_.collection(MCP_COLLECTION).document(sid).get()
+                    if not snap.exists:
+                        raise MCPSchemaError(
+                            f"MCP server doc {sid!r} not found in {MCP_COLLECTION!r}; "
+                            f"skipping for specialist {specialist_name!r}"
+                        )
+                    doc = snap.to_dict() or {}
+                    if doc.get("enabled") is not True:
+                        raise MCPSchemaError(
+                            f"MCP server {sid!r} is not enabled; "
+                            f"skipping for specialist {specialist_name!r}"
+                        )
+                    if allowed_names is not None:
+                        return build_toolset_for_doc(
+                            sid, doc, allowed_tool_names=allowed_names
+                        )
+                    return build_toolset_for_doc(sid, doc)
+
+                return _build_fn
+
+            build_fn = _make_build_fn(server_id, db, allowed_for_server, name)
+
+            def _runner(
+                _pool: McpToolsetPool = pool,
+                _key: tuple[str, ...] = pool_key,
+                _fn: Callable[[], Any] = build_fn,
+            ) -> Any:
+                return asyncio.run(
+                    _pool.get_or_create(
+                        kind=McpServerKind.CLOUD_RUN,
+                        key=_key,
+                        build_fn=_fn,
+                    )
+                )
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _executor:
+                future = _executor.submit(_runner)
+                try:
+                    toolsets[server_id] = future.result(
+                        timeout=_MCP_POOL_CHECKOUT_TIMEOUT_SECONDS
+                    )
+                except concurrent.futures.TimeoutError:
+                    logger.warning(
+                        "mcp_pool_checkout_timeout",
+                        extra={
+                            "server_id": server_id,
+                            "specialist": name,
+                            "timeout_s": _MCP_POOL_CHECKOUT_TIMEOUT_SECONDS,
+                        },
+                    )
+                except (MCPSchemaError, ValueError) as exc:
+                    logger.error(
+                        "Failed to build toolset for MCP server %r (specialist %r): %s",
+                        server_id,
+                        name,
+                        exc,
+                    )
+                except Exception:
+                    logger.error(
+                        "Unexpected error checking out MCP toolset for server %r "
+                        "(specialist %r)",
+                        server_id,
+                        name,
+                        exc_info=True,
+                    )
 
     # AH-PRD-06 PR-C: resolve ``default_global: true`` function tools (e.g.
     # ``create_visualization`` from AH-PRD-04) once per specialist build.
@@ -519,6 +609,7 @@ def resolve_agent(
     doc_id: str,
     account_id: str | None = None,
     ttl_seconds: int = 60,
+    session_state: Mapping[str, Any] | None = None,
 ) -> BaseAgent:
     """Return a cached specialist ``BaseAgent`` for ``(doc_id, account_id)``.
 
@@ -539,6 +630,10 @@ def resolve_agent(
         doc_id: Firestore document ID in the ``agent_configs`` collection.
         account_id: Per-account overlay key.  ``None`` loads the global config.
         ttl_seconds: TTL for the underlying config cache.
+        session_state: Current ADK session state mapping.  Used by Phase 3
+            (AH-62) to derive per-server credential hashes for
+            ``McpToolsetPool`` key computation.  ``None`` is treated as an
+            empty mapping (all creds hashes default to the hash of ``{}``).
 
     Returns:
         A ready-to-use ``BaseAgent`` with tools wired according to the config.
@@ -552,7 +647,10 @@ def resolve_agent(
     cache_key: tuple[str, str | None, str] = (doc_id, account_id, content_hash)
 
     return _specialists_cache.get_or_build(
-        cache_key, lambda: _build_specialist(config, doc_id, account_id)
+        cache_key,
+        lambda: _build_specialist(
+            config, doc_id, account_id, session_state=session_state
+        ),
     )
 
 
@@ -583,6 +681,25 @@ def available_specialists_provider(context: ReadonlyContext) -> str:
     )
 
     account_id: str | None = context.state.get("account_id")
+    # Phase 3 (AH-62): capture session state once so it can be threaded into
+    # resolve_agent → _build_specialist for creds-hash key computation.
+    #
+    # ADK-version dependency: ``ReadonlyContext.state`` currently returns a
+    # ``MappingProxyType`` over ``session.state`` (readonly_context.py), which
+    # ``dict()`` casts cleanly. ``CallbackContext.state`` returns ADK's
+    # ``State`` object instead, which has ``__getitem__`` but no ``keys()`` /
+    # ``__iter__``; ``dict(state)`` on that raises ``KeyError: 0``. The
+    # ``attach_specialists_before_agent_callback`` bridge uses
+    # ``state.to_dict()`` for exactly this reason — see
+    # ``sub_agent_attacher.py``. We mirror that defence here so a future ADK
+    # release that aligns ``ReadonlyContext.state`` with ``CallbackContext.state``
+    # (or any other shape exposing ``to_dict()``) does not silently break the
+    # specialists block. Regression coverage:
+    # ``test_real_adk_state_session_state_forwarded`` below.
+    state = context.state
+    session_state: Mapping[str, Any] = (
+        state.to_dict() if hasattr(state, "to_dict") else dict(state)
+    )
 
     if not account_id:
         logger.warning(
@@ -623,7 +740,7 @@ def available_specialists_provider(context: ReadonlyContext) -> str:
             config = resolve_config(doc_id, account_id)
             if not config.visible_in_frontend:
                 continue
-            agent = resolve_agent(doc_id, account_id)
+            agent = resolve_agent(doc_id, account_id, session_state=session_state)
             specialists[doc_id] = agent
         except Exception as exc:
             logger.warning(

@@ -1578,7 +1578,59 @@ Options (b) (maintain fallback + structured marker) and (c) (add `sandbox_requir
 
 ---
 
-## Review 37 — SK-42: SandboxPool concurrent-clobber fix via refcount-based ExecutorLease API
+## Review 37: Shape A → B Production Cutover Complete (DM-PRD-08)
+
+**Date:** 2026-05-28
+**Scope:** Production cut over to Shape B; the multi-tenant migration is now a fully-closed chapter across **dev → staging → prod**. No new code in this entry — it captures the completion of the production cutover defined in [Review 15](#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1) and follows the staging cutover in [Review 33](#review-33-multi-tenant-migration-complete--shape-a--b-cutover-dm-prd-00-through-dm-prd-06).
+
+### Summary
+
+The DM-PRD-08 production cutover ran end-to-end on 2026-05-28 across ten issues (DM-93 through DM-102), executed by the PO-proxy operator against `ken-e-production`:
+
+- **DM-93 (Rollback runbook)** — `deployment/runbooks/shape-b-migration-rollback.md` authored (first runbook in the repo; GCS-export + PITR + import recovery + code-rollback + abort criteria).
+- **DM-94 (Deploy verification + window)** — confirmed prod Cloud Run revision `kene-api-prod-00103-8fj` carries the full DM-PRD-00–05 code path; maintenance window declared.
+- **DM-95 (Pre-cutover GCS export)** — full `(default)` Firestore export (4,562 docs / ~3 MB) to `gs://ken-e-production-backups/pre-shape-b-cutover-2026-05-28/`; `analytics` excluded.
+- **DM-96 (Dry-run + halt-gate)** — 34 source docs on `(default)` (strategy_docs 20, alert_configurations 7, monitoring_topics 7), 0 on `analytics`; exact reconciliation to the 2026-05-25 inventory; PO PROCEED authorised.
+- **DM-97 (Destructive cutover)** — Phase A copy+verify (source=dest VERIFIED on both DBs) then Phase B delete (34 source docs removed on `(default)`); post-cutover dry-run = 0 source docs. The only destructive step.
+- **DM-98 (`accounts`-field residue)** — dead pre-Shape-D list residue removed from the three prod orgs (`equity-trust`, `healthway`, `open-lines`) via `audit_org_accounts_field.py`; Shape-D safety check confirmed list-form before deleting.
+- **DM-99 (Orphan placeholder)** — the migrated side-effect `accounts/<test_account_id>/strategy_docs/` (an unresolved-placeholder collection prefix-matched by `--all`) recursive-deleted; the top-level source had already been removed in DM-97 Phase B.
+- **DM-101 (Phase 6 verification)** — all six §4.3 checks PASS against prod.
+- **DM-100 (Timing report)** — 34 docs migrated in ~5 min; throughput RTT-bound (~0.3 docs/sec), matching the DM-62 staging finding.
+
+**Net effect:** `ken-e-production` is now exclusively on Shape B + Shape C. The Shape A → B migration is complete in every environment. One account (`acc_8790f7c66e554490a7617d32d696f496`) was already writing Shape B natively (the routers have been deployed for weeks), so the destination is a superset of the migrated source — no data was lost.
+
+### Key outcomes
+
+- **Production fully on Shape B** — no top-level Shape-A collections remain; `notifications` + `usage_records` retained as Shape C per the Review 15 carve-out (`usage_records` simply unmaterialized — prod has no billing records yet).
+- **Belt-and-suspenders backup** — pre-cutover managed GCS export + Firestore PITR (~7-day) provide the restore substrate documented in the DM-93 runbook.
+- **Halt-gate honored** — the single destructive step (DM-97) ran only after an explicit PO PROCEED on the reconciled dry-run counts.
+- **Org `accounts`-field + orphan residue cleared** — regression-confirmed by Phase-6 checks #3 and #4.
+
+### Consequences
+
+- The Shape A → B workstream is **closed across all environments**; no further cutover projects are planned. Any new account-scoped Firestore resource lands directly under `accounts/{account_id}/{resource}/...`.
+- `deployment/runbooks/shape-b-migration-rollback.md` is the canonical recovery reference for any post-cutover incident within the PITR window.
+- The pre-cutover export at `gs://ken-e-production-backups/pre-shape-b-cutover-2026-05-28/` is retained under a 90-day object-lifecycle policy.
+
+### Cross-references
+
+- **Review 15** — [Multi-Tenant Data Model Shape](#review-15-multi-tenant-data-model-shape--firestore-subcollections-shape-b--gcs-prefix-g1): the original decision (single-shot per-environment, no dual-write, no shim).
+- **Review 33** — [Multi-Tenant Migration Complete — Staging Cutover](#review-33-multi-tenant-migration-complete--shape-a--b-cutover-dm-prd-00-through-dm-prd-06): the staging cutover this production run mirrors.
+- **Production run log** — [`docs/design/components/data-management/runs/DM-PRD-08-prod-migration-execute.md`](components/data-management/runs/DM-PRD-08-prod-migration-execute.md): the full per-issue execution narrative + the DM-100 timing report (34 docs, ~5 min, RTT-bound, matching DM-62's profile).
+- **Rollback runbook** — [`deployment/runbooks/shape-b-migration-rollback.md`](../../deployment/runbooks/shape-b-migration-rollback.md): GCS-import + PITR recovery procedure.
+
+### Documents updated
+
+| File | Change |
+|------|--------|
+| `docs/design/DESIGN-REVIEW-LOG.md` | This entry (Review 37). |
+| `docs/design/components/data-management/README.md` | §5.1 status table — DM-PRD-08 flipped `Backlog` → `Complete`. |
+| `docs/design/components/PROJECT-PLANNER.md` | DM-PRD-08 row — status `not started` → `shipped`. |
+| `deployment/runbooks/shape-b-migration-rollback.md` + `docs/design/components/data-management/runs/DM-PRD-08-prod-migration-execute.md` | Authored/populated across DM-93–DM-100 (same PR). |
+
+---
+
+## Review 38 — SK-42: SandboxPool concurrent-clobber fix via refcount-based ExecutorLease API
 
 **Date:** 2026-05-27
 **Scope:** Skills component — SK-42 ([Linear](https://linear.app/ken-e/issue/SK-42)); `SandboxPool` in `app/adk/agents/agent_factory/sandbox_pool.py`, new `LeasedSandboxExecutor` in `app/adk/agents/agent_factory/leased_sandbox_executor.py`, `builder.py` wire-up.
@@ -1627,7 +1679,7 @@ Options B (boundary-only fix) and C (session-scoped executors) were rejected:
 | `docs/spike/sk-prd-02-cross-session-tmp-characterisation.md` | Removed "Operational assumption (v1 concurrency)" section (AC-5) |
 | `docs/design/components/skills/projects/SK-PRD-02-agent-integration.md` | §4.6 updated with `lease()` API, `LeasedSandboxExecutor`, span contract |
 | `docs/trace-structure-spec.md` | §15 — added `sandbox_pool.lease` and `sandbox_pool.release` span definitions |
-| `docs/design/DESIGN-REVIEW-LOG.md` | This entry (Review 37) |
+| `docs/design/DESIGN-REVIEW-LOG.md` | This entry (Review 38) |
 
 ---
 

@@ -334,6 +334,125 @@ class TestAvailableSpecialistsProvider:
         assert "good_spe" in result
         assert "bad_spe" not in result
 
+    # -----------------------------------------------------------------------
+    # Regression coverage for AH-62 (PR #721) — provider/callback parity
+    #
+    # ``available_specialists_provider`` and
+    # ``attach_specialists_before_agent_callback`` both extract
+    # ``session_state`` from their respective context objects. ADK gives them
+    # different state types:
+    #
+    # * ``CallbackContext.state`` returns ADK's ``State`` (no ``keys()`` /
+    #   ``__iter__``; ``dict(state)`` raises ``KeyError: 0``).
+    # * ``ReadonlyContext.state`` returns ``MappingProxyType`` over
+    #   ``session.state`` today, which ``dict()`` casts cleanly.
+    #
+    # The provider previously used ``dict(context.state)``; it works for the
+    # current ``MappingProxyType`` shape but silently breaks if a future ADK
+    # release aligns the two contexts on ``State``. The
+    # ``hasattr(state, "to_dict")`` guard in the provider matches the fix
+    # already shipped in ``sub_agent_attacher.py:362`` so a future ADK shape
+    # change cannot silently degrade the specialists block.
+    # -----------------------------------------------------------------------
+
+    def test_real_adk_state_session_state_forwarded(self) -> None:
+        """When ``ReadonlyContext.state`` is an ADK ``State`` (forward-compat
+        shape), the provider must extract session state via ``to_dict()`` and
+        forward it to ``resolve_agent``. A regression here (e.g. reintroducing
+        ``dict(state)``) would crash with ``KeyError: 0``."""
+        from types import SimpleNamespace
+
+        from google.adk.sessions.state import State
+
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        good_cfg = _make_merged_config("good", visible_in_frontend=True)
+        good_agent = _make_llm_agent("good_spe")
+        state = State(
+            value={"account_id": "acct_1", "mcp_creds_x": "v1"},
+            delta={"mcp_creds_y": "v2"},
+        )
+        ctx = SimpleNamespace(state=state)
+        seen_session_states: list[Any] = []
+
+        def _capturing_resolve_agent(
+            doc_id: str,
+            _account_id: str | None = None,
+            _ttl: int = 60,
+            session_state: Any = None,
+        ) -> Any:
+            seen_session_states.append(session_state)
+            return good_agent
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.config_loader.list_account_agent_configs",
+                return_value=["good_spe"],
+            ),
+            patch.object(specialist_runtime, "resolve_config", return_value=good_cfg),
+            patch.object(
+                specialist_runtime,
+                "resolve_agent",
+                side_effect=_capturing_resolve_agent,
+            ),
+        ):
+            result = specialist_runtime.available_specialists_provider(ctx)  # type: ignore[arg-type]
+
+        assert "good_spe" in result, (
+            "Provider produced an empty block — likely a state→dict crash "
+            "swallowed upstream. Did dict(state) regress for ADK State?"
+        )
+        assert seen_session_states, "resolve_agent was never called"
+        forwarded = seen_session_states[0]
+        assert forwarded is not None
+        assert forwarded.get("account_id") == "acct_1"
+        assert forwarded.get("mcp_creds_x") == "v1"
+        assert forwarded.get("mcp_creds_y") == "v2"
+
+    def test_mappingproxy_state_session_state_forwarded(self) -> None:
+        """Today's ADK shape — ``ReadonlyContext.state`` returns
+        ``MappingProxyType`` over ``session.state``. The provider must extract
+        session state via the ``dict()`` fallback branch and forward it."""
+        from types import MappingProxyType, SimpleNamespace
+
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        good_cfg = _make_merged_config("good", visible_in_frontend=True)
+        good_agent = _make_llm_agent("good_spe")
+        proxy = MappingProxyType(
+            {"account_id": "acct_1", "mcp_creds_x": "v1"}
+        )
+        ctx = SimpleNamespace(state=proxy)
+        seen_session_states: list[Any] = []
+
+        def _capturing_resolve_agent(
+            doc_id: str,
+            _account_id: str | None = None,
+            _ttl: int = 60,
+            session_state: Any = None,
+        ) -> Any:
+            seen_session_states.append(session_state)
+            return good_agent
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.config_loader.list_account_agent_configs",
+                return_value=["good_spe"],
+            ),
+            patch.object(specialist_runtime, "resolve_config", return_value=good_cfg),
+            patch.object(
+                specialist_runtime,
+                "resolve_agent",
+                side_effect=_capturing_resolve_agent,
+            ),
+        ):
+            result = specialist_runtime.available_specialists_provider(ctx)  # type: ignore[arg-type]
+
+        assert "good_spe" in result
+        forwarded = seen_session_states[0]
+        assert forwarded.get("account_id") == "acct_1"
+        assert forwarded.get("mcp_creds_x") == "v1"
+
 
 # ---------------------------------------------------------------------------
 # TestListCache
@@ -835,6 +954,10 @@ def _patch_specialist_runtime_externals(
     rather than ``specialist_runtime.*`` because ``_build_specialist`` re-imports
     each symbol via local ``from … import …`` inside the function body.
 
+    AH-62 Phase 3: also patches ``specialist_runtime._DEFAULT_MCP_POOL`` with a
+    fresh ``McpToolsetPool()`` so tests are isolated from each other (the module-level
+    singleton would otherwise cache toolsets across test invocations).
+
     Args:
         fake_db: In-memory Firestore stand-in.  When ``None``, an empty
             ``_FakeFirestoreDb`` is used (no MCP server docs — all server
@@ -856,11 +979,20 @@ def _patch_specialist_runtime_externals(
     from contextlib import ExitStack
     from unittest.mock import patch as _patch
 
+    from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+
     stack = ExitStack()
 
     if fake_db is None:
         fake_db = _FakeFirestoreDb({})
 
+    # AH-62: inject a fresh pool per test for isolation.
+    stack.enter_context(
+        _patch(
+            "app.adk.agents.agent_factory.specialist_runtime._DEFAULT_MCP_POOL",
+            new=McpToolsetPool(),
+        )
+    )
     stack.enter_context(
         _patch(
             "app.adk.agents.agent_factory.mcp._build_firestore_client",
@@ -1525,3 +1657,200 @@ class TestSpecialistRuntimeReviewWrap:
                 sr._build_specialist(config, "whitespace_spec", None)
 
         mock_build_pipeline.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Pool integration tests (AH-62 Phase 3)
+# ---------------------------------------------------------------------------
+
+
+class TestBuildSpecialistMcpPoolIntegration:
+    """``_build_specialist`` Phase 3: pool-backed MCP toolset checkout (AH-62).
+
+    Verifies that:
+    - Pool checkout is used instead of direct Firestore get() for each server.
+    - Pool hit: build_toolset_for_doc is NOT called a second time.
+    - Pool miss: build_toolset_for_doc IS called once.
+    - Session-state creds_hash keys pool correctly (different creds → different entry).
+    - Pool checkout timeout: server is skipped gracefully.
+    - Injected mcp_pool kwarg overrides _DEFAULT_MCP_POOL.
+    """
+
+    def test_pool_called_for_each_mcp_server(self) -> None:
+        """build_toolset_for_doc is called once per enabled MCP server (pool miss)."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+
+        config = _make_specialist_config(mcp_servers=["ga_mcp", "ads_mcp"])
+        fake_db = _FakeFirestoreDb(
+            {
+                ("mcp_server_configs", "ga_mcp"): _enabled_mcp_doc(),
+                ("mcp_server_configs", "ads_mcp"): _enabled_mcp_doc(),
+            }
+        )
+        fresh_pool = McpToolsetPool()
+        stack, mock_btf, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
+        with stack:
+            sr._build_specialist(config, "multi_srv", "acc1", mcp_pool=fresh_pool)
+
+        assert mock_btf.call_count == 2
+        called_ids = {call.args[0] for call in mock_btf.call_args_list}
+        assert called_ids == {"ga_mcp", "ads_mcp"}
+
+    def test_pool_hit_does_not_call_build_toolset_again(self) -> None:
+        """Pool hit on second call → build_toolset_for_doc NOT called again."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+
+        config = _make_specialist_config(mcp_servers=["ga_mcp"])
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "ga_mcp"): _enabled_mcp_doc()}
+        )
+        fresh_pool = McpToolsetPool()
+        stack, mock_btf, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
+        with stack:
+            sr._build_specialist(config, "spec", "acc1", mcp_pool=fresh_pool)
+            assert mock_btf.call_count == 1
+
+            sr._build_specialist(config, "spec", "acc1", mcp_pool=fresh_pool)
+            assert mock_btf.call_count == 1, (
+                "build_toolset_for_doc must NOT be called on pool hit"
+            )
+
+    def test_different_creds_hash_produces_new_pool_entry(self) -> None:
+        """Different session-state creds for the same server produce distinct pool entries."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+
+        config = _make_specialist_config(mcp_servers=["ga_mcp"])
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "ga_mcp"): _enabled_mcp_doc()}
+        )
+        fresh_pool = McpToolsetPool()
+        stack, mock_btf, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
+        with stack:
+            sr._build_specialist(
+                config,
+                "spec",
+                "acc1",
+                session_state={"mcp_creds_ga_mcp": {"token": "tok1"}},
+                mcp_pool=fresh_pool,
+            )
+            assert mock_btf.call_count == 1
+
+            sr._build_specialist(
+                config,
+                "spec",
+                "acc1",
+                session_state={"mcp_creds_ga_mcp": {"token": "tok2"}},
+                mcp_pool=fresh_pool,
+            )
+            assert mock_btf.call_count == 2, (
+                "Different creds should produce a new pool entry"
+            )
+
+    def test_pool_checkout_timeout_skips_server(self) -> None:
+        """Pool checkout timeout logs a warning and skips the server (no hard failure)."""
+        import concurrent.futures
+        from unittest.mock import patch as _patch
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+
+        config = _make_specialist_config(mcp_servers=["slow_mcp"])
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "slow_mcp"): _enabled_mcp_doc()}
+        )
+        fresh_pool = McpToolsetPool()
+        stack, _mock_btf, mock_ba = _patch_specialist_runtime_externals(fake_db=fake_db)
+        with stack:
+            with _patch(
+                "concurrent.futures.Future.result",
+                side_effect=concurrent.futures.TimeoutError,
+            ):
+                sr._build_specialist(config, "spec", "acc1", mcp_pool=fresh_pool)
+
+        mock_ba.assert_called_once()
+
+    def test_mcp_pool_kwarg_overrides_default_pool(self) -> None:
+        """The mcp_pool= kwarg takes precedence over _DEFAULT_MCP_POOL."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+
+        config = _make_specialist_config(mcp_servers=["ga_mcp"])
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "ga_mcp"): _enabled_mcp_doc()}
+        )
+        injected_pool = McpToolsetPool()
+        stack, _mock_btf, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
+        with stack:
+            sr._build_specialist(config, "spec", "acc1", mcp_pool=injected_pool)
+
+        assert len(injected_pool._pool) == 1, (
+            "Injected pool should have received the toolset entry"
+        )
+
+    def test_session_state_none_uses_empty_creds(self) -> None:
+        """session_state=None and session_state={} produce identical pool keys."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+
+        config = _make_specialist_config(mcp_servers=["ga_mcp"])
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "ga_mcp"): _enabled_mcp_doc()}
+        )
+        pool_a = McpToolsetPool()
+        pool_b = McpToolsetPool()
+        stack, _mock_btf, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
+        with stack:
+            sr._build_specialist(
+                config, "spec", "acc1", session_state=None, mcp_pool=pool_a
+            )
+            sr._build_specialist(
+                config, "spec", "acc1", session_state={}, mcp_pool=pool_b
+            )
+
+        key_a = next(iter(pool_a._pool.keys()))
+        key_b = next(iter(pool_b._pool.keys()))
+        assert key_a == key_b, (
+            "None and {} session_state must produce identical pool keys"
+        )
+
+    def test_non_json_serialisable_creds_do_not_crash_build(self) -> None:
+        """AH-62 follow-up: ``mcp_creds_*`` values that are not natively
+        JSON-serialisable (datetime, bytes, set, ...) must coerce via
+        ``default=str`` rather than aborting the entire specialist build
+        with ``TypeError``. The creds substrate is owned by upstream auth
+        flows the pool does not control; defensive coercion keeps the pool
+        from being a hard failure mode for chat dispatch."""
+        import datetime as _dt
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+
+        config = _make_specialist_config(mcp_servers=["ga_mcp"])
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "ga_mcp"): _enabled_mcp_doc()}
+        )
+        fresh_pool = McpToolsetPool()
+        stack, _mock_btf, _ = _patch_specialist_runtime_externals(fake_db=fake_db)
+
+        nasty_creds = {
+            "expires_at": _dt.datetime(2026, 1, 1, 0, 0, 0),
+            "binary_blob": b"\x00\x01\x02",
+            "scopes": {"read", "write"},  # set — not JSON-serialisable
+        }
+        with stack:
+            # Must not raise.
+            sr._build_specialist(
+                config,
+                "spec",
+                "acc1",
+                session_state={"mcp_creds_ga_mcp": nasty_creds},
+                mcp_pool=fresh_pool,
+            )
+
+        assert len(fresh_pool._pool) == 1, (
+            "Build aborted before reaching the pool — defensive coercion "
+            "regressed."
+        )

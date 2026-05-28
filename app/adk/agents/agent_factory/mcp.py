@@ -350,10 +350,24 @@ def build_toolset_for_doc(
 
     Raises:
         MCPSchemaError: ``connection`` sub-dict is missing or has an unknown
-            ``connection_type``; or field type validation fails.
+            ``connection_type``; ``kind`` is unknown; or field type validation
+            fails.
+        NotImplementedError: ``kind`` is ``"zapier"`` (reserved for Phase 4 /
+            R2, AH-PRD-09).
         ValueError: ``auth_type`` is a non-None value not recognised by
             ``make_header_provider`` (AH-12 fail-fast contract).
     """
+    kind: str = doc.get("kind") or "cloud_run"
+    if kind == "zapier":
+        raise NotImplementedError(
+            f"MCP server {server_id!r}: zapier kind is reserved for Phase 4 / R2 "
+            f"(AH-PRD-09); not available in this release."
+        )
+    if kind != "cloud_run":
+        raise MCPSchemaError(
+            f"MCP server {server_id!r}: unknown kind {kind!r}; expected 'cloud_run'."
+        )
+
     connection = doc.get("connection")
     if not connection:
         raise MCPSchemaError(

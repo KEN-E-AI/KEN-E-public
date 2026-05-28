@@ -169,7 +169,7 @@ The component's work is split across **9 project PRDs** under [`projects/`](./pr
 | [DM-PRD-05](./projects/DM-PRD-05-deletion-sweep-rewrite.md) | Deletion Sweep Rewrite (Account + User) | Complete | 2–3 d | DM-PRD-01, DM-PRD-02, DM-PRD-03, DM-PRD-04 | DM-PRD-06, DM-PRD-07 |
 | [DM-PRD-06](./projects/DM-PRD-06-verification-and-cutover.md) | Verification & Staging Cutover | Complete | 1 d | DM-PRD-05 | — |
 | [DM-PRD-07](./projects/DM-PRD-07-approval-workflow-and-audit.md) | Roles, Members, Audit Substrate | Blocked | 4–5 d | PR-PRD-01, DM-PRD-05 | PR-PRD-07 |
-| [DM-PRD-08](./projects/DM-PRD-08-production-cutover.md) | Production Cutover | Backlog | 1 d | DM-PRD-06 | — |
+| [DM-PRD-08](./projects/DM-PRD-08-production-cutover.md) | Production Cutover | Complete | 1 d | DM-PRD-06 | — |
 
 ### 5.2 Dependency graph
 
