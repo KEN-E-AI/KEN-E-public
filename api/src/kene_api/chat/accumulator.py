@@ -37,6 +37,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from google.cloud import firestore
+
 from shared.token_accounting import BillableTokenCounts, extract_billable_tokens
 
 

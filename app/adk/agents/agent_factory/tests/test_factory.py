@@ -565,7 +565,11 @@ class TestCallbackChaining:
             additional_before_agent_callbacks=[my_cb],
         )
 
-        assert agent.before_agent_callback == [_WEAVE_BEFORE, _SK_SPANS_BEFORE_AGENT, my_cb]
+        assert agent.before_agent_callback == [
+            _WEAVE_BEFORE,
+            _SK_SPANS_BEFORE_AGENT,
+            my_cb,
+        ]
 
     def test_additional_before_tool_callback_appended_after_adk_sentinel(self) -> None:
         # SK-27: skill_spans_before_tool_callback sits between the skill filter
@@ -578,7 +582,10 @@ class TestCallbackChaining:
         )
 
         assert agent.before_tool_callback == [
-            _ADK_BEFORE_TOOL, _SKILL_FILTER, _SK_SPANS_BEFORE_TOOL, my_cb
+            _ADK_BEFORE_TOOL,
+            _SKILL_FILTER,
+            _SK_SPANS_BEFORE_TOOL,
+            my_cb,
         ]
 
     def test_additional_after_tool_callback_appended_after_adk_sentinel(self) -> None:
@@ -591,7 +598,11 @@ class TestCallbackChaining:
             additional_after_tool_callbacks=[my_cb],
         )
 
-        assert agent.after_tool_callback == [_ADK_AFTER_TOOL, _SK_SPANS_AFTER_TOOL, my_cb]
+        assert agent.after_tool_callback == [
+            _ADK_AFTER_TOOL,
+            _SK_SPANS_AFTER_TOOL,
+            my_cb,
+        ]
 
     def test_multiple_additional_callbacks_preserve_order(self) -> None:
         cb_a = MagicMock(name="cb_a")
@@ -756,20 +767,22 @@ class TestSkillIdsAndSandbox:
         assert agent.name == "skills"
 
     def test_sandbox_code_executor_enabled_builds_agent_without_error(self) -> None:
-        from unittest.mock import AsyncMock, MagicMock
+        from unittest.mock import MagicMock
 
-        from google.adk.code_executors import BuiltInCodeExecutor
-
+        from app.adk.agents.agent_factory.leased_sandbox_executor import (
+            LeasedSandboxExecutor,
+        )
         from app.adk.agents.agent_factory.sandbox_pool import SandboxPool
 
         mock_pool = MagicMock(spec=SandboxPool)
-        mock_pool.get_or_create = AsyncMock(return_value=BuiltInCodeExecutor())
 
         config = _make_config(sandbox_code_executor_enabled=True)
         agent = _build(config, name="sandbox", sandbox_pool=mock_pool)
 
         assert agent is not None
-        assert agent.code_executor is mock_pool.get_or_create.return_value
+        # SK-42: build_agent returns a LeasedSandboxExecutor wrapper (lazy construction).
+        assert isinstance(agent.code_executor, LeasedSandboxExecutor)
+        assert agent.code_executor._pool is mock_pool
 
     def test_skill_ids_not_surfaced_as_llm_agent_attribute(self) -> None:
         config = _make_config(skill_ids=["s1"])

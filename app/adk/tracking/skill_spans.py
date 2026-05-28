@@ -384,7 +384,10 @@ async def skill_spans_before_tool_callback(
                 call_id = "_single_slot"
 
             existing = _skill_ctx_registry.get() or {}
-            updated = {**existing, call_id: {"call": call, "skill_id": resolved_skill_id}}
+            updated = {
+                **existing,
+                call_id: {"call": call, "skill_id": resolved_skill_id},
+            }
             _skill_ctx_registry.set(updated)
     except Exception:
         logger.warning(

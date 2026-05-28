@@ -141,7 +141,11 @@ class PermissionService:
         # If no scopes required, allow
         if not required_scopes:
             self._log_result(
-                tool_name, user_id, account_id, allowed=True, reason="no_scopes_required"
+                tool_name,
+                user_id,
+                account_id,
+                allowed=True,
+                reason="no_scopes_required",
             )
             return PermissionCheckResult(allowed=True, reason="No permissions required")
 

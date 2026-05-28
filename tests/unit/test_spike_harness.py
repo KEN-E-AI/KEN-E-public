@@ -21,6 +21,7 @@ from scripts.spike.sandbox_test_harness import (
 # _sha256_short
 # ---------------------------------------------------------------------------
 
+
 class TestSha256Short:
     def test_returns_12_chars(self) -> None:
         result = _sha256_short("hello")
@@ -38,9 +39,12 @@ class TestSha256Short:
 # _status_severity_key and _worst_status
 # ---------------------------------------------------------------------------
 
+
 class TestStatusSeverity:
     def test_script_tampered_is_worst(self) -> None:
-        key = _status_severity_key("error: script_tampered (expected=abc, observed=def, diff=/tmp/x.diff)")
+        key = _status_severity_key(
+            "error: script_tampered (expected=abc, observed=def, diff=/tmp/x.diff)"
+        )
         assert key == 0
 
     def test_ok_maps_above_all_named_errors(self) -> None:
@@ -106,6 +110,7 @@ class TestWorstStatus:
 # ---------------------------------------------------------------------------
 # _check_script_tampering
 # ---------------------------------------------------------------------------
+
 
 class TestCheckScriptTampering:
     def test_no_captured_parts_returns_none(self) -> None:

@@ -220,13 +220,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to stop MCP health monitor: {e}")
 
-    # Stop the SandboxPool sweep and await cancellation (SK-37).
-    # Ensures the background task is cancelled cleanly on SIGTERM so there are
-    # no "un-awaited task" warnings at process teardown.
+    # Stop the SandboxPool sweep (SK-37).
+    # Signals the background sweep daemon thread to exit and joins it cleanly on
+    # SIGTERM.  stop() is synchronous — the pool runs on threads, not the loop.
     try:
         from app.adk.agents.agent_factory.builder import _DEFAULT_SANDBOX_POOL
 
-        await _DEFAULT_SANDBOX_POOL.stop()
+        _DEFAULT_SANDBOX_POOL.stop()
         logger.info("SandboxPool sweep stopped")
     except Exception as e:
         logger.warning("Failed to stop SandboxPool sweep: %s", e)

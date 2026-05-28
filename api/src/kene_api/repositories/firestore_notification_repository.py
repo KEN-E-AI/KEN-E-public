@@ -78,9 +78,7 @@ class FirestoreNotificationRepository(NotificationRepository):
 
         if not include_archived:
             now = datetime.now().isoformat()
-            query = query.where(
-                filter=firestore.FieldFilter("archived_at", ">", now)
-            )
+            query = query.where(filter=firestore.FieldFilter("archived_at", ">", now))
             query = query.order_by("archived_at", direction=firestore.Query.ASCENDING)
 
         def _run_query() -> list[dict[str, Any]]:
@@ -169,9 +167,7 @@ class FirestoreNotificationRepository(NotificationRepository):
 
         if not include_archived:
             now = datetime.now().isoformat()
-            query = query.where(
-                filter=firestore.FieldFilter("archived_at", ">", now)
-            )
+            query = query.where(filter=firestore.FieldFilter("archived_at", ">", now))
             query = query.order_by("archived_at", direction=firestore.Query.ASCENDING)
 
         query = query.order_by("created_at", direction=firestore.Query.DESCENDING)

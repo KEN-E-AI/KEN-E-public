@@ -116,14 +116,19 @@ def test_is_agent_running_states(
 
 class TestMetadataToSidebarItemFields:
     def test_returns_sidebar_item_instance(self) -> None:
-        assert isinstance(_metadata_to_sidebar_item(_make_metadata()), ChatSessionSidebarItem)
+        assert isinstance(
+            _metadata_to_sidebar_item(_make_metadata()), ChatSessionSidebarItem
+        )
 
     def test_session_id_passes_through(self) -> None:
         m = _make_metadata(session_id="sess_xyz")
         assert _metadata_to_sidebar_item(m).session_id == "sess_xyz"
 
     def test_title_passes_through(self) -> None:
-        assert _metadata_to_sidebar_item(_make_metadata(title="My chat")).title == "My chat"
+        assert (
+            _metadata_to_sidebar_item(_make_metadata(title="My chat")).title
+            == "My chat"
+        )
 
     def test_null_title_passes_through(self) -> None:
         assert _metadata_to_sidebar_item(_make_metadata(title=None)).title is None

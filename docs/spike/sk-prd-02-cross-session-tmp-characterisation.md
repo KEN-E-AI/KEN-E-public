@@ -233,38 +233,6 @@ clearing significantly more expensive, `_TMP_CLEAR_TIMEOUT_SECONDS` can be tuned
 
 ---
 
-## Operational assumption (v1 concurrency)
-
-`SandboxPool` keys by `(account_id, config_id)` per SK-PRD-02 §4.6 — not by session.
-Multiple callers (e.g. two users on the same account using the same agent_config, or
-a future ADK that adds parallel tool dispatch) can therefore share the same pool
-entry.  `_clear_tmp` runs on every `get_or_create` return path against the pool's
-single executor instance, outside the stripe lock, and the Vertex container behind
-`sandboxEnvironments/<sid>` is shared across all concurrent `execute_code` calls.
-
-The implication is a symmetric inverse of the leak this mitigation closes:
-
-* The LEAK (closed by `_clear_tmp`): caller B can *read* `/tmp` contents written by
-  a previous caller A from a prior session.
-* The CLOBBER (new hazard, v1 accepted): caller A is mid-`execute_code` writing
-  working files to `/tmp` when caller B's `get_or_create` triggers `_clear_tmp`,
-  destroying A's in-flight data.
-
-**v1 ships with the explicit assumption that callers serialise their use of a
-pooled executor.**  This is true under current ADK (single-turn-single-tool
-dispatch) within one user's chat session.  It is *not* true for cross-user
-same-config concurrency, which the pool's keying scheme permits.
-
-**Resolution path:** [SK-42](https://linear.app/ken-e/issue/SK-42) replaces this
-assumption with a refcount-based `ExecutorLease` API so concurrent callers can
-share the executor without `_clear_tmp` racing against in-flight work.  SK-42 is
-prioritised **before SK-PRD-02 takes broad production traffic** (the assumption is
-acceptable for the controlled-rollout phase but breaks under multi-user
-concurrency at scale).  AC-5 of SK-42 removes this section once the lease API
-ships.
-
----
-
 ## Mitigation decision
 
 **Decision: Add defence-in-depth /tmp clearing to SandboxPool.get_or_create.**
@@ -287,21 +255,43 @@ Changes applied in this PR:
    to parse the `vertexai==1.134.0` `Chunk(data=bytes_json, ...)` response shape.
    Required to make the probe actually report results against the current SDK.
 
-**Per-call latency impact:** not directly measured (the probe ran with
-`_CLEAR_TMP_ON_REUSE = False` so the trial timings do not include `/tmp` clearing).
-Observed `execute_code` round-trip on the same sandbox averaged ~1.2 s (range
-1.0 – 2.4 s); `_clear_tmp` issues one `execute_code` call per `get_or_create`,
-so first-order expectation is roughly +1 s on every pool hit / miss. The
-`sandbox_pool.get` Weave span carries `pool_size_after` and `tmp_clear_failed` and
-the span duration captures end-to-end latency for downstream MER-E monitoring.
+**Per-call latency impact — vertexai.Client construction:** the `vertexai.Client`
+construction overhead (expected tens of ms for auth resolution + gRPC channel setup)
+has been **eliminated as a per-call cost** by SK-43.  `_clear_tmp` now calls the
+module-level `_get_vertexai_client(project, location)` (decorated with
+`@functools.lru_cache(maxsize=2)`), so the client is constructed once per
+`(project, location)` pair for the lifetime of the Cloud Run instance.  The
+`sandbox_pool.lease` Weave span carries a `client_cache_hit: bool` attribute
+(SK-43 AC-5) so MER-E can monitor cache health in production; it is emitted on
+the `lease` span — not `sandbox_pool.get` — because `_clear_tmp` now fires at the
+0 → 1 refcount transition inside `lease()` (SK-42).  Measured construction
+latency (`scripts/skills/measure_vertexai_client_init.py --cached`, 100
+iterations, ADC `ken-e-production` / `us-central1`): uncached mean **24.6 ms**
+(p95 9.4 ms; the 1.6 s max is the one-time cold start — auth discovery + initial
+gRPC channel setup), cached subsequent calls mean **~0.0001 ms** (pure dict
+lookup).  Full table posted as a comment on SK-43 (AC-3).
+
+**Per-call latency impact — execute_code round-trip:** not directly measured
+(the probe ran with `_CLEAR_TMP_ON_REUSE = False` so the trial timings do not
+include `/tmp` clearing). Observed `execute_code` round-trip on the same sandbox
+averaged ~1.2 s (range 1.0 – 2.4 s); `_clear_tmp` issues one `execute_code` call
+on the 0 → 1 lease transition, so first-order expectation is roughly +1 s on the
+first lease acquisition for an idle pool entry. The `sandbox_pool.get` Weave span
+carries `cache_hit` and `pool_size_after`; the SK-42 lease redesign moved
+`cleared_tmp`, `tmp_clear_failed`, and `client_cache_hit` to the
+`sandbox_pool.lease` span, whose span duration captures end-to-end latency for
+downstream MER-E monitoring.
 
 Two known optimisations are tracked as follow-ups, **both prioritised before
 SK-PRD-02 takes broad production traffic**:
 
 * [SK-43](https://linear.app/ken-e/issue/SK-43) — cache the `vertexai.Client`
-  instance to amortise client init across calls.  PR #720 reviewer concern #2 first
-  flagged this; the v1 docstring's "fresh client per call avoids threading issues"
-  rationale is treated as unverified and SK-43 owns the verification + caching.
+  instance to amortise client init across calls. **Landed** (see PR linked to
+  SK-43): `_get_vertexai_client(project, location)` with `lru_cache(maxsize=2)`
+  is now in `sandbox_pool.py`; thread-safety verified against the Python gRPC
+  documentation (gRPC channels are thread-safe); the `client_cache_hit` span
+  attribute (AC-5) is emitted on the `sandbox_pool.lease` span for MER-E
+  monitoring.
 * `_TMP_CLEAR_TIMEOUT_SECONDS` tuning — currently 5 s; lower if Vertex round-trip
   improves and we want to bound worst-case `_clear_tmp` overhead more tightly.
 

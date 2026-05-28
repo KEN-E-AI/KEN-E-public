@@ -86,10 +86,16 @@ def parse_account_form_data(
         websites_list = []  # Websites is required, default to empty list
 
     region_list = parse_json_field(region, "region")
-    marketing_channels_list = parse_json_field(marketing_channels, "marketing_channels") or []
-    product_integrations_list = parse_json_field(product_integrations, "product_integrations") or []
+    marketing_channels_list = (
+        parse_json_field(marketing_channels, "marketing_channels") or []
+    )
+    product_integrations_list = (
+        parse_json_field(product_integrations, "product_integrations") or []
+    )
     enabled_strategies_list = parse_json_field(enabled_strategies, "enabled_strategies")
-    override_product_categories_list = parse_json_field(override_product_categories, "override_product_categories")
+    override_product_categories_list = parse_json_field(
+        override_product_categories, "override_product_categories"
+    )
 
     # Create and return the validated model
     return AccountRequest(

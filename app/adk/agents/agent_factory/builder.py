@@ -11,6 +11,7 @@ from google.adk.code_executors import BuiltInCodeExecutor
 from google.genai.types import GenerateContentConfig
 
 from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+from app.adk.agents.agent_factory.leased_sandbox_executor import LeasedSandboxExecutor
 from app.adk.agents.agent_factory.roster import (
     MAX_TOOLS_PER_SPECIALIST,
     RosterCapExceededError,
@@ -38,7 +39,6 @@ logger = get_structured_logger(__name__)
 _MAX_ORG_CONTEXT_CHARS = 4000
 _ORG_CONTEXT_BLOCKED = ("[END CONTEXT]", "[ORGANIZATION CONTEXT]")
 _SKILL_LOAD_TIMEOUT_SECONDS = 30
-_SANDBOX_BUILD_TIMEOUT_SECONDS = 30
 
 # Process-wide singleton — one pool per Cloud Run instance. Mirrors the
 # ``_specialists_cache`` singleton pattern in specialist_runtime.py:169.
@@ -292,26 +292,6 @@ def _build_skill_toolset(
             return None, {}, True
 
 
-async def _build_code_executor_async(
-    *,
-    account_id: str,
-    config_id_for_pool: str,
-    sandbox_pool: SandboxPool,
-) -> Any:
-    """Async core: obtain a pooled AgentEngineSandboxCodeExecutor.
-
-    Delegates to ``sandbox_pool.get_or_create`` so the sandbox process is
-    reused across ``LlmAgent`` rebuilds under AH-PRD-09's per-turn resolver.
-    The pool is keyed by ``(account_id, config_id_for_pool)`` where
-    ``config_id_for_pool`` is the stable Firestore doc id (the ``name=`` kwarg
-    on ``build_agent``).
-    """
-    return await sandbox_pool.get_or_create(
-        account_id=account_id,
-        config_id=config_id_for_pool,
-    )
-
-
 def _build_code_executor(
     config: MergedAgentConfig,
     *,
@@ -321,34 +301,29 @@ def _build_code_executor(
 ) -> Any:
     """Resolve the code executor for this agent using sandbox > built-in > None precedence.
 
-    * ``sandbox_code_executor_enabled=True`` → obtain a pooled
-      ``AgentEngineSandboxCodeExecutor`` from ``sandbox_pool``.  This wins
-      over ``code_execution_enabled`` when both are True — AC-4 requires the
-      sandbox specifically and ``LlmAgent.code_executor`` is a single field.
+    * ``sandbox_code_executor_enabled=True`` → return a ``LeasedSandboxExecutor``
+      that routes every ``execute_code`` call through ``sandbox_pool.lease()``
+      (SK-42 CLOBBER fix).  The underlying pooled
+      ``AgentEngineSandboxCodeExecutor`` is constructed on first use and reused
+      across ``LlmAgent`` rebuilds under AH-PRD-09's per-turn resolver.  This
+      wins over ``code_execution_enabled`` when both are True — AC-4 requires
+      the sandbox specifically and ``LlmAgent.code_executor`` is a single field.
     * ``sandbox_code_executor_enabled=False`` (or absent) → fall through to
       the existing ``code_execution_enabled`` rule (``BuiltInCodeExecutor()``
       or ``None``).
 
-    When ``account_id is None`` and sandbox is requested, skips the sandbox
-    (pool keying requires a real account scope), emits a WARNING, and falls
-    through to the ``code_execution_enabled`` resolution below — unlike the
-    timeout path, which returns ``None`` unconditionally.  This asymmetry is
-    a pre-existing inconsistency tracked for a follow-up issue.
+    ``account_id is None`` returns ``None`` regardless of
+    ``code_execution_enabled`` — requesting sandbox is a hard requirement, not a
+    soft preference, and the pool cannot be keyed without an account, so a
+    WARNING is emitted before the ``None`` return so operators retain the
+    signal.  See DESIGN-REVIEW-LOG Review 36 for the fail-closed rationale.
 
-    On sandbox-build timeout the function returns ``None`` regardless of
-    ``code_execution_enabled`` — requesting sandbox is treated as a hard
-    requirement, not a soft preference; the agent has no code executor that
-    turn.  See DESIGN-REVIEW-LOG Review 36 for the decision rationale.
-
-    **Always** routes through a ThreadPoolExecutor — including the no-loop
-    case where ``_build_skill_toolset`` would call ``asyncio.run`` directly.
-    The reason is timeout enforcement: ``future.result(timeout=…)`` gives us
-    a wall-clock bound on the sandbox construction regardless of caller
-    context, whereas a bare ``asyncio.run`` provides no timeout.  The cost is
-    one short-lived thread per sync invocation; the benefit is that a
-    misbehaving sandbox build cannot hang the agent factory.  Skill-toolset
-    loading can tolerate the no-timeout path because individual skill loads
-    are cheap; sandbox construction calls into Vertex AI and is not.
+    Construction is a cheap, synchronous, I/O-free call:
+    ``LeasedSandboxExecutor`` only stores the pool + key, and the pooled
+    ``AgentEngineSandboxCodeExecutor.__init__`` merely parses a resource-name
+    regex.  The real sandbox cold-start happens lazily inside the inner
+    ``execute_code`` (ADK's ``sandboxes.create``), so there is nothing here to
+    bound with a timeout; ``SandboxPool._clear_tmp`` keeps its own 5s bound.
     """
     if config.sandbox_code_executor_enabled:
         if account_id is None:
@@ -356,31 +331,13 @@ def _build_code_executor(
                 "sandbox_skipped_no_account",
                 extra={"config_id": name},
             )
-        else:
+            return None
 
-            def _runner() -> Any:
-                return asyncio.run(
-                    _build_code_executor_async(
-                        account_id=account_id,
-                        config_id_for_pool=name,
-                        sandbox_pool=sandbox_pool,
-                    )
-                )
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(_runner)
-                try:
-                    return future.result(timeout=_SANDBOX_BUILD_TIMEOUT_SECONDS)
-                except concurrent.futures.TimeoutError:
-                    logger.error(
-                        "sandbox_build_timeout",
-                        extra={
-                            "account_id": account_id,
-                            "config_id": name,
-                            "timeout_s": _SANDBOX_BUILD_TIMEOUT_SECONDS,
-                        },
-                    )
-                    return None
+        return LeasedSandboxExecutor(
+            pool=sandbox_pool,
+            account_id=account_id,
+            config_id=name,
+        )
 
     return BuiltInCodeExecutor() if config.code_execution_enabled else None
 

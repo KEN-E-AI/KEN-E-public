@@ -24,6 +24,7 @@ from src.kene_api.models.chat import ChatCategoryDefinition
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_db() -> MagicMock:
     """Return a MagicMock Firestore client with .document().create() succeeding by default.
 
@@ -161,6 +162,7 @@ class TestCreateCategoryFirestoreWrite:
 def _make_doc(name: str, user_id: str = "u1") -> MagicMock:
     """Return a mock Firestore document snapshot."""
     from datetime import datetime, timezone
+
     doc = MagicMock()
     doc.to_dict.return_value = {
         "category_id": f"cat_{hash(name) & 0xFFFFFF:024x}",
@@ -203,6 +205,7 @@ class TestListCategories:
 
     def test_order_by_called_with_name_ascending(self) -> None:
         from google.cloud import firestore as fs
+
         db = _make_db()
         db.collection.return_value.order_by.return_value.get.return_value = []
         svc = _make_svc(db)
@@ -531,14 +534,18 @@ class TestDeleteCategoryBatching:
         db = _make_db_for_delete([])
         svc = _make_svc(db)
         result = svc.delete_category("u1", "cat_abc")
-        assert result == DeleteCategoryResult(category_id="cat_abc", sessions_reassigned=0)
+        assert result == DeleteCategoryResult(
+            category_id="cat_abc", sessions_reassigned=0
+        )
         assert db.transaction.call_count == 1
 
     def test_one_session_one_transaction_fused(self) -> None:
         db = _make_db_for_delete([_make_snap()])
         svc = _make_svc(db)
         result = svc.delete_category("u1", "cat_abc")
-        assert result == DeleteCategoryResult(category_id="cat_abc", sessions_reassigned=1)
+        assert result == DeleteCategoryResult(
+            category_id="cat_abc", sessions_reassigned=1
+        )
         assert db.transaction.call_count == 1
 
     def test_400_sessions_one_transaction_boundary(self) -> None:

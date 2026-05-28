@@ -48,23 +48,31 @@ def verify_internal_oidc_caller(request: Request) -> str:
 
     authorization: str = request.headers.get("Authorization", "")
     if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+        raise HTTPException(
+            status_code=401, detail="Missing or invalid Authorization header"
+        )
 
-    token = authorization[len("Bearer "):]
+    token = authorization[len("Bearer ") :]
 
     audience = os.getenv(_AUDIENCE_ENV, "")
     if not audience:
         logger.error("CHAT_INTERNAL_OIDC_AUDIENCE is not set")
-        raise HTTPException(status_code=500, detail="Server misconfiguration: missing audience")
+        raise HTTPException(
+            status_code=500, detail="Server misconfiguration: missing audience"
+        )
 
     allowlist_raw = os.getenv(_ALLOWLIST_ENV, "")
     allowlist = {e.strip() for e in allowlist_raw.split(",") if e.strip()}
     if not allowlist:
         logger.error("CHAT_INTERNAL_SA_ALLOWLIST is empty — denying all callers")
-        raise HTTPException(status_code=500, detail="Server misconfiguration: allowlist not configured")
+        raise HTTPException(
+            status_code=500, detail="Server misconfiguration: allowlist not configured"
+        )
 
     try:
-        id_info = id_token.verify_oauth2_token(token, GoogleRequest(), audience=audience)
+        id_info = id_token.verify_oauth2_token(
+            token, GoogleRequest(), audience=audience
+        )
     except Exception as exc:
         logger.warning("OIDC token verification failed: %s", exc)
         raise HTTPException(status_code=401, detail="Invalid OIDC token") from exc

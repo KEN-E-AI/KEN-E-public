@@ -356,7 +356,9 @@ async def update_company_keywords(
         )
     except Exception as e:
         logger.error(f"Error updating company keywords: {e!s}")
-        raise HTTPException(status_code=500, detail="Failed to update company keywords") from e
+        raise HTTPException(
+            status_code=500, detail="Failed to update company keywords"
+        ) from e
 
 
 @router.put("/{account_id}/customers", response_model=SuccessResponse)
@@ -413,7 +415,9 @@ async def update_customer_keywords(
 
         # Get existing concept keywords to preserve them
         existing_concepts = doc.get("customer_concepts", []) if doc else []
-        concept_keywords = [c.get("keyword") for c in existing_concepts if c.get("keyword")]
+        concept_keywords = [
+            c.get("keyword") for c in existing_concepts if c.get("keyword")
+        ]
 
         # Combine the plain keywords from request with concept keywords
         # This maintains backward compatibility with the customer_keywords field
@@ -440,14 +444,18 @@ async def update_customer_keywords(
         ) from e
 
 
-@router.get("/{account_id}/customers/search-concepts", response_model=list[ConceptOption])
+@router.get(
+    "/{account_id}/customers/search-concepts", response_model=list[ConceptOption]
+)
 async def search_customer_concepts(
     account_id: str = Path(..., description="Account ID"),
     term: str = Query(..., description="Term to disambiguate"),
     user: UserContext = Depends(get_current_user_context),
 ) -> list[ConceptOption]:
     """Search for concept interpretations using free APIs and Gemini."""
-    logger.info(f"Concept search request - account: {account_id}, term: {term}, user: {user.email}")
+    logger.info(
+        f"Concept search request - account: {account_id}, term: {term}, user: {user.email}"
+    )
 
     # Check user has access to this account
     if not user.has_account_access(account_id) and not user.is_super_admin:
@@ -483,7 +491,9 @@ async def search_customer_concepts(
                 _cache_service.set(cache_key, concepts, ttl_seconds=3600)
                 logger.info(f"Cached {len(concepts)} concepts for term: {term}")
             except AttributeError as e:
-                logger.debug(f"Could not cache concepts, cache service not available: {e}")
+                logger.debug(
+                    f"Could not cache concepts, cache service not available: {e}"
+                )
             except TypeError as e:
                 logger.debug(f"Could not cache concepts, type error: {e}")
         else:
@@ -492,12 +502,16 @@ async def search_customer_concepts(
         return concepts
 
     except Exception as e:
-        logger.error(f"Error in search_customer_concepts for term '{term}': {e!s}", exc_info=True)
+        logger.error(
+            f"Error in search_customer_concepts for term '{term}': {e!s}", exc_info=True
+        )
         # Return empty list instead of raising error to allow frontend to handle gracefully
         return []
 
 
-@router.post("/{account_id}/customers/add-concept", response_model=CustomerKeywordConcept)
+@router.post(
+    "/{account_id}/customers/add-concept", response_model=CustomerKeywordConcept
+)
 async def add_customer_concept(
     account_id: str = Path(..., description="Account ID"),
     request: AddCustomerConceptRequest = Body(...),
@@ -584,10 +598,14 @@ async def add_customer_concept(
         raise
     except Exception as e:
         logger.error(f"Error adding customer concept: {e!s}")
-        raise HTTPException(status_code=500, detail="Failed to add customer concept") from e
+        raise HTTPException(
+            status_code=500, detail="Failed to add customer concept"
+        ) from e
 
 
-@router.delete("/{account_id}/customers/concepts/{concept_id}", response_model=SuccessResponse)
+@router.delete(
+    "/{account_id}/customers/concepts/{concept_id}", response_model=SuccessResponse
+)
 async def remove_customer_concept(
     account_id: str = Path(..., description="Account ID"),
     concept_id: str = Path(..., description="Concept ID to remove"),
@@ -624,11 +642,15 @@ async def remove_customer_concept(
             else:
                 keyword_to_remove = c.get("keyword")
                 found_concept = True
-                logger.info(f"Found concept to remove: {concept_id}, keyword: {keyword_to_remove}")
+                logger.info(
+                    f"Found concept to remove: {concept_id}, keyword: {keyword_to_remove}"
+                )
 
         if not found_concept:
             logger.warning(f"Concept {concept_id} not found in concepts list")
-            raise HTTPException(status_code=404, detail=f"Concept {concept_id} not found")
+            raise HTTPException(
+                status_code=404, detail=f"Concept {concept_id} not found"
+            )
 
         # Also update legacy customer_keywords by removing the keyword
         keywords = doc.get("customer_keywords", [])
@@ -637,8 +659,12 @@ async def remove_customer_concept(
             logger.info(f"Removed keyword '{keyword_to_remove}' from customer_keywords")
 
         # Log what we're updating
-        logger.info(f"Updating document with {len(updated_concepts)} concepts (was {len(concepts)})")
-        logger.info(f"Updating document with {len(keywords)} keywords (was {len(doc.get('customer_keywords', []))})")
+        logger.info(
+            f"Updating document with {len(updated_concepts)} concepts (was {len(concepts)})"
+        )
+        logger.info(
+            f"Updating document with {len(keywords)} keywords (was {len(doc.get('customer_keywords', []))})"
+        )
 
         # Update document
         firestore.update_document(
@@ -660,7 +686,9 @@ async def remove_customer_concept(
         raise
     except Exception as e:
         logger.error(f"Error removing customer concept: {e!s}")
-        raise HTTPException(status_code=500, detail="Failed to remove customer concept") from e
+        raise HTTPException(
+            status_code=500, detail="Failed to remove customer concept"
+        ) from e
 
 
 @router.post("/{account_id}/competitors", response_model=SuccessResponse)
@@ -820,7 +848,9 @@ async def update_competitor(
         raise
     except Exception as e:
         logger.error(f"Error updating competitor: {e!s}")
-        raise HTTPException(status_code=500, detail="Failed to update competitor") from e
+        raise HTTPException(
+            status_code=500, detail="Failed to update competitor"
+        ) from e
 
 
 @router.delete(
@@ -880,7 +910,9 @@ async def delete_competitor(
         raise
     except Exception as e:
         logger.error(f"Error deleting competitor: {e!s}")
-        raise HTTPException(status_code=500, detail="Failed to delete competitor") from e
+        raise HTTPException(
+            status_code=500, detail="Failed to delete competitor"
+        ) from e
 
 
 # ==================== CUSTOMER PROFILE MONITORING ENDPOINTS ====================
@@ -1014,9 +1046,8 @@ async def update_customer_profile_keywords(
         # Get customer profile entries
         customer_profiles = doc.get("customer_profile_entries", [])
 
-        if (
-            customer_profile_index < 0
-            or customer_profile_index >= len(customer_profiles)
+        if customer_profile_index < 0 or customer_profile_index >= len(
+            customer_profiles
         ):
             raise HTTPException(
                 status_code=404,
@@ -1086,9 +1117,8 @@ async def delete_customer_profile_keywords(
         # Get customer profile entries
         customer_profiles = doc.get("customer_profile_entries", [])
 
-        if (
-            customer_profile_index < 0
-            or customer_profile_index >= len(customer_profiles)
+        if customer_profile_index < 0 or customer_profile_index >= len(
+            customer_profiles
         ):
             raise HTTPException(
                 status_code=404,
@@ -1174,7 +1204,9 @@ async def get_company_keywords_paginated(
         )
     except Exception as e:
         logger.error(f"Error retrieving paginated company keywords: {e!s}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve keywords") from e
+        raise HTTPException(
+            status_code=500, detail="Failed to retrieve keywords"
+        ) from e
 
 
 @router.get("/industries/all", response_model=IndustryKeywordsListResponse)
@@ -1382,9 +1414,7 @@ async def cleanup_orphaned_monitoring_entries(
                 document_id="default",
                 data={
                     "competitor_entries": doc.get("competitor_entries", []),
-                    "customer_profile_entries": doc.get(
-                        "customer_profile_entries", []
-                    ),
+                    "customer_profile_entries": doc.get("customer_profile_entries", []),
                     "updated_at": datetime.utcnow().isoformat(),
                 },
             )
@@ -1396,4 +1426,6 @@ async def cleanup_orphaned_monitoring_entries(
 
     except Exception as e:
         logger.error(f"Error cleaning up orphaned entries: {e!s}")
-        raise HTTPException(status_code=500, detail="Failed to cleanup orphaned entries") from e
+        raise HTTPException(
+            status_code=500, detail="Failed to cleanup orphaned entries"
+        ) from e

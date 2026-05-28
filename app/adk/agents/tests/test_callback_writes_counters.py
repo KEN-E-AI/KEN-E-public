@@ -56,7 +56,9 @@ def _make_event(
             candidates_token_count=candidates,
             thoughts_token_count=thoughts,
             cached_content_token_count=cached,
-        ) if (prompt or candidates or thoughts or cached) else None,
+        )
+        if (prompt or candidates or thoughts or cached)
+        else None,
         author=author,
         get_function_calls=get_function_calls,
         is_final_response=is_final_response,
@@ -108,14 +110,16 @@ class TestBuildTurnDelta:
     def test_token_events_are_summed(self) -> None:
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
         events = [
-            _make_event(prompt=100, candidates=50, cached=20),   # input=80, output=50
-            _make_event(prompt=200, candidates=80, thoughts=30, cached=0),  # input=200, output=80, reasoning=30
+            _make_event(prompt=100, candidates=50, cached=20),  # input=80, output=50
+            _make_event(
+                prompt=200, candidates=80, thoughts=30, cached=0
+            ),  # input=200, output=80, reasoning=30
         ]
         delta = _build_turn_delta(events, now)
-        assert delta.input_tokens_increment == 280    # 80 + 200
-        assert delta.output_tokens_increment == 130   # 50 + 80
+        assert delta.input_tokens_increment == 280  # 80 + 200
+        assert delta.output_tokens_increment == 130  # 50 + 80
         assert delta.reasoning_tokens_increment == 30
-        assert delta.current_context_tokens == 440    # 280 + 130 + 30
+        assert delta.current_context_tokens == 440  # 280 + 130 + 30
 
     def test_cached_tokens_excluded_from_input(self) -> None:
         now = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -151,9 +155,9 @@ class TestBuildTurnDelta:
         events = [
             _make_event(author="user"),
             _make_event(author="model"),
-            _make_event(author="root"),    # not counted
+            _make_event(author="root"),  # not counted
             _make_event(author="system"),  # not counted
-            _make_event(author=None),      # not counted
+            _make_event(author=None),  # not counted
         ]
         delta = _build_turn_delta(events, now)
         assert delta.message_count == 2
@@ -221,8 +225,8 @@ class TestBuildTurnDelta:
         # Events with no usage_metadata (None) should not blow up and should
         # contribute 0 tokens.
         events = [
-            _make_event(is_tool_call=True),   # no usage_metadata set
-            _make_event(author="user"),        # no usage_metadata set
+            _make_event(is_tool_call=True),  # no usage_metadata set
+            _make_event(author="user"),  # no usage_metadata set
         ]
         delta = _build_turn_delta(events, now)
         assert delta.input_tokens_increment == 0
@@ -235,7 +239,9 @@ class TestBuildTurnDelta:
         events = [
             _make_event(prompt=100, candidates=50, cached=10, author="user"),
             _make_event(is_tool_call=True),
-            _make_event(prompt=200, candidates=80, thoughts=20, cached=0, author="model"),
+            _make_event(
+                prompt=200, candidates=80, thoughts=20, cached=0, author="model"
+            ),
             _make_event(final_text="final answer"),
         ]
         delta = _build_turn_delta(events, now)
@@ -323,7 +329,7 @@ class TestChatAfterAgentCallbackIntegration:
             ctx = _make_callback_ctx(
                 session_id="sess_003",
                 invocation_id="inv_003",
-                account_id="",   # empty — triggers the guard
+                account_id="",  # empty — triggers the guard
                 parent_agent=None,
             )
             result = chat_after_agent_callback(ctx)

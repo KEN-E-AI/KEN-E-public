@@ -48,7 +48,9 @@ class OAuthCredentials(BaseModel):
     token_type: str = Field("Bearer", description="Token type")
     expires_at: datetime | None = Field(None, description="Token expiration time")
     scopes: list[str] = Field(default_factory=list, description="Granted scopes")
-    provider: str = Field("unknown", description="OAuth provider (e.g., google, hubspot)")
+    provider: str = Field(
+        "unknown", description="OAuth provider (e.g., google, hubspot)"
+    )
     client_id: str | None = Field(None, description="OAuth client ID")
     client_secret: str | None = Field(None, description="OAuth client secret")
     token_uri: str | None = Field(None, description="Token refresh URI")
@@ -174,7 +176,9 @@ class AuthHeaderMiddleware:
             expires_at = None
             if creds_dict.get("expires_at"):
                 if isinstance(creds_dict["expires_at"], (int, float)):
-                    expires_at = datetime.fromtimestamp(creds_dict["expires_at"], tz=timezone.utc)
+                    expires_at = datetime.fromtimestamp(
+                        creds_dict["expires_at"], tz=timezone.utc
+                    )
                 elif isinstance(creds_dict["expires_at"], str):
                     expires_at = datetime.fromisoformat(
                         creds_dict["expires_at"].replace("Z", "+00:00")
@@ -219,7 +223,9 @@ class AuthHeaderMiddleware:
             expires_at = None
             if creds_dict.get("expires_at"):
                 if isinstance(creds_dict["expires_at"], (int, float)):
-                    expires_at = datetime.fromtimestamp(creds_dict["expires_at"], tz=timezone.utc)
+                    expires_at = datetime.fromtimestamp(
+                        creds_dict["expires_at"], tz=timezone.utc
+                    )
                 elif isinstance(creds_dict["expires_at"], str):
                     expires_at = datetime.fromisoformat(
                         creds_dict["expires_at"].replace("Z", "+00:00")

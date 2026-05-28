@@ -17,23 +17,23 @@ async def upload_strategy_documents(
     files: list[UploadFile] | None,
     account_id: str,
     data_region: str,
-    storage_service: StorageService
+    storage_service: StorageService,
 ) -> list[str]:
     """
     Upload strategy documents to GCS and return their URLs.
-    
+
     Extracted from the account creation endpoint for better testability (T-4).
     This function can be easily unit tested with a mocked StorageService.
-    
+
     Args:
         files: List of files to upload (can be None or empty)
         account_id: Account ID for organizing uploads
         data_region: Data region for bucket selection
         storage_service: Injected storage service for testability
-        
+
     Returns:
         List of successfully uploaded document URLs (empty if no uploads or all failed)
-        
+
     Examples:
         >>> urls = await upload_strategy_documents(
         ...     files=[file1, file2],
@@ -46,39 +46,38 @@ async def upload_strategy_documents(
     if not files:
         logger.info(f"No files to upload for account {account_id}")
         return []
-    
+
     try:
         logger.info(
             f"Uploading {len(files)} business strategy documents for account {account_id}"
         )
-        
+
         # Use storage service to upload files
         uploaded_files = await storage_service.upload_business_documents(
             account_id, data_region, files
         )
-        
+
         # Extract successful upload URLs
         uploaded_urls = [
-            f["gcs_url"] 
-            for f in uploaded_files 
+            f["gcs_url"]
+            for f in uploaded_files
             if "gcs_url" in f and not f.get("error")
         ]
-        
+
         logger.info(
             f"Successfully uploaded {len(uploaded_urls)}/{len(files)} documents "
             f"for account {account_id}"
         )
-        
+
         # Log each URL for debugging
         for url in uploaded_urls:
             logger.debug(f"Uploaded document URL: {url}")
-        
+
         return uploaded_urls
-        
+
     except Exception as e:
         logger.error(
-            f"Failed to upload documents for account {account_id}: {e}",
-            exc_info=True
+            f"Failed to upload documents for account {account_id}: {e}", exc_info=True
         )
         return []
 
@@ -91,14 +90,14 @@ def prepare_strategy_generation_params(
     region: list[str] | None,
     user_id: str,
     estimated_annual_ad_budget: int | None,
-    uploaded_document_urls: list[str] | None = None
+    uploaded_document_urls: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     Prepare parameters for strategy generation task.
-    
+
     Pure function for preparing strategy generation parameters.
     Extracted for testability and clarity.
-    
+
     Args:
         account_id: Account identifier
         account_name: Company name
@@ -108,10 +107,10 @@ def prepare_strategy_generation_params(
         user_id: User who created the account
         estimated_annual_ad_budget: Annual ad budget
         uploaded_document_urls: Optional URLs of uploaded documents
-        
+
     Returns:
         Dictionary of parameters ready for strategy generation
-        
+
     Examples:
         >>> params = prepare_strategy_generation_params(
         ...     account_id="acc_123",
@@ -133,5 +132,5 @@ def prepare_strategy_generation_params(
         "user_id": user_id,
         "annual_ad_budget": estimated_annual_ad_budget,
         "uploaded_document_urls": uploaded_document_urls or [],
-        "user_context": None  # Background tasks don't have user context
+        "user_context": None,  # Background tasks don't have user context
     }

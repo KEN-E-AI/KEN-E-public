@@ -1332,9 +1332,7 @@ async def get_kpi_setting(
         if not is_healthy:
             raise HTTPException(status_code=503, detail=FIRESTORE_UNAVAILABLE_MESSAGE)
 
-        metric_id = firestore.get_kpi_setting(
-            account_id=account_id, kpi_name=kpi_name
-        )
+        metric_id = firestore.get_kpi_setting(account_id=account_id, kpi_name=kpi_name)
 
         if metric_id is None:
             raise HTTPException(
@@ -1395,9 +1393,7 @@ async def update_kpi_setting(
         )
 
 
-@router.get(
-    "/kpi-settings/{account_id}", response_model=KPISettingsResponse
-)
+@router.get("/kpi-settings/{account_id}", response_model=KPISettingsResponse)
 async def get_all_kpi_settings(
     account_id: str,
     firestore: FirestoreService = Depends(get_firestore_service),

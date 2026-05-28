@@ -2,7 +2,6 @@
 
 import logging
 from datetime import datetime
-from typing import Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Path
 
@@ -15,7 +14,7 @@ from ..cache import (
 )
 from ..firestore import FirestoreService, get_firestore_service
 from ..models.kene_models import SuccessResponse
-from ..models.monitoring_models import IndustryKeywords, IndustryKeywordsListResponse
+from ..models.monitoring_models import IndustryKeywords
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +118,7 @@ async def get_all_industry_keywords(
 
         return industries
     except Exception as e:
-        logger.error(f"Error retrieving industry keywords: {str(e)}")
+        logger.error(f"Error retrieving industry keywords: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to retrieve industry keywords"
         )
@@ -191,7 +190,7 @@ async def update_industry_keywords(
             data={"keywords": keywords},
         )
     except Exception as e:
-        logger.error(f"Error updating industry keywords: {str(e)}")
+        logger.error(f"Error updating industry keywords: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to update industry keywords"
         )
@@ -264,7 +263,7 @@ async def delete_industry_keywords(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error deleting industry keywords: {str(e)}")
+        logger.error(f"Error deleting industry keywords: {e!s}")
         raise HTTPException(
             status_code=500, detail="Failed to delete industry keywords"
         )

@@ -19,8 +19,12 @@ from app.adk.agents.utils.criteria_utils import sanitise_criteria
 
 
 def test_ascii_letters_pass_through() -> None:
-    assert sanitise_criteria("abcdefghijklmnopqrstuvwxyz") == "abcdefghijklmnopqrstuvwxyz"
-    assert sanitise_criteria("ABCDEFGHIJKLMNOPQRSTUVWXYZ") == "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    assert (
+        sanitise_criteria("abcdefghijklmnopqrstuvwxyz") == "abcdefghijklmnopqrstuvwxyz"
+    )
+    assert (
+        sanitise_criteria("ABCDEFGHIJKLMNOPQRSTUVWXYZ") == "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    )
 
 
 def test_ascii_digits_pass_through() -> None:
@@ -37,7 +41,27 @@ def test_whitespace_passes_through() -> None:
 
 @pytest.mark.parametrize(
     "char",
-    [".", ",", ";", ":", "(", ")", "-", "'", '"', "!", "?", "%", "@", "&", "=", "+", "/", "#", "*"],
+    [
+        ".",
+        ",",
+        ";",
+        ":",
+        "(",
+        ")",
+        "-",
+        "'",
+        '"',
+        "!",
+        "?",
+        "%",
+        "@",
+        "&",
+        "=",
+        "+",
+        "/",
+        "#",
+        "*",
+    ],
 )
 def test_punctuation_passes_through(char: str) -> None:
     payload = f"before{char}after"
@@ -67,7 +91,9 @@ def test_typical_criteria_unchanged() -> None:
     ],
 )
 def test_non_ascii_whitespace_stripped(name: str, char: str) -> None:
-    assert sanitise_criteria(f"hello{char}world") == "helloworld", f"{name} not stripped"
+    assert sanitise_criteria(f"hello{char}world") == "helloworld", (
+        f"{name} not stripped"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +111,9 @@ def test_non_ascii_whitespace_stripped(name: str, char: str) -> None:
     ],
 )
 def test_zero_width_chars_stripped(name: str, char: str) -> None:
-    assert sanitise_criteria(f"hello{char}world") == "helloworld", f"{name} not stripped"
+    assert sanitise_criteria(f"hello{char}world") == "helloworld", (
+        f"{name} not stripped"
+    )
 
 
 def test_bom_stripped() -> None:
@@ -103,7 +131,9 @@ def test_bom_stripped() -> None:
     ],
 )
 def test_bidi_overrides_stripped(name: str, char: str) -> None:
-    assert sanitise_criteria(f"hello{char}world") == "helloworld", f"{name} not stripped"
+    assert sanitise_criteria(f"hello{char}world") == "helloworld", (
+        f"{name} not stripped"
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -7,11 +7,10 @@ stand-in.
 
 from __future__ import annotations
 
-from typing import Any
-from unittest.mock import MagicMock
-
 import io
 import json
+from typing import Any
+from unittest.mock import MagicMock
 
 from api.scripts.migrate_agent_config_title import (
     _looks_like_snake_case_id,
@@ -160,9 +159,7 @@ class _FakeAccountsCollection:
     def __init__(self, per_account: dict[str, dict[str, dict[str, Any]]]) -> None:
         # per_account: { account_id: { config_id: doc_data } }
         self._per_account = per_account
-        self._snapshots = [
-            _FakeSnapshot(aid, {}) for aid in per_account
-        ]
+        self._snapshots = [_FakeSnapshot(aid, {}) for aid in per_account]
         self._subcols: dict[str, _FakeCollection] = {
             aid: _FakeCollection(
                 [_FakeSnapshot(cid, data) for cid, data in cfgs.items()]
@@ -236,10 +233,7 @@ def test_needs_manual_review_flags_non_snake_case_name_without_title() -> None:
 def test_needs_manual_review_clears_when_title_already_set() -> None:
     """If title is already set, name's interpretation is unambiguous —
     no review needed."""
-    assert (
-        needs_manual_review({"name": "Dave", "title": "Brand Guardian"})
-        is False
-    )
+    assert needs_manual_review({"name": "Dave", "title": "Brand Guardian"}) is False
 
 
 def test_needs_manual_review_clears_for_snake_case_name() -> None:

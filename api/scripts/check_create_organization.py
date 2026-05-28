@@ -6,9 +6,7 @@ Script to test organization creation endpoint in staging environment.
 import asyncio
 import json
 import os
-import sys
 from datetime import datetime
-from pathlib import Path
 
 import aiohttp
 from dotenv import load_dotenv
@@ -31,7 +29,7 @@ async def get_auth_token():
     # 1. Use a test user token
     # 2. Implement Firebase auth flow
     # 3. Use a service account
-    
+
     # For now, return None and test without auth
     print("⚠️  Warning: No authentication token provided")
     print("   If the API requires authentication, this test will fail")
@@ -43,11 +41,11 @@ async def test_create_organization():
     api_base_url = os.getenv("API_BASE_URL", "http://localhost:8000")
     if environment == "staging":
         api_base_url = "https://staging.api.ken-e.ai"
-    
+
     create_url = f"{api_base_url}/api/v1/organizations/"
-    
+
     print(f"\n🔍 Testing organization creation at {create_url}")
-    
+
     # Prepare test data
     test_org = {
         "organization_name": f"Test Org {datetime.now().strftime('%Y%m%d_%H%M%S')}",
@@ -64,71 +62,62 @@ async def test_create_organization():
             "billing_cycle": "monthly",
             "next_billing_date": datetime.now().isoformat(),
             "features": ["Basic Reports", "1 User"],
-            "usage": {
-                "reports_generated": 0,
-                "reports_limit": 10
-            }
+            "usage": {"reports_generated": 0, "reports_limit": 10},
         },
         "billing": {
-            "payment_method": {
-                "last_four": "",
-                "brand": "",
-                "expires": ""
-            },
+            "payment_method": {"last_four": "", "brand": "", "expires": ""},
             "address": "",
-            "tax_id": ""
+            "tax_id": "",
         },
-        "team": {
-            "members_used": 1,
-            "members_limit": 1,
-            "pending_invitations": 0
-        }
+        "team": {"members_used": 1, "members_limit": 1, "pending_invitations": 0},
     }
-    
-    print(f"\n📝 Test organization data:")
+
+    print("\n📝 Test organization data:")
     print(json.dumps(test_org, indent=2))
-    
+
     # Get auth token
     token = await get_auth_token()
-    
+
     headers = {
         "Content-Type": "application/json",
     }
-    
+
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    
+
     try:
         async with aiohttp.ClientSession() as session:
             print(f"\n🚀 Sending POST request to {create_url}")
-            async with session.post(create_url, json=test_org, headers=headers) as response:
+            async with session.post(
+                create_url, json=test_org, headers=headers
+            ) as response:
                 response_text = await response.text()
-                
+
                 print(f"\n📊 Response Status: {response.status}")
-                print(f"📊 Response Headers:")
+                print("📊 Response Headers:")
                 for key, value in response.headers.items():
                     print(f"   {key}: {value}")
-                
+
                 if response.status == 200 or response.status == 201:
                     data = json.loads(response_text)
-                    print(f"\n✅ Organization created successfully!")
+                    print("\n✅ Organization created successfully!")
                     print(f"   Organization ID: {data.get('organization_id')}")
                     print(f"   Organization Name: {data.get('organization_name')}")
                     return True
                 else:
-                    print(f"\n❌ Failed to create organization")
+                    print("\n❌ Failed to create organization")
                     print(f"   Status: {response.status}")
                     print(f"   Response: {response_text}")
-                    
+
                     if response.status == 503:
                         print("\n💡 503 Service Unavailable - Possible causes:")
                         print("   1. Neo4j database is not accessible")
                         print("   2. API cannot connect to Neo4j")
                         print("   3. Database is overloaded or down")
                         print("   4. Network issues between API and database")
-                    
+
                     return False
-                    
+
     except aiohttp.ClientError as e:
         print(f"\n❌ HTTP Client Error: {e}")
         return False
@@ -153,13 +142,13 @@ async def main():
     print("Organization Creation Test")
     print(f"Environment: {environment}")
     print("=" * 60)
-    
+
     # Test organization creation
     success = await test_create_organization()
-    
+
     if not success:
         await check_api_logs()
-        
+
         print("\n💡 Quick fixes to try:")
         print("   1. Restart the API service in staging")
         print("   2. Check Neo4j connection string in environment variables")

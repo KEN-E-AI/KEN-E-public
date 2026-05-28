@@ -12,21 +12,24 @@ Usage:
 """
 
 import argparse
+
 import weave
-from strategy_agent.evaluations.env_loader import load_env
 from strategy_agent.evaluations.core.dataset_extractors import extract_product_portfolio
+from strategy_agent.evaluations.env_loader import load_env
 
 load_env()
 
 # Parse arguments
-parser = argparse.ArgumentParser(description='Create exploded product portfolio dataset')
+parser = argparse.ArgumentParser(
+    description="Create exploded product portfolio dataset"
+)
 parser.add_argument(
-    '--dataset',
+    "--dataset",
     type=str,
     required=True,
 )
 parser.add_argument(
-    '--output_name',
+    "--output_name",
     type=str,
     required=True,
 )
@@ -46,11 +49,11 @@ expanded_rows = []
 
 for row in base_dataset.rows:
     # Extract trace ID - handle both Call objects and WeaveDict
-    trace_ref = row['trace']
-    if hasattr(trace_ref, 'id'):
+    trace_ref = row["trace"]
+    if hasattr(trace_ref, "id"):
         trace_id = trace_ref.id
-    elif isinstance(trace_ref, dict) and 'id' in trace_ref:
-        trace_id = trace_ref['id']
+    elif isinstance(trace_ref, dict) and "id" in trace_ref:
+        trace_id = trace_ref["id"]
     else:
         # Use a placeholder if we can't get ID
         trace_id = str(trace_ref)[:50]
@@ -63,19 +66,18 @@ for row in base_dataset.rows:
 
     # Create one row per category
     for category_index, category in enumerate(portfolio):
-        expanded_rows.append({
-            'trace_id': trace_id,
-            'category_index': category_index,
-            'category_id': category.get('id', ''),
-            'category_name': category.get('category_name', ''),
-            'category_description': category.get('description', '')
-        })
+        expanded_rows.append(
+            {
+                "trace_id": trace_id,
+                "category_index": category_index,
+                "category_id": category.get("id", ""),
+                "category_name": category.get("category_name", ""),
+                "category_description": category.get("description", ""),
+            }
+        )
 
 # Create expanded dataset
-exploded_dataset = weave.Dataset(
-    rows=expanded_rows,
-    name=args.output_name
-)
+exploded_dataset = weave.Dataset(rows=expanded_rows, name=args.output_name)
 
 # Publish
 weave.publish(exploded_dataset)

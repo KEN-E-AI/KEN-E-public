@@ -13,6 +13,8 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
 
+from shared.secrets import get_env_or_secret
+
 from ..auth import UserContext
 from ..auth.user_context import get_current_user_context
 from ..firestore import get_firestore_service
@@ -39,7 +41,6 @@ from ..models.oauth_models import (
 )
 from ..services.encryption_service import IntegrationCredentialsService
 from ..services.oauth_state_service import OAuthStateService
-from shared.secrets import get_env_or_secret
 
 logger = logging.getLogger(__name__)
 
@@ -52,15 +53,15 @@ GOOGLE_CLIENT_SECRET = get_env_or_secret("GOOGLE_OAUTH_CLIENT_SECRET", "")
 GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 
+
 # OAuth redirect URI - must be configured via environment variable
 def get_google_redirect_uri() -> str:
     """Get the Google OAuth redirect URI from environment."""
     redirect_uri = os.getenv("GOOGLE_OAUTH_REDIRECT_URI")
     if not redirect_uri:
-        raise ValueError(
-            "GOOGLE_OAUTH_REDIRECT_URI environment variable is required"
-        )
+        raise ValueError("GOOGLE_OAUTH_REDIRECT_URI environment variable is required")
     return redirect_uri
+
 
 # Google Analytics scopes
 # We need both Data API and Admin API scopes
@@ -68,6 +69,7 @@ GA_SCOPES = [
     "https://www.googleapis.com/auth/analytics.readonly",  # For Google Analytics Data API
     "https://www.googleapis.com/auth/analytics.edit",  # For Google Analytics Admin API (required for listing properties)
 ]
+
 
 # Frontend URL configuration
 def get_frontend_url() -> str:
@@ -97,7 +99,9 @@ async def authorize_google_analytics(
     track_oauth_attempt("google_analytics")
 
     # Check permissions using has_account_access which handles org admins correctly
-    if not current_user.has_account_access(account_id, required_roles=["edit", "admin", "editor"]):
+    if not current_user.has_account_access(
+        account_id, required_roles=["edit", "admin", "editor"]
+    ):
         track_oauth_callback_error("google_analytics", "permission_denied")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -129,7 +133,9 @@ async def authorize_google_analytics(
     oauth_state_service = OAuthStateService(db)
 
     # Log state transition
-    logger.info(f"[OAUTH_STATE] Creating state token for user {current_user.user_id}, account {account_id}")
+    logger.info(
+        f"[OAUTH_STATE] Creating state token for user {current_user.user_id}, account {account_id}"
+    )
     track_state_transition("google_analytics", "none", "initiated")
 
     # Store state in database
@@ -190,7 +196,11 @@ async def google_oauth_callback(
             collector.track_error(f"google_{error}")
             track_state_transition("google_analytics", "initiated", "failed")
             # Map Google errors to our error codes
-            error_code = OAuthErrorCode.AUTHORIZATION_DENIED if error == "access_denied" else OAuthErrorCode.UNKNOWN_ERROR
+            error_code = (
+                OAuthErrorCode.AUTHORIZATION_DENIED
+                if error == "access_denied"
+                else OAuthErrorCode.UNKNOWN_ERROR
+            )
             return RedirectResponse(
                 url=f"{frontend_url}/account-settings?oauth_error={error_code.value}"
             )
@@ -211,7 +221,9 @@ async def google_oauth_callback(
         # Verify state token from database
         oauth_state = await oauth_state_service.get_state(state)
         if not oauth_state:
-            logger.warning(f"[OAUTH_CALLBACK] Invalid or expired state token: {state[:8]}...")
+            logger.warning(
+                f"[OAUTH_CALLBACK] Invalid or expired state token: {state[:8]}..."
+            )
             collector.track_error("state_expired")
             track_state_transition("google_analytics", "initiated", "expired")
             return RedirectResponse(
@@ -221,7 +233,9 @@ async def google_oauth_callback(
         user_id = oauth_state.user_id
         account_id = oauth_state.account_id
 
-        logger.info(f"[OAUTH_CALLBACK] Valid state token for user {user_id}, account {account_id}")
+        logger.info(
+            f"[OAUTH_CALLBACK] Valid state token for user {user_id}, account {account_id}"
+        )
         track_state_transition("google_analytics", "initiated", "verified")
 
         try:
@@ -241,7 +255,9 @@ async def google_oauth_callback(
                 )
 
                 if token_response.status_code != 200:
-                    logger.error(f"[OAUTH_CALLBACK] Token exchange failed: {token_response.text}")
+                    logger.error(
+                        f"[OAUTH_CALLBACK] Token exchange failed: {token_response.text}"
+                    )
                     collector.track_error("token_exchange_failed")
                     track_state_transition("google_analytics", "verified", "failed")
                     raise HTTPException(
@@ -257,7 +273,11 @@ async def google_oauth_callback(
                     headers={"Authorization": f"Bearer {tokens['access_token']}"},
                 )
 
-                user_info = user_info_response.json() if user_info_response.status_code == 200 else {}
+                user_info = (
+                    user_info_response.json()
+                    if user_info_response.status_code == 200
+                    else {}
+                )
 
             # Store tokens securely
             firestore_service = get_firestore_service()
@@ -293,7 +313,8 @@ async def google_oauth_callback(
                 "access_token": tokens.get("access_token"),
                 "refresh_token": new_refresh_token,
                 "token_type": tokens.get("token_type", "Bearer"),
-                "expires_at": datetime.now().timestamp() + tokens.get("expires_in", 3600),
+                "expires_at": datetime.now().timestamp()
+                + tokens.get("expires_in", 3600),
                 "scope": tokens.get("scope", ""),
                 "user_email": user_info.get("email", ""),
                 "user_id": user_info.get("id", ""),
@@ -310,7 +331,9 @@ async def google_oauth_callback(
             await oauth_state_service.delete_state(state)
 
             # Mark success
-            logger.info(f"[OAUTH_CALLBACK] Successfully completed OAuth flow for account {account_id}")
+            logger.info(
+                f"[OAUTH_CALLBACK] Successfully completed OAuth flow for account {account_id}"
+            )
             collector.track_success()
             track_oauth_success("google_analytics")
             track_state_transition("google_analytics", "verified", "completed")
@@ -318,7 +341,9 @@ async def google_oauth_callback(
             # Redirect to frontend with success - go to property selection
             # Use /settings/organization which is the actual route (not /account-settings which redirects)
             redirect_url = f"{frontend_url}/settings/organization?oauth_success=google_analytics&account={account_id}&select_properties=true"
-            logger.info(f"[OAUTH_CALLBACK] Redirecting to frontend with property selection: {redirect_url}")
+            logger.info(
+                f"[OAUTH_CALLBACK] Redirecting to frontend with property selection: {redirect_url}"
+            )
             return RedirectResponse(url=redirect_url)
 
         except ValueError as e:
@@ -350,7 +375,9 @@ async def refresh_google_analytics_token(
     logger.info(f"[TOKEN_REFRESH] Starting token refresh for account {account_id}")
 
     # Check permissions using has_account_access which handles org admins correctly
-    if not current_user.has_account_access(account_id, required_roles=["edit", "admin", "editor"]):
+    if not current_user.has_account_access(
+        account_id, required_roles=["edit", "admin", "editor"]
+    ):
         track_token_refresh_failure("google_analytics", "permission_denied")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -369,7 +396,9 @@ async def refresh_google_analytics_token(
         )
 
         if not credentials or not credentials.get("refresh_token"):
-            logger.warning(f"[TOKEN_REFRESH] No refresh token found for account {account_id}")
+            logger.warning(
+                f"[TOKEN_REFRESH] No refresh token found for account {account_id}"
+            )
             track_token_refresh_failure("google_analytics", "no_refresh_token")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -389,8 +418,12 @@ async def refresh_google_analytics_token(
             )
 
             if refresh_response.status_code != 200:
-                logger.error(f"[TOKEN_REFRESH] Token refresh failed: {refresh_response.text}")
-                track_token_refresh_failure("google_analytics", f"http_{refresh_response.status_code}")
+                logger.error(
+                    f"[TOKEN_REFRESH] Token refresh failed: {refresh_response.text}"
+                )
+                track_token_refresh_failure(
+                    "google_analytics", f"http_{refresh_response.status_code}"
+                )
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Failed to refresh access token",
@@ -400,7 +433,9 @@ async def refresh_google_analytics_token(
 
         # Update stored credentials with new access token
         credentials["access_token"] = new_tokens.get("access_token")
-        credentials["expires_at"] = datetime.now().timestamp() + new_tokens.get("expires_in", 3600)
+        credentials["expires_at"] = datetime.now().timestamp() + new_tokens.get(
+            "expires_in", 3600
+        )
 
         await creds_service.update_credentials(
             account_id=account_id,
@@ -409,7 +444,9 @@ async def refresh_google_analytics_token(
             user_id=current_user.user_id,
         )
 
-        logger.info(f"[TOKEN_REFRESH] Successfully refreshed token for account {account_id}")
+        logger.info(
+            f"[TOKEN_REFRESH] Successfully refreshed token for account {account_id}"
+        )
         track_token_refresh_success("google_analytics")
 
         return {"message": "Token refreshed successfully"}
@@ -434,7 +471,9 @@ async def disconnect_google_analytics(
     Disconnect Google Analytics by removing stored tokens.
     """
     # Check permissions using has_account_access which handles org admins correctly
-    if not current_user.has_account_access(account_id, required_roles=["edit", "admin", "editor"]):
+    if not current_user.has_account_access(
+        account_id, required_roles=["edit", "admin", "editor"]
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You don't have permission to manage this account's integrations",
@@ -534,7 +573,9 @@ async def get_google_analytics_properties(
 
                 # Update stored credentials
                 credentials["access_token"] = access_token
-                credentials["expires_at"] = datetime.now().timestamp() + new_tokens.get("expires_in", 3600)
+                credentials["expires_at"] = datetime.now().timestamp() + new_tokens.get(
+                    "expires_in", 3600
+                )
 
                 await creds_service.update_credentials(
                     account_id=account_id,
@@ -545,11 +586,19 @@ async def get_google_analytics_properties(
 
         # Check if credentials have stored GA account info from old integration
         stored_ga_account = credentials.get("ga_account", {})
-        logger.info(f"[GA_PROPERTIES] Stored GA account info in credentials: {json.dumps(stored_ga_account, indent=2)}")
+        logger.info(
+            f"[GA_PROPERTIES] Stored GA account info in credentials: {json.dumps(stored_ga_account, indent=2)}"
+        )
 
         # Call Google Analytics Admin API to list properties
-        logger.info(f"[GA_PROPERTIES] Starting to fetch properties for account {account_id}")
-        logger.info(f"[GA_PROPERTIES] Using access token: {access_token[:20]}..." if access_token else "No token")
+        logger.info(
+            f"[GA_PROPERTIES] Starting to fetch properties for account {account_id}"
+        )
+        logger.info(
+            f"[GA_PROPERTIES] Using access token: {access_token[:20]}..."
+            if access_token
+            else "No token"
+        )
 
         properties = []
         async with httpx.AsyncClient() as client:
@@ -561,41 +610,59 @@ async def get_google_analytics_properties(
                 params={"pageSize": 200},
             )
 
-            logger.info(f"[GA_PROPERTIES] Accounts API response status: {accounts_response.status_code}")
+            logger.info(
+                f"[GA_PROPERTIES] Accounts API response status: {accounts_response.status_code}"
+            )
 
             if accounts_response.status_code != 200:
-                logger.error(f"[GA_PROPERTIES] Failed to fetch GA accounts: {accounts_response.text}")
+                logger.error(
+                    f"[GA_PROPERTIES] Failed to fetch GA accounts: {accounts_response.text}"
+                )
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
                     detail="Failed to fetch Google Analytics accounts",
                 )
 
             accounts_data = accounts_response.json()
-            logger.info(f"[GA_PROPERTIES] Raw accounts response: {json.dumps(accounts_data, indent=2)}")
+            logger.info(
+                f"[GA_PROPERTIES] Raw accounts response: {json.dumps(accounts_data, indent=2)}"
+            )
             accounts = accounts_data.get("accounts", [])
-            logger.info(f"[GA_PROPERTIES] Found {len(accounts)} GA accounts: {[acc.get('displayName', 'Unknown') for acc in accounts]}")
+            logger.info(
+                f"[GA_PROPERTIES] Found {len(accounts)} GA accounts: {[acc.get('displayName', 'Unknown') for acc in accounts]}"
+            )
 
             # Log the structure of ALL accounts for debugging
             for idx, acc in enumerate(accounts):
-                logger.info(f"[GA_PROPERTIES] Account {idx}: {json.dumps(acc, indent=2)}")
+                logger.info(
+                    f"[GA_PROPERTIES] Account {idx}: {json.dumps(acc, indent=2)}"
+                )
 
             # For each account, get its properties
             for account in accounts:
                 # The account dict might have either 'name' (resource name) or 'account' (account ID)
                 # Let's handle both cases
                 account_name = account.get("name", "")
-                account_id = account.get("account", "")  # Sometimes the API returns just the ID
+                account_id = account.get(
+                    "account", ""
+                )  # Sometimes the API returns just the ID
                 account_display_name = account.get("displayName", "Unknown Account")
 
                 # If we don't have account_name but have account_id, use that
                 if not account_name and account_id:
                     account_name = account_id
 
-                logger.info(f"[GA_PROPERTIES] Processing account: {account_display_name} (name={account_name}, id={account_id})")
-                logger.info(f"[GA_PROPERTIES] Full account object: {json.dumps(account, indent=2)}")
+                logger.info(
+                    f"[GA_PROPERTIES] Processing account: {account_display_name} (name={account_name}, id={account_id})"
+                )
+                logger.info(
+                    f"[GA_PROPERTIES] Full account object: {json.dumps(account, indent=2)}"
+                )
 
                 if not account_name:
-                    logger.warning(f"[GA_PROPERTIES] Skipping account {account_display_name} - no name or ID field")
+                    logger.warning(
+                        f"[GA_PROPERTIES] Skipping account {account_display_name} - no name or ID field"
+                    )
                     continue
 
                 # Ensure account_name has the proper format for the API
@@ -608,16 +675,20 @@ async def get_google_analytics_properties(
                     account_name = f"accounts/{account_name}"
                 else:
                     # Unknown format, try to extract the ID
-                    match = re.search(r'(\d+)', account_name)
+                    match = re.search(r"(\d+)", account_name)
                     if match:
                         account_name = f"accounts/{match.group(1)}"
                     else:
-                        logger.error(f"[GA_PROPERTIES] Cannot parse account identifier: {account_name}")
+                        logger.error(
+                            f"[GA_PROPERTIES] Cannot parse account identifier: {account_name}"
+                        )
                         continue
 
                 # According to GA Admin API docs, we need to use the properties endpoint with a filter
                 # The account_name should be in format "accounts/123456"
-                properties_url = "https://analyticsadmin.googleapis.com/v1alpha/properties"
+                properties_url = (
+                    "https://analyticsadmin.googleapis.com/v1alpha/properties"
+                )
 
                 # Ensure we have the proper account format for the filter
                 if not account_name.startswith("accounts/"):
@@ -625,33 +696,40 @@ async def get_google_analytics_properties(
                 else:
                     filter_account = account_name
 
-                logger.info(f"[GA_PROPERTIES] Fetching from URL: {properties_url} with filter: parent:{filter_account}")
+                logger.info(
+                    f"[GA_PROPERTIES] Fetching from URL: {properties_url} with filter: parent:{filter_account}"
+                )
 
                 properties_response = await client.get(
                     properties_url,
                     headers={"Authorization": f"Bearer {access_token}"},
-                    params={
-                        "filter": f"parent:{filter_account}",
-                        "pageSize": 200
-                    },
+                    params={"filter": f"parent:{filter_account}", "pageSize": 200},
                 )
 
-                logger.info(f"[GA_PROPERTIES] Properties API response status for {account_display_name}: {properties_response.status_code}")
+                logger.info(
+                    f"[GA_PROPERTIES] Properties API response status for {account_display_name}: {properties_response.status_code}"
+                )
 
                 if properties_response.status_code != 200:
                     error_detail = properties_response.text
-                    logger.error(f"[GA_PROPERTIES] Failed to fetch properties for {account_display_name}: {error_detail}")
+                    logger.error(
+                        f"[GA_PROPERTIES] Failed to fetch properties for {account_display_name}: {error_detail}"
+                    )
                     logger.error(f"[GA_PROPERTIES] Request URL was: {properties_url}")
                     continue
 
                 if properties_response.status_code == 200:
                     properties_data = properties_response.json()
                     account_properties = properties_data.get("properties", [])
-                    logger.info(f"[GA_PROPERTIES] Found {len(account_properties)} properties in account {account_display_name}")
+                    logger.info(
+                        f"[GA_PROPERTIES] Found {len(account_properties)} properties in account {account_display_name}"
+                    )
 
                     for prop in account_properties:
                         property_info = GoogleAnalyticsProperty(
-                            property_id=prop.get("name", ""),  # Format: properties/123456
+                            property_id=prop.get(
+                                "name", ""
+                            ),  # Format: properties/123456
                             display_name=prop.get("displayName", "Unknown Property"),
                             account_id=account_name,
                             account_display_name=account_display_name,
@@ -660,9 +738,13 @@ async def get_google_analytics_properties(
                             create_time=prop.get("createTime", ""),
                         )
                         properties.append(property_info)
-                        logger.info(f"[GA_PROPERTIES] Added property: {property_info.display_name} ({property_info.property_id})")
+                        logger.info(
+                            f"[GA_PROPERTIES] Added property: {property_info.display_name} ({property_info.property_id})"
+                        )
                 else:
-                    logger.warning(f"[GA_PROPERTIES] Failed to fetch properties for account {account_display_name}: {properties_response.text}")
+                    logger.warning(
+                        f"[GA_PROPERTIES] Failed to fetch properties for account {account_display_name}: {properties_response.text}"
+                    )
 
         # Get currently selected properties if any
         selected_property_ids = credentials.get("selected_property_ids", [])
@@ -696,7 +778,9 @@ async def update_selected_properties(
     Update the selected Google Analytics properties for an account.
     """
     # Check permissions using has_account_access which handles org admins correctly
-    if not current_user.has_account_access(account_id, required_roles=["edit", "admin", "editor"]):
+    if not current_user.has_account_access(
+        account_id, required_roles=["edit", "admin", "editor"]
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You don't have permission to manage this account's integrations",
@@ -721,7 +805,9 @@ async def update_selected_properties(
 
         # Update credentials with selected properties
         credentials["selected_property_ids"] = request.property_ids
-        credentials["selected_properties"] = [prop.dict() for prop in request.properties]
+        credentials["selected_properties"] = [
+            prop.dict() for prop in request.properties
+        ]
 
         await creds_service.update_credentials(
             account_id=account_id,
@@ -781,7 +867,9 @@ async def get_google_analytics_status(
                 error_message = None
             elif access_token_expired:
                 integration_status = IntegrationStatus.EXPIRED
-                error_message = "Integration expired. Please reconnect Google Analytics."
+                error_message = (
+                    "Integration expired. Please reconnect Google Analytics."
+                )
             else:
                 integration_status = IntegrationStatus.CONFIGURED
                 error_message = None

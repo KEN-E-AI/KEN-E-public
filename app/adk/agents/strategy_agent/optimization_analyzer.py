@@ -7,7 +7,7 @@ to optimize costs and performance while maintaining quality.
 import logging
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from google.cloud import firestore
 from google.cloud.firestore_v1 import FieldFilter
@@ -15,7 +15,7 @@ from google.cloud.firestore_v1 import FieldFilter
 from shared.account_id_utils import validate_account_id
 
 from .analytics_service import AnalyticsService
-from .retry_utils import with_write_retry, with_read_retry, with_batch_retry
+from .retry_utils import with_batch_retry, with_read_retry
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ class OptimizationRecommendation:
         estimated_savings_percentage: float,
         implementation_difficulty: str,  # easy, medium, hard
         priority: int,  # 1-5, higher is more important
-        details: Dict[str, Any],
+        details: dict[str, Any],
     ):
         """Initialize recommendation.
 
@@ -50,7 +50,7 @@ class OptimizationRecommendation:
         self.details = details
         self.created_at = datetime.now(timezone.utc)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "recommendation_type": self.recommendation_type,
@@ -89,7 +89,7 @@ class OptimizationAnalyzer:
         "pro_model_simple_task_threshold": 100,  # Tokens for simple task
     }
 
-    def __init__(self, account_id: str, project_id: Optional[str] = None):
+    def __init__(self, account_id: str, project_id: str | None = None):
         """Initialize Optimization Analyzer.
 
         Args:
@@ -125,7 +125,7 @@ class OptimizationAnalyzer:
             self.analytics_db = None
             self.default_db = None
 
-    def analyze_usage_patterns(self, days_to_analyze: int = 7) -> Dict[str, Any]:
+    def analyze_usage_patterns(self, days_to_analyze: int = 7) -> dict[str, Any]:
         """Analyze token usage patterns over specified period.
 
         Args:
@@ -167,7 +167,7 @@ class OptimizationAnalyzer:
             logger.error(f"Failed to analyze usage patterns: {e}")
             return patterns
 
-    def _initialize_patterns_dict(self, days_to_analyze: int) -> Dict[str, Any]:
+    def _initialize_patterns_dict(self, days_to_analyze: int) -> dict[str, Any]:
         """Initialize the patterns dictionary structure.
 
         Args:
@@ -199,13 +199,15 @@ class OptimizationAnalyzer:
             Firestore document stream
         """
         cutoff_time = datetime.now(timezone.utc) - timedelta(days=days_to_analyze)
-        collection = self.analytics_db.collection(f"accounts/{self.account_id}/agent_analytics")
+        collection = self.analytics_db.collection(
+            f"accounts/{self.account_id}/agent_analytics"
+        )
 
         return collection.where(
             filter=FieldFilter("timestamp", ">=", cutoff_time)
         ).stream()
 
-    def _update_overall_metrics(self, patterns: Dict[str, Any], data: Dict[str, Any]):
+    def _update_overall_metrics(self, patterns: dict[str, Any], data: dict[str, Any]):
         """Update overall execution metrics.
 
         Args:
@@ -216,7 +218,7 @@ class OptimizationAnalyzer:
         patterns["total_tokens"] += data.get("total_tokens", 0)
         patterns["total_cost"] += data.get("total_cost", 0)
 
-    def _analyze_agent_patterns(self, patterns: Dict[str, Any], data: Dict[str, Any]):
+    def _analyze_agent_patterns(self, patterns: dict[str, Any], data: dict[str, Any]):
         """Analyze agent-specific patterns.
 
         Args:
@@ -241,7 +243,7 @@ class OptimizationAnalyzer:
         if not data.get("success", True):
             agent_pattern["errors"] += 1
 
-    def _analyze_model_usage(self, patterns: Dict[str, Any], data: Dict[str, Any]):
+    def _analyze_model_usage(self, patterns: dict[str, Any], data: dict[str, Any]):
         """Analyze model usage statistics.
 
         Args:
@@ -253,7 +255,7 @@ class OptimizationAnalyzer:
         patterns["model_usage"][model]["tokens"] += data.get("total_tokens", 0)
         patterns["model_usage"][model]["cost"] += data.get("total_cost", 0)
 
-    def _analyze_error_patterns(self, patterns: Dict[str, Any], data: Dict[str, Any]):
+    def _analyze_error_patterns(self, patterns: dict[str, Any], data: dict[str, Any]):
         """Analyze error patterns.
 
         Args:
@@ -264,7 +266,7 @@ class OptimizationAnalyzer:
             patterns["error_patterns"][data.get("error_message", "unknown")] += 1
 
     def _analyze_peak_usage(
-        self, hourly_usage: Dict[int, Dict[str, int]], data: Dict[str, Any]
+        self, hourly_usage: dict[int, dict[str, int]], data: dict[str, Any]
     ):
         """Analyze hourly usage for peak times.
 
@@ -279,7 +281,7 @@ class OptimizationAnalyzer:
             hourly_usage[hour]["executions"] += 1
 
     def _analyze_context_utilization(
-        self, patterns: Dict[str, Any], data: Dict[str, Any]
+        self, patterns: dict[str, Any], data: dict[str, Any]
     ):
         """Analyze context utilization statistics.
 
@@ -297,7 +299,7 @@ class OptimizationAnalyzer:
             utilization = prompt_tokens / model_config["max_context"]
             patterns["context_utilization"].append(utilization)
 
-    def _calculate_agent_averages(self, patterns: Dict[str, Any]):
+    def _calculate_agent_averages(self, patterns: dict[str, Any]):
         """Calculate average metrics for each agent.
 
         Args:
@@ -310,8 +312,8 @@ class OptimizationAnalyzer:
                 )
 
     def _identify_peak_times(
-        self, hourly_usage: Dict[int, Dict[str, int]]
-    ) -> List[Dict[str, Any]]:
+        self, hourly_usage: dict[int, dict[str, int]]
+    ) -> list[dict[str, Any]]:
         """Identify peak usage times from hourly data.
 
         Args:
@@ -333,8 +335,8 @@ class OptimizationAnalyzer:
         ]
 
     def generate_recommendations(
-        self, usage_patterns: Optional[Dict[str, Any]] = None
-    ) -> List[OptimizationRecommendation]:
+        self, usage_patterns: dict[str, Any] | None = None
+    ) -> list[OptimizationRecommendation]:
         """Generate optimization recommendations based on usage patterns.
 
         Args:
@@ -372,8 +374,8 @@ class OptimizationAnalyzer:
         return recommendations
 
     def _check_model_optimization(
-        self, patterns: Dict[str, Any]
-    ) -> List[OptimizationRecommendation]:
+        self, patterns: dict[str, Any]
+    ) -> list[OptimizationRecommendation]:
         """Check for model optimization opportunities.
 
         Args:
@@ -424,8 +426,8 @@ class OptimizationAnalyzer:
         return recommendations
 
     def _check_context_optimization(
-        self, patterns: Dict[str, Any]
-    ) -> List[OptimizationRecommendation]:
+        self, patterns: dict[str, Any]
+    ) -> list[OptimizationRecommendation]:
         """Check for context optimization opportunities.
 
         Args:
@@ -477,8 +479,8 @@ class OptimizationAnalyzer:
         return recommendations
 
     def _check_error_patterns(
-        self, patterns: Dict[str, Any]
-    ) -> List[OptimizationRecommendation]:
+        self, patterns: dict[str, Any]
+    ) -> list[OptimizationRecommendation]:
         """Check error patterns for optimization opportunities.
 
         Args:
@@ -523,8 +525,8 @@ class OptimizationAnalyzer:
         return recommendations
 
     def _check_agent_optimization(
-        self, patterns: Dict[str, Any]
-    ) -> List[OptimizationRecommendation]:
+        self, patterns: dict[str, Any]
+    ) -> list[OptimizationRecommendation]:
         """Check for agent-specific optimization opportunities.
 
         Args:
@@ -568,8 +570,8 @@ class OptimizationAnalyzer:
         return recommendations
 
     def _check_timing_optimization(
-        self, patterns: Dict[str, Any]
-    ) -> List[OptimizationRecommendation]:
+        self, patterns: dict[str, Any]
+    ) -> list[OptimizationRecommendation]:
         """Check for timing optimization opportunities.
 
         Args:
@@ -603,7 +605,7 @@ class OptimizationAnalyzer:
         return recommendations
 
     @with_batch_retry(operation_name="store_recommendations")
-    def _store_recommendations(self, recommendations: List[OptimizationRecommendation]):
+    def _store_recommendations(self, recommendations: list[OptimizationRecommendation]):
         """Store recommendations in Firestore.
 
         Args:
@@ -657,7 +659,7 @@ class OptimizationAnalyzer:
             logger.error(f"Failed to store recommendations: {e}")
 
     @with_read_retry(operation_name="get_latest_recommendations")
-    def get_latest_recommendations(self) -> List[Dict[str, Any]]:
+    def get_latest_recommendations(self) -> list[dict[str, Any]]:
         """Get latest recommendations for the account.
 
         Returns:
@@ -683,7 +685,7 @@ class OptimizationAnalyzer:
             logger.error(f"Failed to get latest recommendations: {e}")
             return []
 
-    def apply_automatic_optimizations(self) -> Dict[str, Any]:
+    def apply_automatic_optimizations(self) -> dict[str, Any]:
         """Apply automatic optimizations that don't require code changes.
 
         Returns:

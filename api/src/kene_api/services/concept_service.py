@@ -4,7 +4,7 @@ import json
 import logging
 import os
 import uuid
-from typing import Any, Optional, ClassVar
+from typing import ClassVar
 
 import httpx
 import vertexai
@@ -21,18 +21,22 @@ logger = logging.getLogger(__name__)
 
 class ConceptDisambiguationService:
     """Service to disambiguate concepts using Wikipedia, Wikidata, and Gemini."""
-    
-    _http_client: ClassVar[Optional[httpx.AsyncClient]] = None
-    _gemini_model_name: ClassVar[Optional[str]] = None
+
+    _http_client: ClassVar[httpx.AsyncClient | None] = None
+    _gemini_model_name: ClassVar[str | None] = None
 
     def __init__(self):
         """Initialize the service with Vertex AI/Gemini."""
         self.gemini_model = None
-        
+
         # Get configuration from environment
-        project_id = os.getenv("VERTEX_AI_PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT_ID") or "ken-e-dev"
+        project_id = (
+            os.getenv("VERTEX_AI_PROJECT_ID")
+            or os.getenv("GOOGLE_CLOUD_PROJECT_ID")
+            or "ken-e-dev"
+        )
         location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
-        
+
         # Check if we've already successfully initialized a model
         if self._gemini_model_name:
             try:
@@ -41,25 +45,29 @@ class ConceptDisambiguationService:
                 logger.debug(f"Reused cached Gemini model '{self._gemini_model_name}'")
                 return
             except Exception as e:
-                logger.warning(f"Could not reuse cached model {self._gemini_model_name}: {e}")
+                logger.warning(
+                    f"Could not reuse cached model {self._gemini_model_name}: {e}"
+                )
                 self._gemini_model_name = None
-        
+
         # Try to initialize Gemini
         try:
             vertexai.init(project=project_id, location=location)
-            
+
             # Get model preference from environment or use defaults
             preferred_model = os.getenv("GEMINI_MODEL", "gemini-2.5-pro")
             model_fallbacks = [
                 "gemini-2.5-flash",
                 "gemini-1.5-flash-002",
                 "gemini-1.5-flash",
-                "gemini-pro"
+                "gemini-pro",
             ]
-            
+
             # Try preferred model first
-            models_to_try = [preferred_model] + [m for m in model_fallbacks if m != preferred_model]
-            
+            models_to_try = [preferred_model] + [
+                m for m in model_fallbacks if m != preferred_model
+            ]
+
             for model_name in models_to_try:
                 try:
                     self.gemini_model = GenerativeModel(model_name)
@@ -67,12 +75,14 @@ class ConceptDisambiguationService:
                     logger.info(f"Successfully initialized Gemini model '{model_name}'")
                     break
                 except Exception as model_error:
-                    logger.debug(f"Could not initialize model {model_name}: {model_error}")
+                    logger.debug(
+                        f"Could not initialize model {model_name}: {model_error}"
+                    )
                     continue
-            
+
             if not self.gemini_model:
                 logger.error("Could not initialize any Gemini model variant")
-                
+
         except Exception as ve:
             logger.error(f"Could not initialize Vertex AI: {ve}")
             self.gemini_model = None
@@ -85,26 +95,21 @@ class ConceptDisambiguationService:
         """Async context manager exit."""
         # HTTP client is now shared class-level, don't close it here
         pass
-    
+
     @classmethod
     async def get_http_client(cls) -> httpx.AsyncClient:
         """Get or create shared HTTP client with connection pooling."""
         if cls._http_client is None or cls._http_client.is_closed:
             cls._http_client = httpx.AsyncClient(
-                timeout=httpx.Timeout(
-                    connect=5.0,
-                    read=30.0,
-                    write=10.0,
-                    pool=5.0
-                ),
+                timeout=httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0),
                 limits=httpx.Limits(
                     max_keepalive_connections=10,
                     max_connections=20,
-                    keepalive_expiry=30.0
-                )
+                    keepalive_expiry=30.0,
+                ),
             )
         return cls._http_client
-    
+
     @classmethod
     async def close_http_client(cls):
         """Close the shared HTTP client."""
@@ -123,7 +128,7 @@ class ConceptDisambiguationService:
             List of possible concept interpretations with confidence scores
         """
         logger.info(f"Searching concepts for term: {term}")
-        
+
         # If Gemini is not available, return empty list
         if not self.gemini_model:
             logger.warning("Gemini model not available for concept search")
@@ -132,10 +137,10 @@ class ConceptDisambiguationService:
         try:
             # Use Gemini to search and analyze concepts
             concepts = await self._search_with_gemini(term)
-            
+
             # Sort by confidence score
             concepts.sort(key=lambda x: x.confidence_score, reverse=True)
-            
+
             # Limit to top 5 results
             result = concepts[:5]
             logger.info(f"Returning {len(result)} concepts for '{term}'")
@@ -161,17 +166,17 @@ class ConceptDisambiguationService:
                 "limit": 3,
                 "format": "json",
             }
-            
+
             search_response = await client.get(search_url, params=search_params)
             search_response.raise_for_status()
-            
+
             search_data = search_response.json()
             if len(search_data) < 4:
                 return []
 
             titles = search_data[1]
             urls = search_data[3]
-            
+
             if not titles:
                 return []
 
@@ -185,13 +190,13 @@ class ConceptDisambiguationService:
                 "exsentences": 2,  # Get first 2 sentences
                 "format": "json",
             }
-            
+
             extract_response = await client.get(search_url, params=extract_params)
             extract_response.raise_for_status()
             extract_data = extract_response.json()
-            
+
             pages = extract_data.get("query", {}).get("pages", {})
-            
+
             # Build concepts with real descriptions
             concepts = []
             for i, title in enumerate(titles):
@@ -199,38 +204,47 @@ class ConceptDisambiguationService:
                     # Find the page data for this title
                     description = None
                     is_disambiguation = False
-                    
+
                     for page_id, page_data in pages.items():
                         if page_data.get("title") == title:
                             extract = page_data.get("extract", "").strip()
                             pageprops = page_data.get("pageprops", {})
-                            
+
                             # Check if it's a disambiguation page
                             if "disambiguation" in pageprops:
                                 is_disambiguation = True
-                                description = f"Disambiguation page - term with multiple meanings"
+                                description = (
+                                    "Disambiguation page - term with multiple meanings"
+                                )
                             elif extract:
                                 # Clean up the extract
-                                description = extract.split("\n")[0]  # Get first paragraph
+                                description = extract.split("\n")[
+                                    0
+                                ]  # Get first paragraph
                                 # Check for "may refer to" which indicates disambiguation
-                                if "may refer to" in description.lower() or "can refer to" in description.lower():
+                                if (
+                                    "may refer to" in description.lower()
+                                    or "can refer to" in description.lower()
+                                ):
                                     is_disambiguation = True
                                     description = "Term with multiple meanings - see Wikipedia for options"
                                 # Limit to reasonable length
                                 elif len(description) > 200:
                                     description = description[:197] + "..."
                             break
-                    
+
                     # If no description found, try to provide something meaningful
                     if not description:
                         if "utilities" in title.lower():
                             description = "Public services such as electricity, gas, water, or telecommunications"
                         else:
-                            description = f"See Wikipedia article for details about {title}"
-                    
+                            description = (
+                                f"See Wikipedia article for details about {title}"
+                            )
+
                     # Lower confidence for disambiguation pages
                     confidence = 0.4 if is_disambiguation else 0.7
-                    
+
                     concept = ConceptOption(
                         id=str(uuid.uuid4()),
                         label=title,
@@ -252,7 +266,9 @@ class ConceptDisambiguationService:
             logger.error(f"Wikipedia API timeout for term '{term}': {e}")
             return []
         except httpx.HTTPStatusError as e:
-            logger.error(f"Wikipedia API HTTP error for term '{term}': {e.response.status_code}")
+            logger.error(
+                f"Wikipedia API HTTP error for term '{term}': {e.response.status_code}"
+            )
             return []
         except httpx.RequestError as e:
             logger.error(f"Wikipedia API request error for term '{term}': {e}")
@@ -310,7 +326,9 @@ class ConceptDisambiguationService:
             logger.error(f"Wikidata API timeout for term '{term}': {e}")
             return []
         except httpx.HTTPStatusError as e:
-            logger.error(f"Wikidata API HTTP error for term '{term}': {e.response.status_code}")
+            logger.error(
+                f"Wikidata API HTTP error for term '{term}': {e.response.status_code}"
+            )
             return []
         except httpx.RequestError as e:
             logger.error(f"Wikidata API request error for term '{term}': {e}")
@@ -323,15 +341,25 @@ class ConceptDisambiguationService:
         """Map Wikidata description to our concept types."""
         description_lower = description.lower()
 
-        if any(word in description_lower for word in ["company", "corporation", "firm"]):
+        if any(
+            word in description_lower for word in ["company", "corporation", "firm"]
+        ):
             return ConceptType.COMPANY
-        elif any(word in description_lower for word in ["city", "country", "state", "region"]):
+        elif any(
+            word in description_lower for word in ["city", "country", "state", "region"]
+        ):
             return ConceptType.LOCATION
-        elif any(word in description_lower for word in ["person", "human", "individual"]):
+        elif any(
+            word in description_lower for word in ["person", "human", "individual"]
+        ):
             return ConceptType.PERSON
-        elif any(word in description_lower for word in ["product", "software", "application"]):
+        elif any(
+            word in description_lower for word in ["product", "software", "application"]
+        ):
             return ConceptType.PRODUCT
-        elif any(word in description_lower for word in ["event", "conference", "festival"]):
+        elif any(
+            word in description_lower for word in ["event", "conference", "festival"]
+        ):
             return ConceptType.EVENT
         else:
             return ConceptType.TOPIC
@@ -339,7 +367,7 @@ class ConceptDisambiguationService:
     async def _search_with_gemini(self, term: str) -> list[ConceptOption]:
         """
         Use Gemini to search for and identify concept interpretations.
-        
+
         Gemini will search the web and find authoritative sources for each interpretation.
         """
         try:
@@ -378,15 +406,15 @@ Important:
 
             response = self.gemini_model.generate_content(prompt)
             response_text = response.text.strip()
-            
+
             # Extract JSON from response
             json_start = response_text.find("{")
             json_end = response_text.rfind("}") + 1
             if json_start >= 0 and json_end > json_start:
                 response_text = response_text[json_start:json_end]
-            
+
             gemini_data = json.loads(response_text)
-            
+
             concepts = []
             for concept_data in gemini_data.get("concepts", []):
                 concept = ConceptOption(
@@ -395,27 +423,35 @@ Important:
                     type=ConceptType(concept_data.get("type", "other")),
                     description=concept_data.get("description", "")[:200],
                     reference=ConceptReference(
-                        url=concept_data.get("url", f"https://www.google.com/search?q={term}"),
+                        url=concept_data.get(
+                            "url", f"https://www.google.com/search?q={term}"
+                        ),
                         title=concept_data.get("label", term),
                         description=concept_data.get("description", "")[:100],
-                        source_type=self._determine_source_type(concept_data.get("url", "")),
+                        source_type=self._determine_source_type(
+                            concept_data.get("url", "")
+                        ),
                     ),
                     confidence_score=concept_data.get("confidence", 0.5),
                 )
                 concepts.append(concept)
-            
+
             return concepts
-            
+
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse Gemini response as JSON for term '{term}': {e}")
+            logger.error(
+                f"Failed to parse Gemini response as JSON for term '{term}': {e}"
+            )
             return []
         except AttributeError as e:
-            logger.error(f"Gemini model not properly initialized for term '{term}': {e}")
+            logger.error(
+                f"Gemini model not properly initialized for term '{term}': {e}"
+            )
             return []
         except Exception as e:
             logger.error(f"Unexpected Gemini search error for term '{term}': {e}")
             return []
-    
+
     def _determine_source_type(self, url: str) -> str:
         """Determine the source type from URL."""
         url_lower = url.lower()
@@ -449,7 +485,7 @@ Important:
         if not self.gemini_model:
             logger.warning("Gemini model not available, returning initial results only")
             return initial_results
-            
+
         try:
             # Prepare context from initial results
             existing_concepts = []
@@ -528,7 +564,9 @@ Important:
                         type=ConceptType(gemini_concept.get("type", ConceptType.OTHER)),
                         description=gemini_concept.get("description", "")[:200],
                         reference=ConceptReference(
-                            url=gemini_concept.get("url", f"https://www.google.com/search?q={term}"),
+                            url=gemini_concept.get(
+                                "url", f"https://www.google.com/search?q={term}"
+                            ),
                             title=label,
                             description=gemini_concept.get("description", "")[:100],
                             source_type="gemini_search",
@@ -540,10 +578,14 @@ Important:
             return list(concept_map.values())
 
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse Gemini analysis response as JSON for term '{term}': {e}")
+            logger.error(
+                f"Failed to parse Gemini analysis response as JSON for term '{term}': {e}"
+            )
             return initial_results
         except AttributeError as e:
-            logger.error(f"Gemini model not properly initialized for analysis of term '{term}': {e}")
+            logger.error(
+                f"Gemini model not properly initialized for analysis of term '{term}': {e}"
+            )
             return initial_results
         except Exception as e:
             logger.error(f"Unexpected Gemini analysis error for term '{term}': {e}")

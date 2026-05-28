@@ -12,10 +12,6 @@ import json
 import os
 from typing import Any
 
-import google.adk as adk
-from google.adk.tools import AgentTool
-from google.genai.types import GenerateContentConfig
-
 from .config_loader import create_agent_from_firestore_config
 from .structured_models import StructuredBusinessStrategy
 

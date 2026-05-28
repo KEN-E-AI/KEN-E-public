@@ -2,6 +2,7 @@
 """Quick script to check strategy documents in Firestore"""
 
 import os
+
 from google.cloud import firestore
 
 # Set up credentials
@@ -27,12 +28,12 @@ for doc in docs:
     doc_data = doc.to_dict()
     doc_type = doc_data.get("doc_type", "unknown")
     strategy_types.append(doc_type)
-    
+
     print(f"Document ID: {doc.id}")
     print(f"  Type: {doc_type}")
     print(f"  Version: {doc_data.get('version', 'unknown')}")
     print(f"  Created: {doc_data.get('created_at', 'unknown')}")
-    
+
     if "content" in doc_data:
         content = doc_data["content"]
         if isinstance(content, dict):
@@ -48,16 +49,16 @@ if doc_count == 0:
 else:
     print(f"✅ Total documents found: {doc_count}")
     print(f"Strategy types: {strategy_types}")
-    
+
     expected = [
         "business_strategy",
-        "competitive_strategy", 
+        "competitive_strategy",
         "customer_strategy",
         "marketing_strategy",
-        "brand_guidelines"
+        "brand_guidelines",
     ]
     missing = [s for s in expected if s not in strategy_types]
-    
+
     if missing:
         print(f"⚠️  Missing strategies: {missing}")
     else:

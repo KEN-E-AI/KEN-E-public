@@ -6,12 +6,16 @@ including authentication attempts, token refreshes, and performance monitoring.
 """
 
 import time
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable, Optional
+from typing import Any
 
-from prometheus_client import Counter, Histogram, Gauge, generate_latest, REGISTRY
+from prometheus_client import REGISTRY, Counter, Gauge, Histogram, generate_latest
 
-def _get_or_create_counter(name: str, documentation: str, labelnames: list[str]) -> Counter:
+
+def _get_or_create_counter(
+    name: str, documentation: str, labelnames: list[str]
+) -> Counter:
     """Get existing counter or create new one, avoiding duplicate registration."""
     # Check if metric already exists in Prometheus registry (global singleton)
     # Note: Counters register multiple names (e.g., 'name', 'name_total', 'name_created')
@@ -34,7 +38,10 @@ def _get_or_create_counter(name: str, documentation: str, labelnames: list[str])
                     return collector
         raise
 
-def _get_or_create_histogram(name: str, documentation: str, labelnames: list[str], buckets: tuple) -> Histogram:
+
+def _get_or_create_histogram(
+    name: str, documentation: str, labelnames: list[str], buckets: tuple
+) -> Histogram:
     """Get existing histogram or create new one, avoiding duplicate registration."""
     # Check if metric already exists in Prometheus registry (global singleton)
     # Note: Histograms register multiple names (e.g., 'name', 'name_bucket', 'name_sum', 'name_count', 'name_created')
@@ -56,6 +63,7 @@ def _get_or_create_histogram(name: str, documentation: str, labelnames: list[str
                 if name in registered_names:
                     return collector
         raise
+
 
 def _get_or_create_gauge(name: str, documentation: str, labelnames: list[str]) -> Gauge:
     """Get existing gauge or create new one, avoiding duplicate registration."""
@@ -79,76 +87,71 @@ def _get_or_create_gauge(name: str, documentation: str, labelnames: list[str]) -
                     return collector
         raise
 
+
 # Authentication Metrics
 oauth_auth_attempts = _get_or_create_counter(
-    'oauth_auth_attempts_total',
-    'Total OAuth authorization attempts',
-    ['integration_type']
+    "oauth_auth_attempts_total",
+    "Total OAuth authorization attempts",
+    ["integration_type"],
 )
 
 oauth_auth_success = _get_or_create_counter(
-    'oauth_auth_success_total',
-    'Successful OAuth authorizations',
-    ['integration_type']
+    "oauth_auth_success_total", "Successful OAuth authorizations", ["integration_type"]
 )
 
 oauth_callback_errors = _get_or_create_counter(
-    'oauth_callback_errors_total',
-    'OAuth callback errors',
-    ['integration_type', 'error_type']
+    "oauth_callback_errors_total",
+    "OAuth callback errors",
+    ["integration_type", "error_type"],
 )
 
 token_refresh_success = _get_or_create_counter(
-    'token_refresh_success_total',
-    'Successful token refreshes',
-    ['integration_type']
+    "token_refresh_success_total", "Successful token refreshes", ["integration_type"]
 )
 
 token_refresh_failures = _get_or_create_counter(
-    'token_refresh_failures_total',
-    'Failed token refreshes',
-    ['integration_type', 'error_reason']
+    "token_refresh_failures_total",
+    "Failed token refreshes",
+    ["integration_type", "error_reason"],
 )
 
 # Performance Metrics
 oauth_flow_duration = _get_or_create_histogram(
-    'oauth_flow_duration_seconds',
-    'Time to complete OAuth flow',
-    ['integration_type'],
-    buckets=(0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0, 30.0)
+    "oauth_flow_duration_seconds",
+    "Time to complete OAuth flow",
+    ["integration_type"],
+    buckets=(0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0, 30.0),
 )
 
 encryption_operation_duration = _get_or_create_histogram(
-    'encryption_duration_seconds',
-    'Time to encrypt/decrypt credentials',
-    ['operation'],
-    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 1.0)
+    "encryption_duration_seconds",
+    "Time to encrypt/decrypt credentials",
+    ["operation"],
+    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 1.0),
 )
 
 # State Metrics
 active_oauth_sessions = _get_or_create_gauge(
-    'active_oauth_sessions',
-    'Number of active OAuth sessions',
-    ['integration_type']
+    "active_oauth_sessions", "Number of active OAuth sessions", ["integration_type"]
 )
 
 oauth_state_transitions = _get_or_create_counter(
-    'oauth_state_transitions_total',
-    'OAuth state transitions',
-    ['integration_type', 'from_state', 'to_state']
+    "oauth_state_transitions_total",
+    "OAuth state transitions",
+    ["integration_type", "from_state", "to_state"],
 )
 
 # Token Expiration Metrics
 tokens_expiring_soon = _get_or_create_gauge(
-    'tokens_expiring_soon',
-    'Number of tokens expiring within 1 hour',
-    ['integration_type']
+    "tokens_expiring_soon",
+    "Number of tokens expiring within 1 hour",
+    ["integration_type"],
 )
 
 expired_tokens = _get_or_create_counter(
-    'expired_tokens_total',
-    'Total number of expired tokens detected',
-    ['integration_type']
+    "expired_tokens_total",
+    "Total number of expired tokens detected",
+    ["integration_type"],
 )
 
 
@@ -165,8 +168,7 @@ def track_oauth_success(integration_type: str) -> None:
 def track_oauth_callback_error(integration_type: str, error_type: str) -> None:
     """Track an OAuth callback error."""
     oauth_callback_errors.labels(
-        integration_type=integration_type,
-        error_type=error_type
+        integration_type=integration_type, error_type=error_type
     ).inc()
 
 
@@ -178,21 +180,16 @@ def track_token_refresh_success(integration_type: str) -> None:
 def track_token_refresh_failure(integration_type: str, error_reason: str) -> None:
     """Track a failed token refresh."""
     token_refresh_failures.labels(
-        integration_type=integration_type,
-        error_reason=error_reason
+        integration_type=integration_type, error_reason=error_reason
     ).inc()
 
 
 def track_state_transition(
-    integration_type: str,
-    from_state: str,
-    to_state: str
+    integration_type: str, from_state: str, to_state: str
 ) -> None:
     """Track an OAuth state transition."""
     oauth_state_transitions.labels(
-        integration_type=integration_type,
-        from_state=from_state,
-        to_state=to_state
+        integration_type=integration_type, from_state=from_state, to_state=to_state
     ).inc()
 
 
@@ -214,12 +211,13 @@ def track_expired_token(integration_type: str) -> None:
 def measure_oauth_flow(integration_type: str) -> Callable:
     """
     Decorator to measure OAuth flow duration.
-    
+
     Usage:
         @measure_oauth_flow("google_analytics")
         async def authorize_google_analytics(...):
             ...
     """
+
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -229,10 +227,10 @@ def measure_oauth_flow(integration_type: str) -> Callable:
                 return result
             finally:
                 duration = time.time() - start_time
-                oauth_flow_duration.labels(
-                    integration_type=integration_type
-                ).observe(duration)
-        
+                oauth_flow_duration.labels(integration_type=integration_type).observe(
+                    duration
+                )
+
         @wraps(func)
         def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
             start_time = time.time()
@@ -241,29 +239,31 @@ def measure_oauth_flow(integration_type: str) -> Callable:
                 return result
             finally:
                 duration = time.time() - start_time
-                oauth_flow_duration.labels(
-                    integration_type=integration_type
-                ).observe(duration)
-        
+                oauth_flow_duration.labels(integration_type=integration_type).observe(
+                    duration
+                )
+
         # Return appropriate wrapper based on function type
         import asyncio
+
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
         else:
             return sync_wrapper
-    
+
     return decorator
 
 
 def measure_encryption_operation(operation: str) -> Callable:
     """
     Decorator to measure encryption/decryption operation duration.
-    
+
     Usage:
         @measure_encryption_operation("encrypt")
         def encrypt_credentials(...):
             ...
     """
+
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -273,10 +273,10 @@ def measure_encryption_operation(operation: str) -> Callable:
                 return result
             finally:
                 duration = time.time() - start_time
-                encryption_operation_duration.labels(
-                    operation=operation
-                ).observe(duration)
-        
+                encryption_operation_duration.labels(operation=operation).observe(
+                    duration
+                )
+
         @wraps(func)
         def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
             start_time = time.time()
@@ -285,24 +285,25 @@ def measure_encryption_operation(operation: str) -> Callable:
                 return result
             finally:
                 duration = time.time() - start_time
-                encryption_operation_duration.labels(
-                    operation=operation
-                ).observe(duration)
-        
+                encryption_operation_duration.labels(operation=operation).observe(
+                    duration
+                )
+
         # Return appropriate wrapper based on function type
         import asyncio
+
         if asyncio.iscoroutinefunction(func):
             return async_wrapper
         else:
             return sync_wrapper
-    
+
     return decorator
 
 
 def get_metrics() -> bytes:
     """
     Generate metrics in Prometheus format.
-    
+
     Returns:
         Prometheus formatted metrics as bytes.
     """
@@ -312,47 +313,47 @@ def get_metrics() -> bytes:
 class OAuthMetricsCollector:
     """
     Context manager for tracking OAuth flow metrics.
-    
+
     Usage:
         async with OAuthMetricsCollector("google_analytics") as collector:
             # OAuth flow logic
             collector.track_success()
     """
-    
+
     def __init__(self, integration_type: str):
         self.integration_type = integration_type
-        self.start_time: Optional[float] = None
+        self.start_time: float | None = None
         self.success = False
-        self.error_type: Optional[str] = None
-    
+        self.error_type: str | None = None
+
     def __enter__(self):
         self.start_time = time.time()
         track_oauth_attempt(self.integration_type)
         return self
-    
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self.start_time:
             duration = time.time() - self.start_time
-            oauth_flow_duration.labels(
-                integration_type=self.integration_type
-            ).observe(duration)
-        
+            oauth_flow_duration.labels(integration_type=self.integration_type).observe(
+                duration
+            )
+
         if self.success:
             track_oauth_success(self.integration_type)
         elif exc_type:
             error_type = self.error_type or exc_type.__name__
             track_oauth_callback_error(self.integration_type, error_type)
-    
+
     async def __aenter__(self):
         return self.__enter__()
-    
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         return self.__exit__(exc_type, exc_val, exc_tb)
-    
+
     def track_success(self):
         """Mark the OAuth flow as successful."""
         self.success = True
-    
+
     def track_error(self, error_type: str):
         """Track a specific error type."""
         self.error_type = error_type

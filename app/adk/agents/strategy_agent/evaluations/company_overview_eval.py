@@ -19,18 +19,19 @@ Usage:
 
 import argparse
 import asyncio
+from typing import Any
+
 import weave
-from typing import Any, Optional
-from strategy_agent.evaluations.env_loader import load_env
 from strategy_agent.evaluations.core.dataset_extractors import extract_company_overview
+from strategy_agent.evaluations.env_loader import load_env
 from strategy_agent.evaluations.scorers.company_overview_scorers import (
+    BrandIdentityScorer,
     CompanyOverviewLengthScorer,
-    ProductServiceDescriptionScorer,
+    CompleteThoughtsScorer,
     FoundingDateScorer,
     MissionStatementScorer,
-    BrandIdentityScorer,
+    ProductServiceDescriptionScorer,
     TargetCustomerScorer,
-    CompleteThoughtsScorer,
 )
 
 
@@ -58,16 +59,13 @@ class CompanyOverviewModel(weave.Model):
             dict with company_overview_summary (matches scorer signature)
         """
         # Scorers expect: output.get('company_overview_summary')
-        return {
-            'company_overview_summary': str(company_overview_summary)
-        }
+        return {"company_overview_summary": str(company_overview_summary)}
 
 
 async def run_company_overview_eval(
     dataset_name: str,
     eval_name: str,
-    enabled_scorers: Optional[list[str]] = None,
-    
+    enabled_scorers: list[str] | None = None,
 ):
     """
     Run comprehensive company overview evaluation.
@@ -94,24 +92,26 @@ async def run_company_overview_eval(
     def preprocess_model_input(row):
         """Extract company_overview_summary with fallback to trace traversal."""
         summary = extract_company_overview(client, row)
-        return {'company_overview_summary': summary}
+        return {"company_overview_summary": summary}
 
     # Use local scorer implementations
     print("\nInitializing scorers:")
 
     all_scorers = {
-        'CompanyOverviewLengthScorer': CompanyOverviewLengthScorer(),
-        'ProductServiceDescriptionScorer': ProductServiceDescriptionScorer(),
-        'FoundingDateScorer': FoundingDateScorer(),
-        'MissionStatementScorer': MissionStatementScorer(),
-        'BrandIdentityScorer': BrandIdentityScorer(),
-        'TargetCustomerScorer': TargetCustomerScorer(),
-        'CompleteThoughtsScorer': CompleteThoughtsScorer(),
+        "CompanyOverviewLengthScorer": CompanyOverviewLengthScorer(),
+        "ProductServiceDescriptionScorer": ProductServiceDescriptionScorer(),
+        "FoundingDateScorer": FoundingDateScorer(),
+        "MissionStatementScorer": MissionStatementScorer(),
+        "BrandIdentityScorer": BrandIdentityScorer(),
+        "TargetCustomerScorer": TargetCustomerScorer(),
+        "CompleteThoughtsScorer": CompleteThoughtsScorer(),
     }
 
     # Filter to enabled scorers if specified
     if enabled_scorers:
-        scorers = [scorer for name, scorer in all_scorers.items() if name in enabled_scorers]
+        scorers = [
+            scorer for name, scorer in all_scorers.items() if name in enabled_scorers
+        ]
     else:
         scorers = list(all_scorers.values())
 
@@ -126,8 +126,8 @@ async def run_company_overview_eval(
         dataset=dataset,
         scorers=scorers,
         preprocess_model_input=preprocess_model_input,
-        name=eval_name
-        #company_overview_full_eval, company_overview_full_eval_test
+        name=eval_name,
+        # company_overview_full_eval, company_overview_full_eval_test
     )
 
     # Run evaluation
@@ -136,8 +136,8 @@ async def run_company_overview_eval(
     try:
         results = await evaluation.evaluate(model)
 
-        print(f"\nEvaluation complete!")
-        print(f"View results at: https://wandb.ai/ken-e/ken-e-strategy-agent/weave")
+        print("\nEvaluation complete!")
+        print("View results at: https://wandb.ai/ken-e/ken-e-strategy-agent/weave")
 
         return results
 
@@ -147,30 +147,29 @@ async def run_company_overview_eval(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Run company overview evaluation')
+    parser = argparse.ArgumentParser(description="Run company overview evaluation")
     parser.add_argument(
-        '--dataset',
+        "--dataset",
         type=str,
         required=True,
-        help='Weave dataset name (e.g., llm_judge_alignment_set:v26)'
+        help="Weave dataset name (e.g., llm_judge_alignment_set:v26)",
     )
     parser.add_argument(
-        '--scorers',
-        nargs='+',
+        "--scorers",
+        nargs="+",
         default=None,
-        help='Scorers to enable (space-separated). If omitted, runs all. Example: FoundingDateScorer MissionStatementScorer'
+        help="Scorers to enable (space-separated). If omitted, runs all. Example: FoundingDateScorer MissionStatementScorer",
     )
     parser.add_argument(
-        '--eval_name',
-        type=str,
-        required=True,
-        help='Weave Evaluation name'
+        "--eval_name", type=str, required=True, help="Weave Evaluation name"
     )
 
     args = parser.parse_args()
 
-    asyncio.run(run_company_overview_eval(
-        dataset_name=args.dataset,
-        eval_name=args.eval_name,
-        enabled_scorers=args.scorers
-    ))
+    asyncio.run(
+        run_company_overview_eval(
+            dataset_name=args.dataset,
+            eval_name=args.eval_name,
+            enabled_scorers=args.scorers,
+        )
+    )

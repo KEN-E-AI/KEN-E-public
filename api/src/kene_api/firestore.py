@@ -387,9 +387,7 @@ class FirestoreService:
 
     # KPI Operations
 
-    def get_kpi_setting(
-        self, account_id: str, kpi_name: str
-    ) -> str | None:
+    def get_kpi_setting(self, account_id: str, kpi_name: str) -> str | None:
         """
         Get a specific KPI setting for an account.
 
@@ -451,11 +449,7 @@ class FirestoreService:
         except NotFound:
             try:
                 doc_ref.set(
-                    {
-                        "account_settings": {
-                            "overview_kpis": {kpi_name: metric_id}
-                        }
-                    },
+                    {"account_settings": {"overview_kpis": {kpi_name: metric_id}}},
                     merge=True,
                 )
                 return True
@@ -466,9 +460,7 @@ class FirestoreService:
             print(f"Error updating KPI setting: {e}")
             return False
 
-    def get_all_kpi_settings(
-        self, account_id: str
-    ) -> dict[str, str] | None:
+    def get_all_kpi_settings(self, account_id: str) -> dict[str, str] | None:
         """
         Get all KPI settings for an account.
 
@@ -835,7 +827,9 @@ class FirestoreService:
                 return None  # Channel already exists
 
             if funnel_type == "organization":
-                field_path = f"funnels.organization.{funnel_step_num}.channels.{channel_name}"
+                field_path = (
+                    f"funnels.organization.{funnel_step_num}.channels.{channel_name}"
+                )
             else:  # big_bet
                 field_path = f"funnels.big_bets.{big_bet_name}.{funnel_step_num}.channels.{channel_name}"
 
@@ -999,7 +993,9 @@ class FirestoreService:
             updated_data = {**existing_channel, **channel_data}
 
             if funnel_type == "organization":
-                field_path = f"funnels.organization.{funnel_step_num}.channels.{channel_name}"
+                field_path = (
+                    f"funnels.organization.{funnel_step_num}.channels.{channel_name}"
+                )
             else:  # big_bet
                 field_path = f"funnels.big_bets.{big_bet_name}.{funnel_step_num}.channels.{channel_name}"
 
@@ -1048,7 +1044,9 @@ class FirestoreService:
                 return False
 
             if funnel_type == "organization":
-                field_path = f"funnels.organization.{funnel_step_num}.channels.{channel_name}"
+                field_path = (
+                    f"funnels.organization.{funnel_step_num}.channels.{channel_name}"
+                )
             else:  # big_bet
                 field_path = f"funnels.big_bets.{big_bet_name}.{funnel_step_num}.channels.{channel_name}"
 

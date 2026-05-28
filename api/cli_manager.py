@@ -131,9 +131,7 @@ class KeneAPIClient:
         return self._make_request("DELETE", self.INTUITIONS_ENDPOINT, json=data)
 
     # KPI Settings methods
-    def get_kpi_setting(
-        self, account_id: str, kpi_name: str
-    ) -> dict[str, Any]:
+    def get_kpi_setting(self, account_id: str, kpi_name: str) -> dict[str, Any]:
         """Get a specific KPI setting."""
         return self._make_request(
             "GET",
@@ -146,9 +144,7 @@ class KeneAPIClient:
 
     def get_all_kpi_settings(self, account_id: str) -> dict[str, Any]:
         """Get all KPI settings for an account."""
-        return self._make_request(
-            "GET", f"{self.FIRESTORE_KPI_ENDPOINT}/{account_id}"
-        )
+        return self._make_request("GET", f"{self.FIRESTORE_KPI_ENDPOINT}/{account_id}")
 
     # Funnel Steps methods
     def create_funnel_step(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -252,9 +248,7 @@ class KeneAPIClient:
         params = f"?account_id={account_id}&funnel_type={funnel_type}&funnel_step_num={funnel_step_num}"
         if big_bet_name:
             params += f"&big_bet_name={big_bet_name}"
-        return self._make_request(
-            "GET", f"{self.FIRESTORE_CHANNELS_ENDPOINT}{params}"
-        )
+        return self._make_request("GET", f"{self.FIRESTORE_CHANNELS_ENDPOINT}{params}")
 
     def get_channel(
         self,
@@ -341,9 +335,7 @@ class KeneAPIClient:
         params = f"?account_id={account_id}&funnel_type={funnel_type}&funnel_step_num={funnel_step_num}&channel_name={channel_name}"
         if big_bet_name:
             params += f"&big_bet_name={big_bet_name}"
-        return self._make_request(
-            "GET", f"{self.FIRESTORE_TACTICS_ENDPOINT}{params}"
-        )
+        return self._make_request("GET", f"{self.FIRESTORE_TACTICS_ENDPOINT}{params}")
 
     def get_tactic(
         self,
@@ -1881,9 +1873,7 @@ class KeneCLI:
     def _view_kpi_settings(self):
         """View all KPI settings."""
         try:
-            result = self.client.get_all_kpi_settings(
-                self.account_id
-            )
+            result = self.client.get_all_kpi_settings(self.account_id)
             if result.get("success"):
                 kpi_settings = result.get("kpi_settings", {})
                 if kpi_settings:

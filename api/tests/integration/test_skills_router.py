@@ -550,7 +550,9 @@ class TestSkillsRouterAuth(_SkillsRouterBase):
         self._install_user(_no_access_user())
         resp = client.post(
             BASE_URL + "/validate",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
         )
         assert resp.status_code == 403
 
@@ -1809,14 +1811,18 @@ class TestCrossAccountIsolation(_SkillsRouterBase):
 
         post_resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert post_resp.status_code == 403
 
         put_resp = client.put(
             BASE_URL + "/any-skill-id",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert put_resp.status_code == 403
@@ -1899,7 +1905,9 @@ class TestCrossAccountIsolation(_SkillsRouterBase):
         assert resp.status_code == 403
         assert resp.json()["detail"] == "owner_mismatch"
 
-    def _seed_inconsistent_skill(self, fake_db: _FakeFirestoreClient, skill_id: str) -> None:
+    def _seed_inconsistent_skill(
+        self, fake_db: _FakeFirestoreClient, skill_id: str
+    ) -> None:
         """Plant a skill doc at OTHER_ACCOUNT_ID's path but with owner.account_id = ACCOUNT_ID."""
         fake_db._store[f"accounts/{OTHER_ACCOUNT_ID}/skills/{skill_id}"] = {
             "skill_id": skill_id,
@@ -1969,7 +1977,9 @@ class TestCrossAccountIsolation(_SkillsRouterBase):
 
         resp = client.put(
             OTHER_BASE_URL + f"/{skill_id}",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert resp.status_code == 403
@@ -1992,7 +2002,9 @@ class TestCrossAccountIsolation(_SkillsRouterBase):
 
         post_resp = client.post(
             BASE_URL + "/",
-            files=[("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))],
+            files=[
+                ("skill_md", ("SKILL.md", io.BytesIO(_VALID_SKILL_MD), "text/markdown"))
+            ],
             data={"name": "seo-checklist"},
         )
         assert post_resp.status_code == 201
@@ -2037,9 +2049,13 @@ class TestCrossAccountIsolation(_SkillsRouterBase):
         # Super-admin passes membership and edit-role gate even without explicit account entry.
         result_sa = await check_account_access(ACCOUNT_ID, super_admin_user)
         assert result_sa.user_id == super_admin_user.user_id
-        result_sa_view = await check_strategy_access(ACCOUNT_ID, super_admin_user, "view")
+        result_sa_view = await check_strategy_access(
+            ACCOUNT_ID, super_admin_user, "view"
+        )
         assert result_sa_view.user_id == super_admin_user.user_id
-        result_sa_edit = await check_strategy_access(ACCOUNT_ID, super_admin_user, "edit")
+        result_sa_edit = await check_strategy_access(
+            ACCOUNT_ID, super_admin_user, "edit"
+        )
         assert result_sa_edit.user_id == super_admin_user.user_id
 
 

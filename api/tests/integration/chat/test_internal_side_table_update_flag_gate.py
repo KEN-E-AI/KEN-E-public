@@ -202,9 +202,7 @@ class TestSideTableUpdateFlagGate:
         assert response.status_code == 404
         assert response.json()["detail"] == "Not Found"
 
-    def test_flag_present_default_enabled_returns_200(
-        self, client: TestClient
-    ) -> None:
+    def test_flag_present_default_enabled_returns_200(self, client: TestClient) -> None:
         """Flag doc present with default_enabled=True → endpoint proceeds → 200."""
         db = _emulator_client()
         _set_flag(db, "chat_v2_enabled", default_enabled=True)

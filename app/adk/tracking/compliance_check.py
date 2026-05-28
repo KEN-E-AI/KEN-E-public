@@ -84,7 +84,9 @@ def main(argv: list[str] | None = None) -> int:
     for path in fixture_paths:
         trace_id, metadata = _load_fixture(path)
         result = validate_trace_compliance(metadata, trace_id=trace_id)
-        _print_result(path, trace_id, result.is_compliant, result.issues, result.warnings)
+        _print_result(
+            path, trace_id, result.is_compliant, result.issues, result.warnings
+        )
         all_metadata.append(metadata)
         all_trace_ids.append(trace_id)
         if not result.is_compliant:

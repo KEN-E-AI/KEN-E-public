@@ -8,12 +8,7 @@ Following ADK constraint workaround: Agents with output_schema cannot use tools.
 Configurations are now loaded from Firestore for easy iteration without redeployment.
 """
 
-import json
 import logging
-
-import google.adk as adk
-from google.adk.tools import AgentTool
-from google.genai.types import GenerateContentConfig
 
 from .config_loader import create_agent_from_firestore_config
 from .marketing_models import MarketingResearchReport
@@ -59,15 +54,21 @@ def create_marketing_formatter():
     # DEBUG: Log the schema being used (only at DEBUG level)
     if logger.isEnabledFor(logging.DEBUG):
         schema = MarketingResearchReport.model_json_schema()
-        logger.debug(f"[DEBUG] Creating marketing_formatter with schema:")
-        logger.debug(f"  - Root properties: {list(schema.get('properties', {}).keys())}")
+        logger.debug("[DEBUG] Creating marketing_formatter with schema:")
+        logger.debug(
+            f"  - Root properties: {list(schema.get('properties', {}).keys())}"
+        )
 
         if "$defs" in schema and "IdealCustomerProfile" in schema["$defs"]:
-            icp_fields = list(schema["$defs"]["IdealCustomerProfile"].get("properties", {}).keys())
+            icp_fields = list(
+                schema["$defs"]["IdealCustomerProfile"].get("properties", {}).keys()
+            )
             logger.debug(f"  - IdealCustomerProfile fields: {icp_fields}")
 
         if "$defs" in schema and "ProductCategoryMapping" in schema["$defs"]:
-            pcm_fields = list(schema["$defs"]["ProductCategoryMapping"].get("properties", {}).keys())
+            pcm_fields = list(
+                schema["$defs"]["ProductCategoryMapping"].get("properties", {}).keys()
+            )
             logger.debug(f"  - ProductCategoryMapping fields: {pcm_fields}")
 
     return create_agent_from_firestore_config(

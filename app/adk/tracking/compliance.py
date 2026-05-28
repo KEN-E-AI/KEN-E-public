@@ -52,13 +52,16 @@ class TraceComplianceIssue(BaseModel):
 class TraceComplianceResult(BaseModel):
     """Result of validating a single trace."""
 
-    is_compliant: bool = Field(..., description="True if the trace meets all requirements")
+    is_compliant: bool = Field(
+        ..., description="True if the trace meets all requirements"
+    )
     issues: list[TraceComplianceIssue] = Field(
         default_factory=list, description="Compliance failures"
     )
     trace_id: str | None = Field(default=None, description="Optional trace identifier")
     warnings: list[TraceComplianceIssue] = Field(
-        default_factory=list, description="Non-critical issues (missing defaulted fields)"
+        default_factory=list,
+        description="Non-critical issues (missing defaulted fields)",
     )
 
     @property
@@ -250,9 +253,7 @@ def validate_trace_compliance(
 
     for field_name, field_spec in REQUIRED_FIELDS.items():
         value = trace_metadata.get(field_name)
-        issues.extend(
-            _validate_field(field_name, value, field_spec, is_required=True)
-        )
+        issues.extend(_validate_field(field_name, value, field_spec, is_required=True))
 
     for field_name, field_spec in FIELDS_WITH_DEFAULTS.items():
         value = trace_metadata.get(field_name)

@@ -17,11 +17,11 @@ SUBSCRIPTION_PLANS_COLLECTION = "subscription-plans"
 async def create_initial_plans():
     """Create initial subscription plans in Firestore."""
     firestore_service = get_firestore_service()
-    
+
     if not firestore_service.health_check():
         print("Error: Firestore service is not available")
         return False
-    
+
     # Define initial plans
     plans = [
         {
@@ -113,7 +113,7 @@ async def create_initial_plans():
             "updated_at": datetime.now(timezone.utc).isoformat(),
         },
     ]
-    
+
     # Create plans in Firestore
     created_count = 0
     for plan in plans:
@@ -123,11 +123,11 @@ async def create_initial_plans():
                 collection=SUBSCRIPTION_PLANS_COLLECTION,
                 document_id=plan["plan_id"],
             )
-            
+
             if existing_plan:
                 print(f"Plan '{plan['plan_name']}' already exists, skipping...")
                 continue
-            
+
             # Create the plan
             firestore_service.create_document(
                 collection=SUBSCRIPTION_PLANS_COLLECTION,
@@ -136,11 +136,11 @@ async def create_initial_plans():
             )
             print(f"Created plan: {plan['plan_name']}")
             created_count += 1
-            
+
         except Exception as e:
-            print(f"Error creating plan '{plan['plan_name']}': {str(e)}")
+            print(f"Error creating plan '{plan['plan_name']}': {e!s}")
             return False
-    
+
     print(f"\nSuccessfully created {created_count} subscription plans")
     return True
 
@@ -149,7 +149,7 @@ async def main():
     """Main function."""
     print("Initializing subscription plans in Firestore...")
     success = await create_initial_plans()
-    
+
     if success:
         print("\nSubscription plans initialization completed successfully!")
         sys.exit(0)

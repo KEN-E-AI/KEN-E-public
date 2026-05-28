@@ -1,7 +1,6 @@
 """Cached user context for improved performance."""
 
 import logging
-from typing import Optional
 
 from .models import UserContext
 
@@ -31,7 +30,7 @@ class CachedUserContextService:
         """Generate cache key for user context."""
         return f"user_context:{user_id}"
 
-    def get_user_context(self, user_id: str) -> Optional[UserContext]:
+    def get_user_context(self, user_id: str) -> UserContext | None:
         """Get user context from cache."""
         redis_available = self.redis.is_available()
         logger.debug(f"Redis available: {redis_available} for user {user_id}")

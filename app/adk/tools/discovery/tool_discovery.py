@@ -23,6 +23,7 @@ except ImportError:
     def log_context(**kwargs: Any) -> dict[str, Any]:
         return {"json_fields": kwargs}
 
+
 from ..registry.tool_registry import ToolRegistry, get_default_registry
 from ..registry.tool_schema import ToolDefinition
 

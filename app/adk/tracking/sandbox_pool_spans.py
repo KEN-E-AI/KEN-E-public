@@ -1,13 +1,13 @@
 """Weave span helper for SandboxPool emit sites.
 
-Provides a single async context manager ``emit_sandbox_pool_span(name, attrs)``
+Provides a single context manager ``emit_sandbox_pool_span(name, attrs)``
 that wraps ``client.create_call`` + ``client.finish_call`` and degrades to a
 no-op when Weave is unavailable — matching the ``try/except`` discipline used
 by ``weave_before_agent_callback`` in ``callbacks.py``.
 
 Usage::
 
-    async with emit_sandbox_pool_span("sandbox_pool.get", {
+    with emit_sandbox_pool_span("sandbox_pool.get", {
         "account_id": account_id,
         "config_id": config_id,
         "cache_hit": cache_hit,
@@ -26,7 +26,7 @@ The helper guarantees:
 from __future__ import annotations
 
 import contextlib
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import Callable, Iterator
 from typing import Any, Literal
 
 from shared.structured_logging import get_structured_logger
@@ -45,15 +45,20 @@ try:
 except ImportError:  # pragma: no cover
     pass
 
-SandboxPoolSpanName = Literal["sandbox_pool.get", "sandbox_pool.evict"]
+SandboxPoolSpanName = Literal[
+    "sandbox_pool.get",
+    "sandbox_pool.evict",
+    "sandbox_pool.lease",
+    "sandbox_pool.release",
+]
 
 
-@contextlib.asynccontextmanager
-async def emit_sandbox_pool_span(
+@contextlib.contextmanager
+def emit_sandbox_pool_span(
     name: SandboxPoolSpanName,
     attrs: dict[str, Any],
-) -> AsyncGenerator[None, None]:
-    """Async context manager that emits a named Weave span for a pool event.
+) -> Iterator[None]:
+    """Context manager that emits a named Weave span for a pool event.
 
     Creates the call before yielding and finishes it after the wrapped block
     completes (or raises).  Degrades to a silent no-op when Weave is

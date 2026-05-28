@@ -176,8 +176,7 @@ class SessionRecoveryService:
         """
         # Extract session ID
         session_id = str(
-            getattr(session, "id", None)
-            or getattr(session, "session_id", session)
+            getattr(session, "id", None) or getattr(session, "session_id", session)
         )
 
         # Get timestamps
@@ -333,15 +332,17 @@ class SessionRecoveryService:
                 if text.strip().startswith("[ORGANIZATION CONTEXT]"):
                     continue
 
-                conversation_history.append({
-                    "role": role,
-                    "content": text,
-                    "timestamp": (
-                        ts.isoformat()
-                        if (ts := getattr(e, "timestamp", None))
-                        else None
-                    ),
-                })
+                conversation_history.append(
+                    {
+                        "role": role,
+                        "content": text,
+                        "timestamp": (
+                            ts.isoformat()
+                            if (ts := getattr(e, "timestamp", None))
+                            else None
+                        ),
+                    }
+                )
 
             # Update cache for faster subsequent access
             if self._redis:

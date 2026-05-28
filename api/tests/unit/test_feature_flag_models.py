@@ -422,7 +422,9 @@ class TestFeatureFlagAuditEntry:
         assert entry.flag_key == "test_flag"
         assert entry.actor_email == "admin@ken-e.ai"
         assert entry.action == "update"
-        assert entry.diff == {"description": {"before": "old desc", "after": "new desc"}}
+        assert entry.diff == {
+            "description": {"before": "old desc", "after": "new desc"}
+        }
         assert entry.created_at == "2026-01-01T00:00:00+00:00"
 
     @pytest.mark.parametrize("action", ["create", "update", "delete", "toggle_active"])
@@ -446,7 +448,9 @@ class TestFeatureFlagAuditEntry:
     def test_flag_audit_response_next_cursor_string(self) -> None:
         """FlagAuditResponse accepts next_cursor as an audit_id string."""
         entry = FeatureFlagAuditEntry.model_validate(self._audit_row())
-        resp = FlagAuditResponse(entries=[entry], next_cursor="2026-01-01T00:00:00+00:00_abc12345")
+        resp = FlagAuditResponse(
+            entries=[entry], next_cursor="2026-01-01T00:00:00+00:00_abc12345"
+        )
         assert resp.next_cursor == "2026-01-01T00:00:00+00:00_abc12345"
 
     def test_empty_entries_with_no_cursor(self) -> None:

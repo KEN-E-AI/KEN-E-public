@@ -10,10 +10,11 @@ Downloaded from W&B Weave and adapted for local use.
 import json
 import logging
 import os
-from pydantic import BaseModel
+
 import vertexai
-from vertexai.generative_models import GenerationConfig, GenerativeModel
 import weave
+from pydantic import BaseModel
+from vertexai.generative_models import GenerationConfig, GenerativeModel
 
 logger = logging.getLogger(__name__)
 
@@ -44,18 +45,18 @@ class ProductCategoryLengthScorer(weave.Scorer):
         """
         try:
             # Extract description from model output
-            description = output.get('product_category_description') or output.get(
-                'description', ''
+            description = output.get("product_category_description") or output.get(
+                "description", ""
             )
 
             char_count = len(description)
             score = 1 if 200 <= char_count <= 1000 else 0
 
-            return {'score': score, 'char_count': char_count}
+            return {"score": score, "char_count": char_count}
 
         except Exception as e:
             logger.error(f"Error in product category length scorer: {e}")
-            return {'score': 0, 'error': str(e)}
+            return {"score": 0, "error": str(e)}
 
 
 class ProductCategoryDescriptionAgreementScorer(weave.Scorer):
@@ -72,28 +73,24 @@ class ProductCategoryDescriptionAgreementScorer(weave.Scorer):
         Returns:
             dict with score=1 (agree) or score=0 (disagree)
         """
-        human_scores = output.get('human_scores', {})
-        llm_scores = output.get('llm_scores', {})
+        human_scores = output.get("human_scores", {})
+        llm_scores = output.get("llm_scores", {})
 
-        factor_name = 'category-description'
+        factor_name = "category-description"
         human_data = human_scores.get(factor_name, {})
         llm_data = llm_scores.get(factor_name, {})
 
         human_score = (
-            human_data.get('score')
-            if isinstance(human_data, dict)
-            else human_data
+            human_data.get("score") if isinstance(human_data, dict) else human_data
         )
-        llm_score = (
-            llm_data.get('score') if isinstance(llm_data, dict) else llm_data
-        )
+        llm_score = llm_data.get("score") if isinstance(llm_data, dict) else llm_data
 
         if human_score is None or llm_score is None:
-            return {'score': 0}
+            return {"score": 0}
 
         agrees = human_score == llm_score
 
-        return {'score': 1 if agrees else 0}
+        return {"score": 1 if agrees else 0}
 
 
 class ProductCategoryLengthAgreementScorer(weave.Scorer):
@@ -110,28 +107,24 @@ class ProductCategoryLengthAgreementScorer(weave.Scorer):
         Returns:
             dict with score=1 (agree) or score=0 (disagree)
         """
-        human_scores = output.get('human_scores', {})
-        llm_scores = output.get('llm_scores', {})
+        human_scores = output.get("human_scores", {})
+        llm_scores = output.get("llm_scores", {})
 
-        factor_name = 'category-description-character-length'
+        factor_name = "category-description-character-length"
         human_data = human_scores.get(factor_name, {})
         llm_data = llm_scores.get(factor_name, {})
 
         human_score = (
-            human_data.get('score')
-            if isinstance(human_data, dict)
-            else human_data
+            human_data.get("score") if isinstance(human_data, dict) else human_data
         )
-        llm_score = (
-            llm_data.get('score') if isinstance(llm_data, dict) else llm_data
-        )
+        llm_score = llm_data.get("score") if isinstance(llm_data, dict) else llm_data
 
         if human_score is None or llm_score is None:
-            return {'score': 0}
+            return {"score": 0}
 
         agrees = human_score == llm_score
 
-        return {'score': 1 if agrees else 0}
+        return {"score": 1 if agrees else 0}
 
 
 class ProductCategoryDescriptionScorer(weave.Scorer):
@@ -150,19 +143,19 @@ class ProductCategoryDescriptionScorer(weave.Scorer):
         """
         try:
             # Extract description from model output
-            description = output.get('product_category_description') or output.get(
-                'description', ''
+            description = output.get("product_category_description") or output.get(
+                "description", ""
             )
 
             if not description:
-                return {'score': 0, 'reasoning': 'Empty or missing description'}
+                return {"score": 0, "reasoning": "Empty or missing description"}
 
             vertexai.init(
-                project=os.getenv('GOOGLE_CLOUD_PROJECT', 'ken-e-dev'),
-                location=os.getenv('GOOGLE_CLOUD_LOCATION', 'us-central1'),
+                project=os.getenv("GOOGLE_CLOUD_PROJECT", "ken-e-dev"),
+                location=os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"),
             )
 
-            model = GenerativeModel('gemini-2.5-pro')
+            model = GenerativeModel("gemini-2.5-pro")
 
             prompt = f"""You are evaluating a product category description.
 
@@ -198,13 +191,15 @@ Provide your assessment as JSON with:
                 response_schema=ScorerAssessment.model_json_schema(),
             )
 
-            response = model.generate_content(prompt, generation_config=generation_config)
+            response = model.generate_content(
+                prompt, generation_config=generation_config
+            )
             assessment = json.loads(response.text)
 
-            score = 1 if assessment['passes'] == 'yes' else 0
+            score = 1 if assessment["passes"] == "yes" else 0
 
-            return {'score': score, 'reasoning': assessment['reasoning']}
+            return {"score": score, "reasoning": assessment["reasoning"]}
 
         except Exception as e:
             logger.error(f"Error in product category description scorer: {e}")
-            return {'score': 0, 'error': str(e)}
+            return {"score": 0, "error": str(e)}

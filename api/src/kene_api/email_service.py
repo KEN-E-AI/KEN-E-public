@@ -7,9 +7,10 @@ from python_http_client.exceptions import HTTPError
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Content, Email, Mail, To
 
+from shared.secrets import get_env_or_secret  # Supports sm:// format
+
 from .exceptions import EmailServiceInitializationError, SecretManagerError
 from .templates.template_loader import template_loader
-from shared.secrets import get_env_or_secret  # Supports sm:// format
 
 logger = logging.getLogger(__name__)
 

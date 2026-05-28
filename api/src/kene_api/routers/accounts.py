@@ -990,9 +990,7 @@ async def delete_account(
             logger.error(
                 f"Failed to delete skill GCS blobs for account {account_id}: {e}"
             )
-            cleanup_results["cleanup_errors"].append(
-                f"Skills GCS cleanup failed: {e}"
-            )
+            cleanup_results["cleanup_errors"].append(f"Skills GCS cleanup failed: {e}")
 
         # Recursively delete all Firestore data under accounts/{account_id}.
         # Covers every Shape B subcollection that exists under the account

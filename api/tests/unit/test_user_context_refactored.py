@@ -421,9 +421,7 @@ class TestApiTestBypassToken:
         creds = MagicMock()
         creds.credentials = "test-bypass-secret"
 
-        with patch(
-            "src.kene_api.auth.user_context.settings"
-        ) as mock_settings:
+        with patch("src.kene_api.auth.user_context.settings") as mock_settings:
             mock_settings.api_test_bypass_token = "test-bypass-secret"
 
             result = await _get_user_context_with_limiter(
@@ -444,9 +442,7 @@ class TestApiTestBypassToken:
         creds = MagicMock()
         creds.credentials = "test-bypass-secret:acc-xyz"
 
-        with patch(
-            "src.kene_api.auth.user_context.settings"
-        ) as mock_settings:
+        with patch("src.kene_api.auth.user_context.settings") as mock_settings:
             mock_settings.api_test_bypass_token = "test-bypass-secret"
 
             result = await _get_user_context_with_limiter(
@@ -466,20 +462,24 @@ class TestApiTestBypassToken:
         """Unrecognized bearer value falls through to normal Firebase verification."""
         # mock_credentials has bearer "test-token-123" which does not match the
         # bypass token "test-bypass-secret", so the bypass path is not taken.
-        with patch(
-            "src.kene_api.auth.user_context.settings"
-        ) as mock_settings, patch(
-            "src.kene_api.auth.user_context._verify_and_decode_token",
-            new_callable=AsyncMock,
-        ) as mock_verify, patch(
-            "src.kene_api.auth.user_context._apply_rate_limiting",
-            new_callable=AsyncMock,
-        ), patch(
-            "src.kene_api.auth.user_context._check_token_revocation",
-            new_callable=AsyncMock,
-        ), patch(
-            "src.kene_api.auth.cached_user_context.get_cached_user_context_service"
-        ) as mock_cache_factory:
+        with (
+            patch("src.kene_api.auth.user_context.settings") as mock_settings,
+            patch(
+                "src.kene_api.auth.user_context._verify_and_decode_token",
+                new_callable=AsyncMock,
+            ) as mock_verify,
+            patch(
+                "src.kene_api.auth.user_context._apply_rate_limiting",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.kene_api.auth.user_context._check_token_revocation",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "src.kene_api.auth.cached_user_context.get_cached_user_context_service"
+            ) as mock_cache_factory,
+        ):
             mock_settings.api_test_bypass_token = "test-bypass-secret"
             mock_settings.load_test_bypass_uid = ""
             mock_verify.return_value = (
@@ -501,14 +501,10 @@ class TestApiTestBypassToken:
                 "permissions": {"organizations": {}, "account_permissions": {}},
                 "roles": [],
             }
-            mock_firestore_db.collection.return_value.document.return_value.get.return_value = (
-                mock_doc
-            )
+            mock_firestore_db.collection.return_value.document.return_value.get.return_value = mock_doc
             mock_firestore_service.get_client.return_value = mock_firestore_db
 
-            with patch(
-                "src.kene_api.auth.user_context.get_audit_logger"
-            ) as mock_audit:
+            with patch("src.kene_api.auth.user_context.get_audit_logger") as mock_audit:
                 mock_audit.return_value = AsyncMock()
                 result = await _get_user_context_with_limiter(
                     mock_request, mock_credentials, mock_firestore_service, None

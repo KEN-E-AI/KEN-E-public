@@ -7,7 +7,9 @@ from fastapi import HTTPException
 from src.kene_api.chat.mark_read_limiter import MarkReadRateLimiter
 
 
-def _make_limiter(max_requests: int = 3, window_seconds: int = 60) -> MarkReadRateLimiter:
+def _make_limiter(
+    max_requests: int = 3, window_seconds: int = 60
+) -> MarkReadRateLimiter:
     return MarkReadRateLimiter(max_requests=max_requests, window_seconds=window_seconds)
 
 

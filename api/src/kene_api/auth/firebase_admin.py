@@ -2,7 +2,6 @@
 
 import logging
 import os
-from typing import Optional
 
 import firebase_admin
 from firebase_admin import auth, credentials
@@ -11,7 +10,7 @@ from google.auth import default
 logger = logging.getLogger(__name__)
 
 # Global Firebase app instance
-_firebase_app: Optional[firebase_admin.App] = None
+_firebase_app: firebase_admin.App | None = None
 
 
 def initialize_firebase_admin() -> firebase_admin.App:
@@ -102,7 +101,7 @@ def verify_id_token(id_token: str) -> dict:
         return decoded_token
     except Exception as e:
         logger.error(f"Failed to verify ID token: {e}")
-        raise ValueError(f"Invalid token: {str(e)}")
+        raise ValueError(f"Invalid token: {e!s}")
 
 
 def get_user(uid: str) -> auth.UserRecord:
@@ -123,7 +122,7 @@ def get_user(uid: str) -> auth.UserRecord:
         return user
     except Exception as e:
         logger.error(f"Failed to get user {uid}: {e}")
-        raise ValueError(f"User not found: {str(e)}")
+        raise ValueError(f"User not found: {e!s}")
 
 
 def get_user_by_email(email: str) -> auth.UserRecord:
@@ -143,4 +142,4 @@ def get_user_by_email(email: str) -> auth.UserRecord:
         return auth.get_user_by_email(email)
     except Exception as e:
         logger.error(f"Failed to get user by email {email}: {e}")
-        raise ValueError(f"User not found: {str(e)}")
+        raise ValueError(f"User not found: {e!s}")

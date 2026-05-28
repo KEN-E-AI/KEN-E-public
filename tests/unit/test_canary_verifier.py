@@ -22,15 +22,21 @@ def _make_stdout(
     rand = bytes.fromhex(urandom_hex) if urandom_hex else b"\xab" * 32
     rand_hex = urandom_hex if urandom_hex is not None else rand.hex()
     payload = str(ns).encode() + b"|" + rand
-    digest = sha256_proof if sha256_proof is not None else hashlib.sha256(payload).hexdigest()
+    digest = (
+        sha256_proof
+        if sha256_proof is not None
+        else hashlib.sha256(payload).hexdigest()
+    )
     big_int = big_int_check if big_int_check is not None else _BIG_INT_EXPECTED
-    return "\n".join([
-        f"time_ns={ns}",
-        f"urandom_hex={rand_hex}",
-        f"sha256_proof={digest}",
-        f"big_int_check={big_int}",
-        extra_lines,
-    ])
+    return "\n".join(
+        [
+            f"time_ns={ns}",
+            f"urandom_hex={rand_hex}",
+            f"sha256_proof={digest}",
+            f"big_int_check={big_int}",
+            extra_lines,
+        ]
+    )
 
 
 class TestVerifyCanaryPass:
@@ -51,18 +57,22 @@ class TestVerifyCanaryPass:
         rand_hex = rand.hex()
         payload = str(ns).encode() + b"|" + rand
         digest = hashlib.sha256(payload).hexdigest()
-        stdout = "\n".join([
-            f"sha256_proof={digest}",
-            f"big_int_check={_BIG_INT_EXPECTED}",
-            f"urandom_hex={rand_hex}",
-            f"time_ns={ns}",
-        ])
+        stdout = "\n".join(
+            [
+                f"sha256_proof={digest}",
+                f"big_int_check={_BIG_INT_EXPECTED}",
+                f"urandom_hex={rand_hex}",
+                f"time_ns={ns}",
+            ]
+        )
         ok, _reason = verify_canary(stdout)
         assert ok is True
 
 
 class TestVerifyCanaryMissingFields:
-    @pytest.mark.parametrize("missing", ["time_ns", "urandom_hex", "sha256_proof", "big_int_check"])
+    @pytest.mark.parametrize(
+        "missing", ["time_ns", "urandom_hex", "sha256_proof", "big_int_check"]
+    )
     def test_missing_field_returns_false(self, missing: str) -> None:
         lines = _make_stdout().splitlines()
         lines = [ln for ln in lines if not ln.startswith(f"{missing}=")]
@@ -121,12 +131,14 @@ class TestVerifyCanaryInvalidHex:
         bad_hex = "0x" + "ab" * 31
         payload = str(ns).encode() + b"|" + (b"\xab" * 31)
         digest = hashlib.sha256(payload).hexdigest()
-        stdout = "\n".join([
-            f"time_ns={ns}",
-            f"urandom_hex={bad_hex}",
-            f"sha256_proof={digest}",
-            f"big_int_check={_BIG_INT_EXPECTED}",
-        ])
+        stdout = "\n".join(
+            [
+                f"time_ns={ns}",
+                f"urandom_hex={bad_hex}",
+                f"sha256_proof={digest}",
+                f"big_int_check={_BIG_INT_EXPECTED}",
+            ]
+        )
         ok, reason = verify_canary(stdout)
         assert ok is False
         assert "invalid_field" in reason

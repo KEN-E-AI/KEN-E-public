@@ -2,12 +2,11 @@
 
 import logging
 from datetime import datetime, timedelta
-from typing import Optional
 
 from google.cloud import firestore
 
 from ..firestore import get_firestore_service
-from .audit_logger import get_audit_logger, SecurityEventType
+from .audit_logger import SecurityEventType, get_audit_logger
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +36,9 @@ class TokenRevocationService:
         self,
         token_id: str,
         user_id: str,
-        reason: Optional[str] = None,
-        revoked_by: Optional[str] = None,
-        expires_at: Optional[datetime] = None,
+        reason: str | None = None,
+        revoked_by: str | None = None,
+        expires_at: datetime | None = None,
     ) -> None:
         """Revoke a token.
 
@@ -85,8 +84,8 @@ class TokenRevocationService:
     async def revoke_all_user_tokens(
         self,
         user_id: str,
-        reason: Optional[str] = None,
-        revoked_by: Optional[str] = None,
+        reason: str | None = None,
+        revoked_by: str | None = None,
     ) -> None:
         """Revoke all tokens for a user.
 
@@ -134,7 +133,7 @@ class TokenRevocationService:
         logger.info(f"All tokens revoked for user {user_id}")
 
     async def is_token_revoked(
-        self, token_id: str, user_id: str, issued_at: Optional[float] = None
+        self, token_id: str, user_id: str, issued_at: float | None = None
     ) -> bool:
         """Check if a token is revoked.
 

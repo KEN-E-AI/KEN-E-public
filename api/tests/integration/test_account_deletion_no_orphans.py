@@ -217,7 +217,11 @@ def _app_overrides(emulator_db: Any) -> Generator[dict[str, Any], None, None]:
 
     app.dependency_overrides[get_current_user_context] = _super_admin
 
-    yield {"neo4j": mock_neo4j, "storage": mock_storage, "skill_storage": mock_skill_storage}
+    yield {
+        "neo4j": mock_neo4j,
+        "storage": mock_storage,
+        "skill_storage": mock_skill_storage,
+    }
 
     for dep in (
         get_neo4j_service,
@@ -558,7 +562,9 @@ class TestAccountDeletionNoOrphans:
         that the blob count returned by the helper flows through to the response.
         """
         # Configure mock to return 7 blobs deleted (arbitrary non-zero count).
-        _app_overrides["skill_storage"].delete_account_prefix = MagicMock(return_value=7)
+        _app_overrides["skill_storage"].delete_account_prefix = MagicMock(
+            return_value=7
+        )
 
         _seed_full_account(emulator_db, account_id, run_id)
 
@@ -604,6 +610,8 @@ class TestAccountDeletionNoOrphans:
         # Error captured in cleanup_errors with the Skills-GCS prefix
         assert any(
             "Skills GCS cleanup failed" in err for err in data["cleanup_errors"]
-        ), f"Expected 'Skills GCS cleanup failed' in cleanup_errors, got: {data['cleanup_errors']}"
+        ), (
+            f"Expected 'Skills GCS cleanup failed' in cleanup_errors, got: {data['cleanup_errors']}"
+        )
         # Count stays at 0 (no blobs deleted)
         assert data["skills_gcs_blobs_deleted"] == 0

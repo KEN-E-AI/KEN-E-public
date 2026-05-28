@@ -3,7 +3,7 @@ Pydantic models for strategy generation parameters and responses.
 """
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -22,10 +22,10 @@ class StrategyParameters(BaseModel):
     annual_ad_budget: float = Field(
         default=0.0, description="Annual advertising budget", ge=0.0
     )
-    project_id: Optional[str] = Field(
+    project_id: str | None = Field(
         default=None, description="GCP project ID for resources"
     )
-    uploaded_documents: List[str] = Field(
+    uploaded_documents: list[str] = Field(
         default_factory=list, description="URLs of uploaded documents"
     )
 
@@ -46,7 +46,7 @@ class StrategyParameters(BaseModel):
 
     @field_validator("project_id", mode="before")
     @classmethod
-    def set_default_project(cls, v: Optional[str]) -> str:
+    def set_default_project(cls, v: str | None) -> str:
         """Set default project ID if not provided."""
         if not v:
             return os.getenv("VERTEX_AI_PROJECT_ID", "ken-e-dev")
@@ -54,7 +54,7 @@ class StrategyParameters(BaseModel):
 
     @field_validator("uploaded_documents", mode="before")
     @classmethod
-    def parse_documents(cls, v: Any) -> List[str]:
+    def parse_documents(cls, v: Any) -> list[str]:
         """Parse uploaded documents from various formats."""
         if isinstance(v, list):
             return v
@@ -80,14 +80,14 @@ class StrategyResponse(BaseModel):
     source: str = Field(default="strategy_specialist", description="Source agent")
     agent: str = Field(default="strategy", description="Agent type")
     account_id: str = Field(..., description="Account ID for the strategy")
-    error: Optional[str] = Field(default=None, description="Error message if any")
+    error: str | None = Field(default=None, description="Error message if any")
 
     model_config = ConfigDict(
         use_enum_values=True,
     )
 
 
-def parse_strategy_query(query: str) -> Dict[str, Any]:
+def parse_strategy_query(query: str) -> dict[str, Any]:
     """
     Parse a formatted strategy query string into a dictionary.
 

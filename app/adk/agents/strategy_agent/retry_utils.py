@@ -8,7 +8,8 @@ import functools
 import logging
 import random
 import time
-from typing import Any, Callable, Optional, Tuple, Type, Union
+from collections.abc import Callable
+from typing import Any
 
 from google.api_core import exceptions as google_exceptions
 from google.cloud import firestore
@@ -52,8 +53,8 @@ class RetryConfig:
         max_delay: float = 60.0,
         exponential_base: float = 2.0,
         jitter: bool = True,
-        retriable_exceptions: Optional[Tuple[Type[Exception], ...]] = None,
-        on_retry: Optional[Callable[[Exception, int], None]] = None,
+        retriable_exceptions: tuple[type[Exception], ...] | None = None,
+        on_retry: Callable[[Exception, int], None] | None = None,
     ):
         """Initialize retry configuration.
 
@@ -104,7 +105,7 @@ BATCH_CONFIG = RetryConfig(max_attempts=3, initial_delay=2.0, max_delay=120.0)
 
 
 def with_firestore_retry(
-    config: Optional[RetryConfig] = None, operation_name: Optional[str] = None
+    config: RetryConfig | None = None, operation_name: str | None = None
 ) -> Callable:
     """Decorator to add retry logic to Firestore operations.
 
@@ -193,7 +194,7 @@ def with_firestore_retry(
     return decorator
 
 
-def with_read_retry(operation_name: Optional[str] = None) -> Callable:
+def with_read_retry(operation_name: str | None = None) -> Callable:
     """Decorator specifically for read operations with optimized retry config.
 
     Args:
@@ -205,7 +206,7 @@ def with_read_retry(operation_name: Optional[str] = None) -> Callable:
     return with_firestore_retry(config=READ_CONFIG, operation_name=operation_name)
 
 
-def with_write_retry(operation_name: Optional[str] = None) -> Callable:
+def with_write_retry(operation_name: str | None = None) -> Callable:
     """Decorator specifically for write operations with optimized retry config.
 
     Args:
@@ -217,7 +218,7 @@ def with_write_retry(operation_name: Optional[str] = None) -> Callable:
     return with_firestore_retry(config=WRITE_CONFIG, operation_name=operation_name)
 
 
-def with_batch_retry(operation_name: Optional[str] = None) -> Callable:
+def with_batch_retry(operation_name: str | None = None) -> Callable:
     """Decorator specifically for batch operations with optimized retry config.
 
     Args:
@@ -245,7 +246,7 @@ class RetryableTransaction:
     def __init__(
         self,
         db: firestore.Client,
-        config: Optional[RetryConfig] = None,
+        config: RetryConfig | None = None,
         operation_name: str = "transaction",
     ):
         """Initialize retryable transaction.
@@ -321,7 +322,7 @@ class RetryableTransaction:
 
 
 def retry_on_conflict(
-    func: Callable, max_attempts: int = 3, operation_name: Optional[str] = None
+    func: Callable, max_attempts: int = 3, operation_name: str | None = None
 ) -> Any:
     """Execute a function with retry on Firestore conflict errors.
 

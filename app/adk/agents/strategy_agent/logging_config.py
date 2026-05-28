@@ -9,8 +9,9 @@ import json
 import logging
 import traceback
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Optional
+from typing import Any
 
 try:
     import google.cloud.logging
@@ -36,7 +37,7 @@ class StrategyAgentLogger:
             use_cloud_logging: Whether to use Google Cloud Logging (if available)
         """
         self.agent_name = agent_name
-        self.execution_id: Optional[str] = None
+        self.execution_id: str | None = None
 
         # Initialize Cloud Logging if available and requested
         self.cloud_logger = None
@@ -52,7 +53,7 @@ class StrategyAgentLogger:
         self.local_logger = logging.getLogger(f"strategy_agent.{agent_name}")
         self.local_logger.setLevel(logging.INFO)
 
-    def _log_struct(self, data: Dict[str, Any], severity: str = "INFO") -> None:
+    def _log_struct(self, data: dict[str, Any], severity: str = "INFO") -> None:
         """Log structured data to both Cloud and local logging.
 
         Args:
@@ -82,7 +83,7 @@ class StrategyAgentLogger:
         log_method(json.dumps(data, default=str))
 
     def log_agent_start(
-        self, execution_id: str, input_tokens: int, context: Dict[str, Any]
+        self, execution_id: str, input_tokens: int, context: dict[str, Any]
     ) -> None:
         """Log the start of agent execution.
 
@@ -108,8 +109,8 @@ class StrategyAgentLogger:
     def log_token_usage(
         self,
         phase: str,
-        tokens: Dict[str, int],
-        percentage_of_limit: Optional[float] = None,
+        tokens: dict[str, int],
+        percentage_of_limit: float | None = None,
     ) -> None:
         """Log token usage at different phases.
 
@@ -131,7 +132,7 @@ class StrategyAgentLogger:
     def log_error(
         self,
         error: Exception,
-        context: Optional[Dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
         include_traceback: bool = True,
     ) -> None:
         """Log an error with full context.
@@ -159,9 +160,9 @@ class StrategyAgentLogger:
     def log_completion(
         self,
         success: bool,
-        output_tokens: Optional[int] = None,
-        duration_seconds: Optional[float] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        output_tokens: int | None = None,
+        duration_seconds: float | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Log agent completion.
 
@@ -189,9 +190,9 @@ class StrategyAgentLogger:
         self,
         model: str,
         prompt_tokens: int,
-        response_tokens: Optional[int] = None,
-        latency_seconds: Optional[float] = None,
-        error: Optional[str] = None,
+        response_tokens: int | None = None,
+        latency_seconds: float | None = None,
+        error: str | None = None,
     ) -> None:
         """Log an LLM API call.
 
@@ -224,7 +225,7 @@ class StrategyAgentLogger:
 
 
 def safe_agent_execution(
-    agent_name: Optional[str] = None, check_token_limits: bool = True
+    agent_name: str | None = None, check_token_limits: bool = True
 ) -> Callable:
     """Decorator to safely execute agent functions with logging and error handling.
 

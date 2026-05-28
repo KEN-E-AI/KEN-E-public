@@ -8,8 +8,8 @@ from ..models.kene_models import (
     ACCOUNT_ID_DESCRIPTION,
     ActivityScanRequest,
     ActivityScanResponse,
-    Notification,
     CreateNotificationRequest,
+    Notification,
     SuccessResponse,
 )
 

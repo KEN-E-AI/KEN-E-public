@@ -38,7 +38,9 @@ def _make_fake_stream(chunks: list[Any]):
     yielding the text fragment.
     """
 
-    async def _fake_stream(*, accumulator: SessionTurnAccumulator | None = None, **_kwargs: Any):
+    async def _fake_stream(
+        *, accumulator: SessionTurnAccumulator | None = None, **_kwargs: Any
+    ):
         for chunk in chunks:
             if accumulator is not None:
                 accumulator.add_stream_chunk(chunk)
@@ -60,8 +62,9 @@ class TestFlushStreamTurn:
         accumulator.add_stream_chunk(_stream_chunk("inv-9", prompt=500, candidates=120))
 
         mock_apply = MagicMock(return_value={"status": "applied"})
-        with patch.object(chat_module, "apply_side_table_update", mock_apply), patch.object(
-            chat_module, "_get_firestore_client", lambda: MagicMock()
+        with (
+            patch.object(chat_module, "apply_side_table_update", mock_apply),
+            patch.object(chat_module, "_get_firestore_client", lambda: MagicMock()),
         ):
             await chat_module._flush_stream_turn(
                 session_id="sess-9",
@@ -84,11 +87,14 @@ class TestFlushStreamTurn:
     async def test_clean_turn_writes_stop_stamp_only(self) -> None:
         """A clean turn writes only the stop-stamp under the distinct api-finally key."""
         accumulator = SessionTurnAccumulator()
-        accumulator.add_stream_chunk(_stream_chunk("inv-clean", prompt=999, candidates=999))
+        accumulator.add_stream_chunk(
+            _stream_chunk("inv-clean", prompt=999, candidates=999)
+        )
 
         mock_apply = MagicMock(return_value={"status": "applied"})
-        with patch.object(chat_module, "apply_side_table_update", mock_apply), patch.object(
-            chat_module, "_get_firestore_client", lambda: MagicMock()
+        with (
+            patch.object(chat_module, "apply_side_table_update", mock_apply),
+            patch.object(chat_module, "_get_firestore_client", lambda: MagicMock()),
         ):
             await chat_module._flush_stream_turn(
                 session_id="sess-clean",
@@ -104,13 +110,16 @@ class TestFlushStreamTurn:
         assert set(kwargs["delta"].keys()) == {"last_agent_stopped_at", "updated_at"}
 
     @pytest.mark.asyncio
-    async def test_failed_turn_without_invocation_id_falls_back_to_stop_stamp(self) -> None:
+    async def test_failed_turn_without_invocation_id_falls_back_to_stop_stamp(
+        self,
+    ) -> None:
         """A failure before any chunk arrived has no invocation id — stop-stamp only."""
         accumulator = SessionTurnAccumulator()  # no chunks → invocation_id is None
 
         mock_apply = MagicMock(return_value={"status": "applied"})
-        with patch.object(chat_module, "apply_side_table_update", mock_apply), patch.object(
-            chat_module, "_get_firestore_client", lambda: MagicMock()
+        with (
+            patch.object(chat_module, "apply_side_table_update", mock_apply),
+            patch.object(chat_module, "_get_firestore_client", lambda: MagicMock()),
         ):
             await chat_module._flush_stream_turn(
                 session_id="sess-noinv",
@@ -154,8 +163,9 @@ class TestFlushStreamTurn:
     async def test_side_table_failure_never_raises(self) -> None:
         """A side-table error must not surface to the SSE client."""
         mock_apply = MagicMock(side_effect=RuntimeError("firestore down"))
-        with patch.object(chat_module, "apply_side_table_update", mock_apply), patch.object(
-            chat_module, "_get_firestore_client", lambda: MagicMock()
+        with (
+            patch.object(chat_module, "apply_side_table_update", mock_apply),
+            patch.object(chat_module, "_get_firestore_client", lambda: MagicMock()),
         ):
             # Must not raise.
             await chat_module._flush_stream_turn(
@@ -184,10 +194,14 @@ class TestStreamCompletionCancellation:
         ]
         mock_apply = MagicMock(return_value={"status": "applied"})
 
-        with patch.object(
-            chat_module.agent_client, "stream_chat_completion", _make_fake_stream(chunks)
-        ), patch.object(chat_module, "apply_side_table_update", mock_apply), patch.object(
-            chat_module, "_get_firestore_client", lambda: MagicMock()
+        with (
+            patch.object(
+                chat_module.agent_client,
+                "stream_chat_completion",
+                _make_fake_stream(chunks),
+            ),
+            patch.object(chat_module, "apply_side_table_update", mock_apply),
+            patch.object(chat_module, "_get_firestore_client", lambda: MagicMock()),
         ):
             gen = chat_module._stream_completion_sse(
                 messages=[],
@@ -221,10 +235,14 @@ class TestStreamCompletionCancellation:
         chunks = [_stream_chunk("inv-clean", prompt=300, candidates=90)]
         mock_apply = MagicMock(return_value={"status": "applied"})
 
-        with patch.object(
-            chat_module.agent_client, "stream_chat_completion", _make_fake_stream(chunks)
-        ), patch.object(chat_module, "apply_side_table_update", mock_apply), patch.object(
-            chat_module, "_get_firestore_client", lambda: MagicMock()
+        with (
+            patch.object(
+                chat_module.agent_client,
+                "stream_chat_completion",
+                _make_fake_stream(chunks),
+            ),
+            patch.object(chat_module, "apply_side_table_update", mock_apply),
+            patch.object(chat_module, "_get_firestore_client", lambda: MagicMock()),
         ):
             gen = chat_module._stream_completion_sse(
                 messages=[],
@@ -245,17 +263,23 @@ class TestStreamCompletionCancellation:
     async def test_agent_failure_mid_stream_flushes_partial_counts(self) -> None:
         """An agent-side exception is also a failed turn — partial counts flushed."""
 
-        async def _failing_stream(*, accumulator: SessionTurnAccumulator | None = None, **_kwargs: Any):
+        async def _failing_stream(
+            *, accumulator: SessionTurnAccumulator | None = None, **_kwargs: Any
+        ):
             if accumulator is not None:
-                accumulator.add_stream_chunk(_stream_chunk("inv-fail", prompt=200, candidates=50))
+                accumulator.add_stream_chunk(
+                    _stream_chunk("inv-fail", prompt=200, candidates=50)
+                )
             yield "chunk-text"
             raise RuntimeError("agent exploded")
 
         mock_apply = MagicMock(return_value={"status": "applied"})
-        with patch.object(
-            chat_module.agent_client, "stream_chat_completion", _failing_stream
-        ), patch.object(chat_module, "apply_side_table_update", mock_apply), patch.object(
-            chat_module, "_get_firestore_client", lambda: MagicMock()
+        with (
+            patch.object(
+                chat_module.agent_client, "stream_chat_completion", _failing_stream
+            ),
+            patch.object(chat_module, "apply_side_table_update", mock_apply),
+            patch.object(chat_module, "_get_firestore_client", lambda: MagicMock()),
         ):
             gen = chat_module._stream_completion_sse(
                 messages=[],

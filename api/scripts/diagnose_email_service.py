@@ -37,7 +37,7 @@ print("-" * 80)
 gcp_project = os.getenv("GOOGLE_CLOUD_PROJECT", "")
 print(f"GOOGLE_CLOUD_PROJECT: {gcp_project if gcp_project else '✗ NOT SET'}")
 if gcp_project:
-    print(f"  - Will be used for Secret Manager lookups")
+    print("  - Will be used for Secret Manager lookups")
 else:
     print("  ⚠️  WARNING: Required for Secret Manager (sm://) resolution")
 print()
@@ -49,28 +49,37 @@ app_base_url = os.getenv("APP_BASE_URL", "http://localhost:8080")
 print(f"SENDGRID_API_KEY: {'✓ Set' if api_key else '✗ NOT SET'}")
 if api_key:
     if api_key.startswith("sm://"):
-        print(f"  - Format: Secret Manager reference")
+        print("  - Format: Secret Manager reference")
         print(f"  - Secret path: {api_key}")
-        print(f"  - Will attempt to fetch from Secret Manager using project: {gcp_project or 'ken-e-dev (default)'}")
+        print(
+            f"  - Will attempt to fetch from Secret Manager using project: {gcp_project or 'ken-e-dev (default)'}"
+        )
         # Try to fetch the actual secret
         try:
             from shared.secrets import get_env_or_secret
+
             actual_key = get_env_or_secret("SENDGRID_API_KEY")
             if actual_key and actual_key.startswith("SG."):
-                print(f"  - ✓ Successfully fetched secret from Secret Manager")
+                print("  - ✓ Successfully fetched secret from Secret Manager")
                 print(f"  - Actual key starts with: {actual_key[:10]}...")
             elif actual_key:
-                print(f"  - ⚠️  Fetched value but doesn't start with 'SG.'")
-                print(f"  - Starts with: {actual_key[:10] if len(actual_key) > 10 else actual_key}")
+                print("  - ⚠️  Fetched value but doesn't start with 'SG.'")
+                print(
+                    f"  - Starts with: {actual_key[:10] if len(actual_key) > 10 else actual_key}"
+                )
             else:
-                print(f"  - ✗ Failed to fetch secret from Secret Manager")
+                print("  - ✗ Failed to fetch secret from Secret Manager")
         except Exception as e:
             print(f"  - ✗ Error fetching secret: {e}")
     else:
-        print(f"  - Format: Direct API key")
+        print("  - Format: Direct API key")
         print(f"  - Length: {len(api_key)} characters")
         print(f"  - Starts with 'SG.': {api_key.startswith('SG.')}")
-        print(f"  - Preview: {api_key[:10]}..." if len(api_key) > 10 else f"  - Value: {api_key}")
+        print(
+            f"  - Preview: {api_key[:10]}..."
+            if len(api_key) > 10
+            else f"  - Value: {api_key}"
+        )
 else:
     print("  ⚠️  WARNING: SendGrid API key is not set!")
     print("  Set it with: export SENDGRID_API_KEY='your-key-here'")
@@ -102,6 +111,7 @@ try:
 except Exception as e:
     print(f"✗ Error initializing email service: {e}")
     import traceback
+
     traceback.print_exc()
 
 print()
@@ -113,7 +123,9 @@ if not api_key:
     print("❌ ISSUE FOUND: SendGrid API key is not configured")
     print()
     print("To fix:")
-    print("1. Get your SendGrid API key from https://app.sendgrid.com/settings/api_keys")
+    print(
+        "1. Get your SendGrid API key from https://app.sendgrid.com/settings/api_keys"
+    )
     print("2. Set it as an environment variable:")
     print("   export SENDGRID_API_KEY='SG.your-key-here'")
     print("3. Or add it to your .env file")

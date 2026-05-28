@@ -114,9 +114,7 @@ def invoke_pipeline(
         tuple[str, dict[str, Any], list[Event]]: (response_text, final_session_state, events)
         On timeout or error: (error_sentinel_text, {}, [])
     """
-    return _invoke_pipeline_collecting_events(
-        agent, query, user_id, session_id, state
-    )
+    return _invoke_pipeline_collecting_events(agent, query, user_id, session_id, state)
 
 
 async def _run_pipeline_collecting_events(
@@ -251,13 +249,19 @@ def dispatch_with_context(dispatch_func: Callable) -> Callable[[str], str]:
         logger.info(f"[DISPATCH-WRAPPER] Tool called: {dispatch_func.__name__}")
         logger.info(f"[DISPATCH-WRAPPER] Query length: {len(query)} chars")
         logger.info(f"[DISPATCH-WRAPPER] Query preview: {query[:200]}")
-        logger.info(f"[DISPATCH-WRAPPER] tool_context present: {tool_context is not None}")
+        logger.info(
+            f"[DISPATCH-WRAPPER] tool_context present: {tool_context is not None}"
+        )
         logger.info(f"[DISPATCH-WRAPPER] tool_context type: {type(tool_context)}")
-        logger.info(f"[DISPATCH-WRAPPER] kwargs keys: {list(kwargs.keys()) if kwargs else []}")
+        logger.info(
+            f"[DISPATCH-WRAPPER] kwargs keys: {list(kwargs.keys()) if kwargs else []}"
+        )
 
         if tool_context:
             logger.info("[DISPATCH-WRAPPER] ✅ ToolContext received!")
-            logger.info(f"[DISPATCH-WRAPPER] State keys: {list(tool_context.state.keys()) if hasattr(tool_context, 'state') else 'no state attr'}")
+            logger.info(
+                f"[DISPATCH-WRAPPER] State keys: {list(tool_context.state.keys()) if hasattr(tool_context, 'state') else 'no state attr'}"
+            )
         else:
             logger.warning("[DISPATCH-WRAPPER] ⚠️  NO ToolContext - will use fallback")
         logger.info("[DISPATCH-WRAPPER] ========== TOOL CALL INFO END ==========")
@@ -273,7 +277,9 @@ def dispatch_with_context(dispatch_func: Callable) -> Callable[[str], str]:
             ga_credentials = tool_context.state.get("ga_credentials")
             logger.info("[DISPATCH-WRAPPER] Retrieved from session state:")
             logger.info(f"  - account_id: {account_id}")
-            logger.info(f"  - ga_credentials: {'present' if ga_credentials else 'none'}")
+            logger.info(
+                f"  - ga_credentials: {'present' if ga_credentials else 'none'}"
+            )
 
             # Build tenant_context from session state
             # Credentials flow via McpToolset header_provider (no encoding needed)
@@ -283,7 +289,9 @@ def dispatch_with_context(dispatch_func: Callable) -> Callable[[str], str]:
                     "selected_property_ids": ga_credentials.get(
                         "selected_property_ids", []
                     ),
-                    "selected_properties": ga_credentials.get("selected_properties", []),
+                    "selected_properties": ga_credentials.get(
+                        "selected_properties", []
+                    ),
                     "account_id": account_id,
                 }
                 logger.info(
@@ -302,6 +310,7 @@ def dispatch_with_context(dispatch_func: Callable) -> Callable[[str], str]:
                     org_context = tool_context.state.get("organization_context")
                     if org_context:
                         from shared.context_utils import inject_organization_context
+
                         query = inject_organization_context(query, org_context)
                         logger.info(
                             f"[DISPATCH-WRAPPER] Org context injected from session state, length: {len(query)}"

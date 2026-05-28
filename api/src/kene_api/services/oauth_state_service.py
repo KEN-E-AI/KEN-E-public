@@ -64,7 +64,9 @@ class OAuthStateService:
         # Store in Firestore (run sync operation in thread pool)
         doc_ref = self.collection.document(state_token)
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, doc_ref.set, oauth_state.model_dump(mode="json"))
+        await loop.run_in_executor(
+            None, doc_ref.set, oauth_state.model_dump(mode="json")
+        )
 
         logger.info(f"Created OAuth state for user {user_id}, account {account_id}")
 
@@ -147,7 +149,9 @@ class OAuthStateService:
 
             # Run sync operations in thread pool
             loop = asyncio.get_event_loop()
-            expired_docs = await loop.run_in_executor(None, list, expired_query.stream())
+            expired_docs = await loop.run_in_executor(
+                None, list, expired_query.stream()
+            )
 
             count = 0
             batch = self.db.batch()
@@ -176,4 +180,3 @@ class OAuthStateService:
         except Exception as e:
             logger.error(f"Error cleaning up expired states: {e}")
             return 0
-

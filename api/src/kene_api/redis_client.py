@@ -3,7 +3,7 @@
 import json
 import logging
 import os
-from typing import Any, Optional
+from typing import Any
 
 import redis
 from redis.exceptions import ConnectionError, TimeoutError
@@ -65,7 +65,7 @@ class RedisService:
 
     def __init__(self):
         """Initialize Redis connection."""
-        self.client: Optional[redis.Redis] = None
+        self.client: redis.Redis | None = None
         self._initialized = False
 
     def initialize(self) -> None:
@@ -117,7 +117,7 @@ class RedisService:
         except Exception:
             return False
 
-    def get(self, key: str) -> Optional[str]:
+    def get(self, key: str) -> str | None:
         """Get value from cache."""
         if not self.client:
             return None
@@ -128,7 +128,7 @@ class RedisService:
             logger.error(f"Redis get error for key {key}: {e}")
             return None
 
-    def set(self, key: str, value: str, ttl: Optional[int] = None) -> bool:
+    def set(self, key: str, value: str, ttl: int | None = None) -> bool:
         """Set value in cache with optional TTL."""
         if not self.client:
             return False
@@ -153,7 +153,7 @@ class RedisService:
             logger.error(f"Redis delete error for key {key}: {e}")
             return False
 
-    def get_json(self, key: str) -> Optional[Any]:
+    def get_json(self, key: str) -> Any | None:
         """Get JSON value from cache."""
         value = self.get(key)
         if value:
@@ -163,7 +163,7 @@ class RedisService:
                 logger.error(f"Failed to decode JSON for key {key}")
         return None
 
-    def set_json(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+    def set_json(self, key: str, value: Any, ttl: int | None = None) -> bool:
         """Set JSON value in cache."""
         try:
             json_value = json.dumps(value)

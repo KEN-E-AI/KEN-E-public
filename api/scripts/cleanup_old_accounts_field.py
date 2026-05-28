@@ -26,7 +26,6 @@ env_path = Path(__file__).parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
 
 from google.cloud.firestore_v1 import DELETE_FIELD
-
 from src.kene_api.firestore import FirestoreService
 
 
@@ -55,7 +54,7 @@ def cleanup_user(user_id: str, fs: FirestoreService, dry_run: bool = False):
     print(f"  New 'account_permissions' field: {account_permissions}")
 
     if dry_run:
-        print(f"  Would delete 'permissions.accounts' field")
+        print("  Would delete 'permissions.accounts' field")
         return True
 
     # Delete the old field
@@ -63,14 +62,16 @@ def cleanup_user(user_id: str, fs: FirestoreService, dry_run: bool = False):
         client.collection("users").document(user_id).update(
             {"permissions.accounts": DELETE_FIELD}
         )
-        print(f"  ✓ Deleted 'permissions.accounts' field")
+        print("  ✓ Deleted 'permissions.accounts' field")
 
         # Invalidate cache
-        from src.kene_api.auth.cached_user_context import get_cached_user_context_service
+        from src.kene_api.auth.cached_user_context import (
+            get_cached_user_context_service,
+        )
 
         cached_user_service = get_cached_user_context_service()
         cached_user_service.invalidate_user_context(user_id)
-        print(f"  ✓ Invalidated user cache")
+        print("  ✓ Invalidated user cache")
 
         return True
     except Exception as e:
@@ -81,7 +82,7 @@ def cleanup_user(user_id: str, fs: FirestoreService, dry_run: bool = False):
 def cleanup_all_users(fs: FirestoreService, dry_run: bool = False):
     """Clean up old accounts field for all users."""
     print("=" * 80)
-    print(f"Cleaning up old 'accounts' field from all users")
+    print("Cleaning up old 'accounts' field from all users")
     if dry_run:
         print("DRY RUN MODE - No changes will be made")
     print("=" * 80)
