@@ -1727,4 +1727,50 @@ Options B (boundary-only fix) and C (session-scoped executors) were rejected:
 
 ---
 
+## Review 40 — AH-80: SandboxPool per-key Future intentionally omitted (Item G n/a post-SK-42)
+
+**Date:** 2026-05-28
+**Scope:** AH-PRD-09 follow-up — AH-80 ([Linear](https://linear.app/ken-e/issue/AH-80)); `SandboxPool` in `app/adk/agents/agent_factory/sandbox_pool.py`, `builder.py` executor-singleton migration.
+
+### Summary
+
+AH-77 Item G stated: *"Same pattern applied to SandboxPool if it has the identical shape (it does)."*  The "pattern" referred to is McpToolsetPool's per-key `Future` that prevents stripe-lock serialisation when concurrent callers request the same key and `build_fn()` takes 30+ seconds (Firestore + ADK construction).  AH-77's commit did not implement this for `SandboxPool`, and the omission was undocumented.  AH-80 closes the gap by either implementing or formally scoping out each undelivered sub-criterion.
+
+For `SandboxPool` the decision is scope-out (option b): the per-key Future pattern is **intentionally not applied**.
+
+### Decision
+
+**SandboxPool does not need the per-key Future after SK-42 (Review 38).**
+
+The pathology that Item G fixes in `McpToolsetPool` is: multiple concurrent callers requesting the same pool key each individually enter the stripe lock and execute `build_fn()` — a 30-second-bounded async operation (Firestore doc fetch + ADK toolset construction) — serialising them behind the lock.  The per-key Future collapses N redundant builds into one.
+
+After SK-42, `SandboxPool._construct` is purely I/O-free.  It performs only:
+1. A `_sandbox_resource_name` regex parse.
+2. An `AgentEngineSandboxCodeExecutor(resource_name=...)` constructor call (in-process object creation — no Vertex API call, no network I/O; the actual cold-start happens lazily on the first `execute_code`).
+
+Holding the single non-stripe `threading.Lock` across `_construct` is therefore microsecond-cheap, as `sandbox_pool.py`'s class-level docstring explicitly states.  There is no serialisation cost worth eliminating.
+
+The correct single-flight mechanism for `SandboxPool` is already in place: the per-key `threading.Event` in `self._clearing` (registered inside the structural lock in `_acquire()`).  This event serialises the one scenario where concurrent callers must wait — the 0 → 1 refcount transition while `_clear_tmp` is running.  This is exactly where contention lives in `SandboxPool`; it is not at the construction boundary.
+
+**What would invalidate this decision:** if a future change makes `_construct` perform I/O (e.g., a preflight Vertex API probe, Firestore resource-name lookup, or eager gRPC channel creation), the stated precondition is violated and the per-key Future should be reconsidered.  The code comments added at `get_or_create` and `_acquire` in `sandbox_pool.py` name this condition explicitly.
+
+For `builder.py`, AH-80 implements the complement of Item G (option a): the per-build `ThreadPoolExecutor(max_workers=1)` at `builder.py:275` for the skill-toolset load is migrated to the shared `_POOL_CHECKOUT_EXECUTOR` singleton, mirroring the change `specialist_runtime._build_specialist` received in AH-77.
+
+### Consequences
+
+- `SandboxPool` code is semantically unchanged.  The only additions are two scope-out comments at `get_or_create` and `_acquire` that name the design rationale and its precondition.
+- `builder.py` no longer constructs a `ThreadPoolExecutor(max_workers=1)` per skill-toolset load.  The singleton is the sole executor for all pool-checkout call sites (MCP toolset loads in `specialist_runtime` and skill-toolset loads in `builder`).
+- PR #728's AC-F1 regression test (`test_build_skill_toolset_does_not_create_thread_pool_executor`) lands in `tests/test_factory_skills.py::TestExecutorSingleton` — the location PR #728's AC table incorrectly named as `tests/test_builder.py` (which does not exist).
+
+### Documents updated
+
+| File | Change |
+|------|--------|
+| `app/adk/agents/agent_factory/builder.py` | Replaced `ThreadPoolExecutor(max_workers=1)` with `get_pool_checkout_executor().submit()`; added `_executors` import |
+| `app/adk/agents/agent_factory/sandbox_pool.py` | Added scope-out rationale comments at `get_or_create` and `_acquire` |
+| `app/adk/agents/agent_factory/tests/test_factory_skills.py` | Added `TestExecutorSingleton` class with `test_build_skill_toolset_does_not_create_thread_pool_executor` and `test_get_pool_checkout_executor_returns_singleton` |
+| `docs/design/DESIGN-REVIEW-LOG.md` | This entry (Review 40) |
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, and documents updated. Decision rationale lives in the Review itself — this log is the canonical record going forward.*

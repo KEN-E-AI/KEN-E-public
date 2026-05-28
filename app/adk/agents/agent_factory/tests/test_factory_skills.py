@@ -928,6 +928,68 @@ class TestAsyncBridge:
         assert "skill_load_total_failure" not in metadata
 
 
+# ---------------------------------------------------------------------------
+# TestExecutorSingleton — AH-80 (follow-up to AH-77 Item F)
+# ---------------------------------------------------------------------------
+
+
+class TestExecutorSingleton:
+    """The skill-toolset load path reuses the process-wide singleton executor.
+
+    AH-77 Item F migrated specialist_runtime._build_specialist to the singleton.
+    AH-80 closes the same gap in builder._build_skill_toolset (the running-loop
+    branch at builder.py:281).
+    """
+
+    def test_get_pool_checkout_executor_returns_singleton(self) -> None:
+        """get_pool_checkout_executor() always returns the same instance."""
+        from app.adk.agents.agent_factory._executors import get_pool_checkout_executor
+
+        e1 = get_pool_checkout_executor()
+        e2 = get_pool_checkout_executor()
+        assert e1 is e2, "Expected singleton — got two distinct executor instances"
+
+    def test_build_skill_toolset_does_not_create_thread_pool_executor(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """_build_skill_toolset submits to the singleton, not a fresh ThreadPoolExecutor.
+
+        We monkeypatch get_pool_checkout_executor in the builder module to return
+        a recording mock and verify its .submit() is called during a skill-toolset
+        load invoked from inside a running event loop (the branch that previously
+        used ThreadPoolExecutor(max_workers=1)).
+        """
+        import concurrent.futures
+
+        skill = _make_adk_skill("skill-singleton-test")
+        fake_loader = _make_fake_loader_module(skills_by_id={"id-s": skill})
+        monkeypatch.setitem(sys.modules, "kene_api.services.skill_loader", fake_loader)
+
+        # A recording executor that wraps a real ThreadPoolExecutor so futures
+        # still behave correctly.
+        real_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        recording_executor = MagicMock(wraps=real_executor)
+
+        config = _make_config(skill_ids=["id-s"])
+
+        async def _run() -> Any:
+            with patch(
+                "app.adk.agents.agent_factory.builder.get_pool_checkout_executor",
+                return_value=recording_executor,
+            ):
+                return _build_with_skills(
+                    config, name="singleton_test", account_id="acc_singleton"
+                )
+
+        asyncio.run(_run())
+        real_executor.shutdown(wait=False)
+
+        assert recording_executor.submit.called, (
+            "get_pool_checkout_executor().submit() was not called — "
+            "_build_skill_toolset is not using the singleton executor"
+        )
+
+
 class TestSkillNameIndex:
     """SK-27: skill_name_index sidecar records skill metadata for span callbacks."""
 
