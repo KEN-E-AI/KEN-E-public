@@ -355,14 +355,33 @@ def attach_specialists_before_agent_callback(
     logs + degrades on every failure mode) so an attach failure cannot
     block the turn.
     """
-    # Arm the SandboxPool sweep on first turn inside the Agent Engine process
-    # (SK-37). start() is idempotent (sandbox_pool.py checks ``if self._sweep_thread
-    # is not None and self._sweep_thread.is_alive()``), so the per-turn call costs
-    # one branch check after the first invocation. start() spawns a daemon thread
-    # and needs no event loop, so it is safe to call from this (or any) entrypoint.
-    # No ADK-exposed AdkApp startup hook exists in the pinned version; this
+    # Pool initialisation (per-turn idempotent) — arm the background idle-TTL
+    # sweeps on first turn inside the Agent Engine process.  start() is
+    # idempotent on both pools; subsequent calls cost one branch check.  No
+    # ADK-exposed AdkApp startup hook exists in the pinned version; this
     # callback is the closest guaranteed-to-fire entrypoint on the Agent
     # Engine surface.
+    #
+    # MCP pool (AH-78): start() calls asyncio.ensure_future(_sweep_loop()),
+    # which requires a running event loop.  The callback fires from within
+    # ADK's async invocation flow, so a loop IS in scope.  Separate
+    # try/except from the SandboxPool block below so a failure in one pool
+    # does not mask a failure in the other.
+    try:
+        from app.adk.agents.agent_factory.specialist_runtime import _DEFAULT_MCP_POOL
+
+        _DEFAULT_MCP_POOL.start()
+    except Exception as exc:
+        logger.warning(
+            "[ATTACH-SPECIALISTS] McpToolsetPool.start() raised; sweep may be dormant: %s",
+            exc,
+        )
+
+    # SandboxPool (SK-37): start() spawns a daemon thread and needs no event
+    # loop, so it is safe to call from this (or any) entrypoint.
+    # start() is idempotent (sandbox_pool.py checks ``if self._sweep_thread
+    # is not None and self._sweep_thread.is_alive()``), so the per-turn call
+    # costs one branch check after the first invocation.
     try:
         from app.adk.agents.agent_factory.builder import _DEFAULT_SANDBOX_POOL
 

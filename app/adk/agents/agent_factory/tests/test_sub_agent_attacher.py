@@ -838,6 +838,84 @@ class TestSandboxPoolStartWiring:
 
 
 # ---------------------------------------------------------------------------
+# McpToolsetPool.start() wiring in before_agent_callback — AH-78
+# ---------------------------------------------------------------------------
+
+
+class TestMcpPoolStartWiring:
+    """attach_specialists_before_agent_callback must call
+    _DEFAULT_MCP_POOL.start() exactly once per invocation (AH-78).
+
+    start() is idempotent in production but the callback always attempts the
+    call so that the first turn inside the Agent Engine process arms the sweep.
+    """
+
+    def _make_callback_context(self, account_id: str | None = "acc_123") -> Any:
+        """Minimal stub of CallbackContext used by the callback."""
+        from unittest.mock import MagicMock
+
+        ctx = MagicMock()
+        ctx.state.get.return_value = account_id
+        # Stub to_dict() so attach_account_specialists receives a proper
+        # Mapping[str, Any] rather than a MagicMock (production calls
+        # callback_context.state.to_dict() to derive session_state).
+        ctx.state.to_dict.return_value = {"account_id": account_id}
+        ctx._invocation_context.agent = _make_root()
+        return ctx
+
+    def test_start_called_once_per_callback_fire(self) -> None:
+        """start() is invoked on every callback fire (idempotent per AH-78 design)."""
+        from unittest.mock import MagicMock, patch
+
+        pool = MagicMock()
+        ctx = self._make_callback_context()
+
+        import app.adk.agents.agent_factory.specialist_runtime as _runtime
+
+        original = _runtime._DEFAULT_MCP_POOL
+        _runtime._DEFAULT_MCP_POOL = pool
+        try:
+            with patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher."
+                "list_account_agent_configs_cached",
+                return_value=[],
+            ):
+                result = attach_specialists_before_agent_callback(ctx)
+        finally:
+            _runtime._DEFAULT_MCP_POOL = original
+
+        pool.start.assert_called_once()
+        assert result is None  # callback must return None so the turn proceeds
+
+    def test_start_exception_swallowed_callback_returns_none(self) -> None:
+        """A RuntimeError from start() must be swallowed; the callback still
+        returns None so the turn is not blocked (defensive try/except in AH-78
+        wiring mirrors the surrounding attach_account_specialists pattern)."""
+        from unittest.mock import MagicMock, patch
+
+        pool = MagicMock()
+        pool.start.side_effect = RuntimeError("no loop")
+        ctx = self._make_callback_context()
+
+        import app.adk.agents.agent_factory.specialist_runtime as _runtime
+
+        original = _runtime._DEFAULT_MCP_POOL
+        _runtime._DEFAULT_MCP_POOL = pool
+        try:
+            with patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher."
+                "list_account_agent_configs_cached",
+                return_value=[],
+            ):
+                result = attach_specialists_before_agent_callback(ctx)
+        finally:
+            _runtime._DEFAULT_MCP_POOL = original
+
+        # Exception swallowed; callback returned None.
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
 # Before-agent callback bridge — regression coverage for AH-62 (PR #721)
 #
 # The callback at attach_specialists_before_agent_callback wraps the attach

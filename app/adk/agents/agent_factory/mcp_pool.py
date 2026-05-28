@@ -38,11 +38,8 @@ Usage::
         build_fn=lambda: build_toolset_for_doc(server_id, doc),
     )
 
-TODOs:
-* Nothing calls ``_DEFAULT_MCP_POOL.start()`` today, so the idle-TTL background
-  sweep is dormant in production — only the LRU cap evicts.  SK-37 wires
-  ``start()`` / ``stop()`` from the runtime entrypoint (FastAPI lifespan or
-  Cloud Run startup); the same ticket covers McpToolsetPool.
+start() is called from attach_specialists_before_agent_callback (AH-78),
+which arms the idle-TTL background sweep on the first turn per process.
 """
 
 from __future__ import annotations
