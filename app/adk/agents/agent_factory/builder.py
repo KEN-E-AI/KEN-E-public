@@ -10,6 +10,7 @@ from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.code_executors import BuiltInCodeExecutor
 from google.genai.types import GenerateContentConfig
 
+from app.adk.agents.agent_factory._executors import get_pool_checkout_executor
 from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
 from app.adk.agents.agent_factory.leased_sandbox_executor import LeasedSandboxExecutor
 from app.adk.agents.agent_factory.roster import (
@@ -267,29 +268,33 @@ def _build_skill_toolset(
     # A loop is already running — submit asyncio.run on a worker thread so we
     # don't collide with the caller's loop.  The thread owns its own event loop
     # for the lifetime of the coroutine, then tears it down.
+    #
+    # AH-77 Item F / AH-80: reuse the process-wide singleton executor rather
+    # than constructing a new ThreadPoolExecutor per skill-toolset load.  The
+    # executor's sole role is timeout enforcement via future.result(timeout=…) —
+    # it is not used for parallelism.  Mirrors specialist_runtime.py:452-456.
     def _runner() -> tuple[Any | None, dict]:
         return asyncio.run(
             _build_skill_toolset_async(account_id, skill_ids, config_id=config_id)
         )
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_runner)
-        try:
-            toolset, skill_name_index = future.result(
-                timeout=_SKILL_LOAD_TIMEOUT_SECONDS
-            )
-            return toolset, skill_name_index, False
-        except concurrent.futures.TimeoutError:
-            logger.error(
-                "skill_toolset_load_timeout",
-                extra={
-                    "account_id": account_id,
-                    "config_id": config_id,
-                    "skill_ids": skill_ids,
-                    "timeout_s": _SKILL_LOAD_TIMEOUT_SECONDS,
-                },
-            )
-            return None, {}, True
+    future = get_pool_checkout_executor().submit(_runner)
+    try:
+        toolset, skill_name_index = future.result(
+            timeout=_SKILL_LOAD_TIMEOUT_SECONDS
+        )
+        return toolset, skill_name_index, False
+    except concurrent.futures.TimeoutError:
+        logger.error(
+            "skill_toolset_load_timeout",
+            extra={
+                "account_id": account_id,
+                "config_id": config_id,
+                "skill_ids": skill_ids,
+                "timeout_s": _SKILL_LOAD_TIMEOUT_SECONDS,
+            },
+        )
+        return None, {}, True
 
 
 def _build_code_executor(
