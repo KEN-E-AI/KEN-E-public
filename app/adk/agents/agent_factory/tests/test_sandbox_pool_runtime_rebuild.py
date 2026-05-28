@@ -34,8 +34,6 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
 from app.adk.agents.agent_factory.leased_sandbox_executor import LeasedSandboxExecutor
 from app.adk.agents.agent_factory.sandbox_pool import SandboxPool
@@ -149,7 +147,9 @@ def _build_with_pool(
         _PATCH_SK_SPANS_BEFORE_TOOL,
         _PATCH_SK_SPANS_AFTER_TOOL,
     ):
-        return b.build_agent(config, name=name, account_id=account_id, sandbox_pool=pool)
+        return b.build_agent(
+            config, name=name, account_id=account_id, sandbox_pool=pool
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -176,8 +176,12 @@ def test_sandbox_not_respawned_across_runtime_rebuilds() -> None:
     initial_global_size = len(b._DEFAULT_SANDBOX_POOL._pool)
 
     # Simulate two per-turn runtime resolver builds for the same specialist.
-    agent_turn_1 = _build_with_pool(config, account_id="acc_test", name="test_specialist", pool=pool)
-    agent_turn_2 = _build_with_pool(config, account_id="acc_test", name="test_specialist", pool=pool)
+    agent_turn_1 = _build_with_pool(
+        config, account_id="acc_test", name="test_specialist", pool=pool
+    )
+    agent_turn_2 = _build_with_pool(
+        config, account_id="acc_test", name="test_specialist", pool=pool
+    )
 
     # Both agents must carry LeasedSandboxExecutor wrappers (SK-42 lazy model).
     assert isinstance(agent_turn_1.code_executor, LeasedSandboxExecutor), (
@@ -223,8 +227,12 @@ def test_sandbox_not_respawned_across_runtime_rebuilds() -> None:
     )
 
     agent_turn_1.code_executor.execute_code(MagicMock(), MagicMock())
-    assert call_count[0] == 1, "_construct must be called exactly once on first execute_code"
-    assert len(pool._pool) == 1, "Pool must have exactly one entry after first execute_code"
+    assert call_count[0] == 1, (
+        "_construct must be called exactly once on first execute_code"
+    )
+    assert len(pool._pool) == 1, (
+        "Pool must have exactly one entry after first execute_code"
+    )
 
     # Trigger execute_code on turn-2 agent → pool reuse, _construct NOT called again.
     agent_turn_2.code_executor.execute_code(MagicMock(), MagicMock())
@@ -252,8 +260,7 @@ def test_different_account_ids_construct_independently() -> None:
     assert agent_acc_a.code_executor._account_id == "acc_a"
     assert agent_acc_b.code_executor._account_id == "acc_b"
     assert (
-        agent_acc_a.code_executor._account_id
-        != agent_acc_b.code_executor._account_id
+        agent_acc_a.code_executor._account_id != agent_acc_b.code_executor._account_id
     ), "Different account IDs must map to different pool keys"
 
     # Both still reference the shared pool (different keys, same pool object).

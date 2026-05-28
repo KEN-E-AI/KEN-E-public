@@ -14,7 +14,6 @@ from app.adk.agents.agent_factory.dispatch import (
     assemble_available_specialists_block,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
@@ -109,7 +108,7 @@ class TestAssembleAvailableSpecialistsBlockSanitisation:
 
         bullet = next(line for line in result.splitlines() if line.startswith("- **"))
         # Description portion after "- **long_spec**: " should be ≤500 chars
-        desc_part = bullet[len("- **long_spec**: "):]
+        desc_part = bullet[len("- **long_spec**: ") :]
         assert len(desc_part) <= 500
 
     def test_description_all_unsafe_chars_falls_back(self) -> None:
