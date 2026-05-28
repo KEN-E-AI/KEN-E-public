@@ -22,6 +22,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from shared.account_id_utils import validate_account_id
 from shared.structured_logging import get_structured_logger
 
 # Lazy import guard — mirrors skill_spans.py:36-42.  builder.py imports
@@ -83,11 +84,25 @@ def specialists_span_before_agent_callback(
             # not an error in this callback.
             return None
 
+        if not isinstance(specialists, list):
+            logger.warning(
+                "specialists_span: state['_available_specialists'] has unexpected "
+                "type %s; skipping span emission",
+                type(specialists).__name__,
+            )
+            return None
+
         account_id = "unknown"
         try:
-            account_id = str(state.get("account_id") or "unknown")
-        except Exception:
-            pass
+            raw_account_id = state.get("account_id")
+            if raw_account_id:
+                account_id = validate_account_id(str(raw_account_id))
+        except (ValueError, Exception):
+            logger.debug(
+                "specialists_span: could not validate account_id from state; "
+                "defaulting to 'unknown'",
+                exc_info=True,
+            )
 
         call = client.create_call(
             op="specialists.list",

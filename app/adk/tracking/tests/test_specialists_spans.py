@@ -288,6 +288,59 @@ class TestSpecialistsSpanBeforeAgentCallback:
         assert result is None
         assert any("non-blocking" in r.message for r in caplog.records)
 
+    # (f2) finish_call raises -----------------------------------------------
+
+    def test_finish_call_raises_no_exception_propagated(self, caplog) -> None:
+        """If finish_call raises, it is caught by the outer handler; callback returns None."""
+        from app.adk.tracking.specialists_spans import (
+            specialists_span_before_agent_callback,
+        )
+
+        ctx = _make_ctx(
+            specialists=[{"name": "s", "description": "d", "agent_id": "s"}]
+        )
+        mock_client = _make_client_mock()
+        mock_client.finish_call.side_effect = RuntimeError("finish exploded")
+
+        with (
+            caplog.at_level(
+                logging.WARNING, logger="app.adk.tracking.specialists_spans"
+            ),
+            patch(_GET_CLIENT_PATH, return_value=mock_client),
+            patch(_CALL_CTX_PATH, MagicMock()),
+        ):
+            result = specialists_span_before_agent_callback(ctx)
+
+        assert result is None
+        assert any("non-blocking" in r.message for r in caplog.records)
+
+    # (f3) non-list specialists type guard ----------------------------------
+
+    def test_non_list_specialists_skips_span(self, caplog) -> None:
+        """If state['_available_specialists'] has an unexpected type, skip emission."""
+        from app.adk.tracking.specialists_spans import (
+            specialists_span_before_agent_callback,
+        )
+
+        state = _SimpleState(
+            {"_available_specialists": "not-a-list", "account_id": "acc_x"}
+        )
+        ctx = _FakeCallbackContext(state=state)
+        client = _make_client_mock()
+
+        with (
+            caplog.at_level(
+                logging.WARNING, logger="app.adk.tracking.specialists_spans"
+            ),
+            patch(_GET_CLIENT_PATH, return_value=client),
+            patch(_CALL_CTX_PATH, MagicMock()),
+        ):
+            result = specialists_span_before_agent_callback(ctx)
+
+        assert result is None
+        assert client.create_call.call_count == 0
+        assert any("unexpected type" in r.message for r in caplog.records)
+
     # (g) agent_id == name invariant ----------------------------------------
 
     def test_agent_id_equals_name_invariant(self) -> None:

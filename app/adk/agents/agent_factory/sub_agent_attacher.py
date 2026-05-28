@@ -433,7 +433,7 @@ def attach_specialists_before_agent_callback(
         callback_context.state["_available_specialists"] = [
             {
                 "name": a.name,
-                "description": (getattr(a, "description", "") or "")[:1024],
+                "description": str(getattr(a, "description", "") or "")[:1024],
                 "agent_id": a.name,
             }
             for a in sub_agents
