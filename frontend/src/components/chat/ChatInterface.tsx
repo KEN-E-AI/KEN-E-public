@@ -4,8 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ArtifactBlock } from "./ArtifactBlock";
-import { streamChatCompletion } from "@/lib/chatApi";
+import { getConversationHistory, streamChatCompletion } from "@/lib/chatApi";
 import type { ChatMessage } from "@/lib/chatApi";
+import { parseConversationHistory } from "@/lib/parseConversationHistory";
 import { useOrgStatus } from "@/hooks/useOrgStatus";
 import { useMarkRead } from "@/hooks/useMarkRead";
 import { cn } from "@/lib/utils";
@@ -29,6 +30,11 @@ type Message = {
 
 type ChatInterfaceProps = {
   sessionId?: string;
+  // Lazily create a session on the first message when there is no sessionId.
+  // Returns the new session id (without navigating) or null on failure.
+  onCreateSession?: () => Promise<string | null>;
+  // Called after a session is created so the parent can move the URL to it.
+  onSessionStarted?: (id: string) => void;
   // TODO(CH-PRD-XX): compact mode is reserved for the mini-widget in LayoutC
   compact?: boolean;
 };
@@ -44,6 +50,8 @@ const TEXT_SIZE_CLASSES: Record<TextSize, string> = {
 
 export function ChatInterface({
   sessionId,
+  onCreateSession,
+  onSessionStarted,
   compact: _compact = false,
 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>(() => [
@@ -62,6 +70,10 @@ export function ChatInterface({
   const abortRef = useRef<AbortController | null>(null);
   const handleStopRef = useRef<() => void>(() => {});
   const latestAssistantRef = useRef<HTMLDivElement | null>(null);
+  // Session ids created from within this component (first-message lazy create).
+  // Their history must NOT be reloaded — the live turn is already in `messages`,
+  // and a backend fetch could clobber the in-flight stream.
+  const locallyCreatedRef = useRef<Set<string>>(new Set());
 
   // Cancel any in-flight stream when the component unmounts
   useEffect(() => {
@@ -69,6 +81,28 @@ export function ChatInterface({
       abortRef.current?.abort();
     };
   }, []);
+
+  // Load prior messages when a session is opened or switched. Keeps the intro
+  // for an ephemeral (no sessionId) or brand-new (empty history) conversation.
+  useEffect(() => {
+    if (!sessionId) return;
+    if (locallyCreatedRef.current.has(sessionId)) return; // just created here
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = await getConversationHistory(sessionId);
+        if (cancelled) return;
+        const parsed = parseConversationHistory(raw);
+        if (parsed.length > 0) setMessages(parsed);
+      } catch (err) {
+        if (!cancelled)
+          console.error("Failed to load conversation history:", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
 
   useEffect(() => {
     try {
@@ -195,9 +229,21 @@ export function ChatInterface({
     ]);
 
     try {
+      // First message with no session → create one now (deferred creation).
+      // Guard the new id against the history-load effect BEFORE navigating, so
+      // the in-flight stream below isn't clobbered by a backend history fetch.
+      let activeSessionId = sessionId;
+      if (!activeSessionId && onCreateSession) {
+        const newId = await onCreateSession();
+        if (!newId) throw new Error("SESSION_CREATE_FAILED");
+        locallyCreatedRef.current.add(newId);
+        activeSessionId = newId;
+        onSessionStarted?.(newId);
+      }
+
       for await (const chunk of streamChatCompletion(
         history,
-        sessionId,
+        activeSessionId,
         undefined,
         controller.signal,
       )) {
@@ -216,16 +262,26 @@ export function ChatInterface({
         setMessages((prev) => prev.filter((m) => m.id !== assistantId));
         return;
       }
+      const message =
+        (err as Error)?.message === "SESSION_CREATE_FAILED"
+          ? "Couldn't start a new session. Please try again."
+          : "An error occurred. Please try again.";
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === assistantId
-            ? { ...m, content: "An error occurred. Please try again." }
-            : m,
+          m.id === assistantId ? { ...m, content: message } : m,
         ),
       );
       setIsStreaming(false);
     }
-  }, [input, isStreaming, isOrgInactive, messages, sessionId]);
+  }, [
+    input,
+    isStreaming,
+    isOrgInactive,
+    messages,
+    sessionId,
+    onCreateSession,
+    onSessionStarted,
+  ]);
 
   const handleRetry = useCallback(
     (stoppedId: string) => {
