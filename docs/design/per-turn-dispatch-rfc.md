@@ -501,8 +501,7 @@ Six phases. Phases 0 and 1 are gating: if Phase 0 fails to validate Zapier MCP, 
 **Goal:** Decommission the deploy-time factory's specialist build, finalize observability, ship behind a feature flag, cut over.
 
 **Work:**
-- Feature flag `agentic_harness_per_turn_dispatch` defaults off; admins / dev accounts opt in for soak testing.
-- After soak: flip to default on.
+- Decommission unreachable legacy code paths.
 - Delete the now-unused `generate_dispatch_functions` and `_make_factory_instruction_provider`'s baked-text path.
 - Delete the legacy `create_ken_e_agent()` if no longer used (verify no callers outside the deprecated path).
 - Update Cloud Trace / Weave dashboards: add panels for specialist cache hit rate, MCP pool size, Zapier latency p50/p95, dispatch error rate.
@@ -515,7 +514,6 @@ Six phases. Phases 0 and 1 are gating: if Phase 0 fails to validate Zapier MCP, 
 - Operations runbook for Zapier outage and per-account credential revocation.
 
 **Exit criteria:**
-- Feature flag default-on in production for 1 week without regression.
 - All documentation reflects the new architecture; `[PLANNED]` tags collapsed where work shipped.
 - **MER-E eval suite passes against the new trace shape** — every prior eval set still scores correctly under `delegate_to_specialist` span structure. Verified in dev + staging before default-on; this is the **cutover gate** (see §9.1 MER-E coordination plan).
 - **`MergedAgentConfig.warnings`** field scheduled for removal from the API contract one release after this rollout (does not block Phase 5).
@@ -539,7 +537,7 @@ Six phases. Phases 0 and 1 are gating: if Phase 0 fails to validate Zapier MCP, 
 
 - **End of Phase 0:** go / no-go on Zapier. No-go pivots to `cloud_run`-only runtime resolver (Phases 1, 2, 3-narrowed, 5). Saves ~2 weeks; loses the long-tail product win.
 - **Mid-Phase 2:** if cache invalidation correctness is harder than expected, fall back to TTL-only (drop hash invalidation as a v2 enhancement).
-- **End of Phase 3:** if MCP pool stability is shaky under load, ship Phase 3 behind the feature flag and stress-test before rollout.
+- **End of Phase 3:** if MCP pool stability is shaky under load, stress-test before rollout.
 
 ---
 
@@ -576,7 +574,7 @@ The cost is real — 7–10 eng-weeks — but it buys:
   - **Contract diff document.** Drafted at start of Phase 2 — enumerates span name changes, new attributes (`specialist_name`, `cache_hit`, `mcp_pool_hit`), retired attributes, and the new inner-Runner nesting shape.
   - **Dev verification.** MER-E extractors updated and tested against a staging trace fixture before Phase 2 merges to main.
   - **Cutover gate.** Phase 5 default-on is gated on the MER-E eval suite passing against the new trace shape (Phase 5 Exit criterion).
-  - **Rollback.** If MER-E eval scores diverge unexpectedly after default-on, the feature flag flips off and the contract diff is revisited before re-attempting.
+  - **Rollback.** If MER-E eval scores diverge unexpectedly after cutover, the contract diff is revisited before re-attempting.
 - **Chat / Billing event-topology drift.** Inner-Runner dispatch produces a different event sequence than today's flat dispatchers. Two consumers — `SessionTurnAccumulator` (CH-PRD-01) and `extract_billable_tokens(event)` (BL-PRD-02) — depend on the event stream being complete and correctly attributed. Mitigation: Phase 2 parity tests against the deploy-time baseline; both are merge blockers for Phase 2 (see §4.9 and Phase 2 ACs).
 
 ### 9.2 Open questions for product / dev review
@@ -586,6 +584,7 @@ The cost is real — 7–10 eng-weeks — but it buys:
 3. **Per-account specialist visibility on the root's Available Specialists block.** Today every account sees the same specialist set (plus their custom agents). Should the block be per-account-filtered at runtime (account A sees their custom agents only)? Recommendation: **yes, since the resolver already knows `account_id`** — it's a small addition and an obvious product feature.
 4. **Zapier pricing model.** Need a real cost projection from finance based on expected chat volume per account. Recommendation: **part of Phase 0 deliverables**.
 5. **Cutover strategy.** Big-bang behind a feature flag (current proposal), or gradual per-account migration? Recommendation: **feature-flag with explicit dev/QA accounts opted in for ~1 week, then default-on**.
+   **Resolved (2026-05-28):** No production users; per-turn dispatch is the unconditional path. Feature flag dropped per AH-66 + PO decision.
 6. **Should `LlmAgent`-instance cache be process-wide or per-session?** Process-wide is simpler and more efficient; per-session avoids any chance of cross-account state leaks. Recommendation: **process-wide, with account_id baked into the cache key** — the `LlmAgent` itself is stateless; session state lives in ADK's session, not on the agent.
 7. **Read-only `is_system` specialists.** If we let admins edit specialist configs at runtime, do `is_system: true` (platform-seeded) specialists stay read-only? Recommendation: **yes, enforced by the CRUD API as today**.
 8. **Skills sandbox lifecycle under per-turn specialist rebuild — Skills team alignment.** Today's SK-PRD-02 attaches a `SkillToolset` to a specialist at construction. Per-turn specialist rebuild implies per-turn `SkillToolset` reconstruction. Sandbox code-executor processes are heavyweight; respawning per turn would dominate latency. **Decision: option (a) — pool sandboxes by `(account_id, skill_id)`** in a `SandboxPool` abstraction analogous to `McpToolsetPool` (LRU + idle TTL + async cleanup on eviction; see §4.8 for the pattern). Pooling at the sandbox layer decouples sandbox lifecycle from `agent_cache` reuse, so a config edit that invalidates the cached `LlmAgent` does not force a sandbox cold-start — admins iterating on a specialist see no sandbox-respawn cost between edits. **Ownership: this is an SK-PRD-02 scope expansion** (a new pool abstraction inside the Skills component), not AH-PRD-09 work. **Coordination dependency:** SandboxPool must exist before AH-PRD-09's Phase 5 default-on, otherwise any specialist with attached skills would respawn its sandbox every turn under the new runtime. Skills team to amend SK-PRD-02 (or open SK-PRD-02a) ahead of Phase 5. Rejected alternative: **(b)** pin sandboxes to `LlmAgent` instances and ride `agent_cache` reuse — simpler but couples sandbox cold-start to every config edit, a noticeable UX regression when admins iterate.

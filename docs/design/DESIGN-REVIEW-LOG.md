@@ -1683,4 +1683,48 @@ Options B (boundary-only fix) and C (session-scoped executors) were rejected:
 
 ---
 
+## Review 39 — AH-66: Drop per-turn dispatch feature flag; verify AC #23 SandboxPool gate
+
+**Date:** 2026-05-28
+**Scope:** AH-PRD-09 Phase 5 — feature flag removal, dead-code deletion, AC #23 hard gate verification, doc cleanup.
+
+### Decision
+
+**Drop the `agentic_harness_per_turn_dispatch` feature flag entirely.** KEN-E has no production users, so there is no UX risk to manage and no need to keep a legacy fallback alive. The per-turn runtime resolver (`specialist_runtime` + `attach_specialists_before_agent_callback`) is the unconditional production code path. A flag that gated soak and default-on rollout was unnecessary.
+
+**Rationale (from PO, 2026-05-28):**
+- The `agentic_harness_per_turn_dispatch` key existed only in docs and one trace fixture — it was never registered in Firestore, Terraform, or any feature-flag evaluation path.
+- No legacy `dispatch_to_<specialist>` function-tool path existed to fall back to: AH-60 (Phase 2) deleted deploy-time specialist construction; AH-75 replaced `delegate_to_specialist` with ADK's native `transfer_to_agent`.
+- Registering a flag that guarded a nonexistent path would have been dead code at the infrastructure level, mirroring the dead code deleted in this PR.
+
+### Findings
+
+1. **`generate_dispatch_functions` / `_build_dispatch` confirmed dead code.** Zero non-test production callers verified by `grep -rn`. Deleted. `assemble_available_specialists_block` remains — live in `specialist_runtime.available_specialists_provider`.
+2. **AC #23 hard gate satisfied.** SK-PRD-02 SandboxPool shipped (SK-23 + SK-26 + SK-37, all Done). New test `test_sandbox_pool_runtime_rebuild.py` verifies that two per-turn `build_agent` calls for the same `(account_id, config_id)` produce `LeasedSandboxExecutors` sharing the same pool key, pool stays empty until first `execute_code`, and `_construct` fires exactly once across both `execute_code` calls.
+3. **Emergency rollback = Cloud Run revision rollback.** Without a flag, the only rollback mechanism is `gcloud run services update-traffic --to-revisions=<previous>=100` (~30 s). Documented in `deployment/runbooks/per-turn-dispatch-emergency-rollback.md`.
+
+### Consequences
+
+- `agentic_harness_per_turn_dispatch` references purged from all docs and the trace fixture's `metadata.feature_flags` block.
+- `dispatch.py` reduced from 218 to 69 LOC; single exported symbol (`assemble_available_specialists_block`).
+- AH-68's "delete legacy paths post-soak" rationale collapses to "delete remaining legacy paths" (no soak window needed). AH-68 covers `_make_factory_instruction_provider` baked-text path, `create_ken_e_agent()`, dashboards, and a future DESIGN-REVIEW-LOG entry for the full post-AH-75 dispatch-surface picture.
+
+### Documents updated
+
+| File | Change |
+|------|--------|
+| `app/adk/agents/agent_factory/dispatch.py` | Deleted `generate_dispatch_functions`, `_build_dispatch`, `_VALID_SPECIALIST_NAME_RE` |
+| `app/adk/agents/agent_factory/__init__.py` | Removed `generate_dispatch_functions` import + `__all__` entry |
+| `app/adk/agents/agent_factory/tests/test_dispatch_gen.py` | Pruned to `assemble_available_specialists_block` tests only |
+| `app/adk/agents/agent_factory/tests/test_sandbox_pool_runtime_rebuild.py` | New — AC #23 SandboxPool no-respawn integration test |
+| `app/adk/tracking/tests/fixtures/transfer_to_specialist_trace.json` | Removed `agentic_harness_per_turn_dispatch` key from `metadata.feature_flags` |
+| `docs/design/components/agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md` | §2/§3/§5.1/§7 Phase 5 + AC #20 removed; SK-PRD-02 + MER-E dependency rows updated |
+| `docs/design/per-turn-dispatch-rfc.md` | §Phase 5 flag bullet removed; §9.2 #5 cutover question marked Resolved |
+| `docs/trace-structure-spec.md` | §14.4 preamble updated to remove flag-flip temporal framing |
+| `docs/design/components/agentic-harness/projects/AH-PRD-09-trace-contract-diff.md` | §4 parenthetical + §8 rewritten as MER-E Validation Workflow; fixture paths corrected to `transfer_to_specialist_*` |
+| `deployment/runbooks/per-turn-dispatch-emergency-rollback.md` | New — Cloud Run revision rollback runbook |
+| `docs/design/DESIGN-REVIEW-LOG.md` | This entry (Review 39) |
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, and documents updated. Decision rationale lives in the Review itself — this log is the canonical record going forward.*

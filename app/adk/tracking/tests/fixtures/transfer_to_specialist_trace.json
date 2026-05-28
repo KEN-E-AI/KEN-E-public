@@ -54,7 +54,6 @@
     "environment": "staging",
     "rollout_percentage": 100,
     "feature_flags": {
-      "agentic_harness_per_turn_dispatch": true,
       "agentic_harness_transfer_to_agent_dispatch": true
     }
   }

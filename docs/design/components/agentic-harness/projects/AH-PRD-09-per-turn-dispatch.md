@@ -3,7 +3,7 @@
 **Status:** Proposed
 **Owner team:** Core AI / Agent Platform (backend; coordinates with Skills, Integrations, Chat, Billing, MER-E)
 **Blocked by:** [AH-PRD-01](./AH-PRD-01-review-loop-framework.md) (review pipeline is invoked inside `delegate_to_specialist`), [AH-PRD-02](./AH-PRD-02-agent-factory.md) (this PRD supersedes its deploy-time factory model), [DM-PRD-00](../../data-management/projects/DM-PRD-00-migration-foundation.md) (Shape B convention)
-**Soft prerequisite:** [SK-PRD-02](../../skills/projects/SK-PRD-02-agent-integration.md) `SandboxPool` — **Phase 5 default-on is gated on this shipping**
+**Soft prerequisite:** [SK-PRD-02](../../skills/projects/SK-PRD-02-agent-integration.md) `SandboxPool` — PRD §7 AC #23 verification depends on this shipping (confirmed Done in SK-23 + SK-26 + SK-37).
 **Phase 4 only (deferred to R2):** IN-PRD-01 / IN-PRD-02 / IN-PRD-03 — Zapier hybrid MCP cannot ship without the Integrations component
 **Parallel with:** SK-PRD-00, SK-PRD-01, SK-PRD-02 (all R1; SandboxPool design mirrors `McpToolsetPool`)
 **Blocks:** Future per-platform specialist PRDs (AH-PRD-10+) consume the runtime resolver
@@ -38,7 +38,9 @@ The combination — runtime specialist resolution + hybrid MCP — meets the imm
 
 **Phase 4 — Zapier-backed Integrations component work (1–1.5 weeks; DEFERRED TO R2).** `accounts/{account_id}/integrations/zapier` document + Zapier OAuth flow + `/settings/integrations` "Connect Zapier" tile + connection status UI. Requires the Integrations component (IN-PRDs 01/02/03), which sits behind DM-PRD-07 → PR-PRD-01. Cannot ship in R1 without cascading half the planner; deferred per the RFC §7.2 no-go pivot.
 
-**Phase 5 — Cleanup, observability, rollout (1 week).** Feature flag `agentic_harness_per_turn_dispatch` (default off → soak → default on); delete unused `generate_dispatch_functions` and `_make_factory_instruction_provider`'s baked-text path; delete legacy `create_ken_e_agent()` if no callers remain; Cloud Trace / Weave dashboards (cache hit rate, MCP pool size, Zapier latency p50/p95, dispatch error rate); DESIGN-REVIEW-LOG entry; operator runbooks. **Cutover gate: MER-E eval suite passes against the new trace shape.** **Default-on gate: SK-PRD-02's `SandboxPool` shipped.**
+**Phase 5 — Cleanup, observability, rollout (1 week).** Decommission unreachable legacy code paths (see AH-66); delete unused `generate_dispatch_functions` and `_make_factory_instruction_provider`'s baked-text path; delete legacy `create_ken_e_agent()` if no callers remain; Cloud Trace / Weave dashboards (cache hit rate, MCP pool size, Zapier latency p50/p95, dispatch error rate); DESIGN-REVIEW-LOG entry; operator runbooks. **Cutover gate: MER-E eval suite passes against the new trace shape.**
+
+> **Revision (AH-66, 2026-05-28):** The per-turn dispatch feature flag was dropped. KEN-E has no production users; the per-turn dispatch path is unconditional. FF-PRD-01, Terraform flag file, and AC #20 removed. SandboxPool gate (AC #23) verified by `test_sandbox_pool_runtime_rebuild.py`.
 
 ### Out of scope
 
@@ -56,13 +58,12 @@ The combination — runtime specialist resolution + hybrid MCP — meets the imm
 | **[AH-PRD-01](./AH-PRD-01-review-loop-framework.md)** | `build_review_pipeline()` is called inside `delegate_to_specialist` exactly as it was inside the generated dispatchers. | This component |
 | **[AH-PRD-02](./AH-PRD-02-agent-factory.md)** | This PRD supersedes AH-PRD-02's deploy-time factory model. Reuses `MergedAgentConfig`, `_make_header_provider`, `build_toolset_for_doc`, dispatch.py, builder.py with modifications. AH-PRD-02 retains its narrative as "what shipped first"; AH-PRD-09 ships the runtime successor. | This component |
 | **[DM-PRD-00](../../data-management/projects/DM-PRD-00-migration-foundation.md)** | Shape B convention. No new Firestore subcollections in this PRD beyond what AH-PRD-02 already established. | `../../data-management/README.md` |
-| **[SK-PRD-02](../../skills/projects/SK-PRD-02-agent-integration.md) — soft prerequisite (Phase 5 gate)** | SK-PRD-02's `SandboxPool` must ship before Phase 5 default-on. Without it, sandbox-attached specialists respawn their sandbox every turn under the runtime resolver. Pool design intentionally mirrors `McpToolsetPool`. | `../../skills/README.md` §3.2 |
+| **[SK-PRD-02](../../skills/projects/SK-PRD-02-agent-integration.md) — soft prerequisite** | PRD §7 AC #23 verification depends on this shipping (confirmed Done in SK-23 + SK-26 + SK-37). Without it, sandbox-attached specialists respawn their sandbox every turn under the runtime resolver. Pool design intentionally mirrors `McpToolsetPool`. | `../../skills/README.md` §3.2 |
 | **Integrations component (Phase 4 only — deferred to R2)** | IN-PRD-01 (encrypted token store), IN-PRD-02 (OAuth flows pattern), IN-PRD-03 (Connection-Management UI) needed for Zapier first-class integration. Not in R1 scope. | `../../integrations/README.md` |
 | **Chat ([CH-PRD-01](../../chat/projects/CH-PRD-01-session-metadata-substrate.md)) — coordination dep** | `SessionTurnAccumulator` extracts tokens from every ADK event. Inner-Runner dispatch must preserve event propagation. **Phase 2 parity test is a merge blocker.** | RFC §4.9 |
 | **Billing ([BL-PRD-02](../../billing/projects/BL-PRD-02-token-meter-monthly-enforcement.md)) — coordination dep** | `extract_billable_tokens(event)` at `shared/token_accounting.py`. Same parity-test contract as Chat. **Phase 2 parity test is a merge blocker.** | RFC §4.9 |
-| **MER-E (sister repo) — coordination dep** | Trace shape changes from N `dispatch_to_*` spans to a single `delegate_to_specialist` span with nested inner-Runner children. MER-E extractors update before Phase 5. **Cutover gate.** | RFC §9.1 |
+| **MER-E (sister repo) — coordination dep** | Trace shape changes from N `dispatch_to_*` spans to a single `delegate_to_specialist` span with nested inner-Runner children. MER-E extractors validate against the post-AH-75 trace fixture. **Cutover gate.** | RFC §9.1 |
 | **[AH-PRD-06](./AH-PRD-06-tool-mapping.md) PR-C** | Wires `default_global` function tools through `hierarchy.py:325`. Phase 3 ports this into the runtime resolver. Schedule PR-C to land before or alongside Phase 2 to avoid merge conflict. | RFC §9.2 #9 |
-| **Feature Flags ([FF-PRD-01](../../feature-flags/projects/FF-PRD-01-data-model-evaluation-api.md))** | `agentic_harness_per_turn_dispatch` flag registered in Phase 5; gates the runtime path during soak and rollout. | `../../feature-flags/README.md` |
 
 ## 4. Data contract
 
@@ -167,7 +168,6 @@ The Chat / Billing parity tests at `app/adk/agents/agent_factory/tests/test_chat
 | Delete | `app/adk/agents/ken_e_agent.py` — `create_ken_e_agent` and `_make_instruction_provider` deleted once verified unused | 5 |
 | Delete | `generate_dispatch_functions` and `_make_factory_instruction_provider`'s baked-text path | 5 |
 | Update | Cloud Trace / Weave dashboards | 5 |
-| Create | `deployment/terraform/feature_flags/agentic_harness_per_turn_dispatch.tf` — flag registration | 5 |
 
 See [RFC §10 Appendix](../../../per-turn-dispatch-rfc.md#10-appendix--code-paths-affected) for the complete code-path table including doc edits.
 
@@ -245,12 +245,11 @@ ACs are organized by phase. Each phase merges only when its criteria are met.
 
 ### Phase 5 — Cleanup + rollout (R1)
 
-20. Feature flag `agentic_harness_per_turn_dispatch` default-on in production for 1 week without regression.
-21. All documentation reflects the new architecture; `[PLANNED]` tags collapsed where work shipped.
-22. **MER-E eval suite passes against the new trace shape** — every prior eval set still scores correctly under `delegate_to_specialist` span structure. **Cutover gate.**
-23. **SK-PRD-02 `SandboxPool` has shipped** — verified by integration test that a sandbox-attached specialist does not respawn its sandbox across runtime rebuilds. **Hard gate for default-on.**
-24. Legacy `generate_dispatch_functions` and unused paths deleted.
-25. `MergedAgentConfig.warnings` field scheduled for removal one release after this rollout (not blocking Phase 5).
+20. All documentation reflects the new architecture; `[PLANNED]` tags collapsed where work shipped.
+21. **MER-E eval suite passes against the new trace shape** — every prior eval set still scores correctly under `delegate_to_specialist` span structure. **Cutover gate.**
+22. **SK-PRD-02 `SandboxPool` has shipped** — verified by `test_sandbox_pool_runtime_rebuild.py` (AH-66) that a sandbox-attached specialist does not respawn its sandbox across runtime rebuilds.
+23. Legacy `generate_dispatch_functions` and unused paths deleted.
+24. `MergedAgentConfig.warnings` field scheduled for removal one release after this rollout (not blocking Phase 5).
 
 ## 8. Test plan
 
@@ -291,7 +290,7 @@ ACs are organized by phase. Each phase merges only when its criteria are met.
 - **Latency on cold starts.** First dispatch to a fresh specialist pays build + MCP-pool cost. Mitigation: cache warming at root start; pool LRU sized for working set; observability for outliers.
 - **Cache-invalidation correctness.** Stale cached `LlmAgent` serving old behavior after a Firestore write is the failure we most want to avoid. Mitigation: content-hash invalidation in addition to TTL; integration tests covering "write then read" within the cache window.
 - **ADK Runner internals.** Inner-Runner wiring depends on ADK's session/context propagation. Mitigation: pin ADK version in Phases 2–3; document the Runner contract.
-- **MER-E contract drift.** Trace shape changes require coordinated MER-E updates. Mitigation: concrete coordination plan in [RFC §9.1](../../../per-turn-dispatch-rfc.md#91-risks) — owner pairing by end of Phase 0, contract diff at start of Phase 2, cutover gated on eval suite passing.
+- **MER-E contract drift.** Trace shape changes require coordinated MER-E updates. Mitigation: concrete coordination plan in [RFC §9.1](../../../per-turn-dispatch-rfc.md#91-risks) — owner pairing by end of Phase 0, contract diff at start of Phase 2, MER-E extractors validate against the post-AH-75 trace fixture. **Cutover gate.**
 - **Chat / Billing event-topology drift.** Inner-Runner dispatch produces a different event sequence. Mitigation: Phase 2 parity tests as merge blockers.
 
 ### 9.2 Open questions

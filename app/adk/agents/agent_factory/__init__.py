@@ -35,7 +35,6 @@ from app.adk.agents.agent_factory.config_loader import (
 )
 from app.adk.agents.agent_factory.dispatch import (
     assemble_available_specialists_block,
-    generate_dispatch_functions,
 )
 from app.adk.agents.agent_factory.hierarchy import ROOT_CONFIG_ID, build_hierarchy
 from app.adk.agents.agent_factory.mcp import (
@@ -85,7 +84,6 @@ __all__ = [
     "build_toolset_for_config",
     "build_toolset_for_doc",
     "count_specialist_tool_roster",
-    "generate_dispatch_functions",
     "get_skill_build_metadata",
     "list_account_agent_configs",
     "load_agent_config",

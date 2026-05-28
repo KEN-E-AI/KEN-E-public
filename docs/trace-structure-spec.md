@@ -811,7 +811,7 @@ child; `review_loop_iteration` is L4.
 
 ### 14.4 MER-E Extractor Guidance
 
-Before the Phase 5 flag flip (`agentic_harness_per_turn_dispatch` default-on):
+For the canonical post-AH-75 trace shape:
 
 1. **Stop matching `dispatch_to_*` span names** — update any extractor query of the form
    `span["name"].startswith("dispatch_to_")` to `span["name"] == "delegate_to_specialist"`.

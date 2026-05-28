@@ -64,6 +64,7 @@ from typing import Any
 from google.adk.agents import BaseAgent
 from google.adk.agents.readonly_context import ReadonlyContext
 
+from app.adk.agents.agent_factory._executors import get_pool_checkout_executor
 from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
 from app.adk.agents.agent_factory.mcp_pool import McpServerKind, McpToolsetPool
 from app.adk.agents.utils.config_cache import get_cached_merged_config
@@ -448,36 +449,39 @@ def _build_specialist(
                     )
                 )
 
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _executor:
-                future = _executor.submit(_runner)
-                try:
-                    toolsets[server_id] = future.result(
-                        timeout=_MCP_POOL_CHECKOUT_TIMEOUT_SECONDS
-                    )
-                except concurrent.futures.TimeoutError:
-                    logger.warning(
-                        "mcp_pool_checkout_timeout",
-                        extra={
-                            "server_id": server_id,
-                            "specialist": name,
-                            "timeout_s": _MCP_POOL_CHECKOUT_TIMEOUT_SECONDS,
-                        },
-                    )
-                except (MCPSchemaError, ValueError) as exc:
-                    logger.error(
-                        "Failed to build toolset for MCP server %r (specialist %r): %s",
-                        server_id,
-                        name,
-                        exc,
-                    )
-                except Exception:
-                    logger.error(
-                        "Unexpected error checking out MCP toolset for server %r "
-                        "(specialist %r)",
-                        server_id,
-                        name,
-                        exc_info=True,
-                    )
+            # AH-77 Item F: reuse the process-wide singleton executor rather than
+            # constructing a new ThreadPoolExecutor per server per specialist
+            # build.  The executor's sole role is timeout enforcement via
+            # future.result(timeout=...) — it is not used for parallelism.
+            future = get_pool_checkout_executor().submit(_runner)
+            try:
+                toolsets[server_id] = future.result(
+                    timeout=_MCP_POOL_CHECKOUT_TIMEOUT_SECONDS
+                )
+            except concurrent.futures.TimeoutError:
+                logger.warning(
+                    "mcp_pool_checkout_timeout",
+                    extra={
+                        "server_id": server_id,
+                        "specialist": name,
+                        "timeout_s": _MCP_POOL_CHECKOUT_TIMEOUT_SECONDS,
+                    },
+                )
+            except (MCPSchemaError, ValueError) as exc:
+                logger.error(
+                    "Failed to build toolset for MCP server %r (specialist %r): %s",
+                    server_id,
+                    name,
+                    exc,
+                )
+            except Exception:
+                logger.error(
+                    "Unexpected error checking out MCP toolset for server %r "
+                    "(specialist %r)",
+                    server_id,
+                    name,
+                    exc_info=True,
+                )
 
     # AH-PRD-06 PR-C: resolve ``default_global: true`` function tools (e.g.
     # ``create_visualization`` from AH-PRD-04) once per specialist build.
