@@ -289,6 +289,7 @@ def test_agent_skill_tool_calls_emit_spans(
         config,
         name="test_skills_agent",
         account_id="acc_test_skills",
+        config_doc_id="test_skills_agent",
     )
 
     # ── 4. Stub WeaveClient.finish_call with a no-op BEFORE TraceCapture ─────
