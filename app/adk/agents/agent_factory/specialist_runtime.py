@@ -88,11 +88,8 @@ _MCP_POOL_CHECKOUT_TIMEOUT_SECONDS: int = 30
 # ``_DEFAULT_SANDBOX_POOL`` singleton pattern in builder.py:51.
 # Tests inject a fresh pool or MagicMock via the ``mcp_pool=`` kwarg on
 # ``_build_specialist`` so the module global is never mutated by test code.
-#
-# TODO(SK-37): nothing calls ``_DEFAULT_MCP_POOL.start()`` today, so the
-# idle-TTL background sweep is dormant in production — only the LRU cap evicts.
-# SK-37 wires ``start()`` / ``stop()`` from the runtime entrypoint (FastAPI
-# lifespan or Cloud Run startup).
+# start() is called from attach_specialists_before_agent_callback (AH-78),
+# which arms the idle-TTL background sweep on the first turn per process.
 _DEFAULT_MCP_POOL: McpToolsetPool = McpToolsetPool()
 
 
