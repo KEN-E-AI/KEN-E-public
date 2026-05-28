@@ -868,14 +868,18 @@ def test_per_key_future_different_keys_same_stripe_parallel() -> None:
     def _fetch_a() -> Any:
         return asyncio.run(
             pool.get_or_create(
-                kind=McpServerKind.CLOUD_RUN, key=("a", "acc", "h1"), build_fn=_slow_build_a
+                kind=McpServerKind.CLOUD_RUN,
+                key=("a", "acc", "h1"),
+                build_fn=_slow_build_a,
             )
         )
 
     def _fetch_b() -> Any:
         return asyncio.run(
             pool.get_or_create(
-                kind=McpServerKind.CLOUD_RUN, key=("b", "acc", "h2"), build_fn=_slow_build_b
+                kind=McpServerKind.CLOUD_RUN,
+                key=("b", "acc", "h2"),
+                build_fn=_slow_build_b,
             )
         )
 

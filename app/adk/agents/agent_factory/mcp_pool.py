@@ -303,7 +303,11 @@ class McpToolsetPool:
                 logger.warning(
                     "mcp_pool_aclose_failed",
                     # AH-77 Item E: log kind + server_id only.
-                    extra={"kind": evict_kind, "server_id": evict_server_id, "reason": reason},
+                    extra={
+                        "kind": evict_kind,
+                        "server_id": evict_server_id,
+                        "reason": reason,
+                    },
                     exc_info=True,
                 )
 
