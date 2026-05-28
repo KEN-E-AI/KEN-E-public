@@ -1,11 +1,12 @@
 """Unit tests: SandboxPool start/stop wiring in the FastAPI lifespan (SK-37).
 
-Verifies AC-2 (graceful shutdown awaits stop()) and the defensive branch
+Verifies AC-2 (graceful shutdown calls stop()) and the defensive branch
 (start() raising must not block lifespan setup).
 
 The tests patch ``app.adk.agents.agent_factory.builder._DEFAULT_SANDBOX_POOL``
 with a MagicMock(spec=SandboxPool) so no real Vertex AI connection is made.
-``stop()`` is an async method, so the mock configures it as an AsyncMock.
+Both ``start()`` and ``stop()`` are synchronous (the pool runs on threads, not
+the event loop), so the spec'd mock auto-creates them as sync MagicMocks.
 
 Pattern follows test_main_startup_guard.py: pure-unit, no network, no Firestore.
 """
@@ -13,7 +14,7 @@ Pattern follows test_main_startup_guard.py: pure-unit, no network, no Firestore.
 from __future__ import annotations
 
 import logging
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -26,10 +27,8 @@ from app.adk.agents.agent_factory.sandbox_pool import SandboxPool
 
 
 def _make_pool_mock() -> MagicMock:
-    """Return a MagicMock(spec=SandboxPool) with stop() as an AsyncMock."""
-    mock = MagicMock(spec=SandboxPool)
-    mock.stop = AsyncMock()
-    return mock
+    """Return a MagicMock(spec=SandboxPool) — start()/stop() are sync MagicMocks."""
+    return MagicMock(spec=SandboxPool)
 
 
 # The import path that main.py uses inside the lifespan deferred import.
@@ -51,8 +50,8 @@ class TestSandboxPoolLifespanHappyPath:
             with TestClient(app):
                 pool.start.assert_called_once()
 
-    def test_stop_awaited_exactly_once_on_shutdown(self) -> None:
-        """stop() is awaited exactly once when the TestClient context exits."""
+    def test_stop_called_exactly_once_on_shutdown(self) -> None:
+        """stop() is called exactly once when the TestClient context exits."""
         pool = _make_pool_mock()
         with patch(_POOL_TARGET, pool):
             from src.kene_api.main import app
@@ -61,14 +60,14 @@ class TestSandboxPoolLifespanHappyPath:
                 pass  # lifespan start
 
             # After the context exits, lifespan shutdown has run.
-            pool.stop.assert_awaited_once()
+            pool.stop.assert_called_once()
 
     def test_start_before_stop(self) -> None:
         """start() fires before stop() — startup ordering is correct."""
         call_order: list[str] = []
         pool = _make_pool_mock()
         pool.start.side_effect = lambda: call_order.append("start")
-        pool.stop.side_effect = AsyncMock(side_effect=lambda: call_order.append("stop"))
+        pool.stop.side_effect = lambda: call_order.append("stop")
         with patch(_POOL_TARGET, pool):
             from src.kene_api.main import app
 

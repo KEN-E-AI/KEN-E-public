@@ -7,14 +7,17 @@ surfaced only when ADK reads an inherited ``BaseCodeExecutor`` field per request
 assert every inherited Pydantic field is populated, so a future regression that
 drops ``super().__init__()`` fails at unit-test time instead of at runtime.
 
-``execute_code`` → ``pool.lease()`` proxying is covered by
-``test_leased_executor_refcount_boundary`` in
-``tests/integration/test_sandbox_pool_runtime_resolver.py``; this file's sole
-purpose is the field surface.
+``execute_code`` → ``pool.lease()`` proxying under the pool's real refcount is
+covered by ``test_leased_executor_refcount_boundary`` in
+``tests/integration/test_sandbox_pool_runtime_resolver.py``; this file covers
+the field surface and the synchronous ADK call contract.
 """
 
 from __future__ import annotations
 
+import contextlib
+import inspect
+from typing import Any
 from unittest.mock import MagicMock
 
 from google.adk.code_executors import BaseCodeExecutor
@@ -58,3 +61,40 @@ def test_wrapper_attrs_set() -> None:
     pool = MagicMock(spec=SandboxPool)
     e = LeasedSandboxExecutor(pool=pool, account_id="acc_123", config_id="my_agent")
     assert (e._pool, e._account_id, e._config_id) == (pool, "acc_123", "my_agent")
+
+
+def test_execute_code_is_not_a_coroutine_function() -> None:
+    """execute_code must be a plain (sync) function per ADK's BaseCodeExecutor.
+
+    ADK's ``_code_execution`` flow calls ``execute_code(...)`` un-awaited and
+    reads ``.stdout`` off the return value, so an ``async def`` here hands ADK a
+    coroutine and crashes on the first code turn (the PR #727 blocker).
+    """
+    assert not inspect.iscoroutinefunction(LeasedSandboxExecutor.execute_code)
+
+
+def test_execute_code_proxies_inner_result_synchronously() -> None:
+    """execute_code enters pool.lease() and returns the inner result directly.
+
+    Uses a sync lease() context manager and a sync inner executor — mirroring
+    the real (post-rework) pool surface — and asserts the wrapper returns the
+    inner executor's result object unchanged (not a coroutine).
+    """
+    sentinel = object()
+    inner = MagicMock()
+    inner.execute_code.return_value = sentinel
+
+    @contextlib.contextmanager
+    def _fake_lease(*, account_id: str, config_id: str) -> Any:
+        yield inner
+
+    pool = MagicMock(spec=SandboxPool)
+    pool.lease.side_effect = _fake_lease
+
+    e = LeasedSandboxExecutor(pool=pool, account_id="acc_123", config_id="my_agent")
+    ctx, code_input = MagicMock(), MagicMock()
+    result = e.execute_code(ctx, code_input)
+
+    assert result is sentinel
+    pool.lease.assert_called_once_with(account_id="acc_123", config_id="my_agent")
+    inner.execute_code.assert_called_once_with(ctx, code_input)

@@ -33,13 +33,12 @@ _ATTRS = {
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_noop_when_weave_not_installed() -> None:
+def test_noop_when_weave_not_installed() -> None:
     """Helper silently yields and emits nothing when _weave_get_client is None
     (i.e. Weave is not installed in the environment)."""
     executed = False
     with patch(_GET_CLIENT_PATH, new=None):
-        async with emit_sandbox_pool_span("sandbox_pool.get", _ATTRS):
+        with emit_sandbox_pool_span("sandbox_pool.get", _ATTRS):
             executed = True
 
     assert executed, "Wrapped block should still execute"
@@ -50,14 +49,13 @@ async def test_noop_when_weave_not_installed() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_noop_when_get_client_returns_none() -> None:
+def test_noop_when_get_client_returns_none() -> None:
     """Helper silently yields and emits nothing when get_client() returns None
     (i.e. Weave is installed but not initialised)."""
     mock_get_client = MagicMock(return_value=None)
     executed = False
     with patch(_GET_CLIENT_PATH, new=mock_get_client):
-        async with emit_sandbox_pool_span("sandbox_pool.get", _ATTRS):
+        with emit_sandbox_pool_span("sandbox_pool.get", _ATTRS):
             executed = True
 
     assert executed, "Wrapped block should still execute"
@@ -69,8 +67,7 @@ async def test_noop_when_get_client_returns_none() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_creates_and_finishes_call() -> None:
+def test_creates_and_finishes_call() -> None:
     """When a Weave client is available, create_call and finish_call are each
     called exactly once with the expected arguments."""
     mock_call = MagicMock(id="span-1")
@@ -78,7 +75,7 @@ async def test_creates_and_finishes_call() -> None:
     mock_client.create_call.return_value = mock_call
 
     with patch(_GET_CLIENT_PATH, return_value=mock_client):
-        async with emit_sandbox_pool_span("sandbox_pool.get", _ATTRS):
+        with emit_sandbox_pool_span("sandbox_pool.get", _ATTRS):
             pass
 
     mock_client.create_call.assert_called_once_with(
@@ -95,8 +92,7 @@ async def test_creates_and_finishes_call() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_finish_call_called_even_on_exception() -> None:
+def test_finish_call_called_even_on_exception() -> None:
     """finish_call is invoked in the finally block even when the wrapped body
     raises — the exception propagates to the caller."""
     mock_call = MagicMock(id="span-2")
@@ -105,7 +101,7 @@ async def test_finish_call_called_even_on_exception() -> None:
 
     with patch(_GET_CLIENT_PATH, return_value=mock_client):
         with pytest.raises(ValueError, match="boom"):
-            async with emit_sandbox_pool_span("sandbox_pool.evict", _ATTRS):
+            with emit_sandbox_pool_span("sandbox_pool.evict", _ATTRS):
                 raise ValueError("boom")
 
     mock_client.finish_call.assert_called_once_with(mock_call, output=_ATTRS)
@@ -116,8 +112,7 @@ async def test_finish_call_called_even_on_exception() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_noop_when_create_call_raises() -> None:
+def test_noop_when_create_call_raises() -> None:
     """If create_call itself raises, the helper swallows the exception, the
     wrapped block still runs, and finish_call is NOT called (no call object)."""
     mock_client = MagicMock()
@@ -125,7 +120,7 @@ async def test_noop_when_create_call_raises() -> None:
 
     executed = False
     with patch(_GET_CLIENT_PATH, return_value=mock_client):
-        async with emit_sandbox_pool_span("sandbox_pool.get", _ATTRS):
+        with emit_sandbox_pool_span("sandbox_pool.get", _ATTRS):
             executed = True
 
     assert executed, "Wrapped block must run despite create_call failure"
@@ -137,8 +132,7 @@ async def test_noop_when_create_call_raises() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_noop_when_finish_call_raises() -> None:
+def test_noop_when_finish_call_raises() -> None:
     """If finish_call raises, the helper swallows it and the caller does not
     see any exception."""
     mock_call = MagicMock(id="span-3")
@@ -148,5 +142,5 @@ async def test_noop_when_finish_call_raises() -> None:
 
     with patch(_GET_CLIENT_PATH, return_value=mock_client):
         # Must not raise
-        async with emit_sandbox_pool_span("sandbox_pool.evict", _ATTRS):
+        with emit_sandbox_pool_span("sandbox_pool.evict", _ATTRS):
             pass

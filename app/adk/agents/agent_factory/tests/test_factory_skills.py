@@ -773,35 +773,32 @@ class TestSandboxWiring:
         assert len(toolsets) == 1
 
     # ------------------------------------------------------------------
-    # AC-4 — timeout enforcement
+    # AC-4 — lazy construction (no build-time I/O)
     # ------------------------------------------------------------------
 
     @pytest.mark.parametrize("code_execution_enabled", [False, True])
     def test_sandbox_build_creates_leased_executor_instantly(
         self,
         code_execution_enabled: bool,
-        monkeypatch: pytest.MonkeyPatch,
         caplog: pytest.LogCaptureFixture,
     ) -> None:
         """sandbox=True always returns LeasedSandboxExecutor instantly (SK-42 lazy construction).
 
-        SK-42: build_agent creates a LeasedSandboxExecutor wrapper without touching
-        the pool, so there is no I/O during build_agent and the timeout path is never
-        triggered.  The timeout mechanism (from Review 36) is preserved for future
-        use but becomes unreachable in normal operation.
+        build_agent creates a LeasedSandboxExecutor wrapper without touching the
+        pool — there is no I/O during build_agent.  PR #727 removed the vestigial
+        sandbox-build timeout guard: the wrapper is constructed synchronously and
+        the real sandbox cold-start now happens lazily inside the inner
+        execute_code, so no "sandbox_build_timeout" error path exists any more.
 
-        Previously named test_sandbox_build_timeout_returns_none_no_fallback; the
-        test was updated when SK-42 changed the sandbox-build path to lazy construction.
+        Previously named test_sandbox_build_timeout_returns_none_no_fallback.
         """
         import logging
 
-        import app.adk.agents.agent_factory.builder as b
         from app.adk.agents.agent_factory.leased_sandbox_executor import (
             LeasedSandboxExecutor,
         )
 
         pool = self._make_mock_pool()
-        monkeypatch.setattr(b, "_SANDBOX_BUILD_TIMEOUT_SECONDS", 0.05)
 
         config = _make_config(
             sandbox_code_executor_enabled=True,
@@ -811,12 +808,11 @@ class TestSandboxWiring:
         with caplog.at_level(logging.ERROR):
             agent = self._build(config, account_id="acc_to", sandbox_pool=pool)
 
-        # SK-42: LeasedSandboxExecutor is always returned; build_agent is instant
-        # (no pool I/O), so the timeout path is never reached.
+        # LeasedSandboxExecutor is always returned; build_agent is instant (no pool I/O).
         assert isinstance(agent.code_executor, LeasedSandboxExecutor)
         assert agent.code_executor._pool is pool
 
-        # No timeout error logged — construction is instant.
+        # The build-timeout error path no longer exists — nothing should log it.
         timeout_records = [
             r
             for r in caplog.records

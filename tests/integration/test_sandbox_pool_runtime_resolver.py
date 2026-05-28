@@ -48,12 +48,11 @@ tests/integration/ but do not share any files.
 
 from __future__ import annotations
 
+import inspect
 import sys
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 # ── neo4j mock — must precede any app imports ─────────────────────────────────
 # Mirrors tests/integration/test_review_loop_single_step.py:32-37.
@@ -163,21 +162,20 @@ def _make_config(**kw: Any) -> MergedAgentConfig:
 def _make_pool_with_stub() -> tuple[SandboxPool, Any, list[int]]:
     """Return (pool, executor_sentinel, construct_call_count_list).
 
-    pool._construct is monkey-assigned to an async stub that always returns the
-    same AsyncMock sentinel regardless of key.  construct_call_count is a
+    pool._construct is monkey-assigned to a sync stub that always returns the
+    same MagicMock sentinel regardless of key.  construct_call_count is a
     one-element list so the closure can mutate it.
 
     SK-42: pool._construct is no longer called during build_agent — it fires
     lazily on the first LeasedSandboxExecutor.execute_code call.  The sentinel
-    is therefore an AsyncMock (not BuiltInCodeExecutor) because the inner
-    executor no longer needs to pass Pydantic validation on LlmAgent.code_executor
-    (LeasedSandboxExecutor fills that role now).
+    is a plain MagicMock because the inner executor no longer needs to pass
+    Pydantic validation on LlmAgent.code_executor (LeasedSandboxExecutor fills
+    that role now).
     """
-    sentinel = AsyncMock()
-    sentinel.aclose = AsyncMock()
+    sentinel = MagicMock()
     call_count: list[int] = [0]
 
-    async def _stub_construct(*, account_id: str, config_id: str) -> Any:
+    def _stub_construct(*, account_id: str, config_id: str) -> Any:
         call_count[0] += 1
         return sentinel
 
@@ -191,20 +189,18 @@ def _make_pool_with_per_key_stub() -> tuple[
 ]:
     """Return (pool, executors_by_key, construct_call_count_list).
 
-    Like _make_pool_with_stub but returns a distinct AsyncMock instance for
+    Like _make_pool_with_stub but returns a distinct MagicMock instance for
     each unique (account_id, config_id) key.  Used by the integrity-check test
     to verify that different keys yield different executors.
     """
     executors: dict[tuple[str, str], Any] = {}
     call_count: list[int] = [0]
 
-    async def _stub_construct(*, account_id: str, config_id: str) -> Any:
+    def _stub_construct(*, account_id: str, config_id: str) -> Any:
         call_count[0] += 1
         key = (account_id, config_id)
         if key not in executors:
-            ex = AsyncMock()
-            ex.aclose = AsyncMock()
-            executors[key] = ex
+            executors[key] = MagicMock()
         return executors[key]
 
     pool = SandboxPool()
@@ -213,9 +209,9 @@ def _make_pool_with_per_key_stub() -> tuple[
 
 
 def _make_span_recorder() -> tuple[list[tuple[str, dict]], Any]:
-    """Return (recorded_spans, AsyncContextManager patch target).
+    """Return (recorded_spans, context-manager patch target).
 
-    Mirrors app/adk/agents/agent_factory/tests/test_sandbox_pool.py:490-504.
+    Mirrors app/adk/agents/agent_factory/tests/test_sandbox_pool.py.
     Each emitted span appends (name, attrs) to *recorded_spans*.
 
     Intentionally duplicated rather than promoted to a shared helper —
@@ -225,8 +221,8 @@ def _make_span_recorder() -> tuple[list[tuple[str, dict]], Any]:
 
     import contextlib
 
-    @contextlib.asynccontextmanager
-    async def _recording_span(name: str, attrs: dict) -> Any:
+    @contextlib.contextmanager
+    def _recording_span(name: str, attrs: dict) -> Any:
         recorded.append((name, dict(attrs)))
         yield
 
@@ -423,8 +419,7 @@ def test_different_config_ids_construct_independently() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_leased_executor_refcount_boundary() -> None:
+def test_leased_executor_refcount_boundary() -> None:
     """LeasedSandboxExecutor.execute_code enters/exits pool.lease(); refcount returns to 0.
 
     SK-42 acceptance: the refcount is 1 while execute_code is in progress and
@@ -439,22 +434,19 @@ async def test_leased_executor_refcount_boundary() -> None:
     class _FakeInnerExecutor:
         """Minimal in-pool executor that captures the in-flight refcount."""
 
-        async def execute_code(self, invocation_context: Any, code_input: Any) -> str:
+        def execute_code(self, invocation_context: Any, code_input: Any) -> str:
             refcount_during.append(pool._entry_refcount(key))
             return "ok"
 
-        async def aclose(self) -> None:
-            pass
-
     inner = _FakeInnerExecutor()
 
-    async def _stub_construct(*, account_id: str, config_id: str) -> Any:
+    def _stub_construct(*, account_id: str, config_id: str) -> Any:
         construct_count[0] += 1
         return inner
 
     pool = SandboxPool()
     pool._construct = _stub_construct  # type: ignore[method-assign]
-    pool._clear_tmp = AsyncMock()  # avoid real Vertex calls
+    pool._clear_tmp = MagicMock()  # avoid real Vertex calls
 
     config = _make_config()
     agent = _build_with_pool(config, account_id="acc_z", name="spec_c", pool=pool)
@@ -463,12 +455,12 @@ async def test_leased_executor_refcount_boundary() -> None:
     assert key not in pool._pool, "Pool should be empty before first execute_code"
 
     # First call: triggers lazy construction + lease.
-    result = await agent.code_executor.execute_code(MagicMock(), MagicMock())
+    result = agent.code_executor.execute_code(MagicMock(), MagicMock())
     assert result == "ok"
     assert construct_count[0] == 1, "_construct must be called on first execute_code"
 
     # Second call: reuses pool entry — no additional _construct.
-    await agent.code_executor.execute_code(MagicMock(), MagicMock())
+    agent.code_executor.execute_code(MagicMock(), MagicMock())
     assert construct_count[0] == 1, (
         "_construct must not be called again on second execute_code"
     )
@@ -480,3 +472,53 @@ async def test_leased_executor_refcount_boundary() -> None:
     assert pool._entry_refcount(key) == 0, (
         "Refcount must be 0 after execute_code returns (lease released)"
     )
+
+
+# ---------------------------------------------------------------------------
+# Test 5 — ADK code-executor contract: execute_code is synchronous and its
+#           return value exposes .stdout / .stderr directly (the PR #727 blocker).
+# ---------------------------------------------------------------------------
+
+
+def test_execute_code_matches_adk_sync_contract() -> None:
+    """execute_code is sync and returns a result ADK can read .stdout off of.
+
+    Regression for the PR #727 critical blocker: ADK's ``_code_execution`` flow
+    invokes ``code_executor.execute_code(...)`` **un-awaited** and immediately
+    reads ``.stdout`` / ``.stderr`` off the return value.  When the wrapper was
+    ``async def`` it handed ADK a coroutine, which crashed with
+    ``AttributeError: 'coroutine' object has no attribute 'stdout'`` on the
+    first code turn.  This drives the wrapper exactly as ADK does — calling
+    ``execute_code`` without awaiting — and asserts the result is a concrete
+    object whose ``.stdout`` / ``.stderr`` are readable.
+    """
+
+    class _CodeExecutionResult:
+        stdout = "hello from sandbox"
+        stderr = ""
+
+    class _FakeInnerExecutor:
+        def execute_code(self, invocation_context: Any, code_input: Any) -> Any:
+            return _CodeExecutionResult()
+
+    inner = _FakeInnerExecutor()
+
+    def _stub_construct(*, account_id: str, config_id: str) -> Any:
+        return inner
+
+    pool = SandboxPool()
+    pool._construct = _stub_construct  # type: ignore[method-assign]
+    pool._clear_tmp = MagicMock()  # avoid real Vertex calls
+
+    config = _make_config()
+    agent = _build_with_pool(config, account_id="acc_q", name="spec_d", pool=pool)
+    assert isinstance(agent.code_executor, LeasedSandboxExecutor)
+
+    # Exactly how ADK calls it: un-awaited, then read .stdout / .stderr.
+    result = agent.code_executor.execute_code(MagicMock(), MagicMock())
+
+    assert not inspect.iscoroutine(result), (
+        "execute_code must return a concrete result, not a coroutine — ADK reads "
+        ".stdout off the return value without awaiting it (PR #727 blocker)"
+    )
+    assert (result.stdout, result.stderr) == ("hello from sandbox", "")
