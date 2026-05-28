@@ -188,12 +188,14 @@ resource "google_logging_metric" "config_cache_hit_rate" {
   for_each = local.deploy_project_ids
   project  = each.value
 
+  # Counts config_cache_read log entries where cache_hit=true.
+  # Hit rate = ALIGN_RATE(this metric) / ALIGN_RATE(config_cache_total) in dashboard.
   name   = "agentic_harness/config_cache_hit_rate"
   filter = "resource.type=\"cloud_run_revision\" AND jsonPayload.message=\"config_cache_read\" AND jsonPayload.cache_hit=true"
 
   metric_descriptor {
     metric_kind = "DELTA"
-    value_type  = "BOOLEAN"
+    value_type  = "INT64"
   }
 }
 
@@ -201,12 +203,13 @@ resource "google_logging_metric" "agent_cache_hit_rate" {
   for_each = local.deploy_project_ids
   project  = each.value
 
+  # Counts specialist_agent_resolved log entries where agent_cache_hit=true.
   name   = "agentic_harness/agent_cache_hit_rate"
   filter = "resource.type=\"cloud_run_revision\" AND jsonPayload.message=\"specialist_agent_resolved\" AND jsonPayload.agent_cache_hit=true"
 
   metric_descriptor {
     metric_kind = "DELTA"
-    value_type  = "BOOLEAN"
+    value_type  = "INT64"
   }
 }
 
@@ -214,12 +217,13 @@ resource "google_logging_metric" "mcp_pool_cache_hit_rate" {
   for_each = local.deploy_project_ids
   project  = each.value
 
+  # Counts mcp_pool_checkout log entries where cache_hit=true.
   name   = "agentic_harness/mcp_pool_cache_hit_rate"
   filter = "resource.type=\"cloud_run_revision\" AND jsonPayload.message=\"mcp_pool_checkout\" AND jsonPayload.cache_hit=true"
 
   metric_descriptor {
     metric_kind = "DELTA"
-    value_type  = "BOOLEAN"
+    value_type  = "INT64"
   }
 }
 
@@ -243,7 +247,7 @@ resource "google_logging_metric" "dispatch_error_count" {
   project  = each.value
 
   name   = "agentic_harness/dispatch_error_count"
-  filter = "resource.type=\"cloud_run_revision\" AND severity=\"ERROR\" AND (jsonPayload.message=~\"Failed to build toolset|Unexpected error checking out MCP toolset|mcp_pool_checkout_timeout\")"
+  filter = "resource.type=\"cloud_run_revision\" AND severity=\"ERROR\" AND (jsonPayload.message=\"Failed to build toolset\" OR jsonPayload.message=\"Unexpected error checking out MCP toolset\" OR jsonPayload.message=\"mcp_pool_checkout_timeout\")"
 
   metric_descriptor {
     metric_kind = "DELTA"

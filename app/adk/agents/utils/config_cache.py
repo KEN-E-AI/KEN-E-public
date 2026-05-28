@@ -121,7 +121,8 @@ def get_cached_config(
         cached = _cache.get(doc_id)
         if cached is not None and now < cached[3]:
             logger.info(
-                "config_cache_read", extra={"doc_id": doc_id, "cache_hit": True}
+                "config_cache_read",
+                extra={"json_fields": {"doc_id": doc_id, "cache_hit": True}},
             )
             return cached[0], cached[1], cached[2]
 
@@ -141,7 +142,10 @@ def get_cached_config(
                 return cached[0], cached[1], cached[2]
             raise
 
-        logger.info("config_cache_read", extra={"doc_id": doc_id, "cache_hit": False})
+        logger.info(
+            "config_cache_read",
+            extra={"json_fields": {"doc_id": doc_id, "cache_hit": False}},
+        )
         _cache[doc_id] = (config, metadata, extensions, now + ttl_seconds)
         return config, metadata, extensions
 
@@ -180,7 +184,8 @@ def get_cached_merged_config(
         cached = _merged_cache.get(key)
         if cached is not None and now < cached[1]:
             logger.info(
-                "config_cache_read", extra={"doc_id": doc_id, "cache_hit": True}
+                "config_cache_read",
+                extra={"json_fields": {"doc_id": doc_id, "cache_hit": True}},
             )
             return cached[0]
 
@@ -200,7 +205,10 @@ def get_cached_merged_config(
                 return cached[0]
             raise
 
-        logger.info("config_cache_read", extra={"doc_id": doc_id, "cache_hit": False})
+        logger.info(
+            "config_cache_read",
+            extra={"json_fields": {"doc_id": doc_id, "cache_hit": False}},
+        )
         _merged_cache[key] = (config, now + ttl_seconds)
         return config
 

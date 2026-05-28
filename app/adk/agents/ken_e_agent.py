@@ -9,6 +9,7 @@ import time (PEP 562 module-level __getattr__).
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 # Load environment variables from .env file BEFORE reading any env vars.
@@ -28,15 +29,21 @@ try:
 except ImportError:
     pass
 
+_ken_e_agent_lock = threading.Lock()
 _ken_e_agent_instance = None
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> object:
     if name == "ken_e_agent":
         global _ken_e_agent_instance
-        if _ken_e_agent_instance is None:
-            from app.adk.agents.agent_factory import build_hierarchy
+        with _ken_e_agent_lock:
+            if _ken_e_agent_instance is None:
+                from app.adk.agents.agent_factory import build_hierarchy
 
-            _ken_e_agent_instance = build_hierarchy()
+                _ken_e_agent_instance = build_hierarchy()
         return _ken_e_agent_instance
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    raise AttributeError(
+        f"module {__name__!r} has no attribute {name!r}. "
+        "Note: create_ken_e_agent, _BASE_INSTRUCTION, build_ken_e_instruction, "
+        "and _make_instruction_provider were removed in AH-68."
+    )
