@@ -569,7 +569,11 @@ class TestSandboxWiring:
     ) -> Any:
         import app.adk.agents.agent_factory.builder as b
 
-        kw: dict[str, Any] = {"account_id": account_id, "sandbox_pool": sandbox_pool}
+        kw: dict[str, Any] = {
+            "account_id": account_id,
+            "config_doc_id": "test_agent",
+            "sandbox_pool": sandbox_pool,
+        }
 
         with (
             _PATCH_BEFORE_AGENT,
