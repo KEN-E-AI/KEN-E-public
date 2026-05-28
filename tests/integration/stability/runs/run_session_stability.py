@@ -164,12 +164,12 @@ async def run_test1_sustained_session(
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
 
-    from app.adk.agents.ken_e_agent import create_ken_e_agent
+    from app.adk.agents.agent_factory import build_hierarchy
 
     QUERIES = _load_corpus()
     mp_module = _load_memory_profiler()
 
-    agent = create_ken_e_agent()
+    agent = build_hierarchy()
     session_service = InMemorySessionService()
     runner = Runner(
         agent=agent,
@@ -483,10 +483,10 @@ async def run_test4_long_session(invocations_n: int = 25) -> StepResult:
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
 
-    from app.adk.agents.ken_e_agent import create_ken_e_agent
+    from app.adk.agents.agent_factory import build_hierarchy
 
     QUERIES = _load_corpus()
-    agent = create_ken_e_agent()
+    agent = build_hierarchy()
     session_service = InMemorySessionService()
     runner = Runner(
         agent=agent,

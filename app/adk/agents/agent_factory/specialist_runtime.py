@@ -508,7 +508,7 @@ def _build_specialist(
         raise
 
     specialist = build_agent(
-        config, name=name, account_id=account_id, tools=tools, config_doc_id=None
+        config, name=name, account_id=account_id, tools=tools, config_doc_id=name
     )
 
     # AH-75: prevent multi-turn "stuck on specialist" routing. ADK's Runner
