@@ -1113,3 +1113,53 @@ async def test_clear_tmp_reuses_cached_client() -> None:
 
     # vertexai.Client must have been called once despite two _clear_tmp calls
     mock_vertexai.Client.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Test 34 — deadlock guard: a raise from _evict_if_over_cap during lease() must
+#           not orphan the clearing event / refcount (PR #727 reviewer finding)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_lease_evict_failure_releases_clearing_event_and_refcount() -> None:
+    """_evict_if_over_cap raising during lease() must not deadlock the key.
+
+    The cache-miss path registers ``self._clearing[key]`` and bumps the refcount
+    inside ``_acquire``'s stripe lock; ``lease()`` then enforces the LRU cap.  If
+    that enforcement raises, ``lease()``'s ``try/finally`` must still pop + set the
+    clearing event and release the refcount — otherwise every future ``_acquire``
+    for the key blocks forever on the never-set ``Event``.  Verifies the exception
+    propagates, the state is clean, and a subsequent lease of the same key
+    succeeds.
+    """
+    pool = SandboxPool()
+    pool._CLEAR_TMP_ON_REUSE = True  # so the 0→1 miss registers a clearing event
+    executor = _make_executor()
+
+    async def _fake_construct(**_: Any) -> Any:
+        return executor
+
+    async def _raise_evict() -> None:
+        raise RuntimeError("simulated cap-enforcement failure")
+
+    pool._construct = _fake_construct  # type: ignore[method-assign]
+    pool._clear_tmp = AsyncMock()  # type: ignore[method-assign]
+    pool._evict_if_over_cap = _raise_evict  # type: ignore[method-assign]
+
+    key = ("acc", "cfg")
+
+    # First lease: cache miss → _evict_if_over_cap fires → raises before yield.
+    with pytest.raises(RuntimeError, match="simulated cap-enforcement failure"):
+        async with pool.lease(account_id="acc", config_id="cfg"):
+            pass  # never reached — lease().__aenter__ raises
+
+    # No orphaned clearing event; refcount fully released.
+    assert key not in pool._clearing
+    assert pool._entry_refcount(key) == 0
+
+    # The key is reusable: a subsequent lease (now a cache hit, so
+    # _evict_if_over_cap is not called) acquires without deadlocking.
+    async with pool.lease(account_id="acc", config_id="cfg") as result:
+        assert result is executor
+    assert pool._entry_refcount(key) == 0

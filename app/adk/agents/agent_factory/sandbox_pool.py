@@ -226,10 +226,14 @@ class SandboxPool:
         executor without triggering a clear, so no in-flight ``/tmp`` data
         is destroyed.
 
-        **Exception safety:** ``__aexit__`` is guaranteed by Python's
-        ``async with`` protocol regardless of whether the body raises.
-        The refcount is always decremented and the deferred-evict path is
-        always checked on exit.
+        **Exception safety:** every step after the refcount bump runs inside a
+        single ``try/finally``.  The refcount is always decremented and the
+        deferred-evict path always checked on exit, and a 0 → 1 holder's
+        clearing ``Event`` is always ``set()`` (unblocking waiters) — even if
+        ``_evict_if_over_cap`` or ``_clear_tmp`` raises or the task is cancelled
+        before the clear runs.  This closes the window where an orphaned
+        ``self._clearing[key]`` + refcount would permanently deadlock every
+        future lease of the key.
 
         Emits a ``sandbox_pool.lease`` Weave span on entry (after
         construction and any clearing) carrying ``cleared_tmp``,
@@ -238,53 +242,72 @@ class SandboxPool:
         ``sandbox_pool.release`` span on exit.
         """
         key = (account_id, config_id)
-        executor, _zero_to_one, clearing_event = await self._acquire(key)
+        executor, _zero_to_one, clearing_event, cache_miss = await self._acquire(key)
 
+        # Everything after the refcount bump runs inside this try/finally so the
+        # clearing event and refcount are always released.  No awaits are placed
+        # between _acquire() returning and entering the try.
         cleared_tmp = False
         tmp_clear_failed = False
         client_cache_hit = False
-        if clearing_event is not None:
-            # We are the 0→1 transition holder responsible for clearing /tmp.
-            # Finish the clear and then unblock any concurrent callers that
-            # are waiting on the clearing event before receiving the executor.
-            # Snapshot the cached-client hit count around the clear so the span
-            # reports whether _clear_tmp reused the lru-cached vertexai.Client
-            # (SK-43). Best-effort under concurrency: a hit credited by a
-            # concurrent _clear_tmp on another stripe could be attributed here;
-            # MER-E aggregates over time windows so per-call jitter is tolerable.
-            pre_hits = _get_vertexai_client.cache_info().hits
-            try:
-                await self._clear_tmp(executor)
-                cleared_tmp = True
-            except Exception:
-                tmp_clear_failed = True
-                logger.warning(
-                    "SandboxPool._clear_tmp failed; returning executor uncleared",
-                    extra={"account_id": account_id, "config_id": config_id},
-                )
-            finally:
-                client_cache_hit = _get_vertexai_client.cache_info().hits > pre_hits
-                # Delete before set so waiting callers see no event on retry.
-                del self._clearing[key]
-                clearing_event.set()
-
-        refcount_after = self._entry_refcount(key)
-        async with emit_sandbox_pool_span(
-            "sandbox_pool.lease",
-            {
-                "account_id": account_id,
-                "config_id": config_id,
-                "refcount_after": refcount_after,
-                "cleared_tmp": cleared_tmp,
-                "tmp_clear_failed": tmp_clear_failed,
-                "client_cache_hit": client_cache_hit,
-            },
-        ):
-            pass
-
         try:
+            if cache_miss:
+                # Enforce the LRU cap for the freshly constructed entry.  Runs
+                # here (not inside _acquire) so a raise lands in the finally
+                # below and cannot orphan the clearing event / refcount.
+                await self._evict_if_over_cap()
+
+            if clearing_event is not None:
+                # We are the 0→1 transition holder responsible for clearing /tmp.
+                # Finish the clear and then unblock any concurrent callers that
+                # are waiting on the clearing event before receiving the executor.
+                # Snapshot the cached-client hit count around the clear so the span
+                # reports whether _clear_tmp reused the lru-cached vertexai.Client
+                # (SK-43). Best-effort under concurrency: a hit credited by a
+                # concurrent _clear_tmp on another stripe could be attributed here;
+                # MER-E aggregates over time windows so per-call jitter is tolerable.
+                pre_hits = _get_vertexai_client.cache_info().hits
+                try:
+                    await self._clear_tmp(executor)
+                    cleared_tmp = True
+                except Exception:
+                    tmp_clear_failed = True
+                    logger.warning(
+                        "SandboxPool._clear_tmp failed; returning executor uncleared",
+                        extra={"account_id": account_id, "config_id": config_id},
+                    )
+                finally:
+                    client_cache_hit = _get_vertexai_client.cache_info().hits > pre_hits
+                    # Pop before set so waiting callers see no event on retry.
+                    self._clearing.pop(key, None)
+                    clearing_event.set()
+
+            refcount_after = self._entry_refcount(key)
+            async with emit_sandbox_pool_span(
+                "sandbox_pool.lease",
+                {
+                    "account_id": account_id,
+                    "config_id": config_id,
+                    "refcount_after": refcount_after,
+                    "cleared_tmp": cleared_tmp,
+                    "tmp_clear_failed": tmp_clear_failed,
+                    "client_cache_hit": client_cache_hit,
+                },
+            ):
+                pass
+
             yield executor
         finally:
+            # Backstop: if our clearing event is still registered, we failed
+            # before the clear block could set it (e.g. _evict_if_over_cap raised
+            # or the task was cancelled).  Release it now so waiters unblock —
+            # they retry, find the refcount back at 0, and reconstruct.  On the
+            # normal path the clear block already popped it, so this is a no-op.
+            # Checking the dict (not the local) is safe: no concurrent caller can
+            # register a new event for this key while we still hold the refcount.
+            leaked_clearing = self._clearing.pop(key, None)
+            if leaked_clearing is not None:
+                leaked_clearing.set()
             triggered_evict = await self._release(key)
             release_refcount = self._entry_refcount(key)
             async with emit_sandbox_pool_span(
@@ -499,10 +522,10 @@ class SandboxPool:
 
     async def _acquire(
         self, key: tuple[str, str]
-    ) -> tuple[AgentEngineSandboxCodeExecutor, bool, asyncio.Event | None]:
+    ) -> tuple[AgentEngineSandboxCodeExecutor, bool, asyncio.Event | None, bool]:
         """Increment refcount for ``key``, constructing on miss.
 
-        Returns ``(executor, zero_to_one, clearing_event)`` where:
+        Returns ``(executor, zero_to_one, clearing_event, cache_miss)`` where:
         - ``zero_to_one`` is True when this call transitioned refcount 0 → 1.
         - ``clearing_event`` is a non-None asyncio.Event that the caller MUST
           set (after ``_clear_tmp`` completes) when ``zero_to_one`` is True and
@@ -510,6 +533,8 @@ class SandboxPool:
           in ``self._clearing`` wait for it before receiving the executor, closing
           the window where a second caller could receive the executor while the
           first caller's ``_clear_tmp`` is still running.
+        - ``cache_miss`` is True when this call constructed a new executor; the
+          caller (``lease()``) enforces the LRU cap for it.
 
         Called by ``lease().__aenter__``.  Runs under the stripe lock to
         preserve single-flight construction semantics and atomic refcount bump.
@@ -517,8 +542,12 @@ class SandboxPool:
         concurrent caller can increment refcount (and receive the executor)
         before the event is visible to them.
 
-        Cap enforcement fires outside the lock (same as ``get_or_create``) to
-        avoid a deadlock when the LRU key hashes to the same stripe.
+        Cap enforcement is intentionally NOT performed here: it would run after
+        the refcount bump + clearing-event registration, and if it raised it
+        would orphan both (permanent per-key deadlock).  ``lease()`` runs it
+        inside the same ``try/finally`` that guarantees their release.  (It must
+        still run outside the stripe lock — same as ``get_or_create`` — to avoid
+        a self-deadlock when the LRU key hashes to the same stripe.)
         """
         account_id, config_id = key
         cache_miss: bool = False
@@ -576,10 +605,7 @@ class SandboxPool:
 
             break
 
-        if cache_miss:
-            await self._evict_if_over_cap()
-
-        return executor, zero_to_one, clearing_event_out
+        return executor, zero_to_one, clearing_event_out, cache_miss
 
     async def _release(self, key: tuple[str, str]) -> bool:
         """Decrement refcount for ``key`` and fire deferred eviction on 0.
