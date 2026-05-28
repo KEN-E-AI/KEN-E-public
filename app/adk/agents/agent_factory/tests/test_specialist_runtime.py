@@ -419,9 +419,7 @@ class TestAvailableSpecialistsProvider:
 
         good_cfg = _make_merged_config("good", visible_in_frontend=True)
         good_agent = _make_llm_agent("good_spe")
-        proxy = MappingProxyType(
-            {"account_id": "acct_1", "mcp_creds_x": "v1"}
-        )
+        proxy = MappingProxyType({"account_id": "acct_1", "mcp_creds_x": "v1"})
         ctx = SimpleNamespace(state=proxy)
         seen_session_states: list[Any] = []
 
@@ -1851,8 +1849,7 @@ class TestBuildSpecialistMcpPoolIntegration:
             )
 
         assert len(fresh_pool._pool) == 1, (
-            "Build aborted before reaching the pool — defensive coercion "
-            "regressed."
+            "Build aborted before reaching the pool — defensive coercion regressed."
         )
 
 
