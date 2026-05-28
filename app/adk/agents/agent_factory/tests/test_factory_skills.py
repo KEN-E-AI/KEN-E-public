@@ -961,8 +961,6 @@ class TestExecutorSingleton:
         """
         import concurrent.futures
 
-        import app.adk.agents.agent_factory.builder as b
-
         skill = _make_adk_skill("skill-singleton-test")
         fake_loader = _make_fake_loader_module(skills_by_id={"id-s": skill})
         monkeypatch.setitem(sys.modules, "kene_api.services.skill_loader", fake_loader)

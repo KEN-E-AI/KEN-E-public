@@ -280,9 +280,7 @@ def _build_skill_toolset(
 
     future = get_pool_checkout_executor().submit(_runner)
     try:
-        toolset, skill_name_index = future.result(
-            timeout=_SKILL_LOAD_TIMEOUT_SECONDS
-        )
+        toolset, skill_name_index = future.result(timeout=_SKILL_LOAD_TIMEOUT_SECONDS)
         return toolset, skill_name_index, False
     except concurrent.futures.TimeoutError:
         logger.error(

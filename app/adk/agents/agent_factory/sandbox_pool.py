@@ -359,6 +359,17 @@ class SandboxPool:
         that ``pool_size_after`` reflects post-eviction size for cap-triggering
         misses.  Span emission occurs outside the structural lock to keep the
         lock window tight.
+
+        **AH-77 §G / AH-80 scope-out note:** The AH-77 Item G per-key Future
+        pattern from McpToolsetPool (``mcp_pool.py``) is intentionally **not**
+        applied here.  After SK-42 (DESIGN-REVIEW-LOG Review 38), ``_construct``
+        is purely I/O-free (``_sandbox_resource_name`` regex parse + lazy ADK
+        import); holding the single non-stripe ``threading.Lock`` across it is
+        microsecond-cheap.  The stripe-collision pathology that Item G fixes in
+        McpToolsetPool (lock held across 30-second-bounded Firestore + ADK
+        construction) does not exist in SandboxPool.  See DESIGN-REVIEW-LOG
+        Review 40 for the full rationale.  If ``_construct`` is ever changed to
+        perform I/O this note must be revisited.
         """
         key = (account_id, config_id)
         cache_hit: bool
@@ -571,6 +582,16 @@ class SandboxPool:
         the refcount bump + clearing-event registration, and if it raised it
         would orphan both (permanent per-key deadlock).  ``lease()`` runs it
         inside the same ``try/finally`` that guarantees their release.
+
+        **AH-77 §G / AH-80 scope-out note:** The per-key Future pattern from
+        ``mcp_pool.py:184-219`` is intentionally not applied here.  After SK-42,
+        ``_construct`` is I/O-free; the single ``threading.Lock`` held across it
+        is microsecond-cheap.  The correct single-flight mechanism for SandboxPool
+        is the per-key ``threading.Event`` in ``self._clearing`` (registered
+        inside the lock above) — that is the only point where concurrent callers
+        need to wait (the 0 → 1 ``_clear_tmp`` boundary).  See DESIGN-REVIEW-LOG
+        Review 40.  If ``_construct`` is changed to perform I/O this note must be
+        revisited.
         """
         account_id, config_id = key
         cache_miss: bool = False
