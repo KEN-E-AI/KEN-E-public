@@ -65,10 +65,18 @@ class LeasedSandboxExecutor(_BASE):  # type: ignore[misc]
         account_id: str,
         config_id: str,
     ) -> None:
-        # Do NOT call super().__init__() — BaseCodeExecutor may require
-        # abstract-method registration that we satisfy via execute_code below,
-        # and BuiltInCodeExecutor's no-arg pattern shows parent __init__ is
-        # trivially optional in practice.
+        # super().__init__() MUST run: BaseCodeExecutor is a Pydantic v2 model
+        # and only its __init__ populates the inherited field defaults
+        # (code_block_delimiters, execution_result_delimiters, optimize_data_file,
+        # stateful, error_retry_attempts).  ADK reads those fields per request in
+        # _CodeExecutionRequestProcessor (_code_execution.py:141-144) for ANY
+        # BaseCodeExecutor — there is no BuiltInCodeExecutor escape hatch on that
+        # path; BuiltInCodeExecutor only survives because it does not override
+        # __init__, so its defaults are populated.  Skipping super().__init__()
+        # leaves the fields unset and raises AttributeError on the first turn.
+        # The underscore attrs below are plain (non-field) attributes and set
+        # correctly after the base initialiser has run.
+        super().__init__()
         self._pool = pool
         self._account_id = account_id
         self._config_id = config_id
