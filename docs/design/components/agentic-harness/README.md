@@ -12,7 +12,7 @@ The component owns three architectural pillars. **The review loop framework** (G
 
 After this component's Release 1 projects complete, adding a new specialist is a Firestore config change rather than a code change, every specialist delegation gets a quality gate for free, and every account can customize its agents without affecting other accounts. This platform is what the Skills, Project Tasks, and Knowledge Graph components build on — they all run on agents assembled by the factory, with review loops wrapping their dispatches.
 
-> **[PLANNED] Per-turn dispatch agent (AH-PRD-09).** A successor architecture replaces AH-PRD-02's deploy-time factory with a **runtime resolver**: the deployed root becomes a thin dispatcher whose only tool is `delegate_to_specialist(name, query, acceptance_criteria=None)`, and specialists are resolved per turn from Firestore via a `specialist_runtime` module (TTL + content-hash cache with per-key striped locking). Admin agent edits (instruction / model / temperature / max_output_tokens / tools / new specialists) propagate to the next chat turn without redeploy — restoring Sprint 6 Decision B's intent which AH-PRD-02 silently regressed on. Adds a `McpToolsetPool` with hybrid `McpServerKind` enum (`cloud_run` + `zapier`) for runtime MCP connection reuse. Scheduled for **Release 1**, Phases 0–3 + 5 (the `cloud_run`-only runtime resolver); Phase 4 (Zapier hybrid MCP) deferred to R2 alongside the Integrations component. Phase 5 default-on is gated on Skills' [SK-PRD-02 SandboxPool](../skills/projects/SK-PRD-02-agent-integration.md) shipping. Full design: [`docs/design/per-turn-dispatch-rfc.md`](../../per-turn-dispatch-rfc.md); PRD: [AH-PRD-09](./projects/AH-PRD-09-per-turn-dispatch.md). The §2 / §2.5 wording below continues to describe the **current shipped state** (deploy-time factory); it collapses to the runtime model as AH-PRD-09 phases ship.
+> **Per-turn dispatch agent (AH-PRD-09) — shipped R1 (Phases 0–3 + 5).** AH-PRD-09 replaced AH-PRD-02's deploy-time factory with a **runtime resolver**: the deployed root carries `tools=[]` and no specialist-dispatch function tool. Specialists are resolved per turn from Firestore via `specialist_runtime` (TTL + content-hash cache with per-key striped locking) and attached to `root.sub_agents` by `attach_specialists_before_agent_callback`. The root LLM uses ADK's native `transfer_to_agent` to dispatch — not a function tool. Admin agent edits (instruction / model / temperature / max_output_tokens / tools / new specialists) propagate to the next chat turn without redeploy. A process-wide `McpToolsetPool` reuses MCP connections across per-turn specialist rebuilds (LRU + idle-TTL eviction, `aclose()`-on-eviction); `mcp_servers/{server_id}` carries a `kind` field (`cloud_run`; open enum). The per-turn dispatch path is unconditional — no feature flag. **[PLANNED] Phase 4 (R2):** Zapier hybrid MCP deferred alongside the Integrations component. Full design: [`docs/design/per-turn-dispatch-rfc.md`](../../per-turn-dispatch-rfc.md); PRD: [AH-PRD-09](./projects/AH-PRD-09-per-turn-dispatch.md).
 
 ## 2. Architecture
 
@@ -24,60 +24,46 @@ After this component's Release 1 projects complete, adding a new specialist is a
                                     │
 ┌───────────────────────────────────▼─────────────────────────────────────────┐
 │  Root Agent (ken_e)                                                         │
-│    ├── InstructionProvider (closure reading session state)                  │
-│    ├── Tools: auto-generated dispatch functions                             │
-│    │     search_company_news(query, acceptance_criteria, tool_context)      │
-│    │     query_google_analytics(query, acceptance_criteria, tool_context)   │
-│    │     … N more per the factory                                           │
-│    └── Callbacks: Weave tracing + ADK before/after hooks                    │
+│    ├── InstructionProvider (renders "Available Specialists" block per turn)  │
+│    ├── tools=[]  (no dispatch function tools — AH-PRD-09 / AH-75)          │
+│    ├── sub_agents: [specialist₁, specialist₂, …]  ← attached per turn by   │
+│    │     attach_specialists_before_agent_callback                           │
+│    └── Callbacks: Weave tracing + attach_specialists_before_agent_callback  │
 └───────────────────────────────────┬─────────────────────────────────────────┘
-                                    │ dispatch_to_{specialist}()
+                                    │ transfer_to_agent(agent_name=…)  [ADK built-in]
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  Dispatch handler                                                           │
-│    @safe_weave_op()                                                         │
-│    if acceptance_criteria:                                                  │
-│      pipeline = build_review_pipeline(specialist, criteria, prefix)         │
-│      run pipeline → approved draft                                          │
-│    else:                                                                    │
-│      invoke_agent_sync(specialist)     (single-pass legacy path)            │
-└───────────────────────────────────┬─────────────────────────────────────────┘
-                                    │
-┌───────────────────────────────────▼─────────────────────────────────────────┐
-│  Review pipeline (LoopAgent, max_iterations=3)                              │
+│  Specialist (LlmAgent, or LoopAgent review pipeline if                      │
+│              config.default_acceptance_criteria is set)                     │
 │    ├── specialist (LlmAgent, output_key="{prefix}_draft")                   │
-│    │     instruction: task + criteria + {prefix}_feedback?                  │
-│    │     tools: McpToolset(s) + function tools + code_execution             │
+│    │     tools: McpToolset(s) from McpToolsetPool + function tools          │
+│    │            + code_execution                                            │
 │    └── reviewer (LlmAgent, gemini-2.0-flash, include_contents='none')       │
-│          instruction: evaluate {prefix}_draft vs criteria                   │
 │          tools: [exit_loop]                                                 │
 └─────────────────────────────────────────────────────────────────────────────┘
 
-                            Agent Factory (deploy-time)
+                      Per-Turn Runtime Resolver (AH-PRD-09)
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  Firestore                                                                  │
 │    agent_configs/{config_id}            (global, per-specialist)            │
-│    mcp_servers/{server_id}              (global, with specialist_categories)│
+│    mcp_servers/{server_id}              (global; kind="cloud_run"|…)        │
 │    accounts/{account_id}/agent_configs/{config_id}   (per-account overlay + │
 │                                                       custom agents)        │
 └──────────────────────────────────┬──────────────────────────────────────────┘
-                                   │
+                                   │  per-turn (TTL + content-hash cache)
                                    ▼
-                         agent_factory.build_hierarchy(account_id=None)
+                    specialist_runtime.resolve_config(name, account_id)
+                    specialist_runtime.resolve_agent(config)
                                    │
-                                   ├── load global configs
-                                   ├── shallow-merge per-account overlays
-                                   ├── create McpToolset per server
-                                   │     header_provider=_make_header_provider(auth_type)
-                                   ├── resolve each specialist's tool roster (≤30 tools, curated)
-                                   ├── create LlmAgent per config
-                                   ├── generate dispatch_to_{name}() per specialist
-                                   │     (each calls build_review_pipeline when criteria present)
-                                   └── return root agent with all dispatches wired
+                                   ├── shallow-merge per-account overlay at runtime
+                                   ├── resolve tool roster (≤30 tools, curated) via ToolRegistry
+                                   ├── acquire McpToolset from McpToolsetPool (reused across turns)
+                                   ├── build LlmAgent (or LoopAgent if default_acceptance_criteria)
+                                   └── attach to root.sub_agents via attach_account_specialists()
 
-  Root agent routes via specialist descriptions (read from each agent_config);
-  specialists see a fixed ≤30-tool list — no per-turn tool_filter.
+  Root agent routes via "Available Specialists" block in the InstructionProvider;
+  specialists see a fixed ≤30-tool list resolved at runtime — no per-turn tool_filter.
   (See §2.5 Tool-assignment & routing model.)
 ```
 
@@ -85,7 +71,7 @@ After this component's Release 1 projects complete, adding a new specialist is a
 
 | Path | Purpose |
 |------|---------|
-| `app/adk/agents/ken_e_agent.py` | Root agent definition + InstructionProvider + tool wrappers. Updated by AH-PRD-01 (adds `acceptance_criteria` parameter). Deleted by AH-PRD-09 Phase 5 once `create_ken_e_agent` and the per-specialist tool wrappers are unused — the post-AH-PRD-09 root carries only `delegate_to_specialist`. |
+| `app/adk/agents/ken_e_agent.py` | Root agent definition + InstructionProvider. Reduced to a lazy stub by AH-PRD-09 Phase 5 — `create_ken_e_agent` and the per-specialist tool wrappers were removed. The root now carries `tools=[]`; dispatch is via ADK's native `transfer_to_agent` managed by `attach_specialists_before_agent_callback`. |
 | `app/adk/agents/utils/review_pipeline.py` | `build_review_pipeline()` factory + `extract_pipeline_result()`. Created by AH-PRD-01. |
 | `app/adk/agents/utils/dispatch_handlers.py` | Dispatch functions. Updated by AH-PRD-01 (adds `acceptance_criteria` parameter). AH-PRD-02 adds the auto-generated `dispatch_to_{name}()` variants alongside legacy ones. |
 | `app/adk/agents/utils/supervisor_utils.py` | `invoke_agent_sync()` + pipeline-result extraction. Updated by AH-PRD-01. |
@@ -202,8 +188,8 @@ Transitional agents (`google_analytics_agent_v4.py`, `company_news_chatbot/agent
 | Component | Dependency |
 |-----------|------------|
 | **[Skills](../skills/README.md)** | SK-PRD-02 adds `SkillToolset` + sandbox `code_executor` wiring into the factory. SK-PRD-04 replaces the disabled placeholder rows ("Skills", "Sandbox code execution") that AH-PRD-02's AgentEditView + AgentCreatePage reserve, and adds attach-time validation on `PUT /agent-configs`. |
-| **[Project Tasks](../project-tasks/README.md)** | PR-PRD-02 (Planning Agent & Tools) writes a Firestore `agent_configs/project_planning` document; `specialist_runtime.resolve_config` reads it per turn (AH-PRD-09 Phase 2) and `resolve_agent` builds the `LlmAgent`. The root reaches the planning specialist via `delegate_to_specialist("project_planning", …)` — no auto-generated `dispatch_to_project_planning()` or `_BASE_INSTRUCTION` CAPABILITY block. Routing guidance lives in the config doc's `description` field. |
-| **[Knowledge Graph](../knowledge-graph/README.md)** | KG-PRD-05 (Research-on-Creation Refactor) refactors strategy-agent research builders to use `GraphSyncService`; those builders still run inside the review-loop dispatch owned here. KG-PRD-03's four ADK read tools (`load_context_section`, `load_document`, `search_kb`, `list_observations`) are registered in `tools.yaml` with `default_global: true`; AH-PRD-06 PR-C wires them through `hierarchy.py:325` and AH-PRD-09 Phase 3 ports the same injection into `specialist_runtime.resolve_agent`. The tools surface on every specialist (not on the root, which carries only `delegate_to_specialist`). |
+| **[Project Tasks](../project-tasks/README.md)** | PR-PRD-02 (Planning Agent & Tools) writes a Firestore `agent_configs/project_planning` document; `specialist_runtime.resolve_config` reads it per turn (AH-PRD-09 Phase 2) and `resolve_agent` builds the `LlmAgent`. The root reaches the planning specialist via ADK's native `transfer_to_agent("project_planning")` — `attach_specialists_before_agent_callback` attaches it to `root.sub_agents` each turn. Routing guidance lives in the config doc's `description` field. |
+| **[Knowledge Graph](../knowledge-graph/README.md)** | KG-PRD-05 (Research-on-Creation Refactor) refactors strategy-agent research builders to use `GraphSyncService`; those builders still run inside the review-loop dispatch owned here. KG-PRD-03's four ADK read tools (`load_context_section`, `load_document`, `search_kb`, `list_observations`) are registered in `tools.yaml` with `default_global: true`; AH-PRD-06 PR-C wires them through `hierarchy.py:325` and AH-PRD-09 Phase 3 ports the same injection into `specialist_runtime.resolve_agent`. The tools surface on every specialist (not on the root, which carries `tools=[]`). |
 | **[Automations](../automations/README.md)** | Consumes factory-assembled agents indirectly — the orchestrator calls `AgentEngineClient` which invokes whatever hierarchy `deploy_ken_e.py` built. No direct integration; transitive only. |
 | Future narrow-specialist sprints | Google Ads, Meta Ads, Mailchimp (R5, planned per §2.6) — each is a Firestore `agent_configs/*` document and optional `mcp_servers/*` registration. The pattern established in AH-PRD-03 is the template; AH-PRD-04 ensures every new specialist automatically receives `create_visualization()` via the factory's default function-tool roster. |
 
@@ -276,7 +262,7 @@ Five touchpoints do not fit cleanly inside one PRD and need an owning team to co
 
 1. **Day 1:** Core AI kicks off AH-PRD-01 (no blockers). DM-PRD-00 should already be merged or very close to merging (the `accounts/{account_id}/agent_configs/` subcollection pattern relies on the Shape B convention being documented).
 2. **Day ~3 (AH-PRD-01 merged):** AH-PRD-02 kickoff. Backend and frontend can parallelize once the Phase 1 config loader lands — Phase 2 (backend-heavy: MCP + dispatch generation) and Phase 3 (frontend-heavy: UI + API) are largely independent once the Pydantic contract is published.
-3. **AH-PRD-03 kickoff — once AH-PRD-09 Phases 2 and 3 are in staging.** Gated by both the per-turn dispatch runtime (`specialist_runtime` + `delegate_to_specialist`, Phase 2) and the `McpToolsetPool` with the `kind="cloud_run"` `mcp_servers` schema field (Phase 3). Small project; mostly config + tests. Deprecation banner on `google_analytics_agent_v4.py`; full removal is a follow-up once no callers remain.
+3. **AH-PRD-03 kickoff — once AH-PRD-09 Phases 2 and 3 are in staging.** Gated by both the per-turn dispatch runtime (`specialist_runtime` + `transfer_to_agent` surface, Phase 2 + AH-75) and the `McpToolsetPool` with the `kind="cloud_run"` `mcp_servers` schema field (Phase 3). Small project; mostly config + tests. Deprecation banner on `google_analytics_agent_v4.py`; full removal is a follow-up once no callers remain.
 4. **AH-PRD-06 (in flight):** PR-A merged (#472) and PR-B in review (#473) once AH-PRD-02 was in. PR-C is the small follow-up that wires `default_global` function tools through `hierarchy.py:325` — schedule alongside AH-PRD-07's scoping spike since both touch the factory's tool-resolution path.
 5. **AH-PRD-07 (after AH-PRD-06 PR-C):** Scoping spike first to choose between Option A (route strategy-agent specialists through `build_hierarchy`) and Option B (bridge via shim). Whichever shape, the migration backfill for existing Firestore docs (`marketing_researcher`, `marketing_formatter`) ships ahead of the construction switch — see §5.3 coordination point.
 6. **Release 1 exit:** Review loop, factory, first specialist, per-agent tool mapping, and unified construction path all working in staging. MER-E consuming Weave spans. Ready for downstream components (Skills, Project Tasks, KG-PRD-05) to pick up.
