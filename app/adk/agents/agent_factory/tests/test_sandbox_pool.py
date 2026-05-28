@@ -856,6 +856,67 @@ async def test_tmp_clear_failed_set_on_span_when_clear_raises() -> None:
     )
 
 
+@pytest.mark.asyncio
+async def test_client_cache_hit_on_lease_span() -> None:
+    """client_cache_hit reflects the vertexai.Client lru_cache state during _clear_tmp (SK-43).
+
+    The autouse fixture clears the cache first, so the first lease's _clear_tmp
+    constructs the client (cache miss → client_cache_hit=False); a second lease
+    cycle on the same key is another 0→1 transition whose _clear_tmp hits the
+    cache (client_cache_hit=True).
+    """
+    pool = SandboxPool()
+    pool._CLEAR_TMP_ON_REUSE = True
+
+    class _Executor:
+        sandbox_resource_name = (
+            "projects/test-proj/locations/us-central1/sandboxes/acc/cfg"
+        )
+
+        async def aclose(self) -> None:  # pragma: no cover — not exercised here
+            pass
+
+    executor = _Executor()
+
+    async def _fake_construct(**_: Any) -> Any:
+        return executor
+
+    pool._construct = _fake_construct  # type: ignore[method-assign]
+
+    captured_attrs: list[dict[str, Any]] = []
+
+    @contextlib.asynccontextmanager
+    async def _fake_emit(op_name: str, attrs: dict[str, Any]):
+        captured_attrs.append({"op_name": op_name, **attrs})
+        yield
+
+    mock_vertexai = MagicMock()
+    mock_vertexai.Client.return_value = MagicMock()
+
+    with (
+        patch.dict(sys.modules, {"vertexai": mock_vertexai}),
+        patch("asyncio.wait_for", new=AsyncMock(return_value=None)),
+        patch(
+            "app.adk.agents.agent_factory.sandbox_pool.emit_sandbox_pool_span",
+            _fake_emit,
+        ),
+    ):
+        async with pool.lease(account_id="acc", config_id="cfg"):
+            pass
+        # Refcount returned to 0, so this is a fresh 0→1 transition → _clear_tmp
+        # fires again and reuses the cached client.
+        async with pool.lease(account_id="acc", config_id="cfg"):
+            pass
+
+    lease_hits = [
+        a["client_cache_hit"]
+        for a in captured_attrs
+        if a["op_name"] == "sandbox_pool.lease"
+    ]
+    assert lease_hits == [False, True]
+    mock_vertexai.Client.assert_called_once()
+
+
 # ===========================================================================
 # Test 29 — SK-42 CLOBBER fix: concurrent leases block _clear_tmp while
 #           another caller is in-flight

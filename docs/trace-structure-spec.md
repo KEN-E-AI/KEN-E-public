@@ -877,7 +877,8 @@ pool internal (no agent-turn parent)
 │                           the stack when the factory calls _build_code_executor()
 ├── sandbox_pool.lease   ← emitted by SandboxPool.lease().__aenter__(); fires on
 │                           every execute_code call via LeasedSandboxExecutor.
-│                           Carries refcount_after, cleared_tmp, tmp_clear_failed.
+│                           Carries refcount_after, cleared_tmp, tmp_clear_failed,
+│                           client_cache_hit.
 │                           tmp_clear_failed is on this span (not sandbox_pool.get)
 │                           because _clear_tmp now fires only at the 0→1 refcount
 │                           transition inside lease() (SK-42 CLOBBER fix).
@@ -973,6 +974,7 @@ any `_clear_tmp` call and before yielding the executor to the caller.
 | `refcount_after` | `int` | Yes | Refcount after this lease was acquired. `1` means this caller is the only active lease; `>1` means concurrent `execute_code` calls are in-flight on the same sandbox. |
 | `cleared_tmp` | `bool` | Yes | `true` if `_clear_tmp` was called and succeeded on this lease acquisition (only possible on the 0 → 1 transition when `_CLEAR_TMP_ON_REUSE=True`). |
 | `tmp_clear_failed` | `bool` | Yes | `true` if `_clear_tmp` raised on this lease acquisition (SK-35 defence-in-depth degraded — cross-session `/tmp` data may not have been purged). MER-E should alert on `count(sandbox_pool.lease where tmp_clear_failed=true) > 0` over a 5-minute window (see SK-9 §Q3 High disposition). |
+| `client_cache_hit` | `bool` | Yes | `true` if `_clear_tmp` reused the lru-cached `vertexai.Client` (SK-43) on this lease acquisition; `false` on a cache miss (first construction for the `(project, location)` pair) **and** whenever no clear ran (refcount ≥ 1, or `_CLEAR_TMP_ON_REUSE=False`). Best-effort under concurrency — a hit credited by a concurrent `_clear_tmp` may be attributed to the wrong span; MER-E should aggregate over time windows. Watch for the hit rate dropping below ~95%, which signals multi-region / multi-project churn against `maxsize=2`. |
 
 #### `sandbox_pool.release`
 

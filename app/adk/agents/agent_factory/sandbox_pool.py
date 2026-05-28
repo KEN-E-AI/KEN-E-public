@@ -98,8 +98,9 @@ def _get_vertexai_client(project: str, location: str) -> Any:
     calls is safe (SK-43 thread-safety verification).
 
     ``maxsize=2`` covers the typical dev + prod environment in one process.
-    Revisit if the ``client_cache_hit`` rate in MER-E drops below ~95% — that
-    would signal multi-region or multi-project agent configs (SK-43).
+    Revisit if the ``client_cache_hit`` rate on the ``sandbox_pool.lease`` span
+    (MER-E) drops below ~95% — that would signal multi-region or multi-project
+    agent configs (SK-43).
 
     Lazily imports ``vertexai`` so this module remains importable in test
     environments without a live Vertex AI install — the same pattern used by
@@ -231,18 +232,27 @@ class SandboxPool:
         always checked on exit.
 
         Emits a ``sandbox_pool.lease`` Weave span on entry (after
-        construction and any clearing) and a ``sandbox_pool.release`` span
-        on exit.
+        construction and any clearing) carrying ``cleared_tmp``,
+        ``tmp_clear_failed``, and ``client_cache_hit`` (whether ``_clear_tmp``
+        reused the lru-cached ``vertexai.Client`` — SK-43), and a
+        ``sandbox_pool.release`` span on exit.
         """
         key = (account_id, config_id)
         executor, _zero_to_one, clearing_event = await self._acquire(key)
 
         cleared_tmp = False
         tmp_clear_failed = False
+        client_cache_hit = False
         if clearing_event is not None:
             # We are the 0→1 transition holder responsible for clearing /tmp.
             # Finish the clear and then unblock any concurrent callers that
             # are waiting on the clearing event before receiving the executor.
+            # Snapshot the cached-client hit count around the clear so the span
+            # reports whether _clear_tmp reused the lru-cached vertexai.Client
+            # (SK-43). Best-effort under concurrency: a hit credited by a
+            # concurrent _clear_tmp on another stripe could be attributed here;
+            # MER-E aggregates over time windows so per-call jitter is tolerable.
+            pre_hits = _get_vertexai_client.cache_info().hits
             try:
                 await self._clear_tmp(executor)
                 cleared_tmp = True
@@ -253,6 +263,7 @@ class SandboxPool:
                     extra={"account_id": account_id, "config_id": config_id},
                 )
             finally:
+                client_cache_hit = _get_vertexai_client.cache_info().hits > pre_hits
                 # Delete before set so waiting callers see no event on retry.
                 del self._clearing[key]
                 clearing_event.set()
@@ -266,6 +277,7 @@ class SandboxPool:
                 "refcount_after": refcount_after,
                 "cleared_tmp": cleared_tmp,
                 "tmp_clear_failed": tmp_clear_failed,
+                "client_cache_hit": client_cache_hit,
             },
         ):
             pass
