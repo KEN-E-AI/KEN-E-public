@@ -120,7 +120,9 @@ def get_cached_config(
     with _lock_for(doc_id):
         cached = _cache.get(doc_id)
         if cached is not None and now < cached[3]:
-            logger.info("config_cache_read", extra={"doc_id": doc_id, "cache_hit": True})
+            logger.info(
+                "config_cache_read", extra={"doc_id": doc_id, "cache_hit": True}
+            )
             return cached[0], cached[1], cached[2]
 
         try:
@@ -177,7 +179,9 @@ def get_cached_merged_config(
     with _lock_for(key):
         cached = _merged_cache.get(key)
         if cached is not None and now < cached[1]:
-            logger.info("config_cache_read", extra={"doc_id": doc_id, "cache_hit": True})
+            logger.info(
+                "config_cache_read", extra={"doc_id": doc_id, "cache_hit": True}
+            )
             return cached[0]
 
         try:
