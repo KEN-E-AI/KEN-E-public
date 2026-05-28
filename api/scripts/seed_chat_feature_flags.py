@@ -46,7 +46,7 @@ CHAT_FLAGS_TO_REGISTER: list[FeatureFlagWriteRequest] = [
             "categories, todos, artifacts). When False, all new Chat endpoints "
             "return 404; existing endpoints remain functional."
         ),
-        default_enabled=False,
+        default_enabled=True,
         is_active=True,
         bucketing_entity="account",
         owner="chat-team@ken-e.ai",
@@ -57,7 +57,7 @@ CHAT_FLAGS_TO_REGISTER: list[FeatureFlagWriteRequest] = [
             "Gates the session status view endpoint + Session Status toggle "
             "button. Depends on chat_v2_enabled being on."
         ),
-        default_enabled=False,
+        default_enabled=True,
         is_active=True,
         bucketing_entity="account",
         owner="chat-team@ken-e.ai",
@@ -68,7 +68,7 @@ CHAT_FLAGS_TO_REGISTER: list[FeatureFlagWriteRequest] = [
             "Gates category CRUD + sidebar filter + status-view assign dropdown. "
             "Depends on chat_v2_enabled being on."
         ),
-        default_enabled=False,
+        default_enabled=True,
         is_active=True,
         bucketing_entity="account",
         owner="chat-team@ken-e.ai",
@@ -110,7 +110,10 @@ async def _seed_flags(db: object, dry_run: bool) -> dict[str, str]:
     results: dict[str, str] = {}
     for req in CHAT_FLAGS_TO_REGISTER:
         if dry_run:
-            print(f"  [DRY RUN] would create: {req.key!r} (default_enabled=False)")
+            print(
+                f"  [DRY RUN] would create: {req.key!r} "
+                f"(default_enabled={req.default_enabled})"
+            )
             results[req.key] = "dry_run"
             continue
         try:

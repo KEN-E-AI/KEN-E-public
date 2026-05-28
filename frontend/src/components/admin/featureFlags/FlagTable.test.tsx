@@ -155,6 +155,20 @@ describe("FlagTable", () => {
       expect(screen.getByText("No feature flags yet.")).toBeInTheDocument();
     });
 
+    it("renders + New flag button in the empty state when onCreate is provided", () => {
+      const onCreate = vi.fn();
+      render(<FlagTable flags={[]} onCreate={onCreate} />, {
+        wrapper: makeWrapper(),
+      });
+
+      expect(
+        screen.getByTestId("feature-flags-table-empty"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: /new flag/i }),
+      ).toBeInTheDocument();
+    });
+
     it("renders + New flag button only when onCreate is provided", () => {
       const { rerender } = render(<FlagTable flags={[flagBeta]} />, {
         wrapper: makeWrapper(),

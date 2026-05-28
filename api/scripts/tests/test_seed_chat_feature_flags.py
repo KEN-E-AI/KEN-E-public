@@ -54,10 +54,10 @@ class TestRegistryInvariants:
             "chat_categories_enabled",
         }
 
-    def test_all_default_disabled(self) -> None:
+    def test_all_default_enabled(self) -> None:
         for flag in CHAT_FLAGS_TO_REGISTER:
-            assert flag.default_enabled is False, (
-                f"{flag.key} should default to disabled at registration time"
+            assert flag.default_enabled is True, (
+                f"{flag.key} should default to enabled (GA) at registration time"
             )
 
     def test_scoped_out_disjoint_from_registered(self) -> None:

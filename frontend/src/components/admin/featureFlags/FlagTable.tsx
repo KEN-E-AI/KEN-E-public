@@ -138,17 +138,6 @@ export function FlagTable({ flags, onRowClick, onCreate }: Props) {
     );
   }
 
-  if (flags.length === 0) {
-    return (
-      <div
-        data-testid="feature-flags-table-empty"
-        className="text-[var(--color-text-tertiary)] text-[var(--text-body-md)] py-6"
-      >
-        No feature flags yet.
-      </div>
-    );
-  }
-
   const sorted = sortFlags(flags, sortColumn, sortDirection);
 
   return (
@@ -160,94 +149,103 @@ export function FlagTable({ flags, onRowClick, onCreate }: Props) {
           </Button>
         </div>
       )}
-      <div className="rounded-[var(--radius-lg)] border border-[var(--color-border-default)] bg-card overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Key</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead>Active</TableHead>
-              <TableHead>Default</TableHead>
-              <TableHead>Rollout %</TableHead>
-              <TableHead>Owner</TableHead>
-              <TableHead
-                className="cursor-pointer select-none hover:text-[var(--color-text-primary)]"
-                tabIndex={0}
-                onClick={handleGaReleaseHeaderClick}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    handleGaReleaseHeaderClick();
+      {flags.length === 0 ? (
+        <div
+          data-testid="feature-flags-table-empty"
+          className="text-[var(--color-text-tertiary)] text-[var(--text-body-md)] py-6"
+        >
+          No feature flags yet.
+        </div>
+      ) : (
+        <div className="rounded-[var(--radius-lg)] border border-[var(--color-border-default)] bg-card overflow-hidden">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Key</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead>Active</TableHead>
+                <TableHead>Default</TableHead>
+                <TableHead>Rollout %</TableHead>
+                <TableHead>Owner</TableHead>
+                <TableHead
+                  className="cursor-pointer select-none hover:text-[var(--color-text-primary)]"
+                  tabIndex={0}
+                  onClick={handleGaReleaseHeaderClick}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleGaReleaseHeaderClick();
+                    }
+                  }}
+                  aria-sort={
+                    sortColumn === "expected_ga_release"
+                      ? sortDirection === "asc"
+                        ? "ascending"
+                        : "descending"
+                      : "none"
                   }
-                }}
-                aria-sort={
-                  sortColumn === "expected_ga_release"
-                    ? sortDirection === "asc"
-                      ? "ascending"
-                      : "descending"
-                    : "none"
-                }
-              >
-                GA Release
-                {sortColumn === "expected_ga_release" && (
-                  <span className="ml-1 text-xs">
-                    {sortDirection === "asc" ? "↑" : "↓"}
-                  </span>
-                )}
-              </TableHead>
-              <TableHead>Updated</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sorted.map((flag) => (
-              <TableRow
-                key={flag.key}
-                className={onRowClick ? "cursor-pointer" : undefined}
-                onClick={onRowClick ? () => onRowClick(flag) : undefined}
-              >
-                <TableCell className="font-mono text-[var(--text-body-sm)] text-[var(--color-text-primary)]">
-                  {flag.key}
-                </TableCell>
-                <TableCell>
-                  <span
-                    className="block truncate max-w-[28ch] text-[var(--color-text-secondary)]"
-                    title={flag.description}
-                  >
-                    {flag.description}
-                  </span>
-                </TableCell>
-                <TableCell onClick={(e) => e.stopPropagation()}>
-                  <Switch
-                    checked={flag.is_active}
-                    onCheckedChange={() => void handleToggleActive(flag)}
-                    aria-label={`Toggle ${flag.key} active state`}
-                    disabled={updateFlag.isPending}
-                  />
-                </TableCell>
-                <TableCell>
-                  <Badge
-                    variant={flag.default_enabled ? "success" : "secondary"}
-                  >
-                    {flag.default_enabled ? "On" : "Off"}
-                  </Badge>
-                </TableCell>
-                <TableCell className="text-[var(--color-text-secondary)]">
-                  {flag.targeting_rules.rollout_percentage}%
-                </TableCell>
-                <TableCell className="text-[var(--color-text-secondary)] text-[var(--text-body-sm)]">
-                  {flag.owner}
-                </TableCell>
-                <TableCell className="text-[var(--color-text-secondary)]">
-                  {flag.expected_ga_release ?? "—"}
-                </TableCell>
-                <TableCell className="text-[var(--color-text-secondary)] text-[var(--text-body-sm)]">
-                  {new Date(flag.updated_at).toLocaleDateString()}
-                </TableCell>
+                >
+                  GA Release
+                  {sortColumn === "expected_ga_release" && (
+                    <span className="ml-1 text-xs">
+                      {sortDirection === "asc" ? "↑" : "↓"}
+                    </span>
+                  )}
+                </TableHead>
+                <TableHead>Updated</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+            </TableHeader>
+            <TableBody>
+              {sorted.map((flag) => (
+                <TableRow
+                  key={flag.key}
+                  className={onRowClick ? "cursor-pointer" : undefined}
+                  onClick={onRowClick ? () => onRowClick(flag) : undefined}
+                >
+                  <TableCell className="font-mono text-[var(--text-body-sm)] text-[var(--color-text-primary)]">
+                    {flag.key}
+                  </TableCell>
+                  <TableCell>
+                    <span
+                      className="block truncate max-w-[28ch] text-[var(--color-text-secondary)]"
+                      title={flag.description}
+                    >
+                      {flag.description}
+                    </span>
+                  </TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <Switch
+                      checked={flag.is_active}
+                      onCheckedChange={() => void handleToggleActive(flag)}
+                      aria-label={`Toggle ${flag.key} active state`}
+                      disabled={updateFlag.isPending}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={flag.default_enabled ? "success" : "secondary"}
+                    >
+                      {flag.default_enabled ? "On" : "Off"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-[var(--color-text-secondary)]">
+                    {flag.targeting_rules.rollout_percentage}%
+                  </TableCell>
+                  <TableCell className="text-[var(--color-text-secondary)] text-[var(--text-body-sm)]">
+                    {flag.owner}
+                  </TableCell>
+                  <TableCell className="text-[var(--color-text-secondary)]">
+                    {flag.expected_ga_release ?? "—"}
+                  </TableCell>
+                  <TableCell className="text-[var(--color-text-secondary)] text-[var(--text-body-sm)]">
+                    {new Date(flag.updated_at).toLocaleDateString()}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
     </div>
   );
 }
