@@ -502,7 +502,7 @@ Six phases. Phases 0 and 1 are gating: if Phase 0 fails to validate Zapier MCP, 
 
 **Work:**
 - Decommission unreachable legacy code paths.
-- Delete the now-unused `generate_dispatch_functions` and `_make_factory_instruction_provider`'s baked-text path.
+- `generate_dispatch_functions` already deleted in AH-66 (see DESIGN-REVIEW-LOG Review 39); delete `_make_factory_instruction_provider`'s baked-text path (AH-68).
 - Delete the legacy `create_ken_e_agent()` if no longer used (verify no callers outside the deprecated path).
 - Update Cloud Trace / Weave dashboards: add panels for specialist cache hit rate, MCP pool size, Zapier latency p50/p95, dispatch error rate.
 - Update docs and architecture diagrams per §5 above.
