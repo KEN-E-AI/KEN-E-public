@@ -162,6 +162,12 @@ def build_hierarchy(
     #   "Available Specialists" block and the transfer-target set stay in
     #   sync because both walk the same list_account_agent_configs +
     #   resolve_config(visible_in_frontend) pipeline.
+    # * specialists_span_before_agent_callback MUST come AFTER
+    #   attach_specialists_before_agent_callback.  The attach callback writes
+    #   session.state["_available_specialists"]; the span callback reads it.
+    #   Reversing the order would leave the state key absent on every turn,
+    #   causing the span callback to take the "missing-key → degradation signal"
+    #   branch — which would look identical to a real capture failure (CH-58).
     #
     # Lazy import: avoids circular import at module-load time since
     # agent_factory/__init__.py imports both hierarchy and specialist_runtime,
@@ -171,6 +177,9 @@ def build_hierarchy(
     )
     from app.adk.agents.agent_factory.sub_agent_attacher import (
         attach_specialists_before_agent_callback,
+    )
+    from app.adk.tracking.specialists_spans import (
+        specialists_span_before_agent_callback,
     )
 
     root_agent = build_agent(
@@ -182,6 +191,9 @@ def build_hierarchy(
         instruction_suffix_provider=available_specialists_provider,
         additional_before_agent_callbacks=[
             attach_specialists_before_agent_callback,
+            # Ordering constraint: span callback reads the state key written by
+            # the attach callback above — must remain AFTER it in this list.
+            specialists_span_before_agent_callback,
         ],
     )
     logger.info("Built root agent %r.", "ken_e")

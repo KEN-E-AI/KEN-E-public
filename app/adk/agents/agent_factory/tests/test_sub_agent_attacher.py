@@ -1013,3 +1013,142 @@ class TestBeforeAgentCallback:
         assert forwarded.get("account_id") == "acc_regression"
         assert forwarded.get("mcp_creds_x") == "v"
         assert forwarded.get("mcp_creds_y") == "w"
+
+
+# ---------------------------------------------------------------------------
+# State capture for W&B Weave tracing (CH-58)
+#
+# attach_specialists_before_agent_callback must write
+# state["_available_specialists"] with shape [{name, description, agent_id}]
+# every turn — including fingerprint-cache-hit turns where _attach_locked
+# returns early without touching root_agent.sub_agents.
+# ---------------------------------------------------------------------------
+
+
+class TestStateCapture:
+    """Tests for CH-58: _available_specialists written to session state."""
+
+    def _make_ctx(self, account_id: str = "acc_123") -> Any:
+        """Callback context backed by a real ADK State."""
+        root = _make_root()
+        state = State(value={"account_id": account_id}, delta={})
+        ctx = SimpleNamespace(
+            state=state,
+            _invocation_context=SimpleNamespace(agent=root),
+        )
+        return ctx, root
+
+    def test_state_captures_available_specialists(self) -> None:
+        """After attach, state["_available_specialists"] matches sub_agents."""
+        ctx, root = self._make_ctx()
+        a = _make_specialist("ga_spec")
+        b = _make_specialist("seo_spec")
+
+        with _patched_resolvers({"ga_spec": a, "seo_spec": b}):
+            result = attach_specialists_before_agent_callback(ctx)  # type: ignore[arg-type]
+
+        assert result is None
+        captured = ctx.state.get("_available_specialists")
+        assert captured is not None, "_available_specialists not set in state"
+        names = {e["name"] for e in captured}
+        assert names == {"ga_spec", "seo_spec"}
+        for entry in captured:
+            assert "name" in entry
+            assert "description" in entry
+            assert "agent_id" in entry
+            assert entry["agent_id"] == entry["name"], (
+                "agent_id must equal name (ADK contract — specialist_runtime.py:626)"
+            )
+
+    def test_state_captures_on_fingerprint_cache_hit(self) -> None:
+        """Fingerprint-cache-hit turns must still write _available_specialists.
+
+        On the second turn with unchanged configs, _attach_locked returns
+        early without calling _reconcile — but root_agent.sub_agents is still
+        populated from the first turn.  The callback must read from
+        root_agent.sub_agents (not from a local variable inside _attach_locked)
+        so the state key is always present.
+        """
+        ctx, root = self._make_ctx()
+        a = _make_specialist("ga_spec")
+
+        # First turn: full reconcile, fingerprint stored.
+        with _patched_resolvers({"ga_spec": a}):
+            attach_specialists_before_agent_callback(ctx)  # type: ignore[arg-type]
+        assert ctx.state.get("_available_specialists") is not None
+
+        # Clear the state key to detect whether the second turn re-writes it.
+        ctx.state["_available_specialists"] = None
+
+        # Second turn: same fingerprint → _attach_locked short-circuits.
+        with _patched_resolvers({"ga_spec": a}):
+            attach_specialists_before_agent_callback(ctx)  # type: ignore[arg-type]
+
+        captured = ctx.state.get("_available_specialists")
+        assert captured is not None, (
+            "_available_specialists must be rewritten every turn; "
+            "fingerprint-cache-hit turns must not leave the key as None."
+        )
+        assert any(e["name"] == "ga_spec" for e in captured)
+
+    def test_state_captures_empty_list_when_no_specialists(self) -> None:
+        """Zero specialists → _available_specialists is [] (not missing)."""
+        ctx, root = self._make_ctx()
+
+        with _patched_resolvers({}):  # no visible specialists
+            attach_specialists_before_agent_callback(ctx)  # type: ignore[arg-type]
+
+        captured = ctx.state.get("_available_specialists")
+        assert captured == [], (
+            "Empty specialist roster must write [] — not leave the key absent."
+        )
+
+    def test_description_truncated_to_1024_chars(self) -> None:
+        """Descriptions longer than 1024 chars are truncated at capture time."""
+        ctx, root = self._make_ctx()
+        long_spec = LlmAgent(
+            name="verbose_spec",
+            model="gemini-2.5-pro",
+            instruction="Test.",
+            description="x" * 2000,
+        )
+
+        def _list(_acc: str) -> list[str]:
+            return ["verbose_spec"]
+
+        def _resolve_config(doc_id: str, _acc=None, _ttl=60) -> MergedAgentConfig:
+            return MergedAgentConfig(
+                instruction=".",
+                model="gemini-2.5-pro",
+                description="x" * 2000,
+                visible_in_frontend=True,
+            )
+
+        def _resolve_agent(
+            doc_id: str, _acc=None, _ttl=60, session_state=None
+        ) -> LlmAgent:
+            return long_spec
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher."
+                "list_account_agent_configs_cached",
+                side_effect=_list,
+            ),
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher.resolve_config",
+                side_effect=_resolve_config,
+            ),
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher.resolve_agent",
+                side_effect=_resolve_agent,
+            ),
+        ):
+            attach_specialists_before_agent_callback(ctx)  # type: ignore[arg-type]
+
+        captured = ctx.state.get("_available_specialists")
+        assert captured is not None
+        assert len(captured) == 1
+        assert len(captured[0]["description"]) <= 1024, (
+            "description must be truncated to ≤1024 chars"
+        )

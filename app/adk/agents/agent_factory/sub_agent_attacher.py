@@ -414,4 +414,34 @@ def attach_specialists_before_agent_callback(
             "specialists for this turn may be stale. %s",
             exc,
         )
+    # Capture the per-turn specialist roster for W&B Weave tracing (CH-58).
+    #
+    # This write MUST happen every turn — including fingerprint-cache-hit turns
+    # where ``_attach_locked`` returns early without touching ``root_agent.sub_agents``.
+    # Reading from ``root_agent.sub_agents`` (not from a local variable inside
+    # ``_attach_locked``) ensures the state always reflects the live attached set
+    # regardless of whether the reconcile pass ran.
+    #
+    # ``agent_id == agent.name`` by ADK contract: ``_build_specialist`` assigns
+    # ``name=doc_id`` and the name is preserved through the LoopAgent wrapper
+    # (specialist_runtime.py:510-512, 572, 626). Both fields are emitted so
+    # MER-E can join on either; a future ADK release that decouples them would
+    # surface as a contract-version bump in docs/trace-structure-spec.md §16.
+    try:
+        root_agent = callback_context._invocation_context.agent
+        sub_agents: list[Any] = getattr(root_agent, "sub_agents", None) or []
+        callback_context.state["_available_specialists"] = [
+            {
+                "name": a.name,
+                "description": (getattr(a, "description", "") or "")[:1024],
+                "agent_id": a.name,
+            }
+            for a in sub_agents
+        ]
+    except Exception as exc:
+        logger.warning(
+            "[ATTACH-SPECIALISTS] Failed to capture _available_specialists "
+            "in session state: %s",
+            exc,
+        )
     return None
