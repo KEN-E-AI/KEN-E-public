@@ -171,7 +171,7 @@ def test_sandbox_not_respawned_across_runtime_rebuilds() -> None:
     """
     import app.adk.agents.agent_factory.builder as b
 
-    pool, sentinel, call_count = _make_pool_with_stub()
+    pool, _sentinel, call_count = _make_pool_with_stub()
     config = _make_sandbox_config()
     initial_global_size = len(b._DEFAULT_SANDBOX_POOL._pool)
 
@@ -222,9 +222,11 @@ def test_sandbox_not_respawned_across_runtime_rebuilds() -> None:
         def execute_code(self, invocation_context: Any, code_input: Any) -> Any:
             return _FakeResult()
 
-    pool._construct = lambda *, account_id, config_id: (  # type: ignore[method-assign]
-        call_count.__setitem__(0, call_count[0] + 1) or _FakeInner()
-    )
+    def _stub_with_fake_inner(*, account_id: str, config_id: str) -> Any:
+        call_count[0] += 1
+        return _FakeInner()
+
+    pool._construct = _stub_with_fake_inner  # type: ignore[method-assign]
 
     agent_turn_1.code_executor.execute_code(MagicMock(), MagicMock())
     assert call_count[0] == 1, (
@@ -250,7 +252,7 @@ def test_different_account_ids_construct_independently() -> None:
 
     This guards against a regression where all accounts share one pool entry.
     """
-    pool, _sentinel, call_count = _make_pool_with_stub()
+    pool, _sentinel, _call_count = _make_pool_with_stub()
     config = _make_sandbox_config()
 
     agent_acc_a = _build_with_pool(config, account_id="acc_a", name="spec_x", pool=pool)

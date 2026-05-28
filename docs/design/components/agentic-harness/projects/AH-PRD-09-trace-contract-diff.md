@@ -144,7 +144,7 @@ grandchild of `delegate_to_specialist`).
 A canonical staging trace fixture is committed at:
 
 ```
-app/adk/tracking/tests/fixtures/delegate_to_specialist_trace.json
+app/adk/tracking/tests/fixtures/transfer_to_specialist_trace.json
 ```
 
 The fixture represents a compliant post-AH-PRD-09 `delegate_to_specialist` trace
@@ -154,7 +154,7 @@ with:
   `total_iterations`, `output_key_prefix`
 - One `review_loop_iteration` grandchild
 
-Use `app/adk/tracking/tests/test_delegate_to_specialist_fixture.py` to run the
+Use `app/adk/tracking/tests/test_transfer_to_specialist_fixture.py` to run the
 schema-conformance assertion.
 
 ---
@@ -206,6 +206,6 @@ canonical post-cutover trace shape see AH-66 and
 - `app/adk/agents/agent_factory/dispatch.py` — `delegate_to_specialist` function
 - `app/adk/agents/agent_factory/specialist_runtime.py` — `resolve_agent_with_hit`, `run`
 - `app/adk/agents/utils/review_pipeline_tracing.py` — `set_delegate_attrs`
-- `app/adk/tracking/tests/fixtures/delegate_to_specialist_trace.json` — canonical fixture
+- `app/adk/tracking/tests/fixtures/transfer_to_specialist_trace.json` — canonical fixture
 - AH-PRD-09 §7 AC #22 — cutover gate acceptance criterion
 - AH-62 — `mcp_pool_hit` attribute (not yet implemented; TODO placeholder in `set_delegate_attrs`)
