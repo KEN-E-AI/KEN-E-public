@@ -114,10 +114,7 @@ span["name"].startswith("dispatch_to_")
 span["name"] == "delegate_to_specialist"
 ```
 
-The N-specialist function registry (`generate_dispatch_functions`,
-`_build_dispatch`) is still present in `dispatch.py` for backward compatibility
-(deployments without the `agentic_harness_per_turn_dispatch` feature flag still
-use it), but it is excluded from the default tool set once the flag is on.
+`generate_dispatch_functions` and `_build_dispatch` were deleted in AH-66; only `assemble_available_specialists_block` survives in `dispatch.py`.
 
 ---
 
@@ -174,24 +171,31 @@ eval suite passes against the new trace shape before the Phase 5 default-on flip
 
 ---
 
-## §8 Cutover-Gate Runbook
+## §8 MER-E Validation Workflow
 
-The Phase 5 flip (enabling `agentic_harness_per_turn_dispatch` by default) is
-**gated** on MER-E extractor readiness.  Steps:
+The per-turn dispatch feature flag was dropped in AH-66 (2026-05-28).
+The post-AH-75 trace shape is unconditional — there is no
+"before the flag flip" state to reason about.
 
-1. **This PR merges** → new `delegate_to_specialist` attributes are live in
-   staging traces.
-2. **MER-E team** runs their eval suite against the staging fixture (§6) and the
-   updated extractor guidance in `trace-structure-spec.md` §14.
-3. **MER-E team** comments on AH-67 confirming the eval suite passes.
-4. **AH team** opens the Phase 5 feature-flag PR to set
-   `agentic_harness_per_turn_dispatch` default-on.
-5. After the flag flip, `dispatch_to_*` spans no longer appear.  MER-E extractors
-   that matched on the old pattern may be removed once the eval suite confirms
-   backward coverage is no longer needed.
+MER-E validation steps:
 
-If the MER-E eval suite cannot be updated before the planned Phase 5 release date,
-the flag flip must be deferred — do **not** break the eval suite silently.
+1. AH-75 has shipped. The post-AH-75 trace fixture at
+   `app/adk/tracking/tests/fixtures/transfer_to_specialist_trace.json` is
+   the canonical contract MER-E validates against.
+2. MER-E team validates their extractors against the fixture + extractor
+   guidance in §14.4 of `docs/trace-structure-spec.md`.
+3. MER-E team confirms their eval suite passes on AH-67 and tags the
+   AH-67 issue with confirmation.
+
+Note: `dispatch_to_*` spans were never emitted in production after
+AH-PRD-09 Phase 2 shipped — the `generate_dispatch_functions` code path
+was deleted in AH-66 and never registered in the deployed root.
+
+Note: This document still references `delegate_to_specialist` span names
+throughout §2–§6 (AH-75 replaced that with `transfer_to_agent`). A
+broader AH-75 refresh of this document is tracked separately; for the
+canonical post-cutover trace shape see AH-66 and
+`app/adk/tracking/tests/fixtures/transfer_to_specialist_trace.json`.
 
 ---
 
