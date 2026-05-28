@@ -3,10 +3,10 @@ SandboxPool.lease() so every code-execution call acquires / releases a
 refcount-tracked lease.
 
 SK-42: This wrapper is the production call site for the new lease API.
-``_build_code_executor_async`` returns a ``LeasedSandboxExecutor`` instead of
-a bare pooled executor.  ADK's ``LlmAgent`` stores it in ``code_executor`` and
-calls ``await code_executor.execute_code(...)`` on each tool invocation.
-Every such call enters ``async with self._pool.lease(...)``, ensuring:
+``_build_code_executor`` returns a ``LeasedSandboxExecutor`` instead of a bare
+pooled executor.  ADK's ``LlmAgent`` stores it in ``code_executor`` and calls
+``code_executor.execute_code(...)`` (synchronously — see below) on each tool
+invocation.  Every such call enters ``with self._pool.lease(...)``, ensuring:
 
   * ``_clear_tmp`` fires only on the 0 → 1 refcount transition (no in-flight
     concurrent ``execute_code`` is running when the clear executes).
@@ -56,7 +56,7 @@ class LeasedSandboxExecutor(_BASE):  # type: ignore[misc]
             config_id="my_agent",
         )
         # LlmAgent stores executor in code_executor field.
-        # ADK calls: await executor.execute_code(invocation_context, input_data)
+        # ADK calls: executor.execute_code(invocation_context, input_data)
     """
 
     def __init__(
@@ -81,18 +81,25 @@ class LeasedSandboxExecutor(_BASE):  # type: ignore[misc]
         self._account_id = account_id
         self._config_id = config_id
 
-    async def execute_code(
+    def execute_code(
         self,
         invocation_context: Any,
         code_execution_input: Any,
     ) -> Any:
         """Proxy execute_code through a pool lease (SK-42 CLOBBER fix).
 
+        Synchronous to match ADK's ``BaseCodeExecutor.execute_code`` contract:
+        the ``_code_execution`` flow calls ``execute_code(...)`` un-awaited and
+        reads ``.stdout``/``.stderr`` off the return value immediately, so an
+        ``async def`` here would hand ADK a coroutine and raise
+        ``AttributeError: 'coroutine' object has no attribute 'stdout'`` on the
+        first code turn.
+
         Acquires a lease before delegating to the underlying pooled executor,
         ensuring ``_clear_tmp`` never runs while this call is in-flight on
         the shared Vertex container.
         """
-        async with self._pool.lease(
+        with self._pool.lease(
             account_id=self._account_id, config_id=self._config_id
         ) as inner:
-            return await inner.execute_code(invocation_context, code_execution_input)
+            return inner.execute_code(invocation_context, code_execution_input)
