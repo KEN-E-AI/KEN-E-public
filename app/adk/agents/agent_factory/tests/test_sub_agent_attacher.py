@@ -856,6 +856,10 @@ class TestMcpPoolStartWiring:
 
         ctx = MagicMock()
         ctx.state.get.return_value = account_id
+        # Stub to_dict() so attach_account_specialists receives a proper
+        # Mapping[str, Any] rather than a MagicMock (production calls
+        # callback_context.state.to_dict() to derive session_state).
+        ctx.state.to_dict.return_value = {"account_id": account_id}
         ctx._invocation_context.agent = _make_root()
         return ctx
 
