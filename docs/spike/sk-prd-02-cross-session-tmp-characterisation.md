@@ -260,9 +260,11 @@ construction overhead (expected tens of ms for auth resolution + gRPC channel se
 has been **eliminated as a per-call cost** by SK-43.  `_clear_tmp` now calls the
 module-level `_get_vertexai_client(project, location)` (decorated with
 `@functools.lru_cache(maxsize=2)`), so the client is constructed once per
-`(project, location)` pair for the lifetime of the Cloud Run instance.  The
-`sandbox_pool.get` Weave span carries a new `client_cache_hit: bool` attribute
-so MER-E can monitor cache health in production.  Precise construction-latency
+`(project, location)` pair for the lifetime of the Cloud Run instance.  (SK-43
+AC-5 proposed an optional `client_cache_hit` span attribute for MER-E
+cache-health monitoring; it was deferred and is **not** emitted in this release —
+cache health can instead be inferred from `_get_vertexai_client.cache_info()`.)
+Precise construction-latency
 numbers (mean / p95 / max from 100 iterations) will be captured by a PO or Test
 Team member running `scripts/skills/measure_vertexai_client_init.py` on a
 credentialled workstation and posted as a comment on SK-43 (AC-3).
@@ -271,10 +273,11 @@ credentialled workstation and posted as a comment on SK-43 (AC-3).
 (the probe ran with `_CLEAR_TMP_ON_REUSE = False` so the trial timings do not
 include `/tmp` clearing). Observed `execute_code` round-trip on the same sandbox
 averaged ~1.2 s (range 1.0 – 2.4 s); `_clear_tmp` issues one `execute_code` call
-per `get_or_create`, so first-order expectation is roughly +1 s on every pool
-hit / miss. The `sandbox_pool.get` Weave span carries `pool_size_after`,
-`tmp_clear_failed`, and `client_cache_hit`, and the span duration captures
-end-to-end latency for downstream MER-E monitoring.
+on the 0 → 1 lease transition, so first-order expectation is roughly +1 s on the
+first lease acquisition for an idle pool entry. The `sandbox_pool.get` Weave span
+carries `cache_hit` and `pool_size_after`; the SK-42 lease redesign moved
+`cleared_tmp` and `tmp_clear_failed` to the `sandbox_pool.lease` span, whose span
+duration captures end-to-end latency for downstream MER-E monitoring.
 
 Two known optimisations are tracked as follow-ups, **both prioritised before
 SK-PRD-02 takes broad production traffic**:
@@ -283,8 +286,8 @@ SK-PRD-02 takes broad production traffic**:
   instance to amortise client init across calls. **Landed** (see PR linked to
   SK-43): `_get_vertexai_client(project, location)` with `lru_cache(maxsize=2)`
   is now in `sandbox_pool.py`; thread-safety verified against the Python gRPC
-  documentation (gRPC channels are thread-safe); `client_cache_hit` attribute
-  added to the `sandbox_pool.get` span for MER-E monitoring.
+  documentation (gRPC channels are thread-safe). The optional `client_cache_hit`
+  span attribute (AC-5) was not implemented in this release.
 * `_TMP_CLEAR_TIMEOUT_SECONDS` tuning — currently 5 s; lower if Vertex round-trip
   improves and we want to bound worst-case `_clear_tmp` overhead more tightly.
 
