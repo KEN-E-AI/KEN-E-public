@@ -20,6 +20,7 @@ vi.mock("framer-motion", () => ({
 
 vi.mock("@/lib/chatApi", () => ({
   streamChatCompletion: vi.fn(),
+  getConversationHistory: vi.fn(),
 }));
 
 vi.mock("@/hooks/useOrgStatus", () => ({
@@ -35,11 +36,12 @@ vi.mock("@/hooks/useMarkRead", () => ({
   useMarkRead: vi.fn(),
 }));
 
-import { streamChatCompletion } from "@/lib/chatApi";
+import { streamChatCompletion, getConversationHistory } from "@/lib/chatApi";
 import { useOrgStatus } from "@/hooks/useOrgStatus";
 import { useMarkRead } from "@/hooks/useMarkRead";
 
 const mockStreamChatCompletion = vi.mocked(streamChatCompletion);
+const mockGetConversationHistory = vi.mocked(getConversationHistory);
 const mockUseOrgStatus = vi.mocked(useOrgStatus);
 const mockUseMarkRead = vi.mocked(useMarkRead);
 
@@ -261,5 +263,162 @@ describe("ChatInterface", () => {
     });
 
     await waitFor(() => expect(introMsg.className).toContain("text-sm"));
+  });
+
+  // ── TC-History-1: prior messages load for a session and replace the intro ──
+
+  test("TC-History-1: loads prior history for a sessionId and drops the intro", async () => {
+    mockGetConversationHistory.mockResolvedValue({
+      events: [
+        { content: { role: "user", parts: [{ text: "earlier question" }] } },
+        { content: { role: "model", parts: [{ text: "earlier answer" }] } },
+      ],
+    });
+
+    render(<ChatInterface sessionId="sess_hist" />);
+
+    expect(await screen.findByText("earlier question")).toBeInTheDocument();
+    expect(screen.getByText("earlier answer")).toBeInTheDocument();
+    expect(mockGetConversationHistory).toHaveBeenCalledWith("sess_hist");
+    expect(
+      screen.queryByText(/I'm your KEN-E AI assistant/i),
+    ).not.toBeInTheDocument();
+  });
+
+  // ── TC-History-2: no sessionId stays ephemeral and never fetches ─────────
+
+  test("TC-History-2: no sessionId keeps the intro and skips the history fetch", () => {
+    render(<ChatInterface />);
+
+    expect(
+      screen.getByText(/I'm your KEN-E AI assistant/i),
+    ).toBeInTheDocument();
+    expect(mockGetConversationHistory).not.toHaveBeenCalled();
+  });
+
+  // ── TC-History-3: empty history retains the intro (fresh session) ────────
+
+  test("TC-History-3: empty history retains the intro", async () => {
+    mockGetConversationHistory.mockResolvedValue({ events: [] });
+
+    render(<ChatInterface sessionId="sess_empty" />);
+
+    await waitFor(() =>
+      expect(mockGetConversationHistory).toHaveBeenCalledWith("sess_empty"),
+    );
+    expect(
+      screen.getByText(/I'm your KEN-E AI assistant/i),
+    ).toBeInTheDocument();
+  });
+
+  // ── TC-History-4: a failed fetch retains the intro and logs the error ────
+
+  test("TC-History-4: fetch failure retains the intro", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    mockGetConversationHistory.mockRejectedValue(new Error("boom"));
+
+    render(<ChatInterface sessionId="sess_err" />);
+
+    await waitFor(() => expect(errSpy).toHaveBeenCalled());
+    expect(
+      screen.getByText(/I'm your KEN-E AI assistant/i),
+    ).toBeInTheDocument();
+    errSpy.mockRestore();
+  });
+
+  // ── TC-Defer-1: first message with no sessionId lazily creates a session ──
+
+  test("TC-Defer-1: first message creates a session, streams with it, and activates it", async () => {
+    const onCreateSession = vi.fn().mockResolvedValue("new-sess-1");
+    const onSessionStarted = vi.fn();
+    mockStreamChatCompletion.mockReturnValue(makeStream(["Reply"]));
+
+    render(
+      <ChatInterface
+        onCreateSession={onCreateSession}
+        onSessionStarted={onSessionStarted}
+      />,
+    );
+
+    fireEvent.change(screen.getByRole("textbox", { name: /chat input/i }), {
+      target: { value: "Hello" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() => expect(onCreateSession).toHaveBeenCalledTimes(1));
+    // Stream is invoked with the freshly created session id (2nd positional arg).
+    await waitFor(() =>
+      expect(mockStreamChatCompletion.mock.calls[0][1]).toBe("new-sess-1"),
+    );
+    expect(onSessionStarted).toHaveBeenCalledWith("new-sess-1");
+    await waitFor(() => expect(screen.getByText("Reply")).toBeInTheDocument());
+  });
+
+  // ── TC-Defer-2: the just-created session is not re-fetched (no clobber) ──
+
+  test("TC-Defer-2: history is not reloaded for a locally-created session", async () => {
+    const onCreateSession = vi.fn().mockResolvedValue("new-sess-2");
+    mockStreamChatCompletion.mockReturnValue(makeStream(["Reply"]));
+
+    const { rerender } = render(
+      <ChatInterface
+        onCreateSession={onCreateSession}
+        onSessionStarted={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByRole("textbox", { name: /chat input/i }), {
+      target: { value: "Hello" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+    await waitFor(() => expect(onCreateSession).toHaveBeenCalled());
+
+    // Simulate the URL moving to the new session (parent re-renders the prop).
+    rerender(
+      <ChatInterface sessionId="new-sess-2" onSessionStarted={vi.fn()} />,
+    );
+
+    // The history-load effect must skip the session we just created.
+    expect(mockGetConversationHistory).not.toHaveBeenCalled();
+  });
+
+  // ── TC-Defer-3: an existing sessionId is used directly (no create) ──
+
+  test("TC-Defer-3: does not create when a sessionId is already present", async () => {
+    const onCreateSession = vi.fn();
+    mockStreamChatCompletion.mockReturnValue(makeStream(["Reply"]));
+
+    render(
+      <ChatInterface sessionId="sess_X" onCreateSession={onCreateSession} />,
+    );
+
+    fireEvent.change(screen.getByRole("textbox", { name: /chat input/i }), {
+      target: { value: "Hello" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() =>
+      expect(mockStreamChatCompletion.mock.calls[0][1]).toBe("sess_X"),
+    );
+    expect(onCreateSession).not.toHaveBeenCalled();
+  });
+
+  // ── TC-Defer-4: a failed create surfaces an error, no stream ──
+
+  test("TC-Defer-4: create failure shows an error and does not stream", async () => {
+    const onCreateSession = vi.fn().mockResolvedValue(null);
+    render(<ChatInterface onCreateSession={onCreateSession} />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: /chat input/i }), {
+      target: { value: "Hello" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send message/i }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/couldn't start a new session/i),
+      ).toBeInTheDocument(),
+    );
+    expect(mockStreamChatCompletion).not.toHaveBeenCalled();
   });
 });

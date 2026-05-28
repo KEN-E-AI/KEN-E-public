@@ -1,72 +1,173 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
-import { MemoryRouter, Route, Routes, Navigate } from "react-router-dom";
+import type { ReactNode } from "react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  MemoryRouter,
+  Route,
+  Routes,
+  Navigate,
+  useLocation,
+} from "react-router-dom";
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
-// Stub the telemetry helper so tests don't write to console and
-// can assert the function was called.
+// Telemetry — assert the page-view span fires.
 const mockEmitPageView = vi.fn();
 vi.mock("@/lib/telemetry", () => ({
   emitPageView: (...args: unknown[]) => mockEmitPageView(...args),
 }));
 
-// Mock useFeatureFlag so we can flip flag state per test.
-const mockUseFeatureFlag = vi.fn(() => ({
-  enabled: false,
-  reason: "default" as const,
-  isLoading: false,
-}));
-vi.mock("@/contexts/FeatureFlagsContext", () => ({
-  // mockUseFeatureFlag is typed by vi.fn() with 0 args; the key is
-  // ignored because the mock returns the same value for every flag.
-  useFeatureFlag: (_key: string) => mockUseFeatureFlag(),
-  FeatureFlagsProvider: ({ children }: { children: React.ReactNode }) =>
-    children,
-  useFeatureFlagsContext: vi.fn(),
-  FeatureFlagsContext: {},
+// Auth — Chat reads selectedOrgAccount.accountId.
+const mockUseAuth = vi.fn();
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: () => mockUseAuth(),
 }));
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// New-session mutation hook.
+const mockMutate = vi.fn();
+const mockUseCreateChatSession = vi.fn();
+vi.mock("@/hooks/useCreateChatSession", () => ({
+  useCreateChatSession: () => mockUseCreateChatSession(),
+}));
+
+// Partially mock chatApi: stub createChatConversation (the lazy-create call),
+// keep everything else real (toChatSessionId, branded-type guards, etc.).
+vi.mock("@/lib/chatApi", async (orig) => {
+  const actual = await orig<typeof import("@/lib/chatApi")>();
+  return { ...actual, createChatConversation: vi.fn() };
+});
+
+// Heavy children stubbed to identifiable markers + interaction hooks.
+vi.mock("@/components/chat/SessionsSidebar", () => ({
+  SessionsSidebar: ({
+    isCollapsed,
+    onToggleCollapse,
+    onSessionSelect,
+    onNewSession,
+  }: any) => (
+    <div data-slot="sessions-sidebar" aria-label="Sessions sidebar">
+      <button onClick={onToggleCollapse}>
+        {isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+      </button>
+      <button onClick={() => onSessionSelect("picked123")}>
+        Select session
+      </button>
+      <button onClick={onNewSession}>New session</button>
+    </div>
+  ),
+}));
+
+vi.mock("@/components/chat/ChatInterface", () => ({
+  ChatInterface: ({ sessionId, onCreateSession, onSessionStarted }: any) => (
+    <div data-testid="chat-interface" data-session-id={sessionId ?? ""}>
+      <button
+        onClick={async () => {
+          const id = await onCreateSession?.();
+          if (id) onSessionStarted?.(id);
+        }}
+      >
+        simulate first message
+      </button>
+    </div>
+  ),
+}));
+
+vi.mock("@/components/chat/ArtifactsPanel", () => ({
+  ArtifactsPanel: () => <div data-testid="artifacts-panel" />,
+}));
+
+vi.mock("@/components/chat/TodoListsPanel", () => ({
+  TodoListsPanel: () => <div data-testid="todo-lists-panel" />,
+}));
 
 import Chat from "../Chat";
 import NotFoundPage from "../NotFoundPage";
 import { ChatInterface } from "@/components/chat/ChatInterface";
+import { createChatConversation } from "@/lib/chatApi";
 
-/**
- * Renders Chat inside a MemoryRouter at `/chat` with optional query params.
- */
-function renderChat(search = "") {
-  const path = `/chat${search}`;
-  return render(
-    <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route path="/chat" element={<Chat />} />
-        <Route path="*" element={<NotFoundPage />} />
-      </Routes>
-    </MemoryRouter>,
+const mockCreateChatConversation = vi.mocked(createChatConversation);
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const LAST_SESSION_KEY = "kene_chat_last_session";
+const SIDEBAR_COLLAPSED_KEY = "kene_chat_sidebar_collapsed";
+const BOOT_UID_KEY = "kene_chat_boot_uid";
+const TEST_UID = "user_1";
+
+function LocationProbe() {
+  const location = useLocation();
+  return (
+    <div data-testid="location">{location.pathname + location.search}</div>
   );
 }
 
-// ─── localStorage helpers ─────────────────────────────────────────────────────
+function withQueryClient(ui: ReactNode) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return <QueryClientProvider client={client}>{ui}</QueryClientProvider>;
+}
 
-function clearLocalStorage() {
-  localStorage.removeItem("kene_chat_sidebar_collapsed");
+function renderChat(search = "") {
+  return render(
+    withQueryClient(
+      <MemoryRouter initialEntries={[`/chat${search}`]}>
+        <LocationProbe />
+        <Routes>
+          <Route path="/chat" element={<Chat />} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+      </MemoryRouter>,
+    ),
+  );
+}
+
+function locationText(): string {
+  return screen.getByTestId("location").textContent ?? "";
+}
+
+// Deterministic in-memory storage (the test runtime's default storage is
+// unreliable here — `removeItem` is missing under Node's experimental shim).
+function memoryStorage() {
+  const store = new Map<string, string>();
+  return {
+    getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+    setItem: (k: string, v: string) => void store.set(k, String(v)),
+    removeItem: (k: string) => void store.delete(k),
+    clear: () => void store.clear(),
+    key: (i: number) => Array.from(store.keys())[i] ?? null,
+    get length() {
+      return store.size;
+    },
+  };
+}
+
+function installMemoryStorage() {
+  vi.stubGlobal("localStorage", memoryStorage());
+  vi.stubGlobal("sessionStorage", memoryStorage());
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe("Chat page shell", () => {
   beforeEach(() => {
-    clearLocalStorage();
-    vi.clearAllMocks();
+    installMemoryStorage();
+    mockUseAuth.mockReturnValue({
+      user: { id: TEST_UID },
+      selectedOrgAccount: { accountId: "acct_1" },
+    });
+    mockUseCreateChatSession.mockReturnValue({
+      mutate: mockMutate,
+      isPending: false,
+    });
   });
 
   afterEach(() => {
-    clearLocalStorage();
+    vi.unstubAllGlobals();
   });
 
-  // ── AC-1a: renders inside a router without throwing ───────────────────────
+  // ── slots ────────────────────────────────────────────────────────────────
 
   it("renders the sessions-sidebar slot", () => {
     renderChat();
@@ -77,88 +178,77 @@ describe("Chat page shell", () => {
 
   it("renders the chat-body slot", () => {
     renderChat();
-    const slot = document.querySelector("[data-slot='chat-body']");
-    expect(slot).not.toBeNull();
+    expect(document.querySelector("[data-slot='chat-body']")).not.toBeNull();
   });
 
   it("renders the view-toggle slot", () => {
     renderChat();
-    const slot = document.querySelector("[data-slot='view-toggle']");
-    expect(slot).not.toBeNull();
+    expect(document.querySelector("[data-slot='view-toggle']")).not.toBeNull();
   });
 
   // ── ?session= query param wiring ──────────────────────────────────────────
 
-  it("shows empty-state copy when session param is absent", () => {
-    renderChat();
-    expect(screen.getByText(/start a new session/i)).toBeInTheDocument();
-  });
-
-  it("shows the session ID when ?session= param is present", () => {
+  it("passes the validated session id down to ChatInterface", () => {
     renderChat("?session=abc123");
-    expect(screen.getByText(/session: abc123/i)).toBeInTheDocument();
+    expect(screen.getByTestId("chat-interface")).toHaveAttribute(
+      "data-session-id",
+      "abc123",
+    );
   });
 
   // ── view-state toggle ─────────────────────────────────────────────────────
 
-  it("starts in message view (toggle button label is 'Session Status')", () => {
-    renderChat();
-    expect(
-      screen.getByRole("button", { name: /session status/i }),
-    ).toBeInTheDocument();
+  it("starts in message view (toggle label reads 'Session Status')", () => {
+    renderChat("?session=abc123");
+    const toggle = screen.getByRole("button", { name: /toggle view/i });
+    expect(toggle).toHaveTextContent(/session status/i);
+    expect(screen.getByTestId("chat-interface")).toBeInTheDocument();
   });
 
-  it("toggles to status view when button is clicked", () => {
-    renderChat();
-    const toggleBtn = screen.getByRole("button", { name: /session status/i });
-    fireEvent.click(toggleBtn);
-    // Button label flips; status placeholder visible
-    expect(screen.getByRole("button", { name: /^chat$/i })).toBeInTheDocument();
+  it("toggles to status view when the toggle is clicked", () => {
+    renderChat("?session=abc123");
+    fireEvent.click(screen.getByRole("button", { name: /toggle view/i }));
     expect(
-      screen.getByText(/session status — coming soon/i),
-    ).toBeInTheDocument();
+      screen.getByRole("button", { name: /toggle view/i }),
+    ).toHaveTextContent(/chat/i);
+    expect(screen.getByTestId("artifacts-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("todo-lists-panel")).toBeInTheDocument();
   });
 
   it("toggles back to message view on a second click", () => {
-    renderChat();
-    const getToggle = () =>
-      screen.getByRole("button", { name: /session status|^chat$/i });
-    fireEvent.click(getToggle()); // → status
-    fireEvent.click(getToggle()); // → message
-    expect(
-      screen.getByRole("button", { name: /session status/i }),
-    ).toBeInTheDocument();
+    renderChat("?session=abc123");
+    const toggle = () => screen.getByRole("button", { name: /toggle view/i });
+    fireEvent.click(toggle()); // → status
+    fireEvent.click(toggle()); // → message
+    expect(toggle()).toHaveTextContent(/session status/i);
+    expect(screen.getByTestId("chat-interface")).toBeInTheDocument();
   });
 
-  // ── localStorage persistence ──────────────────────────────────────────────
+  // ── sidebar-collapse localStorage ─────────────────────────────────────────
 
   it("collapse toggle writes to localStorage", () => {
-    renderChat();
-    const collapseBtn = screen.getByRole("button", {
-      name: /collapse sidebar/i,
-    });
-    expect(localStorage.getItem("kene_chat_sidebar_collapsed")).toBeNull();
-    fireEvent.click(collapseBtn);
-    expect(localStorage.getItem("kene_chat_sidebar_collapsed")).toBe("true");
+    renderChat("?session=abc123");
+    expect(localStorage.getItem(SIDEBAR_COLLAPSED_KEY)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /collapse sidebar/i }));
+    expect(localStorage.getItem(SIDEBAR_COLLAPSED_KEY)).toBe("true");
   });
 
   it("reads initial collapsed state from localStorage", () => {
-    localStorage.setItem("kene_chat_sidebar_collapsed", "true");
-    renderChat();
-    // When collapsed, button label should be "Expand sidebar"
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, "true");
+    renderChat("?session=abc123");
     expect(
       screen.getByRole("button", { name: /expand sidebar/i }),
     ).toBeInTheDocument();
   });
 
   it("collapse toggle round-trips: collapse → expand restores false", () => {
-    renderChat();
-    const getCollapseBtn = () =>
+    renderChat("?session=abc123");
+    const getBtn = () =>
       screen.getByRole("button", { name: /collapse sidebar|expand sidebar/i });
-    fireEvent.click(getCollapseBtn()); // collapse → true
-    expect(localStorage.getItem("kene_chat_sidebar_collapsed")).toBe("true");
-    fireEvent.click(getCollapseBtn()); // expand → false
-    expect(localStorage.getItem("kene_chat_sidebar_collapsed")).toBe("false");
+    fireEvent.click(getBtn()); // collapse → true
+    expect(localStorage.getItem(SIDEBAR_COLLAPSED_KEY)).toBe("true");
+    fireEvent.click(getBtn()); // expand → false
+    expect(localStorage.getItem(SIDEBAR_COLLAPSED_KEY)).toBe("false");
   });
 
   // ── emitPageView telemetry ─────────────────────────────────────────────────
@@ -168,7 +258,7 @@ describe("Chat page shell", () => {
     expect(mockEmitPageView).toHaveBeenCalledTimes(1);
   });
 
-  it("calls emitPageView with 'chat.page.render' event and correct props", () => {
+  it("calls emitPageView with 'chat.page.render' and the session id", () => {
     renderChat("?session=test999");
     expect(mockEmitPageView).toHaveBeenCalledWith("chat.page.render", {
       session_id: "test999",
@@ -185,52 +275,153 @@ describe("Chat page shell", () => {
   });
 });
 
-// ─── Flag-gate integration: ternary route renders correct component ───────────
+// ─── Session boot: resume on in-app nav, defer creation to first message ──────
+
+describe("Chat session boot (resume on nav / deferred create)", () => {
+  beforeEach(() => {
+    installMemoryStorage();
+    mockUseAuth.mockReturnValue({
+      user: { id: TEST_UID },
+      selectedOrgAccount: { accountId: "acct_1" },
+    });
+    mockUseCreateChatSession.mockReturnValue({
+      mutate: mockMutate,
+      isPending: false,
+    });
+    mockCreateChatConversation.mockReset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("persists the active session id and marks the browser session for the user", async () => {
+    renderChat("?session=abc123");
+    await waitFor(() =>
+      expect(localStorage.getItem(LAST_SESSION_KEY)).toBe("abc123"),
+    );
+    expect(sessionStorage.getItem(BOOT_UID_KEY)).toBe(TEST_UID);
+  });
+
+  it("does NOT create a session at login — leaves the empty composer (deferred)", async () => {
+    renderChat();
+    await waitFor(() =>
+      expect(screen.getByTestId("chat-interface")).toBeInTheDocument(),
+    );
+    expect(locationText()).toBe("/chat");
+    expect(mockMutate).not.toHaveBeenCalled();
+    expect(mockCreateChatConversation).not.toHaveBeenCalled();
+    expect(screen.getByTestId("chat-interface")).toHaveAttribute(
+      "data-session-id",
+      "",
+    );
+  });
+
+  it("resumes the active session on in-app navigation (boot marker matches)", async () => {
+    sessionStorage.setItem(BOOT_UID_KEY, TEST_UID);
+    localStorage.setItem(LAST_SESSION_KEY, "active123");
+    renderChat();
+    await waitFor(() => expect(locationText()).toBe("/chat?session=active123"));
+    expect(mockCreateChatConversation).not.toHaveBeenCalled();
+  });
+
+  it("stays on the empty composer when the boot marker matches but nothing is stored", async () => {
+    sessionStorage.setItem(BOOT_UID_KEY, TEST_UID);
+    renderChat();
+    await waitFor(() =>
+      expect(screen.getByTestId("chat-interface")).toBeInTheDocument(),
+    );
+    expect(locationText()).toBe("/chat");
+    expect(mockCreateChatConversation).not.toHaveBeenCalled();
+  });
+
+  it("does not redirect when a session is already in the URL", async () => {
+    localStorage.setItem(LAST_SESSION_KEY, "active123");
+    renderChat("?session=current456");
+    await waitFor(() =>
+      expect(screen.getByTestId("chat-interface")).toBeInTheDocument(),
+    );
+    expect(locationText()).toBe("/chat?session=current456");
+  });
+
+  it("creates a session on the first message and moves the URL to it", async () => {
+    mockCreateChatConversation.mockResolvedValue({
+      session_id: "new789",
+      created_at: "",
+      last_updated: "",
+      message_count: 0,
+    });
+    renderChat();
+    // The mocked ChatInterface's button simulates first-message create+activate.
+    fireEvent.click(
+      screen.getByRole("button", { name: /simulate first message/i }),
+    );
+    await waitFor(() =>
+      expect(mockCreateChatConversation).toHaveBeenCalledWith({
+        account_id: "acct_1",
+      }),
+    );
+    await waitFor(() => expect(locationText()).toBe("/chat?session=new789"));
+  });
+
+  it("navigates to ?session= when a sidebar session is selected", async () => {
+    // Render already in a session so the boot effect is a no-op.
+    renderChat("?session=existing999");
+    fireEvent.click(screen.getByRole("button", { name: /select session/i }));
+    await waitFor(() => expect(locationText()).toBe("/chat?session=picked123"));
+  });
+});
+
+// ─── Flag-gate: ternary route renders the correct component ───────────────────
 
 describe("App-level flag-gate behavior", () => {
   beforeEach(() => {
-    mockUseFeatureFlag.mockReturnValue({
-      enabled: false,
-      reason: "default",
-      isLoading: false,
+    installMemoryStorage();
+    mockUseAuth.mockReturnValue({
+      user: { id: TEST_UID },
+      selectedOrgAccount: { accountId: "acct_1" },
     });
-    vi.clearAllMocks();
+    mockUseCreateChatSession.mockReturnValue({
+      mutate: mockMutate,
+      isPending: false,
+    });
   });
 
-  /**
-   * Mirrors the AppRoutes ternary:
-   *   <Route path="/chat" element={isChatV2Enabled ? <Chat /> : <ChatInterface />} />
-   */
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // Mirrors AppRoutes: <Route path="/chat" element={flag ? <Chat/> : <ChatInterface/>} />
   function renderAppSlice(flagEnabled: boolean, path = "/chat") {
     return render(
-      <MemoryRouter initialEntries={[path]}>
-        <Routes>
-          <Route
-            path="/chat"
-            element={flagEnabled ? <Chat /> : <ChatInterface />}
-          />
-          <Route path="*" element={<NotFoundPage />} />
-        </Routes>
-      </MemoryRouter>,
+      withQueryClient(
+        <MemoryRouter initialEntries={[path]}>
+          <Routes>
+            <Route
+              path="/chat"
+              element={flagEnabled ? <Chat /> : <ChatInterface />}
+            />
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        </MemoryRouter>,
+      ),
     );
   }
 
-  /**
-   * Mirrors the top-level redirect + ternary chat route to verify
-   * "/" → "/chat" lands on ChatInterface (not 404) when flag is off.
-   */
   function renderWithRootRedirect(flagEnabled: boolean) {
     return render(
-      <MemoryRouter initialEntries={["/"]}>
-        <Routes>
-          <Route path="/" element={<Navigate to="/chat" replace />} />
-          <Route
-            path="/chat"
-            element={flagEnabled ? <Chat /> : <ChatInterface />}
-          />
-          <Route path="*" element={<NotFoundPage />} />
-        </Routes>
-      </MemoryRouter>,
+      withQueryClient(
+        <MemoryRouter initialEntries={["/"]}>
+          <Routes>
+            <Route path="/" element={<Navigate to="/chat" replace />} />
+            <Route
+              path="/chat"
+              element={flagEnabled ? <Chat /> : <ChatInterface />}
+            />
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        </MemoryRouter>,
+      ),
     );
   }
 
