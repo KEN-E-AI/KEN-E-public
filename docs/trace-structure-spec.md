@@ -1042,6 +1042,95 @@ correlation described in §4.6.
 
 ---
 
+## 16. Per-Turn Available-Specialist Roster Span (CH-58)
+
+Emitted once per agent turn by `specialists_span_before_agent_callback` in
+`app/adk/tracking/specialists_spans.py`.  The span records the exact specialist
+set that was attached to `root_agent.sub_agents` at turn start — which is also
+the set that was rendered into the "## Available Specialists" prompt block —
+giving MER-E ground-truth availability data for routing-quality evaluation.
+
+### 16.1 Span Hierarchy
+
+```
+ken_e_agent (L1 — root)
+└── specialists.list  (L2 — emitted from before_agent_callback, before any tool call)
+```
+
+The span is emitted in `before_agent_callback` (not `before_tool_callback`), so
+its `op_name` does **not** carry the `adk.tool.` prefix.
+
+### 16.2 Per-Span Attributes
+
+#### `specialists.list`
+
+Emitted by `specialists_span_before_agent_callback` in
+`app/adk/tracking/specialists_spans.py`.  One span per agent turn.  Fires after
+`attach_specialists_before_agent_callback` populates session state.
+
+| Attribute | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `account_id` | `str` | Yes | The account the turn was executed for. Defaults to `"unknown"` when absent from session state. |
+| `specialist_count` | `int` | Yes | Number of specialists available this turn. `0` when no specialists are configured for the account. |
+| `specialists` | `list[{name, description, agent_id}]` | Yes | Per-specialist array. May be `[]` when no specialists are configured. See §16.3 for the entry shape. |
+
+#### Per-entry shape for `specialists`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | `str` | Yes | The ADK agent name used by `transfer_to_agent`. Equals `agent_id` by ADK contract (see §16.4). |
+| `description` | `str` | Yes | Human-readable description of the specialist (from Firestore `agent_configs`). Truncated to 1024 chars at capture time. Empty string when the agent has no description. |
+| `agent_id` | `str` | Yes | The Firestore `agent_configs` doc ID. Equals `name` by ADK contract (see §16.4). MER-E may join roster entries to `agent_config` / version / deployment history on either field. |
+
+### 16.3 Position in Hierarchy
+
+`specialists.list` is a direct child of the L1 `ken_e_agent` root span, at the
+same level as the L2 sub-agent spans described in §14.  It is emitted from a
+`before_agent_callback` so it always precedes any tool-call or sub-agent spans
+within the same turn.
+
+### 16.4 `agent_id` ↔ `name` Equivalence
+
+`agent_id` and `name` carry the same value in all v1 deployments.  This is an
+ADK contract: `_build_specialist` assigns `name=doc_id` to every specialist
+(see `specialist_runtime.py:510-512`), and the name is preserved through the
+`LoopAgent` wrapper (`specialist_runtime.py:572`) and the `transfer_to_agent`
+lookup (`specialist_runtime.py:626`).
+
+Both fields are emitted so MER-E can:
+- Join on `agent_id` for lookups against `agent_config` history.
+- Join on `name` for correlation with `delegate_to_specialist` spans (which use
+  the agent name as the transfer target).
+
+A future ADK release that decouples `name` from `doc_id` would surface as a
+contract-version bump in this section.  The test `test_agent_id_equals_name_invariant`
+in `app/adk/tracking/tests/test_specialists_spans.py` is the in-code regression guard.
+
+### 16.5 Empty vs Missing Semantics
+
+Two distinct signals:
+
+| Condition | `specialists.list` span present? | Meaning |
+|-----------|----------------------------------|---------|
+| `state["_available_specialists"] == []` | **Yes** (`specialist_count: 0`) | Legitimate — no specialists configured for this account yet. |
+| `"_available_specialists"` key absent from state | **No** | **Degradation signal** — capture failed or callback wiring was bypassed. |
+
+MER-E alert recommendation: a `ken_e_agent` root span with **no** `specialists.list`
+child indicates a degraded capture path.  The absence should be treated as a
+missing-data issue, not as "zero specialists were available."
+
+### 16.6 MER-E Extractor Guidance
+
+1. Match by exact `op_name`: `specialists.list`.  No `adk.tool.` prefix.
+2. The span is a **direct child** of the `ken_e_agent` root span.
+3. `specialists` array entries each carry `{name, description, agent_id}`.
+   Join on `agent_id` for `agent_config` lookups; join on `name` for routing
+   span correlation.
+4. `specialist_count == 0` with `specialists == []` is a valid turn state, not
+   an error.  Only the **absence** of the span itself signals degradation.
+
+---
+
 ## 13. Glossary
 
 | Term | Definition |

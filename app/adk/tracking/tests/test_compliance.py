@@ -220,3 +220,73 @@ class TestIssueFieldDetails:
 
         result = validate_trace_compliance(_valid_trace(), trace_id="span_123")
         assert result.trace_id == "span_123"
+
+
+# ---------------------------------------------------------------------------
+# CH-58: specialists.list span is additive — no regression in compliance
+# ---------------------------------------------------------------------------
+
+
+class TestSpecialistsSpanComplianceRegression:
+    """The ``specialists.list`` child span (CH-58) is additive.
+
+    A trace with the new span must pass compliance exactly as well as an
+    identical trace without it — the span must not become a new required
+    field, must not introduce a new validation failure, and must not alter
+    the ``is_compliant`` or ``warnings`` result of a previously-passing trace.
+    """
+
+    def _trace_with_specialists_span(self) -> dict[str, Any]:
+        """Return a valid trace annotated with a synthetic specialists.list child.
+
+        Note: ``validate_trace_compliance`` operates on root-span metadata dicts
+        (the flat key-value attributes of the ``ken_e_agent`` span), NOT on a
+        nested call tree.  The ``specialists.list`` span is a sibling child span
+        that ``validate_trace_compliance`` never sees — it is a W&B Weave call
+        tree node, not a metadata field.  We verify compliance is unchanged by
+        adding an extra key to the metadata dict that might be added if the
+        span's attributes were ever folded in.
+        """
+        trace = _valid_trace()
+        # Simulate any future path that might fold specialist-roster data into
+        # the root metadata dict — compliance should still pass.
+        trace["specialist_count"] = 2
+        trace["specialists_present"] = True
+        return trace
+
+    def test_trace_with_specialists_metadata_is_compliant(self) -> None:
+        """Adding specialist roster fields to trace metadata must not break compliance."""
+        from app.adk.tracking.compliance import validate_trace_compliance
+
+        result = validate_trace_compliance(self._trace_with_specialists_span())
+        assert result.is_compliant is True
+
+    def test_trace_without_specialists_span_is_still_compliant(self) -> None:
+        """Absence of the specialists.list span must not introduce a required-field failure.
+
+        The span is additive — existing traces that predate CH-58 must continue
+        to pass compliance with no new issues.
+        """
+        from app.adk.tracking.compliance import validate_trace_compliance
+
+        result = validate_trace_compliance(_valid_trace())
+        assert result.is_compliant is True
+        # No new issue introduced by the absence of specialists.list span data.
+        assert result.issues == []
+
+    def test_no_new_required_field_added_to_trace_metadata(self) -> None:
+        """validate_trace_compliance must not require any CH-58 field.
+
+        A fully valid pre-CH-58 trace (no ``specialist_count``, no
+        ``specialists``) must still pass compliance with zero issues.
+        """
+        from app.adk.tracking.compliance import validate_trace_compliance
+
+        trace = _valid_trace()
+        # Explicitly confirm neither of the span's attribute names is required.
+        assert "specialist_count" not in trace
+        assert "specialists" not in trace
+
+        result = validate_trace_compliance(trace)
+        assert result.is_compliant is True
+        assert result.issues == []

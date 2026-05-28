@@ -336,9 +336,30 @@ class TestCaptureHarness:
         specialist_b = _make_deterministic_specialist("test_specialist")
         events_a = await _capture_mode_a_events(specialist_a)
         events_b = await _capture_mode_b_events(specialist_b)
-        assert len(events_a) >= len(events_b), (
-            f"Mode A ({len(events_a)} events) must yield >= Mode B ({len(events_b)} events). "
-            "Mode A includes specialist events in the outer stream; Mode B currently does not."
+
+        # CH-58: attach_specialists_before_agent_callback now writes
+        # _available_specialists to session state, which ADK surfaces as a
+        # pure state-delta event (content=None, usage_metadata=None) in Mode B.
+        # That event carries no LLM output — it is a callback side-effect.
+        # Compare only "content-bearing" events (content is not None OR
+        # usage_metadata is not None) to preserve the original intent of this
+        # assertion: Mode A must surface specialist LLM output in the outer
+        # stream.
+        def _content_bearing(event: Any) -> bool:
+            return (
+                getattr(event, "content", None) is not None
+                or getattr(event, "usage_metadata", None) is not None
+            )
+
+        meaningful_a = [e for e in events_a if _content_bearing(e)]
+        meaningful_b = [e for e in events_b if _content_bearing(e)]
+        assert len(meaningful_a) >= len(meaningful_b), (
+            f"Mode A ({len(meaningful_a)} content-bearing events) must yield >= "
+            f"Mode B ({len(meaningful_b)} content-bearing events). "
+            "Both modes route through ADK's native transfer_to_agent (AH-75); "
+            "specialist LLM events appear in both streams. "
+            "Pure state-delta events (e.g. from CH-58's _available_specialists write) "
+            "are excluded from this count."
         )
 
 

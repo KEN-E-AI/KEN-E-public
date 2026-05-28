@@ -555,5 +555,66 @@ class TestWeaveDecoratorOnConfigCache:
             importlib.reload(cc_module)
 
 
+# ---------------------------------------------------------------------------
+# TestAdditionalCallbackOrdering (CH-58)
+# ---------------------------------------------------------------------------
+
+
+class TestAdditionalCallbackOrdering:
+    """Regression guard: additional_before_agent_callbacks must remain ordered
+    [attach_specialists_before_agent_callback, specialists_span_before_agent_callback].
+
+    Reversing the order would cause specialists_span_before_agent_callback to
+    run before the state key is populated, making every turn look like a
+    degraded capture path (missing-key branch) rather than a real degradation.
+    """
+
+    def test_additional_callbacks_order_attach_then_span(self) -> None:
+        """attach callback precedes span callback in additional_before_agent_callbacks."""
+        import app.adk.agents.agent_factory.builder as b
+        import app.adk.agents.agent_factory.hierarchy as h
+        from app.adk.agents.agent_factory.sub_agent_attacher import (
+            attach_specialists_before_agent_callback,
+        )
+        from app.adk.tracking.specialists_spans import (
+            specialists_span_before_agent_callback,
+        )
+
+        docs = {("agent_configs", "ken_e_chatbot"): _ROOT_DOC}
+        fake_db = _FakeFirestoreDb(docs)
+        captured: dict[str, Any] = {}
+        original_build_agent = b.build_agent
+
+        def _spy(config, *, name: str, tools=None, **kwargs):
+            captured["additional_before_agent_callbacks"] = kwargs.get(
+                "additional_before_agent_callbacks", []
+            )
+            return original_build_agent(config, name=name, tools=tools, **kwargs)
+
+        with (
+            _PATCH_BEFORE_AGENT,
+            _PATCH_AFTER_AGENT,
+            _PATCH_BEFORE_TOOL,
+            _PATCH_AFTER_TOOL,
+            patch(
+                "app.adk.agents.agent_factory.hierarchy.build_agent",
+                side_effect=_spy,
+            ),
+        ):
+            h.build_hierarchy(db=fake_db)
+
+        callbacks = captured["additional_before_agent_callbacks"]
+        assert len(callbacks) >= 2, (
+            f"Expected ≥2 additional_before_agent_callbacks; got {len(callbacks)}"
+        )
+        attach_idx = callbacks.index(attach_specialists_before_agent_callback)
+        span_idx = callbacks.index(specialists_span_before_agent_callback)
+        assert attach_idx < span_idx, (
+            "attach_specialists_before_agent_callback must come BEFORE "
+            "specialists_span_before_agent_callback in additional_before_agent_callbacks "
+            "(ordering violation would break CH-58 state-key capture)"
+        )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
