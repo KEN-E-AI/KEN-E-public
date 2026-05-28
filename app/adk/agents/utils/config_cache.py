@@ -43,7 +43,6 @@ if strict freshness is required they should ``clear_config_cache()`` first
 
 from __future__ import annotations
 
-import logging
 import os
 import threading
 import time
@@ -52,11 +51,12 @@ from typing import Any
 from google.adk.agents.llm_agent_config import LlmAgentConfig
 
 from app.utils.weave_observability import safe_weave_op
+from shared.structured_logging import get_structured_logger
 
 from ..agent_factory.config_loader import MergedAgentConfig, load_agent_config
 from ..strategy_agent.config_loader import load_config_from_firestore
 
-logger = logging.getLogger(__name__)
+logger = get_structured_logger(__name__)
 
 
 def _current_project_id() -> str:
@@ -120,6 +120,7 @@ def get_cached_config(
     with _lock_for(doc_id):
         cached = _cache.get(doc_id)
         if cached is not None and now < cached[3]:
+            logger.info("config_cache_read", extra={"doc_id": doc_id, "cache_hit": True})
             return cached[0], cached[1], cached[2]
 
         try:
@@ -138,6 +139,7 @@ def get_cached_config(
                 return cached[0], cached[1], cached[2]
             raise
 
+        logger.info("config_cache_read", extra={"doc_id": doc_id, "cache_hit": False})
         _cache[doc_id] = (config, metadata, extensions, now + ttl_seconds)
         return config, metadata, extensions
 
@@ -175,6 +177,7 @@ def get_cached_merged_config(
     with _lock_for(key):
         cached = _merged_cache.get(key)
         if cached is not None and now < cached[1]:
+            logger.info("config_cache_read", extra={"doc_id": doc_id, "cache_hit": True})
             return cached[0]
 
         try:
@@ -193,6 +196,7 @@ def get_cached_merged_config(
                 return cached[0]
             raise
 
+        logger.info("config_cache_read", extra={"doc_id": doc_id, "cache_hit": False})
         _merged_cache[key] = (config, now + ttl_seconds)
         return config
 

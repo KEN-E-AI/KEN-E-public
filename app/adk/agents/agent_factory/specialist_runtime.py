@@ -647,12 +647,22 @@ def resolve_agent(
     content_hash = _content_hash(config)
     cache_key: tuple[str, str | None, str] = (doc_id, account_id, content_hash)
 
-    return _specialists_cache.get_or_build(
+    cache_hit = _specialists_cache.get(cache_key) is not None
+    agent = _specialists_cache.get_or_build(
         cache_key,
         lambda: _build_specialist(
             config, doc_id, account_id, session_state=session_state
         ),
     )
+    logger.info(
+        "specialist_agent_resolved",
+        extra={
+            "name": doc_id,
+            "account_id": account_id,
+            "agent_cache_hit": cache_hit,
+        },
+    )
+    return agent
 
 
 def available_specialists_provider(context: ReadonlyContext) -> str:

@@ -240,6 +240,16 @@ class McpToolsetPool:
         ):
             pass
 
+        logger.info(
+            "mcp_pool_checkout",
+            extra={
+                "kind": kind.value,
+                "server_id": span_server_id,
+                "cache_hit": cache_hit,
+                "pool_size_after": pool_size_after,
+            },
+        )
+
         await self._evict_if_over_cap()
         return toolset
 
