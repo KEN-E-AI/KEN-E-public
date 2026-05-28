@@ -48,6 +48,7 @@ TODOs:
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import threading
 import time
 from collections import OrderedDict
@@ -60,15 +61,12 @@ from shared.structured_logging import get_structured_logger
 
 logger = get_structured_logger(__name__)
 
-# 32 stripe slots — same count as ``SandboxPool``. Sized for single-flight
-# correctness, not for build parallelism: ``build_fn`` runs while the stripe
-# lock is held (see ``get_or_create``), so two distinct keys that hash to the
-# same slot serialise their entire builds. Build time is bounded by the
-# ``_MCP_POOL_CHECKOUT_TIMEOUT_SECONDS`` timeout in ``specialist_runtime`` (30 s).
-# With 128 max entries spread over 32 slots, expected collision depth is ~4;
-# the AC #12 p95 cold-start budget assumes a warm pool, so this trade-off only
-# bites on first-build-into-a-colliding-stripe. Revisit with a per-key Future
-# pattern if cold-start tail latency becomes a problem in production.
+# 32 stripe slots — same count as ``SandboxPool``. Each stripe lock is held
+# only across dict-mutation operations, not across ``build_fn`` execution
+# (AH-77 Item G per-key Future pattern).  Concurrent callers for the *same*
+# key coalesce on a ``concurrent.futures.Future`` stored in ``_pending``; callers
+# for *different* keys that hash to the same slot proceed in parallel once each
+# has installed its own Future placeholder.
 _STRIPE_COUNT: int = 32
 
 
@@ -104,6 +102,12 @@ class McpToolsetPool:
 
     def __init__(self) -> None:
         self._pool: OrderedDict[tuple[str, ...], tuple[Any, float]] = OrderedDict()
+        # Per-key in-flight Futures for single-flight coalescing (AH-77 Item G).
+        # A Future is stored here from the moment a caller decides to build until
+        # it sets the result (success) or exception (failure) and pops the entry.
+        # Guarded by the same per-stripe lock as ``_pool``, but only for the
+        # dict-mutation operations — ``build_fn`` runs *outside* the stripe lock.
+        self._pending: dict[tuple[str, ...], concurrent.futures.Future[Any]] = {}
         # Pre-populated list — eliminates lazy-creation race when multiple
         # asyncio.run() calls from different worker threads access the pool
         # concurrently. threading.Lock (not asyncio.Lock) provides cross-thread
@@ -125,12 +129,15 @@ class McpToolsetPool:
         kind: McpServerKind,
         key: tuple[str, ...],
         build_fn: Callable[[], Any],
+        timeout: float | None = None,
     ) -> Any:
         """Return a cached McpToolset or build a new one.
 
-        Single-flight: concurrent calls for the same ``(kind, key)`` serialise
-        via the per-slot stripe lock so ``build_fn`` is called at most once per
-        distinct pool key.
+        Single-flight (AH-77 Item G): concurrent callers for the *same* key
+        coalesce on a ``concurrent.futures.Future`` stored in ``_pending``.
+        The stripe lock is held only during dict-mutation operations; ``build_fn``
+        runs *outside* it so concurrent callers for *different* keys that hash
+        to the same stripe slot build in parallel.
 
         Args:
             kind: The deployment kind of the MCP server.
@@ -139,16 +146,21 @@ class McpToolsetPool:
                 token_hash)``.
             build_fn: Zero-argument sync callable that constructs and returns
                 a new McpToolset when the pool has no entry for this key.
-                Called while the stripe lock is held; must not call back into
-                the pool or attempt to acquire the same stripe lock.
+                Called *outside* the stripe lock; must not call back into
+                the pool for the same key (that would dead-wait on the Future).
+            timeout: Optional wall-clock bound (seconds) on the wait for an
+                in-flight build.  ``None`` means wait forever.
 
         Returns:
             A ready-to-use McpToolset instance.
 
         Raises:
             NotImplementedError: ``kind`` is ``McpServerKind.ZAPIER`` (Phase 4).
-            Any exception raised by ``build_fn`` propagates to the caller;
-            the pool entry is not created on failure.
+            concurrent.futures.TimeoutError: the in-flight build did not finish
+                within *timeout* seconds.
+            Any exception raised by ``build_fn`` propagates to all coalesced
+            callers; the pool entry is not created and ``_pending`` is cleaned
+            up so the next caller retries.
         """
         if kind is McpServerKind.ZAPIER:
             raise NotImplementedError(
@@ -158,19 +170,52 @@ class McpToolsetPool:
         pool_key = (kind.value, *key)
         stripe = self._stripe(pool_key)
 
-        # threading.Lock — safe across asyncio.run() boundaries in worker threads.
-        # No await inside this block: build_fn is sync, all ops are dict/list.
+        # Step 1: under the stripe lock, decide what to do.
+        #   a) Cache hit — return the cached toolset immediately.
+        #   b) Concurrent build in flight — snapshot the Future, release lock,
+        #      wait outside.
+        #   c) First caller for this key — install a placeholder Future in
+        #      _pending, release lock, call build_fn outside.
+        is_builder = False
+        build_future: concurrent.futures.Future[Any] | None = None
+        toolset: Any = None
+        cache_hit = False
+
         with stripe:
             entry = self._pool.get(pool_key)
             if entry is not None:
+                # (a) Cache hit.
                 toolset, _ = entry
                 self._pool.move_to_end(pool_key)
                 self._pool[pool_key] = (toolset, time.monotonic())
                 cache_hit = True
+            elif pool_key in self._pending:
+                # (b) Concurrent build already in flight.
+                build_future = self._pending[pool_key]
             else:
-                toolset = build_fn()
-                self._pool[pool_key] = (toolset, time.monotonic())
-                cache_hit = False
+                # (c) First caller — install placeholder.
+                build_future = concurrent.futures.Future()
+                self._pending[pool_key] = build_future
+                is_builder = True
+
+        if not cache_hit:
+            if is_builder:
+                # Build outside the stripe lock so other stripe-colliding keys
+                # can proceed concurrently.
+                try:
+                    toolset = build_fn()
+                    build_future.set_result(toolset)  # type: ignore[union-attr]
+                except Exception as exc:
+                    build_future.set_exception(exc)  # type: ignore[union-attr]
+                    with stripe:
+                        self._pending.pop(pool_key, None)
+                    raise
+                with stripe:
+                    self._pending.pop(pool_key, None)
+                    self._pool[pool_key] = (toolset, time.monotonic())
+            else:
+                # Wait for the in-flight build to complete.
+                toolset = build_future.result(timeout=timeout)  # type: ignore[union-attr]
 
         # ``len(self._pool)`` is read after releasing the stripe lock —
         # deliberate, not a race: ``len()`` on a dict is GIL-atomic, and
@@ -180,11 +225,18 @@ class McpToolsetPool:
         # concurrent eviction runs between these two lines; that's acceptable
         # for an observability counter and not worth widening the lock for.
         pool_size_after = len(self._pool)
+        # AH-77 Item E: emit only (kind, server_id) — never pool_key, account_id,
+        # or creds_hash, which would pin credential identity alongside account_id
+        # in long-retention telemetry.  server_id is pool_key[1] for CLOUD_RUN
+        # (pool_key = (kind.value, server_id, account_id, creds_hash)).
+        # For ZAPIER the key shape differs but ZAPIER raises NotImplementedError
+        # above, so this path is CLOUD_RUN-only today.
+        span_server_id = pool_key[1] if len(pool_key) > 1 else None
         async with emit_mcp_pool_span(
             "mcp_pool.get",
             {
                 "kind": kind.value,
-                "pool_key": str(pool_key),
+                "server_id": span_server_id,
                 "cache_hit": cache_hit,
                 "pool_size_after": pool_size_after,
             },
@@ -230,10 +282,14 @@ class McpToolsetPool:
 
         # Span and aclose() outside the lock — both can yield to the event loop.
         pool_size_after = len(self._pool)
+        # AH-77 Item E: emit (kind, server_id) only — no pool_key or creds_hash.
+        evict_kind = pool_key[0] if pool_key else None
+        evict_server_id = pool_key[1] if len(pool_key) > 1 else None
         async with emit_mcp_pool_span(
             "mcp_pool.evict",
             {
-                "pool_key": str(pool_key),
+                "kind": evict_kind,
+                "server_id": evict_server_id,
                 "reason": reason,
                 "pool_size_after": pool_size_after,
             },
@@ -246,7 +302,8 @@ class McpToolsetPool:
             except Exception:
                 logger.warning(
                     "mcp_pool_aclose_failed",
-                    extra={"pool_key": str(pool_key), "reason": reason},
+                    # AH-77 Item E: log kind + server_id only.
+                    extra={"kind": evict_kind, "server_id": evict_server_id, "reason": reason},
                     exc_info=True,
                 )
 
@@ -326,10 +383,14 @@ class McpToolsetPool:
                 to_close.append((lru_key, toolset, len(self._pool)))
 
         for lru_key, toolset, pool_size_after in to_close:
+            # AH-77 Item E: emit (kind, server_id) only.
+            lru_kind = lru_key[0] if lru_key else None
+            lru_server_id = lru_key[1] if len(lru_key) > 1 else None
             async with emit_mcp_pool_span(
                 "mcp_pool.evict",
                 {
-                    "pool_key": str(lru_key),
+                    "kind": lru_kind,
+                    "server_id": lru_server_id,
                     "reason": "lru",
                     "pool_size_after": pool_size_after,
                 },
@@ -340,7 +401,8 @@ class McpToolsetPool:
             except Exception:
                 logger.warning(
                     "mcp_pool_lru_aclose_failed",
-                    extra={"pool_key": str(lru_key)},
+                    # AH-77 Item E: log kind + server_id only.
+                    extra={"kind": lru_kind, "server_id": lru_server_id},
                     exc_info=True,
                 )
 

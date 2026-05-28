@@ -1854,3 +1854,67 @@ class TestBuildSpecialistMcpPoolIntegration:
             "Build aborted before reaching the pool — defensive coercion "
             "regressed."
         )
+
+
+# ---------------------------------------------------------------------------
+# TestExecutorSingleton — AH-77 Item F
+# ---------------------------------------------------------------------------
+
+
+class TestExecutorSingleton:
+    """The MCP pool checkout path reuses the process-wide singleton executor."""
+
+    def test_get_pool_checkout_executor_returns_singleton(self) -> None:
+        """get_pool_checkout_executor() always returns the same instance."""
+        from app.adk.agents.agent_factory._executors import get_pool_checkout_executor
+
+        e1 = get_pool_checkout_executor()
+        e2 = get_pool_checkout_executor()
+        assert e1 is e2, "Expected singleton — got two distinct executor instances"
+
+    def test_specialist_runtime_uses_singleton_executor(self) -> None:
+        """_build_specialist submits MCP pool checkout to the singleton, not a fresh executor.
+
+        We monkeypatch get_pool_checkout_executor to return a recording mock and
+        verify its .submit() is called at least once during a specialist build
+        that includes an MCP server.
+        """
+        import concurrent.futures
+
+        import app.adk.agents.agent_factory.specialist_runtime as sr
+
+        # Config with one MCP server.
+        config = _make_specialist_config(mcp_servers=["ga_mcp"])
+
+        # Fake Firestore DB that returns an enabled MCP server doc.
+        fake_db = _FakeFirestoreDb(
+            {("mcp_server_configs", "ga_mcp"): _enabled_mcp_doc()}
+        )
+
+        # A recording executor that wraps a real ThreadPoolExecutor so that
+        # futures still behave correctly.
+        real_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        recording_executor = MagicMock(wraps=real_executor)
+
+        stack, _, _ = _patch_specialist_runtime_externals(
+            fake_db=fake_db, mock_resolver=True
+        )
+        with (
+            stack,
+            patch(
+                "app.adk.agents.agent_factory.specialist_runtime.get_pool_checkout_executor",
+                return_value=recording_executor,
+            ),
+        ):
+            sr._build_specialist(
+                config,
+                "ga_specialist",
+                "acc1",
+                session_state={},
+            )
+
+        real_executor.shutdown(wait=False)
+        assert recording_executor.submit.called, (
+            "get_pool_checkout_executor().submit() was not called — "
+            "_build_specialist is not using the singleton executor"
+        )

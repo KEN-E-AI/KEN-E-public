@@ -13,6 +13,10 @@ Coverage map
   preserved (tests 5, 6, 7, 8).
 * AC-14 — McpToolsetPool concurrent safety: same-key single-flight via
   asyncio.gather x 10; different-key calls do not serialise (tests 9, 10).
+* AH-77 Item E — span redaction (test_span_redacts_credentials_hash): no
+  pool_key, account_id, or creds_hash in any span or log extra.
+* AH-77 Item G — per-key Future (tests per_key_future_*): single-flight same-
+  key, parallel different-key same-stripe, failure propagation.
 * Edge cases: unknown-key evict no-op, start/stop lifecycle, start idempotency,
   zapier kind raises NotImplementedError (tests 11-15).
 * AC-8 — Weave span content (tests 16-21): cache_hit, pool_size_after,
@@ -22,6 +26,8 @@ Coverage map
 from __future__ import annotations
 
 import asyncio
+import threading
+import time
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -717,3 +723,212 @@ async def test_span_evict_noop_absent_key_emits_span() -> None:
     assert len(evict_spans) == 1
     _, attrs = evict_spans[0]
     assert attrs["pool_size_after"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Test 22 — AH-77 Item E: span attrs contain no pool_key / account_id /
+#           creds_hash across all emission paths
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_span_redacts_credentials_hash() -> None:
+    """No span attribute must contain pool_key, account_id, or creds_hash (AH-77 Item E).
+
+    Covers mcp_pool.get (cache miss + hit) and mcp_pool.evict (manual + LRU).
+    """
+    import contextlib
+
+    pool = McpToolsetPool()
+    pool._MAX_ENTRIES = 1  # type: ignore[assignment]
+
+    creds_hash = "abcdef1234567890" * 4  # representative hex hash
+
+    all_recorded: list[tuple[str, dict]] = []
+
+    @contextlib.asynccontextmanager
+    async def _accumulating_span(name: str, attrs: dict) -> Any:
+        all_recorded.append((name, dict(attrs)))
+        yield
+
+    with patch(_SPAN_PATH, _accumulating_span):
+        # Cache miss
+        await pool.get_or_create(
+            kind=McpServerKind.CLOUD_RUN,
+            key=("srv-a", "acc-a", creds_hash),
+            build_fn=_make_toolset,
+        )
+        # Cache hit (second call, same key)
+        await pool.get_or_create(
+            kind=McpServerKind.CLOUD_RUN,
+            key=("srv-a", "acc-a", creds_hash),
+            build_fn=_make_toolset,
+        )
+        # LRU eviction: insert a second key to push out the first (max_entries=1)
+        await pool.get_or_create(
+            kind=McpServerKind.CLOUD_RUN,
+            key=("srv-b", "acc-b", creds_hash),
+            build_fn=_make_toolset,
+        )
+        # Manual evict
+        await pool.evict(("cloud_run", "srv-b", "acc-b", creds_hash))
+
+    assert all_recorded, "Expected at least some spans"
+    for span_name, attrs in all_recorded:
+        for attr_key, attr_val in attrs.items():
+            assert attr_val != creds_hash, (
+                f"Span '{span_name}' attr '{attr_key}' contains creds_hash"
+            )
+            full_pool_key_str = str(("cloud_run", "srv-a", "acc-a", creds_hash))
+            assert attr_val != full_pool_key_str, (
+                f"Span '{span_name}' attr '{attr_key}' contains full pool_key"
+            )
+        assert "account_id" not in attrs, (
+            f"Span '{span_name}' must not have 'account_id' attribute"
+        )
+        assert "pool_key" not in attrs, (
+            f"Span '{span_name}' must not have 'pool_key' attribute"
+        )
+        assert "creds_hash" not in attrs, (
+            f"Span '{span_name}' must not have 'creds_hash' attribute"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests 23-25 — AH-77 Item G: per-key Future single-flight
+# ---------------------------------------------------------------------------
+
+
+def test_per_key_future_same_key_single_flight() -> None:
+    """build_fn is called exactly once when N concurrent thread-callers hit the same key.
+
+    AH-77 Item G AC-G1.  Uses real threads to exercise the Future waiter path:
+    whichever thread wins the stripe lock first becomes the builder; the remaining
+    threads coalesce on the Future and wait.  ``asyncio.gather`` in a single event
+    loop cannot test this because the builder completes synchronously before any
+    other coroutine gets a chance to run.
+    """
+    import concurrent.futures as cf
+
+    pool = McpToolsetPool()
+    toolset = _make_toolset()
+    call_count = 0
+
+    def _build() -> Any:
+        nonlocal call_count
+        call_count += 1
+        return toolset
+
+    def _fetch() -> Any:
+        return asyncio.run(
+            pool.get_or_create(
+                kind=McpServerKind.CLOUD_RUN,
+                key=("srv", "acc", "h"),
+                build_fn=_build,
+            )
+        )
+
+    with cf.ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(_fetch) for _ in range(10)]
+        results = [f.result(timeout=10) for f in futures]
+
+    assert call_count == 1, f"build_fn called {call_count} times, expected 1"
+    assert all(r is toolset for r in results)
+
+
+def test_per_key_future_different_keys_same_stripe_parallel() -> None:
+    """Distinct keys that hash to the same stripe build concurrently.
+
+    AH-77 Item G AC-G2.  We monkeypatch ``_stripe`` so every key maps to the
+    same lock, then verify that two simultaneous builds complete in roughly one
+    sleep's worth of time (not two).  Uses threads to match the production path
+    (``asyncio.run`` from worker threads).
+    """
+    import concurrent.futures as cf
+
+    pool = McpToolsetPool()
+    shared_lock = threading.Lock()
+    pool._stripe = lambda _key: shared_lock  # type: ignore[method-assign]
+
+    start_barrier = threading.Barrier(2)
+    finish_times: list[float] = []
+
+    def _slow_build_a() -> Any:
+        start_barrier.wait()
+        time.sleep(0.05)
+        finish_times.append(time.monotonic())
+        return _make_toolset()
+
+    def _slow_build_b() -> Any:
+        start_barrier.wait()
+        time.sleep(0.05)
+        finish_times.append(time.monotonic())
+        return _make_toolset()
+
+    def _fetch_a() -> Any:
+        return asyncio.run(
+            pool.get_or_create(
+                kind=McpServerKind.CLOUD_RUN, key=("a", "acc", "h1"), build_fn=_slow_build_a
+            )
+        )
+
+    def _fetch_b() -> Any:
+        return asyncio.run(
+            pool.get_or_create(
+                kind=McpServerKind.CLOUD_RUN, key=("b", "acc", "h2"), build_fn=_slow_build_b
+            )
+        )
+
+    t0 = time.monotonic()
+    with cf.ThreadPoolExecutor(max_workers=2) as executor:
+        fa = executor.submit(_fetch_a)
+        fb = executor.submit(_fetch_b)
+        fa.result(timeout=5)
+        fb.result(timeout=5)
+    elapsed = time.monotonic() - t0
+
+    assert len(finish_times) == 2
+    # If builds ran in parallel both finish near the same time; if serialised
+    # the total would be >= 0.10 s.  Allow generous overhead for CI jitter.
+    assert elapsed < 0.14, (
+        f"Expected parallel build (~0.05 s) but elapsed={elapsed:.3f} s "
+        f"(suggests serialisation)"
+    )
+
+
+@pytest.mark.asyncio
+async def test_per_key_future_build_failure_no_cached_exception() -> None:
+    """build_fn failure propagates to all waiters; _pool and _pending are clean.
+
+    AH-77 Item G AC-G3.
+    """
+    pool = McpToolsetPool()
+    boom = RuntimeError("build exploded")
+    call_count = 0
+
+    def _failing_build() -> Any:
+        nonlocal call_count
+        call_count += 1
+        raise boom
+
+    # First call — triggers the build, propagates exception.
+    with pytest.raises(RuntimeError, match="build exploded"):
+        await pool.get_or_create(
+            kind=McpServerKind.CLOUD_RUN,
+            key=("srv", "acc", "h"),
+            build_fn=_failing_build,
+        )
+
+    # _pool and _pending must both be empty after the failure.
+    assert len(pool._pool) == 0, "_pool must be empty after build failure"
+    assert len(pool._pending) == 0, "_pending must be empty after build failure"
+
+    # Subsequent call must retry (not return a cached exception).
+    working_toolset = _make_toolset()
+    result = await pool.get_or_create(
+        kind=McpServerKind.CLOUD_RUN,
+        key=("srv", "acc", "h"),
+        build_fn=lambda: working_toolset,
+    )
+    assert result is working_toolset
+    assert call_count == 1  # the working build is a fresh lambda, not _failing_build
