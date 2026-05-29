@@ -6,9 +6,11 @@ from dataclasses import dataclass
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
+from google.adk.agents.llm_agent_config import LlmAgentConfig
 
 from app.adk.tracking.callbacks import (
     _current_agent_call,
+    _get_chatbot_config_metadata,
     weave_after_agent_callback,
     weave_before_agent_callback,
 )
@@ -16,6 +18,32 @@ from app.adk.tracking.callbacks import (
 _INIT_WEAVE_PATH = "app.adk.tracking.callbacks.init_weave_if_needed"
 _GET_CLIENT_PATH = "app.adk.tracking.callbacks._weave_get_client"
 _CALL_CTX_PATH = "app.adk.tracking.callbacks._weave_call_context"
+_CONFIG_META_PATH = "app.adk.tracking.callbacks._get_chatbot_config_metadata"
+
+
+def _config_cache_module():
+    """Resolve the same ``config_cache`` module ``_get_chatbot_config_metadata``
+    imports from.
+
+    The callback tries the Agent-Engine-flattened ``agents.utils.config_cache``
+    first and falls back to ``app.adk.agents.utils.config_cache``. Under pytest
+    the flattened path is importable, so patching the ``app.adk.…`` module
+    object would miss the real ``get_cached_config``. Mirroring the import order
+    here guarantees we patch the object the callback actually calls.
+    """
+    try:
+        from agents.utils import config_cache
+    except ImportError:
+        from app.adk.agents.utils import config_cache
+    return config_cache
+
+
+_MOCK_CONFIG_METADATA = {
+    "version": "v1.0.0",
+    "experiment_id": "baseline",
+    "variant_name": "baseline",
+    "model": "gemini-2.5-pro",
+}
 
 
 @dataclass
@@ -36,7 +64,8 @@ def _reset_context_var():
 class TestWeaveBeforeAgentCallback:
     """Tests for weave_before_agent_callback."""
 
-    def test_creates_call_and_sets_context_var(self):
+    @patch(_CONFIG_META_PATH, return_value=_MOCK_CONFIG_METADATA)
+    def test_creates_call_and_sets_context_var(self, mock_cfg: MagicMock):
         mock_call = MagicMock(id="call-123")
         mock_client = MagicMock()
         mock_client.create_call.return_value = mock_call
@@ -63,6 +92,8 @@ class TestWeaveBeforeAgentCallback:
             call_order.append("get_client")
             return None
 
+        # client is None → early return before _build_chatbot_root_attrs;
+        # no need to patch _get_chatbot_config_metadata here.
         with (
             patch(_INIT_WEAVE_PATH, side_effect=mock_init),
             patch(_GET_CLIENT_PATH, side_effect=mock_get),
@@ -72,13 +103,15 @@ class TestWeaveBeforeAgentCallback:
         assert call_order == ["init", "get_client"]
 
     def test_noop_when_client_is_none(self):
+        # Returns None before reaching _build_chatbot_root_attrs → no patch needed.
         with patch(_INIT_WEAVE_PATH), patch(_GET_CLIENT_PATH, return_value=None):
             result = weave_before_agent_callback(callback_context=MockCallbackContext())
 
         assert result is None
         assert _current_agent_call.get(None) is None
 
-    def test_handles_create_call_exception(self):
+    @patch(_CONFIG_META_PATH, return_value=_MOCK_CONFIG_METADATA)
+    def test_handles_create_call_exception(self, mock_cfg: MagicMock):
         mock_client = MagicMock()
         mock_client.create_call.side_effect = RuntimeError("Weave down")
 
@@ -150,3 +183,82 @@ class TestWeaveAfterAgentCallback:
 
         assert result is None
         assert _current_agent_call.get(None) is None
+
+
+class TestGetChatbotConfigMetadata:
+    """Projection from ``get_cached_config`` to the six span-attribute keys.
+
+    These exercise the production projection directly (no mock on
+    ``_get_chatbot_config_metadata`` itself) — the rest of the suite mocks
+    that seam to stay hermetic, so the mapping is otherwise untested.
+    """
+
+    @staticmethod
+    def _make_config(
+        model: str = "gemini-2.5-pro",
+        temperature: float | None = 0.3,
+        max_output_tokens: int | None = 2048,
+    ) -> LlmAgentConfig:
+        gcc: dict[str, object] = {}
+        if temperature is not None:
+            gcc["temperature"] = temperature
+        if max_output_tokens is not None:
+            gcc["max_output_tokens"] = max_output_tokens
+        return LlmAgentConfig(
+            name="ken_e_chatbot",
+            model=model,
+            instruction="sys",
+            description="desc",
+            generate_content_config=gcc or None,
+        )
+
+    def test_projects_all_six_keys(self):
+        config = self._make_config()
+        metadata = {
+            "version": "v2.1.0",
+            "experiment_id": "exp-42",
+            "variant_name": "treatment",
+        }
+        with patch.object(
+            _config_cache_module(),
+            "get_cached_config",
+            return_value=(config, metadata, {}),
+        ):
+            result = _get_chatbot_config_metadata()
+
+        assert result == {
+            "version": "v2.1.0",
+            "experiment_id": "exp-42",
+            "variant_name": "treatment",
+            "model": "gemini-2.5-pro",
+            "temperature": 0.3,
+            "max_output_tokens": 2048,
+        }
+
+    def test_defaults_when_metadata_keys_missing(self):
+        config = self._make_config(temperature=None, max_output_tokens=None)
+        with patch.object(
+            _config_cache_module(),
+            "get_cached_config",
+            return_value=(config, {}, {}),
+        ):
+            result = _get_chatbot_config_metadata()
+
+        assert result == {
+            "version": None,
+            "experiment_id": "baseline",
+            "variant_name": "baseline",
+            "model": "gemini-2.5-pro",
+            "temperature": None,
+            "max_output_tokens": None,
+        }
+
+    def test_returns_empty_dict_when_get_cached_config_raises(self):
+        with patch.object(
+            _config_cache_module(),
+            "get_cached_config",
+            side_effect=RuntimeError("firestore down"),
+        ):
+            result = _get_chatbot_config_metadata()
+
+        assert result == {}

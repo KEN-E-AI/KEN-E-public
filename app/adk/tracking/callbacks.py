@@ -64,46 +64,52 @@ _MAX_GOAL_LENGTH = 500
 
 
 def _get_chatbot_config_metadata() -> dict[str, Any]:
-    """Load and cache ken_e_chatbot Firestore metadata for span attributes.
+    """Return span-attribute metadata for the ken_e_chatbot config doc.
 
-    Cached for the lifetime of the process via _CHATBOT_CONFIG_CACHE — config
-    changes require a redeploy anyway, so a per-request Firestore read would
-    be wasted I/O. Note: not using @lru_cache because we want to retry on
-    failure (an early Firestore hiccup shouldn't permanently cache an empty
-    dict).
+    Delegates to ``get_cached_config("ken_e_chatbot")`` — the shared TTL
+    cache in ``app/adk/agents/utils/config_cache.py`` (Sprint 6 Decision B).
+    That helper provides:
+
+    * 60-second TTL with a single Firestore read per window (single-flight
+      under concurrent first-turn load via 32-stripe locking).
+    * Serve-stale-on-error: a Firestore hiccup with a prior cache hit returns
+      the last-good value rather than blocking the agent turn.
+    * On first-call failure (no cached value) the helper raises; we catch and
+      return ``{}`` so the callback's outer ``try/except`` degrades gracefully.
+
+    The returned dict carries the six keys ``_build_chatbot_root_attrs``
+    reads: ``version``, ``experiment_id``, ``variant_name``, ``model``,
+    ``temperature``, ``max_output_tokens``.
+
+    Note: config changes propagate to trace metadata on the next TTL boundary
+    (~60 s). This matches the existing InstructionProvider contract (Sprint 6
+    Decision B) — we are aligning trace metadata with it, not introducing a
+    new staleness window.
 
     Import path handles both deployment layouts:
-      - Local dev: `app.adk.agents.strategy_agent.config_loader`
+      - Local dev: ``app.adk.agents.utils.config_cache``
       - Agent Engine runtime (extra_packages flatten to root):
-        `agents.strategy_agent.config_loader`
+        ``agents.utils.config_cache``
     """
-    if _CHATBOT_CONFIG_CACHE.get("loaded"):
-        return _CHATBOT_CONFIG_CACHE["data"]
-
     try:
         try:
-            from agents.strategy_agent.config_loader import (
-                get_current_config_metadata,
-            )
+            from agents.utils.config_cache import get_cached_config
         except ImportError:
-            from app.adk.agents.strategy_agent.config_loader import (
-                get_current_config_metadata,
-            )
+            from app.adk.agents.utils.config_cache import get_cached_config
 
-        data = get_current_config_metadata("ken_e_chatbot")
-        # Only mark as loaded if we got real data (not an error fallback).
-        if data and not data.get("error"):
-            _CHATBOT_CONFIG_CACHE["data"] = data
-            _CHATBOT_CONFIG_CACHE["loaded"] = True
-            return data
-        logger.warning(f"ken_e_chatbot config returned empty/error: {data}; will retry")
-        return data or {}
+        config, metadata, _extensions = get_cached_config("ken_e_chatbot")
+        gcc = getattr(config, "generate_content_config", None)
+        return {
+            "version": metadata.get("version"),
+            "experiment_id": metadata.get("experiment_id", "baseline"),
+            "variant_name": metadata.get("variant_name", "baseline"),
+            "model": getattr(config, "model", "unknown"),
+            "temperature": getattr(gcc, "temperature", None),
+            "max_output_tokens": getattr(gcc, "max_output_tokens", None),
+        }
     except Exception as e:
         logger.warning(f"Failed to load ken_e_chatbot config metadata: {e}")
         return {}
-
-
-_CHATBOT_CONFIG_CACHE: dict[str, Any] = {"loaded": False, "data": {}}
 
 
 def _build_chatbot_root_attrs(callback_context: CallbackContext) -> dict[str, Any]:
