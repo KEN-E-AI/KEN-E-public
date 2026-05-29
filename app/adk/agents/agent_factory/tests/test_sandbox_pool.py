@@ -22,10 +22,16 @@ Coverage map
   resource name format (tests 11-16).
 * AC-8 — Weave span content (tests 17-22): cache_hit, pool_size_after,
   reason correctness for each eviction path; no-op evict still emits a span.
+* Invariant guard — _release refcount-underflow (refcount==0 on entry) returns
+  False, preserves entry, does not drive refcount negative, logs ERROR (test 35).
+* _evict_if_over_cap skips pending_evict=True entries; evicts next non-pending
+  LRU instead (test 36); returns without evicting when all entries are pending
+  (test 37).
 """
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import os
 import sys
@@ -1112,4 +1118,306 @@ def test_lease_evict_failure_releases_clearing_event_and_refcount() -> None:
     # _evict_if_over_cap is not called) acquires without deadlocking.
     with pool.lease(account_id="acc", config_id="cfg") as result:
         assert result is executor
+
+
+# ---------------------------------------------------------------------------
+# Test 35 — cancellation guard (evict site): asyncio.CancelledError raised
+#           inside _evict_if_over_cap during lease() must not orphan state
+# ---------------------------------------------------------------------------
+
+
+def test_lease_cancellation_during_evict_releases_clearing_event_and_refcount() -> None:
+    """CancelledError from _evict_if_over_cap must not deadlock the key.
+
+    This mirrors test_lease_evict_failure_releases_clearing_event_and_refcount
+    (Test 34) but raises ``asyncio.CancelledError`` instead of ``RuntimeError``.
+    ``asyncio.CancelledError`` is a ``BaseException`` subclass since Python 3.8,
+    so it flows past the inner ``except Exception`` block around ``_clear_tmp``
+    (``sandbox_pool.py:289``) and is handled only by the outer ``try/finally``
+    at ``sandbox_pool.py:317``.  Verifies that the outer backstop pops + sets
+    any registered clearing event and releases the refcount regardless of which
+    ``BaseException`` subclass propagates, leaving the key reusable.
+    """
+    pool = SandboxPool()
+    pool._CLEAR_TMP_ON_REUSE = True  # so the 0→1 miss registers a clearing event
+    executor = _make_executor()
+
+    def _fake_construct(**_: Any) -> Any:
+        return executor
+
+    def _raise_evict() -> None:
+        raise asyncio.CancelledError(
+            "simulated task cancellation during cap enforcement"
+        )
+
+    pool._construct = _fake_construct  # type: ignore[method-assign]
+    pool._clear_tmp = MagicMock()  # type: ignore[method-assign]
+    pool._evict_if_over_cap = _raise_evict  # type: ignore[method-assign]
+
+    key = ("acc", "cfg")
+
+    # First lease: cache miss → _evict_if_over_cap fires → CancelledError raised.
+    with pytest.raises(asyncio.CancelledError):
+        with pool.lease(account_id="acc", config_id="cfg"):
+            pass  # never reached — lease() raises before yielding
+
+    # No orphaned clearing event; refcount fully released.
+    assert key not in pool._clearing
     assert pool._entry_refcount(key) == 0
+
+    # The key is reusable: a subsequent lease (now a cache hit, so
+    # _evict_if_over_cap is not called) acquires without deadlocking.
+    with pool.lease(account_id="acc", config_id="cfg") as result:
+        assert result is executor
+    assert pool._entry_refcount(key) == 0
+
+
+# ---------------------------------------------------------------------------
+# Test 36 — cancellation guard (clear_tmp site): asyncio.CancelledError raised
+#           inside _clear_tmp during lease() must not orphan state
+# ---------------------------------------------------------------------------
+
+
+def test_lease_cancellation_during_clear_tmp_releases_clearing_event_and_refcount() -> (
+    None
+):
+    """CancelledError from _clear_tmp must not deadlock the key.
+
+    Unlike Test 35 (which cancels at ``_evict_if_over_cap``), this test cancels
+    at ``_clear_tmp`` (``sandbox_pool.py:287``).  At that point the clearing
+    event has already been registered by ``_acquire`` and
+    ``_evict_if_over_cap`` has succeeded, so execution is inside the inner
+    ``if clearing_event is not None`` block.
+
+    ``asyncio.CancelledError`` is a ``BaseException`` subclass, so it bypasses
+    the inner ``except Exception`` at ``sandbox_pool.py:289`` (which only catches
+    ``Exception``) and lands directly in the inner ``finally`` at
+    ``sandbox_pool.py:295``.  That inner ``finally`` pops ``self._clearing[key]``
+    and sets the event, unblocking waiters.  The outer ``finally`` then runs the
+    backstop pop (a no-op because the inner ``finally`` already removed the entry)
+    and releases the refcount.
+
+    Verifies the three SK-48 invariants after the cancelled lease and confirms a
+    subsequent lease of the same key succeeds without deadlocking.
+    """
+    import asyncio
+
+    pool = SandboxPool()
+    pool._CLEAR_TMP_ON_REUSE = True  # so the 0→1 miss registers a clearing event
+    executor = _make_executor()
+
+    def _fake_construct(**_: Any) -> Any:
+        return executor
+
+    def _noop_evict() -> None:
+        pass  # cap enforcement succeeds; cancellation happens later at _clear_tmp
+
+    _clear_tmp_calls = 0
+
+    def _raise_clear_tmp(_executor: Any) -> None:
+        nonlocal _clear_tmp_calls
+        _clear_tmp_calls += 1
+        if _clear_tmp_calls == 1:
+            raise asyncio.CancelledError("simulated task cancellation during tmp clear")
+
+    pool._construct = _fake_construct  # type: ignore[method-assign]
+    pool._evict_if_over_cap = _noop_evict  # type: ignore[method-assign]
+    pool._clear_tmp = _raise_clear_tmp  # type: ignore[method-assign]
+
+    key = ("acc", "cfg")
+
+    # First lease: cache miss → _clear_tmp fires → CancelledError bypasses
+    # except Exception and hits the inner finally, which pops + sets the
+    # clearing event, then re-raises into the outer finally, which releases
+    # the refcount.
+    with pytest.raises(asyncio.CancelledError):
+        with pool.lease(account_id="acc", config_id="cfg"):
+            pass  # never reached — lease() raises before yielding
+
+    # _clear_tmp was called exactly once (the failed lease); the cache-hit
+    # follow-up below takes the fast path and does not call _clear_tmp again.
+    assert _clear_tmp_calls == 1
+
+    # Inner finally already cleaned up the clearing event; outer backstop
+    # was a no-op.  Both invariants must hold.
+    assert key not in pool._clearing
+    assert pool._entry_refcount(key) == 0
+
+    # The key is reusable: a subsequent lease (now a cache hit, so neither
+    # _evict_if_over_cap nor _clear_tmp is called) acquires without deadlocking.
+    with pool.lease(account_id="acc", config_id="cfg") as result:
+        assert result is executor
+    assert pool._entry_refcount(key) == 0
+
+
+# ---------------------------------------------------------------------------
+# Test 35 — _release refcount-underflow guard: double-release must not drive
+#           refcount negative, must not remove the entry, and must log ERROR
+# ---------------------------------------------------------------------------
+
+
+def test_release_refcount_underflow_guard(caplog: pytest.LogCaptureFixture) -> None:
+    """_release on a key with refcount=0 must fire the invariant-violation guard.
+
+    Seeds the pool entry directly with refcount=0 to reach the guard at
+    sandbox_pool.py:661-668 deterministically (same direct-seeding pattern
+    used in test_stale_before_guard_skips_refreshed_entry).  Asserts that
+    _release returns False, does not remove the entry, does not drive the
+    refcount negative, does not mutate pending_evict, and emits an ERROR-level
+    log record containing "refcount underflow".
+    """
+    pool = SandboxPool()
+    key = ("acc", "cfg")
+    executor = _make_executor()
+    last_used = 0.0
+    seeded_pending_evict = False
+
+    # Seed entry with refcount=0 — bypasses _acquire intentionally.
+    pool._pool[key] = (executor, last_used, 0, seeded_pending_evict)
+
+    with caplog.at_level("ERROR", logger="app.adk.agents.agent_factory.sandbox_pool"):
+        result = pool._release(key)
+
+    # Guard must return False (not trigger deferred eviction).
+    assert result is False
+
+    # Entry must still be present — the guard must not remove it.
+    assert key in pool._pool
+
+    # Refcount must remain 0, not driven to -1.
+    assert pool._entry_refcount(key) == 0
+
+    # pending_evict must be unchanged — the guard is non-mutating.
+    _, _, _, actual_pending_evict = pool._pool[key]
+    assert actual_pending_evict == seeded_pending_evict
+
+    # An ERROR-level log record containing "refcount underflow" must be present.
+    underflow_records = [
+        r
+        for r in caplog.records
+        if r.levelname == "ERROR" and "refcount underflow" in r.getMessage()
+    ]
+    assert underflow_records, (
+        "Expected at least one ERROR log record containing 'refcount underflow', "
+        f"got: {[r.getMessage() for r in caplog.records]}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 36 — _evict_if_over_cap skips pending_evict=True entries
+# ---------------------------------------------------------------------------
+
+
+def test_evict_if_over_cap_skips_pending_entry() -> None:
+    """_evict_if_over_cap skips the LRU entry when it carries pending_evict=True.
+
+    With _MAX_ENTRIES=2 and two entries already in the pool, the LRU (k0) is
+    mutated to pending_evict=True (simulating an in-flight deferred eviction via
+    SK-42's lease+evict race).  Inserting a third key triggers cap enforcement.
+    The pending k0 must remain in the pool and the next non-pending entry (k1)
+    must be evicted instead.  The emitted sandbox_pool.evict span must carry k1's
+    (account_id, config_id), not k0's, so MER-E attribution is correct.
+    """
+    pool = SandboxPool()
+    pool._MAX_ENTRIES = 2  # type: ignore[assignment]
+
+    def _fake_construct(*, account_id: str, config_id: str) -> Any:
+        return _make_executor()
+
+    pool._construct = _fake_construct  # type: ignore[method-assign]
+
+    # Populate two slots: k0 (LRU / oldest), k1 (MRU / newest)
+    pool.get_or_create(account_id="acc", config_id="k0")
+    pool.get_or_create(account_id="acc", config_id="k1")
+
+    k0 = ("acc", "k0")
+    k1 = ("acc", "k1")
+
+    # Mark the LRU entry as pending_evict=True (deferred-eviction state)
+    executor0, last_used0, refcount0, _pending0 = pool._pool[k0]
+    pool._pool[k0] = (executor0, last_used0, refcount0, True)
+
+    recorded, patch_target = _make_span_recorder()
+    with patch(_SPAN_PATH, patch_target):
+        # Insert k2 — this pushes the pool over cap and triggers _evict_if_over_cap
+        pool.get_or_create(account_id="acc", config_id="k2")
+
+    # k0 (pending) must survive; k1 (non-pending) must be the sole eviction victim;
+    # k2 (the trigger entry) must also survive — proving only one eviction occurred.
+    assert k0 in pool._pool, "pending k0 must not be evicted by cap enforcement"
+    assert k1 not in pool._pool, "non-pending k1 must be the cap-enforcement victim"
+    k2 = ("acc", "k2")
+    assert k2 in pool._pool, "k2 (trigger entry) must survive — only k1 is evicted"
+    assert len(pool._pool) == pool._MAX_ENTRIES, (
+        "pool must be at exactly _MAX_ENTRIES after exactly one eviction"
+    )
+
+    # The evict span must name k1 exactly once, not k0
+    evict_spans = [(n, a) for n, a in recorded if n == "sandbox_pool.evict"]
+    assert len(evict_spans) == 1, "exactly one sandbox_pool.evict span must be emitted"
+    k1_spans = [
+        a for _, a in evict_spans if a["account_id"] == "acc" and a["config_id"] == "k1"
+    ]
+    assert k1_spans, "sandbox_pool.evict span must carry k1's identifiers"
+    assert k1_spans[0]["reason"] == "lru", "eviction reason must be 'lru'"
+    k0_spans = [a for _, a in evict_spans if a["config_id"] == "k0"]
+    assert not k0_spans, "no sandbox_pool.evict span must be emitted for pending k0"
+
+
+# ---------------------------------------------------------------------------
+# Test 37 — _evict_if_over_cap returns immediately when all entries are pending
+# ---------------------------------------------------------------------------
+
+
+def test_evict_if_over_cap_all_pending_returns_without_evicting() -> None:
+    """_evict_if_over_cap emits no evictions when every pool entry is pending.
+
+    When all LRU candidates are marked pending_evict=True the inner loop finds
+    no eligible victim and oldest_key remains None.  The method returns without
+    calling evict() and the pool state is unchanged.  No sandbox_pool.evict span
+    must be emitted (the ``oldest_key is None`` guard after the scan loop).
+    """
+    pool = SandboxPool()
+    pool._MAX_ENTRIES = 2  # type: ignore[assignment]
+
+    def _fake_construct(*, account_id: str, config_id: str) -> Any:
+        return _make_executor()
+
+    pool._construct = _fake_construct  # type: ignore[method-assign]
+
+    # Populate two slots
+    pool.get_or_create(account_id="acc", config_id="k0")
+    pool.get_or_create(account_id="acc", config_id="k1")
+
+    k0 = ("acc", "k0")
+    k1 = ("acc", "k1")
+
+    # Mark both entries as pending_evict=True
+    for key in (k0, k1):
+        executor, last_used, refcount, _pending = pool._pool[key]
+        pool._pool[key] = (executor, last_used, refcount, True)
+
+    # Manually push the pool one over cap by injecting a third entry that is
+    # also pending_evict=True, so every candidate is deferred.  We inject
+    # directly into _pool rather than going through get_or_create (which would
+    # call _evict_if_over_cap itself and change pool state before we can
+    # observe the all-pending early-return).
+    k2 = ("acc", "k2")
+    pool._pool[k2] = (_make_executor(), 0.0, 0, True)
+
+    keys_before = set(pool._pool.keys())
+
+    recorded, patch_target = _make_span_recorder()
+    with patch(_SPAN_PATH, patch_target):
+        pool._evict_if_over_cap()
+
+    # Pool state must be unchanged — no entry removed
+    assert set(pool._pool.keys()) == keys_before, (
+        "_evict_if_over_cap must not remove any entry when all candidates are pending"
+    )
+
+    # No evict span must have been emitted
+    evict_spans = [(n, a) for n, a in recorded if n == "sandbox_pool.evict"]
+    assert not evict_spans, (
+        "no sandbox_pool.evict span must be emitted when all entries are pending_evict=True"
+    )
