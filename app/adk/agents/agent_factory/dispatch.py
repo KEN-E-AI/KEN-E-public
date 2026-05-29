@@ -18,6 +18,7 @@ Public symbols:
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Mapping
 from typing import Any
 
@@ -35,6 +36,32 @@ _MAX_DESCRIPTION_CHARS: int = 500
 # Hard cap on human name / title fields (AH-84). Short identity strings; keep
 # the block compact relative to the root agent's context budget.
 _MAX_IDENTITY_CHARS: int = 64
+
+# AH-84: render-time hardening for identity fields. The API write boundary
+# (api/.../agent_config_models.py::_validate_identity_field) enforces a char
+# allowlist on new writes, but ``agent_configs/{id}`` docs are also written by
+# paths that bypass those Pydantic models — MER-E (sister repo) lifecycle
+# writes, migrations, admin/Firestore-console edits, and any ``name``/``title``
+# stored before AH-84 added the validator. Since these values are interpolated
+# verbatim into the root LLM's system prompt, we drop anything outside the
+# allowlist here too, so the prompt surface is closed regardless of how the
+# value reached Firestore. This mirrors the allowlist in
+# ``_validate_identity_field`` but *strips* disallowed characters (newlines,
+# Markdown structural chars like ``#``/``*``/``—``, Unicode confusables) rather
+# than rejecting, since render must always succeed.
+_IDENTITY_UNSAFE_RE: re.Pattern[str] = re.compile(r"[^A-Za-zÀ-ÖØ-öø-ÿ0-9 '\-.]")
+
+
+def _sanitise_identity(value: str) -> str | None:
+    """Reduce an identity string to the prompt-safe allowlist.
+
+    Drops characters outside the identity allowlist before the value is
+    interpolated into the LLM system prompt, then strips surrounding
+    whitespace and caps to ``_MAX_IDENTITY_CHARS``. Returns ``None`` when
+    nothing printable survives (caller then omits the clause entirely).
+    """
+    cleaned = _IDENTITY_UNSAFE_RE.sub("", value).strip()[:_MAX_IDENTITY_CHARS]
+    return cleaned or None
 
 
 def _format_specialist_line(
@@ -69,15 +96,12 @@ def _format_specialist_line(
             description = "(no description provided)"
 
     # Sanitise and cap the identity fields.  We do NOT run them through
-    # sanitise_criteria (which strips apostrophes / hyphens used legitimately in
-    # human names); a length cap + strip is sufficient.
-    cleaned_human_name: str | None = None
-    if human_name:
-        cleaned_human_name = human_name.strip()[:_MAX_IDENTITY_CHARS] or None
-
-    cleaned_title: str | None = None
-    if title:
-        cleaned_title = title.strip()[:_MAX_IDENTITY_CHARS] or None
+    # sanitise_criteria (which permits newlines and strips apostrophes / hyphens
+    # used legitimately in human names); _sanitise_identity applies the
+    # identity allowlist + length cap so the values are prompt-safe regardless
+    # of which write path put them in Firestore (see _IDENTITY_UNSAFE_RE).
+    cleaned_human_name = _sanitise_identity(human_name) if human_name else None
+    cleaned_title = _sanitise_identity(title) if title else None
 
     if cleaned_human_name and cleaned_title:
         return (
