@@ -22,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { AgentToolPicker } from "./agents/AgentToolPicker";
 import { DisabledPlaceholderRow } from "./agents/DisabledPlaceholderRow";
 
@@ -75,6 +76,8 @@ export const schema = z.object({
     .array(z.string())
     .max(30, "You can attach up to 30 tools per agent")
     .default([]),
+  // AH-82: whether KEN-E may delegate tasks to this agent from chat.
+  ken_e_sub_agent: z.boolean().default(true),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -88,6 +91,7 @@ const FORM_FIELDS = [
   "temperature",
   "description",
   "tool_ids",
+  "ken_e_sub_agent",
 ] as const satisfies readonly (keyof FormValues)[];
 
 // ─── AgentCreatePage ──────────────────────────────────────────────────────────
@@ -108,7 +112,7 @@ export function AgentCreatePage() {
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     mode: "onChange",
-    defaultValues: { temperature: 0.3, tool_ids: [] },
+    defaultValues: { temperature: 0.3, tool_ids: [], ken_e_sub_agent: true },
   });
 
   function onSubmit(data: FormValues) {
@@ -305,6 +309,28 @@ export function AgentCreatePage() {
             </p>
           )}
         </div>
+
+        {/* Available to KEN-E (AH-82) */}
+        <Controller
+          name="ken_e_sub_agent"
+          control={control}
+          render={({ field }) => (
+            <div className="flex items-center justify-between">
+              <div className="space-y-1">
+                <Label htmlFor="ken-e-sub-agent">Available to KEN-E</Label>
+                <p className="text-sm text-muted-foreground">
+                  When on, KEN-E can delegate tasks to this agent from chat.
+                </p>
+              </div>
+              <Switch
+                id="ken-e-sub-agent"
+                checked={field.value}
+                onCheckedChange={field.onChange}
+                data-testid="ken-e-sub-agent-toggle"
+              />
+            </div>
+          )}
+        />
 
         {/* Tools (AH-PRD-06) */}
         <Controller

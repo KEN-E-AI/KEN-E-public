@@ -388,3 +388,79 @@ describe("AgentCreatePage — server validation", () => {
     });
   });
 });
+
+describe("AgentCreatePage — ken_e_sub_agent toggle", () => {
+  it("renders the toggle defaulting to on", () => {
+    render(<AgentCreatePage />, { wrapper: makeWrapper() });
+    const toggle = screen.getByTestId("ken-e-sub-agent-toggle");
+    expect(toggle).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("data-state", "checked");
+  });
+
+  it("submits ken_e_sub_agent: true when left at the default", async () => {
+    mockCreateAgentConfig.mockResolvedValueOnce({
+      config_id: "custom_abc12345",
+      customization_status: "custom_agent",
+    });
+    const user = userEvent.setup();
+    render(<AgentCreatePage />, { wrapper: makeWrapper() });
+
+    await user.type(screen.getByTestId("title-input"), "Business Researcher");
+    await user.type(
+      screen.getByTestId("instruction-field"),
+      "You are a helpful assistant.",
+    );
+    await user.click(screen.getByTestId("model-select"));
+    const modelOptions = await screen.findAllByRole("option");
+    await user.click(modelOptions[0]);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /create agent/i }),
+      ).not.toBeDisabled(),
+    );
+    await user.click(screen.getByRole("button", { name: /create agent/i }));
+
+    await waitFor(() =>
+      expect(mockCreateAgentConfig).toHaveBeenCalledWith(
+        "acc_test",
+        expect.objectContaining({ ken_e_sub_agent: true }),
+      ),
+    );
+  });
+
+  it("submits ken_e_sub_agent: false when toggled off", async () => {
+    mockCreateAgentConfig.mockResolvedValueOnce({
+      config_id: "custom_abc12345",
+      customization_status: "custom_agent",
+    });
+    const user = userEvent.setup();
+    render(<AgentCreatePage />, { wrapper: makeWrapper() });
+
+    await user.type(screen.getByTestId("title-input"), "Business Researcher");
+    await user.type(
+      screen.getByTestId("instruction-field"),
+      "You are a helpful assistant.",
+    );
+    await user.click(screen.getByTestId("model-select"));
+    const modelOptions = await screen.findAllByRole("option");
+    await user.click(modelOptions[0]);
+
+    // Turn the toggle off before submitting
+    await user.click(screen.getByTestId("ken-e-sub-agent-toggle"));
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /create agent/i }),
+      ).not.toBeDisabled(),
+    );
+    await user.click(screen.getByRole("button", { name: /create agent/i }));
+
+    await waitFor(() =>
+      expect(mockCreateAgentConfig).toHaveBeenCalledWith(
+        "acc_test",
+        expect.objectContaining({ ken_e_sub_agent: false }),
+      ),
+    );
+  });
+});
