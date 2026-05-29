@@ -132,7 +132,9 @@ class TestWeaveBeforeAgentCallback:
         mock_client = MagicMock()
         mock_client.create_call.return_value = mock_call
 
-        ctx = MockCallbackContext(_invocation_context=_make_invocation_ctx(instruction=None))
+        ctx = MockCallbackContext(
+            _invocation_context=_make_invocation_ctx(instruction=None)
+        )
 
         with patch(_INIT_WEAVE_PATH), patch(_GET_CLIENT_PATH, return_value=mock_client):
             result = await weave_before_agent_callback(callback_context=ctx)
@@ -158,9 +160,7 @@ class TestWeaveBeforeAgentCallback:
             patch(_INIT_WEAVE_PATH, side_effect=mock_init),
             patch(_GET_CLIENT_PATH, side_effect=mock_get),
         ):
-            await weave_before_agent_callback(
-                callback_context=MockCallbackContext()
-            )
+            await weave_before_agent_callback(callback_context=MockCallbackContext())
 
         assert call_order == ["init", "get_client"]
 
@@ -223,7 +223,7 @@ class TestWeaveAfterAgentCallback:
         _current_agent_call.set(mock_call)
 
         mock_client = MagicMock()
-        ctx = MockCallbackContext()  # no _last_model_output in state
+        ctx = MockCallbackContext()  # no temp:_last_model_output in state
 
         with (
             patch(_GET_CLIENT_PATH, return_value=mock_client),
@@ -243,7 +243,9 @@ class TestWeaveAfterAgentCallback:
         _current_agent_call.set(mock_call)
 
         mock_client = MagicMock()
-        ctx = MockCallbackContext(state={"_last_model_output": "Here is the answer."})
+        ctx = MockCallbackContext(
+            state={"temp:_last_model_output": "Here is the answer."}
+        )
 
         with (
             patch(_GET_CLIENT_PATH, return_value=mock_client),
@@ -302,7 +304,9 @@ class TestCaptureLastModelOutputCallback:
     """Tests for capture_last_model_output_after_model_callback."""
 
     @staticmethod
-    def _make_part(text: str | None = None, thought: bool = False, function_call: object = None):
+    def _make_part(
+        text: str | None = None, thought: bool = False, function_call: object = None
+    ):
         part = MagicMock()
         part.text = text
         part.thought = thought
@@ -325,7 +329,21 @@ class TestCaptureLastModelOutputCallback:
         result = await capture_last_model_output_after_model_callback(ctx, resp)
 
         assert result is None
-        assert ctx.state["_last_model_output"] == "Hello, world!"
+        assert ctx.state["temp:_last_model_output"] == "Hello, world!"
+
+    @pytest.mark.asyncio
+    async def test_uses_invocation_scoped_temp_key(self):
+        """The output text must be stored under a ``temp:``-prefixed key so ADK
+        clears it between invocations. Persisting it under a plain key would let
+        a turn that ends on a function_call surface the previous turn's text and
+        would write the answer into the session document on every turn."""
+        ctx = MockCallbackContext()
+        resp = self._make_response([self._make_part(text="Answer.")])
+
+        await capture_last_model_output_after_model_callback(ctx, resp)
+
+        assert ctx.state["temp:_last_model_output"] == "Answer."
+        assert "_last_model_output" not in ctx.state
 
     @pytest.mark.asyncio
     async def test_joins_multiple_text_parts(self):
@@ -335,7 +353,7 @@ class TestCaptureLastModelOutputCallback:
 
         await capture_last_model_output_after_model_callback(ctx, resp)
 
-        assert ctx.state["_last_model_output"] == "Line 1\nLine 2"
+        assert ctx.state["temp:_last_model_output"] == "Line 1\nLine 2"
 
     @pytest.mark.asyncio
     async def test_skips_thought_parts(self):
@@ -348,7 +366,7 @@ class TestCaptureLastModelOutputCallback:
 
         await capture_last_model_output_after_model_callback(ctx, resp)
 
-        assert ctx.state["_last_model_output"] == "User-visible answer."
+        assert ctx.state["temp:_last_model_output"] == "User-visible answer."
 
     @pytest.mark.asyncio
     async def test_skips_function_call_parts(self):
@@ -362,7 +380,7 @@ class TestCaptureLastModelOutputCallback:
 
         await capture_last_model_output_after_model_callback(ctx, resp)
 
-        assert ctx.state["_last_model_output"] == "Final answer."
+        assert ctx.state["temp:_last_model_output"] == "Final answer."
 
     @pytest.mark.asyncio
     async def test_noop_on_empty_response(self):
@@ -373,7 +391,7 @@ class TestCaptureLastModelOutputCallback:
         result = await capture_last_model_output_after_model_callback(ctx, resp)
 
         assert result is None
-        assert "_last_model_output" not in ctx.state
+        assert "temp:_last_model_output" not in ctx.state
 
     @pytest.mark.asyncio
     async def test_noop_when_all_parts_are_thought_or_function_call(self):
@@ -386,7 +404,7 @@ class TestCaptureLastModelOutputCallback:
 
         await capture_last_model_output_after_model_callback(ctx, resp)
 
-        assert "_last_model_output" not in ctx.state
+        assert "temp:_last_model_output" not in ctx.state
 
 
 class TestGetChatbotConfigMetadata:

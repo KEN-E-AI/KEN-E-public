@@ -630,7 +630,8 @@ class TestAfterModelCallbackWiring:
     Ordering constraint: adk_after_model_callback MUST precede
     capture_last_model_output_after_model_callback so thought-part stripping
     happens before text capture. Reversing the order would include internal
-    reasoning in _last_model_output and propagate it to the Weave output span.
+    reasoning in temp:_last_model_output and propagate it to the Weave output
+    span.
     """
 
     def test_after_model_callbacks_contain_both_expected_functions(self) -> None:
@@ -709,7 +710,7 @@ class TestAfterModelCallbackWiring:
         capture_idx = callbacks.index(capture_last_model_output_after_model_callback)
         assert adk_idx < capture_idx, (
             "adk_after_model_callback must precede capture_last_model_output_after_model_callback "
-            "(ordering violation: thought parts would appear in _last_model_output)"
+            "(ordering violation: thought parts would appear in temp:_last_model_output)"
         )
 
 
