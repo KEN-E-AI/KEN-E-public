@@ -77,9 +77,11 @@ class MergedAgentConfig(BaseModel):
 # API but never consumed by the factory; the routing key is the Firestore
 # document ID (passed separately to ``LlmAgent(name=...)`` by the builder).
 #
-# ``deployment_status`` is written by MER-E (sister repo) onto the shared
-# ``agent_configs/{id}`` docs. The factory doesn't consume it; strip it
-# so an MER-E-touched doc still validates here.
+# ``deployment_status`` and ``lifecycle_status`` are written by MER-E (sister
+# repo) onto the shared ``agent_configs/{id}`` docs. The factory doesn't
+# consume either; strip them so an MER-E-touched doc still validates here.
+# (The router's strip list in ``api/src/kene_api/routers/agent_configs.py``
+# carries the same two fields — keep them in sync.)
 #
 # ``canonical_id`` and ``legacy_agent_name`` are pre-AH-PRD-02 storage
 # metadata that survives on a handful of seeded docs. Strip both so the
@@ -100,6 +102,7 @@ _STORAGE_INTERNAL_FIELDS: frozenset[str] = frozenset(
         "created_by",
         "updated_by",
         "deployment_status",
+        "lifecycle_status",
         "canonical_id",
         "legacy_agent_name",
     }
