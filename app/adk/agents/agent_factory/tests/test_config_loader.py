@@ -333,9 +333,14 @@ class TestConfigLoader:
     def test_storage_internal_fields_stripped_before_validate(
         self, mock_client: MagicMock, mock_auth: MagicMock
     ) -> None:
-        """``name`` / ``title`` / ``created_at`` / ``updated_at`` / ``created_by``
-        live on storage docs but not on the factory's ``MergedAgentConfig``
-        (extra="forbid"). They must be stripped before validation."""
+        """``created_at`` / ``updated_at`` / ``created_by`` live on storage docs
+        but are not part of the factory's ``MergedAgentConfig`` (extra="forbid").
+        They must be stripped before validation.
+
+        Note: ``name`` and ``title`` are NOT stripped since AH-84 — they are
+        now real ``MergedAgentConfig`` fields surfaced in the Available
+        Specialists block.  See ``test_name_and_title_round_trip`` below.
+        """
         from app.adk.agents.agent_factory.config_loader import load_agent_config
 
         global_data = {
@@ -356,8 +361,53 @@ class TestConfigLoader:
 
         assert result.temperature == 0.5
         assert result.max_output_tokens == 4096
-        assert not hasattr(result, "name")
-        assert not hasattr(result, "title")
+        # AH-84: name + title are now real model fields that round-trip.
+        assert result.name == "Dave"
+        assert result.title == "Business Researcher"
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_name_and_title_round_trip(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """AH-84: ``name`` and ``title`` must flow through to ``MergedAgentConfig``
+        so the Available Specialists block can surface them for the LLM."""
+        from app.adk.agents.agent_factory.config_loader import load_agent_config
+
+        global_data = {
+            "name": "BEN-E",
+            "title": "Brand Guardian",
+            "instruction": "Protect the brand voice.",
+            "model": "gemini-2.5-pro",
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=global_data)
+
+        result = load_agent_config("ben_e_agent")
+
+        assert result.name == "BEN-E"
+        assert result.title == "Brand Guardian"
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_name_and_title_default_to_none_when_absent(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """AH-84: agents without a human name or title must still load cleanly
+        and produce ``None`` for both optional fields."""
+        from app.adk.agents.agent_factory.config_loader import load_agent_config
+
+        global_data = {
+            "instruction": "Answer questions.",
+            "model": "gemini-2.5-pro",
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=global_data)
+
+        result = load_agent_config("anon_agent")
+
+        assert result.name is None
+        assert result.title is None
 
     @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
     @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")

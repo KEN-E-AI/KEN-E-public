@@ -18,6 +18,8 @@ Public symbols:
 from __future__ import annotations
 
 import logging
+import re
+from collections.abc import Mapping
 from typing import Any
 
 from google.adk.agents import BaseAgent
@@ -31,13 +33,59 @@ logger = logging.getLogger(__name__)
 # Hard cap on specialist description length in the Available Specialists block.
 _MAX_DESCRIPTION_CHARS: int = 500
 
+# Hard cap on human name / title fields (AH-84). Short identity strings; keep
+# the block compact relative to the root agent's context budget.
+_MAX_IDENTITY_CHARS: int = 64
 
-def _format_specialist_line(name: str, raw_desc: str) -> str:
-    """Return a single ``"- **{name}**: {description}"`` bullet.
+# AH-84: render-time hardening for identity fields. The API write boundary
+# (api/.../agent_config_models.py::_validate_identity_field) enforces a char
+# allowlist on new writes, but ``agent_configs/{id}`` docs are also written by
+# paths that bypass those Pydantic models — MER-E (sister repo) lifecycle
+# writes, migrations, admin/Firestore-console edits, and any ``name``/``title``
+# stored before AH-84 added the validator. Since these values are interpolated
+# verbatim into the root LLM's system prompt, we drop anything outside the
+# allowlist here too, so the prompt surface is closed regardless of how the
+# value reached Firestore. This mirrors the allowlist in
+# ``_validate_identity_field`` but *strips* disallowed characters (newlines,
+# Markdown structural chars like ``#``/``*``/``—``, Unicode confusables) rather
+# than rejecting, since render must always succeed.
+_IDENTITY_UNSAFE_RE: re.Pattern[str] = re.compile(r"[^A-Za-zÀ-ÖØ-öø-ÿ0-9 '\-.]")
+
+
+def _sanitise_identity(value: str) -> str | None:
+    """Reduce an identity string to the prompt-safe allowlist.
+
+    Drops characters outside the identity allowlist before the value is
+    interpolated into the LLM system prompt, then strips surrounding
+    whitespace and caps to ``_MAX_IDENTITY_CHARS``. Returns ``None`` when
+    nothing printable survives (caller then omits the clause entirely).
+    """
+    cleaned = _IDENTITY_UNSAFE_RE.sub("", value).strip()[:_MAX_IDENTITY_CHARS]
+    return cleaned or None
+
+
+def _format_specialist_line(
+    name: str,
+    raw_desc: str,
+    human_name: str | None = None,
+    title: str | None = None,
+) -> str:
+    """Return a single specialist bullet for the Available Specialists block.
 
     Shared by both ``assemble_available_specialists_block`` and
     ``assemble_specialists_block_from_state`` so the Markdown output is
     byte-for-byte identical regardless of which path produced it.
+
+    The bold-wrapped token is always *name* (the Firestore ``doc_id`` and the
+    ``transfer_to_agent`` routing key).  *human_name* and *title* are optional
+    identity clauses that help the LLM map conversational references to the
+    correct ``doc_id`` (AH-84).
+
+    Format rules:
+    - Both clauses present:  ``- **{name}** — known as "{human_name}", {title}: {desc}``
+    - Only *human_name*:     ``- **{name}** — known as "{human_name}": {desc}``
+    - Only *title*:          ``- **{name}** — {title}: {desc}``
+    - Neither:               ``- **{name}**: {desc}``  (byte-identical to pre-AH-84)
     """
     raw_desc = raw_desc.strip()
     if not raw_desc:
@@ -46,19 +94,37 @@ def _format_specialist_line(name: str, raw_desc: str) -> str:
         description = sanitise_criteria(raw_desc[:_MAX_DESCRIPTION_CHARS])
         if not description:
             description = "(no description provided)"
+
+    # Sanitise and cap the identity fields.  We do NOT run them through
+    # sanitise_criteria (which permits newlines and strips apostrophes / hyphens
+    # used legitimately in human names); _sanitise_identity applies the
+    # identity allowlist + length cap so the values are prompt-safe regardless
+    # of which write path put them in Firestore (see _IDENTITY_UNSAFE_RE).
+    cleaned_human_name = _sanitise_identity(human_name) if human_name else None
+    cleaned_title = _sanitise_identity(title) if title else None
+
+    if cleaned_human_name and cleaned_title:
+        return (
+            f'- **{name}** — known as "{cleaned_human_name}",'
+            f" {cleaned_title}: {description}"
+        )
+    if cleaned_human_name:
+        return f'- **{name}** — known as "{cleaned_human_name}": {description}'
+    if cleaned_title:
+        return f"- **{name}** — {cleaned_title}: {description}"
     return f"- **{name}**: {description}"
 
 
 def assemble_available_specialists_block(
     specialists: dict[str, BaseAgent],
+    metadata: Mapping[str, Mapping[str, str | None]] | None = None,
 ) -> str:
     """Build a Markdown block listing every registered specialist.
 
     Returns a string starting with ``"## Available Specialists\\n\\n"`` followed
     by one bullet per specialist in alphabetical order.  Each bullet has the
-    form ``"- **{name}**: {description}"``.  When the specialist's description
-    is absent or empty, the fallback text ``"(no description provided)"`` is
-    used.
+    form ``"- **{name}**: {description}"``, optionally enriched with the
+    agent's human name and title when *metadata* is supplied (AH-84).
 
     When the registry is empty, the heading is still emitted, followed by a
     single ``"- None registered."`` line.
@@ -67,6 +133,12 @@ def assemble_available_specialists_block(
         specialists: Mapping of specialist name -> ``BaseAgent``. Accepts
             ``LlmAgent`` for plain specialists or ``LoopAgent`` for
             review-pipeline-wrapped specialists (AH-75 / AH-PRD-09).
+        metadata: Optional per-specialist identity metadata keyed by
+            ``doc_id``.  Each value may carry ``"human_name"`` and/or
+            ``"title"`` strings.  When ``None`` (default) or when a
+            specialist's doc_id is absent from the mapping, the bullet
+            renders without those clauses — byte-for-byte identical to the
+            pre-AH-84 output.
 
     Returns:
         A Markdown-formatted string ready for injection into a router agent's
@@ -81,7 +153,15 @@ def assemble_available_specialists_block(
     for name in sorted(specialists):
         agent = specialists[name]
         raw_desc: str = (getattr(agent, "description", None) or "").strip()
-        lines.append(_format_specialist_line(name, raw_desc))
+        spec_meta = (metadata or {}).get(name, {})
+        lines.append(
+            _format_specialist_line(
+                name,
+                raw_desc,
+                human_name=spec_meta.get("human_name"),
+                title=spec_meta.get("title"),
+            )
+        )
 
     return heading + "\n".join(lines)
 
@@ -104,8 +184,17 @@ def assemble_specialists_block_from_state(
 
     Args:
         state_dicts: The value of ``context.state["_available_specialists"]``.
-            Each dict must have at least a ``"name"`` key; ``"description"``
-            is used when present and non-empty.
+            Each dict must have at least a ``"name"`` key.  Optional keys:
+
+            * ``"description"`` — used when present and non-empty.
+            * ``"human_name"`` — human identity label, e.g. ``"BEN-E"``
+              (AH-84); rendered as the ``"known as"`` clause when non-None.
+            * ``"title"`` — role description, e.g. ``"Brand Guardian"``
+              (AH-84); rendered before the colon when non-None.
+
+            Both identity keys default to ``None`` when absent so existing
+            callers that write only ``{name, description, agent_id}`` continue
+            to produce the pre-AH-84 bullet format unchanged.
 
     Returns:
         A Markdown-formatted string ready for injection into a router agent's
@@ -122,7 +211,14 @@ def assemble_specialists_block_from_state(
         if not name:
             continue
         raw_desc: str = entry.get("description", "") or ""
-        lines.append(_format_specialist_line(name, raw_desc))
+        lines.append(
+            _format_specialist_line(
+                name,
+                raw_desc,
+                human_name=entry.get("human_name"),
+                title=entry.get("title"),
+            )
+        )
 
     if not lines:
         return heading + "- None registered."

@@ -88,6 +88,39 @@ def _validate_tool_ids_format(value: list[str] | None) -> list[str] | None:
     return value
 
 
+# AH-84: character allowlist for agent identity fields (``name``, ``title``).
+# These values are interpolated verbatim into the root LLM's system prompt
+# inside the Available Specialists block, so unrestricted printable ASCII
+# (including newlines and Markdown structural characters) creates a prompt
+# injection surface.  The allowlist covers the legitimate identity use-case:
+# letters (including common locale variants), digits, spaces, hyphens,
+# apostrophes, and periods.  A value like "BEN-E", "O'Brien", or
+# "Research Lead 2.0" passes; "Ignore above\n##" does not.
+_IDENTITY_CHARS_RE = re.compile(r"^[A-Za-zÀ-ÖØ-öø-ÿ0-9 '\-\.]{1,64}$")
+
+# Runtime max_length aligned with _MAX_IDENTITY_CHARS in dispatch.py.
+_IDENTITY_MAX_LENGTH: int = 64
+
+
+def _validate_identity_field(value: str | None) -> str | None:
+    """Validate that an identity string (name or title) is prompt-safe.
+
+    Returns the stripped value, or raises ``ValueError`` if the value contains
+    characters outside the allowlist.
+    """
+    if value is None:
+        return value
+    stripped = value.strip()
+    if not stripped:
+        return None
+    if not _IDENTITY_CHARS_RE.match(stripped):
+        raise ValueError(
+            "may only contain letters, digits, spaces, hyphens, apostrophes, "
+            f"and periods — got: {stripped!r}"
+        )
+    return stripped
+
+
 class AgentConfigMetadata(BaseModel):
     """Metadata for an agent configuration."""
 
@@ -119,11 +152,13 @@ class AgentConfig(BaseModel):
     """
 
     name: str | None = Field(
-        None, max_length=100, description="Human name (e.g. 'Dave'). Optional."
+        None,
+        max_length=_IDENTITY_MAX_LENGTH,
+        description="Human name (e.g. 'Dave'). Optional.",
     )
     title: str | None = Field(
         None,
-        max_length=100,
+        max_length=_IDENTITY_MAX_LENGTH,
         description="Role description (e.g. 'Business Researcher').",
     )
     model: str = Field(..., description="Model identifier")
@@ -149,6 +184,11 @@ class AgentConfig(BaseModel):
 
     metadata: AgentConfigMetadata
 
+    @field_validator("name", "title", mode="before")
+    @classmethod
+    def _validate_identity(cls, v: str | None) -> str | None:
+        return _validate_identity_field(v)
+
     @field_validator("tool_ids")
     @classmethod
     def _validate_tool_ids(cls, v: list[str] | None) -> list[str] | None:
@@ -170,13 +210,13 @@ class AgentConfigUpdate(BaseModel):
 
     name: str | None = Field(
         None,
-        max_length=100,
+        max_length=_IDENTITY_MAX_LENGTH,
         description="Human name (e.g. 'Dave'). Optional.",
     )
 
     title: str | None = Field(
         None,
-        max_length=100,
+        max_length=_IDENTITY_MAX_LENGTH,
         description="Role description (e.g. 'Business Researcher').",
     )
 
@@ -259,6 +299,11 @@ class AgentConfigUpdate(BaseModel):
             "and Available Specialists block. Independent of visible_in_frontend."
         ),
     )
+
+    @field_validator("name", "title", mode="before")
+    @classmethod
+    def _validate_identity(cls, v: str | None) -> str | None:
+        return _validate_identity_field(v)
 
     @field_validator("updated_by")
     @classmethod
@@ -414,12 +459,12 @@ class AgentConfigCreate(BaseModel):
     title: str = Field(
         ...,
         min_length=1,
-        max_length=100,
+        max_length=_IDENTITY_MAX_LENGTH,
         description="Role description (e.g. 'Business Researcher'). Required.",
     )
     name: str | None = Field(
         None,
-        max_length=100,
+        max_length=_IDENTITY_MAX_LENGTH,
         description="Human name (e.g. 'Dave'). Optional.",
     )
     instruction: str = Field(
@@ -446,6 +491,11 @@ class AgentConfigCreate(BaseModel):
     # AH-82: explicit delegation gate — True (default) means this custom agent
     # is delegatable from chat.
     ken_e_sub_agent: bool = True
+
+    @field_validator("name", "title", mode="before")
+    @classmethod
+    def _validate_identity(cls, v: str | None) -> str | None:
+        return _validate_identity_field(v)
 
     @field_validator("model")
     @classmethod
@@ -478,8 +528,8 @@ class AgentConfigOverlayUpdate(BaseModel):
     overlay doc (``customization_status="customized"``).
     """
 
-    name: str | None = Field(None, max_length=100)
-    title: str | None = Field(None, max_length=100)
+    name: str | None = Field(None, max_length=_IDENTITY_MAX_LENGTH)
+    title: str | None = Field(None, max_length=_IDENTITY_MAX_LENGTH)
     instruction: str | None = Field(None, min_length=10, max_length=50000)
     model: str | None = Field(None, max_length=100)
     description: str | None = Field(None, min_length=10, max_length=1000)
@@ -511,6 +561,11 @@ class AgentConfigOverlayUpdate(BaseModel):
             "Omit to leave the existing overlay value untouched."
         ),
     )
+
+    @field_validator("name", "title", mode="before")
+    @classmethod
+    def _validate_identity(cls, v: str | None) -> str | None:
+        return _validate_identity_field(v)
 
     @field_validator("model")
     @classmethod

@@ -22,6 +22,7 @@ from app.adk.agents.agent_factory.model_routing import (
 # resolve_model_location — table-driven
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize(
     ("environment", "data_region", "expected"),
     [
@@ -70,7 +71,9 @@ def test_resolve_model_location(
 # ---------------------------------------------------------------------------
 
 
-def test_apply_model_location_env_dev_sets_global(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_apply_model_location_env_dev_sets_global(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Development environment must set GOOGLE_CLOUD_LOCATION=global."""
     monkeypatch.delenv("GOOGLE_CLOUD_LOCATION", raising=False)
     result = apply_model_location_env("development")
@@ -88,7 +91,9 @@ def test_apply_model_location_env_staging_sets_regional(
     assert os.environ["GOOGLE_CLOUD_LOCATION"] == "us-central1"
 
 
-def test_apply_model_location_env_reads_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_apply_model_location_env_reads_env_var(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """When no explicit environment arg, ENVIRONMENT env var is consulted."""
     monkeypatch.setenv("ENVIRONMENT", "development")
     monkeypatch.delenv("GOOGLE_CLOUD_LOCATION", raising=False)
