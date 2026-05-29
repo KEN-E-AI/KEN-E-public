@@ -103,7 +103,11 @@ def _get_vertexai_client(project: str, location: str) -> Any:
     https://grpc.github.io/grpc/python/grpc.html — "Channels are thread-safe."
     ``vertexai.Client`` wraps the google-genai SDK client which in turn uses a
     gRPC channel, so sharing a single instance across concurrent ``_clear_tmp``
-    calls is safe (SK-43 thread-safety verification).
+    calls is safe (SK-43 thread-safety verification).  Under a concurrent cold
+    start, two threads may both miss the cache and each construct a
+    ``vertexai.Client`` before either populates it; ``lru_cache`` keeps exactly
+    one entry and silently discards the duplicate — harmless wasted work because
+    both instances are thread-safe per the gRPC-channel guarantee above (SK-49).
 
     ``maxsize=2`` covers the typical dev + prod environment in one process.
     Revisit if the ``client_cache_hit`` rate on the ``sandbox_pool.lease`` span
