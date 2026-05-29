@@ -189,7 +189,7 @@ def _extract_user_goal(callback_context: CallbackContext) -> str | None:
     return None
 
 
-def weave_before_agent_callback(
+async def weave_before_agent_callback(
     callback_context: CallbackContext,
 ) -> types.Content | None:
     """Create a parent Weave span for the entire agent invocation.
@@ -197,6 +197,12 @@ def weave_before_agent_callback(
     Pushes a call onto the Weave call stack so that subsequent
     auto-instrumented LLM calls and @weave.op() tool dispatches
     become children of this span.
+
+    Resolves the agent's system instruction text via
+    ``agent.canonical_instruction(callback_context)`` and includes it in the
+    span inputs so MER-E can inspect the active prompt at trace time. The
+    resolution is wrapped in a defensive try/except so any ADK-internal API
+    change degrades gracefully without breaking the agent turn.
 
     Returns None so the agent proceeds normally.
     """
@@ -212,6 +218,21 @@ def weave_before_agent_callback(
             return None
 
         agent_goal = _extract_user_goal(callback_context)
+
+        # Resolve the instruction text for the root span inputs.
+        # ``canonical_instruction`` handles both plain-string and
+        # InstructionProvider callable variants. Wrapped in try/except so any
+        # ADK-internal API change doesn't break the agent turn.
+        instruction_text: str | None = None
+        try:
+            invocation_ctx = getattr(callback_context, "_invocation_context", None)
+            if invocation_ctx is not None:
+                agent = getattr(invocation_ctx, "agent", None)
+                if agent is not None and hasattr(agent, "canonical_instruction"):
+                    instr, _ = await agent.canonical_instruction(callback_context)
+                    instruction_text = instr
+        except Exception:
+            pass
 
         # Build L1 root metadata + agent_goal in a single weave.attributes()
         # context. Entering BEFORE create_call ensures the parent span itself
@@ -231,12 +252,16 @@ def weave_before_agent_callback(
         # ``attributes=`` explicitly or the parent root span ships without
         # ``account_id``, ``session_id``, ``agent_id``, ``agent_version``
         # set, which fails ``validate_trace_compliance``.
+        inputs: dict[str, Any] = {
+            "agent": "ken_e",
+            "context_agent_goal": agent_goal,
+        }
+        if instruction_text is not None:
+            inputs["instruction"] = truncate_large_output(instruction_text)
+
         call = client.create_call(
             op="ken_e_agent",
-            inputs={
-                "agent": "ken_e",
-                "context_agent_goal": agent_goal,
-            },
+            inputs=inputs,
             attributes=root_attrs,
             use_stack=True,
         )
@@ -254,15 +279,34 @@ def weave_after_agent_callback(
     Finalises the call, pops it from the Weave call stack, and clears
     the ContextVar.
 
+    Reads ``state["_last_model_output"]`` — stashed by
+    ``capture_last_model_output_after_model_callback`` on the final model call —
+    and surfaces it as ``output["text"]`` on the finished span so MER-E can
+    inspect the agent's response text at trace time.
+
     Returns None so the agent proceeds normally.
     """
     call = _current_agent_call.get(None)
     if not call:
         return None
     try:
+        # Read last model output text stashed by the after_model callback.
+        last_text: str | None = None
+        try:
+            if hasattr(callback_context, "state") and hasattr(
+                callback_context.state, "get"
+            ):
+                last_text = callback_context.state.get("_last_model_output")
+        except Exception:
+            pass
+
+        output: dict[str, Any] = {"status": "completed"}
+        if last_text:
+            output["text"] = last_text
+
         client = _weave_get_client()
         if client:
-            client.finish_call(call, output={"status": "completed"})
+            client.finish_call(call, output=output)
         _weave_call_context.pop_call(call.id)
     except Exception:
         logger.warning("Failed to finish Weave parent span", exc_info=True)
@@ -339,6 +383,43 @@ async def adk_after_model_callback(
             p for p in llm_response.content.parts if not getattr(p, "thought", False)
         ]
         return llm_response
+
+    return None
+
+
+async def capture_last_model_output_after_model_callback(
+    callback_context: CallbackContext,
+    llm_response: LlmResponse,
+) -> LlmResponse | None:
+    """Stash the final model text output in session state for the root Weave span.
+
+    Joins non-thought, non-function_call text parts from the LlmResponse into a
+    single string and stores it in ``state["_last_model_output"]``. This key is
+    read by ``weave_after_agent_callback`` to populate ``finish_call(output=...)``
+    so MER-E can inspect the agent's response text at trace time.
+
+    Returns None so the response is not modified.
+    """
+    if not llm_response.content or not llm_response.content.parts:
+        return None
+
+    text_parts: list[str] = []
+    for part in llm_response.content.parts:
+        text = getattr(part, "text", None)
+        if not text:
+            continue
+        if getattr(part, "thought", False):
+            continue
+        if getattr(part, "function_call", None):
+            continue
+        text_parts.append(text)
+
+    if (
+        text_parts
+        and hasattr(callback_context, "state")
+        and hasattr(callback_context.state, "__setitem__")
+    ):
+        callback_context.state["_last_model_output"] = "\n".join(text_parts)
 
     return None
 

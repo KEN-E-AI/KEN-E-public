@@ -56,12 +56,13 @@ def _root_spec_fields() -> set[str]:
 class TestChatbotL1Metadata:
     """The chatbot agent's L1 span must carry the full root metadata block."""
 
+    @pytest.mark.asyncio
     @patch("app.adk.tracking.callbacks._get_chatbot_config_metadata")
     @patch("app.adk.tracking.callbacks._weave_call_context")
     @patch("app.adk.tracking.callbacks._weave_get_client")
     @patch("app.adk.tracking.callbacks.init_weave_if_needed")
     @patch("app.adk.tracking.callbacks.weave")
-    def test_before_callback_passes_full_root_metadata(
+    async def test_before_callback_passes_full_root_metadata(
         self,
         mock_weave: MagicMock,
         mock_init: MagicMock,
@@ -99,7 +100,7 @@ class TestChatbotL1Metadata:
         content.parts = [part]
         ctx.user_content = content
 
-        weave_before_agent_callback(ctx)
+        await weave_before_agent_callback(ctx)
 
         mock_weave.attributes.assert_called_once()
         attrs = mock_weave.attributes.call_args[0][0]
@@ -119,12 +120,13 @@ class TestChatbotL1Metadata:
         assert attrs["model_used"] == "gemini-2.5-pro"
         assert isinstance(attrs["rollout_percentage"], int)
 
+    @pytest.mark.asyncio
     @patch("app.adk.tracking.callbacks._get_chatbot_config_metadata")
     @patch("app.adk.tracking.callbacks._weave_call_context")
     @patch("app.adk.tracking.callbacks._weave_get_client")
     @patch("app.adk.tracking.callbacks.init_weave_if_needed")
     @patch("app.adk.tracking.callbacks.weave")
-    def test_emitted_metadata_passes_compliance_validator(
+    async def test_emitted_metadata_passes_compliance_validator(
         self,
         mock_weave: MagicMock,
         mock_init: MagicMock,
@@ -153,7 +155,7 @@ class TestChatbotL1Metadata:
         ctx._invocation_context.user_id = "user_1"
         ctx.user_content = None  # No goal — simpler attrs dict
 
-        weave_before_agent_callback(ctx)
+        await weave_before_agent_callback(ctx)
 
         attrs = mock_weave.attributes.call_args[0][0]
         result = validate_trace_compliance(attrs)

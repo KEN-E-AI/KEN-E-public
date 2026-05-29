@@ -190,6 +190,10 @@ def build_hierarchy(
     from app.adk.agents.agent_factory.sub_agent_attacher import (
         attach_specialists_before_agent_callback,
     )
+    from app.adk.tracking.callbacks import (
+        adk_after_model_callback,
+        capture_last_model_output_after_model_callback,
+    )
     from app.adk.tracking.specialists_spans import (
         specialists_span_before_agent_callback,
     )
@@ -206,6 +210,14 @@ def build_hierarchy(
             # Ordering constraint: span callback reads the state key written by
             # the attach callback above — must remain AFTER it in this list.
             specialists_span_before_agent_callback,
+        ],
+        additional_after_model_callbacks=[
+            # Ordering constraint: adk_after_model_callback strips thought parts
+            # from the response first; capture_last_model_output reads the
+            # (already-stripped) parts second so _last_model_output contains only
+            # user-visible text, not internal reasoning.
+            adk_after_model_callback,
+            capture_last_model_output_after_model_callback,
         ],
     )
     logger.info("Built root agent %r.", "ken_e")
