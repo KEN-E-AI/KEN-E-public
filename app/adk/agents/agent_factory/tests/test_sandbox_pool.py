@@ -1113,3 +1113,56 @@ def test_lease_evict_failure_releases_clearing_event_and_refcount() -> None:
     with pool.lease(account_id="acc", config_id="cfg") as result:
         assert result is executor
     assert pool._entry_refcount(key) == 0
+
+
+# ---------------------------------------------------------------------------
+# Test 35 — _release refcount-underflow guard: double-release must not drive
+#           refcount negative, must not remove the entry, and must log ERROR
+# ---------------------------------------------------------------------------
+
+
+def test_release_refcount_underflow_guard(caplog: pytest.LogCaptureFixture) -> None:
+    """_release on a key with refcount=0 must fire the invariant-violation guard.
+
+    Seeds the pool entry directly with refcount=0 to reach the guard at
+    sandbox_pool.py:661-668 deterministically (same direct-seeding pattern
+    used in test_stale_before_guard_skips_refreshed_entry).  Asserts that
+    _release returns False, does not remove the entry, does not drive the
+    refcount negative, does not mutate pending_evict, and emits an ERROR-level
+    log record containing "refcount underflow".
+    """
+    pool = SandboxPool()
+    key = ("acc", "cfg")
+    executor = _make_executor()
+    last_used = 0.0
+    seeded_pending_evict = False
+
+    # Seed entry with refcount=0 — bypasses _acquire intentionally.
+    pool._pool[key] = (executor, last_used, 0, seeded_pending_evict)
+
+    with caplog.at_level("ERROR", logger="app.adk.agents.agent_factory.sandbox_pool"):
+        result = pool._release(key)
+
+    # Guard must return False (not trigger deferred eviction).
+    assert result is False
+
+    # Entry must still be present — the guard must not remove it.
+    assert key in pool._pool
+
+    # Refcount must remain 0, not driven to -1.
+    assert pool._entry_refcount(key) == 0
+
+    # pending_evict must be unchanged — the guard is non-mutating.
+    _, _, _, actual_pending_evict = pool._pool[key]
+    assert actual_pending_evict == seeded_pending_evict
+
+    # An ERROR-level log record containing "refcount underflow" must be present.
+    underflow_records = [
+        r
+        for r in caplog.records
+        if r.levelname == "ERROR" and "refcount underflow" in r.getMessage()
+    ]
+    assert underflow_records, (
+        "Expected at least one ERROR log record containing 'refcount underflow', "
+        f"got: {[r.getMessage() for r in caplog.records]}"
+    )
