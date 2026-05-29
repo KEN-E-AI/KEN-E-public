@@ -35,7 +35,15 @@ class EmbeddingGenerator:
 
         # Initialize Vertex AI
         project = os.getenv("GOOGLE_CLOUD_PROJECT", "ken-e-dev")
-        location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+        # AH-86: embeddings must use the REGIONAL Vertex endpoint, not the
+        # chat model-serving location. ``GOOGLE_CLOUD_LOCATION`` is repurposed
+        # for the Gemini model-serving endpoint (set to ``global`` in dev so
+        # newly-released models resolve — see agent_factory/model_routing.py),
+        # but ``text-embedding-004`` is served regionally and 404s on
+        # ``global``. ``VERTEX_AI_LOCATION`` is the regional engine location
+        # (us-central1), the correct home for embeddings. (Per-account EU
+        # residency routing for embeddings is tracked under DR-PRD-01.)
+        location = os.getenv("VERTEX_AI_LOCATION", "us-central1")
 
         vertexai.init(project=project, location=location)
 

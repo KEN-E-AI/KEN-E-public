@@ -46,6 +46,10 @@ from app.adk.agents.agent_factory.mcp import (
     load_toolsets_for_specialist,
 )
 from app.adk.agents.agent_factory.mcp_pool import McpServerKind, McpToolsetPool
+from app.adk.agents.agent_factory.model_routing import (
+    apply_model_location_env,
+    resolve_model_location,
+)
 from app.adk.agents.agent_factory.roster import (
     MAX_TOOLS_PER_SPECIALIST,
     RosterCapExceededError,
@@ -76,6 +80,7 @@ __all__ = [
     "MergedAgentConfig",
     "RosterCapExceededError",
     "SandboxPool",
+    "apply_model_location_env",
     "assemble_available_specialists_block",
     "attach_account_specialists",
     "attach_specialists_before_agent_callback",
@@ -90,5 +95,6 @@ __all__ = [
     "load_all_mcp_toolsets",
     "load_toolsets_for_specialist",
     "record_skill_build_metadata",
+    "resolve_model_location",
     "resolve_specialist_roster",
 ]

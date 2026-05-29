@@ -1152,3 +1152,76 @@ class TestStateCapture:
         assert len(captured[0]["description"]) <= 1024, (
             "description must be truncated to ≤1024 chars"
         )
+
+
+# ---------------------------------------------------------------------------
+# Model-serving location wiring in before_agent_callback — AH-86
+# ---------------------------------------------------------------------------
+
+
+class TestModelLocationWiring:
+    """attach_specialists_before_agent_callback must apply the per-environment
+    Vertex model-serving location at runtime (AH-86).
+
+    The build_hierarchy() call site only fires in the deploy process / local
+    ``adk run`` path; the managed Agent Engine runtime unpickles the prebuilt
+    graph and never re-runs build_hierarchy.  This callback is the
+    guaranteed-to-fire runtime entrypoint, so it must (re)apply the location —
+    overriding the platform-injected ``GOOGLE_CLOUD_LOCATION`` — before the
+    root agent's first model call.
+    """
+
+    def _make_callback_context(self, account_id: str | None = "acc_123") -> Any:
+        from unittest.mock import MagicMock
+
+        ctx = MagicMock()
+        ctx.state.get.return_value = account_id
+        ctx._invocation_context.agent = _make_root()
+        return ctx
+
+    def test_dev_callback_overrides_platform_location_to_global(self) -> None:
+        """In development, the callback overrides a platform-injected
+        ``GOOGLE_CLOUD_LOCATION=us-central1`` with ``global`` so global-only
+        models (e.g. gemini-3.5-flash) resolve at runtime."""
+        import os
+        from unittest.mock import patch
+
+        ctx = self._make_callback_context()
+        with (
+            patch.dict(
+                os.environ,
+                {"ENVIRONMENT": "development", "GOOGLE_CLOUD_LOCATION": "us-central1"},
+                clear=False,
+            ),
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher."
+                "list_account_agent_configs_cached",
+                return_value=[],
+            ),
+        ):
+            result = attach_specialists_before_agent_callback(ctx)
+            assert os.environ["GOOGLE_CLOUD_LOCATION"] == "global"
+
+        assert result is None  # callback must return None so the turn proceeds
+
+    def test_staging_callback_keeps_regional_location(self) -> None:
+        """In staging, the callback must NOT route to global — regional
+        endpoints are required for residency / prod parity."""
+        import os
+        from unittest.mock import patch
+
+        ctx = self._make_callback_context()
+        with (
+            patch.dict(
+                os.environ,
+                {"ENVIRONMENT": "staging", "GOOGLE_CLOUD_LOCATION": "global"},
+                clear=False,
+            ),
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher."
+                "list_account_agent_configs_cached",
+                return_value=[],
+            ),
+        ):
+            attach_specialists_before_agent_callback(ctx)
+            assert os.environ["GOOGLE_CLOUD_LOCATION"] == "us-central1"
