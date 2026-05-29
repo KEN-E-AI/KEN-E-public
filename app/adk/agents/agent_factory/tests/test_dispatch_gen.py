@@ -191,7 +191,7 @@ class TestNameTitleRendering:
         }
         result = assemble_available_specialists_block(specialists, metadata=metadata)
 
-        bullets = [l for l in result.splitlines() if l.startswith("- **")]
+        bullets = [line for line in result.splitlines() if line.startswith("- **")]
         assert len(bullets) == 1
         assert bullets[0].startswith("- **ga_specialist**")
         assert "Google Analytics Agent" in bullets[0]  # appears in the clause
@@ -205,7 +205,7 @@ class TestNameTitleRendering:
         result = assemble_available_specialists_block(specialists, metadata=metadata)
 
         # Extract the human_name portion from inside quotes
-        bullet = next(l for l in result.splitlines() if l.startswith("- **"))
+        bullet = next(line for line in result.splitlines() if line.startswith("- **"))
         # The quoted portion starts after 'known as "'
         start = bullet.index('known as "') + len('known as "')
         end = bullet.index('"', start)
@@ -217,7 +217,7 @@ class TestNameTitleRendering:
         metadata = {"spec": self._make_meta(title=long_title)}
         result = assemble_available_specialists_block(specialists, metadata=metadata)
 
-        bullet = next(l for l in result.splitlines() if l.startswith("- **"))
+        bullet = next(line for line in result.splitlines() if line.startswith("- **"))
         # Format is "- **spec** — {title}: {desc}" — title is between " — " and ": "
         after_em = bullet.split(" — ", 1)[1]  # "{title}: {desc}"
         title_part = after_em.split(": ", 1)[0]
@@ -287,7 +287,7 @@ class TestAssembleSpecialistsBlockFromState:
             }
         ]
         result = assemble_specialists_block_from_state(dicts)
-        bullets = [l for l in result.splitlines() if l.startswith("- **")]
+        bullets = [line for line in result.splitlines() if line.startswith("- **")]
         assert bullets[0].startswith("- **ga_specialist**")
 
     def test_sorted_alphabetically(self) -> None:
@@ -296,6 +296,6 @@ class TestAssembleSpecialistsBlockFromState:
             {"name": "a_spec", "description": "A"},
         ]
         result = assemble_specialists_block_from_state(dicts)
-        lines = [l for l in result.splitlines() if l.startswith("- **")]
+        lines = [line for line in result.splitlines() if line.startswith("- **")]
         assert lines[0].startswith("- **a_spec**")
         assert lines[1].startswith("- **z_spec**")

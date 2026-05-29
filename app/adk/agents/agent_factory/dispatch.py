@@ -160,8 +160,17 @@ def assemble_specialists_block_from_state(
 
     Args:
         state_dicts: The value of ``context.state["_available_specialists"]``.
-            Each dict must have at least a ``"name"`` key; ``"description"``
-            is used when present and non-empty.
+            Each dict must have at least a ``"name"`` key.  Optional keys:
+
+            * ``"description"`` — used when present and non-empty.
+            * ``"human_name"`` — human identity label, e.g. ``"BEN-E"``
+              (AH-84); rendered as the ``"known as"`` clause when non-None.
+            * ``"title"`` — role description, e.g. ``"Brand Guardian"``
+              (AH-84); rendered before the colon when non-None.
+
+            Both identity keys default to ``None`` when absent so existing
+            callers that write only ``{name, description, agent_id}`` continue
+            to produce the pre-AH-84 bullet format unchanged.
 
     Returns:
         A Markdown-formatted string ready for injection into a router agent's

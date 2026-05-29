@@ -1099,7 +1099,7 @@ class TestStateCapture:
 
     def test_state_captures_available_specialists(self) -> None:
         """After attach, state["_available_specialists"] matches sub_agents."""
-        ctx, root = self._make_ctx()
+        ctx, _root = self._make_ctx()
         a = _make_specialist("ga_spec")
         b = _make_specialist("seo_spec")
 
@@ -1131,7 +1131,7 @@ class TestStateCapture:
         root_agent.sub_agents (not from a local variable inside _attach_locked)
         so the state key is always present.
         """
-        ctx, root = self._make_ctx()
+        ctx, _root = self._make_ctx()
         a = _make_specialist("ga_spec")
 
         # First turn: full reconcile, fingerprint stored.
@@ -1155,7 +1155,7 @@ class TestStateCapture:
 
     def test_state_captures_empty_list_when_no_specialists(self) -> None:
         """Zero specialists → _available_specialists is [] (not missing)."""
-        ctx, root = self._make_ctx()
+        ctx, _root = self._make_ctx()
 
         with _patched_resolvers({}):  # no visible specialists
             attach_specialists_before_agent_callback(ctx)  # type: ignore[arg-type]
@@ -1167,7 +1167,7 @@ class TestStateCapture:
 
     def test_description_truncated_to_1024_chars(self) -> None:
         """Descriptions longer than 1024 chars are truncated at capture time."""
-        ctx, root = self._make_ctx()
+        ctx, _root = self._make_ctx()
         long_spec = LlmAgent(
             name="verbose_spec",
             model="gemini-2.5-pro",
@@ -1292,7 +1292,7 @@ class TestStateCaptureNameTitle:
 
     def test_human_name_and_title_propagated(self) -> None:
         """Entries in _available_specialists carry human_name and title from the config."""
-        ctx, root = self._make_ctx()
+        ctx, _root = self._make_ctx()
         a = _make_specialist("ben_e_agent")
 
         with self._patched_resolvers_with_identity(
@@ -1308,7 +1308,7 @@ class TestStateCaptureNameTitle:
 
     def test_absent_name_and_title_produce_none(self) -> None:
         """Specialists without name/title have human_name=None and title=None."""
-        ctx, root = self._make_ctx()
+        ctx, _root = self._make_ctx()
         a = _make_specialist("ga_spec")
 
         with self._patched_resolvers_with_identity({"ga_spec": a}):
@@ -1324,7 +1324,7 @@ class TestStateCaptureNameTitle:
         """When resolve_config raises inside the state-capture block, the
         specialist row must still appear in _available_specialists (with
         human_name/title defaulting to None)."""
-        ctx, root = self._make_ctx()
+        ctx, _root = self._make_ctx()
         a = _make_specialist("ga_spec")
 
         def _list(_acc: str) -> list[str]:

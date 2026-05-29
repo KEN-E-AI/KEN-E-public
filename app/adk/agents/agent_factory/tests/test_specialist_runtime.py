@@ -490,6 +490,42 @@ class TestAvailableSpecialistsProvider:
         assert forwarded.get("account_id") == "acct_1"
         assert forwarded.get("mcp_creds_x") == "v1"
 
+    def test_slow_path_carries_name_and_title_into_block(self) -> None:
+        """AH-84: slow path (no _available_specialists in state) must wire
+        config.name + config.title from resolve_config into the metadata arg
+        of assemble_available_specialists_block so the rendered bullet is
+        enriched."""
+        from app.adk.agents.agent_factory import specialist_runtime
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+
+        cfg_with_identity = MergedAgentConfig(
+            instruction="Brand specialist.",
+            model="gemini-2.5-pro",
+            description="Guards the brand voice.",
+            name="BEN-E",
+            title="Brand Guardian",
+            ken_e_sub_agent=True,
+        )
+        agent = _make_llm_agent("ben_e_agent")
+        ctx = self._make_context("acct_1")  # no _available_specialists key
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.config_loader.list_account_agent_configs",
+                return_value=["ben_e_agent"],
+            ),
+            patch.object(
+                specialist_runtime, "resolve_config", return_value=cfg_with_identity
+            ),
+            patch.object(specialist_runtime, "resolve_agent", return_value=agent),
+        ):
+            result = specialist_runtime.available_specialists_provider(ctx)
+
+        assert '- **ben_e_agent** — known as "BEN-E", Brand Guardian:' in result, (
+            "Slow path must include human_name and title in the block when "
+            "config.name and config.title are set."
+        )
+
 
 # ---------------------------------------------------------------------------
 # TestAvailableSpecialistsProviderFastPath — AH-86
