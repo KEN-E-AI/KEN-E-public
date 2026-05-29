@@ -616,5 +616,102 @@ class TestAdditionalCallbackOrdering:
         )
 
 
+# ---------------------------------------------------------------------------
+# TestAfterModelCallbackWiring (AH-87)
+# ---------------------------------------------------------------------------
+
+
+class TestAfterModelCallbackWiring:
+    """Regression guard: build_hierarchy must wire both after_model callbacks onto
+    the root agent so Weave spans capture the system instruction (via
+    weave_before_agent_callback) and final output text (via
+    capture_last_model_output_after_model_callback).
+
+    Ordering constraint: adk_after_model_callback MUST precede
+    capture_last_model_output_after_model_callback so thought-part stripping
+    happens before text capture. Reversing the order would include internal
+    reasoning in _last_model_output and propagate it to the Weave output span.
+    """
+
+    def test_after_model_callbacks_contain_both_expected_functions(self) -> None:
+        import app.adk.agents.agent_factory.builder as b
+        import app.adk.agents.agent_factory.hierarchy as h
+        from app.adk.tracking.callbacks import (
+            adk_after_model_callback,
+            capture_last_model_output_after_model_callback,
+        )
+
+        docs = {("agent_configs", "ken_e_chatbot"): _ROOT_DOC}
+        fake_db = _FakeFirestoreDb(docs)
+        captured: dict[str, Any] = {}
+        original_build_agent = b.build_agent
+
+        def _spy(config, *, name: str, tools=None, **kwargs):
+            captured["additional_after_model_callbacks"] = kwargs.get(
+                "additional_after_model_callbacks", []
+            )
+            return original_build_agent(config, name=name, tools=tools, **kwargs)
+
+        with (
+            _PATCH_BEFORE_AGENT,
+            _PATCH_AFTER_AGENT,
+            _PATCH_BEFORE_TOOL,
+            _PATCH_AFTER_TOOL,
+            patch(
+                "app.adk.agents.agent_factory.hierarchy.build_agent",
+                side_effect=_spy,
+            ),
+        ):
+            h.build_hierarchy(db=fake_db)
+
+        callbacks = captured["additional_after_model_callbacks"]
+        assert adk_after_model_callback in callbacks, (
+            "adk_after_model_callback must be in additional_after_model_callbacks"
+        )
+        assert capture_last_model_output_after_model_callback in callbacks, (
+            "capture_last_model_output_after_model_callback must be in additional_after_model_callbacks"
+        )
+
+    def test_adk_after_model_precedes_capture_last_model_output(self) -> None:
+        """Ordering constraint: thought-stripping must run before text capture."""
+        import app.adk.agents.agent_factory.builder as b
+        import app.adk.agents.agent_factory.hierarchy as h
+        from app.adk.tracking.callbacks import (
+            adk_after_model_callback,
+            capture_last_model_output_after_model_callback,
+        )
+
+        docs = {("agent_configs", "ken_e_chatbot"): _ROOT_DOC}
+        fake_db = _FakeFirestoreDb(docs)
+        captured: dict[str, Any] = {}
+        original_build_agent = b.build_agent
+
+        def _spy(config, *, name: str, tools=None, **kwargs):
+            captured["additional_after_model_callbacks"] = kwargs.get(
+                "additional_after_model_callbacks", []
+            )
+            return original_build_agent(config, name=name, tools=tools, **kwargs)
+
+        with (
+            _PATCH_BEFORE_AGENT,
+            _PATCH_AFTER_AGENT,
+            _PATCH_BEFORE_TOOL,
+            _PATCH_AFTER_TOOL,
+            patch(
+                "app.adk.agents.agent_factory.hierarchy.build_agent",
+                side_effect=_spy,
+            ),
+        ):
+            h.build_hierarchy(db=fake_db)
+
+        callbacks = captured["additional_after_model_callbacks"]
+        adk_idx = callbacks.index(adk_after_model_callback)
+        capture_idx = callbacks.index(capture_last_model_output_after_model_callback)
+        assert adk_idx < capture_idx, (
+            "adk_after_model_callback must precede capture_last_model_output_after_model_callback "
+            "(ordering violation: thought parts would appear in _last_model_output)"
+        )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
