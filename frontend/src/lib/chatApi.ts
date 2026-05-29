@@ -432,7 +432,7 @@ export async function* streamChatCompletion(
 
     // Flush any trailing buffered data line (no trailing newline from server).
     if (buffer.startsWith("data: ")) {
-      const data = buffer.slice(6).trim();
+      const data = buffer.slice(6); // consistent: no trim (matches main loop)
       if (data && data !== "[DONE]") {
         yield { type: "text", text: data };
       }

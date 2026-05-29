@@ -115,20 +115,28 @@ def _contains_function_event_str(text: str) -> bool:
     )
 
 
-def _format_sse(channel: str, text: str, seq: int) -> str:
+def _format_sse(channel: str, text: str, seq: int = 0) -> str:
     """Format a Server-Sent Event frame for the given channel.
 
     Args:
         channel: "text" or "reasoning".
         text: The payload text.
-        seq: Monotonically increasing sequence number (only used for reasoning).
+        seq: Monotonically increasing sequence number (only meaningful for reasoning).
 
     Returns:
         A complete SSE frame string ready to be yielded to the client.
+
+    SSE framing safety: the reasoning channel uses ``json.dumps`` so embedded
+    newlines are escaped automatically. The text channel splits on newlines and
+    emits one ``data:`` prefix per line per the SSE spec, preventing a
+    multi-line model fragment from introducing a spurious event boundary.
     """
     if channel == "reasoning":
         return f"event: reasoning\ndata: {json.dumps({'text': text, 'seq': seq})}\n\n"
-    return f"data: {text}\n\n"
+    # SSE spec §9.2.6: multi-line data uses one "data:" prefix per line.
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    payload = "".join(f"data: {line}\n" for line in lines)
+    return f"{payload}\n"
 
 
 async def load_organization_context_from_neo4j(account_id: str) -> str | None:

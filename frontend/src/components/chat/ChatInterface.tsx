@@ -219,7 +219,11 @@ export function ChatInterface({
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setIsStreaming(true);
-    setThinkingStartTime(Date.now());
+    // Capture start time in a local variable to avoid the stale-closure problem:
+    // setThinkingStartTime is async, so reading `thinkingStartTime` from the
+    // closure at stream-end would give the prior turn's value.
+    const turnStartTime = Date.now();
+    setThinkingStartTime(turnStartTime);
     // Reset reasoning for this new turn.
     setLiveThoughts([]);
     liveThoughtsRef.current = [];
@@ -278,7 +282,7 @@ export function ChatInterface({
 
       // Persist reasoning on the completed message when thoughts were collected.
       const finalThoughts = collectedThoughts;
-      const duration = Math.round((Date.now() - thinkingStartTime) / 1000);
+      const duration = Math.round((Date.now() - turnStartTime) / 1000);
       setMessages((prev) =>
         prev.map((m) => {
           if (m.id !== assistantId) return m;

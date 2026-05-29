@@ -60,6 +60,16 @@ class TestFormatSse:
         parsed = json.loads(payload_str)
         assert parsed["text"] == "line one\nline two"
 
+    def test_text_channel_splits_newlines_into_multiple_data_lines(self):
+        """Embedded newlines in text produce multiple data: lines (SSE spec §9.2.6)."""
+        result = _format_sse("text", "line one\nline two", 0)
+        assert result == "data: line one\ndata: line two\n\n"
+
+    def test_text_channel_handles_crlf(self):
+        """CRLF line endings are normalised to LF before splitting."""
+        result = _format_sse("text", "a\r\nb", 0)
+        assert result == "data: a\ndata: b\n\n"
+
     def test_unknown_channel_falls_through_to_text(self):
         result = _format_sse("unknown", "hello", 0)
         assert result == "data: hello\n\n"
@@ -72,6 +82,11 @@ class TestFormatSse:
         """Verify the [DONE] terminator can be emitted on the text channel."""
         result = _format_sse("text", "[DONE]", 0)
         assert result == "data: [DONE]\n\n"
+
+    def test_seq_defaults_to_zero(self):
+        """seq parameter defaults to 0 so callers don't have to pass it."""
+        result = _format_sse("text", "hi")
+        assert result == "data: hi\n\n"
 
 
 # ---------------------------------------------------------------------------
