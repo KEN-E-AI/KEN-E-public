@@ -48,6 +48,7 @@ const defaultConfig: MergedAgentConfig = {
   available_to_copy: true,
   automatically_available: true,
   visible_in_frontend: true,
+  ken_e_sub_agent: true,
   customization_status: "default",
   based_on_version: null,
 };
@@ -77,6 +78,7 @@ const customAgentConfig: MergedAgentConfig = {
   available_to_copy: false,
   automatically_available: false,
   visible_in_frontend: true,
+  ken_e_sub_agent: true,
   customization_status: "custom_agent",
   based_on_version: null,
 };

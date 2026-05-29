@@ -89,6 +89,7 @@ const baseConfig: MergedAgentConfig = {
   available_to_copy: true,
   automatically_available: true,
   visible_in_frontend: true,
+  ken_e_sub_agent: true,
   customization_status: "default",
   based_on_version: null,
 };
@@ -803,5 +804,134 @@ describe("AgentEditView — response-style slider", () => {
     expect(screen.getByTestId("temperature-slider")).toHaveTextContent("0.4");
     // Temperature row is not marked dirty after the silent snap.
     expect(screen.queryAllByTestId("dirty-indicator")).toHaveLength(0);
+  });
+});
+
+describe("AgentEditView — ken_e_sub_agent toggle", () => {
+  beforeEach(() => {
+    mockUseAccountTools.mockReturnValue({
+      data: fixtureTools,
+      isLoading: false,
+      isError: false,
+    });
+  });
+
+  it("renders the toggle seeded from the loaded config (true)", () => {
+    mockUseAgentConfig.mockReturnValue({
+      data: { ...baseConfig, ken_e_sub_agent: true },
+      isLoading: false,
+      isError: false,
+    });
+    render(<AgentEditView configId={configId} onClose={vi.fn()} />, {
+      wrapper: makeWrapper(),
+    });
+    const toggle = screen.getByTestId("ken-e-sub-agent-toggle");
+    expect(toggle).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("data-state", "checked");
+  });
+
+  it("renders the toggle seeded from the loaded config (false)", () => {
+    mockUseAgentConfig.mockReturnValue({
+      data: { ...baseConfig, ken_e_sub_agent: false },
+      isLoading: false,
+      isError: false,
+    });
+    render(<AgentEditView configId={configId} onClose={vi.fn()} />, {
+      wrapper: makeWrapper(),
+    });
+    const toggle = screen.getByTestId("ken-e-sub-agent-toggle");
+    expect(toggle).toHaveAttribute("data-state", "unchecked");
+  });
+
+  it("shows a DirtyDot and enables Save when the toggle is flipped", async () => {
+    mockUseAgentConfig.mockReturnValue({
+      data: { ...baseConfig, ken_e_sub_agent: true },
+      isLoading: false,
+      isError: false,
+    });
+    const user = userEvent.setup();
+    render(<AgentEditView configId={configId} onClose={vi.fn()} />, {
+      wrapper: makeWrapper(),
+    });
+
+    expect(screen.getByTestId("save-button")).toBeDisabled();
+    await user.click(screen.getByTestId("ken-e-sub-agent-toggle"));
+    await waitFor(() =>
+      expect(screen.getByTestId("save-button")).not.toBeDisabled(),
+    );
+  });
+
+  it("clears the DirtyDot when toggled back to the loaded value", async () => {
+    mockUseAgentConfig.mockReturnValue({
+      data: { ...baseConfig, ken_e_sub_agent: true },
+      isLoading: false,
+      isError: false,
+    });
+    const user = userEvent.setup();
+    render(<AgentEditView configId={configId} onClose={vi.fn()} />, {
+      wrapper: makeWrapper(),
+    });
+
+    // Toggle off → dirty
+    await user.click(screen.getByTestId("ken-e-sub-agent-toggle"));
+    await waitFor(() =>
+      expect(screen.getByTestId("save-button")).not.toBeDisabled(),
+    );
+    // Toggle back on → not dirty
+    await user.click(screen.getByTestId("ken-e-sub-agent-toggle"));
+    await waitFor(() =>
+      expect(screen.getByTestId("save-button")).toBeDisabled(),
+    );
+  });
+
+  it("includes ken_e_sub_agent in PUT body only when dirty", async () => {
+    mockUseAgentConfig.mockReturnValue({
+      data: { ...baseConfig, ken_e_sub_agent: true },
+      isLoading: false,
+      isError: false,
+    });
+    const user = userEvent.setup();
+    render(<AgentEditView configId={configId} onClose={vi.fn()} />, {
+      wrapper: makeWrapper(),
+    });
+
+    await user.click(screen.getByTestId("ken-e-sub-agent-toggle"));
+    await waitFor(() =>
+      expect(screen.getByTestId("save-button")).not.toBeDisabled(),
+    );
+    await user.click(screen.getByTestId("save-button"));
+
+    expect(mockMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({ ken_e_sub_agent: false }),
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("does not include ken_e_sub_agent in PUT body when untouched", async () => {
+    mockUseAgentConfig.mockReturnValue({
+      data: { ...baseConfig, ken_e_sub_agent: true },
+      isLoading: false,
+      isError: false,
+    });
+    const user = userEvent.setup();
+    render(<AgentEditView configId={configId} onClose={vi.fn()} />, {
+      wrapper: makeWrapper(),
+    });
+
+    // Change a different field to make Save enabled
+    await user.clear(screen.getByTestId("instruction-field"));
+    await user.type(
+      screen.getByTestId("instruction-field"),
+      "Updated instruction for the agent.",
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("save-button")).not.toBeDisabled(),
+    );
+    await user.click(screen.getByTestId("save-button"));
+
+    const call = mockMutate.mock.calls[0][0];
+    expect(call.body).not.toHaveProperty("ken_e_sub_agent");
   });
 });

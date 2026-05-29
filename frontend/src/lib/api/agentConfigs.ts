@@ -63,6 +63,8 @@ export type MergedAgentConfig = {
   available_to_copy: boolean;
   automatically_available: boolean;
   visible_in_frontend: boolean;
+  // AH-82: whether KEN-E may delegate tasks to this agent from chat.
+  ken_e_sub_agent: boolean;
   customization_status: CustomizationStatus;
   based_on_version: number | null;
 };
@@ -79,6 +81,8 @@ export type AgentConfigCreate = {
   // explicit list for an allowlist. The API caps at 30 entries.
   tool_ids?: string[] | null;
   sandbox_code_executor_enabled?: boolean;
+  // AH-82: whether KEN-E may delegate tasks to this agent from chat.
+  ken_e_sub_agent?: boolean;
 };
 
 export type AgentConfigOverlayUpdate = {
@@ -91,6 +95,9 @@ export type AgentConfigOverlayUpdate = {
   skill_ids?: string[] | null;
   tool_ids?: string[] | null;
   sandbox_code_executor_enabled?: boolean | null;
+  // AH-82: overlay value for the delegation gate. null = leave existing
+  // overlay value untouched; explicit true/false = write the value.
+  ken_e_sub_agent?: boolean | null;
 };
 
 // ─── Display helpers ──────────────────────────────────────────────────────────

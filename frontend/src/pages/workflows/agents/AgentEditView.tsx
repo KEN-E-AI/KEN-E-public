@@ -28,6 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { AgentToolPicker } from "./AgentToolPicker";
 import { DisabledPlaceholderRow } from "./DisabledPlaceholderRow";
 
@@ -96,6 +97,7 @@ const EDITABLE_FIELDS = [
   "temperature",
   "description",
   "tool_ids",
+  "ken_e_sub_agent",
 ] as const;
 
 type EditableField = (typeof EDITABLE_FIELDS)[number];
@@ -127,6 +129,8 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
   const [temperature, setTemperature] = useState<number>(0.3);
   const [model, setModel] = useState("");
   const [description, setDescription] = useState("");
+  // AH-82: whether KEN-E may delegate tasks to this agent from chat.
+  const [kenESubAgent, setKenESubAgent] = useState<boolean>(true);
   // AH-PRD-06: tool_ids is seeded once both the config and the inventory have
   // loaded. Legacy agents (stored ``tool_ids: null``) are expanded to "every
   // tool currently available to the account" so a no-op save preserves prior
@@ -150,6 +154,7 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
     setTemperature(snapTemperatureToGrid(config.temperature));
     setModel(config.model);
     setDescription(config.description ?? "");
+    setKenESubAgent(config.ken_e_sub_agent);
   }, [config]);
 
   // Seed tool_ids once BOTH the config and the inventory have arrived. Done
@@ -206,6 +211,7 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
   // insertion order.
   const isDirtyToolIds =
     seededToolsRef.current && !setEquals(toolIds, initialToolIds);
+  const isDirtyKenESubAgent = kenESubAgent !== config.ken_e_sub_agent;
   const hasAnyDirty =
     isDirtyName ||
     isDirtyTitle ||
@@ -213,7 +219,8 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
     isDirtyTemperature ||
     isDirtyModel ||
     isDirtyDescription ||
-    isDirtyToolIds;
+    isDirtyToolIds ||
+    isDirtyKenESubAgent;
 
   const isCustomAgent = config.customization_status === "custom_agent";
   const isDefault = config.customization_status === "default";
@@ -274,6 +281,7 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
     // legacy ``tool_ids: null`` agents on the legacy code path until they
     // opt into the explicit allowlist.
     if (isDirtyToolIds) dirty.tool_ids = toolIds;
+    if (isDirtyKenESubAgent) dirty.ken_e_sub_agent = kenESubAgent;
 
     upsertMutation.mutate(
       { configId, body: dirty },
@@ -491,6 +499,28 @@ export function AgentEditView({ configId, onClose }: AgentEditViewProps) {
               {fieldErrors.description}
             </p>
           )}
+        </div>
+
+        {/* Available to KEN-E (AH-82) */}
+        <div className="flex items-center justify-between">
+          <div className="space-y-1">
+            <Label
+              htmlFor="ken-e-sub-agent"
+              className="flex items-center gap-1"
+            >
+              Available to KEN-E
+              <DirtyDot dirty={isDirtyKenESubAgent} />
+            </Label>
+            <p className="text-sm text-muted-foreground">
+              When on, KEN-E can delegate tasks to this agent from chat.
+            </p>
+          </div>
+          <Switch
+            id="ken-e-sub-agent"
+            checked={kenESubAgent}
+            onCheckedChange={setKenESubAgent}
+            data-testid="ken-e-sub-agent-toggle"
+          />
         </div>
 
         {/* Tools (AH-PRD-06) */}
