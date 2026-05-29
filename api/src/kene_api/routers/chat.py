@@ -1634,12 +1634,15 @@ class AgentEngineClient:
                                 elif "content" in chunk:
                                     response_parts.append(str(chunk["content"]))
                                 else:
-                                    if not _is_function_event_part(chunk):
-                                        response_parts.append(str(chunk))
-                                    else:
-                                        logger.debug(
-                                            "Skipping function debug data in non-streaming response"
-                                        )
+                                    # CH-59: a dict chunk with no `content`/`parts` is a
+                                    # contentless ADK control event (e.g. the state-delta
+                                    # event ADK emits when a before_agent_callback writes
+                                    # session state). It carries no user-facing text — skip
+                                    # it instead of appending the raw event dict to the reply.
+                                    logger.debug(
+                                        "Skipping non-text event chunk in non-streaming response (keys=%s)",
+                                        sorted(chunk.keys()),
+                                    )
                             elif isinstance(chunk, str):
                                 logger.debug(
                                     f"Processing string chunk: {chunk[:50]}..."
@@ -1939,8 +1942,15 @@ class AgentEngineClient:
                             elif "content" in chunk:
                                 yield str(chunk["content"])
                             else:
-                                if not _is_function_event_part(chunk):
-                                    yield str(chunk)
+                                # CH-59: a dict chunk with no `content`/`parts` is a
+                                # contentless ADK control event (e.g. the state-delta
+                                # event ADK emits when a before_agent_callback writes
+                                # session state). It carries no user-facing text — skip
+                                # it instead of streaming the raw event dict to the client.
+                                logger.debug(
+                                    "Skipping non-text event chunk in stream (keys=%s)",
+                                    sorted(chunk.keys()),
+                                )
                         elif isinstance(chunk, str):
                             # Log the raw chunk for debugging
                             logger.debug(
