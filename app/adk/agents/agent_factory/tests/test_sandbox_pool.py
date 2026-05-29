@@ -1112,4 +1112,132 @@ def test_lease_evict_failure_releases_clearing_event_and_refcount() -> None:
     # _evict_if_over_cap is not called) acquires without deadlocking.
     with pool.lease(account_id="acc", config_id="cfg") as result:
         assert result is executor
+
+
+# ---------------------------------------------------------------------------
+# Test 35 — cancellation guard (evict site): asyncio.CancelledError raised
+#           inside _evict_if_over_cap during lease() must not orphan state
+# ---------------------------------------------------------------------------
+
+
+def test_lease_cancellation_during_evict_releases_clearing_event_and_refcount() -> None:
+    """CancelledError from _evict_if_over_cap must not deadlock the key.
+
+    This mirrors test_lease_evict_failure_releases_clearing_event_and_refcount
+    (Test 34) but raises ``asyncio.CancelledError`` instead of ``RuntimeError``.
+    ``asyncio.CancelledError`` is a ``BaseException`` subclass since Python 3.8,
+    so it flows past the inner ``except Exception`` block around ``_clear_tmp``
+    (``sandbox_pool.py:289``) and is handled only by the outer ``try/finally``
+    at ``sandbox_pool.py:317``.  Verifies that the outer backstop pops + sets
+    any registered clearing event and releases the refcount regardless of which
+    ``BaseException`` subclass propagates, leaving the key reusable.
+    """
+    import asyncio
+
+    pool = SandboxPool()
+    pool._CLEAR_TMP_ON_REUSE = True  # so the 0→1 miss registers a clearing event
+    executor = _make_executor()
+
+    def _fake_construct(**_: Any) -> Any:
+        return executor
+
+    def _raise_evict() -> None:
+        raise asyncio.CancelledError(
+            "simulated task cancellation during cap enforcement"
+        )
+
+    pool._construct = _fake_construct  # type: ignore[method-assign]
+    pool._clear_tmp = MagicMock()  # type: ignore[method-assign]
+    pool._evict_if_over_cap = _raise_evict  # type: ignore[method-assign]
+
+    key = ("acc", "cfg")
+
+    # First lease: cache miss → _evict_if_over_cap fires → CancelledError raised.
+    with pytest.raises(asyncio.CancelledError):
+        with pool.lease(account_id="acc", config_id="cfg"):
+            pass  # never reached — lease() raises before yielding
+
+    # No orphaned clearing event; refcount fully released.
+    assert key not in pool._clearing
+    assert pool._entry_refcount(key) == 0
+
+    # The key is reusable: a subsequent lease (now a cache hit, so
+    # _evict_if_over_cap is not called) acquires without deadlocking.
+    with pool.lease(account_id="acc", config_id="cfg") as result:
+        assert result is executor
+    assert pool._entry_refcount(key) == 0
+
+
+# ---------------------------------------------------------------------------
+# Test 36 — cancellation guard (clear_tmp site): asyncio.CancelledError raised
+#           inside _clear_tmp during lease() must not orphan state
+# ---------------------------------------------------------------------------
+
+
+def test_lease_cancellation_during_clear_tmp_releases_clearing_event_and_refcount() -> (
+    None
+):
+    """CancelledError from _clear_tmp must not deadlock the key.
+
+    Unlike Test 35 (which cancels at ``_evict_if_over_cap``), this test cancels
+    at ``_clear_tmp`` (``sandbox_pool.py:287``).  At that point the clearing
+    event has already been registered by ``_acquire`` and
+    ``_evict_if_over_cap`` has succeeded, so execution is inside the inner
+    ``if clearing_event is not None`` block.
+
+    ``asyncio.CancelledError`` is a ``BaseException`` subclass, so it bypasses
+    the inner ``except Exception`` at ``sandbox_pool.py:289`` (which only catches
+    ``Exception``) and lands directly in the inner ``finally`` at
+    ``sandbox_pool.py:295``.  That inner ``finally`` pops ``self._clearing[key]``
+    and sets the event, unblocking waiters.  The outer ``finally`` then runs the
+    backstop pop (a no-op because the inner ``finally`` already removed the entry)
+    and releases the refcount.
+
+    Verifies the three SK-48 invariants after the cancelled lease and confirms a
+    subsequent lease of the same key succeeds without deadlocking.
+    """
+    import asyncio
+
+    pool = SandboxPool()
+    pool._CLEAR_TMP_ON_REUSE = True  # so the 0→1 miss registers a clearing event
+    executor = _make_executor()
+
+    def _fake_construct(**_: Any) -> Any:
+        return executor
+
+    def _noop_evict() -> None:
+        pass  # cap enforcement succeeds; cancellation happens later at _clear_tmp
+
+    _clear_tmp_calls = 0
+
+    def _raise_clear_tmp(_executor: Any) -> None:
+        nonlocal _clear_tmp_calls
+        _clear_tmp_calls += 1
+        if _clear_tmp_calls == 1:
+            raise asyncio.CancelledError("simulated task cancellation during tmp clear")
+
+    pool._construct = _fake_construct  # type: ignore[method-assign]
+    pool._evict_if_over_cap = _noop_evict  # type: ignore[method-assign]
+    pool._clear_tmp = _raise_clear_tmp  # type: ignore[method-assign]
+
+    key = ("acc", "cfg")
+
+    # First lease: cache miss → _clear_tmp fires → CancelledError bypasses
+    # except Exception and hits the inner finally, which pops + sets the
+    # clearing event, then re-raises into the outer finally, which releases
+    # the refcount.
+    with pytest.raises(asyncio.CancelledError):
+        with pool.lease(account_id="acc", config_id="cfg"):
+            pass  # never reached — lease() raises before yielding
+
+    # Inner finally already cleaned up the clearing event; outer backstop
+    # was a no-op.  Both invariants must hold.
+    assert key not in pool._clearing
+    assert pool._entry_refcount(key) == 0
+
+    # The key is reusable: a subsequent lease (now a cache hit, so neither
+    # _evict_if_over_cap nor _clear_tmp is called) acquires without deadlocking.
+    with pool.lease(account_id="acc", config_id="cfg") as result:
+        assert result is executor
+    assert pool._entry_refcount(key) == 0
     assert pool._entry_refcount(key) == 0
