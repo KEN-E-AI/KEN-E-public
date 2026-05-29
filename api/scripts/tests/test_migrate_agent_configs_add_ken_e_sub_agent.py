@@ -175,7 +175,7 @@ class TestBackfill:
 
     def test_already_false_is_unchanged(self) -> None:
         """A doc with ken_e_sub_agent=False already is not rewritten."""
-        docs = {
+        docs: dict[str, dict[str, Any] | None] = {
             agent: {
                 "instruction": "x.",
                 "model": "gemini-2.5-pro",
@@ -197,7 +197,7 @@ class TestBackfill:
 
     def test_explicit_true_is_patched(self) -> None:
         """A doc with ken_e_sub_agent=True still needs patching."""
-        docs = {
+        docs: dict[str, dict[str, Any] | None] = {
             "business_formatter": {
                 "instruction": "x.",
                 "model": "gemini-2.5-pro",
@@ -252,7 +252,7 @@ class TestBackfill:
 
     def test_idempotent_second_run(self) -> None:
         """Re-running on already-migrated collection produces zero writes."""
-        docs = {
+        docs: dict[str, dict[str, Any] | None] = {
             agent: {
                 "instruction": "x.",
                 "model": "gemini-2.5-pro",
