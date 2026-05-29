@@ -171,7 +171,7 @@ async def run_compliance_check(
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
 
-    from app.adk.agents.ken_e_agent import create_ken_e_agent
+    from app.adk.agents.agent_factory import build_hierarchy
     from app.adk.tracking.compliance import generate_compliance_report
 
     QUERIES = _load_corpus()
@@ -183,7 +183,7 @@ async def run_compliance_check(
     print(f"Output: {output_path}")
     print()
 
-    agent = create_ken_e_agent()
+    agent = build_hierarchy()
     session_service = InMemorySessionService()
     runner = Runner(
         agent=agent,

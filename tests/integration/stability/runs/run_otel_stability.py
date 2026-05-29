@@ -641,12 +641,12 @@ async def run_step3_genai_coverage(invocations: int) -> StepResult:
     from google.adk.sessions import InMemorySessionService
     from google.genai.types import Content, Part
 
-    from app.adk.agents.ken_e_agent import create_ken_e_agent
+    from app.adk.agents.agent_factory import build_hierarchy
 
     QUERIES = _load_corpus()
     TraceCapture = _load_trace_capture()
 
-    agent = create_ken_e_agent()
+    agent = build_hierarchy()
     session_service = InMemorySessionService()
     runner = Runner(
         agent=agent,
@@ -734,12 +734,12 @@ async def run_step4_non_genai(invocations: int) -> StepResult:
     from google.adk.sessions import InMemorySessionService
     from google.genai.types import Content, Part
 
-    from app.adk.agents.ken_e_agent import create_ken_e_agent
+    from app.adk.agents.agent_factory import build_hierarchy
 
     QUERIES = _load_corpus()
     TraceCapture = _load_trace_capture()
 
-    agent = create_ken_e_agent()
+    agent = build_hierarchy()
     session_service = InMemorySessionService()
     runner = Runner(
         agent=agent,

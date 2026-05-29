@@ -54,7 +54,6 @@ import collections
 import concurrent.futures
 import hashlib
 import json
-import logging
 import re
 import threading
 import time
@@ -69,12 +68,13 @@ from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
 from app.adk.agents.agent_factory.mcp_pool import McpServerKind, McpToolsetPool
 from app.adk.agents.utils.config_cache import get_cached_merged_config
 from shared.account_id_utils import validate_account_id
+from shared.structured_logging import get_structured_logger
 
 # Firestore document IDs for MCP servers and specialist configs follow the same
 # lowercase-identifier convention as specialist names in dispatch.py.
 _VALID_DOC_ID_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
-logger = logging.getLogger(__name__)
+logger = get_structured_logger(__name__)
 
 # LRU capacity for the agent object cache.
 _AGENT_CACHE_MAX: int = 256
@@ -508,7 +508,7 @@ def _build_specialist(
         raise
 
     specialist = build_agent(
-        config, name=name, account_id=account_id, tools=tools, config_doc_id=None
+        config, name=name, account_id=account_id, tools=tools, config_doc_id=name
     )
 
     # AH-75: prevent multi-turn "stuck on specialist" routing. ADK's Runner
@@ -647,12 +647,24 @@ def resolve_agent(
     content_hash = _content_hash(config)
     cache_key: tuple[str, str | None, str] = (doc_id, account_id, content_hash)
 
-    return _specialists_cache.get_or_build(
+    # Note: this probe is outside the cache's internal lock, so a concurrent
+    # first-call can cause a genuine hit to be reported as a miss — the same
+    # accepted inaccuracy as mcp_pool.py:221-225. Metric accuracy over time is
+    # unaffected; individual entries may be one event stale under contention.
+    cache_hit = _specialists_cache.get(cache_key) is not None
+    agent = _specialists_cache.get_or_build(
         cache_key,
         lambda: _build_specialist(
             config, doc_id, account_id, session_state=session_state
         ),
     )
+    # account_id is intentionally omitted — see AH-77 Item E; only non-tenant
+    # identifiers are emitted in long-retention telemetry logs.
+    logger.info(
+        "specialist_agent_resolved",
+        extra={"json_fields": {"name": doc_id, "agent_cache_hit": cache_hit}},
+    )
+    return agent
 
 
 def available_specialists_provider(context: ReadonlyContext) -> str:

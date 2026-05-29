@@ -137,7 +137,7 @@ Each specialist receives a **fixed curated tool list (≤30 tools)** at construc
 | Create | `app/adk/agents/agent_factory/config_loader.py` — global + overlay + merge + `based_on_version` |
 | Create | `app/adk/agents/agent_factory/mcp.py` — MCP toolset creation + `specialist_categories` grouping; absorbs the YAML-loading + auth helpers previously in `app/adk/mcp_config/manager.py` |
 | Create | `app/adk/agents/agent_factory/header_provider.py` — `_make_header_provider(auth_type)` |
-| Create | `app/adk/agents/agent_factory/dispatch.py` — `generate_dispatch_functions(specialists)` |
+| Create | `app/adk/agents/agent_factory/dispatch.py` — `generate_dispatch_functions(specialists)` (**deleted in AH-66**; only `assemble_available_specialists_block` survives; see DESIGN-REVIEW-LOG Review 39) |
 | Modify | `app/adk/mcp_config/manager.py` — **retire connection pooling + LRU eviction** (ADK's `MCPSessionManager` owns these natively per [`mcp-architecture.md`](../mcp-architecture.md) §2); **move** YAML loading + auth helpers into `app/adk/agents/agent_factory/mcp.py`; **retain** health-monitoring + admin-status endpoints. Update any remaining caller to import the factory's MCP utilities. |
 | Modify | `deploy_ken_e.py` — replace individual agent imports with `agent_factory.build_hierarchy()` |
 | Create | `api/src/kene_api/routers/agent_configs.py` — `/api/v1/accounts/{account_id}/agent-configs/` CRUD |

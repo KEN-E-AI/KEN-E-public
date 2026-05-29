@@ -177,3 +177,230 @@ resource "google_monitoring_dashboard" "api_latency" {
     }
   })
 }
+
+# ---------------------------------------------------------------------------
+# Per-turn dispatch observability (AH-68)
+# Log-based metrics for config cache, agent cache, MCP pool, and dispatch
+# errors emitted by specialist_runtime, mcp_pool, and config_cache modules.
+# ---------------------------------------------------------------------------
+
+resource "google_logging_metric" "config_cache_hit_rate" {
+  for_each = local.deploy_project_ids
+  project  = each.value
+
+  # Counts config_cache_read log entries where cache_hit=true.
+  # Hit rate = ALIGN_RATE(this metric) / ALIGN_RATE(config_cache_total) in dashboard.
+  name   = "agentic_harness/config_cache_hit_rate"
+  filter = "resource.type=\"cloud_run_revision\" AND jsonPayload.message=\"config_cache_read\" AND jsonPayload.cache_hit=true"
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+  }
+}
+
+resource "google_logging_metric" "agent_cache_hit_rate" {
+  for_each = local.deploy_project_ids
+  project  = each.value
+
+  # Counts specialist_agent_resolved log entries where agent_cache_hit=true.
+  name   = "agentic_harness/agent_cache_hit_rate"
+  filter = "resource.type=\"cloud_run_revision\" AND jsonPayload.message=\"specialist_agent_resolved\" AND jsonPayload.agent_cache_hit=true"
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+  }
+}
+
+resource "google_logging_metric" "mcp_pool_cache_hit_rate" {
+  for_each = local.deploy_project_ids
+  project  = each.value
+
+  # Counts mcp_pool_checkout log entries where cache_hit=true.
+  name   = "agentic_harness/mcp_pool_cache_hit_rate"
+  filter = "resource.type=\"cloud_run_revision\" AND jsonPayload.message=\"mcp_pool_checkout\" AND jsonPayload.cache_hit=true"
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+  }
+}
+
+resource "google_logging_metric" "mcp_pool_size" {
+  for_each = local.deploy_project_ids
+  project  = each.value
+
+  name   = "agentic_harness/mcp_pool_size"
+  filter = "resource.type=\"cloud_run_revision\" AND jsonPayload.message=\"mcp_pool_checkout\""
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+  }
+
+  value_extractor = "EXTRACT(jsonPayload.pool_size_after)"
+}
+
+resource "google_logging_metric" "dispatch_error_count" {
+  for_each = local.deploy_project_ids
+  project  = each.value
+
+  name   = "agentic_harness/dispatch_error_count"
+  filter = "resource.type=\"cloud_run_revision\" AND severity=\"ERROR\" AND (jsonPayload.message=\"Failed to build toolset\" OR jsonPayload.message=\"Unexpected error checking out MCP toolset\" OR jsonPayload.message=\"mcp_pool_checkout_timeout\")"
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+  }
+}
+
+# Cloud Monitoring dashboard for per-turn dispatch caches and pool health.
+
+resource "google_monitoring_dashboard" "per_turn_dispatch" {
+  for_each = local.deploy_project_ids
+  project  = each.value
+
+  lifecycle {
+    ignore_changes = [dashboard_json]
+  }
+
+  dashboard_json = jsonencode({
+    displayName = "Per-Turn Dispatch — ${each.key}"
+    mosaicLayout = {
+      columns = 12
+      tiles = [
+        {
+          xPos   = 0
+          yPos   = 0
+          width  = 6
+          height = 4
+          widget = {
+            title = "Config Cache Hit Rate"
+            xyChart = {
+              dataSets = [{
+                timeSeriesQuery = {
+                  timeSeriesFilter = {
+                    filter = "metric.type=\"logging.googleapis.com/user/agentic_harness/config_cache_hit_rate\" AND resource.type=\"cloud_run_revision\""
+                    aggregation = {
+                      alignmentPeriod  = "60s"
+                      perSeriesAligner = "ALIGN_RATE"
+                    }
+                  }
+                }
+                plotType = "LINE"
+              }]
+              yAxis = {
+                label = "Hits / sec"
+              }
+            }
+          }
+        },
+        {
+          xPos   = 6
+          yPos   = 0
+          width  = 6
+          height = 4
+          widget = {
+            title = "Agent Cache Hit Rate"
+            xyChart = {
+              dataSets = [{
+                timeSeriesQuery = {
+                  timeSeriesFilter = {
+                    filter = "metric.type=\"logging.googleapis.com/user/agentic_harness/agent_cache_hit_rate\" AND resource.type=\"cloud_run_revision\""
+                    aggregation = {
+                      alignmentPeriod  = "60s"
+                      perSeriesAligner = "ALIGN_RATE"
+                    }
+                  }
+                }
+                plotType = "LINE"
+              }]
+              yAxis = {
+                label = "Hits / sec"
+              }
+            }
+          }
+        },
+        {
+          xPos   = 0
+          yPos   = 4
+          width  = 6
+          height = 4
+          widget = {
+            title = "MCP Pool Cache Hit Rate"
+            xyChart = {
+              dataSets = [{
+                timeSeriesQuery = {
+                  timeSeriesFilter = {
+                    filter = "metric.type=\"logging.googleapis.com/user/agentic_harness/mcp_pool_cache_hit_rate\" AND resource.type=\"cloud_run_revision\""
+                    aggregation = {
+                      alignmentPeriod  = "60s"
+                      perSeriesAligner = "ALIGN_RATE"
+                    }
+                  }
+                }
+                plotType = "LINE"
+              }]
+              yAxis = {
+                label = "Hits / sec"
+              }
+            }
+          }
+        },
+        {
+          xPos   = 6
+          yPos   = 4
+          width  = 6
+          height = 4
+          widget = {
+            title = "MCP Pool Size"
+            xyChart = {
+              dataSets = [{
+                timeSeriesQuery = {
+                  timeSeriesFilter = {
+                    filter = "metric.type=\"logging.googleapis.com/user/agentic_harness/mcp_pool_size\" AND resource.type=\"cloud_run_revision\""
+                    aggregation = {
+                      alignmentPeriod  = "60s"
+                      perSeriesAligner = "ALIGN_MEAN"
+                    }
+                  }
+                }
+                plotType = "LINE"
+              }]
+              yAxis = {
+                label = "Pool entries"
+              }
+            }
+          }
+        },
+        {
+          xPos   = 0
+          yPos   = 8
+          width  = 12
+          height = 4
+          widget = {
+            title = "Dispatch Error Count"
+            xyChart = {
+              dataSets = [{
+                timeSeriesQuery = {
+                  timeSeriesFilter = {
+                    filter = "metric.type=\"logging.googleapis.com/user/agentic_harness/dispatch_error_count\" AND resource.type=\"cloud_run_revision\""
+                    aggregation = {
+                      alignmentPeriod  = "60s"
+                      perSeriesAligner = "ALIGN_RATE"
+                    }
+                  }
+                }
+                plotType = "LINE"
+              }]
+              yAxis = {
+                label = "Errors / sec"
+              }
+            }
+          }
+        }
+      ]
+    }
+  })
+}

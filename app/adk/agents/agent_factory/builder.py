@@ -62,7 +62,7 @@ def _sanitize_org_context(value: str) -> str:
 def _make_factory_instruction_provider(
     instruction_text: str,
     *,
-    config_doc_id: str | None = None,
+    config_doc_id: str,
     instruction_suffix: str = "",
     instruction_suffix_provider: Callable[[ReadonlyContext], str] | None = None,
 ) -> Callable[[ReadonlyContext], str]:
@@ -74,20 +74,19 @@ def _make_factory_instruction_provider(
 
     def instruction_provider(context: ReadonlyContext) -> str:
         base = instruction_text
-        if config_doc_id is not None:
-            try:
-                cfg, _, _ = config_cache.get_cached_config(config_doc_id)
-                if cfg.instruction:
-                    base = cfg.instruction
-            except Exception as exc:
-                # Intentionally broad: any cache/Firestore failure must not
-                # crash the turn — fall back to the deploy-time instruction.
-                logger.warning(
-                    "InstructionProvider could not load %r from cache (%s); "
-                    "falling back to deploy-time instruction",
-                    config_doc_id,
-                    type(exc).__name__,
-                )
+        try:
+            cfg, _, _ = config_cache.get_cached_config(config_doc_id)
+            if cfg.instruction:
+                base = cfg.instruction
+        except Exception as exc:
+            # Intentionally broad: any cache/Firestore failure must not
+            # crash the turn — fall back to the deploy-time instruction.
+            logger.warning(
+                "InstructionProvider could not load %r from cache (%s); "
+                "falling back to deploy-time instruction",
+                config_doc_id,
+                type(exc).__name__,
+            )
 
         if instruction_suffix_provider is not None:
             dynamic_suffix = instruction_suffix_provider(context)
@@ -351,7 +350,7 @@ def build_agent(
     name: str,
     account_id: str | None,
     tools: list[Any] | None = None,
-    config_doc_id: str | None = None,
+    config_doc_id: str,
     instruction_suffix: str = "",
     instruction_suffix_provider: Callable[[ReadonlyContext], str] | None = None,
     sandbox_pool: SandboxPool | None = None,

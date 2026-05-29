@@ -1773,4 +1773,68 @@ For `builder.py`, AH-80 implements the complement of Item G (option a): the per-
 
 ---
 
+## Review 41 — AH-68: Phase 5 closure — legacy deletion, observability, doc collapse
+
+**Date:** 2026-05-28
+**Scope:** AH-PRD-09 Phase 5 final story ([AH-68](https://linear.app/ken-e/issue/AH-68)); legacy deploy-time factory code deleted, Cloud Monitoring observability added, `[PLANNED]` tags collapsed across System Architecture and component docs.
+
+### Summary
+
+This review seals the AH-PRD-09 per-turn dispatch project. Review 35 (AH-75) replaced `delegate_to_specialist` with `transfer_to_agent`. Review 39 (AH-66) dropped the feature flag. AH-68 is the third and final step: delete the last legacy code paths, add operator observability, and collapse all `[PLANNED]` markers for R1 scope so design docs describe what actually ships.
+
+Three streams of work, one closing seam:
+
+**Code deletion.** `_make_factory_instruction_provider`'s `config_doc_id is None` guard (the "baked-text path") deleted; `config_doc_id` is now a required parameter and the cache-backed read runs unconditionally. The `try/except` fallback to `instruction_text` was preserved as Firestore-resilience, not baked-text. `create_ken_e_agent()`, `_make_instruction_provider`, `build_ken_e_instruction`, and `_BASE_INSTRUCTION` deleted from `ken_e_agent.py`; the file reduced to a 42-line PEP 562 lazy stub so the agent registry resolves `.ken_e_agent` at import time without triggering `build_hierarchy()`. `ken_e_app.py` (dead `AdkApp` wrapper) deleted. All unit and stability tests that exercised the deleted symbols deleted or updated to use `build_hierarchy()`. Orphan `generate_dispatch_functions` references in docs updated to reflect deletion by AH-66 (Review 39).
+
+**Observability.** Three runtime modules now emit structured `logger.info` logs for cache hit/miss and pool size: `config_cache.py` (`config_cache_read` with `cache_hit` field), `specialist_runtime.py` (`specialist_agent_resolved` with `agent_cache_hit` field), `mcp_pool.py` (`mcp_pool_checkout` with `cache_hit` and `pool_size_after` fields). These feed five new `google_logging_metric` resources and one `google_monitoring_dashboard` resource in Terraform (`deployment/terraform/monitoring.tf`). The dashboard ("Per-Turn Dispatch — {env}") displays config cache hit rate, agent cache hit rate, MCP pool hit rate, MCP pool size, and dispatch error count. Operator runbook at `deployment/runbooks/per-turn-dispatch-observability.md` documents Cloud Monitoring dashboard URL pattern, Weave saved view definitions, and four common debugging recipes. Follow-up issue AH-81 opened for `MergedAgentConfig.warnings` field removal in R2.
+
+**Documentation.** `[PLANNED]` markers for AH-PRD-09 Phases 0–3 + 5 collapsed across `docs/KEN-E-System-Architecture.md`, `docs/design/components/agentic-harness/README.md`, and `docs/design/components/agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md`. All three now describe the post-AH-75 reality: root carries `tools=[]`, `attach_specialists_before_agent_callback` wires `sub_agents` per turn, ADK's native `transfer_to_agent` is the dispatch mechanism, `McpToolsetPool` reuses connections across runtime rebuilds. Phase 4 (Zapier) `[PLANNED]` markers preserved — Phase 4 deferred to R2 alongside Integrations. AH-PRD-09 status updated to `Shipped (Phases 0–3 + 5 in R1; Phase 4 deferred to R2)`.
+
+### Findings
+
+1. **`_make_factory_instruction_provider` baked-text path confirmed dead.** Only two call sites existed: `hierarchy.py:176` (already passed `config_doc_id=ROOT_CONFIG_ID`) and `specialist_runtime.py:511` (passed `config_doc_id=None`, updated to `config_doc_id=name`). Zero callers needed the `None` path.
+2. **`ken_e_agent.py` retained as lazy stub.** The agent registry (`registry.py`) lazy-loads via `importlib.import_module(".ken_e_agent") + getattr(module, "ken_e_agent")`. Hard deletion would have required a registry refactor. The PEP 562 `__getattr__` stub preserves the registry contract with no module-import-time `build_hierarchy()` call.
+3. **Cache hit/miss signals were Weave-only before AH-68.** `mcp_pool.py` emitted hit/miss data only via `emit_mcp_pool_span` (Weave spans). Cloud Monitoring log-based metrics required adding structured `logger.info` calls alongside the existing Weave spans — three one-line additions, no behavioral change.
+4. **`MergedAgentConfig.warnings` scheduled for R2 removal (AH-81).** AH-60 emptied `_REDEPLOY_REQUIRED_FIELDS` so the field is always returned empty; it is marked `deprecated=true` in the OpenAPI schema. Soak period before removal: one release after AH-68 ships.
+5. **delegate_to_specialist references audited.** `agentic-harness/README.md` and `KEN-E-System-Architecture.md` contained several forward-looking mentions of `delegate_to_specialist` as the root's tool that were false after AH-75. All updated to `transfer_to_agent` / `tools=[]` framing.
+
+### Consequences
+
+- No `create_ken_e_agent()` callable exists in the codebase. New agent construction uses `build_hierarchy()` (deploy-time root) or `specialist_runtime.resolve_agent()` (per-turn specialists).
+- `config_cache.py` now uses `get_structured_logger` (was `logging.getLogger`).
+- Cache hit rate, MCP pool health, and dispatch errors are now visible in Cloud Monitoring without requiring Weave access.
+- Operator has a documented runbook for per-turn dispatch debugging (`per-turn-dispatch-observability.md`), complementing the existing rollback runbook.
+- AH-PRD-09 project is complete for R1. Only AH-65 (Phase 4 Zapier) and AH-81 (warnings field removal) remain, both targeting R2.
+
+### Documents updated
+
+| File | Change |
+|------|--------|
+| `app/adk/agents/agent_factory/builder.py` | `config_doc_id` made required; `if config_doc_id is not None:` guard deleted |
+| `app/adk/agents/agent_factory/specialist_runtime.py` | `config_doc_id=None` → `config_doc_id=name`; added `specialist_agent_resolved` log |
+| `app/adk/agents/agent_factory/tests/test_factory.py` | Tests updated to pass `config_doc_id`; baked-text path tests deleted |
+| `app/adk/agents/agent_factory/tests/test_factory_skills.py` | Updated `config_doc_id` in build helpers |
+| `app/adk/agents/agent_factory/tests/test_sandbox_pool_runtime_rebuild.py` | Updated `config_doc_id` in build helper |
+| `app/adk/agents/agent_factory/mcp_pool.py` | Added `mcp_pool_checkout` structured info log |
+| `app/adk/agents/utils/config_cache.py` | Switched to `get_structured_logger`; added `config_cache_read` info logs |
+| `app/adk/agents/ken_e_agent.py` | Reduced 325-line factory module to 42-line PEP 562 lazy stub |
+| `app/adk/agents/ken_e_app.py` | **Deleted** |
+| `app/adk/agents/tests/test_ken_e_agent.py` | **Deleted** |
+| `tests/unit/test_adk_agents/test_ken_e_instruction_provider.py` | **Deleted** |
+| `tests/unit/test_adk_agents/test_ken_e_tool_wrappers.py` | **Deleted** |
+| `tests/integration/stability/runs/run_adk_stability.py` | Replaced `create_ken_e_agent` with `build_hierarchy`; removed deleted-symbol test functions |
+| `tests/integration/stability/runs/run_otel_stability.py` | Replaced `create_ken_e_agent` with `build_hierarchy` |
+| `tests/integration/stability/runs/run_session_stability.py` | Replaced `create_ken_e_agent` with `build_hierarchy` |
+| `tests/integration/stability/runs/run_trace_compliance.py` | Replaced `create_ken_e_agent` with `build_hierarchy` |
+| `deployment/terraform/monitoring.tf` | 5 new `google_logging_metric` resources + 1 `google_monitoring_dashboard` (Per-Turn Dispatch) |
+| `deployment/runbooks/per-turn-dispatch-observability.md` | **New** operator runbook |
+| `docs/KEN-E-System-Architecture.md` | Collapsed R1 `[PLANNED]` banners; corrected `transfer_to_agent` / `tools=[]` wording |
+| `docs/design/components/agentic-harness/README.md` | Collapsed R1 `[PLANNED]` banner; updated architecture diagram; fixed `ken_e_agent.py` row; corrected `delegate_to_specialist` references |
+| `docs/design/components/agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md` | Status → Shipped; AC #20 marked [SHIPPED — AH-68]; file inventory updated |
+| `docs/design/components/agentic-harness/projects/AH-PRD-02-agent-factory.md` | `generate_dispatch_functions` row annotated as deleted in AH-66 |
+| `docs/design/per-turn-dispatch-rfc.md` | Phase 5 work item updated |
+| `docs/design/DESIGN-REVIEW-LOG.md` | This entry (Review 41) |
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, and documents updated. Decision rationale lives in the Review itself — this log is the canonical record going forward.*

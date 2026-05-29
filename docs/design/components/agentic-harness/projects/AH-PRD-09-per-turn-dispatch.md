@@ -1,6 +1,6 @@
 # AH-PRD-09 — Per-Turn Dispatch Agent
 
-**Status:** Proposed
+**Status:** Shipped (Phases 0–3 + 5 in R1; Phase 4 deferred to R2)
 **Owner team:** Core AI / Agent Platform (backend; coordinates with Skills, Integrations, Chat, Billing, MER-E)
 **Blocked by:** [AH-PRD-01](./AH-PRD-01-review-loop-framework.md) (review pipeline is invoked inside `delegate_to_specialist`), [AH-PRD-02](./AH-PRD-02-agent-factory.md) (this PRD supersedes its deploy-time factory model), [DM-PRD-00](../../data-management/projects/DM-PRD-00-migration-foundation.md) (Shape B convention)
 **Soft prerequisite:** [SK-PRD-02](../../skills/projects/SK-PRD-02-agent-integration.md) `SandboxPool` — PRD §7 AC #23 verification depends on this shipping (confirmed Done in SK-23 + SK-26 + SK-37).
@@ -38,7 +38,7 @@ The combination — runtime specialist resolution + hybrid MCP — meets the imm
 
 **Phase 4 — Zapier-backed Integrations component work (1–1.5 weeks; DEFERRED TO R2).** `accounts/{account_id}/integrations/zapier` document + Zapier OAuth flow + `/settings/integrations` "Connect Zapier" tile + connection status UI. Requires the Integrations component (IN-PRDs 01/02/03), which sits behind DM-PRD-07 → PR-PRD-01. Cannot ship in R1 without cascading half the planner; deferred per the RFC §7.2 no-go pivot.
 
-**Phase 5 — Cleanup, observability, rollout (1 week).** Decommission unreachable legacy code paths (see AH-66); delete unused `generate_dispatch_functions` and `_make_factory_instruction_provider`'s baked-text path; delete legacy `create_ken_e_agent()` if no callers remain; Cloud Trace / Weave dashboards (cache hit rate, MCP pool size, Zapier latency p50/p95, dispatch error rate); DESIGN-REVIEW-LOG entry; operator runbooks. **Cutover gate: MER-E eval suite passes against the new trace shape.**
+**Phase 5 — Cleanup, observability, rollout (1 week).** Decommission unreachable legacy code paths (see AH-66); `generate_dispatch_functions` already deleted in AH-66 (see DESIGN-REVIEW-LOG Review 39); delete `_make_factory_instruction_provider`'s baked-text path; delete legacy `create_ken_e_agent()` if no callers remain; Cloud Trace / Weave dashboards (cache hit rate, MCP pool size, Zapier latency p50/p95, dispatch error rate); DESIGN-REVIEW-LOG entry; operator runbooks. **Cutover gate: MER-E eval suite passes against the new trace shape.**
 
 > **Revision (AH-66, 2026-05-28):** The per-turn dispatch feature flag was dropped. KEN-E has no production users; the per-turn dispatch path is unconditional. FF-PRD-01, Terraform flag file, and AC #20 removed. SandboxPool gate (AC #23) verified by `test_sandbox_pool_runtime_rebuild.py`.
 
@@ -165,8 +165,8 @@ The Chat / Billing parity tests at `app/adk/agents/agent_factory/tests/test_chat
 | Create | `api/src/kene_api/routers/integrations/zapier.py` — Zapier connect/disconnect endpoints | 4 (deferred to R2) |
 | Create | `frontend/src/pages/settings/integrations/*` — "Connect Zapier" tile + connection status | 4 (deferred to R2) |
 | Modify | `api/src/kene_api/routers/agent_configs.py:82` — `_REDEPLOY_REQUIRED_FIELDS` emptied; `warnings` field marked `deprecated=true` in OpenAPI | 2 |
-| Delete | `app/adk/agents/ken_e_agent.py` — `create_ken_e_agent` and `_make_instruction_provider` deleted once verified unused | 5 |
-| Delete | `generate_dispatch_functions` and `_make_factory_instruction_provider`'s baked-text path | 5 |
+| ~~Delete~~ → Stub | `app/adk/agents/ken_e_agent.py` — `create_ken_e_agent` and `_make_instruction_provider` removed (AH-68); file retained as a lazy stub because callers were reduced but the module boundary preserved | 5 |
+| ~~Delete~~ (done AH-66) | `generate_dispatch_functions` deleted in AH-66; `_make_factory_instruction_provider`'s baked-text path remaining Phase 5 work | 5 |
 | Update | Cloud Trace / Weave dashboards | 5 |
 
 See [RFC §10 Appendix](../../../per-turn-dispatch-rfc.md#10-appendix--code-paths-affected) for the complete code-path table including doc edits.
@@ -245,10 +245,10 @@ ACs are organized by phase. Each phase merges only when its criteria are met.
 
 ### Phase 5 — Cleanup + rollout (R1)
 
-20. All documentation reflects the new architecture; `[PLANNED]` tags collapsed where work shipped.
+20. **[SHIPPED — AH-68]** All documentation reflects the new architecture; `[PLANNED]` tags collapsed where work shipped (System Architecture §1.4 / §4 / §5; agentic-harness README §1 / §2 / §2.1 / §3.2).
 21. **MER-E eval suite passes against the new trace shape** — every prior eval set still scores correctly under `delegate_to_specialist` span structure. **Cutover gate.**
 22. **SK-PRD-02 `SandboxPool` has shipped** — verified by `test_sandbox_pool_runtime_rebuild.py` (AH-66) that a sandbox-attached specialist does not respawn its sandbox across runtime rebuilds.
-23. Legacy `generate_dispatch_functions` and unused paths deleted.
+23. Legacy `generate_dispatch_functions` deleted (completed in AH-66; see DESIGN-REVIEW-LOG Review 39); remaining unused paths deleted in AH-68.
 24. `MergedAgentConfig.warnings` field scheduled for removal one release after this rollout (not blocking Phase 5).
 
 ## 8. Test plan

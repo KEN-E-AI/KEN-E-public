@@ -1,21 +1,14 @@
 """ADK production stability validation (local).
 
-Drives the KEN-E ADK agent through ≥50 invocations, monitors callback-bus
-health, exercises the live config-cache hot-reload path, and feeds 10+
-diverse ``organization_context`` payloads through the InstructionProvider.
+Drives the KEN-E ADK agent through ≥50 invocations and monitors
+callback-bus health.
 
 What this validates:
 
 * ≥50 ADK ``Runner`` invocations complete with zero construction or
   callback exceptions.
-* A config-cache mutation propagates to the InstructionProvider on the
-  next turn (the live hot-reload path).
 * The callback bus emits zero errors / warnings during the run, scoped
   to the four callback-host modules.
-* 10+ distinct ``organization_context`` payloads — missing, empty,
-  small, >10KB, malformed, duplicate keys, deeply nested, unicode,
-  emoji, integer, etc. — all merge cleanly through both
-  ``build_ken_e_instruction`` and ``_make_instruction_provider``.
 
 Design choice — ``Runner`` instead of HTTP:
 
@@ -26,13 +19,6 @@ plumbing is covered separately by the harness's
 (``before_agent`` / ``after_agent`` / ``after_model`` / ``before_tool``
 / ``after_tool``) and the live ``config_cache`` — without needing
 Firebase ID tokens or a running uvicorn.
-
-For the config-refresh check we don't mutate Firestore — we mutate the
-cached config object in-process and clear the TTL, which is functionally
-equivalent to "Firestore was changed and the TTL expired" because the
-cache is the only thing the InstructionProvider reads from. This keeps
-the run side-effect-free and avoids polluting the dev project's
-``ken_e_chatbot`` doc with test edits.
 
 Output: a JSON report at
 ``tests/integration/stability/runs/run_adk_stability_<ts>.json`` plus a
@@ -67,7 +53,6 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock
 
 # Ensure repo root on sys.path so ``app.adk.*`` imports resolve when
 # invoked via ``python`` (script mode) from anywhere.
@@ -165,77 +150,15 @@ class InvocationOutcome:
 
 
 @dataclass
-class OrgContextResult:
-    """One org_context payload merge attempt."""
-
-    label: str
-    payload_size: int
-    merged: bool
-    error: str | None = None
-
-
-@dataclass
 class StabilityReport:
     started_at: str
     finished_at: str
     invocations: list[InvocationOutcome] = field(default_factory=list)
     callback_records: list[dict[str, Any]] = field(default_factory=list)
-    org_context_results: list[OrgContextResult] = field(default_factory=list)
-    config_refresh: dict[str, Any] = field(default_factory=dict)
     summary: dict[str, Any] = field(default_factory=dict)
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
-
-
-def _build_org_context_payloads() -> list[tuple[str, Any]]:
-    """Return ≥10 distinct org_context payloads (label, value).
-
-    Each payload exercises a different shape the merge logic must handle
-    without raising. Values are what would land in
-    ``session.state["organization_context"]`` — the InstructionProvider
-    reads it as-is and prepends with delimiters, so the test is whether
-    the merge produces a string without exceptions.
-    """
-    big = "BIG_CONTEXT " * 1024  # ~13 KB > 10KB threshold
-    deeply_nested = {"level1": {"level2": {"level3": {"level4": {"value": "deep"}}}}}
-    return [
-        ("missing", None),  # state has no key at all
-        ("empty_string", ""),
-        ("empty_dict", {}),  # InstructionProvider truthiness drops it
-        ("small_string", "Acme Corp — B2B SaaS, professional tone"),
-        ("over_10kb_string", big),
-        (
-            "malformed_json_like_string",
-            '{"foo": "bar", invalid_key, no_quotes}',  # invalid JSON but valid Python str
-        ),
-        (
-            "duplicate_keys_repr",
-            '{"key": "v1", "key": "v2"}',  # duplicate keys in textual form
-        ),
-        ("deeply_nested_dict", deeply_nested),
-        ("unicode_emoji", "Café 你好 🚀✨ — мир"),
-        (
-            "control_chars",
-            "line1\nline2\tindented\rcarriage\x00null",
-        ),
-        (
-            "curly_brace_template_safe",
-            "Revenue: {confidential} | Format: {custom}",
-        ),
-        ("integer_payload", 42),  # wrong type — must not crash
-    ]
-
-
-def _make_runtime_context(state: dict[str, Any]) -> Any:
-    """Build a minimal ReadonlyContext-like object with ``state`` attribute.
-
-    ``build_ken_e_instruction`` / ``_make_instruction_provider`` only
-    touch ``context.state`` so a MagicMock with the attribute is enough.
-    """
-    ctx = MagicMock()
-    ctx.state = state
-    return ctx
 
 
 async def _invoke_one(
@@ -291,7 +214,7 @@ async def run_invocations(
     from google.adk.runners import Runner
     from google.adk.sessions import InMemorySessionService
 
-    from app.adk.agents.ken_e_agent import create_ken_e_agent
+    from app.adk.agents.agent_factory import build_hierarchy
 
     # Import the corpus by file path to avoid the namespace-package
     # collision between the repo-root ``tests/`` and ``api/tests/``
@@ -302,7 +225,7 @@ async def run_invocations(
     # per-construction stability is covered by the import + instantiate
     # above (which itself runs the agent factory end-to-end once).
     construction_started = time.monotonic()
-    agent = create_ken_e_agent()
+    agent = build_hierarchy()
     construction_duration_s = time.monotonic() - construction_started
 
     session_service = InMemorySessionService()
@@ -358,122 +281,6 @@ async def run_invocations(
     return outcomes, timing
 
 
-def run_config_refresh_check() -> dict[str, Any]:
-    """Mutate the live config cache and verify the next instruction reflects it.
-
-    Strategy: read the current cache entry, swap in a sentinel
-    instruction, mark the entry as fresh, then call
-    ``_make_instruction_provider``'s closure and assert the sentinel
-    appears. Then expire the entry and verify the cache re-fetches from
-    Firestore on the next read (the original instruction should return).
-
-    This is the in-process equivalent of "admin PUTs a new instruction;
-    next turn picks it up within TTL". It does not write to Firestore
-    so the dev project's config doc is untouched.
-    """
-    from app.adk.agents import ken_e_agent
-    from app.adk.agents.utils import config_cache
-
-    config_cache.clear_config_cache()
-    provider = ken_e_agent._make_instruction_provider("ken_e_chatbot")
-
-    # Cold read populates cache (real Firestore fetch).
-    pre_cache_read_started = time.monotonic()
-    pre_instruction = provider(_make_runtime_context({}))
-    pre_cache_read_s = time.monotonic() - pre_cache_read_started
-
-    # Fingerprint the original so we can later confirm restoration.
-    original_cfg, original_meta, _original_expiry = config_cache._cache["ken_e_chatbot"]
-
-    # Inject a sentinel instruction into the cached config (does not
-    # touch Firestore). Mark the entry as freshly cached so the
-    # provider returns the sentinel on the next call.
-    sentinel_marker = (
-        f"[STABILITY-TEST-SENTINEL-{int(time.time())}] "
-        "This text proves the InstructionProvider re-read the cached "
-        "config on this turn."
-    )
-    sentinel_cfg = original_cfg.model_copy(update={"instruction": sentinel_marker})
-    new_expiry = time.monotonic() + 60  # fresh for next 60s
-    config_cache._cache["ken_e_chatbot"] = (sentinel_cfg, original_meta, new_expiry)
-
-    next_call_started = time.monotonic()
-    post_instruction = provider(_make_runtime_context({}))
-    next_call_s = time.monotonic() - next_call_started
-
-    sentinel_picked_up = sentinel_marker in post_instruction
-
-    # Now expire the entry and confirm a refetch happens (Firestore
-    # restores the real instruction).
-    config_cache._cache["ken_e_chatbot"] = (
-        sentinel_cfg,
-        original_meta,
-        time.monotonic() - 1,  # already expired
-    )
-    refetched = provider(_make_runtime_context({}))
-    refetched_clean = sentinel_marker not in refetched
-
-    return {
-        "passed": sentinel_picked_up and refetched_clean,
-        "sentinel_picked_up_after_swap": sentinel_picked_up,
-        "expired_entry_refetched_clean": refetched_clean,
-        "pre_instruction_chars": len(pre_instruction),
-        "post_instruction_chars": len(post_instruction),
-        "pre_cache_read_s": pre_cache_read_s,
-        "next_call_s": next_call_s,
-        "config_doc_version": original_meta.get("version"),
-    }
-
-
-def run_org_context_merges() -> list[OrgContextResult]:
-    """Feed every org_context shape through both merge entry points.
-
-    ``build_ken_e_instruction`` is the static path (no cache).
-    ``_make_instruction_provider`` is the live path (reads cache).
-    A merge is "clean" iff (a) it returns a non-empty string and (b)
-    no exception escapes. The integer payload case (wrong type) is
-    expected to merge as ``f"... {int}"`` — Python str interpolation
-    handles it cleanly.
-    """
-    from app.adk.agents import ken_e_agent
-    from app.adk.agents.utils import config_cache
-
-    config_cache.clear_config_cache()
-    provider = ken_e_agent._make_instruction_provider("ken_e_chatbot")
-    static = ken_e_agent.build_ken_e_instruction
-
-    results: list[OrgContextResult] = []
-    for label, payload in _build_org_context_payloads():
-        state: dict[str, Any] = (
-            {} if label == "missing" else {"organization_context": payload}
-        )
-        size = len(repr(payload)) if payload is not None else 0
-        try:
-            static_result = static(_make_runtime_context(state))
-            live_result = provider(_make_runtime_context(state))
-            merged_ok = bool(static_result) and bool(live_result)
-            results.append(
-                OrgContextResult(
-                    label=label,
-                    payload_size=size,
-                    merged=merged_ok,
-                    error=None,
-                )
-            )
-        except Exception as e:
-            # Every payload shape must merge cleanly; record exception
-            # type + message so failure mode is visible in the report.
-            results.append(
-                OrgContextResult(
-                    label=label,
-                    payload_size=size,
-                    merged=False,
-                    error=f"{type(e).__name__}: {e}",
-                )
-            )
-    return results
-
-
 # ── Driver ──────────────────────────────────────────────────────────────────
 
 
@@ -502,26 +309,9 @@ async def run_full(target_invocations: int, output_path: Path) -> StabilityRepor
 
     with _attach_callback_capture() as capture:
         # Bulk invocations + callback-bus capture (paired — same run).
-        print("[1/3] driving invocations + capturing callback bus...")
+        print("[1/1] driving invocations + capturing callback bus...")
         outcomes, timing = await run_invocations(target_invocations, capture)
         print(f"      done — {len(outcomes)} invocations completed")
-        print()
-
-        # Config refresh — runs after the bulk so the cache is warm.
-        print("[2/3] config refresh check...")
-        refresh = run_config_refresh_check()
-        print(
-            f"      done — sentinel_picked_up={refresh['sentinel_picked_up_after_swap']}"
-        )
-        print()
-
-        # org_context merges — pure logic, no agent invocation.
-        print("[3/3] org_context merge sweep...")
-        org_results = run_org_context_merges()
-        print(
-            f"      done — {sum(1 for r in org_results if r.merged)}"
-            f"/{len(org_results)} merged cleanly"
-        )
         print()
 
     # Snapshot capture state. Must read inside the with-block to count
@@ -534,7 +324,6 @@ async def run_full(target_invocations: int, output_path: Path) -> StabilityRepor
         1 for r in callback_records if r["level"] in {"ERROR", "CRITICAL"}
     )
     callback_warnings = sum(1 for r in callback_records if r["level"] == "WARNING")
-    org_context_failures = sum(1 for r in org_results if not r.merged)
 
     summary = {
         "invocations_target": target_invocations,
@@ -542,13 +331,9 @@ async def run_full(target_invocations: int, output_path: Path) -> StabilityRepor
         "invocations_failed": invocation_errors,
         "invocations_passed": invocation_errors == 0
         and len(outcomes) >= target_invocations,
-        "config_refresh_passed": refresh["passed"],
         "callback_errors": callback_errors,
         "callback_warnings": callback_warnings,
         "callback_passed": callback_errors == 0,
-        "org_context_payloads": len(org_results),
-        "org_context_failures": org_context_failures,
-        "org_context_passed": org_context_failures == 0 and len(org_results) >= 10,
         "construction_duration_s": timing["construction_duration_s"],
         "invocation_p50_s": _percentile(timing["invocation_durations_s"], 50),
         "invocation_p95_s": _percentile(timing["invocation_durations_s"], 95),
@@ -557,9 +342,7 @@ async def run_full(target_invocations: int, output_path: Path) -> StabilityRepor
         summary[k]
         for k in (
             "invocations_passed",
-            "config_refresh_passed",
             "callback_passed",
-            "org_context_passed",
         )
     )
 
@@ -568,8 +351,6 @@ async def run_full(target_invocations: int, output_path: Path) -> StabilityRepor
         finished_at=datetime.now(UTC).isoformat(),
         invocations=outcomes,
         callback_records=callback_records,
-        org_context_results=org_results,
-        config_refresh=refresh,
         summary=summary,
     )
 
@@ -604,16 +385,10 @@ def _print_summary(report: StabilityReport) -> None:
         f"{s['invocations_completed']}/{s['invocations_target']} "
         f"completed, {s['invocations_failed']} failed   [{_pf(s['invocations_passed'])}]"
     )
-    print(f"  config refresh : [{_pf(s['config_refresh_passed'])}]")
     print(
         f"  callback bus   : "
         f"{s['callback_errors']} errors, "
         f"{s['callback_warnings']} warnings   [{_pf(s['callback_passed'])}]"
-    )
-    print(
-        f"  org_context    : "
-        f"{s['org_context_payloads'] - s['org_context_failures']}"
-        f"/{s['org_context_payloads']} merged  [{_pf(s['org_context_passed'])}]"
     )
     print("-" * 64)
     print(
@@ -657,10 +432,7 @@ def _cli() -> None:
     os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "us-central1")
     os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "true")
 
-    # The ken_e agent module loads ``app/adk/.env`` via dotenv at import
-    # time, but a local dev's active ``.env`` may not include sub-agent
-    # config (``VERTEX_AI_NEWS_DATASTORE_ID``, etc). Pre-load the
-    # environment-specific .env so sub-agent construction succeeds.
+    # Pre-load the environment-specific .env so sub-agent construction succeeds.
     try:
         from dotenv import load_dotenv
 
