@@ -15,7 +15,7 @@ KEN-E already has the **routing key** (`data_region` on the account, values US /
 Everything else that touches account-scoped data is **single-region (`us-central1`) or global** — today KEN-E is, in the auditor's phrase, *"one US cell wearing a regional costume."* Five root causes generate the bulk of the findings:
 
 1. A **single global Firestore database** backs all accounts (US + EU), with cross-account collection-group sweeps that assume one DB.
-2. **Full prompt + response content is shipped to W&B Weave (US SaaS)** because `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` is baked into dev/staging agent deploys — the most direct egress of regulated EU content.
+2. **Full prompt + response content is shipped to W&B Weave (US SaaS)** because `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` is set for dev/staging agent deploys (`deploy_ken_e.py:367-370`; prod already sets it `false`), and Weave (US SaaS) receives traces in *every* environment — the most direct egress of regulated EU content. For the EU cell the work is therefore guaranteeing capture stays off **and** not initializing US-hosted Weave (AH-PRD-12), not flipping a prod default.
 3. **Vertex model inference + the Agent Engine reasoning/sandbox/session plane are pinned to `us-central1`** (bare model strings; ambient `VERTEX_AI_LOCATION`), so EU reasoning and EU context execute in the US. *(The recent `gemini-3.5-flash` 404 outage was an instance of this class — a bare model string resolving to the wrong endpoint.)*
 4. **OAuth tokens are encrypted by a US KMS key** with no account routing — EU credentials encrypted by a US-region key.
 5. **Neo4j is a single global Aura instance**, compounded by a cross-account authorization defect (see R-10).
@@ -121,7 +121,7 @@ A small pure resolver `resolve_model_location(environment, data_region) -> locat
 | ID | Sev | Cut | Component | Gap | Key sites |
 |----|-----|-----|-----------|-----|-----------|
 | **R-01** | 🔴 Crit | Blocker | data-management | Single global Firestore DB for all US+EU accounts; Shape B is logical-only, no physical residency | `firestore.py:61-83`, `dependencies.py:36-37` |
-| **R-02** | 🔴 Crit | Blocker | agentic-harness | Full prompt+response content → W&B Weave (US SaaS); OTEL content capture baked on | `weave_observability.py:110-114`, `deploy_ken_e.py:367-370` |
+| **R-02** | 🔴 Crit | Blocker | agentic-harness | Full prompt+response content → W&B Weave (US SaaS); OTEL content capture on in dev/staging (prod already off), gated per-env not per-region; Weave US SaaS in all envs | `weave_observability.py:110-114`, `deploy_ken_e.py:367-370` |
 | **R-03** | 🔴 Crit | Blocker | agentic-harness | Bare model strings → ambient/global Vertex endpoint; EU prompts processed in US | `builder.py:465` |
 | **R-04** | 🔴 Crit | Blocker | agentic-harness | Agent Engine reasoning + sandbox + session pinned us-central1 | `deploy_ken_e.py:297-304`, `sandbox_pool.py:78-82`, `chat.py:376` |
 | **R-05** | 🔴 Crit | Blocker | integrations | OAuth tokens encrypted with a US KMS key for all accounts | `encryption_service.py:50-52,145-230` |
@@ -192,8 +192,9 @@ The `DR-PRD-NN` column is a stable *logical* label tying each slice back to the 
 | **DR-PRD-09** | SAR-E / Performance residency-by-design | R-20 | sar-e → `SE-PRD-08` (+ performance) | Bake regional requirements into SE-PRD-01/02/05/06 + PE-PRD-01. |
 | **DR-PRD-10** | Cross-cell admin + change-region migration | R-21 | data-management → `DM-PRD-10` | Per-region fan-out for admin ops; supervised account region-migration tool. |
 | **(hotfix)** | Neo4j cross-account `account_id` binding | R-10 | knowledge-graph (standalone PR) | Ships ahead of the program; not gated on residency. |
+| **(phase 1)** | MCP server region/account routing | R-15 | agentic-harness — Phase-1 follow-up (slice TBD) | Not a launch blocker; deferred to post-launch Phase-1 hardening. Explicitly **not** folded into AH-PRD-11 (which excludes it, §2). Listed here so the gap-register item has an owner rather than being orphaned. |
 
-**Status (2026-05-29):** the [Data Residency (US + EU) Initiative](https://linear.app/ken-e/initiative/data-residency-us-eu-e60f510ef09b), the keystone `DM-PRD-09` (full PRD authored), and **stub Linear projects for all ten dependent slices** — each linked to the Initiative, status Backlog, blocked by `DM-PRD-09`, homed in the team above — are created. The numbers in the **Component PRD** column are the allocated IDs. The component **PRD documents** for the dependent slices are authored when each is scheduled; until then this doc (the §7 row + the §5 gap register) is the interim spec. Multi-component slices (DR-PRD-06/07/09) are homed in the primary component's project with the secondary team attached for visibility.
+**Status (2026-05-29):** the [Data Residency (US + EU) Initiative](https://linear.app/ken-e/initiative/data-residency-us-eu-e60f510ef09b), the keystone `DM-PRD-09` (full PRD authored), and **stub Linear projects for all ten dependent slices** — each linked to the Initiative, status Backlog, blocked by `DM-PRD-09`, homed in the team above — are created. The numbers in the **Component PRD** column are the allocated IDs. **The component PRD documents for all ten dependent slices are now authored** (in this change), each against the *proposed* DM-PRD-09 foundation contract and carrying its relevant open questions — so each will need a reconciliation pass if the foundation's open questions (Q3 topology / Q5 org-region scope / Q6 EU region) resolve differently. Multi-component slices (DR-PRD-06/07/09) are homed in the primary component's project with the secondary team attached for visibility.
 
 ---
 

@@ -48,7 +48,7 @@ See [`../../../data-residency-architecture.md`](../../../data-residency-architec
 
 - **The dev→`global` model slice (AH-86).** Already shipped in PR #751 (`model_routing.py`); this PRD only activates the production `data_region` branch.
 - **Observability residency (R-02, R-12)** — content-capture off + EU trace/log sink. Separate sibling slice **[AH-PRD-12]** (`./AH-PRD-12-observability-residency.md`, DR-PRD-02). The `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` flag (`deploy_ken_e.py:367-370`) is its concern, not this PRD's.
-- **MCP server region routing (R-15)** — `mcp.py` URLs are a Phase-1 follow-up, not a launch blocker.
+- **MCP server region routing (R-15)** — `mcp.py` URLs are a Phase-1 follow-up (post-launch), not a launch blocker; owned by a separate agentic-harness Phase-1 slice per [`../../../data-residency-architecture.md`](../../../data-residency-architecture.md) §7, **not** folded into this PRD.
 - **Firestore / Neo4j / KMS / Redis / BigQuery regionalization** — DM-PRD-09 (Firestore), KG-PRD-07 (Neo4j), IN-PRD-08 (KMS/tokens), CH-PRD-07 / BL-PRD-07 (Redis / usage). This PRD consumes the foundation resolver only.
 - **Migrating existing US sessions to EU** — green-field (Q7); supervised region migration is DM-PRD-10.
 - **Gating EU sign-ups behind a feature flag** — the §6.1 gating rule when Q1 is unresolved is a Feature-Flags concern, wired when the EU cell is verified end-to-end.
