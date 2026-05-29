@@ -32,6 +32,7 @@ from app.adk.agents.agent_factory.config_loader import (
     FirestoreConnectionError,
     _load_and_merge,
 )
+from app.adk.agents.agent_factory.model_routing import apply_model_location_env
 from shared.account_id_utils import validate_account_id
 from shared.structured_logging import get_structured_logger
 
@@ -133,11 +134,22 @@ def build_hierarchy(
         ConfigNotFoundError: When the ``ROOT_CONFIG_ID`` document is absent
             from both the global and account collections.
     """
-    # Step 0 — validate account_id format before touching Firestore.
+    # Step 0 — force GOOGLE_CLOUD_LOCATION before any genai.Client is built.
+    # ADK's Gemini model reads GOOGLE_CLOUD_LOCATION via os.environ at
+    # api_client construction time (cached_property).  On Agent Engine the
+    # platform injects this var equal to the engine's deploy region;
+    # load_dotenv(..., override=False) cannot win against it.  We write it
+    # explicitly here so the model-serving endpoint matches the environment
+    # (dev → global, staging/prod → regional).  VERTEX_AI_LOCATION is a
+    # separate variable used by vertexai.init() / sandbox_pool and is never
+    # touched here.  See app/adk/agents/agent_factory/model_routing.py.
+    apply_model_location_env()
+
+    # Step 1 — validate account_id format before touching Firestore.
     if account_id is not None:
         account_id = validate_account_id(account_id)
 
-    # Step 1 — resolve Firestore client.
+    # Step 2 — resolve Firestore client.
     if db is None:
         resolved_project_id = _resolve_project_id(project_id)
         try:
@@ -147,12 +159,12 @@ def build_hierarchy(
                 f"Failed to connect to Firestore for project {resolved_project_id!r}: {exc}"
             ) from exc
 
-    # Step 2 — load root config only. Specialists are resolved per-turn by
+    # Step 3 — load root config only. Specialists are resolved per-turn by
     # specialist_runtime; no N+1 read at deploy time.
     root_config = _load_and_merge(db, ROOT_CONFIG_ID, account_id)
     logger.info("Loaded root agent config %r.", ROOT_CONFIG_ID)
 
-    # Step 3 — build the root agent.
+    # Step 4 — build the root agent.
     #
     # * instruction_suffix_provider renders the Available Specialists block
     #   per-turn from the TTL-cached Firestore data so admin edits propagate

@@ -58,6 +58,7 @@ from app.adk.agents.agent_factory.config_loader import (
     FirestoreConnectionError,
     MergedAgentConfig,
 )
+from app.adk.agents.agent_factory.model_routing import apply_model_location_env
 from app.adk.agents.agent_factory.specialist_runtime import (
     _content_hash,
     block_lock_for,
@@ -355,6 +356,25 @@ def attach_specialists_before_agent_callback(
     logs + degrades on every failure mode) so an attach failure cannot
     block the turn.
     """
+    # AH-86: pin the Vertex model-serving endpoint for THIS runtime process.
+    # ``build_hierarchy()`` (the other call site) runs only in the deploy
+    # process and the local ``adk run`` path; the managed Agent Engine runtime
+    # unpickles the prebuilt agent graph and never re-runs build_hierarchy, so
+    # ``GOOGLE_CLOUD_LOCATION`` must be (re)applied here.  This before-agent
+    # callback is the earliest guaranteed-to-fire runtime entrypoint (same
+    # rationale as the pool initialisation below) and runs before the root
+    # agent's first ``generate_content`` call this turn — so the genai client's
+    # ``cached_property`` reads the corrected location.  Idempotent (logs only
+    # on change); defensive so a resolver failure can never block the turn.
+    try:
+        apply_model_location_env()
+    except Exception as exc:  # pragma: no cover — defensive
+        logger.warning(
+            "[ATTACH-SPECIALISTS] apply_model_location_env() raised; "
+            "model-serving location may be stale: %s",
+            exc,
+        )
+
     # Pool initialisation (per-turn idempotent) — arm the background idle-TTL
     # sweeps on first turn inside the Agent Engine process.  start() is
     # idempotent on both pools; subsequent calls cost one branch check.  No
