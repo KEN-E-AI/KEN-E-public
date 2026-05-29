@@ -147,4 +147,47 @@ describe("streamChatCompletion — SSE parser", () => {
       { type: "text", text: "plain text" },
     ]);
   });
+
+  test("multi-line text event joins data lines with newlines (SSE §9.2.6)", async () => {
+    // The backend splits a multi-line text fragment into one `data:` line per
+    // line; the client must rejoin them with "\n" so embedded newlines survive.
+    const events = await driveStream(
+      "data: line one\ndata: line two\n\ndata: [DONE]\n\n",
+    );
+    expect(events).toEqual([{ type: "text", text: "line one\nline two" }]);
+  });
+
+  test("blank data lines round-trip a paragraph break", async () => {
+    // A pure "\n\n" fragment is emitted as three empty `data:` lines and must
+    // reconstruct as "\n\n", not collapse to nothing.
+    const events = await driveStream(
+      "data: para one\ndata: \ndata: para two\n\ndata: [DONE]\n\n",
+    );
+    expect(events).toEqual([{ type: "text", text: "para one\n\npara two" }]);
+  });
+
+  test("multi-line text split across reads still joins correctly", async () => {
+    // The two `data:` lines of one event arrive in separate stream reads; the
+    // event boundary (blank line) is what dispatches, so they must still join.
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode("data: first\n"));
+        controller.enqueue(encoder.encode("data: second\n\n"));
+        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.close();
+      },
+    });
+    const { streamChatCompletion } = await import("../chatApi");
+    vi.spyOn(global, "fetch").mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      body: stream,
+    } as unknown as Response);
+
+    const events = await collectEvents(
+      streamChatCompletion([{ role: "user", content: "hi" }]),
+    );
+    expect(events).toEqual([{ type: "text", text: "first\nsecond" }]);
+  });
 });

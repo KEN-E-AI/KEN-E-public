@@ -376,9 +376,37 @@ export async function* streamChatCompletion(
   // Buffer carries an incomplete trailing line across reads so an SSE line
   // split across TCP packets isn't silently dropped.
   let buffer = "";
-  // Tracks the SSE event type for the current event block. Resets to "message"
-  // (the default SSE type) after every blank-line dispatch.
+  // Per-event accumulation. Per the SSE spec, an event is a run of field lines
+  // terminated by a blank line, and consecutive `data:` lines are concatenated
+  // with "\n" to form the payload. The backend emits one `data:` line per line
+  // of a multi-line fragment (SSE-injection safety), so this join is what
+  // restores embedded newlines — without it, line and paragraph breaks in the
+  // streamed answer collapse (the message bubble renders `whitespace-pre-wrap`).
   let currentEvent = "message";
+  let dataLines: string[] = [];
+
+  // Build the StreamEvent for a completed event block, or null when it should
+  // be dropped (unknown event type, malformed reasoning JSON).
+  const buildEvent = (eventType: string, data: string): StreamEvent | null => {
+    if (eventType === "reasoning") {
+      try {
+        const parsed = JSON.parse(data) as { text: string; seq: number };
+        return { type: "reasoning", text: parsed.text };
+      } catch {
+        // Malformed reasoning JSON — drop silently, no UI noise.
+        console.debug(
+          "[streamChatCompletion] malformed reasoning payload:",
+          data,
+        );
+        return null;
+      }
+    }
+    if (eventType === "message") {
+      return { type: "text", text: data };
+    }
+    // Unknown event types (e.g. "event: ping") — dropped.
+    return null;
+  };
 
   try {
     while (true) {
@@ -390,51 +418,43 @@ export async function* streamChatCompletion(
       buffer = lines.pop() ?? "";
 
       for (const line of lines) {
-        if (line.startsWith("event: ")) {
+        if (line === "") {
+          // Blank line: event boundary — dispatch the accumulated event.
+          if (dataLines.length > 0) {
+            const data = dataLines.join("\n");
+            dataLines = [];
+            if (data === "[DONE]") {
+              return;
+            }
+            const event = buildEvent(currentEvent, data);
+            if (event) {
+              yield event;
+            }
+          }
+          currentEvent = "message";
+        } else if (line.startsWith("event: ")) {
           currentEvent = line.slice(7).trim();
         } else if (line.startsWith("data: ")) {
-          // Do NOT trim the data value — trailing spaces in text content are meaningful.
-          const data = line.slice(6);
-          if (data === "[DONE]") {
-            return;
-          }
-          if (data) {
-            if (currentEvent === "reasoning") {
-              try {
-                const parsed = JSON.parse(data) as {
-                  text: string;
-                  seq: number;
-                };
-                yield { type: "reasoning", text: parsed.text };
-              } catch {
-                // Malformed reasoning JSON — drop silently, no UI noise.
-                console.debug(
-                  "[streamChatCompletion] malformed reasoning payload:",
-                  data,
-                );
-              }
-            } else if (currentEvent === "message") {
-              // Only yield on the default SSE channel. Unknown event types are dropped.
-              yield { type: "text", text: data };
-            }
-            // Unknown event types (e.g. "event: ping", "event: unknown") — silently dropped.
-          }
-          // Reset event type after each data dispatch (blank line follows in SSE spec,
-          // but we reset eagerly on data dispatch to handle servers that omit the blank).
-          currentEvent = "message";
-        } else if (line === "") {
-          // Blank line: SSE event boundary — reset event type.
-          currentEvent = "message";
+          // Do NOT trim — leading/trailing spaces and empty data lines are
+          // meaningful and must round-trip into the joined payload.
+          dataLines.push(line.slice(6));
         }
-        // Unknown line prefixes (comments starting with ":") are silently ignored.
+        // Other SSE fields (comments ":", "id:", "retry:") are ignored.
       }
     }
 
-    // Flush any trailing buffered data line (no trailing newline from server).
+    // Flush an event left unterminated by a final blank line (server closed
+    // the stream without the trailing "\n\n").
     if (buffer.startsWith("data: ")) {
-      const data = buffer.slice(6); // consistent: no trim (matches main loop)
-      if (data && data !== "[DONE]") {
-        yield { type: "text", text: data };
+      dataLines.push(buffer.slice(6));
+    }
+    if (dataLines.length > 0) {
+      const data = dataLines.join("\n");
+      if (data !== "[DONE]") {
+        const event = buildEvent(currentEvent, data);
+        if (event) {
+          yield event;
+        }
       }
     }
   } finally {
