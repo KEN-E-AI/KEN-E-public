@@ -492,6 +492,312 @@ class TestAvailableSpecialistsProvider:
 
 
 # ---------------------------------------------------------------------------
+# TestAvailableSpecialistsProviderFastPath — AH-86
+# ---------------------------------------------------------------------------
+
+
+class TestAvailableSpecialistsProviderFastPath:
+    """Regression guard for AH-86.
+
+    When ``state["_available_specialists"]`` is present and non-empty,
+    ``available_specialists_provider`` MUST:
+
+    1. Return the correctly-formatted block directly from those dicts.
+    2. NOT call ``list_account_agent_configs_cached`` or ``resolve_agent``
+       (patched to raise so any accidental call fails the test immediately).
+    3. Produce output byte-for-byte identical to
+       ``assemble_available_specialists_block`` for the same specialists.
+
+    When the key is absent or empty, the provider MUST fall back to the
+    existing Firestore resolution path (slow path preserved).
+    """
+
+    def _make_state_context(
+        self,
+        account_id: str | None = "acct_1",
+        specialists: list[dict[str, Any]] | None = None,
+    ) -> MagicMock:
+        """Return a minimal ReadonlyContext mock with the given state."""
+        ctx = MagicMock()
+        state: dict[str, Any] = {}
+        if account_id:
+            state["account_id"] = account_id
+        if specialists is not None:
+            state["_available_specialists"] = specialists
+        ctx.state = state
+        return ctx
+
+    # ------------------------------------------------------------------
+    # Fast path — regression guard for the AH-86 hang
+    # ------------------------------------------------------------------
+
+    def test_fast_path_returns_block_without_firestore_or_resolution(
+        self,
+    ) -> None:
+        """When _available_specialists is in state, the block is built from
+        those dicts and neither list_account_agent_configs_cached nor
+        resolve_agent is called.  Both are patched to raise so any accidental
+        invocation fails the test immediately."""
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        state_specialists = [
+            {
+                "name": "analytics",
+                "description": "GA4 analytics specialist",
+                "agent_id": "analytics",
+            },
+            {
+                "name": "strategy",
+                "description": "Strategy specialist",
+                "agent_id": "strategy",
+            },
+        ]
+        ctx = self._make_state_context(specialists=state_specialists)
+
+        with (
+            patch.object(
+                specialist_runtime,
+                "list_account_agent_configs_cached",
+                side_effect=AssertionError(
+                    "list_account_agent_configs_cached must NOT be called on fast path"
+                ),
+            ),
+            patch.object(
+                specialist_runtime,
+                "resolve_agent",
+                side_effect=AssertionError(
+                    "resolve_agent must NOT be called on fast path"
+                ),
+            ),
+        ):
+            result = specialist_runtime.available_specialists_provider(ctx)
+
+        assert "## Available Specialists" in result
+        assert "analytics" in result
+        assert "strategy" in result
+        assert "GA4 analytics specialist" in result
+        assert "Strategy specialist" in result
+
+    def test_fast_path_output_matches_assemble_block_output(self) -> None:
+        """Block from fast path must be byte-for-byte identical to the block
+        produced by assemble_available_specialists_block for the same data."""
+        from app.adk.agents.agent_factory import specialist_runtime
+        from app.adk.agents.agent_factory.dispatch import (
+            assemble_available_specialists_block,
+            assemble_specialists_block_from_state,
+        )
+
+        state_specialists = [
+            {
+                "name": "analytics",
+                "description": "GA4 analytics specialist",
+                "agent_id": "analytics",
+            },
+            {
+                "name": "strategy",
+                "description": "Strategy specialist",
+                "agent_id": "strategy",
+            },
+        ]
+        ctx = self._make_state_context(specialists=state_specialists)
+
+        # Build the reference block via the BaseAgent path.
+        agents: dict[str, Any] = {}
+        for entry in state_specialists:
+            agent = MagicMock()
+            agent.name = entry["name"]
+            agent.description = entry["description"]
+            agents[entry["name"]] = agent
+        reference_block = assemble_available_specialists_block(agents)
+
+        # Fast path must match.
+        fast_path_block = assemble_specialists_block_from_state(state_specialists)
+        assert fast_path_block == reference_block, (
+            f"Fast path block differs from reference:\n"
+            f"fast:      {fast_path_block!r}\n"
+            f"reference: {reference_block!r}"
+        )
+
+        # Provider must also match.
+        with (
+            patch.object(
+                specialist_runtime,
+                "list_account_agent_configs_cached",
+                side_effect=AssertionError("must not call list on fast path"),
+            ),
+            patch.object(
+                specialist_runtime,
+                "resolve_agent",
+                side_effect=AssertionError("must not call resolve_agent on fast path"),
+            ),
+        ):
+            provider_block = specialist_runtime.available_specialists_provider(ctx)
+
+        assert provider_block == reference_block, (
+            f"Provider block differs from reference:\n"
+            f"provider:  {provider_block!r}\n"
+            f"reference: {reference_block!r}"
+        )
+
+    def test_fast_path_alphabetical_ordering(self) -> None:
+        """Specialists are listed in alphabetical order on the fast path,
+        matching the behaviour of assemble_available_specialists_block."""
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        state_specialists = [
+            {"name": "zeta", "description": "Last alphabetically", "agent_id": "zeta"},
+            {
+                "name": "alpha",
+                "description": "First alphabetically",
+                "agent_id": "alpha",
+            },
+            {"name": "mu", "description": "Middle alphabetically", "agent_id": "mu"},
+        ]
+        ctx = self._make_state_context(specialists=state_specialists)
+
+        with (
+            patch.object(
+                specialist_runtime,
+                "list_account_agent_configs_cached",
+                side_effect=AssertionError("must not call list on fast path"),
+            ),
+            patch.object(
+                specialist_runtime,
+                "resolve_agent",
+                side_effect=AssertionError("must not call resolve_agent on fast path"),
+            ),
+        ):
+            result = specialist_runtime.available_specialists_provider(ctx)
+
+        lines = [ln for ln in result.splitlines() if ln.startswith("- **")]
+        assert lines[0].startswith("- **alpha**"), f"Expected alpha first; got {lines}"
+        assert lines[1].startswith("- **mu**"), f"Expected mu second; got {lines}"
+        assert lines[2].startswith("- **zeta**"), f"Expected zeta third; got {lines}"
+
+    def test_fast_path_empty_description_uses_fallback(self) -> None:
+        """Empty description in state dict produces '(no description provided)'."""
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        state_specialists = [
+            {"name": "nodesc", "description": "", "agent_id": "nodesc"},
+        ]
+        ctx = self._make_state_context(specialists=state_specialists)
+
+        with (
+            patch.object(
+                specialist_runtime,
+                "list_account_agent_configs_cached",
+                side_effect=AssertionError("must not call list on fast path"),
+            ),
+            patch.object(
+                specialist_runtime,
+                "resolve_agent",
+                side_effect=AssertionError("must not call resolve_agent on fast path"),
+            ),
+        ):
+            result = specialist_runtime.available_specialists_provider(ctx)
+
+        assert "(no description provided)" in result
+
+    # ------------------------------------------------------------------
+    # Slow path — fallback when _available_specialists absent/empty
+    # ------------------------------------------------------------------
+
+    def test_slow_path_used_when_state_key_absent(self) -> None:
+        """When _available_specialists is not in state, the provider falls back
+        to the existing Firestore resolution path."""
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        cfg = _make_merged_config("v1", visible_in_frontend=True)
+        agent = _make_llm_agent("spe_1")
+        # No _available_specialists key in state — only account_id.
+        ctx = MagicMock()
+        ctx.state = {"account_id": "acct_1"}
+        list_mock = MagicMock(return_value=["spe_1"])
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.config_loader.list_account_agent_configs",
+                list_mock,
+            ),
+            patch.object(specialist_runtime, "resolve_config", return_value=cfg),
+            patch.object(specialist_runtime, "resolve_agent", return_value=agent),
+        ):
+            result = specialist_runtime.available_specialists_provider(ctx)
+
+        # list_account_agent_configs should have been called (slow path ran).
+        assert list_mock.called, "Slow path should call list_account_agent_configs"
+        assert "spe_1" in result
+
+    def test_slow_path_used_when_state_key_is_empty_list(self) -> None:
+        """When _available_specialists is [] (empty), the slow path runs."""
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        cfg = _make_merged_config("v1", visible_in_frontend=True)
+        agent = _make_llm_agent("spe_1")
+        ctx = self._make_state_context(specialists=[])  # empty list
+        list_mock = MagicMock(return_value=["spe_1"])
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.config_loader.list_account_agent_configs",
+                list_mock,
+            ),
+            patch.object(specialist_runtime, "resolve_config", return_value=cfg),
+            patch.object(specialist_runtime, "resolve_agent", return_value=agent),
+        ):
+            result = specialist_runtime.available_specialists_provider(ctx)
+
+        assert list_mock.called, "Slow path should call list_account_agent_configs"
+        assert "spe_1" in result
+
+    # ------------------------------------------------------------------
+    # assemble_specialists_block_from_state unit tests
+    # ------------------------------------------------------------------
+
+    def test_assemble_block_from_state_empty_list(self) -> None:
+        """Empty dicts list returns the heading + 'None registered.'."""
+        from app.adk.agents.agent_factory.dispatch import (
+            assemble_specialists_block_from_state,
+        )
+
+        result = assemble_specialists_block_from_state([])
+        assert result == "## Available Specialists\n\n- None registered."
+
+    def test_assemble_block_from_state_single_specialist(self) -> None:
+        """Single entry produces one bullet with name and description."""
+        from app.adk.agents.agent_factory.dispatch import (
+            assemble_specialists_block_from_state,
+        )
+
+        result = assemble_specialists_block_from_state(
+            [
+                {
+                    "name": "analytics",
+                    "description": "GA4 analytics",
+                    "agent_id": "analytics",
+                }
+            ]
+        )
+        assert result == "## Available Specialists\n\n- **analytics**: GA4 analytics"
+
+    def test_assemble_block_from_state_skips_entries_without_name(self) -> None:
+        """Entries with a missing or empty 'name' key are silently skipped."""
+        from app.adk.agents.agent_factory.dispatch import (
+            assemble_specialists_block_from_state,
+        )
+
+        result = assemble_specialists_block_from_state(
+            [
+                {"name": "", "description": "Should be skipped", "agent_id": ""},
+                {"name": "analytics", "description": "GA4", "agent_id": "analytics"},
+            ]
+        )
+        assert "analytics" in result
+        assert "Should be skipped" not in result
+
+
+# ---------------------------------------------------------------------------
 # TestListCache
 # ---------------------------------------------------------------------------
 

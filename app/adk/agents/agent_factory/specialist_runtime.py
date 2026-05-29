@@ -672,21 +672,36 @@ def available_specialists_provider(context: ReadonlyContext) -> str:
     """Return the ``## Available Specialists`` Markdown block for the root agent.
 
     Designed as an ADK ``InstructionProvider``-compatible callable
-    ``(ReadonlyContext) -> str``.  Reads ``account_id`` from session state,
-    lists all agent configs visible to the account, resolves each to a
-    ``LlmAgent``, filters to ``ken_e_sub_agent=True`` (the chat-delegation
-    gate introduced in AH-82), and formats the result using
-    :func:`assemble_available_specialists_block` from ``dispatch.py``.
+    ``(ReadonlyContext) -> str``.
 
-    Note: ``visible_in_frontend`` is intentionally NOT used as a filter here.
-    It controls Workflows-page UI visibility only.  An agent with
-    ``visible_in_frontend=False, ken_e_sub_agent=True`` will appear in this
-    block and be delegatable, while one with
-    ``visible_in_frontend=True, ken_e_sub_agent=False`` will be shown in the
-    Workflows page but will not be delegatable from chat.
+    Delegation gate (AH-82): the block lists only specialists with
+    ``ken_e_sub_agent=True`` — enforced on both the fast and slow paths below
+    (fast path via the attached sub-agent set; slow path via the filter in the
+    fallback loop).  ``visible_in_frontend`` is intentionally NOT a filter here;
+    it controls Workflows-page UI visibility only.  An agent with
+    ``visible_in_frontend=False, ken_e_sub_agent=True`` appears in this block and
+    is delegatable, while one with ``visible_in_frontend=True,
+    ken_e_sub_agent=False`` is shown on the Workflows page but is not delegatable
+    from chat.
 
-    Agents that fail to resolve are logged and excluded from the block rather
-    than surfacing as errors to the root agent.
+    **AH-86 fast path (primary):** When ``context.state["_available_specialists"]``
+    is present and non-empty (written by ``attach_specialists_before_agent_callback``
+    in ``sub_agent_attacher.py`` before this provider runs), the block is built
+    directly from those dicts via
+    :func:`assemble_specialists_block_from_state` — with NO call to
+    ``list_account_agent_configs_cached``, ``resolve_config``, or
+    ``resolve_agent``.  This eliminates the event-loop-blocking
+    ``future.result()`` calls inside ``_build_specialist`` / ``_build_skill_toolset``
+    that caused the "chat hangs on Reasoning…, no text" symptom.
+
+    **Fallback (slow path):** When ``_available_specialists`` is absent or empty
+    (e.g. the before-agent callback did not run, or in tests that exercise the
+    full resolution chain), the provider falls back to the existing Firestore
+    list + per-specialist ``resolve_agent`` path, with the same ``_block_cache``
+    TTL and error-isolation semantics as before AH-86.
+
+    Agents that fail to resolve (slow path only) are logged and excluded from
+    the block rather than surfacing as errors to the root agent.
 
     Args:
         context: ADK ``ReadonlyContext`` providing ``context.state``.
@@ -699,12 +714,9 @@ def available_specialists_provider(context: ReadonlyContext) -> str:
     )
     from app.adk.agents.agent_factory.dispatch import (
         assemble_available_specialists_block,
+        assemble_specialists_block_from_state,
     )
 
-    account_id: str | None = context.state.get("account_id")
-    # Phase 3 (AH-62): capture session state once so it can be threaded into
-    # resolve_agent → _build_specialist for creds-hash key computation.
-    #
     # ADK-version dependency: ``ReadonlyContext.state`` currently returns a
     # ``MappingProxyType`` over ``session.state`` (readonly_context.py), which
     # ``dict()`` casts cleanly. ``CallbackContext.state`` returns ADK's
@@ -721,6 +733,35 @@ def available_specialists_provider(context: ReadonlyContext) -> str:
     session_state: Mapping[str, Any] = (
         state.to_dict() if hasattr(state, "to_dict") else dict(state)
     )
+
+    # ------------------------------------------------------------------
+    # AH-86 fast path: build block from session state without Firestore
+    # ------------------------------------------------------------------
+    # ``attach_specialists_before_agent_callback`` writes
+    # ``state["_available_specialists"]`` as a list of
+    # ``{"name", "description", "agent_id"}`` dicts before ADK invokes this
+    # instruction provider.  When present and non-empty, use those dicts
+    # directly — no Firestore list, no resolve_config, no resolve_agent, no
+    # future.result() blocking.
+    state_specialists: list[dict[str, Any]] | None = session_state.get(
+        "_available_specialists"
+    )
+    if state_specialists:
+        logger.debug(
+            "[AVAILABLE-SPECIALISTS] Fast path: building block from "
+            "%d state dicts (no Firestore/agent resolution).",
+            len(state_specialists),
+        )
+        return assemble_specialists_block_from_state(state_specialists)
+
+    # ------------------------------------------------------------------
+    # Slow path (fallback): full Firestore list + resolve_agent resolution
+    # ------------------------------------------------------------------
+    # Reached when _available_specialists is absent (before-agent callback
+    # did not run) or empty (no specialists registered for this account).
+    # Preserves all pre-AH-86 behaviour: _block_cache TTL, account_id
+    # validation, FirestoreConnectionError isolation.
+    account_id: str | None = context.state.get("account_id")
 
     if not account_id:
         logger.warning(
