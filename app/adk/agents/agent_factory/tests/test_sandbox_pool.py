@@ -26,6 +26,7 @@ Coverage map
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import os
 import sys
@@ -1132,8 +1133,6 @@ def test_lease_cancellation_during_evict_releases_clearing_event_and_refcount() 
     any registered clearing event and releases the refcount regardless of which
     ``BaseException`` subclass propagates, leaving the key reusable.
     """
-    import asyncio
-
     pool = SandboxPool()
     pool._CLEAR_TMP_ON_REUSE = True  # so the 0→1 miss registers a clearing event
     executor = _make_executor()
@@ -1230,6 +1229,10 @@ def test_lease_cancellation_during_clear_tmp_releases_clearing_event_and_refcoun
         with pool.lease(account_id="acc", config_id="cfg"):
             pass  # never reached — lease() raises before yielding
 
+    # _clear_tmp was called exactly once (the failed lease); the cache-hit
+    # follow-up below takes the fast path and does not call _clear_tmp again.
+    assert _clear_tmp_calls == 1
+
     # Inner finally already cleaned up the clearing event; outer backstop
     # was a no-op.  Both invariants must hold.
     assert key not in pool._clearing
@@ -1239,5 +1242,4 @@ def test_lease_cancellation_during_clear_tmp_releases_clearing_event_and_refcoun
     # _evict_if_over_cap nor _clear_tmp is called) acquires without deadlocking.
     with pool.lease(account_id="acc", config_id="cfg") as result:
         assert result is executor
-    assert pool._entry_refcount(key) == 0
     assert pool._entry_refcount(key) == 0
