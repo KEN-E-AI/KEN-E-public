@@ -214,8 +214,8 @@ def build_hierarchy(
         additional_after_model_callbacks=[
             # Ordering constraint: adk_after_model_callback strips thought parts
             # from the response first; capture_last_model_output reads the
-            # (already-stripped) parts second so _last_model_output contains only
-            # user-visible text, not internal reasoning.
+            # (already-stripped) parts second so temp:_last_model_output contains
+            # only user-visible text, not internal reasoning.
             adk_after_model_callback,
             capture_last_model_output_after_model_callback,
         ],

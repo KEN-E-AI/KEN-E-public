@@ -62,6 +62,16 @@ _current_agent_goal_ctx: contextvars.ContextVar[Any] = contextvars.ContextVar(
 
 _MAX_GOAL_LENGTH = 500
 
+# Invocation-scoped state key for the final model output text surfaced on the
+# root Weave span. The ``temp:`` prefix means ADK discards it between
+# invocations, so a turn whose final model action is a function_call (e.g. a
+# specialist transfer that produces no text) cannot carry the previous turn's
+# text forward, and the (potentially large) answer is never persisted to the
+# session document. Written by
+# ``capture_last_model_output_after_model_callback``, read by
+# ``weave_after_agent_callback``.
+_LAST_MODEL_OUTPUT_STATE_KEY = "temp:_last_model_output"
+
 
 def _get_chatbot_config_metadata() -> dict[str, Any]:
     """Return span-attribute metadata for the ken_e_chatbot config doc.
@@ -279,10 +289,12 @@ def weave_after_agent_callback(
     Finalises the call, pops it from the Weave call stack, and clears
     the ContextVar.
 
-    Reads ``state["_last_model_output"]`` — stashed by
+    Reads ``state["temp:_last_model_output"]`` — stashed by
     ``capture_last_model_output_after_model_callback`` on the final model call —
     and surfaces it as ``output["text"]`` on the finished span so MER-E can
-    inspect the agent's response text at trace time.
+    inspect the agent's response text at trace time. The ``temp:`` prefix scopes
+    the key to this invocation, so a turn that ends on a function_call (and never
+    overwrites the key) does not surface a previous turn's text.
 
     Returns None so the agent proceeds normally.
     """
@@ -296,7 +308,7 @@ def weave_after_agent_callback(
             if hasattr(callback_context, "state") and hasattr(
                 callback_context.state, "get"
             ):
-                last_text = callback_context.state.get("_last_model_output")
+                last_text = callback_context.state.get(_LAST_MODEL_OUTPUT_STATE_KEY)
         except Exception:
             pass
 
@@ -394,9 +406,11 @@ async def capture_last_model_output_after_model_callback(
     """Stash the final model text output in session state for the root Weave span.
 
     Joins non-thought, non-function_call text parts from the LlmResponse into a
-    single string and stores it in ``state["_last_model_output"]``. This key is
-    read by ``weave_after_agent_callback`` to populate ``finish_call(output=...)``
-    so MER-E can inspect the agent's response text at trace time.
+    single string and stores it in ``state["temp:_last_model_output"]``. This key
+    is read by ``weave_after_agent_callback`` to populate ``finish_call(output=...)``
+    so MER-E can inspect the agent's response text at trace time. The ``temp:``
+    prefix keeps the value invocation-scoped (ADK clears it between turns), so it
+    is never persisted to the session document and cannot go stale across turns.
 
     Returns None so the response is not modified.
     """
@@ -419,7 +433,7 @@ async def capture_last_model_output_after_model_callback(
         and hasattr(callback_context, "state")
         and hasattr(callback_context.state, "__setitem__")
     ):
-        callback_context.state["_last_model_output"] = "\n".join(text_parts)
+        callback_context.state[_LAST_MODEL_OUTPUT_STATE_KEY] = "\n".join(text_parts)
 
     return None
 
