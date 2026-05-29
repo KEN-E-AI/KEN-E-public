@@ -42,6 +42,13 @@ class MergedAgentConfig(BaseModel):
     instruction: str
     model: str
 
+    # AH-84: human-readable identity fields surfaced in the Available Specialists
+    # block so KEN-E can map conversational references ("Have BEN-E review …") to
+    # the correct transfer_to_agent doc_id. Both default to None — missing either
+    # field renders the bullet identically to the pre-AH-84 format.
+    name: str | None = None
+    title: str | None = None
+
     description: str | None = None
     temperature: float | None = None
     max_output_tokens: int | None = None
@@ -80,9 +87,11 @@ class MergedAgentConfig(BaseModel):
 # the ``MergedAgentConfig`` schema. ``_build_config`` strips these before
 # validation since ``extra="forbid"`` would otherwise reject them.
 #
-# ``name`` and ``title`` are user-facing identity metadata exposed by the
-# API but never consumed by the factory; the routing key is the Firestore
-# document ID (passed separately to ``LlmAgent(name=...)`` by the builder).
+# ``name`` and ``title`` are NOT stripped here (AH-84): they are now real
+# ``MergedAgentConfig`` fields surfaced in the Available Specialists block so
+# the LLM can map conversational references ("Have BEN-E …") to the correct
+# ``transfer_to_agent`` doc_id. The routing key remains the Firestore document
+# ID (passed separately to ``LlmAgent(name=...)`` by the builder).
 #
 # ``deployment_status`` and ``lifecycle_status`` are written by MER-E (sister
 # repo) onto the shared ``agent_configs/{id}`` docs. The factory doesn't
@@ -102,8 +111,6 @@ class MergedAgentConfig(BaseModel):
 # "fix" this asymmetry by syncing the two sets.
 _STORAGE_INTERNAL_FIELDS: frozenset[str] = frozenset(
     {
-        "name",
-        "title",
         "created_at",
         "updated_at",
         "created_by",

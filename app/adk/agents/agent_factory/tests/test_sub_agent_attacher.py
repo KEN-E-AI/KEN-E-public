@@ -34,7 +34,10 @@ from google.adk.sessions.state import State
 
 from app.adk.agents.agent_factory import specialist_runtime as sr
 from app.adk.agents.agent_factory import sub_agent_attacher as saa
-from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+from app.adk.agents.agent_factory.config_loader import (
+    FirestoreConnectionError,
+    MergedAgentConfig,
+)
 from app.adk.agents.agent_factory.sub_agent_attacher import (
     attach_account_specialists,
     attach_specialists_before_agent_callback,
@@ -1112,6 +1115,9 @@ class TestStateCapture:
             assert "name" in entry
             assert "description" in entry
             assert "agent_id" in entry
+            # AH-84: human_name and title keys must always be present (may be None).
+            assert "human_name" in entry
+            assert "title" in entry
             assert entry["agent_id"] == entry["name"], (
                 "agent_id must equal name (ADK contract — specialist_runtime.py:626)"
             )
@@ -1208,6 +1214,165 @@ class TestStateCapture:
         assert len(captured[0]["description"]) <= 1024, (
             "description must be truncated to ≤1024 chars"
         )
+
+
+# ---------------------------------------------------------------------------
+# AH-84: human_name + title propagation in _available_specialists
+# ---------------------------------------------------------------------------
+
+
+class TestStateCaptureNameTitle:
+    """AH-84: human_name and title must be carried into _available_specialists."""
+
+    def _make_ctx(self, account_id: str = "acc_123") -> Any:
+        root = _make_root()
+        state = State(value={"account_id": account_id}, delta={})
+        ctx = SimpleNamespace(
+            state=state,
+            _invocation_context=SimpleNamespace(agent=root),
+        )
+        return ctx, root
+
+    def _patched_resolvers_with_identity(
+        self,
+        visible: dict[str, LlmAgent],
+        human_name: str | None = None,
+        title: str | None = None,
+    ) -> Any:
+        """Like _patched_resolvers but the returned MergedAgentConfig carries
+        human_name and title on the ``name`` and ``title`` fields."""
+
+        def _list(_account_id: str) -> list[str]:
+            return list(visible.keys())
+
+        def _resolve_config(
+            doc_id: str, _account_id: str | None = None, _ttl: int = 60
+        ) -> MergedAgentConfig:
+            return MergedAgentConfig(
+                name=human_name,
+                title=title,
+                instruction=f"{doc_id} instruction",
+                model="gemini-2.5-pro",
+                description=f"{doc_id} description",
+                visible_in_frontend=True,
+                ken_e_sub_agent=True,
+            )
+
+        def _resolve_agent(
+            doc_id: str,
+            _account_id: str | None = None,
+            _ttl: int = 60,
+            session_state: Mapping[str, Any] | None = None,
+        ) -> LlmAgent:
+            return visible[doc_id]
+
+        from contextlib import ExitStack
+
+        stack = ExitStack()
+        stack.enter_context(
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher."
+                "list_account_agent_configs_cached",
+                side_effect=_list,
+            )
+        )
+        stack.enter_context(
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher.resolve_config",
+                side_effect=_resolve_config,
+            )
+        )
+        stack.enter_context(
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher.resolve_agent",
+                side_effect=_resolve_agent,
+            )
+        )
+        return stack
+
+    def test_human_name_and_title_propagated(self) -> None:
+        """Entries in _available_specialists carry human_name and title from the config."""
+        ctx, root = self._make_ctx()
+        a = _make_specialist("ben_e_agent")
+
+        with self._patched_resolvers_with_identity(
+            {"ben_e_agent": a}, human_name="BEN-E", title="Brand Guardian"
+        ):
+            attach_specialists_before_agent_callback(ctx)  # type: ignore[arg-type]
+
+        captured = ctx.state.get("_available_specialists")
+        assert captured is not None
+        ben_e = next(e for e in captured if e["name"] == "ben_e_agent")
+        assert ben_e["human_name"] == "BEN-E"
+        assert ben_e["title"] == "Brand Guardian"
+
+    def test_absent_name_and_title_produce_none(self) -> None:
+        """Specialists without name/title have human_name=None and title=None."""
+        ctx, root = self._make_ctx()
+        a = _make_specialist("ga_spec")
+
+        with self._patched_resolvers_with_identity({"ga_spec": a}):
+            attach_specialists_before_agent_callback(ctx)  # type: ignore[arg-type]
+
+        captured = ctx.state.get("_available_specialists")
+        assert captured is not None
+        ga = next(e for e in captured if e["name"] == "ga_spec")
+        assert ga["human_name"] is None
+        assert ga["title"] is None
+
+    def test_resolve_config_failure_does_not_drop_specialist(self) -> None:
+        """When resolve_config raises inside the state-capture block, the
+        specialist row must still appear in _available_specialists (with
+        human_name/title defaulting to None)."""
+        ctx, root = self._make_ctx()
+        a = _make_specialist("ga_spec")
+
+        def _list(_acc: str) -> list[str]:
+            return ["ga_spec"]
+
+        call_count = 0
+
+        def _resolve_config(doc_id: str, _acc=None, _ttl=60) -> MergedAgentConfig:
+            nonlocal call_count
+            call_count += 1
+            # First call (from _attach_locked) succeeds; second call
+            # (from the state-capture block) raises.
+            if call_count == 1:
+                return MergedAgentConfig(
+                    instruction=".",
+                    model="gemini-2.5-pro",
+                    ken_e_sub_agent=True,
+                )
+            raise FirestoreConnectionError("simulated transient error")
+
+        def _resolve_agent(doc_id: str, _acc=None, _ttl=60, session_state=None) -> LlmAgent:
+            return a
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher."
+                "list_account_agent_configs_cached",
+                side_effect=_list,
+            ),
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher.resolve_config",
+                side_effect=_resolve_config,
+            ),
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher.resolve_agent",
+                side_effect=_resolve_agent,
+            ),
+        ):
+            attach_specialists_before_agent_callback(ctx)  # type: ignore[arg-type]
+
+        captured = ctx.state.get("_available_specialists")
+        assert captured is not None, "specialist must still appear in state"
+        assert any(e["name"] == "ga_spec" for e in captured), (
+            "ga_spec row must not be dropped on resolve_config failure"
+        )
+        ga = next(e for e in captured if e["name"] == "ga_spec")
+        assert ga["human_name"] is None
+        assert ga["title"] is None
 
 
 # ---------------------------------------------------------------------------

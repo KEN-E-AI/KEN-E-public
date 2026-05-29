@@ -453,17 +453,46 @@ def attach_specialists_before_agent_callback(
     # (specialist_runtime.py:510-512, 572, 626). Both fields are emitted so
     # MER-E can join on either; a future ADK release that decouples them would
     # surface as a contract-version bump in docs/trace-structure-spec.md §16.
+    # AH-84: capture human name + title alongside the existing specialist metadata
+    # so the Available Specialists block can render the enriched identity clauses
+    # (fast path via assemble_specialists_block_from_state).
+    #
+    # resolve_config is TTL-cached (60 s) and the cache is warm from the
+    # _attach_locked call above (same turn, same account_id), so each lookup
+    # here costs a single cache-hit — negligible versus the I/O the turn incurs.
+    # We read account_id independently from the callback context rather than
+    # relying on the outer try-block's variable to avoid a NameError if that
+    # block raised before the assignment.
     try:
+        _state_account_id: str | None = callback_context.state.get("account_id")
         root_agent = callback_context._invocation_context.agent
         sub_agents: list[Any] = getattr(root_agent, "sub_agents", None) or []
-        callback_context.state["_available_specialists"] = [
-            {
+
+        specialists_state: list[dict[str, Any]] = []
+        for a in sub_agents:
+            entry: dict[str, Any] = {
                 "name": a.name,
                 "description": str(getattr(a, "description", "") or "")[:1024],
                 "agent_id": a.name,
+                "human_name": None,
+                "title": None,
             }
-            for a in sub_agents
-        ]
+            try:
+                cfg = resolve_config(a.name, _state_account_id)
+                entry["human_name"] = cfg.name
+                entry["title"] = cfg.title
+            except Exception as _cfg_exc:
+                logger.warning(
+                    "[ATTACH-SPECIALISTS] resolve_config(%r, %r) failed while "
+                    "building _available_specialists; human_name/title will be "
+                    "absent for this specialist: %s",
+                    a.name,
+                    _state_account_id,
+                    _cfg_exc,
+                )
+            specialists_state.append(entry)
+
+        callback_context.state["_available_specialists"] = specialists_state
     except Exception as exc:
         logger.warning(
             "[ATTACH-SPECIALISTS] Failed to capture _available_specialists "

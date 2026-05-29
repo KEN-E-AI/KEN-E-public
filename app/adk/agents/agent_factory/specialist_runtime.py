@@ -797,6 +797,9 @@ def available_specialists_provider(context: ReadonlyContext) -> str:
         return "## Available Specialists\n\n- None registered."
 
     specialists: dict[str, BaseAgent] = {}
+    # AH-84: carry human name + title from the resolved config so the slow
+    # path produces the same enriched bullets as the fast path.
+    metadata: dict[str, dict[str, str | None]] = {}
     for doc_id in doc_ids:
         try:
             config = resolve_config(doc_id, account_id)
@@ -806,6 +809,7 @@ def available_specialists_provider(context: ReadonlyContext) -> str:
                 continue
             agent = resolve_agent(doc_id, account_id, session_state=session_state)
             specialists[doc_id] = agent
+            metadata[doc_id] = {"human_name": config.name, "title": config.title}
         except Exception as exc:
             logger.warning(
                 "[AVAILABLE-SPECIALISTS] Could not resolve specialist %r (account=%r): %s",
@@ -815,7 +819,7 @@ def available_specialists_provider(context: ReadonlyContext) -> str:
                 exc_info=True,
             )
 
-    block = assemble_available_specialists_block(specialists)
+    block = assemble_available_specialists_block(specialists, metadata=metadata)
     with block_lock_for(account_id):
         _block_cache[account_id] = (block, time.monotonic() + _BLOCK_CACHE_TTL)
     return block
