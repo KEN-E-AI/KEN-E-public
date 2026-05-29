@@ -2037,6 +2037,84 @@ class TestSpecialistRuntimeReviewWrap:
 
         mock_build_pipeline.assert_not_called()
 
+    def test_company_news_agent_with_criteria_wraps_in_review_pipeline(self) -> None:
+        """When ``company_news_agent`` has ``default_acceptance_criteria`` set to
+        ``REVIEW_CRITERIA_TEXT``, ``_build_specialist`` wraps the constructed
+        ``LlmAgent`` in a ``LoopAgent`` review pipeline and renames it to the
+        doc_id so ``transfer_to_agent(agent_name="company_news_agent")`` resolves."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+        from app.adk.agents.scripts.seed_news_researcher_review_criteria import (
+            REVIEW_CRITERIA_TEXT,
+        )
+        from app.adk.agents.utils.criteria_utils import sanitise_criteria
+
+        config = MergedAgentConfig(
+            instruction="Company news specialist.",
+            model="gemini-2.5-pro",
+            description="Company news assistant.",
+            default_acceptance_criteria=REVIEW_CRITERIA_TEXT,
+        )
+
+        from contextlib import ExitStack
+        from unittest.mock import patch as _patch
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.mcp._build_firestore_client",
+                    return_value=_FakeFirestoreDb({}),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.tools.registry.function_tool_registry.resolve_default_global_tools",
+                    return_value=[],
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.tools.registry.tool_registry.get_default_registry",
+                    return_value=MagicMock(name="fake_registry"),
+                )
+            )
+
+            def _make_specialist_mock(_config: Any, *, name: str, **_kw: Any) -> Any:
+                m = MagicMock(name=f"llmagent_{name}")
+                m.name = name
+                m.description = _config.description
+                return m
+
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.build_agent",
+                    side_effect=_make_specialist_mock,
+                )
+            )
+
+            fake_pipeline = MagicMock(name="loopagent")
+            fake_pipeline.name = "company_news_agent_review_loop"
+            fake_pipeline.description = ""
+
+            mock_build_pipeline = stack.enter_context(
+                _patch(
+                    "app.adk.agents.utils.review_pipeline.build_review_pipeline",
+                    return_value=fake_pipeline,
+                )
+            )
+            result = sr._build_specialist(config, "company_news_agent", None)
+
+        mock_build_pipeline.assert_called_once()
+        call_kwargs = mock_build_pipeline.call_args.kwargs
+        # _build_specialist passes criteria through sanitise_criteria(), which
+        # strips non-ASCII chars (including "≤"). Assert against the sanitised
+        # form so the test documents the real contract.
+        assert call_kwargs["acceptance_criteria"] == sanitise_criteria(REVIEW_CRITERIA_TEXT)
+        assert call_kwargs["output_key_prefix"] == "company_news_agent_review"
+        assert result is fake_pipeline
+        assert result.name == "company_news_agent"
+        assert result.description == "Company news assistant."
+
 
 # ---------------------------------------------------------------------------
 # Pool integration tests (AH-62 Phase 3)
