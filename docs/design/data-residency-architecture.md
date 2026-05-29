@@ -15,7 +15,7 @@ KEN-E already has the **routing key** (`data_region` on the account, values US /
 Everything else that touches account-scoped data is **single-region (`us-central1`) or global** — today KEN-E is, in the auditor's phrase, *"one US cell wearing a regional costume."* Five root causes generate the bulk of the findings:
 
 1. A **single global Firestore database** backs all accounts (US + EU), with cross-account collection-group sweeps that assume one DB.
-2. **Full prompt + response content is shipped to W&B Weave (US SaaS)** because `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` is baked into dev/staging agent deploys — the most direct egress of regulated EU content.
+2. **Full prompt + response content is shipped to W&B Weave (US SaaS)** because `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` is set for dev/staging agent deploys (`deploy_ken_e.py:367-370`; prod already sets it `false`), and Weave (US SaaS) receives traces in *every* environment — the most direct egress of regulated EU content. For the EU cell the work is therefore guaranteeing capture stays off **and** not initializing US-hosted Weave (AH-PRD-12), not flipping a prod default.
 3. **Vertex model inference + the Agent Engine reasoning/sandbox/session plane are pinned to `us-central1`** (bare model strings; ambient `VERTEX_AI_LOCATION`), so EU reasoning and EU context execute in the US. *(The recent `gemini-3.5-flash` 404 outage was an instance of this class — a bare model string resolving to the wrong endpoint.)*
 4. **OAuth tokens are encrypted by a US KMS key** with no account routing — EU credentials encrypted by a US-region key.
 5. **Neo4j is a single global Aura instance**, compounded by a cross-account authorization defect (see R-10).
@@ -121,7 +121,7 @@ A small pure resolver `resolve_model_location(environment, data_region) -> locat
 | ID | Sev | Cut | Component | Gap | Key sites |
 |----|-----|-----|-----------|-----|-----------|
 | **R-01** | 🔴 Crit | Blocker | data-management | Single global Firestore DB for all US+EU accounts; Shape B is logical-only, no physical residency | `firestore.py:61-83`, `dependencies.py:36-37` |
-| **R-02** | 🔴 Crit | Blocker | agentic-harness | Full prompt+response content → W&B Weave (US SaaS); OTEL content capture baked on | `weave_observability.py:110-114`, `deploy_ken_e.py:367-370` |
+| **R-02** | 🔴 Crit | Blocker | agentic-harness | Full prompt+response content → W&B Weave (US SaaS); OTEL content capture on in dev/staging (prod already off), gated per-env not per-region; Weave US SaaS in all envs | `weave_observability.py:110-114`, `deploy_ken_e.py:367-370` |
 | **R-03** | 🔴 Crit | Blocker | agentic-harness | Bare model strings → ambient/global Vertex endpoint; EU prompts processed in US | `builder.py:465` |
 | **R-04** | 🔴 Crit | Blocker | agentic-harness | Agent Engine reasoning + sandbox + session pinned us-central1 | `deploy_ken_e.py:297-304`, `sandbox_pool.py:78-82`, `chat.py:376` |
 | **R-05** | 🔴 Crit | Blocker | integrations | OAuth tokens encrypted with a US KMS key for all accounts | `encryption_service.py:50-52,145-230` |
@@ -165,26 +165,53 @@ R-20 (SAR-E/Performance regional-by-design), R-21 (cross-cell admin + change-reg
 
 **R-10** is a cross-account authorization leak that is **exploitable today** regardless of regions: `delete_product_category()` / `delete_product()` / `update_product()` match Cypher on `node_id` alone, so a `node_id` from another account can discover and cascade-delete relationships across tenants. Bind `account_id` in every `WHERE` clause (template: `create_node` / `list_nodes` / `get_node`) and add a Cypher review checklist. This should go out as a standalone hotfix PR ahead of the residency program.
 
+### 6.5 Transitive critical path — the launch-blocking dependency chain
+
+**Decision (2026-05-29): close the full residency blocker set by launch — EU live at launch, not gated.** §6.1 lists eight gap-register blockers, but each launch-blocker *slice* also depends on its component's **foundation** PRD, and every one of those is currently un-started. The genuine launch-critical set is the transitive closure below — it is the program's dominant schedule risk and must be managed as a single critical path, not eight independent blockers:
+
+| Launch blocker (slice) | Foundation it also needs (`blocked_by`) | Foundation status | Critical-path action |
+|---|---|---|---|
+| DM-PRD-09 — R-01, R-08 | DM-PRD-08 (prod cutover) | ✅ shipped | **Start now** — keystone, unblocked; blocks all others. |
+| KG-PRD-07 — R-06 | KG-PRD-01 (migration runner) | not started | KG-PRD-01 has no dependencies — start in parallel now. |
+| CH-PRD-07 — R-07, R-11, R-17 | CH-PRD-05 (todo lists + artifacts) | not started | Start CH-PRD-05 now. |
+| AH-PRD-11 — R-03, R-04, R-16 | AH-PRD-09 (per-turn dispatch; 6-phase) | not started | AH-PRD-09's prerequisites (AH-PRD-01/02, DM-PRD-00) are shipped — start now; it is the long pole. The R-03 model-routing half can land early against already-shipped surfaces (`model_routing.py` + the before-agent callback), so split it from the R-04/R-16 engine work. |
+| AH-PRD-12 — R-02, R-12 | AH-PRD-11 → AH-PRD-09 | not started | Sequenced behind AH-PRD-11; the R-02 content-capture-off half can land early/independently. |
+| IN-PRD-08 — R-05 | IN-PRD-01 → DM-PRD-07 → PR-PRD-01 + DM-PRD-05 | not started (3-deep) | **Longest chain, highest risk** — R-05 sits behind roles/members/audit + the project-tasks data model, none of it residency work. De-risk first, or scope R-05 to regionalize the *current* encryption substrate without waiting for the full IN-PRD-01 (IN-PRD-08 §2 already supports either substrate). |
+
+**Crash plan.** DM-PRD-09, KG-PRD-01, CH-PRD-05, and AH-PRD-09 are all startable now (prerequisites shipped) and are the long poles — run them in parallel immediately. The R-10 hotfix ships ahead of all of it (§6.4). The IN-PRD-01 → DM-PRD-07 → PR-PRD-01 chain is the critical path for R-05 and needs the earliest de-risking, or the scoped-down R-05 above.
+
+**The one risk the crash plan cannot remove — R-04 (external).** Whether Vertex AI Agent Engine is GA in an EU region by launch (open Q1) is outside the team's control. Committing to an EU launch does not change that: if EU Agent Engine GA has not landed, AH-PRD-11's R-04/R-16 (EU reasoning / sandbox / session) cannot be made resident, and locked decision **D6** still governs — gate EU sign-ups **for that reason alone** until GA lands, even with every internal blocker closed. R-04 is therefore the single residual launch risk under this posture: track Q1 weekly and keep the EU sign-up gate (Feature-Flags) ready as the R-04-specific fallback.
+
 ---
 
-## 7. Breakdown into PRDs (proposed)
+## 7. Breakdown into component PRDs
 
-A `DR-PRD-NN` series, each a standard 10-section PRD mapping ~1:1 to a Linear project. R-01 is the keystone that unblocks most others.
+**Homing decision (2026-05-29):** data residency is **not** a new component. Each slice below is a PRD **homed in the existing component that owns the affected code**, carrying that component's PRD prefix and next-available number. The program is held together by two cross-cutting artifacts, not by a component directory:
 
-| PRD | Title | Closes | Notes |
-|-----|-------|--------|-------|
-| **DR-PRD-00** | Regional-cell foundation | R-01, R-08, R-18, R-22 | GCP project-per-region, Terraform regionalization, global routing directory, `get_firestore(account_id)` DI, `data_region` immutability + enum. **Keystone — start first.** |
-| **DR-PRD-01** | Agent reasoning + inference residency | R-03, R-04, R-16 | EU Agent Engine, regional model endpoint, sandbox + session routing. **Gated on EU Agent Engine GA.** **First slice (in progress): the per-environment `resolve_model_location` resolver — `development → global` — which closes AH-86 in dev (see §3.5).** |
-| **DR-PRD-02** | Observability residency | R-02, R-12 | EU content-capture off + EU-resident trace/log sink + large-attr bucket. |
-| **DR-PRD-03** | Integrations residency | R-05 | Per-region KMS keyrings; `integration_credentials`/`oauth_states` under Shape B. |
-| **DR-PRD-04** | Knowledge-graph residency | R-06 | One EU Neo4j **instance per region** (not multi-DB in one instance); keep a single database per regional instance; `NEO4J_URI` routing by `data_region`. Confirm Aura-EU vs self-host (open Q4). *(R-10 ships separately as a hotfix.)* |
-| **DR-PRD-05** | Chat residency | R-07, R-11, R-17 | Region-routed artifact buckets, regional Redis, Shape-B idempotency keys. |
-| **DR-PRD-06** | Telemetry & analytics residency | R-13, R-14 | Shape-B/regional `usage_records`; per-region BigQuery datasets. |
-| **DR-PRD-07** | Cross-account sweep regionalization | R-09 | Per-region schedulers (PR-PRD-06), session-end loop (KG-PRD-04), deletion fan-out, audit. |
-| **DR-PRD-08** | Data Pipeline residency | R-19 | Regional Cloud Run + run records + artifacts (fold into DP-PRD before it ships). |
-| **DR-PRD-09** | SAR-E / Performance residency-by-design | R-20 | Bake regional requirements into SE-PRD-01/02/05/06 + PE-PRD-01. |
-| **DR-PRD-10** | Cross-cell admin + change-region migration | R-21 | Per-region fan-out for admin ops; supervised account region-migration tool. |
-| **(hotfix)** | Neo4j cross-account `account_id` binding | R-10 | Standalone PR, ahead of the program. |
+1. **This design doc** — the cross-component spec (locked decisions, gap register, cut-line). It plays the role `multi-tenant-data-model-research-findings.md` played for the Shape B migration.
+2. **The "Data Residency (US + EU)" Linear Initiative** — the execution tracker that groups every component slice's Linear project.
+
+The **keystone is `DM-PRD-09` (Regional-cell foundation)**, homed in Data Management. It ships the `account_id → region` routing directory, the `get_<resource>(account_id)` DI pattern — the **Regional Cell routing convention**, documented in [`components/data-management/README.md`](components/data-management/README.md) §7.8 the same way the Shape B path convention is the cross-component contract — and `data_region` immutability + enum validation. **Every other slice is `blocked_by` `DM-PRD-09` and reuses its routing helper rather than reinventing per-component.**
+
+The `DR-PRD-NN` column is a stable *logical* label tying each slice back to the gap register (§5) and is **independent of the component PRD numbers** (e.g. logical `DR-PRD-00` becomes `DM-PRD-09`). The **Owning component → Component PRD** column is the actual PRD / Linear project the slice becomes; `NN` = next-available number in that component, assigned at creation.
+
+| Logical slice | Title | Closes | Owning component → Component PRD | Notes |
+|-----|-------|--------|----------------------------------|-------|
+| **DR-PRD-00** | Regional-cell foundation | R-01, R-08, R-18, R-22 | **data-management → `DM-PRD-09`** | GCP project-per-region, Terraform regionalization, global routing directory, `get_firestore(account_id)` DI, `data_region` immutability + enum. **Keystone — created first; blocks all others.** |
+| **DR-PRD-01** | Agent reasoning + inference residency | R-03, R-04, R-16 | agentic-harness → `AH-PRD-11` | EU Agent Engine, regional model endpoint, sandbox + session routing. **Gated on EU Agent Engine GA.** First slice already shipped: the per-environment `resolve_model_location` resolver (`development → global`) closing AH-86 in dev (PR #751; see §3.5). |
+| **DR-PRD-02** | Observability residency | R-02, R-12 | agentic-harness → `AH-PRD-12` | EU content-capture off + EU-resident trace/log sink + large-attr bucket. |
+| **DR-PRD-03** | Integrations residency | R-05 | integrations → `IN-PRD-08` | Per-region KMS keyrings; `integration_credentials` / `oauth_states` region-routed. |
+| **DR-PRD-04** | Knowledge-graph residency | R-06 | knowledge-graph → `KG-PRD-07` | One EU Neo4j **instance per region** (not multi-DB in one instance); keep a single database per regional instance; `NEO4J_URI` routing by `data_region`. Confirm Aura-EU vs self-host (open Q4). *(R-10 ships separately as a hotfix.)* |
+| **DR-PRD-05** | Chat residency | R-07, R-11, R-17 | chat → `CH-PRD-07` | Region-routed artifact buckets, regional Redis, Shape-B idempotency keys. |
+| **DR-PRD-06** | Telemetry & analytics residency | R-13, R-14 | billing → `BL-PRD-07` (+ sar-e) | Shape-B/regional `usage_records`; per-region BigQuery datasets (BigQuery work split to a future `SE-PRD`). |
+| **DR-PRD-07** | Cross-account sweep regionalization | R-09 | project-tasks → `PR-PRD-10` (+ data-management) | Per-region schedulers (PR-PRD-06), session-end loop (KG-PRD-04), deletion fan-out, audit. |
+| **DR-PRD-08** | Data Pipeline residency | R-19 | data-pipeline → `DP-PRD-07` | Regional Cloud Run + run records + artifacts (fold into DP-PRD before it ships). |
+| **DR-PRD-09** | SAR-E / Performance residency-by-design | R-20 | sar-e → `SE-PRD-08` (+ performance) | Bake regional requirements into SE-PRD-01/02/05/06 + PE-PRD-01. |
+| **DR-PRD-10** | Cross-cell admin + change-region migration | R-21 | data-management → `DM-PRD-10` | Per-region fan-out for admin ops; supervised account region-migration tool. |
+| **(hotfix)** | Neo4j cross-account `account_id` binding | R-10 | knowledge-graph (standalone PR) | Ships ahead of the program; not gated on residency. |
+| **(phase 1)** | MCP server region/account routing | R-15 | agentic-harness — Phase-1 follow-up (slice TBD) | Not a launch blocker; deferred to post-launch Phase-1 hardening. Explicitly **not** folded into AH-PRD-11 (which excludes it, §2). Listed here so the gap-register item has an owner rather than being orphaned. |
+
+**Status (2026-05-29):** the [Data Residency (US + EU) Initiative](https://linear.app/ken-e/initiative/data-residency-us-eu-e60f510ef09b), the keystone `DM-PRD-09` (full PRD authored), and **stub Linear projects for all ten dependent slices** — each linked to the Initiative, status Backlog, blocked by `DM-PRD-09`, homed in the team above — are created. The numbers in the **Component PRD** column are the allocated IDs. **The component PRD documents for all ten dependent slices are now authored** (in this change), each against the *proposed* DM-PRD-09 foundation contract and carrying its relevant open questions — so each will need a reconciliation pass if the foundation's open questions (Q3 topology / Q5 org-region scope / Q6 EU region) resolve differently. Multi-component slices (DR-PRD-06/07/09) are homed in the primary component's project with the secondary team attached for visibility.
 
 ---
 

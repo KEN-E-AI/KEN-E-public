@@ -155,7 +155,7 @@ This component publishes no public HTTP API. Its contracts are structural and co
 
 ## 5. Project Index
 
-The component's work is split across **9 project PRDs** under [`projects/`](./projects/). Every PRD is self-contained — a team can pick one up and ship it without reading the others. The blocking relationships below determine how many teams can work in parallel at each phase. DM-PRD-07 was added alongside the Figma-frontend backend alignment: role-based access control and a formal audit-log schema are cross-cutting concerns that belong with Data Management rather than with any single consumer component. DM-PRD-08 was added after DM-PRD-06's staging cutover closed cleanly: the same Shape A residue (and the DM-92 `accounts`-field residue) exists in `ken-e-production` today, so production gets its own one-shot cutover project rather than absorbing the work into the staging-scoped DM-PRD-06.
+The component's work is split across project PRDs under [`projects/`](./projects/) — **nine Shape B migration PRDs (DM-PRD-00 through DM-PRD-08)** plus two data-residency PRDs — keystone **[DM-PRD-09](./projects/DM-PRD-09-regional-cell-foundation.md)** and **[DM-PRD-10](./projects/DM-PRD-10-cross-cell-admin-region-migration.md)** — which belong to a separate cross-component workstream (see §7.8 and [`../../data-residency-architecture.md`](../../data-residency-architecture.md)) rather than the migration chain. Every PRD is self-contained — a team can pick one up and ship it without reading the others. The blocking relationships below determine how many teams can work in parallel at each phase. DM-PRD-07 was added alongside the Figma-frontend backend alignment: role-based access control and a formal audit-log schema are cross-cutting concerns that belong with Data Management rather than with any single consumer component. DM-PRD-08 was added after DM-PRD-06's staging cutover closed cleanly: the same Shape A residue (and the DM-92 `accounts`-field residue) exists in `ken-e-production` today, so production gets its own one-shot cutover project rather than absorbing the work into the staging-scoped DM-PRD-06.
 
 ### 5.1 Projects
 
@@ -170,6 +170,10 @@ The component's work is split across **9 project PRDs** under [`projects/`](./pr
 | [DM-PRD-06](./projects/DM-PRD-06-verification-and-cutover.md) | Verification & Staging Cutover | Complete | 1 d | DM-PRD-05 | — |
 | [DM-PRD-07](./projects/DM-PRD-07-approval-workflow-and-audit.md) | Roles, Members, Audit Substrate | Blocked | 4–5 d | PR-PRD-01, DM-PRD-05 | PR-PRD-07 |
 | [DM-PRD-08](./projects/DM-PRD-08-production-cutover.md) | Production Cutover | Complete | 1 d | DM-PRD-06 | — |
+| [DM-PRD-09](./projects/DM-PRD-09-regional-cell-foundation.md) | Regional-Cell Foundation | Ready to start | 4–5 d | DM-PRD-08 | DR-PRD-01–DR-PRD-10 (residency program) |
+| [DM-PRD-10](./projects/DM-PRD-10-cross-cell-admin-region-migration.md) | Cross-Cell Admin & Region Migration | Ready to start | 4–5 d | DM-PRD-09 | — |
+
+**DM-PRD-09 and DM-PRD-10 are not part of the Shape B migration chain below.** They belong to the data-residency program — a separate cross-component workstream tracked by the "Data Residency (US + EU)" Linear Initiative and spec'd by [`../../data-residency-architecture.md`](../../data-residency-architecture.md). DM-PRD-09 (keystone) depends only on the production cutover and blocks every per-component residency slice (§7.8); DM-PRD-10 (cross-cell admin + supervised region migration, phase 2) builds on DM-PRD-09.
 
 ### 5.2 Dependency graph
 
@@ -318,6 +322,12 @@ Every production cross-account read — scheduler sweeps, audit aggregation, aut
 | `campaigns` (`is_active ASC, objective ASC, updated_at DESC`) | collection-scope | PR-PRD-08 | Campaign picker in the activity form |
 
 When a new query crosses account boundaries, add a collection-group index here rather than iterating accounts in the application layer. When a consumer needs a single-account list filter, add the index to the owning component's Terraform file and register it in this table. When a new audit subcollection is registered with the audit substrate (DM-PRD-07 §4.8), add its collection-group `at` index here too.
+
+### 7.8 Regional Cell routing convention `[PLANNED — DM-PRD-09]`
+
+Data residency adds a **second** cross-component contract alongside the Shape B path convention (§7.1): where Shape B fixes the *logical path* of account-scoped data, the Regional Cell convention fixes its *physical region*. Each account is pinned to a regional cell (US or EU) by its **immutable** `data_region`; every region-bound resource (Firestore, Neo4j, KMS, model endpoint, Redis, BigQuery, GCS) is obtained through a `get_<resource>(account_id)` resolver that looks up the account's home region in a global `account_id → region` directory and returns the region-appropriate client. The reference implementation already exists for GCS — `storage_service.py::_get_bucket_config(data_region)` (a `data_region → (resource, location)` map with a US default and a normalize/validate step).
+
+`DM-PRD-09` (Regional-cell foundation) authors the canonical version of this convention here once the foundation lands. Until then, the spec is [`../../data-residency-architecture.md`](../../data-residency-architecture.md) (§2 locked decisions, §3.4 reference pattern, §3.5 model endpoints) and the keystone PRD [`./projects/DM-PRD-09-regional-cell-foundation.md`](./projects/DM-PRD-09-regional-cell-foundation.md). **No component may hardcode a region or a single-region client for account-scoped data** — it routes through the resolver, exactly as every component routes account-scoped Firestore paths through Shape B (§7.1).
 
 ---
 
