@@ -59,7 +59,9 @@ class ChatService {
 
   /**
    * Stream a chat response from the Agent Engine.
-   * This returns an async generator that yields chunks of the response.
+   * This returns an async generator that yields answer text chunks only.
+   * Reasoning events are consumed internally so callers that depend on
+   * the legacy string contract are not broken.
    */
   async *streamMessage(
     messages: ChatMessage[],
@@ -67,7 +69,16 @@ class ChatService {
     accountId?: string,
   ): AsyncGenerator<string, void, unknown> {
     try {
-      yield* streamChatCompletion(messages, sessionId, accountId);
+      for await (const event of streamChatCompletion(
+        messages,
+        sessionId,
+        accountId,
+      )) {
+        if (event.type === "text") {
+          yield event.text;
+        }
+        // reasoning events are silently consumed — legacy callers don't handle them.
+      }
     } catch (error) {
       console.error("Error streaming chat message:", error);
       yield "I'm sorry, I'm having trouble processing your request right now. Please try again in a moment.";

@@ -5,7 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ArtifactBlock } from "./ArtifactBlock";
 import { getConversationHistory, streamChatCompletion } from "@/lib/chatApi";
-import type { ChatMessage } from "@/lib/chatApi";
+import type { ChatMessage, StreamEvent } from "@/lib/chatApi";
 import { parseConversationHistory } from "@/lib/parseConversationHistory";
 import { useOrgStatus } from "@/hooks/useOrgStatus";
 import { useMarkRead } from "@/hooks/useMarkRead";
@@ -65,6 +65,12 @@ export function ChatInterface({
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [thinkingStartTime, setThinkingStartTime] = useState(0);
+  // Reasoning fragments accumulated during the live turn. Reset at the start of
+  // each handleSend so a new turn never shows thoughts from a prior turn.
+  const [liveThoughts, setLiveThoughts] = useState<string[]>([]);
+  // Ref mirrors liveThoughts so handleStop (a stale closure) can read the
+  // current value without being recreated on every reasoning event.
+  const liveThoughtsRef = useRef<string[]>([]);
   const [chatTextSize, setChatTextSize] = useState<TextSize>("medium");
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -174,13 +180,16 @@ export function ChatInterface({
     abortRef.current?.abort();
     abortRef.current = null;
     const duration = Math.round((Date.now() - thinkingStartTime) / 1000);
+    // Read partial reasoning via ref so this stale closure always sees the
+    // latest thoughts even though it can't depend on liveThoughts state.
+    const partialThoughts = liveThoughtsRef.current;
     const stoppedMsg: Message = {
       id: `stopped-${crypto.randomUUID()}`,
       role: "assistant",
       content: "Generation was stopped by the user.",
       timestamp: new Date(),
       stopped: true,
-      reasoning: { thoughts: [], durationSeconds: duration },
+      reasoning: { thoughts: partialThoughts, durationSeconds: duration },
     };
     setMessages((prev) => [...prev, stoppedMsg]);
     setIsStreaming(false);
@@ -211,12 +220,18 @@ export function ChatInterface({
     setInput("");
     setIsStreaming(true);
     setThinkingStartTime(Date.now());
+    // Reset reasoning for this new turn.
+    setLiveThoughts([]);
+    liveThoughtsRef.current = [];
 
     const controller = new AbortController();
     abortRef.current = controller;
 
     const assistantId = `asst-${crypto.randomUUID()}`;
     let accumulated = "";
+    // Local accumulator mirrors liveThoughts so we can read the final value
+    // inside setMessages without a stale closure.
+    let collectedThoughts: string[] = [];
 
     setMessages((prev) => [
       ...prev,
@@ -241,19 +256,39 @@ export function ChatInterface({
         onSessionStarted?.(newId);
       }
 
-      for await (const chunk of streamChatCompletion(
+      for await (const event of streamChatCompletion(
         history,
         activeSessionId,
         undefined,
         controller.signal,
       )) {
-        accumulated += chunk;
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId ? { ...m, content: accumulated } : m,
-          ),
-        );
+        if (event.type === "reasoning") {
+          collectedThoughts = [...collectedThoughts, event.text];
+          liveThoughtsRef.current = collectedThoughts;
+          setLiveThoughts(collectedThoughts);
+        } else {
+          accumulated += event.text;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId ? { ...m, content: accumulated } : m,
+            ),
+          );
+        }
       }
+
+      // Persist reasoning on the completed message when thoughts were collected.
+      const finalThoughts = collectedThoughts;
+      const duration = Math.round((Date.now() - thinkingStartTime) / 1000);
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id !== assistantId) return m;
+          if (finalThoughts.length === 0) return m;
+          return {
+            ...m,
+            reasoning: { thoughts: finalThoughts, durationSeconds: duration },
+          };
+        }),
+      );
       setIsStreaming(false);
     } catch (err: unknown) {
       const name = (err as Error)?.name;
@@ -377,7 +412,7 @@ export function ChatInterface({
               <div className="max-w-[80%]">
                 <ThinkingBlock
                   isThinking={true}
-                  thoughts={[]}
+                  thoughts={liveThoughts}
                   onStop={handleStop}
                 />
               </div>

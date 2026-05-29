@@ -115,6 +115,22 @@ def _contains_function_event_str(text: str) -> bool:
     )
 
 
+def _format_sse(channel: str, text: str, seq: int) -> str:
+    """Format a Server-Sent Event frame for the given channel.
+
+    Args:
+        channel: "text" or "reasoning".
+        text: The payload text.
+        seq: Monotonically increasing sequence number (only used for reasoning).
+
+    Returns:
+        A complete SSE frame string ready to be yielded to the client.
+    """
+    if channel == "reasoning":
+        return f"event: reasoning\ndata: {json.dumps({'text': text, 'seq': seq})}\n\n"
+    return f"data: {text}\n\n"
+
+
 async def load_organization_context_from_neo4j(account_id: str) -> str | None:
     """Load organization context from Neo4j using API's Neo4j service.
 
@@ -1789,22 +1805,26 @@ class AgentEngineClient:
         conversation_name: str | None = None,
         account_id: str | None = None,
         accumulator: SessionTurnAccumulator | None = None,
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[tuple[str, str], None]:
         """Stream a chat completion from the Agent Engine using agent_engines API.
 
         When `accumulator` is supplied, every raw chunk is folded into it via
         `add_stream_chunk` before text extraction — this is how a cancelled
         stream still flushes partial token counts (CH-PRD-01 §7 AC-8).
+
+        Yields:
+            Tuples of ``(channel, text)`` where ``channel`` is one of
+            ``"text"`` or ``"reasoning"``.
         """
         if not self.agent_engine:
-            yield "I'm sorry, but I'm unable to process your request at the moment. Please try again later."
+            yield ("text", "I'm sorry, but I'm unable to process your request at the moment. Please try again later.")
             return
 
         try:
             # Get the latest message
             latest_message = messages[-1] if messages else None
             if not latest_message:
-                yield "I didn't receive any message to process."
+                yield ("text", "I didn't receive any message to process.")
                 return
 
             user_input = latest_message.content
@@ -1914,33 +1934,45 @@ class AgentEngineClient:
                                     content["parts"], list
                                 ):
                                     for part in content["parts"]:
-                                        if isinstance(part, dict) and "text" in part:
-                                            yield part["text"]
-                                        elif isinstance(
+                                        if isinstance(
                                             part, dict
                                         ) and _is_function_event_part(part):
                                             logger.debug(
                                                 "Skipping function_call/function_response part in stream"
                                             )
+                                        elif (
+                                            isinstance(part, dict)
+                                            and part.get("thought", False)
+                                            and "text" in part
+                                        ):
+                                            yield ("reasoning", part["text"])
+                                        elif isinstance(part, dict) and "text" in part:
+                                            yield ("text", part["text"])
                                         else:
-                                            yield str(part)
+                                            yield ("text", str(part))
                                 else:
-                                    yield str(content)
+                                    yield ("text", str(content))
                             # Handle direct structure: {'parts': [{'text': '...'}]}
                             elif "parts" in chunk and isinstance(chunk["parts"], list):
                                 for part in chunk["parts"]:
-                                    if isinstance(part, dict) and "text" in part:
-                                        yield part["text"]
-                                    elif isinstance(
+                                    if isinstance(
                                         part, dict
                                     ) and _is_function_event_part(part):
                                         logger.debug(
                                             "Skipping function_call/function_response part in stream"
                                         )
+                                    elif (
+                                        isinstance(part, dict)
+                                        and part.get("thought", False)
+                                        and "text" in part
+                                    ):
+                                        yield ("reasoning", part["text"])
+                                    elif isinstance(part, dict) and "text" in part:
+                                        yield ("text", part["text"])
                                     else:
-                                        yield str(part)
+                                        yield ("text", str(part))
                             elif "content" in chunk:
-                                yield str(chunk["content"])
+                                yield ("text", str(chunk["content"]))
                             else:
                                 # CH-59: a dict chunk with no `content`/`parts` is a
                                 # contentless ADK control event (e.g. the state-delta
@@ -1990,11 +2022,11 @@ class AgentEngineClient:
                                                 isinstance(part, dict)
                                                 and "text" in part
                                             ):
-                                                yield part["text"]
+                                                yield ("text", part["text"])
                                     else:
-                                        yield chunk
+                                        yield ("text", chunk)
                                 except (ValueError, SyntaxError):
-                                    yield chunk
+                                    yield ("text", chunk)
 
                             # Check if the chunk contains both function data and text
                             elif _contains_function_event_str(chunk):
@@ -2020,7 +2052,7 @@ class AgentEngineClient:
 
                                     # Only yield the text part if it exists and isn't empty
                                     if text_part:
-                                        yield text_part
+                                        yield ("text", text_part)
                                 else:
                                     # Try simpler approach: split by the last }} and take what comes after
                                     # This handles cases where the regex might fail
@@ -2030,16 +2062,16 @@ class AgentEngineClient:
                                             # Check if the remaining part isn't another JSON object
                                             remaining = parts[1].strip()
                                             if not remaining.startswith("{"):
-                                                yield remaining
+                                                yield ("text", remaining)
                                     elif not chunk.strip().startswith("{"):
                                         # If it doesn't start with {, it's probably just text
-                                        yield chunk
+                                        yield ("text", chunk)
                             else:
-                                yield chunk
+                                yield ("text", chunk)
                         elif hasattr(chunk, "content"):
-                            yield str(chunk.content)
+                            yield ("text", str(chunk.content))
                         else:
-                            yield str(chunk)
+                            yield ("text", str(chunk))
                     return
 
                 # Fallback: use regular query and yield the result
@@ -2203,7 +2235,8 @@ async def _stream_completion_sse(
     accumulator = SessionTurnAccumulator()
     turn_failed = False
     try:
-        async for chunk in agent_client.stream_chat_completion(
+        _reasoning_seq = 0
+        async for channel, text in agent_client.stream_chat_completion(
             messages=messages,
             user_context=user_context,
             session_id=session_id,
@@ -2211,8 +2244,11 @@ async def _stream_completion_sse(
             account_id=account_id,
             accumulator=accumulator,
         ):
-            # Format as Server-Sent Events
-            yield f"data: {chunk}\n\n"
+            if channel == "reasoning":
+                yield _format_sse("reasoning", text, _reasoning_seq)
+                _reasoning_seq += 1
+            else:
+                yield _format_sse("text", text, 0)
         yield "data: [DONE]\n\n"
     except (asyncio.CancelledError, GeneratorExit, Exception):
         # SSE cancellation (GeneratorExit / CancelledError) or an agent-side
