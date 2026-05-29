@@ -722,6 +722,104 @@ class TestConfigLoader:
         assert result.automatically_available is False
         assert result.visible_in_frontend is False
 
+    # AH-82: ken_e_sub_agent tests
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_ken_e_sub_agent_defaults_to_true_when_absent(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """AH-82: docs without ken_e_sub_agent load as True (fail-open delegatable)."""
+        from app.adk.agents.agent_factory.config_loader import load_agent_config
+
+        minimal_doc = {"instruction": "Hello.", "model": "gemini-2.5-pro"}
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=minimal_doc)
+
+        result = load_agent_config("test_agent")
+
+        assert result.ken_e_sub_agent is True
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_ken_e_sub_agent_round_trips_explicit_false(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """AH-82: explicit False round-trips correctly (strategy-pipeline agents)."""
+        from app.adk.agents.agent_factory.config_loader import load_agent_config
+
+        doc = {
+            "instruction": "Formats business research.",
+            "model": "gemini-2.5-pro",
+            "ken_e_sub_agent": False,
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=doc)
+
+        result = load_agent_config("business_formatter")
+
+        assert result.ken_e_sub_agent is False
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_ken_e_sub_agent_round_trips_explicit_true(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """AH-82: explicit True round-trips correctly."""
+        from app.adk.agents.agent_factory.config_loader import load_agent_config
+
+        doc = {
+            "instruction": "Researches news.",
+            "model": "gemini-2.5-pro",
+            "ken_e_sub_agent": True,
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=doc)
+
+        result = load_agent_config("news_researcher")
+
+        assert result.ken_e_sub_agent is True
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_ken_e_sub_agent_not_in_storage_internal_fields(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """AH-82: ken_e_sub_agent must NOT be in _STORAGE_INTERNAL_FIELDS.
+
+        If it were stripped before validation, the runtime filter would always
+        see the True default and the migration's False writes would be ignored.
+        """
+        from app.adk.agents.agent_factory.config_loader import (
+            _STORAGE_INTERNAL_FIELDS,
+        )
+
+        assert "ken_e_sub_agent" not in _STORAGE_INTERNAL_FIELDS
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_ken_e_sub_agent_extra_forbid_still_active(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """AH-82: extra='forbid' rejects docs with unknown fields even after adding
+        ken_e_sub_agent.  Guard against accidental removal of model_config."""
+        from app.adk.agents.agent_factory.config_loader import (
+            ConfigValidationError,
+            load_agent_config,
+        )
+
+        doc_with_unknown = {
+            "instruction": "Hello.",
+            "model": "gemini-2.5-pro",
+            "ken_e_sub_agent": False,
+            "totally_unknown_field": "should_fail",
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=doc_with_unknown)
+
+        with pytest.raises(ConfigValidationError):
+            load_agent_config("test_agent")
+
     @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
     @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
     def test_default_acceptance_criteria_round_trips(

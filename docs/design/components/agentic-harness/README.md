@@ -63,7 +63,10 @@ After this component's Release 1 projects complete, adding a new specialist is a
                                    └── attach to root.sub_agents via attach_account_specialists()
 
   Root agent routes via "Available Specialists" block in the InstructionProvider;
-  specialists see a fixed ≤30-tool list resolved at runtime — no per-turn tool_filter.
+  only agents with ``ken_e_sub_agent=True`` appear in the block and are attached to
+  ``root.sub_agents``.  ``visible_in_frontend`` governs Workflows-page UI visibility
+  only and does NOT affect chat delegation (AH-82).
+  Specialists see a fixed ≤30-tool list resolved at runtime — no per-turn tool_filter.
   (See §2.5 Tool-assignment & routing model.)
 ```
 
@@ -138,6 +141,8 @@ Each specialist receives a **fixed curated tool roster of ≤30 tools** at const
 #### Routing (root agent → specialist)
 
 The root agent picks a specialist by **LLM reasoning over specialist descriptions** — not by tool-index lookup. Each `agent_configs/{id}` document carries a `description` field that answers "what does this specialist do, and when should the root pick it?" The root's system instruction lists all active specialists (name + description) and the dispatch tool functions the factory generated. Standard LLM tool-calling handles the selection.
+
+**Delegation gate (AH-82):** `available_specialists_provider` and `attach_specialists_before_agent_callback` filter the specialist set by `ken_e_sub_agent=True`. An agent with `ken_e_sub_agent=False` is **not** attached to `root.sub_agents` and does **not** appear in the Available Specialists prompt block, regardless of `visible_in_frontend`. `visible_in_frontend` exclusively controls the Workflows-page list (`?visible_in_frontend=true` API filter) — the two fields are orthogonal. This decoupling allows agents like the strategy-pipeline formatters to be hidden from the Workflows UI (`visible_in_frontend=False`) while also being excluded from chat delegation (`ken_e_sub_agent=False`), and allows future agents to be visible in the Workflows UI but non-delegatable (or vice versa).
 
 Why description-based, not tool-index-based:
 
@@ -289,6 +294,11 @@ Five touchpoints do not fit cleanly inside one PRD and need an owning team to co
 - `agent_configs/*` and `mcp_servers/*` are **global** collections per the Shape B carve-out. Per-account customization lives at `accounts/{account_id}/agent_configs/{config_id}` and is a shallow-merge overlay onto the global config.
 - `config_id` naming: global specialists use descriptive names (`google_analytics_specialist`, `project_planning`); user-authored custom agents use a `custom_` prefix + UUID.
 - Each specialist's tool roster is capped at **≤30 tools** at construction (see §2.5). Build fails fast if exceeded.
+- **Chat delegation gate (AH-82): `ken_e_sub_agent` field.** The two delegation filter sites (`available_specialists_provider` and `_attach_locked` in `sub_agent_attacher`) both read `config.ken_e_sub_agent` — **not** `visible_in_frontend`. The three boolean flags on every agent config are orthogonal:
+  - `ken_e_sub_agent=True` → agent is attached to `root.sub_agents` and appears in the Available Specialists prompt block (chat delegation gate).
+  - `visible_in_frontend=True` → agent appears in the Workflows-page list (`?visible_in_frontend=true` API query).
+  - `automatically_available=True` → the global config doc appears in the per-account merged list at all (inventory filter).
+  A strategy-pipeline formatter is typically `visible_in_frontend=False, ken_e_sub_agent=False`. A future agent that should be in the Workflows UI but not delegatable from chat would set `visible_in_frontend=True, ken_e_sub_agent=False`. When adding a new workflow-only agent, always set `ken_e_sub_agent=False` in the seed helper.
 
 ### Review loop (AH-PRD-01)
 - Specialist and reviewer are **direct children** of `LoopAgent`. No `SequentialAgent` wrapper — `SequentialAgent` would swallow `escalate` from `exit_loop`.

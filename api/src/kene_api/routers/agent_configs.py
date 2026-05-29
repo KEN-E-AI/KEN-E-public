@@ -178,7 +178,8 @@ def _build_firestore_updates(
     variant_name: str | None = None,
     experiment_id: str | None = None,
     notes: str | None = None,
-) -> dict[str, str | int | float]:
+    ken_e_sub_agent: bool | None = None,
+) -> dict[str, str | int | float | bool]:
     """
     Build type-safe Firestore update dictionary.
 
@@ -203,11 +204,12 @@ def _build_firestore_updates(
         variant_name: New variant name
         experiment_id: New experiment ID
         notes: Change notes
+        ken_e_sub_agent: AH-82 delegation gate flag
 
     Returns:
         Dictionary with Firestore update format (dot notation for metadata fields)
     """
-    updates: dict[str, str | int | float] = {}
+    updates: dict[str, str | int | float | bool] = {}
 
     if instruction is not None:
         updates["instruction"] = instruction
@@ -242,6 +244,10 @@ def _build_firestore_updates(
     if notes is not None:
         updates["metadata.notes"] = notes
 
+    # AH-82: boolean delegation gate — written only when explicitly provided.
+    if ken_e_sub_agent is not None:
+        updates["ken_e_sub_agent"] = ken_e_sub_agent
+
     return updates
 
 
@@ -273,6 +279,8 @@ def _snapshot_pre_image(
         snap["temperature"] = current_config.get("temperature")
     if update.max_output_tokens is not None:
         snap["max_output_tokens"] = current_config.get("max_output_tokens")
+    if update.ken_e_sub_agent is not None:
+        snap["ken_e_sub_agent"] = current_config.get("ken_e_sub_agent")
 
     return snap
 
@@ -297,6 +305,8 @@ def _snapshot_post_image(
         snap["temperature"] = updated_data.get("temperature")
     if update.max_output_tokens is not None:
         snap["max_output_tokens"] = updated_data.get("max_output_tokens")
+    if update.ken_e_sub_agent is not None:
+        snap["ken_e_sub_agent"] = updated_data.get("ken_e_sub_agent")
 
     return snap
 
@@ -591,6 +601,7 @@ async def update_agent_config(
             variant_name=update.variant_name,
             experiment_id=update.experiment_id,
             notes=update.notes,
+            ken_e_sub_agent=update.ken_e_sub_agent,
         )
 
         # Nullable identity fields use model_fields_set so a caller can
@@ -950,6 +961,11 @@ async def create_account_agent_config(
     if body.tool_ids is not None:
         _reject_unknown_tool_ids(body.tool_ids)
         doc_data["tool_ids"] = body.tool_ids
+    # AH-82: persist the delegation gate flag only when the caller explicitly
+    # sets it. Absence means the True default from MergedAgentConfig applies.
+    if not body.ken_e_sub_agent:
+        # Write only when False to keep the doc sparse on the common case.
+        doc_data["ken_e_sub_agent"] = body.ken_e_sub_agent
 
     try:
         (

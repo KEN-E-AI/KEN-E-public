@@ -242,6 +242,16 @@ class AgentConfigUpdate(BaseModel):
         default="", max_length=5000, description="Notes about this change"
     )
 
+    # AH-82: explicit delegation gate — controls whether this agent is
+    # attachable to root.sub_agents independent of visible_in_frontend.
+    ken_e_sub_agent: bool | None = Field(
+        None,
+        description=(
+            "True = delegatable from chat; False = excluded from sub_agents "
+            "and Available Specialists block. Independent of visible_in_frontend."
+        ),
+    )
+
     @field_validator("updated_by")
     @classmethod
     def validate_email_format(cls, v: str) -> str:
@@ -370,6 +380,11 @@ class MergedAgentConfig(BaseModel):
     automatically_available: bool = True
     visible_in_frontend: bool = True
 
+    # AH-82: explicit delegation gate — decoupled from UI visibility.
+    # True (default) → delegatable from chat; False → excluded from sub_agents
+    # and the Available Specialists block even if visible_in_frontend=True.
+    ken_e_sub_agent: bool = True
+
     # Discriminator populated by the merge logic
     customization_status: str = Field(
         default="default",
@@ -419,6 +434,10 @@ class AgentConfigCreate(BaseModel):
         ),
     )
     sandbox_code_executor_enabled: bool = False
+
+    # AH-82: explicit delegation gate — True (default) means this custom agent
+    # is delegatable from chat.
+    ken_e_sub_agent: bool = True
 
     @field_validator("model")
     @classmethod
@@ -472,6 +491,18 @@ class AgentConfigOverlayUpdate(BaseModel):
         ),
     )
     sandbox_code_executor_enabled: bool | None = None
+
+    # AH-82: per-account overlay can set the delegation gate independently of
+    # visible_in_frontend.  Omitting the field leaves the existing overlay value
+    # untouched; explicit True/False writes that selection.
+    ken_e_sub_agent: bool | None = Field(
+        None,
+        description=(
+            "True = delegatable from chat; False = excluded from sub_agents "
+            "and Available Specialists block. Independent of visible_in_frontend. "
+            "Omit to leave the existing overlay value untouched."
+        ),
+    )
 
     @field_validator("model")
     @classmethod

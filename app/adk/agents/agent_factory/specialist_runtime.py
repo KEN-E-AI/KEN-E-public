@@ -33,9 +33,10 @@ Design notes:
 * Phase 2 (AH-59): ``_build_specialist`` fetches MCP server docs directly from
   Firestore (one ``get()`` per server ID) and calls ``build_toolset_for_doc``.
   Phase 3 (AH-62): pool-backed checkout via ``McpToolsetPool`` (implemented).
-* ``available_specialists_provider`` filters to ``visible_in_frontend=True``
-  configs so strategy-pipeline and other hidden agents are excluded from the
-  block shown to the root agent.
+* ``available_specialists_provider`` filters to ``ken_e_sub_agent=True``
+  configs so strategy-pipeline and other workflow-only agents are excluded
+  from the block shown to the root agent.  ``visible_in_frontend`` is
+  unaffected by this filter — it governs Workflows-page UI visibility only.
 * AH-75: dispatch happens via ADK's native ``transfer_to_agent``; runtime
   attachment of resolved specialists to ``root.sub_agents`` lives in
   ``sub_agent_attacher`` (a sibling module), invoked from the root agent's
@@ -673,9 +674,16 @@ def available_specialists_provider(context: ReadonlyContext) -> str:
     Designed as an ADK ``InstructionProvider``-compatible callable
     ``(ReadonlyContext) -> str``.  Reads ``account_id`` from session state,
     lists all agent configs visible to the account, resolves each to a
-    ``LlmAgent``, filters to ``visible_in_frontend=True``, and formats the
-    result using :func:`assemble_available_specialists_block` from
-    ``dispatch.py``.
+    ``LlmAgent``, filters to ``ken_e_sub_agent=True`` (the chat-delegation
+    gate introduced in AH-82), and formats the result using
+    :func:`assemble_available_specialists_block` from ``dispatch.py``.
+
+    Note: ``visible_in_frontend`` is intentionally NOT used as a filter here.
+    It controls Workflows-page UI visibility only.  An agent with
+    ``visible_in_frontend=False, ken_e_sub_agent=True`` will appear in this
+    block and be delegatable, while one with
+    ``visible_in_frontend=True, ken_e_sub_agent=False`` will be shown in the
+    Workflows page but will not be delegatable from chat.
 
     Agents that fail to resolve are logged and excluded from the block rather
     than surfacing as errors to the root agent.
@@ -751,7 +759,9 @@ def available_specialists_provider(context: ReadonlyContext) -> str:
     for doc_id in doc_ids:
         try:
             config = resolve_config(doc_id, account_id)
-            if not config.visible_in_frontend:
+            # AH-82: filter on the explicit delegation gate, not visible_in_frontend.
+            # visible_in_frontend drives Workflows-page UI visibility only.
+            if not config.ken_e_sub_agent:
                 continue
             agent = resolve_agent(doc_id, account_id, session_state=session_state)
             specialists[doc_id] = agent
