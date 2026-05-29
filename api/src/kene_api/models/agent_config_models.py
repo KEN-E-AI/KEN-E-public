@@ -139,6 +139,14 @@ class AgentConfig(BaseModel):
             "[…]=explicit subset."
         ),
     )
+
+    # AH-82: explicit chat-delegation gate, decoupled from UI visibility.
+    # True (default) → delegatable from chat; False → excluded from
+    # root.sub_agents and the Available Specialists block. Carried on the read
+    # model so the global GET/PUT responses surface the stored value (docs that
+    # predate the field load as the True default).
+    ken_e_sub_agent: bool = True
+
     metadata: AgentConfigMetadata
 
     @field_validator("tool_ids")

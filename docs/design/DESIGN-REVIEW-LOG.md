@@ -1882,7 +1882,7 @@ AH-82 introduces `ken_e_sub_agent: bool = True` as the explicit, independent del
 | `app/adk/agents/agent_factory/tests/test_config_loader.py` | Added 5 tests for `ken_e_sub_agent` round-trip, default, and `_STORAGE_INTERNAL_FIELDS` exclusion |
 | `app/adk/agents/agent_factory/tests/test_sub_agent_attacher.py` | Rewrote `test_invisible_specialist_filtered_out` → `test_non_sub_agent_filtered_out` + added `test_visible_in_frontend_false_still_delegatable` cross-product case; updated `_patched_resolvers` helper |
 | `app/adk/agents/agent_factory/tests/test_specialist_runtime.py` | Updated `_make_merged_config` helper to accept `ken_e_sub_agent` kwarg; rewrote `test_filters_out_not_visible_in_frontend` → `test_filters_out_not_ken_e_sub_agent` + added `test_visible_in_frontend_does_not_affect_delegation` |
-| `api/src/kene_api/models/agent_config_models.py` | Added `ken_e_sub_agent` to `MergedAgentConfig`, `AgentConfigCreate`, `AgentConfigUpdate`, `AgentConfigOverlayUpdate` |
+| `api/src/kene_api/models/agent_config_models.py` | Added `ken_e_sub_agent` to all five API models — `AgentConfig` (read model, default `True` so the global GET/PUT responses surface the stored value), `MergedAgentConfig`, `AgentConfigCreate`, `AgentConfigUpdate`, `AgentConfigOverlayUpdate` |
 | `api/src/kene_api/routers/agent_configs.py` | Threaded `ken_e_sub_agent` through `_build_firestore_updates()`, `_snapshot_pre_image()`, `_snapshot_post_image()`, `create_account_agent_config`, and `update_agent_config` |
 | `api/scripts/migrate_agent_configs_add_ken_e_sub_agent.py` | **New** — idempotent migration script |
 | `api/scripts/tests/test_migrate_agent_configs_add_ken_e_sub_agent.py` | **New** — unit + fake-Firestore tests for the migration |
