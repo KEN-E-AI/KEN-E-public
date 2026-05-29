@@ -22,6 +22,8 @@ Coverage map
   resource name format (tests 11-16).
 * AC-8 — Weave span content (tests 17-22): cache_hit, pool_size_after,
   reason correctness for each eviction path; no-op evict still emits a span.
+* Invariant guard — _release refcount-underflow (refcount==0 on entry) returns
+  False, preserves entry, does not drive refcount negative, logs ERROR (test 35).
 """
 
 from __future__ import annotations
