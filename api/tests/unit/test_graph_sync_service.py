@@ -3,6 +3,7 @@
 Tests generic CRUD operations for all node types using mocked dependencies.
 """
 
+import contextlib
 from datetime import datetime
 from unittest.mock import AsyncMock, Mock
 
@@ -3399,3 +3400,110 @@ class TestRollupStrategyListOptimization:
         # Assert
         assert result["items"] == []
         assert result["total"] == 0
+
+
+class TestR10CrossAccountScoping:
+    """R-10: every cascade/relationship query that anchors on a caller-supplied
+    node_id MUST bind account_id, so a node_id from another account cannot
+    enumerate or cascade a tenant's graph. The anchor node (the one matched by
+    the caller-supplied node_id) is scoped to the account via a ``BELONGS_TO``
+    edge, mirroring ``get_node`` / ``list_nodes``. See REVIEW.md Cypher checklist.
+    """
+
+    @staticmethod
+    def _account_scoped(call) -> bool:
+        """A discovery query is account-scoped when it both binds the
+        ``account_id`` param and references it in a BELONGS_TO clause."""
+        query, params = call.args[0], call.args[1]
+        return (
+            params.get("account_id") is not None
+            and "$account_id" in query
+            and "BELONGS_TO" in query
+        )
+
+    @pytest.mark.asyncio
+    async def test_delete_product_category_cascade_is_account_scoped(
+        self, graph_sync_service, mock_neo4j_service
+    ):
+        mock_neo4j_service.execute_query.return_value = []
+        with contextlib.suppress(NodeNotFoundException):
+            await graph_sync_service.delete_product_category(
+                "acc_A", "prodcat_X", "user_1"
+            )
+
+        cascade = [
+            c
+            for c in mock_neo4j_service.execute_query.call_args_list
+            if "(cat:ProductCategory {node_id: $node_id})" in c.args[0]
+        ]
+        assert len(cascade) == 2  # products + category value-propositions discovery
+        assert all(self._account_scoped(c) for c in cascade), [
+            c.args[0] for c in cascade
+        ]
+        assert all(c.args[1]["account_id"] == "acc_A" for c in cascade)
+
+    @pytest.mark.asyncio
+    async def test_delete_product_cascade_is_account_scoped(
+        self, graph_sync_service, mock_neo4j_service
+    ):
+        mock_neo4j_service.execute_query.return_value = []
+        with contextlib.suppress(NodeNotFoundException):
+            await graph_sync_service.delete_product("acc_A", "prod_X", "user_1")
+
+        cascade = [
+            c
+            for c in mock_neo4j_service.execute_query.call_args_list
+            if "(prod:Product {node_id: $node_id})" in c.args[0]
+        ]
+        assert len(cascade) == 1
+        assert self._account_scoped(cascade[0]), cascade[0].args[0]
+
+    @pytest.mark.asyncio
+    async def test_delete_competitor_cascade_is_account_scoped(
+        self, graph_sync_service, mock_neo4j_service
+    ):
+        mock_neo4j_service.execute_query.return_value = []
+        with contextlib.suppress(NodeNotFoundException):
+            await graph_sync_service.delete_competitor_cascade(
+                "acc_A", "comp_X", "user_1"
+            )
+
+        cascade = [
+            c
+            for c in mock_neo4j_service.execute_query.call_args_list
+            if "(c:Competitor {node_id: $node_id})" in c.args[0]
+        ]
+        assert len(cascade) == 8  # all competitor cascade discovery queries
+        assert all(self._account_scoped(c) for c in cascade), [
+            c.args[0] for c in cascade
+        ]
+        assert all(c.args[1]["account_id"] == "acc_A" for c in cascade)
+
+    @pytest.mark.asyncio
+    async def test_delete_customer_profile_anchor_is_account_scoped(
+        self, graph_sync_service, mock_neo4j_service
+    ):
+        mock_neo4j_service.execute_query.return_value = []
+        with contextlib.suppress(NodeNotFoundException):
+            await graph_sync_service.delete_customer_profile(
+                "acc_A", "profile_X", "user_1"
+            )
+
+        cascade = [
+            c
+            for c in mock_neo4j_service.execute_query.call_args_list
+            if "(cp:CustomerProfile {node_id: $profile_id})" in c.args[0]
+        ]
+        assert len(cascade) == 5  # one discovery query per marketing-strategy type
+        # The CustomerProfile ANCHOR itself must be scoped, not only the strategy `s`.
+        assert all(
+            "(cp)-[:BELONGS_TO]->(:Account {account_id: $account_id})" in c.args[0]
+            for c in cascade
+        ), [c.args[0] for c in cascade]
+
+    # Note: ``update_product``'s post-update category lookup is also scoped to the
+    # account in the fix, but it is *gated* — it only runs after ``update_node``'s
+    # account-scoped ``get_node`` confirms the product belongs to the caller — so it
+    # is defense-in-depth rather than an exploitable leak. It is exercised by the
+    # REVIEW.md Cypher checklist and the existing ``update_product`` happy-path test,
+    # not re-driven here (fully mocking ``update_node``'s firestore-sync path is brittle).

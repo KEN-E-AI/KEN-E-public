@@ -789,9 +789,12 @@ class GraphSyncService:
         # First, get all products in this category
         prod_query = """
         MATCH (cat:ProductCategory {node_id: $node_id})-[:INCLUDES_PRODUCT]->(prod:Product)
+        WHERE (cat)-[:BELONGS_TO]->(:Account {account_id: $account_id})
         RETURN prod.node_id as prod_node_id
         """
-        prod_results = await self.neo4j.execute_query(prod_query, {"node_id": node_id})
+        prod_results = await self.neo4j.execute_query(
+            prod_query, {"node_id": node_id, "account_id": account_id}
+        )
 
         # Cascade delete each product (which will in turn delete their VPs)
         for record in prod_results:
@@ -804,10 +807,11 @@ class GraphSyncService:
         # Delete value propositions directly linked to the category
         cat_vp_query = """
         MATCH (cat:ProductCategory {node_id: $node_id})-[:HAS_VALUE_PROPOSITION]->(vp:ValueProposition)
+        WHERE (cat)-[:BELONGS_TO]->(:Account {account_id: $account_id})
         RETURN vp.node_id as vp_node_id
         """
         cat_vp_results = await self.neo4j.execute_query(
-            cat_vp_query, {"node_id": node_id}
+            cat_vp_query, {"node_id": node_id, "account_id": account_id}
         )
 
         # Delete each category-level value proposition
@@ -940,10 +944,13 @@ class GraphSyncService:
         # Fetch category_node_id from relationship
         query = """
         MATCH (cat:ProductCategory)-[:INCLUDES_PRODUCT]->(p:Product {node_id: $node_id})
+        WHERE (p)-[:BELONGS_TO]->(:Account {account_id: $account_id})
         RETURN cat.node_id as category_node_id
         """
 
-        category_result = await self.neo4j.execute_query(query, {"node_id": node_id})
+        category_result = await self.neo4j.execute_query(
+            query, {"node_id": node_id, "account_id": account_id}
+        )
 
         if category_result and len(category_result) > 0:
             result["category_node_id"] = category_result[0]["category_node_id"]
@@ -966,9 +973,12 @@ class GraphSyncService:
         # First, cascade delete all value propositions linked to this product
         vp_query = """
         MATCH (prod:Product {node_id: $node_id})-[:HAS_VALUE_PROPOSITION]->(vp:ValueProposition)
+        WHERE (prod)-[:BELONGS_TO]->(:Account {account_id: $account_id})
         RETURN vp.node_id as vp_node_id
         """
-        vp_results = await self.neo4j.execute_query(vp_query, {"node_id": node_id})
+        vp_results = await self.neo4j.execute_query(
+            vp_query, {"node_id": node_id, "account_id": account_id}
+        )
 
         # Delete each value proposition
         for record in vp_results:
@@ -2128,9 +2138,12 @@ class GraphSyncService:
         # 1. Delete all risks (from strengths) first
         risk_query = """
         MATCH (c:Competitor {node_id: $node_id})-[:HAS_STRENGTH]->(cs:CompetitorStrength)-[:CREATES]->(r:Risk)
+        WHERE (c)-[:BELONGS_TO]->(:Account {account_id: $account_id})
         RETURN r.node_id as risk_node_id
         """
-        risk_results = await self.neo4j.execute_query(risk_query, {"node_id": node_id})
+        risk_results = await self.neo4j.execute_query(
+            risk_query, {"node_id": node_id, "account_id": account_id}
+        )
 
         for record in risk_results:
             risk_node_id = record["risk_node_id"]
@@ -2143,10 +2156,11 @@ class GraphSyncService:
         # 2. Delete all strengths (now that risks are gone)
         strength_query = """
         MATCH (c:Competitor {node_id: $node_id})-[:HAS_STRENGTH]->(cs:CompetitorStrength)
+        WHERE (c)-[:BELONGS_TO]->(:Account {account_id: $account_id})
         RETURN cs.node_id as strength_node_id
         """
         strength_results = await self.neo4j.execute_query(
-            strength_query, {"node_id": node_id}
+            strength_query, {"node_id": node_id, "account_id": account_id}
         )
 
         for record in strength_results:
@@ -2168,10 +2182,11 @@ class GraphSyncService:
         # 3. Delete all opportunities (from weaknesses) first
         opportunity_query = """
         MATCH (c:Competitor {node_id: $node_id})-[:HAS_WEAKNESS]->(cw:CompetitorWeakness)-[:CREATES]->(o:Opportunity)
+        WHERE (c)-[:BELONGS_TO]->(:Account {account_id: $account_id})
         RETURN o.node_id as opportunity_node_id
         """
         opportunity_results = await self.neo4j.execute_query(
-            opportunity_query, {"node_id": node_id}
+            opportunity_query, {"node_id": node_id, "account_id": account_id}
         )
 
         for record in opportunity_results:
@@ -2185,10 +2200,11 @@ class GraphSyncService:
         # 4. Delete all weaknesses (now that opportunities are gone)
         weakness_query = """
         MATCH (c:Competitor {node_id: $node_id})-[:HAS_WEAKNESS]->(cw:CompetitorWeakness)
+        WHERE (c)-[:BELONGS_TO]->(:Account {account_id: $account_id})
         RETURN cw.node_id as weakness_node_id
         """
         weakness_results = await self.neo4j.execute_query(
-            weakness_query, {"node_id": node_id}
+            weakness_query, {"node_id": node_id, "account_id": account_id}
         )
 
         for record in weakness_results:
@@ -2210,10 +2226,11 @@ class GraphSyncService:
         # 5. Delete all value propositions from substitute products first
         sub_vp_query = """
         MATCH (c:Competitor {node_id: $node_id})-[:OFFERS_PRODUCT]->(sp:SubstituteProduct)-[:HAS_VALUE_PROPOSITION]->(vp:ValueProposition)
+        WHERE (c)-[:BELONGS_TO]->(:Account {account_id: $account_id})
         RETURN vp.node_id as vp_node_id
         """
         sub_vp_results = await self.neo4j.execute_query(
-            sub_vp_query, {"node_id": node_id}
+            sub_vp_query, {"node_id": node_id, "account_id": account_id}
         )
 
         for record in sub_vp_results:
@@ -2227,10 +2244,11 @@ class GraphSyncService:
         # 6. Delete all substitute products (now that their VPs are gone, unlink products)
         substitute_query = """
         MATCH (c:Competitor {node_id: $node_id})-[:OFFERS_PRODUCT]->(sp:SubstituteProduct)
+        WHERE (c)-[:BELONGS_TO]->(:Account {account_id: $account_id})
         RETURN sp.node_id as substitute_node_id
         """
         substitute_results = await self.neo4j.execute_query(
-            substitute_query, {"node_id": node_id}
+            substitute_query, {"node_id": node_id, "account_id": account_id}
         )
 
         for record in substitute_results:
@@ -2252,10 +2270,11 @@ class GraphSyncService:
         # 7. Delete all tactics
         tactic_query = """
         MATCH (c:Competitor {node_id: $node_id})-[:USES_TACTIC]->(ct:CompetitorTactic)
+        WHERE (c)-[:BELONGS_TO]->(:Account {account_id: $account_id})
         RETURN ct.node_id as tactic_node_id
         """
         tactic_results = await self.neo4j.execute_query(
-            tactic_query, {"node_id": node_id}
+            tactic_query, {"node_id": node_id, "account_id": account_id}
         )
 
         for record in tactic_results:
@@ -2269,9 +2288,12 @@ class GraphSyncService:
         # 8. Delete value propositions directly linked to competitor
         vp_query = """
         MATCH (c:Competitor {node_id: $node_id})-[:HAS_VALUE_PROPOSITION]->(vp:ValueProposition)
+        WHERE (c)-[:BELONGS_TO]->(:Account {account_id: $account_id})
         RETURN vp.node_id as vp_node_id
         """
-        vp_results = await self.neo4j.execute_query(vp_query, {"node_id": node_id})
+        vp_results = await self.neo4j.execute_query(
+            vp_query, {"node_id": node_id, "account_id": account_id}
+        )
 
         for record in vp_results:
             vp_node_id = record["vp_node_id"]
@@ -2848,7 +2870,8 @@ class GraphSyncService:
             # Find all strategies linked to this profile
             query = f"""
             MATCH (cp:CustomerProfile {{node_id: $profile_id}})-[]->(s:{strategy_type})
-            WHERE (s)-[:BELONGS_TO]->(:Account {{account_id: $account_id}})
+            WHERE (cp)-[:BELONGS_TO]->(:Account {{account_id: $account_id}})
+              AND (s)-[:BELONGS_TO]->(:Account {{account_id: $account_id}})
             RETURN s.node_id as node_id
             """
             strategies = await self.neo4j.execute_query(

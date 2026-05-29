@@ -13,6 +13,7 @@ Code Review rules. Treat violations as findings.
 - **No hardcoded credentials** — use environment variables or Secret Manager (D-5)
 - **Conventional Commit format** on PR title (GH-1)
 - **Context managers** for Neo4j sessions and file operations (D-1, PY-5)
+- **Account-scoped Cypher** — every Neo4j query that matches a node by a caller-supplied `node_id` (or other caller-supplied identifier) MUST bind `account_id` so it cannot read or mutate another tenant's graph. Scope the **anchor** node (the one the caller's id matches) via `(n)-[:BELONGS_TO]->(:Account {account_id: $account_id})` (or a `node.account_id = $account_id` predicate), mirroring `get_node` / `list_nodes`. Scoping only the *returned*/downstream node is insufficient — the anchor itself must be scoped, and cascade-discovery queries must scope before they enumerate. Reference: `graph_sync_service.py` cascade queries (R-10).
 - **TDD evidence** — new code should have corresponding tests (C-1)
 
 ## Style
