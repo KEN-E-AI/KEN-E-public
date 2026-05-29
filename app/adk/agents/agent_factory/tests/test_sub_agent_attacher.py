@@ -1345,7 +1345,9 @@ class TestStateCaptureNameTitle:
                 )
             raise FirestoreConnectionError("simulated transient error")
 
-        def _resolve_agent(doc_id: str, _acc=None, _ttl=60, session_state=None) -> LlmAgent:
+        def _resolve_agent(
+            doc_id: str, _acc=None, _ttl=60, session_state=None
+        ) -> LlmAgent:
             return a
 
         with (

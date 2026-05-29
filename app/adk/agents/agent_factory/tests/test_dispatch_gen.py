@@ -134,7 +134,9 @@ class TestNameTitleRendering:
         return {"human_name": human_name, "title": title}
 
     def test_both_clauses_present(self) -> None:
-        specialists = {"ben_e_agent": _make_specialist("ben_e_agent", "Guards the brand.")}
+        specialists = {
+            "ben_e_agent": _make_specialist("ben_e_agent", "Guards the brand.")
+        }
         metadata = {"ben_e_agent": self._make_meta("BEN-E", "Brand Guardian")}
         result = assemble_available_specialists_block(specialists, metadata=metadata)
 
@@ -144,14 +146,18 @@ class TestNameTitleRendering:
         )
 
     def test_only_human_name(self) -> None:
-        specialists = {"ben_e_agent": _make_specialist("ben_e_agent", "Guards the brand.")}
+        specialists = {
+            "ben_e_agent": _make_specialist("ben_e_agent", "Guards the brand.")
+        }
         metadata = {"ben_e_agent": self._make_meta("BEN-E")}
         result = assemble_available_specialists_block(specialists, metadata=metadata)
 
         assert '- **ben_e_agent** — known as "BEN-E": Guards the brand.' in result
 
     def test_only_title(self) -> None:
-        specialists = {"ben_e_agent": _make_specialist("ben_e_agent", "Guards the brand.")}
+        specialists = {
+            "ben_e_agent": _make_specialist("ben_e_agent", "Guards the brand.")
+        }
         metadata = {"ben_e_agent": self._make_meta(title="Brand Guardian")}
         result = assemble_available_specialists_block(specialists, metadata=metadata)
 
@@ -169,14 +175,20 @@ class TestNameTitleRendering:
             specialists, metadata={}
         )
 
-        assert without_metadata == "## Available Specialists\n\n- **spec**: Does things."
+        assert (
+            without_metadata == "## Available Specialists\n\n- **spec**: Does things."
+        )
         assert with_empty_metadata == without_metadata
         assert with_no_metadata_key == without_metadata
 
     def test_bold_token_is_always_doc_id(self) -> None:
         """The bold/routing token must be the doc_id, not the human name."""
-        specialists = {"ga_specialist": _make_specialist("ga_specialist", "GA queries.")}
-        metadata = {"ga_specialist": self._make_meta("Google Analytics Agent", "Analytics")}
+        specialists = {
+            "ga_specialist": _make_specialist("ga_specialist", "GA queries.")
+        }
+        metadata = {
+            "ga_specialist": self._make_meta("Google Analytics Agent", "Analytics")
+        }
         result = assemble_available_specialists_block(specialists, metadata=metadata)
 
         bullets = [l for l in result.splitlines() if l.startswith("- **")]
@@ -225,7 +237,9 @@ class TestAssembleSpecialistsBlockFromState:
         assert "None registered" in result
 
     def test_basic_name_description_renders(self) -> None:
-        dicts = [{"name": "my_spec", "description": "Does things.", "agent_id": "my_spec"}]
+        dicts = [
+            {"name": "my_spec", "description": "Does things.", "agent_id": "my_spec"}
+        ]
         result = assemble_specialists_block_from_state(dicts)
         assert "- **my_spec**: Does things." in result
 

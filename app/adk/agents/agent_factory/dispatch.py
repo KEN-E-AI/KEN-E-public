@@ -93,7 +93,7 @@ def _format_specialist_line(
 
 def assemble_available_specialists_block(
     specialists: dict[str, BaseAgent],
-    metadata: "Mapping[str, Mapping[str, str | None]] | None" = None,
+    metadata: Mapping[str, Mapping[str, str | None]] | None = None,
 ) -> str:
     """Build a Markdown block listing every registered specialist.
 
