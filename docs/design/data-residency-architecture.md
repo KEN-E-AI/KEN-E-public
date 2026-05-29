@@ -167,24 +167,33 @@ R-20 (SAR-E/Performance regional-by-design), R-21 (cross-cell admin + change-reg
 
 ---
 
-## 7. Breakdown into PRDs (proposed)
+## 7. Breakdown into component PRDs
 
-A `DR-PRD-NN` series, each a standard 10-section PRD mapping ~1:1 to a Linear project. R-01 is the keystone that unblocks most others.
+**Homing decision (2026-05-29):** data residency is **not** a new component. Each slice below is a PRD **homed in the existing component that owns the affected code**, carrying that component's PRD prefix and next-available number. The program is held together by two cross-cutting artifacts, not by a component directory:
 
-| PRD | Title | Closes | Notes |
-|-----|-------|--------|-------|
-| **DR-PRD-00** | Regional-cell foundation | R-01, R-08, R-18, R-22 | GCP project-per-region, Terraform regionalization, global routing directory, `get_firestore(account_id)` DI, `data_region` immutability + enum. **Keystone — start first.** |
-| **DR-PRD-01** | Agent reasoning + inference residency | R-03, R-04, R-16 | EU Agent Engine, regional model endpoint, sandbox + session routing. **Gated on EU Agent Engine GA.** **First slice (in progress): the per-environment `resolve_model_location` resolver — `development → global` — which closes AH-86 in dev (see §3.5).** |
-| **DR-PRD-02** | Observability residency | R-02, R-12 | EU content-capture off + EU-resident trace/log sink + large-attr bucket. |
-| **DR-PRD-03** | Integrations residency | R-05 | Per-region KMS keyrings; `integration_credentials`/`oauth_states` under Shape B. |
-| **DR-PRD-04** | Knowledge-graph residency | R-06 | One EU Neo4j **instance per region** (not multi-DB in one instance); keep a single database per regional instance; `NEO4J_URI` routing by `data_region`. Confirm Aura-EU vs self-host (open Q4). *(R-10 ships separately as a hotfix.)* |
-| **DR-PRD-05** | Chat residency | R-07, R-11, R-17 | Region-routed artifact buckets, regional Redis, Shape-B idempotency keys. |
-| **DR-PRD-06** | Telemetry & analytics residency | R-13, R-14 | Shape-B/regional `usage_records`; per-region BigQuery datasets. |
-| **DR-PRD-07** | Cross-account sweep regionalization | R-09 | Per-region schedulers (PR-PRD-06), session-end loop (KG-PRD-04), deletion fan-out, audit. |
-| **DR-PRD-08** | Data Pipeline residency | R-19 | Regional Cloud Run + run records + artifacts (fold into DP-PRD before it ships). |
-| **DR-PRD-09** | SAR-E / Performance residency-by-design | R-20 | Bake regional requirements into SE-PRD-01/02/05/06 + PE-PRD-01. |
-| **DR-PRD-10** | Cross-cell admin + change-region migration | R-21 | Per-region fan-out for admin ops; supervised account region-migration tool. |
-| **(hotfix)** | Neo4j cross-account `account_id` binding | R-10 | Standalone PR, ahead of the program. |
+1. **This design doc** — the cross-component spec (locked decisions, gap register, cut-line). It plays the role `multi-tenant-data-model-research-findings.md` played for the Shape B migration.
+2. **The "Data Residency (US + EU)" Linear Initiative** — the execution tracker that groups every component slice's Linear project.
+
+The **keystone is `DM-PRD-09` (Regional-cell foundation)**, homed in Data Management. It ships the `account_id → region` routing directory, the `get_<resource>(account_id)` DI pattern — the **Regional Cell routing convention**, documented in [`components/data-management/README.md`](components/data-management/README.md) §7.8 the same way the Shape B path convention is the cross-component contract — and `data_region` immutability + enum validation. **Every other slice is `blocked_by` `DM-PRD-09` and reuses its routing helper rather than reinventing per-component.**
+
+The `DR-PRD-NN` column is a stable *logical* label tying each slice back to the gap register (§5) and is **independent of the component PRD numbers** (e.g. logical `DR-PRD-00` becomes `DM-PRD-09`). The **Owning component → Component PRD** column is the actual PRD / Linear project the slice becomes; `NN` = next-available number in that component, assigned at creation.
+
+| Logical slice | Title | Closes | Owning component → Component PRD | Notes |
+|-----|-------|--------|----------------------------------|-------|
+| **DR-PRD-00** | Regional-cell foundation | R-01, R-08, R-18, R-22 | **data-management → `DM-PRD-09`** | GCP project-per-region, Terraform regionalization, global routing directory, `get_firestore(account_id)` DI, `data_region` immutability + enum. **Keystone — created first; blocks all others.** |
+| **DR-PRD-01** | Agent reasoning + inference residency | R-03, R-04, R-16 | agentic-harness → `AH-PRD-11` | EU Agent Engine, regional model endpoint, sandbox + session routing. **Gated on EU Agent Engine GA.** First slice already shipped: the per-environment `resolve_model_location` resolver (`development → global`) closing AH-86 in dev (PR #751; see §3.5). |
+| **DR-PRD-02** | Observability residency | R-02, R-12 | agentic-harness → `AH-PRD-12` | EU content-capture off + EU-resident trace/log sink + large-attr bucket. |
+| **DR-PRD-03** | Integrations residency | R-05 | integrations → `IN-PRD-08` | Per-region KMS keyrings; `integration_credentials` / `oauth_states` region-routed. |
+| **DR-PRD-04** | Knowledge-graph residency | R-06 | knowledge-graph → `KG-PRD-07` | One EU Neo4j **instance per region** (not multi-DB in one instance); keep a single database per regional instance; `NEO4J_URI` routing by `data_region`. Confirm Aura-EU vs self-host (open Q4). *(R-10 ships separately as a hotfix.)* |
+| **DR-PRD-05** | Chat residency | R-07, R-11, R-17 | chat → `CH-PRD-07` | Region-routed artifact buckets, regional Redis, Shape-B idempotency keys. |
+| **DR-PRD-06** | Telemetry & analytics residency | R-13, R-14 | billing → `BL-PRD-07` (+ sar-e) | Shape-B/regional `usage_records`; per-region BigQuery datasets (BigQuery work split to a future `SE-PRD`). |
+| **DR-PRD-07** | Cross-account sweep regionalization | R-09 | project-tasks → `PR-PRD-10` (+ data-management) | Per-region schedulers (PR-PRD-06), session-end loop (KG-PRD-04), deletion fan-out, audit. |
+| **DR-PRD-08** | Data Pipeline residency | R-19 | data-pipeline → `DP-PRD-07` | Regional Cloud Run + run records + artifacts (fold into DP-PRD before it ships). |
+| **DR-PRD-09** | SAR-E / Performance residency-by-design | R-20 | sar-e → `SE-PRD-08` (+ performance) | Bake regional requirements into SE-PRD-01/02/05/06 + PE-PRD-01. |
+| **DR-PRD-10** | Cross-cell admin + change-region migration | R-21 | data-management → `DM-PRD-10` | Per-region fan-out for admin ops; supervised account region-migration tool. |
+| **(hotfix)** | Neo4j cross-account `account_id` binding | R-10 | knowledge-graph (standalone PR) | Ships ahead of the program; not gated on residency. |
+
+**Status (2026-05-29):** the [Data Residency (US + EU) Initiative](https://linear.app/ken-e/initiative/data-residency-us-eu-e60f510ef09b), the keystone `DM-PRD-09` (full PRD authored), and **stub Linear projects for all ten dependent slices** — each linked to the Initiative, status Backlog, blocked by `DM-PRD-09`, homed in the team above — are created. The numbers in the **Component PRD** column are the allocated IDs. The component **PRD documents** for the dependent slices are authored when each is scheduled; until then this doc (the §7 row + the §5 gap register) is the interim spec. Multi-component slices (DR-PRD-06/07/09) are homed in the primary component's project with the secondary team attached for visibility.
 
 ---
 
