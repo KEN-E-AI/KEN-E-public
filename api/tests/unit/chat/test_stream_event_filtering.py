@@ -95,7 +95,7 @@ class TestStreamingSkipsContentlessEvents:
 
         # Only the real answer reaches the client; the event dict (whose keys
         # would otherwise appear verbatim) is dropped entirely.
-        assert "".join(responses) == _ANSWER
+        assert "".join(text for _channel, text in responses) == _ANSWER
 
 
 class TestNonStreamingSkipsContentlessEvents:

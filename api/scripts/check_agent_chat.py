@@ -191,13 +191,13 @@ async def test_agent_chat():
         print(f"📤 Streaming message: '{test_messages[0].content}'")
 
         response_parts = []
-        async for chunk in client.stream_chat_completion(
+        async for channel, text in client.stream_chat_completion(
             messages=test_messages,
             user_context=test_user,
             session_id=test_session_id + "_stream",
         ):
-            response_parts.append(chunk)
-            print(f"📥 Chunk: {chunk[:50]}...")
+            response_parts.append(text)
+            print(f"📥 Chunk [{channel}]: {text[:50]}...")
 
         full_response = "".join(response_parts)
         print("\n✅ Streaming completion successful!")

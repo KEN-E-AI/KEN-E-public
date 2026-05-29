@@ -303,15 +303,34 @@ export async function postChatCompletion(
 }
 
 /**
+ * Discriminated-union event emitted by streamChatCompletion.
+ * - "text": a fragment of the assistant's answer text.
+ * - "reasoning": a fragment of the model's reasoning (thought) text.
+ * Unknown SSE event types are silently dropped.
+ */
+export type StreamEvent =
+  | { type: "text"; text: string }
+  | { type: "reasoning"; text: string };
+
+/**
  * POST /api/v1/chat/completions (streaming SSE)
- * Async generator yielding raw SSE data-line payloads.
+ * Async generator yielding discriminated StreamEvent objects.
+ *
+ * Wire protocol:
+ *   - Answer text:   `data: <text>\n\n`           (default SSE channel)
+ *   - Reasoning:     `event: reasoning\n`
+ *                    `data: {"text":"...","seq":N}\n\n`
+ *   - Stream end:    `data: [DONE]\n\n`
+ *
+ * Backward-compatible: a pre-CH-60 server that emits only default `data:`
+ * lines works identically — only "text" events are produced.
  */
 export async function* streamChatCompletion(
   messages: ChatMessage[],
   sessionId?: string,
   accountId?: string,
   signal?: AbortSignal,
-): AsyncGenerator<string, void, unknown> {
+): AsyncGenerator<StreamEvent, void, unknown> {
   const request: ChatRequest = {
     messages,
     stream: true,
@@ -357,6 +376,37 @@ export async function* streamChatCompletion(
   // Buffer carries an incomplete trailing line across reads so an SSE line
   // split across TCP packets isn't silently dropped.
   let buffer = "";
+  // Per-event accumulation. Per the SSE spec, an event is a run of field lines
+  // terminated by a blank line, and consecutive `data:` lines are concatenated
+  // with "\n" to form the payload. The backend emits one `data:` line per line
+  // of a multi-line fragment (SSE-injection safety), so this join is what
+  // restores embedded newlines — without it, line and paragraph breaks in the
+  // streamed answer collapse (the message bubble renders `whitespace-pre-wrap`).
+  let currentEvent = "message";
+  let dataLines: string[] = [];
+
+  // Build the StreamEvent for a completed event block, or null when it should
+  // be dropped (unknown event type, malformed reasoning JSON).
+  const buildEvent = (eventType: string, data: string): StreamEvent | null => {
+    if (eventType === "reasoning") {
+      try {
+        const parsed = JSON.parse(data) as { text: string; seq: number };
+        return { type: "reasoning", text: parsed.text };
+      } catch {
+        // Malformed reasoning JSON — drop silently, no UI noise.
+        console.debug(
+          "[streamChatCompletion] malformed reasoning payload:",
+          data,
+        );
+        return null;
+      }
+    }
+    if (eventType === "message") {
+      return { type: "text", text: data };
+    }
+    // Unknown event types (e.g. "event: ping") — dropped.
+    return null;
+  };
 
   try {
     while (true) {
@@ -368,22 +418,43 @@ export async function* streamChatCompletion(
       buffer = lines.pop() ?? "";
 
       for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          const data = line.slice(6).trim();
-          if (data === "[DONE]") {
-            return;
+        if (line === "") {
+          // Blank line: event boundary — dispatch the accumulated event.
+          if (dataLines.length > 0) {
+            const data = dataLines.join("\n");
+            dataLines = [];
+            if (data === "[DONE]") {
+              return;
+            }
+            const event = buildEvent(currentEvent, data);
+            if (event) {
+              yield event;
+            }
           }
-          if (data) {
-            yield data;
-          }
+          currentEvent = "message";
+        } else if (line.startsWith("event: ")) {
+          currentEvent = line.slice(7).trim();
+        } else if (line.startsWith("data: ")) {
+          // Do NOT trim — leading/trailing spaces and empty data lines are
+          // meaningful and must round-trip into the joined payload.
+          dataLines.push(line.slice(6));
         }
+        // Other SSE fields (comments ":", "id:", "retry:") are ignored.
       }
     }
 
+    // Flush an event left unterminated by a final blank line (server closed
+    // the stream without the trailing "\n\n").
     if (buffer.startsWith("data: ")) {
-      const data = buffer.slice(6).trim();
-      if (data && data !== "[DONE]") {
-        yield data;
+      dataLines.push(buffer.slice(6));
+    }
+    if (dataLines.length > 0) {
+      const data = dataLines.join("\n");
+      if (data !== "[DONE]") {
+        const event = buildEvent(currentEvent, data);
+        if (event) {
+          yield event;
+        }
       }
     }
   } finally {

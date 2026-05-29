@@ -22,6 +22,7 @@ import {
   toChatSessionId as mkSessionId,
   toChatCategoryId as mkCategoryId,
 } from "./chatApi";
+import type { StreamEvent } from "./chatApi";
 
 // ─── Mock the shared axios instance ──────────────────────────────────────────
 
@@ -420,12 +421,15 @@ describe("streamChatCompletion", () => {
     );
 
     const messages = [{ role: "user" as const, content: "Stream this" }];
-    const chunks: string[] = [];
-    for await (const chunk of streamChatCompletion(messages)) {
-      chunks.push(chunk);
+    const events: StreamEvent[] = [];
+    for await (const event of streamChatCompletion(messages)) {
+      events.push(event);
     }
 
-    expect(chunks).toEqual(["chunk1", "chunk2"]);
+    expect(events).toEqual([
+      { type: "text", text: "chunk1" },
+      { type: "text", text: "chunk2" },
+    ]);
     expect(mockFetch).toHaveBeenCalledWith(
       expect.stringContaining("/api/v1/chat/completions"),
       expect.objectContaining({
@@ -452,13 +456,13 @@ describe("streamChatCompletion", () => {
     });
     mockFetch.mockResolvedValueOnce(new Response(body, { status: 200 }));
 
-    const chunks: string[] = [];
-    for await (const chunk of streamChatCompletion([
+    const events: StreamEvent[] = [];
+    for await (const event of streamChatCompletion([
       { role: "user" as const, content: "split" },
     ])) {
-      chunks.push(chunk);
+      events.push(event);
     }
-    expect(chunks).toEqual(["hello"]);
+    expect(events).toEqual([{ type: "text", text: "hello" }]);
   });
 
   it("throws when fetch is invoked with an aborted signal", async () => {

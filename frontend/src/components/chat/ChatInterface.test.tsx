@@ -7,6 +7,7 @@ import {
   act,
 } from "@testing-library/react";
 import { ChatInterface } from "./ChatInterface";
+import type { StreamEvent } from "@/lib/chatApi";
 
 // ─── Module mocks ────────────────────────────────────────────────────────────
 
@@ -45,12 +46,13 @@ const mockGetConversationHistory = vi.mocked(getConversationHistory);
 const mockUseOrgStatus = vi.mocked(useOrgStatus);
 const mockUseMarkRead = vi.mocked(useMarkRead);
 
-// Helper: build an async generator that yields chunks then completes
+// Helper: build an async generator that yields text StreamEvents then completes.
+// Accepts plain strings for brevity (each string becomes a text event).
 async function* makeStream(
   chunks: string[],
-): AsyncGenerator<string, void, unknown> {
+): AsyncGenerator<StreamEvent, void, unknown> {
   for (const chunk of chunks) {
-    yield chunk;
+    yield { type: "text", text: chunk };
   }
 }
 
@@ -94,8 +96,8 @@ describe("ChatInterface", () => {
   test("TC-2: ThinkingBlock renders while SSE stream is in-flight", async () => {
     // A stream that never resolves until we tell it to
     let resolve!: () => void;
-    const blockingStream = (async function* () {
-      yield "partial";
+    const blockingStream = (async function* (): AsyncGenerator<StreamEvent> {
+      yield { type: "text", text: "partial" };
       await new Promise<void>((r) => (resolve = r));
     })();
     mockStreamChatCompletion.mockReturnValue(blockingStream);
@@ -150,8 +152,8 @@ describe("ChatInterface", () => {
 
   test("TC-Stop: ghost placeholder removed and stopped message visible after Stop", async () => {
     let resolve!: () => void;
-    const blockingStream = (async function* () {
-      yield "partial";
+    const blockingStream = (async function* (): AsyncGenerator<StreamEvent> {
+      yield { type: "text", text: "partial" };
       await new Promise<void>((r) => (resolve = r));
     })();
     mockStreamChatCompletion.mockReturnValue(blockingStream);
