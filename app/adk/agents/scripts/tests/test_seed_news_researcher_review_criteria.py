@@ -1,4 +1,4 @@
-"""Tests for seed_news_researcher_review_criteria.py (AH-87 / review-loop criteria seed).
+"""Tests for seed_news_researcher_review_criteria.py (AH-85 / review-loop criteria seed).
 
 Coverage map:
   (a) REVIEW_CRITERIA_TEXT constant matches the exact string from the issue.
@@ -28,8 +28,16 @@ def test_review_criteria_text_verbatim() -> None:
     """The constant must match the exact string agreed in the issue."""
     assert script.REVIEW_CRITERIA_TEXT == (
         "Response cites at least 3 distinct sources, each with a publication date;"
-        " the summary is ≤ 200 words; no factual claim is made without a cited source."
+        " the summary is at most 200 words; no factual claim is made without a cited source."
     )
+
+
+def test_review_criteria_text_survives_sanitisation() -> None:
+    """REVIEW_CRITERIA_TEXT must survive sanitise_criteria unchanged so what is
+    stored in Firestore equals what the LLM reviewer actually sees in its prompt."""
+    from app.adk.agents.utils.criteria_utils import sanitise_criteria
+
+    assert sanitise_criteria(script.REVIEW_CRITERIA_TEXT) == script.REVIEW_CRITERIA_TEXT
 
 
 # ---------------------------------------------------------------------------

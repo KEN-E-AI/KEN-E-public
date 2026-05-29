@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 REVIEW_CRITERIA_TEXT = (
     "Response cites at least 3 distinct sources, each with a publication date;"
-    " the summary is ≤ 200 words; no factual claim is made without a cited source."
+    " the summary is at most 200 words; no factual claim is made without a cited source."
 )
 TARGET_DOC_ID = "company_news_agent"
 DEV_PROJECT_ID = "ken-e-dev"
@@ -71,9 +71,10 @@ def main() -> int:
 
     # Hard guard: refuse to run against any project other than ken-e-dev.
     if args.project_id != DEV_PROJECT_ID:
-        print(
-            f"ERROR: This script is dev-only and refuses to run against"
-            f" '{args.project_id}'. Allowed: 'ken-e-dev'."
+        logger.error(
+            "This script is dev-only and refuses to run against"
+            " '%s'. Allowed: 'ken-e-dev'.",
+            args.project_id,
         )
         sys.exit(2)
 
@@ -105,7 +106,7 @@ def main() -> int:
         TARGET_DOC_ID,
         args.project_id,
         dry_run=args.dry_run,
-        db=db if not args.dry_run else None,
+        db=db,
     )
 
     logger.info("-" * 60)

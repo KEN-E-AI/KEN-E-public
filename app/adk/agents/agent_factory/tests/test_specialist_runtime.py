@@ -2044,10 +2044,10 @@ class TestSpecialistRuntimeReviewWrap:
         doc_id so ``transfer_to_agent(agent_name="company_news_agent")`` resolves."""
         from app.adk.agents.agent_factory import specialist_runtime as sr
         from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+        from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
         from app.adk.agents.scripts.seed_news_researcher_review_criteria import (
             REVIEW_CRITERIA_TEXT,
         )
-        from app.adk.agents.utils.criteria_utils import sanitise_criteria
 
         config = MergedAgentConfig(
             instruction="Company news specialist.",
@@ -2060,6 +2060,14 @@ class TestSpecialistRuntimeReviewWrap:
         from unittest.mock import patch as _patch
 
         with ExitStack() as stack:
+            # Isolate the module-level pool singleton (isolation contract from
+            # _patch_specialist_runtime_externals, line 1336).
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.specialist_runtime._DEFAULT_MCP_POOL",
+                    new=McpToolsetPool(),
+                )
+            )
             stack.enter_context(
                 _patch(
                     "app.adk.agents.agent_factory.mcp._build_firestore_client",
@@ -2106,10 +2114,9 @@ class TestSpecialistRuntimeReviewWrap:
 
         mock_build_pipeline.assert_called_once()
         call_kwargs = mock_build_pipeline.call_args.kwargs
-        # _build_specialist passes criteria through sanitise_criteria(), which
-        # strips non-ASCII chars (including "≤"). Assert against the sanitised
-        # form so the test documents the real contract.
-        assert call_kwargs["acceptance_criteria"] == sanitise_criteria(REVIEW_CRITERIA_TEXT)
+        # REVIEW_CRITERIA_TEXT uses only ASCII characters so sanitise_criteria
+        # passes it through unchanged — assert the raw constant directly.
+        assert call_kwargs["acceptance_criteria"] == REVIEW_CRITERIA_TEXT
         assert call_kwargs["output_key_prefix"] == "company_news_agent_review"
         assert result is fake_pipeline
         assert result.name == "company_news_agent"
