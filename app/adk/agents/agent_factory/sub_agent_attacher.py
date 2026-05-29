@@ -16,11 +16,15 @@ Invoked from the root agent's ``before_agent_callback`` so the
 
 Behaviour:
 
-* Lists every visible specialist for *account_id* via
+* Lists every delegatable specialist for *account_id* via
   :func:`config_loader.list_account_agent_configs`, resolves each through
   :func:`specialist_runtime.resolve_agent` (LRU-cached;
   content-hash-keyed), and ensures each resolved ``BaseAgent`` appears in
   ``root_agent.sub_agents`` exactly once.
+
+  Delegation gate: ``ken_e_sub_agent=True`` (AH-82).  The legacy
+  ``visible_in_frontend`` flag is no longer used here; it governs
+  Workflows-page UI visibility only.
 
 * Reconcile pass: any entry already in ``root.sub_agents`` whose name does
   not match a currently visible specialist (e.g. the specialist was
@@ -172,7 +176,9 @@ def _attach_locked(
     for doc_id in doc_ids:
         try:
             config = resolve_config(doc_id, account_id)
-            if not config.visible_in_frontend:
+            # AH-82: filter on the explicit delegation gate.
+            # visible_in_frontend governs Workflows-page UI visibility only.
+            if not config.ken_e_sub_agent:
                 continue
             visible_configs[doc_id] = config
         except Exception as exc:

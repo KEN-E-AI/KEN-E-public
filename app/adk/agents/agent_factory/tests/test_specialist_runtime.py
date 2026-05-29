@@ -32,6 +32,7 @@ def _make_merged_config(
     instruction: str = "v1",
     model: str = "gemini-2.5-pro",
     visible_in_frontend: bool = True,
+    ken_e_sub_agent: bool = True,
 ) -> Any:
     """Return a minimal MergedAgentConfig-like object suitable for tests."""
     from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
@@ -41,6 +42,7 @@ def _make_merged_config(
         model=model,
         description="Test specialist",
         visible_in_frontend=visible_in_frontend,
+        ken_e_sub_agent=ken_e_sub_agent,
     )
 
 
@@ -276,40 +278,77 @@ class TestAvailableSpecialistsProvider:
 
         assert "None registered" in result
 
-    def test_filters_out_not_visible_in_frontend(self) -> None:
+    def test_filters_out_not_ken_e_sub_agent(self) -> None:
+        """AH-82: delegation filter is ken_e_sub_agent, not visible_in_frontend.
+
+        An agent with ken_e_sub_agent=False is excluded from the block
+        regardless of visible_in_frontend.  An agent with ken_e_sub_agent=True
+        is included even if visible_in_frontend=False.
+        """
         from app.adk.agents.agent_factory import specialist_runtime
 
-        hidden_cfg = _make_merged_config("hidden", visible_in_frontend=False)
-        visible_cfg = _make_merged_config("visible", visible_in_frontend=True)
-        visible_agent = _make_llm_agent("visible_spe")
+        # ken_e_sub_agent=False → excluded, even though visible_in_frontend=True.
+        not_delegatable_cfg = _make_merged_config(
+            "not_delegatable", visible_in_frontend=True, ken_e_sub_agent=False
+        )
+        # ken_e_sub_agent=True, visible_in_frontend=False → still delegatable.
+        delegatable_hidden_cfg = _make_merged_config(
+            "delegatable", visible_in_frontend=False, ken_e_sub_agent=True
+        )
+        delegatable_agent = _make_llm_agent("delegatable_spe")
 
         ctx = self._make_context("acct_1")
 
         with (
             patch(
                 "app.adk.agents.agent_factory.config_loader.list_account_agent_configs",
-                return_value=["hidden_spe", "visible_spe"],
+                return_value=["not_delegatable_spe", "delegatable_spe"],
             ),
             patch.object(
                 specialist_runtime,
                 "resolve_config",
-                side_effect=[hidden_cfg, visible_cfg],
+                side_effect=[not_delegatable_cfg, delegatable_hidden_cfg],
             ),
             patch.object(
                 specialist_runtime,
                 "resolve_agent",
-                return_value=visible_agent,
+                return_value=delegatable_agent,
             ),
         ):
             result = specialist_runtime.available_specialists_provider(ctx)
 
-        assert "visible_spe" in result
-        assert "hidden_spe" not in result
+        assert "delegatable_spe" in result
+        assert "not_delegatable_spe" not in result
+
+    def test_visible_in_frontend_does_not_affect_delegation(self) -> None:
+        """AH-82: visible_in_frontend=False does NOT exclude from block when
+        ken_e_sub_agent=True.  The two flags are fully independent."""
+        from app.adk.agents.agent_factory import specialist_runtime
+
+        # UI-hidden but delegatable agent.
+        cfg = _make_merged_config(
+            "hidden_but_delegatable", visible_in_frontend=False, ken_e_sub_agent=True
+        )
+        agent = _make_llm_agent("hidden_but_delegatable_spe")
+
+        ctx = self._make_context("acct_1")
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.config_loader.list_account_agent_configs",
+                return_value=["hidden_but_delegatable_spe"],
+            ),
+            patch.object(specialist_runtime, "resolve_config", return_value=cfg),
+            patch.object(specialist_runtime, "resolve_agent", return_value=agent),
+        ):
+            result = specialist_runtime.available_specialists_provider(ctx)
+
+        assert "hidden_but_delegatable_spe" in result
 
     def test_failed_specialist_resolve_is_excluded_not_raised(self) -> None:
         from app.adk.agents.agent_factory import specialist_runtime
 
-        good_cfg = _make_merged_config("good", visible_in_frontend=True)
+        good_cfg = _make_merged_config("good", ken_e_sub_agent=True)
         good_agent = _make_llm_agent("good_spe")
 
         ctx = self._make_context("acct_1")
@@ -366,7 +405,7 @@ class TestAvailableSpecialistsProvider:
 
         from app.adk.agents.agent_factory import specialist_runtime
 
-        good_cfg = _make_merged_config("good", visible_in_frontend=True)
+        good_cfg = _make_merged_config("good", ken_e_sub_agent=True)
         good_agent = _make_llm_agent("good_spe")
         state = State(
             value={"account_id": "acct_1", "mcp_creds_x": "v1"},
@@ -417,7 +456,7 @@ class TestAvailableSpecialistsProvider:
 
         from app.adk.agents.agent_factory import specialist_runtime
 
-        good_cfg = _make_merged_config("good", visible_in_frontend=True)
+        good_cfg = _make_merged_config("good", ken_e_sub_agent=True)
         good_agent = _make_llm_agent("good_spe")
         proxy = MappingProxyType({"account_id": "acct_1", "mcp_creds_x": "v1"})
         ctx = SimpleNamespace(state=proxy)

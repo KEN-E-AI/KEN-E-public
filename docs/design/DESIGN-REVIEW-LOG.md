@@ -1837,4 +1837,58 @@ Three streams of work, one closing seam:
 
 ---
 
+---
+
+## Review 42 — AH-82: Delegation Gate Decoupled from UI Visibility (`ken_e_sub_agent`)
+
+**Date:** 2026-05-29
+**Scope:** AH-82 ([Linear](https://linear.app/ken-e/issue/AH-82/feat-harness-add-ken-e-sub-agent-flag-switch-delegation-filter-off)); standalone refactor decoupling the chat-delegation gate from the Workflows-page visibility flag.
+
+### Summary
+
+KEN-E's per-turn dispatch (AH-PRD-09) previously used `visible_in_frontend` as the predicate at both delegation filter call sites — `available_specialists_provider` in `specialist_runtime.py` (renders the Available Specialists prompt block) and `_attach_locked` in `sub_agent_attacher.py` (synchronises `root.sub_agents` before each turn). That field's sole intended job is controlling whether an agent appears on the Workflows > Agents page; it was never designed to gate chat delegation.
+
+This conflation caused a correctness problem: strategy-pipeline agents (e.g., `business_formatter`) that must never be reachable from chat were excluded from delegation by setting `visible_in_frontend=False`, meaning the only way to exclude them from delegation was to also hide them from the Workflows UI. The reverse is also true in principle: any future agent that should be visible in the UI but not delegatable from chat had no independent knob.
+
+AH-82 introduces `ken_e_sub_agent: bool = True` as the explicit, independent delegation gate and switches both filter sites to it. `visible_in_frontend` retains its sole job.
+
+### Decision
+
+**Add `ken_e_sub_agent: bool = True` to the `MergedAgentConfig` schema.** Default `True` (fail-open: existing Firestore docs without the field remain delegatable). Field is NOT added to `_STORAGE_INTERNAL_FIELDS` in either `config_loader.py` or `routers/agent_configs.py` — it is a real runtime-consumed schema field, not storage metadata.
+
+**Thread the field through the five API Pydantic models** (`AgentConfig`, `MergedAgentConfig` response, `AgentConfigCreate`, `AgentConfigUpdate`, `AgentConfigOverlayUpdate`) and the router's `_build_firestore_updates()` / `_snapshot_pre_image()` / `_snapshot_post_image()` helpers so admins can set it via the per-account overlay PUT and on custom-agent create. The overlay PUT endpoint already uses `body.model_dump(exclude_unset=True)` so `ken_e_sub_agent` is included in the sparse write only when the caller explicitly sets it.
+
+**Switch both delegation filter sites to `ken_e_sub_agent`.** `visible_in_frontend` is intentionally left in the two Workflows-page paths (`?visible_in_frontend=true` API query in `list_account_agent_configs`, `agentConfigs.ts:141` in the frontend) — those correctly still drive the Workflows UI.
+
+**Ship an idempotent migration script** (`api/scripts/migrate_agent_configs_add_ken_e_sub_agent.py`) that sets `ken_e_sub_agent=False` on the 8 strategy-pipeline agents. A `--enumerate-other-formatters` pre-flight mode scans the live collection for any unlisted `*_formatter` docs. Ops sequence: **run the migration before deploying the new image** in each environment; the migration writes a field the old code ignores, so pre-deploy execution is safe.
+
+**`automatically_available` disposition:** audited and confirmed orthogonal. `automatically_available=False` prevents the global config from appearing in the per-account merged list at all (inventory filter). `ken_e_sub_agent=False` keeps the agent in the account's view but excludes it from chat delegation. `visible_in_frontend=False` hides it from the Workflows-page UI filter. All three are independent; none is duplicative of another.
+
+### Consequences
+
+- Any agent with `visible_in_frontend=False, ken_e_sub_agent=True` (previously impossible to express independently) is now delegatable from chat but hidden from the Workflows UI — the configuration space is fully orthogonal.
+- Any agent with `visible_in_frontend=True, ken_e_sub_agent=False` appears in the Workflows UI but is NOT delegatable from chat.
+- The 8 strategy-pipeline agents (`business_researcher`, `business_formatter`, `competitive_researcher`, `competitive_formatter`, `marketing_researcher`, `marketing_formatter`, `brand_researcher`, `brand_formatter`) gain `ken_e_sub_agent=False` after the migration runs.
+- Per-turn resolver TTL cache (60 s) covers the new field automatically — `ken_e_sub_agent` is included in `MergedAgentConfig.model_dump_json()` and thus in the content-hash cache key. A migration write causes the next per-turn read to see the updated value after the TTL expires (at most 60 s window of stale delegation).
+- `visible_in_frontend` is not deprecated or renamed; it retains its current job.
+
+### Documents updated
+
+| File | Change |
+|------|--------|
+| `app/adk/agents/agent_factory/config_loader.py` | Added `ken_e_sub_agent: bool = True` to `MergedAgentConfig` |
+| `app/adk/agents/agent_factory/sub_agent_attacher.py` | Switched `_attach_locked` filter from `visible_in_frontend` to `ken_e_sub_agent`; updated module docstring |
+| `app/adk/agents/agent_factory/specialist_runtime.py` | Switched `available_specialists_provider` filter from `visible_in_frontend` to `ken_e_sub_agent`; updated module docstring (lines 36–38) and function docstring (line 676) |
+| `app/adk/agents/agent_factory/tests/test_config_loader.py` | Added 5 tests for `ken_e_sub_agent` round-trip, default, and `_STORAGE_INTERNAL_FIELDS` exclusion |
+| `app/adk/agents/agent_factory/tests/test_sub_agent_attacher.py` | Rewrote `test_invisible_specialist_filtered_out` → `test_non_sub_agent_filtered_out` + added `test_visible_in_frontend_false_still_delegatable` cross-product case; updated `_patched_resolvers` helper |
+| `app/adk/agents/agent_factory/tests/test_specialist_runtime.py` | Updated `_make_merged_config` helper to accept `ken_e_sub_agent` kwarg; rewrote `test_filters_out_not_visible_in_frontend` → `test_filters_out_not_ken_e_sub_agent` + added `test_visible_in_frontend_does_not_affect_delegation` |
+| `api/src/kene_api/models/agent_config_models.py` | Added `ken_e_sub_agent` to all five API models — `AgentConfig` (read model, default `True` so the global GET/PUT responses surface the stored value), `MergedAgentConfig`, `AgentConfigCreate`, `AgentConfigUpdate`, `AgentConfigOverlayUpdate` |
+| `api/src/kene_api/routers/agent_configs.py` | Threaded `ken_e_sub_agent` through `_build_firestore_updates()`, `_snapshot_pre_image()`, `_snapshot_post_image()`, `create_account_agent_config`, and `update_agent_config` |
+| `api/scripts/migrate_agent_configs_add_ken_e_sub_agent.py` | **New** — idempotent migration script |
+| `api/scripts/tests/test_migrate_agent_configs_add_ken_e_sub_agent.py` | **New** — unit + fake-Firestore tests for the migration |
+| `docs/design/components/agentic-harness/README.md` | Updated §2 diagram caption, §2.5 routing model, §7 Agent construction conventions |
+| `docs/design/DESIGN-REVIEW-LOG.md` | This entry (Review 42) |
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, and documents updated. Decision rationale lives in the Review itself — this log is the canonical record going forward.*

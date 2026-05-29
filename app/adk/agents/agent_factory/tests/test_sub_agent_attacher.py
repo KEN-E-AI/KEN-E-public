@@ -102,6 +102,7 @@ def _patched_resolvers(visible: dict[str, LlmAgent], config_suffix: str = "") ->
             model="gemini-2.5-pro",
             description=f"{doc_id} description",
             visible_in_frontend=True,
+            ken_e_sub_agent=True,
         )
 
     def _resolve_agent(
@@ -233,15 +234,20 @@ class TestReconcile:
         assert stale.parent_agent is None
         assert fresh.parent_agent is root
 
-    def test_invisible_specialist_filtered_out(self) -> None:
-        """``config.visible_in_frontend = False`` keeps a doc out of the
-        prompt block AND out of sub_agents."""
+    def test_non_sub_agent_filtered_out(self) -> None:
+        """AH-82: ``config.ken_e_sub_agent = False`` keeps a doc out of
+        sub_agents regardless of visible_in_frontend.
+
+        Cross-product coverage:
+        - ga_spec: ken_e_sub_agent=True → attached
+        - workflow_spec: ken_e_sub_agent=False (visible_in_frontend=True) → excluded
+        """
         root = _make_root()
         a = _make_specialist("ga_spec")
-        b = _make_specialist("hidden_spec")
+        b = _make_specialist("workflow_spec")
 
         def _list(_account_id: str) -> list[str]:
-            return ["ga_spec", "hidden_spec"]
+            return ["ga_spec", "workflow_spec"]
 
         def _resolve_config(
             doc_id: str, _account_id: str | None = None, _ttl: int = 60
@@ -250,7 +256,9 @@ class TestReconcile:
                 instruction=f"{doc_id}.",
                 model="gemini-2.5-pro",
                 description=f"{doc_id} desc",
-                visible_in_frontend=(doc_id != "hidden_spec"),
+                # workflow_spec is visible in frontend but NOT delegatable.
+                visible_in_frontend=True,
+                ken_e_sub_agent=(doc_id != "workflow_spec"),
             )
 
         def _resolve_agent(
@@ -259,7 +267,7 @@ class TestReconcile:
             _ttl: int = 60,
             session_state: Mapping[str, Any] | None = None,
         ) -> LlmAgent:
-            return {"ga_spec": a, "hidden_spec": b}[doc_id]
+            return {"ga_spec": a, "workflow_spec": b}[doc_id]
 
         with (
             patch(
@@ -280,6 +288,54 @@ class TestReconcile:
 
         assert [s.name for s in root.sub_agents] == ["ga_spec"]
         assert b.parent_agent is None
+
+    def test_visible_in_frontend_false_still_delegatable(self) -> None:
+        """AH-82 cross-product: visible_in_frontend=False, ken_e_sub_agent=True
+        → agent IS attached to sub_agents (delegation gate is independent)."""
+        root = _make_root()
+        a = _make_specialist("ui_hidden_spec")
+
+        def _list(_account_id: str) -> list[str]:
+            return ["ui_hidden_spec"]
+
+        def _resolve_config(
+            doc_id: str, _account_id: str | None = None, _ttl: int = 60
+        ) -> MergedAgentConfig:
+            return MergedAgentConfig(
+                instruction=f"{doc_id}.",
+                model="gemini-2.5-pro",
+                description=f"{doc_id} desc",
+                visible_in_frontend=False,  # hidden from Workflows UI
+                ken_e_sub_agent=True,  # but still delegatable from chat
+            )
+
+        def _resolve_agent(
+            doc_id: str,
+            _account_id: str | None = None,
+            _ttl: int = 60,
+            session_state: Mapping[str, Any] | None = None,
+        ) -> LlmAgent:
+            return a
+
+        with (
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher."
+                "list_account_agent_configs_cached",
+                side_effect=_list,
+            ),
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher.resolve_config",
+                side_effect=_resolve_config,
+            ),
+            patch(
+                "app.adk.agents.agent_factory.sub_agent_attacher.resolve_agent",
+                side_effect=_resolve_agent,
+            ),
+        ):
+            attach_account_specialists(root, "acc_123")
+
+        assert [s.name for s in root.sub_agents] == ["ui_hidden_spec"]
+        assert a.parent_agent is root
 
 
 # ---------------------------------------------------------------------------

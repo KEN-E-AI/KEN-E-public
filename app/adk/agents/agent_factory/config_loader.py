@@ -63,6 +63,13 @@ class MergedAgentConfig(BaseModel):
     automatically_available: bool = True
     visible_in_frontend: bool = True
 
+    # AH-82: explicit delegation gate — decoupled from UI visibility.
+    # True (default) → the root agent may delegate to this specialist via
+    # transfer_to_agent; False → excluded from root.sub_agents and from the
+    # "Available Specialists" prompt block even if visible_in_frontend=True.
+    # visible_in_frontend still controls Workflows-page UI visibility only.
+    ken_e_sub_agent: bool = True
+
     based_on_version: int | None = None
     customization_status: Literal["default", "customized", "custom_agent"] = "default"
 
