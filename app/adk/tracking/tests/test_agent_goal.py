@@ -4,6 +4,15 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+_MOCK_CONFIG_METADATA = {
+    "version": "v1.0.0",
+    "experiment_id": "baseline",
+    "variant_name": "baseline",
+    "model": "gemini-2.5-pro",
+}
+
+_CONFIG_METADATA_PATH = "app.adk.tracking.callbacks._get_chatbot_config_metadata"
+
 
 class TestWeaveBeforeAgentCallbackGoal:
     """Test that weave_before_agent_callback sets context_agent_goal."""
@@ -19,11 +28,16 @@ class TestWeaveBeforeAgentCallbackGoal:
         ctx.user_content = content
         return ctx
 
+    @patch(_CONFIG_METADATA_PATH, return_value=_MOCK_CONFIG_METADATA)
     @patch("app.adk.tracking.callbacks._weave_call_context")
     @patch("app.adk.tracking.callbacks._weave_get_client")
     @patch("app.adk.tracking.callbacks.init_weave_if_needed")
     def test_agent_goal_set_from_user_content(
-        self, mock_init: MagicMock, mock_get_client: MagicMock, mock_call_ctx: MagicMock
+        self,
+        mock_init: MagicMock,
+        mock_get_client: MagicMock,
+        mock_call_ctx: MagicMock,
+        mock_cfg: MagicMock,
     ) -> None:
         from app.adk.tracking.callbacks import weave_before_agent_callback
 
@@ -44,11 +58,16 @@ class TestWeaveBeforeAgentCallbackGoal:
         )
         assert inputs.get("context_agent_goal") == "Tell me about Tesla earnings"
 
+    @patch(_CONFIG_METADATA_PATH, return_value=_MOCK_CONFIG_METADATA)
     @patch("app.adk.tracking.callbacks._weave_call_context")
     @patch("app.adk.tracking.callbacks._weave_get_client")
     @patch("app.adk.tracking.callbacks.init_weave_if_needed")
     def test_agent_goal_none_when_no_user_content(
-        self, mock_init: MagicMock, mock_get_client: MagicMock, mock_call_ctx: MagicMock
+        self,
+        mock_init: MagicMock,
+        mock_get_client: MagicMock,
+        mock_call_ctx: MagicMock,
+        mock_cfg: MagicMock,
     ) -> None:
         from app.adk.tracking.callbacks import weave_before_agent_callback
 
@@ -70,11 +89,16 @@ class TestWeaveBeforeAgentCallbackGoal:
         )
         assert inputs.get("context_agent_goal") is None
 
+    @patch(_CONFIG_METADATA_PATH, return_value=_MOCK_CONFIG_METADATA)
     @patch("app.adk.tracking.callbacks._weave_call_context")
     @patch("app.adk.tracking.callbacks._weave_get_client")
     @patch("app.adk.tracking.callbacks.init_weave_if_needed")
     def test_agent_goal_truncated_for_long_queries(
-        self, mock_init: MagicMock, mock_get_client: MagicMock, mock_call_ctx: MagicMock
+        self,
+        mock_init: MagicMock,
+        mock_get_client: MagicMock,
+        mock_call_ctx: MagicMock,
+        mock_cfg: MagicMock,
     ) -> None:
         from app.adk.tracking.callbacks import weave_before_agent_callback
 
@@ -102,6 +126,7 @@ class TestWeaveBeforeAgentCallbackGoal:
 class TestAgentGoalContextPropagation:
     """Test that agent-level weave.attributes context propagates to tool spans."""
 
+    @patch(_CONFIG_METADATA_PATH, return_value=_MOCK_CONFIG_METADATA)
     @patch("app.adk.tracking.callbacks._weave_call_context")
     @patch("app.adk.tracking.callbacks._weave_get_client")
     @patch("app.adk.tracking.callbacks.init_weave_if_needed")
@@ -112,6 +137,7 @@ class TestAgentGoalContextPropagation:
         mock_init: MagicMock,
         mock_get_client: MagicMock,
         mock_call_ctx: MagicMock,
+        mock_cfg: MagicMock,
     ) -> None:
         from app.adk.tracking.callbacks import weave_before_agent_callback
 

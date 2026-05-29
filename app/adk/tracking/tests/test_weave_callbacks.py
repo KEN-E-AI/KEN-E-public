@@ -16,6 +16,14 @@ from app.adk.tracking.callbacks import (
 _INIT_WEAVE_PATH = "app.adk.tracking.callbacks.init_weave_if_needed"
 _GET_CLIENT_PATH = "app.adk.tracking.callbacks._weave_get_client"
 _CALL_CTX_PATH = "app.adk.tracking.callbacks._weave_call_context"
+_CONFIG_META_PATH = "app.adk.tracking.callbacks._get_chatbot_config_metadata"
+
+_MOCK_CONFIG_METADATA = {
+    "version": "v1.0.0",
+    "experiment_id": "baseline",
+    "variant_name": "baseline",
+    "model": "gemini-2.5-pro",
+}
 
 
 @dataclass
@@ -36,7 +44,8 @@ def _reset_context_var():
 class TestWeaveBeforeAgentCallback:
     """Tests for weave_before_agent_callback."""
 
-    def test_creates_call_and_sets_context_var(self):
+    @patch(_CONFIG_META_PATH, return_value=_MOCK_CONFIG_METADATA)
+    def test_creates_call_and_sets_context_var(self, mock_cfg: MagicMock):
         mock_call = MagicMock(id="call-123")
         mock_client = MagicMock()
         mock_client.create_call.return_value = mock_call
@@ -63,6 +72,8 @@ class TestWeaveBeforeAgentCallback:
             call_order.append("get_client")
             return None
 
+        # client is None → early return before _build_chatbot_root_attrs;
+        # no need to patch _get_chatbot_config_metadata here.
         with (
             patch(_INIT_WEAVE_PATH, side_effect=mock_init),
             patch(_GET_CLIENT_PATH, side_effect=mock_get),
@@ -72,13 +83,15 @@ class TestWeaveBeforeAgentCallback:
         assert call_order == ["init", "get_client"]
 
     def test_noop_when_client_is_none(self):
+        # Returns None before reaching _build_chatbot_root_attrs → no patch needed.
         with patch(_INIT_WEAVE_PATH), patch(_GET_CLIENT_PATH, return_value=None):
             result = weave_before_agent_callback(callback_context=MockCallbackContext())
 
         assert result is None
         assert _current_agent_call.get(None) is None
 
-    def test_handles_create_call_exception(self):
+    @patch(_CONFIG_META_PATH, return_value=_MOCK_CONFIG_METADATA)
+    def test_handles_create_call_exception(self, mock_cfg: MagicMock):
         mock_client = MagicMock()
         mock_client.create_call.side_effect = RuntimeError("Weave down")
 
