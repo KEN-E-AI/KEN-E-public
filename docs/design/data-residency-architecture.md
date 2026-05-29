@@ -165,6 +165,23 @@ R-20 (SAR-E/Performance regional-by-design), R-21 (cross-cell admin + change-reg
 
 **R-10** is a cross-account authorization leak that is **exploitable today** regardless of regions: `delete_product_category()` / `delete_product()` / `update_product()` match Cypher on `node_id` alone, so a `node_id` from another account can discover and cascade-delete relationships across tenants. Bind `account_id` in every `WHERE` clause (template: `create_node` / `list_nodes` / `get_node`) and add a Cypher review checklist. This should go out as a standalone hotfix PR ahead of the residency program.
 
+### 6.5 Transitive critical path — the launch-blocking dependency chain
+
+**Decision (2026-05-29): close the full residency blocker set by launch — EU live at launch, not gated.** §6.1 lists eight gap-register blockers, but each launch-blocker *slice* also depends on its component's **foundation** PRD, and every one of those is currently un-started. The genuine launch-critical set is the transitive closure below — it is the program's dominant schedule risk and must be managed as a single critical path, not eight independent blockers:
+
+| Launch blocker (slice) | Foundation it also needs (`blocked_by`) | Foundation status | Critical-path action |
+|---|---|---|---|
+| DM-PRD-09 — R-01, R-08 | DM-PRD-08 (prod cutover) | ✅ shipped | **Start now** — keystone, unblocked; blocks all others. |
+| KG-PRD-07 — R-06 | KG-PRD-01 (migration runner) | not started | KG-PRD-01 has no dependencies — start in parallel now. |
+| CH-PRD-07 — R-07, R-11, R-17 | CH-PRD-05 (todo lists + artifacts) | not started | Start CH-PRD-05 now. |
+| AH-PRD-11 — R-03, R-04, R-16 | AH-PRD-09 (per-turn dispatch; 6-phase) | not started | AH-PRD-09's prerequisites (AH-PRD-01/02, DM-PRD-00) are shipped — start now; it is the long pole. The R-03 model-routing half can land early against already-shipped surfaces (`model_routing.py` + the before-agent callback), so split it from the R-04/R-16 engine work. |
+| AH-PRD-12 — R-02, R-12 | AH-PRD-11 → AH-PRD-09 | not started | Sequenced behind AH-PRD-11; the R-02 content-capture-off half can land early/independently. |
+| IN-PRD-08 — R-05 | IN-PRD-01 → DM-PRD-07 → PR-PRD-01 + DM-PRD-05 | not started (3-deep) | **Longest chain, highest risk** — R-05 sits behind roles/members/audit + the project-tasks data model, none of it residency work. De-risk first, or scope R-05 to regionalize the *current* encryption substrate without waiting for the full IN-PRD-01 (IN-PRD-08 §2 already supports either substrate). |
+
+**Crash plan.** DM-PRD-09, KG-PRD-01, CH-PRD-05, and AH-PRD-09 are all startable now (prerequisites shipped) and are the long poles — run them in parallel immediately. The R-10 hotfix ships ahead of all of it (§6.4). The IN-PRD-01 → DM-PRD-07 → PR-PRD-01 chain is the critical path for R-05 and needs the earliest de-risking, or the scoped-down R-05 above.
+
+**The one risk the crash plan cannot remove — R-04 (external).** Whether Vertex AI Agent Engine is GA in an EU region by launch (open Q1) is outside the team's control. Committing to an EU launch does not change that: if EU Agent Engine GA has not landed, AH-PRD-11's R-04/R-16 (EU reasoning / sandbox / session) cannot be made resident, and locked decision **D6** still governs — gate EU sign-ups **for that reason alone** until GA lands, even with every internal blocker closed. R-04 is therefore the single residual launch risk under this posture: track Q1 weekly and keep the EU sign-up gate (Feature-Flags) ready as the R-04-specific fallback.
+
 ---
 
 ## 7. Breakdown into component PRDs
