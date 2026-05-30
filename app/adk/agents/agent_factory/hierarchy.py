@@ -212,10 +212,14 @@ def build_hierarchy(
             specialists_span_before_agent_callback,
         ],
         additional_after_model_callbacks=[
-            # Ordering constraint: adk_after_model_callback strips thought parts
-            # from the response first; capture_last_model_output reads the
-            # (already-stripped) parts second so temp:_last_model_output contains
-            # only user-visible text, not internal reasoning.
+            # Ordering constraint: adk_after_model_callback captures thought
+            # parts into state["_last_reasoning"] first so the value is
+            # available to any future callback that reads it. It no longer
+            # strips thought=True parts (AH-89) — the streaming router
+            # (chat.py) emits them on the event: reasoning SSE channel.
+            # capture_last_model_output_after_model_callback filters
+            # thought=True parts independently (see its body in callbacks.py),
+            # so temp:_last_model_output contains only user-visible text.
             adk_after_model_callback,
             capture_last_model_output_after_model_callback,
         ],

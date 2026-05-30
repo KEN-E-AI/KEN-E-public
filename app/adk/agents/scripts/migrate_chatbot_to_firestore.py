@@ -142,6 +142,12 @@ Remember: You are a router, not a data source. ALWAYS delegate to the appropriat
     # merge in a clean environment.
     "temperature": 0.7,
     "max_output_tokens": 4096,
+    # AH-89: enable Gemini thought emission. budget=2048 is bounded (vs. -1
+    # "dynamic" which is uncapped) while giving meaningful reasoning headroom
+    # for typical chat queries. Tunable via Firestore admin write without a
+    # redeploy — AH-PRD-09 config_cache TTL propagates the change in ≤60 s.
+    # Set to None to disable thinking entirely.
+    "thinking_budget": 2048,
     # AH-41: the 8 audited fields are written explicitly so behavior is
     # not silently driven by Pydantic schema defaults. The orchestrator
     # is visible in the Workflows > Agents UI (it IS the chat agent) but
@@ -152,13 +158,13 @@ Remember: You are a router, not a data source. ALWAYS delegate to the appropriat
     **AUDIT_FIELDS_RESEARCHER,
     "available_to_copy": False,
     "metadata": {
-        "version": "v1.2",
+        "version": "v1.3",
         "variant_name": "baseline",
         "experiment_id": "baseline",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "updated_by": "migration_script",
-        "notes": "Initial chatbot configuration migrated from hardcoded ken_e_agent.py. Enables model selection and runtime updates via Admin UI. v1.1: Added Task Delegation section with 2-4 acceptance-criteria generation guidance per AH-6 (AH-PRD-01 §7 AC#8). v1.2 (AH-41): added 8 audited fields explicitly (code_execution_enabled, mcp_servers, skill_ids, sandbox_code_executor_enabled, response_schema, available_to_copy=False, automatically_available, visible_in_frontend).",
+        "notes": "Initial chatbot configuration migrated from hardcoded ken_e_agent.py. Enables model selection and runtime updates via Admin UI. v1.1: Added Task Delegation section with 2-4 acceptance-criteria generation guidance per AH-6 (AH-PRD-01 §7 AC#8). v1.2 (AH-41): added 8 audited fields explicitly (code_execution_enabled, mcp_servers, skill_ids, sandbox_code_executor_enabled, response_schema, available_to_copy=False, automatically_available, visible_in_frontend). v1.3 (AH-89): added thinking_budget=2048 to enable Gemini thought emission; unblocks CH-60 ThinkingBlock live reasoning.",
     },
 }
 

@@ -11,7 +11,7 @@ from typing import Literal
 
 from google.auth import default as google_auth_default
 from google.cloud import firestore
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from shared.structured_logging import get_structured_logger
 
@@ -64,6 +64,29 @@ class MergedAgentConfig(BaseModel):
     # config, not of the per-call dispatch. When set, the resolver wraps the
     # built LlmAgent in build_review_pipeline at content-hash build time.
     default_acceptance_criteria: str | None = None
+
+    # AH-89 — Gemini thought emission. None = thinking disabled; non-negative
+    # int = explicit token budget (e.g. 2048); -1 = model picks dynamically.
+    # Stored flat (AH-PRD-02 §5.2 pattern). build_agent reconstructs the SDK
+    # ThinkingConfig(include_thoughts=True, thinking_budget=…) at the
+    # GenerateContentConfig boundary. Tunable via Firestore admin write without
+    # a redeploy (AH-PRD-09 §7 AC-2 ≤60 s propagation). Note: the ROOT agent
+    # (ken_e_chatbot) is still deploy-time-bound (build_hierarchy), so changing
+    # thinking_budget on the root config requires make backend to take effect.
+    thinking_budget: int | None = None
+
+    @field_validator("thinking_budget")
+    @classmethod
+    def _validate_thinking_budget(cls, v: int | None) -> int | None:
+        if v is None:
+            return v
+        if v == -1:
+            return v  # -1 = model picks budget dynamically
+        if v < 0:
+            raise ValueError(
+                "thinking_budget must be None, -1 (dynamic), or a non-negative int"
+            )
+        return v
 
     # Phase 3 (AH-18 / PRD §4) — Global config flags
     available_to_copy: bool = True

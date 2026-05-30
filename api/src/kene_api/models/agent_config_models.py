@@ -428,6 +428,26 @@ class MergedAgentConfig(BaseModel):
     sandbox_code_executor_enabled: bool = False
     response_schema: dict | None = None
 
+    # AH-89 — Gemini thought emission. None = thinking disabled; non-negative
+    # int = explicit token budget (e.g. 2048); -1 = model picks dynamically.
+    # Read model only — the Create/Update/Overlay write surfaces do not yet
+    # expose this field (a future admin-UI story will add the form input).
+    # The seed script (migrate_chatbot_to_firestore.py) is the source of truth.
+    thinking_budget: int | None = None
+
+    @field_validator("thinking_budget")
+    @classmethod
+    def _validate_thinking_budget(cls, v: int | None) -> int | None:
+        if v is None:
+            return v
+        if v == -1:
+            return v  # -1 = model picks budget dynamically
+        if v < 0:
+            raise ValueError(
+                "thinking_budget must be None, -1 (dynamic), or a non-negative int"
+            )
+        return v
+
     # Phase 3 flags (AH-18)
     available_to_copy: bool = True
     automatically_available: bool = True

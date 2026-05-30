@@ -354,23 +354,31 @@ async def adk_after_model_callback(
 
     When the model decides to call a tool, the response typically includes
     thought parts (reasoning) alongside function_call parts. This callback
-    extracts the reasoning, stores it in state["_last_reasoning"], and strips
-    thought parts from the response so they don't appear in the chat.
+    extracts the reasoning and stores it in state["_last_reasoning"] so that
+    adk_before_tool_callback can surface it as a ``context_reasoning`` attribute
+    on Weave tool spans (app/adk/security/hooks.py:235-238).
 
-    Returns None if no thought parts were stripped, or the modified response.
+    Thought parts are intentionally NOT stripped from the response (AH-89):
+    CH-60 (PR #753) wired the streaming router to emit ``thought=True`` parts
+    on a dedicated ``event: reasoning`` SSE channel so the chat UI's
+    ThinkingBlock can display live reasoning. Stripping here would defeat that
+    pipeline. capture_last_model_output_after_model_callback (next in the
+    after_model chain) already filters thought=True parts on its own
+    (callbacks.py line 425-426) so temp:_last_model_output contains only
+    user-visible text regardless.
+
+    Returns None unconditionally — never mutates the LlmResponse.
     """
     if not llm_response.content or not llm_response.content.parts:
         return None
 
     reasoning_parts = []
-    has_thought_parts = False
     for part in llm_response.content.parts:
         text = getattr(part, "text", None)
         if not text:
             continue
         if getattr(part, "thought", False):
             reasoning_parts.append(text)
-            has_thought_parts = True
 
     # Fall back to regular text parts if no thought parts exist
     if not reasoning_parts:
@@ -388,13 +396,6 @@ async def adk_after_model_callback(
         callback_context.state["_last_reasoning"] = reasoning_text[
             :_MAX_REASONING_LENGTH
         ]
-
-    # Strip thought parts from the response so they don't leak into the chat
-    if has_thought_parts:
-        llm_response.content.parts = [
-            p for p in llm_response.content.parts if not getattr(p, "thought", False)
-        ]
-        return llm_response
 
     return None
 

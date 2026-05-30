@@ -899,5 +899,71 @@ class TestConfigLoader:
         )
 
 
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_thinking_budget_round_trips(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """AH-89: thinking_budget is stored flat and round-trips through MergedAgentConfig.
+
+        The builder reconstructs ThinkingConfig(include_thoughts=True, thinking_budget=…)
+        at the GenerateContentConfig boundary. The factory model just carries the int.
+        """
+        from app.adk.agents.agent_factory.config_loader import load_agent_config
+
+        doc_with_budget = {
+            "instruction": "Root agent.",
+            "model": "gemini-2.5-pro",
+            "thinking_budget": 2048,
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=doc_with_budget)
+
+        result = load_agent_config("test_agent")
+
+        assert result.thinking_budget == 2048
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_thinking_budget_defaults_to_none(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """A doc without thinking_budget defaults to None (thinking disabled)."""
+        from app.adk.agents.agent_factory.config_loader import load_agent_config
+
+        doc_without_budget = {
+            "instruction": "Root agent.",
+            "model": "gemini-2.5-pro",
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=doc_without_budget)
+
+        result = load_agent_config("test_agent")
+
+        assert result.thinking_budget is None
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_thinking_budget_invalid_negative_rejected(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """AH-89 validator: any negative value other than -1 must be rejected."""
+        from app.adk.agents.agent_factory.config_loader import (
+            ConfigValidationError,
+            load_agent_config,
+        )
+
+        doc_bad_budget = {
+            "instruction": "Root agent.",
+            "model": "gemini-2.5-pro",
+            "thinking_budget": -2,
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=doc_bad_budget)
+
+        with pytest.raises(ConfigValidationError):
+            load_agent_config("test_agent")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

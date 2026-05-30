@@ -106,7 +106,7 @@ _ROOT_CONFIG_ID: str = "ken_e_chatbot"
 # the right long-term fix is to reject the edit at the API layer (separate
 # ticket).
 _ROOT_REDEPLOY_REQUIRED_FIELDS: frozenset[str] = frozenset(
-    {"model", "temperature", "max_output_tokens"}
+    {"model", "temperature", "max_output_tokens", "thinking_budget"}
 )
 
 # Storage-internal fields that live on Firestore docs but are not part of

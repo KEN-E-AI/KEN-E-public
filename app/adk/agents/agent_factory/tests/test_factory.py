@@ -412,6 +412,77 @@ class TestResponseSchema:
 
 
 # ---------------------------------------------------------------------------
+# AH-89: ThinkingConfig wired into GenerateContentConfig from thinking_budget
+# ---------------------------------------------------------------------------
+
+
+class TestThinkingConfig:
+    def test_thinking_budget_set_produces_thinking_config(self) -> None:
+        from google.genai.types import ThinkingConfig
+
+        config = _make_config(thinking_budget=2048)
+        agent = _build(config, name="think")
+
+        assert agent.generate_content_config is not None
+        tc = agent.generate_content_config.thinking_config
+        assert tc is not None
+        assert isinstance(tc, ThinkingConfig)
+        assert tc.include_thoughts is True
+        assert tc.thinking_budget == 2048
+
+    def test_thinking_budget_zero_still_sets_thinking_config(self) -> None:
+        """Budget 0 disables reasoning tokens while keeping include_thoughts=True."""
+        config = _make_config(thinking_budget=0)
+        agent = _build(config, name="think_zero")
+
+        tc = agent.generate_content_config.thinking_config
+        assert tc is not None
+        assert tc.include_thoughts is True
+        assert tc.thinking_budget == 0
+
+    def test_thinking_budget_minus_one_uses_dynamic_budget(self) -> None:
+        """Budget -1 asks the model to pick its own budget."""
+
+        config = _make_config(thinking_budget=-1)
+        agent = _build(config, name="think_dynamic")
+
+        tc = agent.generate_content_config.thinking_config
+        assert tc is not None
+        assert tc.thinking_budget == -1
+
+    def test_thinking_budget_none_leaves_thinking_config_absent(self) -> None:
+        """Default None: no ThinkingConfig constructed."""
+        config = _make_config(thinking_budget=None)
+        agent = _build(config, name="no_think")
+
+        gcc = agent.generate_content_config
+        assert gcc is None or getattr(gcc, "thinking_config", None) is None
+
+    def test_thinking_budget_with_temperature_both_set(self) -> None:
+        """thinking_budget and temperature compose into a single GenerateContentConfig."""
+        config = _make_config(temperature=0.7, thinking_budget=2048)
+        agent = _build(config, name="think_temp")
+
+        gcc = agent.generate_content_config
+        assert gcc is not None
+        assert gcc.temperature == 0.7
+        tc = gcc.thinking_config
+        assert tc is not None
+        assert tc.include_thoughts is True
+        assert tc.thinking_budget == 2048
+
+    def test_temperature_only_does_not_set_thinking_config(self) -> None:
+        """Regression: a config with only temperature must not get a ThinkingConfig."""
+        config = _make_config(temperature=0.3)
+        agent = _build(config, name="temp_only")
+
+        gcc = agent.generate_content_config
+        assert gcc is not None
+        assert gcc.temperature == 0.3
+        assert getattr(gcc, "thinking_config", None) is None
+
+
+# ---------------------------------------------------------------------------
 # AC-7: No GenerateContentConfig fields populated when all config defaults
 #
 # IMPORTANT: LlmAgent.validate_generate_content_config always converts None →

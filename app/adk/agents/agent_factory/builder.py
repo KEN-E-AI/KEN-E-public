@@ -8,7 +8,7 @@ from typing import Any
 from google.adk.agents import LlmAgent
 from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.code_executors import BuiltInCodeExecutor
-from google.genai.types import GenerateContentConfig
+from google.genai.types import GenerateContentConfig, ThinkingConfig
 
 from app.adk.agents.agent_factory._executors import get_pool_checkout_executor
 from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
@@ -371,11 +371,22 @@ def build_agent(
     # AH-40: reconstruct the SDK GenerateContentConfig from flat fields at
     # the ADK construction boundary. Storage is flat; the nested grouping
     # exists only as an SDK API concern.
+    #
+    # AH-89: when thinking_budget is set, add a ThinkingConfig so the model
+    # emits thought=True parts. include_thoughts=True is hard-wired — chat is
+    # the only consumer and the streaming router (chat.py) needs the parts on
+    # the event: reasoning channel. Set thinking_budget=-1 to let the model
+    # pick the budget dynamically; set None to disable thinking entirely.
     gcc_kwargs: dict[str, Any] = {}
     if config.temperature is not None:
         gcc_kwargs["temperature"] = config.temperature
     if config.max_output_tokens is not None:
         gcc_kwargs["max_output_tokens"] = config.max_output_tokens
+    if config.thinking_budget is not None:
+        gcc_kwargs["thinking_config"] = ThinkingConfig(
+            include_thoughts=True,
+            thinking_budget=config.thinking_budget,
+        )
     generate_content_config: GenerateContentConfig | None = (
         GenerateContentConfig(**gcc_kwargs) if gcc_kwargs else None
     )

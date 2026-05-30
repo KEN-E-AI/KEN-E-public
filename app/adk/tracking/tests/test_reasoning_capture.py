@@ -46,25 +46,28 @@ def _make_function_call_part() -> MagicMock:
 
 
 class TestAfterModelCallback:
-    """Test adk_after_model_callback extracts reasoning from LlmResponse."""
+    """Test adk_after_model_callback extracts reasoning from LlmResponse.
+
+    AH-89: the callback no longer strips thought=True parts from the response.
+    It only captures reasoning into state["_last_reasoning"] for Weave tool
+    spans and always returns None.
+    """
 
     @pytest.mark.asyncio
     async def test_extracts_thought_reasoning(self) -> None:
         from app.adk.tracking.callbacks import adk_after_model_callback
 
         ctx = MockCallbackContext()
-        response = MockLlmResponse(
-            [
-                _make_text_part(
-                    "I'll search for Apple news to answer your question.", thought=True
-                ),
-                _make_function_call_part(),
-            ]
+        thought = _make_text_part(
+            "I'll search for Apple news to answer your question.", thought=True
         )
+        func_call = _make_function_call_part()
+        response = MockLlmResponse([thought, func_call])
 
         result = await adk_after_model_callback(ctx, response)
 
-        assert result is response  # Modified response returned
+        # AH-89: always returns None — never mutates the response
+        assert result is None
         assert (
             ctx.state["_last_reasoning"]
             == "I'll search for Apple news to answer your question."
@@ -85,8 +88,8 @@ class TestAfterModelCallback:
 
         result = await adk_after_model_callback(ctx, response)
 
-        # Returns modified response (thought parts stripped)
-        assert result is response
+        # AH-89: always returns None
+        assert result is None
         assert ctx.state["_last_reasoning"] == "Thinking about which tool to use..."
 
     @pytest.mark.asyncio
@@ -121,7 +124,8 @@ class TestAfterModelCallback:
 
         result = await adk_after_model_callback(ctx, response)
 
-        assert result is response  # Modified response returned
+        # AH-89: always returns None
+        assert result is None
         assert ctx.state["_last_reasoning"] == (
             "Let me check the analytics data.\nI'll use the GA report tool."
         )
@@ -177,7 +181,8 @@ class TestAfterModelCallback:
         assert len(ctx.state["_last_reasoning"]) <= _MAX_REASONING_LENGTH
 
     @pytest.mark.asyncio
-    async def test_strips_thought_parts_from_response(self) -> None:
+    async def test_thought_parts_survive_in_response(self) -> None:
+        """AH-89: thought parts must NOT be stripped — the streaming router needs them."""
         from app.adk.tracking.callbacks import adk_after_model_callback
 
         ctx = MockCallbackContext()
@@ -187,18 +192,36 @@ class TestAfterModelCallback:
 
         result = await adk_after_model_callback(ctx, response)
 
-        # Returns modified response with thought parts stripped
-        assert result is response
-        assert thought not in result.content.parts
-        assert func_call in result.content.parts
+        # AH-89: callback returns None and leaves response untouched
+        assert result is None
+        assert thought in response.content.parts
+        assert func_call in response.content.parts
 
     @pytest.mark.asyncio
-    async def test_returns_none_when_no_thought_parts(self) -> None:
+    async def test_returns_none_always(self) -> None:
+        """AH-89: callback never mutates the response — always returns None."""
         from app.adk.tracking.callbacks import adk_after_model_callback
 
         ctx = MockCallbackContext()
         response = MockLlmResponse(
             [_make_text_part("regular text"), _make_function_call_part()]
+        )
+
+        result = await adk_after_model_callback(ctx, response)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_thought_parts_present(self) -> None:
+        """AH-89: even with thought parts, callback returns None (no mutation)."""
+        from app.adk.tracking.callbacks import adk_after_model_callback
+
+        ctx = MockCallbackContext()
+        response = MockLlmResponse(
+            [
+                _make_text_part("thinking...", thought=True),
+                _make_function_call_part(),
+            ]
         )
 
         result = await adk_after_model_callback(ctx, response)

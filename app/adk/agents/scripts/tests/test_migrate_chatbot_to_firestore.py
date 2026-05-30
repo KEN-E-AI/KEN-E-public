@@ -42,4 +42,13 @@ def test_config_dict_retains_pre_ah41_fields() -> None:
     assert config["max_output_tokens"] == 4096
     # AH-40: flat shape; the legacy nested wrapper must be gone.
     assert "generate_content_config" not in config
-    assert config["metadata"]["version"] == "v1.2"  # bumped by AH-41
+    assert config["metadata"]["version"] == "v1.3"  # bumped by AH-89
+
+
+def test_thinking_budget_present_and_nonzero() -> None:
+    """AH-89: thinking_budget must be set so the root agent emits thought parts."""
+    config = script.KEN_E_CHATBOT_CONFIG
+    assert "thinking_budget" in config, "thinking_budget field missing from seed dict"
+    assert config["thinking_budget"] is not None, "thinking_budget must not be None"
+    assert isinstance(config["thinking_budget"], int)
+    assert config["thinking_budget"] > 0, "thinking_budget should be a positive int"
