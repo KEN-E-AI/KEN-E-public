@@ -2,35 +2,12 @@
      under the "## Question 2 — Cost per session" heading when SK-7 creates that file.
      Update the placeholder tables with real data once execution unblocks. -->
 
-> [!NOTE]
-> **Timing capture complete (2026-05-25); billing reconciliation pending
-> 2026-05-27 settlement (tracked in SK-34).** Wave 2.5 harness rework
-> (SK-33) merged; N=30 cold+warm cohort orchestrator run completed with
-> 60/60 sessions OK. Cohort timing tables in `### Result (table)` below
-> are populated with live data. **Vertex AI billing export still requires
-> the ≥36 h Vertex settlement window** before SKU-level cost numbers are
-> pullable; the Line-item Split, Threshold Check, and billing-derived
-> Implication subsections remain placeholder until then.
->
-> Two prior orchestrator attempts on the same day failed at session 2 of
-> 60 with `[harness] Script not found: .../q2_cost_per_session.py` —
-> diagnosed as a branch-switching artifact (orchestrator
-> subprocess-spawns with filesystem-relative paths; the working tree was
-> switched mid-run). Resolved by running the successful re-run from a
-> `git worktree` of `spike/agent-engine-sandbox` at `/tmp/kene-spike/`,
-> isolated from the main repo's branch switches. Methodology lesson
-> captured in SK-7's Linear description.
->
-> **Remove this banner only after** SK-34 lands the billing reconciliation
-> (Line-item Split, Threshold Check, `_MAX_ENTRIES` recommendation, rate-limit
-> recommendation).
-
 ## Question 2 — Cost per session
 
 ### Method
 
 **ADK version:** google-adk==1.27.5
-**Spike engine:** `projects/PROJECT_NUMBER/locations/us-central1/reasoningEngines/ENGINE_ID`
+**Spike engine:** `projects/525657242938/locations/us-central1/reasoningEngines/2624457839443181568` (displayName `sk-prd-00-spike-sandbox`)
 **Service account:** `ken-e-api@ken-e-dev.iam.gserviceaccount.com`
 
 **Representative workload** (defined in `q2-cost-per-session-methodology.md` §d):
@@ -50,10 +27,15 @@
 time-of-day billing artifacts. Cold sessions pass a fresh Agent Engine resource name; warm
 sessions reuse the `sandboxEnvironment` from the corresponding cold session in the block.
 
-**Billing attribution:** Per `q2-cost-per-session-methodology.md` §e, billing data was pulled ≥36h after the
-last session from the Vertex AI billing export filtered to the spike service account and
-measurement window. If the export did not separately break out `sandboxEnvironment` compute,
-the proportional-by-duration fallback was applied (noted in the table below).
+**Billing attribution:** Billing was pulled 2026-05-31 (≫ the 36 h window that opened
+2026-05-27T01:30Z) from the Cloud Billing export at `ken-e-dev.billing_export`
+(`gcp_billing_export_resource_v1_*`). The Vertex billing export attributes cost by
+**project + resource + label**, not by calling principal — so the spike was isolated two ways
+rather than by service account: (a) the dedicated spike engine by `resource.name`
+(`reasoning-engine-2624457839443181568` — the Cloud Run backing-service id equals the
+`reasoningEngine` id, verified against the Vertex `reasoningEngines.list` API), and (b) the
+spike agent's LLM usage by the billing label `adk_agent_name = "spike_sandbox_agent"`. The
+proportional-by-duration fallback (§e) was **not needed**: see the Line-item Split below.
 
 **Orchestrator standalone verification (structural):**
 
@@ -147,24 +129,63 @@ is the per-session overhead: subprocess startup (~1 s for `uv run` cold
 start within the worktree), Python interpreter + SDK import (~1-2 s), and
 Vertex `execute_code` API round-trip (~1-2 s including sandbox creation).
 
-#### Cost (still pending Vertex billing settlement — 36 h from session end)
+#### Cost (Vertex billing export — settled; pulled 2026-05-31)
 
-Vertex AI billing exports have daily granularity; 36 h from the last
-session in the N=30 run (`warm_b5s4`, completed ~2026-05-25T13:30Z) covers
-one full settlement cycle plus a margin. **Billing pull window opens
-on or after 2026-05-27T01:30Z.**
+Vertex AI billing exports have daily granularity; the N=30 run completed
+2026-05-25 and the export was fully settled by this pull on 2026-05-31
+(≫ the 36 h window that opened 2026-05-27T01:30Z).
 
-**Line-item split (populate from billing export after 2026-05-27):**
+**Headline: the sandbox path produced no separately-metered Vertex cost.**
+The dedicated spike engine `sk-prd-00-spike-sandbox`
+(`…/reasoningEngines/2624457839443181568`) is a **sandbox-parent-only engine
+with no `query()` implementation**, so it runs no deployed serving container
+and accrued **zero `ReasoningEngine management fee`** over 2026-05-23 →
+2026-05-30 (0 billing rows for `reasoning-engine-2624457839443181568`). Vertex
+does **not** itemise a `SANDBOX_ENVIRONMENT_RUNTIME` or code-execution SKU in
+this billing account/window (0 rows for any `%sandbox%` / `%code exec%` SKU
+across all six projects in the export). The only spike-attributable line items
+are orchestration-layer Gemini tokens (label `adk_agent_name=spike_sandbox_agent`),
+which §a explicitly **excludes** from the Q2 sandbox-cost measure — and which
+were consumed almost entirely on 2026-05-24 during SK-1 agent runs, not by the
+2026-05-25 direct-executor N=30 run.
 
-| Billing SKU | Window total ($) | Per-session (cold, $) | Per-session (warm, $) |
-|---|---|---|---|
-| Vertex AI Reasoning Engine compute (`REASONING_ENGINE_COMPUTE`) | *[pending billing export]* | *[pending]* | *[pending]* |
-| sandboxEnvironment lifecycle (`SANDBOX_ENVIRONMENT_RUNTIME`, if itemised) | *[pending]* | *[pending]* | *[pending]* |
-| Generative AI code-exec output tokens (`GENERATIVE_AI_CODE_EXECUTION`) | *[pending]* | *[pending]* | *[pending]* |
-| Network egress (`NETWORKING_EGRESS_GOOG`, if itemised) | *[pending]* | *[pending]* | *[pending]* |
-| **Total** | *[pending]* | *[pending]* | *[pending]* |
+**Line-item split:**
 
-**Threshold check (PRD §7.AC-2 / AC #5):** *[pending billing export — PASS / FAIL against $0.10/session warm-p50]*
+| Billing SKU | Window total ($) | Per-session (cold, $) | Per-session (warm, $) | Attribution |
+|---|---|---|---|---|
+| Vertex AI Reasoning Engine compute (`reasoning-engine-2624457839443181568`) | 0.000000 | 0.000000 | 0.000000 | Direct (resource name) — 0 rows; sandbox-parent engine, no `query()` container |
+| sandboxEnvironment lifecycle (`SANDBOX_ENVIRONMENT_RUNTIME`) | n/a | n/a | n/a | SKU not itemised by Vertex in this window |
+| Generative AI code-exec output tokens (`GENERATIVE_AI_CODE_EXECUTION`) | n/a | n/a | n/a | SKU not present; direct executor emits no `code_execution_result` Gemini tokens |
+| Network egress (`NETWORKING_EGRESS_GOOG`) | 0.000000 | 0.000000 | 0.000000 | 0 spike-tagged egress rows (same-region same-project; Q1 is authoritative) |
+| **Total (session-attributable)** | **0.000000** | **0.000000** | **0.000000** | |
+| _Memo: orchestration LLM — **excluded** by §a_ | _0.290715_ | _≤ 0.0048¹_ | _≤ 0.0048¹_ | Label `spike_sandbox_agent`: $0.290024 on 05-24 (SK-1 runs), $0.000691 on 05-25 (Q2) |
+
+¹ Upper bound only, and out of scope per §a. Even if the **entire** $0.290715 of
+orchestration-layer Gemini spend (almost all of it 2026-05-24 SK-1 traffic, not
+the Q2 run) were wrongly charged to the 60 Q2 sessions, that is $0.0048/session
+— still ~20× under the $0.10 threshold. The 2026-05-25-only spike LLM spend was
+$0.000691 total (≈ $0.0000115/session).
+
+Reproducible query (run 2026-05-31 against `ken-e-dev.billing_export`):
+
+```sql
+SELECT
+  DATE(usage_start_time) AS day, service.description AS service,
+  sku.description AS sku, ROUND(SUM(cost), 6) AS cost_usd
+FROM `ken-e-dev.billing_export.gcp_billing_export_resource_v1_0183BD_803ED8_88685C`
+WHERE usage_start_time >= TIMESTAMP("2026-05-23 00:00:00 UTC")
+  AND usage_start_time <  TIMESTAMP("2026-05-31 00:00:00 UTC")
+  AND project.id = "ken-e-dev"
+  AND ( resource.name = "reasoning-engine-2624457839443181568"          -- engine fee: 0 rows
+        OR EXISTS (SELECT 1 FROM UNNEST(labels) l                       -- spike LLM, by label
+                   WHERE l.key = "adk_agent_name" AND l.value = "spike_sandbox_agent") )
+GROUP BY day, service, sku ORDER BY day, cost_usd DESC;
+```
+
+**Threshold check (PRD §7.AC-2 / AC #5): PASS** — warm-cohort per-session
+session-attributable cost = **$0.000000/session** (no metered sandbox or engine
+cost; ≤ $0.0048 even under the absurd all-LLM upper bound) — far below the
+$0.10/session threshold.
 
 ---
 
@@ -196,26 +217,35 @@ on or after 2026-05-27T01:30Z.**
    stable. The N=30 sample is large enough that p50/p95 numbers above
    should be treated as load-bearing for SK-PRD-02 tuning.
 
-#### Billing-derived implications (PENDING 2026-05-27 settlement)
+#### Billing-derived implications (resolved 2026-05-31)
 
-5. **`_MAX_ENTRIES` (LRU cap):** TBD — needs per-session cost to compare
-   against pool eviction cost. If per-session cost is dominated by
-   compute (not container lifecycle), `_MAX_ENTRIES` can be small without
-   meaningful regression. If sandbox-environment lifecycle is itemised
-   separately and is a per-pool-entry cost, a larger cap may be more
-   economical.
+5. **`_MAX_ENTRIES` (LRU cap): cost is not the binding constraint — size by
+   memory/concurrency; recommended default `_MAX_ENTRIES = 8`.** The billing
+   reconciliation shows warm-held sandboxes carry **no metered holding cost**:
+   the sandbox-parent engine accrues no `ReasoningEngine management fee` and
+   sandbox runtime is not a separately-billed SKU. The original worry ("if
+   sandbox-environment lifecycle is a per-pool-entry cost, a larger cap may be
+   more economical") is therefore **moot** — there is no per-entry cost to
+   amortise either way. `_MAX_ENTRIES` should be sized by per-process memory and
+   expected concurrent in-process sessions (see Q4 resource limits), not
+   economics. **Caveat for SK-PRD-02:** if the pool is later hosted under a
+   *production* engine that also serves `query()` traffic, that host engine's
+   management fee (~$0.086/h when active — observed on peer `ken-e-chat-agent` /
+   `strategy-supervisor` engines in the same window) is a **fixed deployment
+   cost shared across all sessions**, not a per-sandbox-session cost; it does
+   not change the per-session economics measured here.
 
-6. **Rate-limit recommendation:** TBD against the PRD §7.AC-2 $0.10/session
-   threshold. Cold/warm equivalence above suggests cost should also be
-   equivalent — but the billing export will confirm.
+6. **Rate-limit recommendation: no cost-based sandbox rate limit needed for
+   Release 1.** Per-session cost is $0.00 metered (≤ $0.0048 upper bound) —
+   ~20×+ below the $0.10/session trigger in PRD §7.AC-2. A per-account
+   sandbox-session cap is **not** warranted on cost grounds. Runaway/abuse
+   protection remains the responsibility of Q4's per-session 5-minute budget cap
+   and the SK-9 security controls, not a cost-based rate limiter.
 
-7. **PRD §9 open question (rate limit threshold):** still open pending
-   billing.
-
-> **Tasks 4 (live N=30 run) and 5 (cohort table) complete 2026-05-25.**
-> **Tasks 6-8 (billing reconciliation, cost table, SK-8 recommendation)
-> still pending the 36 h Vertex billing settlement** — billing pull
-> window opens on or after 2026-05-27T01:30Z. Update the Line-item Split
-> + Threshold Check tables and the billing-derived implications above
-> when the export lands; then post the resolved finding as a comment on
-> SK-3 and remove the `> [!NOTE]` banner at the top of this fragment.
+7. **PRD §9 open question (rate-limit threshold): CLOSED.** Representative
+   per-session cost ($0.00 metered; ≤ $0.0048 absolute upper bound) is far below
+   $0.10/session, so KEN-E does **not** rate-limit sandbox sessions per account
+   on cost grounds (Items 5–6). Re-open only if Vertex begins itemising
+   `SANDBOX_ENVIRONMENT_RUNTIME`, or if SK-PRD-02 hosts the pool under a
+   `query()`-serving engine and elects to attribute that engine's fixed
+   management fee per-session.
