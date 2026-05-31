@@ -2122,6 +2122,109 @@ class TestSpecialistRuntimeReviewWrap:
         assert result.name == "company_news_agent"
         assert result.description == "Company news assistant."
 
+    # --- AH-92: reviewer_model threads from config → reviewer child ---------
+
+    def _build_with_real_review_pipeline(self, config: Any, doc_id: str) -> Any:
+        """Drive ``_build_specialist`` through the *real* ``build_review_pipeline``
+        so the returned ``LoopAgent``'s reviewer child reflects the resolved
+        ``reviewer_model``.
+
+        Only GCP/registry infrastructure is stubbed; ``build_agent`` returns a
+        real minimal ``LlmAgent`` (``build_review_pipeline`` copies its field set
+        onto the worker) and the pipeline itself runs unpatched, so the reviewer
+        child is a real ``LlmAgent`` carrying ``.model``.
+        """
+        from contextlib import ExitStack
+        from unittest.mock import patch as _patch
+
+        from google.adk.agents import LlmAgent
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+
+        def _real_specialist(_config: Any, *, name: str, **_kw: Any) -> LlmAgent:
+            return LlmAgent(
+                name=name,
+                model=_config.model,
+                instruction=_config.instruction,
+                description=_config.description,
+            )
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.specialist_runtime._DEFAULT_MCP_POOL",
+                    new=McpToolsetPool(),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.mcp._build_firestore_client",
+                    return_value=_FakeFirestoreDb({}),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.tools.registry.function_tool_registry.resolve_default_global_tools",
+                    return_value=[],
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.tools.registry.tool_registry.get_default_registry",
+                    return_value=MagicMock(name="fake_registry"),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.build_agent",
+                    side_effect=_real_specialist,
+                )
+            )
+            # build_review_pipeline runs unpatched.
+            return sr._build_specialist(config, doc_id, None)
+
+    def test_reviewer_model_set_threads_to_reviewer_child(self) -> None:
+        """AH-92 AC1: a config with ``reviewer_model`` set builds a review
+        ``LoopAgent`` whose reviewer child (``sub_agents[1]``) uses that model,
+        independent of the specialist's own ``model``."""
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+
+        config = MergedAgentConfig(
+            instruction="News researcher.",
+            model="gemini-2.5-pro",
+            description="News researcher.",
+            default_acceptance_criteria="Cite at least 3 sources.",
+            reviewer_model="gemini-2.5-flash",
+        )
+
+        worker, reviewer = self._build_with_real_review_pipeline(
+            config, "news_researcher"
+        ).sub_agents
+
+        assert (worker.model, reviewer.model) == ("gemini-2.5-pro", "gemini-2.5-flash")
+
+    def test_reviewer_model_unset_falls_back_to_default(self) -> None:
+        """AH-92 AC2: a config with ``reviewer_model`` unset (None) falls back to
+        ``DEFAULT_REVIEWER_MODEL`` on the reviewer child — no behavior change from
+        before the field existed, and independent of the specialist's ``model``."""
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+        from app.adk.agents.utils.review_pipeline import DEFAULT_REVIEWER_MODEL
+
+        config = MergedAgentConfig(
+            instruction="News researcher.",
+            model="gemini-2.5-flash",
+            description="News researcher.",
+            default_acceptance_criteria="Cite at least 3 sources.",
+        )
+        assert config.reviewer_model is None  # sanity: field defaults to unset
+
+        worker, reviewer = self._build_with_real_review_pipeline(
+            config, "news_researcher"
+        ).sub_agents
+
+        assert (worker.model, reviewer.model) == ("gemini-2.5-flash", DEFAULT_REVIEWER_MODEL)
+
 
 # ---------------------------------------------------------------------------
 # AH-90 regression: build_agent + build_review_pipeline end-to-end (no mocks)

@@ -38,7 +38,7 @@ After this component's Release 1 projects complete, adding a new specialist is a
 │    ├── specialist (LlmAgent, output_key="{prefix}_draft")                   │
 │    │     tools: McpToolset(s) from McpToolsetPool + function tools          │
 │    │            + code_execution                                            │
-│    └── reviewer (LlmAgent, gemini-2.0-flash, include_contents='none')       │
+│    └── reviewer (LlmAgent, DEFAULT_REVIEWER_MODEL, include_contents='none') │
 │          tools: [exit_loop]                                                 │
 └─────────────────────────────────────────────────────────────────────────────┘
 
@@ -92,7 +92,7 @@ After this component's Release 1 projects complete, adding a new specialist is a
 
 1. **Deploy-time hierarchy build (AH-PRD-02):** `deploy_ken_e.py` calls `agent_factory.build_hierarchy()`. The factory reads `agent_configs/*` and `mcp_servers/*` from Firestore, applies any per-account overlay for the deploying account (default: no overlay — global config only), creates `McpToolset` instances with OAuth header providers, resolves each specialist's curated tool roster (≤30 tools, per §2.5) using the ToolRegistry metadata catalog, and generates `dispatch_to_{specialist}()` functions on the root. The root agent is handed to Agent Engine as usual.
 2. **Per-turn dispatch (AH-PRD-01 + AH-PRD-02):** A user message hits the root agent. The root picks a specialist by LLM reasoning over each specialist's description (sourced from `agent_configs/{id}.description`), generates 2–4 measurable acceptance criteria, and calls the dispatch tool function with `query` + `acceptance_criteria`. The dispatch handler wraps the specialist in a review pipeline via `build_review_pipeline(specialist, acceptance_criteria, output_key_prefix)`.
-3. **Review-loop iteration:** The specialist drafts a response using its (fixed) tool roster. The reviewer (`gemini-2.0-flash`, `include_contents='none'`) reads the draft and acceptance criteria, calls `exit_loop` if all criteria are met, or writes feedback to `{prefix}_feedback` for the next iteration. Max iterations = 3 by default.
+3. **Review-loop iteration:** The specialist drafts a response using its (fixed) tool roster. The reviewer (`DEFAULT_REVIEWER_MODEL` — `gemini-2.5-pro` by default, configurable per-specialist via `reviewer_model`, `include_contents='none'`) reads the draft and acceptance criteria, calls `exit_loop` if all criteria are met, or writes feedback to `{prefix}_feedback` for the next iteration. Max iterations = 3 by default.
 4. **Multi-tenant config overlay (AH-PRD-02):** An account admin can customize a specialist's instruction, model, or temperature by writing to `accounts/{account_id}/agent_configs/{config_id}`. The config loader shallow-merges the overlay onto the global config. Admins can also create fully custom agents (`custom_*` prefixed `config_id`) scoped to their account only.
 5. **Tracing:** Every dispatch is wrapped in `@safe_weave_op()`. Review-loop iterations appear as sub-spans; acceptance criteria live in the pipeline span's attributes; exit condition (approved vs. max_iterations) is captured. MER-E consumes these spans for quality scoring.
 
@@ -116,7 +116,7 @@ This component does **not** own the chat endpoint or the session-management API 
 
 | Abstraction | Path | Purpose |
 |-------------|------|---------|
-| `build_review_pipeline(specialist, criteria, prefix, max_iterations)` | `app/adk/agents/utils/review_pipeline.py` | Factory producing a `LoopAgent` with specialist + reviewer as direct sub-agents. No `SequentialAgent` wrapper (would swallow `escalate`). Reviewer is `gemini-2.0-flash` with `include_contents='none'`. (AH-PRD-01) |
+| `build_review_pipeline(specialist, criteria, prefix, max_iterations, reviewer_model)` | `app/adk/agents/utils/review_pipeline.py` | Factory producing a `LoopAgent` with specialist + reviewer as direct sub-agents. No `SequentialAgent` wrapper (would swallow `escalate`). Reviewer uses `DEFAULT_REVIEWER_MODEL` (`gemini-2.5-pro`) unless overridden by the per-specialist `reviewer_model` config field (AH-92). (AH-PRD-01) |
 | `agent_factory.build_hierarchy(account_id=None)` | `app/adk/agents/agent_factory/__init__.py` | Deploy-time assembly: reads Firestore, applies overlay, creates specialists + MCP toolsets + dispatch functions, returns root agent. (AH-PRD-02) |
 | `_make_header_provider(auth_type)` | `app/adk/agents/agent_factory/header_provider.py` | Closure factory mapping `ga_oauth` / `google_ads_oauth` / `meta_ads_oauth` / `mailchimp_oauth` → session-state credential key → HTTP headers. Fail-fast on unknown `auth_type`. (AH-PRD-02 §5.3) |
 | `MergedAgentConfig` | `api/src/kene_api/models/agent_config_models.py` | Pydantic view over global + overlay, with a `customization_status: "default" \| "customized" \| "custom_agent"` discriminator and `based_on_version` for customized/custom. (AH-PRD-02) |
@@ -304,7 +304,7 @@ Five touchpoints do not fit cleanly inside one PRD and need an owning team to co
 
 ### Review loop (AH-PRD-01)
 - Specialist and reviewer are **direct children** of `LoopAgent`. No `SequentialAgent` wrapper — `SequentialAgent` would swallow `escalate` from `exit_loop`.
-- Reviewer: `gemini-2.0-flash`, `include_contents='none'`, `exit_loop` in tools.
+- Reviewer: `DEFAULT_REVIEWER_MODEL` (`gemini-2.5-pro` by default; configurable per-specialist via `reviewer_model` Firestore field — AH-92), `include_contents='none'`, `exit_loop` in tools.
 - Each review pipeline uses a unique `output_key_prefix` to isolate state between concurrent pipelines in the same session.
 - `{prefix}_feedback?` (with `?` suffix) — optional template variable; first iteration resolves to empty string instead of `KeyError`.
 - `exit_loop` is a tool call with no text — if the agent also has `output_key`, that key is overwritten to `""` on exit. The reviewer (not the specialist) holds `exit_loop`; specialist's `{prefix}_draft` is the approved result.

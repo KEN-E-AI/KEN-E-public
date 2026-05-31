@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 from src.kene_api.models.agent_config_models import (
+    DEFAULT_REVIEWER_MODEL,
     MAX_ACCEPTANCE_CRITERIA_CHARS,
     MAX_TOOLS_PER_SPECIALIST,
     SUPPORTED_MODELS,
@@ -267,6 +268,132 @@ class TestDefaultAcceptanceCriteria:
         ``test_merged_accepts_over_max_length_stored_value``)."""
         with pytest.raises(ValidationError):
             make("x" * (MAX_ACCEPTANCE_CRITERIA_CHARS + 1))
+
+
+class TestReviewerModel:
+    """AH-92: ``reviewer_model`` is a first-class optional field on every
+    agent-config model.  Write models (AgentConfigUpdate / Create /
+    OverlayUpdate) enforce the supported-model pattern; the read/merge model
+    (MergedAgentConfig) deliberately does not — an unrecognised model stored
+    out-of-band must still list without failing validation."""
+
+    REVIEWER = "gemini-2.5-flash"
+
+    def _merged(self, **overrides: object) -> MergedAgentConfig:
+        payload: dict[str, object] = {
+            "config_id": "company_news_agent",
+            "instruction": "You are a news researcher...",
+            "model": "gemini-2.5-pro",
+            "customization_status": "default",
+        }
+        payload.update(overrides)
+        return MergedAgentConfig(**payload)
+
+    # --- MergedAgentConfig (read/merge model) ---
+
+    def test_merged_accepts_value(self) -> None:
+        assert self._merged(reviewer_model=self.REVIEWER).reviewer_model == self.REVIEWER
+
+    def test_merged_defaults_to_none_when_omitted(self) -> None:
+        assert self._merged().reviewer_model is None
+
+    def test_merged_accepts_unrecognised_model_stored_out_of_band(self) -> None:
+        """Read path: an unrecognised model must NOT fail validation so the doc
+        still lists (mirrors test_merged_accepts_over_max_length_stored_value
+        for default_acceptance_criteria)."""
+        merged = self._merged(reviewer_model="future-model-not-yet-in-supported-set")
+        assert merged.reviewer_model == "future-model-not-yet-in-supported-set"
+
+    # --- Write models ---
+
+    def test_agent_config_accepts_value(self) -> None:
+        config = AgentConfig(**_valid_agent_config(reviewer_model=self.REVIEWER))
+        assert config.reviewer_model == self.REVIEWER
+
+    def test_agent_config_defaults_to_none(self) -> None:
+        config = AgentConfig(**_valid_agent_config())
+        assert config.reviewer_model is None
+
+    def test_create_accepts_value(self) -> None:
+        body = AgentConfigCreate(
+            title="News Researcher",
+            instruction="You are a news researcher...",
+            model="gemini-2.5-pro",
+            reviewer_model=self.REVIEWER,
+        )
+        assert body.reviewer_model == self.REVIEWER
+
+    def test_update_accepts_value(self) -> None:
+        body = AgentConfigUpdate(
+            updated_by="admin@ken-e.ai",
+            reviewer_model=self.REVIEWER,
+        )
+        assert body.reviewer_model == self.REVIEWER
+
+    def test_overlay_explicit_null_is_a_set_field(self) -> None:
+        """An explicit null must land in model_fields_set so the overlay/global-PUT
+        handlers can distinguish 'reset to default' from 'omit'."""
+        cleared = AgentConfigOverlayUpdate(reviewer_model=None)
+        assert cleared.reviewer_model is None
+        assert "reviewer_model" in cleared.model_fields_set
+
+    @pytest.mark.parametrize(
+        "make",
+        [
+            # AgentConfig is the storage model — no pattern enforced (mirrors
+            # default_acceptance_criteria which only has max_length, not pattern).
+            # The three write surfaces below enforce the pattern.
+            lambda v: AgentConfigCreate(
+                title="T",
+                instruction="instruction text",
+                model="gemini-2.5-pro",
+                reviewer_model=v,
+            ),
+            lambda v: AgentConfigUpdate(
+                updated_by="admin@ken-e.ai", reviewer_model=v
+            ),
+            lambda v: AgentConfigOverlayUpdate(reviewer_model=v),
+        ],
+    )
+    def test_write_models_reject_invalid_model_pattern(self, make) -> None:
+        """Write surfaces (AgentConfigCreate / Update / OverlayUpdate) must
+        reject reviewer models that don't match the model-name pattern.
+        AgentConfig (storage/read model) deliberately omits the pattern —
+        an unrecognised model stored out-of-band must still load."""
+        with pytest.raises(ValidationError):
+            make("not a valid model name!")
+
+    @pytest.mark.parametrize(
+        "make",
+        [
+            lambda v: AgentConfigCreate(
+                title="T",
+                instruction="instruction text",
+                model="gemini-2.5-pro",
+                reviewer_model=v,
+            ),
+            lambda v: AgentConfigUpdate(
+                updated_by="admin@ken-e.ai", reviewer_model=v
+            ),
+            lambda v: AgentConfigOverlayUpdate(reviewer_model=v),
+        ],
+    )
+    def test_write_models_reject_unsupported_model_not_in_allowlist(
+        self, make
+    ) -> None:
+        """Even a structurally valid model string not in SUPPORTED_MODELS must
+        be rejected. Reviewer model validates against the same frozenset as the
+        main model field — preventing invented-but-structurally-valid strings
+        from reaching the ADK layer."""
+        with pytest.raises(ValidationError):
+            make("gemini-99-invented-flash")
+
+    def test_default_reviewer_model_constant(self) -> None:
+        """DEFAULT_REVIEWER_MODEL must be a non-empty string and must be in
+        SUPPORTED_MODELS so the runtime default is always a valid choice."""
+        assert isinstance(DEFAULT_REVIEWER_MODEL, str)
+        assert DEFAULT_REVIEWER_MODEL
+        assert DEFAULT_REVIEWER_MODEL in SUPPORTED_MODELS
 
 
 class TestAgentConfigOverlayUpdate:

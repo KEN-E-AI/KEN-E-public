@@ -23,6 +23,11 @@ from app.utils.weave_observability import safe_weave_op
 
 logger = logging.getLogger(__name__)
 
+# Default reviewer model for the Generator-Critic review loop.
+# Configurable per-specialist via ``MergedAgentConfig.reviewer_model``
+# (AH-92 / AH-PRD-09); callers that omit the parameter continue to get this.
+DEFAULT_REVIEWER_MODEL: str = "gemini-2.5-pro"
+
 # Hallucinated-approval patterns. Tightened to filter common negation/conditional
 # false positives ("not approved", "cannot approve", "would call exit_loop").
 # Observability-only: false positives waste log volume but don't change loop behavior.
@@ -182,7 +187,7 @@ def build_review_pipeline(
     acceptance_criteria: str,
     output_key_prefix: str | None = None,
     max_iterations: int = 3,
-    reviewer_model: str = "gemini-2.5-pro",
+    reviewer_model: str = DEFAULT_REVIEWER_MODEL,
 ) -> LoopAgent:
     """Build a Generator-Critic review loop wrapping a specialist agent.
 

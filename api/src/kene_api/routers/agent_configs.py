@@ -290,6 +290,9 @@ def _snapshot_pre_image(
         snap["default_acceptance_criteria"] = current_config.get(
             "default_acceptance_criteria"
         )
+    # AH-92: nullable field — same model_fields_set convention.
+    if "reviewer_model" in fields_set:
+        snap["reviewer_model"] = current_config.get("reviewer_model")
 
     return snap
 
@@ -321,6 +324,9 @@ def _snapshot_post_image(
         snap["default_acceptance_criteria"] = updated_data.get(
             "default_acceptance_criteria"
         )
+    # AH-92: nullable field — mirror the pre-image capture above.
+    if "reviewer_model" in fields_set:
+        snap["reviewer_model"] = updated_data.get("reviewer_model")
 
     return snap
 
@@ -631,6 +637,9 @@ async def update_agent_config(
         # omission leaves the stored value untouched.
         if "default_acceptance_criteria" in fields_set:
             updates["default_acceptance_criteria"] = update.default_acceptance_criteria
+        # AH-92: nullable reviewer model — same model_fields_set convention.
+        if "reviewer_model" in fields_set:
+            updates["reviewer_model"] = update.reviewer_model
 
         # Snapshot pre-image for audit diff (Sprint 6 AC-6.9)
         pre_image = _snapshot_pre_image(current_config, update)
@@ -971,6 +980,9 @@ async def create_account_agent_config(
     # AH-91: persist optional review-loop criteria on the custom agent.
     if body.default_acceptance_criteria is not None:
         doc_data["default_acceptance_criteria"] = body.default_acceptance_criteria
+    # AH-92: persist optional reviewer model on the custom agent.
+    if body.reviewer_model is not None:
+        doc_data["reviewer_model"] = body.reviewer_model
     if body.skill_ids:
         doc_data["skill_ids"] = body.skill_ids
     if body.sandbox_code_executor_enabled:

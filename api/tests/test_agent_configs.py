@@ -715,6 +715,59 @@ class TestAdminUpdateNullClearing:
         }
 
 
+    @pytest.mark.asyncio
+    async def test_reviewer_model_change_audited(
+        self, admin_user, sample_config_data
+    ):
+        """AH-92: setting ``reviewer_model`` via the global PUT writes the field
+        and audits it in fields_changed / changes."""
+        from unittest.mock import AsyncMock
+
+        from src.kene_api.routers import agent_configs as router_mod
+
+        model = "gemini-2.5-flash"
+        pre = dict(sample_config_data)
+        pre.pop("reviewer_model", None)
+        pre["metadata"] = {**pre["metadata"], "version": "v1.0.0"}
+        post = dict(pre)
+        post["reviewer_model"] = model
+        post["metadata"] = {**pre["metadata"], "version": "v1.0.1"}
+
+        mock_db = MagicMock()
+        doc_ref = MagicMock()
+        captured_updates: dict = {}
+
+        def _capture(updates):
+            captured_updates.update(updates)
+
+        doc_ref.update.side_effect = _capture
+        doc_ref.get.side_effect = [
+            MagicMock(exists=True, to_dict=lambda: pre),
+            MagicMock(exists=True, to_dict=lambda: post),
+        ]
+        mock_db.collection.return_value.document.return_value = doc_ref
+
+        spy_audit = AsyncMock(return_value="audit-1")
+        with patch.object(router_mod, "log_config_action", spy_audit):
+            await router_mod.update_agent_config(
+                "company_news_agent",
+                AgentConfigUpdate(
+                    reviewer_model=model,
+                    updated_by="admin@ken-e.ai",
+                ),
+                user=admin_user,
+                db=mock_db,
+            )
+
+        assert captured_updates["reviewer_model"] == model
+        kw = spy_audit.await_args.kwargs
+        assert "reviewer_model" in kw["fields_changed"]
+        assert kw["changes"]["reviewer_model"] == {
+            "before": None,
+            "after": model,
+        }
+
+
 class TestAllowlistDerivedFromRegistry:
     """Test that ALLOWED_CONFIG_IDS is derived from the agent registry."""
 

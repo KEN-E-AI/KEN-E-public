@@ -65,6 +65,11 @@ class MergedAgentConfig(BaseModel):
     # built LlmAgent in build_review_pipeline at content-hash build time.
     default_acceptance_criteria: str | None = None
 
+    # AH-92: per-specialist reviewer model for the Generator-Critic loop.
+    # None → runtime falls back to DEFAULT_REVIEWER_MODEL. Not validated here
+    # (read/ADK model) — an unrecognised stored value must not block loading.
+    reviewer_model: str | None = None
+
     # AH-89 — Gemini thought emission. None = thinking disabled; non-negative
     # int = explicit token budget (e.g. 2048); -1 = model picks dynamically.
     # Stored flat (AH-PRD-02 §5.2 pattern). build_agent reconstructs the SDK

@@ -109,6 +109,11 @@ _IDENTITY_MAX_LENGTH: int = 64
 # verbatim and only enforces this length bound.
 MAX_ACCEPTANCE_CRITERIA_CHARS: int = 2000
 
+# AH-92: model used by the Generator-Critic reviewer inside the review pipeline.
+# Mirrors DEFAULT_REVIEWER_MODEL in app/adk/agents/utils/review_pipeline.py —
+# duplicated intentionally (API must not import from app/).
+DEFAULT_REVIEWER_MODEL: str = "gemini-2.5-pro"
+
 
 def _validate_identity_field(value: str | None) -> str | None:
     """Validate that an identity string (name or title) is prompt-safe.
@@ -194,6 +199,20 @@ class AgentConfig(BaseModel):
             "Review-loop acceptance criteria (AH-75 / AH-PRD-09). When set, the "
             "specialist runs a worker/reviewer loop against these criteria; "
             "None/empty disables the review pipeline."
+        ),
+    )
+
+    # AH-92: model used by the Generator-Critic reviewer inside the review
+    # pipeline (AH-75 / AH-PRD-09). None → runtime falls back to
+    # DEFAULT_REVIEWER_MODEL. Stored verbatim — write models enforce the
+    # supported-model allowlist; the read model does not to avoid silent doc
+    # skipping if an out-of-band write stores an unrecognised value.
+    reviewer_model: str | None = Field(
+        None,
+        description=(
+            "Model for the review-loop reviewer agent (AH-92 / AH-PRD-09). "
+            "None/omit = use DEFAULT_REVIEWER_MODEL. Only meaningful when "
+            "default_acceptance_criteria is also set."
         ),
     )
 
@@ -325,6 +344,20 @@ class AgentConfigUpdate(BaseModel):
         ),
     )
 
+    # AH-92: reviewer model for the Generator-Critic loop (AH-75 / AH-PRD-09).
+    # Nullable — the global PUT handler uses model_fields_set so omitting
+    # leaves the stored value untouched while an explicit null resets to the
+    # runtime default.
+    reviewer_model: str | None = Field(
+        None,
+        pattern=r"^(gemini-[\d]+-[\w-]+|gemini-[\d\.]+[-\w]+|gpt-[\w-]+|o1-[\w-]+)$",
+        description=(
+            "Model for the review-loop reviewer agent (AH-92 / AH-PRD-09). "
+            "Omit to leave the existing value untouched; send null to reset "
+            "to DEFAULT_REVIEWER_MODEL."
+        ),
+    )
+
     # AH-82: explicit delegation gate — controls whether this agent is
     # attachable to root.sub_agents independent of visible_in_frontend.
     ken_e_sub_agent: bool | None = Field(
@@ -368,6 +401,22 @@ class AgentConfigUpdate(BaseModel):
                 f"Supported OpenAI models: {', '.join(openai_models)}"
             )
 
+        return v
+
+    # AH-92: reviewer model must be a known supported model (same allowlist as
+    # ``model``). Pattern on the field handles shape; this cross-checks the
+    # exact supported set so an invented-but-structurally-valid string is
+    # rejected at the write boundary.
+    @field_validator("reviewer_model")
+    @classmethod
+    def validate_reviewer_model_exists(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if v not in SUPPORTED_MODELS:
+            raise ValueError(
+                f"reviewer_model '{v}' is not supported. "
+                f"Supported models: {sorted(SUPPORTED_MODELS)!r}"
+            )
         return v
 
 
@@ -467,6 +516,19 @@ class MergedAgentConfig(BaseModel):
             "Review-loop acceptance criteria (AH-75 / AH-PRD-09). When set, the "
             "specialist runs a worker/reviewer loop against these criteria; "
             "None/empty disables the review pipeline."
+        ),
+    )
+
+    # AH-92: model used by the Generator-Critic reviewer (AH-75 / AH-PRD-09).
+    # Deliberately NOT pattern-validated here (read/merge model): an unrecognised
+    # model stored out-of-band must still list, not fail validation silently.
+    # The write surfaces (AgentConfigUpdate / Create / OverlayUpdate) enforce
+    # the supported-model pattern.
+    reviewer_model: str | None = Field(
+        None,
+        description=(
+            "Model for the review-loop reviewer agent (AH-92 / AH-PRD-09). "
+            "None = runtime falls back to DEFAULT_REVIEWER_MODEL."
         ),
     )
 
@@ -577,6 +639,17 @@ class AgentConfigCreate(BaseModel):
         ),
     )
 
+    # AH-92: optional reviewer model for the Generator-Critic loop. Omit / null
+    # = runtime falls back to DEFAULT_REVIEWER_MODEL.
+    reviewer_model: str | None = Field(
+        None,
+        pattern=r"^(gemini-[\d]+-[\w-]+|gemini-[\d\.]+[-\w]+|gpt-[\w-]+|o1-[\w-]+)$",
+        description=(
+            "Model for the review-loop reviewer agent (AH-92 / AH-PRD-09). "
+            "None/omit = use DEFAULT_REVIEWER_MODEL."
+        ),
+    )
+
     # AH-82: explicit delegation gate — True (default) means this custom agent
     # is delegatable from chat.
     ken_e_sub_agent: bool = True
@@ -600,6 +673,19 @@ class AgentConfigCreate(BaseModel):
                 f"Model '{v}' is not supported.\n"
                 f"Supported Gemini models: {', '.join(gemini_models)}\n"
                 f"Supported OpenAI models: {', '.join(openai_models)}"
+            )
+        return v
+
+    # AH-92: same SUPPORTED_MODELS cross-check as model.
+    @field_validator("reviewer_model")
+    @classmethod
+    def validate_reviewer_model_exists(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if v not in SUPPORTED_MODELS:
+            raise ValueError(
+                f"reviewer_model '{v}' is not supported. "
+                f"Supported models: {sorted(SUPPORTED_MODELS)!r}"
             )
         return v
 
@@ -653,6 +739,20 @@ class AgentConfigOverlayUpdate(BaseModel):
         ),
     )
 
+    # AH-92: per-account overlay for the reviewer model (AH-75 / AH-PRD-09).
+    # Omitting the field leaves any existing overlay value untouched
+    # (exclude_unset); sending null resets to DEFAULT_REVIEWER_MODEL; a string
+    # overlays the global default.
+    reviewer_model: str | None = Field(
+        None,
+        pattern=r"^(gemini-[\d]+-[\w-]+|gemini-[\d\.]+[-\w]+|gpt-[\w-]+|o1-[\w-]+)$",
+        description=(
+            "Model for the review-loop reviewer agent (AH-92 / AH-PRD-09). "
+            "Omit to leave the existing overlay value untouched; send null to "
+            "reset to DEFAULT_REVIEWER_MODEL."
+        ),
+    )
+
     # AH-82: per-account overlay can set the delegation gate independently of
     # visible_in_frontend.  Omitting the field leaves the existing overlay value
     # untouched; explicit True/False writes that selection.
@@ -689,6 +789,19 @@ class AgentConfigOverlayUpdate(BaseModel):
             )
         return v
 
+    # AH-92: same SUPPORTED_MODELS cross-check as model.
+    @field_validator("reviewer_model")
+    @classmethod
+    def validate_reviewer_model_exists(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        if v not in SUPPORTED_MODELS:
+            raise ValueError(
+                f"reviewer_model '{v}' is not supported. "
+                f"Supported models: {sorted(SUPPORTED_MODELS)!r}"
+            )
+        return v
+
     @field_validator("tool_ids")
     @classmethod
     def _validate_tool_ids(cls, v: list[str] | None) -> list[str] | None:
@@ -696,6 +809,8 @@ class AgentConfigOverlayUpdate(BaseModel):
 
 
 __all__ = [
+    "DEFAULT_REVIEWER_MODEL",
+    "MAX_ACCEPTANCE_CRITERIA_CHARS",
     "MAX_TOOLS_PER_SPECIALIST",
     "SUPPORTED_MODELS",
     "AgentConfig",

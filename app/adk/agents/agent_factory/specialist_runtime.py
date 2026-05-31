@@ -546,7 +546,10 @@ def _build_specialist(
         MAX_CRITERIA_CHARS,
         sanitise_criteria,
     )
-    from app.adk.agents.utils.review_pipeline import build_review_pipeline
+    from app.adk.agents.utils.review_pipeline import (
+        DEFAULT_REVIEWER_MODEL,
+        build_review_pipeline,
+    )
 
     if len(criteria) > MAX_CRITERIA_CHARS:
         logger.warning(
@@ -559,10 +562,17 @@ def _build_specialist(
         criteria = criteria[:MAX_CRITERIA_CHARS]
     criteria = sanitise_criteria(criteria)
 
+    # AH-92: per-specialist reviewer model. Falls back to DEFAULT_REVIEWER_MODEL
+    # when the config field is None (unset).
+    reviewer_model: str = (
+        config.reviewer_model.strip() if config.reviewer_model else DEFAULT_REVIEWER_MODEL
+    )
+
     pipeline = build_review_pipeline(
         specialist=specialist,
         acceptance_criteria=criteria,
         output_key_prefix=f"{name}_review",
+        reviewer_model=reviewer_model,
     )
 
     # Rename the LoopAgent to the specialist's doc_id so ADK's
