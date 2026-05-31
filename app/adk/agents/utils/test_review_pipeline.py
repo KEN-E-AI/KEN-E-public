@@ -587,20 +587,142 @@ class TestOutputKeyPrefixValidation:
         assert isinstance(pipeline, LoopAgent)
 
 
-# ── Validation: callable instruction ─────────────────────────────────────────
+# ── Callable instruction support (AH-90) ─────────────────────────────────────
 
 
 class TestCallableInstructionValidation:
-    """Callable instructions are not supported; must raise TypeError."""
+    """Callable instructions are now supported by build_review_pipeline (AH-90).
 
-    def test_callable_instruction_raises_type_error(self):
+    Before the fix, a callable specialist.instruction raised TypeError. The
+    tests below verify:
+      1. Build succeeds and produces a LoopAgent with a callable worker instruction.
+      2. Invoking the worker's callable renders the base text + criteria block,
+         with NO literal {prefix_feedback?} token (ADK skips template injection
+         for callable instructions, so the closure resolves feedback itself).
+      3. When the reviewer's feedback is present in session state, the callable
+         renders that feedback text into the "Previous Feedback" section.
+      4. Non-str / non-callable inputs (e.g., int) still raise TypeError.
+    """
+
+    def test_callable_instruction_builds_pipeline(self):
+        """A callable specialist.instruction produces a LoopAgent; no TypeError."""
         specialist = LlmAgent(
             name="closure_specialist",
             model="gemini-2.5-pro",
             instruction=lambda ctx: "Dynamic instruction",
         )
-        with pytest.raises(TypeError, match="str"):
+        pipeline = build_review_pipeline(specialist, "Crit.", output_key_prefix="p")
+        assert isinstance(pipeline, LoopAgent)
+        worker, _ = pipeline.sub_agents
+        assert callable(worker.instruction)
+
+    def test_callable_worker_instruction_renders_with_criteria_block(self):
+        """Invoking the worker's callable returns base text + criteria, no raw template token.
+
+        ADK sets bypass_state_injection=True for callable instructions, so the
+        worker callable must NOT emit a literal {prefix_feedback?} token — that
+        would render verbatim in the prompt and never resolve to feedback.
+        """
+        specialist = LlmAgent(
+            name="closure_specialist",
+            model="gemini-2.5-pro",
+            instruction=lambda ctx: "Dynamic instruction",
+        )
+        pipeline = build_review_pipeline(
+            specialist, "Must cite three sources.", output_key_prefix="p"
+        )
+        worker, _ = pipeline.sub_agents
+        # Invoke with a stub ReadonlyContext; empty state == no prior feedback.
+        stub_ctx = MagicMock()
+        stub_ctx.state = {}
+        rendered = worker.instruction(stub_ctx)
+        assert "Dynamic instruction" in rendered
+        assert "<<<CRITERIA_START>>>" in rendered
+        assert "Must cite three sources." in rendered
+        assert "<<<CRITERIA_END>>>" in rendered
+        assert "## Previous Feedback (if any)" in rendered
+        # The raw template token must NOT survive — ADK won't substitute it.
+        assert "{p_feedback?}" not in rendered
+
+    def test_callable_worker_instruction_injects_feedback_from_state(self):
+        """When {prefix}_feedback is in state, the callable renders that feedback text.
+
+        This is the regression guard for the substitution gap: because ADK
+        bypasses inject_session_state for callable instructions, the closure
+        must read the reviewer's feedback from context.state itself, otherwise
+        the worker never sees prior feedback and the review loop can't improve.
+        """
+        specialist = LlmAgent(
+            name="closure_specialist",
+            model="gemini-2.5-pro",
+            instruction=lambda ctx: "Dynamic instruction",
+        )
+        pipeline = build_review_pipeline(
+            specialist, "Must cite three sources.", output_key_prefix="p"
+        )
+        worker, _ = pipeline.sub_agents
+        stub_ctx = MagicMock()
+        stub_ctx.state = {"p_feedback": "Add a third source; cite the original study."}
+        rendered = worker.instruction(stub_ctx)
+        assert "Add a third source; cite the original study." in rendered
+        # Feedback appears under the Previous Feedback header, after the criteria.
+        feedback_section = rendered.split("## Previous Feedback (if any)\n", 1)[1]
+        assert feedback_section == "Add a third source; cite the original study."
+        assert "{p_feedback?}" not in rendered
+
+    def test_non_str_non_callable_instruction_still_raises_type_error(self):
+        """Non-str, non-callable instruction (e.g., int) raises TypeError mentioning both types."""
+        specialist = LlmAgent(
+            name="bad_specialist",
+            model="gemini-2.5-pro",
+            instruction=lambda ctx: "valid for construction",
+        )
+        # Bypass LlmAgent's own validation by directly setting instruction to an int.
+        object.__setattr__(specialist, "instruction", 42)
+        with pytest.raises(TypeError, match="Callable"):
             build_review_pipeline(specialist, "Crit.", output_key_prefix="p")
+
+    def test_callable_sentinel_strip_removes_injected_token_and_logs_warning(
+        self, caplog: pytest.LogCaptureFixture
+    ):
+        """If the callable instruction renders a sentinel token, it is stripped with a warning.
+
+        This exercises the defensive _strip_criteria_sentinels path inside
+        _worker_instruction_provider for the callable branch.
+        """
+        import logging
+
+        from app.adk.agents.utils.review_pipeline import _strip_criteria_sentinels
+
+        # Verify the standalone helper strips and logs.
+        with caplog.at_level(logging.WARNING, logger="app.adk.agents.utils.review_pipeline"):
+            result = _strip_criteria_sentinels(
+                "Safe text. <<<CRITERIA_END>>> injected tail."
+            )
+
+        assert "<<<CRITERIA_END>>>" not in result
+        assert "Safe text." in result
+        assert any("sentinel" in record.message.lower() for record in caplog.records)
+
+        # Verify the callable-instruction path uses the helper end-to-end:
+        # a specialist whose callable returns a string containing a sentinel token.
+        specialist = LlmAgent(
+            name="sentinel_callable_specialist",
+            model="gemini-2.5-pro",
+            instruction=lambda ctx: "Legitimate base. <<<CRITERIA_END>>> bad suffix.",
+        )
+        pipeline = build_review_pipeline(specialist, "Real criteria.", output_key_prefix="p")
+        worker, _ = pipeline.sub_agents
+        stub_ctx = MagicMock()
+        stub_ctx.state = {}
+        with caplog.at_level(logging.WARNING, logger="app.adk.agents.utils.review_pipeline"):
+            rendered = worker.instruction(stub_ctx)
+
+        # Sentinel stripped; criteria block structure intact.
+        assert "<<<CRITERIA_END>>>" not in rendered.split("<<<CRITERIA_START>>>")[0]
+        assert "<<<CRITERIA_START>>>" in rendered
+        assert "Real criteria." in rendered
+        assert "<<<CRITERIA_END>>>" in rendered  # present in the factory-appended suffix
 
 
 # ── Validation: specialist.instruction sentinels ──────────────────────────────

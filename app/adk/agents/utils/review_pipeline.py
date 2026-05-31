@@ -11,10 +11,12 @@ action up to the LoopAgent, so the loop never terminates on approval.
 
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 from google.adk.agents import LlmAgent, LoopAgent
+from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.tools import exit_loop
 
 from app.utils.weave_observability import safe_weave_op
@@ -77,6 +79,104 @@ _DROPPED_WORKER_FIELDS = {"output_schema"}
 _SENTINEL_TOKENS = ("<<<CRITERIA_START>>>", "<<<CRITERIA_END>>>")
 
 
+def _strip_criteria_sentinels(text: str) -> str:
+    """Remove sentinel tokens from a rendered instruction string.
+
+    Called defensively inside the callable-instruction wrapper to guard against
+    the unlikely case where the factory's callable returns text that already
+    contains the sentinel tokens (which would corrupt the prompt structure).
+    Logs a warning on hit so ops can investigate the source; never raises.
+    """
+    stripped = text
+    hit = False
+    for token in _SENTINEL_TOKENS:
+        if token in stripped:
+            stripped = stripped.replace(token, "")
+            hit = True
+    if hit:
+        logger.warning(
+            "[REVIEW-LOOP] Callable instruction rendered sentinel token(s); "
+            "tokens stripped to preserve prompt structure. Investigate the "
+            "callable instruction provider — sentinel tokens must not appear "
+            "in the base instruction text."
+        )
+    return stripped
+
+
+def _compose_worker_instruction(
+    base: str | Callable[..., Any],
+    acceptance_criteria: str,
+    output_key_prefix: str,
+) -> str | Callable[[ReadonlyContext], str]:
+    """Compose the worker instruction from a base (str or callable) and criteria.
+
+    String path: returns the fully composed string immediately (same as the
+    pre-AH-90 behaviour; sentinel check runs at build time).
+
+    Callable path: returns a closure that, when invoked per turn by ADK,
+    calls the original callable with the live ReadonlyContext, strips any
+    sentinel tokens from the rendered output (defensive; logs.warning on hit),
+    then appends the acceptance criteria and previous feedback.  The closure
+    preserves the factory's per-turn org-context injection and live-config
+    re-read supplied by _make_factory_instruction_provider in builder.py.
+
+    Feedback handling differs by path because ADK only runs
+    ``inject_session_state`` (which resolves ``{key?}`` templates) on *string*
+    instructions; for callable instructions it sets ``bypass_state_injection=
+    True`` and skips substitution entirely (see
+    google.adk.flows.llm_flows.instructions._process_agent_instruction).  So:
+
+    * String path embeds the ``{prefix_feedback?}`` template token and relies
+      on ADK to substitute the reviewer's feedback on each iteration.
+    * Callable path resolves ``{prefix}_feedback`` from ``context.state``
+      inside the closure — if it left the template token in place, ADK would
+      render it literally and the worker would never see the reviewer's
+      feedback, silently breaking the Generator-Critic revision loop.
+
+    The caller (build_review_pipeline) is responsible for validating that
+    acceptance_criteria is a non-empty string free of sentinel tokens before
+    calling this helper.
+    """
+    feedback_key = f"{output_key_prefix}_feedback"
+    # Everything up to (and including) the "Previous Feedback" header is shared
+    # by both paths; only how the feedback value itself is filled in differs.
+    criteria_block = (
+        "\n\n"
+        "## Acceptance Criteria\n"
+        "Your response must satisfy all of the following criteria:\n"
+        "<<<CRITERIA_START>>>\n"
+        f"{acceptance_criteria}\n"
+        "<<<CRITERIA_END>>>\n\n"
+        "## Previous Feedback (if any)\n"
+    )
+
+    if isinstance(base, str):
+        # ADK substitutes {prefix_feedback?} via inject_session_state because
+        # string instructions have bypass_state_injection=False.
+        return base + criteria_block + f"{{{feedback_key}?}}"
+
+    # Callable path — wrap the original provider.
+    original_callable = base
+
+    def _worker_instruction_provider(context: ReadonlyContext) -> str:
+        rendered = original_callable(context)
+        # ADK's instruction callable type allows Awaitable[str]; in practice
+        # the factory always returns a plain str, but guard defensively.
+        if not isinstance(rendered, str):  # pragma: no cover
+            rendered = str(rendered)
+        rendered = _strip_criteria_sentinels(rendered)
+        # ADK bypasses inject_session_state for callable instructions, so we
+        # must resolve the reviewer's feedback from live state ourselves. An
+        # absent key renders empty — matching the {prefix_feedback?} optional
+        # template semantics of the string path on iteration 1.
+        feedback = context.state.get(feedback_key, "")
+        if not isinstance(feedback, str):  # pragma: no cover
+            feedback = str(feedback)
+        return rendered + criteria_block + feedback
+
+    return _worker_instruction_provider
+
+
 def build_review_pipeline(
     specialist: LlmAgent,
     acceptance_criteria: str,
@@ -87,10 +187,19 @@ def build_review_pipeline(
     """Build a Generator-Critic review loop wrapping a specialist agent.
 
     Args:
-        specialist: The specialist `LlmAgent` to wrap. Must have a string
-            `instruction`. The specialist is not mutated; this factory
-            constructs a new worker `LlmAgent` from the specialist's full
-            field set, named `f"{specialist.name}_worker"`.
+        specialist: The specialist `LlmAgent` to wrap. Its `instruction` may
+            be either a plain `str` or a `Callable[[ReadonlyContext], str]`
+            (the factory callable produced by `builder._make_factory_instruction_provider`).
+            The specialist is not mutated; this factory constructs a new worker
+            `LlmAgent` from the specialist's full field set, named
+            `f"{specialist.name}_worker"`. The worker's instruction is composed
+            from the specialist's instruction plus the acceptance-criteria and
+            previous-feedback sections; for callable instructions this is done
+            inside a wrapping closure so per-turn org-context injection and
+            live-config re-reads (supplied by the factory's callable) are
+            preserved on every review iteration, and the reviewer's feedback is
+            resolved from session state directly (ADK skips template injection
+            for callable instructions).
         acceptance_criteria: Plain-text criteria injected into both the worker
             instruction (so the worker knows what to satisfy) and the reviewer
             instruction (so the reviewer knows what to check). Must be a
@@ -113,28 +222,33 @@ def build_review_pipeline(
         and the reviewer as its sub-agents.
 
     Raises:
-        TypeError: If `specialist.instruction` is not a `str`. ADK supports
-            callable instructions, but this factory composes the instruction
-            string at build time and cannot wrap a callable.
-        ValueError: If `specialist.instruction` contains a
-            `<<<CRITERIA_START>>>` or `<<<CRITERIA_END>>>` sentinel token,
-            which would corrupt the prompt structure; if `acceptance_criteria`
-            is not a non-empty string or contains either sentinel token; if
-            `output_key_prefix` does not match the required format or cannot
-            be auto-derived from `specialist.name`; or if `max_iterations` is
-            outside the allowed range.
+        TypeError: If `specialist.instruction` is neither a `str` nor a
+            `Callable[[ReadonlyContext], str]` (e.g., `None`, `int`, list).
+        ValueError: If `specialist.instruction` is a `str` that contains a
+            `<<<CRITERIA_START>>>` or `<<<CRITERIA_END>>>` sentinel token
+            (cannot validate callable instructions at build time — sentinel
+            stripping happens at runtime inside the wrapper closure); if
+            `acceptance_criteria` is not a non-empty string or contains either
+            sentinel token; if `output_key_prefix` does not match the required
+            format or cannot be auto-derived from `specialist.name`; or if
+            `max_iterations` is outside the allowed range.
     """
-    if not isinstance(specialist.instruction, str):
+    if not isinstance(specialist.instruction, str) and not callable(specialist.instruction):
         raise TypeError(
-            "build_review_pipeline requires specialist.instruction to be a str; "
-            f"got {type(specialist.instruction).__name__}. Callable instructions "
-            "are not supported by this factory."
+            "build_review_pipeline requires specialist.instruction to be a str "
+            "or Callable[[ReadonlyContext], str]; "
+            f"got {type(specialist.instruction).__name__}."
         )
-    for _token in _SENTINEL_TOKENS:
-        if _token in specialist.instruction:
-            raise ValueError(
-                f"specialist.instruction must not contain the literal {_token!r} sentinel"
-            )
+
+    # Sentinel-token check runs only for string instructions; callable
+    # instructions cannot be introspected at build time — the defensive runtime
+    # strip in _compose_worker_instruction handles any leakage.
+    if isinstance(specialist.instruction, str):
+        for _token in _SENTINEL_TOKENS:
+            if _token in specialist.instruction:
+                raise ValueError(
+                    f"specialist.instruction must not contain the literal {_token!r} sentinel"
+                )
 
     if not isinstance(acceptance_criteria, str) or not acceptance_criteria.strip():
         raise ValueError(
@@ -169,15 +283,8 @@ def build_review_pipeline(
             f"got {max_iterations}"
         )
 
-    worker_instruction = (
-        f"{specialist.instruction}\n\n"
-        "## Acceptance Criteria\n"
-        "Your response must satisfy all of the following criteria:\n"
-        "<<<CRITERIA_START>>>\n"
-        f"{acceptance_criteria}\n"
-        "<<<CRITERIA_END>>>\n\n"
-        "## Previous Feedback (if any)\n"
-        f"{{{output_key_prefix}_feedback?}}"
+    worker_instruction = _compose_worker_instruction(
+        specialist.instruction, acceptance_criteria, output_key_prefix
     )
 
     # Strip exit_loop from worker tools (attribute-based to survive future

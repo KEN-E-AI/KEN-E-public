@@ -2124,6 +2124,193 @@ class TestSpecialistRuntimeReviewWrap:
 
 
 # ---------------------------------------------------------------------------
+# AH-90 regression: build_agent + build_review_pipeline end-to-end (no mocks)
+# ---------------------------------------------------------------------------
+# This class closes the test gap identified in AH-90:
+#   "There is no test that builds a specialist via production build_agent and
+#    then wraps it. That gap must be closed as part of the fix."
+#
+# The existing test_criteria_set_wraps_in_review_pipeline_renamed_to_doc_id and
+# test_company_news_agent_with_criteria_wraps_in_review_pipeline both mock BOTH
+# build_agent AND build_review_pipeline.  The tests below call the real
+# implementations so a regression to the pre-AH-90 TypeError would surface here.
+# ---------------------------------------------------------------------------
+
+
+class TestBuildSpecialistRealBuildAgentWrap:
+    """Non-mocked regression: real build_agent + real build_review_pipeline.
+
+    Verifies that a MergedAgentConfig driven through the production build_agent
+    path (which wraps instruction in a callable provider) can then be wrapped
+    by the production build_review_pipeline without error (AH-90 fix).
+
+    This test FAILS on main before the AH-90 fix (TypeError from
+    build_review_pipeline rejecting the callable instruction) and PASSES after.
+    """
+
+    def test_real_build_agent_then_real_build_review_pipeline_succeeds(self) -> None:
+        """build_agent → callable instruction → build_review_pipeline: no TypeError.
+
+        This is the missing coverage that let the AH-90 regression slip past
+        PR #759's mocked test.  The key invariant is that build_agent always
+        produces a callable instruction (via _make_factory_instruction_provider),
+        so any test that mocks build_agent bypasses the problematic path.
+        """
+        from contextlib import ExitStack
+        from unittest.mock import MagicMock
+        from unittest.mock import patch as _patch
+
+        from google.adk.agents import LoopAgent
+
+        from app.adk.agents.agent_factory.builder import build_agent
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+        from app.adk.agents.utils.review_pipeline import build_review_pipeline
+
+        config = MergedAgentConfig(
+            instruction="Real instruction for the news researcher.",
+            model="gemini-2.5-pro",
+            description="Company news assistant.",
+            default_acceptance_criteria="Cite at least 3 sources.",
+        )
+
+        # Minimal patch surface: only infrastructure calls that would hit GCP/
+        # Weave in a unit test context are stubbed. build_agent and
+        # build_review_pipeline run unpatched so the callable-instruction
+        # wiring is exercised end-to-end.
+        _fake_cached_cfg = MagicMock()
+        _fake_cached_cfg.instruction = config.instruction
+
+        with ExitStack() as stack:
+            # config_cache.get_cached_config is called inside the callable
+            # instruction provider on every context invocation.  Return a
+            # minimal fake so it falls back to the deploy-time instruction.
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.config_cache.get_cached_config",
+                    return_value=(_fake_cached_cfg, {}, {}),
+                )
+            )
+            # Callback and skill-loader infrastructure — irrelevant to the
+            # callable-instruction wiring contract being tested.
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.weave_before_agent_callback",
+                    new=MagicMock(name="weave_before"),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.weave_after_agent_callback",
+                    new=MagicMock(name="weave_after"),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.adk_before_tool_callback",
+                    new=MagicMock(name="adk_before_tool"),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.adk_after_tool_callback",
+                    new=MagicMock(name="adk_after_tool"),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.skill_allowed_tools_before_tool_callback",
+                    new=MagicMock(name="skill_filter"),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.skill_spans_before_agent_callback",
+                    new=MagicMock(name="sk_spans_before_agent"),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.skill_spans_before_tool_callback",
+                    new=MagicMock(name="sk_spans_before_tool"),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.skill_spans_after_tool_callback",
+                    new=MagicMock(name="sk_spans_after_tool"),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder._build_skill_toolset",
+                    return_value=(None, {}, False),
+                )
+            )
+
+            # --- Step 1: real build_agent ---
+            specialist = build_agent(
+                config,
+                name="real_news_researcher",
+                account_id=None,
+                tools=[],
+                config_doc_id="real_news_researcher",
+            )
+
+        # build_agent always wraps instruction in _make_factory_instruction_provider.
+        assert callable(specialist.instruction), (
+            "build_agent must produce a callable instruction; "
+            f"got {type(specialist.instruction).__name__}"
+        )
+
+        # --- Step 2: real build_review_pipeline — must NOT raise TypeError ---
+        # This is the regression assertion: on main before the AH-90 fix,
+        # the line below raises:
+        #   TypeError: build_review_pipeline requires specialist.instruction to be a str;
+        #              got function. Callable instructions are not supported by this factory.
+        pipeline = build_review_pipeline(
+            specialist=specialist,
+            acceptance_criteria=config.default_acceptance_criteria,
+            output_key_prefix="real_news_researcher_review",
+        )
+
+        assert isinstance(pipeline, LoopAgent), (
+            "build_review_pipeline must return a LoopAgent"
+        )
+        worker, reviewer = pipeline.sub_agents
+        assert worker.name == "real_news_researcher_worker"
+        assert reviewer.name == "real_news_researcher_review_reviewer"
+
+        # Worker's instruction must be callable (the wrapping closure).
+        assert callable(worker.instruction), (
+            "Worker instruction must be callable (wrapping the original provider)"
+        )
+
+        # Invoking the worker's callable must render the base instruction text
+        # plus the criteria block.
+        stub_ctx = MagicMock()
+        stub_ctx.state = {}
+        rendered = worker.instruction(stub_ctx)
+        assert "Real instruction for the news researcher." in rendered
+        assert "<<<CRITERIA_START>>>" in rendered
+        assert "Cite at least 3 sources." in rendered
+        assert "<<<CRITERIA_END>>>" in rendered
+        # ADK skips template injection for callable instructions, so the raw
+        # {prefix_feedback?} token must NOT leak into the prompt — the closure
+        # resolves feedback from session state instead (verified below).
+        assert "{real_news_researcher_review_feedback?}" not in rendered
+
+        # With the reviewer's feedback present in state, the closure renders it
+        # under the Previous Feedback header (the Generator-Critic revision loop
+        # depends on this reaching the worker on iterations 2+).
+        stub_ctx_with_feedback = MagicMock()
+        stub_ctx_with_feedback.state = {
+            "real_news_researcher_review_feedback": "Add a fourth source."
+        }
+        rendered_with_feedback = worker.instruction(stub_ctx_with_feedback)
+        assert "Add a fourth source." in rendered_with_feedback
+
+
+# ---------------------------------------------------------------------------
 # Pool integration tests (AH-62 Phase 3)
 # ---------------------------------------------------------------------------
 

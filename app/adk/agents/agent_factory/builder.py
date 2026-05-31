@@ -38,7 +38,16 @@ from shared.structured_logging import get_structured_logger
 logger = get_structured_logger(__name__)
 
 _MAX_ORG_CONTEXT_CHARS = 4000
-_ORG_CONTEXT_BLOCKED = ("[END CONTEXT]", "[ORGANIZATION CONTEXT]")
+_ORG_CONTEXT_BLOCKED = (
+    "[END CONTEXT]",
+    "[ORGANIZATION CONTEXT]",
+    # Review-loop sentinel tokens — belt-and-suspenders to prevent user-supplied
+    # organization_context from corrupting the criteria framing in the worker
+    # prompt. The callable-instruction path also strips these at render time via
+    # _strip_criteria_sentinels in review_pipeline.py.
+    "<<<CRITERIA_START>>>",
+    "<<<CRITERIA_END>>>",
+)
 _SKILL_LOAD_TIMEOUT_SECONDS = 30
 
 # Process-wide singleton — one pool per Cloud Run instance. Mirrors the
