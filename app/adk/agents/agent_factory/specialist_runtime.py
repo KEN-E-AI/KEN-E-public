@@ -99,14 +99,59 @@ _DEFAULT_MCP_POOL: McpToolsetPool = McpToolsetPool()
 # ---------------------------------------------------------------------------
 
 
-def _content_hash(config: MergedAgentConfig) -> str:
+def _content_hash(
+    config: MergedAgentConfig,
+    resolved_reviewer_model: str | None = None,
+) -> str:
     """Return a sha256 hex digest of ``config``'s JSON representation.
 
     Any field change (instruction, model, temperature, mcp_servers, …)
     produces a new hash, causing the cached ``LlmAgent`` to be superseded on
     the next ``resolve_agent`` call.
+
+    Args:
+        config: The merged agent configuration.
+        resolved_reviewer_model: When non-``None``, folded into the hash input
+            so that a change to the harness-wide default (AH-93,
+            ``system_settings/harness``) propagates to already-cached
+            ``LoopAgent`` review pipelines within the TTL window.  The
+            per-specialist override from AH-92 is already part of
+            ``config.model_dump_json()`` (it is a ``MergedAgentConfig``
+            field), so it does not need separate folding.  Only pass a
+            non-``None`` value when the specialist uses a review pipeline
+            (``config.default_acceptance_criteria`` is set); non-review
+            specialists should pass ``None`` to avoid unnecessary cache churn
+            on every harness-default flip.
     """
-    return hashlib.sha256(config.model_dump_json().encode()).hexdigest()
+    base = config.model_dump_json()
+    if resolved_reviewer_model is not None:
+        payload = f"{base}|reviewer={resolved_reviewer_model}"
+    else:
+        payload = base
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def _resolve_reviewer_model(config: MergedAgentConfig) -> str:
+    """Return the reviewer model to use for *config*'s review pipeline (AH-93).
+
+    Resolution chain (highest priority first):
+
+    1. ``config.reviewer_model`` — per-specialist override (AH-92).
+    2. ``harness_default_reviewer_model()`` — harness-wide Firestore knob (AH-93).
+    3. ``DEFAULT_REVIEWER_MODEL`` — code-level constant (AH-PRD-01 floor).
+
+    The result is resolved **once per ``resolve_agent`` call** and threaded
+    into both ``_content_hash`` and ``_build_specialist`` so the two sites
+    always see the same value within a single turn (avoids a race if the 60 s
+    TTL window expires between the two reads).
+    """
+    from app.adk.agents.utils.review_pipeline import DEFAULT_REVIEWER_MODEL
+    from app.adk.agents.utils.system_settings import harness_default_reviewer_model
+
+    if config.reviewer_model and config.reviewer_model.strip():
+        return config.reviewer_model.strip()
+    harness_default = harness_default_reviewer_model()
+    return harness_default if harness_default else DEFAULT_REVIEWER_MODEL
 
 
 # ---------------------------------------------------------------------------
@@ -288,6 +333,7 @@ def _build_specialist(
     account_id: str | None,
     session_state: Mapping[str, Any] | None = None,
     mcp_pool: McpToolsetPool | None = None,
+    resolved_reviewer_model: str | None = None,
 ) -> BaseAgent:
     """Construct a specialist ``BaseAgent`` from a ``MergedAgentConfig``.
 
@@ -562,11 +608,20 @@ def _build_specialist(
         criteria = criteria[:MAX_CRITERIA_CHARS]
     criteria = sanitise_criteria(criteria)
 
-    # AH-92: per-specialist reviewer model. Falls back to DEFAULT_REVIEWER_MODEL
-    # when the config field is None (unset).
-    reviewer_model: str = (
-        config.reviewer_model.strip() if config.reviewer_model else DEFAULT_REVIEWER_MODEL
-    )
+    # AH-93: use the pre-resolved reviewer model threaded from ``resolve_agent``
+    # when available (covers the chain: per-specialist override → harness default
+    # → code constant).  When ``_build_specialist`` is called directly (e.g.
+    # from tests) without going through ``resolve_agent``, fall back to the
+    # AH-92 per-specialist config field, then to DEFAULT_REVIEWER_MODEL.
+    # Use ``is not None`` (not just truth check) so an empty string, were one
+    # ever produced by a future caller, falls through rather than being silently
+    # used as the model identifier.
+    if resolved_reviewer_model is not None:
+        reviewer_model: str = resolved_reviewer_model
+    elif config.reviewer_model and config.reviewer_model.strip():
+        reviewer_model = config.reviewer_model.strip()
+    else:
+        reviewer_model = DEFAULT_REVIEWER_MODEL
 
     pipeline = build_review_pipeline(
         specialist=specialist,
@@ -655,7 +710,19 @@ def resolve_agent(
         raises (Firestore errors, roster-cap exceeded, MCP schema errors, …).
     """
     config = resolve_config(doc_id, account_id, ttl_seconds)
-    content_hash = _content_hash(config)
+
+    # AH-93: resolve the reviewer model once here — before the hash — so both
+    # the cache-key computation and the specialist build see the same value
+    # within a single turn (avoids a race if the 60 s system-settings TTL
+    # expires between the two sites).  Gate to review-pipeline specialists only
+    # so non-review specialists' cache keys are unaffected by harness-default
+    # changes.
+    criteria = (config.default_acceptance_criteria or "").strip()
+    resolved_reviewer: str | None = (
+        _resolve_reviewer_model(config) if criteria else None
+    )
+
+    content_hash = _content_hash(config, resolved_reviewer_model=resolved_reviewer)
     cache_key: tuple[str, str | None, str] = (doc_id, account_id, content_hash)
 
     # Note: this probe is outside the cache's internal lock, so a concurrent
@@ -666,7 +733,11 @@ def resolve_agent(
     agent = _specialists_cache.get_or_build(
         cache_key,
         lambda: _build_specialist(
-            config, doc_id, account_id, session_state=session_state
+            config,
+            doc_id,
+            account_id,
+            session_state=session_state,
+            resolved_reviewer_model=resolved_reviewer,
         ),
     )
     # account_id is intentionally omitted — see AH-77 Item E; only non-tenant

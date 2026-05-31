@@ -56,19 +56,25 @@ def _make_llm_agent(name: str = "test_specialist") -> MagicMock:
 
 @pytest.fixture(autouse=True)
 def clear_specialists_cache() -> Any:
-    """Each test starts with a clean agent cache, config cache, block cache, and list cache."""
+    """Each test starts with a clean agent cache, config cache, block cache, list cache,
+    and system-settings cache."""
     from app.adk.agents.agent_factory import specialist_runtime
     from app.adk.agents.utils.config_cache import clear_config_cache
+    from app.adk.agents.utils.system_settings import (
+        clear_system_settings_cache_for_tests,
+    )
 
     specialist_runtime._specialists_cache.clear()
     specialist_runtime._clear_block_cache_for_tests()
     specialist_runtime._clear_list_cache_for_tests()
     clear_config_cache()
+    clear_system_settings_cache_for_tests()
     yield
     specialist_runtime._specialists_cache.clear()
     specialist_runtime._clear_block_cache_for_tests()
     specialist_runtime._clear_list_cache_for_tests()
     clear_config_cache()
+    clear_system_settings_cache_for_tests()
 
 
 # ---------------------------------------------------------------------------
@@ -2224,6 +2230,409 @@ class TestSpecialistRuntimeReviewWrap:
         ).sub_agents
 
         assert (worker.model, reviewer.model) == ("gemini-2.5-flash", DEFAULT_REVIEWER_MODEL)
+
+
+# ---------------------------------------------------------------------------
+# TestHarnessDefaultReviewerModel — AH-93: harness-wide default reviewer model
+# ---------------------------------------------------------------------------
+# This class tests the three ACs of the resolution chain:
+#
+#   AC1: No override + no system doc  → DEFAULT_REVIEWER_MODEL (code floor).
+#   AC2: No override + system doc set → system-doc value used.
+#   AC3: Per-specialist override wins over system doc.
+#   AC4: Cache propagation — changing the system default yields a new cache key
+#        so already-resolved LoopAgents are NOT reused stale.
+#   AC5: Non-review specialists' cache keys are UNAFFECTED by system-default
+#        changes (gate on default_acceptance_criteria truthy).
+#   AC6: _content_hash is deterministic for identical inputs.
+# ---------------------------------------------------------------------------
+
+
+class TestHarnessDefaultReviewerModel:
+    """AH-93: harness-wide default reviewer model resolution chain + cache propagation."""
+
+    def _build_with_real_review_pipeline(
+        self,
+        config: Any,
+        doc_id: str,
+        *,
+        harness_default: str | None = None,
+    ) -> Any:
+        """Drive ``_build_specialist`` with the *real* ``build_review_pipeline``.
+
+        Stubs GCP / registry infrastructure and patches
+        ``harness_default_reviewer_model`` to return *harness_default*.
+        ``build_agent`` returns a real minimal ``LlmAgent`` so the reviewer
+        child has a real ``.model`` attribute.
+        """
+        from contextlib import ExitStack
+        from unittest.mock import patch as _patch
+
+        from google.adk.agents import LlmAgent
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+
+        def _real_specialist(_config: Any, *, name: str, **_kw: Any) -> LlmAgent:
+            return LlmAgent(
+                name=name,
+                model=_config.model,
+                instruction=_config.instruction,
+                description=_config.description,
+            )
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.specialist_runtime._DEFAULT_MCP_POOL",
+                    new=McpToolsetPool(),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.mcp._build_firestore_client",
+                    return_value=_FakeFirestoreDb({}),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.tools.registry.function_tool_registry.resolve_default_global_tools",
+                    return_value=[],
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.tools.registry.tool_registry.get_default_registry",
+                    return_value=MagicMock(name="fake_registry"),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.build_agent",
+                    side_effect=_real_specialist,
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.utils.system_settings.harness_default_reviewer_model",
+                    return_value=harness_default,
+                )
+            )
+            # build_review_pipeline runs unpatched.
+            return sr._build_specialist(
+                config,
+                doc_id,
+                None,
+                resolved_reviewer_model=sr._resolve_reviewer_model(config),
+            )
+
+    def test_ac1_no_override_no_system_doc_uses_default_reviewer_model(self) -> None:
+        """AC1: no per-specialist override + no system doc → ``DEFAULT_REVIEWER_MODEL``."""
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+        from app.adk.agents.utils.review_pipeline import DEFAULT_REVIEWER_MODEL
+
+        config = MergedAgentConfig(
+            instruction="Test specialist.",
+            model="gemini-2.5-pro",
+            description="Test specialist.",
+            default_acceptance_criteria="Must include a numbered list.",
+        )
+        assert config.reviewer_model is None  # sanity
+
+        _worker, reviewer = self._build_with_real_review_pipeline(
+            config, "test_spec", harness_default=None
+        ).sub_agents
+
+        assert reviewer.model == DEFAULT_REVIEWER_MODEL
+
+    def test_ac2_no_override_system_doc_set_uses_harness_default(self) -> None:
+        """AC2: no per-specialist override + system doc has a value → harness value used."""
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+
+        config = MergedAgentConfig(
+            instruction="Test specialist.",
+            model="gemini-2.5-pro",
+            description="Test specialist.",
+            default_acceptance_criteria="Must include a numbered list.",
+        )
+
+        _worker, reviewer = self._build_with_real_review_pipeline(
+            config, "test_spec", harness_default="gemini-2.5-flash"
+        ).sub_agents
+
+        assert reviewer.model == "gemini-2.5-flash"
+
+    def test_ac3_per_specialist_override_wins_over_harness_default(self) -> None:
+        """AC3: per-specialist ``reviewer_model`` beats the harness default."""
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+
+        config = MergedAgentConfig(
+            instruction="Test specialist.",
+            model="gemini-2.5-pro",
+            description="Test specialist.",
+            default_acceptance_criteria="Must include a numbered list.",
+            reviewer_model="gemini-2.5-pro",  # explicit override
+        )
+
+        _worker, reviewer = self._build_with_real_review_pipeline(
+            config, "test_spec", harness_default="gemini-2.5-flash"
+        ).sub_agents
+
+        # Override wins.
+        assert reviewer.model == "gemini-2.5-pro"
+
+    def test_ac4_cache_propagation_changing_system_default_produces_new_hash(self) -> None:
+        """AC4: changing the harness default yields a new content hash so stale
+        LoopAgents are NOT served from the cache."""
+        from unittest.mock import patch as _patch
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+
+        config = MergedAgentConfig(
+            instruction="Test specialist.",
+            model="gemini-2.5-pro",
+            description="Test specialist.",
+            default_acceptance_criteria="Must include a numbered list.",
+        )
+
+        # Resolve the hash with harness_default = "gemini-2.5-flash".
+        with _patch(
+            "app.adk.agents.utils.system_settings.harness_default_reviewer_model",
+            return_value="gemini-2.5-flash",
+        ):
+            resolved_a = sr._resolve_reviewer_model(config)
+            hash_a = sr._content_hash(config, resolved_reviewer_model=resolved_a)
+
+        # Resolve the hash with harness_default = "gemini-2.5-pro".
+        with _patch(
+            "app.adk.agents.utils.system_settings.harness_default_reviewer_model",
+            return_value="gemini-2.5-pro",
+        ):
+            resolved_b = sr._resolve_reviewer_model(config)
+            hash_b = sr._content_hash(config, resolved_reviewer_model=resolved_b)
+
+        # Different harness defaults → different hashes → distinct cache entries.
+        assert resolved_a != resolved_b
+        assert hash_a != hash_b
+
+    def test_ac4_fresh_build_invoked_after_default_change(self) -> None:
+        """AC4 (extended): changing the system default triggers a fresh _build_specialist
+        call instead of reusing the stale cached LoopAgent."""
+        from contextlib import ExitStack
+        from unittest.mock import patch as _patch
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+        from app.adk.agents.agent_factory.mcp_pool import McpToolsetPool
+
+        config_a = MergedAgentConfig(
+            instruction="Test spec.",
+            model="gemini-2.5-pro",
+            description="Test spec.",
+            default_acceptance_criteria="Must include a numbered list.",
+        )
+
+        build_call_count = [0]
+
+        def _counting_build(
+            cfg: Any, *, name: str, account_id: Any = None, **kw: Any
+        ) -> MagicMock:
+            build_call_count[0] += 1
+            m = MagicMock(name=f"agent_build_{build_call_count[0]}")
+            m.name = name
+            m.description = "Test spec."
+            return m
+
+        with ExitStack() as stack:
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.specialist_runtime._DEFAULT_MCP_POOL",
+                    new=McpToolsetPool(),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.mcp._build_firestore_client",
+                    return_value=_FakeFirestoreDb({}),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.tools.registry.function_tool_registry.resolve_default_global_tools",
+                    return_value=[],
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.tools.registry.tool_registry.get_default_registry",
+                    return_value=MagicMock(name="fake_registry"),
+                )
+            )
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.agent_factory.builder.build_agent",
+                    side_effect=_counting_build,
+                )
+            )
+            # Also mock build_review_pipeline to avoid needing real LlmAgent internals.
+            def _fake_pipeline(specialist: Any, **_kw: Any) -> MagicMock:
+                m = MagicMock(name="pipeline")
+                m.name = specialist.name
+                m.description = specialist.description
+                return m
+
+            stack.enter_context(
+                _patch(
+                    "app.adk.agents.utils.review_pipeline.build_review_pipeline",
+                    side_effect=_fake_pipeline,
+                )
+            )
+
+            # First call with harness default A.
+            with _patch(
+                "app.adk.agents.utils.system_settings.harness_default_reviewer_model",
+                return_value="gemini-2.5-flash",
+            ):
+                resolved_a = sr._resolve_reviewer_model(config_a)
+                hash_a = sr._content_hash(config_a, resolved_reviewer_model=resolved_a)
+                key_a = ("spec", None, hash_a)
+                sr._specialists_cache.get_or_build(
+                    key_a,
+                    lambda: sr._build_specialist(
+                        config_a, "spec", None, resolved_reviewer_model=resolved_a
+                    ),
+                )
+
+            assert build_call_count[0] == 1  # fresh build triggered
+
+            # Second call with harness default B (different value).
+            with _patch(
+                "app.adk.agents.utils.system_settings.harness_default_reviewer_model",
+                return_value="gemini-2.5-pro",
+            ):
+                resolved_b = sr._resolve_reviewer_model(config_a)
+                hash_b = sr._content_hash(config_a, resolved_reviewer_model=resolved_b)
+                key_b = ("spec", None, hash_b)
+                assert hash_a != hash_b  # different key
+                sr._specialists_cache.get_or_build(
+                    key_b,
+                    lambda: sr._build_specialist(
+                        config_a, "spec", None, resolved_reviewer_model=resolved_b
+                    ),
+                )
+
+            # A NEW build was triggered — stale entry not reused.
+            assert build_call_count[0] == 2
+
+    def test_ac5_non_review_specialist_hash_unaffected_by_harness_default(self) -> None:
+        """AC5: specialists without default_acceptance_criteria have ``resolved_reviewer=None``
+        so their cache key / hash does NOT change when the harness default changes."""
+        from unittest.mock import patch as _patch
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+
+        config = MergedAgentConfig(
+            instruction="Plain specialist.",
+            model="gemini-2.5-pro",
+            description="Plain specialist.",
+            # No default_acceptance_criteria — not a review specialist.
+        )
+        assert not (config.default_acceptance_criteria or "").strip()  # sanity
+
+        with _patch(
+            "app.adk.agents.utils.system_settings.harness_default_reviewer_model",
+            return_value="gemini-2.5-flash",
+        ):
+            # resolve_agent computes resolved_reviewer=None for non-review specs
+            # and passes None to _content_hash.
+            hash_a = sr._content_hash(config, resolved_reviewer_model=None)
+
+        with _patch(
+            "app.adk.agents.utils.system_settings.harness_default_reviewer_model",
+            return_value="gemini-2.5-pro",
+        ):
+            hash_b = sr._content_hash(config, resolved_reviewer_model=None)
+
+        # Hash unchanged — no churn for non-review specialists.
+        assert hash_a == hash_b
+
+    def test_ac6_content_hash_deterministic(self) -> None:
+        """AC6: ``_content_hash`` returns the same hex for identical inputs."""
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+
+        config = MergedAgentConfig(
+            instruction="Test.",
+            model="gemini-2.5-pro",
+            description="Test.",
+            default_acceptance_criteria="Must be accurate.",
+        )
+
+        h1 = sr._content_hash(config, resolved_reviewer_model="gemini-2.5-flash")
+        h2 = sr._content_hash(config, resolved_reviewer_model="gemini-2.5-flash")
+        assert h1 == h2
+
+    def test_resolve_reviewer_model_resolution_chain(self) -> None:
+        """Unit-test ``_resolve_reviewer_model`` independently of the build path."""
+        from unittest.mock import patch as _patch
+
+        from app.adk.agents.agent_factory import specialist_runtime as sr
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+        from app.adk.agents.utils.review_pipeline import DEFAULT_REVIEWER_MODEL
+
+        # Level 3: no override, no system default → code floor.
+        config_none = MergedAgentConfig(
+            instruction="Test.", model="gemini-2.5-pro", description="Test."
+        )
+        with _patch(
+            "app.adk.agents.utils.system_settings.harness_default_reviewer_model",
+            return_value=None,
+        ):
+            assert sr._resolve_reviewer_model(config_none) == DEFAULT_REVIEWER_MODEL
+
+        # Level 2: no override, system default set → harness value.
+        with _patch(
+            "app.adk.agents.utils.system_settings.harness_default_reviewer_model",
+            return_value="gemini-2.5-flash",
+        ):
+            assert sr._resolve_reviewer_model(config_none) == "gemini-2.5-flash"
+
+        # Level 1: per-specialist override wins regardless of harness default.
+        config_override = MergedAgentConfig(
+            instruction="Test.",
+            model="gemini-2.5-pro",
+            description="Test.",
+            reviewer_model="my-custom-model",
+        )
+        with _patch(
+            "app.adk.agents.utils.system_settings.harness_default_reviewer_model",
+            return_value="gemini-2.5-flash",
+        ):
+            assert sr._resolve_reviewer_model(config_override) == "my-custom-model"
+
+    def test_ah92_regression_reviewer_model_set_still_threads_to_reviewer_child(
+        self,
+    ) -> None:
+        """AH-92 regression: per-specialist ``reviewer_model`` still threads
+        correctly via the new ``resolved_reviewer_model`` kwarg path."""
+        from app.adk.agents.agent_factory.config_loader import MergedAgentConfig
+
+        config = MergedAgentConfig(
+            instruction="News researcher.",
+            model="gemini-2.5-pro",
+            description="News researcher.",
+            default_acceptance_criteria="Cite at least 3 sources.",
+            reviewer_model="gemini-2.5-flash",
+        )
+
+        worker, reviewer = self._build_with_real_review_pipeline(
+            config, "news_researcher", harness_default="gemini-2.5-pro"
+        ).sub_agents
+
+        # Per-specialist override (gemini-2.5-flash) beats harness default.
+        assert (worker.model, reviewer.model) == ("gemini-2.5-pro", "gemini-2.5-flash")
 
 
 # ---------------------------------------------------------------------------
