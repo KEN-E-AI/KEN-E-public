@@ -179,7 +179,7 @@ def _build_firestore_updates(
     experiment_id: str | None = None,
     notes: str | None = None,
     ken_e_sub_agent: bool | None = None,
-) -> dict[str, str | int | float | bool]:
+) -> dict[str, str | int | float | bool | None]:
     """
     Build type-safe Firestore update dictionary.
 
@@ -209,7 +209,10 @@ def _build_firestore_updates(
     Returns:
         Dictionary with Firestore update format (dot notation for metadata fields)
     """
-    updates: dict[str, str | int | float | bool] = {}
+    # Value type includes None: nullable fields (name/title/default_acceptance_
+    # criteria) are written into this dict by the caller to clear them, and
+    # Firestore accepts an explicit null write.
+    updates: dict[str, str | int | float | bool | None] = {}
 
     if instruction is not None:
         updates["instruction"] = instruction
@@ -281,6 +284,12 @@ def _snapshot_pre_image(
         snap["max_output_tokens"] = current_config.get("max_output_tokens")
     if update.ken_e_sub_agent is not None:
         snap["ken_e_sub_agent"] = current_config.get("ken_e_sub_agent")
+    # AH-91: nullable field — use model_fields_set so a null-clearing update is
+    # audited as a real change (mirrors name/title above).
+    if "default_acceptance_criteria" in fields_set:
+        snap["default_acceptance_criteria"] = current_config.get(
+            "default_acceptance_criteria"
+        )
 
     return snap
 
@@ -307,6 +316,11 @@ def _snapshot_post_image(
         snap["max_output_tokens"] = updated_data.get("max_output_tokens")
     if update.ken_e_sub_agent is not None:
         snap["ken_e_sub_agent"] = updated_data.get("ken_e_sub_agent")
+    # AH-91: nullable field — mirror the pre-image capture above.
+    if "default_acceptance_criteria" in fields_set:
+        snap["default_acceptance_criteria"] = updated_data.get(
+            "default_acceptance_criteria"
+        )
 
     return snap
 
@@ -613,6 +627,10 @@ async def update_agent_config(
             updates["name"] = update.name
         if "title" in fields_set:
             updates["title"] = update.title
+        # AH-91: nullable review-loop criteria — explicit null clears it,
+        # omission leaves the stored value untouched.
+        if "default_acceptance_criteria" in fields_set:
+            updates["default_acceptance_criteria"] = update.default_acceptance_criteria
 
         # Snapshot pre-image for audit diff (Sprint 6 AC-6.9)
         pre_image = _snapshot_pre_image(current_config, update)
@@ -950,6 +968,9 @@ async def create_account_agent_config(
         doc_data["description"] = body.description
     if body.temperature is not None:
         doc_data["temperature"] = body.temperature
+    # AH-91: persist optional review-loop criteria on the custom agent.
+    if body.default_acceptance_criteria is not None:
+        doc_data["default_acceptance_criteria"] = body.default_acceptance_criteria
     if body.skill_ids:
         doc_data["skill_ids"] = body.skill_ids
     if body.sandbox_code_executor_enabled:

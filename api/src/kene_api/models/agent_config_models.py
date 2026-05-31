@@ -101,6 +101,14 @@ _IDENTITY_CHARS_RE = re.compile(r"^[A-Za-zÀ-ÖØ-öø-ÿ0-9 '\-\.]{1,64}$")
 # Runtime max_length aligned with _MAX_IDENTITY_CHARS in dispatch.py.
 _IDENTITY_MAX_LENGTH: int = 64
 
+# AH-91: hard cap on default_acceptance_criteria length. Mirrors
+# MAX_CRITERIA_CHARS in app/adk/agents/utils/criteria_utils.py — duplicated
+# intentionally because the API must not import from app/ (see the merge-logic
+# comment in routers/agent_configs.py). The ADK runtime additionally sanitises
+# and truncates the value at review-pipeline build time; the API stores it
+# verbatim and only enforces this length bound.
+MAX_ACCEPTANCE_CRITERIA_CHARS: int = 2000
+
 
 def _validate_identity_field(value: str | None) -> str | None:
     """Validate that an identity string (name or title) is prompt-safe.
@@ -172,6 +180,20 @@ class AgentConfig(BaseModel):
             "Optional per-tool allowlist (AH-PRD-06). None=legacy "
             "(all tools from attached mcp_servers); []=no tools; "
             "[…]=explicit subset."
+        ),
+    )
+
+    # AH-91 (surfaces AH-75 / AH-PRD-09 review-loop config). When set to a
+    # non-empty string, the ADK runtime wraps the specialist in a worker/reviewer
+    # review pipeline keyed on these criteria; None/empty = single-pass. Stored
+    # verbatim — the runtime sanitises + truncates at pipeline-build time.
+    default_acceptance_criteria: str | None = Field(
+        None,
+        max_length=MAX_ACCEPTANCE_CRITERIA_CHARS,
+        description=(
+            "Review-loop acceptance criteria (AH-75 / AH-PRD-09). When set, the "
+            "specialist runs a worker/reviewer loop against these criteria; "
+            "None/empty disables the review pipeline."
         ),
     )
 
@@ -288,6 +310,19 @@ class AgentConfigUpdate(BaseModel):
 
     notes: str = Field(
         default="", max_length=5000, description="Notes about this change"
+    )
+
+    # AH-91: review-loop acceptance criteria (AH-75 / AH-PRD-09). Nullable —
+    # the global PUT handler uses model_fields_set so omitting leaves the stored
+    # value untouched while an explicit null clears it.
+    default_acceptance_criteria: str | None = Field(
+        None,
+        max_length=MAX_ACCEPTANCE_CRITERIA_CHARS,
+        description=(
+            "Review-loop acceptance criteria (AH-75 / AH-PRD-09). Omit to leave "
+            "the existing value untouched; send null to clear (disable the "
+            "review pipeline)."
+        ),
     )
 
     # AH-82: explicit delegation gate — controls whether this agent is
@@ -412,6 +447,29 @@ class MergedAgentConfig(BaseModel):
     model: str = Field(..., description="Model identifier")
 
     description: str | None = Field(None, description="Agent description")
+
+    # AH-91 (surfaces AH-75 / AH-PRD-09 review-loop config). Adding this field
+    # is what un-hides agents whose Firestore doc carries it: under
+    # extra="forbid" the doc previously failed validation and was silently
+    # dropped from the list. Overlay value wins over global via the merge.
+    #
+    # Deliberately NOT length-bounded here (unlike the write models): this is the
+    # read/merge model, and a hard max_length would re-introduce the very bug
+    # this field fixes — a stored value over MAX_ACCEPTANCE_CRITERIA_CHARS
+    # (written out-of-band by a seed or a future ADK write, since the runtime
+    # only truncates at pipeline-build time, not at write time) would raise
+    # ValidationError in _merge_from_data and the list endpoint would silently
+    # skip the doc again. Stored values pass through verbatim on read; the write
+    # surfaces (AgentConfig / *Create / *Update / *OverlayUpdate) enforce the cap.
+    default_acceptance_criteria: str | None = Field(
+        None,
+        description=(
+            "Review-loop acceptance criteria (AH-75 / AH-PRD-09). When set, the "
+            "specialist runs a worker/reviewer loop against these criteria; "
+            "None/empty disables the review pipeline."
+        ),
+    )
+
     temperature: float | None = Field(None, ge=0.0, le=1.0)
     max_output_tokens: int | None = Field(None, ge=100, le=65535)
     code_execution_enabled: bool = False
@@ -508,6 +566,17 @@ class AgentConfigCreate(BaseModel):
     )
     sandbox_code_executor_enabled: bool = False
 
+    # AH-91: optional review-loop acceptance criteria (AH-75 / AH-PRD-09) for a
+    # custom agent. Omit / null = single-pass (no review loop).
+    default_acceptance_criteria: str | None = Field(
+        None,
+        max_length=MAX_ACCEPTANCE_CRITERIA_CHARS,
+        description=(
+            "Review-loop acceptance criteria (AH-75 / AH-PRD-09). When set, the "
+            "custom agent runs a worker/reviewer loop against these criteria."
+        ),
+    )
+
     # AH-82: explicit delegation gate — True (default) means this custom agent
     # is delegatable from chat.
     ken_e_sub_agent: bool = True
@@ -569,6 +638,20 @@ class AgentConfigOverlayUpdate(BaseModel):
         ),
     )
     sandbox_code_executor_enabled: bool | None = None
+
+    # AH-91: per-account overlay for the review-loop acceptance criteria
+    # (AH-75 / AH-PRD-09). Omitting the field leaves any existing overlay value
+    # untouched (exclude_unset); sending null clears it; a string overlays the
+    # global value.
+    default_acceptance_criteria: str | None = Field(
+        None,
+        max_length=MAX_ACCEPTANCE_CRITERIA_CHARS,
+        description=(
+            "Review-loop acceptance criteria (AH-75 / AH-PRD-09). Omit to leave "
+            "the existing overlay value untouched; send null to clear; a string "
+            "overlays the global default."
+        ),
+    )
 
     # AH-82: per-account overlay can set the delegation gate independently of
     # visible_in_frontend.  Omitting the field leaves the existing overlay value

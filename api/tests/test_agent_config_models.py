@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 from src.kene_api.models.agent_config_models import (
+    MAX_ACCEPTANCE_CRITERIA_CHARS,
     MAX_TOOLS_PER_SPECIALIST,
     SUPPORTED_MODELS,
     AgentConfig,
@@ -165,6 +166,107 @@ class TestMergedAgentConfigExtraForbid:
 
         with pytest.raises(ValidationError):
             MergedAgentConfig(**payload)
+
+
+class TestDefaultAcceptanceCriteria:
+    """AH-91: ``default_acceptance_criteria`` (AH-75 / AH-PRD-09 review-loop
+    config) is a first-class optional field on every agent-config model. The
+    write models cap it at ``MAX_ACCEPTANCE_CRITERIA_CHARS``; the read/merge
+    model ``MergedAgentConfig`` deliberately does not (an over-length stored
+    value must still list, not re-trigger the silent ``extra="forbid"`` drop
+    this field fixes)."""
+
+    CRITERIA = "Cite at least 3 distinct sources; summary under 200 words."
+
+    def _merged(self, **overrides: object) -> MergedAgentConfig:
+        payload: dict[str, object] = {
+            "config_id": "company_news_agent",
+            "instruction": "You are a news researcher...",
+            "model": "gemini-2.5-pro",
+            "customization_status": "default",
+        }
+        payload.update(overrides)
+        return MergedAgentConfig(**payload)
+
+    def test_merged_accepts_value(self) -> None:
+        assert (
+            self._merged(
+                default_acceptance_criteria=self.CRITERIA
+            ).default_acceptance_criteria
+            == self.CRITERIA
+        )
+
+    def test_merged_defaults_to_none_when_omitted(self) -> None:
+        assert self._merged().default_acceptance_criteria is None
+
+    def test_merged_accepts_over_max_length_stored_value(self) -> None:
+        """AH-91 read-path: the merge model must NOT length-bound this field.
+
+        A stored value over ``MAX_ACCEPTANCE_CRITERIA_CHARS`` (written
+        out-of-band — the ADK runtime only truncates at pipeline-build time,
+        not at write time) would otherwise raise ``ValidationError`` in
+        ``_merge_from_data`` and the list endpoint would silently skip the doc,
+        re-introducing the exact agent-disappears bug this field fixes.
+        """
+        oversize = "x" * (MAX_ACCEPTANCE_CRITERIA_CHARS + 1)
+        assert (
+            self._merged(
+                default_acceptance_criteria=oversize
+            ).default_acceptance_criteria
+            == oversize
+        )
+
+    def test_agent_config_accepts_value(self) -> None:
+        config = AgentConfig(
+            **_valid_agent_config(default_acceptance_criteria=self.CRITERIA)
+        )
+        assert config.default_acceptance_criteria == self.CRITERIA
+
+    def test_create_accepts_value(self) -> None:
+        body = AgentConfigCreate(
+            title="News Researcher",
+            instruction="You are a news researcher...",
+            model="gemini-2.5-pro",
+            default_acceptance_criteria=self.CRITERIA,
+        )
+        assert body.default_acceptance_criteria == self.CRITERIA
+
+    def test_update_accepts_value(self) -> None:
+        body = AgentConfigUpdate(
+            updated_by="admin@ken-e.ai",
+            default_acceptance_criteria=self.CRITERIA,
+        )
+        assert body.default_acceptance_criteria == self.CRITERIA
+
+    def test_overlay_explicit_null_is_a_set_field(self) -> None:
+        """An explicit null must round-trip through ``model_fields_set`` so the
+        overlay/global-PUT handlers can distinguish 'clear' from 'omit'."""
+        cleared = AgentConfigOverlayUpdate(default_acceptance_criteria=None)
+        assert cleared.default_acceptance_criteria is None
+        assert "default_acceptance_criteria" in cleared.model_fields_set
+
+    @pytest.mark.parametrize(
+        "make",
+        [
+            lambda v: AgentConfig(**_valid_agent_config(default_acceptance_criteria=v)),
+            lambda v: AgentConfigCreate(
+                title="T",
+                instruction="instruction text",
+                model="gemini-2.5-pro",
+                default_acceptance_criteria=v,
+            ),
+            lambda v: AgentConfigUpdate(
+                updated_by="admin@ken-e.ai", default_acceptance_criteria=v
+            ),
+            lambda v: AgentConfigOverlayUpdate(default_acceptance_criteria=v),
+        ],
+    )
+    def test_write_models_reject_over_max_length(self, make) -> None:
+        """The write surfaces enforce the cap (``MergedAgentConfig``, the
+        read/merge model, intentionally does not — see
+        ``test_merged_accepts_over_max_length_stored_value``)."""
+        with pytest.raises(ValidationError):
+            make("x" * (MAX_ACCEPTANCE_CRITERIA_CHARS + 1))
 
 
 class TestAgentConfigOverlayUpdate:

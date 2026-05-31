@@ -115,6 +115,9 @@ def test_merged_agent_config_api_model_field_parity() -> None:
         "customization_status",
         "based_on_version",
         "config_id",
+        # AH-91: review-loop criteria must be exposed so docs carrying it are
+        # not dropped by extra="forbid" validation.
+        "default_acceptance_criteria",
     }
     api_fields = set(ApiModel.model_fields.keys())
     missing = required_fields - api_fields

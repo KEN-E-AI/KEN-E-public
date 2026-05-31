@@ -44,6 +44,7 @@ from src.kene_api.auth.models import UserContext
 from src.kene_api.auth.user_context import get_current_user_context
 from src.kene_api.dependencies import get_firestore
 from src.kene_api.main import app
+from src.kene_api.models.agent_config_models import MAX_ACCEPTANCE_CRITERIA_CHARS
 
 # ---------------------------------------------------------------------------
 # Shared helpers
@@ -380,6 +381,146 @@ class TestAccountAgentConfigsAuth:
         listed_ids = [c["config_id"] for c in resp.json()]
         assert "company_news_agent" in listed_ids
         assert "_schema" not in listed_ids
+
+    def test_list_includes_global_doc_with_acceptance_criteria(
+        self, client: TestClient
+    ) -> None:
+        """AH-91 regression: a global doc carrying ``default_acceptance_criteria``
+        is listed (not dropped) and the value is returned.
+
+        Before AH-91 the ``extra="forbid"`` ``MergedAgentConfig`` rejected such a
+        doc, silently hiding the agent from the account list — the dev
+        ``company_news_agent`` symptom.
+        """
+        self._install_user(_account_admin())
+
+        criteria = "Cite at least 3 distinct sources; summary under 200 words."
+        doc = MagicMock()
+        doc.id = "company_news_agent"
+        doc.to_dict.return_value = {
+            **_VALID_GLOBAL_DOC,
+            "default_acceptance_criteria": criteria,
+        }
+
+        global_col = MagicMock()
+        global_col.stream.return_value = iter([doc])
+        agent_cfg_sub = MagicMock()
+        agent_cfg_sub.stream.return_value = iter([])
+        account_doc = MagicMock()
+        account_doc.collection.return_value = agent_cfg_sub
+        accounts_col = MagicMock()
+        accounts_col.document.return_value = account_doc
+
+        def _col(name: str):
+            if name == "agent_configs":
+                return global_col
+            if name == "accounts":
+                return accounts_col
+            return MagicMock()
+
+        db = MagicMock()
+        db.collection.side_effect = _col
+        self._install_db(db)
+
+        resp = client.get(BASE_URL + "/")
+        assert resp.status_code == 200
+        listed = {c["config_id"]: c for c in resp.json()}
+        assert listed["company_news_agent"]["default_acceptance_criteria"] == criteria
+
+    def test_list_includes_doc_with_over_length_acceptance_criteria(
+        self, client: TestClient
+    ) -> None:
+        """AH-91 read-path: a stored value over ``MAX_ACCEPTANCE_CRITERIA_CHARS``
+        must still list (verbatim), not get dropped by the merge model.
+
+        The runtime only truncates at pipeline-build time, so an out-of-band
+        writer (seed / future ADK write) can leave an over-length value in
+        Firestore. A length-bounded read model would raise ``ValidationError``
+        in ``_merge_from_data``; the list endpoint would then skip the doc —
+        re-introducing the exact agent-disappears bug AH-91 fixes.
+        """
+        self._install_user(_account_admin())
+
+        oversize = "x" * (MAX_ACCEPTANCE_CRITERIA_CHARS + 1)
+        doc = MagicMock()
+        doc.id = "company_news_agent"
+        doc.to_dict.return_value = {
+            **_VALID_GLOBAL_DOC,
+            "default_acceptance_criteria": oversize,
+        }
+
+        global_col = MagicMock()
+        global_col.stream.return_value = iter([doc])
+        agent_cfg_sub = MagicMock()
+        agent_cfg_sub.stream.return_value = iter([])
+        account_doc = MagicMock()
+        account_doc.collection.return_value = agent_cfg_sub
+        accounts_col = MagicMock()
+        accounts_col.document.return_value = account_doc
+
+        def _col(name: str):
+            if name == "agent_configs":
+                return global_col
+            if name == "accounts":
+                return accounts_col
+            return MagicMock()
+
+        db = MagicMock()
+        db.collection.side_effect = _col
+        self._install_db(db)
+
+        resp = client.get(BASE_URL + "/")
+        assert resp.status_code == 200
+        listed = {c["config_id"]: c for c in resp.json()}
+        assert listed["company_news_agent"]["default_acceptance_criteria"] == oversize
+
+    def test_list_overlay_acceptance_criteria_shadows_global(
+        self, client: TestClient
+    ) -> None:
+        """AH-91 AC-3: a per-account overlay value wins over the global value
+        in the merged response."""
+        self._install_user(_account_admin())
+
+        global_doc = MagicMock()
+        global_doc.id = "company_news_agent"
+        global_doc.to_dict.return_value = {
+            **_VALID_GLOBAL_DOC,
+            "default_acceptance_criteria": "global criteria",
+        }
+        overlay_doc = MagicMock()
+        overlay_doc.id = "company_news_agent"
+        overlay_doc.to_dict.return_value = {
+            "based_on_version": 3,
+            "default_acceptance_criteria": "overlay criteria",
+        }
+
+        global_col = MagicMock()
+        global_col.stream.return_value = iter([global_doc])
+        agent_cfg_sub = MagicMock()
+        agent_cfg_sub.stream.return_value = iter([overlay_doc])
+        account_doc = MagicMock()
+        account_doc.collection.return_value = agent_cfg_sub
+        accounts_col = MagicMock()
+        accounts_col.document.return_value = account_doc
+
+        def _col(name: str):
+            if name == "agent_configs":
+                return global_col
+            if name == "accounts":
+                return accounts_col
+            return MagicMock()
+
+        db = MagicMock()
+        db.collection.side_effect = _col
+        self._install_db(db)
+
+        resp = client.get(BASE_URL + "/")
+        assert resp.status_code == 200
+        listed = {c["config_id"]: c for c in resp.json()}
+        assert (
+            listed["company_news_agent"]["default_acceptance_criteria"]
+            == "overlay criteria"
+        )
 
     def test_account_admin_put_is_200(self, client: TestClient) -> None:
         """Org admin can upsert an overlay (200 with merged config returned)."""

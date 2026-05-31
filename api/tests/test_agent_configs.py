@@ -662,6 +662,58 @@ class TestAdminUpdateNullClearing:
             "after": None,
         }
 
+    @pytest.mark.asyncio
+    async def test_default_acceptance_criteria_change_audited(
+        self, admin_user, sample_config_data
+    ):
+        """AH-91: setting ``default_acceptance_criteria`` via the global PUT
+        writes the field and audits it in fields_changed / changes."""
+        from unittest.mock import AsyncMock
+
+        from src.kene_api.routers import agent_configs as router_mod
+
+        criteria = "Cite at least 3 distinct sources; summary under 200 words."
+        pre = dict(sample_config_data)
+        pre.pop("default_acceptance_criteria", None)
+        pre["metadata"] = {**pre["metadata"], "version": "v1.0.0"}
+        post = dict(pre)
+        post["default_acceptance_criteria"] = criteria
+        post["metadata"] = {**pre["metadata"], "version": "v1.0.1"}
+
+        mock_db = MagicMock()
+        doc_ref = MagicMock()
+        captured_updates: dict = {}
+
+        def _capture(updates):
+            captured_updates.update(updates)
+
+        doc_ref.update.side_effect = _capture
+        doc_ref.get.side_effect = [
+            MagicMock(exists=True, to_dict=lambda: pre),
+            MagicMock(exists=True, to_dict=lambda: post),
+        ]
+        mock_db.collection.return_value.document.return_value = doc_ref
+
+        spy_audit = AsyncMock(return_value="audit-1")
+        with patch.object(router_mod, "log_config_action", spy_audit):
+            await router_mod.update_agent_config(
+                "company_news_agent",
+                AgentConfigUpdate(
+                    default_acceptance_criteria=criteria,
+                    updated_by="admin@ken-e.ai",
+                ),
+                user=admin_user,
+                db=mock_db,
+            )
+
+        assert captured_updates["default_acceptance_criteria"] == criteria
+        kw = spy_audit.await_args.kwargs
+        assert "default_acceptance_criteria" in kw["fields_changed"]
+        assert kw["changes"]["default_acceptance_criteria"] == {
+            "before": None,
+            "after": criteria,
+        }
+
 
 class TestAllowlistDerivedFromRegistry:
     """Test that ALLOWED_CONFIG_IDS is derived from the agent registry."""
