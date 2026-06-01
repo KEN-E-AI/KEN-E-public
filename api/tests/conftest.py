@@ -3,7 +3,8 @@ Pytest configuration and fixtures for API tests.
 """
 
 import os
-from collections.abc import Generator
+from collections.abc import AsyncGenerator, Generator
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -111,6 +112,22 @@ def mock_firebase_auth():
         ),
     ):
         yield
+
+
+@pytest.fixture
+async def fake_redis() -> AsyncGenerator[Any, None]:
+    """Async fakeredis fixture for rate-limiter tests (AH-70).
+
+    Yields a ``fakeredis.aioredis.FakeRedis`` instance that supports Lua
+    ``eval`` so the 2-key sliding-window script can run without a real Redis
+    server.  Each test gets a fresh, isolated in-memory store.
+    """
+    import fakeredis.aioredis  # type: ignore[import-untyped]
+
+    redis = fakeredis.aioredis.FakeRedis(decode_responses=False)
+    yield redis
+    await redis.flushall()
+    await redis.aclose()
 
 
 @pytest.fixture

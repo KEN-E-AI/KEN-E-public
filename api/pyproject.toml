@@ -49,6 +49,7 @@ shared = { path = "../shared", editable = true }
 [dependency-groups]
 dev = [
     "black>=25.1.0",
+    "fakeredis[aioredis,lua]>=2.26.0",  # async Redis emulator + Lua eval for rate-limiter unit tests (AH-70)
     "flake8>=7.2.0",
     "httpx>=0.28.1",
     "hypothesis>=6.100.0",

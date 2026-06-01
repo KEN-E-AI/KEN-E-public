@@ -4,15 +4,21 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import os
 import time
+import uuid
 from collections import defaultdict
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from functools import lru_cache
+from typing import TYPE_CHECKING, Any
 
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, Request, Response, status
 
 if TYPE_CHECKING:
+    from redis.asyncio import Redis as AsyncRedis
+
+    from .auth.audit_logger import AuditLogger
     from .auth.models import UserContext
 
 logger = logging.getLogger(__name__)
@@ -212,6 +218,397 @@ class LocalRateLimiter:
 # Backward-compat alias — survives one release cycle while AH-71 migrates call
 # sites from `from ..rate_limiter import RateLimiter` to `LocalRateLimiter`.
 RateLimiter = LocalRateLimiter
+
+
+# ---------------------------------------------------------------------------
+# RedisRateLimiter — async, ZSET-backed, 2-key atomic Lua sliding window
+# ---------------------------------------------------------------------------
+
+# Sentinel cap: requests that fall into the _no_xff_chain_ sentinel bucket are
+# capped here across ALL sentinel hits regardless of which per-limiter threshold
+# applies.  5/min is deliberately aggressive — prevents an attacker from
+# weaponising the sentinel bucket as a DoS lever against legitimate users who
+# momentarily land in it (see PRD §4.3 / AC-19).
+_SENTINEL_CAP_PER_MINUTE = 5
+_SENTINEL_REDIS_KEY = "kene:ratelimit:_sentinel_"
+
+# Atomic Lua script — operates on KEYS[1]=minute_key, KEYS[2]=hour_key.
+# Strict order per §4.6:
+#   1. ZREMRANGEBYSCORE (trim stale)
+#   2. ZRANGEBYSCORE WITHSCORES LIMIT 0 1  (READ oldest_score BEFORE add)
+#   3. ZCARD (count existing)
+#   4. If count >= limit: return denied
+#   5. ZADD (add unique member)
+#   6. EXPIRE (bounded lifetime — LAST to guard against orphaned keys)
+# Returns a flat list: [min_allowed, min_count, min_oldest, hr_allowed, hr_count, hr_oldest]
+_LUA_SLIDING_WINDOW = """
+local function check_window(key, limit, now, window, member)
+    redis.call('ZREMRANGEBYSCORE', key, 0, now - window)
+    local oldest_entries = redis.call('ZRANGEBYSCORE', key, 0, '+inf', 'WITHSCORES', 'LIMIT', 0, 1)
+    local oldest_score = oldest_entries[2] or now
+    local count = redis.call('ZCARD', key)
+    if count >= limit then
+        return {0, count, oldest_score}
+    end
+    redis.call('ZADD', key, now, member)
+    redis.call('EXPIRE', key, window + 60)
+    return {1, count + 1, oldest_score}
+end
+
+local min_limit = tonumber(ARGV[1])
+local hr_limit  = tonumber(ARGV[2])
+local now       = tonumber(ARGV[3])
+local member    = ARGV[4]
+
+local min_result = check_window(KEYS[1], min_limit, now, 60,   member)
+local hr_result  = check_window(KEYS[2], hr_limit,  now, 3600, member)
+
+return {min_result[1], min_result[2], min_result[3],
+        hr_result[1],  hr_result[2],  hr_result[3]}
+"""
+
+# Sentinel cap Lua: same single-window check for the shared sentinel bucket.
+_LUA_SENTINEL_CAP = """
+local key    = KEYS[1]
+local limit  = tonumber(ARGV[1])
+local now    = tonumber(ARGV[2])
+local member = ARGV[3]
+
+redis.call('ZREMRANGEBYSCORE', key, 0, now - 60)
+local count = redis.call('ZCARD', key)
+if count >= limit then
+    redis.call('EXPIRE', key, 120)
+    return 0
+end
+redis.call('ZADD', key, now, member)
+redis.call('EXPIRE', key, 120)
+return 1
+"""
+
+
+class RedisRateLimiter:
+    """Async Redis-backed sliding-window rate limiter (ZSET, 2-key atomic Lua).
+
+    Uses ``redis.asyncio.Redis`` — NOT the sync ``redis.Redis`` from
+    ``redis_client.py``.  Calling a sync Redis client from an async FastAPI
+    dependency chain would block the event loop.
+
+    The 2-key Lua script is atomic across both the per-minute and per-hour
+    windows in a single Redis round-trip, satisfying AC-3 and AC-4.
+
+    ``fallback_on_redis_error`` is intentionally defined here for AH-B2 parity
+    but the circuit-breaker / SwitchableRateLimiter logic is NOT implemented in
+    AH-B1 — that ships in AH-79.  Passing a non-False value raises
+    ``NotImplementedError`` so callers are not silently no-op'd.
+    """
+
+    MINUTE_WINDOW = 60
+    HOUR_WINDOW = 3600
+
+    def __init__(
+        self,
+        requests_per_minute: int,
+        requests_per_hour: int,
+        redis_client: AsyncRedis,
+        key_strategy: KeyStrategy,
+        limiter_name: str,
+        key_prefix: str = "kene:ratelimit",
+        audit_logger: AuditLogger | None = None,
+        emit_remaining_on_success: bool = True,
+        fallback_on_redis_error: bool | LocalRateLimiter = False,
+    ) -> None:
+        if fallback_on_redis_error is not False:
+            raise NotImplementedError(
+                "fallback_on_redis_error is AH-B2 scope (AH-79). "
+                "Pass fallback_on_redis_error=False for AH-B1 usage."
+            )
+        self.requests_per_minute = requests_per_minute
+        self.requests_per_hour = requests_per_hour
+        self.redis_client = redis_client
+        self.key_strategy = key_strategy
+        self.limiter_name = limiter_name
+        self.key_prefix = key_prefix
+        self.audit_logger = audit_logger
+        self.emit_remaining_on_success = emit_remaining_on_success
+
+    def _build_key(self, window: str, client_key: str) -> str:
+        """Build the Redis ZSET key for a given window and client key."""
+        return f"{self.key_prefix}:{self.limiter_name}:{window}:{client_key}"
+
+    async def _check_sentinel_cap(self, now: float) -> bool:
+        """Return True if the sentinel cap allows the request, False if it's blocked."""
+        member = f"{now}:{uuid.uuid4().hex[:16]}"
+        result: int = await self.redis_client.eval(
+            _LUA_SENTINEL_CAP,
+            1,
+            _SENTINEL_REDIS_KEY,
+            str(_SENTINEL_CAP_PER_MINUTE),
+            str(now),
+            member,
+        )
+        return bool(result)
+
+    async def check_rate_limit(
+        self,
+        request: Request,
+        ctx: UserContext | None = None,
+        response: Response | None = None,
+    ) -> None:
+        """Check whether the request exceeds rate limits and raise 429 if so.
+
+        Sets ``X-RateLimit-*`` headers on the supplied ``response`` object when
+        provided (200 OK path).  Headers are also set on the ``HTTPException``
+        headers dict on 429 responses.
+
+        Args:
+            request: The incoming FastAPI request.
+            ctx: Optional authenticated user context passed to key_strategy.
+            response: Optional FastAPI Response object for header injection on
+                successful requests.  If not supplied, headers are silently
+                omitted on the 200 path (Retry-After is always set on 429).
+
+        Raises:
+            HTTPException: 429 if a rate limit is exceeded.
+        """
+        client_key = self.key_strategy(request, ctx)
+        now = time.time()
+
+        # Sentinel cap — checked before the per-limiter window (§4.3 / AC-19).
+        if client_key == _SENTINEL_KEY:
+            allowed = await self._check_sentinel_cap(now)
+            if not allowed:
+                # Forensic: the sentinel client_key is the literal
+                # "ip:_no_xff_chain_". Splitting yields the bare suffix which is
+                # not an IP address; record an explicit sentinel marker so SIEM
+                # searches for an IP don't match this row.
+                if self.audit_logger is not None:
+                    try:
+                        await self.audit_logger.log_rate_limit_exceeded(
+                            ip_address="sentinel:no_xff_chain",
+                            endpoint=request.url.path,
+                            user_id=ctx.user_id if ctx is not None else None,
+                        )
+                    except Exception:
+                        # Audit-sink failure must NOT replace the 429. Log with
+                        # context for the on-call (the traceback is auto-attached
+                        # by .exception()) and intentionally fall through to the
+                        # raise below so the rate-limit denial still surfaces to
+                        # the client. Don't propagate — that's B2's whole point.
+                        logger.exception(
+                            "audit_logger failed during 429 emission "
+                            "(limiter=%s window=sentinel endpoint=%s)",
+                            self.limiter_name,
+                            request.url.path,
+                        )
+                # Same X-RateLimit-* header shape as the per-window 429 paths
+                # so CDN/observability sees a consistent set across all 429s.
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Rate limit exceeded: sentinel cap (5 requests per minute)",
+                    headers={
+                        "X-RateLimit-Limit": str(_SENTINEL_CAP_PER_MINUTE),
+                        "X-RateLimit-Remaining": "0",
+                        "Retry-After": str(self.MINUTE_WINDOW),
+                    },
+                )
+
+        minute_key = self._build_key("minute", client_key)
+        hour_key = self._build_key("hour", client_key)
+        member = f"{now}:{uuid.uuid4().hex[:16]}"
+
+        results: list[Any] = await self.redis_client.eval(
+            _LUA_SLIDING_WINDOW,
+            2,
+            minute_key,
+            hour_key,
+            str(self.requests_per_minute),
+            str(self.requests_per_hour),
+            str(now),
+            member,
+        )
+
+        # Unpack Lua return: [min_allowed, min_count, min_oldest,
+        #                      hr_allowed,  hr_count,  hr_oldest]
+        min_allowed = bool(int(results[0]))
+        min_count = int(results[1])
+        min_oldest = float(results[2])
+        hr_allowed = bool(int(results[3]))
+        hr_count = int(results[4])
+        hr_oldest = float(results[5])
+
+        if not min_allowed:
+            retry_after = max(1, math.ceil(min_oldest + self.MINUTE_WINDOW - now))
+            reset_at = math.ceil(min_oldest + self.MINUTE_WINDOW)
+            remaining = 0
+            exc_headers: dict[str, str] = {
+                "Retry-After": str(retry_after),
+                "X-RateLimit-Limit": str(self.requests_per_minute),
+                "X-RateLimit-Remaining": str(remaining),
+                "X-RateLimit-Reset": str(reset_at),
+            }
+            if self.audit_logger is not None:
+                ip_key = _validated_ip_key(request)
+                ip_addr = ip_key.split(":", 1)[1] if ":" in ip_key else ip_key
+                try:
+                    await self.audit_logger.log_rate_limit_exceeded(
+                        ip_address=ip_addr,
+                        endpoint=request.url.path,
+                        user_id=ctx.user_id if ctx is not None else None,
+                    )
+                except Exception:
+                    # Audit failure must NOT replace the 429 — log with context
+                    # and fall through. .exception() auto-attaches the traceback.
+                    logger.exception(
+                        "audit_logger failed during 429 emission "
+                        "(limiter=%s window=minute endpoint=%s)",
+                        self.limiter_name,
+                        request.url.path,
+                    )
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Rate limit exceeded: {self.requests_per_minute} requests per minute",
+                headers=exc_headers,
+            )
+
+        if not hr_allowed:
+            retry_after = max(1, math.ceil(hr_oldest + self.HOUR_WINDOW - now))
+            reset_at = math.ceil(hr_oldest + self.HOUR_WINDOW)
+            remaining = 0
+            exc_headers = {
+                "Retry-After": str(retry_after),
+                "X-RateLimit-Limit": str(self.requests_per_hour),
+                "X-RateLimit-Remaining": str(remaining),
+                "X-RateLimit-Reset": str(reset_at),
+            }
+            if self.audit_logger is not None:
+                ip_key = _validated_ip_key(request)
+                ip_addr = ip_key.split(":", 1)[1] if ":" in ip_key else ip_key
+                try:
+                    await self.audit_logger.log_rate_limit_exceeded(
+                        ip_address=ip_addr,
+                        endpoint=request.url.path,
+                        user_id=ctx.user_id if ctx is not None else None,
+                    )
+                except Exception:
+                    # Audit failure must NOT replace the 429 — log with context
+                    # and fall through. .exception() auto-attaches the traceback.
+                    logger.exception(
+                        "audit_logger failed during 429 emission "
+                        "(limiter=%s window=hour endpoint=%s)",
+                        self.limiter_name,
+                        request.url.path,
+                    )
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Rate limit exceeded: {self.requests_per_hour} requests per hour",
+                headers=exc_headers,
+            )
+
+        # Request allowed — compute headers for the most-restrictive window.
+        # Per-minute is almost always the binding window; per-hour can bind for
+        # burst-then-quiet traffic patterns.
+        min_remaining = self.requests_per_minute - min_count
+        hr_remaining = self.requests_per_hour - hr_count
+
+        if min_remaining <= hr_remaining:
+            # Minute window is more restrictive
+            binding_limit = self.requests_per_minute
+            binding_remaining = min_remaining
+            binding_reset = math.ceil(min_oldest + self.MINUTE_WINDOW)
+        else:
+            # Hour window is more restrictive
+            binding_limit = self.requests_per_hour
+            binding_remaining = hr_remaining
+            binding_reset = math.ceil(hr_oldest + self.HOUR_WINDOW)
+
+        if response is not None:
+            response.headers["X-RateLimit-Limit"] = str(binding_limit)
+            response.headers["X-RateLimit-Reset"] = str(binding_reset)
+            if self.emit_remaining_on_success:
+                response.headers["X-RateLimit-Remaining"] = str(binding_remaining)
+
+
+# ---------------------------------------------------------------------------
+# Factory helper — reads KENE_RATE_LIMIT_BACKEND and returns the right backend
+# ---------------------------------------------------------------------------
+
+
+@lru_cache(maxsize=1)
+def _build_async_redis_client() -> AsyncRedis:
+    """Construct an async Redis client from the standard KENE_* env vars.
+
+    Reuses the same 4 connection vars as ``redis_client.py`` for consistency.
+    Returns a ``redis.asyncio.Redis`` — NOT the sync ``redis.Redis``.
+
+    ``@lru_cache(maxsize=1)`` ensures a single connection pool is reused across
+    all callers within a process lifetime (singleton pattern per api/CLAUDE.md).
+    """
+    import redis.asyncio as aioredis
+
+    host = os.environ.get("REDIS_HOST", "localhost")
+    port = int(os.environ.get("REDIS_PORT", "6379"))
+    password = os.environ.get("REDIS_PASSWORD") or None
+    db = int(os.environ.get("REDIS_DB", "0"))
+
+    pool = aioredis.BlockingConnectionPool(
+        host=host,
+        port=port,
+        password=password,
+        db=db,
+        max_connections=50,
+        socket_timeout=2,
+        socket_connect_timeout=1,
+        health_check_interval=30,
+        decode_responses=False,
+    )
+    return aioredis.Redis(connection_pool=pool)
+
+
+def build_rate_limiter(
+    name: str,
+    requests_per_minute: int,
+    requests_per_hour: int,
+    key_strategy: KeyStrategy = ip_only_key_strategy,
+    **kwargs: Any,
+) -> LocalRateLimiter | RedisRateLimiter:
+    """Return the correct concrete limiter based on ``KENE_RATE_LIMIT_BACKEND``.
+
+    ``"redis"`` → ``RedisRateLimiter`` (default in prod/staging).
+    ``"memory"`` → ``LocalRateLimiter`` (default in dev/test; no Redis dep).
+
+    Extra ``**kwargs`` are forwarded to the chosen constructor.  For
+    ``RedisRateLimiter``, a ``redis_client`` kwarg is required unless the env
+    var selects ``"memory"``.  A ``redis_client`` can be injected explicitly
+    (e.g. ``fakeredis.aioredis.FakeRedis`` in tests) or omitted to use the
+    module-level auto-constructed client.
+    """
+    backend = os.environ.get("KENE_RATE_LIMIT_BACKEND", "redis").lower()
+
+    if backend == "memory":
+        if kwargs.get("audit_logger") is not None:
+            logger.info(
+                "build_rate_limiter: audit_logger is not supported by LocalRateLimiter "
+                "(memory backend). It will be ignored. Switch to the Redis backend for "
+                "audit logging."
+            )
+        return LocalRateLimiter(
+            requests_per_minute=requests_per_minute,
+            requests_per_hour=requests_per_hour,
+            key_strategy=key_strategy,
+            limiter_name=name,
+        )
+
+    # Redis backend (default)
+    redis_client = kwargs.pop("redis_client", None) or _build_async_redis_client()
+    return RedisRateLimiter(
+        requests_per_minute=requests_per_minute,
+        requests_per_hour=requests_per_hour,
+        redis_client=redis_client,
+        key_strategy=key_strategy,
+        limiter_name=name,
+        **kwargs,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Global limiter instances
