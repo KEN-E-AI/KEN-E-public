@@ -1484,7 +1484,15 @@ class AgentEngineClient:
                         if hasattr(content_obj, "parts") and content_obj.parts:
                             formatted_event["content"]["parts"] = []
                             for part in content_obj.parts:
-                                if hasattr(part, "text"):
+                                # Exclude reasoning (thought=True) parts — they are
+                                # the model's chain-of-thought, not the answer. The
+                                # streaming path routes them to the "reasoning"
+                                # channel; history must drop them too, otherwise the
+                                # reasoning leaks in as the message content and the
+                                # answer is lost (CH-63).
+                                if getattr(part, "thought", False):
+                                    continue
+                                if getattr(part, "text", None):
                                     formatted_event["content"]["parts"].append(
                                         {"text": part.text}
                                     )

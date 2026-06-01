@@ -236,16 +236,28 @@ async def test_conversation_history(
     """
     Test retrieving conversation history.
     """
-    # Mock session with history in ADK format
+    # Mock session with history in ADK format. `thought` is set explicitly on
+    # every part: a bare MagicMock auto-vivifies `.thought` as a truthy child,
+    # which the CH-63 reasoning filter would treat as a thought part and drop.
+    # Real google.genai Part objects default thought to None — model that here.
+    # The assistant turn carries a reasoning (thought=True) part followed by the
+    # answer, so this also asserts the CH-63 filter excludes reasoning (CH-63).
     mock_session = MagicMock()
     mock_session.events = [
         MagicMock(
-            content=MagicMock(role="user", parts=[MagicMock(text="User message 1")]),
+            content=MagicMock(
+                role="user",
+                parts=[MagicMock(text="User message 1", thought=False)],
+            ),
             timestamp="2025-01-01T00:00:00Z",
         ),
         MagicMock(
             content=MagicMock(
-                role="assistant", parts=[MagicMock(text="AI response 1")]
+                role="assistant",
+                parts=[
+                    MagicMock(text="Reasoning about the answer", thought=True),
+                    MagicMock(text="AI response 1", thought=False),
+                ],
             ),
             timestamp="2025-01-01T00:00:01Z",
         ),
@@ -278,7 +290,9 @@ async def test_conversation_history(
         assert history["events"][0]["role"] == "user"
         assert history["events"][0]["content"]["parts"][0]["text"] == "User message 1"
         assert history["events"][1]["role"] == "assistant"
-        assert history["events"][1]["content"]["parts"][0]["text"] == "AI response 1"
+        # The reasoning (thought=True) part is excluded; only the answer remains,
+        # so parts[0] is the answer rather than the chain-of-thought (CH-63).
+        assert history["events"][1]["content"]["parts"] == [{"text": "AI response 1"}]
 
 
 def test_missing_agent_engine_handling():
