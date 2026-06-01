@@ -17,7 +17,8 @@ from typing import Any
 
 from google.adk.agents import LlmAgent, LoopAgent
 from google.adk.agents.readonly_context import ReadonlyContext
-from google.adk.tools import exit_loop
+from google.adk.tools import ToolContext
+from google.adk.tools import exit_loop as _adk_exit_loop
 
 from app.utils.weave_observability import safe_weave_op
 
@@ -180,6 +181,36 @@ def _compose_worker_instruction(
         return rendered + criteria_block + feedback
 
     return _worker_instruction_provider
+
+
+def _make_review_exit_loop(feedback_key: str) -> Callable[[ToolContext], None]:
+    """Build the reviewer's loop-exit tool for one pipeline.
+
+    Behaves like ADK's built-in ``exit_loop`` (delegates to it, so the
+    ``escalate`` / ``skip_summarization`` semantics that end the ``LoopAgent``
+    are preserved) **and** explicitly writes ``""`` to the reviewer's feedback
+    key on approval.
+
+    Why the explicit write: ADK <= 1.27 overwrote an agent's ``output_key`` to
+    ``""`` on a tool-only turn (no model text), so the reviewer's ``exit_loop``
+    approval cleared ``{prefix}_feedback`` as a side effect — which
+    ``extract_pipeline_result`` (and the tracing layer) read as "approved".
+    ADK 1.34+ sets ``skip_summarization`` on exit and no longer writes
+    ``output_key`` on a tool-only turn, so a stale rejection in
+    ``{prefix}_feedback`` would survive and an approved draft would be misread
+    as rejected. Clearing the key here restores the approval invariant
+    deterministically, independent of ADK version.
+    """
+
+    def exit_loop(tool_context: ToolContext) -> None:
+        """Exits the review loop on approval.
+
+        Call this only when the draft satisfies every acceptance criterion.
+        """
+        _adk_exit_loop(tool_context)
+        tool_context.state[feedback_key] = ""
+
+    return exit_loop
 
 
 def build_review_pipeline(
@@ -352,7 +383,7 @@ def build_review_pipeline(
         model=reviewer_model,
         instruction=reviewer_instruction,
         include_contents="none",
-        tools=[exit_loop],
+        tools=[_make_review_exit_loop(f"{output_key_prefix}_feedback")],
         output_key=f"{output_key_prefix}_feedback",
     )
 
@@ -375,7 +406,9 @@ def extract_pipeline_result(
        is **not** equivalent to an approved-but-empty draft; an upstream failure
        must not be reported as success.
     2. Draft present, feedback empty (or absent) — reviewer called exit_loop,
-       which wipes the reviewer's output_key. Approved.
+       whose per-pipeline tool clears the reviewer's feedback key on approval
+       (see ``_make_review_exit_loop``; ADK 1.34+ no longer auto-clears
+       ``output_key`` on a tool-only turn). Approved.
     3. Draft present, feedback non-empty — max_iterations reached without
        approval; the last reviewer rejection is retained as the warning.
 

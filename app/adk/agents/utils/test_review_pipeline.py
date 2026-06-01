@@ -156,7 +156,37 @@ class TestExitLoopStripping:
             simple_specialist, "Crit.", output_key_prefix="p"
         )
         _, reviewer = pipeline.sub_agents
-        assert exit_loop in reviewer.tools
+        # The reviewer carries a single loop-exit tool named "exit_loop". It is a
+        # per-pipeline wrapper (not the bare ADK built-in) that also clears the
+        # feedback key on approval — see _make_review_exit_loop.
+        assert [getattr(t, "__name__", None) for t in reviewer.tools] == ["exit_loop"]
+
+    def test_reviewer_exit_loop_clears_feedback_and_escalates(self, simple_specialist):
+        """The reviewer's exit tool sets escalate AND clears the feedback key.
+
+        Restores the empty-feedback approval invariant that ADK <=1.27 provided
+        by auto-clearing output_key on a tool-only turn (regressed in 1.34+).
+        """
+        pipeline = build_review_pipeline(
+            simple_specialist, "Crit.", output_key_prefix="p"
+        )
+        _, reviewer = pipeline.sub_agents
+        exit_tool = reviewer.tools[0]
+
+        class _Actions:
+            escalate = False
+            skip_summarization = False
+
+        class _Ctx:
+            def __init__(self):
+                self.actions = _Actions()
+                self.state: dict[str, object] = {"p_feedback": "stale rejection"}
+
+        ctx = _Ctx()
+        exit_tool(ctx)
+
+        assert ctx.actions.escalate is True
+        assert ctx.state["p_feedback"] == ""
 
     def test_worker_tools_empty_when_specialist_has_only_exit_loop(
         self, specialist_with_exit_loop
@@ -240,7 +270,8 @@ class TestReviewerConfig:
             simple_specialist, "Crit.", output_key_prefix="p"
         )
         _, reviewer = pipeline.sub_agents
-        assert reviewer.tools == [exit_loop]
+        assert len(reviewer.tools) == 1
+        assert reviewer.tools[0].__name__ == "exit_loop"
 
 
 # ── Worker output key and instruction templates ────────────────────────────────
@@ -993,8 +1024,9 @@ class TestBehavioralLoop:
         )
         state = _run(_run_pipeline(pipeline))
 
-        # Approved draft retained; feedback key written as "" (exit_loop produces
-        # no text, so output_key extracts the empty string — key must be present).
+        # Approved draft retained; the reviewer's exit_loop tool clears the
+        # feedback key to "" on approval (ADK 1.34+ no longer auto-clears
+        # output_key on a tool-only turn — see _make_review_exit_loop).
         assert state["ap_draft"] == "good draft — detailed response"
         assert state["ap_feedback"] == ""
 
@@ -1189,7 +1221,7 @@ class TestStateIsolationBehavioral:
         # All four state keys present and pipeline-specific
         assert state["news_review_draft"] == "news draft content"
         assert state["ga_review_draft"] == "ga draft content"
-        # exit_loop produces no text, so feedback is "" on approval
+        # The reviewer's exit_loop tool clears feedback to "" on approval.
         assert state["news_review_feedback"] == ""
         assert state["ga_review_feedback"] == ""
         # No cross-pollution: each prefix's draft is independent
