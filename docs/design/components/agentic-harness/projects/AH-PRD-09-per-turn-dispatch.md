@@ -6,7 +6,7 @@
 **Soft prerequisite:** [SK-PRD-02](../../skills/projects/SK-PRD-02-agent-integration.md) `SandboxPool` — PRD §7 AC #23 verification depends on this shipping (confirmed Done in SK-23 + SK-26 + SK-37).
 **Phase 4 only (deferred to R2):** IN-PRD-01 / IN-PRD-02 / IN-PRD-03 — Zapier hybrid MCP cannot ship without the Integrations component
 **Parallel with:** SK-PRD-00, SK-PRD-01, SK-PRD-02 (all R1; SandboxPool design mirrors `McpToolsetPool`)
-**Blocks:** Future per-platform specialist PRDs (AH-PRD-10+) consume the runtime resolver
+**Blocks:** Future per-platform specialist PRDs (AH-PRD-13+) consume the runtime resolver
 **Estimated effort:** 7–10 engineering weeks across 6 phases (4–6 calendar weeks with two engineers from Phase 2 onward)
 **Release:** 1 (Foundation) — Phases 0–3 + 5; **Phase 4 (Zapier hybrid MCP) deferred to R2** alongside the Integrations component
 

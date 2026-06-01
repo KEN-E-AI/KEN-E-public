@@ -1,7 +1,7 @@
 # AH-PRD-10 — Rate-Limiter Rework: User-Keyed Identity + Shared State
 
-> **Linear Project:** AH-PRD-10 (to be created under [KEN-E] Agentic Harness)
-> **Status:** Backlog
+> **Linear Project:** AH-PRD-10 under [KEN-E] Agentic Harness
+> **Status:** Shipped (R1)
 > **Owner team:** Core AI
 > **Blocked by:** —
 > **Parallel with:** any other AH-PRD work (low surface-area overlap)
