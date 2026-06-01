@@ -1,133 +1,256 @@
-"""Probe Q4 — usage_metadata location on 2.0 events; extract_billable_tokens compat?
+"""Probe Q4 — Dynamic-graph fan-out via ctx.run_node; usage_metadata in outer stream. (LIVE)
 
-Run with:
-    /tmp/adk2-probe/bin/python docs/spike-adk2/probe-4-usage-metadata.py
+Tests the dynamic-graph path: an LlmAgent coordinator whose function tool
+fans out to two task-mode specialists via ctx.run_node + asyncio.gather.
 
-Findings:
-    - ADK 2.0 Event.usage_metadata remains Optional[GenerateContentResponseUsageMetadata].
-    - GenerateContentResponseUsageMetadata has the same fields as 1.x:
-      prompt_token_count, candidates_token_count, thoughts_token_count,
-      cached_content_token_count, total_token_count.
-    - Two NEW fields in the genai SDK (2026 release): tool_use_prompt_token_count,
-      traffic_type (both optional, default None).
-    - extract_billable_tokens (shared/token_accounting.py) uses duck-typing (getattr)
-      and is fully backward-compatible with ADK 2.0 events.
-    - New Event fields in 2.0: node_info (NodeInfo: path, output_for, message_as_output),
-      output (Any), isolation_scope (str | None). These do NOT break token accounting.
-    - MER-E Weave extractor DOES need updating: see probe-7 for trace shape changes.
+Run with (from repo root):
+    .venv-adk2/bin/python docs/spike-adk2/probe-4-usage-metadata.py
+
+Findings (AH-96 static duck-typing sim, upgraded to live by AH-99):
+    Q4 (live): Both fan-out branches' inner events appear in the outer stream
+    with non-null usage_metadata.  extract_billable_tokens + SessionTurnAccumulator
+    count all inner tokens (billing accuracy improvement vs. ADK 1.x).
+
+Prior static content:
+    The AH-96 probe-4 verified extract_billable_tokens duck-typing against a
+    mock ADK 2.0 event.  That finding is retained as a docstring note below.
+    This rewrite adds the live assertion that confirms the same invariant on
+    real Gemini Flash events flowing through the actual ADK 2.0 runtime.
+
+Static finding (carried forward):
+    - ADK 2.0 Event.usage_metadata is Optional[GenerateContentResponseUsageMetadata].
+    - Two new optional fields in the 2026 genai SDK: tool_use_prompt_token_count,
+      traffic_type — silently ignored by extract_billable_tokens via duck-typing.
+    - New Event fields: node_info, output, isolation_scope — don't break accounting.
+
+Exit codes:
+    0 — both fan-out branches' inner events visible; accumulator > 0; parity holds
+    1 — assertion failed (stdout shows which)
+    2 — unexpected exception (infrastructure/credential issue)
+
+ADK version required: 2.0.0 (in .venv-adk2/)
 """
 
-from types import SimpleNamespace
+from __future__ import annotations
 
-print("=== Probe Q4: usage_metadata in ADK 2.0 events ===\n")
+import asyncio
+import json
+import os
+import sys
+from typing import Any
 
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
 
-def check_event_schema():
-    from google.adk.events.event import Event
-    fields = Event.model_fields
-    print("ADK 2.0 Event fields:")
-    for name, f in fields.items():
-        marker = " ← NEW in 2.0" if name in ("node_info", "output", "isolation_scope") else ""
-        print(f"  {name}: {f.annotation}{marker}")
-    return fields
+import _live_harness
 
-
-def check_usage_metadata_schema():
-    from google.genai.types import GenerateContentResponseUsageMetadata
-    fields = GenerateContentResponseUsageMetadata.model_fields
-    print("\nGenerateContentResponseUsageMetadata fields (shared by ADK 1.x and 2.0):")
-    for name, f in fields.items():
-        print(f"  {name}: {f.annotation}")
-    return fields
+print("=== Probe Q4 (live): Dynamic-graph fan-out + usage_metadata ===\n")
 
 
-def simulate_extract_billable_tokens():
-    """Simulate extract_billable_tokens against a mock ADK 2.0 event."""
+def _make_fan_out_tool(
+    specialist_a: Any,
+    specialist_b: Any,
+) -> Any:
+    """Build a FunctionTool that fans out to two task-mode specialists via ctx.run_node."""
+    from google.adk.tools import FunctionTool
 
-    # Simulate extract_billable_tokens without importing KEN-E's shared package
-    def extract_billable_tokens(event):
-        usage = getattr(event, "usage_metadata", None)
-        if usage is None:
-            return {"input": 0, "output": 0, "reasoning": 0}
-        prompt = int(getattr(usage, "prompt_token_count", 0) or 0)
-        candidates = int(getattr(usage, "candidates_token_count", 0) or 0)
-        thoughts = int(getattr(usage, "thoughts_token_count", 0) or 0)
-        cached = int(getattr(usage, "cached_content_token_count", 0) or 0)
-        return {
-            "input": max(0, prompt - cached),
-            "output": candidates,
-            "reasoning": thoughts,
-        }
+    async def fan_out_analysis(question: str, tool_context: Any) -> str:
+        """Dispatch the question to two specialist analysts and combine their answers.
 
-    # ADK 2.0 event with new node_info field + standard usage_metadata
-    usage = SimpleNamespace(
-        prompt_token_count=1250,
-        candidates_token_count=380,
-        thoughts_token_count=0,
-        cached_content_token_count=200,
-        total_token_count=1630,
-        tool_use_prompt_token_count=None,  # new in 2.0 genai SDK
-        traffic_type=None,  # new in 2.0 genai SDK
+        Args:
+            question: The question to analyze from two perspectives.
+            tool_context: ADK ToolContext — provides ctx.run_node.
+
+        Returns:
+            Combined analysis from both specialists.
+        """
+        # Fan out to both specialists concurrently — the dynamic-graph path
+        result_a, result_b = await asyncio.gather(
+            tool_context.run_node(
+                specialist_a,
+                question,
+                override_isolation_scope=f"branch_a_{question[:10]}",
+            ),
+            tool_context.run_node(
+                specialist_b,
+                question,
+                override_isolation_scope=f"branch_b_{question[:10]}",
+            ),
+        )
+        return f"Specialist A: {result_a}\nSpecialist B: {result_b}"
+
+    return FunctionTool(func=fan_out_analysis)
+
+
+async def run_probe() -> int:
+    """Run the live probe.  Returns exit code (0=pass, 1=fail, 2=error)."""
+
+    extract_billable_tokens, SessionTurnAccumulator = _live_harness.import_real_modules()
+
+    from google.adk.agents.llm_agent import LlmAgent
+
+    # Two task-mode leaf specialists for the fan-out
+    specialist_a = LlmAgent(
+        name="specialist_a",
+        model=_live_harness._DEFAULT_MODEL,
+        mode="task",
+        instruction="You are Analyst A. Answer the user's question in one sentence from an economic perspective.",
     )
-    node_info = SimpleNamespace(
-        path="/root_agent/google_analytics_specialist",
-        output_for=None,
-        message_as_output=None,
-    )
-    event_2_0 = SimpleNamespace(
-        usage_metadata=usage,
-        node_info=node_info,
-        output=None,  # new in 2.0
-        isolation_scope=None,  # new in 2.0
-        content=None,
-        author="google_analytics_specialist",
+    specialist_b = LlmAgent(
+        name="specialist_b",
+        model=_live_harness._DEFAULT_MODEL,
+        mode="task",
+        instruction="You are Analyst B. Answer the user's question in one sentence from a social perspective.",
     )
 
-    result = extract_billable_tokens(event_2_0)
-    expected = {"input": 1050, "output": 380, "reasoning": 0}
-    print("\nextract_billable_tokens on mock ADK 2.0 event:")
-    print(f"  Result: {result}")
-    print(f"  Expected: {expected}")
-    assert result == expected, f"Mismatch: {result} != {expected}"
-    print("  => PASS ✅  extract_billable_tokens is backward-compatible with ADK 2.0 events")
+    fan_out_tool = _make_fan_out_tool(specialist_a, specialist_b)
 
-    # Event with node_info for an inner task sub-agent
-    inner_usage = SimpleNamespace(
-        prompt_token_count=800,
-        candidates_token_count=220,
-        thoughts_token_count=0,
-        cached_content_token_count=0,
-        total_token_count=1020,
-        tool_use_prompt_token_count=None,
-        traffic_type=None,
-    )
-    inner_event = SimpleNamespace(
-        usage_metadata=inner_usage,
-        node_info=SimpleNamespace(
-            path="/root_agent/google_analytics_specialist/worker",
-            output_for=None,
-            message_as_output=None,
+    coordinator = LlmAgent(
+        name="coordinator",
+        model=_live_harness._DEFAULT_MODEL,
+        mode="chat",
+        instruction=(
+            "You are a multi-perspective analyst. When given a question, "
+            "use the fan_out_analysis tool to get two perspectives, then "
+            "summarize both answers in 2-3 sentences."
         ),
-        output=None,
-        isolation_scope="fc_1234",  # task sub-agent scoped
-        content=None,
-        author="worker",
+        tools=[fan_out_tool],
     )
-    inner_result = extract_billable_tokens(inner_event)
-    print(f"\nInner task sub-agent event: {inner_result}")
-    print("  => Inner task events carry usage_metadata and are now visible in outer stream")
-    print("  => extract_billable_tokens works unchanged — token totals will now INCLUDE sub-agent tokens")
-    print("  => This is CORRECT behavior for ADK 2.0 (and a fix vs ADK 1.x where inner tokens were lost)")
-    return True
+
+    runner, user_id = _live_harness.make_runner(coordinator)
+    print(f"Session user_id: {user_id}")
+
+    try:
+        print("\nRunning one turn (fan-out to two specialists) against real Gemini Flash...")
+        events = await _live_harness.run_and_collect(
+            runner,
+            "What is the impact of remote work adoption? Answer from two perspectives.",
+            user_id=user_id,
+        )
+
+        print(f"Total events yielded: {len(events)}")
+
+        # Feed all events into the real accumulator
+        accumulator = SessionTurnAccumulator()
+        for event in events:
+            accumulator.add_event(event)
+        accumulator_total = accumulator._input + accumulator._output + accumulator._reasoning
+
+        # Sum via extract_billable_tokens
+        per_event_total = 0
+        inner_events_by_author: dict[str, list[dict[str, Any]]] = {}
+
+        for event in events:
+            counts = extract_billable_tokens(event)
+            per_event_total += counts.total_billable
+
+            author = getattr(event, "author", None)
+            usage = getattr(event, "usage_metadata", None)
+            if author not in (None, "user", "coordinator") and usage is not None:
+                node_info = getattr(event, "node_info", None)
+                entry = {
+                    "author": author,
+                    "isolation_scope": getattr(event, "isolation_scope", None),
+                    "node_path": getattr(node_info, "path", None) if node_info else None,
+                    "prompt_token_count": getattr(usage, "prompt_token_count", None),
+                    "candidates_token_count": getattr(usage, "candidates_token_count", None),
+                }
+                if author not in inner_events_by_author:
+                    inner_events_by_author[author] = []
+                inner_events_by_author[author].append(entry)
+
+        # Print diagnostics
+        print("\nInner specialist events with usage_metadata (by author):")
+        for author, evs in inner_events_by_author.items():
+            print(f"  {author}: {len(evs)} event(s)")
+            for ev in evs[:2]:  # limit to first 2 per author
+                print(f"    {ev}")
+
+        print(f"\nextract_billable_tokens sum: {per_event_total}")
+        print(f"SessionTurnAccumulator total: {accumulator_total}")
+
+        # Assertions
+        assertion_failures: list[str] = []
+
+        # A1: Both fan-out branches contributed events with usage_metadata
+        branches_seen = set(inner_events_by_author.keys())
+        if "specialist_a" not in branches_seen:
+            assertion_failures.append(
+                "FAIL A1a: No events with usage_metadata from specialist_a in outer stream. "
+                "Branch A fan-out events not propagated."
+            )
+        if "specialist_b" not in branches_seen:
+            assertion_failures.append(
+                "FAIL A1b: No events with usage_metadata from specialist_b in outer stream. "
+                "Branch B fan-out events not propagated."
+            )
+
+        if not assertion_failures:
+            print(
+                f"\nPASS A1: Both fan-out branches visible in outer stream "
+                f"(branches seen: {branches_seen})."
+            )
+            # Print decisive evidence for AH-99 AC #2
+            print("\n=== DECISIVE EVIDENCE: First inner event per branch with usage_metadata ===")
+            for author, evs in inner_events_by_author.items():
+                print(f"Branch '{author}' first event:")
+                print(json.dumps(evs[0], indent=2))
+
+        # A2: Accumulator counted tokens
+        if accumulator_total == 0:
+            assertion_failures.append(
+                "FAIL A2: SessionTurnAccumulator total is 0 — inner tokens not counted."
+            )
+        else:
+            print(f"\nPASS A2: SessionTurnAccumulator counted {accumulator_total} total tokens.")
+
+        # A3: Parity invariant
+        if per_event_total != accumulator_total:
+            assertion_failures.append(
+                f"FAIL A3: Parity violated — "
+                f"extract_billable_tokens sum ({per_event_total}) != "
+                f"accumulator total ({accumulator_total})."
+            )
+        else:
+            print(
+                f"PASS A3: Parity invariant holds — "
+                f"sum ({per_event_total}) == accumulator ({accumulator_total})."
+            )
+
+        if assertion_failures:
+            print("\n=== PROBE Q4 (live): FAIL ===")
+            for failure in assertion_failures:
+                print(f"  {failure}")
+            return 1
+
+        print("\n=== PROBE Q4 (live): PASS ===")
+        print("Dynamic-graph fan-out path: both branches' inner events visible in outer stream.")
+        print("AH-99 AC #2 (dynamic-graph path) confirmed on real Gemini Flash.")
+        return 0
+
+    finally:
+        print(f"\nCleaning up spike sessions...")
+        deleted = await _live_harness.cleanup_spike_sessions()
+        print(f"  Deleted {deleted} spike session(s).")
 
 
-check_event_schema()
-check_usage_metadata_schema()
-simulate_extract_billable_tokens()
-
-print("\n=== Q4 VERDICT ===")
-print("usage_metadata: same field structure in 2.0, two new optional fields (tool_use_prompt_token_count,")
-print("  traffic_type) that extract_billable_tokens ignores via duck-typing.")
-print("extract_billable_tokens: COMPATIBLE with ADK 2.0 events — no change needed.")
-print("Billing impact: inner task sub-agent tokens NOW COUNTED (they were lost in 1.x).")
-print("  This is the correct behavior — billing accuracy improves with 2.0.")
+if __name__ == "__main__":
+    try:
+        exit_code = asyncio.run(run_probe())
+    except Exception as exc:
+        code = _live_harness.classify_exit_code(exc)
+        label = (
+            "infrastructure/credentials"
+            if code == 2
+            else "FINDING — ADK 2.0 differs from the spike assumption"
+        )
+        print(f"\nERROR [{label}] (exit {code}): {type(exc).__name__}: {exc}")
+        print(
+            "\nNote: exit 2 = infra/credentials (ADC, 401/403/429/5xx, transport) -> INDETERMINATE; "
+            "exit 1 = a real finding (model 404, changed ADK API, validation error) -> NO-GO. "
+            "This probe needs Gemini Flash + Agent Engine access on ken-e-dev "
+            "(ADC via 'gcloud auth application-default login')."
+        )
+        sys.exit(code)
+    sys.exit(exit_code)

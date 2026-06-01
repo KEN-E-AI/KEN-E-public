@@ -1,7 +1,7 @@
 """Probe Q6 — AgentTool leaf calls: what bridge makes parity tests pass?
 
-Run with:
-    /tmp/adk2-probe/bin/python docs/spike-adk2/probe-6-agent-tool-bridge.py
+Run with (from repo root):
+    .venv-adk2/bin/python docs/spike-adk2/probe-6-agent-tool-bridge.py
 
 Findings:
     - In ADK 2.0, the task-mode path (_TaskAgentTool → ctx.run_node) does NOT

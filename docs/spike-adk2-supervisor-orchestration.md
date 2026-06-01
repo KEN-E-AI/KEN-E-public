@@ -323,3 +323,26 @@ fan-out + synthesis) but avoids re-introducing the AH-75 billing/tracing defects
 ---
 
 _Spike conducted by: agentic-harness-dev-team | AH-96 | 2026-06-01_
+
+---
+
+## Live Evidence (AH-99)
+
+The static analysis above returned a **CONDITIONAL GO**. [AH-99](https://linear.app/ken-e/issue/AH-99)
+(Phase 0.5) is the live-validation gate that converts this to a **confirmed GO** or **NO-GO** by
+running the four decisive probes against real Gemini Flash and the dev Vertex AI Agent Engine.
+
+Current status: ✅ **GO-confirmed** (2026-06-01). All four live probes (Q1, Q4, Q5, Q7) executed
+against real Gemini Flash + the dev Agent Engine on `ken-e-dev` and exit 0:
+- **AC #1** (task-mode): inner specialist events reach the outer stream with non-null `usage_metadata`.
+- **AC #2** (dynamic-graph): `ctx.run_node` fan-out branches surface inner events in the outer stream.
+- **AC #3**: `node_info` / `isolation_scope` survive a real `VertexAiSessionService` round-trip (no migration needed).
+- **Q7**: the `LoopAgent` review-loop terminates via `exit_loop` end-to-end (deprecated → `Workflow` long-term).
+
+The earlier "INDETERMINATE due to missing IAM" note was incorrect — IAM is sufficient on a
+credentialed ADC; the real blockers were two probe bugs (model pin + Vertex routing), now fixed.
+See [`docs/spike-adk2-supervisor-orchestration-live.md`](spike-adk2-supervisor-orchestration-live.md)
+for the full evidence table, decisive event JSON, and the AH-97 routing decision.
+
+[AH-97](https://linear.app/ken-e/issue/AH-97) (doc propagation) is **unblocked**: per AH-99 AC #5,
+write the ADK 2.0 supervisor-orchestration model as the target architecture.

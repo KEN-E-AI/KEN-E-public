@@ -1,4 +1,6 @@
 # ADK 2.0 spike — isolated workspace
 # Do NOT mix with the main KEN-E codebase (pinned to 1.34.1)
-google-adk==2.0.0
+google-adk[gcp]==2.0.0
+google-cloud-aiplatform>=1.90.0
+google-cloud-firestore>=2.16.0
 weave>=0.51.0,<0.51.57

@@ -1,7 +1,7 @@
 """Probe Q3 — Does asyncio.run on a worker thread preserve Weave contextvar call-stack?
 
-Run with:
-    /tmp/adk2-probe/bin/python docs/spike-adk2/probe-3-weave-contextvar.py
+Run with (from repo root):
+    .venv-adk2/bin/python docs/spike-adk2/probe-3-weave-contextvar.py
 
 Findings:
     - Python's ThreadPoolExecutor.submit() does NOT propagate contextvars to

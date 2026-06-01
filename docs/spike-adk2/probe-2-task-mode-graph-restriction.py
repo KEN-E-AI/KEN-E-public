@@ -1,7 +1,7 @@
 """Probe Q2 — When is task mode re-enabled inside graphs? #3984 status?
 
-Run with:
-    /tmp/adk2-probe/bin/python docs/spike-adk2/probe-2-task-mode-graph-restriction.py
+Run with (from repo root):
+    .venv-adk2/bin/python docs/spike-adk2/probe-2-task-mode-graph-restriction.py
 
 Findings:
     - task mode=True is PROHIBITED as a static Workflow graph node in both
@@ -40,13 +40,23 @@ def check_graph_restriction():
 
 def check_3984_status():
     """Check if #3984 is referenced or fixed in the installed ADK."""
+    import importlib.util
     import os
-    adk_path = "/tmp/adk2-probe/lib/python3.12/site-packages/google/adk"
+    import pathlib
+
+    # Portable ADK path lookup — works regardless of venv location or Python version
+    spec = importlib.util.find_spec("google.adk")
+    if spec is None or spec.submodule_search_locations is None:
+        print("  WARNING: google.adk not found in current environment")
+        return True
+    adk_path = str(pathlib.Path(list(spec.submodule_search_locations)[0]))
+
     issue_refs = []
     for root, _, files in os.walk(adk_path):
         for f in files:
             if f.endswith(".py"):
-                content = open(os.path.join(root, f)).read()
+                with open(os.path.join(root, f), encoding="utf-8") as fh:
+                    content = fh.read()
                 if "3984" in content:
                     issue_refs.append(os.path.join(root, f))
     print(f"\nGitHub #3984 referenced in ADK 2.0.0 source: {len(issue_refs)} files")
