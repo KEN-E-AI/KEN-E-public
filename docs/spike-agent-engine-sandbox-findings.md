@@ -1,6 +1,6 @@
 # Spike — AgentEngineSandboxCodeExecutor
 
-**Status:** Complete (Q1–Q5 empirical captures done; recommendation deferred to SK-8)
+**Status:** Complete — **scoped-go** (Q1–Q5 empirical captures done; recommendation filled by SK-8)
 **ADK Version:** google-adk==1.27.5
 **Spike engine:** `projects/525657242938/locations/us-central1/reasoningEngines/2624457839443181568` (displayName `sk-prd-00-spike-sandbox`)
 **Capture date:** 2026-05-25 (post Wave 2.5 SK-33 harness rework)
@@ -25,7 +25,7 @@ error — there is no structured `OUTCOME_DEADLINE_EXCEEDED` enum; memory enforc
 opaque (no Python-level MemoryError was captured). File I/O: `scripts/` is **not**
 mounted in the sandbox filesystem — the sandbox runs in an empty `/home/bard` working
 directory under a gVisor kernel, and no skill-metadata environment variables are injected.
-The go/scoped-go/no-go verdict is deferred to `## Recommendation` (filled by SK-8).
+The verdict is **scoped-go** — see `## Recommendation` for rationale and the two SK-PRD-02 scope deltas (bundle-inlining delivery contract + 503-as-kill-signal).
 
 ---
 
@@ -1287,10 +1287,204 @@ INSIDE the sandbox runtime, not synthetic LLM output.
 
 ## Recommendation
 
-_TODO — SK-8 (compose go/scoped-go/no-go recommendation + Sprint 2.6-B follow-ups)._
+**Recommendation: scoped-go**
+
+The `AgentEngineSandboxCodeExecutor` is safe and economical to use for user-authored
+scripts in KEN-E's Skills feature, with two non-negotiable scope changes that SK-PRD-02
+must absorb before implementation begins. The verdict is **scoped-go** rather than plain
+**go** because Q5 inverts a load-bearing assumption in SK-PRD-02's current design, and
+that inversion requires explicit enumeration per PRD §7.AC-3.
+
+**Per finding:**
+
+- **Q1 — Network egress (inverted positive):** Default sandbox has no internet egress —
+  4/4 vectors blocked (DNS, HTTPS, DoH, raw TCP). This is the opposite of the pre-spike
+  assumption. No `network_policy` constructor kwarg is needed; no authoring-UI egress
+  warning is required. The sandbox security posture on egress is stronger than assumed.
+  PRD §9 open question 1 is **resolved** in the most favourable direction: the "accept
+  the risk" option from PRD §9 is not needed because the risk is already mitigated at
+  the Vertex network layer.
+
+- **Q2 — Cost per session (within threshold):** Per-session cost is $0.00 metered (≤
+  $0.0048 upper bound including all orchestration LLM spend). Warm-held pool entries
+  accrue no separately-metered holding cost. Both figures are well below the $0.10/session
+  PRD threshold. No cost-based per-account sandbox rate limit is warranted in Release 1.
+  PRD §9 open question 2 is **closed**.
+
+- **Q3 — Cross-skill state contamination (confirmed, keying adequate):** Same-session
+  state contamination is total — all five probe vectors (filesystem, environment, modules,
+  tempdir, subprocess records) leak between skills sharing one executor instance. The
+  existing `SandboxPool (account_id, config_id)` keying provides the correct isolation
+  boundary: one sandbox per specialist, state shared only across skills attached to the
+  same specialist (never across accounts or across specialists). Additionally, because
+  `SandboxPool` keeps entries warm across sessions, `/tmp` artifacts from session N are
+  visible to session N+1 for the same `(account_id, config_id)` key if the container is
+  reused; `SandboxPool.lease()` (SK-42 `_clear_tmp`) is the primary mitigation. No
+  pool-key change is required. The 10-skill-per-agent cap is retained on both token-budget
+  and security grounds. PRD §9 open question 3 is **resolved** — no cap change, but a
+  security-argument footnote and cross-skill + cross-session state-leak authoring-UI
+  warnings are required (see Follow-ups).
+
+- **Q4 — Resource limits and failure modes (functional, with 503 kill-signal caveat):**
+  CPU-bound and wall-clock-bound scripts are terminated at approximately 5 minutes (304 s
+  and 303 s respectively) with a `503 UNAVAILABLE` API error — no structured
+  `OUTCOME_DEADLINE_EXCEEDED` enum exists. Memory enforcement is opaque; Python-level
+  `MemoryError` is not a reliable OOM signal. SK-PRD-02 MUST treat 503 as a terminal kill
+  signal, not a transient retriable error. `_IDLE_TTL_SECONDS` must be bounded by the
+  5-minute Vertex budget (ceiling: 300 s); the Q2 p50 session runtime (~14 s) sets the
+  practical floor.
+
+- **Q5 — File I/O with scripts/ (scope-delta trigger):** `scripts/` is **not**
+  filesystem-mounted in the sandbox. The default sandbox working directory (`/home/bard`)
+  is empty; `scripts/extract.py` and every alternative mount point tested are
+  `file_not_found`. No skill-metadata environment variables (`SKILL_`, `BUNDLE_`,
+  `KENE_`, etc.) are injected by the runtime. This inverts SK-PRD-02's implicit working
+  assumption that an L3 callable can `open()` a file from the bundle's `scripts/`
+  directory. SK-PRD-02 bundle delivery **must be inline-into-script** — the bundle file
+  contents must be embedded in the script string passed to `execute_code`. This is a
+  non-trivial scope change: it affects `_build_code_executor`'s callers, SK-PRD-03's
+  authoring contract, and the per-script bundle-size cap.
+
+**SK-PRD-02 scope deltas (per PRD §7.AC-3 — required for scoped-go):**
+
+1. **Bundle delivery is inline-into-script, not filesystem-mount.** `_build_code_executor`
+   callers and SK-PRD-03's authoring contract must package bundle file contents into the
+   script string passed to `execute_code`. No `open()` of a bundle-path is possible
+   inside the sandbox. Affects: SK-PRD-02 §2 (Scope — add "bundle-inlining delivery
+   contract"), SK-PRD-02 §4 (data contract — `_build_code_executor` signature), and
+   SK-PRD-03 §2 (authoring contract — per-script bundle-size cap for legacy LLM-loop).
+
+2. **503 UNAVAILABLE is a terminal kill signal, not a transient.** SK-PRD-02 MUST NOT
+   retry `execute_code` on `503`. Affects: SK-PRD-02 §4 (`_build_code_executor` error
+   handling) and the `SandboxPool` lease/release path.
+
+See the `## Follow-ups for Sprint 2.6-B` list below for actionable directives derived
+from each finding.
 
 ---
 
 ## Follow-ups for Sprint 2.6-B
 
-_TODO — SK-8 (compose go/scoped-go/no-go recommendation + Sprint 2.6-B follow-ups)._
+### SK-PRD-02 implementation
+
+- **Confirm `scripts/` as a real executable feature (not reference-only).** Q5's
+  filesystem-mount inversion does not change this binary — execution itself works (Q4
+  confirms scripts run to completion in the sandbox). The bundle delivery mechanism
+  changes (inline-into-script instead of filesystem-mount), but `scripts/` remains a
+  first-class executable surface. Do not downgrade `scripts/` to read-only reference
+  files in SK-PRD-02's scope. Update SK-PRD-02 §2 (Scope) to add "bundle-inlining
+  delivery contract" as a requirement, replacing any implicit filesystem-mount assumption.
+  (This is the "scripts as feature vs reference-only" decision called for in PRD §9.)
+
+- **Update SK-PRD-02 §4.6 `SandboxPool` pseudocode to reflect spike-calibrated values.**
+  The current §4.6 pseudocode at `docs/design/components/skills/projects/SK-PRD-02-agent-integration.md`
+  hard-codes `_MAX_ENTRIES: int = 64` and `_IDLE_TTL_SECONDS: int = 900`. Both are
+  superseded by this spike's findings: set `_MAX_ENTRIES = 8` (from Q2 billing
+  reconciliation + Q4 resource limits) and `_IDLE_TTL_SECONDS` to a value in `[15, 300]`
+  (floor from Q2 p50; ceiling from Q4 empirical cap). Update the §4.6 pseudocode before
+  implementation begins so implementors do not use the stale defaults.
+
+- **Document default-deny egress in `_build_code_executor` docstring and `SandboxPool._construct`.**
+  Add a pointer to Q1's "Implication for Skills" section (lines 320–342). Do **not** add
+  a `network_policy` constructor kwarg — no such kwarg is exposed by the ADK 1.27.5
+  surface. The default-deny finding is environment-specific: observed on `ken-e-dev`,
+  `us-central1`, ADK 1.27.5, outside any VPC-SC perimeter. Run a re-validation Q1
+  probe when ADK is upgraded to a new minor version or when deploying to a production GCP
+  project with a different networking configuration (Shared VPC, PSC-I, VPC-SC). If
+  re-validation shows egress is open, the egress warning must be added to the authoring
+  UI immediately. PRD §9 open question 1 (**HTTP-egress policy**) = **resolved** for
+  Release 1 under the observed default; treat as conditional on re-validation.
+
+- **Do not add a cost-based per-account sandbox session rate limit in Release 1.**
+  Per-session cost is $0.00 metered (≤ $0.0048 upper bound) — well below the $0.10
+  trigger. Runaway/abuse protection is provided by Q4's 5-minute per-session budget cap
+  and SK-9's security controls, not a cost gate. Re-open only if Vertex begins itemising
+  `SANDBOX_ENVIRONMENT_RUNTIME` as a separately-billed SKU. PRD §9 open question 2
+  (**per-session cost rate-limit**) = **closed**.
+
+- **Retain the 10-skill-per-agent cap at 10.** The cap is justified on token-budget
+  grounds (L1 metadata overhead at agent construction) and now also on security grounds:
+  Q3's all-LEAK finding means each additional scripts-bearing skill attached to an agent
+  increases the shared sandbox state surface. Add a one-sentence security-argument
+  footnote in SK-PRD-02's §9 open questions resolution block citing the all-LEAK result.
+  PRD §9 open question 3 (**10-skill cap reconsideration**) = **resolved** — no cap
+  change, secondary security rationale added.
+
+- **Set `SandboxPool._MAX_ENTRIES = 8`.** Size by expected per-process concurrent
+  in-process sessions and per-entry memory footprint, not by economics (warm-held
+  entries have no metered holding cost). Eight is a conservative starting point for a
+  Cloud Run instance serving a small-to-medium account fleet; tune up via the
+  `sandbox_pool.get` / `sandbox_pool.evict` Weave spans if eviction rate is high.
+
+- **Set `SandboxPool._IDLE_TTL_SECONDS` to a value in `[15, 300]`.** The floor is
+  derived from Q2's p50 cold-start + warm-call latency (~14 s per invocation); evicting
+  before 15 s is premature. The ceiling is 300 s — the conservative round-number below
+  both Q4 observed kill times (303–304 s); a pool entry cannot be kept warm past the
+  Vertex execution cap in any case. Document this range in the `SandboxPool` class
+  docstring.
+
+- **Bundle delivery MUST be inline-into-script (not filesystem-mount), using safe data
+  encoding.** Every `execute_code` call must be self-contained: embed bundle file contents
+  as a base64-encoded constant or JSON literal that the L3 script decodes at runtime.
+  Do NOT concatenate user-controlled skill content as raw Python text into the script body
+  — that path creates a code-injection surface because user-authored SKILL.md bodies and
+  `scripts/*.py` content can contain arbitrary Python constructs. `_build_code_executor`
+  callers MUST NOT pass file paths or assume `open()` will resolve inside the sandbox —
+  Q5 confirms the sandbox `cwd` (`/home/bard`) is empty and no `scripts/` directory is
+  mounted. This safe-encoding requirement applies independently of whether v2 injection
+  scanning is deployed; the encoding layer is the inlining contract, not a scan gate.
+  Update SK-PRD-02 §2 (Scope) and §4 (data contract) to document this delivery contract
+  explicitly.
+
+- **Treat `503 UNAVAILABLE` from `execute_code` as a terminal kill signal when elapsed
+  time is ≥ ~300 s.** Do NOT retry a 503 that arrives after ≥ 300 s — that response
+  means the sandbox process was forcibly terminated by Vertex (Q4 result: both
+  CPU-bound and wall-clock-bound probes were killed at 303–304 s). A 503 returned in
+  < 60 s may be a transient Vertex backend error (load shedding, region capacity) and
+  may be retried once with a short backoff before treating as terminal. Update the
+  `SandboxPool` lease/release path and `_build_code_executor` error-handling to implement
+  this elapsed-time discriminant. Under SK-42's deferred-eviction model, a terminal 503
+  during an active lease (refcount > 0) must set `pending_evict=True`; immediate
+  `aclose()` must not be called through an active refcount.
+
+- **Do not rely on Python `MemoryError` for OOM detection.** Q4 showed the sandbox
+  memory enforcer kills the process opaquely — no Python-level `MemoryError` was
+  captured. If pool tuning requires a per-entry memory cap, design a dedicated probe
+  (read `/proc/self/status` + write to a sandbox-side file) before the OOM-trigger
+  allocation; do not infer memory limits from Python exception handling.
+
+### SK-PRD-03 authoring + UI
+
+- **Add same-session and cross-session state-leak warnings under the `scripts/` file
+  uploader.** Q3 confirmed all-LEAK across skills sharing one sandbox executor and
+  identified `/tmp` cross-session persistence when the container is reused by
+  `SandboxPool`. Recommended warning text: *"Scripts attached to the same agent share
+  filesystem, environment, and Python module state within a session. Do not write sensitive
+  data to `/tmp` — `/tmp` data persists across sessions for the same agent (within the
+  same account) until the sandbox pool entry is evicted. Do not rely on state isolation
+  between skills."* This warning replaces the previously-planned egress warning (which Q1
+  made obsolete).
+
+- **Omit the internet-egress warning** previously mandated under the `scripts/` uploader.
+  Q1 inverted: the default sandbox has no internet egress. Adding an egress warning now
+  would be factually wrong against the observed default. If a future operator opens egress
+  via VPC-SC or PSC-I + SWP, gate the warning on a config flag at that time.
+
+- **Impose a per-script bundle-size cap for the legacy LLM-loop path.** Q5's
+  inline-into-script delivery contract means large bundles become an LlmAgent token-budget
+  issue when the legacy loop is enabled. Set a per-script bundle-size cap (specific value
+  to be confirmed by SK-PRD-03 team based on the LLM context window available) and
+  surface a validation error in the authoring UI if the bundle exceeds it.
+
+### Skills README §7 updates
+
+- **Add a "default sandbox runtime has no internet egress" note to README §7 (Sandbox
+  gating).** Exact text: *"Default sandbox runtime has no internet egress. Operators
+  wishing to enable HTTP access for trusted skills must explicitly open the sandbox via
+  VPC-SC or PSC-I + SWP — this is an admin-level action, not a per-skill or per-account
+  knob."* Source: Q1 Implication for Skills §3 (lines 335–342).
+
+- **Add a cross-skill state-leak note to README §7 (Sandbox gating).** Exact text:
+  *"When multiple skills with scripts are attached to the same agent, their script
+  executions share filesystem, environment, and module state within a session."* Source:
+  Q3 Implication for Skills §3 (lines 871–876).
