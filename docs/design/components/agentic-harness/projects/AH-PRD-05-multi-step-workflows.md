@@ -1,11 +1,29 @@
 # AH-PRD-05 — Multi-Step Workflow Orchestration
 
-**Status:** Blocked
+**Status:** Blocked — **being re-scoped for supervisor-orchestration**; substrate gated on the AH-96 Phase 0 spike (see banner below)
 **Owner team:** Core AI / Agent Platform
 **Blocked by:** AH-PRD-01 (`build_review_pipeline()`), AH-PRD-02 (factory-assembled specialist registry the workflow draws from), AH-PRD-03 (concrete first specialist for E2E coverage), AH-PRD-04 (artifact session-state convention threaded into `<prefix>_artifacts`)
 **Parallel with:** Knowledge-Graph (KG-PRD-04 / KG-PRD-05), Skills SK-PRDs, Performance SE-PRD-05 / PE-PRDs (no overlap — workflow plumbing is intra-component)
 **Blocks:** Any future R3+ feature that needs decomposed parallel data-gathering or staged execution with user approval — most concretely the multi-platform optimisation flows that motivate the R5 narrow specialists (Google Ads / Meta Ads / Mailchimp)
 **Estimated effort:** 4 stories (originally `review-loop-implementation-plan.md` Phase 4). ≈ 3–5 days.
+
+---
+
+> ## ⚠️ Architecture-refresh banner (2026-06) — re-scoping in progress; do not implement as written
+>
+> This PRD predates the AH-75 dispatch change and the ADK 2.0 GA. **The product direction has expanded:** KEN-E should become a true **supervisor-orchestrator** — control the conversation, build TODO lists that delegate individual tasks to sub-agents, **post-process** sub-agent output, **fan out** to multiple specialists and **synthesize in one turn**. This in-session multi-step workflow primitive is the **rewrite target** for that work.
+>
+> **🚫 HARD RULE — do NOT ship the §5.4 `execute_workflow()` / `invoke_pipeline()` inner-Runner shape on ADK 1.x.** AH-75 (see [AH-PRD-09](./AH-PRD-09-per-turn-dispatch.md) §4.6) proved that any inner-Runner / `AgentTool` call-and-return path silently discards inner sub-agent events (everything except `state_delta` + final content), which **breaks the Billing token meter, Chat status tracking, MER-E Weave traces, the review loop, and UI streaming**. The `invoke_pipeline(pipeline, state)` call in §5.4 is exactly that anti-pattern.
+>
+> **Gate:** the substrate for this rewrite is decided by the Phase 0 spike — Linear **AH-96** (does ADK 2.0's task-mode / dynamic-graph path propagate inner node events to the outer `Runner.run_async` stream?).
+> - **GO** → rebuild on ADK 2.0 task-mode + dynamic graphs (`ctx.run_node` + `asyncio.gather` for fan-out/synthesize; `complete_task` for call-and-return), preserving the outer-stream observability contracts.
+> - **NO-GO** → fall back to the static composition tree below (`ParallelAgent`/`SequentialAgent`/`LoopAgent` shape is reusable) reached via the existing `transfer_to_agent` machinery — **NOT** an inner Runner — plus a hand-built event bridge (tag inner events with the outer `invocation_id`; flush per-sub-call `usage_metadata` into `session.state`).
+>
+> **What survives either path:** the composition-tree shape, the `WorkflowStep` dataclass, dependency-level grouping, the synthesizer (`include_contents='none'`) pattern, and approval-via-conversation-turns continuation are the right design and are **reused**. What changes is the **dispatch/invocation mechanism** — and the `execute_workflow` *root function tool* surface must be re-justified, since under AH-75 the root carries `tools=[]` and dispatches via `transfer_to_agent`.
+>
+> **Also stale below** (corrected during the rewrite): ADK `1.26.0` → repo is on `1.27.5`, heading to `1.34.x`/2.0; reviewer `gemini-2.0-flash` → now `gemini-2.5-pro` via the `reviewer_model` field (AH-92); the review loop is now config-driven via `default_acceptance_criteria` (AH-85), not a per-dispatch argument.
+>
+> Full analysis, phased plan, and fallback: [`../../../adk2-supervisor-orchestration-analysis.md`](../../../adk2-supervisor-orchestration-analysis.md).
 
 ---
 
@@ -156,6 +174,8 @@ task is genuinely multi-step or genuinely cross-specialist.
 ```
 
 ### 5.4 `execute_workflow()` shape
+
+> ⚠️ **Do not implement the `invoke_pipeline(...)` inner-Runner call below on ADK 1.x** — see the banner at the top of this PRD and Linear **AH-96**. An inner Runner loses inner sub-agent events (billing / chat status / MER-E traces / UI streaming). This shape is retained only as the pre-rewrite reference.
 
 ```python
 def execute_workflow(steps: str, tool_context: ToolContext | None = None) -> str:
