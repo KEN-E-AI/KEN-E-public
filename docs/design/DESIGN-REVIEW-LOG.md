@@ -1891,4 +1891,44 @@ AH-82 introduces `ken_e_sub_agent: bool = True` as the explicit, independent del
 
 ---
 
+## Review 43 — SK-PRD-00: Agent Engine sandbox spike complete (scoped-go)
+
+**Date:** 2026-06-01
+**Scope:** SK-PRD-00 ([Linear project](https://linear.app/ken-e/project/sk-prd-00-sandbox-spike-b45a5131d5e4); closing issue [SK-10](https://linear.app/ken-e/issue/SK-10/sk-prd-00-10-add-design-review-log-entry-and-merge-spike-report)); the sprint-0 empirical spike answering the five `AgentEngineSandboxCodeExecutor` viability questions that gate SK-PRD-02 (Agent Factory — Skills & Sandbox Integration + `SandboxPool`). Canonical findings: [`docs/spike-agent-engine-sandbox-findings.md`](../spike-agent-engine-sandbox-findings.md) (merged via PR #767 / #770).
+
+### Summary
+
+A live harness ran against the default `AgentEngineSandboxCodeExecutor` on Vertex AI Agent Engine (`ken-e-dev`, `us-central1`, ADK 1.27.5). Results (2026-05-25 capture):
+
+- **Q1 — Network egress:** no internet egress; 4/4 vectors blocked (DNS, HTTPS, DoH, raw TCP). This inverts the pre-spike assumption that egress was open — the security posture is stronger than assumed.
+- **Q2 — Cost per session:** $0.00 metered (≤ $0.0048 upper bound including all orchestration LLM spend), well below the $0.10/session PRD threshold; warm pool entries accrue no separately-metered holding cost.
+- **Q3 — Cross-skill state contamination:** total within a session — all five probe vectors (filesystem, environment, modules, tempdir, subprocess records) leak between skills sharing one executor. Confirms `SandboxPool (account_id, config_id)` is the correct isolation boundary; `/tmp` also persists across sessions for a reused warm entry.
+- **Q4 — Resource limits & failure modes:** CPU-bound and wall-clock-bound scripts are killed at ~5 min (303–304 s) with a `503 UNAVAILABLE` API error — no structured `OUTCOME_DEADLINE_EXCEEDED` enum; memory enforcement is opaque (no reliable Python `MemoryError`).
+- **Q5 — File I/O with `scripts/`:** `scripts/` is **not** filesystem-mounted; the sandbox `cwd` (`/home/bard`) is empty under a gVisor kernel; no skill-metadata environment variables are injected. Inverts SK-PRD-02's implicit assumption that an L3 callable can `open()` a bundle file.
+
+### Decision
+
+**Verdict: scoped-go for SK-PRD-02.** The executor is safe and economical for user-authored skill scripts, conditional on two non-negotiable scope deltas SK-PRD-02 must absorb before implementation (enumerated per PRD §7.AC-3):
+
+1. **Bundle delivery is inline-into-script, not filesystem-mount.** `_build_code_executor` callers and SK-PRD-03's authoring contract must embed bundle file contents into the `execute_code` script string via safe data encoding (e.g. a base64 / JSON literal decoded at runtime) — never raw concatenation of user-authored content, which is a code-injection surface. No `open()` of a bundle path resolves inside the sandbox.
+2. **`503 UNAVAILABLE` is a terminal kill signal, not a transient.** A 503 at elapsed ≥ ~300 s means Vertex forcibly terminated the process — do not retry; under SK-42's deferred-eviction model a terminal 503 during an active lease (refcount > 0) must set `pending_evict=True` rather than `aclose()` through the active refcount. A 503 returned in < 60 s may be retried once with short backoff.
+
+### Consequences
+
+- SK-PRD-02 §2 (Scope) + §4 (data contract) must document the inline bundle-delivery contract and the 503-terminal error-handling discriminant.
+- SK-PRD-02 §4.6 `SandboxPool` pseudocode recalibrated: `_MAX_ENTRIES` 64 → **8**; `_IDLE_TTL_SECONDS` 900 → a value in **[15, 300]** (floor = Q2 ~14 s p50 latency; ceiling = the 5-minute Vertex execution cap).
+- PRD §9 open questions resolved: (1) HTTP-egress policy **resolved** in the favorable direction — no `network_policy` kwarg, no authoring-UI egress warning; conditional on a re-validation Q1 probe at each ADK minor bump or production-network change. (2) per-session cost rate-limit **closed** — no cost gate in Release 1. (3) 10-skill-per-agent cap **retained** at 10 (token-budget grounds plus a new security rationale from the all-LEAK result).
+- SK-PRD-03 authoring UI: same-session + cross-session `/tmp` state-leak warnings replace the now-obsolete egress warning; add a per-script bundle-size cap for the legacy LLM-loop path.
+- Skills README §7 (Sandbox gating): add the "default sandbox runtime has no internet egress" and "cross-skill state-leak" notes.
+- Spike close-out (SK-10): the dedicated spike Agent Engine `reasoningEngines/2624457839443181568` (and its 80 child sandboxes) plus 2 stray `sandboxEnvironments` under production `reasoningEngines/5957383247464759296` were deleted; the `ken-e-dev` staging bucket was verified clear of spike objects; the throwaway branch `spike/agent-engine-sandbox` is deleted. The SK-9 security-escalation gate cleared before merge.
+
+### Documents updated
+
+| File | Change |
+|------|--------|
+| `docs/design/DESIGN-REVIEW-LOG.md` | This entry (Review 43) |
+| `docs/spike-agent-engine-sandbox-findings.md` | Canonical findings report — **referenced**, already merged via PR #767 (SK-7) / #770 (SK-8); not modified here |
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, and documents updated. Decision rationale lives in the Review itself — this log is the canonical record going forward.*
