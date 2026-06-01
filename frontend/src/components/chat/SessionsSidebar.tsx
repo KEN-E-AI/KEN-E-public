@@ -320,7 +320,10 @@ export function SessionsSidebar({
                       {item.title ?? "Untitled session"}
                     </p>
                     {item.category_name && (
-                      <p className="text-[0.6875rem] text-[var(--color-text-tertiary)] truncate">
+                      <p
+                        data-slot="session-category-label"
+                        className="text-[0.6875rem] text-[var(--color-text-tertiary)] truncate"
+                      >
                         {item.category_name}
                       </p>
                     )}

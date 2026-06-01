@@ -120,7 +120,9 @@ test("TC-4: member-of-A GET /accounts/A/skills → 200 with item; GET detail →
     { headers: { Authorization: `Bearer ${memberOfAToken}` } },
   );
   expect(listResp.status()).toBe(200);
-  const listBody = (await listResp.json()) as { items: Array<{ skill_id: string }> };
+  const listBody = (await listResp.json()) as {
+    items: Array<{ skill_id: string }>;
+  };
   expect(listBody.items.some((s) => s.skill_id === SKILL_ID)).toBe(true);
 
   // Detail endpoint returns 200 for the seeded skill.

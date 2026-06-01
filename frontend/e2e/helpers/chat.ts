@@ -34,6 +34,12 @@ export type ChatSessionOverrides = {
   category_name?: string | null;
   updated_at?: string;
   created_at?: string;
+  // search_text is normally computed by the side-table service as
+  // casefold(title + " " + category_name + " " + latest_summary). In E2E tests
+  // that seed Firestore directly (bypassing the API), pass an explicit value so
+  // the backend's casefold substring filter in list_sessions() works correctly.
+  // This is a test-only shortcut documented in the implementation plan (AD-5).
+  search_text?: string | null;
 };
 
 /**
@@ -64,6 +70,7 @@ export async function seedChatSession(
     category_name = null,
     updated_at = now,
     created_at = now,
+    search_text = null,
   } = overrides;
 
   const url = `${FIRESTORE_REST}/accounts/${encodeURIComponent(accountId)}/chat_sessions/${encodeURIComponent(sessionId)}`;
@@ -102,6 +109,14 @@ export async function seedChatSession(
             : nullVal(),
         last_viewed_at:
           last_viewed_at !== null ? timestamp(last_viewed_at) : nullVal(),
+        // Optional pre-computed search_text for tests that need substring filtering
+        // without going through the API's side-table service (see AD-5 in the CH-42
+        // implementation plan). Omitting the field lets the side-table service write
+        // it on the next real turn; providing it lets direct-Firestore-seeded tests
+        // exercise the casefold filter path immediately.
+        ...(search_text !== null && search_text !== undefined
+          ? { search_text: str(search_text) }
+          : {}),
       },
     },
   });
@@ -220,6 +235,62 @@ export function buildSelectedOrgAccountScript(opts: {
 }
 
 // ─── Cleanup ──────────────────────────────────────────────────────────────────
+
+/**
+ * Delete all documents under `users/{userId}/chat_categories/` by listing and
+ * deleting them individually.
+ *
+ * Categories are user-scoped (not account-scoped) per chat README §7.2. This
+ * helper must target the `users/` path — NOT the `accounts/` path — to avoid
+ * silent no-ops that leave category docs behind after a test run.
+ *
+ * No-ops gracefully on 404 (user or collection not found).
+ */
+export async function cleanupChatCategories(
+  request: APIRequestContext,
+  userId: string,
+): Promise<void> {
+  const baseUrl = `${FIRESTORE_REST}/users/${encodeURIComponent(userId)}/chat_categories`;
+  let pageToken: string | undefined;
+
+  do {
+    const url = pageToken
+      ? `${baseUrl}?pageToken=${encodeURIComponent(pageToken)}`
+      : baseUrl;
+    const listResp = await request.get(url, {
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!listResp.ok()) {
+      // 404 means the collection doesn't exist — nothing to clean up.
+      if (listResp.status() === 404) return;
+      throw new Error(
+        `cleanupChatCategories: list failed ${listResp.status()} — ${await listResp.text()}`,
+      );
+    }
+    const body = await listResp.json();
+    const docs: Array<{ name: string }> = body.documents ?? [];
+    const EXPECTED_PREFIX = `projects/${PROJECT}/databases/(default)/documents/`;
+    await Promise.all(
+      docs.map(async (doc) => {
+        // Guard against a crafted emulator response with an unexpected path that
+        // could cause the cleanup helper to delete unintended Firestore documents.
+        if (!doc.name.startsWith(EXPECTED_PREFIX)) {
+          throw new Error(
+            `cleanupChatCategories: unexpected doc.name: ${doc.name}`,
+          );
+        }
+        const deleteUrl = `${FIRESTORE_BASE}/v1/${doc.name}`;
+        const delResp = await request.delete(deleteUrl);
+        if (!delResp.ok() && delResp.status() !== 404) {
+          throw new Error(
+            `cleanupChatCategories: DELETE failed ${delResp.status()} — ${await delResp.text()}`,
+          );
+        }
+      }),
+    );
+    pageToken = body.nextPageToken;
+  } while (pageToken);
+}
 
 /**
  * Delete all documents under `accounts/{accountId}/chat_sessions/` by listing

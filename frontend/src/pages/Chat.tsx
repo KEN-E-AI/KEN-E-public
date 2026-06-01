@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeftRight } from "lucide-react";
@@ -8,10 +8,12 @@ import { ChatInterface } from "@/components/chat/ChatInterface";
 import { SessionsSidebar } from "@/components/chat/SessionsSidebar";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCreateChatSession } from "@/hooks/useCreateChatSession";
-import { CHAT_SESSIONS_QUERY_KEY } from "@/hooks/useChatSessions";
+import { useChatSessions, CHAT_SESSIONS_QUERY_KEY } from "@/hooks/useChatSessions";
+import type { ChatCategoryId } from "@/lib/chatApi";
 import { createChatConversation, toChatSessionId } from "@/lib/chatApi";
 import { ArtifactsPanel } from "@/components/chat/ArtifactsPanel";
 import { TodoListsPanel } from "@/components/chat/TodoListsPanel";
+import { StatusViewCategoryAssignSlot } from "@/components/chat/StatusViewCategoryAssignSlot";
 import {
   getActiveSessionId,
   setActiveSessionId,
@@ -49,6 +51,23 @@ export default function Chat() {
   const accountId = selectedOrgAccount?.accountId ?? null;
   const createSession = useCreateChatSession();
   const queryClient = useQueryClient();
+
+  // Subscribe to the default sessions list (no filter/search) so Chat.tsx
+  // re-renders reactively when the sidebar poll resolves category changes.
+  // TanStack Query deduplicates the fetch — SessionsSidebar owns the polling;
+  // this is a subscriber-only join to the shared cache.
+  const { data: sessionsData } = useChatSessions({ accountId });
+
+  // Derive the active session's category_id from the sessions cache so the
+  // assign-slot dropdown reflects the current assignment without a separate fetch.
+  const currentSessionCategoryId = useMemo((): ChatCategoryId | null => {
+    if (!sessionId) return null;
+    for (const page of sessionsData?.pages ?? []) {
+      const match = page.items.find((s) => s.session_id === sessionId);
+      if (match) return match.category_id;
+    }
+    return null;
+  }, [sessionsData, sessionId]);
 
   const [viewState, setViewState] = useState<ViewState>("message");
   const [sidebarCollapsed, setSidebarCollapsed] =
@@ -214,8 +233,14 @@ export default function Chat() {
               onSessionResolved={onSessionResolved}
             />
           ) : (
-            // TODO: replace this placeholder with the full SessionStatusView once it ships (CH-PRD-04); ArtifactsPanel and TodoListsPanel will move into that surface.
+            // TODO: replace this placeholder with the full SessionStatusView once it ships (CH-PRD-04); ArtifactsPanel, TodoListsPanel, and StatusViewCategoryAssignSlot will move into that surface.
             <div className="overflow-y-auto h-full space-y-4 py-2">
+              {sessionId && (
+                <StatusViewCategoryAssignSlot
+                  sessionId={toChatSessionId(sessionId)}
+                  currentCategoryId={currentSessionCategoryId}
+                />
+              )}
               <ArtifactsPanel
                 sessionId={sessionId ? toChatSessionId(sessionId) : null}
               />
