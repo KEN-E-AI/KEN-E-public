@@ -527,6 +527,36 @@ class TestAssignCategoryUnassign:
         assert db.document.call_count == 1
 
 
+class TestDeleteCategoryMissingDocRaises:
+    """delete_category raises PermissionError when the category doc is missing
+    (PRD §7 AC-10's 404→403 collapse — prevents ID-probing oracle on DELETE).
+    Transaction-retry idempotency is covered by `tx.set(..., merge=True)` in
+    `_apply_delete_batch`."""
+
+    def test_raises_permission_error_when_category_doc_missing(self) -> None:
+        db = _make_db_for_delete([])
+        # Category doc absent (never owned, or already deleted by this user).
+        category_snap = MagicMock()
+        category_snap.exists = False
+        db.document.return_value.get.return_value = category_snap
+
+        svc = _make_svc(db)
+        with pytest.raises(PermissionError):
+            svc.delete_category("u1", "cat_already_gone")
+
+    def test_no_transaction_attempted_on_missing_doc(self) -> None:
+        db = _make_db_for_delete([])
+        category_snap = MagicMock()
+        category_snap.exists = False
+        db.document.return_value.get.return_value = category_snap
+
+        svc = _make_svc(db)
+        with pytest.raises(PermissionError):
+            svc.delete_category("u1", "cat_already_gone")
+        # The missing-doc guard returns before opening any transaction.
+        assert db.transaction.call_count == 0
+
+
 class TestDeleteCategoryBatching:
     """Verify that delete_category creates the correct number of transactions."""
 
@@ -610,7 +640,7 @@ class TestDeleteCategoryBatching:
         svc = _make_svc(db)
         svc.delete_category("u1", "cat_abc")
         tx = db.transaction.return_value
-        assert tx.update.call_count == 1
+        assert tx.set.call_count == 1
 
 
 # ---------------------------------------------------------------------------
@@ -637,28 +667,28 @@ class TestDeleteCategoryWritePayloads:
         snap = _make_snap(title="My Session")
         db, _ = self._run_delete([snap])
         tx = db.transaction.return_value
-        payload = tx.update.call_args[0][1]
+        payload = tx.set.call_args[0][1]
         assert payload["category_id"] is _fs.DELETE_FIELD
 
     def test_update_includes_updated_at(self) -> None:
         snap = _make_snap()
         db, _ = self._run_delete([snap])
         tx = db.transaction.return_value
-        payload = tx.update.call_args[0][1]
+        payload = tx.set.call_args[0][1]
         assert "updated_at" in payload
 
     def test_update_includes_search_text(self) -> None:
         snap = _make_snap(title="My Session")
         db, _ = self._run_delete([snap])
         tx = db.transaction.return_value
-        payload = tx.update.call_args[0][1]
+        payload = tx.set.call_args[0][1]
         assert "search_text" in payload
 
     def test_search_text_recomputed_without_category(self) -> None:
         snap = _make_snap(title="Q3 Plan", latest_summary="draft")
         db, _ = self._run_delete([snap])
         tx = db.transaction.return_value
-        payload = tx.update.call_args[0][1]
+        payload = tx.set.call_args[0][1]
         # Formula: casefold(title + summary), no category
         assert payload["search_text"] == "q3 plan draft"
 
@@ -666,7 +696,7 @@ class TestDeleteCategoryWritePayloads:
         snap = _make_snap(title="Alpha", latest_summary=None)
         db, _ = self._run_delete([snap])
         tx = db.transaction.return_value
-        payload = tx.update.call_args[0][1]
+        payload = tx.set.call_args[0][1]
         assert payload["search_text"] == "alpha"
 
     def test_tx_delete_called_once_for_category_doc(self) -> None:
@@ -684,12 +714,19 @@ class TestDeleteCategoryWritePayloads:
         tx = db.transaction.return_value
         tx.delete.assert_called_once_with(category_ref)
 
+    def test_set_called_with_merge_true(self) -> None:
+        snap = _make_snap(title="My Session")
+        db, _ = self._run_delete([snap])
+        tx = db.transaction.return_value
+        _, kwargs = tx.set.call_args
+        assert kwargs.get("merge") is True
+
     def test_zero_sessions_no_tx_update_only_delete(self) -> None:
         db = _make_db_for_delete([])
         svc = _make_svc(db)
         svc.delete_category("u1", "cat_abc")
         tx = db.transaction.return_value
-        tx.update.assert_not_called()
+        tx.set.assert_not_called()
         tx.delete.assert_called_once()
 
     def test_update_called_once_per_affected_session(self) -> None:
@@ -698,11 +735,11 @@ class TestDeleteCategoryWritePayloads:
         svc = _make_svc(db)
         svc.delete_category("u1", "cat_abc")
         tx = db.transaction.return_value
-        assert tx.update.call_count == 3
+        assert tx.set.call_count == 3
 
     def test_update_targets_snap_reference(self) -> None:
         snap = _make_snap()
         db, _ = self._run_delete([snap])
         tx = db.transaction.return_value
-        ref_arg = tx.update.call_args[0][0]
+        ref_arg = tx.set.call_args[0][0]
         assert ref_arg is snap.reference

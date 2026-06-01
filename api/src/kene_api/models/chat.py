@@ -129,6 +129,28 @@ class ChatCategoryDefinition(BaseModel):
     created_at: datetime = Field(default_factory=_now_utc)
     updated_at: datetime = Field(default_factory=_now_utc)
 
+    def to_public(self) -> "ChatCategoryPublic":
+        """Project to the public wire shape, dropping user_id and name_casefold."""
+        return ChatCategoryPublic(
+            category_id=self.category_id,
+            name=self.name,
+            created_at=self.created_at,
+            updated_at=self.updated_at,
+        )
+
+
+class ChatCategoryPublic(BaseModel):
+    """Public wire shape for a chat category (PRD §4.1 TypeScript ChatCategory).
+
+    Drops internal fields (user_id, name_casefold) that are not part of the
+    frontend wire contract.
+    """
+
+    category_id: str
+    name: str
+    created_at: datetime
+    updated_at: datetime
+
 
 class TodoItem(BaseModel):
     """Single item in an agent-authored todo list (read-only for users)."""
@@ -195,7 +217,7 @@ class CreateCategoryRequest(BaseModel):
 
 
 class AssignCategoryRequest(BaseModel):
-    category_id: str | None = None  # None → assign to Uncategorized
+    category_id: str | None = Field(default=None, max_length=100)  # None → Uncategorized
 
 
 class DeleteSessionResponse(BaseModel):

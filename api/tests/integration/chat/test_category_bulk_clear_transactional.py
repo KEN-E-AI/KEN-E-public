@@ -216,38 +216,45 @@ class TestDeleteCategory800Sessions:
         assert not cat_snap.exists
 
 
-class TestDeleteCategoryIdempotency:
-    """Calling delete_category twice on the same category is safe."""
+class TestDeleteCategorySingleShot:
+    """delete_category is single-shot at the function boundary: second call
+    on an already-deleted category raises PermissionError (per PRD §7 AC-10's
+    404→403 collapse, which prevents an ID-probing oracle on DELETE).
 
-    def test_second_call_returns_zero_sessions_reassigned(self) -> None:
+    Transaction-retry idempotency for the bulk-clear loop itself is covered
+    by `tx.set(..., merge=True)` in `_apply_delete_batch` — see PRD §9 for
+    the only idempotency guarantee the spec actually mandates.
+    """
+
+    def test_first_call_clears_all_sessions(self) -> None:
         db = _emulator_client()
         _seed_category_doc(db)
         _seed_sessions(db, 3)
 
         svc = _make_service(db)
-        first = svc.delete_category(_USER_ID, _CATEGORY_ID)
-        second = svc.delete_category(_USER_ID, _CATEGORY_ID)
+        result = svc.delete_category(_USER_ID, _CATEGORY_ID)
 
-        assert first.sessions_reassigned == 3
-        assert second.sessions_reassigned == 0
+        assert result.sessions_reassigned == 3
 
-    def test_second_call_does_not_raise(self) -> None:
+    def test_second_call_raises_permission_error(self) -> None:
         db = _emulator_client()
         _seed_category_doc(db)
         _seed_sessions(db, 2)
 
         svc = _make_service(db)
         svc.delete_category(_USER_ID, _CATEGORY_ID)
-        # Must not raise even though category doc is already gone
-        svc.delete_category(_USER_ID, _CATEGORY_ID)
+        # Category doc is now gone — AC-10 collapses missing → 403
+        with pytest.raises(PermissionError):
+            svc.delete_category(_USER_ID, _CATEGORY_ID)
 
-    def test_sessions_remain_cleared_after_second_call(self) -> None:
+    def test_sessions_remain_cleared_after_failed_second_call(self) -> None:
         db = _emulator_client()
         _seed_category_doc(db)
         _seed_sessions(db, 2)
 
         svc = _make_service(db)
         svc.delete_category(_USER_ID, _CATEGORY_ID)
-        svc.delete_category(_USER_ID, _CATEGORY_ID)
+        with pytest.raises(PermissionError):
+            svc.delete_category(_USER_ID, _CATEGORY_ID)
 
         assert _count_sessions_with_category(db) == 0

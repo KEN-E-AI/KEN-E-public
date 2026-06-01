@@ -85,7 +85,7 @@ if _write_audit is None:
 USER_SUBCOLLECTIONS: list[str] = [
     "notification_status",  # firestore_notification_repository.py
     "preferences",  # firestore_notification_repository.py + routers/users.py (default_preferences seed)
-    "chat_categories",  # CH-PRD-03
+    "chat_categories",  # CH-PRD-03 §7 AC-12
     "notifications",  # routers/users.py — NotificationSettings seed on user creation
     "security",  # routers/users.py — SecuritySettings seed on user creation
 ]

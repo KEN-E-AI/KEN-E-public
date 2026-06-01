@@ -7,6 +7,8 @@ delete_category (CH-32) and assign_category (CH-33) extend this class.
 from __future__ import annotations
 
 import hashlib
+import logging
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -74,6 +76,27 @@ def _now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
+logger = logging.getLogger(__name__)
+
+try:
+    import weave
+
+    WEAVE_AVAILABLE = True
+except ImportError:
+    WEAVE_AVAILABLE = False
+    weave = None  # type: ignore[assignment]
+
+
+def _maybe_weave_attrs(attrs: dict[str, object]) -> AbstractContextManager[None]:
+    """Return ``weave.attributes(attrs)`` when Weave is available, else a no-op context manager."""
+    if WEAVE_AVAILABLE and weave is not None:
+        try:
+            return weave.attributes(attrs)
+        except Exception as exc:
+            logger.warning("weave.attributes failed: %s", exc)
+    return nullcontext()
+
+
 # Firestore transactions are capped at 500 operations. 400 updates + 1 fused
 # tx.delete() on the last batch = 401 ops max — well within the limit.
 _DELETE_CATEGORY_BATCH_SIZE = 400
@@ -95,13 +118,18 @@ def _apply_delete_batch(
     """
     for snap in batch:
         new_search_text = recompute_search_text(snap.to_dict(), category_name=None)
-        tx.update(
+        # set(..., merge=True) is idempotent: DELETE_FIELD on a missing field is a
+        # no-op, and missing documents are not re-created with unexpected state
+        # (only search_text + updated_at would land — acceptable for the rare
+        # hard-delete-between-Phase-1-and-Phase-2 race PRD §9 already accepts).
+        tx.set(
             snap.reference,
             {
                 "category_id": firestore.DELETE_FIELD,
                 "search_text": new_search_text,
                 "updated_at": now,
             },
+            merge=True,
         )
     if is_last:
         tx.delete(category_ref)
@@ -161,19 +189,26 @@ class ChatCategoryService:
             created_at=now,
             updated_at=now,
         )
-        try:
-            self._db.document(_doc_path(user_id, category_id)).create(
-                definition.model_dump()
-            )
-        except AlreadyExists as exc:
-            # The deterministic id collided — another row with this user's
-            # name_casefold already exists. Surface it with the colliding id
-            # (which equals what we just tried to write — the path IS the dedup
-            # key, so the existing doc's id is structurally identical).
-            raise CategoryExistsError(
-                f"A category with name_casefold='{new_casefold}' already exists",
-                existing_id=category_id,
-            ) from exc
+        with _maybe_weave_attrs(
+            {
+                "user_id": user_id,
+                "category_id": category_id,
+                "name_casefold": new_casefold,
+            }
+        ):
+            try:
+                self._db.document(_doc_path(user_id, category_id)).create(
+                    definition.model_dump()
+                )
+            except AlreadyExists as exc:
+                # The deterministic id collided — another row with this user's
+                # name_casefold already exists. Surface it with the colliding id
+                # (which equals what we just tried to write — the path IS the dedup
+                # key, so the existing doc's id is structurally identical).
+                raise CategoryExistsError(
+                    f"A category with name_casefold='{new_casefold}' already exists",
+                    existing_id=category_id,
+                ) from exc
         return definition
 
     def list_categories(self, user_id: str) -> list[ChatCategoryDefinition]:
@@ -238,15 +273,22 @@ class ChatCategoryService:
 
         now = _now_utc()
         new_search_text = recompute_search_text(metadata, category_name)
-        self._db.document(
-            f"accounts/{metadata.account_id}/chat_sessions/{session_id}"
-        ).update(
+        with _maybe_weave_attrs(
             {
+                "user_id": user_id,
+                "session_id": session_id,
                 "category_id": category_id,
-                "search_text": new_search_text,
-                "updated_at": now,
             }
-        )
+        ):
+            self._db.document(
+                f"accounts/{metadata.account_id}/chat_sessions/{session_id}"
+            ).update(
+                {
+                    "category_id": category_id,
+                    "search_text": new_search_text,
+                    "updated_at": now,
+                }
+            )
 
         return metadata.model_copy(
             update={
@@ -269,20 +311,22 @@ class ChatCategoryService:
         belonging to user_id whose category_id matches the one being deleted.
         Reading outside the transaction is intentional and documented — the read
         may be large, and PRD §9 accepts that a concurrent assign_category that
-        lands between Phase 1 and Phase 2 is silently cleared (last-writer-wins).
+        assigns this same category to a NEW session between Phase 1 and Phase 2
+        causes that new session to escape the bulk-clear (last-writer-wins).
 
         Phase 2 — Batched transactions: chunk the affected snapshots into batches
-        of _DELETE_CATEGORY_BATCH_SIZE (400). Each transaction calls tx.update()
-        on every session in the batch, clearing category_id, recomputing
-        search_text, and stamping updated_at.
+        of _DELETE_CATEGORY_BATCH_SIZE (400). Each transaction calls
+        tx.set(..., merge=True) on every session in the batch, clearing
+        category_id, recomputing search_text, and stamping updated_at.
 
         Phase 3 — Fused delete: the LAST batch's transaction also calls
         tx.delete() on the category document. When zero sessions are affected,
         a single transaction runs that only deletes the category doc.
 
-        Idempotency: already-cleared sessions reach the same final state on
-        retry. tx.delete() on a missing document is a no-op (Firestore SDK
-        guarantee), so the overall call is safe to retry on partial failure.
+        Idempotency: tx.set(..., merge=True) is a no-op on already-cleared fields
+        and does not raise on hard-deleted documents. tx.delete() on a missing
+        document is also a no-op (Firestore SDK guarantee), so the overall call
+        is safe to retry on partial failure.
 
         Args:
             user_id: The authenticated user's ID.
@@ -292,6 +336,16 @@ class ChatCategoryService:
             DeleteCategoryResult with category_id + sessions_reassigned count.
         """
         category_ref = self._db.document(_doc_path(user_id, category_id))
+        # PRD §7 AC-10: 404→403 collapse to prevent ID probing. If the category
+        # doesn't exist (never owned by this user, or already deleted by them),
+        # raise PermissionError. Idempotency of the transactional bulk-clear
+        # itself is covered by `tx.set(..., merge=True)` in `_apply_delete_batch`
+        # (handles the hard-delete-between-Phase-1-and-Phase-2 race PRD §9
+        # explicitly accepts) — that's the only idempotency PRD §9 actually
+        # mandates. User-facing double-call semantics are deliberately
+        # single-shot to keep the existence side-channel closed.
+        if not category_ref.get().exists:
+            raise PermissionError("Forbidden")
         now = _now_utc()
 
         # Phase 1 — Discovery outside the transaction.
@@ -315,11 +369,34 @@ class ChatCategoryService:
         else:
             chunks = [[]]
 
-        for batch_index, batch in enumerate(chunks):
-            is_last = batch_index == len(chunks) - 1
-            _apply_delete_batch(
-                self._db.transaction(), batch, is_last, category_ref, now
-            )
+        with _maybe_weave_attrs(
+            {
+                "user_id": user_id,
+                "category_id": category_id,
+                "sessions_reassigned": len(affected),
+                "transactions_used": len(chunks),
+            }
+        ):
+            for batch_index, batch in enumerate(chunks):
+                is_last = batch_index == len(chunks) - 1
+                # Skip the bulk_clear span for the empty-batch path (0 sessions) —
+                # that transaction only deletes the category doc, not sessions.
+                _bc_ctx = (
+                    _maybe_weave_attrs(
+                        {
+                            "user_id": user_id,
+                            "category_id": category_id,
+                            "batch_index": batch_index,
+                            "batch_size": len(batch),
+                        }
+                    )
+                    if batch
+                    else nullcontext()
+                )
+                with _bc_ctx:
+                    _apply_delete_batch(
+                        self._db.transaction(), batch, is_last, category_ref, now
+                    )
 
         return DeleteCategoryResult(
             category_id=category_id,

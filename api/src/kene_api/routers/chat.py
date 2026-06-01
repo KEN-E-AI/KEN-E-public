@@ -13,7 +13,7 @@ from typing import Any
 from uuid import uuid4
 
 import vertexai
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 from fastapi.responses import StreamingResponse
 from google.adk.sessions import VertexAiSessionService
 from pydantic import BaseModel, Field, computed_field
@@ -40,6 +40,9 @@ from ..cache import (
 )
 from ..chat.accumulator import SessionTurnAccumulator
 from ..chat.artifacts import generate_artifact_signed_url, list_artifacts
+from ..chat.categories import CategoryExistsError, get_chat_category_service
+from ..chat.category_assign_limiter import category_assign_limiter
+from ..chat.category_user_limiter import category_user_limiter
 from ..chat.mark_read_limiter import mark_read_limiter
 from ..chat.orphan_scan_endpoints import (
     run_adk_session_orphan_scan,
@@ -53,8 +56,11 @@ from ..dependencies import get_firestore_client as _get_firestore_client
 from ..exceptions import ServiceUnavailableError
 from ..firestore import get_firestore_service
 from ..models.chat import (
+    AssignCategoryRequest,
+    ChatCategoryPublic,
     ChatSessionMetadata,
     ChatSessionSidebarItem,
+    CreateCategoryRequest,
     InternalSideTableUpdateRequest,
     ListArtifactsResponse,
     ListArtifactsResponseItem,
@@ -2778,6 +2784,155 @@ async def update_conversation(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update conversation",
         ) from e
+
+
+# ---------------------------------------------------------------------------
+# Category CRUD endpoints — CH-35 (CH-PRD-03 §5.4, §7 AC-POST/DELETE/GET/PUT)
+# ---------------------------------------------------------------------------
+
+
+async def _require_categories_enabled(user_context: UserContext) -> None:
+    """Raise 404 when either `chat_v2_enabled` (master kill switch) or
+    `chat_categories_enabled` is off. Fail-closed on flag-service errors
+    (`is_feature_enabled` swallows + returns `default=False`).
+
+    Per `api/CLAUDE.md` (Chat flags table), `chat_categories_enabled`
+    depends on the master `chat_v2_enabled` flag — if an operator kills the
+    master flag in production, every category endpoint must also disappear.
+    """
+    ctx = EvaluationContext(
+        user_id=user_context.user_id,
+        user_email=user_context.email,
+        organization_id=None,
+        account_id=None,
+    )
+    if not await is_feature_enabled("chat_v2_enabled", ctx, default=False):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+    if not await is_feature_enabled("chat_categories_enabled", ctx, default=False):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not Found")
+
+
+@router.get("/categories", response_model=list[ChatCategoryPublic])
+async def list_categories(
+    user_context: UserContext = Depends(get_current_user_context),
+) -> list[ChatCategoryPublic]:
+    """Return all categories for the authenticated user, sorted by name ASC.
+
+    Gated by ``chat_categories_enabled`` feature flag — returns 404 when off.
+    """
+    await _require_categories_enabled(user_context)
+    loop = asyncio.get_running_loop()
+    svc = get_chat_category_service()
+    categories = await loop.run_in_executor(
+        None,
+        lambda: svc.list_categories(user_id=user_context.user_id),
+    )
+    return [c.to_public() for c in categories]
+
+
+@router.post("/categories", response_model=ChatCategoryPublic, status_code=201)
+async def create_category(
+    body: CreateCategoryRequest,
+    user_context: UserContext = Depends(get_current_user_context),
+) -> ChatCategoryPublic:
+    """Create a new category for the authenticated user.
+
+    Gated by ``chat_categories_enabled`` feature flag — returns 404 when off.
+    Rate-limited to 20 requests/hour/user (shared with DELETE /categories/{id}).
+    Returns 409 when a category with the same casefold name already exists.
+    Returns 400 when the name is empty or exceeds 64 characters.
+    """
+    await _require_categories_enabled(user_context)
+    category_user_limiter.check(user_context.user_id)
+    loop = asyncio.get_running_loop()
+    svc = get_chat_category_service()
+    try:
+        category = await loop.run_in_executor(
+            None,
+            lambda: svc.create_category(user_id=user_context.user_id, name=body.name),
+        )
+    except CategoryExistsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error": "category_exists", "existing_category_id": exc.existing_id},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid category name: must be 1-64 non-empty characters.",
+        ) from exc
+    return category.to_public()
+
+
+@router.delete("/categories/{category_id}", status_code=200)
+async def delete_category(
+    category_id: str = Path(..., max_length=100, pattern=r"^[\w\-]+$"),
+    user_context: UserContext = Depends(get_current_user_context),
+) -> dict:
+    """Delete a category and clear it from all sessions owned by the user.
+
+    Gated by ``chat_categories_enabled`` feature flag — returns 404 when off.
+    Rate-limited to 20 requests/hour/user (shared with POST /categories).
+    Returns ``{sessions_reassigned: int}`` — number of sessions that had their
+    category cleared.
+    """
+    await _require_categories_enabled(user_context)
+    category_user_limiter.check(user_context.user_id)
+    loop = asyncio.get_running_loop()
+    svc = get_chat_category_service()
+    try:
+        result = await loop.run_in_executor(
+            None,
+            lambda: svc.delete_category(user_id=user_context.user_id, category_id=category_id),
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden",
+        ) from exc
+    return {"sessions_reassigned": result.sessions_reassigned}
+
+
+@router.put("/conversations/{session_id}/category", status_code=200)
+async def assign_category(
+    session_id: str = Path(..., max_length=256, pattern=r"^[\w\-]+$"),
+    body: AssignCategoryRequest = Body(...),
+    user_context: UserContext = Depends(get_current_user_context),
+) -> dict:
+    """Assign or clear a category on a conversation.
+
+    Gated by ``chat_categories_enabled`` feature flag — returns 404 when off.
+    Rate-limited to 60 requests/minute/session, scoped per authenticated user.
+    Returns 403 when the session or category is not owned by the caller
+    (404 is deliberately collapsed to 403 to prevent ID probing — CH-PRD-03 §5.4).
+    """
+    await _require_categories_enabled(user_context)
+    # Compose limiter key with the authenticated user_id so an attacker who
+    # guesses a victim's session_id cannot exhaust the victim's bucket and
+    # cause cross-user 429 DoS. Pre-fix, the key was the untrusted path param
+    # alone — any authenticated user could hammer PUT
+    # /conversations/{victim_session_id}/category and lock the victim out for
+    # ~60s. The composed key keeps the per-session 60/min cap intact (each
+    # legit user's session has its own bucket) but eliminates the cross-user
+    # lever. AH-PRD-10's harness will replace this when AH-71 lands.
+    category_assign_limiter.check(f"{user_context.user_id}:{session_id}")
+    loop = asyncio.get_running_loop()
+    svc = get_chat_category_service()
+    try:
+        await loop.run_in_executor(
+            None,
+            lambda: svc.assign_category(
+                user_id=user_context.user_id,
+                session_id=session_id,
+                category_id=body.category_id,
+            ),
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden",
+        ) from exc
+    return {"session_id": session_id, "category_id": body.category_id}
 
 
 @router.post("/conversations/{session_id}/mark-read", response_model=MarkReadResponse)
