@@ -48,7 +48,7 @@ async def _apply_rate_limiting(
         HTTPException: If rate limit is exceeded
     """
     try:
-        rate_limiter.check_rate_limit(request)
+        await rate_limiter.check_rate_limit(request)
     except HTTPException as e:
         if e.status_code == 429:
             await audit_logger.log_rate_limit_exceeded(
@@ -90,7 +90,7 @@ async def _verify_and_decode_token(
     except Exception as e:
         # Apply rate limiting for failed authentication attempts
         try:
-            rate_limiter.check_rate_limit(request)
+            await rate_limiter.check_rate_limit(request)
         except HTTPException as rate_error:
             if rate_error.status_code == 429:
                 await audit_logger.log_rate_limit_exceeded(

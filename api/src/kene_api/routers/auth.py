@@ -49,7 +49,7 @@ async def verify_recaptcha(
     to ensure the user is not a bot.
     """
     # Apply rate limiting
-    recaptcha_rate_limiter.check_rate_limit(request)
+    await recaptcha_rate_limiter.check_rate_limit(request)
 
     # Get client IP address
     client_ip = request.client.host if request.client else None

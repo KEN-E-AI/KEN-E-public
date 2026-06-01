@@ -31,7 +31,7 @@ def mock_request():
 def mock_rate_limiter():
     """Create a mock rate limiter."""
     limiter = MagicMock()
-    limiter.check_rate_limit = MagicMock()
+    limiter.check_rate_limit = AsyncMock()
     return limiter
 
 

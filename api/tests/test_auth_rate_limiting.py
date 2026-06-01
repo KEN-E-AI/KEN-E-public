@@ -4,6 +4,16 @@ import pytest
 from fastapi import status
 from httpx import ASGITransport, AsyncClient
 from src.kene_api.main import app
+from src.kene_api.rate_limiter import recaptcha_rate_limiter
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    recaptcha_rate_limiter.minute_requests.clear()
+    recaptcha_rate_limiter.hour_requests.clear()
+    yield
+    recaptcha_rate_limiter.minute_requests.clear()
+    recaptcha_rate_limiter.hour_requests.clear()
 
 
 @pytest.mark.asyncio
