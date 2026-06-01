@@ -1,3 +1,4 @@
+import axios from "axios";
 import type { Brand, AccountId } from "@/lib/branded-types";
 import api from "@/lib/api";
 import { auth } from "@/lib/firebase";
@@ -174,7 +175,7 @@ export type ListArtifactsResponse = {
   items: ListArtifactsResponseItem[];
 };
 
-// ─── Categories types (CH-PRD-03 §4.1 — list-only stub until CH-PRD-03 ships full CRUD) ──
+// ─── Categories types (CH-PRD-03 §4.1) ───────────────────────────────────────
 
 export type ChatCategory = {
   category_id: ChatCategoryId;
@@ -182,6 +183,30 @@ export type ChatCategory = {
   created_at: string;
   updated_at: string;
 };
+
+export type DeleteCategoryResponse = {
+  sessions_reassigned: number;
+};
+
+/**
+ * Thrown by createChatCategory when the server returns 409 (casefold dedup
+ * conflict). Carries the existing category id so callers can surface it without
+ * re-parsing the raw AxiosError response body. `existingCategoryId` is null
+ * when the server 409 response does not include a parseable ID.
+ */
+export class CategoryExistsError extends Error {
+  constructor(
+    public readonly existingCategoryId: ChatCategoryId | null,
+    public readonly attemptedName: string,
+  ) {
+    super(
+      existingCategoryId
+        ? `Category "${attemptedName}" already exists as id "${existingCategoryId}"`
+        : `Category "${attemptedName}" already exists`,
+    );
+    this.name = "CategoryExistsError";
+  }
+}
 
 // ─── API client functions ─────────────────────────────────────────────────────
 
@@ -488,12 +513,65 @@ export async function listArtifacts(
 
 /**
  * GET /api/v1/chat/categories
- * Minimal list-only wrapper — CH-PRD-03 delivers the full useChatCategories hook + CRUD.
  * Gated by chat_categories_enabled flag; caller must check the flag before calling.
  */
 export async function listChatCategories(): Promise<ChatCategory[]> {
   const { data } = await api.get<ChatCategory[]>(`${CHAT_BASE}/categories`);
   return data;
+}
+
+/**
+ * POST /api/v1/chat/categories
+ * Creates a new category. Throws CategoryExistsError on 409 (casefold dedup conflict).
+ */
+export async function createChatCategory(name: string): Promise<ChatCategory> {
+  try {
+    const { data } = await api.post<ChatCategory>(`${CHAT_BASE}/categories`, {
+      name,
+    });
+    return data;
+  } catch (err: unknown) {
+    if (axios.isAxiosError(err) && err.response?.status === 409) {
+      const rawId: unknown = err.response?.data?.detail?.existing_category_id;
+      const existingId =
+        typeof rawId === "string" ? (tryChatCategoryId(rawId) ?? null) : null;
+      if (rawId !== undefined && existingId === null) {
+        console.warn(
+          "createChatCategory: 409 response missing or malformed existing_category_id; CategoryExistsError.existingCategoryId will be null. rawId=",
+          rawId,
+        );
+      }
+      throw new CategoryExistsError(existingId, name);
+    }
+    throw err;
+  }
+}
+
+/**
+ * DELETE /api/v1/chat/categories/{id}
+ * Deletes a category and bulk-clears it from affected sessions.
+ */
+export async function deleteChatCategory(
+  id: ChatCategoryId,
+): Promise<DeleteCategoryResponse> {
+  const { data } = await api.delete<DeleteCategoryResponse>(
+    `${CHAT_BASE}/categories/${encodeURIComponent(id)}`,
+  );
+  return data;
+}
+
+/**
+ * PUT /api/v1/chat/conversations/{session_id}/category
+ * Assigns or clears a session's category. Pass null to unassign.
+ */
+export async function assignSessionCategory(
+  sessionId: ChatSessionId,
+  categoryId: ChatCategoryId | null,
+): Promise<void> {
+  await api.put(
+    `${CHAT_BASE}/conversations/${encodeURIComponent(sessionId)}/category`,
+    { category_id: categoryId },
+  );
 }
 
 /**

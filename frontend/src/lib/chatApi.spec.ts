@@ -19,6 +19,11 @@ import {
   chatHealth,
   listTodoLists,
   listArtifacts,
+  listChatCategories,
+  createChatCategory,
+  deleteChatCategory,
+  assignSessionCategory,
+  CategoryExistsError,
   toChatSessionId as mkSessionId,
   toChatCategoryId as mkCategoryId,
 } from "./chatApi";
@@ -604,5 +609,196 @@ describe("listArtifacts", () => {
     expect(mockApi.get).toHaveBeenCalledWith(
       "/api/v1/chat/conversations/sess%2Fabc/artifacts",
     );
+  });
+});
+
+// ─── listChatCategories ───────────────────────────────────────────────────────
+
+describe("listChatCategories", () => {
+  it("calls GET /api/v1/chat/categories and returns data", async () => {
+    const fixture = [
+      {
+        category_id: mkCategoryId("cat_01"),
+        name: "Campaign Planning",
+        created_at: "2026-05-01T09:00:00Z",
+        updated_at: "2026-05-01T09:00:00Z",
+      },
+    ];
+    mockApi.get.mockResolvedValueOnce({ data: fixture });
+    const result = await listChatCategories();
+    expect(mockApi.get).toHaveBeenCalledWith("/api/v1/chat/categories");
+    expect(result).toEqual(fixture);
+  });
+});
+
+// ─── createChatCategory ───────────────────────────────────────────────────────
+
+describe("createChatCategory", () => {
+  it("calls POST /api/v1/chat/categories with the name and returns the created category", async () => {
+    const fixture = {
+      category_id: mkCategoryId("cat_01"),
+      name: "Q3 Campaigns",
+      created_at: "2026-05-01T09:00:00Z",
+      updated_at: "2026-05-01T09:00:00Z",
+    };
+    mockApi.post.mockResolvedValueOnce({ data: fixture });
+    const result = await createChatCategory("Q3 Campaigns");
+    expect(mockApi.post).toHaveBeenCalledWith("/api/v1/chat/categories", {
+      name: "Q3 Campaigns",
+    });
+    expect(result).toEqual(fixture);
+  });
+
+  it("throws CategoryExistsError with existing id on 409", async () => {
+    const axiosError = {
+      isAxiosError: true,
+      response: {
+        status: 409,
+        data: {
+          detail: {
+            error: "category_exists",
+            existing_category_id: "cat_42",
+          },
+        },
+      },
+    };
+    mockApi.post.mockRejectedValueOnce(axiosError);
+
+    let caught: unknown;
+    try {
+      await createChatCategory("q3 campaigns");
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(CategoryExistsError);
+    const typedErr = caught as CategoryExistsError;
+    expect(typedErr.existingCategoryId).toBe("cat_42");
+    expect(typedErr.attemptedName).toBe("q3 campaigns");
+  });
+
+  it("rethrows non-409 AxiosErrors unchanged", async () => {
+    const axiosError = Object.assign(
+      new Error("Request failed with status code 500"),
+      {
+        isAxiosError: true,
+        response: { status: 500, data: { detail: "Internal Server Error" } },
+      },
+    );
+    mockApi.post.mockRejectedValueOnce(axiosError);
+
+    await expect(createChatCategory("Q3")).rejects.not.toBeInstanceOf(
+      CategoryExistsError,
+    );
+  });
+
+  it("gracefully handles 409 with missing detail.existing_category_id — existingCategoryId is null", async () => {
+    const axiosError = Object.assign(new Error("Conflict"), {
+      isAxiosError: true,
+      response: { status: 409, data: {} },
+    });
+    mockApi.post.mockRejectedValueOnce(axiosError);
+
+    let caught: unknown;
+    try {
+      await createChatCategory("Q3");
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(CategoryExistsError);
+    expect((caught as CategoryExistsError).existingCategoryId).toBeNull();
+  });
+
+  it("warns when 409 carries a non-string existing_category_id (server contract violation)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const axiosError = Object.assign(new Error("Conflict"), {
+      isAxiosError: true,
+      response: {
+        status: 409,
+        data: { detail: { existing_category_id: 42 } },
+      },
+    });
+    mockApi.post.mockRejectedValueOnce(axiosError);
+
+    let caught: unknown;
+    try {
+      await createChatCategory("Q3");
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(CategoryExistsError);
+    expect((caught as CategoryExistsError).existingCategoryId).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("missing or malformed existing_category_id"),
+      42,
+    );
+    warnSpy.mockRestore();
+  });
+});
+
+// ─── deleteChatCategory ───────────────────────────────────────────────────────
+
+describe("deleteChatCategory", () => {
+  it("calls DELETE /api/v1/chat/categories/{id} and returns sessions_reassigned", async () => {
+    const fixture = { sessions_reassigned: 5 };
+    mockApi.delete.mockResolvedValueOnce({ data: fixture });
+    const result = await deleteChatCategory(mkCategoryId("cat_01"));
+    expect(mockApi.delete).toHaveBeenCalledWith(
+      "/api/v1/chat/categories/cat_01",
+    );
+    expect(result).toEqual(fixture);
+  });
+
+  it("URL-encodes category IDs that contain special characters", async () => {
+    mockApi.delete.mockResolvedValueOnce({ data: { sessions_reassigned: 0 } });
+    await deleteChatCategory("cat/special" as ReturnType<typeof mkCategoryId>);
+    expect(mockApi.delete).toHaveBeenCalledWith(
+      "/api/v1/chat/categories/cat%2Fspecial",
+    );
+  });
+});
+
+// ─── assignSessionCategory ────────────────────────────────────────────────────
+
+describe("assignSessionCategory", () => {
+  it("calls PUT /api/v1/chat/conversations/{session_id}/category with category_id", async () => {
+    mockApi.put.mockResolvedValueOnce({ data: { status: "ok" } });
+    await assignSessionCategory(mkSessionId("sess_01"), mkCategoryId("cat_01"));
+    expect(mockApi.put).toHaveBeenCalledWith(
+      "/api/v1/chat/conversations/sess_01/category",
+      { category_id: "cat_01" },
+    );
+  });
+
+  it("sends category_id: null to clear a session's category", async () => {
+    mockApi.put.mockResolvedValueOnce({ data: { status: "ok" } });
+    await assignSessionCategory(mkSessionId("sess_01"), null);
+    expect(mockApi.put).toHaveBeenCalledWith(
+      "/api/v1/chat/conversations/sess_01/category",
+      { category_id: null },
+    );
+  });
+
+  it("URL-encodes session IDs that contain special characters", async () => {
+    mockApi.put.mockResolvedValueOnce({ data: { status: "ok" } });
+    await assignSessionCategory(
+      "sess/special" as ReturnType<typeof mkSessionId>,
+      mkCategoryId("cat_01"),
+    );
+    expect(mockApi.put).toHaveBeenCalledWith(
+      "/api/v1/chat/conversations/sess%2Fspecial/category",
+      { category_id: "cat_01" },
+    );
+  });
+
+  it("returns void on success", async () => {
+    mockApi.put.mockResolvedValueOnce({ data: { status: "ok" } });
+    const result = await assignSessionCategory(
+      mkSessionId("sess_01"),
+      mkCategoryId("cat_01"),
+    );
+    expect(result).toBeUndefined();
   });
 });
