@@ -1,11 +1,5 @@
-// Production wiring for CH-PRD-02. Consumes useChatSessions (CH-22),
-// SessionStatusDot / deriveSessionStatus (CH-21), and lib/chatApi.ts types (CH-18).
-// Collapse state is owned by Chat.tsx (persisted to localStorage) and passed as props.
-// CH-PRD-03 will swap the native <select> for CategoriesDropdown when it ships.
-
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Search, Plus, ChevronLeft, Filter } from "lucide-react";
+import { Search, Plus, ChevronLeft } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -13,13 +7,9 @@ import { cn } from "@/lib/utils";
 import { useFeatureFlag } from "@/contexts/FeatureFlagsContext";
 import type { FlagKey } from "@/lib/featureFlags/types";
 import type { AccountId } from "@/lib/branded-types";
-import {
-  deriveSessionStatus,
-  isOptimisticSessionId,
-  listChatCategories,
-  tryChatCategoryId,
-} from "@/lib/chatApi";
+import { deriveSessionStatus, isOptimisticSessionId } from "@/lib/chatApi";
 import type { ChatSessionId, ChatCategoryId } from "@/lib/chatApi";
+import { CategoriesDropdown } from "./CategoriesDropdown";
 import { useChatSessions } from "@/hooks/useChatSessions";
 import { SessionStatusDot } from "./SessionStatusDot";
 
@@ -66,15 +56,6 @@ export function SessionsSidebar({
   const { enabled: chatCategoriesEnabled } = useFeatureFlag(
     "chat_categories_enabled" as FlagKey,
   );
-
-  // ── Categories (only fetched when flag is on) ───────────────────────────────
-  const { data: categoriesData } = useQuery({
-    queryKey: ["chat-categories"],
-    queryFn: listChatCategories,
-    enabled: chatCategoriesEnabled,
-    staleTime: 60_000,
-  });
-  const categories = categoriesData ?? [];
 
   // ── Infinite query for sessions ─────────────────────────────────────────────
   const {
@@ -280,25 +261,11 @@ export function SessionsSidebar({
 
         {/* Category Filter — only rendered when chat_categories_enabled is on */}
         {chatCategoriesEnabled && (
-          <div className="relative">
-            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-[var(--color-text-tertiary)]" />
-            <select
-              value={selectedCategoryId ?? ""}
-              onChange={(e) => {
-                const val = e.target.value;
-                setSelectedCategoryId(tryChatCategoryId(val) ?? null);
-              }}
-              aria-label="Filter sessions by category"
-              className="w-full pl-9 pr-3 py-2 rounded-[var(--radius-md)] border-2 border-[var(--color-border-default)] bg-[var(--color-bg-primary)] text-[var(--text-body-sm)] focus:outline-none focus:ring-2 focus:ring-[var(--color-violet-500)]"
-            >
-              <option value="">All sessions</option>
-              {categories.map((cat) => (
-                <option key={cat.category_id} value={cat.category_id}>
-                  {cat.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          <CategoriesDropdown
+            variant="filter"
+            value={selectedCategoryId}
+            onChange={setSelectedCategoryId}
+          />
         )}
       </div>
 

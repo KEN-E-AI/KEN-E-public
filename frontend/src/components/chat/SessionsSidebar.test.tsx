@@ -20,15 +20,24 @@ vi.mock("@/contexts/FeatureFlagsContext", () => ({
   useFeatureFlag: vi.fn(),
 }));
 
-// Spread the real chatApi so deriveSessionStatus / isOptimisticSessionId keep
-// their real implementations; only listChatCategories is stubbed out.
 vi.mock("@/lib/chatApi", async (importActual) => {
   const actual = await importActual<typeof import("@/lib/chatApi")>();
-  return {
-    ...actual,
-    listChatCategories: vi.fn().mockResolvedValue([]),
-  };
+  return { ...actual };
 });
+
+// Stub CategoriesDropdown so sidebar tests focus on flag-gating + state
+// plumbing, not on the dropdown's internal Radix wiring.
+vi.mock("./CategoriesDropdown", () => ({
+  CategoriesDropdown: vi.fn(
+    ({ variant, value }: { variant: string; value?: string | null }) => (
+      <div
+        data-testid="categories-dropdown"
+        data-variant={variant}
+        data-value={value ?? ""}
+      />
+    ),
+  ),
+}));
 
 import { useChatSessions } from "@/hooks/useChatSessions";
 import { useFeatureFlag } from "@/contexts/FeatureFlagsContext";
@@ -221,7 +230,7 @@ describe("SessionsSidebar", () => {
   });
 
   // ── TC-7: Category filter — flag on ────────────────────────────────────────
-  test("TC-7: category <select> renders when chat_categories_enabled flag is on", () => {
+  test("TC-7: CategoriesDropdown with variant=filter renders when chat_categories_enabled is on", () => {
     mockUseFeatureFlag.mockReturnValue({
       enabled: true,
       reason: "default" as const,
@@ -230,18 +239,16 @@ describe("SessionsSidebar", () => {
 
     renderSidebar();
 
-    expect(
-      screen.getByRole("combobox", { name: /filter sessions by category/i }),
-    ).toBeInTheDocument();
+    const dropdown = screen.getByTestId("categories-dropdown");
+    expect(dropdown).toBeInTheDocument();
+    expect(dropdown).toHaveAttribute("data-variant", "filter");
   });
 
   // ── TC-8: Category filter — flag off ───────────────────────────────────────
-  test("TC-8: category <select> is absent when chat_categories_enabled flag is off", () => {
+  test("TC-8: CategoriesDropdown is absent when chat_categories_enabled is off", () => {
     renderSidebar();
 
-    expect(
-      screen.queryByRole("combobox", { name: /filter sessions by category/i }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("categories-dropdown")).not.toBeInTheDocument();
   });
 
   // ── TC-9: Active / needs-review counts ─────────────────────────────────────
