@@ -35,6 +35,9 @@ type ChatInterfaceProps = {
   onCreateSession?: () => Promise<string | null>;
   // Called after a session is created so the parent can move the URL to it.
   onSessionStarted?: (id: string) => void;
+  // Called when a pending_ session id resolves to the real id mid-stream.
+  // The parent should swap the URL (?session=) and the resume marker (CH-62).
+  onSessionResolved?: (realId: string) => void;
   // TODO(CH-PRD-XX): compact mode is reserved for the mini-widget in LayoutC
   compact?: boolean;
 };
@@ -52,6 +55,7 @@ export function ChatInterface({
   sessionId,
   onCreateSession,
   onSessionStarted,
+  onSessionResolved,
   compact: _compact = false,
 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>(() => [
@@ -266,7 +270,15 @@ export function ChatInterface({
         undefined,
         controller.signal,
       )) {
-        if (event.type === "reasoning") {
+        if (event.type === "session") {
+          // Guard the real id before the parent navigates to it, so the
+          // history-load effect (which fires when sessionId prop changes)
+          // doesn't clobber the in-flight stream — same defense as the
+          // lazy-create path above (CH-62).
+          locallyCreatedRef.current.add(event.sessionId);
+          activeSessionId = event.sessionId;
+          onSessionResolved?.(event.sessionId);
+        } else if (event.type === "reasoning") {
           collectedThoughts = [...collectedThoughts, event.text];
           liveThoughtsRef.current = collectedThoughts;
           setLiveThoughts(collectedThoughts);
@@ -320,6 +332,7 @@ export function ChatInterface({
     sessionId,
     onCreateSession,
     onSessionStarted,
+    onSessionResolved,
   ]);
 
   const handleRetry = useCallback(

@@ -331,11 +331,14 @@ export async function postChatCompletion(
  * Discriminated-union event emitted by streamChatCompletion.
  * - "text": a fragment of the assistant's answer text.
  * - "reasoning": a fragment of the model's reasoning (thought) text.
+ * - "session": a one-time event carrying the real session id when a pending_
+ *   placeholder has been resolved server-side (CH-62).
  * Unknown SSE event types are silently dropped.
  */
 export type StreamEvent =
   | { type: "text"; text: string }
-  | { type: "reasoning"; text: string };
+  | { type: "reasoning"; text: string }
+  | { type: "session"; sessionId: string };
 
 /**
  * POST /api/v1/chat/completions (streaming SSE)
@@ -413,6 +416,22 @@ export async function* streamChatCompletion(
   // Build the StreamEvent for a completed event block, or null when it should
   // be dropped (unknown event type, malformed reasoning JSON).
   const buildEvent = (eventType: string, data: string): StreamEvent | null => {
+    if (eventType === "session") {
+      try {
+        const parsed = JSON.parse(data) as { session_id: string };
+        if (typeof parsed.session_id !== "string" || !parsed.session_id) {
+          return null;
+        }
+        return { type: "session", sessionId: parsed.session_id };
+      } catch {
+        // Malformed session JSON — drop silently (CH-62).
+        console.debug(
+          "[streamChatCompletion] malformed session payload:",
+          data,
+        );
+        return null;
+      }
+    }
     if (eventType === "reasoning") {
       try {
         const parsed = JSON.parse(data) as { text: string; seq: number };

@@ -44,6 +44,10 @@ function readLastSession(): string | null {
 }
 
 function writeLastSession(id: string): void {
+  // Defense-in-depth: never durably persist a pending_ placeholder. A pending_
+  // id is only valid for a single /completions call; storing it would poison the
+  // resume marker and silently create a new empty session on every reload (CH-62).
+  if (id.startsWith("pending_")) return;
   try {
     localStorage.setItem(LAST_SESSION_KEY, id);
   } catch {
@@ -155,6 +159,22 @@ export default function Chat() {
     [navigate],
   );
 
+  // Called mid-stream when a pending_ session id resolves to the real Vertex id.
+  // Swaps the URL and the durable resume marker so that any future resume
+  // (tab reload, mini-widget, sidebar navigation) finds the real session (CH-62).
+  const onSessionResolved = useCallback(
+    (realId: string) => {
+      // Apply the same format guard used at every other id entry point so an
+      // unexpected server value cannot pollute the URL or localStorage (CH-62).
+      if (!SESSION_ID_RE.test(realId)) return;
+      navigate(`/chat?session=${encodeURIComponent(realId)}`, {
+        replace: true,
+      });
+      writeLastSession(realId);
+    },
+    [navigate],
+  );
+
   // Emit the page-view telemetry span once on mount.
   useEffect(() => {
     emitPageView("chat.page.render", {
@@ -217,6 +237,7 @@ export default function Chat() {
               sessionId={sessionId ?? undefined}
               onCreateSession={onCreateSession}
               onSessionStarted={onSessionStarted}
+              onSessionResolved={onSessionResolved}
             />
           ) : (
             // TODO: replace this placeholder with the full SessionStatusView once it ships (CH-PRD-04); ArtifactsPanel and TodoListsPanel will move into that surface.

@@ -190,4 +190,22 @@ describe("streamChatCompletion — SSE parser", () => {
     );
     expect(events).toEqual([{ type: "text", text: "first\nsecond" }]);
   });
+
+  test("event: session + data yields session event before text events", async () => {
+    const payload = JSON.stringify({ session_id: "real_42" });
+    const events = await driveStream(
+      `event: session\ndata: ${payload}\n\ndata: hello\n\ndata: [DONE]\n\n`,
+    );
+    expect(events).toEqual([
+      { type: "session", sessionId: "real_42" },
+      { type: "text", text: "hello" },
+    ]);
+  });
+
+  test("malformed event: session payload is silently dropped", async () => {
+    const events = await driveStream(
+      "event: session\ndata: NOT_JSON\n\ndata: [DONE]\n\n",
+    );
+    expect(events).toEqual([]);
+  });
 });

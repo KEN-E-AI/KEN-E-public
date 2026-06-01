@@ -193,4 +193,44 @@ describe("ChatInterface — reasoning channel (CH-60)", () => {
     // Both calls made.
     expect(mockStreamChatCompletion).toHaveBeenCalledTimes(2);
   });
+
+  test("pending_ session id reconciliation: onSessionResolved called once with the real id, locallyCreatedRef guards history reload", async () => {
+    // This test covers the blind spot the original suite omitted: when
+    // createChatConversation returns a pending_ id and the stream emits a
+    // "session" event, ChatInterface must call onSessionResolved once with the
+    // real id (CH-62).
+
+    // Step 1: set up mocks.
+    const onSessionResolved = vi.fn();
+
+    // The stream yields a session event (pending→real) followed by text.
+    mockStreamChatCompletion.mockReturnValue(
+      makeStream([
+        { type: "session", sessionId: "real_vertex_id_999" },
+        { type: "text", text: "Hello from agent." },
+      ]) as any,
+    );
+
+    // Step 2: render ChatInterface with onSessionResolved prop.
+    render(
+      <ChatInterface
+        sessionId="pending_abc123"
+        onSessionResolved={onSessionResolved}
+      />,
+    );
+
+    // Step 3: send a message to trigger the stream.
+    const textarea = screen.getByPlaceholderText(/ask me anything/i);
+    await userEvent.type(textarea, "test message");
+    await userEvent.keyboard("{Enter}");
+
+    // Step 4: wait for the stream to complete.
+    await waitFor(() => {
+      expect(screen.getByText("Hello from agent.")).toBeInTheDocument();
+    });
+
+    // Step 5: assert onSessionResolved was called exactly once with the real id.
+    expect(onSessionResolved).toHaveBeenCalledTimes(1);
+    expect(onSessionResolved).toHaveBeenCalledWith("real_vertex_id_999");
+  });
 });

@@ -1828,7 +1828,8 @@ class AgentEngineClient:
 
         Yields:
             Tuples of ``(channel, text)`` where ``channel`` is one of
-            ``"text"`` or ``"reasoning"``.
+            ``"text"``, ``"reasoning"``, or ``"session"`` (emitted at most once when a
+            ``pending_`` placeholder is resolved to the real session id).
         """
         if not self.agent_engine:
             yield ("text", "I'm sorry, but I'm unable to process your request at the moment. Please try again later.")
@@ -1852,9 +1853,16 @@ class AgentEngineClient:
             )
 
             # Get or create session for this user (credentials now passed via session state)
+            incoming_session_id = session_id
             actual_session_id = await self.get_or_create_session(
                 user_id, user_context, session_id, conversation_name, account_id
             )
+
+            # When a pending_ placeholder resolves to a real id, yield a one-time
+            # session event so the client can swap its URL and resume marker before
+            # any text or reasoning frames arrive (CH-62).
+            if incoming_session_id != actual_session_id:
+                yield ("session", actual_session_id)
 
             # Check if this is the first message and we need to generate a conversation name
             session_key = f"{user_id}:{actual_session_id}"
@@ -2248,6 +2256,10 @@ async def _stream_completion_sse(
     """
     accumulator = SessionTurnAccumulator()
     turn_failed = False
+    # Tracks the session id as it may be resolved from a pending_ placeholder
+    # to the real ADK id mid-stream. _flush_stream_turn needs the real id so the
+    # side-table write targets the correct document (CH-62).
+    resolved_session_id = session_id
     try:
         _reasoning_seq = 0
         async for channel, text in agent_client.stream_chat_completion(
@@ -2258,7 +2270,13 @@ async def _stream_completion_sse(
             account_id=account_id,
             accumulator=accumulator,
         ):
-            if channel == "reasoning":
+            if channel == "session":
+                # One-time metadata frame: the pending_ placeholder has resolved.
+                # Emitted before any text/reasoning so the client can swap its
+                # URL and resume marker while the turn is in flight (CH-62).
+                resolved_session_id = text
+                yield f"event: session\ndata: {json.dumps({'session_id': text})}\n\n"
+            elif channel == "reasoning":
                 yield _format_sse("reasoning", text, _reasoning_seq)
                 _reasoning_seq += 1
             else:
@@ -2271,7 +2289,7 @@ async def _stream_completion_sse(
         raise
     finally:
         await _flush_stream_turn(
-            session_id=session_id,
+            session_id=resolved_session_id,
             account_id=account_id or "",
             accumulator=accumulator,
             turn_failed=turn_failed,
