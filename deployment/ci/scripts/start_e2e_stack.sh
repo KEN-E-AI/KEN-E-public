@@ -219,6 +219,15 @@ echo "[e2e-stack] Bob user document seeded."
 
 # ---------------------------------------------------------------------------
 # 5. Start FastAPI backend with emulator env vars and short cache TTL.
+#
+# CH-54 tactical overrides removed (AH-72 / AH-PRD-10 AH-D):
+#   KENE_TOKEN_RATE_LIMIT_PER_MINUTE=10000
+#   KENE_TOKEN_RATE_LIMIT_PER_HOUR=100000
+# were added in PR #665 as a band-aid for an e2e flake caused by all
+# Playwright test users sharing the same IP-keyed 127.0.0.1 bucket.
+# After AH-71 wired authenticated_key_strategy into token_rate_limiter,
+# each test user gets their own per-UID bucket — the canonical 60/min
+# default is sufficient and the tactical overrides are no longer needed.
 # ---------------------------------------------------------------------------
 echo "[e2e-stack] Starting FastAPI backend on port ${API_PORT}..."
 cd api
@@ -232,8 +241,6 @@ GOOGLE_CLOUD_PROJECT_ID="test-project" \
 GOOGLE_CLOUD_PROJECT="test-project" \
 ENVIRONMENT=ci \
 API_TEST_BYPASS_TOKEN="e2e-test-bypass-secret" \
-KENE_TOKEN_RATE_LIMIT_PER_MINUTE=10000 \
-KENE_TOKEN_RATE_LIMIT_PER_HOUR=100000 \
   uv run uvicorn src.kene_api.main:app --host 127.0.0.1 --port "${API_PORT}" &
 
 cd ..

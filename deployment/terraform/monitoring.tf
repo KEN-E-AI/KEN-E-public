@@ -255,6 +255,68 @@ resource "google_logging_metric" "dispatch_error_count" {
   }
 }
 
+# ---------------------------------------------------------------------------
+# Rate-limit backend override observability (AH-73)
+# Alert fires on any write to the rate_limit_backend_override feature flag.
+# The structured log is emitted by emit_audit_if_critical in
+# feature_flags/security_critical.py; the Prometheus counter is a secondary
+# signal for /metrics scrapes.
+# ---------------------------------------------------------------------------
+
+resource "google_logging_metric" "rate_limit_backend_override_flips" {
+  for_each = local.deploy_project_ids
+  project  = each.value
+
+  name   = "agentic_harness/rate_limit_backend_override_flips"
+  filter = "resource.type=\"cloud_run_revision\" AND jsonPayload.message=\"feature_flag_changed\" AND jsonPayload.security_event.event_type=\"FEATURE_FLAG_CHANGED\" AND jsonPayload.security_event.details.flag_key=\"rate_limit_backend_override\""
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+  }
+}
+
+resource "google_monitoring_alert_policy" "rate_limit_backend_override_flip" {
+  for_each = local.deploy_project_ids
+  project  = each.value
+
+  display_name = "Rate-limit backend override flip (${each.key})"
+  combiner     = "OR"
+  enabled      = true
+
+  # Any single flip (rate > 0 over 1-minute alignment) pages on-call.
+  # duration "0s" means the condition fires immediately when the metric is
+  # above threshold — no sustained-window grace period.
+  conditions {
+    display_name = "rate_limit_backend_override flag flipped"
+    condition_threshold {
+      filter          = "metric.type=\"logging.googleapis.com/user/agentic_harness/rate_limit_backend_override_flips\" AND resource.type=\"cloud_run_revision\" AND resource.label.project_id=\"${each.value}\""
+      duration        = "0s"
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+
+      aggregations {
+        alignment_period   = "60s"
+        per_series_aligner = "ALIGN_RATE"
+      }
+    }
+  }
+
+  # No notification channels attached at merge time — operators wire PagerDuty
+  # or Slack via `gcloud monitoring channels` in a separate runbook step.
+  # See api/CLAUDE.md §Rate Limiting > rate_limit_backend_override feature flag.
+  notification_channels = []
+
+  alert_strategy {
+    auto_close = "1800s"
+  }
+
+  documentation {
+    content   = "The rate_limit_backend_override feature flag was flipped. This switches all SwitchableRateLimiter instances from Redis to in-process LocalRateLimiter (or vice versa). Verify the change was intentional and monitor for 429 rate changes. See api/CLAUDE.md §Rate Limiting for the rollback runbook."
+    mime_type = "text/markdown"
+  }
+}
+
 # Cloud Monitoring dashboard for per-turn dispatch caches and pool health.
 
 resource "google_monitoring_dashboard" "per_turn_dispatch" {

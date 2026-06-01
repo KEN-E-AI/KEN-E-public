@@ -169,6 +169,77 @@ To kill a feature in production:
 
 The ≤60 s propagation is two-layered: backend Cloud Run instances re-read Firestore after the 60 s in-process LRU TTL expires; frontend clients revalidate via TanStack Query (`staleTime=60_000`) on the next `selectedAccount.accountId` change or explicit refetch.
 
+## Rate Limiting
+
+The API uses a layered rate-limiting architecture across six named limiter instances. The physical implementation lives in `api/src/kene_api/rate_limiter.py` and `api/src/kene_api/auth/rate_limiting.py`; it is owned by the Agentic Harness component because every chat turn traverses this gate before reaching the root agent.
+
+### Limiter instances
+
+| Name | Limits | Key strategy | `fallback_cap_divisor` | `fail_open` | `emit_remaining_on_success` |
+|---|---|---|---|---|---|
+| `auth` | 10/min, 50/hr | IP (pre-auth) | 10 (÷10 on Redis outage) | False | False |
+| `bad_token` | 10/min, 50/hr | IP (pre-auth) | 10 | False | False |
+| `password_reset` | 3/min, 10/hr | IP (pre-auth) | 10 | False | False |
+| `recaptcha` | 5/min, 20/hr | IP (pre-auth) | 10 | False | False |
+| `token` | `KENE_TOKEN_RATE_LIMIT_PER_MINUTE`/min (default 60), `KENE_TOKEN_RATE_LIMIT_PER_HOUR`/hr (default 1000) | Authenticated UID (sha256[:16] hash) | 1 | True | True |
+| `progress` | 120/min, 2000/hr | Authenticated UID | 1 | True | True |
+
+**Security-critical limiters** (`auth`, `bad_token`, `password_reset`, `recaptcha`): `fallback_cap_divisor=10` means a Redis outage divides effective limits by 10 per process instance, preventing a Redis failure from silently disabling brute-force protection. `emit_remaining_on_success=False` prevents leaking bucket headroom to unauthenticated callers.
+
+**Throughput limiters** (`token`, `progress`): `fail_open=True` means a Redis error or open circuit breaker allows the request through — a Redis outage must not cascade to a service outage. `emit_remaining_on_success=True` so clients can use the `X-RateLimit-Remaining` header for backoff.
+
+### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `KENE_TOKEN_RATE_LIMIT_PER_MINUTE` | `60` | Per-minute limit for the `token` limiter |
+| `KENE_TOKEN_RATE_LIMIT_PER_HOUR` | `1000` | Per-hour limit for the `token` limiter |
+| `KENE_RATE_LIMIT_BACKEND` | `redis` | `redis` (production) or `memory` (development/test). When `memory`, `build_rate_limiter` returns a `LocalRateLimiter` directly with no Redis dependency. |
+| `KENE_RATE_LIMIT_REDIS_PREFIX` | `kene:ratelimit` | Prefix for all Redis ZSET keys. Change only if multiple services share a Redis instance. |
+| `KENE_RATE_LIMIT_TRUSTED_HOPS` | `1` | Number of trailing X-Forwarded-For entries controlled by trusted proxies. On Cloud Run without a Global Load Balancer, `1` is correct (Cloud Run's own internal proxy is the only trusted hop). **If a GLB is ever placed in front of Cloud Run, bump this to `2`** — otherwise attackers can spoof the client IP by prepending entries to the XFF chain. The `_validated_ip_key` function emits a WARNING with `action="xff_short_chain"` when the chain is shorter than expected, which surfaces ingress-config drift. |
+
+### Trusted-hops model and XFF parsing
+
+`_validated_ip_key(request)` reads `KENE_RATE_LIMIT_TRUSTED_HOPS` (default 1) and returns `X-Forwarded-For[-trusted_hops]`. If the chain is shorter than `trusted_hops`, it returns the sentinel key `"ip:_no_xff_chain_"` and emits a structured WARNING log (fields: `expected_hops`, `actual_hops`, `path`, `xff_header`). The sentinel bucket is capped at 5/min across all sentinel hits via a separate Redis ZSET — preventing an attacker from weaponising the sentinel bucket as a DoS lever.
+
+On Cloud Run, `request.client.host` is the load-balancer IP, not the client IP. The rate limiter deliberately does NOT fall back to `request.client.host` — using it would make IP-keyed rate limits trivially bypassable by rotating through many IPs.
+
+**GLB runbook:** If a GCP Global Load Balancer is ever added in front of Cloud Run, set `KENE_RATE_LIMIT_TRUSTED_HOPS=2` in the Cloud Run service environment variables. The GLB appends the real client IP to the XFF chain as a second trusted hop; without this adjustment, all requests would land in the sentinel bucket.
+
+### Response headers
+
+`RedisRateLimiter` emits the following headers on every response:
+
+| Header | 429 response | 200 response |
+|---|---|---|
+| `X-RateLimit-Limit` | Always | Always |
+| `X-RateLimit-Remaining` | Always (value: 0) | Only if `emit_remaining_on_success=True` |
+| `X-RateLimit-Reset` | Always (Unix timestamp) | Always |
+| `Retry-After` | Always (seconds until window expires) | Never |
+
+`LocalRateLimiter` emits only `Retry-After` on 429 responses (no per-window counters available in the in-memory backend).
+
+### `rate_limit_backend_override` feature flag (rollback path)
+
+The `rate_limit_backend_override` feature flag in Firestore switches all `SwitchableRateLimiter` instances to use their in-process `LocalRateLimiter` fallback on the next request, without a redeploy.
+
+```
+To roll back from Redis to in-memory rate limiting:
+
+1. Open /admin/feature-flags as a super-admin.
+2. Find rate_limit_backend_override; flip is_active → on.
+3. Confirm the toast. Fully effective within ≤60 s (per-instance TTL).
+4. Monitor: SwitchableRateLimiter logs "SwitchableRateLimiter: Redis
+   unavailable..." with ERROR severity when the flag is active.
+5. To restore Redis path: flip is_active → off.
+```
+
+Every write to this flag emits a `FEATURE_FLAG_CHANGED` audit event with `severity="CRITICAL"` (via `emit_audit_if_critical` in `feature_flags/security_critical.py`) and increments the `ratelimit_backend_override_flips_total` Prometheus counter. A Cloud Monitoring alert fires on any flip — see `deployment/terraform/monitoring.tf`.
+
+### Circuit breaker
+
+`SwitchableRateLimiter` wraps a `_CircuitBreaker` (K=10 consecutive Redis errors → 60 s cooldown → half-open probe). The `ratelimit_circuit_breaker_state` Prometheus gauge tracks state per limiter: 0=closed, 1=open, 2=half_open. All state transitions also appear in structured logs (`action="circuit_breaker_opened"`) and in the `ratelimit_redis_errors_total` counter.
+
 ## Email Service Setup (Local Development)
 
 The API uses SendGrid for sending invitation emails. To enable this locally:

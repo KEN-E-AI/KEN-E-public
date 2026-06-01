@@ -461,6 +461,59 @@ class TestEmergencyCapOnOutage:
 
         assert exc_info.value.status_code == 429
 
+    async def test_fallback_path_emits_audit_on_429(
+        self, fake_redis: Any, monkeypatch: Any
+    ) -> None:
+        """AC-16 / audit-symmetry: fallback LocalRateLimiter must emit audit
+        on 429 even when Redis is unavailable (closes the AH-71→AH-73 gap
+        where audit_logger was forwarded to RedisRateLimiter but not to the
+        sibling fallback)."""
+        from src.kene_api.rate_limiter import _CB_K
+
+        monkeypatch.setenv("KENE_RATE_LIMIT_TRUSTED_HOPS", "1")
+        monkeypatch.setenv("KENE_RATE_LIMIT_BACKEND", "redis")
+
+        audit_mock = MagicMock()
+        audit_mock.log_rate_limit_exceeded = AsyncMock(return_value=None)
+
+        limiter: SwitchableRateLimiter = _make_switchable(  # type: ignore[assignment]
+            fake_redis,
+            key_strategy=ip_only_key_strategy,
+            rpm=10,
+            rph=50,
+            fallback_cap_divisor=10,  # fallback rpm = 1 (security-critical)
+            fail_open=False,
+            name="auth_fallback_audit",
+            audit_logger=audit_mock,
+        )
+
+        # Fallback construction must have received the audit_logger via
+        # build_rate_limiter — the regression gap was this being None.
+        assert limiter.fallback_limiter.audit_logger is audit_mock
+
+        # Open the circuit breaker so requests skip Redis and hit the fallback.
+        for _ in range(_CB_K):
+            await limiter._circuit_breaker.record_failure()
+
+        request = _make_request(forwarded_for="198.51.100.20")
+
+        with patch(
+            "src.kene_api.rate_limiter.is_feature_enabled",
+            new=AsyncMock(return_value=False),
+        ):
+            # First request consumes the 1/min fallback budget — allowed,
+            # no audit emission expected (no 429).
+            await limiter.check_rate_limit(request, None)
+            assert audit_mock.log_rate_limit_exceeded.await_count == 0
+
+            # Second request via fallback path → 429.
+            with pytest.raises(HTTPException) as exc_info:
+                await limiter.check_rate_limit(request, None)
+            assert exc_info.value.status_code == 429
+
+        # Audit MUST have fired on the 429 via the fallback LocalRateLimiter.
+        assert audit_mock.log_rate_limit_exceeded.await_count == 1
+
     async def test_throughput_limiter_fails_open_on_redis_outage(
         self, fake_redis: Any, monkeypatch: Any
     ) -> None:

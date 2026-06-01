@@ -38,6 +38,20 @@ if TYPE_CHECKING:
     from .auth.models import UserContext
     from .models.feature_flag_models import EvaluationContext
 
+try:
+    from shared.structured_logging import log_context as _log_context
+except ImportError:  # pragma: no cover — shared package always present in prod
+    # Fallback so the module remains importable in minimal test environments.
+    def _log_context(**kwargs: Any) -> dict[str, Any]:
+        return kwargs
+
+from .metrics.rate_limiter_metrics import (
+    ratelimit_429_total,
+    ratelimit_circuit_breaker_state,
+    ratelimit_local_fallback_total,
+    ratelimit_redis_errors_total,
+)
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -72,9 +86,16 @@ def _validated_ip_key(request: Request) -> str:
         trusted_hops = int(os.environ.get("KENE_RATE_LIMIT_TRUSTED_HOPS", "1"))
     except ValueError:
         logger.warning(
-            "Rate limiter: KENE_RATE_LIMIT_TRUSTED_HOPS is not an integer "
-            "(value=%r); coercing to 1.",
-            os.environ.get("KENE_RATE_LIMIT_TRUSTED_HOPS"),
+            "rate_limiter: xff_config_error",
+            extra=_log_context(
+                component="rate_limiter",
+                action="xff_config_error",
+                extra={
+                    "reason": "KENE_RATE_LIMIT_TRUSTED_HOPS is not an integer",
+                    "value": os.environ.get("KENE_RATE_LIMIT_TRUSTED_HOPS"),
+                    "coerced_to": 1,
+                },
+            ),
         )
         trusted_hops = 1
     if trusted_hops < 1:
@@ -82,9 +103,16 @@ def _validated_ip_key(request: Request) -> str:
         # entries[-0] = entries[0] — the LEFTMOST, attacker-controllable XFF
         # entry. Coerce to 1 so the sentinel still guards.
         logger.warning(
-            "Rate limiter: KENE_RATE_LIMIT_TRUSTED_HOPS=%d is below the safe "
-            "minimum (1); coercing to 1 to preserve XFF-spoofing defence.",
-            trusted_hops,
+            "rate_limiter: xff_config_error",
+            extra=_log_context(
+                component="rate_limiter",
+                action="xff_config_error",
+                extra={
+                    "reason": "KENE_RATE_LIMIT_TRUSTED_HOPS below safe minimum",
+                    "value": trusted_hops,
+                    "coerced_to": 1,
+                },
+            ),
         )
         trusted_hops = 1
 
@@ -93,12 +121,17 @@ def _validated_ip_key(request: Request) -> str:
 
     if len(entries) < trusted_hops:
         logger.warning(
-            "Rate limiter: X-Forwarded-For chain is shorter than trusted_hops "
-            "(%d entries, need %d). Returning sentinel key. "
-            "Check proxy configuration at path %s.",
-            len(entries),
-            trusted_hops,
-            getattr(request.url, "path", "<unknown>"),
+            "rate_limiter: xff_short_chain",
+            extra=_log_context(
+                component="rate_limiter",
+                action="xff_short_chain",
+                extra={
+                    "expected_hops": trusted_hops,
+                    "actual_hops": len(entries),
+                    "path": getattr(request.url, "path", "<unknown>"),
+                    "xff_header": xff_header,
+                },
+            ),
         )
         return _SENTINEL_KEY
 
@@ -247,6 +280,21 @@ class LocalRateLimiter:
 
         if len(minute_requests) >= self.requests_per_minute:
             await self._emit_audit_log(request, ctx)
+            logger.warning(
+                "rate_limiter: 429",
+                extra=_log_context(
+                    component="rate_limiter",
+                    action="rate_limit_exceeded",
+                    extra={
+                        "limiter_name": self.limiter_name,
+                        "client_key": client_id,
+                        "window": "minute",
+                        "limit": self.requests_per_minute,
+                        "path": getattr(request.url, "path", "<unknown>"),
+                    },
+                ),
+            )
+            ratelimit_429_total.labels(limiter_name=self.limiter_name).inc()
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=f"Rate limit exceeded: {self.requests_per_minute} requests per minute",
@@ -255,6 +303,21 @@ class LocalRateLimiter:
 
         if len(hour_requests) >= self.requests_per_hour:
             await self._emit_audit_log(request, ctx)
+            logger.warning(
+                "rate_limiter: 429",
+                extra=_log_context(
+                    component="rate_limiter",
+                    action="rate_limit_exceeded",
+                    extra={
+                        "limiter_name": self.limiter_name,
+                        "client_key": client_id,
+                        "window": "hour",
+                        "limit": self.requests_per_hour,
+                        "path": getattr(request.url, "path", "<unknown>"),
+                    },
+                ),
+            )
+            ratelimit_429_total.labels(limiter_name=self.limiter_name).inc()
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=f"Rate limit exceeded: {self.requests_per_hour} requests per hour",
@@ -460,6 +523,21 @@ class RedisRateLimiter:
                         )
                 # Same X-RateLimit-* header shape as the per-window 429 paths
                 # so CDN/observability sees a consistent set across all 429s.
+                logger.warning(
+                    "rate_limiter: 429",
+                    extra=_log_context(
+                        component="rate_limiter",
+                        action="rate_limit_exceeded",
+                        extra={
+                            "limiter_name": self.limiter_name,
+                            "client_key": client_key,
+                            "window": "sentinel",
+                            "limit": _SENTINEL_CAP_PER_MINUTE,
+                            "path": getattr(request.url, "path", "<unknown>"),
+                        },
+                    ),
+                )
+                ratelimit_429_total.labels(limiter_name=self.limiter_name).inc()
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                     detail="Rate limit exceeded: sentinel cap (5 requests per minute)",
@@ -522,6 +600,21 @@ class RedisRateLimiter:
                         self.limiter_name,
                         request.url.path,
                     )
+            logger.warning(
+                "rate_limiter: 429",
+                extra=_log_context(
+                    component="rate_limiter",
+                    action="rate_limit_exceeded",
+                    extra={
+                        "limiter_name": self.limiter_name,
+                        "client_key": client_key,
+                        "window": "minute",
+                        "limit": self.requests_per_minute,
+                        "path": getattr(request.url, "path", "<unknown>"),
+                    },
+                ),
+            )
+            ratelimit_429_total.labels(limiter_name=self.limiter_name).inc()
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=f"Rate limit exceeded: {self.requests_per_minute} requests per minute",
@@ -556,6 +649,21 @@ class RedisRateLimiter:
                         self.limiter_name,
                         request.url.path,
                     )
+            logger.warning(
+                "rate_limiter: 429",
+                extra=_log_context(
+                    component="rate_limiter",
+                    action="rate_limit_exceeded",
+                    extra={
+                        "limiter_name": self.limiter_name,
+                        "client_key": client_key,
+                        "window": "hour",
+                        "limit": self.requests_per_hour,
+                        "path": getattr(request.url, "path", "<unknown>"),
+                    },
+                ),
+            )
+            ratelimit_429_total.labels(limiter_name=self.limiter_name).inc()
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=f"Rate limit exceeded: {self.requests_per_hour} requests per hour",
@@ -608,9 +716,14 @@ class _CircuitBreaker:
     All state mutations are serialised behind a single ``asyncio.Lock`` so
     concurrent coroutines cannot race the half-open probe gate.  Uses
     ``time.monotonic()`` (immune to wall-clock jumps) for cooldown timing.
+
+    ``limiter_name`` is used to label the ``ratelimit_circuit_breaker_state``
+    Prometheus gauge, which tracks state transitions with encoding:
+    0=closed, 1=open, 2=half_open.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, limiter_name: str = "rate_limiter") -> None:
+        self.limiter_name: str = limiter_name
         self.consecutive_errors: int = 0
         self.opened_at: float | None = None
         self._lock: asyncio.Lock = asyncio.Lock()
@@ -653,14 +766,25 @@ class _CircuitBreaker:
             if self._half_open_probe_in_flight:
                 return "skip"
             self._half_open_probe_in_flight = True
+            # Transition from open → half_open; update gauge so dashboards reflect
+            # the probe window without waiting for the next record_success/failure.
+            ratelimit_circuit_breaker_state.labels(
+                limiter_name=self.limiter_name
+            ).set(2)
             return "go"
 
     async def record_success(self) -> None:
         """Record a successful Redis call — resets error counter and closes circuit."""
         async with self._lock:
+            was_open = self.opened_at is not None
             self.consecutive_errors = 0
             self.opened_at = None
             self._half_open_probe_in_flight = False
+            if was_open:
+                # Transitioned from open/half_open → closed.
+                ratelimit_circuit_breaker_state.labels(
+                    limiter_name=self.limiter_name
+                ).set(0)
 
     async def record_failure(self) -> None:
         """Record a failed Redis call.
@@ -674,12 +798,20 @@ class _CircuitBreaker:
             if self.consecutive_errors >= _CB_K:
                 self.opened_at = time.monotonic()
                 logger.warning(
-                    "Circuit breaker OPENED after %d consecutive Redis errors "
-                    "(limiter=%s). Falling back to LocalRateLimiter for %ss.",
-                    self.consecutive_errors,
-                    "rate_limiter",
-                    _CB_COOLDOWN_SECONDS,
+                    "rate_limiter: circuit_breaker_opened",
+                    extra=_log_context(
+                        component="rate_limiter",
+                        action="circuit_breaker_opened",
+                        extra={
+                            "limiter_name": self.limiter_name,
+                            "consecutive_errors": self.consecutive_errors,
+                            "cooldown_seconds": _CB_COOLDOWN_SECONDS,
+                        },
+                    ),
                 )
+                ratelimit_circuit_breaker_state.labels(
+                    limiter_name=self.limiter_name
+                ).set(1)
 
 
 # ---------------------------------------------------------------------------
@@ -760,7 +892,7 @@ class SwitchableRateLimiter:
         self.fallback_cap_divisor = fallback_cap_divisor
         self.fail_open = fail_open
         self.limiter_name = limiter_name
-        self._circuit_breaker = _CircuitBreaker()
+        self._circuit_breaker = _CircuitBreaker(limiter_name=limiter_name)
 
     # ---------------------------------------------------------------------------
     # Backward-compat proxy properties (AH-71 PO fix)
@@ -850,6 +982,7 @@ class SwitchableRateLimiter:
                     self.limiter_name,
                 )
                 return
+            ratelimit_local_fallback_total.labels(limiter_name=self.limiter_name).inc()
             await self.fallback_limiter.check_rate_limit(request, ctx)
             return
 
@@ -867,18 +1000,35 @@ class SwitchableRateLimiter:
                 exc, (_redis_exceptions.ConnectionError, _redis_exceptions.TimeoutError)
             ):
                 await self._circuit_breaker.record_failure()
+                cb_state = await self._circuit_breaker.state()
                 logger.error(
-                    "SwitchableRateLimiter: Redis error on limiter '%s': %s. "
-                    "Activating fallback.",
-                    self.limiter_name,
-                    type(exc).__name__,
+                    "rate_limiter: redis_error",
+                    extra=_log_context(
+                        component="rate_limiter",
+                        action="redis_error",
+                        extra={
+                            "limiter_name": self.limiter_name,
+                            "error_type": type(exc).__name__,
+                            "error_message": str(exc),
+                            "fallback_active": True,
+                            "circuit_breaker_state": cb_state,
+                        },
+                    ),
+                    exc_info=True,
                 )
+                ratelimit_redis_errors_total.labels(
+                    limiter_name=self.limiter_name,
+                    error_type=type(exc).__name__,
+                ).inc()
                 if self.fail_open:
                     logger.error(
                         "SwitchableRateLimiter: throughput limiter '%s' failing open.",
                         self.limiter_name,
                     )
                     return
+                ratelimit_local_fallback_total.labels(
+                    limiter_name=self.limiter_name
+                ).inc()
                 await self.fallback_limiter.check_rate_limit(request, ctx)
             else:
                 # Unexpected Redis exception — treat as failure, re-raise.
@@ -962,10 +1112,14 @@ def build_rate_limiter(
     """
     backend = os.environ.get("KENE_RATE_LIMIT_BACKEND", "redis").lower()
 
+    # Pop audit_logger BEFORE the backend branch — both the memory backend
+    # AND the Redis branch's fallback LocalRateLimiter need it so AC-16's
+    # "AuditLogger called from EVERY 429 site" holds during a Redis outage
+    # or rate_limit_backend_override flag flip (closes the AH-71 audit-
+    # symmetry gap that was scoped to AH-73).
+    audit_logger_kwarg = kwargs.pop("audit_logger", None)
+
     if backend == "memory":
-        # AH-71: pass audit_logger through so the memory backend emits audit
-        # events symmetrically with the Redis backend (PRD §6.4 Option A).
-        audit_logger_kwarg = kwargs.pop("audit_logger", None)
         return LocalRateLimiter(
             requests_per_minute=requests_per_minute,
             requests_per_hour=requests_per_hour,
@@ -983,6 +1137,7 @@ def build_rate_limiter(
         redis_client=redis_client,
         key_strategy=key_strategy,
         limiter_name=name,
+        audit_logger=audit_logger_kwarg,
         **kwargs,
     )
 
@@ -1000,6 +1155,7 @@ def build_rate_limiter(
         requests_per_hour=fallback_rph,
         key_strategy=key_strategy,
         limiter_name=f"{name}:fallback",
+        audit_logger=audit_logger_kwarg,
     )
 
     return SwitchableRateLimiter(

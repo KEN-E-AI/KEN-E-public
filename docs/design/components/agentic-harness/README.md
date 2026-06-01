@@ -23,6 +23,15 @@ After this component's Release 1 projects complete, adding a new specialist is a
 └───────────────────────────────────┬─────────────────────────────────────────┘
                                     │
 ┌───────────────────────────────────▼─────────────────────────────────────────┐
+│  Rate Limiter Gate  (api/src/kene_api/auth/user_context.py:297)             │
+│    Six named instances: auth · bad_token · token · password_reset ·         │
+│    recaptcha · progress                                                     │
+│    XFF-aware IP keying (trusted_hops) + UID keying for authed endpoints     │
+│    SwitchableRateLimiter → RedisRateLimiter (primary) + LocalRateLimiter   │
+│    (fallback via circuit breaker or rate_limit_backend_override flag)       │
+└───────────────────────────────────┬─────────────────────────────────────────┘
+                                    │
+┌───────────────────────────────────▼─────────────────────────────────────────┐
 │  Root Agent (ken_e)                                                         │
 │    ├── InstructionProvider (renders "Available Specialists" block per turn)  │
 │    ├── tools=[]  (no dispatch function tools — AH-PRD-09 / AH-75)          │
@@ -328,6 +337,21 @@ Five touchpoints do not fit cleanly inside one PRD and need an owning team to co
 - Unit tests for `build_review_pipeline` and the factory use mock ADK agents and mock Firestore.
 - Integration tests use Firestore emulator for the factory; `@pytest.mark.llm` marker for the E2E tests against a live Gemini endpoint (GA specialist in AH-PRD-03).
 - Review-loop regression guard: `acceptance_criteria=None` must produce identical behavior to pre-AH-PRD-01 code. This is an explicit AC on AH-PRD-01.
+
+### Rate limiting
+
+The rate-limit gate sits at the front of every request path, before the ADK agent runtime resolves the per-turn dispatch. Code physically lives in `api/src/kene_api/rate_limiter.py` and `api/src/kene_api/auth/rate_limiting.py`; the component owns the design because every chat turn traverses it (see AH-PRD-10 §1.3).
+
+Design invariants developers must preserve when touching this subsystem:
+
+- **Key-strategy split:** Pre-auth endpoints (`auth`, `bad_token`, `password_reset`, `recaptcha`) use `ip_only_key_strategy` (XFF-aware, trusted-hops-capped). Authenticated endpoints (`token`, `progress`) use `authenticated_key_strategy` (sha256[:16] of `UserContext.user_id`). Never use `authenticated_key_strategy` on a pre-auth endpoint — it receives `ctx=None` and falls back to IP with a WARNING.
+- **Per-limiter fail behavior:** Security-critical limiters (`fallback_cap_divisor=10, fail_open=False`) divide effective limits by 10 on Redis outage — a Redis failure must not silently disable brute-force protection. Throughput limiters (`fallback_cap_divisor=1, fail_open=True`) allow requests through on Redis outage — a Redis failure must not cascade to a service outage.
+- **Trusted-hops-aware XFF parsing:** `_validated_ip_key` reads `KENE_RATE_LIMIT_TRUSTED_HOPS` (default 1). On Cloud Run without a GLB, `1` is correct. **If a Global Load Balancer is placed in front of Cloud Run, `KENE_RATE_LIMIT_TRUSTED_HOPS` must be set to `2`** — otherwise all requests land in the sentinel bucket. The function emits a structured WARNING (`action="xff_short_chain"`) when chain length < trusted_hops; operators see this in Cloud Logging without any dashboard configuration.
+- **Circuit breaker:** `_CircuitBreaker` opens after K=10 consecutive Redis errors and holds open for 60 s before admitting a half-open probe. State is labeled in the `ratelimit_circuit_breaker_state` Prometheus gauge (0=closed, 1=open, 2=half_open). `SwitchableRateLimiter` is the only instantiator of `_CircuitBreaker`; its `limiter_name` kwarg is forwarded so gauges carry the correct instance label.
+- **Emergency cap:** The `fallback_cap_divisor` is applied at construction time in `build_rate_limiter`, not per-request. The fallback `LocalRateLimiter` instance carries pre-divided limits (`max(1, rpm // divisor)`) so the emergency budget is always visible in the limiter's repr and in tests without running Redis.
+- **Provisional home:** The rate-limiter code lives under `api/src/kene_api/` (the FastAPI service), but its design and operational runbooks are documented here because the Agentic Harness component owns the chat request path this gate protects. Changes to limiter semantics that affect agent turn throughput must include an update to this README.
+
+Full env-var matrix, response headers, flag rollback runbook, and GLB topology caveat: see `api/CLAUDE.md` §Rate Limiting.
 
 ### Standard shape for a project PRD in [`projects/`](./projects/)
 Every PRD follows the shared 10-section structure used across sibling components:
