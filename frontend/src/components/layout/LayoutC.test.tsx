@@ -1,7 +1,8 @@
 // NOTE: Class-contract lock only — runtime breakpoint behaviour is not verified by JSDOM.
-import { describe, test, expect, beforeEach, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
+import { render, screen, within, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { AuthContextType } from "@/contexts/AuthContext";
 import { AuthContext } from "@/contexts/AuthContext";
 import type { UserId } from "@/lib/branded-types";
@@ -13,6 +14,7 @@ import {
   resetLayoutBannersForTesting,
 } from "./LayoutC";
 import type { LayoutBannerId } from "./LayoutC";
+import { LAST_SESSION_KEY, BOOT_UID_KEY } from "@/hooks/useActiveChatSession";
 
 // TopNav is mocked here to keep this file focused on LayoutC composition.
 // The TopNav <nav aria-label="Primary navigation"> landmark and its mobile
@@ -29,16 +31,77 @@ vi.mock("./TopNav", async () => {
   };
 });
 
+// ChatInterface mock now exposes session-wiring props so the widget tests can
+// assert that the right sessionId / callbacks are forwarded. The compact prop
+// is still surfaced via data-compact for the existing compact-mode assertions.
 vi.mock("@/components/chat/ChatInterface", () => ({
-  ChatInterface: ({ compact }: { compact?: boolean }) => (
+  ChatInterface: ({
+    compact,
+    sessionId,
+    onCreateSession,
+    onSessionStarted,
+  }: {
+    compact?: boolean;
+    sessionId?: string;
+    onCreateSession?: () => Promise<string | null>;
+    onSessionStarted?: (id: string) => void;
+  }) => (
     <div
       data-testid="chat-interface"
       data-compact={compact ? "true" : "false"}
+      data-session-id={sessionId ?? ""}
+      data-has-create-session={onCreateSession ? "true" : "false"}
+      data-has-session-started={onSessionStarted ? "true" : "false"}
     />
   ),
 }));
 
-const mockAuthContext = (): Partial<AuthContextType> => ({
+// Feature flags — default to flag OFF so existing tests are unaffected.
+// Individual test cases in the "Cross-surface widget session wiring" suite
+// override this to flag ON via vi.mocked(useFeatureFlag).mockReturnValue(...).
+vi.mock("@/contexts/FeatureFlagsContext", () => ({
+  useFeatureFlag: vi.fn().mockReturnValue({
+    enabled: false,
+    reason: "default" as const,
+    isLoading: false,
+  }),
+}));
+
+// chatApi — stub createChatConversation for the lazy-create path.
+vi.mock("@/lib/chatApi", async (orig) => {
+  const actual = await orig<typeof import("@/lib/chatApi")>();
+  return { ...actual, createChatConversation: vi.fn() };
+});
+
+import { useFeatureFlag } from "@/contexts/FeatureFlagsContext";
+import { createChatConversation } from "@/lib/chatApi";
+
+const mockUseFeatureFlag = vi.mocked(useFeatureFlag);
+const mockCreateChatConversation = vi.mocked(createChatConversation);
+
+// Deterministic in-memory storage (mirrors the Chat.spec.tsx helper).
+function memoryStorage() {
+  const store = new Map<string, string>();
+  return {
+    getItem: (k: string) => (store.has(k) ? store.get(k)! : null),
+    setItem: (k: string, v: string) => void store.set(k, String(v)),
+    removeItem: (k: string) => void store.delete(k),
+    clear: () => void store.clear(),
+    key: (i: number) => Array.from(store.keys())[i] ?? null,
+    get length() {
+      return store.size;
+    },
+  };
+}
+
+function installMemoryStorage() {
+  vi.stubGlobal("localStorage", memoryStorage());
+  vi.stubGlobal("sessionStorage", memoryStorage());
+}
+
+const mockAuthContext = (
+  overrides?: Partial<AuthContextType>,
+): Partial<AuthContextType> => ({
   user: {
     id: "test-user" as UserId,
     email: "user@example.com",
@@ -49,25 +112,35 @@ const mockAuthContext = (): Partial<AuthContextType> => ({
   isAuthLoading: false,
   hasSelectedWorkspace: true,
   isSuperAdmin: false,
+  ...overrides,
 });
 
 function renderLayoutC({
   initialPath = "/",
   children = <div data-testid="page-content" />,
+  authOverrides,
 }: {
   initialPath?: string;
   children?: React.ReactNode;
+  authOverrides?: Partial<AuthContextType>;
 } = {}) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return render(
-    <MemoryRouter initialEntries={[initialPath]}>
-      <AuthContext.Provider value={mockAuthContext() as AuthContextType}>
-        <Routes>
-          <Route element={<LayoutC />}>
-            <Route path="*" element={children} />
-          </Route>
-        </Routes>
-      </AuthContext.Provider>
-    </MemoryRouter>,
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={[initialPath]}>
+        <AuthContext.Provider
+          value={mockAuthContext(authOverrides) as AuthContextType}
+        >
+          <Routes>
+            <Route element={<LayoutC />}>
+              <Route path="*" element={children} />
+            </Route>
+          </Routes>
+        </AuthContext.Provider>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
@@ -392,5 +465,237 @@ describe("LayoutC", () => {
       unregisterLayoutBanner(id);
       expect(LAYOUT_BANNER_REGISTRY).toHaveLength(0);
     });
+  });
+});
+
+// ─── Cross-surface widget session wiring (CH-61) ─────────────────────────────
+
+describe("LayoutC — cross-surface widget session wiring (CH-61)", () => {
+  const TEST_UID = "test-user";
+  const ACCOUNT_ID = "acct_1";
+
+  beforeEach(() => {
+    resetLayoutBannersForTesting();
+    installMemoryStorage();
+    mockUseFeatureFlag.mockReturnValue({
+      enabled: false,
+      reason: "default" as const,
+      isLoading: false,
+    });
+    mockCreateChatConversation.mockReset();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    mockUseFeatureFlag.mockReturnValue({
+      enabled: false,
+      reason: "default" as const,
+      isLoading: false,
+    });
+  });
+
+  // Opens the widget on a non-/chat route and returns the ChatInterface element.
+  async function openWidget(opts?: {
+    authOverrides?: Partial<AuthContextType>;
+  }) {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const user = userEvent.setup();
+    renderLayoutC({
+      initialPath: "/performance",
+      authOverrides: opts?.authOverrides ?? {
+        selectedOrgAccount: {
+          accountId: ACCOUNT_ID as any,
+          orgId: "org_1" as any,
+          role: "member" as any,
+        } as any,
+      },
+    });
+    const trigger = screen.getByRole("button", { name: /KEN-E/i });
+    await user.click(trigger);
+    return await screen.findByTestId("chat-interface");
+  }
+
+  test("(a) flag-on, no stored session → widget mounts with sessionId='' and onCreateSession wired", async () => {
+    mockUseFeatureFlag.mockReturnValue({
+      enabled: true,
+      reason: "rollout" as const,
+      isLoading: false,
+    });
+    // No LAST_SESSION_KEY or BOOT_UID_KEY set — getActiveSessionId returns null.
+    const chatEl = await openWidget();
+    expect(chatEl).toHaveAttribute("data-session-id", "");
+    expect(chatEl).toHaveAttribute("data-has-create-session", "true");
+    expect(chatEl).toHaveAttribute("data-has-session-started", "true");
+  });
+
+  test("(b) flag-on, stored session + matching boot uid → widget mounts with that session id", async () => {
+    mockUseFeatureFlag.mockReturnValue({
+      enabled: true,
+      reason: "rollout" as const,
+      isLoading: false,
+    });
+    localStorage.setItem(
+      LAST_SESSION_KEY,
+      JSON.stringify({ id: "active_session_42", accountId: ACCOUNT_ID }),
+    );
+    sessionStorage.setItem(BOOT_UID_KEY, TEST_UID);
+    const chatEl = await openWidget();
+    expect(chatEl).toHaveAttribute("data-session-id", "active_session_42");
+    expect(chatEl).toHaveAttribute("data-has-create-session", "true");
+    expect(chatEl).toHaveAttribute("data-has-session-started", "true");
+  });
+
+  test("(b2) flag-on, marker written AFTER mount → opening widget re-reads storage and resolves session", async () => {
+    // This is the exact regression the PO caught: LayoutC stays mounted across SPA
+    // navigation; the user chats on /chat (setActiveSessionId fires), then navigates
+    // to /performance and opens the widget. The stale useMemo must NOT return undefined.
+    mockUseFeatureFlag.mockReturnValue({
+      enabled: true,
+      reason: "rollout" as const,
+      isLoading: false,
+    });
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const user = userEvent.setup();
+
+    renderLayoutC({
+      initialPath: "/performance",
+      authOverrides: {
+        selectedOrgAccount: {
+          accountId: ACCOUNT_ID as any,
+          orgId: "org_1" as any,
+          role: "member" as any,
+        } as any,
+      },
+    });
+
+    // Storage is empty at this point — memo computed undefined on initial render.
+    expect(screen.queryByTestId("chat-interface")).not.toBeInTheDocument();
+
+    // Simulate /chat page writing the resume marker AFTER LayoutC mounted
+    // (the SPA-navigation scenario the PO identified).
+    localStorage.setItem(
+      LAST_SESSION_KEY,
+      JSON.stringify({ id: "late_session_99", accountId: ACCOUNT_ID }),
+    );
+    sessionStorage.setItem(BOOT_UID_KEY, TEST_UID);
+
+    // Open the widget — miniChatOpen flips to true, triggering the memo re-read.
+    const trigger = screen.getByRole("button", { name: /KEN-E/i });
+    await user.click(trigger);
+
+    const chatEl = await screen.findByTestId("chat-interface");
+    // The widget must now carry the session that was written after mount.
+    expect(chatEl).toHaveAttribute("data-session-id", "late_session_99");
+  });
+
+  test("(c) flag-off → widget mounts with no session props regardless of stored keys", async () => {
+    // Flag stays OFF (default in beforeEach).
+    localStorage.setItem(LAST_SESSION_KEY, "should_not_be_used");
+    sessionStorage.setItem(BOOT_UID_KEY, TEST_UID);
+    const chatEl = await openWidget();
+    // sessionId should be empty (undefined coerced to "") and no callbacks wired.
+    expect(chatEl).toHaveAttribute("data-session-id", "");
+    expect(chatEl).toHaveAttribute("data-has-create-session", "false");
+    expect(chatEl).toHaveAttribute("data-has-session-started", "false");
+  });
+
+  test("(d) {!isHome} guard still hides the widget on /chat", async () => {
+    mockUseFeatureFlag.mockReturnValue({
+      enabled: true,
+      reason: "rollout" as const,
+      isLoading: false,
+    });
+    renderLayoutC({ initialPath: "/chat" });
+    expect(screen.queryByTestId("mini-chat-widget")).not.toBeInTheDocument();
+  });
+
+  test("flag-on, boot uid mismatch (different user) → widget mounts with no session id", async () => {
+    mockUseFeatureFlag.mockReturnValue({
+      enabled: true,
+      reason: "rollout" as const,
+      isLoading: false,
+    });
+    localStorage.setItem(LAST_SESSION_KEY, "other_users_session");
+    sessionStorage.setItem(BOOT_UID_KEY, "different-user-id");
+    const chatEl = await openWidget();
+    expect(chatEl).toHaveAttribute("data-session-id", "");
+  });
+
+  test("flag-on, account switch: widget does NOT resume a different account's session", async () => {
+    // Regression guard: acct_2 must not be able to read acct_1's stored session.
+    mockUseFeatureFlag.mockReturnValue({
+      enabled: true,
+      reason: "rollout" as const,
+      isLoading: false,
+    });
+    // Store a session for acct_1 using the new account-scoped JSON format.
+    localStorage.setItem(
+      LAST_SESSION_KEY,
+      JSON.stringify({ id: "sess_for_acct1", accountId: "acct_1" }),
+    );
+    sessionStorage.setItem(BOOT_UID_KEY, TEST_UID);
+    // Render widget for acct_2 — must NOT see acct_1's session.
+    const chatEl = await openWidget({
+      authOverrides: {
+        selectedOrgAccount: {
+          accountId: "acct_2" as any,
+          orgId: "org_1" as any,
+          role: "member" as any,
+        } as any,
+      },
+    });
+    expect(chatEl).toHaveAttribute("data-session-id", "");
+  });
+
+  test("(TC-1c regression) flag-on, session written after mount → widget open picks it up", async () => {
+    // Regression for TC-1c: LayoutC never remounts on SPA navigation, so the
+    // useMemo deps [chatV2Enabled, user?.id] alone would never re-read storage
+    // when /chat writes the session marker after mount. miniChatOpen must be in
+    // the memo deps so opening the widget triggers a fresh getActiveSessionId call.
+    mockUseFeatureFlag.mockReturnValue({
+      enabled: true,
+      reason: "rollout" as const,
+      isLoading: false,
+    });
+    // No session in storage before render.
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const ue = userEvent.setup();
+    renderLayoutC({
+      initialPath: "/performance",
+      authOverrides: {
+        selectedOrgAccount: {
+          accountId: ACCOUNT_ID as any,
+          orgId: "org_1" as any,
+          role: "member" as any,
+        } as any,
+      },
+    });
+
+    // Write session marker after mount — simulates /chat page creating a session
+    // while the user is on a different page with LayoutC already mounted.
+    localStorage.setItem(LAST_SESSION_KEY, "post_mount_session");
+    sessionStorage.setItem(BOOT_UID_KEY, TEST_UID);
+
+    // Open the widget — this is the trigger that must cause widgetSessionId to
+    // re-read storage (via miniChatOpen entering the memo deps).
+    const trigger = screen.getByRole("button", { name: /KEN-E/i });
+    await ue.click(trigger);
+
+    const chatEl = await screen.findByTestId("chat-interface");
+    expect(chatEl).toHaveAttribute("data-session-id", "post_mount_session");
+    expect(chatEl).toHaveAttribute("data-has-create-session", "true");
+    expect(chatEl).toHaveAttribute("data-has-session-started", "true");
+  });
+
+  test("widget remains in compact mode regardless of flag state", async () => {
+    mockUseFeatureFlag.mockReturnValue({
+      enabled: true,
+      reason: "rollout" as const,
+      isLoading: false,
+    });
+    localStorage.setItem(LAST_SESSION_KEY, "active_session");
+    sessionStorage.setItem(BOOT_UID_KEY, TEST_UID);
+    const chatEl = await openWidget();
+    expect(chatEl).toHaveAttribute("data-compact", "true");
   });
 });

@@ -1,6 +1,13 @@
-import { useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { ChevronDown, MessageSquare } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Brand } from "@/lib/branded-types";
 import {
   Collapsible,
@@ -11,6 +18,16 @@ import { ExtensionsProvider } from "@/contexts/ExtensionsContext";
 import { ChatInterface } from "@/components/chat/ChatInterface";
 import { cn } from "@/lib/utils";
 import { TopNav, NAVIGATION } from "./TopNav";
+import { useAuth } from "@/contexts/AuthContext";
+import { useFeatureFlag } from "@/contexts/FeatureFlagsContext";
+import type { FlagKey } from "@/lib/featureFlags/types";
+import { createChatConversation } from "@/lib/chatApi";
+import { CHAT_SESSIONS_QUERY_KEY } from "@/hooks/useChatSessions";
+import {
+  getActiveSessionId,
+  setActiveSessionId,
+  SESSION_ID_RE,
+} from "@/hooks/useActiveChatSession";
 
 export type LayoutBannerId = Brand<string, "LayoutBannerId">;
 
@@ -94,6 +111,56 @@ function LayoutCInner() {
   const [miniChatOpen, setMiniChatOpen] = useState(false);
   const [miniChatHeight, setMiniChatHeight] = useState(
     MINI_CHAT_DEFAULT_HEIGHT,
+  );
+
+  const { user, selectedOrgAccount } = useAuth();
+  const accountId = selectedOrgAccount?.accountId ?? null;
+  const queryClient = useQueryClient();
+  const { enabled: chatV2Enabled } = useFeatureFlag(
+    "chat_v2_enabled" as FlagKey,
+  );
+
+  // Resolve the active session id for the widget on each relevant change:
+  //   - miniChatOpen flips to true: user opens the widget after /chat created a session
+  //     while LayoutC was already mounted (SPA navigation never unmounts LayoutC).
+  //   - location.pathname: belt-and-suspenders on route change so stale ids don't persist.
+  //   - accountId: re-reads when the user switches accounts; prevents a different
+  //     account's session id from bleeding into the widget.
+  const widgetSessionId = useMemo(
+    () =>
+      chatV2Enabled && user && accountId
+        ? (getActiveSessionId(user.id, accountId) ?? undefined)
+        : undefined,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [chatV2Enabled, user?.id, accountId, miniChatOpen, location.pathname],
+  );
+
+  // Widget: lazily create a session on the first message (same as Chat.tsx).
+  // Does NOT navigate — stamps the resume marker only so /chat can pick it up.
+  const onWidgetCreateSession = useCallback(async (): Promise<
+    string | null
+  > => {
+    if (!accountId) return null;
+    try {
+      const info = await createChatConversation({ account_id: accountId });
+      const id = info?.session_id;
+      if (!id || !SESSION_ID_RE.test(id)) return null;
+      queryClient.invalidateQueries({ queryKey: [CHAT_SESSIONS_QUERY_KEY] });
+      return id;
+    } catch {
+      return null;
+    }
+  }, [accountId, queryClient]);
+
+  // Widget: write the resume marker when a session is created/started, but do
+  // NOT navigate — the user stays on the page they opened the widget on.
+  // setActiveSessionId already guards against invalid ids at the write boundary.
+  const userId = user?.id;
+  const onWidgetSessionStarted = useCallback(
+    (id: string) => {
+      if (userId && accountId) setActiveSessionId(id, userId, accountId);
+    },
+    [userId, accountId],
   );
   const resizeStateRef = useRef<{
     startY: number;
@@ -255,7 +322,16 @@ function LayoutCInner() {
                   borderTop: "2px dashed var(--color-border-default)",
                 }}
               >
-                <ChatInterface compact />
+                <ChatInterface
+                  compact
+                  sessionId={widgetSessionId}
+                  onCreateSession={
+                    chatV2Enabled ? onWidgetCreateSession : undefined
+                  }
+                  onSessionStarted={
+                    chatV2Enabled ? onWidgetSessionStarted : undefined
+                  }
+                />
               </div>
             </CollapsibleContent>
           </div>

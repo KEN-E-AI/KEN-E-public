@@ -12,6 +12,11 @@ import { CHAT_SESSIONS_QUERY_KEY } from "@/hooks/useChatSessions";
 import { createChatConversation, toChatSessionId } from "@/lib/chatApi";
 import { ArtifactsPanel } from "@/components/chat/ArtifactsPanel";
 import { TodoListsPanel } from "@/components/chat/TodoListsPanel";
+import {
+  getActiveSessionId,
+  setActiveSessionId,
+  SESSION_ID_RE,
+} from "@/hooks/useActiveChatSession";
 
 type ViewState = "message" | "status";
 
@@ -33,52 +38,6 @@ function writeSidebarCollapsed(collapsed: boolean): void {
   }
 }
 
-const LAST_SESSION_KEY = "kene_chat_last_session";
-
-function readLastSession(): string | null {
-  try {
-    return localStorage.getItem(LAST_SESSION_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function writeLastSession(id: string): void {
-  // Defense-in-depth: never durably persist a pending_ placeholder. A pending_
-  // id is only valid for a single /completions call; storing it would poison the
-  // resume marker and silently create a new empty session on every reload (CH-62).
-  if (id.startsWith("pending_")) return;
-  try {
-    localStorage.setItem(LAST_SESSION_KEY, id);
-  } catch {
-    // localStorage unavailable — ignore
-  }
-}
-
-// Per-tab marker recording which user already has an active chat in this
-// browser session. sessionStorage (not localStorage) so it resets on a new
-// browser session / fresh login → "start fresh on login"; within the same
-// login it lets bare /chat resume the active session instead of starting over.
-const BOOT_UID_KEY = "kene_chat_boot_uid";
-
-function readBootUid(): string | null {
-  try {
-    return sessionStorage.getItem(BOOT_UID_KEY);
-  } catch {
-    return null;
-  }
-}
-
-function writeBootUid(uid: string): void {
-  try {
-    sessionStorage.setItem(BOOT_UID_KEY, uid);
-  } catch {
-    // sessionStorage unavailable — ignore
-  }
-}
-
-const SESSION_ID_RE = /^[a-zA-Z0-9_-]{1,128}$/;
-
 export default function Chat() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -95,7 +54,11 @@ export default function Chat() {
   const [sidebarCollapsed, setSidebarCollapsed] =
     useState<boolean>(readSidebarCollapsed);
   const isFirstRender = useRef(true);
-  const didBootRef = useRef(false);
+  // Keyed on "userId:accountId" so the boot runs once per (user, account) pair —
+  // switching accounts triggers a fresh resume attempt while still preventing
+  // spurious re-runs within the same session. Plain boolean ref was insufficient
+  // once accountId was added to the effect's dep array.
+  const bootedForRef = useRef<string | null>(null);
 
   // Persist sidebar collapse state across hard refreshes.
   // Skip the initial render — the value was just read from localStorage,
@@ -111,29 +74,35 @@ export default function Chat() {
   // Remember the active session (for in-login resume) and mark this browser
   // session as belonging to the current user.
   useEffect(() => {
-    if (sessionId && user) {
-      writeLastSession(sessionId);
-      writeBootUid(user.id);
+    if (sessionId && user && accountId) {
+      setActiveSessionId(sessionId, user.id, accountId);
     }
-  }, [sessionId, user]);
+  }, [sessionId, user, accountId]);
 
   // When the user lands on a bare /chat (no ?session=) and is navigating within
   // the same login, resume the active session. A new login / fresh browser
   // session is left on the empty composer — no session is created until the
   // first message is sent (see onCreateSession below), so we don't accumulate
-  // empty "Untitled" sessions on every visit. Runs once per mount (didBootRef).
+  // empty "Untitled" sessions on every visit.
+  // Runs once per (user, account) pair — bootedForRef tracks the key so that
+  // switching accounts triggers a fresh resume attempt for the new account.
   useEffect(() => {
-    if (rawSession || didBootRef.current || !user) return;
-    if (readBootUid() !== user.id) return; // new login → stay on empty composer
+    if (rawSession || !user) return;
 
-    const stored = readLastSession();
-    if (stored && SESSION_ID_RE.test(stored)) {
-      didBootRef.current = true;
+    const key = accountId ? `${user.id}:${accountId}` : user.id;
+    if (bootedForRef.current === key) return;
+    // Mark immediately so the effect does not re-fire if no stored session is
+    // found (prevents a loop when no session exists for the current account).
+    bootedForRef.current = key;
+
+    const stored = getActiveSessionId(user.id, accountId ?? undefined);
+    if (stored) {
+      // getActiveSessionId already validates via SESSION_ID_RE internally.
       navigate(`/chat?session=${encodeURIComponent(stored)}`, {
         replace: true,
       });
     }
-  }, [rawSession, user, navigate]);
+  }, [rawSession, user, accountId, navigate]);
 
   // Lazily create a session on the first message (ChatInterface calls this when
   // it has no sessionId). Creates the side-table row and returns the new id
@@ -154,6 +123,7 @@ export default function Chat() {
 
   const onSessionStarted = useCallback(
     (id: string) => {
+      if (!SESSION_ID_RE.test(id)) return; // defence-in-depth: reject invalid ids
       navigate(`/chat?session=${encodeURIComponent(id)}`, { replace: true });
     },
     [navigate],
@@ -170,9 +140,13 @@ export default function Chat() {
       navigate(`/chat?session=${encodeURIComponent(realId)}`, {
         replace: true,
       });
-      writeLastSession(realId);
+      // Persist through the shared active-session store so the mini-widget
+      // (which reads getActiveSessionId) resumes the reconciled real id —
+      // account-scoped to match the boot effect. The pending_ guard lives in
+      // setActiveSessionId (CH-62 ⇄ CH-61 integration).
+      if (user) setActiveSessionId(realId, user.id, accountId ?? undefined);
     },
-    [navigate],
+    [navigate, user, accountId],
   );
 
   // Emit the page-view telemetry span once on mount.

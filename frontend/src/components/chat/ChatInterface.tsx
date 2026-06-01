@@ -38,7 +38,6 @@ type ChatInterfaceProps = {
   // Called when a pending_ session id resolves to the real id mid-stream.
   // The parent should swap the URL (?session=) and the resume marker (CH-62).
   onSessionResolved?: (realId: string) => void;
-  // TODO(CH-PRD-XX): compact mode is reserved for the mini-widget in LayoutC
   compact?: boolean;
 };
 
@@ -56,7 +55,7 @@ export function ChatInterface({
   onCreateSession,
   onSessionStarted,
   onSessionResolved,
-  compact: _compact = false,
+  compact = false,
 }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>(() => [
     {
@@ -361,11 +360,14 @@ export function ChatInterface({
       className="flex flex-col flex-1 min-h-0 bg-[var(--color-bg-primary)]"
     >
       <div className="flex-1 min-h-0 overflow-y-auto" ref={scrollRef}>
-        <div className="space-y-4 p-6">
+        <div className={cn("space-y-4", compact ? "p-4" : "p-6")}>
           {messages.map((message, index) => (
             <div key={message.id} className="flex justify-start">
               <div
-                className="max-w-[80%] space-y-2"
+                className={cn(
+                  compact ? "max-w-full" : "max-w-[80%]",
+                  "space-y-2",
+                )}
                 ref={
                   index === lastAssistantIndex ? latestAssistantRef : undefined
                 }
@@ -426,7 +428,7 @@ export function ChatInterface({
 
           {isStreaming && (
             <div className="flex justify-start">
-              <div className="max-w-[80%]">
+              <div className={compact ? "max-w-full" : "max-w-[80%]"}>
                 <ThinkingBlock
                   isThinking={true}
                   thoughts={liveThoughts}
@@ -439,7 +441,7 @@ export function ChatInterface({
       </div>
 
       <div
-        className="shrink-0 p-6"
+        className={cn("shrink-0", compact ? "p-4" : "p-6")}
         style={{ borderTop: "2px dashed var(--color-border-default)" }}
       >
         <div className="flex gap-3">
@@ -457,14 +459,17 @@ export function ChatInterface({
                 handleSend();
               }
             }}
-            className="min-h-[3.75rem] resize-none rounded-[var(--radius-md)]"
+            className={cn(
+              "resize-none rounded-[var(--radius-md)]",
+              compact ? "min-h-[2.5rem]" : "min-h-[3.75rem]",
+            )}
             disabled={isStreaming || isOrgInactive}
             aria-label="Chat input"
           />
           <Button
             onClick={handleSend}
             size="icon"
-            className="shrink-0 size-[3.75rem]"
+            className={cn("shrink-0", compact ? "size-11" : "size-[3.75rem]")}
             disabled={isStreaming || isOrgInactive}
             aria-label="Send message"
           >
@@ -475,12 +480,14 @@ export function ChatInterface({
             )}
           </Button>
         </div>
-        <p className="text-[var(--text-caption)] text-[var(--color-text-tertiary)] mt-3 flex items-center gap-2">
-          <Sparkles className="size-3" />
-          {isOrgInactive
-            ? "Your subscription is inactive. Please update your billing."
-            : "Tip: Ask me to create campaigns, analyze data, or set up automations"}
-        </p>
+        {!compact && (
+          <p className="text-[var(--text-caption)] text-[var(--color-text-tertiary)] mt-3 flex items-center gap-2">
+            <Sparkles className="size-3" />
+            {isOrgInactive
+              ? "Your subscription is inactive. Please update your billing."
+              : "Tip: Ask me to create campaigns, analyze data, or set up automations"}
+          </p>
+        )}
       </div>
     </div>
   );

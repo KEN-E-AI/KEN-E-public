@@ -93,6 +93,7 @@ import Chat from "../Chat";
 import NotFoundPage from "../NotFoundPage";
 import { ChatInterface } from "@/components/chat/ChatInterface";
 import { createChatConversation } from "@/lib/chatApi";
+import { getActiveSessionId } from "@/hooks/useActiveChatSession";
 
 const mockCreateChatConversation = vi.mocked(createChatConversation);
 
@@ -306,7 +307,7 @@ describe("Chat session boot (resume on nav / deferred create)", () => {
   it("persists the active session id and marks the browser session for the user", async () => {
     renderChat("?session=abc123");
     await waitFor(() =>
-      expect(localStorage.getItem(LAST_SESSION_KEY)).toBe("abc123"),
+      expect(getActiveSessionId(TEST_UID, "acct_1")).toBe("abc123"),
     );
     expect(sessionStorage.getItem(BOOT_UID_KEY)).toBe(TEST_UID);
   });
@@ -377,6 +378,55 @@ describe("Chat session boot (resume on nav / deferred create)", () => {
     renderChat("?session=existing999");
     fireEvent.click(screen.getByRole("button", { name: /select session/i }));
     await waitFor(() => expect(locationText()).toBe("/chat?session=picked123"));
+  });
+
+  it("re-runs boot effect after account switch and resumes the new account's session (bootedForRef guard)", async () => {
+    // Regression guard for the bootedForRef fix: after one boot attempt for
+    // acct_1 (no stored session → stays on empty composer), switching to acct_2
+    // which HAS a stored session must trigger a second boot and navigate.
+    // Before the fix, a plain didBootRef would have blocked the second boot.
+
+    // acct_1 has no stored session.
+    const makeChatTree = () =>
+      withQueryClient(
+        <MemoryRouter initialEntries={["/chat"]}>
+          <LocationProbe />
+          <Routes>
+            <Route path="/chat" element={<Chat />} />
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        </MemoryRouter>,
+      );
+
+    const { rerender } = render(makeChatTree());
+
+    // First boot for acct_1 — no session, stays on bare /chat.
+    await waitFor(() =>
+      expect(screen.getByTestId("chat-interface")).toBeInTheDocument(),
+    );
+    expect(locationText()).toBe("/chat");
+
+    // acct_2 has a stored session (written, e.g., from the widget on another page).
+    localStorage.setItem(
+      LAST_SESSION_KEY,
+      JSON.stringify({ id: "sess_acct2", accountId: "acct_2" }),
+    );
+    sessionStorage.setItem(BOOT_UID_KEY, TEST_UID);
+
+    // Simulate account switch: update the mock then re-render with a fresh
+    // element so React reconciles the component tree and re-runs hooks.
+    mockUseAuth.mockReturnValue({
+      user: { id: TEST_UID },
+      selectedOrgAccount: { accountId: "acct_2" },
+    });
+
+    // Creating a new element (not the same cached reference) ensures React's
+    // reconciler re-runs the component's hooks and picks up the new auth value.
+    rerender(makeChatTree());
+
+    await waitFor(() =>
+      expect(locationText()).toBe("/chat?session=sess_acct2"),
+    );
   });
 });
 
@@ -494,15 +544,18 @@ describe("Chat session resolved (onSessionResolved — CH-62)", () => {
       screen.getByRole("button", { name: /simulate session resolved/i }),
     );
     await waitFor(() =>
-      expect(localStorage.getItem(LAST_SESSION_KEY)).toBe("real_42"),
+      // Read through the canonical accessor: onSessionResolved now persists via
+      // the account-scoped setActiveSessionId (CH-62 ⇄ CH-61 integration), so the
+      // raw value is a JSON blob — assert the resumable id, not the storage format.
+      expect(getActiveSessionId(TEST_UID, "acct_1")).toBe("real_42"),
     );
   });
 
-  it("writeLastSession rejects pending_ ids (defense-in-depth)", async () => {
+  it("setActiveSessionId rejects pending_ ids (defense-in-depth)", async () => {
     // The boot effect writes the current session id — if it were pending_ it
     // must be rejected. We verify by starting on a pending_ URL: the boot
-    // effect fires writeLastSession("pending_abc"), which must be a no-op, so
-    // the marker stays null.
+    // effect fires setActiveSessionId("pending_abc", …), which must be a no-op,
+    // so the marker stays null.
     renderChat("?session=pending_abc");
     // Allow effects to settle.
     await waitFor(() =>
@@ -525,7 +578,10 @@ describe("Chat session resolved (onSessionResolved — CH-62)", () => {
     );
 
     await waitFor(() =>
-      expect(localStorage.getItem(LAST_SESSION_KEY)).toBe("real_42"),
+      // Read through the canonical accessor: onSessionResolved now persists via
+      // the account-scoped setActiveSessionId (CH-62 ⇄ CH-61 integration), so the
+      // raw value is a JSON blob — assert the resumable id, not the storage format.
+      expect(getActiveSessionId(TEST_UID, "acct_1")).toBe("real_42"),
     );
     await waitFor(() => expect(locationText()).toBe("/chat?session=real_42"));
   });

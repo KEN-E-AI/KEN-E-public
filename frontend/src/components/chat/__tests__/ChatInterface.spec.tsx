@@ -1,15 +1,17 @@
 /**
- * Unit tests for ChatInterface reasoning-channel integration (CH-60).
+ * Unit tests for ChatInterface.
  *
  * Covers:
- * - Live ThinkingBlock receives streaming thoughts as reasoning events arrive.
- * - ThinkingBlock shows placeholder ("Analyzing your request…") when no thoughts.
- * - Persisted message contains reasoning.thoughts after stream completion.
- * - Stop button preserves partial reasoning.
- * - Second turn starts with empty liveThoughts (no ghost from prior turn).
- * - Text streaming continues to work correctly alongside reasoning.
- *
- * References: CH-60 Implementation Plan Task 4.
+ * - Reasoning-channel integration (CH-60):
+ *   Live ThinkingBlock receives streaming thoughts as reasoning events arrive.
+ *   ThinkingBlock shows placeholder ("Analyzing your request…") when no thoughts.
+ *   Persisted message contains reasoning.thoughts after stream completion.
+ *   Stop button preserves partial reasoning.
+ *   Second turn starts with empty liveThoughts (no ghost from prior turn).
+ *   Text streaming continues to work correctly alongside reasoning.
+ * - Compact mode (CH-61):
+ *   With compact=true: tightened padding / sizing classes, tip footer hidden.
+ *   With compact=false (default): full-size classes, tip footer visible.
  */
 
 import { describe, test, expect, vi, beforeEach, afterEach } from "vitest";
@@ -232,5 +234,58 @@ describe("ChatInterface — reasoning channel (CH-60)", () => {
     // Step 5: assert onSessionResolved was called exactly once with the real id.
     expect(onSessionResolved).toHaveBeenCalledTimes(1);
     expect(onSessionResolved).toHaveBeenCalledWith("real_vertex_id_999");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Compact mode (CH-61)
+// ---------------------------------------------------------------------------
+
+describe("ChatInterface — compact mode (CH-61)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("tip footer is NOT rendered in compact mode", () => {
+    render(<ChatInterface compact />);
+    // The tip footer contains "Tip:" text when not in compact mode.
+    expect(screen.queryByText(/tip:/i)).not.toBeInTheDocument();
+  });
+
+  test("tip footer IS rendered in default (non-compact) mode", () => {
+    render(<ChatInterface />);
+    expect(screen.getByText(/tip:/i)).toBeInTheDocument();
+  });
+
+  test("composer textarea has tighter min-height class in compact mode", () => {
+    render(<ChatInterface compact />);
+    const textarea = screen.getByRole("textbox", { name: /chat input/i });
+    expect(textarea.className).toMatch(/min-h-\[2\.5rem\]/);
+    expect(textarea.className).not.toMatch(/min-h-\[3\.75rem\]/);
+  });
+
+  test("composer textarea has full min-height class in default mode", () => {
+    render(<ChatInterface />);
+    const textarea = screen.getByRole("textbox", { name: /chat input/i });
+    expect(textarea.className).toMatch(/min-h-\[3\.75rem\]/);
+    expect(textarea.className).not.toMatch(/min-h-\[2\.5rem\]/);
+  });
+
+  test("send button has smaller size class in compact mode", () => {
+    render(<ChatInterface compact />);
+    const button = screen.getByRole("button", { name: /send message/i });
+    expect(button.className).toMatch(/\bsize-11\b/);
+    expect(button.className).not.toMatch(/size-\[3\.75rem\]/);
+  });
+
+  test("send button has full size class in default mode", () => {
+    render(<ChatInterface />);
+    const button = screen.getByRole("button", { name: /send message/i });
+    expect(button.className).toMatch(/size-\[3\.75rem\]/);
+    expect(button.className).not.toMatch(/\bsize-11\b/);
   });
 });
