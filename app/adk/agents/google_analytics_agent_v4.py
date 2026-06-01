@@ -1,5 +1,21 @@
 """Google Analytics Agent V4 - McpToolset + Header-Based OAuth.
 
+.. deprecated::
+   **AH-25 / AH-PRD-03 Phase 1 — Do not use in new code.**
+
+   This file is the transitional hardcoded GA agent installed in the
+   R1.0 deploy-time specialist pattern. It is superseded by the
+   AH-PRD-09 per-turn runtime resolver: the GA Specialist now lives at
+   ``agent_configs/google_analytics_specialist`` in Firestore and is
+   constructed per-turn by ``specialist_runtime.resolve_agent`` via
+   ADK-native ``transfer_to_agent("google_analytics_specialist")``.
+
+   The root agent (``ken_e_agent.py``) no longer references this module.
+   This file is retained until a follow-up grep confirms no callers remain,
+   at which point it will be deleted. Expected removal: once the
+   ``google_analytics_agent_v4`` name no longer appears in any import,
+   Makefile target, or deploy script. Track via the AH-26 follow-up story.
+
 Uses ADK McpToolset with SSE transport to connect to the GA MCP server.
 OAuth credentials flow automatically from session state through the
 header_provider callback to the GA MCP server's BearerAuthMiddleware.
