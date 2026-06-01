@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import math
@@ -11,15 +12,31 @@ import uuid
 from collections import defaultdict
 from collections.abc import Callable
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from fastapi import HTTPException, Request, Response, status
+
+try:
+    import redis.exceptions as _redis_exceptions
+except ImportError:  # pragma: no cover — redis is a required dep
+    # If `redis` is missing the entire RedisRateLimiter + SwitchableRateLimiter
+    # path silently degrades to "all exceptions treated as bugs" (the isinstance
+    # check downstream is always False). Emit a CRITICAL log at import time so
+    # operators see this BEFORE traffic hits a misconfigured deploy.
+    _redis_exceptions = None  # type: ignore[assignment]
+    logging.getLogger(__name__).critical(
+        "rate_limiter: `redis` package import failed at module load — "
+        "RedisRateLimiter + SwitchableRateLimiter Redis-error discrimination "
+        "is disabled. Every Redis transport error will be re-raised as a 500 "
+        "without circuit-breaker tripping. Add `redis` to your environment."
+    )
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis as AsyncRedis
 
     from .auth.audit_logger import AuditLogger
     from .auth.models import UserContext
+    from .models.feature_flag_models import EvaluationContext
 
 logger = logging.getLogger(__name__)
 
@@ -318,9 +335,14 @@ class RedisRateLimiter:
         fallback_on_redis_error: bool | LocalRateLimiter = False,
     ) -> None:
         if fallback_on_redis_error is not False:
-            raise NotImplementedError(
-                "fallback_on_redis_error is AH-B2 scope (AH-79). "
-                "Pass fallback_on_redis_error=False for AH-B1 usage."
+            # This parameter is now vestigial — fallback logic is handled by
+            # SwitchableRateLimiter (AH-79).  Accept any value with an INFO log
+            # so existing callers are not broken.  Deletion is deferred to a
+            # follow-up to keep this PR small.
+            logger.info(
+                "RedisRateLimiter: fallback_on_redis_error is no longer used "
+                "(AH-79 moved fallback logic to SwitchableRateLimiter). "
+                "Remove this kwarg from the call site."
             )
         self.requests_per_minute = requests_per_minute
         self.requests_per_hour = requests_per_hour
@@ -529,6 +551,274 @@ class RedisRateLimiter:
 
 
 # ---------------------------------------------------------------------------
+# _CircuitBreaker — per-instance Redis-error circuit breaker (AH-79)
+# ---------------------------------------------------------------------------
+
+# Circuit breaker constants per AH-PRD-10 §7 AC-14.
+_CB_K: int = 10  # consecutive Redis errors before circuit opens
+_CB_COOLDOWN_SECONDS: float = 60.0  # seconds the circuit stays open before half-open
+
+
+class _CircuitBreaker:
+    """Process-local consecutive-error circuit breaker for Redis calls.
+
+    State machine:
+      CLOSED      → normal operation; Redis calls allowed.
+      OPEN        → circuit tripped after K consecutive errors; Redis calls
+                    skipped for COOLDOWN_SECONDS.
+      HALF_OPEN   → cooldown elapsed; exactly ONE probe request is admitted.
+                    Success → CLOSED. Failure → OPEN (cooldown resets).
+
+    All state mutations are serialised behind a single ``asyncio.Lock`` so
+    concurrent coroutines cannot race the half-open probe gate.  Uses
+    ``time.monotonic()`` (immune to wall-clock jumps) for cooldown timing.
+    """
+
+    def __init__(self) -> None:
+        self.consecutive_errors: int = 0
+        self.opened_at: float | None = None
+        self._lock: asyncio.Lock = asyncio.Lock()
+        self._half_open_probe_in_flight: bool = False
+
+    async def state(self) -> Literal["closed", "open", "half_open"]:
+        """Return current circuit-breaker state.
+
+        OPEN transitions to HALF_OPEN once the cooldown elapses; the caller
+        must still call ``acquire_attempt()`` to obtain the probe token.
+        """
+        async with self._lock:
+            return self._state_unlocked()
+
+    def _state_unlocked(self) -> Literal["closed", "open", "half_open"]:
+        """Return state without acquiring the lock (caller must hold it)."""
+        if self.opened_at is None:
+            return "closed"
+        elapsed = time.monotonic() - self.opened_at
+        if elapsed >= _CB_COOLDOWN_SECONDS:
+            return "half_open"
+        return "open"
+
+    async def acquire_attempt(self) -> Literal["go", "skip"]:
+        """Return whether the caller should attempt the Redis call.
+
+        - ``"go"`` : circuit is closed, or is half-open AND the caller wins the
+                     probe token.  Caller MUST call ``record_success()`` or
+                     ``record_failure()`` when done.
+        - ``"skip"``: circuit is open, or another half-open probe is already
+                      in flight.  Caller should branch to the Local fallback.
+        """
+        async with self._lock:
+            state = self._state_unlocked()
+            if state == "closed":
+                return "go"
+            if state == "open":
+                return "skip"
+            # half_open — only one probe token at a time
+            if self._half_open_probe_in_flight:
+                return "skip"
+            self._half_open_probe_in_flight = True
+            return "go"
+
+    async def record_success(self) -> None:
+        """Record a successful Redis call — resets error counter and closes circuit."""
+        async with self._lock:
+            self.consecutive_errors = 0
+            self.opened_at = None
+            self._half_open_probe_in_flight = False
+
+    async def record_failure(self) -> None:
+        """Record a failed Redis call.
+
+        Increments the consecutive-error counter.  If the counter reaches K,
+        opens the circuit.  If in half-open state, re-opens with a fresh cooldown.
+        """
+        async with self._lock:
+            self._half_open_probe_in_flight = False
+            self.consecutive_errors += 1
+            if self.consecutive_errors >= _CB_K:
+                self.opened_at = time.monotonic()
+                logger.warning(
+                    "Circuit breaker OPENED after %d consecutive Redis errors "
+                    "(limiter=%s). Falling back to LocalRateLimiter for %ss.",
+                    self.consecutive_errors,
+                    "rate_limiter",
+                    _CB_COOLDOWN_SECONDS,
+                )
+
+
+# ---------------------------------------------------------------------------
+# SwitchableRateLimiter — runtime-switchable wrapper with circuit breaker (AH-79)
+# ---------------------------------------------------------------------------
+
+# Synthetic EvaluationContext kwargs for the per-request feature-flag read.
+# Same pattern as routers/chat.py:3211-3216 for kill-switch reads.
+_SYSTEM_RATE_LIMITER_CTX_KWARGS: dict[str, str | None] = {
+    "user_id": "_system_rate_limiter",
+    "user_email": "system@ken-e.ai",
+    "organization_id": None,
+    "account_id": None,
+}
+
+
+def _get_system_eval_ctx() -> EvaluationContext:
+    """Return the synthetic EvaluationContext for the rate-limiter feature-flag read.
+
+    Lazy import avoids circular imports at module load time; the instance is
+    constructed per-call (lightweight Pydantic model).
+    """
+    from .models.feature_flag_models import (
+        EvaluationContext as _EvalCtx,
+    )
+
+    return _EvalCtx(**_SYSTEM_RATE_LIMITER_CTX_KWARGS)
+
+
+async def is_feature_enabled(
+    flag_key: str,
+    ctx: EvaluationContext,
+    default: bool = False,
+) -> bool:
+    """Module-level wrapper around ``feature_flag_service.is_feature_enabled``.
+
+    Exposed at module level so tests can patch
+    ``src.kene_api.rate_limiter.is_feature_enabled`` without depending on
+    the lazy-import path inside ``check_rate_limit``.
+    """
+    from .services.feature_flag_service import (
+        is_feature_enabled as _is_feature_enabled,
+    )
+
+    return await _is_feature_enabled(flag_key, ctx, default)
+
+
+class SwitchableRateLimiter:
+    """Runtime-switchable rate limiter that wraps a RedisRateLimiter and a fallback
+    LocalRateLimiter.
+
+    Per-request, it:
+      (a) reads the ``rate_limit_backend_override`` feature flag via
+          ``is_feature_enabled`` with a synthetic ``_system_rate_limiter``
+          EvaluationContext.  Flag=True → delegate to Local (rollback path).
+      (b) if flag is False, consults the process-local ``_CircuitBreaker``:
+          - "skip" → fallback to Local (or fail-open for throughput limiters).
+          - "go"  → delegate to Redis, recording success/failure.
+
+    For security-critical limiters (``fallback_cap_divisor=10, fail_open=False``),
+    the fallback ``LocalRateLimiter`` has its limits pre-divided by 10 so a Redis
+    outage does not silently disable brute-force protection.
+
+    For throughput limiters (``fail_open=True``), a Redis error logs ERROR and
+    returns without rate-limiting (request is allowed through).
+    """
+
+    def __init__(
+        self,
+        redis_limiter: RedisRateLimiter,
+        fallback_limiter: LocalRateLimiter,
+        fallback_cap_divisor: int = 1,
+        fail_open: bool = False,
+        limiter_name: str = "default",
+    ) -> None:
+        self.redis_limiter = redis_limiter
+        self.fallback_limiter = fallback_limiter
+        self.fallback_cap_divisor = fallback_cap_divisor
+        self.fail_open = fail_open
+        self.limiter_name = limiter_name
+        self._circuit_breaker = _CircuitBreaker()
+
+    async def check_rate_limit(
+        self,
+        request: Request,
+        ctx: UserContext | None = None,
+        response: Response | None = None,
+    ) -> None:
+        """Check whether the request exceeds rate limits and raise 429 if so.
+
+        Reads ``rate_limit_backend_override`` feature flag PER-REQUEST (not at
+        startup) so the backend can be toggled at runtime without a redeploy.
+
+        Args:
+            request:  The incoming FastAPI request.
+            ctx:      Optional authenticated user context; passed to key_strategy.
+            response: Optional FastAPI Response for header injection on success.
+
+        Raises:
+            HTTPException: 429 if a rate limit is exceeded.
+        """
+        eval_ctx = _get_system_eval_ctx()
+
+        use_local: bool = False
+        try:
+            flag_enabled = await is_feature_enabled(
+                "rate_limit_backend_override", eval_ctx, default=False
+            )
+        except Exception:
+            # Feature-flag read failure must NOT block the limiter path.
+            # Fall through to Redis (the circuit breaker guards that path).
+            # ERROR (not WARNING) — flag-service unavailability is a
+            # control-plane incident operators need to see; exc_info=True
+            # so the traceback lands in Cloud Logging for debugging.
+            logger.error(
+                "SwitchableRateLimiter: feature flag read failed for "
+                "rate_limit_backend_override (limiter=%s). Falling back to "
+                "Redis path. Flag-service backend (Firestore) may be down.",
+                self.limiter_name,
+                exc_info=True,
+            )
+            flag_enabled = False
+
+        if flag_enabled:
+            use_local = True
+        else:
+            attempt = await self._circuit_breaker.acquire_attempt()
+            if attempt == "skip":
+                use_local = True
+
+        if use_local:
+            if self.fail_open:
+                logger.error(
+                    "SwitchableRateLimiter: Redis unavailable for throughput limiter "
+                    "'%s'; failing open (request allowed).",
+                    self.limiter_name,
+                )
+                return
+            await self.fallback_limiter.check_rate_limit(request, ctx)
+            return
+
+        # Redis path
+        try:
+            await self.redis_limiter.check_rate_limit(request, ctx, response)
+            await self._circuit_breaker.record_success()
+        except HTTPException:
+            # A 429 from Redis is a legitimate rate-limit decision — NOT a Redis error.
+            # Do not count it as a failure; re-raise so the client sees the 429.
+            await self._circuit_breaker.record_success()
+            raise
+        except Exception as exc:
+            if _redis_exceptions is not None and isinstance(
+                exc, (_redis_exceptions.ConnectionError, _redis_exceptions.TimeoutError)
+            ):
+                await self._circuit_breaker.record_failure()
+                logger.error(
+                    "SwitchableRateLimiter: Redis error on limiter '%s': %s. "
+                    "Activating fallback.",
+                    self.limiter_name,
+                    type(exc).__name__,
+                )
+                if self.fail_open:
+                    logger.error(
+                        "SwitchableRateLimiter: throughput limiter '%s' failing open.",
+                        self.limiter_name,
+                    )
+                    return
+                await self.fallback_limiter.check_rate_limit(request, ctx)
+            else:
+                # Unexpected Redis exception — treat as failure, re-raise.
+                await self._circuit_breaker.record_failure()
+                raise
+
+
+# ---------------------------------------------------------------------------
 # Factory helper — reads KENE_RATE_LIMIT_BACKEND and returns the right backend
 # ---------------------------------------------------------------------------
 
@@ -569,18 +859,38 @@ def build_rate_limiter(
     requests_per_minute: int,
     requests_per_hour: int,
     key_strategy: KeyStrategy = ip_only_key_strategy,
+    fallback_cap_divisor: int = 1,
+    fail_open: bool = False,
     **kwargs: Any,
-) -> LocalRateLimiter | RedisRateLimiter:
+) -> LocalRateLimiter | SwitchableRateLimiter:
     """Return the correct concrete limiter based on ``KENE_RATE_LIMIT_BACKEND``.
 
-    ``"redis"`` → ``RedisRateLimiter`` (default in prod/staging).
-    ``"memory"`` → ``LocalRateLimiter`` (default in dev/test; no Redis dep).
+    ``"redis"`` (default in prod/staging) → ``SwitchableRateLimiter`` wrapping
+    both a ``RedisRateLimiter`` (primary) and an emergency-capped sibling
+    ``LocalRateLimiter`` (fallback).
 
-    Extra ``**kwargs`` are forwarded to the chosen constructor.  For
-    ``RedisRateLimiter``, a ``redis_client`` kwarg is required unless the env
-    var selects ``"memory"``.  A ``redis_client`` can be injected explicitly
-    (e.g. ``fakeredis.aioredis.FakeRedis`` in tests) or omitted to use the
-    module-level auto-constructed client.
+    ``"memory"`` (default in dev/test; no Redis dep) → ``LocalRateLimiter``
+    directly.  No switching needed when memory IS the only backend.
+
+    Args:
+        name:                 Logical limiter name (used in Redis keys + logs).
+        requests_per_minute:  Per-minute window limit for the primary backend.
+        requests_per_hour:    Per-hour window limit for the primary backend.
+        key_strategy:         Bucket-key derivation callable.
+        fallback_cap_divisor: Emergency-cap divisor applied to the fallback
+                              ``LocalRateLimiter``'s limits.  ``1`` = no cap
+                              (default, safe for throughput limiters).  ``10`` =
+                              divide limits by 10 (security-critical limiters per
+                              AH-PRD-10 §7 AC-13).
+        fail_open:            If ``True``, a Redis error or open circuit-breaker
+                              causes the limiter to allow the request through
+                              (fail-open).  ``False`` (default) falls back to the
+                              emergency-capped ``LocalRateLimiter`` (fail-closed
+                              via local fallback).
+        **kwargs:             Forwarded to ``RedisRateLimiter`` constructor.  A
+                              ``redis_client`` kwarg is required for the Redis
+                              branch unless the env var selects ``"memory"``.
+                              Inject ``fakeredis.aioredis.FakeRedis`` in tests.
     """
     backend = os.environ.get("KENE_RATE_LIMIT_BACKEND", "redis").lower()
 
@@ -598,15 +908,40 @@ def build_rate_limiter(
             limiter_name=name,
         )
 
-    # Redis backend (default)
+    # Redis backend (default) — wrap in SwitchableRateLimiter.
     redis_client = kwargs.pop("redis_client", None) or _build_async_redis_client()
-    return RedisRateLimiter(
+
+    redis_limiter = RedisRateLimiter(
         requests_per_minute=requests_per_minute,
         requests_per_hour=requests_per_hour,
         redis_client=redis_client,
         key_strategy=key_strategy,
         limiter_name=name,
         **kwargs,
+    )
+
+    # Construct the emergency-capped sibling LocalRateLimiter.
+    # When fallback_cap_divisor=1, limits are unchanged (no cap for throughput
+    # limiters). When fallback_cap_divisor=10, limits are divided by 10 for
+    # security-critical limiters (AC-13 — enforced at construction time, not
+    # per-request, so the cap is visible in the limiter's repr for diagnostics).
+    divisor = max(1, fallback_cap_divisor)
+    fallback_rpm = max(1, requests_per_minute // divisor)
+    fallback_rph = max(1, requests_per_hour // divisor)
+
+    fallback_limiter = LocalRateLimiter(
+        requests_per_minute=fallback_rpm,
+        requests_per_hour=fallback_rph,
+        key_strategy=key_strategy,
+        limiter_name=f"{name}:fallback",
+    )
+
+    return SwitchableRateLimiter(
+        redis_limiter=redis_limiter,
+        fallback_limiter=fallback_limiter,
+        fallback_cap_divisor=divisor,
+        fail_open=fail_open,
+        limiter_name=name,
     )
 
 

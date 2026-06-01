@@ -522,6 +522,21 @@ class FeatureFlagService:
         diff = compute_flag_diff(None, flag)
         await record_audit(self._db, flag.key, actor_email, "create", diff)
 
+        # Security-critical flag side-effects: CRITICAL audit log + Prometheus
+        # counter. The hook handles its own failures internally (catches +
+        # ERROR-logs with exc_info); the outer try/except was redundant
+        # defense and would defeat a future intentional re-raise from the hook
+        # (e.g. SOX-style "fail-closed on audit failure"). Single source of
+        # truth: the hook owns its failure semantics.
+        from ..feature_flags.security_critical import emit_audit_if_critical
+
+        await emit_audit_if_critical(
+            key=flag.key,
+            before=None,
+            after=flag,
+            actor_email=actor_email,
+        )
+
         return flag
 
     async def update_flag(
@@ -578,6 +593,18 @@ class FeatureFlagService:
         diff = compute_flag_diff(existing, updated)
         await record_audit(self._db, key, actor_email, "update", diff)
 
+        # Security-critical flag side-effects: hook owns its own failure
+        # semantics (catches + ERROR-logs internally). See create_flag for
+        # rationale.
+        from ..feature_flags.security_critical import emit_audit_if_critical
+
+        await emit_audit_if_critical(
+            key=key,
+            before=existing,
+            after=updated,
+            actor_email=actor_email,
+        )
+
         return updated
 
     async def delete_flag(
@@ -615,6 +642,18 @@ class FeatureFlagService:
 
         diff = compute_flag_diff(existing, None)
         await record_audit(self._db, key, actor_email, "delete", diff)
+
+        # Security-critical flag side-effects: hook owns its own failure
+        # semantics (catches + ERROR-logs internally). See create_flag for
+        # rationale.
+        from ..feature_flags.security_critical import emit_audit_if_critical
+
+        await emit_audit_if_critical(
+            key=key,
+            before=existing,
+            after=None,
+            actor_email=actor_email,
+        )
 
 
 # ---------------------------------------------------------------------------

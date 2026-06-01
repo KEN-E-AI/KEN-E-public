@@ -22,6 +22,7 @@ from src.kene_api.rate_limiter import (
     _SENTINEL_CAP_PER_MINUTE,
     LocalRateLimiter,
     RedisRateLimiter,
+    SwitchableRateLimiter,
     authenticated_key_strategy,
     build_rate_limiter,
     ip_only_key_strategy,
@@ -111,18 +112,21 @@ class TestRedisRateLimiterInterface:
         )
         assert limiter.redis_client is redis_client
 
-    def test_fallback_on_redis_error_not_implemented(self):
-        """fallback_on_redis_error is AH-B2 scope — raises NotImplementedError."""
+    def test_fallback_on_redis_error_now_vestigial(self):
+        """AH-79: fallback_on_redis_error parameter is now vestigial (no longer raises
+        NotImplementedError). Passing a non-False value logs INFO but constructs cleanly.
+        Fallback logic moved to SwitchableRateLimiter."""
         redis = fakeredis.aioredis.FakeRedis(decode_responses=False)
-        with pytest.raises(NotImplementedError, match="AH-B2"):
-            RedisRateLimiter(
-                requests_per_minute=10,
-                requests_per_hour=100,
-                redis_client=redis,
-                key_strategy=ip_only_key_strategy,
-                limiter_name="fallback_test",
-                fallback_on_redis_error=True,
-            )
+        # Must NOT raise NotImplementedError (AH-79 dropped the raise)
+        limiter = RedisRateLimiter(
+            requests_per_minute=10,
+            requests_per_hour=100,
+            redis_client=redis,
+            key_strategy=ip_only_key_strategy,
+            limiter_name="fallback_test",
+            fallback_on_redis_error=True,
+        )
+        assert limiter is not None
 
     def test_fallback_false_is_accepted(self):
         """fallback_on_redis_error=False (default) constructs without error."""
@@ -696,10 +700,11 @@ class TestBuildRateLimiterFactory:
         )
         assert isinstance(limiter, LocalRateLimiter)
 
-    def test_redis_backend_with_explicit_client_returns_redis_rate_limiter(
+    def test_redis_backend_with_explicit_client_returns_switchable_rate_limiter(
         self, monkeypatch: Any
     ) -> None:
-        """KENE_RATE_LIMIT_BACKEND=redis with explicit redis_client returns RedisRateLimiter."""
+        """KENE_RATE_LIMIT_BACKEND=redis with explicit redis_client returns SwitchableRateLimiter
+        (AH-79: factory now returns the resilience wrapper, not raw RedisRateLimiter)."""
         monkeypatch.setenv("KENE_RATE_LIMIT_BACKEND", "redis")
         fake_redis = fakeredis.aioredis.FakeRedis(decode_responses=False)
         limiter = build_rate_limiter(
@@ -708,11 +713,11 @@ class TestBuildRateLimiterFactory:
             requests_per_hour=100,
             redis_client=fake_redis,
         )
-        assert isinstance(limiter, RedisRateLimiter)
-        assert limiter.redis_client is fake_redis
+        assert isinstance(limiter, SwitchableRateLimiter)
+        assert limiter.redis_limiter.redis_client is fake_redis
 
     def test_default_backend_is_redis(self, monkeypatch: Any) -> None:
-        """Without KENE_RATE_LIMIT_BACKEND set, the default is redis."""
+        """Without KENE_RATE_LIMIT_BACKEND set, the default is redis → SwitchableRateLimiter."""
         monkeypatch.delenv("KENE_RATE_LIMIT_BACKEND", raising=False)
         fake_redis = fakeredis.aioredis.FakeRedis(decode_responses=False)
         limiter = build_rate_limiter(
@@ -721,7 +726,7 @@ class TestBuildRateLimiterFactory:
             requests_per_hour=100,
             redis_client=fake_redis,
         )
-        assert isinstance(limiter, RedisRateLimiter)
+        assert isinstance(limiter, SwitchableRateLimiter)
 
     def test_memory_backend_preserves_limiter_name(self, monkeypatch: Any) -> None:
         monkeypatch.setenv("KENE_RATE_LIMIT_BACKEND", "memory")
@@ -741,6 +746,7 @@ class TestBuildRateLimiterFactory:
             requests_per_hour=50,
             redis_client=fake_redis,
         )
+        # AH-79: factory returns SwitchableRateLimiter; limiter_name is on the wrapper.
         assert limiter.limiter_name == "my_redis_limiter"
 
     def test_memory_backend_ignores_audit_logger_kwarg(self, monkeypatch: Any) -> None:

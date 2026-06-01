@@ -27,6 +27,7 @@ class SecurityEventType(str, Enum):
     SUSPICIOUS_ACTIVITY = "suspicious_activity"
     SUPER_ADMIN_GRANTED = "super_admin_granted"
     SUPER_ADMIN_REVOKED = "super_admin_revoked"
+    FEATURE_FLAG_CHANGED = "feature_flag_changed"
 
 
 class AuditLogger:
