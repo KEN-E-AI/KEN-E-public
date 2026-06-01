@@ -152,9 +152,13 @@ def authenticated_key_strategy(request: Request, ctx: UserContext | None) -> str
 class LocalRateLimiter:
     """In-memory sliding-window rate limiter with pluggable KeyStrategy.
 
-    This is the local (non-Redis) backend.  AH-70 will introduce
+    This is the local (non-Redis) backend.  AH-70 introduced
     RedisRateLimiter with the same async interface so call sites can
     `await` either backend uniformly.
+
+    AH-71 adds optional ``audit_logger`` support so the memory backend
+    emits ``RATE_LIMIT_EXCEEDED`` audit events symmetrically with
+    ``RedisRateLimiter`` (PRD §6.4 Option A — limiter owns the audit call).
     """
 
     # Time windows in seconds
@@ -167,11 +171,13 @@ class LocalRateLimiter:
         requests_per_hour: int = 100,
         key_strategy: KeyStrategy = ip_only_key_strategy,
         limiter_name: str = "default",
+        audit_logger: AuditLogger | None = None,
     ) -> None:
         self.requests_per_minute = requests_per_minute
         self.requests_per_hour = requests_per_hour
         self.key_strategy = key_strategy
         self.limiter_name = limiter_name
+        self.audit_logger = audit_logger
         self.minute_requests: dict[str, list[float]] = defaultdict(list)
         self.hour_requests: dict[str, list[float]] = defaultdict(list)
 
@@ -183,20 +189,48 @@ class LocalRateLimiter:
         cutoff_time = current_time - window_seconds
         return [req_time for req_time in requests if req_time > cutoff_time]
 
+    async def _emit_audit_log(
+        self,
+        request: Request,
+        ctx: UserContext | None,
+    ) -> None:
+        """Emit a RATE_LIMIT_EXCEEDED audit event.
+
+        Wraps the audit call in try/except so a Firestore outage never
+        replaces the 429 — identical to the pattern in RedisRateLimiter.
+        """
+        if self.audit_logger is None:
+            return
+        ip_key = _validated_ip_key(request)
+        ip_addr = ip_key.split(":", 1)[1] if ":" in ip_key else ip_key
+        try:
+            await self.audit_logger.log_rate_limit_exceeded(
+                ip_address=ip_addr,
+                endpoint=request.url.path,
+                user_id=ctx.user_id if ctx is not None else None,
+            )
+        except Exception:
+            # Audit-sink failure must NOT replace the 429 — log with context
+            # and fall through so the rate-limit denial still reaches the client.
+            logger.exception(
+                "audit_logger failed during 429 emission "
+                "(limiter=%s endpoint=%s)",
+                self.limiter_name,
+                request.url.path,
+            )
+
     async def check_rate_limit(
         self, request: Request, ctx: UserContext | None = None
     ) -> None:
         """Check whether the request exceeds rate limits and raise 429 if so.
 
-        The async signature is interface-only for this local backend (no awaits
-        in the body).  It matches the upcoming RedisRateLimiter (AH-70) so call
-        sites can `await` either backend without a conditional.
+        The async signature matches RedisRateLimiter / SwitchableRateLimiter
+        so call sites can ``await`` either backend without a conditional.
 
         Args:
             request: The incoming FastAPI request.
-            ctx: Optional authenticated user context.  Passed to key_strategy;
-                 defaults to None so existing call sites (which do not yet pass
-                 ctx) continue to work until AH-71 wires UserContext through.
+            ctx: Optional authenticated user context.  Passed to key_strategy
+                 and included in the audit log's ``user_id`` field when set.
 
         Raises:
             HTTPException: 429 if a rate limit is exceeded.
@@ -212,6 +246,7 @@ class LocalRateLimiter:
         )
 
         if len(minute_requests) >= self.requests_per_minute:
+            await self._emit_audit_log(request, ctx)
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=f"Rate limit exceeded: {self.requests_per_minute} requests per minute",
@@ -219,6 +254,7 @@ class LocalRateLimiter:
             )
 
         if len(hour_requests) >= self.requests_per_hour:
+            await self._emit_audit_log(request, ctx)
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=f"Rate limit exceeded: {self.requests_per_hour} requests per hour",
@@ -726,6 +762,38 @@ class SwitchableRateLimiter:
         self.limiter_name = limiter_name
         self._circuit_breaker = _CircuitBreaker()
 
+    # ---------------------------------------------------------------------------
+    # Backward-compat proxy properties (AH-71 PO fix)
+    # ---------------------------------------------------------------------------
+    # Tests that were written against LocalRateLimiter access these attributes
+    # directly.  Rather than rewriting every test (Option B), we expose them as
+    # delegation properties that forward to the appropriate underlying limiter:
+    #   - minute_requests / hour_requests  → fallback_limiter  (mutable dicts that
+    #     tests can .clear(); the fallback limiter is what's active when Redis is
+    #     unavailable, which is the common CI/test scenario)
+    #   - requests_per_minute / requests_per_hour → redis_limiter  (the configured
+    #     "canonical" limits, not the emergency-capped fallback values)
+
+    @property
+    def minute_requests(self) -> dict:
+        """Proxy to fallback_limiter.minute_requests for test backward-compat."""
+        return self.fallback_limiter.minute_requests
+
+    @property
+    def hour_requests(self) -> dict:
+        """Proxy to fallback_limiter.hour_requests for test backward-compat."""
+        return self.fallback_limiter.hour_requests
+
+    @property
+    def requests_per_minute(self) -> int:
+        """Proxy to redis_limiter.requests_per_minute for test backward-compat."""
+        return self.redis_limiter.requests_per_minute
+
+    @property
+    def requests_per_hour(self) -> int:
+        """Proxy to redis_limiter.requests_per_hour for test backward-compat."""
+        return self.redis_limiter.requests_per_hour
+
     async def check_rate_limit(
         self,
         request: Request,
@@ -895,17 +963,15 @@ def build_rate_limiter(
     backend = os.environ.get("KENE_RATE_LIMIT_BACKEND", "redis").lower()
 
     if backend == "memory":
-        if kwargs.get("audit_logger") is not None:
-            logger.info(
-                "build_rate_limiter: audit_logger is not supported by LocalRateLimiter "
-                "(memory backend). It will be ignored. Switch to the Redis backend for "
-                "audit logging."
-            )
+        # AH-71: pass audit_logger through so the memory backend emits audit
+        # events symmetrically with the Redis backend (PRD §6.4 Option A).
+        audit_logger_kwarg = kwargs.pop("audit_logger", None)
         return LocalRateLimiter(
             requests_per_minute=requests_per_minute,
             requests_per_hour=requests_per_hour,
             key_strategy=key_strategy,
             limiter_name=name,
+            audit_logger=audit_logger_kwarg,
         )
 
     # Redis backend (default) — wrap in SwitchableRateLimiter.
@@ -946,19 +1012,43 @@ def build_rate_limiter(
 
 
 # ---------------------------------------------------------------------------
-# Global limiter instances
+# Global limiter instances (AH-71: migrated to build_rate_limiter)
 # ---------------------------------------------------------------------------
 
-# reCAPTCHA verification — restrictive to prevent abuse
-recaptcha_rate_limiter = LocalRateLimiter(
+# reCAPTCHA verification — IP-keyed, security-critical (pre-auth endpoint).
+# fallback_cap_divisor=10: Redis outage reduces effective limit to 1 req/min/instance.
+# emit_remaining_on_success=False: don't leak headroom to unauthenticated callers.
+def _get_auth_audit_logger() -> AuditLogger | None:
+    """Lazy-import the audit logger to avoid circular imports at module load."""
+    try:
+        from .auth.audit_logger import get_audit_logger as _get_audit_logger
+
+        return _get_audit_logger()
+    except Exception:
+        return None
+
+
+recaptcha_rate_limiter: LocalRateLimiter | SwitchableRateLimiter = build_rate_limiter(
+    name="recaptcha",
     requests_per_minute=5,
     requests_per_hour=20,
-    limiter_name="recaptcha",
+    key_strategy=ip_only_key_strategy,
+    fallback_cap_divisor=10,
+    fail_open=False,
+    audit_logger=_get_auth_audit_logger(),
+    emit_remaining_on_success=False,
 )
 
-# Progress-polling endpoints — permissive (polled frequently during long ops)
-progress_rate_limiter = LocalRateLimiter(
+# Progress-polling endpoints — authenticated, throughput path.
+# fail_open=True: Redis outage must not cascade to a service outage.
+# emit_remaining_on_success=True: clients may use remaining count for backoff.
+progress_rate_limiter: LocalRateLimiter | SwitchableRateLimiter = build_rate_limiter(
+    name="progress",
     requests_per_minute=120,
     requests_per_hour=2000,
-    limiter_name="progress",
+    key_strategy=authenticated_key_strategy,
+    fallback_cap_divisor=1,
+    fail_open=True,
+    audit_logger=_get_auth_audit_logger(),
+    emit_remaining_on_success=True,
 )

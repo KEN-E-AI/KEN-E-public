@@ -55,25 +55,39 @@ def mock_credentials():
 
 
 class TestApplyRateLimiting:
-    """Test _apply_rate_limiting function."""
+    """Test _apply_rate_limiting function.
+
+    AH-71: _apply_rate_limiting now passes ctx to check_rate_limit so
+    authenticated_key_strategy can derive a per-user bucket key.
+    The limiter owns the RATE_LIMIT_EXCEEDED audit event; the wrapper
+    no longer calls log_rate_limit_exceeded (D-B from the implementation plan).
+    """
 
     @pytest.mark.asyncio
     async def test_rate_limiting_passes(
         self, mock_request, mock_rate_limiter, mock_audit_logger
     ):
-        """Test rate limiting when under limit."""
+        """Test rate limiting when under limit.
+
+        AH-71: call site passes (request, ctx=None) — no audit call needed
+        because the limiter handles it internally on 429.
+        """
         await _apply_rate_limiting(
-            mock_request, mock_rate_limiter, mock_audit_logger, "127.0.0.1"
+            mock_request, mock_rate_limiter, mock_audit_logger, "127.0.0.1", ctx=None
         )
 
-        mock_rate_limiter.check_rate_limit.assert_called_once_with(mock_request)
+        mock_rate_limiter.check_rate_limit.assert_called_once_with(mock_request, None)
         mock_audit_logger.log_rate_limit_exceeded.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_rate_limiting_exceeded(
         self, mock_request, mock_rate_limiter, mock_audit_logger
     ):
-        """Test rate limiting when limit exceeded."""
+        """Test rate limiting when limit exceeded.
+
+        AH-71: the wrapper re-raises 429 without calling log_rate_limit_exceeded
+        — the limiter emitted the audit event internally before raising (D-B).
+        """
         exc = HTTPException(status_code=429, detail="Rate limit exceeded")
         mock_rate_limiter.check_rate_limit.side_effect = exc
 
@@ -83,18 +97,22 @@ class TestApplyRateLimiting:
             )
 
         assert exc_info.value.status_code == 429
-        mock_audit_logger.log_rate_limit_exceeded.assert_called_once_with(
-            ip_address="127.0.0.1",
-            endpoint="http://test.com/api/test",
-        )
+        # Limiter owns the audit call now — wrapper must NOT double-log.
+        mock_audit_logger.log_rate_limit_exceeded.assert_not_called()
 
 
 class TestVerifyAndDecodeToken:
-    """Test _verify_and_decode_token function."""
+    """Test _verify_and_decode_token function.
+
+    AH-71: the ``rate_limiter`` parameter was removed from the signature.
+    The bad-token exception path now uses ``bad_token_rate_limiter`` directly
+    (imported from auth.rate_limiting) so the dedicated 10/min IP-keyed ceiling
+    applies instead of the 60/min throughput ceiling (AC-4 / Critical #1).
+    """
 
     @pytest.mark.asyncio
     async def test_valid_token(
-        self, mock_credentials, mock_audit_logger, mock_request, mock_rate_limiter
+        self, mock_credentials, mock_audit_logger, mock_request
     ):
         """Test successful token verification."""
         with patch("src.kene_api.auth.user_context.verify_id_token") as mock_verify:
@@ -109,7 +127,6 @@ class TestVerifyAndDecodeToken:
                 mock_audit_logger,
                 "127.0.0.1",
                 "TestAgent",
-                mock_rate_limiter,
                 mock_request,
             )
 
@@ -120,10 +137,20 @@ class TestVerifyAndDecodeToken:
 
     @pytest.mark.asyncio
     async def test_invalid_token(
-        self, mock_credentials, mock_audit_logger, mock_request, mock_rate_limiter
+        self, mock_credentials, mock_audit_logger, mock_request
     ):
-        """Test failed token verification."""
-        with patch("src.kene_api.auth.user_context.verify_id_token") as mock_verify:
+        """Test failed token verification.
+
+        AH-71: bad_token_rate_limiter is called (not token_rate_limiter) on
+        the failure path.  Patch it to allow the request so the 401 surfaces.
+        """
+        with (
+            patch("src.kene_api.auth.user_context.verify_id_token") as mock_verify,
+            patch(
+                "src.kene_api.auth.user_context.bad_token_rate_limiter.check_rate_limit",
+                new_callable=AsyncMock,
+            ),
+        ):
             mock_verify.side_effect = Exception("Invalid token")
 
             with pytest.raises(HTTPException) as exc_info:
@@ -132,7 +159,6 @@ class TestVerifyAndDecodeToken:
                     mock_audit_logger,
                     "127.0.0.1",
                     "TestAgent",
-                    mock_rate_limiter,
                     mock_request,
                 )
 

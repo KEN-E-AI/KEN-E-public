@@ -14,11 +14,11 @@ from shared.structured_logging import log_context
 
 from ..config import settings
 from ..firestore import FirestoreService, get_firestore_service
-from ..rate_limiter import RateLimiter
+from ..rate_limiter import LocalRateLimiter, SwitchableRateLimiter
 from .audit_logger import AuditLogger, SecurityEventType, get_audit_logger
 from .firebase_admin import initialize_firebase_admin, verify_id_token
 from .models import UserContext
-from .rate_limiting import token_rate_limiter
+from .rate_limiting import bad_token_rate_limiter, token_rate_limiter
 from .token_revocation import get_token_revocation_service
 
 logger = logging.getLogger(__name__)
@@ -32,30 +32,33 @@ security = HTTPBearer(auto_error=False)
 
 async def _apply_rate_limiting(
     request: Request,
-    rate_limiter: RateLimiter,
+    rate_limiter: LocalRateLimiter | SwitchableRateLimiter,
     audit_logger: AuditLogger,
     client_ip: str | None,
+    ctx: UserContext | None = None,
 ) -> None:
-    """Apply rate limiting and log if exceeded.
+    """Apply rate limiting.
+
+    The limiter itself logs the RATE_LIMIT_EXCEEDED audit event on 429
+    (AH-71 / PRD §6.4 Option A).  This wrapper exists to localise the
+    try/except around check_rate_limit for the two call sites in
+    _get_user_context_with_limiter (missing-credentials at line ~304,
+    post-verify at line ~355).
 
     Args:
-        request: The FastAPI request object
-        rate_limiter: The rate limiter to use
-        audit_logger: Audit logger instance
-        client_ip: Client IP address for logging
+        request:      The FastAPI request object.
+        rate_limiter: The rate limiter to use.
+        audit_logger: Audit logger instance (retained in signature for future
+                      non-429 logging; not used for 429 events — limiter owns those).
+        client_ip:    Client IP address (unused for 429 audit; limiter resolves IP
+                      from X-Forwarded-For directly).
+        ctx:          Optional UserContext for user-keyed limiters.  Pass None on
+                      the missing-credentials path (token not yet verified).
 
     Raises:
-        HTTPException: If rate limit is exceeded
+        HTTPException: If rate limit is exceeded (re-raised from limiter).
     """
-    try:
-        await rate_limiter.check_rate_limit(request)
-    except HTTPException as e:
-        if e.status_code == 429:
-            await audit_logger.log_rate_limit_exceeded(
-                ip_address=client_ip or "unknown",
-                endpoint=str(request.url),
-            )
-        raise
+    await rate_limiter.check_rate_limit(request, ctx)
 
 
 async def _verify_and_decode_token(
@@ -63,24 +66,29 @@ async def _verify_and_decode_token(
     audit_logger: AuditLogger,
     client_ip: str | None,
     user_agent: str | None,
-    rate_limiter: RateLimiter,
     request: Request,
 ) -> tuple[dict[str, Any], str, str]:
     """Verify and decode Firebase ID token.
 
+    On token-verification failure the request is charged against
+    ``bad_token_rate_limiter`` (10/min IP-keyed, AH-71 / AC-4 Critical #1).
+    Using a dedicated limiter — rather than the 60/min throughput
+    ``token_rate_limiter`` — ensures a brute-force attacker is blocked at
+    10 bad tokens/min, not 60.  The limiter owns the 429 audit event.
+
     Args:
-        credentials: HTTP Bearer credentials
-        audit_logger: Audit logger instance
-        client_ip: Client IP address
-        user_agent: User agent string
-        rate_limiter: Rate limiter to use for failed attempts
-        request: FastAPI request object
+        credentials: HTTP Bearer credentials.
+        audit_logger: Audit logger instance (for TOKEN_VERIFICATION_FAILURE events).
+        client_ip:    Client IP address.
+        user_agent:   User agent string.
+        request:      FastAPI request object.
 
     Returns:
-        Tuple of (decoded_token, user_id, email)
+        Tuple of (decoded_token, user_id, email).
 
     Raises:
-        HTTPException: If token verification fails
+        HTTPException: 401 if token verification fails; 429 if bad-token
+                       rate limit is exceeded.
     """
     try:
         decoded_token = verify_id_token(credentials.credentials)
@@ -88,19 +96,16 @@ async def _verify_and_decode_token(
         email = decoded_token.get("email", "")
         return decoded_token, user_id, email
     except Exception as e:
-        # Apply rate limiting for failed authentication attempts
+        # Rate-limit bad-token attempts via the dedicated IP-keyed limiter.
+        # ctx=None: token verification failed, no identity established.
+        # The limiter emits the RATE_LIMIT_EXCEEDED audit log on 429.
         try:
-            await rate_limiter.check_rate_limit(request)
+            await bad_token_rate_limiter.check_rate_limit(request, ctx=None)
         except HTTPException as rate_error:
-            if rate_error.status_code == 429:
-                await audit_logger.log_rate_limit_exceeded(
-                    ip_address=client_ip or "unknown",
-                    endpoint=str(request.url),
-                )
-            logger.error(f"Failed to verify token: {e}")
+            logger.error("Failed to verify token: %s", e)
             raise rate_error
 
-        logger.error(f"Failed to verify token: {e}")
+        logger.error("Failed to verify token: %s", e)
         await audit_logger.log_event(
             event_type=SecurityEventType.TOKEN_VERIFICATION_FAILURE,
             ip_address=client_ip,
@@ -112,7 +117,7 @@ async def _verify_and_decode_token(
             status_code=401,
             detail="Invalid authentication token",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from None
 
 
 async def _check_token_revocation(
@@ -241,7 +246,7 @@ async def _get_user_context_with_limiter(
     request: Request,
     credentials: HTTPAuthorizationCredentials,
     firestore_service: FirestoreService,
-    rate_limiter: RateLimiter | None = None,
+    rate_limiter: LocalRateLimiter | SwitchableRateLimiter | None = None,
 ) -> UserContext:
     """Internal function to get user context with custom rate limiter.
 
@@ -300,8 +305,8 @@ async def _get_user_context_with_limiter(
     audit_logger = get_audit_logger()
 
     if not credentials:
-        # Apply rate limiting for missing credentials
-        await _apply_rate_limiting(request, active_limiter, audit_logger, client_ip)
+        # Apply rate limiting for missing credentials (ctx=None — no identity established).
+        await _apply_rate_limiting(request, active_limiter, audit_logger, client_ip, ctx=None)
 
         await audit_logger.log_login_failure(
             ip_address=client_ip,
@@ -318,7 +323,7 @@ async def _get_user_context_with_limiter(
         # Verify the Firebase ID token
         t0 = time.time()
         decoded_token, user_id, email = await _verify_and_decode_token(
-            credentials, audit_logger, client_ip, user_agent, active_limiter, request
+            credentials, audit_logger, client_ip, user_agent, request
         )
         logger.info(
             "Firebase token verification completed",
@@ -352,7 +357,20 @@ async def _get_user_context_with_limiter(
                 ),
             )
         else:
-            await _apply_rate_limiting(request, active_limiter, audit_logger, client_ip)
+            # Pass a minimal UserContext so authenticated_key_strategy can derive a
+            # per-user bucket key.  The full UserContext (with permissions) is built
+            # after the cache/Firestore lookup below — user_id + email are sufficient
+            # because authenticated_key_strategy only reads ctx.user_id (D-10).
+            minimal_ctx = UserContext(
+                user_id=user_id,
+                email=email,
+                organization_permissions={},
+                account_permissions={},
+                roles=[],
+            )
+            await _apply_rate_limiting(
+                request, active_limiter, audit_logger, client_ip, ctx=minimal_ctx
+            )
 
         # Check if token is revoked
         await _check_token_revocation(

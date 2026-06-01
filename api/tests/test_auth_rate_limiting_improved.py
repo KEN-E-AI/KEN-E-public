@@ -6,7 +6,6 @@ from httpx import ASGITransport, AsyncClient
 from hypothesis import given, settings
 from hypothesis import strategies as st
 from src.kene_api.main import app
-from src.kene_api.rate_limiter import recaptcha_rate_limiter
 
 # Constants for expected values
 HTTP_OK = status.HTTP_200_OK
@@ -16,15 +15,27 @@ RATE_LIMIT_HOUR = 20  # Must match recaptcha_rate_limiter configuration
 
 
 @pytest.fixture(autouse=True)
-def reset_rate_limiter():
-    """Reset the rate limiter state before each test."""
-    # Clear all tracked requests
-    recaptcha_rate_limiter.minute_requests.clear()
-    recaptcha_rate_limiter.hour_requests.clear()
+def reset_rate_limiter(monkeypatch) -> None:
+    """Inject a fresh in-memory rate limiter at the configured limit (5/min).
+
+    The global recaptcha_rate_limiter is now a SwitchableRateLimiter; without
+    Redis in CI the emergency-capped fallback (1/min) breaks tests that rely
+    on the 5/min configured rate.  A LocalRateLimiter is the correct test
+    double for these endpoint integration tests.
+    """
+    import src.kene_api.rate_limiter as rl_mod
+    import src.kene_api.routers.auth as auth_mod
+    from src.kene_api.rate_limiter import LocalRateLimiter, ip_only_key_strategy
+
+    fresh = LocalRateLimiter(
+        requests_per_minute=5,
+        requests_per_hour=20,
+        key_strategy=ip_only_key_strategy,
+        limiter_name="recaptcha",
+    )
+    monkeypatch.setattr(rl_mod, "recaptcha_rate_limiter", fresh)
+    monkeypatch.setattr(auth_mod, "recaptcha_rate_limiter", fresh)
     yield
-    # Clean up after test
-    recaptcha_rate_limiter.minute_requests.clear()
-    recaptcha_rate_limiter.hour_requests.clear()
 
 
 @pytest.mark.asyncio

@@ -5,9 +5,28 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 from src.kene_api.main import app
+from src.kene_api.rate_limiter import recaptcha_rate_limiter
 from src.kene_api.recaptcha import RecaptchaVerificationResult
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _reset_recaptcha_limiter():
+    """Clear recaptcha rate-limiter state before/after each test.
+
+    test_auth.py makes real requests to the recaptcha endpoint so the global
+    recaptcha_rate_limiter accumulates in-memory state across tests.  Without
+    this reset, test_verify_recaptcha_failure (the 2nd test in the file) gets
+    429 because the fallback LocalRateLimiter is already at capacity from
+    test_verify_recaptcha_success.  Matches the fixture pattern already used
+    in test_auth_rate_limiting.py for the same reason.
+    """
+    recaptcha_rate_limiter.minute_requests.clear()
+    recaptcha_rate_limiter.hour_requests.clear()
+    yield
+    recaptcha_rate_limiter.minute_requests.clear()
+    recaptcha_rate_limiter.hour_requests.clear()
 
 
 @pytest.mark.asyncio

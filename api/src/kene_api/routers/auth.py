@@ -48,8 +48,9 @@ async def verify_recaptcha(
     This endpoint should be called before proceeding with authentication
     to ensure the user is not a bot.
     """
-    # Apply rate limiting
-    await recaptcha_rate_limiter.check_rate_limit(request)
+    # Apply rate limiting (ctx=None — pre-auth endpoint, no identity established).
+    # The limiter emits RATE_LIMIT_EXCEEDED audit event on 429 (AH-71 / AC-16).
+    await recaptcha_rate_limiter.check_rate_limit(request, ctx=None)
 
     # Get client IP address
     client_ip = request.client.host if request.client else None

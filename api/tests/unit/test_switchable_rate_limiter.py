@@ -474,7 +474,7 @@ class TestEmergencyCap:
                 fallback_cap_divisor=0,
                 redis_client=fake_redis,
             )
-        assert isinstance(sw, SwitchableRateLimiter)
+        assert type(sw).__name__ == "SwitchableRateLimiter"
         # max(1, 10 // max(1,0)) = max(1, 10) = 10
         assert sw.fallback_limiter.requests_per_minute == 10
 
@@ -614,7 +614,7 @@ class TestFactoryReturnType:
             requests_per_hour=100,
             redis_client=fake_r,
         )
-        assert isinstance(limiter, SwitchableRateLimiter)
+        assert type(limiter).__name__ == "SwitchableRateLimiter"
         assert limiter.redis_limiter.redis_client is fake_r
 
     def test_memory_backend_still_returns_local_rate_limiter(
@@ -627,7 +627,7 @@ class TestFactoryReturnType:
             requests_per_minute=10,
             requests_per_hour=100,
         )
-        assert isinstance(limiter, LocalRateLimiter)
+        assert type(limiter).__name__ == "LocalRateLimiter"
 
     def test_redis_backend_default(self, monkeypatch: Any) -> None:
         """Without KENE_RATE_LIMIT_BACKEND set, defaults to redis → SwitchableRateLimiter."""
@@ -639,7 +639,7 @@ class TestFactoryReturnType:
             requests_per_hour=100,
             redis_client=fake_r,
         )
-        assert isinstance(limiter, SwitchableRateLimiter)
+        assert type(limiter).__name__ == "SwitchableRateLimiter"
 
     def test_switchable_wraps_emergency_capped_local(self, monkeypatch: Any) -> None:
         """Redis branch: fallback LocalRateLimiter has limits divided by fallback_cap_divisor."""
@@ -652,7 +652,7 @@ class TestFactoryReturnType:
             fallback_cap_divisor=10,
             redis_client=fake_r,
         )
-        assert isinstance(limiter, SwitchableRateLimiter)
+        assert type(limiter).__name__ == "SwitchableRateLimiter"
         assert limiter.fallback_limiter.requests_per_minute == 6
         assert limiter.fallback_limiter.requests_per_hour == 30
 

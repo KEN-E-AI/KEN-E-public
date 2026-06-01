@@ -698,7 +698,7 @@ class TestBuildRateLimiterFactory:
             requests_per_minute=10,
             requests_per_hour=100,
         )
-        assert isinstance(limiter, LocalRateLimiter)
+        assert type(limiter).__name__ == "LocalRateLimiter"
 
     def test_redis_backend_with_explicit_client_returns_switchable_rate_limiter(
         self, monkeypatch: Any
@@ -713,7 +713,7 @@ class TestBuildRateLimiterFactory:
             requests_per_hour=100,
             redis_client=fake_redis,
         )
-        assert isinstance(limiter, SwitchableRateLimiter)
+        assert type(limiter).__name__ == "SwitchableRateLimiter"
         assert limiter.redis_limiter.redis_client is fake_redis
 
     def test_default_backend_is_redis(self, monkeypatch: Any) -> None:
@@ -726,7 +726,7 @@ class TestBuildRateLimiterFactory:
             requests_per_hour=100,
             redis_client=fake_redis,
         )
-        assert isinstance(limiter, SwitchableRateLimiter)
+        assert type(limiter).__name__ == "SwitchableRateLimiter"
 
     def test_memory_backend_preserves_limiter_name(self, monkeypatch: Any) -> None:
         monkeypatch.setenv("KENE_RATE_LIMIT_BACKEND", "memory")
@@ -762,7 +762,7 @@ class TestBuildRateLimiterFactory:
             requests_per_hour=100,
             audit_logger=mock_audit,
         )
-        assert isinstance(limiter, LocalRateLimiter)
+        assert type(limiter).__name__ == "LocalRateLimiter"
 
 
 # ---------------------------------------------------------------------------

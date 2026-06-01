@@ -328,8 +328,18 @@ class TestGetCurrentUserContext:
                             mock_request, credentials, mock_firestore_service
                         )
 
-                    # Verify rate limiter was called for regular user
-                    mock_rate_limit.assert_called_once_with(mock_request)
+                    # Verify rate limiter was called for regular user.
+                    # AH-71: call site now passes (request, ctx) so the limiter
+                    # can derive a per-user bucket key via authenticated_key_strategy.
+                    mock_rate_limit.assert_called_once()
+                    call_args = mock_rate_limit.call_args
+                    assert call_args[0][0] is mock_request
+                    # ctx is a minimal UserContext built from the decoded token
+                    from src.kene_api.auth.models import UserContext as _UC
+                    passed_ctx = call_args[0][1]
+                    assert isinstance(passed_ctx, _UC)
+                    assert passed_ctx.user_id == "regular-user-id"
+                    assert passed_ctx.email == "user@example.com"
 
                     # Verify the exception is rate limit
                     assert exc_info.value.status_code == 429
