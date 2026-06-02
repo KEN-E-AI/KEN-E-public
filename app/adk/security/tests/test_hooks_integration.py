@@ -37,9 +37,10 @@ class MockState:
 
 @dataclass
 class MockToolContext:
-    """Minimal mock of ADK ToolContext (needs .state)."""
+    """Minimal mock of ADK ToolContext (needs .state and .user_content)."""
 
     state: MockState = field(default_factory=MockState)
+    user_content: Any = None
 
 
 def _make_context(

@@ -290,7 +290,7 @@ def _get_state_dict(tool_context: Any) -> dict[str, Any]:
             return state
         # ADK state might be a State object with dict-like access
         if hasattr(state, "get"):
-            return state  # type: ignore
+            return state
         # Try to convert to dict
         if hasattr(state, "to_dict"):
             return state.to_dict()
