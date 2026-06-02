@@ -99,11 +99,13 @@ def mock_firebase_auth():
         "GOOGLE_CLOUD_PROJECT": "test-project-id",
     }
 
-    # Patch Firebase token verification, Firestore service, and environment
+    # Patch Firebase token verification at the call site (user_context.py
+    # imports verify_id_token directly, so patching the source module would
+    # not reach the bound reference). Same for the Firestore service.
     with (
         patch.dict(os.environ, test_env),
         patch(
-            "src.kene_api.auth.firebase_admin.verify_id_token",
+            "src.kene_api.auth.user_context.verify_id_token",
             return_value=mock_decoded_token,
         ),
         patch(
