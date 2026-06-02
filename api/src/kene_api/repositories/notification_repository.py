@@ -205,8 +205,12 @@ class InMemoryNotificationRepository(NotificationRepository):
             now = datetime.now().isoformat()
             notifications = [n for n in notifications if n.archived_at > now]
 
-        # Sort by created_at descending
-        notifications.sort(key=lambda x: x.created_at, reverse=True)
+        # Sort by created_at descending, with notification id as a deterministic
+        # tiebreaker. Without the tiebreaker, two notifications with identical
+        # created_at (which Firestore can produce on bulk writes within the
+        # same millisecond) would sort in arbitrary order, making pagination
+        # return the same item on adjacent pages or skip items.
+        notifications.sort(key=lambda x: (x.created_at, x.id), reverse=True)
 
         # Apply pagination
         if offset:

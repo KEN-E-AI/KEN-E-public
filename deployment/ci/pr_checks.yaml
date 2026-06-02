@@ -113,9 +113,7 @@ steps:
         GOOGLE_CLOUD_PROJECT=test-project \
           uv run pytest tests \
             --ignore=tests/integration \
-            --ignore=tests/middleware \
-            --ignore=tests/unit/test_chat_performance.py \
-            --ignore=tests/unit/test_notification_service.py
+            --ignore=tests/middleware
 
   # Run agent-side unit tests for the clean subdirectories of app/adk/.
   # Scope: agent_factory, mcp_config, and tracking test directories, plus the
