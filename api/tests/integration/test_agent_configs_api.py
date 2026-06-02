@@ -844,6 +844,79 @@ class TestAccountAgentConfigsEmulator:
         finally:
             self._cleanup(emulator_db, account_id, [hidden_id])
 
+    # ------------------------------------------------------------------
+    # AC: lifecycle_status='disabled' master gate (cross-repo contract).
+    # A disabled global is excluded everywhere, regardless of
+    # automatically_available and regardless of any per-account overlay.
+    # ------------------------------------------------------------------
+
+    def test_list_excludes_disabled_global(
+        self, client: TestClient, emulator_db, account_id: str
+    ) -> None:
+        """Global config with lifecycle_status='disabled' is excluded even when automatically_available=True."""
+        disabled_id = f"disabled_agent_{uuid.uuid4().hex[:8]}"
+        self._seed_global(
+            emulator_db,
+            disabled_id,
+            {"lifecycle_status": "disabled", "automatically_available": True},
+        )
+
+        base_url = f"/api/v1/accounts/{account_id}/agent-configs"
+
+        try:
+            resp = client.get(base_url + "/")
+            assert resp.status_code == 200
+            listed_ids = [c["config_id"] for c in resp.json()]
+            assert disabled_id not in listed_ids, (
+                "Disabled global must be excluded regardless of automatically_available"
+            )
+        finally:
+            self._cleanup(emulator_db, account_id, [disabled_id])
+
+    def test_list_excludes_disabled_global_with_account_overlay(
+        self, client: TestClient, emulator_db, account_id: str
+    ) -> None:
+        """Per-account overlay of a disabled global is also excluded — gate fires first."""
+        disabled_id = f"disabled_with_overlay_{uuid.uuid4().hex[:8]}"
+        self._seed_global(emulator_db, disabled_id, {"lifecycle_status": "disabled"})
+        # Seed an account overlay too — should still be excluded because the
+        # global is disabled and the overlay has no base config to customise.
+        emulator_db.collection("accounts").document(account_id).collection(
+            "agent_configs"
+        ).document(disabled_id).set({"instruction": "Account override."})
+
+        base_url = f"/api/v1/accounts/{account_id}/agent-configs"
+
+        try:
+            resp = client.get(base_url + "/")
+            assert resp.status_code == 200
+            listed_ids = [c["config_id"] for c in resp.json()]
+            assert disabled_id not in listed_ids, (
+                "Per-account overlay of disabled global must also be excluded"
+            )
+        finally:
+            self._cleanup(emulator_db, account_id, [disabled_id])
+
+    def test_list_includes_active_and_absent_lifecycle_status(
+        self, client: TestClient, emulator_db, account_id: str
+    ) -> None:
+        """lifecycle_status='active' or absent leaves the existing behavior unchanged."""
+        active_id = f"active_agent_{uuid.uuid4().hex[:8]}"
+        absent_id = f"legacy_agent_{uuid.uuid4().hex[:8]}"
+        self._seed_global(emulator_db, active_id, {"lifecycle_status": "active"})
+        self._seed_global(emulator_db, absent_id)  # no lifecycle_status field
+
+        base_url = f"/api/v1/accounts/{account_id}/agent-configs"
+
+        try:
+            resp = client.get(base_url + "/")
+            assert resp.status_code == 200
+            listed_ids = [c["config_id"] for c in resp.json()]
+            assert active_id in listed_ids
+            assert absent_id in listed_ids
+        finally:
+            self._cleanup(emulator_db, account_id, [active_id, absent_id])
+
     def test_list_visible_in_frontend_filter(
         self, client: TestClient, emulator_db, account_id: str, global_config_id: str
     ) -> None:

@@ -882,8 +882,27 @@ async def list_account_agent_configs(
             .stream()
         }
 
-        config_ids = set(account_docs.keys())
+        # Master gate: if MER-E marked a global agent disabled, it is
+        # excluded from every account regardless of automatically_available
+        # and regardless of any per-account overlay. The disabled set drops
+        # the doc_id from BOTH the global-include path AND the per-account
+        # overlay path — a per-account overlay of a disabled global has no
+        # base config to customise. Case-insensitive match + treat any
+        # other non-empty value as active (a MER-E typo logged on the
+        # factory side via _is_disabled).
+        def _is_disabled_value(raw: object) -> bool:
+            return isinstance(raw, str) and raw.strip().lower() == "disabled"
+
+        disabled_global_ids = {
+            cid
+            for cid, data in global_docs.items()
+            if data and _is_disabled_value(data.get("lifecycle_status"))
+        }
+
+        config_ids = set(account_docs.keys()) - disabled_global_ids
         for cid, data in global_docs.items():
+            if cid in disabled_global_ids:
+                continue
             if data and data.get("automatically_available", True):
                 config_ids.add(cid)
 

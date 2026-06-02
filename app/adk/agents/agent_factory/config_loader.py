@@ -26,6 +26,20 @@ class ConfigNotFoundError(AgentFactoryConfigError):
     """Raised when the requested config document does not exist in Firestore."""
 
 
+class ConfigDisabledError(ConfigNotFoundError):
+    """Raised when a config document is present but marked ``lifecycle_status='disabled'``.
+
+    Subclasses :class:`ConfigNotFoundError` so existing handlers that treat
+    "not found" as "drop the agent" continue to work — a disabled agent is
+    semantically identical to a non-existent one from KEN-E's perspective.
+    MER-E (the sister repo) writes ``lifecycle_status='disabled'`` on the
+    shared ``agent_configs/{id}`` doc when an admin disables an agent. In
+    staging/prod MER-E also deletes the doc (so this exception never fires
+    there); in dev the doc is preserved to hold the agent's configuration
+    for later reactivation, so KEN-E must filter the disabled flag itself.
+    """
+
+
 class ConfigValidationError(AgentFactoryConfigError):
     """Raised when the config document fails Pydantic validation."""
 
@@ -168,6 +182,35 @@ def _doc_to_dict_or_none(doc: firestore.DocumentSnapshot) -> dict | None:
     return doc.to_dict() or {}
 
 
+def _is_disabled(doc_data: dict | None) -> bool:
+    """Return True if the agent config doc is marked disabled by MER-E.
+
+    Accepts ``"disabled"`` case-insensitively. A missing field is treated
+    as active. Any other value (e.g. a boolean, integer, list, or string
+    that is neither ``"active"`` nor ``"disabled"``) is also treated as
+    active, but logs a WARN so a MER-E typo cannot silently leave a
+    meant-to-be-disabled agent visible — failing open here would defeat
+    the entire gate.
+    """
+    if doc_data is None:
+        return False
+    raw = doc_data.get("lifecycle_status")
+    if raw is None:
+        return False
+    if isinstance(raw, str):
+        normalized = raw.strip().lower()
+        if normalized == "disabled":
+            return True
+        if normalized == "active":
+            return False
+    logger.warning(
+        "Unrecognized lifecycle_status value %r on agent config; "
+        "treating as active. Expected 'active' or 'disabled'.",
+        raw,
+    )
+    return False
+
+
 def load_agent_config(
     config_id: str,
     account_id: str | None = None,
@@ -223,6 +266,17 @@ def _load_and_merge(
     global_data = _doc_to_dict_or_none(
         db.collection("agent_configs").document(config_id).get()
     )
+
+    # Master gate: if MER-E disabled the global agent, exclude it everywhere —
+    # per-account overlays of a disabled global are moot, since the overlay
+    # only customises a base config that no longer logically exists. The gate
+    # is applied BEFORE the automatically_available default-inclusion logic
+    # and before any overlay merge. Account-scoped custom_* agents (no global
+    # doc) are unaffected because the check only runs on global_data.
+    if _is_disabled(global_data):
+        raise ConfigDisabledError(
+            f"Config {config_id!r} is disabled (lifecycle_status='disabled')"
+        )
 
     if account_id is None:
         if global_data is None:

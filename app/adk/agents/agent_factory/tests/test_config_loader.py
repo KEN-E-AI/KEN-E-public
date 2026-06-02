@@ -514,6 +514,212 @@ class TestConfigLoader:
 
         assert result.temperature == 0.5
 
+    # -------------------------------------------------------------------------
+    # lifecycle_status='disabled' gate — cross-repo contract with MER-E.
+    # MER-E sets lifecycle_status='disabled' on the shared agent_configs doc
+    # when an admin disables an agent. In dev the doc is preserved (for later
+    # reactivation), so KEN-E must filter it out itself. The gate raises
+    # ConfigDisabledError (a ConfigNotFoundError subclass) so existing
+    # "not found → drop" handlers treat disabled agents as invisible without
+    # needing changes.
+    # -------------------------------------------------------------------------
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_lifecycle_status_disabled_raises_config_disabled_error(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """A global doc marked disabled raises ConfigDisabledError instead of returning a config."""
+        from app.adk.agents.agent_factory.config_loader import (
+            ConfigDisabledError,
+            ConfigNotFoundError,
+            load_agent_config,
+        )
+
+        global_data = {
+            "instruction": "Hello.",
+            "model": "gemini-2.5-pro",
+            "lifecycle_status": "disabled",
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=global_data)
+
+        with pytest.raises(ConfigDisabledError) as exc_info:
+            load_agent_config("disabled_agent")
+
+        assert "disabled_agent" in str(exc_info.value)
+        # Critical: must inherit from ConfigNotFoundError so existing handlers
+        # treat disabled identically to missing.
+        assert isinstance(exc_info.value, ConfigNotFoundError)
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_lifecycle_status_disabled_excludes_account_overlay_too(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """Per-account overlay of a disabled global is moot — gate fires first."""
+        from app.adk.agents.agent_factory.config_loader import (
+            ConfigDisabledError,
+            load_agent_config,
+        )
+
+        global_data = {
+            "instruction": "Original.",
+            "model": "gemini-2.5-pro",
+            "lifecycle_status": "disabled",
+        }
+        overlay_data = {
+            "instruction": "Account override.",
+            "model": "gemini-2.5-flash",
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(
+            global_data=global_data, overlay_data=overlay_data
+        )
+
+        with pytest.raises(ConfigDisabledError):
+            load_agent_config("disabled_agent", account_id="acc_123")
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_lifecycle_status_active_loads_normally(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """lifecycle_status='active' is the existing behavior — no regression."""
+        from app.adk.agents.agent_factory.config_loader import load_agent_config
+
+        global_data = {
+            "instruction": "Hello.",
+            "model": "gemini-2.5-pro",
+            "lifecycle_status": "active",
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=global_data)
+
+        result = load_agent_config("active_agent")
+
+        assert result.instruction == "Hello."
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_lifecycle_status_absent_loads_normally(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """Missing lifecycle_status field is treated as 'active' per the contract."""
+        from app.adk.agents.agent_factory.config_loader import load_agent_config
+
+        global_data = {
+            "instruction": "Hello.",
+            "model": "gemini-2.5-pro",
+            # lifecycle_status intentionally absent
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=global_data)
+
+        result = load_agent_config("legacy_agent")
+
+        assert result.instruction == "Hello."
+
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_lifecycle_status_disabled_does_not_affect_custom_only_agent(
+        self, mock_client: MagicMock, mock_auth: MagicMock
+    ) -> None:
+        """A custom_* agent (no global doc) is unaffected — gate only checks global_data."""
+        from app.adk.agents.agent_factory.config_loader import load_agent_config
+
+        # No global doc, overlay only — represents a user-created custom_* agent.
+        overlay_data = {
+            "instruction": "Custom agent body.",
+            "model": "gemini-2.5-flash",
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(overlay_data=overlay_data)
+
+        result = load_agent_config("custom_user_agent", account_id="acc_123")
+
+        assert result.instruction == "Custom agent body."
+        assert result.customization_status == "custom_agent"
+
+    @pytest.mark.parametrize(
+        "raw_value",
+        [
+            "Disabled",  # capitalized — should still fire
+            "DISABLED",  # uppercase — should still fire
+            "  disabled  ",  # whitespace — should still fire
+        ],
+    )
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_lifecycle_status_disabled_case_insensitive(
+        self, mock_client: MagicMock, mock_auth: MagicMock, raw_value: str
+    ) -> None:
+        """Case/whitespace variants of 'disabled' still fire the gate (no MER-E-typo bypass)."""
+        from app.adk.agents.agent_factory.config_loader import (
+            ConfigDisabledError,
+            load_agent_config,
+        )
+
+        global_data = {
+            "instruction": "Hello.",
+            "model": "gemini-2.5-pro",
+            "lifecycle_status": raw_value,
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=global_data)
+
+        with pytest.raises(ConfigDisabledError):
+            load_agent_config("agent_x")
+
+    @pytest.mark.parametrize(
+        "raw_value",
+        [
+            True,
+            1,
+            ["disabled"],
+            {"status": "disabled"},
+            "unknown_value",
+        ],
+    )
+    @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
+    @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
+    def test_lifecycle_status_non_recognised_value_warns_and_falls_through(
+        self,
+        mock_client: MagicMock,
+        mock_auth: MagicMock,
+        raw_value: object,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """A non-string or unrecognised value treats as active BUT emits a WARN.
+
+        Fail-open semantics are documented and intentional — but the WARN is
+        the breadcrumb that turns a silent failure into a Sentry-visible one.
+        """
+        import logging
+
+        from app.adk.agents.agent_factory.config_loader import load_agent_config
+
+        global_data = {
+            "instruction": "Hello.",
+            "model": "gemini-2.5-pro",
+            "lifecycle_status": raw_value,
+        }
+        mock_auth.return_value = (MagicMock(), None)
+        mock_client.return_value = _make_mock_db(global_data=global_data)
+
+        with caplog.at_level(logging.WARNING):
+            result = load_agent_config("agent_x")
+
+        # Loaded (not gated) — fail-open is the documented behavior.
+        assert result.instruction == "Hello."
+        # But WARN must have been emitted so the typo surfaces in logs.
+        assert any(
+            "Unrecognized lifecycle_status value" in record.message
+            for record in caplog.records
+        ), (
+            f"Expected WARN log for raw_value={raw_value!r}, got: {[r.message for r in caplog.records]}"
+        )
+
     @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
     @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
     def test_based_on_version_passes_through(
@@ -897,7 +1103,6 @@ class TestConfigLoader:
         assert result.default_acceptance_criteria == (
             "Cite ≥3 sources; structured output."
         )
-
 
     @patch("app.adk.agents.agent_factory.config_loader.google_auth_default")
     @patch("app.adk.agents.agent_factory.config_loader.firestore.Client")
