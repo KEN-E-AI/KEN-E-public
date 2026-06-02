@@ -91,6 +91,31 @@ _reauth_cache: dict[str, dict[str, Any]] = {}
 # Strong references for fire-and-forget tasks to prevent garbage collection (RUF006)
 _background_tasks: set[asyncio.Task[Any]] = set()
 
+
+def _serialize_session_metadata_for_cache(metadata: dict) -> dict:
+    """Return a Redis-JSON-safe shallow copy of a session-metadata dict.
+
+    `created_at` and `last_updated` may be datetime objects — including
+    Firestore's ``DatetimeWithNanoseconds`` (a ``datetime`` subclass returned
+    by ADK's ``session.create_time`` / ``update_time``). ``json.dumps`` rejects
+    both, so callers must normalize to ISO strings before ``set_json``. The
+    matching decode is ``datetime.fromisoformat(...)`` at every read site
+    that rehydrates session metadata from Redis. Returns a shallow copy so
+    the in-memory cache holds real datetimes for arithmetic.
+
+    Only ``created_at`` and ``last_updated`` are normalized — every other
+    field in the session-metadata dict is currently a string/int/None. If a
+    new datetime-typed field is added to the dict, add it to this loop or
+    the cache write will silently fail again.
+    """
+    out = dict(metadata)
+    for key in ("created_at", "last_updated"):
+        value = out.get(key)
+        if isinstance(value, datetime):
+            out[key] = value.isoformat()
+    return out
+
+
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 
 
@@ -995,8 +1020,10 @@ class AgentEngineClient:
                     cache_key = session_metadata_key(user_id, session_id)
                     redis_service.set_json(
                         cache_key,
-                        self._user_sessions[session_key],
-                        ttl_seconds=SESSION_METADATA_TTL_SECONDS,
+                        _serialize_session_metadata_for_cache(
+                            self._user_sessions[session_key]
+                        ),
+                        ttl=SESSION_METADATA_TTL_SECONDS,
                     )
             except Exception as e:
                 logger.warning(f"Failed to sync session metadata to Redis: {e}")
@@ -1840,7 +1867,10 @@ class AgentEngineClient:
             ``pending_`` placeholder is resolved to the real session id).
         """
         if not self.agent_engine:
-            yield ("text", "I'm sorry, but I'm unable to process your request at the moment. Please try again later.")
+            yield (
+                "text",
+                "I'm sorry, but I'm unable to process your request at the moment. Please try again later.",
+            )
             return
 
         try:
@@ -2417,13 +2447,22 @@ async def chat_completion(
                                 cache_key = session_metadata_key(uid, sid)
                                 redis_svc.set_json(
                                     cache_key,
-                                    session_metadata,
-                                    ttl_seconds=SESSION_METADATA_TTL_SECONDS,
+                                    _serialize_session_metadata_for_cache(
+                                        session_metadata
+                                    ),
+                                    ttl=SESSION_METADATA_TTL_SECONDS,
                                 )
                         except Exception as _redis_err:
-                            logger.debug(
-                                "Redis session-preview cache write failed: %s",
-                                _redis_err,
+                            logger.warning(
+                                "Redis session-preview cache write failed",
+                                extra=log_context(
+                                    component="chat",
+                                    action="redis_session_metadata_cache_write",
+                                    session_id=sid,
+                                    extra={
+                                        "error_type": type(_redis_err).__name__,
+                                    },
+                                ),
                             )
                 except Exception as _preview_err:
                     logger.debug(
@@ -2880,7 +2919,10 @@ async def create_category(
     except CategoryExistsError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"error": "category_exists", "existing_category_id": exc.existing_id},
+            detail={
+                "error": "category_exists",
+                "existing_category_id": exc.existing_id,
+            },
         ) from exc
     except ValueError as exc:
         raise HTTPException(
@@ -2909,7 +2951,9 @@ async def delete_category(
     try:
         result = await loop.run_in_executor(
             None,
-            lambda: svc.delete_category(user_id=user_context.user_id, category_id=category_id),
+            lambda: svc.delete_category(
+                user_id=user_context.user_id, category_id=category_id
+            ),
         )
     except PermissionError as exc:
         raise HTTPException(

@@ -9,11 +9,16 @@ Tests cover:
 
 import asyncio
 import time
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
-from src.kene_api.routers.chat import AgentEngineClient
+from src.kene_api.routers.chat import (
+    SESSION_METADATA_TTL_SECONDS,
+    AgentEngineClient,
+    _serialize_session_metadata_for_cache,
+)
 from src.kene_api.services.ga_credential_helper import GACredentialHelper
 
 
@@ -488,6 +493,174 @@ class TestOAuthTimeout:
             )
             # Should NOT attempt refresh if token valid
             mock_client_class.assert_not_called()
+
+
+class _DatetimeWithNanoseconds(datetime):
+    """Stand-in for Firestore's DatetimeWithNanoseconds.
+
+    The real class lives in ``google.api_core.datetime_helpers`` and behaves
+    as a ``datetime`` subclass. ``json.dumps`` rejects it the same way it
+    rejects a stdlib ``datetime``; ``isoformat()`` round-trips cleanly. The
+    tests use a local subclass so they don't need the google-api-core
+    import path.
+    """
+
+
+class TestSessionMetadataCacheSerialization:
+    """The Redis JSON encoder used by the chat session cache cannot accept
+    ``datetime``/``DatetimeWithNanoseconds`` values directly — ``set_json``
+    swallows the resulting ``TypeError`` and returns ``False``, leaving the
+    cache cold. Every caller that writes session metadata to Redis routes
+    its dict through ``_serialize_session_metadata_for_cache`` to encode
+    datetimes as ISO strings before write."""
+
+    def test_helper_isoformats_stdlib_datetime(self) -> None:
+        now = datetime(2026, 6, 2, 12, 0, 0, tzinfo=timezone.utc)
+        result = _serialize_session_metadata_for_cache(
+            {"created_at": now, "last_updated": now, "session_id": "s_abc"}
+        )
+        assert result["created_at"] == now.isoformat()
+        assert result["last_updated"] == now.isoformat()
+        assert result["session_id"] == "s_abc"
+
+    def test_helper_isoformats_datetime_with_nanoseconds_subclass(self) -> None:
+        """ADK returns ``session.update_time`` as ``DatetimeWithNanoseconds``
+        (a ``datetime`` subclass). The helper must treat it the same as a
+        stdlib datetime — ``isinstance(value, datetime)`` covers both."""
+        dt = _DatetimeWithNanoseconds(2026, 6, 2, 12, 0, 0, tzinfo=timezone.utc)
+        result = _serialize_session_metadata_for_cache({"created_at": dt})
+        assert result["created_at"] == dt.isoformat()
+        assert isinstance(result["created_at"], str)
+
+    def test_helper_passes_through_iso_strings_unchanged(self) -> None:
+        """When the dict already holds ISO strings (e.g. a metadata dict
+        round-tripped from Redis), the helper must not re-encode them."""
+        iso = "2026-06-02T12:00:00+00:00"
+        result = _serialize_session_metadata_for_cache(
+            {"created_at": iso, "last_updated": iso}
+        )
+        assert result == {"created_at": iso, "last_updated": iso}
+
+    def test_helper_preserves_other_fields(self) -> None:
+        now = datetime.now(timezone.utc)
+        result = _serialize_session_metadata_for_cache(
+            {
+                "session_id": "s_xyz",
+                "user_id": "u_1",
+                "conversation_name": "Hello",
+                "created_at": now,
+                "last_updated": now,
+                "message_count": 7,
+                "preview": "Hi there",
+            }
+        )
+        assert result["session_id"] == "s_xyz"
+        assert result["user_id"] == "u_1"
+        assert result["conversation_name"] == "Hello"
+        assert result["message_count"] == 7
+        assert result["preview"] == "Hi there"
+
+    def test_helper_does_not_mutate_input(self) -> None:
+        """The in-memory cache continues to hold real datetimes for
+        arithmetic; the helper must return a copy."""
+        now = datetime.now(timezone.utc)
+        original = {"created_at": now, "last_updated": now}
+        _ = _serialize_session_metadata_for_cache(original)
+        assert original["created_at"] is now
+        assert original["last_updated"] is now
+
+    def test_helper_handles_missing_datetime_fields(self) -> None:
+        result = _serialize_session_metadata_for_cache(
+            {"session_id": "s_1", "message_count": 0}
+        )
+        assert result == {"session_id": "s_1", "message_count": 0}
+
+    def test_update_conversation_metadata_writes_iso_strings_with_correct_kwarg(
+        self,
+    ) -> None:
+        """End-to-end: ``update_conversation_metadata`` reaches Redis with
+        ISO-encoded datetimes and a valid ``ttl`` value.
+
+        ``RedisService.set_json`` signature is ``(key, value, ttl=None)``.
+        A call with a mismatched kwarg raises ``TypeError`` at runtime,
+        which the surrounding ``except Exception`` would catch and log
+        as a warning — making the cache sync a silent no-op. The
+        in-memory cache holds real datetimes; the helper converts them
+        to ISO strings on the write path."""
+        client = AgentEngineClient()
+        user_id = "test_user"
+        session_id = "s_123"
+        session_key = f"{user_id}:{session_id}"
+        client._user_sessions[session_key] = {
+            "session_id": session_id,
+            "user_id": user_id,
+            "conversation_name": "Old name",
+            "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+            "last_updated": datetime(2026, 1, 1, tzinfo=timezone.utc),
+            "message_count": 0,
+        }
+
+        captured: dict = {}
+
+        def _capture_set_json(key: str, value: dict, ttl: int | None = None) -> bool:
+            captured["key"] = key
+            captured["value"] = value
+            captured["ttl"] = ttl
+            return True
+
+        with patch("src.kene_api.routers.chat.get_redis_service") as mock_get_redis:
+            mock_redis = MagicMock()
+            mock_redis.is_available.return_value = True
+            mock_redis.set_json.side_effect = _capture_set_json
+            mock_get_redis.return_value = mock_redis
+
+            ok = client.update_conversation_metadata(
+                user_id=user_id,
+                session_id=session_id,
+                conversation_name="New name",
+            )
+
+        assert ok is True
+        mock_redis.set_json.assert_called_once()
+        # Datetimes are ISO strings: update_conversation_metadata refreshes
+        # last_updated via datetime.now before the cache write, so the helper
+        # is the only thing that produces strings on this path.
+        assert isinstance(captured["value"]["created_at"], str)
+        assert isinstance(captured["value"]["last_updated"], str)
+        assert captured["value"]["conversation_name"] == "New name"
+        assert captured["ttl"] == SESSION_METADATA_TTL_SECONDS
+
+    def test_every_session_metadata_write_uses_helper_and_correct_kwarg(
+        self,
+    ) -> None:
+        """Source-inspection lock-in for both ``set_json`` sites that write
+        ``session_metadata_key`` values.
+
+        The second site lives inside the streaming ``_post_response_writes``
+        closure, which is impractical to mock end-to-end. This static check
+        prevents either site from regressing to ``ttl_seconds=`` or to a raw
+        unserialized dict, without needing a streaming fixture."""
+        import inspect
+
+        from src.kene_api.routers import chat as chat_module
+
+        source = inspect.getsource(chat_module)
+
+        # No call site anywhere in chat.py may use the wrong kwarg —
+        # RedisService.set_json's signature is (key, value, ttl=None).
+        assert "ttl_seconds=" not in source, (
+            "ttl_seconds= is not a valid kwarg on RedisService.set_json; "
+            "use ttl= instead"
+        )
+
+        # Both write sites for session_metadata_key go through the helper.
+        # The helper is named uniquely enough that a substring count is a
+        # robust signal (one definition + two call sites = 3 occurrences).
+        helper_occurrences = source.count("_serialize_session_metadata_for_cache")
+        assert helper_occurrences >= 3, (
+            "Expected at least 3 references to _serialize_session_metadata_for_cache "
+            f"(1 def + 2 call sites); found {helper_occurrences}"
+        )
 
 
 class TestPerformanceMetrics:
