@@ -11,6 +11,8 @@
 
 > **Program context.** Data residency is *not* a new component. This slice is homed in Agentic Harness, carries the next `AH-PRD` number, and reuses the keystone foundation from [DM-PRD-09](../../data-management/projects/DM-PRD-09-regional-cell-foundation.md) rather than reinventing routing. Read [`../../../data-residency-architecture.md`](../../../data-residency-architecture.md) §1–§4 (esp. §2 D1/D3/D4/D6, §3.2 cell table, §3.4 reference pattern, §3.5 model-endpoint strategy) and §5 (gap register) before this PRD. This project closes **R-03, R-04, R-16** (logical slice **DR-PRD-01**, design doc §7).
 
+> **ADK 2.0 sequencing (Review 45).** This PRD threads `data_region` through `builder.py`, `sub_agent_attacher.py`, `sandbox_pool.py`, `deploy_ken_e.py`, and `chat.py` — the same chat-tree surfaces the **ADK 2.0 migration ([AH-PRD-13](./AH-PRD-13-adk2-foundation.md))** rewrites. Sequence after AH-PRD-13 (or coordinate closely) to avoid rework; the EU agent runtime deploys on ADK 2.0, and the sandbox residency relies on AH-PRD-13's sandbox-on-2.0 re-validation.
+
 ---
 
 ## 1. Context

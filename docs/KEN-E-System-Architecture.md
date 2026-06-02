@@ -90,7 +90,7 @@ KEN-E is built as fifteen discrete components, each with its own README and set 
 
 | Component | Scope | Primary component doc |
 |-----------|-------|----------------------|
-| **Agentic Harness** | Root agent, narrow per-platform specialists, review loop, config-driven agent factory, tool-assignment model, MCP integration | [`components/agentic-harness/README.md`](design/components/agentic-harness/README.md) |
+| **Agentic Harness** | Root agent, narrow per-platform specialists, review loop, config-driven agent factory, tool-assignment model, MCP integration; supervisor-orchestration model (AH-PRD-05, target, ADK 2.0) adds a second dispatch surface for multi-task turns: `mode='chat'` coordinator decomposes user messages, delegates per-task to `mode='task'` specialists, synthesizes in one turn | [`components/agentic-harness/README.md`](design/components/agentic-harness/README.md) |
 | **Knowledge Graph** | Neo4j schema, provenance spine (`Session` / `Observation` / `ResearchRun`), orchestrator read tools, session-end learning loop | [`components/knowledge-graph/README.md`](design/components/knowledge-graph/README.md) |
 | **Project Tasks** | `ProjectPlan` / `PlanTask` data model, `TaskOrchestrator`, event-driven + time-based triggers, planning specialist, calendar UI, multi-category activities, campaigns | [`components/project-tasks/README.md`](design/components/project-tasks/README.md) |
 | **Automations** | `PlanRun` execution records, recurring scheduler, artifact system, test/dry-run mode, Automations UI (list + details) | [`components/automations/README.md`](design/components/automations/README.md) |
@@ -129,11 +129,13 @@ For the canonical architecture diagram, key abstractions, data flow, API contrac
 
 ### 2.1 Agent Type Selection (Google ADK)
 
-KEN-E uses ADK's standard agent types. Root and all specialists are `LlmAgent` instances — LLM-backed, tool-calling agents with InstructionProvider closures reading org context from session state. Review pipelines use ADK's `LoopAgent` (Generator–Critic). Future multi-step workflows (R3) use `ParallelAgent` + `SequentialAgent` composition per the multi-step workflow pattern documented in `review-loop-implementation-plan.md`.
+KEN-E uses ADK's standard agent types. Root and all specialists are `LlmAgent` instances — LLM-backed, tool-calling agents with InstructionProvider closures reading org context from session state. Review pipelines use ADK's `LoopAgent` (Generator–Critic). Multi-task in-session orchestration uses the ADK 2.0 supervisor model (`mode='chat'` coordinator + `mode='task'` specialist leaves + `ctx.run_node` fan-out) — see §8.1 and [AH-PRD-05](design/components/agentic-harness/projects/AH-PRD-05-multi-step-workflows.md). `ParallelAgent` + `SequentialAgent` composition was the pre-AH-99 design; `review-loop-implementation-plan.md` retains that history as reference.
 
-The [Strategy Supervisor](../app/adk/agents/create_strategy_docs_supervisor.py) is a multi-agent (non-LlmAgent) subsystem kept as a separate entry point — not dispatched from the root. Its replacement by knowledge-graph integration is tracked in [KG-PRD-05](design/components/knowledge-graph/README.md).
+The [Strategy Supervisor](../app/adk/agents/create_strategy_docs_supervisor.py) is a multi-agent (non-LlmAgent) subsystem kept as a separate entry point — not dispatched from the root. It **stays pinned to ADK 1.34.x** on its own deploy tree and is fully removed in a later release (tracker TBD); [KG-PRD-05](design/components/knowledge-graph/README.md) begins the knowledge-graph-integration migration by refactoring its graph-write path but does not remove it ([DESIGN-REVIEW-LOG Review 45](design/DESIGN-REVIEW-LOG.md#review-45--adk-20-migration-initiative-structuring-strategy-agent-pin-sk-10-correction)).
 
 For the current and planned specialist roster, see [agentic-harness README §2.6 Specialist roadmap](design/components/agentic-harness/README.md#26-specialist-roadmap).
+
+**Multi-task supervisor-orchestrated flow (AH-PRD-05 target, requires ADK 2.0 — Foundation PRD AH-PRD-13):** For requests that require multiple specialists, the `mode='chat'` coordinator decomposes the user message into a TODO ledger, delegates per-task to `mode='task'` specialists (call-and-return — parent regains control after each task), fans out independent tasks via `ctx.run_node` + `asyncio.gather`, and synthesizes all results before returning to the user. Task-mode inner `usage_metadata` reaches the outer stream natively (AH-99 GO-confirmed), preserving Billing, Chat, and MER-E parity contracts. See [AH-PRD-05](design/components/agentic-harness/projects/AH-PRD-05-multi-step-workflows.md).
 
 ---
 
@@ -290,6 +292,8 @@ All three types count toward the agent's curated tool roster for scope purposes,
 
 See [Review 22 in DESIGN-REVIEW-LOG](design/DESIGN-REVIEW-LOG.md#review-22-backfill--decisions-7--8-token-budget-strategy--toolregistry-as-build-time-catalog) for the Token Budget Strategy + ToolRegistry rationale.
 
+**Supervisor-orchestration tool model:** Supervisor-orchestrated turns inherit the same ≤30-tool roster model per leaf specialist; the `mode='chat'` coordinator carries no domain tools (only ledger-management tools: `set_todo_list`, `update_todo_list`).
+
 ---
 
 ## 5. MCP Server Architecture
@@ -351,12 +355,26 @@ See [Review 23 in DESIGN-REVIEW-LOG](design/DESIGN-REVIEW-LOG.md#review-23-backf
 
 KEN-E handles work that spans more than one LLM turn or more than one session through several complementary mechanisms — in-session workflow agents, persistent project-task orchestration, automations, deterministic data-pipeline extraction, and a separate analytical-computation layer — all documented at the component level. This section frames the architecture at a high level and points at the component docs for details.
 
-### 8.1 In-Session Multi-Step Workflows [PLANNED, R3]
+### 8.1 In-Session Multi-Step Workflows
 
+**Supervisor-orchestration model (AH-PRD-05, spec-ready, ADK 2.0 — [PLANNED]).** KEN-E's in-session multi-step orchestration uses the ADK 2.0 supervisor model (AH-99 GO-confirmed, 2026-06-01):
 
-For complex requests that can be decomposed into parallel + sequential steps within a single conversation (e.g., "Increase budgets for Meta Ads campaigns with the most engaged website visitors" → parallel data-gathering across Google Analytics + Meta Ads → synthesizer → user approval → execution step), KEN-E composes review pipelines (AH-PRD-01) into larger workflows using ADK workflow agents.
+- **Coordinator:** `LlmAgent(mode='chat')` — decomposes the user request into a TODO ledger, drives per-task delegation, and synthesizes results.
+- **Specialist leaves:** `LlmAgent(mode='task')` — invoked via ADK's delegation primitive; call-and-return so the coordinator regains control after each task.
+- **Fan-out:** `ctx.run_node` + `asyncio.gather` for independent parallel tasks.
+- **Review loops:** `LoopAgent` leaves wrap per-task delegations when acceptance criteria are set (AH-PRD-01; deprecated in ADK 2.0 but functional).
+- **Parity:** Task-mode inner `usage_metadata` reaches the outer Runner stream natively (probe-1 + probe-4) — no custom event bridge; Billing, Chat, MER-E contracts preserved.
 
-The **multi-step pattern** — `ParallelAgent` + pipeline-wrapped `LoopAgent`s + synthesizer with `include_contents='none'` — plus the `build_review_pipeline()` / `build_workflow_pipeline()` factory code, three validated ADK pitfalls (ADK 1.26.0), and LLM cost/latency tables all live in [`docs/design/review-loop-implementation-plan.md`](design/review-loop-implementation-plan.md) §3.3 (architecture) and §Phase 4 (4-story delivery plan). The single-step review-loop building block is tracked as [AH-PRD-01](design/components/agentic-harness/projects/AH-PRD-01-review-loop-framework.md); the multi-step composition (`build_workflow_pipeline`, `WorkflowStep`, `execute_workflow` root tool, approval-via-conversation-turns continuation) is tracked as [AH-PRD-05](design/components/agentic-harness/projects/AH-PRD-05-multi-step-workflows.md), targeting Release 3.
+**Example (budget-shift optimisation):**
+1. Coordinator decomposes: "Increase budgets for best-performing Meta Ads campaigns" → TODO ledger: GA engagement query + Meta Ads spend query + synthesis + approval-required budget-change task.
+2. GA + Meta Ads tasks fan out in parallel via `ctx.run_node` + `asyncio.gather`.
+3. Synthesis task depends on both; produces a ranked optimisation plan.
+4. Coordinator returns the plan and awaits user approval (approval-via-conversation-turns continuation).
+5. On approval: Meta Ads budget-change task runs; coordinator returns the final result.
+
+**Implementation gate:** the ADK 2.0 Foundation PRD ([AH-PRD-13](design/components/agentic-harness/projects/AH-PRD-13-adk2-foundation.md)) (`google-adk` 1.34.1 → 2.0.0). The single-specialist `transfer_to_agent` R1 runtime is unaffected. Full spec: [AH-PRD-05](design/components/agentic-harness/projects/AH-PRD-05-multi-step-workflows.md). Decision: [DESIGN-REVIEW-LOG Review 44](design/DESIGN-REVIEW-LOG.md#review-44--ah-97-supervisor-orchestration-adoption-adk-20).
+
+> **Note:** `execute_workflow` / `invoke_pipeline` (inner-Runner patterns) are explicitly NOT the recommended implementation shape — they reintroduce the AH-75 billing/tracing defect (see AH-PRD-09 §4.6 and AH-PRD-05 §2). The supervisor model described above is the correct target.
 
 ### 8.2 Project Plans & Task Orchestration
 

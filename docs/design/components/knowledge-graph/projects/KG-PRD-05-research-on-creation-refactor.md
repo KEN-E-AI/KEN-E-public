@@ -6,6 +6,8 @@
 **Parallel with:** KG-PRD-03, KG-PRD-04
 **Estimated effort:** 3–4 days
 
+> **ADK 2.0 note (Review 45).** This PRD modifies the `strategy_agent` subsystem, which **stays pinned to ADK 1.34.x** and is **not** migrated to ADK 2.0 (the chat tree migrates; the strategy tree does not — see [AH-PRD-13](../../agentic-harness/projects/AH-PRD-13-adk2-foundation.md) §5.2). Keep the in-process `GraphSyncService` import ADK-major-agnostic. This refactor changes the strategy agents' graph-write path; it does **not** remove the agents (full removal is a later release).
+
 ---
 
 ## 1. Context

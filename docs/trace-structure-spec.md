@@ -86,7 +86,9 @@ ADK uses dot-notation span names. MER-E's current `ToolCallExtractor` uses colon
 | Tool | `adk.tool.<tool_name>` | `tool:<tool_name>` | Match via `attributes.type == "tool"` or `adk.tool.` prefix |
 | LLM | `generate_content` / `chat.completions` | `llm:<model_name>` | Exclude via known LLM op_name patterns |
 | Formatter | `<subagent>_format` | Not matched | Identified by `_format` suffix in op_name |
-| Per-turn dispatch (AH-PRD-09) | `delegate_to_specialist` | Not previously present | Match `op_name == "delegate_to_specialist"` exactly; replaces `dispatch_to_*` pattern — see §14 |
+| Per-turn dispatch (AH-PRD-09) | `delegate_to_specialist` *(deprecated for supervisor-orchestrated turns — see §14 and AH-PRD-05)* | Not previously present | Match `op_name == "delegate_to_specialist"` exactly; replaces `dispatch_to_*` pattern — see §14 |
+| `task_delegation` | supervisor-orchestration per-task delegation span; emitted when coordinator delegates to a `mode='task'` specialist (AH-PRD-05) | Not previously present | Match `span.name == "task_delegation"` + `attributes.task_id` presence — see AH-PRD-05-trace-contract-diff.md |
+| `fanout` | supervisor-orchestration parallel fan-out span; emitted for each `ctx.run_node` + `asyncio.gather` parallel execution group (AH-PRD-05) | Not previously present | Match `span.name == "fanout"` + `attributes.task_ids` presence |
 
 ### Identification Strategy
 
@@ -840,6 +842,8 @@ The fixture includes all required attributes for `delegate_to_specialist`,
 `app/adk/tracking/tests/test_delegate_to_specialist_fixture.py` asserts schema
 compliance and is wired into the standard pytest run.
 
+**Supervisor-orchestration dispatch shape (AH-PRD-05, target post-ADK-2.0 unpin):** Multi-task supervisor-orchestrated turns produce a different span hierarchy. See [AH-PRD-05-trace-contract-diff.md](design/components/agentic-harness/projects/AH-PRD-05-trace-contract-diff.md) for the MER-E contract diff. Key differences: the root agent span contains coordinator task-ledger spans; each task produces a `task_delegation` sub-span with `usage_metadata` on the outer stream natively; fan-out branches are `fanout` spans containing parallel `task_delegation` children.
+
 ---
 
 ## 15. Skills Component Runtime Spans (SK-PRD-02)
@@ -1128,6 +1132,8 @@ missing-data issue, not as "zero specialists were available."
    span correlation.
 4. `specialist_count == 0` with `specialists == []` is a valid turn state, not
    an error.  Only the **absence** of the span itself signals degradation.
+
+**For supervisor-orchestrated turns (AH-PRD-05 target):** Task-mode `usage_metadata` appears on the outer stream natively (AH-99 probe-1 + probe-4 confirmed). Extract `usage_metadata` from task-mode events using the same `extract_billable_tokens` helper — the field placement is unchanged; only the span context changes. Coordinator-to-task-specialist call boundaries are marked by the `task_delegation` span boundary. See [AH-PRD-05-trace-contract-diff.md](design/components/agentic-harness/projects/AH-PRD-05-trace-contract-diff.md) for the full extractor-migration guidance and MER-E validation checklist.
 
 ---
 

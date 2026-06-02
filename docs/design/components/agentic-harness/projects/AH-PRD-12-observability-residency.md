@@ -9,6 +9,8 @@
 
 > **Program context.** Data residency is **not** a new component — this is a slice homed in Agentic Harness, bound to the **Data Residency (US + EU)** Linear Initiative and the cross-component spec [`../../../data-residency-architecture.md`](../../../data-residency-architecture.md). Read that doc's §1–§4 (esp. §2 decisions, §3.2 regional-cell table "Traces / logs" row, §4 posture table "W&B / traces / logs" row), §5 gap register (R-02, R-12), §6 cut-line, §7 homing before this PRD. This project closes **R-02** (the single most urgent content-egress blocker) and **R-12**. It reuses the `Region` / `CELLS` registry + `resolve_account_region(account_id)` resolver shipped by DM-PRD-09 (`shared/residency/`) — it does **not** redefine them.
 
+> **ADK 2.0 note (Review 45).** The ADK 2.0 event/trace shape (`node_info` / `isolation_scope`, plus the `task_delegation` / `fanout` spans introduced by [AH-PRD-13](./AH-PRD-13-adk2-foundation.md) / [AH-PRD-14](./AH-PRD-14-supervisor-contract-preservation.md)) changes what the OTEL capture + Weave spans carry. The residency routing here is span-shape-agnostic, but validate against the 2.0 trace shape, and carry forward the known weave-autopatch fragility under 2.0.
+
 ---
 
 ## 1. Context

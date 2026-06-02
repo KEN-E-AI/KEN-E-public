@@ -12,6 +12,19 @@ The component spans the full stack — a FastAPI CRUD surface with Firestore per
 
 A developer reading only this section should understand: this component owns `ProjectPlan` / `PlanTask` data, the `/api/v1/plans/*` API, the `/calendar` page, the `project_planning` specialist agent, and the two triggering mechanisms (event-driven + time-based) that advance an active plan.
 
+### Layer Boundary: In-Session vs. Cross-Session Orchestration
+
+KEN-E has two distinct orchestration layers that must not be conflated:
+
+| Layer | Mechanism | Scope | PRD |
+|---|---|---|---|
+| **In-session orchestration** | Supervisor model: `LlmAgent(mode='chat')` coordinator decomposes user message, delegates per-task to `mode='task'` specialists, synthesizes in one turn | Single chat session; everything within one user turn | [AH-PRD-05](../agentic-harness/projects/AH-PRD-05-multi-step-workflows.md) |
+| **Cross-session, scheduled work** | `TaskOrchestrator` + `ProjectPlan` / `PlanTask` | Multi-session; scheduled triggers; calendar-based execution | This component |
+
+The supervisor's task ledger (`TodoItem` with `assignee`, `depends_on`, etc.) borrows the DAG + assignee concepts from Project Tasks **conceptually** but does NOT route through `TaskOrchestrator`. In-session supervisor tasks are ephemeral (live in `session.state`); cross-session project tasks are persisted in Firestore (`accounts/{account_id}/project_plans/{plan_id}`).
+
+**Decision:** [DESIGN-REVIEW-LOG Review 44](../../DESIGN-REVIEW-LOG.md#review-44--ah-97-supervisor-orchestration-adoption-adk-20)
+
 ## 2. Architecture
 
 ### 2.1 Key Directories
@@ -22,7 +35,7 @@ A developer reading only this section should understand: this component owns `Pr
 | `api/src/kene_api/routers/project_plans.py` | CRUD + history endpoints under `/api/v1/plans/*` |
 | `api/src/kene_api/routers/internal/scheduler.py` | Internal scheduler endpoint `launch-due-tasks` (PRD-6) |
 | `api/src/kene_api/services/task_orchestrator.py` | `TaskOrchestrator` service (PRD-4) — event-driven DAG advancement, dispatch, revision loop |
-| Firestore `agent_configs/project_planning` config doc | Read per turn by `specialist_runtime.resolve_config` (AH-PRD-09 Phase 2) — cached ~60 s. Defines model, instruction, temperature, `description` (drives root's description-based routing), tools, callbacks. `specialist_runtime.resolve_agent` builds the `LlmAgent` on demand; the root reaches the planning specialist via `delegate_to_specialist("project_planning", …)` — no hand-written agent file, no dispatch handler. PRD-9 updates the instruction + tool roster for the multi-category model. |
+| Firestore `agent_configs/project_planning` config doc | Read per turn by `specialist_runtime.resolve_config` (AH-PRD-09 Phase 2) — cached ~60 s. Defines model, instruction, temperature, `description` (drives root's description-based routing), tools, callbacks. `specialist_runtime.resolve_agent` builds the `LlmAgent` on demand; the root reaches the planning specialist via `transfer_to_agent("project_planning", …)` — no hand-written agent file, no dispatch handler. PRD-9 updates the instruction + tool roster for the multi-category model. |
 | `app/adk/agents/project_planning_tools.py` | Python tool functions referenced by the config doc: `save_project_plan`, `update_task_status`, `get_project_plan` (PRD-2); `resolve_or_create_campaign` (PRD-9, post PR-PRD-08) |
 | `frontend/src/pages/CalendarPage.tsx` | Calendar view + list view toggle at route `/calendar` |
 | `frontend/src/components/calendar/` | `ActivityDetailPanel`, `ProjectEditDrawer`, filters, deep-link helpers |
@@ -31,7 +44,7 @@ A developer reading only this section should understand: this component owns `Pr
 
 ### 2.2 Data Flow
 
-1. **Creation:** A user request to the root agent is routed via `delegate_to_specialist("project_planning", query, acceptance_criteria)` (AH-PRD-09 Phase 2) to the project-planning specialist, which calls `save_project_plan` → `POST /api/v1/plans/{account_id}` → persisted to Firestore under `accounts/{account_id}/project_plans/{plan_id}`.
+1. **Creation:** A user request to the root agent is routed via `transfer_to_agent("project_planning", query, acceptance_criteria)` (AH-PRD-09 Phase 2) to the project-planning specialist, which calls `save_project_plan` → `POST /api/v1/plans/{account_id}` → persisted to Firestore under `accounts/{account_id}/project_plans/{plan_id}`.
 2. **Display:** The frontend calls `GET /api/v1/plans/{account_id}` (list) and `/{plan_id}` (detail) to render the calendar and task panels. Deep-links from chat (`/calendar?project={plan_id}&task={task_id}`) open the right plan with the right task focused.
 3. **Activation:** A user activates a plan via `POST .../activate` (owned by PRD-4). Tasks with no unmet `depends_on` enter the "ready" pool.
 4. **Advancement (event-driven, PRD-4):** When a task status changes (`PATCH .../tasks/{task_id}`), `TaskOrchestrator.on_task_status_change` resolves newly-unblocked tasks, dispatches agent tasks via `AgentEngineClient`, notifies humans via the existing notification system, and handles revision loops (capped at 5 iterations).
@@ -78,7 +91,7 @@ Schema source of truth: `api/src/kene_api/models/project_plan_models.py` (Pydant
 | `is_system` flag | Same file | Marks platform-owned templates. Defined here; cross-component enforcement table in [`../data-management/README.md` §7.6](../data-management/README.md#76-is_system-system-plan-convention). |
 | `TaskOrchestrator` | `api/src/kene_api/services/task_orchestrator.py` | Single convergence point for task-state changes; exposes `on_task_status_change`, `on_task_due`, `activate_plan` |
 | `AgentEngineClient` (reused) | `api/src/kene_api/routers/chat.py` (258–378) | Used by orchestrator to dispatch agent tasks |
-| `specialist_runtime.resolve_config` + `resolve_agent` | `app/adk/agents/agent_factory/specialist_runtime.py` | AH-PRD-09 Phase 2. Reads Firestore `agent_configs/*` per turn (cached ~60 s) and constructs the planning specialist's `LlmAgent` on demand. The root reaches it via `delegate_to_specialist("project_planning", …)` — no `dispatch_to_project_planning()` is generated. (AH-PRD-02's `build_hierarchy()` survives, reduced to building the root only — see AH-PRD-09 §5.1.) |
+| `specialist_runtime.resolve_config` + `resolve_agent` | `app/adk/agents/agent_factory/specialist_runtime.py` | AH-PRD-09 Phase 2. Reads Firestore `agent_configs/*` per turn (cached ~60 s) and constructs the planning specialist's `LlmAgent` on demand. The root reaches it via `transfer_to_agent("project_planning", …)` — no `dispatch_to_project_planning()` is generated. (AH-PRD-02's `build_hierarchy()` survives, reduced to building the root only — see AH-PRD-09 §5.1.) |
 | `project_planning_tools` | `app/adk/agents/project_planning_tools.py` | Python tool functions referenced by the agent config doc: `save_project_plan`, `update_task_status`, `get_project_plan` |
 | `ActivitiesContext` | `frontend/src/contexts/ActivitiesContext.tsx` | Frontend plan/task state provider |
 | `CalendarPage` | `frontend/src/pages/CalendarPage.tsx` | Top-level calendar/list view with filters and deep-link support |
@@ -89,13 +102,13 @@ Schema source of truth: `api/src/kene_api/models/project_plan_models.py` (Pydant
 
 | Component | Dependency | Reference |
 |-----------|------------|-----------|
-| **Agent Factory (AH-PRD-02) + Per-Turn Dispatch (AH-PRD-09 Phase 2)** | **Hard prerequisite — must ship before PRD-2 starts.** AH-PRD-02 publishes the Firestore config schema (`agent_configs/*` with `description`, `model`, `instruction`, `tools`, etc.). AH-PRD-09 Phase 2 ships `specialist_runtime.resolve_config` + `resolve_agent` (per-turn construction) and `delegate_to_specialist` (the single root tool). PR-PRD-02 writes the config doc + tool functions only; the runtime does the rest. | [`../agentic-harness/projects/AH-PRD-02-agent-factory.md`](../agentic-harness/projects/AH-PRD-02-agent-factory.md), [`../agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md`](../agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md) |
+| **Agent Factory (AH-PRD-02) + Per-Turn Dispatch (AH-PRD-09 Phase 2)** | **Hard prerequisite — must ship before PRD-2 starts.** AH-PRD-02 publishes the Firestore config schema (`agent_configs/*` with `description`, `model`, `instruction`, `tools`, etc.). AH-PRD-09 Phase 2 ships `specialist_runtime.resolve_config` + `resolve_agent` (per-turn construction) and `transfer_to_agent` (the single root tool). PR-PRD-02 writes the config doc + tool functions only; the runtime does the rest. | [`../agentic-harness/projects/AH-PRD-02-agent-factory.md`](../agentic-harness/projects/AH-PRD-02-agent-factory.md), [`../agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md`](../agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md) |
 | **Data Management — DM-PRD-05 (Deletion Sweep Rewrite)** | **Hard prerequisite — must ship before PR-PRD-01 starts.** Rewrites the enumerated sweep in `routers/accounts.py:968-997` as `firestore.recursive_delete(accounts/{account_id})` so account deletion automatically covers the new `project_plans` and `project_plan_audit` subcollections. | [`../data-management/projects/DM-PRD-05-deletion-sweep-rewrite.md`](../data-management/projects/DM-PRD-05-deletion-sweep-rewrite.md) |
 | **Data Management — DM-PRD-00 (Migration Foundation)** | **Hard prerequisite — must ship before PR-PRD-06 starts.** Provisions the `project_plans` collection-group composite index (`status ASC, launched_at ASC, due_date ASC`) used by the scheduler's due-task query. | [`../data-management/projects/DM-PRD-00-migration-foundation.md`](../data-management/projects/DM-PRD-00-migration-foundation.md) |
 | **Data Management — DM-PRD-07 (Roles, Members, Audit Substrate)** | **Hard prerequisite — must ship before PR-PRD-07 starts.** Publishes the two-tier role model (`OrgRole` + `AccountRole`) with overlay rules + `require_role(min_role, scope="account")` + transition-policy table + generalized `AuditEntry` schema + `write_audit(parent_kind, parent_id, audit_subcollection, ...)` helper + per-component registry. Every status-changing endpoint in this component calls into that gate and writes via that helper with `audit_subcollection="project_plan_audit"`. | [`../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md`](../data-management/projects/DM-PRD-07-approval-workflow-and-audit.md) |
 | Notifications (existing) | `create_notification` API + `NotificationCategory` enum — PRD-4 adds a `"Task Ready"` category and `NotificationSidebar.tsx` deep-link wiring | `api/src/kene_api/services/notification_service_v2.py`, `frontend/src/components/notifications/NotificationSidebar.tsx` |
 | Strategy Document pattern (existing) | Firestore versioning + audit pattern used as the template for project-plan persistence | `api/src/kene_api/routers/strategy.py`, `api/src/kene_api/models/strategy_models.py` |
-| Root agent | Under AH-PRD-09 Phase 2 the root carries only `delegate_to_specialist`. Routing guidance for the planning specialist lives in the `agent_configs/project_planning.description` field — rendered into the root's per-turn "Available Specialists" block by `specialist_runtime.available_specialists_provider`. No `create_project_plan` root-agent tool wrapper exists; no `_BASE_INSTRUCTION` CAPABILITY block edit is required. | n/a (config-driven) |
+| Root agent | Under AH-PRD-09 Phase 2 the root carries only `transfer_to_agent`. Routing guidance for the planning specialist lives in the `agent_configs/project_planning.description` field — rendered into the root's per-turn "Available Specialists" block by `specialist_runtime.available_specialists_provider`. No `create_project_plan` root-agent tool wrapper exists; no `_BASE_INSTRUCTION` CAPABILITY block edit is required. | n/a (config-driven) |
 | Account / Auth | `check_strategy_access`-equivalent dependency for account-scoped access control | `api/src/kene_api/auth/` |
 | Cloud Scheduler (GCP) | PRD-6 provisions a per-minute cron; OIDC service-account auth on the internal endpoint | `deployment/terraform/` |
 
@@ -173,7 +186,8 @@ Edge summary:
 | `docs/KEN-E-System-Architecture.md` | Agent dispatch, Tool discovery, Session management | When implementing PRD-2 (planning agent + tools) or PRD-4 (agent dispatch from orchestrator). |
 | [`../agentic-harness/README.md`](../agentic-harness/README.md) | §2 Architecture, §2.4 Key Abstractions, §2.5 Tool-assignment & routing model | When writing the planning specialist's config doc (§2.5 description-based routing) and tool registration in PRD-2. |
 | [`../agentic-harness/projects/AH-PRD-02-agent-factory.md`](../agentic-harness/projects/AH-PRD-02-agent-factory.md) | §5.2 Config-to-constructor mapping | Firestore fields that define an agent config, consumed by the runtime resolver when PRD-2 writes `agent_configs/project_planning`. |
-| [`../agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md`](../agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md) | §4 Data contract (`specialist_runtime`, `delegate_to_specialist`), §5 Implementation outline | The runtime resolver that picks up `agent_configs/project_planning` per turn — read alongside AH-PRD-02 §5.2. |
+| [`../agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md`](../agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md) | §4 Data contract (`specialist_runtime`, `transfer_to_agent`), §5 Implementation outline | The runtime resolver that picks up `agent_configs/project_planning` per turn — read alongside AH-PRD-02 §5.2. |
+| [`AH-PRD-05 — Multi-Step Workflow Orchestration`](../agentic-harness/projects/AH-PRD-05-multi-step-workflows.md) | §1 Layer Boundary | In-session supervisor-orchestration model; layer boundary defined in §1 of this README |
 | [`../agentic-harness/mcp-architecture.md`](../agentic-harness/mcp-architecture.md) | §4 Platform decisions, §6 Firestore config, §7 MCPServerManager | When wiring new ADK tools into the registry in PRD-2. |
 | [`../data-management/multi-tenant-migration-plan.md`](../data-management/multi-tenant-migration-plan.md) | Phase 5 — PRD + doc edits | Firestore paths in this component follow **Shape B** (`accounts/{account_id}/project_plans/...`). |
 | [`../../DESIGN-REVIEW-LOG.md`](../../DESIGN-REVIEW-LOG.md) | 2026-04-20 entry (Multi-Tenant Shape B) | Rationale for the current `accounts/*/project_plans/*` path layout and the collection-group scheduler query. |

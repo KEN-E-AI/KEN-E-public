@@ -7,6 +7,8 @@
 **Blocks:** —
 **Estimated effort:** 4–5 days
 
+> **ADK 2.0 note (Review 45).** The sandbox toggle + ephemeral-chat agent run on the **chat agent runtime**, which migrates to ADK 2.0. The `AgentEngineSandboxCodeExecutor` + `SandboxPool` 2.0 re-validation is owned by [AH-PRD-13](../../agentic-harness/projects/AH-PRD-13-adk2-foundation.md); sequence this PRD after it (or validate the sandbox on 2.0 first). The factory-built ephemeral agent inherits the migrated runtime — no SK-specific agent-construction change is needed.
+
 ---
 
 ## 1. Context

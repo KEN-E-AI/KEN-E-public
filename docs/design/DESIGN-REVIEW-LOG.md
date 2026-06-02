@@ -1931,4 +1931,104 @@ A live harness ran against the default `AgentEngineSandboxCodeExecutor` on Verte
 
 ---
 
+## Review 44 — AH-97: Supervisor-Orchestration Adoption (ADK 2.0)
+
+**Date:** 2026-06-01
+**Scope:** AH-97 ([Linear](https://linear.app/ken-e/issue/AH-97)); propagation of the supervisor-orchestration architecture decision following AH-99 GO-confirmed live validation.
+
+### Summary
+
+AH-96 (Phase 0 static spike) returned a CONDITIONAL GO. AH-99 (Phase 0.5 — live validation, 2026-06-01) upgraded this to a **GO-confirmed** verdict: all four live probes (probe-1 task-mode inner-event propagation, probe-4 dynamic-graph fan-out, probe-5 session round-trip, probe-7 LoopAgent review-loop) against real Gemini Flash and the dev Agent Engine exited 0. This review captures the resulting architecture decision and the documentation propagation across the canonical strategy docs.
+
+### Decision
+
+**Adopt ADK 2.0 supervisor-orchestration as the target architecture for KEN-E in-session multi-task orchestration.** The model adds a second dispatch surface alongside the existing post-AH-75 `transfer_to_agent` path:
+
+1. **Single-specialist-per-turn (existing R1 runtime, unchanged):** Root carries `tools=[]`; dispatch via ADK-native `transfer_to_agent`. One-way handoff; specialist runs to completion; Billing/Chat/MER-E parity contracts satisfied natively. This path continues to ship and will continue to be the fast path for single-task turns.
+
+2. **Multi-task supervisor-orchestrated turns (new target architecture):** Root is a `LlmAgent(mode='chat')` coordinator that decomposes the user request into a TODO ledger, delegates per-task via `mode='task'` specialists (invoked via the ADK delegation primitive), post-processes results, fans out via `ctx.run_node` + `asyncio.gather`, and synthesizes in one turn. AH-99 probe-1 and probe-4 confirm that task-mode sub-agent `usage_metadata` reaches the outer `Runner.run_async` stream natively — Billing, Chat, MER-E, and UI-streaming parity contracts are preserved without a custom event bridge.
+
+Key findings from AH-99:
+
+1. **Inner event propagation confirmed.** Task-mode `usage_metadata` lands on the outer stream natively (probe-1 + probe-4). This resolves the AH-75 trilemma: supervisor-orchestration gives the parent control *and* preserves outer-stream events.
+2. **`transfer_to_agent` retained as the single-specialist fast path.** The two paths coexist in one runtime; no R1 production assertion is invalidated.
+3. **`ctx.run_node` fan-out validated.** Dynamic-graph fan-out (probe-4) surfaces inner events with `usage_metadata` in the outer stream. This is the fan-out/synthesize primitive for multi-specialist turns.
+4. **`LoopAgent` deprecated, not removed.** Review loops continue to work today; long-term migration to `Workflow(graph=…)` is a future R-something item (not blocking).
+5. **GitHub `#3984` still OPEN.** The validated path is `mode='task'` under a `mode='chat'` coordinator — *not* task-mode nodes inside a static `Workflow` graph. That topology remains unvalidated; do not use it until `#3984` closes.
+6. **AH-98 carry-forward.** AH-99 §9 directs that `source="agent"` tools (`AgentTool.run_async`) must be migrated off the legacy inner-Runner path to task-mode / `ctx.run_node` paths to avoid re-introducing the AH-75 billing/tracing defect on the search sub-agent. Captured in AH-PRD-05 §3 Dependencies + §9 Risks.
+
+### Consequences
+
+- AH-PRD-05 is rewritten in place as the supervisor-orchestration implementation spec. Status header reads "Ready (spec) — implementation requires ADK 2.0 (Foundation PRD AH-PRD-13)." The existing re-scoping banner is removed.
+- The `execute_workflow` / `invoke_pipeline` inner-Runner shape is recorded as the named anti-pattern (per the AH-PRD-05 rewrite's hard rule: "do NOT implement the inner-Runner call on ADK 1.x").
+- The ADK 2.0 unpin (`google-adk` 1.34.1 → 2.0.0) + breaking-change migration is owned by a new **ADK 2.0 Foundation PRD (AH-PRD-13)** — not SK-10 (a Skills sandbox-spike close-out, unrelated). The 1.27.5 → 1.34.1 bump was already discharged by AH-96. Code changes ride AH-PRD-13 + downstream PRDs.
+- A trace-contract-diff doc (`AH-PRD-05-trace-contract-diff.md`) is authored per the AH-PRD-09 template so MER-E can update extractors before any supervisor-orchestration implementation PR merges.
+- The supervisor TODO ledger adds fields to `TodoItem` (`assignee`, `query`, `criteria`, `depends_on`, `result_key`, richer `status` enum) — Chat README updated.
+- The layer boundary between in-session orchestration (Harness) and cross-session scheduled work (Project Tasks) is documented explicitly.
+
+### Documents updated
+
+| File | Change |
+|------|--------|
+| `docs/design/adk2-supervisor-orchestration-analysis.md` | Status line flipped to "Decision recorded — 2026-06-01"; Outcome section appended |
+| `docs/design/DESIGN-REVIEW-LOG.md` | This entry (Review 44) |
+| `docs/design/components/agentic-harness/projects/AH-PRD-05-multi-step-workflows.md` | Full rewrite as supervisor-orchestration target architecture spec |
+| `docs/design/components/agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md` | §4.6 supervisor-orchestration successor subsection appended |
+| `docs/design/components/agentic-harness/projects/AH-PRD-02-agent-factory.md` | §5.4 Pitfall #3 updated to "Realized — ADK 2.0 GA" |
+| `docs/design/components/agentic-harness/README.md` | §1, §2 (diagram + AH-PRD-09 callout), §2.2, §2.5, §7 updated for supervisor-orchestration |
+| `docs/KEN-E-System-Architecture.md` | §1.6, §2.3.2, §4, §8.1 updated |
+| `docs/trace-structure-spec.md` | §3.1, §14, §16 updated; contract-diff doc referenced |
+| `docs/design/components/agentic-harness/projects/AH-PRD-05-trace-contract-diff.md` | New file — supervisor-orchestration trace contract diff for MER-E |
+| `docs/design/components/chat/README.md` | `TodoItem` schema widening + §5.3 cross-PRD note |
+| `docs/design/components/project-tasks/README.md` | Layer-boundary note + stale `delegate_to_specialist` reference corrected |
+| `docs/design/components/agentic-harness/mcp-architecture.md` | ADK 2.0 compatibility note |
+
+---
+
+## Review 45 — ADK 2.0 Migration Initiative: structuring, strategy-agent pin, SK-10 correction
+
+**Date:** 2026-06-02
+**Scope:** Follow-up to [Review 44](#review-44--ah-97-supervisor-orchestration-adoption-adk-20) / AH-97. Structures the actual ADK 2.0 *code* migration (Review 44 recorded the design adoption only), records the strategy-agent disposition, and corrects the SK-10 mis-reference that Review 44 / AH-97 propagated.
+
+### Summary
+
+Review 44 adopted the ADK 2.0 supervisor-orchestration model as the target architecture (docs only). A migration-sizing pass + an ADK-footprint recon (2026-06-02) established that the 2.0 *upgrade* is a **multi-PRD initiative**, not a pin bump, and surfaced two corrections to the Review 44 framing.
+
+### Decisions
+
+1. **`strategy_agent` stays pinned to ADK 1.34.x.** The `app/adk/agents/strategy_agent/` subsystem (account-creation strategy-doc generation; its own `deploy_with_sys_version.py` deploy tree; heavy `AgentTool` use) is **functional today and removed in a later release** (tracker TBD; [KG-PRD-05](components/knowledge-graph/README.md) refactors its graph-write path but does not remove the agents). It is **out of scope** for the 2.0 migration. Consequence: only the **chat tree** (`deploy_ken_e.py`) migrates to 2.0, and **the two deploy trees decouple by ADK major version** (owned by AH-PRD-13 §5.2).
+
+2. **The ADK 2.0 migration is a multi-PRD initiative.** New PRDs: **AH-PRD-13** (ADK 2.0 Migration Foundation — unpin + breaking-change audit + deploy-tree decoupling; the gate), **AH-PRD-14** (Contract Preservation — sub-call token capture, SSE author-tagging, `TodoItem` widening, synthesizer config; can proceed on 1.34.1), **AH-PRD-15** (AgentTool → task-mode migration + prod cutover). **AH-PRD-05** (Supervisor Orchestration) is the existing implementation spec (the "Phase 3" consumer). Per-platform specialist PRDs renumber to **AH-PRD-16+**.
+
+3. **SK-10 correction.** Review 44 / AH-97 stated "ADK 2.0 unpin via SK-10." This is wrong: **SK-10 is a Skills sandbox-spike close-out** ([SK-PRD-00](components/skills/projects/SK-PRD-00-skills-experiment.md), done), unrelated to the ADK 2.0 work. The `google-adk` 1.27.5 → 1.34.1 bump was already discharged by AH-96 (the codebase is at **1.34.1**, incl. `requirements.txt` per PR #816). The 2.0 unpin (1.34.1 → 2.0.0) + breaking-change migration is owned by **AH-PRD-13**. All AH-97 docs were corrected accordingly.
+
+4. **AH-100 needs 2.0 work, but no separate PRD.** AH-100 (per-turn `root.tools` hot-reload) rests on a 1.x-specific guarantee (per-invocation `canonical_tools` recompute); it is **re-validated under the 2.0 graph engine by AH-PRD-13 §5.3**. Separately, AH-98/AH-100 let the **root** carry `agent.google_search` (an `AgentTool`), which `#3984` leaves broken on 2.0 — its migration + the coordinator/root-tool reconciliation are owned by **AH-PRD-15**, which **gates prod cutover** (Foundation validates on 2.0 with the tool unassigned).
+
+5. **`response_artifacts` is not a phantom.** The AH-96 analysis memo's instruction to "correct `response_artifacts` → `register_artifact`" conflated two layers. `response_artifacts` is AH-PRD-04's (unbuilt) session-state surfacing key; `register_artifact` is the shipped GCS + `ChatArtifactIndex` provenance path. AH-PRD-05's artifact wording was reconciled to AH-PRD-04's actual convention (not blindly replaced).
+
+### Consequences / corrections applied (this branch)
+
+- New PRD: `AH-PRD-13-adk2-foundation.md`.
+- AH-PRD-05, AH-PRD-09, AH-PRD-05-trace-contract-diff, README, System-Architecture, trace-structure-spec, and Review 44 — every "ADK 2.0 unpin via SK-10" / "1.27.5 → 2.0.0" reference repointed to AH-PRD-13 / "1.34.1 → 2.0.0".
+- AH-PRD-05: artifact framing reconciled with AH-PRD-04; task-mode delegation primitive (`request_task_<name>` / `complete_task`) named in §5.2; AgentTool ownership pointed to AH-PRD-15.
+- README project index + dependency graph renumbered (per-platform specialists → AH-PRD-16+).
+- `mcp-architecture.md`: trimmed a self-referential note line.
+
+### Documents updated
+
+| File | Change |
+|------|--------|
+| `docs/design/components/agentic-harness/projects/AH-PRD-13-adk2-foundation.md` | New — the Foundation (gating) PRD |
+| `docs/design/components/agentic-harness/projects/AH-PRD-05-multi-step-workflows.md` | SK-10 → AH-PRD-13; artifact reconciliation; task-mode primitive named; AgentTool → AH-PRD-15 |
+| `docs/design/components/agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md` | Implementation-gate SK-10 → AH-PRD-13 |
+| `docs/design/components/agentic-harness/projects/AH-PRD-05-trace-contract-diff.md` | ADK 2.0 gate SK-10 → AH-PRD-13 |
+| `docs/design/components/agentic-harness/README.md` | Gate refs + project index + dep graph (AH-PRD-13; specialists → 16+) |
+| `docs/KEN-E-System-Architecture.md` | §2.1 + §8.1 gate refs SK-10 → AH-PRD-13; version 1.34.1 → 2.0.0 |
+| `docs/trace-structure-spec.md` | "post-SK-10 unpin" → "post-ADK-2.0 unpin" |
+| `docs/design/components/agentic-harness/mcp-architecture.md` | Trimmed self-referential note |
+| `docs/design/adk2-supervisor-orchestration-analysis.md` | Header "Related" SK-10 → AH-PRD-13 |
+| `docs/design/DESIGN-REVIEW-LOG.md` | Review 44 SK-10 correction + this entry (Review 45) |
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, and documents updated. Decision rationale lives in the Review itself — this log is the canonical record going forward.*

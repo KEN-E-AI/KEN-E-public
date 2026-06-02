@@ -225,3 +225,12 @@ HubSpot MCP is currently read-only. Google Ads uses a **hybrid approach** (MCP f
 - MCPServerManager: `app/adk/mcp_config/manager.py`
 - ToolRegistry: `app/adk/tools/registry/tool_registry.py`
 - Design review log: [`../../DESIGN-REVIEW-LOG.md`](../../DESIGN-REVIEW-LOG.md)
+
+---
+
+## ADK 2.0 Compatibility
+
+AH-99 probe-5 (2026-06-01) validated that `VertexAiSessionService` accepts ADK 2.0-shaped events — specifically the new `node_info` and `isolation_scope` fields introduced by task-mode and dynamic-graph dispatch — with no schema migration required. The `create`, `get`, `list`, and `delete` session operations all function correctly under ADK 2.0.
+
+**Consequence for the MCP/toolset story:** The MCP architecture documented in this file is **unaffected by the ADK 2.0 supervisor-orchestration adoption**. `McpToolset` construction, `McpToolsetPool` lifecycle, the `cloud_run` / `zapier` `McpServerKind` paths, and OAuth header injection all continue to operate identically under the supervisor model. Per-task specialists (`mode='task'`) receive their `McpToolset` from the pool via the same `specialist_runtime.resolve_agent` path as single-specialist turns.
+*Reference: `docs/spike-adk2-supervisor-orchestration-live.md` §1 probe-5 result; [AH-PRD-05](./projects/AH-PRD-05-multi-step-workflows.md) §3 Dependencies.*

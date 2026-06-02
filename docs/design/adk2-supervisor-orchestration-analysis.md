@@ -1,11 +1,11 @@
 # ADK 2.0 & KEN-E Supervisor-Orchestration — Analysis & Recommendation
 
-> **Status:** Analysis / recommendation — **decision requested**. Spike-gated.
+> **Status:** Decision recorded — 2026-06-01 — ADK 2.0 supervisor-orchestration adopted as target architecture (AH-99 GO-confirmed).
 > **Date:** 2026-06-01
 > **Owner:** Agentic Harness (Core AI / Agent Platform)
 > **Scope:** Whether and how to make KEN-E a supervisor-orchestrator (control the conversation, build TODO lists that delegate individual tasks to sub-agents, post-process sub-agent output, fan out to multiple specialists and synthesize in one turn), and whether to adopt Google ADK 2.0 to do it.
 > **Decision gate:** Linear **AH-96** — Phase 0 spike (does ADK 2.0 propagate inner node events to the outer Runner stream?). Do not fund the rework until that spike returns GO/NO-GO.
-> **Related:** [AH-PRD-05](./components/agentic-harness/projects/AH-PRD-05-multi-step-workflows.md) (Multi-Step Workflow Orchestration — the rewrite target), [AH-PRD-09](./components/agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md) §4.6 (AH-75 dispatch rationale / event-loss evidence), [AH-PRD-02](./components/agentic-harness/projects/AH-PRD-02-agent-factory.md) §5.4, SK-10 (ADK unpin).
+> **Related:** [AH-PRD-05](./components/agentic-harness/projects/AH-PRD-05-multi-step-workflows.md) (Multi-Step Workflow Orchestration — the rewrite target), [AH-PRD-09](./components/agentic-harness/projects/AH-PRD-09-per-turn-dispatch.md) §4.6 (AH-75 dispatch rationale / event-loss evidence), [AH-PRD-02](./components/agentic-harness/projects/AH-PRD-02-agent-factory.md) §5.4, AH-PRD-13 (ADK 2.0 Foundation — the 2.0 unpin + migration; the earlier 1.27.5 → 1.34.1 bump rode SK-10, now discharged).
 
 > **Provenance & confidence.** This memo was produced by a multi-agent analysis workflow (2026-06-01) and the ADK 2.0 claims were adversarially verified against primary sources — PyPI, the `google/adk-python` CHANGELOG, `adk.dev/2.0`, and the GitHub REST API for issue state (verification overall-confidence: HIGH). **Two facts to keep front-of-mind:** (1) the single *decisive* question — whether 2.0's task-mode/graph paths propagate inner sub-agent events to an outer `Runner.run_async` consumer — is **UNVERIFIED by any primary source** and is exactly what AH-96 must close; (2) the "2.0 sessions readable by ADK 1.28+" threshold cited below came from a search summary, not a primary page — treat the specific version number as unconfirmed. During web research, two agents independently encountered and correctly **refused to act on a prompt-injection** embedded in GitHub Discussion #5263; source 2.0 facts from `adk.dev/2.0` only.
 
@@ -184,3 +184,34 @@ Build the supervisor on **path (C) — static sub-agent composition** (AH-PRD-05
 ---
 
 **Bottom line:** ADK 2.0 is the right strategic target and dissolves the trilemma *in principle* — but the one fact that matters most to KEN-E (outer-stream propagation) is unverified, and the underlying bug is open. Gate the rework on Phase 0. Bump to 1.34.x and fix the outer-stream contracts in parallel so we are ready to build on whichever substrate the spike chooses.
+
+---
+## Outcome
+
+**Decision recorded: 2026-06-01.** AH-96 (Phase 0 static spike) returned a CONDITIONAL GO based on source-analysis of ADK 2.0 internals. AH-99 (Phase 0.5 live validation) upgraded this to a **GO-confirmed** verdict on 2026-06-01: all four live probes (probe-1 task-mode inner-event propagation, probe-4 dynamic-graph fan-out, probe-5 session round-trip, probe-7 LoopAgent review-loop) against real Gemini Flash and the dev Agent Engine exited 0.
+
+The ADK 2.0 supervisor-orchestration model is adopted as the **target architecture** for in-session multi-task orchestration in KEN-E. See:
+
+- **Live validation evidence:** `docs/spike-adk2-supervisor-orchestration-live.md` §1 (GO-confirmed verdict + probe results table)
+- **Canonical implementation spec:** `docs/design/components/agentic-harness/projects/AH-PRD-05-multi-step-workflows.md` (rewritten as the supervisor-orchestration target)
+- **Decision log:** `docs/design/DESIGN-REVIEW-LOG.md` Review 44 (Supervisor-Orchestration Adoption — ADK 2.0)
+
+The existing analysis (§§1–7 above) is retained verbatim as the audit trail of reasoning. The supervisor-orchestration model layers on top of the post-AH-75 dispatch surface (`transfer_to_agent` for single-specialist-per-turn remains the R1 runtime fast path); it does not replace it.
+
+---
+
+## Cross-project ADK 2.0 impact (step-5 review, 2026-06-02)
+
+Every **not-started** project in [PROJECT-PLANNER](./components/PROJECT-PLANNER.md) was assessed for ADK 2.0 migration impact. Only projects that construct ADK agents in-process, run code-exec/sandbox, or depend on the event/trace/billing contracts can be affected; the rest are unaffected.
+
+| Verdict | Projects | Rationale |
+|---|---|---|
+| **Auto-covered** (inherit the migrated runtime; no PRD change) | AH-PRD-04 (data-viz — function tool + `response_artifacts` session-state), PR-PRD-02 (planning agent), SE-PRD-02 / 03 / 05 (sar-e glue + derivation agents), KG-PRD-04 / 06 (orchestrator read tools) | Built via the factory / `agent_configs` / function tools; AH-PRD-13 migrates the runtime they sit on. Those sequenced after the R3 migration ship on 2.0; any shipping earlier (R2/R4) re-validate at cutover. |
+| **Note added** (2.0 coordination) | AH-PRD-11 (residency — threads region through the same surfaces AH-PRD-13 rewrites), AH-PRD-12 (residency — 2.0 trace shape), SK-PRD-04 (sandbox/code-exec on 2.0), KG-PRD-05 (modifies the 1.34.x strategy tree — not migrated) | A 2.0 sequencing / cross-ref note was added to each PRD. |
+| **Unaffected** (HTTP dispatch / non-agent) | PR-PRD-04 (`TaskOrchestrator`) + A-PRD-02 (`AutomationRunEngine`) dispatch the deployed agent over HTTP (`AgentEngineClient`); all UI / Dashboards / Data-Pipeline / Integrations / Billing-storage / Performance / Data-Management / KG-01-03/07 | No in-process ADK agent construction; the 2.0 migration is internal to the deployed agent. |
+
+**Findings folded back into the migration PRDs:**
+- **AH-PRD-13 gap closed:** added a **sandbox / code-exec 2.0 re-validation** scope item (`AgentEngineSandboxCodeExecutor` + `SandboxPool`) — the SK-PRD-00 spike basis was 1.x; AH-PRD-11 and SK-PRD-04 depend on it.
+- **Correction:** KG-PRD-05 is a graph-write-path refactor that **keeps** the strategy agents — it does **not** remove them; full removal is a later release (tracker TBD). **Open item for the PO:** System-Architecture §2.1 still says the strategy supervisor's "replacement … is tracked in KG-PRD-05," which overstates KG-PRD-05's actual scope (a refactor) — reconcile.
+
+---

@@ -147,6 +147,27 @@ The Chat / Billing parity tests at `app/adk/agents/agent_factory/tests/test_chat
 
 > **PRD evolution note.** §4.1 above was rewritten to reflect the new abstractions. §4.5 (cross-component contracts) is unchanged in intent but satisfied via a different mechanism. §7 Phase 2 ACs #9 and #10 are now satisfied via `transfer_to_agent` rather than via the function-tool dispatch. §11 Risk "ADK Runner internals" is retired — we now use ADK's most-supported path, not a custom one.
 
+### Supervisor-Orchestration Successor (AH-PRD-05)
+
+**`transfer_to_agent` remains the single-specialist-per-turn fast path and ships in R1 unchanged.** The supervisor-orchestration model described in [AH-PRD-05](./AH-PRD-05-multi-step-workflows.md) is **additive** — it does not replace `transfer_to_agent` but adds a second dispatch surface for multi-task turns where the parent must regain control mid-turn, fan out to multiple specialists, and synthesize in one pass.
+
+**What supervisor-orchestration adds (AH-99 GO-confirmed, 2026-06-01):**
+
+| Aspect | Post-AH-75 (R1 runtime, unchanged) | Supervisor model (AH-PRD-05 target) |
+|---|---|---|
+| Coordinator | Root (`tools=[]`) dispatches one specialist per turn | Root (`LlmAgent(mode='chat')`) decomposes user message into a TODO ledger and delegates per-task |
+| Specialist dispatch | ADK-native `transfer_to_agent` (one-way) | ADK delegation to `mode='task'` specialists (call-and-return; parent regains control) |
+| Fan-out | N/A — one specialist per turn | `ctx.run_node` + `asyncio.gather` for parallel multi-branch execution |
+| Review loop | `LoopAgent` leaf wraps the dispatched specialist | `LoopAgent` leaf continues to wrap per-task specialist work |
+| Billing/Chat/MER-E parity | Preserved natively via `transfer_to_agent` outer-stream events | Preserved natively via task-mode outer-stream propagation (AH-99 probe-1 + probe-4) |
+
+**Key constraints (from AH-99 live probes):**
+- The validated path is `mode='task'` under a `mode='chat'` coordinator. Task-mode nodes inside a static `Workflow` graph are **not validated** (GitHub `#3984` still OPEN).
+- `LoopAgent` is deprecated in ADK 2.0 but functional; migration to `Workflow(graph=…)` is a long-term follow-on.
+- **`AgentTool.run_async` (inner-Runner pattern) must not be used** — it re-introduces the AH-75 billing/tracing defect. AH-98 documents the migration of `source="agent"` tools off this path.
+
+**Implementation gate:** ADK 2.0 — the unpin (`google-adk` 1.34.1 → 2.0.0) + breaking-change migration is owned by the ADK 2.0 Foundation PRD ([AH-PRD-13](./AH-PRD-13-adk2-foundation.md)). The `transfer_to_agent` R1 path is unaffected by the unpin. See [DESIGN-REVIEW-LOG Review 44](../../../DESIGN-REVIEW-LOG.md#review-44--ah-97-supervisor-orchestration-adoption-adk-20) for the full decision record.
+
 ## 5. Implementation outline
 
 ### 5.1 File inventory (consolidated across phases)

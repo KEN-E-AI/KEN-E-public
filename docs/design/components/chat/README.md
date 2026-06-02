@@ -221,7 +221,7 @@ Schema source of truth: `api/src/kene_api/models/chat.py` (Pydantic), mirrored i
 | `ChatCategoryDefinition` | Same | Per-user. `name_casefold` for Unicode-safe dedup. |
 | `ChatArtifactIndex` | Same | One per artifact. `created_by_tool: str \| None` — non-null in v1 (agent-created); `None` reserved for future user uploads. No separate `creator` field. |
 | `ChatStatusDetail` | Same | Composite response shape for `/status-detail`. Includes server-derived `is_agent_running`, `context_usage_percent`, `duration_seconds`, `activity_summary`, `total_tokens`. No `cost_usd_display`. |
-| `TodoList` + `TodoItem` | Same | Read-only shapes matching the `session.state["todo_lists"]` convention. |
+| `TodoList` + `TodoItem` | Same | Read-only shapes matching the `session.state["todo_lists"]` convention. In the supervisor-orchestration model ([AH-PRD-05](../agentic-harness/projects/AH-PRD-05-multi-step-workflows.md)), `TodoItem` gains supervisor ledger fields: `assignee` (specialist doc_id), `query` (task query), `criteria` (acceptance criteria for the review-loop wrapper), `depends_on` (list of upstream item_ids), `result_key` (session-state key where the specialist writes its output), and a widened `status` enum (`pending` \| `dispatched` \| `awaiting_review` \| `completed` \| `failed`). These fields are **additive and backward-compatible** — the existing `set_todo_list` / `update_todo_list` tool surface is unchanged for users. The supervisor (not the user) writes the new fields. **Implementation note:** the `status` enum is widened from binary to 5-state; consumers using exhaustive pattern matching must handle the three new states (`dispatched`, `awaiting_review`, `failed`) gracefully. |
 | `ChatSessionSideTableService.update_from_delta(session_id, delta)` | `api/src/kene_api/chat/side_table.py` | The single hook that applies a delta to the side-table. Uses `firestore.Increment` for token counters. |
 | `ChatSessionSideTableService.list_for_user(user_id, account_id, cursor, category_id?, query?)` | Same | Cursor-paginated read. Applies 30-day window. Enforces `user_id` match server-side. |
 | `SessionTurnAccumulator` | `api/src/kene_api/chat/accumulator.py` | In-memory per-turn delta: tokens, tool_call_count, message_count (user+model only), latest_summary, post-compaction context baseline. Single Firestore `update` per turn via `build_delta()`. |
@@ -355,6 +355,10 @@ Four touchpoints need conscious coordination:
 2. **Sprint 2:** CH-PRD-02 (5 days, frontend + thin backend). The `/chat` page goes live behind `chat_v2_enabled` flag. Completes end-to-end the existing chat UX with v2 plumbing. Load-test gate at AC #16.
 3. **Sprint 3:** CH-PRD-03, CH-PRD-04, CH-PRD-05 in parallel across three dev pairs (3 / 4 / 4 days). Each gated by its own feature flag (`chat_categories_enabled`, `chat_status_detail_enabled`). Each ships independently.
 4. **Sprint 4 (capstone):** flag sweep — enable all three Chat flags in dev → staging → prod. Observe for 7 days. Delete `frontend/src/services/chatService.ts` in a follow-up PR. Drop the flags from CLAUDE.md once usage stabilizes.
+
+### 5.x Cross-PRD Coordination: AH-PRD-05 (Supervisor-Orchestration)
+
+The `TodoItem` schema widening described in §2.4 is driven by the supervisor-orchestration model in [AH-PRD-05](../agentic-harness/projects/AH-PRD-05-multi-step-workflows.md). The `set_todo_list` / `update_todo_list` tools are the supervisor coordinator's primary ledger-write mechanism. Chat owns the schema and model definitions; the Harness (AH-PRD-05) is the consumer. Coordinate on any further `TodoItem` field additions before implementing them.
 
 ## 6. Global Document References
 

@@ -248,7 +248,7 @@ async def run_sub_task(query: str, tool_context: ToolContext) -> str:
 
 1. **Manual `parent_agent` linkage.** `parent_agent` is set only in Pydantic `model_post_init()`. Dynamically appended agents don't get it → `root_agent` property returns wrong agent → `transfer_to_agent` breaks.
 2. **Duplicate-name gap.** `validate_sub_agents_unique_names` only fires at construction. Runtime `sub_agents.append()` bypasses validation entirely.
-3. **ADK v2 migration.** `transfer_to_agent` is being replaced by Task Mode (`Agent(mode='task')`). Any dynamic-creation patterns written today will need rework.
+3. **ADK v2 migration — Realized.** Task Mode (`LlmAgent(mode='task')`) is GA in ADK 2.0 (released 2026-05-19). AH-99 (2026-06-01) live-confirmed that task-mode specialists under a `mode='chat'` coordinator propagate inner `usage_metadata` to the outer `Runner.run_async` stream natively — Billing, Chat, and MER-E parity contracts preserved. [AH-PRD-05](./AH-PRD-05-multi-step-workflows.md) is rewritten as the supervisor-orchestration implementation spec, using `mode='task'` specialist delegation and `ctx.run_node` fan-out as the primary multi-task primitives. See [DESIGN-REVIEW-LOG Review 44](../../../DESIGN-REVIEW-LOG.md#review-44--ah-97-supervisor-orchestration-adoption-adk-20) for the full decision record.
 
 ### 5.5 Factory limitations & open questions
 
