@@ -209,6 +209,28 @@ with tempfile.TemporaryDirectory() as temp_dir:
     app_dest = temp_path / "app"
     app_dest.mkdir(parents=True, exist_ok=True)
 
+    # Copy app/adk/ sub-packages so absolute imports like
+    # ``from app.adk.tools.agent_tools.google_search import …`` (added in AH-98)
+    # resolve on the Agent Engine backend. The strategy agent re-exports
+    # create_google_search_agent at package import, so without these the agent
+    # fails to unpickle with ``ModuleNotFoundError: No module named 'app.adk'``.
+    # Mirrors deploy_packaging.assemble_deploy_tree (used by the chat deploy).
+    app_adk_dest = app_dest / "adk"
+    app_adk_dest.mkdir(parents=True, exist_ok=True)
+    (app_dest / "__init__.py").touch()
+    (app_adk_dest / "__init__.py").touch()
+    for subpkg in ("agents", "security", "tracking", "tools", "mcp_config"):
+        src = adk_root / subpkg
+        if src.exists():
+            shutil.copytree(
+                src,
+                app_adk_dest / subpkg,
+                ignore=shutil.ignore_patterns("tests", "__pycache__"),
+            )
+            logger.info(f"Copied app.adk.{subpkg} package")
+        else:
+            logger.warning(f"app/adk/{subpkg} not found")
+
     # Copy app/utils/ (weave_observability, etc.)
     app_utils_src = app_root / "utils"
     if app_utils_src.exists():
