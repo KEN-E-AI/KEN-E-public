@@ -285,20 +285,20 @@ async def _capture_mode_b_events(
 
 @pytest.fixture(autouse=True)
 def clear_specialists_cache() -> Any:
-    """Each test starts with a clean agent cache, config cache, block cache, and fingerprint cache."""
+    """Each test starts with a clean agent cache, config cache, block cache, and applied-state slot."""
     from app.adk.agents.agent_factory import sub_agent_attacher as saa
     from app.adk.agents.utils.config_cache import clear_config_cache
 
     sr._specialists_cache.clear()
     sr._clear_block_cache_for_tests()
     sr._clear_list_cache_for_tests()
-    saa._clear_fingerprint_cache_for_tests()
+    saa._reset_applied_state_for_tests()
     clear_config_cache()
     yield
     sr._specialists_cache.clear()
     sr._clear_block_cache_for_tests()
     sr._clear_list_cache_for_tests()
-    saa._clear_fingerprint_cache_for_tests()
+    saa._reset_applied_state_for_tests()
     clear_config_cache()
 
 

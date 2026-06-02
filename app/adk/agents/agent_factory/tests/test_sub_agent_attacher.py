@@ -50,19 +50,19 @@ from app.adk.agents.agent_factory.sub_agent_attacher import (
 
 @pytest.fixture(autouse=True)
 def _clean_caches() -> Any:
-    """Each test starts and ends with empty agent + block + list + fingerprint caches."""
+    """Each test starts and ends with empty agent + block + list caches and a reset applied-state slot."""
     from app.adk.agents.utils.config_cache import clear_config_cache
 
     sr._specialists_cache.clear()
     sr._clear_block_cache_for_tests()
     sr._clear_list_cache_for_tests()
-    saa._clear_fingerprint_cache_for_tests()
+    saa._reset_applied_state_for_tests()
     clear_config_cache()
     yield
     sr._specialists_cache.clear()
     sr._clear_block_cache_for_tests()
     sr._clear_list_cache_for_tests()
-    saa._clear_fingerprint_cache_for_tests()
+    saa._reset_applied_state_for_tests()
     clear_config_cache()
     # root.sub_agents is NOT reset here — each test calls _make_root() for a fresh instance.
 
@@ -528,6 +528,13 @@ class TestReparenting:
         to root_a and then attached to root_b in the same process (only
         possible in test fixtures since production has one root per process),
         ``parent_agent`` must move to root_b.
+
+        The two attaches use different account_ids so the (account_id,
+        fingerprint) slot registers an account switch and runs the reconcile —
+        which exercises the reparenting branch of ``_set_parent``. (A
+        same-account second attach with an unchanged fingerprint would
+        short-circuit, correctly, in production where there is one root per
+        process.)
         """
         root_a = _make_root("root_a")
         root_b = _make_root("root_b")
@@ -538,7 +545,9 @@ class TestReparenting:
         assert specialist.parent_agent is root_a
         assert specialist in root_a.sub_agents
 
-        # Now attach the same specialist instance under a second root.
+        # Now attach the same specialist instance under a second root for a
+        # different account → account switch → reconcile runs → reparenting
+        # branch of _set_parent is exercised.
         with _patched_resolvers({"ga_spec": specialist}):
             attach_account_specialists(root_b, "acc_second")
 
@@ -723,50 +732,123 @@ class TestFingerprintShortCircuit:
 
         assert root.sub_agents == [fresh]
 
-    def test_fingerprint_is_per_account(self) -> None:
-        """Fingerprint cache must not bleed between different account_ids."""
-        root_a = _make_root("root_a")
-        root_b = _make_root("root_b")
-        a = _make_specialist("ga_spec")
+    def test_multi_account_interleave_does_not_serve_stale_specialists(self) -> None:
+        """A→B→A sequential interleave must not leave A with B's specialists.
 
-        resolve_calls: list[tuple[str, str | None]] = []
+        Regression test for the cross-account isolation bug fixed by replacing
+        the per-account ``_fingerprint_cache`` dict with the single-slot
+        ``_applied_state`` (AH-102).
 
-        def _track_resolve(
+        Scenario:
+            turn 1  acct A (spec_a) → miss → root.sub_agents={spec_a}, slot=(A,FA)
+            turn 2  acct B (spec_b) → miss → root.sub_agents={spec_b}, slot=(B,FB)
+            turn 3  acct A (unchanged) → slot (B,FB) ≠ (A,FA) → reconcile → {spec_a}
+
+        After turn 3 the root must contain spec_a, not spec_b.
+        """
+        root = _make_root()
+        spec_a = _make_specialist("spec_a")
+        spec_b = _make_specialist("spec_b")
+
+        # Turn 1: account A attaches spec_a.
+        with _patched_resolvers({"spec_a": spec_a}):
+            attach_account_specialists(root, "acc_A")
+        assert {s.name for s in root.sub_agents} == {"spec_a"}
+
+        # Turn 2: account B (different config hash → different frozenset) attaches spec_b.
+        # Use config_suffix to produce a distinct (doc_id, content_hash) set so
+        # the fingerprint comparison correctly identifies this as a different slot.
+        with _patched_resolvers({"spec_b": spec_b}, config_suffix="_B"):
+            attach_account_specialists(root, "acc_B")
+        assert {s.name for s in root.sub_agents} == {"spec_b"}
+
+        # Turn 3: account A again (config unchanged → same frozenset as turn 1).
+        # The single-slot fingerprint now holds B's set (slot=FB ≠ FA) so a
+        # reconcile MUST run and restore spec_a.
+        with _patched_resolvers({"spec_a": spec_a}):
+            attach_account_specialists(root, "acc_A")
+
+        names = {s.name for s in root.sub_agents}
+        assert names == {"spec_a"}, (
+            "After A→B→A interleave, root.sub_agents must contain A's specialists, "
+            f"not B's. Got: {names}"
+        )
+
+    def test_same_config_different_account_does_not_share_slot(self) -> None:
+        """Two accounts sharing an IDENTICAL specialist config must not share the
+        applied slot — account B must receive its own account-bound instance.
+
+        Regression for the cross-account credential leak (AH-102): a specialist
+        binds its per-account MCP connection at build time and is cached under
+        (doc_id, account_id, content_hash). Two accounts with no per-account
+        overlay resolve a global specialist to a byte-identical
+        ``MergedAgentConfig`` → identical content_hash → identical fingerprint,
+        yet need distinct instances. A fingerprint-only slot would HIT on the
+        account switch and leave account A's credentialed specialist live for
+        account B; the (account_id, fingerprint) slot forces a reconcile.
+
+        Here resolve_agent returns a different instance per account while the
+        config (and thus the fingerprint) is account-independent — so only the
+        account_id in the slot can distinguish the two turns.
+        """
+        root = _make_root()
+        # Same doc_id + identical config → identical fingerprint for both
+        # accounts, but two distinct per-account instances.
+        spec_for_a = _make_specialist("shared_spec")
+        spec_for_b = _make_specialist("shared_spec")
+        per_account_instance = {"acc_A": spec_for_a, "acc_B": spec_for_b}
+
+        def _list(_account_id: str) -> list[str]:
+            return ["shared_spec"]
+
+        def _resolve_config(
+            doc_id: str, _account_id: str | None = None, _ttl: int = 60
+        ) -> MergedAgentConfig:
+            # Account-independent → identical content_hash for A and B.
+            return MergedAgentConfig(
+                instruction="shared_spec instruction",
+                model="gemini-2.5-pro",
+                description="shared_spec description",
+                visible_in_frontend=True,
+                ken_e_sub_agent=True,
+            )
+
+        def _resolve_agent(
             doc_id: str,
             account_id: str | None = None,
             _ttl: int = 60,
             session_state: Mapping[str, Any] | None = None,
         ) -> LlmAgent:
-            resolve_calls.append((doc_id, account_id))
-            return a
+            return per_account_instance[account_id]
 
         with (
             patch(
                 "app.adk.agents.agent_factory.sub_agent_attacher."
                 "list_account_agent_configs_cached",
-                return_value=["ga_spec"],
+                side_effect=_list,
             ),
             patch(
                 "app.adk.agents.agent_factory.sub_agent_attacher.resolve_config",
-                side_effect=lambda doc_id, _acc=None, _ttl=60: MergedAgentConfig(
-                    instruction=f"{doc_id} instruction",
-                    model="gemini-2.5-pro",
-                    description=f"{doc_id} description",
-                    visible_in_frontend=True,
-                ),
+                side_effect=_resolve_config,
             ),
             patch(
                 "app.adk.agents.agent_factory.sub_agent_attacher.resolve_agent",
-                side_effect=_track_resolve,
+                side_effect=_resolve_agent,
             ),
         ):
-            attach_account_specialists(root_a, "acct_x")
-            attach_account_specialists(root_b, "acct_y")
+            attach_account_specialists(root, "acc_A")
+            assert root.sub_agents == [spec_for_a]
 
-        # Both accounts are new, so resolve_agent must have been called for both.
-        accounts_seen = {acc for _, acc in resolve_calls}
-        assert "acct_x" in accounts_seen
-        assert "acct_y" in accounts_seen
+            # Account switch with an IDENTICAL fingerprint. A fingerprint-only
+            # slot would short-circuit here and leave spec_for_a live.
+            attach_account_specialists(root, "acc_B")
+
+        assert root.sub_agents == [spec_for_b], (
+            "Account B must receive its own account-bound specialist instance, "
+            "not account A's, even though both accounts share an identical config "
+            f"fingerprint. Got: {[s.name for s in root.sub_agents]} "
+            f"(is spec_for_b: {root.sub_agents == [spec_for_b]})"
+        )
 
     def test_transient_resolve_agent_failure_is_retried_next_turn(self) -> None:
         """If resolve_agent fails transiently the failed specialist must NOT be
@@ -1122,8 +1204,8 @@ class TestStateCapture:
                 "agent_id must equal name (ADK contract — specialist_runtime.py:626)"
             )
 
-    def test_state_captures_on_fingerprint_cache_hit(self) -> None:
-        """Fingerprint-cache-hit turns must still write _available_specialists.
+    def test_state_captures_on_applied_fingerprint_hit(self) -> None:
+        """Applied-fingerprint-hit turns must still write _available_specialists.
 
         On the second turn with unchanged configs, _attach_locked returns
         early without calling _reconcile — but root_agent.sub_agents is still

@@ -77,15 +77,57 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Fingerprint cache: maps account_id → frozenset of (doc_id, content_hash)
-# for the last successfully-attached visible specialist set. Allows _attach_locked
-# to skip the full resolve + reconcile pass when no config has changed.
-_fingerprint_cache: dict[str, frozenset[tuple[str, str]]] = {}
+# Single process-global slot: the (account_id, fingerprint) pair currently
+# reflected in ``root.sub_agents`` — where ``fingerprint`` is the frozenset of
+# (doc_id, content_hash) for the visible specialist set. There is exactly ONE
+# ``root`` (and therefore one ``root.sub_agents`` slot) per worker process, so
+# the applied state MUST be a single slot too — NOT keyed per account.
+#
+# A per-account map (the original shape) serves stale specialists when one
+# worker handles multiple accounts sequentially:
+#
+#     turn 1  acct A (specialists SA) → miss → root.sub_agents=SA, fp[A]=FA
+#     turn 2  acct B (specialists SB) → miss → root.sub_agents=SB, fp[B]=FB
+#     turn 3  acct A (unchanged)      → fp[A] HIT → early return
+#                                      → root.sub_agents is still SB  ← A delegates to B's agents
+#
+# No concurrency needed; plain sequential interleaving on one process is enough.
+# Keying the applied state to the live ``root.sub_agents`` slot instead forces a
+# re-resolve whenever the desired state differs from what is live — correct over
+# fast. On a hit the resolver is skipped, so a no-op turn costs one comparison.
+#
+# Why the slot carries ``account_id`` and not just the fingerprint: a specialist
+# instance binds its per-account MCP connection at *build* time
+# (``_build_specialist`` pool_key = (server_id, account_id, creds_hash)) and is
+# cached under (doc_id, account_id, content_hash). Two accounts with no
+# per-account config overlay resolve a global specialist to a byte-identical
+# ``MergedAgentConfig`` → identical content_hash → identical fingerprint, yet
+# need distinct, account-bound instances. A fingerprint-only slot would HIT on
+# that account switch and leave the previous account's credentialed specialist
+# live — a cross-account leak (AH-102). Comparing the full (account_id,
+# fingerprint) forces a reconcile on every account switch, even for a shared
+# config. Single-account-per-process is unchanged: account_id is constant, so
+# the comparison reduces to the fingerprint.
+#
+# Residual concurrency note: a single shared ``root.sub_agents`` mutated per
+# turn is still racy across *concurrent* turns for different accounts (per-account
+# stripe locks don't mutually exclude). That window is inherited from the
+# shared-root shape and may warrant a separate design pass (per-turn sub-agent
+# lists vs. mutating shared state). This slot fixes the sequential stale read
+# above, which needs no concurrency.
+#
+# AH-100 (PR #805, commit f634f2ff) introduced the analogous ``_applied_hash``
+# slot in ``root_tools_attacher.py``. This slot mirrors that single-slot pattern
+# but additionally keys on account_id: root.tools are account-independent, so
+# AH-100 may share the slot across same-config accounts; specialists carry
+# per-account credentials and cannot.
+_applied_state: tuple[str, frozenset[tuple[str, str]]] | None = None
 
 
-def _clear_fingerprint_cache_for_tests() -> None:
-    """Drop the fingerprint cache.  For test isolation only."""
-    _fingerprint_cache.clear()
+def _reset_applied_state_for_tests() -> None:
+    """Reset the applied-state slot.  For test isolation only."""
+    global _applied_state
+    _applied_state = None
 
 
 def attach_account_specialists(
@@ -153,6 +195,8 @@ def _attach_locked(
 
     Caller holds the per-account stripe lock.
     """
+    global _applied_state
+
     try:
         doc_ids = list_account_agent_configs_cached(account_id)
     except FirestoreConnectionError as exc:
@@ -165,13 +209,17 @@ def _attach_locked(
 
     # Compute a fingerprint of (doc_id, content_hash) for all visible configs.
     # This is cheap — resolve_config is TTL-cached; the hash is a pure function
-    # of the already-fetched config. If the fingerprint hasn't changed, the
-    # sub_agents list is already in sync and we can skip the full reconcile pass.
+    # of the already-fetched config. If the applied slot already records this
+    # (account_id, fingerprint) pair, root.sub_agents is already in sync for this
+    # account and we can skip the full reconcile pass.
     #
-    # _fingerprint_cache is accessed here while the caller holds
-    # block_lock_for(account_id), which serialises all reads and writes for a
-    # given account_id. Concurrent access for *different* accounts is safe via
-    # CPython's GIL-protected dict operations.
+    # Single global slot (see ``_applied_state``): the slot is compared as
+    # (account_id, fingerprint), so an account switch forces a re-resolve even
+    # when the fingerprint is identical (shared global config) — one account
+    # never serves another's account-bound specialists from the shared slot.
+    # Caller holds block_lock_for(account_id) which serialises same-account reads
+    # and writes; CPython's GIL protects the single object-reference read/write
+    # across accounts.
     visible_configs: dict[str, MergedAgentConfig] = {}
     for doc_id in doc_ids:
         try:
@@ -193,7 +241,7 @@ def _attach_locked(
     new_fingerprint: frozenset[tuple[str, str]] = frozenset(
         (doc_id, _content_hash(cfg)) for doc_id, cfg in visible_configs.items()
     )
-    if _fingerprint_cache.get(account_id) == new_fingerprint:
+    if _applied_state == (account_id, new_fingerprint):
         return
 
     desired: dict[str, BaseAgent] = {}
@@ -224,10 +272,15 @@ def _attach_locked(
             account_id,
         )
         return
-    # Only store the fingerprint for specialists that were successfully resolved
-    # so a transient resolve_agent failure does not permanently suppress retry.
-    _fingerprint_cache[account_id] = frozenset(
-        (doc_id, _content_hash(visible_configs[doc_id])) for doc_id in desired
+    # Only commit the slot for specialists that were successfully resolved so a
+    # transient resolve_agent failure does not permanently suppress retry. The
+    # next turn's comparison (for any account) sees the (account_id, fingerprint)
+    # that is currently live in root.sub_agents.
+    _applied_state = (
+        account_id,
+        frozenset(
+            (doc_id, _content_hash(visible_configs[doc_id])) for doc_id in desired
+        ),
     )
 
     # AH-75 (reviewer feedback): the "Available Specialists" prompt block is
