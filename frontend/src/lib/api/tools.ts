@@ -11,7 +11,7 @@ import api from "@/lib/api";
 export type AccountToolSource = "global_default" | "integration";
 
 export type AccountToolEntry = {
-  /** Canonical ID — ``<mcp_server>.<tool_name>`` or ``function.<tool_name>``. */
+  /** Canonical ID — ``<mcp_server>.<tool_name>``, ``function.<tool_name>``, or ``agent.<tool_name>``. */
   tool_id: string;
   name: string;
   description: string;

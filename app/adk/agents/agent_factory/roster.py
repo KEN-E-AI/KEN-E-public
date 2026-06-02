@@ -83,6 +83,7 @@ def count_specialist_tool_roster(
     *,
     mcp_server_ids: list[str],
     function_tools: list[Any],
+    agent_tools: list[Any] | None = None,
     registry: ToolRegistry,
 ) -> int:
     """Return the logical tool count for a specialist before construction.
@@ -117,13 +118,16 @@ def count_specialist_tool_roster(
     Returns:
         Total logical tool count.
     """
+    agent_tool_count = len(agent_tools or [])
     server_count = sum(_tool_count_for_server(sid, registry) for sid in mcp_server_ids)
-    total = server_count + len(function_tools)
+    total = server_count + len(function_tools) + agent_tool_count
     logger.debug(
-        "Logical roster count for %r: %d mcp-tool(s) + %d function-tool(s) = %d",
+        "Logical roster count for %r: %d mcp-tool(s) + %d function-tool(s) + "
+        "%d agent-tool(s) = %d",
         specialist_name,
         server_count,
         len(function_tools),
+        agent_tool_count,
         total,
     )
     return total
@@ -137,8 +141,8 @@ def per_server_allowed_tools(
     Returns ``None`` when ``tool_ids`` is ``None`` (signals "no filter / legacy
     behaviour"). Returns an empty dict when ``tool_ids`` is set but contains no
     MCP-attached IDs (signals "drop every server"). Otherwise returns
-    ``{server_id: [bare_tool_name, …]}``. ``function.*`` IDs are excluded —
-    function tools are filtered separately by name.
+    ``{server_id: [bare_tool_name, …]}``. ``function.*`` and ``agent.*`` IDs are
+    excluded — those built-in tools are filtered separately by name (AH-98).
 
     Consumed by:
       * ``hierarchy.py`` Step 6a — passes the per-server list into
@@ -152,7 +156,7 @@ def per_server_allowed_tools(
     result: dict[str, list[str]] = {}
     for tid in tool_ids:
         server, _, name = tid.partition(".")
-        if not name or server == "function":
+        if not name or server in ("function", "agent"):
             continue
         result.setdefault(server, []).append(name)
     return result
@@ -177,12 +181,29 @@ def _filter_function_tools_by_ids(
     return kept
 
 
+def _filter_agent_tools_by_ids(agent_tools: list[Any], tool_ids: set[str]) -> list[Any]:
+    """Return only agent tools whose ``agent.{name}`` ID is in tool_ids (AH-98).
+
+    Agent tools are ADK ``AgentTool`` instances; their name is stamped to the
+    catalogue name by ``agent_tool_registry.register_agent_tool``. Anything
+    without a discoverable ``name`` is dropped silently — there's nothing
+    reliable to match against.
+    """
+    kept: list[Any] = []
+    for tool in agent_tools:
+        bare_name = getattr(tool, "name", None)
+        if isinstance(bare_name, str) and f"agent.{bare_name}" in tool_ids:
+            kept.append(tool)
+    return kept
+
+
 def resolve_specialist_roster(
     specialist_name: str,
     *,
     mcp_toolsets: dict[str, Any],
     function_tools: list[Any],
     mcp_server_ids: list[str],
+    agent_tools: list[Any] | None = None,
     tool_ids: list[str] | None = None,
     registry: ToolRegistry | None = None,
 ) -> list[Any]:
@@ -228,6 +249,7 @@ def resolve_specialist_roster(
     # returned list are always consistent (TOCTOU guard).
     frozen_toolsets: dict[str, Any] = dict(mcp_toolsets)
     frozen_function_tools: list[Any] = list(function_tools)
+    frozen_agent_tools: list[Any] = list(agent_tools or [])
 
     # AH-PRD-06: apply the per-agent tool allowlist. Within-toolset filtering
     # is the caller's job at construction (``hierarchy.py`` passes
@@ -259,7 +281,12 @@ def resolve_specialist_roster(
         kept_function_tools = _filter_function_tools_by_ids(
             frozen_function_tools, tool_id_set
         )
-        return [*kept_toolsets.values(), *kept_function_tools]
+        # AH-98: opt-in agent tools are attached only when their ``agent.{name}``
+        # id is listed. The candidate set is the full catalogue (passed in by
+        # the caller), so non-default-global tools like google_search attach
+        # here even though they're excluded from the legacy "all tools" branch.
+        kept_agent_tools = _filter_agent_tools_by_ids(frozen_agent_tools, tool_id_set)
+        return [*kept_toolsets.values(), *kept_function_tools, *kept_agent_tools]
 
     # Validate server IDs: no empty/blank entries, no duplicates, must match
     # the toolsets dict keys so the logical count matches the runtime roster.
@@ -294,18 +321,40 @@ def resolve_specialist_roster(
 
         registry = get_default_registry()
 
+    # AH-98: with no per-agent ``tool_ids`` allowlist, only ``default_global``
+    # agent tools attach (parity with default-global function tools). Opt-in
+    # tools like google_search are excluded here — they require an explicit
+    # ``agent.{name}`` entry in ``tool_ids`` (the branch above). The registry
+    # lookup is guarded so empty-agent-tool callers don't depend on it.
+    # (No annotation here: the ``tool_ids is not None`` branch above already
+    # binds ``kept_agent_tools`` and returns, so re-annotating trips mypy's
+    # no-redef. The list-comprehension below fixes the element type.)
+    kept_agent_tools = []
+    if frozen_agent_tools:
+        default_global_agent_names = {
+            t.name for t in registry.list_agent_tools() if t.default_global
+        }
+        kept_agent_tools = [
+            t
+            for t in frozen_agent_tools
+            if getattr(t, "name", None) in default_global_agent_names
+        ]
+
     logical_count = count_specialist_tool_roster(
         specialist_name,
         mcp_server_ids=mcp_server_ids,
         function_tools=frozen_function_tools,
+        agent_tools=kept_agent_tools,
         registry=registry,
     )
 
     if logical_count > MAX_TOOLS_PER_SPECIALIST:
+        mcp_count = logical_count - len(frozen_function_tools) - len(kept_agent_tools)
         raise RosterCapExceededError(
             f"Specialist {specialist_name!r} has a logical tool count of {logical_count} "
             f"({len(frozen_function_tools)} function tool(s) + "
-            f"{logical_count - len(frozen_function_tools)} MCP tool(s)), "
+            f"{len(kept_agent_tools)} agent tool(s) + "
+            f"{mcp_count} MCP tool(s)), "
             f"which exceeds the {MAX_TOOLS_PER_SPECIALIST}-tool cap. "
             f"Note: function tools include any default-global entries from "
             f"``tools.yaml`` resolved by ``hierarchy.py`` (AH-PRD-06 PR-C) — if "
@@ -315,4 +364,4 @@ def resolve_specialist_roster(
             f"(see README §2.6)."
         )
 
-    return [*frozen_toolsets.values(), *frozen_function_tools]
+    return [*frozen_toolsets.values(), *frozen_function_tools, *kept_agent_tools]

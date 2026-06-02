@@ -388,6 +388,7 @@ def _build_specialist(
         per_server_allowed_tools,
         resolve_specialist_roster,
     )
+    from app.adk.tools.registry.agent_tool_registry import resolve_agent_tools
     from app.adk.tools.registry.function_tool_registry import (
         resolve_default_global_tools,
     )
@@ -533,6 +534,12 @@ def _build_specialist(
     # is non-None; included verbatim otherwise.
     default_global_function_tools = resolve_default_global_tools(get_default_registry())
 
+    # AH-98: resolve the full catalogue of agent-as-a-tool instances (e.g.
+    # ``google_search``). The roster resolver attaches them opt-in — only when
+    # the spec's ``tool_ids`` lists ``agent.{name}`` — except for any tagged
+    # ``default_global``, which attach like default-global function tools.
+    agent_tools = resolve_agent_tools(get_default_registry())
+
     # AH-PRD-02 §2.5: enforce the ≤30-tool logical cap and apply the
     # ``tool_ids`` filter to the assembled tool list. Raises
     # ``RosterCapExceededError`` (which propagates through ``resolve_agent``
@@ -544,6 +551,7 @@ def _build_specialist(
             mcp_toolsets=toolsets,
             function_tools=default_global_function_tools,
             mcp_server_ids=list(toolsets.keys()),
+            agent_tools=agent_tools,
             tool_ids=config.tool_ids,
         )
     except RosterCapExceededError:

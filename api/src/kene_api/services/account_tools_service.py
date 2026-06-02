@@ -126,12 +126,13 @@ def _parse_catalogue(path: Path) -> dict[str, list[dict[str, Any]]]:
         logger.warning(
             "Tool catalogue not found at %s; returning empty inventory", path
         )
-        return {"tools": [], "function_tools": []}
+        return {"tools": [], "function_tools": [], "agent_tools": []}
     with open(path) as f:
         raw = yaml.safe_load(f) or {}
     return {
         "tools": list(raw.get("tools") or []),
         "function_tools": list(raw.get("function_tools") or []),
+        "agent_tools": list(raw.get("agent_tools") or []),
     }
 
 
@@ -140,9 +141,9 @@ def _load_catalogue(
 ) -> dict[str, list[dict[str, Any]]]:
     """Load the raw catalogue from the YAML file.
 
-    Returns a dict with ``tools`` and ``function_tools`` lists; either may
-    be empty if the section is absent. The schema deliberately mirrors
-    ``tools.yaml`` so callers can iterate by source.
+    Returns a dict with ``tools``, ``function_tools`` and ``agent_tools``
+    lists; any may be empty if the section is absent. The schema deliberately
+    mirrors ``tools.yaml`` so callers can iterate by source.
 
     Resolution: when ``path`` is ``None`` and import-time resolution
     succeeded (``_TOOLS_YAML`` is set), that cached path is used — no
@@ -165,7 +166,7 @@ def _load_catalogue(
                 path = _resolve_tools_yaml_path()
             except FileNotFoundError as exc:
                 logger.warning("Tool catalogue lookup failed: %s", exc)
-                return {"tools": [], "function_tools": []}
+                return {"tools": [], "function_tools": [], "agent_tools": []}
     return _parse_catalogue(path)
 
 
@@ -239,6 +240,24 @@ def compose_inventory(
             )
         )
 
+    # Agent-as-a-tool built-ins (AH-98), e.g. google_search. Always surfaced
+    # under the "Built-in" group (source="global_default") so the picker can
+    # offer them; they attach to an agent only when its tool_ids lists the
+    # ``agent.{name}`` id (opt-in — independent of any default_global flag).
+    for tool in raw.get("agent_tools") or []:
+        name = cast(str, tool["name"])
+        entries.append(
+            AccountToolEntry(
+                tool_id=f"agent.{name}",
+                name=name,
+                description=cast(str, tool.get("description", "")),
+                category=cast(str, tool.get("category", "general")),
+                source="global_default",
+                mcp_server=None,
+                integration_platform=None,
+            )
+        )
+
     # MCP-attached tools, gated on a connected integration. Iterate platforms
     # rather than tools so we can attribute each surfaced tool back to the
     # integration that unlocked it.
@@ -277,6 +296,7 @@ def list_known_tool_ids(
     Format mirrors ``AccountToolEntry.tool_id``:
       * ``<mcp_server>.<tool_name>`` for tools in ``tools:``
       * ``function.<tool_name>`` for tools in ``function_tools:``
+      * ``agent.<tool_name>`` for tools in ``agent_tools:`` (AH-98)
     """
     raw = catalogue if catalogue is not None else _load_catalogue()
     known: set[str] = set()
@@ -289,6 +309,10 @@ def list_known_tool_ids(
         name = tool.get("name")
         if name:
             known.add(f"function.{name}")
+    for tool in raw.get("agent_tools") or []:
+        name = tool.get("name")
+        if name:
+            known.add(f"agent.{name}")
     return known
 
 

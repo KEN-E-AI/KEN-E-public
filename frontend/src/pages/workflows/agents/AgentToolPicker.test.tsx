@@ -154,6 +154,41 @@ describe("AgentToolPicker — grouping", () => {
       "1 of 3 selected",
     );
   });
+
+  it("places an agent-as-a-tool under Built-in and toggles its id (AH-98)", () => {
+    const onChange = vi.fn();
+    const toolsWithAgent: AccountToolEntry[] = [
+      ...fixtureTools,
+      {
+        tool_id: "agent.google_search",
+        name: "google_search",
+        description: "Search the public web via Google.",
+        category: "research",
+        source: "global_default",
+        mcp_server: null,
+        integration_platform: null,
+      },
+    ];
+    render(
+      <AgentToolPicker
+        value={[]}
+        onChange={onChange}
+        tools={toolsWithAgent}
+        isLoading={false}
+        isError={false}
+      />,
+    );
+    // The agent tool (source=global_default) groups under "Built-in".
+    const builtIn = screen.getByTestId("tool-picker-group-__builtin__");
+    expect(
+      within(builtIn).getByTestId("tool-picker-tool-agent.google_search"),
+    ).toBeInTheDocument();
+    // Selecting it persists the agent.google_search id.
+    fireEvent.click(
+      screen.getByTestId("tool-picker-checkbox-agent.google_search"),
+    );
+    expect(onChange).toHaveBeenCalledWith(["agent.google_search"]);
+  });
 });
 
 // ─── Selection ────────────────────────────────────────────────────────────────

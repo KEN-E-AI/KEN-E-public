@@ -83,13 +83,17 @@ class ToolDefinition(BaseModel):
     description: str = Field(..., description="Human-readable description")
     category: str = Field(..., description="Tool category for grouping")
     mcp_server: str | None = Field(default=None, description="MCP server name")
-    source: Literal["mcp", "function"] = Field(
+    source: Literal["mcp", "function", "agent"] = Field(
         default="mcp",
-        description="Whether the tool is delivered by an MCP server or as a built-in function tool",
+        description=(
+            "How the tool is delivered: 'mcp' (MCP server), 'function' (built-in "
+            "SDK function tool), or 'agent' (agent-as-a-tool — an ADK AgentTool "
+            "wrapping a leaf sub-agent, e.g. google_search)"
+        ),
     )
     default_global: bool = Field(
         default=False,
-        description="Function tools only: part of every account's default inventory",
+        description="Function/agent built-ins only: part of every account's default inventory",
     )
     parameters: list[ToolParameter] = Field(
         default_factory=list, description="Input parameters"
@@ -123,19 +127,20 @@ class ToolDefinition(BaseModel):
 
     @model_validator(mode="after")
     def _validate_source_consistency(self) -> "ToolDefinition":
-        # Catches the truly broken combinations: a `source="function"` tool that
-        # also names an MCP server is contradictory; `default_global=True` is only
-        # meaningful for function tools. ``source="mcp"`` with ``mcp_server=None``
-        # is permitted because the existing schema has long allowed it (loose /
-        # placeholder entries).
-        if self.source == "function" and self.mcp_server is not None:
+        # Catches the truly broken combinations: a non-MCP tool (`function` or
+        # `agent`) that also names an MCP server is contradictory; `default_global`
+        # is only meaningful for those built-in kinds. ``source="mcp"`` with
+        # ``mcp_server=None`` is permitted because the existing schema has long
+        # allowed it (loose / placeholder entries).
+        if self.source in ("function", "agent") and self.mcp_server is not None:
             raise ValueError(
-                f"Tool {self.name!r}: source='function' requires mcp_server=None "
+                f"Tool {self.name!r}: source={self.source!r} requires mcp_server=None "
                 f"(got {self.mcp_server!r})"
             )
-        if self.default_global and self.source != "function":
+        if self.default_global and self.source not in ("function", "agent"):
             raise ValueError(
-                f"Tool {self.name!r}: default_global=True is only allowed when source='function'"
+                f"Tool {self.name!r}: default_global=True is only allowed when "
+                f"source='function' or source='agent'"
             )
         return self
 

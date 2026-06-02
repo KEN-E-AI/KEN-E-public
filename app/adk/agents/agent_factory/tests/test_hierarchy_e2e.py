@@ -443,5 +443,42 @@ class TestErrorHandling:
                 h.build_hierarchy()
 
 
+class TestRootAgentTools:
+    """TC-6 (AH-98): the root honors ``tool_ids`` to attach opt-in agent tools
+    (e.g. web search) via config alone — no code change, no redeploy."""
+
+    @pytest.fixture(autouse=True)
+    def _ensure_google_search_registered(self):
+        # The agent-tool registry is a process-global singleton; other test
+        # modules clear it in teardown (clear_agent_tool_registry). Reloading
+        # the impl module re-runs its import-time registration so this class is
+        # independent of test order. (Production registers once at startup via
+        # hierarchy.py's import and never clears.)
+        import importlib
+
+        import app.adk.tools.agent_tools.google_search as gs_mod
+
+        importlib.reload(gs_mod)
+        yield
+
+    def test_root_gets_google_search_when_tool_ids_lists_it(self) -> None:
+        from google.adk.tools.agent_tool import AgentTool
+
+        docs = {
+            ("agent_configs", "ken_e_chatbot"): {
+                **_ROOT_DOC,
+                "tool_ids": ["agent.google_search"],
+            }
+        }
+        root = _run_build_hierarchy(docs)
+        agent_tool_names = [t.name for t in root.tools if isinstance(t, AgentTool)]
+        assert "google_search" in agent_tool_names
+
+    def test_root_has_no_tools_without_tool_ids(self) -> None:
+        # google_search is opt-in (not default_global) → absent unless listed.
+        root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})
+        assert root.tools == []
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

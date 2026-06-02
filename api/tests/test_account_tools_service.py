@@ -167,13 +167,93 @@ class TestComposeInventory:
         assert any(t.tool_id == "function.create_visualization" for t in response.tools)
 
 
+class TestAgentToolsInventory:
+    """AH-98: agent-as-a-tool entries (``agent.{name}``) in the inventory."""
+
+    @pytest.fixture
+    def catalogue_with_agent_tool(self) -> dict[str, list[dict[str, Any]]]:
+        return {
+            "tools": [],
+            "function_tools": [],
+            "agent_tools": [
+                {
+                    "name": "google_search",
+                    "description": "Search the web.",
+                    "category": "research",
+                    "default_global": False,
+                }
+            ],
+        }
+
+    def test_agent_tool_surfaced_as_builtin(
+        self, catalogue_with_agent_tool: dict[str, list[dict[str, Any]]]
+    ) -> None:
+        db = _db_with_connected_integrations()
+        response = compose_inventory(
+            account_id="acc_test", db=db, catalogue=catalogue_with_agent_tool
+        )
+        gs = next(t for t in response.tools if t.tool_id == "agent.google_search")
+        assert gs.name == "google_search"
+        assert gs.source == "global_default"
+        assert gs.mcp_server is None
+        assert gs.integration_platform is None
+
+    def test_agent_tool_surfaced_without_any_integration(
+        self, catalogue_with_agent_tool: dict[str, list[dict[str, Any]]]
+    ) -> None:
+        # Opt-in (default_global False) but still always offered in the picker —
+        # no integration required.
+        db = _db_with_connected_integrations()
+        response = compose_inventory(
+            account_id="acc_test", db=db, catalogue=catalogue_with_agent_tool
+        )
+        assert any(t.tool_id == "agent.google_search" for t in response.tools)
+
+    def test_list_known_tool_ids_includes_agent_tool(
+        self, catalogue_with_agent_tool: dict[str, list[dict[str, Any]]]
+    ) -> None:
+        ids = account_tools_service.list_known_tool_ids(
+            catalogue=catalogue_with_agent_tool
+        )
+        assert "agent.google_search" in ids
+
+    def test_default_catalogue_surfaces_google_search(self) -> None:
+        # Smoke: the real tools.yaml surfaces google_search as an agent tool.
+        db = _db_with_connected_integrations()
+        response = compose_inventory(account_id="acc_test", db=db)
+        assert any(t.tool_id == "agent.google_search" for t in response.tools)
+
+    def test_default_catalogue_known_ids_includes_google_search(self) -> None:
+        assert "agent.google_search" in account_tools_service.list_known_tool_ids()
+
+    def test_known_agent_ids_match_yaml(self) -> None:
+        # Internal-consistency guard against parser drift: the agent ids the
+        # router validates against must equal the ``agent_tools:`` entries in the
+        # real catalogue. (The ADK-side registry is locked by the ADK suite's
+        # test_load_default_config — together they keep both parsers in sync.)
+        import yaml
+
+        raw = (
+            yaml.safe_load(account_tools_service._resolve_tools_yaml_path().read_text())
+            or {}
+        )
+        yaml_agent_ids = {f"agent.{t['name']}" for t in (raw.get("agent_tools") or [])}
+        known_agent_ids = {
+            i
+            for i in account_tools_service.list_known_tool_ids()
+            if i.startswith("agent.")
+        }
+        assert known_agent_ids == yaml_agent_ids
+        assert yaml_agent_ids  # non-empty → google_search present
+
+
 class TestLoadCatalogue:
     def test_missing_yaml_returns_empty(self, tmp_path) -> None:
         # The service handles a missing catalogue file gracefully — useful in
         # test environments where the file isn't reachable.
         missing = tmp_path / "nonexistent.yaml"
         loaded = account_tools_service._load_catalogue(missing)
-        assert loaded == {"tools": [], "function_tools": []}
+        assert loaded == {"tools": [], "function_tools": [], "agent_tools": []}
 
     def test_path_resolver_walks_up_to_canonical_location(self) -> None:
         # Review item #6: the resolver should locate the catalogue without

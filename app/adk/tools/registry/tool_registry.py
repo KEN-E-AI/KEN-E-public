@@ -80,7 +80,9 @@ class ToolRegistry:
         with open(config_path) as f:
             config = yaml.safe_load(f)
 
-        if not config or ("tools" not in config and "function_tools" not in config):
+        if not config or not any(
+            section in config for section in ("tools", "function_tools", "agent_tools")
+        ):
             logger.warning(f"No tools defined in {config_path}")
             return 0
 
@@ -102,6 +104,15 @@ class ToolRegistry:
             except Exception as e:
                 tool_name = tool_data.get("name", "unknown")
                 logger.error(f"Failed to load function tool '{tool_name}': {e}")
+
+        for tool_data in config.get("agent_tools") or []:
+            try:
+                tool = self._parse_tool_definition(tool_data, source="agent")
+                self.register_tool(tool)
+                loaded_count += 1
+            except Exception as e:
+                tool_name = tool_data.get("name", "unknown")
+                logger.error(f"Failed to load agent tool '{tool_name}': {e}")
 
         logger.info(f"Loaded {loaded_count} tools from {config_path}")
         return loaded_count
@@ -224,6 +235,15 @@ class ToolRegistry:
     def list_function_tools(self) -> list[ToolDefinition]:
         """List built-in function tools (``source == "function"``)."""
         return [t for t in self._tools.values() if t.source == "function"]
+
+    def list_agent_tools(self) -> list[ToolDefinition]:
+        """List agent-as-a-tool entries (``source == "agent"``).
+
+        These are ADK ``AgentTool`` wrappers around a leaf sub-agent (e.g.
+        ``google_search``). Their runtime instances live in
+        ``agent_tool_registry``; this method only returns their metadata.
+        """
+        return [t for t in self._tools.values() if t.source == "agent"]
 
     def list_default_global_tools(self) -> list[ToolDefinition]:
         """List tools that are part of every account's default inventory.

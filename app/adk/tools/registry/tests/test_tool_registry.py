@@ -418,6 +418,13 @@ class TestLoadFromConfig:
         assert viz.default_global is True
         assert viz.mcp_server is None
 
+        # Agent tool: source=agent, opt-in (not default-global), no mcp_server
+        gs = registry.get_tool("google_search")
+        assert gs is not None
+        assert gs.source == "agent"
+        assert gs.default_global is False
+        assert gs.mcp_server is None
+
     def test_load_nonexistent_config_raises(self, registry: ToolRegistry):
         with pytest.raises(FileNotFoundError):
             registry.load_from_config("/nonexistent/path.yaml")
@@ -469,6 +476,24 @@ class TestLoadFromConfig:
         assert viz.source == "function"
         assert viz.mcp_server is None
 
+    def test_load_agent_tools_section(self, registry: ToolRegistry, tmp_path: Path):
+        config = tmp_path / "tools.yaml"
+        config.write_text(
+            "agent_tools:\n"
+            "  - name: google_search\n"
+            "    description: Search the web\n"
+            "    category: research\n"
+        )
+        loaded = registry.load_from_config(config)
+        assert loaded == 1
+
+        gs = registry.get_tool("google_search")
+        assert gs is not None
+        assert gs.source == "agent"
+        assert gs.default_global is False
+        assert gs.mcp_server is None
+        assert [t.name for t in registry.list_agent_tools()] == ["google_search"]
+
 
 class TestSourceAndDefaultGlobal:
     """Tests for the `source` + `default_global` fields on ToolDefinition."""
@@ -512,9 +537,43 @@ class TestSourceAndDefaultGlobal:
                 default_global=True,
             )
 
+    def test_agent_source_tool(self):
+        tool = ToolDefinition(
+            name="google_search",
+            description="Search the web",
+            category="research",
+            source="agent",
+        )
+        assert tool.source == "agent"
+        assert tool.mcp_server is None
+        assert tool.default_global is False
+
+    def test_agent_source_rejects_mcp_server(self):
+        with pytest.raises(ValueError, match="source='agent' requires mcp_server=None"):
+            ToolDefinition(
+                name="t",
+                description="d",
+                category="c",
+                source="agent",
+                mcp_server="some_server",
+            )
+
+    def test_agent_source_allows_default_global(self):
+        # default_global is meaningful for agent built-ins too (parity with
+        # function tools) even though google_search itself ships opt-in.
+        tool = ToolDefinition(
+            name="t",
+            description="d",
+            category="c",
+            source="agent",
+            default_global=True,
+        )
+        assert tool.source == "agent"
+        assert tool.default_global is True
+
 
 class TestListByKindHelpers:
-    """Tests for list_mcp_tools / list_function_tools / list_default_global_tools."""
+    """Tests for list_mcp_tools / list_function_tools / list_default_global_tools / list_agent_tools."""
 
     @pytest.fixture
     def loaded_registry(self) -> ToolRegistry:
@@ -544,6 +603,14 @@ class TestListByKindHelpers:
                 source="function",
             )
         )
+        registry.register_tool(
+            ToolDefinition(
+                name="agent_a",
+                description="d",
+                category="c",
+                source="agent",
+            )
+        )
         return registry
 
     def test_list_mcp_tools(self, loaded_registry: ToolRegistry):
@@ -557,6 +624,9 @@ class TestListByKindHelpers:
 
     def test_list_default_global_tools(self, loaded_registry: ToolRegistry):
         assert [t.name for t in loaded_registry.list_default_global_tools()] == ["fn_a"]
+
+    def test_list_agent_tools(self, loaded_registry: ToolRegistry):
+        assert [t.name for t in loaded_registry.list_agent_tools()] == ["agent_a"]
 
 
 class TestGetIndexForContext:

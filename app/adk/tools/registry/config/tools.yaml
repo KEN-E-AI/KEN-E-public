@@ -343,6 +343,36 @@ function_tools:
       - "Uncheck the LinkedIn ads item"
 
 # ============================================================================
+# Agent Tools (Built-in, agent-as-a-tool)
+# ============================================================================
+# Tools in this section are ADK ``AgentTool`` wrappers around a leaf sub-agent
+# (e.g. a Google-search agent holding the built-in ``google_search`` tool, which
+# cannot be combined with other tools or an output_schema in the same agent).
+# They surface in the agent tool picker under "Built-in" and attach to an agent
+# only when its ``tool_ids`` lists them (opt-in: ``default_global: false``).
+# Tool-id namespace: ``agent.{name}``. Runtime instances are owned by
+# ``app/adk/tools/registry/agent_tool_registry.py`` (AH-98).
+
+agent_tools:
+  - name: google_search
+    description: Search the public web via Google and return grounded results. Assignable to any agent; the agent may issue several google_search calls in a single turn and they run in parallel.
+    category: research
+    default_global: false
+    keywords:
+      - search
+      - web
+      - google
+      - research
+      - lookup
+      - news
+      - current
+      - public
+    estimated_tokens: 200
+    examples:
+      - "Search the web for recent news about this company"
+      - "Look up the latest public data on this topic"
+
+# ============================================================================
 # Placeholder for future tools (Sprint 3+)
 # ============================================================================
 

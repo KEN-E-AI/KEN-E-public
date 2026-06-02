@@ -16,6 +16,7 @@ from app.adk.agents.agent_factory.roster import (
     MAX_TOOLS_PER_SPECIALIST,
     RosterCapExceededError,
     count_specialist_tool_roster,
+    per_server_allowed_tools,
     resolve_specialist_roster,
 )
 
@@ -31,14 +32,37 @@ def _fake_tool(mcp_server: str | None) -> MagicMock:
     return t
 
 
+def _fake_agent_tool_def(name: str, *, default_global: bool = False) -> MagicMock:
+    """Minimal ToolDefinition-like for an ``agent_tools:`` catalogue entry."""
+    t = MagicMock()
+    t.name = name
+    t.default_global = default_global
+    return t
+
+
+def _agent_tool(name: str) -> MagicMock:
+    """Minimal AgentTool-like instance exposing a ``name`` attribute."""
+    t = MagicMock()
+    t.name = name
+    return t
+
+
 class _FakeRegistry:
     """In-memory stand-in for ToolRegistry that returns a fixed tool list."""
 
-    def __init__(self, tools: list[MagicMock]) -> None:
+    def __init__(
+        self,
+        tools: list[MagicMock],
+        agent_tool_defs: list[MagicMock] | None = None,
+    ) -> None:
         self._tools = tools
+        self._agent_tool_defs = agent_tool_defs or []
 
     def list_tools(self) -> list[MagicMock]:
         return list(self._tools)
+
+    def list_agent_tools(self) -> list[MagicMock]:
+        return list(self._agent_tool_defs)
 
 
 def _registry_for(*server_tool_pairs: tuple[str, int]) -> _FakeRegistry:
@@ -222,6 +246,18 @@ class TestCountSpecialistToolRoster:
         )
 
         assert result == 0
+
+    def test_count_includes_agent_tools(self) -> None:
+        registry = _registry_for(("srv", 2))
+        result = count_specialist_tool_roster(
+            "spec",
+            mcp_server_ids=["srv"],
+            function_tools=[MagicMock()],
+            agent_tools=[MagicMock(), MagicMock()],
+            registry=registry,
+        )
+
+        assert result == 2 + 1 + 2
 
 
 # ---------------------------------------------------------------------------
@@ -650,6 +686,139 @@ class TestResolveSpecialistRosterWithToolIds:
                 tool_ids=too_many,
                 registry=registry,
             )
+
+
+class TestPerServerAllowedToolsReservedPrefix:
+    """AH-98: the ``agent.`` prefix is reserved like ``function.`` — it must not
+    be grouped as an MCP server, or ``agent.google_search`` would be mistaken for
+    a server literally named ``agent``."""
+
+    def test_agent_prefix_not_treated_as_mcp_server(self) -> None:
+        assert per_server_allowed_tools(["agent.google_search"]) == {}
+
+    def test_function_prefix_still_reserved(self) -> None:
+        assert per_server_allowed_tools(["function.create_visualization"]) == {}
+
+    def test_mixed_prefixes_only_mcp_grouped(self) -> None:
+        result = per_server_allowed_tools(
+            ["srv.tool_a", "agent.google_search", "function.viz"]
+        )
+        assert result == {"srv": ["tool_a"]}
+
+
+class TestResolveSpecialistRosterWithAgentTools:
+    """AH-98: agent-as-a-tool (``agent.{name}``) resolution + opt-in attach."""
+
+    def test_opt_in_via_tool_ids_attaches_agent_tool(self) -> None:
+        registry = _FakeRegistry([])
+        gs = _agent_tool("google_search")
+        result = resolve_specialist_roster(
+            "spec",
+            mcp_toolsets={},
+            function_tools=[],
+            mcp_server_ids=[],
+            agent_tools=[gs],
+            tool_ids=["agent.google_search"],
+            registry=registry,
+        )
+        assert result == [gs]
+
+    def test_tool_ids_none_excludes_non_default_global_agent_tool(self) -> None:
+        # google_search ships opt-in (default_global=False) -> not attached when
+        # the agent hasn't customised tool_ids. This is the core opt-in guarantee.
+        registry = _FakeRegistry(
+            [], agent_tool_defs=[_fake_agent_tool_def("google_search")]
+        )
+        gs = _agent_tool("google_search")
+        result = resolve_specialist_roster(
+            "spec",
+            mcp_toolsets={},
+            function_tools=[],
+            mcp_server_ids=[],
+            agent_tools=[gs],
+            tool_ids=None,
+            registry=registry,
+        )
+        assert result == []
+
+    def test_tool_ids_none_includes_default_global_agent_tool(self) -> None:
+        registry = _FakeRegistry(
+            [], agent_tool_defs=[_fake_agent_tool_def("auto_tool", default_global=True)]
+        )
+        at = _agent_tool("auto_tool")
+        result = resolve_specialist_roster(
+            "spec",
+            mcp_toolsets={},
+            function_tools=[],
+            mcp_server_ids=[],
+            agent_tools=[at],
+            tool_ids=None,
+            registry=registry,
+        )
+        assert result == [at]
+
+    def test_tool_ids_empty_excludes_agent_tool(self) -> None:
+        registry = _FakeRegistry([])
+        gs = _agent_tool("google_search")
+        result = resolve_specialist_roster(
+            "spec",
+            mcp_toolsets={},
+            function_tools=[],
+            mcp_server_ids=[],
+            agent_tools=[gs],
+            tool_ids=[],
+            registry=registry,
+        )
+        assert result == []
+
+    def test_agent_tool_not_listed_is_excluded(self) -> None:
+        registry = _FakeRegistry([])
+        gs = _agent_tool("google_search")
+        result = resolve_specialist_roster(
+            "spec",
+            mcp_toolsets={},
+            function_tools=[],
+            mcp_server_ids=[],
+            agent_tools=[gs],
+            tool_ids=["function.create_visualization"],
+            registry=registry,
+        )
+        assert result == []
+
+    def test_ordering_mcp_then_function_then_agent(self) -> None:
+        registry = _registry_for(("srv", 1))
+        ts = MagicMock(name="ts")
+        ft = MagicMock(name="ft")
+        ft.name = "create_visualization"
+        at = _agent_tool("google_search")
+        result = resolve_specialist_roster(
+            "spec",
+            mcp_toolsets={"srv": ts},
+            function_tools=[ft],
+            mcp_server_ids=["srv"],
+            agent_tools=[at],
+            tool_ids=[
+                "srv.tool_one",
+                "function.create_visualization",
+                "agent.google_search",
+            ],
+            registry=registry,
+        )
+        assert result == [ts, ft, at]
+
+    def test_no_agent_tools_arg_is_backward_compatible(self) -> None:
+        # Existing callers that don't pass agent_tools keep working unchanged.
+        registry = _registry_for(("srv", 1))
+        ts = MagicMock(name="ts")
+        result = resolve_specialist_roster(
+            "spec",
+            mcp_toolsets={"srv": ts},
+            function_tools=[],
+            mcp_server_ids=["srv"],
+            tool_ids=None,
+            registry=registry,
+        )
+        assert result == [ts]
 
 
 if __name__ == "__main__":

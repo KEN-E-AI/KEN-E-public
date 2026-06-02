@@ -10,11 +10,34 @@ from src.kene_api.routers.agent_configs import (
     AgentConfigUpdate,
     _build_firestore_updates,
     _increment_version,
+    _reject_unknown_tool_ids,
     _sanitize_updated_by,
     get_agent_config,
     list_agent_configs,
     update_agent_config,
 )
+
+
+class TestRejectUnknownToolIds:
+    """AH-98: the catalogue cross-check accepts the google_search agent tool."""
+
+    def test_accepts_agent_google_search(self) -> None:
+        # No raise — agent.google_search is in the real catalogue.
+        _reject_unknown_tool_ids(["agent.google_search"])
+
+    def test_accepts_agent_tool_mixed_with_function_tool(self) -> None:
+        _reject_unknown_tool_ids(
+            ["agent.google_search", "function.create_visualization"]
+        )
+
+    def test_rejects_unknown_agent_tool(self) -> None:
+        with pytest.raises(HTTPException) as exc_info:
+            _reject_unknown_tool_ids(["agent.bogus"])
+        assert exc_info.value.status_code == 422
+
+    def test_none_and_empty_are_noops(self) -> None:
+        _reject_unknown_tool_ids(None)
+        _reject_unknown_tool_ids([])
 
 
 @pytest.fixture

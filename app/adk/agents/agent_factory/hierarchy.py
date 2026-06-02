@@ -26,6 +26,7 @@ from typing import Any
 
 from google.adk.agents import LlmAgent
 
+import app.adk.tools.agent_tools.google_search  # agent-tool registration (AH-98)
 import app.adk.tools.todo_list_tools  # noqa: F401  # default_global registration
 from app.adk.agents.agent_factory.builder import build_agent
 from app.adk.agents.agent_factory.config_loader import (
@@ -184,12 +185,22 @@ def build_hierarchy(
     # Lazy import: avoids circular import at module-load time since
     # agent_factory/__init__.py imports both hierarchy and specialist_runtime,
     # and specialist_runtime imports config_cache which imports agent_factory.
+    # AH-98: the root is delegation-only (no MCP servers, no function tools),
+    # but it MAY be granted opt-in agent-as-a-tool capabilities — e.g. web
+    # search — by listing ``agent.{name}`` ids in ``ken_e_chatbot.tool_ids``.
+    # Routing the root build through the shared roster resolver means an admin
+    # can give Kinney web search via config alone, with no code change. When
+    # ``tool_ids`` is unset the resolver returns ``[]`` (google_search is opt-in
+    # / not default_global), preserving the historical ``tools=[]`` root.
+    from app.adk.agents.agent_factory.roster import resolve_specialist_roster
     from app.adk.agents.agent_factory.specialist_runtime import (
         available_specialists_provider,
     )
     from app.adk.agents.agent_factory.sub_agent_attacher import (
         attach_specialists_before_agent_callback,
     )
+    from app.adk.tools.registry.agent_tool_registry import resolve_agent_tools
+    from app.adk.tools.registry.tool_registry import get_default_registry
     from app.adk.tracking.callbacks import (
         adk_after_model_callback,
         capture_last_model_output_after_model_callback,
@@ -198,11 +209,22 @@ def build_hierarchy(
         specialists_span_before_agent_callback,
     )
 
+    _default_registry = get_default_registry()
+    root_tools = resolve_specialist_roster(
+        "ken_e",
+        mcp_toolsets={},
+        function_tools=[],
+        mcp_server_ids=[],
+        agent_tools=resolve_agent_tools(_default_registry),
+        tool_ids=getattr(root_config, "tool_ids", None),
+        registry=_default_registry,
+    )
+
     root_agent = build_agent(
         root_config,
         name="ken_e",
         account_id=account_id,
-        tools=[],
+        tools=root_tools,
         config_doc_id=ROOT_CONFIG_ID,
         instruction_suffix_provider=available_specialists_provider,
         additional_before_agent_callbacks=[
