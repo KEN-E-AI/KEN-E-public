@@ -332,7 +332,7 @@ export function SignInView({
           }
 
           * {
-            transition-duration: 0.01ms !important;
+            transition-duration: 1ms !important;
           }
         }
       `}</style>

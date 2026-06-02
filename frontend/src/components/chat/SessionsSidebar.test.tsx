@@ -8,7 +8,7 @@ import type {
   ListChatSessionsResponse,
   ChatSessionSidebarItem,
 } from "@/lib/chatApi";
-import { toChatSessionId } from "@/lib/chatApi";
+import { toChatSessionId, toChatCategoryId } from "@/lib/chatApi";
 
 // ─── Module mocks ─────────────────────────────────────────────────────────────
 
@@ -28,22 +28,21 @@ vi.mock("@/lib/chatApi", async (importActual) => {
 // Stub CategoriesDropdown so sidebar tests focus on flag-gating + state
 // plumbing, not on the dropdown's internal Radix wiring.
 vi.mock("./CategoriesDropdown", () => ({
-  CategoriesDropdown: vi.fn(
-    ({ variant, value }: { variant: string; value?: string | null }) => (
-      <div
-        data-testid="categories-dropdown"
-        data-variant={variant}
-        data-value={value ?? ""}
-      />
-    ),
-  ),
+  CategoriesDropdown: vi.fn(),
+}));
+
+vi.mock("@/hooks/useChatCategories", () => ({
+  useChatCategories: vi.fn(),
 }));
 
 import { useChatSessions } from "@/hooks/useChatSessions";
 import { useFeatureFlag } from "@/contexts/FeatureFlagsContext";
+import { CategoriesDropdown } from "./CategoriesDropdown";
+import { useChatCategories } from "@/hooks/useChatCategories";
 
 const mockUseChatSessions = vi.mocked(useChatSessions);
 const mockUseFeatureFlag = vi.mocked(useFeatureFlag);
+const mockUseChatCategories = vi.mocked(useChatCategories);
 
 // ─── IntersectionObserver stub (jsdom doesn't provide one) ───────────────────
 
@@ -119,6 +118,26 @@ beforeEach(() => {
     reason: "default" as const,
     isLoading: false,
   });
+
+  // Default: categories list is not loaded (flag off / query disabled)
+  mockUseChatCategories.mockReturnValue({
+    list: { data: undefined, isLoading: false, isError: false },
+    create: { mutateAsync: vi.fn() },
+    remove: { mutateAsync: vi.fn() },
+    assign: { mutateAsync: vi.fn() },
+  } as any);
+
+  // Default CategoriesDropdown implementation (same as the old inline mock)
+  vi.mocked(CategoriesDropdown).mockImplementation(
+    ({ variant, value }: { variant: string; value?: string | null }) =>
+      (
+        <div
+          data-testid="categories-dropdown"
+          data-variant={variant}
+          data-value={value ?? ""}
+        />
+      ) as unknown as React.ReactElement,
+  );
 });
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -282,5 +301,82 @@ describe("SessionsSidebar", () => {
     renderSidebar();
 
     expect(screen.getByText(/1 active.*1 need review/i)).toBeInTheDocument();
+  });
+
+  // ── TC-10: selectedCategoryId reset on category deletion ────────────────────
+  test("TC-10: resets selectedCategoryId to null when selected category disappears from list", () => {
+    const CAT_ID = toChatCategoryId("cat-001");
+
+    // Enable categories so the filter dropdown is rendered and onChange is wired
+    mockUseFeatureFlag.mockReturnValue({
+      enabled: true,
+      reason: "default" as const,
+      isLoading: false,
+    });
+
+    // Initially: categories list contains CAT_ID
+    mockUseChatCategories.mockReturnValue({
+      list: { data: [{ category_id: CAT_ID, name: "Q3 Campaigns" }] },
+      create: { mutateAsync: vi.fn() },
+      remove: { mutateAsync: vi.fn() },
+      assign: { mutateAsync: vi.fn() },
+    } as any);
+
+    // Override CategoriesDropdown to capture the filter onChange callback
+    let capturedOnChange: ((v: typeof CAT_ID | null) => void) | undefined;
+    vi.mocked(CategoriesDropdown).mockImplementation(
+      ({ variant, value, onChange }: any) => {
+        if (variant === "filter") capturedOnChange = onChange;
+        return (
+          <div
+            data-testid="categories-dropdown"
+            data-variant={variant}
+            data-value={value ?? ""}
+          />
+        );
+      },
+    );
+
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const { rerender } = render(
+      <QueryClientProvider client={qc}>
+        <SessionsSidebar {...defaultProps} />
+      </QueryClientProvider>,
+    );
+
+    // Simulate the user selecting CAT_ID via the dropdown onChange
+    act(() => {
+      capturedOnChange?.(CAT_ID);
+    });
+
+    // useChatSessions should now be called with the selected category
+    expect(mockUseChatSessions).toHaveBeenLastCalledWith(
+      expect.objectContaining({ categoryId: CAT_ID }),
+    );
+
+    // Simulate the category being deleted: categories list no longer includes CAT_ID
+    mockUseChatCategories.mockReturnValue({
+      list: { data: [] },
+      create: { mutateAsync: vi.fn() },
+      remove: { mutateAsync: vi.fn() },
+      assign: { mutateAsync: vi.fn() },
+    } as any);
+
+    // Re-render so the component picks up the updated mock and runs the useEffect
+    act(() => {
+      rerender(
+        <QueryClientProvider client={qc}>
+          <SessionsSidebar {...defaultProps} />
+        </QueryClientProvider>,
+      );
+    });
+
+    // After the useEffect fires, selectedCategoryId must be null →
+    // useChatSessions is called without a categoryId filter
+    expect(mockUseChatSessions).toHaveBeenLastCalledWith(
+      expect.objectContaining({ categoryId: undefined }),
+    );
   });
 });

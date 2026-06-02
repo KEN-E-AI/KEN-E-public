@@ -114,14 +114,14 @@ async function setupBaseStack({
 // PRD §7 ACs covered: AC-1 (create), AC-3 (assign), AC-5 (delete),
 // AC-6 (filter narrowing), AC-8 (trash-icon confirm), AC-11 (flag on).
 
-// Skipped pending investigation of a systematic Radix DropdownMenu portal
-// timing gap between local Chromium and the CI Playwright image — even with
-// playwright.config retries:2 + 15s waits the test reliably times out on a
-// post-portal interaction in CI while passing on all developer machines.
-// Product code is verified correct (4 Dev VM iterations + Test Team PASS
-// locally). Re-enable once the follow-up issue root-causes the CI animation
-// timing.
-test.skip("SC-1: create → assign → filter → delete → session re-appears under All sessions with no label", async ({
+// Re-enabled in CH-64. Root cause: the CI Playwright image does not honour
+// prefers-reduced-motion by default, so Radix DropdownMenu portal animations
+// run at full speed in CI while the dev machine's browser collapses them.
+// Fix: `reducedMotion: "reduce"` in playwright.config.ts triggers the repo's
+// src/index.css:524 @media(prefers-reduced-motion) block (animation/transition
+// duration → 1ms), plus `[data-state="open"]` open-state signal replaces
+// the less-deterministic getByRole("menu").toBeVisible() wait.
+test("SC-1: create → assign → filter → delete → session re-appears under All sessions with no label", async ({
   page,
   request,
 }) => {
@@ -165,18 +165,27 @@ test.skip("SC-1: create → assign → filter → delete → session re-appears 
 
   // ── Step 2: Open the filter dropdown and create "Q3 Campaigns".
   await filterTrigger.click();
-  // Wait for Radix portal mount + open animation to complete before reaching
-  // into the menu — CI is meaningfully slower than local on portal mount, so
-  // the inner waitFor below was racing the menu's open transition.
-  await expect(page.getByRole("menu")).toBeVisible({ timeout: 15_000 });
-  const newCategoryButton = page.getByRole("menuitem", {
-    name: /\+ New category/i,
+  // Wait for the Radix portal to reach data-state="open" on the Content node
+  // before reaching into the menu. data-state="open" is the canonical signal
+  // that Radix has promoted the content past the entering-animation
+  // pointer-events lock (more deterministic than getByRole("menu").toBeVisible,
+  // which fires as soon as the portal is in the DOM rather than when interactive).
+  await expect(
+    page.locator('[data-slot="dropdown-menu-content"][data-state="open"]'),
+  ).toBeVisible({ timeout: 15_000 });
+  // The "+ New category" create control renders as role="button" with accessible
+  // name "New category" — the "+" is a decorative icon with no accessible text.
+  const newCategoryButton = page.getByRole("button", {
+    name: /New category/i,
   });
   await newCategoryButton.waitFor({ state: "visible", timeout: 15_000 });
   await newCategoryButton.click();
 
   // The inline create form opens inside the dropdown.
-  const nameInput = page.getByPlaceholder(/new category name/i);
+  // Use getByRole("textbox") + accessible name because the input's HTML
+  // placeholder ("Category name…") differs from its aria-label ("New category
+  // name") — getByPlaceholder would not match.
+  const nameInput = page.getByRole("textbox", { name: /new category name/i });
   await nameInput.waitFor({ state: "visible", timeout: 5_000 });
   await nameInput.fill("Q3 Campaigns");
   await nameInput.press("Enter");
@@ -246,8 +255,8 @@ test.skip("SC-1: create → assign → filter → delete → session re-appears 
   // ── Step 5: Delete "Q3 Campaigns" via the trash icon in the filter dropdown.
   await filterTrigger.click();
 
-  // The trash icon has aria-label="Delete Q3 Campaigns".
-  await page.getByRole("button", { name: "Delete Q3 Campaigns" }).click();
+  // The trash icon has aria-label="Delete category Q3 Campaigns".
+  await page.getByRole("button", { name: /Delete category Q3 Campaigns/i }).click();
 
   // Confirm popover appears — click the confirm button.
   const confirmButton = page.getByRole("button", { name: /confirm|delete/i });
@@ -256,42 +265,61 @@ test.skip("SC-1: create → assign → filter → delete → session re-appears 
 
   // ── Step 6: Assert post-delete state.
 
-  // Wait for the AlertDialog and its backdrop overlay to fully detach.
+  // Wait for the AlertDialog portal (BOTH content AND overlay) to fully detach.
   //
-  // Why [role="alertdialog"] and not [role="menu"]:
-  // The DropdownMenu ([role="menu"]) is dismissed by Radix focus management the
-  // moment the nested AlertDialog opens — it detaches almost immediately after
-  // the trash icon is clicked, so the Iteration 3 guard passes in milliseconds.
-  // The AlertDialog itself stays open (AlertDialogAction calls e.preventDefault()
-  // to suppress the default Radix close) until the full sequence resolves:
-  //   1. remove.mutateAsync() API round-trip
-  //   2. TanStack Query invalidation updates list.data (category removed)
-  //   3. React re-renders: the category row is removed from the DOM
-  //   4. React unmounts the AlertDialog inside that row
-  //   5. Radix cleans up the portal (overlay + alertdialog content) with a CSS
-  //      exit animation
-  // During step 5, the backdrop overlay (div.fixed.inset-0.z-50.bg-black/80
-  // aria-hidden="true") blocks all pointer events. Timeout extended to 10 s to
-  // cover the full chain.
+  // Radix AlertDialog renders two independent portal elements via separate
+  // Radix Presence lifecycles:
+  //   • AlertDialogOverlay — `div[data-slot="alert-dialog-overlay"]` (no role).
+  //                          Covers the full viewport with pointer-events:all
+  //                          while mounted. Blocks clicks when present.
+  //   • AlertDialogContent — `[role="alertdialog"][data-slot="alert-dialog-content"]`
+  //
+  // Each Presence waits for its own `animationend` event. With
+  // reducedMotion:"reduce" (→ animation-duration:1ms via index.css:524),
+  // both animations complete in ~1 frame, BUT they fire two separate
+  // `animationend` events scheduled in separate microtask queue positions.
+  // The content animationend resolves first, so [role="alertdialog"] detaches
+  // one microtask ahead of the overlay. The overlay then stays mounted with
+  // pointer-events:all for one more microtask — long enough for the next
+  // filterTrigger.click() to be intercepted by `<html>` (Playwright error:
+  // "<html> intercepts pointer events").
+  // Waiting for BOTH guards ensures the entire portal is clear before clicking.
   await expect(page.locator('[role="alertdialog"]')).not.toBeAttached({
     timeout: 10_000,
   });
+  // The overlay has data-slot="alert-dialog-overlay" (alert-dialog.tsx:17).
+  // This is the element that was intercepting pointer-events after iteration 4's
+  // single-guard fix. Explicitly wait for it to detach.
+  // Timeout matches the content guard (10_000 ms): with animation-duration:1ms
+  // (index.css:528) both Presence lifecycles resolve within a single frame.
+  await expect(
+    page.locator('[data-slot="alert-dialog-overlay"]'),
+  ).not.toBeAttached({ timeout: 10_000 });
 
-  // After the AlertDialog closes, Radix's focus management returns focus to the
-  // filter dropdown trigger, which auto-reopens the dropdown menu. The menu is
-  // therefore ALREADY OPEN — wait for it to be visible rather than clicking the
-  // trigger. A click would fail: a pointer-events block at the <html> level from
-  // the Radix portal teardown persists briefly after [role="alertdialog"]
-  // detaches (independent of the alertdialog ARIA node's removal). Visibility
-  // checks are unaffected by pointer-events; keyboard Escape to close bypasses
-  // pointer-events entirely.
-  await expect(page.getByRole("menu")).toBeVisible({ timeout: 10_000 });
+  // Reopen the filter dropdown via keyboard focus + Space key.
+  //
+  // Why keyboard, not pointer: Radix's Presence lifecycle fires animationend
+  // for each portal element (overlay, content) in separate microtask queue
+  // positions. Even after both not.toBeAttached guards pass, the Radix
+  // cleanup cycle (scroll-lock removal, focus-scope teardown) runs in a
+  // subsequent useLayoutEffect that may not have committed by the time a
+  // pointer-based click is attempted — causing Playwright to report
+  // "<html> intercepts pointer events" for the full 60s retry budget.
+  //
+  // filterTrigger.focus() calls element.focus() directly (JavaScript API, no
+  // pointer events). Space key is the WAI-ARIA trigger for DropdownMenuTrigger.
+  // Together these open the menu without relying on the pointer-events surface.
+  await filterTrigger.focus();
+  await page.keyboard.press("Space");
+  await expect(
+    page.locator('[data-slot="dropdown-menu-content"][data-state="open"]'),
+  ).toBeVisible({ timeout: 15_000 });
 
   // "Q3 Campaigns" must no longer appear in the filter dropdown options.
   await expect(
     page.getByRole("menuitem", { name: "Q3 Campaigns" }),
   ).not.toBeAttached({ timeout: 5_000 });
-  // Close the already-open dropdown via keyboard (bypasses the pointer-events block).
+  // Close the dropdown via keyboard.
   await page.keyboard.press("Escape");
 
   // Both sessions should reappear under "All sessions" filter.
@@ -314,9 +342,8 @@ test.skip("SC-1: create → assign → filter → delete → session re-appears 
 //
 // PRD §7 AC-9 covered.
 
-// Skipped for the same CI-only Radix portal timing gap as SC-1 — see the
-// follow-up issue for root-cause investigation.
-test.skip("SC-2: delete category while status view is open — status view refreshes without error", async ({
+// Re-enabled in CH-64 — same root cause and fix as SC-1: reducedMotion + data-state="open".
+test("SC-2: delete category while status view is open — status view refreshes without error", async ({
   page,
   request,
 }) => {
@@ -389,12 +416,15 @@ test.skip("SC-2: delete category while status view is open — status view refre
     '[data-testid="categories-dropdown-filter-trigger"]',
   );
   await filterTrigger.click();
-  // Wait for the Radix portal mount + open transition so the inner trash
-  // button is hittable — CI's portal mount is slower than local, and the
-  // bare .click() was timing out after 60s because Radix hadn't promoted
-  // the menu past the entering-state pointer-events:none CSS.
-  await expect(page.getByRole("menu")).toBeVisible({ timeout: 15_000 });
-  const deleteButton = page.getByRole("button", { name: "Delete Watch Me" });
+  // Wait for data-state="open" on the DropdownMenuContent node — the canonical
+  // Radix signal that the menu has exited the entering-animation pointer-events
+  // lock and inner buttons are hittable (same fix as SC-1, lines ~171 and ~290).
+  await expect(
+    page.locator('[data-slot="dropdown-menu-content"][data-state="open"]'),
+  ).toBeVisible({ timeout: 15_000 });
+  // The trash icon aria-label is "Delete category Watch Me" — the component
+  // includes "category" in the accessible name for screen-reader context.
+  const deleteButton = page.getByRole("button", { name: /Delete category Watch Me/i });
   await deleteButton.waitFor({ state: "visible", timeout: 15_000 });
   await deleteButton.click();
 

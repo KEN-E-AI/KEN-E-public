@@ -27,6 +27,13 @@ export default defineConfig({
     baseURL: "http://localhost:8080",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
+    // Collapse Radix DropdownMenu portal animations in CI (CH-64).
+    // Triggers the repo's `src/index.css:524` @media(prefers-reduced-motion)
+    // block which reduces animation/transition duration to 1ms, eliminating
+    // the multi-phase portal-mount → open-state → pointer-events-release race
+    // that caused SC-1 + SC-2 in chat-categories.spec.ts to time out in CI
+    // while passing locally.
+    reducedMotion: "reduce",
   },
   projects: [
     {

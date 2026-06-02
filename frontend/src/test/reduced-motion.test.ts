@@ -10,7 +10,7 @@ describe("reduced-motion CSS smoke test", () => {
     expect(cssContent).toContain("@media (prefers-reduced-motion: reduce)");
   });
 
-  it("the reduced-motion block zeros transition-duration via !important", () => {
+  it("the reduced-motion block minimises transition-duration and animation-duration via !important", () => {
     const rmStart = cssContent.indexOf(
       "@media (prefers-reduced-motion: reduce)",
     );
@@ -20,8 +20,12 @@ describe("reduced-motion CSS smoke test", () => {
     // the full declaration without parsing the entire CSS tree.
     const snippet = cssContent.slice(rmStart, rmStart + 400);
 
-    expect(snippet).toMatch(/transition-duration:\s*0\.01ms\s*!important/);
-    expect(snippet).toMatch(/animation-duration:\s*0\.01ms\s*!important/);
+    // Values changed from 0.01ms → 1ms in CH-64 iteration 6 to ensure
+    // animationend fires reliably in headless Chromium (sub-ms animations
+    // may silently skip the event, preventing Radix Presence from unmounting).
+    // 1ms is still imperceptibly fast for users with reduced-motion enabled.
+    expect(snippet).toMatch(/transition-duration:\s*1ms\s*!important/);
+    expect(snippet).toMatch(/animation-duration:\s*1ms\s*!important/);
   });
 
   it("the reduced-motion block targets * (all elements)", () => {

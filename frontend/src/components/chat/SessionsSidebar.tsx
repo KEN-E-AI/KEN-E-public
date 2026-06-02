@@ -11,6 +11,7 @@ import { deriveSessionStatus, isOptimisticSessionId } from "@/lib/chatApi";
 import type { ChatSessionId, ChatCategoryId } from "@/lib/chatApi";
 import { CategoriesDropdown } from "./CategoriesDropdown";
 import { useChatSessions } from "@/hooks/useChatSessions";
+import { useChatCategories } from "@/hooks/useChatCategories";
 import { SessionStatusDot } from "./SessionStatusDot";
 
 export type { ChatSessionId };
@@ -51,6 +52,21 @@ export function SessionsSidebar({
   // ── Category filter ─────────────────────────────────────────────────────────
   const [selectedCategoryId, setSelectedCategoryId] =
     useState<ChatCategoryId | null>(null);
+
+  // Reset the selected category when it has been deleted. useChatCategories
+  // shares the TanStack Query cache with CategoriesDropdown so no extra network
+  // request is made — the list is already in-flight when the dropdown calls it.
+  const { list: categoriesList } = useChatCategories();
+  useEffect(() => {
+    if (selectedCategoryId === null) return;
+    if (!categoriesList.data) return;
+    const stillExists = categoriesList.data.some(
+      (cat) => cat.category_id === selectedCategoryId,
+    );
+    if (!stillExists) {
+      setSelectedCategoryId(null);
+    }
+  }, [selectedCategoryId, categoriesList.data]);
 
   // ── Feature flags ───────────────────────────────────────────────────────────
   const { enabled: chatCategoriesEnabled } = useFeatureFlag(
