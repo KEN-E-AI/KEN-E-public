@@ -5,58 +5,74 @@ from unittest import mock
 
 import pytest
 from fastapi.testclient import TestClient
+from src.kene_api.auth import UserContext
+from src.kene_api.auth.user_context import get_current_user_context
+from src.kene_api.database import get_neo4j_service
+from src.kene_api.firestore import get_firestore_service
 from src.kene_api.main import app
 
 pytestmark = pytest.mark.skipif(
     not os.getenv("FIRESTORE_EMULATOR_HOST"),
-    reason="Requires Firebase/Firestore emulator — unblocked by DM-84",
+    reason="Requires Firebase/Firestore emulator",
 )
 
 
 @pytest.fixture
 def client():
-    """Create test client."""
     return TestClient(app)
 
 
 @pytest.fixture
-def mock_firebase_token():
-    """Mock Firebase ID token verification."""
-    decoded_token = {
-        "uid": "test-user-123",
-        "email": "test@example.com",
-        "email_verified": True,
-    }
-
-    with mock.patch(
-        "src.kene_api.auth.user_context.verify_id_token", return_value=decoded_token
-    ):
-        yield decoded_token
+def authed_user():
+    """User with admin on org_123, view on org_456, admin on acc_123, viewer on acc_456."""
+    user = UserContext(
+        user_id="test-user-123",
+        email="test@example.com",
+        organization_permissions={"org_123": "admin", "org_456": "view"},
+        account_permissions={"acc_123": "admin", "acc_456": "viewer"},
+    )
+    app.dependency_overrides[get_current_user_context] = lambda: user
+    yield user
+    app.dependency_overrides.pop(get_current_user_context, None)
 
 
 @pytest.fixture
-def mock_user_permissions():
-    """Mock user permissions in Firestore."""
-    user_data = {
-        "uid": "test-user-123",
-        "email": "test@example.com",
-        "permissions": {
-            "accounts": {
-                "acc_123": "admin",
-                "acc_456": "viewer",
-            },
-            "organizations": {
-                "org_123": "admin",
-                "org_456": "view",
-            },
-        },
-    }
+def user_no_org_admin():
+    """User with NO org-admin permission — only explicit account access on acc_123.
 
-    mock_doc = mock.Mock()
-    mock_doc.exists = True
-    mock_doc.to_dict.return_value = user_data
+    UserContext.has_account_access returns True for ANY user with at least one
+    org-admin permission (auth/models.py:87-91), so per-account denial tests
+    require a user without org-admin scope. The fixture name encodes the
+    invariant so a contributor swapping it for ``authed_user`` (which has
+    org_123 admin) will notice the test stops being meaningful.
+    """
+    user = UserContext(
+        user_id="test-user-no-org-admin",
+        email="viewer@example.com",
+        organization_permissions={},
+        account_permissions={"acc_123": "viewer"},
+    )
+    app.dependency_overrides[get_current_user_context] = lambda: user
+    yield user
+    app.dependency_overrides.pop(get_current_user_context, None)
 
-    return mock_doc
+
+@pytest.fixture
+def mock_neo4j():
+    service = mock.MagicMock()
+    service.health_check = mock.AsyncMock(return_value=True)
+    service.execute_query = mock.AsyncMock(return_value=[])
+    app.dependency_overrides[get_neo4j_service] = lambda: service
+    yield service
+    app.dependency_overrides.pop(get_neo4j_service, None)
+
+
+@pytest.fixture
+def mock_firestore():
+    service = mock.MagicMock()
+    app.dependency_overrides[get_firestore_service] = lambda: service
+    yield service
+    app.dependency_overrides.pop(get_firestore_service, None)
 
 
 class TestAuthenticationMiddleware:
@@ -64,7 +80,6 @@ class TestAuthenticationMiddleware:
 
     def test_unauthenticated_request_returns_401(self, client):
         """Test that requests without auth token return 401."""
-        # Test various protected endpoints
         endpoints = [
             "/api/v1/organizations/",
             "/api/v1/accounts/",
@@ -93,292 +108,175 @@ class TestAuthenticationMiddleware:
 class TestOrganizationEndpoints:
     """Test organization endpoints with authentication."""
 
-    def test_get_organizations_authenticated(
-        self, client, mock_firebase_token, mock_user_permissions
-    ):
-        """Test getting organizations with valid authentication."""
-        # Mock Firestore
-        with mock.patch(
-            "src.kene_api.firestore.get_firestore_service"
-        ) as mock_firestore:
-            mock_service = mock.Mock()
-            mock_client = mock.Mock()
-            mock_service.get_client.return_value = mock_client
-            mock_client.collection.return_value.document.return_value.get.return_value = mock_user_permissions
-            mock_firestore.return_value = mock_service
+    def test_get_organizations_authenticated(self, client, authed_user, mock_neo4j):
+        """Authenticated user sees organizations they have access to."""
+        mock_neo4j.execute_query.return_value = [
+            {"org": {"organization_id": "org_123", "organization_name": "Test Org 1"}},
+            {"org": {"organization_id": "org_456", "organization_name": "Test Org 2"}},
+        ]
 
-            # Mock Neo4j
-            with mock.patch("src.kene_api.database.get_neo4j_service") as mock_neo4j:
-                mock_db = mock.Mock()
-                mock_db.health_check.return_value = True
-                mock_db.execute_query.return_value = [
-                    {
-                        "org": {
-                            "organization_id": "org_123",
-                            "organization_name": "Test Org 1",
-                        }
-                    },
-                    {
-                        "org": {
-                            "organization_id": "org_456",
-                            "organization_name": "Test Org 2",
-                        }
-                    },
-                ]
-                mock_neo4j.return_value = mock_db
+        # The router calls _create_organization_from_record which builds a
+        # full Organization Pydantic model (plan/billing/subscription/team).
+        # The test is exercising the org-list query filter, not the record
+        # serializer, so short-circuit the helper.
+        def _fake_create(org_data):
+            from src.kene_api.models.kene_models import Organization
 
-                response = client.get(
-                    "/api/v1/organizations/",
-                    headers={"Authorization": "Bearer valid-token"},
-                )
-
-                assert response.status_code == 200
-                data = response.json()
-                assert data["total"] == 2
-                assert len(data["organizations"]) == 2
-
-                # Verify query was filtered by user's accessible organizations
-                called_query = mock_db.execute_query.call_args[0][0]
-                assert "WHERE org.organization_id IN $org_ids" in called_query
-                called_params = mock_db.execute_query.call_args[0][1]
-                assert set(called_params["org_ids"]) == {"org_123", "org_456"}
-
-    def test_get_organization_by_id_with_access(
-        self, client, mock_firebase_token, mock_user_permissions
-    ):
-        """Test getting specific organization when user has access."""
-        with mock.patch(
-            "src.kene_api.firestore.get_firestore_service"
-        ) as mock_firestore:
-            mock_service = mock.Mock()
-            mock_client = mock.Mock()
-            mock_service.get_client.return_value = mock_client
-            mock_client.collection.return_value.document.return_value.get.return_value = mock_user_permissions
-            mock_firestore.return_value = mock_service
-
-            with mock.patch("src.kene_api.database.get_neo4j_service") as mock_neo4j:
-                mock_db = mock.Mock()
-                mock_db.health_check.return_value = True
-                mock_db.execute_query.return_value = [
-                    {
-                        "org": {
-                            "organization_id": "org_123",
-                            "organization_name": "Test Org",
-                        }
-                    }
-                ]
-                mock_neo4j.return_value = mock_db
-
-                response = client.get(
-                    "/api/v1/organizations/org_123",
-                    headers={"Authorization": "Bearer valid-token"},
-                )
-
-                assert response.status_code == 200
-                assert response.json()["organization_id"] == "org_123"
-
-    def test_get_organization_by_id_without_access(
-        self, client, mock_firebase_token, mock_user_permissions
-    ):
-        """Test getting organization when user lacks access."""
-        with mock.patch(
-            "src.kene_api.firestore.get_firestore_service"
-        ) as mock_firestore:
-            mock_service = mock.Mock()
-            mock_client = mock.Mock()
-            mock_service.get_client.return_value = mock_client
-            mock_client.collection.return_value.document.return_value.get.return_value = mock_user_permissions
-            mock_firestore.return_value = mock_service
-
-            response = client.get(
-                "/api/v1/organizations/org_999",
-                headers={"Authorization": "Bearer valid-token"},
+            return Organization.model_construct(
+                organization_id=org_data["organization_id"],
+                organization_name=org_data["organization_name"],
             )
 
-            assert response.status_code == 403
-            assert "Access denied to organization org_999" in response.json()["detail"]
+        with mock.patch(
+            "src.kene_api.routers.organizations._create_organization_from_record",
+            side_effect=_fake_create,
+        ):
+            response = client.get("/api/v1/organizations/")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 2
+        assert len(data["organizations"]) == 2
+
+        called_query = mock_neo4j.execute_query.call_args[0][0]
+        assert "WHERE org.organization_id IN $org_ids" in called_query
+        called_params = mock_neo4j.execute_query.call_args[0][1]
+        assert set(called_params["org_ids"]) == {"org_123", "org_456"}
+
+    def test_get_organization_by_id_with_access(self, client, authed_user, mock_neo4j):
+        """User with admin on org_123 can fetch it."""
+        from src.kene_api.models.kene_models import Organization
+
+        org = Organization.model_construct(
+            organization_id="org_123", organization_name="Test Org"
+        )
+
+        with mock.patch(
+            "src.kene_api.routers.organizations._get_organization_by_id",
+            return_value=org,
+        ):
+            response = client.get("/api/v1/organizations/org_123")
+
+        assert response.status_code == 200
+        assert response.json()["organization_id"] == "org_123"
+
+    def test_get_organization_by_id_without_access(self, client, authed_user):
+        """User without permission on org_999 gets 403."""
+        response = client.get("/api/v1/organizations/org_999")
+
+        assert response.status_code == 403
+        assert "Access denied" in response.json()["detail"]
 
 
 class TestAccountEndpoints:
     """Test account endpoints with authentication."""
 
-    def test_get_accounts_authenticated(
-        self, client, mock_firebase_token, mock_user_permissions
-    ):
-        """Test getting accounts with valid authentication."""
-        with mock.patch(
-            "src.kene_api.firestore.get_firestore_service"
-        ) as mock_firestore:
-            mock_service = mock.Mock()
-            mock_client = mock.Mock()
-            mock_service.get_client.return_value = mock_client
-            mock_client.collection.return_value.document.return_value.get.return_value = mock_user_permissions
-            mock_firestore.return_value = mock_service
+    def test_get_accounts_authenticated(self, client, authed_user, mock_neo4j):
+        """Authenticated user sees only accounts they have access to."""
 
-            with mock.patch("src.kene_api.database.get_neo4j_service") as mock_neo4j:
-                mock_db = mock.Mock()
-                mock_db.health_check.return_value = True
-                mock_db.execute_query.return_value = [
+        def _query_router(query, params=None):
+            # Org-admin enumeration query — returns [{account_id: ...}].
+            if "MATCH (org:Organization {organization_id: $org_id})" in query:
+                return [{"account_id": "acc_org_admin"}]
+            # Final account-list query — returns [{acc: {...}}].
+            if "account_id IN $account_ids" in query:
+                return [
                     {"acc": {"account_id": "acc_123", "account_name": "Account 1"}},
                     {"acc": {"account_id": "acc_456", "account_name": "Account 2"}},
                 ]
-                mock_neo4j.return_value = mock_db
+            # Fail loudly on drift — if the router gains a new query shape, the
+            # test should not silently pick up the wrong response.
+            raise AssertionError(f"Unexpected query in test mock: {query!r}")
 
-                response = client.get(
-                    "/api/v1/accounts/", headers={"Authorization": "Bearer valid-token"}
-                )
+        mock_neo4j.execute_query.side_effect = _query_router
 
-                assert response.status_code == 200
-                data = response.json()
-                assert data["total"] == 2
+        def _fake_create(acc_data):
+            from src.kene_api.models.kene_models import Account
 
-                # Verify query was filtered by user's accessible accounts
-                called_query = mock_db.execute_query.call_args[0][0]
-                assert "WHERE acc.account_id IN $account_ids" in called_query
+            return Account.model_construct(
+                account_id=acc_data["account_id"],
+                account_name=acc_data["account_name"],
+            )
+
+        with mock.patch(
+            "src.kene_api.routers.accounts._create_account_from_record",
+            side_effect=_fake_create,
+        ):
+            response = client.get("/api/v1/accounts/")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 2
+
+        # The final query enumerates accessible_account_ids via WHERE IN.
+        final_call_query = mock_neo4j.execute_query.call_args[0][0]
+        assert "account_id IN $account_ids" in final_call_query
 
     def test_get_accounts_filtered_by_organization(
-        self, client, mock_firebase_token, mock_user_permissions
+        self, client, authed_user, mock_neo4j
     ):
-        """Test getting accounts filtered by organization."""
-        with mock.patch(
-            "src.kene_api.firestore.get_firestore_service"
-        ) as mock_firestore:
-            mock_service = mock.Mock()
-            mock_client = mock.Mock()
-            mock_service.get_client.return_value = mock_client
-            mock_client.collection.return_value.document.return_value.get.return_value = mock_user_permissions
-            mock_firestore.return_value = mock_service
+        """User with access to org_123 can filter accounts by it; org_999 returns 403."""
+        mock_neo4j.execute_query.return_value = []
 
-            with mock.patch("src.kene_api.database.get_neo4j_service") as mock_neo4j:
-                mock_db = mock.Mock()
-                mock_db.health_check.return_value = True
-                mock_db.execute_query.return_value = []
-                mock_neo4j.return_value = mock_db
+        response = client.get("/api/v1/accounts/?organization_id=org_123")
+        assert response.status_code == 200
 
-                # Should succeed - user has access to org_123
-                response = client.get(
-                    "/api/v1/accounts/?organization_id=org_123",
-                    headers={"Authorization": "Bearer valid-token"},
-                )
-                assert response.status_code == 200
-
-                # Should fail - user doesn't have access to org_999
-                response = client.get(
-                    "/api/v1/accounts/?organization_id=org_999",
-                    headers={"Authorization": "Bearer valid-token"},
-                )
-                assert response.status_code == 403
-                assert (
-                    "Access denied to organization org_999" in response.json()["detail"]
-                )
+        response = client.get("/api/v1/accounts/?organization_id=org_999")
+        assert response.status_code == 403
+        assert "Access denied to organization org_999" in response.json()["detail"]
 
 
 class TestNotificationEndpoints:
     """Test notification endpoints with authentication."""
 
-    def test_get_notification_preferences(
-        self, client, mock_firebase_token, mock_user_permissions
-    ):
-        """Test getting notification preferences."""
+    def test_get_notification_preferences(self, client, authed_user, mock_firestore):
+        """Authenticated user can fetch their preferences."""
         with mock.patch(
-            "src.kene_api.firestore.get_firestore_service"
-        ) as mock_firestore:
-            mock_service = mock.Mock()
-            mock_client = mock.Mock()
-            mock_service.get_client.return_value = mock_client
-
-            # Mock user document
-            mock_client.collection.return_value.document.return_value.get.return_value = mock_user_permissions
-
-            # Mock preferences document
-            mock_prefs_doc = mock.Mock()
-            mock_prefs_doc.exists = True
-            mock_prefs_doc.to_dict.return_value = {
+            "src.kene_api.services.notification_service_v2.NotificationService.get_user_preferences",
+            return_value={
                 "categories": ["KPI Performance", "New Features"],
                 "channels": ["ui", "email"],
-            }
+            },
+        ):
+            response = client.get("/api/v1/notifications/preferences")
 
-            with mock.patch(
-                "src.kene_api.services.notification_service_v2.NotificationService.get_user_preferences"
-            ) as mock_get_prefs:
-                mock_get_prefs.return_value = {
-                    "categories": ["KPI Performance", "New Features"],
-                    "channels": ["ui", "email"],
-                }
-
-                mock_firestore.return_value = mock_service
-
-                response = client.get(
-                    "/api/v1/notifications/preferences",
-                    headers={"Authorization": "Bearer valid-token"},
-                )
-
-                assert response.status_code == 200
-                data = response.json()
-                assert "categories" in data
-                assert "channels" in data
+        assert response.status_code == 200
+        data = response.json()
+        assert "categories" in data
+        assert "channels" in data
 
     def test_create_notification_with_permission(
-        self, client, mock_firebase_token, mock_user_permissions
+        self, client, authed_user, mock_firestore
     ):
-        """Test creating notification when user has write permission."""
+        """User with admin on acc_123 can create a notification on it."""
         with mock.patch(
-            "src.kene_api.firestore.get_firestore_service"
-        ) as mock_firestore:
-            mock_service = mock.Mock()
-            mock_client = mock.Mock()
-            mock_service.get_client.return_value = mock_client
-            mock_client.collection.return_value.document.return_value.get.return_value = mock_user_permissions
-            mock_firestore.return_value = mock_service
-
-            with mock.patch(
-                "src.kene_api.services.notification_service_v2.NotificationService.create_notification"
-            ) as mock_create:
-                mock_create.return_value = "notif_123"
-
-                notification_data = {
-                    "account_id": "acc_123",  # User has admin access
-                    "category": "KPI Performance",
-                    "description": "Test notification",
-                }
-
-                response = client.post(
-                    "/api/v1/notifications/",
-                    json=notification_data,
-                    headers={"Authorization": "Bearer valid-token"},
-                )
-
-                assert response.status_code == 200
-                assert response.json()["notification_id"] == "notif_123"
-
-    def test_create_notification_without_permission(
-        self, client, mock_firebase_token, mock_user_permissions
-    ):
-        """Test creating notification when user lacks write permission."""
-        with mock.patch(
-            "src.kene_api.firestore.get_firestore_service"
-        ) as mock_firestore:
-            mock_service = mock.Mock()
-            mock_client = mock.Mock()
-            mock_service.get_client.return_value = mock_client
-            mock_client.collection.return_value.document.return_value.get.return_value = mock_user_permissions
-            mock_firestore.return_value = mock_service
-
-            notification_data = {
-                "account_id": "acc_999",  # User doesn't have access
-                "category": "KPI Performance",
-                "description": "Test notification",
-            }
-
+            "src.kene_api.services.notification_service_v2.NotificationService.create_notification",
+            return_value="notif_123",
+        ):
             response = client.post(
                 "/api/v1/notifications/",
-                json=notification_data,
-                headers={"Authorization": "Bearer valid-token"},
+                json={
+                    "account_id": "acc_123",
+                    "category": "KPI Performance",
+                    "description": "Test notification",
+                },
             )
 
-            assert response.status_code == 403
-            error_detail = response.json()["detail"]
-            # Stronger assertion: check exact error message format
-            assert error_detail == "Access denied to account acc_999", (
-                f"Expected specific error message, got: {error_detail}"
-            )
+        assert response.status_code == 200
+        assert response.json()["notification_id"] == "notif_123"
+
+    def test_create_notification_without_permission(
+        self, client, user_no_org_admin, mock_firestore
+    ):
+        """User without access to acc_999 gets 403 (requires no-org-admin user)."""
+        response = client.post(
+            "/api/v1/notifications/",
+            json={
+                "account_id": "acc_999",
+                "category": "KPI Performance",
+                "description": "Test notification",
+            },
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Access denied to account acc_999"
