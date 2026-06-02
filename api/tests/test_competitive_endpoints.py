@@ -1,12 +1,15 @@
 """Integration tests for competitive knowledge graph endpoints with monitoring sync."""
 
 import os
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
+from src.kene_api.auth.dependencies import get_current_user
 from src.kene_api.auth.models import UserContext
+from src.kene_api.firestore import get_firestore_service
 from src.kene_api.main import app
+from src.kene_api.services.graph_sync_service import get_graph_sync_service
 
 pytestmark = pytest.mark.skipif(
     not os.getenv("FIRESTORE_EMULATOR_HOST"),
@@ -19,7 +22,6 @@ class TestCompetitorEndpoints:
 
     @pytest.fixture
     def mock_user(self):
-        """Create mock user with edit access."""
         return UserContext(
             user_id="test_user",
             email="test@example.com",
@@ -29,313 +31,243 @@ class TestCompetitorEndpoints:
 
     @pytest.fixture
     def client(self):
-        """Create test client."""
         return TestClient(app)
 
+    @pytest.fixture(autouse=True)
+    def _override_auth(self, mock_user):
+        app.dependency_overrides[get_current_user] = lambda: mock_user
+        yield
+        app.dependency_overrides.pop(get_current_user, None)
+
+    @pytest.fixture
+    def mock_graph_service(self):
+        service = AsyncMock()
+        app.dependency_overrides[get_graph_sync_service] = lambda: service
+        yield service
+        app.dependency_overrides.pop(get_graph_sync_service, None)
+
+    @pytest.fixture
+    def mock_firestore(self):
+        service = MagicMock()
+        app.dependency_overrides[get_firestore_service] = lambda: service
+        yield service
+        app.dependency_overrides.pop(get_firestore_service, None)
+
     def test_create_competitor_with_keywords_syncs_to_monitoring(
-        self, client, mock_user
+        self, client, mock_graph_service, mock_firestore
     ):
         """Test creating competitor with keywords adds to monitoring topics."""
-        with patch(
-            "src.kene_api.routers.knowledge_graph.competitive.get_current_user",
-            return_value=mock_user,
-        ):
-            with patch(
-                "src.kene_api.routers.knowledge_graph.competitive.get_graph_sync_service"
-            ) as mock_graph:
-                with patch(
-                    "src.kene_api.routers.knowledge_graph.competitive.get_firestore_service"
-                ) as mock_firestore:
-                    # Mock graph service methods
-                    mock_service = AsyncMock()
-                    mock_service.create_competitor = AsyncMock(
-                        return_value={
-                            "node_id": "comp_123",
-                            "account_id": "acc_test",
-                            "display_name": "Acme Corp",
-                            "description": "A competitor",
-                            "references": [],
-                            "website": "https://acme.com",
-                            "created_time": "2025-01-19T00:00:00",
-                            "last_modified": "2025-01-19T00:00:00",
-                            "created_by": "test_user",
-                            "last_modified_by": "test_user",
-                        }
-                    )
-                    mock_graph.return_value = mock_service
+        mock_graph_service.create_competitor = AsyncMock(
+            return_value={
+                "node_id": "comp_123",
+                "account_id": "acc_test",
+                "display_name": "Acme Corp",
+                "description": "A competitor",
+                "references": [],
+                "website": "https://acme.com",
+                "created_time": "2025-01-19T00:00:00",
+                "last_modified": "2025-01-19T00:00:00",
+                "created_by": "test_user",
+                "last_modified_by": "test_user",
+            }
+        )
+        mock_firestore.get_document.return_value = {
+            "account_id": "acc_test",
+            "organization_id": "org_test",
+            "industry_keywords": [],
+            "company_keywords": [],
+            "customer_keywords": [],
+            "competitor_entries": [],
+            "created_at": "2025-01-19T00:00:00",
+            "updated_at": "2025-01-19T00:00:00",
+        }
 
-                    # Mock Firestore document
-                    mock_firestore.return_value.get_document.return_value = {
-                        "account_id": "acc_test",
-                        "organization_id": "org_test",
-                        "industry_keywords": [],
-                        "company_keywords": [],
-                        "customer_keywords": [],
-                        "competitor_entries": [],
-                        "created_at": "2025-01-19T00:00:00",
-                        "updated_at": "2025-01-19T00:00:00",
-                    }
+        response = client.post(
+            "/api/v1/knowledge-graph/acc_test/competitors",
+            json={
+                "display_name": "Acme Corp",
+                "description": "A competitor",
+                "references": [],
+                "website": "https://acme.com",
+                "keywords": ["acme", "competitor"],
+            },
+            headers={"Authorization": "Bearer test_token"},
+        )
 
-                    response = client.post(
-                        "/api/v1/knowledge-graph/acc_test/competitors",
-                        json={
-                            "display_name": "Acme Corp",
-                            "description": "A competitor",
-                            "references": [],
-                            "website": "https://acme.com",
-                            "keywords": ["acme", "competitor"],
-                        },
-                        headers={"Authorization": "Bearer test_token"},
-                    )
-
-                    assert response.status_code == 200
-                    data = response.json()
-                    assert data["display_name"] == "Acme Corp"
-
-                    # Verify Firestore was updated
-                    assert mock_firestore.return_value.update_document.called
+        assert response.status_code == 200
+        assert response.json()["display_name"] == "Acme Corp"
+        assert mock_firestore.update_document.called
 
     def test_create_competitor_without_keywords_no_monitoring_sync(
-        self, client, mock_user
+        self, client, mock_graph_service, mock_firestore
     ):
         """Test creating competitor without keywords doesn't sync."""
-        with patch(
-            "src.kene_api.routers.knowledge_graph.competitive.get_current_user",
-            return_value=mock_user,
-        ):
-            with patch(
-                "src.kene_api.routers.knowledge_graph.competitive.get_graph_sync_service"
-            ) as mock_graph:
-                with patch(
-                    "src.kene_api.routers.knowledge_graph.competitive.get_firestore_service"
-                ) as mock_firestore:
-                    # Mock graph service
-                    mock_service = AsyncMock()
-                    mock_service.create_competitor = AsyncMock(
-                        return_value={
-                            "node_id": "comp_123",
-                            "account_id": "acc_test",
-                            "display_name": "Acme Corp",
-                            "description": "A competitor",
-                            "references": [],
-                            "website": None,
-                            "created_time": "2025-01-19T00:00:00",
-                            "last_modified": "2025-01-19T00:00:00",
-                            "created_by": "test_user",
-                            "last_modified_by": "test_user",
-                        }
-                    )
-                    mock_graph.return_value = mock_service
+        mock_graph_service.create_competitor = AsyncMock(
+            return_value={
+                "node_id": "comp_123",
+                "account_id": "acc_test",
+                "display_name": "Acme Corp",
+                "description": "A competitor",
+                "references": [],
+                "website": None,
+                "created_time": "2025-01-19T00:00:00",
+                "last_modified": "2025-01-19T00:00:00",
+                "created_by": "test_user",
+                "last_modified_by": "test_user",
+            }
+        )
 
-                    response = client.post(
-                        "/api/v1/knowledge-graph/acc_test/competitors",
-                        json={
-                            "display_name": "Acme Corp",
-                            "description": "A competitor",
-                            "references": [],
-                        },
-                        headers={"Authorization": "Bearer test_token"},
-                    )
+        response = client.post(
+            "/api/v1/knowledge-graph/acc_test/competitors",
+            json={
+                "display_name": "Acme Corp",
+                "description": "A competitor",
+                "references": [],
+            },
+            headers={"Authorization": "Bearer test_token"},
+        )
 
-                    assert response.status_code == 200
-
-                    # Verify Firestore was NOT called
-                    assert not mock_firestore.return_value.get_document.called
+        assert response.status_code == 200
+        assert not mock_firestore.get_document.called
 
     def test_create_competitor_firestore_failure_still_succeeds(
-        self, client, mock_user
+        self, client, mock_graph_service, mock_firestore
     ):
         """Test that Firestore failure doesn't fail competitor creation."""
-        with patch(
-            "src.kene_api.routers.knowledge_graph.competitive.get_current_user",
-            return_value=mock_user,
-        ):
-            with patch(
-                "src.kene_api.routers.knowledge_graph.competitive.get_graph_sync_service"
-            ) as mock_graph:
-                with patch(
-                    "src.kene_api.routers.knowledge_graph.competitive.get_firestore_service"
-                ) as mock_firestore:
-                    # Mock Neo4j success
-                    mock_service = AsyncMock()
-                    mock_service.create_competitor = AsyncMock(
-                        return_value={
-                            "node_id": "comp_123",
-                            "account_id": "acc_test",
-                            "display_name": "Acme Corp",
-                            "description": "A competitor",
-                            "references": [],
-                            "website": "https://acme.com",
-                            "created_time": "2025-01-19T00:00:00",
-                            "last_modified": "2025-01-19T00:00:00",
-                            "created_by": "test_user",
-                            "last_modified_by": "test_user",
-                        }
-                    )
-                    mock_graph.return_value = mock_service
+        mock_graph_service.create_competitor = AsyncMock(
+            return_value={
+                "node_id": "comp_123",
+                "account_id": "acc_test",
+                "display_name": "Acme Corp",
+                "description": "A competitor",
+                "references": [],
+                "website": "https://acme.com",
+                "created_time": "2025-01-19T00:00:00",
+                "last_modified": "2025-01-19T00:00:00",
+                "created_by": "test_user",
+                "last_modified_by": "test_user",
+            }
+        )
+        mock_firestore.get_document.side_effect = Exception("Firestore timeout")
 
-                    # Mock Firestore failure
-                    mock_firestore.return_value.get_document.side_effect = Exception(
-                        "Firestore timeout"
-                    )
+        response = client.post(
+            "/api/v1/knowledge-graph/acc_test/competitors",
+            json={
+                "display_name": "Acme Corp",
+                "description": "A competitor",
+                "references": [],
+                "website": "https://acme.com",
+                "keywords": ["acme"],
+            },
+            headers={"Authorization": "Bearer test_token"},
+        )
 
-                    response = client.post(
-                        "/api/v1/knowledge-graph/acc_test/competitors",
-                        json={
-                            "display_name": "Acme Corp",
-                            "description": "A competitor",
-                            "references": [],
-                            "website": "https://acme.com",
-                            "keywords": ["acme"],
-                        },
-                        headers={"Authorization": "Bearer test_token"},
-                    )
+        assert response.status_code == 200
 
-                    # Should still succeed
-                    assert response.status_code == 200
-
-    def test_delete_competitor_removes_from_monitoring(self, client, mock_user):
+    def test_delete_competitor_removes_from_monitoring(
+        self, client, mock_graph_service, mock_firestore
+    ):
         """Test deleting competitor removes from monitoring topics."""
-        with patch(
-            "src.kene_api.routers.knowledge_graph.competitive.get_current_user",
-            return_value=mock_user,
-        ):
-            with patch(
-                "src.kene_api.routers.knowledge_graph.competitive.get_graph_sync_service"
-            ) as mock_graph:
-                with patch(
-                    "src.kene_api.routers.knowledge_graph.competitive.get_firestore_service"
-                ) as mock_firestore:
-                    # Mock graph service
-                    mock_service = AsyncMock()
-                    mock_service.get_competitor = AsyncMock(
-                        return_value={
-                            "node_id": "comp_123",
-                            "account_id": "acc_test",
-                            "display_name": "Acme Corp",
-                            "description": "A competitor",
-                            "references": [],
-                            "created_time": "2025-01-19T00:00:00",
-                            "last_modified": "2025-01-19T00:00:00",
-                            "created_by": "test_user",
-                            "last_modified_by": "test_user",
-                        }
-                    )
-                    mock_service.delete_competitor = AsyncMock(
-                        return_value={"success": True, "deleted_count": 1}
-                    )
-                    mock_graph.return_value = mock_service
+        competitor_dict = {
+            "node_id": "comp_123",
+            "account_id": "acc_test",
+            "display_name": "Acme Corp",
+            "description": "A competitor",
+            "references": [],
+            "created_time": "2025-01-19T00:00:00",
+            "last_modified": "2025-01-19T00:00:00",
+            "created_by": "test_user",
+            "last_modified_by": "test_user",
+        }
+        mock_graph_service.get_node = AsyncMock(return_value=competitor_dict)
+        mock_graph_service.delete_competitor = AsyncMock(
+            return_value={"success": True, "deleted_count": 1}
+        )
+        mock_firestore.get_document.return_value = {
+            "account_id": "acc_test",
+            "organization_id": "org_test",
+            "industry_keywords": [],
+            "company_keywords": [],
+            "customer_keywords": [],
+            "competitor_entries": [
+                {
+                    "name": "Acme Corp",
+                    "website": "https://acme.com",
+                    "keywords": ["acme"],
+                }
+            ],
+            "created_at": "2025-01-19T00:00:00",
+            "updated_at": "2025-01-19T00:00:00",
+        }
 
-                    # Mock Firestore document
-                    mock_firestore.return_value.get_document.return_value = {
-                        "account_id": "acc_test",
-                        "organization_id": "org_test",
-                        "industry_keywords": [],
-                        "company_keywords": [],
-                        "customer_keywords": [],
-                        "competitor_entries": [
-                            {
-                                "name": "Acme Corp",
-                                "website": "https://acme.com",
-                                "keywords": ["acme"],
-                            }
-                        ],
-                        "created_at": "2025-01-19T00:00:00",
-                        "updated_at": "2025-01-19T00:00:00",
-                    }
+        response = client.delete(
+            "/api/v1/knowledge-graph/acc_test/competitors/comp_123",
+            headers={"Authorization": "Bearer test_token"},
+        )
 
-                    response = client.delete(
-                        "/api/v1/knowledge-graph/acc_test/competitors/comp_123",
-                        headers={"Authorization": "Bearer test_token"},
-                    )
+        assert response.status_code == 200
+        assert mock_firestore.update_document.called
 
-                    assert response.status_code == 200
-
-                    # Verify Firestore was updated to remove competitor
-                    assert mock_firestore.return_value.update_document.called
-
-    def test_create_competitor_invalid_keywords_fails_validation(
-        self, client, mock_user
-    ):
+    def test_create_competitor_invalid_keywords_fails_validation(self, client):
         """Test that invalid keywords fail validation."""
-        with patch(
-            "src.kene_api.routers.knowledge_graph.competitive.get_current_user",
-            return_value=mock_user,
-        ):
-            response = client.post(
-                "/api/v1/knowledge-graph/acc_test/competitors",
-                json={
-                    "display_name": "Acme Corp",
-                    "description": "A competitor",
-                    "references": [],
-                    "keywords": ["x"] * 25,  # Too many keywords
-                },
-                headers={"Authorization": "Bearer test_token"},
-            )
+        response = client.post(
+            "/api/v1/knowledge-graph/acc_test/competitors",
+            json={
+                "display_name": "Acme Corp",
+                "description": "A competitor",
+                "references": [],
+                "keywords": ["x"] * 25,
+            },
+            headers={"Authorization": "Bearer test_token"},
+        )
 
-            assert response.status_code == 422
-            detail = response.json()["detail"]
-            assert any("keywords" in str(error).lower() for error in detail)
+        assert response.status_code == 422
+        detail = response.json()["detail"]
+        assert any("keywords" in str(error).lower() for error in detail)
 
-    def test_create_competitor_invalid_url_fails_validation(self, client, mock_user):
+    def test_create_competitor_invalid_url_fails_validation(self, client):
         """Test that invalid website URL fails validation."""
-        with patch(
-            "src.kene_api.routers.knowledge_graph.competitive.get_current_user",
-            return_value=mock_user,
-        ):
-            response = client.post(
-                "/api/v1/knowledge-graph/acc_test/competitors",
-                json={
-                    "display_name": "Acme Corp",
-                    "description": "A competitor",
-                    "references": [],
-                    "website": "not-a-valid-url",
-                },
-                headers={"Authorization": "Bearer test_token"},
-            )
+        response = client.post(
+            "/api/v1/knowledge-graph/acc_test/competitors",
+            json={
+                "display_name": "Acme Corp",
+                "description": "A competitor",
+                "references": [],
+                "website": "not-a-valid-url",
+            },
+            headers={"Authorization": "Bearer test_token"},
+        )
 
-            assert response.status_code == 422
-            detail = response.json()["detail"]
-            assert any("website" in str(error).lower() for error in detail)
+        assert response.status_code == 422
+        detail = response.json()["detail"]
+        assert any("website" in str(error).lower() for error in detail)
 
-    def test_create_competitor_keyword_too_short_fails_validation(
-        self, client, mock_user
-    ):
+    def test_create_competitor_keyword_too_short_fails_validation(self, client):
         """Test that keywords shorter than 2 chars fail validation."""
-        with patch(
-            "src.kene_api.routers.knowledge_graph.competitive.get_current_user",
-            return_value=mock_user,
-        ):
-            response = client.post(
-                "/api/v1/knowledge-graph/acc_test/competitors",
-                json={
-                    "display_name": "Acme Corp",
-                    "description": "A competitor",
-                    "references": [],
-                    "keywords": ["a"],  # Too short
-                },
-                headers={"Authorization": "Bearer test_token"},
-            )
+        response = client.post(
+            "/api/v1/knowledge-graph/acc_test/competitors",
+            json={
+                "display_name": "Acme Corp",
+                "description": "A competitor",
+                "references": [],
+                "keywords": ["a"],
+            },
+            headers={"Authorization": "Bearer test_token"},
+        )
 
-            assert response.status_code == 422
+        assert response.status_code == 422
 
-    def test_create_competitor_keyword_too_long_fails_validation(
-        self, client, mock_user
-    ):
+    def test_create_competitor_keyword_too_long_fails_validation(self, client):
         """Test that keywords longer than 50 chars fail validation."""
-        with patch(
-            "src.kene_api.routers.knowledge_graph.competitive.get_current_user",
-            return_value=mock_user,
-        ):
-            response = client.post(
-                "/api/v1/knowledge-graph/acc_test/competitors",
-                json={
-                    "display_name": "Acme Corp",
-                    "description": "A competitor",
-                    "references": [],
-                    "keywords": ["a" * 51],  # Too long
-                },
-                headers={"Authorization": "Bearer test_token"},
-            )
+        response = client.post(
+            "/api/v1/knowledge-graph/acc_test/competitors",
+            json={
+                "display_name": "Acme Corp",
+                "description": "A competitor",
+                "references": [],
+                "keywords": ["a" * 51],
+            },
+            headers={"Authorization": "Bearer test_token"},
+        )
 
-            assert response.status_code == 422
+        assert response.status_code == 422

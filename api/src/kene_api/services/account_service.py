@@ -192,7 +192,8 @@ async def create_account_internal(
         f"[ACCOUNT_CREATION] Account structure created for {account_id}, preparing research"
     )
 
-    # Prepare account data for Firestore
+    # Account requires non-None data_region (str) and region (list[str]);
+    # the request fields are Optional.
     account_data = {
         "account_id": account_id,
         "account_name": request.account_name,
@@ -201,15 +202,15 @@ async def create_account_internal(
         "status": request.status,
         "websites": request.websites,
         "timezone": request.timezone,
-        "data_region": request.data_region,
-        "region": request.region,
+        "data_region": request.data_region or "",
+        "region": request.region or [],
         "marketing_channels": request.marketing_channels or [],
         "product_integrations": request.product_integrations or [],
         "estimated_annual_ad_budget": request.estimated_annual_ad_budget,
         "created_at": datetime.utcnow().isoformat(),
-        "created_by": user.user_id,  # Fixed: use user_id instead of uid
+        "created_by": user.user_id,
         "updated_at": datetime.utcnow().isoformat(),
-        "updated_by": user.user_id,  # Fixed: use user_id instead of uid
+        "updated_by": user.user_id,
     }
 
     # Create account in Neo4j database (skip if dry_run=true)

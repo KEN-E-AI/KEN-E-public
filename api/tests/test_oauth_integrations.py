@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
+from src.kene_api.auth import UserContext
 from src.kene_api.auth.user_context import get_current_user_context
 from src.kene_api.firestore import get_firestore_service
 from src.kene_api.main import app
@@ -119,15 +120,15 @@ class TestOAuthAuthorization:
         self, client, mock_firestore_service
     ):
         """Test Google Analytics OAuth with insufficient permissions."""
-        # Create user without proper permissions
-        user = Mock()
-        user.user_id = "test_user_id"
-        user.email = "test@example.com"
-        user.is_super_admin = False
-        user.account_permissions = {"test_account_id": {"role": "viewer"}}
-        user.organization_permissions = {}
-        user.accessible_accounts = ["test_account_id"]
-        user.permissions = {}
+        # A bare Mock() makes user.has_account_access(...) return a truthy
+        # Mock, silently bypassing the permission check the test wants to
+        # exercise. UserContext implements the method against real data.
+        user = UserContext(
+            user_id="test_user_id",
+            email="test@example.com",
+            organization_permissions={},
+            account_permissions={"test_account_id": "viewer"},
+        )
 
         app.dependency_overrides[get_current_user_context] = lambda: user
         app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service

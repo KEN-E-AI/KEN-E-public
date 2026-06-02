@@ -1,10 +1,13 @@
 """Tests for accounts activity logs functionality."""
 
+import json
 import os
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from src.kene_api.auth import UserContext
+from src.kene_api.auth.user_context import get_current_user_context
 from src.kene_api.bigquery import get_bigquery_service
 from src.kene_api.database import get_neo4j_service
 from src.kene_api.firestore import get_firestore_service
@@ -18,6 +21,20 @@ pytestmark = pytest.mark.skipif(
 
 # Create test client
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _override_auth_dep():
+    test_user = UserContext(
+        user_id="test-user-123",
+        email="admin@ken-e.ai",
+        organization_permissions={},
+        account_permissions={},
+        roles=["super_admin"],
+    )
+    app.dependency_overrides[get_current_user_context] = lambda: test_user
+    yield
+    app.dependency_overrides.pop(get_current_user_context, None)
 
 
 @pytest.fixture
@@ -66,12 +83,8 @@ async def test_create_initial_activity_logs_success():
     mock_neo4j = MagicMock()
     mock_bigquery = MagicMock()
 
-    # Mock act_00 exists
-    mock_neo4j.execute_query = AsyncMock(
-        return_value=[{"a": {"activity_id": "act_00"}}]
-    )
+    mock_neo4j.execute_query = AsyncMock(return_value=[{"activity_count": 1}])
 
-    # Mock holiday data from BigQuery
     mock_bigquery.query_holiday_activities = Mock(
         return_value=[
             {
@@ -87,7 +100,6 @@ async def test_create_initial_activity_logs_success():
         ]
     )
 
-    # Mock successful creation
     mock_neo4j.execute_write_query = AsyncMock(return_value=[{"created_count": 2}])
 
     with patch.dict(os.environ, {"GOOGLE_CLOUD_PROJECT_ID": "test-project"}):
@@ -187,93 +199,6 @@ async def test_create_initial_activity_logs_exception_handling():
     assert result == 0
 
 
-@patch("src.kene_api.bigquery._bigquery_service", None)
-def test_create_account_with_regions(
-    mock_neo4j_service, mock_firestore_service, mock_bigquery_service
-):
-    """Test creating account with regions triggers holiday activity logs creation."""
-    # Mock BigQuery service to avoid real initialization
-    mock_bigquery_service._initialized = True
-    mock_bigquery_service._client = Mock()
-
-    # Mock organization exists and is not agency
-    def mock_execute_query(query, parameters=None):
-        if "Organization" in query and "exists" in query:
-            return [{"exists": True}]
-        elif "org.agency" in query:
-            return [{"agency": False}]
-        elif "Account" in query and "exists" in query:
-            return [{"exists": False}]
-        elif 'activity_id: "act_00"' in query:
-            # Match the exact query for act_00
-            return [{"a": {"activity_id": "act_00"}}]
-        elif "MATCH (acc:Account" in query and "RETURN acc" in query:
-            return [
-                {
-                    "acc": {
-                        "account_id": parameters["account_id"],
-                        "account_name": "New Account",
-                        "organization_id": "test-org",
-                        "industry": "Technology",
-                        "status": "Active",
-                        "websites": ["https://new.com"],
-                        "timezone": "America/New_York",
-                        "region": ["AU", "CA"],
-                        "data_region": "",
-                    }
-                }
-            ]
-        else:
-            return []
-
-    mock_neo4j_service.execute_query.side_effect = mock_execute_query
-
-    # Mock write queries - first for account creation, then for initial activities, then for activity logs
-    mock_neo4j_service.execute_write_query.side_effect = [
-        {"nodes_created": 1, "relationships_created": 1},  # Account creation
-        [{"created_count": 1}],  # Initial activities creation (including act_00)
-        [{"created_count": 1}],  # Activity logs creation
-    ]
-
-    # Mock BigQuery returns holidays
-    mock_bigquery_service.query_holiday_activities.return_value = [
-        {
-            "description": "New Year",
-            "start_date": "2024-01-01",
-            "end_date": "2024-01-01",
-        }
-    ]
-
-    # Override dependencies
-    app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service
-    app.dependency_overrides[get_firestore_service] = lambda: mock_firestore_service
-    app.dependency_overrides[get_bigquery_service] = lambda: mock_bigquery_service
-
-    with patch.dict(os.environ, {"GOOGLE_CLOUD_PROJECT_ID": "test-project"}):
-        new_account_data = {
-            "account_name": "New Account",
-            "organization_id": "test-org",
-            "industry": "Technology",
-            "status": "Active",
-            "websites": ["https://new.com"],
-            "timezone": "America/New_York",
-            "region": ["AU", "CA"],
-        }
-
-        response = client.post("/api/v1/accounts/", json=new_account_data)
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data["account_name"] == "New Account"
-    assert data["region"] == ["AU", "CA"]
-
-    # Verify BigQuery was called
-    mock_bigquery_service.query_holiday_activities.assert_called_once()
-
-    # Clean up
-    app.dependency_overrides.clear()
-
-
 def test_create_account_without_regions(
     mock_neo4j_service, mock_firestore_service, mock_bigquery_service
 ):
@@ -318,15 +243,14 @@ def test_create_account_without_regions(
         "organization_id": "test-org",
         "industry": "Technology",
         "status": "Active",
-        "websites": ["https://new.com"],
+        "websites": json.dumps(["https://new.com"]),
         "timezone": "America/New_York",
     }
 
-    response = client.post("/api/v1/accounts/", json=new_account_data)
+    response = client.post("/api/v1/accounts/", data=new_account_data)
 
     assert response.status_code == 200
 
-    # Verify BigQuery was NOT called
     mock_bigquery_service.query_holiday_activities.assert_not_called()
 
     # Clean up

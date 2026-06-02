@@ -225,19 +225,27 @@ async def delete_competitor(
 
     Also deletes the corresponding monitoring entry from Firestore if it exists.
     """
-    # Get competitor name before deletion
+    # Pre-fetch the competitor so monitoring cleanup can find the right
+    # Firestore entry. Only swallow 404 (competitor already gone — Neo4j
+    # delete is a no-op). Auth, network, and programming errors must
+    # propagate so monitoring cleanup is not silently skipped.
     try:
         competitor = await CRUDEndpoints.get_node(
             account_id=account_id,
             node_id=node_id,
             node_type="Competitor",
-            response_class=CompetitorResponse,
+            response_model_class=CompetitorResponse,
             service=service,
             user=user,
         )
         competitor_name = competitor.display_name
-    except Exception as e:
-        logger.warning(f"Could not fetch competitor before deletion: {e}")
+    except HTTPException as e:
+        if e.status_code != 404:
+            raise
+        logger.warning(
+            "Competitor not found for pre-delete fetch; skipping monitoring cleanup",
+            extra={"account_id": account_id, "node_id": node_id},
+        )
         competitor_name = None
 
     # Delete from Neo4j

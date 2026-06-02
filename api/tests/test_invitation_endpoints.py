@@ -301,8 +301,7 @@ class TestInvitationEndpoints:
         # Mock invitation lookup
         mock_firestore.query_documents.return_value = [mock_invitation]
 
-        # Mock inviter user lookup
-        inviter_doc = {"id": "inviter123", "email": "inviter@example.com"}
+        inviter_doc = {"id": "inviter123", "profile": {"email": "inviter@example.com"}}
         mock_firestore.get_document.side_effect = [
             inviter_doc,  # First call for inviter
         ]
