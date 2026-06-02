@@ -49,6 +49,12 @@ class TokenRevocationService:
             revoked_by: Optional ID of user who revoked the token
             expires_at: When the token expires (for cleanup)
         """
+        if not token_id:
+            raise ValueError(
+                "token_id is required to revoke an individual token; "
+                "use revoke_all_user_tokens for blanket revocation."
+            )
+
         firestore_service = get_firestore_service()
         db = firestore_service.get_client()
 
@@ -145,14 +151,22 @@ class TokenRevocationService:
         Returns:
             True if the token is revoked, False otherwise
         """
+        # An empty token_id means the decoded JWT had no jti and no sub+iat
+        # fallback — there is no individual revocation record keyed on "", and
+        # Firestore rejects the empty document path. Skip the per-token lookup
+        # and fall through to the user-wide revoke_all check, which keys only
+        # on user_id + issued_at.
+        has_token_id = bool(token_id)
+
         # Check Redis first — revoke_token() and revoke_all_user_tokens()
         # write to both Redis AND Firestore, so Redis is authoritative
         # when available. Firestore is only needed as fallback when Redis
         # is down.
         if self.redis.is_available():
-            cache_key = f"revoked_token:{token_id}"
-            if self.redis.get(cache_key):
-                return True
+            if has_token_id:
+                cache_key = f"revoked_token:{token_id}"
+                if self.redis.get(cache_key):
+                    return True
 
             all_tokens_key = f"revoked_all_tokens:{user_id}"
             revoke_all_timestamp = self.redis.get(all_tokens_key)
@@ -168,9 +182,10 @@ class TokenRevocationService:
         firestore_service = get_firestore_service()
         db = firestore_service.get_client()
 
-        token_doc = db.collection(self.collection_name).document(token_id).get()
-        if token_doc.exists:
-            return True
+        if has_token_id:
+            token_doc = db.collection(self.collection_name).document(token_id).get()
+            if token_doc.exists:
+                return True
 
         if issued_at:
             all_tokens_doc = (

@@ -509,7 +509,7 @@ class TestUnknownResource:
 
         buf = io.StringIO()
         with redirect_stderr(buf):
-            exit_code = cli_module.cmd_resource(
+            cli_module.cmd_resource(
                 "strategy_docs",
                 "test-project-id",
                 "(default)",
@@ -519,10 +519,11 @@ class TestUnknownResource:
 
         stderr_output = buf.getvalue()
         # A recognised resource must NOT produce the "unknown resource" error —
-        # proving cmd_resource distinguishes the two failure modes.  DM-3's real
-        # runner now runs for known resources; without live Firestore it exits
-        # non-zero (runtime error) rather than the old DM-3-stub exit code 3.
-        assert exit_code != 0
+        # proving cmd_resource distinguishes the two failure modes. The runner
+        # may exit 0 (emulator present, no source docs → VERIFIED) or non-zero
+        # (live-Firestore connect error); the exit code is not part of the
+        # contract we're verifying here. The absence of the unknown-resource
+        # message is sufficient.
         assert "unknown resource:" not in stderr_output
 
 
