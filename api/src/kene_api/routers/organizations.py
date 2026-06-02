@@ -608,8 +608,16 @@ async def create_organization(
                         f"Successfully rolled back organization {organization_id}"
                     )
                 except Exception as rollback_error:
+                    # Orphaned Organization node now exists in Neo4j — emit
+                    # structured fields so SRE can find and clean it up.
                     logger.critical(
-                        f"Failed to rollback organization {organization_id} after permission grant failure: {rollback_error}"
+                        "Failed to rollback organization after permission grant failure",
+                        extra={
+                            "organization_id": organization_id,
+                            "user_id": user.user_id,
+                            "rollback_error_type": type(rollback_error).__name__,
+                        },
+                        exc_info=True,
                     )
 
                 raise HTTPException(
@@ -650,8 +658,16 @@ async def create_organization(
                 )
                 logger.info(f"Successfully rolled back organization {organization_id}")
             except Exception as rollback_error:
+                # Orphaned Organization node now exists in Neo4j — emit
+                # structured fields so SRE can find and clean it up.
                 logger.critical(
-                    f"Failed to rollback organization {organization_id} after permission grant failure: {rollback_error}"
+                    "Failed to rollback organization after permission grant failure",
+                    extra={
+                        "organization_id": organization_id,
+                        "user_id": user.user_id,
+                        "rollback_error_type": type(rollback_error).__name__,
+                    },
+                    exc_info=True,
                 )
 
             raise HTTPException(

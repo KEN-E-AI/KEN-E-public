@@ -116,7 +116,6 @@ steps:
             --ignore=tests/middleware \
             --ignore=tests/unit/test_chat_performance.py \
             --ignore=tests/unit/test_notification_service.py \
-            --ignore=tests/test_accounts.py \
             --ignore=tests/test_accounts_activity_logs.py \
             --ignore=tests/test_auth_endpoints.py \
             --ignore=tests/test_competitive_endpoints.py \
