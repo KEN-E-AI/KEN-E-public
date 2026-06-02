@@ -438,8 +438,14 @@ class TestGetOptionalUserContext:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_invalid_credentials_returns_none(self):
-        """Test that invalid credentials return None."""
+    async def test_invalid_credentials_reraises_http_exception(self):
+        """Credentials presented but invalid must re-raise as 401 — fail closed.
+
+        The earlier behaviour was to swallow HTTPException and return None,
+        which would treat a malformed/revoked JWT as anonymous instead of
+        rejecting it. Anonymous access requires *no* credentials, not bad
+        credentials.
+        """
         credentials = HTTPAuthorizationCredentials(
             scheme="Bearer", credentials="invalid-token"
         )
@@ -450,10 +456,36 @@ class TestGetOptionalUserContext:
             "src.kene_api.auth.user_context.get_current_user_context",
             side_effect=HTTPException(status_code=401, detail="Invalid token"),
         ):
-            result = await get_optional_user_context(
-                mock_request, credentials, mock_firestore
-            )
-            assert result is None
+            with pytest.raises(HTTPException) as exc_info:
+                await get_optional_user_context(
+                    mock_request, credentials, mock_firestore
+                )
+
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.detail == "Invalid token"
+
+    @pytest.mark.asyncio
+    async def test_malformed_jwt_reraises_not_silently_anonymous(self):
+        """JWT missing identity claims (jti/sub/iat) must reach the caller as 401."""
+        credentials = HTTPAuthorizationCredentials(
+            scheme="Bearer", credentials="malformed-jwt"
+        )
+        mock_firestore = mock.Mock()
+        mock_request = mock.Mock(spec=Request)
+
+        with mock.patch(
+            "src.kene_api.auth.user_context.get_current_user_context",
+            side_effect=HTTPException(
+                status_code=401,
+                detail="Token missing required identity claims",
+            ),
+        ):
+            with pytest.raises(HTTPException) as exc_info:
+                await get_optional_user_context(
+                    mock_request, credentials, mock_firestore
+                )
+
+        assert exc_info.value.status_code == 401
 
     @pytest.mark.asyncio
     async def test_valid_credentials_returns_context(self):

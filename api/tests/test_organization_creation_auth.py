@@ -45,6 +45,10 @@ def mock_neo4j_service():
             "properties_set": 0,
         }
     )
+    # Rollback path uses execute_write_operation (DELETE without RETURN),
+    # not execute_write_query. Without this stub, awaiting the bare Mock
+    # attribute raises TypeError instead of completing the rollback.
+    mock_service.execute_write_operation = AsyncMock(return_value=None)
 
     return mock_service
 
@@ -271,10 +275,10 @@ class TestCreateOrganizationAuth:
             assert exc_info.value.status_code == 500
             assert "Failed to complete organization setup" in str(exc_info.value.detail)
 
-            # Verify rollback was attempted (DELETE query executed)
-            assert (
-                mock_neo4j_service.execute_write_query.call_count == 2
-            )  # CREATE + DELETE
+            # CREATE goes through execute_write_query (RETURN org); DELETE
+            # rollback goes through execute_write_operation (no RETURN).
+            assert mock_neo4j_service.execute_write_query.call_count == 1
+            mock_neo4j_service.execute_write_operation.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_create_organization_firestore_exception_rollback(
@@ -306,10 +310,9 @@ class TestCreateOrganizationAuth:
             assert exc_info.value.status_code == 500
             assert "permission system error" in str(exc_info.value.detail)
 
-            # Verify rollback was attempted
-            assert (
-                mock_neo4j_service.execute_write_query.call_count == 2
-            )  # CREATE + DELETE
+            # CREATE → execute_write_query, rollback DELETE → execute_write_operation.
+            assert mock_neo4j_service.execute_write_query.call_count == 1
+            mock_neo4j_service.execute_write_operation.assert_called_once()
 
 
 class TestGetOrganizationRefactored:

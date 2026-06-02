@@ -499,23 +499,15 @@ async def get_optional_user_context(
 ) -> UserContext | None:
     """Get optional user context from Firebase auth token.
 
-    Returns None if no authentication token is present or if token is invalid.
-
-    Args:
-        request: The FastAPI request object
-        credentials: Optional HTTP Bearer credentials
-        firestore_service: Firestore service instance
-
-    Returns:
-        UserContext object or None
+    Returns None ONLY when no credentials are presented. If credentials ARE
+    presented but invalid (malformed JWT, revoked token, missing identity
+    claims), the underlying HTTPException is re-raised so the caller fails
+    closed at 401 rather than silently downgrading to an anonymous request.
     """
     if not credentials:
         return None
 
-    try:
-        return await get_current_user_context(request, credentials, firestore_service)
-    except HTTPException:
-        return None
+    return await get_current_user_context(request, credentials, firestore_service)
 
 
 async def check_account_access(

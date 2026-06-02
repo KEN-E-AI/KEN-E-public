@@ -121,12 +121,9 @@ steps:
             --ignore=tests/test_auth_endpoints.py \
             --ignore=tests/test_competitive_endpoints.py \
             --ignore=tests/test_ga_property_selection.py \
-            --ignore=tests/test_insights.py \
             --ignore=tests/test_invitation_endpoints.py \
-            --ignore=tests/test_metrics.py \
             --ignore=tests/test_monitoring_topics_endpoints.py \
-            --ignore=tests/test_oauth_integrations.py \
-            --ignore=tests/test_organization_creation_auth.py
+            --ignore=tests/test_oauth_integrations.py
 
   # Run agent-side unit tests for the clean subdirectories of app/adk/.
   # Scope: agent_factory, mcp_config, and tracking test directories, plus the

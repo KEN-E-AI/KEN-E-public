@@ -188,3 +188,36 @@ class TestAuditLogger:
 
                 # Verify structured logging still happened
                 mock_logger.log.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_firestore_failure_surfaces_event_context(self, audit_logger, caplog):
+        """A Firestore write failure must log event_type/user_id/severity for SRE correlation.
+
+        Without these fields the operator only sees a generic "failed to store"
+        message and can't tell which audit event was lost. Defensive: ensures
+        the Cloud Logging primary trail can be cross-referenced.
+        """
+        with mock.patch(
+            "src.kene_api.auth.audit_logger.get_firestore_service",
+            side_effect=Exception("Firestore connection failed"),
+        ):
+            with caplog.at_level("ERROR", logger="src.kene_api.auth.audit_logger"):
+                await audit_logger.log_event(
+                    event_type=SecurityEventType.SUSPICIOUS_ACTIVITY,
+                    user_id="test-user",
+                    severity="CRITICAL",
+                )
+
+        error_records = [
+            r
+            for r in caplog.records
+            if r.levelname == "ERROR" and "Failed to persist audit log" in r.message
+        ]
+        assert len(error_records) == 1, (
+            "Expected one structured error record for the failed Firestore write"
+        )
+        record = error_records[0]
+        assert getattr(record, "audit_event_type", None) == "suspicious_activity"
+        assert getattr(record, "audit_user_id", None) == "test-user"
+        assert getattr(record, "audit_severity", None) == "CRITICAL"
+        assert getattr(record, "error_type", None) == "Exception"

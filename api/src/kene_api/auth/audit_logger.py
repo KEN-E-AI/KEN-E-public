@@ -99,19 +99,30 @@ class AuditLogger:
             ),
         )
 
-        # Also store in Firestore for longer retention and queries
+        # Also store in Firestore for longer retention and queries.
+        # The Cloud Logging trail above is the primary record; this is the
+        # queryable secondary copy. Failures surface event context so SRE/
+        # observability can correlate the missing Firestore row with the
+        # already-logged structured event.
         try:
             firestore_service = get_firestore_service()
             db = firestore_service.get_client()
 
-            # Add server timestamp
             event_data["server_timestamp"] = firestore.SERVER_TIMESTAMP
 
-            # Store in Firestore
             await self._store_in_firestore(db, event_data)
 
         except Exception as e:
-            logger.error(f"Failed to store audit log in Firestore: {e}")
+            logger.error(
+                "Failed to persist audit log to Firestore",
+                extra={
+                    "audit_event_type": event_type.value,
+                    "audit_user_id": user_id,
+                    "audit_severity": severity,
+                    "error_type": type(e).__name__,
+                },
+                exc_info=True,
+            )
 
     async def _store_in_firestore(self, db: firestore.Client, event_data: dict) -> None:
         """Store audit log in Firestore.

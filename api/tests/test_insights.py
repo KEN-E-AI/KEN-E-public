@@ -35,8 +35,10 @@ class TestInsightsRouter:
 
     def test_get_insights_empty_response(self, client, mock_neo4j_service):
         """Test getting insights with no data."""
-        # Mock empty responses
-        mock_neo4j_service.execute_query.side_effect = [[], []]  # insights, intuitions
+        # Mock empty insights response (the router queries insights only —
+        # intuitions are now handled by a separate endpoint and always returned
+        # as []).
+        mock_neo4j_service.execute_query.return_value = []
 
         app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service
 
@@ -52,7 +54,6 @@ class TestInsightsRouter:
 
     def test_get_insights_with_data(self, client, mock_neo4j_service):
         """Test getting insights with sample data."""
-        # Mock insight data
         insight_record = {
             "activity": {
                 "activity_id": "activity_001",
@@ -64,20 +65,7 @@ class TestInsightsRouter:
             "relationship": {},
         }
 
-        # Mock intuition data
-        intuition_record = {
-            "activity": {
-                "activity_id": "activity_002",
-                "activity_description": "Test activity 2",
-            },
-            "metric": {"metric_id": "metric_002", "metric_name": "Test Metric 2"},
-            "relationship": {"direction": "positive"},
-        }
-
-        mock_neo4j_service.execute_query.side_effect = [
-            [insight_record],  # insights query
-            [intuition_record],  # intuitions query
-        ]
+        mock_neo4j_service.execute_query.return_value = [insight_record]
 
         app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service
 
@@ -86,10 +74,11 @@ class TestInsightsRouter:
         assert response.status_code == 200
         data = response.json()
         assert len(data["insights"]) == 1
-        assert len(data["intuitions"]) == 1
-        assert data["total"] == 2
+        # Intuitions are handled by a separate endpoint and always returned
+        # as []; total counts insights only.
+        assert data["intuitions"] == []
+        assert data["total"] == 1
 
-        # Verify insight structure
         insight = data["insights"][0]
         assert insight["activity_id"] == "activity_001"
         assert insight["metric_id"] == "metric_001"
@@ -97,12 +86,6 @@ class TestInsightsRouter:
         assert insight["metric_verbose_name"] == "Test Metric"
         assert "HubSpot" in insight["related_dataset_products"]
         assert "Salesforce" in insight["related_dataset_products"]
-
-        # Verify intuition structure
-        intuition = data["intuitions"][0]
-        assert intuition["activity_id"] == "activity_002"
-        assert intuition["metric_id"] == "metric_002"
-        assert intuition["direction"] == "positive"
 
         app.dependency_overrides.clear()
 
@@ -134,9 +117,9 @@ class TestInsightsRouter:
             "relationship_type": "NO_INFLUENCE_CONFIRMED",
         }
 
-        mock_neo4j_service.execute_query.side_effect = [
-            [influence_confirmed_record, no_influence_record],  # insights query
-            [],  # intuitions query
+        mock_neo4j_service.execute_query.return_value = [
+            influence_confirmed_record,
+            no_influence_record,
         ]
 
         app.dependency_overrides[get_neo4j_service] = lambda: mock_neo4j_service

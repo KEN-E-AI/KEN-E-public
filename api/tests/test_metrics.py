@@ -97,7 +97,7 @@ class TestMetricsRouter:
 
         request_data = {
             "account_id": "test_account",
-            "id": "test_metric",
+            "metric_id": "test_metric",
             "d3_format": ".2f",
             "verbose_name": "Test Metric",
             "expression": "COUNT(*)",
@@ -127,13 +127,14 @@ class TestMetricsRouter:
 
         request_data = {
             "account_id": "nonexistent_account",
-            "id": "test_metric",
+            "metric_id": "test_metric",
             "d3_format": ".2f",
             "verbose_name": "Test Metric",
             "expression": "COUNT(*)",
             "metric_name": "test_metric",
             "currency": "USD",
             "account_components": ["marketing"],
+            "related_dataset_id": 1,
             "description": "Test metric description",
         }
 
@@ -175,7 +176,7 @@ class TestMetricsRouter:
 
         request_data = {
             "account_id": "test_account",
-            "id": "test_metric",
+            "metric_id": "test_metric",
             "d3_format": ".3f",
             "description": "Updated description",
         }
@@ -187,7 +188,9 @@ class TestMetricsRouter:
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
-        assert data["message"] == "Metric updated successfully (synced with Superset)"
+        # Superset sync is currently commented out in the router; the message
+        # is just "Metric updated successfully".
+        assert data["message"] == "Metric updated successfully"
 
     @pytest.mark.asyncio
     @patch("src.kene_api.database.neo4j_service")
@@ -199,7 +202,7 @@ class TestMetricsRouter:
 
         request_data = {
             "account_id": "test_account",
-            "id": "nonexistent_metric",
+            "metric_id": "nonexistent_metric",
             "d3_format": ".3f",
         }
 
@@ -241,7 +244,7 @@ class TestMetricsRouter:
 
         request_data = {
             "account_id": "test_account",
-            "id": "test_metric",
+            "metric_id": "test_metric",
         }
 
         transport = ASGITransport(app=app)
@@ -251,4 +254,6 @@ class TestMetricsRouter:
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
-        assert data["message"] == "Metric deleted successfully (removed from Superset)"
+        # Superset delete is currently commented out in the router; the
+        # message is just "Metric deleted successfully".
+        assert data["message"] == "Metric deleted successfully"
