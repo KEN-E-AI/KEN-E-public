@@ -155,8 +155,17 @@ class TokenRevocationService:
         # fallback — there is no individual revocation record keyed on "", and
         # Firestore rejects the empty document path. Skip the per-token lookup
         # and fall through to the user-wide revoke_all check, which keys only
-        # on user_id + issued_at.
+        # on user_id + issued_at. A real Firebase ID token always carries sub
+        # and iat, so an empty token_id in production indicates either an
+        # unusual IdP or a malformed/spoofed token — log it as a forensic
+        # breadcrumb so SRE can spot anomalous traffic.
         has_token_id = bool(token_id)
+        if not has_token_id:
+            logger.warning(
+                "is_token_revoked called with empty token_id for user=%s; "
+                "skipping per-token lookup, honoring revoke_all only",
+                user_id,
+            )
 
         # Check Redis first — revoke_token() and revoke_all_user_tokens()
         # write to both Redis AND Firestore, so Redis is authoritative

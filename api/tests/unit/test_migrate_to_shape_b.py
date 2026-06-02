@@ -494,10 +494,13 @@ class TestUnknownResource:
     def test_known_resource_returns_runner_stub_not_unknown_message(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A recognised name returns the DM-3 runner stub — not the unknown-resource message.
+        """A recognised name dispatches to the runner, not the unknown-resource path.
 
-        This proves cmd_resource correctly distinguishes "name not in registry"
-        from "name in registry but runner not yet implemented".
+        Positive assertion (runner was called) + negative assertion (unknown-error
+        not emitted) together prove cmd_resource correctly distinguishes "name
+        not in registry" from "name in registry, runner dispatched". The runner
+        itself is stubbed so this test is environment-agnostic (works with or
+        without the Firestore emulator).
         """
         fake_resources = {
             "strategy_docs": MigrateConfig(
@@ -507,23 +510,32 @@ class TestUnknownResource:
         monkeypatch.setattr(cli_module, "RESOURCES", fake_resources)
         monkeypatch.setenv("GOOGLE_CLOUD_PROJECT_ID", "test-project-id")
 
+        runner_calls: list[str] = []
+
+        def fake_migrate(client: object, name: str, config: object) -> int:
+            runner_calls.append(name)
+            return 0
+
+        monkeypatch.setattr(cli_module, "migrate_resource", fake_migrate)
+
+        mock_fs = MagicMock()
+        mock_fs.Client.return_value = MagicMock()
+
         buf = io.StringIO()
-        with redirect_stderr(buf):
-            cli_module.cmd_resource(
-                "strategy_docs",
-                "test-project-id",
-                "(default)",
-                dry_run=False,
-                confirm_delete=False,
-            )
+        with patch.dict("sys.modules", {"google.cloud.firestore": mock_fs}):
+            with redirect_stderr(buf):
+                cli_module.cmd_resource(
+                    "strategy_docs",
+                    "test-project-id",
+                    "(default)",
+                    dry_run=False,
+                    confirm_delete=False,
+                )
 
         stderr_output = buf.getvalue()
-        # A recognised resource must NOT produce the "unknown resource" error —
-        # proving cmd_resource distinguishes the two failure modes. The runner
-        # may exit 0 (emulator present, no source docs → VERIFIED) or non-zero
-        # (live-Firestore connect error); the exit code is not part of the
-        # contract we're verifying here. The absence of the unknown-resource
-        # message is sufficient.
+        # Positive: the runner was actually invoked for the known resource.
+        assert runner_calls == ["strategy_docs"]
+        # Negative: cmd_resource did NOT short-circuit on the unknown-resource path.
         assert "unknown resource:" not in stderr_output
 
 
