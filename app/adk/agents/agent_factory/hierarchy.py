@@ -11,10 +11,11 @@ root carries no specialist-dispatch tool; a ``before_agent_callback`` wires
 each turn's visible specialists into ``root.sub_agents`` before the LLM is
 invoked, so ``transfer_to_agent(agent_name=<doc_id>)`` resolves natively.
 
-  config_loader   (AH-10) — loads + merges the root MergedAgentConfig document
-  builder         (AH-15) — constructs LlmAgent with standard ADK callbacks
-  specialist_runtime (AH-59) — available_specialists_provider per-turn provider
-  sub_agent_attacher (AH-75) — runtime sub_agents sync via before_agent_callback
+  config_loader       (AH-10) — loads + merges the root MergedAgentConfig document
+  builder             (AH-15) — constructs LlmAgent with standard ADK callbacks
+  specialist_runtime  (AH-59) — available_specialists_provider per-turn provider
+  sub_agent_attacher  (AH-75) — runtime sub_agents sync via before_agent_callback
+  root_tools_attacher (AH-100) — runtime root.tools sync via before_agent_callback
 
 Deploy-time only: call once in ``deploy_ken_e.py``.
 """
@@ -192,6 +193,9 @@ def build_hierarchy(
     # can give Kinney web search via config alone, with no code change. When
     # ``tool_ids`` is unset the resolver returns ``[]`` (google_search is opt-in
     # / not default_global), preserving the historical ``tools=[]`` root.
+    from app.adk.agents.agent_factory.root_tools_attacher import (
+        attach_root_tools_before_agent_callback,
+    )
     from app.adk.agents.agent_factory.roster import resolve_specialist_roster
     from app.adk.agents.agent_factory.specialist_runtime import (
         available_specialists_provider,
@@ -229,6 +233,12 @@ def build_hierarchy(
         instruction_suffix_provider=available_specialists_provider,
         additional_before_agent_callbacks=[
             attach_specialists_before_agent_callback,
+            # Per-turn root-tools sync (AH-100): hot-reloads ``ken_e_chatbot.
+            # tool_ids`` from the TTL-cached Firestore config so admin edits to
+            # the root's tool list take effect within ~60 s without a redeploy.
+            # Placed after attach_specialists so both attach callbacks are
+            # grouped together before the tracing callback.
+            attach_root_tools_before_agent_callback,
             # Ordering constraint: span callback reads the state key written by
             # the attach callback above — must remain AFTER it in this list.
             specialists_span_before_agent_callback,

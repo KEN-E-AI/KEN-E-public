@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 
 import weave
 
+from app.adk.tracking.tool_trace_context import stash_trace_context
 from app.utils.weave_observability import WEAVE_AVAILABLE, init_weave_if_needed
 from shared.structured_logging import get_structured_logger, log_context
 
@@ -239,7 +240,11 @@ async def adk_before_tool_callback(
 
         attrs_ctx = weave.attributes(trace_attrs)
         attrs_ctx.__enter__()
-        tool_context.state["_trace_attrs_ctx"] = attrs_ctx
+        # Hold the (generator-backed) context manager off session state and
+        # exit it in adk_after_tool_callback. It must NOT live in ADK state:
+        # AgentTool.run_async deep-copies parent state into agent-as-tool child
+        # sessions, and a generator can't be pickled. See tool_trace_context.
+        stash_trace_context(tool_context, attrs_ctx)
 
     await _refresh_ga_token_if_needed(tool_context)
 

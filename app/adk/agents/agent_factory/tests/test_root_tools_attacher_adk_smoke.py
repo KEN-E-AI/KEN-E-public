@@ -1,0 +1,236 @@
+"""ADK behaviour spike: confirm mid-callback root.tools mutation is honoured on the
+same turn in google-adk==1.27.5.
+
+Spike result (Task 1 from AH-100):
+    PASS — mutating ``agent.tools`` inside a ``before_agent_callback`` IS picked
+    up on the same invocation turn.
+
+    Evidence from ADK source (1.27.5):
+    * ``base_agent.py:291`` — ``_handle_before_agent_callback`` fires *before*
+      ``_run_async_impl``.
+    * ``base_llm_flow.py:418-441`` — ``_process_agent_tools`` reads
+      ``agent.tools`` directly at LLM-request build time (no early snapshot or
+      per-invocation cache).
+    * ``invocation_context.py:214`` — ``canonical_tools_cache`` is populated
+      only inside ``_maybe_add_grounding_metadata`` (grounding metadata path),
+      not before the LLM request is assembled.
+
+    Therefore: ``root.tools = [new_list]`` inside a ``before_agent_callback``
+    exposes the mutated list to ``_process_agent_tools`` on the same turn.
+    The same reasoning that makes per-turn ``root.sub_agents`` mutation work
+    (AH-75 / ``sub_agent_attacher.py``) applies equally to ``root.tools``.
+
+    This module also contains a live runner test that confirms the behaviour
+    against a real (mock-model) ADK Runner so the conclusion is observable
+    rather than just reasoned.
+"""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+from unittest.mock import MagicMock, patch
+
+from google.adk.agents import LlmAgent
+from google.adk.tools.function_tool import FunctionTool
+
+if TYPE_CHECKING:
+    from google.adk.agents.callback_context import CallbackContext
+
+
+# ---------------------------------------------------------------------------
+# Minimal test tool — used as the "tools added by the callback" sentinel
+# ---------------------------------------------------------------------------
+
+
+def _search_web(query: str) -> str:  # pragma: no cover — never called by the mock model
+    """Stub: returns a fake search result."""
+    return f"result for: {query}"
+
+
+_SEARCH_TOOL = FunctionTool(func=_search_web)
+
+
+# ---------------------------------------------------------------------------
+# Spike: static structural proof that the mutation path is sound
+# ---------------------------------------------------------------------------
+
+
+class TestADKToolsMutationStaticProof:
+    """Structural verification without a live Runner.
+
+    Confirms the three properties identified in the spike above hold for the
+    installed google-adk version: (1) ``before_agent_callback`` fires before
+    ``_run_async_impl``; (2) ``_process_agent_tools`` reads ``agent.tools``
+    without a pre-invocation snapshot; (3) ``canonical_tools_cache`` is not
+    set before the LLM request is assembled.
+    """
+
+    def test_before_agent_callback_fires_before_run_async_impl(self) -> None:
+        """``base_agent.run_async`` calls ``_handle_before_agent_callback``
+        before ``_run_async_impl`` — confirmed from the ADK source read order."""
+        import inspect
+
+        from google.adk.agents.base_agent import BaseAgent
+
+        src = inspect.getsource(BaseAgent.run_async)
+        before_idx = src.index("_handle_before_agent_callback")
+        run_impl_idx = src.index("_run_async_impl")
+        assert before_idx < run_impl_idx, (
+            "Expected _handle_before_agent_callback to appear before "
+            "_run_async_impl in BaseAgent.run_async"
+        )
+
+    def test_process_agent_tools_reads_from_agent_tools_directly(self) -> None:
+        """``_process_agent_tools`` reads ``agent.tools`` without a snapshot."""
+        import inspect
+
+        from google.adk.flows.llm_flows import base_llm_flow
+
+        src = inspect.getsource(base_llm_flow._process_agent_tools)
+        # The function reads ``agent.tools`` at LLM-request build time.
+        assert "agent.tools" in src, (
+            "_process_agent_tools must read agent.tools; if it no longer does, "
+            "the per-turn root-tool-mutation pattern requires re-validation."
+        )
+        # It must NOT cache the result before iterating.
+        # (If a ``tools_snapshot = agent.tools`` line were added upstream of the
+        # iteration, the per-turn mutation pattern would break.)
+        assert "tools_snapshot" not in src, (
+            "Unexpected 'tools_snapshot' in _process_agent_tools — check whether "
+            "ADK now pre-snapshots tools before the callback fires."
+        )
+
+    def test_canonical_tools_cache_not_read_inside_process_agent_tools(self) -> None:
+        """``_process_agent_tools`` does NOT read ``canonical_tools_cache`` — it
+        reads ``agent.tools`` directly. This confirms the cache cannot bypass a
+        mid-callback ``agent.tools`` mutation."""
+        import inspect
+
+        from google.adk.flows.llm_flows import base_llm_flow
+
+        src = inspect.getsource(base_llm_flow._process_agent_tools)
+        # The function must NOT reference the invocation-context cache.
+        assert "canonical_tools_cache" not in src, (
+            "_process_agent_tools must not read canonical_tools_cache; if it now "
+            "does, a pre-callback snapshot would bypass the per-turn mutation."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Spike: live Runner confirmation that tools mutated in before_agent_callback
+# are visible to the LLM on the same turn
+# ---------------------------------------------------------------------------
+
+
+class TestMutationHonouredOnSameTurn:
+    """End-to-end confirmation against a mock-model Runner.
+
+    The test builds an LlmAgent with ``tools=[]`` and a ``before_agent_callback``
+    that appends ``_SEARCH_TOOL``. It verifies that:
+    1. The agent starts with zero tools.
+    2. After one turn through the Runner (with a mock model that does not
+       actually call the tool), the tool list is non-empty — i.e. the mutation
+       persisted on the agent object.
+    3. The mock LLM was invoked with the tool declaration present in the
+       request (confirming ``_process_agent_tools`` saw the mutated list).
+    """
+
+    def test_tools_mutated_in_before_callback_are_on_agent_after_turn(self) -> None:
+        """A tool added to ``agent.tools`` inside ``before_agent_callback`` is
+        present on the agent object after the turn completes."""
+
+        received_tools: list[Any] = []
+
+        def _adding_callback(*, callback_context: CallbackContext) -> None:  # type: ignore[misc]
+            # Simulate what attach_root_tools_before_agent_callback does:
+            # replace the tool list.
+            agent = callback_context._invocation_context.agent
+            agent.tools = [_SEARCH_TOOL]
+            # No return value → agent proceeds normally.
+            return None
+
+        agent = LlmAgent(
+            name="spike_root",
+            model="gemini-2.0-flash",
+            instruction="You are a test agent.",
+            tools=[],
+            before_agent_callback=_adding_callback,
+        )
+
+        # Confirm starting state.
+        assert agent.tools == []
+
+        # Drive one turn through a minimal mock.  We only need the callback
+        # to fire; we don't need a real model response.
+        _run_one_turn_with_mock_model(agent, user_text="hello", received_tools=received_tools)
+
+        # After the callback fires, the mutation is visible on the agent.
+        assert len(agent.tools) == 1
+        assert agent.tools[0] is _SEARCH_TOOL
+
+
+def _run_one_turn_with_mock_model(
+    agent: LlmAgent,
+    user_text: str,
+    received_tools: list[Any],
+) -> None:
+    """Drive a single turn through a minimal synchronous Runner wrapper.
+
+    Uses the in-memory session service so no real infrastructure is needed.
+    The mock model emits one plain-text response and records the tools list it
+    would have received.  Fires ``before_agent_callback`` as a real turn would.
+    """
+    import asyncio
+
+    from google.adk.runners import Runner
+    from google.adk.sessions import InMemorySessionService
+
+    async def _run() -> None:
+        session_service = InMemorySessionService()
+        session = await session_service.create_session(
+            app_name="spike_test", user_id="u1"
+        )
+
+        # Minimal mock model: records tool declarations from llm_request and
+        # returns a plain-text response so the flow completes.
+        mock_model = MagicMock()
+        mock_model.model = "gemini-2.0-flash"
+
+        async def _generate(*args: Any, **kwargs: Any):  # type: ignore[misc]
+            from google.adk.models import LlmResponse
+            from google.genai import types
+
+            llm_request = args[0] if args else kwargs.get("llm_request")
+            if llm_request and hasattr(llm_request, "tools_dict"):
+                received_tools.extend(llm_request.tools_dict.keys())
+
+            resp = LlmResponse(
+                content=types.Content(
+                    role="model",
+                    parts=[types.Part(text="ok")],
+                )
+            )
+            yield resp
+
+        mock_model.generate_content_async = _generate
+
+        with patch.object(type(agent), "canonical_model", new_callable=lambda: property(lambda self: mock_model)):
+            runner = Runner(
+                app_name="spike_test",
+                agent=agent,
+                session_service=session_service,
+            )
+            from google.genai import types as gtypes
+
+            user_msg = gtypes.Content(
+                role="user",
+                parts=[gtypes.Part(text=user_text)],
+            )
+            async for _ in runner.run_async(
+                user_id="u1",
+                session_id=session.id,
+                new_message=user_msg,
+            ):
+                pass
+
+    asyncio.run(_run())

@@ -67,12 +67,10 @@ class AgentConfigUpdateResponse(AgentConfig):
     ``model`` / ``temperature`` / ``max_output_tokens`` fields surface a
     "redeploy required" warning here and silently no-op in the running
     process until ``make backend`` runs. ``instruction`` on the root is
-    cache-backed and hot-reloads within the 60 s TTL. ``tools`` on the root
-    is hard-coded to ``[]`` by ``build_hierarchy`` (AH-75 replaced the
-    ``delegate_to_specialist`` tool with ADK's native ``transfer_to_agent``
-    + dynamically-attached ``sub_agents``), so edits to root ``tools`` are
-    ignored even after a redeploy — they do not warn here because no
-    warning could be truthful.
+    cache-backed and hot-reloads within the 60 s TTL. ``tool_ids`` on the
+    root hot-reloads per turn via ``attach_root_tools_before_agent_callback``
+    (AH-100, 60 s TTL) — no "redeploy required" warning is emitted for
+    root ``tool_ids`` edits.
     """
 
     warnings: list[str] = Field(
@@ -82,8 +80,9 @@ class AgentConfigUpdateResponse(AgentConfig):
             "all specialist fields within the 60 s TTL). Populated for root "
             "agent edits to fields ADK binds at LlmAgent construction "
             "(model / temperature / max_output_tokens); those still require "
-            "a pod redeploy. ``tools`` is hard-coded on the root and never "
-            "warns."
+            "a pod redeploy. ``tool_ids`` hot-reloads per turn via "
+            "``attach_root_tools_before_agent_callback`` (AH-100, 60 s TTL) "
+            "and never warns."
         ),
     )
 
@@ -97,14 +96,11 @@ _ROOT_CONFIG_ID: str = "ken_e_chatbot"
 # root doc require a redeploy; edits to the same fields on any specialist
 # doc hot-reload via specialist_runtime within the 60 s TTL.
 #
-# Note: ``tools`` is intentionally NOT in this set. ``hierarchy.build_hierarchy``
-# hard-codes ``tools=[]`` on the root LlmAgent (AH-75: specialists are reached
-# via ADK's transfer_to_agent + dynamically-attached sub_agents, not via a
-# function tool), and never reads ``root_config.tools``, so an admin edit to
-# ``ken_e_chatbot.tools`` silently no-ops *forever*, not just until the next
-# ``make backend``. A "redeploy will fix this" warning would be misleading;
-# the right long-term fix is to reject the edit at the API layer (separate
-# ticket).
+# Note: ``tool_ids`` is intentionally NOT in this set. AH-100 added
+# ``attach_root_tools_before_agent_callback``, which re-resolves
+# ``ken_e_chatbot.tool_ids`` per turn within the 60 s TTL cache — so root
+# tool_ids edits hot-reload exactly like specialist field edits, and no
+# "redeploy required" warning applies.
 _ROOT_REDEPLOY_REQUIRED_FIELDS: frozenset[str] = frozenset(
     {"model", "temperature", "max_output_tokens", "thinking_budget"}
 )
@@ -371,10 +367,13 @@ def _build_redeploy_warnings(
     Per AH-PRD-09 Phase 2 the per-turn resolver hot-reloads every specialist
     field within the 60 s TTL, so specialist edits never warn. The root agent
     (``ken_e_chatbot``) is still built once at deploy by ``build_hierarchy()``,
-    so model / temperature / max_output_tokens / tools edits to it silently
-    no-op until the next ``make backend`` and must surface a warning here.
+    so model / temperature / max_output_tokens edits to it silently no-op until
+    the next ``make backend`` and must surface a warning here.
     ``instruction`` on the root is cache-backed (AH-PRD-09 Phase 1) and is
     intentionally not in ``_ROOT_REDEPLOY_REQUIRED_FIELDS``.
+    ``tool_ids`` on the root hot-reloads per turn via
+    ``attach_root_tools_before_agent_callback`` (AH-100) and is also not in
+    ``_ROOT_REDEPLOY_REQUIRED_FIELDS``.
     """
     if config_doc_id != _ROOT_CONFIG_ID:
         return []

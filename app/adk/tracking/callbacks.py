@@ -38,6 +38,7 @@ from app.utils.weave_observability import init_weave_if_needed
 from shared.structured_logging import get_structured_logger
 from shared.trace_metadata import DEFAULT_VERSION
 
+from .tool_trace_context import pop_trace_context
 from .usage import ExecutionStatus, get_usage_tracker
 
 if TYPE_CHECKING:
@@ -575,10 +576,11 @@ async def adk_after_tool_callback(
             previous.append(tool.name)
             tool_context.state["_previous_tool_calls"] = previous
 
-            # Exit the weave.attributes() context entered in adk_before_tool_callback
-            attrs_ctx = tool_context.state.get("_trace_attrs_ctx")
+            # Exit the weave.attributes() context entered in adk_before_tool_callback.
+            # It is stashed off session state (see tool_trace_context) so the
+            # generator-backed CM never crosses an AgentTool's state deep-copy.
+            attrs_ctx = pop_trace_context(tool_context)
             if attrs_ctx:
                 attrs_ctx.__exit__(None, None, None)
-                tool_context.state["_trace_attrs_ctx"] = None
 
     return None

@@ -480,5 +480,200 @@ class TestRootAgentTools:
         assert root.tools == []
 
 
+# ---------------------------------------------------------------------------
+# TC-7: Root tool hot-reload regression (AH-100)
+# ---------------------------------------------------------------------------
+
+
+class TestRootToolsHotReload:
+    """TC-7 (AH-100): editing ``ken_e_chatbot.tool_ids`` in Firestore takes
+    effect on the next chat turn (≤60 s TTL) without a redeploy.
+
+    The per-turn reconcile lives in ``root_tools_attacher.
+    attach_root_tools_before_agent_callback``.  These tests drive that callback
+    directly (no live Runner / Firestore) and assert the AC-1 hot-reload
+    contract.  AC-2 (cold-start unchanged) is also covered here as a regression
+    guard so AH-98's existing behaviour is never silently broken.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _setup(self):
+        from app.adk.agents.agent_factory import root_tools_attacher as rta
+        from app.adk.agents.utils import config_cache
+
+        config_cache.clear_config_cache()
+        rta._reset_applied_hash_for_tests()
+        yield
+        config_cache.clear_config_cache()
+        rta._reset_applied_hash_for_tests()
+
+    @pytest.fixture(autouse=True)
+    def _ensure_google_search_registered(self):
+        import importlib
+
+        import app.adk.tools.agent_tools.google_search as gs_mod
+
+        importlib.reload(gs_mod)
+        yield
+
+    # -----------------------------------------------------------------------
+    # Helpers
+    # -----------------------------------------------------------------------
+
+    def _make_callback_context(self, root: LlmAgent, account_id: str | None) -> Any:
+        ctx = MagicMock()
+        state_dict: dict[str, Any] = {}
+        if account_id is not None:
+            state_dict["account_id"] = account_id
+        ctx.state.get = lambda key, default=None: state_dict.get(key, default)
+        ctx.state.to_dict = lambda: dict(state_dict)
+        mock_inv = MagicMock()
+        mock_inv.agent = root
+        ctx._invocation_context = mock_inv
+        return ctx
+
+    def _make_merged_config(self, tool_ids: list[str] | None) -> MagicMock:
+        cfg = MagicMock()
+        cfg.tool_ids = tool_ids
+        cfg.model_dump_json.return_value = (
+            f'{{"tool_ids": {tool_ids!r}, "instruction": "root"}}'
+        )
+        return cfg
+
+    # -----------------------------------------------------------------------
+    # AC-2: Cold-start path unchanged (AH-98 regression guard)
+    # -----------------------------------------------------------------------
+
+    def test_cold_start_no_tool_ids_gives_empty_tools(self) -> None:
+        """build_hierarchy with tool_ids=null → root.tools == [] at deploy time."""
+        root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})
+        assert root.tools == []
+
+    def test_cold_start_with_tool_ids_gives_agent_tool(self) -> None:
+        """build_hierarchy with tool_ids=['agent.google_search'] → AgentTool present."""
+        from google.adk.tools.agent_tool import AgentTool
+
+        docs = {
+            ("agent_configs", "ken_e_chatbot"): {
+                **_ROOT_DOC,
+                "tool_ids": ["agent.google_search"],
+            }
+        }
+        root = _run_build_hierarchy(docs)
+        assert any(isinstance(t, AgentTool) and t.name == "google_search" for t in root.tools)
+
+    # -----------------------------------------------------------------------
+    # AC-1: Hot-reload — add tool, then remove tool
+    # -----------------------------------------------------------------------
+
+    def test_hot_reload_add_tool_on_next_turn(self) -> None:
+        """Simulating a Firestore edit that adds ``agent.google_search`` causes
+        the callback to materialise the tool on ``root.tools`` for the next
+        turn — without a redeploy."""
+        from google.adk.tools.agent_tool import AgentTool
+
+        from app.adk.agents.agent_factory import root_tools_attacher as rta
+
+        # Start: root built with no tool_ids → tools=[]
+        root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})
+        assert root.tools == []
+
+        # Simulate admin Firestore edit: config now lists google_search.
+        cfg_with_tool = self._make_merged_config(tool_ids=["agent.google_search"])
+        ctx = self._make_callback_context(root, account_id="acc_hotreload")
+
+        with patch.object(rta, "get_cached_merged_config", return_value=cfg_with_tool):
+            rta.attach_root_tools_before_agent_callback(ctx)
+
+        # The tool should now be on root.tools.
+        agent_tool_names = [t.name for t in root.tools if isinstance(t, AgentTool)]
+        assert "google_search" in agent_tool_names
+
+    def test_hot_reload_remove_tool_on_next_turn(self) -> None:
+        """Removing ``agent.google_search`` from ``tool_ids`` causes the callback
+        to remove the tool from ``root.tools`` on the next turn."""
+        from google.adk.tools.agent_tool import AgentTool
+
+        from app.adk.agents.agent_factory import root_tools_attacher as rta
+
+        # Start: root built with google_search already present (cold-start path).
+        docs = {
+            ("agent_configs", "ken_e_chatbot"): {
+                **_ROOT_DOC,
+                "tool_ids": ["agent.google_search"],
+            }
+        }
+        root = _run_build_hierarchy(docs)
+        assert any(isinstance(t, AgentTool) and t.name == "google_search" for t in root.tools)
+
+        # Simulate admin edit: tool_ids cleared.
+        cfg_no_tool = self._make_merged_config(tool_ids=[])
+        ctx = self._make_callback_context(root, account_id="acc_hotreload_remove")
+
+        with patch.object(rta, "get_cached_merged_config", return_value=cfg_no_tool):
+            rta.attach_root_tools_before_agent_callback(ctx)
+
+        agent_tool_names = [t.name for t in root.tools if isinstance(t, AgentTool)]
+        assert "google_search" not in agent_tool_names
+
+    def test_hot_reload_idempotent_no_fingerprint_churn(self) -> None:
+        """Calling the callback twice with no config change is a no-op — the
+        fingerprint cache prevents redundant resolver calls."""
+        from app.adk.agents.agent_factory import root_tools_attacher as rta
+        from app.adk.agents.agent_factory.roster import resolve_specialist_roster
+
+        root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})
+        ctx = self._make_callback_context(root, account_id="acc_idempotent")
+        cfg = self._make_merged_config(tool_ids=[])
+
+        resolve_call_count = 0
+        original_resolve = resolve_specialist_roster
+
+        def _counting_resolve(*args: Any, **kwargs: Any):
+            nonlocal resolve_call_count
+            resolve_call_count += 1
+            return original_resolve(*args, **kwargs)
+
+        with patch.object(rta, "get_cached_merged_config", return_value=cfg), patch.object(
+            rta, "resolve_specialist_roster", side_effect=_counting_resolve
+        ):
+            rta.attach_root_tools_before_agent_callback(ctx)  # First call — resolver runs.
+            rta.attach_root_tools_before_agent_callback(ctx)  # Second call — fingerprint hit.
+
+        # Resolver called exactly once despite two callback invocations.
+        assert resolve_call_count == 1
+
+    def test_attach_root_tools_before_agent_callback_is_in_hierarchy_callbacks(
+        self,
+    ) -> None:
+        """``attach_root_tools_before_agent_callback`` must be registered in
+        ``additional_before_agent_callbacks`` between the specialists attach
+        callback and the span callback (AH-100 ordering constraint)."""
+        from app.adk.agents.agent_factory.root_tools_attacher import (
+            attach_root_tools_before_agent_callback,
+        )
+        from app.adk.agents.agent_factory.sub_agent_attacher import (
+            attach_specialists_before_agent_callback,
+        )
+        from app.adk.tracking.specialists_spans import (
+            specialists_span_before_agent_callback,
+        )
+
+        root = _run_build_hierarchy({("agent_configs", "ken_e_chatbot"): _ROOT_DOC})
+        callbacks: list[Any] = root.before_agent_callback or []
+
+        assert attach_root_tools_before_agent_callback in callbacks
+
+        # Ordering: attach_specialists → attach_root_tools → specialists_span.
+        attach_specialists_idx = callbacks.index(attach_specialists_before_agent_callback)
+        attach_root_idx = callbacks.index(attach_root_tools_before_agent_callback)
+        span_idx = callbacks.index(specialists_span_before_agent_callback)
+
+        assert attach_specialists_idx < attach_root_idx < span_idx, (
+            f"Expected ordering: attach_specialists ({attach_specialists_idx}) < "
+            f"attach_root_tools ({attach_root_idx}) < specialists_span ({span_idx})"
+        )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

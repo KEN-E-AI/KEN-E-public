@@ -255,8 +255,15 @@ _block_cache: dict[str, _BlockCacheEntry] = {}
 _block_locks: list[threading.Lock] = [threading.Lock() for _ in range(32)]
 
 
-def block_lock_for(account_id: str) -> threading.Lock:
-    """Return the stripe lock for *account_id*. Caller must pre-validate via ``validate_account_id``."""
+def block_lock_for(account_id: str | None) -> threading.Lock:
+    """Return the stripe lock for *account_id*.
+
+    Caller must pre-validate via ``validate_account_id``, or pass ``None`` as the
+    dedicated no-account stripe key (``root_tools_attacher`` uses ``None`` so a
+    no-account turn cannot collide with a real account literally named
+    ``"global"``). ``hash(None)`` is a stable constant, so the ``None`` key maps
+    to one consistent stripe.
+    """
     return _block_locks[hash(account_id) % 32]
 
 
