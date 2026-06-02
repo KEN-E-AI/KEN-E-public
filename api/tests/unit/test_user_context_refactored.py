@@ -111,9 +111,7 @@ class TestVerifyAndDecodeToken:
     """
 
     @pytest.mark.asyncio
-    async def test_valid_token(
-        self, mock_credentials, mock_audit_logger, mock_request
-    ):
+    async def test_valid_token(self, mock_credentials, mock_audit_logger, mock_request):
         """Test successful token verification."""
         with patch("src.kene_api.auth.user_context.verify_id_token") as mock_verify:
             mock_verify.return_value = {
@@ -213,6 +211,39 @@ class TestCheckTokenRevocation:
 
             assert exc_info.value.status_code == 401
             assert exc_info.value.detail == "Token has been revoked"
+            mock_audit_logger.log_event.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_empty_token_id_rejected_upfront(self, mock_audit_logger):
+        """Token with no jti, sub, or iat → 401 before is_token_revoked is even called."""
+        # No jti, no sub, no iat — token_id derived from the jti/sub/iat
+        # fallback chain resolves to empty string. A real Firebase ID token
+        # always has sub + iat; an empty token_id indicates a malformed or
+        # spoofed JWT.
+        decoded_token = {"uid": "u1", "email": "u@x.com"}
+
+        with patch(
+            "src.kene_api.auth.user_context.get_token_revocation_service"
+        ) as mock_service:
+            mock_revocation = AsyncMock()
+            mock_revocation.is_token_revoked = AsyncMock(return_value=False)
+            mock_service.return_value = mock_revocation
+
+            with pytest.raises(HTTPException) as exc_info:
+                await _check_token_revocation(
+                    decoded_token,
+                    "user123",
+                    mock_audit_logger,
+                    "127.0.0.1",
+                    "TestAgent",
+                )
+
+            assert exc_info.value.status_code == 401
+            assert exc_info.value.detail == "Token missing required identity claims"
+            # Critical: is_token_revoked must NOT have been called — we reject
+            # before reaching the revocation check.
+            mock_revocation.is_token_revoked.assert_not_called()
+            # Forensic audit event MUST be emitted so SRE can spot the pattern.
             mock_audit_logger.log_event.assert_called_once()
 
 

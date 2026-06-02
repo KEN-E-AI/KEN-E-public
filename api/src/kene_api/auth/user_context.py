@@ -145,6 +145,26 @@ async def _check_token_revocation(
     )
     issued_at = decoded_token.get("iat")
 
+    # Defense-in-depth: a real Firebase ID token always carries `sub` and `iat`,
+    # so an empty token_id means the JWT is missing all three of jti / sub /
+    # iat — a malformed or spoofed token. Reject up-front rather than relying
+    # on downstream revocation-check guards; a JWT with no identity claims
+    # should not authenticate at all.
+    if not token_id:
+        await audit_logger.log_event(
+            event_type=SecurityEventType.TOKEN_VERIFICATION_FAILURE,
+            user_id=user_id,
+            ip_address=client_ip,
+            user_agent=user_agent,
+            details={"reason": "Token missing required identity claims (jti/sub/iat)"},
+            severity="WARNING",
+        )
+        raise HTTPException(
+            status_code=401,
+            detail="Token missing required identity claims",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     if await token_revocation.is_token_revoked(token_id, user_id, issued_at):
         await audit_logger.log_event(
             event_type=SecurityEventType.TOKEN_VERIFICATION_FAILURE,
@@ -306,7 +326,9 @@ async def _get_user_context_with_limiter(
 
     if not credentials:
         # Apply rate limiting for missing credentials (ctx=None — no identity established).
-        await _apply_rate_limiting(request, active_limiter, audit_logger, client_ip, ctx=None)
+        await _apply_rate_limiting(
+            request, active_limiter, audit_logger, client_ip, ctx=None
+        )
 
         await audit_logger.log_login_failure(
             ip_address=client_ip,

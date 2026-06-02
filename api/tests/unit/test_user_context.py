@@ -137,7 +137,9 @@ class TestGetCurrentUserContext:
         )
         decoded_token = {
             "uid": "new-user-id",
+            "sub": "new-user-id",
             "email": "newuser@example.com",
+            "iat": 1700000000,
         }
 
         # Mock Firestore
@@ -336,6 +338,7 @@ class TestGetCurrentUserContext:
                     assert call_args[0][0] is mock_request
                     # ctx is a minimal UserContext built from the decoded token
                     from src.kene_api.auth.models import UserContext as _UC
+
                     passed_ctx = call_args[0][1]
                     assert isinstance(passed_ctx, _UC)
                     assert passed_ctx.user_id == "regular-user-id"
@@ -353,7 +356,9 @@ class TestGetCurrentUserContext:
         )
         decoded_token = {
             "uid": "existing-user-id",
+            "sub": "existing-user-id",
             "email": "user@example.com",
+            "iat": 1700000000,
         }
 
         # Mock Firestore

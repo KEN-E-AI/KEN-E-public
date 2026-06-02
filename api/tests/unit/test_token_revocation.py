@@ -189,6 +189,11 @@ class TestTokenRevocationService:
         result = await revocation_service.is_token_revoked("", "user456")
 
         assert result is False
+        # Defense against vacuous-truth: the for-loop below passes if get() was
+        # never called at all. Assert it ran at least once (for the all-tokens
+        # key) so a future refactor that short-circuits the whole Redis branch
+        # on empty token_id cannot silently make this test pass.
+        assert revocation_service.redis.get.called
         # Per-token cache key MUST NOT be queried with an empty token_id —
         # `revoked_token:` is a poisoned key that could match unrelated entries
         # if anything ever wrote there. Only the all-tokens key should be hit.
@@ -220,6 +225,11 @@ class TestTokenRevocationService:
             result = await revocation_service.is_token_revoked("", "user456")
 
             assert result is False
+            # Defense against vacuous-truth: assert get_firestore_service was
+            # actually called (we entered the Firestore fallback path) so a
+            # future refactor that exits early on empty token_id cannot make
+            # the for-loop below silently pass.
+            assert mock_firestore.called
             # The per-token `collection("revoked_tokens").document("")` call is
             # what Firestore rejects with InvalidArgument — assert it never ran.
             for call in mock_client.collection.call_args_list:
@@ -244,6 +254,53 @@ class TestTokenRevocationService:
         # Critical: a JWT with no jti must still be killed by revoke_all_user_tokens,
         # otherwise blanket revocation would silently fail for malformed-but-valid tokens.
         assert result is True
+
+    @pytest.mark.asyncio
+    async def test_is_token_revoked_empty_token_id_honors_revoke_all_via_firestore(
+        self, revocation_service
+    ):
+        """Empty token_id + Redis down + Firestore revoke_all set → True (security fallback, Firestore path).
+
+        Symmetric to the Redis-path version above. Without this test, a future
+        refactor that accidentally gates the user-wide Firestore check behind
+        `has_token_id` would silently fail blanket revocation whenever Redis
+        is down for users whose JWTs lack `jti`.
+        """
+        revocation_service.redis.is_available.return_value = False
+
+        with mock.patch(
+            "src.kene_api.auth.token_revocation.get_firestore_service"
+        ) as mock_firestore:
+            mock_fs_service = mock.Mock()
+            mock_client = mock.Mock()
+            mock_firestore.return_value = mock_fs_service
+            mock_fs_service.get_client.return_value = mock_client
+
+            # `revoked_tokens_all/user456` exists with revoke_all_before
+            # predating the token's issued_at → token must be considered revoked.
+            revoke_time = datetime(2024, 1, 1, 12, 0, 0)
+            mock_all_tokens_doc = mock.Mock()
+            mock_all_tokens_doc.exists = True
+            mock_all_tokens_doc.to_dict.return_value = {
+                "revoke_all_before": revoke_time
+            }
+            mock_client.collection.return_value.document.return_value.get.return_value = mock_all_tokens_doc
+
+            # Token issued one hour before the all-tokens revocation timestamp.
+            issued_at = datetime(2024, 1, 1, 11, 0, 0).timestamp()
+
+            result = await revocation_service.is_token_revoked("", "user456", issued_at)
+
+            assert result is True
+            # The user-wide collection MUST have been queried; the per-token
+            # `revoked_tokens` collection MUST NOT have been queried with empty id.
+            collection_names = [
+                call.args[0]
+                for call in mock_client.collection.call_args_list
+                if call.args
+            ]
+            assert "revoked_tokens_all" in collection_names
+            assert "revoked_tokens" not in collection_names
 
     @pytest.mark.asyncio
     async def test_revoke_token_empty_token_id_raises_value_error(
