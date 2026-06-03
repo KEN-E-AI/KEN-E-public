@@ -367,7 +367,7 @@ Linear work is organized in two layers:
 Projects are kept small enough that issues do not need intermediate grouping. Project-level ACs are a superset of issue-level ACs — an implementation plan that satisfies only the issue's ACs can still miss the project's intent. The 8–12 range is a guideline (`validate-project-completeness` warns outside it); 3–15 is the hard reject range — projects below 3 are too small to justify a separate PRD, projects above 15 should be split.
 
 - **PRD authority:** The PRD in `docs/design/components/<comp>/projects/<PRD>.md` is the spec. The Linear project is the execution tracker; its description should be a one-paragraph summary + a link to the PRD, not a copy of PRD content.
-- **Release sequencing:** the `release` column in [`docs/design/components/PROJECT-PLANNER.md`](docs/design/components/PROJECT-PLANNER.md) is the canonical cross-component release plan (1: Foundation → 6: Voice). Linear cycles map to releases informally — sequencing is driven by `blocked_by` dependencies, not Linear cycle dates.
+- **Release sequencing:** the `release` column in [`docs/design/components/PROJECT-PLANNER.md`](docs/design/components/PROJECT-PLANNER.md) is the canonical cross-component release plan (1: Foundation → 7: Data Residency). Linear cycles map to releases informally — sequencing is driven by `blocked_by` dependencies, not Linear cycle dates.
 
 ### Canonical sources
 

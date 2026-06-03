@@ -2031,4 +2031,52 @@ Review 44 adopted the ADK 2.0 supervisor-orchestration model as the target archi
 
 ---
 
+## Review 46 — Data-Residency Program Consolidated into a Dedicated Late Milestone (Release 7)
+
+**Date:** 2026-06-02
+**Scope:** `PROJECT-PLANNER.md` release reorg. All eleven data-residency PRDs are moved out of R1–R4 into a new **Release 7 (Data Residency)** — an externally-gated milestone. Supersedes this review's original "minimal re-slot" draft (see *Decision* below).
+
+### Summary
+
+The data-residency program (the `DM-PRD-09` regional-cell keystone + ten per-component slices) was added to the planner with a uniform `1: Foundation` tag but was never run through the dependency-graph derivation the rest of the table follows. Two independent problems surfaced: (1) six slices are `blocked_by` component work that lands in R2–R4, so they cannot start or finish in R1; and (2) the program as a whole only completes once every data-bearing component exists (through R4) and the external **EU Agent Engine GA** gate clears — so smearing it across R1–R4 mis-modelled both the dependencies and the real launch driver.
+
+### Decision
+
+An initial **minimal re-slot** (move only the six dependency-violating slices to their blockers' releases — PR/DP/IN → R2, KG/BL → R3, SE → R4 — keeping the keystone + four dependency-clean slices in R1) was prepared, then **superseded by the PO** in favour of consolidating the **entire program into a dedicated late milestone, Release 7 (Data Residency)**. Rationale: `DM-PRD-09` is the keystone every slice is `blocked_by`, so the program moves as a unit; and residency is gated on EU Agent Engine GA + the business EU-launch decision, which is orthogonal to the R1–R6 product line. All eleven PRDs are re-tagged `7: Data Residency`:
+
+| PRD | Component | Was | Now |
+|-----|-----------|-----|-----|
+| DM-PRD-09 (keystone) | data-management | R1 | **R7** |
+| DM-PRD-10 | data-management | R1 | **R7** |
+| AH-PRD-11 | agentic-harness | R1 | **R7** |
+| AH-PRD-12 | agentic-harness | R1 | **R7** |
+| CH-PRD-07 | chat | R1 | **R7** |
+| PR-PRD-10 | project-tasks | R1→R2\* | **R7** |
+| DP-PRD-07 | data-pipeline | R1→R2\* | **R7** |
+| IN-PRD-08 | integrations | R1→R2\* | **R7** |
+| KG-PRD-07 | knowledge-graph | R1→R3\* | **R7** |
+| BL-PRD-07 | billing | R1→R3\* | **R7** |
+| SE-PRD-08 | sar-e | R1→R4\* | **R7** |
+
+\* interim minimal-re-slot value, superseded by R7.
+
+Within R7, `DM-PRD-09` sequences first; `AH-PRD-11` (EU Agent Engine) is the hard external gate. Every slice's component prerequisite (A-PRD-02, DP-PRD-01, IN-PRD-01, KG-PRD-01, BL-PRD-02, SE-PRD-01, etc.) lands in R1–R4, all before R7, so no `blocked_by` edge is violated.
+
+### Consequences
+
+- R1 is internally closable, and R2/R3/R4 also shed their residency retrofits — the product line is now residency-free end to end.
+- Residency ships as one coherent program rather than eleven retrofits threaded through four releases.
+- R7 has no R1–R6 product dependency; it can be pulled forward to any point after R4 once EU launch is greenlit and EU Agent Engine is GA.
+- No PRD content, scope, or `blocked_by` edges changed — release-sequencing only. A new Release 7 row was added to the Release Strategy table.
+
+### Documents updated
+
+| File | Change |
+|------|--------|
+| `docs/design/components/PROJECT-PLANNER.md` | Eleven `release` cells re-tagged `7: Data Residency`; new **Release 7** row added to the Release Strategy table; "Data residency program sequencing" note rewritten |
+| `docs/design/DESIGN-REVIEW-LOG.md` | This entry (Review 46) |
+| `CLAUDE.md` | Release-range reference updated to `1: Foundation → 7: Data Residency` |
+
+---
+
 *Add new review entries above this line. Each entry should include: date, scope, summary of findings, and documents updated. Decision rationale lives in the Review itself — this log is the canonical record going forward.*
