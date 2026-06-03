@@ -45,3 +45,21 @@ def stash_trace_context(tool_context: Any, attrs_ctx: Any) -> None:
 def pop_trace_context(tool_context: Any) -> Any | None:
     """Remove and return the stashed context manager for *tool_context*, if any."""
     return _pending_trace_contexts.pop(id(tool_context), None)
+
+
+def clear_trace_contexts() -> None:
+    """Close and drop all stashed trace contexts. For test isolation only.
+
+    Exits each stashed ``weave.attributes()`` CM (suppressing weave's
+    cross-context ``reset(token)`` error) before emptying the stash. Exiting
+    runs the generator's ``finally`` so it is exhausted and won't resurface as a
+    ``PytestUnraisableExceptionWarning`` when garbage-collected later. Used by
+    the autouse fixture in ``app/adk/conftest.py``.
+    """
+    for attrs_ctx in list(_pending_trace_contexts.values()):
+        try:
+            attrs_ctx.__exit__(None, None, None)
+        except Exception:
+            # Cross-context reset / already-closed CM — expected during teardown.
+            pass
+    _pending_trace_contexts.clear()

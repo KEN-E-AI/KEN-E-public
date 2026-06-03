@@ -145,3 +145,27 @@ class TestAfterToolLifecycle:
 
         cm.__exit__.assert_called_once_with(None, None, None)
         assert pop_trace_context(ctx) is None
+
+    @pytest.mark.asyncio
+    async def test_cross_context_exit_is_swallowed_and_bookkeeping_runs(self) -> None:
+        """Guard: a ValueError from weave's ContextVar reset (cross-context exit)
+        must be swallowed by the finally block without skipping _previous_tool_calls."""
+        from app.adk.tracking.callbacks import adk_after_tool_callback
+
+        cm = MagicMock()
+        cm.__exit__.side_effect = ValueError("Token was created in a different Context")
+
+        ctx = MockToolContext(
+            {"user_id": "u1", "account_id": "a1", "_previous_tool_calls": ["search_company_news"]}
+        )
+        stash_trace_context(ctx, cm)
+
+        with patch("app.adk.tracking.callbacks.get_usage_tracker") as mock_tracker_fn:
+            mock_tracker_fn.return_value = AsyncMock()
+            # Must not raise even though cm.__exit__ raises ValueError
+            await adk_after_tool_callback(
+                MockBaseTool("query_google_analytics"), {"q": "test"}, ctx, {"status": "ok"}
+            )
+
+        cm.__exit__.assert_called_once_with(None, None, None)
+        assert ctx.state["_previous_tool_calls"] == ["search_company_news", "query_google_analytics"]

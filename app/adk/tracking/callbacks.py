@@ -581,6 +581,15 @@ async def adk_after_tool_callback(
             # generator-backed CM never crosses an AgentTool's state deep-copy.
             attrs_ctx = pop_trace_context(tool_context)
             if attrs_ctx:
-                attrs_ctx.__exit__(None, None, None)
+                try:
+                    attrs_ctx.__exit__(None, None, None)
+                except Exception as e:
+                    # weave's attributes() resets a ContextVar token bound to the
+                    # context where it was created; a cross-context exit (parallel
+                    # tools, AgentTool dispatch, leaked CM) raises ValueError. The
+                    # span attrs are best-effort — never let this break the tool.
+                    logger.debug(
+                        f"Failed to exit tool trace context (non-blocking): {e}"
+                    )
 
     return None
