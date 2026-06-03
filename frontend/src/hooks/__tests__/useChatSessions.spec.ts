@@ -175,7 +175,7 @@ describe("useChatSessions", () => {
       vi.useRealTimers();
     });
 
-    it("polls every 5 seconds while visible", async () => {
+    it("polls every 10 seconds while visible", async () => {
       const { result } = renderHook(
         () => useChatSessions({ accountId: ACCOUNT_ID }),
         { wrapper: createWrapper() },
@@ -186,13 +186,34 @@ describe("useChatSessions", () => {
 
       const callsAfterFirstFetch = mockListChatSessions.mock.calls.length;
 
+      // Advancing one poll interval (10s) triggers exactly one more fetch.
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(5000);
+        await vi.advanceTimersByTimeAsync(10000);
       });
 
       expect(mockListChatSessions.mock.calls.length).toBeGreaterThan(
         callsAfterFirstFetch,
       );
+    });
+
+    it("does not poll before the 10 second interval elapses", async () => {
+      const { result } = renderHook(
+        () => useChatSessions({ accountId: ACCOUNT_ID }),
+        { wrapper: createWrapper() },
+      );
+
+      await flush();
+      expect(result.current.isSuccess).toBe(true);
+
+      const callsAfterFirstFetch = mockListChatSessions.mock.calls.length;
+
+      // 9s is short of the interval — no extra poll yet (guards against an
+      // accidental revert to the 5s cadence).
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(9000);
+      });
+
+      expect(mockListChatSessions.mock.calls.length).toBe(callsAfterFirstFetch);
     });
 
     it("stops polling when tab becomes hidden", async () => {

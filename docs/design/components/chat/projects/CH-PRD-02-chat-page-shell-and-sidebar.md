@@ -292,7 +292,7 @@ Auth: both endpoints require authenticated user + session ownership (`session.us
 6. **Status dots** — `SessionStatusDot.spec.tsx` covers all 8 combinations of `(is_agent_running, last_agent_message_at ? | null, last_viewed_at ? | null)` → correct state.
 7. **Mark-read** — sending a message in session A, then switching to session B without reading the reply, keeps session A's dot coral (needs-review). Returning to A and scrolling the latest message into view flips it idle within 3s.
 8. **New session** — clicking "New Session" creates the session via `POST /conversations`, optimistically inserts a row, navigates to `/chat?session=<id>`; real row replaces optimistic within 1s.
-9. **Polling** — sidebar polls every 5s while tab visible; pauses on `visibilitychange` hidden; resumes on visible within 200ms.
+9. **Polling** — sidebar polls every 10s while tab visible; pauses on `visibilitychange` hidden; resumes on visible within 200ms. (The interval is 10s per the §9 risk-table response to server p95 > 500ms; the original cadence was 5s.)
 10. **30-day window** — a session with `updated_at = now() - 31d` does not appear in default sidebar; accessible via direct URL (`/chat?session=<id>`).
 11. **Deleted sessions excluded** — tombstoned rows (`deleted_at` set) never appear in the sidebar even if recent.
 12. **Porting parity** — `SessionsSidebar.tsx`, `ChatInterface.tsx` render pixel-parity with figma (spot-checked via visual regression test against screenshots).
@@ -300,6 +300,8 @@ Auth: both endpoints require authenticated user + session ownership (`session.us
 14. **`useOrgStatus() inactive_*`** disables the composer with the banner copy (Billing integration; no new API).
 15. **`services/chatService.ts` migration** — internally delegates to `lib/chatApi.ts` in the CH-PRD-02 PR; a **follow-up PR (tracked on the CH-PRD-02 exit checklist)** deletes `chatService.ts` entirely once all callers are migrated. No indefinite shim.
 16. **Load-test gate** — sidebar-list endpoint sustains 1000 concurrent polls (simulating 1000 open tabs × 10 polls/minute) with p95 response time under 100ms. Run via Locust as part of CH-PRD-02's acceptance; failure gates merge.
+
+    > **⚠️ KNOWN-OPEN GAP (tracked in CH-65).** This AC's literal target (1000 polls, p95 < 100ms) has never been met. The staging CI gate was loosened to p90 ≤ 15 000 ms (PR #584 → #592) before any run passed at 100ms, and silently switched from the legacy ADK path to the v2 side-table path when `chat_v2_enabled` went GA — so it no longer tests this threshold on the live path. As of 2026-06-02 the v2 path measures p95 ≈ 20 s under 1000-VU load. The in-process response cache + async read path (CH-53) close the application-side cost; the Cloud Run `min-instances` bump that closes the cold-scale tail is deferred on CH-65 with re-open tripwires. Closing AC #16 = those two + tightening the gate back toward 100ms p95 and confirming it holds on the v2 path.
 
 ## 8. Test plan
 
