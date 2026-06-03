@@ -2773,8 +2773,12 @@ async def list_conversations(
                     detail="Access denied",
                 )
 
+            # list_for_user runs a synchronous Firestore .stream() loop; run it
+            # off the event loop so it does not block sibling requests sharing
+            # this worker.
             svc = get_chat_side_table_service()
-            metadata_rows, next_cursor = svc.list_for_user(
+            metadata_rows, next_cursor = await asyncio.to_thread(
+                svc.list_for_user,
                 user_id=user_context.user_id,
                 account_id=resolved_account_id,
                 cursor=cursor,
